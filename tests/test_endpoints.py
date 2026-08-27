@@ -12,10 +12,9 @@ from rsched.config import EndpointConfig
 from rsched.endpoints import EndpointRegistry, make_endpoint
 from rsched.endpoints.anthropic_api import AnthropicEndpoint, merge_consecutive
 from rsched.endpoints.base import EndpointError, split_system, with_retries
-from rsched.endpoints.claude_cli import (
-    STRIP_VARS,
+from rsched.endpoints.claude_cli import STRIP_VARS, ClaudeCliEndpoint
+from rsched.endpoints.claude_cli_wire import (
     TOKEN_VAR,
-    ClaudeCliEndpoint,
     build_cmd,
     parse_result,
     render_prompt,
@@ -994,7 +993,7 @@ def test_api_key_source_ladder(tmp_path, monkeypatch):
 
 def test_token_source_ladder(tmp_path, monkeypatch):
     """claude-cli's analog: process env → inline (shadow-flagged) → secret → env file."""
-    from rsched.endpoints.claude_cli import token_source
+    from rsched.endpoints.claude_cli_wire import token_source
 
     monkeypatch.delenv(TOKEN_VAR, raising=False)
     monkeypatch.setattr("rsched.secrets.load_secrets", dict)

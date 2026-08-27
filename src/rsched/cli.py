@@ -13,7 +13,7 @@ import sys
 from pathlib import Path
 
 from .config import MODEL_KINDS, load_server_config
-from .engine.actions import BRIEF_FIELD
+from .engine.actionschema import BRIEF_FIELD
 from .paths import expand
 
 

@@ -21,7 +21,8 @@ from __future__ import annotations
 
 import copy
 
-from .actions import ACTION_SCHEMA, ALWAYS_KINDS, KIND_FIELDS, KINDS
+from .actions import ALWAYS_KINDS, KIND_FIELDS
+from .actionschema import ACTION_SCHEMA, KINDS
 
 # Fields every kind carries (actions.validate_action allows `note` on any kind, like `say`).
 _UNIVERSAL_FIELDS = ("say", "note", "kind")

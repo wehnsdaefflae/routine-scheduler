@@ -146,7 +146,7 @@ def signal_config_change(info, fields: list[str], values: dict) -> bool:
     """Tell a LIVE run that its config just changed (F337). No-op when nothing is running.
 
     The delivery seam is the one that already exists for reaching a running run — a signal in
-    control.json, applied at the next turn boundary by `engine/control.apply_config_change`,
+    control.json, applied at the next turn boundary by `engine/switches.apply_config_change`,
     which adopts the live-classified fields and appends an ENGINE NOTE naming every changed
     field and which half it is in. Never a second invisible mutation path: whatever happens,
     the run is TOLD, which is what F337 records as missing.

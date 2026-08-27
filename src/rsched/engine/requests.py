@@ -92,7 +92,7 @@ def request_denial(loop, action: dict) -> list[str]:
             aname = aname.strip()
             if acls == "action" and aname:
                 from ..grants import GATED_KINDS
-                from .actions import KINDS
+                from .actionschema import KINDS
                 if aname in KINDS and aname not in GATED_KINDS:
                     problems.append(
                         f"request: the {aname!r} action kind exists but is not grantable "

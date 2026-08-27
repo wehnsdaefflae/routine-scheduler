@@ -17,7 +17,7 @@ while an endpoint is unreachable or half-configured.
 from __future__ import annotations
 
 from ..config.base import DEFAULT_MODEL_MAX_TOKENS
-from ..engine.history import CHARS_PER_TOKEN, window_ceiling_chars
+from ..engine.compaction import CHARS_PER_TOKEN, window_ceiling_chars
 
 # Below this input ceiling (chars) a model runs but compacts from the first replies: a
 # conversation's recipe alone is ~25k chars before the capability catalog and any

@@ -61,7 +61,7 @@ def lint_workflow_py(source: str, *, filename: str, rule_slugs: list[str]) -> li
             unknown = [t for t in tools if t not in KINDS]
             if unknown:
                 problems.append(f"{filename}: tools names unknown action kind(s) "
-                                f"{unknown} — the vocabulary is engine/actions.KINDS")
+                                f"{unknown} — the vocabulary is engine/actionschema.KINDS")
     return problems
 
 

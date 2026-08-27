@@ -382,7 +382,7 @@ def test_cmd_lint_libraries_home_skips_server_config(tmp_path, monkeypatch):
 
 
 def test_lint_validates_meta_tools_vocabulary():
-    """META tools: entries must name real action kinds (engine/actions.KINDS) — a typo'd
+    """META tools: entries must name real action kinds (engine/actionschema.KINDS) — a typo'd
     allowlist used to pass lint and silently allow nothing at run time."""
     # the seed META carries an explicit `"tools": None` (= everything allowed) — REPLACE
     # that entry; a duplicate key inserted at the top would be overwritten by it (dict

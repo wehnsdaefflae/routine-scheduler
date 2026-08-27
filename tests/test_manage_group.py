@@ -15,7 +15,8 @@ from types import SimpleNamespace
 from rsched import groups
 from rsched.config import ServerConfig
 from rsched.engine import manage_group
-from rsched.engine.actions import KINDS, validate_action
+from rsched.engine.actions import validate_action
+from rsched.engine.actionschema import KINDS
 
 
 def _server(tmp_path, members=("weight-coach", "news-digest")):

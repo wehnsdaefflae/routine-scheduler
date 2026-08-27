@@ -13,8 +13,9 @@ import pytest
 import yaml
 
 from rsched import rules as rules_mod
-from rsched.engine.actions import KINDS, validate_action
-from rsched.engine.executor import do_read_rule
+from rsched.engine.actions import validate_action
+from rsched.engine.actionschema import KINDS
+from rsched.engine.fileops import do_read_rule
 from rsched.engine.observations import format_observation
 from rsched.grants import GATED_KINDS
 from rsched.rules import PRACTICES_HEADING
@@ -179,8 +180,8 @@ def test_user_bound_rule_reaches_a_live_run_once(make_routine, tmp_path, lib):
     the LIBRARY at the next turn boundary, exactly once per signal.
     """
     from rsched.config import ServerConfig, load_routine
-    from rsched.engine.control import apply_rule_additions
     from rsched.engine.run_context import Budgets, RunContext
+    from rsched.engine.switches import apply_rule_additions
     from rsched.engine.transcript import Transcript, read_events
     from rsched.paths import atomic_write_json
 

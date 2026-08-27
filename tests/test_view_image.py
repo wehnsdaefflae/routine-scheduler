@@ -9,7 +9,8 @@ from types import SimpleNamespace
 from rsched import utils_run
 from rsched.endpoints.base import EndpointError, supports_media_type
 from rsched.engine import executor, fileops
-from rsched.engine.actions import KIND_EXAMPLES, KINDS, validate_action
+from rsched.engine.actions import KIND_EXAMPLES, validate_action
+from rsched.engine.actionschema import KINDS
 
 # --- action schema -----------------------------------------------------------
 
@@ -216,7 +217,7 @@ def test_apply_media_fallback(make_routine, tmp_path, monkeypatch):
     loop = _loop(make_routine, tmp_path)
     loop.messages = [{"role": "user", "content": "OBS",
                       "media": [{"path": str(tmp_path / "x.png"), "media_type": "image/png"}]}]
-    from rsched.engine.completion import apply_media_fallback
+    from rsched.engine.window import apply_media_fallback
     assert apply_media_fallback(loop, EndpointError("nope")) is True
     assert "media" not in loop.messages[-1]
     assert "DESCRIBED" in loop.messages[-1]["content"]

@@ -9,8 +9,9 @@ import pytest
 
 from rsched.config import ModelRef
 from rsched.endpoints.base import Completion, EndpointError
-from rsched.engine.completion import next_action, parse_overflow_limit
-from rsched.engine.history import messages_size
+from rsched.engine.compaction import messages_size
+from rsched.engine.completion import next_action
+from rsched.engine.window import parse_overflow_limit
 from test_loop_referral import _FakeEndpoint, _loop
 
 VALID = Completion(text="", parsed={"kind": "read_file", "path": "state/probe.txt",

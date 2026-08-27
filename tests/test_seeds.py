@@ -18,7 +18,7 @@ from pathlib import Path
 import pytest
 
 from rsched.config import load_routine
-from rsched.engine.actions import KINDS
+from rsched.engine.actionschema import KINDS
 from rsched.grants import normalize_capabilities
 from rsched.utils_header import header_problems
 from rsched.workflows.lint import lint_all

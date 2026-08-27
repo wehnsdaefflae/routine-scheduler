@@ -1372,7 +1372,7 @@ def test_endpoints_prefer_inline_key(monkeypatch):
     """Inline key (UI-set) wins over a missing key_env_file, for openai + claude-cli."""
     from rsched.config import EndpointConfig
     from rsched.endpoints import make_endpoint
-    from rsched.endpoints.claude_cli import resolve_token
+    from rsched.endpoints.claude_cli_wire import resolve_token
 
     ep = make_endpoint(EndpointConfig(name="x", kind="openai", api_key="inline-123",
                                       key_env_file="/nonexistent.env", key_var="K"))

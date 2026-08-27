@@ -2,6 +2,14 @@
 and the runner-side queued-status write that must not clobber them (F140)."""
 
 from rsched.daemon.runner import _queued_status
+from rsched.engine.compaction import (
+    CHARS_PER_TOKEN,
+    INPUT_CHARS_PER_TOKEN,
+    clamp_to_cap,
+    input_cap_chars,
+    messages_size,
+    window_ceiling_chars,
+)
 from rsched.engine.history import prior_counters
 
 
@@ -79,11 +87,6 @@ def test_queued_status_roundtrip_does_not_defeat_reseed():
 # model (nano-gpt gemma, 65536-token window) reached ~49k input tokens and still requested
 # 16384 output → the completion 400'd with context_length_exceeded. input_cap_chars must
 # leave max_tokens of output room so compaction fires before that overflow.
-from rsched.engine.history import (  # noqa: E402
-    CHARS_PER_TOKEN,
-    INPUT_CHARS_PER_TOKEN,
-    input_cap_chars,
-)
 
 
 def test_input_cap_reserves_output_room_on_small_window():
@@ -161,11 +164,6 @@ def test_input_cap_never_negative_on_absurd_reservation():
 # middle at all, so a run with a few very large observation bodies overflowed the window with
 # NO compaction path able to help (c-20260802-110156, 3 recurrences). clamp_to_cap enforces the
 # ceiling as a last resort by truncating oversized bodies in place.
-from rsched.engine.history import (  # noqa: E402
-    clamp_to_cap,
-    messages_size,
-    window_ceiling_chars,
-)
 
 
 def test_window_ceiling_reserves_output_and_margin():

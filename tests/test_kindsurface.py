@@ -13,13 +13,8 @@ import json
 import jsonschema
 import pytest
 
-from rsched.engine.actions import (
-    ACTION_SCHEMA,
-    ALWAYS_KINDS,
-    KIND_EXAMPLES,
-    KIND_FIELDS,
-    KINDS,
-)
+from rsched.engine.actions import ALWAYS_KINDS, KIND_EXAMPLES, KIND_FIELDS, KINDS
+from rsched.engine.actionschema import ACTION_SCHEMA
 from rsched.engine.kindsurface import effective_kinds, schema_for_kinds
 
 

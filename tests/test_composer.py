@@ -5,8 +5,8 @@ history / transcript replay (history.py)."""
 import json
 
 from rsched.config import ServerConfig, load_routine
+from rsched.engine.compaction import maybe_compact, messages_size
 from rsched.engine.composer import build_system_prompt, harness_contract, state_digest
-from rsched.engine.history import maybe_compact, messages_size
 from rsched.engine.observations import format_observation, truncate
 from rsched.engine.run_context import Budgets, RunContext
 from rsched.engine.transcript import Transcript
@@ -411,7 +411,7 @@ def _history_endpoint(payload):
 
 
 def _history_messages():
-    from rsched.engine.history import KEEP_HEAD_MSGS, KEEP_TAIL_MSGS
+    from rsched.engine.compaction import KEEP_HEAD_MSGS, KEEP_TAIL_MSGS
 
     head = [{"role": "system", "content": "S"}] + [{"role": "user", "content": f"h{i}"}
                                                    for i in range(KEEP_HEAD_MSGS - 1)]
@@ -422,7 +422,7 @@ def _history_messages():
 
 def test_compact_to_history_writes_navigable_files(tmp_path):
     from rsched.config import ModelRef
-    from rsched.engine.history import KEEP_HEAD_MSGS, KEEP_TAIL_MSGS, compact_to_history
+    from rsched.engine.compaction import KEEP_HEAD_MSGS, KEEP_TAIL_MSGS, compact_to_history
 
     ep = _history_endpoint({"files": [{"name": "Research Notes!", "content": "found X\nfound Y"},
                                       {"name": "decisions", "content": "chose Z"}],
@@ -452,7 +452,7 @@ def test_compact_to_history_non_json_reply_names_the_model(tmp_path):
     import pytest
 
     from rsched.config import ModelRef
-    from rsched.engine.history import compact_to_history
+    from rsched.engine.compaction import compact_to_history
 
     class _Comp:
         parsed = None
@@ -475,7 +475,7 @@ def test_compact_to_history_reports_its_own_usage(tmp_path):
     """The archival call's spend rides the compaction info so the loop can fold it into
     the run's usage — full-context calls must never be invisible to accounting."""
     from rsched.config import ModelRef
-    from rsched.engine.history import compact_to_history
+    from rsched.engine.compaction import compact_to_history
 
     ep = _history_endpoint({"files": [{"name": "n", "content": "c"}], "index": "- n: c"})
     run_dir = tmp_path / "runs" / "20260710-070000"
@@ -492,7 +492,7 @@ def test_compact_to_history_timeout_scales_with_middle_size(tmp_path):
     from typing import ClassVar
 
     from rsched.config import ModelRef
-    from rsched.engine.history import KEEP_HEAD_MSGS, KEEP_TAIL_MSGS, compact_to_history
+    from rsched.engine.compaction import KEEP_HEAD_MSGS, KEEP_TAIL_MSGS, compact_to_history
 
     seen = []
 
@@ -543,7 +543,7 @@ def test_compact_to_history_second_pass_accumulates_atomically(tmp_path):
     """A later compaction carries the earlier files over, rewrites INDEX.md, and leaves no
     temp/displaced siblings behind — the swap is all-or-nothing."""
     from rsched.config import ModelRef
-    from rsched.engine.history import compact_to_history
+    from rsched.engine.compaction import compact_to_history
 
     run_dir = tmp_path / "runs" / "20260710-080000"
     run_dir.mkdir(parents=True)
@@ -572,7 +572,7 @@ def test_compact_to_history_failure_leaves_prior_history_intact(tmp_path, monkey
     import os
 
     from rsched.config import ModelRef
-    from rsched.engine.history import compact_to_history
+    from rsched.engine.compaction import compact_to_history
 
     run_dir = tmp_path / "runs" / "20260710-090000"
     hist = run_dir / "history"
@@ -604,7 +604,7 @@ def test_compact_to_history_failure_leaves_prior_history_intact(tmp_path, monkey
 def test_compact_to_history_rejects_unusable_llm_output(tmp_path):
     """Empty files/index → None (deterministic fallback) and nothing lands on disk."""
     from rsched.config import ModelRef
-    from rsched.engine.history import compact_to_history
+    from rsched.engine.compaction import compact_to_history
 
     run_dir = tmp_path / "runs" / "20260710-100000"
     run_dir.mkdir(parents=True)
@@ -713,12 +713,12 @@ def _gate_loop(monkeypatch, *, usage):
     against a 100k window - between the 0.6 (60k) and 0.8 (80k) thresholds."""
     from types import SimpleNamespace
 
-    from rsched.engine import completion
+    from rsched.engine import window
 
     calls = []
-    monkeypatch.setattr(completion, "compact_to_history",
+    monkeypatch.setattr(window, "compact_to_history",
                         lambda msgs, *_a, **_k: (calls.append("llm") or (msgs, None)))
-    monkeypatch.setattr(completion, "maybe_compact",
+    monkeypatch.setattr(window, "maybe_compact",
                         lambda msgs, *_a, **_k: (calls.append("digest") or (msgs, None)))
 
     class _Reg:
@@ -739,7 +739,7 @@ def _gate_loop(monkeypatch, *, usage):
 
 def test_compaction_gate_uncached_compacts_at_60pct(monkeypatch):
     from rsched.config import ModelRef
-    from rsched.engine.completion import compact_if_needed
+    from rsched.engine.window import compact_if_needed
 
     loop, calls = _gate_loop(monkeypatch, usage={})
     # max_tokens=0 isolates the FRACTION gate: the output reservation (F265, tested in
@@ -753,7 +753,7 @@ def test_compaction_gate_cached_waits_for_80pct(monkeypatch):
     """Observed cache hits raise the gate to 0.8: compaction rewrites the prefix and
     invalidates the whole cache, so carried context is cheaper than re-archiving."""
     from rsched.config import ModelRef
-    from rsched.engine.completion import compact_if_needed
+    from rsched.engine.window import compact_if_needed
 
     loop, calls = _gate_loop(monkeypatch, usage={"cached_in": 5_000})
     # max_tokens=0 isolates the FRACTION gate (the F265 output reservation is tested separately

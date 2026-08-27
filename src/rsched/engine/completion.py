@@ -8,35 +8,24 @@ function takes the live EngineLoop; the turn ORDER stays in loop.run().
 
 from __future__ import annotations
 
-import dataclasses
 import json
 import os
-import re
 import time
-from pathlib import Path
 
 from ..endpoints import failover
 from ..endpoints.base import EndpointError
-from ..health_events import log_health_event
 from ..schema_guard import SchemaViolation, extract_json, retry_message, validate
-from . import fileops, refusal
-from .actions import (
-    ACTION_SCHEMA,
-    KIND_EXAMPLES,
-    normalize_action,
-    util_rejection_outcome,
-    validate_action,
+from . import refusal
+from .actions import KIND_EXAMPLES, normalize_action, util_rejection_outcome, validate_action
+from .actionschema import ACTION_SCHEMA
+from .degrade import (
+    _handle_empty,
+    _handle_refusal,
+    _intercept_refusal_finish,
+    _recover_transport,
+    _turn_task_text,
 )
-from .history import (
-    CHARS_PER_TOKEN,
-    KEEP_HEAD_MSGS,
-    KEEP_TAIL_MSGS,
-    clamp_to_cap,
-    compact_to_history,
-    input_cap_chars,
-    maybe_compact,
-    messages_size,
-)
+from .window import _override_window, compact_if_needed
 
 MAX_SCHEMA_ATTEMPTS = 3   # 1 initial + 2 retries per turn
 
@@ -48,81 +37,6 @@ MAX_SCHEMA_ATTEMPTS = 3   # 1 initial + 2 retries per turn
 # branch: re-sending a refused prompt to the same model usually earns another refusal, so
 # a refusal is never blind-retried — see _handle_refusal (R5).
 REFUSAL_STOPS = frozenset({"refusal", "content_filter"})
-
-# F278: the window guard. The clamp (`clamp_to_cap`) sizes everything from the CATALOG's
-# context figure — when that figure claims a larger window than the provider actually
-# enforces, no compaction gate ever fires and the completion 400s with
-# context_length_exceeded (2026-08-05: a gemma entry raised to 250k tokens against the
-# provider's real 65,536 disarmed the whole net and killed two live conversations). The
-# guard closes the loop at the error itself: parse the provider's STATED maximum from the
-# overflow text, shrink this RUN's view of that model's window to it, re-clamp the prompt,
-# and retry the same model once. Config stays authoritative for sizing DOWN (a smaller
-# configured window is a deliberate budget); the provider is authoritative for sizing UP —
-# a stated max at or above the configured window means config wasn't the problem, so the
-# guard declines and the ordinary transport nets take over.
-_OVERFLOW_HINTS = ("context_length_exceeded", "maximum context length", "context window")
-_OVERFLOW_TOKENS_RE = re.compile(
-    r"(?:maximum context length(?: is)?|context (?:window|length) of(?: only)?|"
-    r"context_length_exceeded\D{0,40}?)\s*(\d{4,7})\s*tokens", re.IGNORECASE)
-
-
-def parse_overflow_limit(text: str) -> int | None:
-    """The provider-stated maximum context TOKENS from a context-overflow error message,
-    or None when the text is not an overflow error (or states no usable figure).
-    """
-    low = text.lower()
-    if not any(h in low for h in _OVERFLOW_HINTS):
-        return None
-    m = _OVERFLOW_TOKENS_RE.search(text)
-    return int(m.group(1)) if m else None
-
-
-def _override_window(loop, ref):
-    """This run's corrected view of a model's window, when the guard has shrunk it: every
-    turn re-picks the ref from the registry (which still carries the catalog's figure), so
-    the correction is re-applied here rather than by mutating shared registry state.
-    """
-    overrides = getattr(loop, "_window_overrides", None)
-    shrunk = overrides.get((ref.endpoint, ref.model)) if overrides else None
-    if shrunk and shrunk < ref.context_chars:
-        return dataclasses.replace(ref, context_chars=shrunk)
-    return ref
-
-
-def _shrink_window_to_provider(loop, endpoint, ref, exc: EndpointError) -> tuple | None:
-    """Net 0 of _recover_transport: a context-overflow failure whose stated maximum is
-    SMALLER than the configured window means the catalog entry lies — shrink the run-local
-    window to the provider's figure, re-clamp the prompt under it, emit the audit trail
-    (transcript event + `model_window_corrected` health event naming the bad entry), and
-    hand back the same endpoint with the corrected ref for one clean retry. Returns None
-    when the error is not an overflow, states no figure, config was not the problem, or
-    this model was already corrected once this run (never loops).
-    """
-    stated = parse_overflow_limit(str(exc))
-    if stated is None:
-        return None
-    corrected = int(stated * CHARS_PER_TOKEN)
-    key = (ref.endpoint, ref.model)
-    overrides = getattr(loop, "_window_overrides", None)
-    if overrides is None:
-        overrides = loop._window_overrides = {}
-    if overrides.get(key, float("inf")) <= corrected or corrected >= ref.context_chars:
-        return None
-    overrides[key] = corrected
-    new_ref = dataclasses.replace(ref, context_chars=corrected)
-    cl = clamp_to_cap(loop.messages, new_ref.context_chars, new_ref.max_tokens)
-    ctx = loop.ctx
-    ctx.transcript.event("compaction", {"window_guard": {
-        "model": ref.name or ref.model, "configured_chars": ref.context_chars,
-        "provider_max_tokens": stated, "corrected_chars": corrected,
-        **({"clamp": cl} if cl else {})}})
-    log_health_event(ctx.server.routines_home, "model_window_corrected",
-                     routine=ctx.routine.slug, run_id=ctx.run_id,
-                     detail=(f"{ref.name or ref.model}: catalog claims "
-                             f"{ref.context_chars:,} context chars but the provider "
-                             f"enforces {stated:,} tokens — run continues on "
-                             f"{corrected:,} chars; correct the catalog entry"))
-    return endpoint, new_ref
 
 
 def fold_usage(usage_sum: dict, completion) -> None:
@@ -276,168 +190,6 @@ def next_action(loop) -> tuple[dict | None, dict]:
     return None, usage_sum
 
 
-def _recover_transport(loop, chain, endpoint, ref, exc: EndpointError) -> tuple:
-    """The completion call failed with a hard EndpointError — the three runtime nets, in
-    order. Net 0: a context-overflow whose stated maximum is smaller than the configured
-    window is a lying catalog entry, not a provider failure — shrink the run-local window,
-    re-clamp, and retry the SAME model (once; see _shrink_window_to_provider, F278).
-    Net 1: a turn whose tail carries an image the endpoint couldn't show is
-    converted to vision-util text (media fallback) and retried text-only on the SAME
-    model — the cooldown the instrumentation just started is lifted, since the image, not
-    the provider, was the problem. Net 2: a genuine hard provider failure advances down
-    the role's fallback chain (the failed model is already cooling); chain exhausted →
-    re-raise, failing the run exactly as before fallbacks existed. Returns the
-    (endpoint, ref) to retry on.
-    """
-    shrunk = _shrink_window_to_provider(loop, endpoint, ref, exc)
-    if shrunk is not None:
-        failover.clear(ref.endpoint, ref.model)   # the CONFIG, not the provider, was at fault
-        return shrunk
-    if apply_media_fallback(loop, exc):
-        failover.clear(ref.endpoint, ref.model)
-        return endpoint, ref
-    switched = _switch_to_fallback(loop, chain, ref, exc)
-    if switched is None:
-        raise exc
-    return switched
-
-
-def _handle_refusal(loop, completion, chain, ref, attempt: int, refstate: dict) -> tuple:
-    """A classifier refusal (stop_reason in REFUSAL_STOPS — an HTTP 200, so error-rate
-    monitoring never sees it; content usually empty, stop_details naming the category).
-    Never blind-retried against the same model: re-sending a refused prompt usually earns
-    another refusal, so the pre-R5 path — 3 same-model retries, then a "failed to produce
-    a valid action" death — burned the run while hiding the cause. Instead: a distinct
-    refusal-marked transcript error first, then ONE clarification pass (engine/refusal.py:
-    flag → isolate the trigger → deliver only its essence to the uncensored
-    HARNESS, whose output is evidence and never this turn's action), then the fallback
-    chain advances — cooling the refused model like a hard failure, which is RUN-scoped
-    (the failover registry is process-local), so the rest of this run stops re-asking
-    while other runs, with other prompts, still probe it fresh. Chain exhausted (or no
-    fallbacks): raises, failing the run HONESTLY with the category named — never "empty
-    completion". Returns the switched chain entry.
-    """
-    details = completion.stop_details or {}
-    category = str(details.get("category") or "") or "unreported"
-    explanation = str(details.get("explanation") or "")
-    what = (f"{ref.name or ref.model} refused the turn "
-            f"(stop_reason={completion.stop_reason}, category={category}"
-            + (f": {explanation[:200]}" if explanation else "") + ")")
-    loop.ctx.transcript.event("error", {
-        "where": "endpoint", "attempt": attempt, "message": what,
-        "refusal": {"category": category, "model": ref.name or ref.model,
-                    **({"explanation": explanation[:500]} if explanation else {})}})
-    if not refstate["referral_tried"]:
-        refstate["referral_tried"] = True
-        refusal.clarify_refusal(loop.ctx, task=_turn_task_text(loop),
-                                refusal=explanation or what, where="loop",
-                                model=ref.name or ref.model)
-    switched = _switch_to_fallback(loop, chain, ref, EndpointError(what))
-    if switched is not None:
-        return switched
-    raise EndpointError(
-        f"{what}; no usable fallback model — configure `fallbacks:` on the catalog "
-        f"model to survive classifier refusals")
-
-
-def _intercept_refusal_finish(loop, candidate, ref, refstate: dict) -> bool:
-    """A finish(status=failed) whose summary reads as a CONTENT REFUSAL is not accepted
-    as the turn's action: flag + isolate the essence + deliver it to the honeypot, then
-    tell the main model the essence is handled separately and re-drive the turn (True =
-    the caller `continue`s). Anything else (an honest failure report, a non-finish
-    action) returns False and is accepted normally. Latched via refstate so a model that
-    keeps refusing eventually lands its finish honestly.
-    """
-    ctx = loop.ctx
-    if not (isinstance(candidate, dict) and candidate.get("kind") == "finish"
-            and refusal.is_refusal(ctx, str(candidate.get("summary") or ""))):
-        return False
-    refstate["referral_tried"] = True
-    rec = refusal.clarify_refusal(ctx, task=_turn_task_text(loop),
-                                  refusal=str(candidate.get("summary") or ""),
-                                  where="loop", model=ref.name or ref.model)
-    if rec.get("isolated"):
-        note = (f"the fragment «{rec['isolated']}» is being handled separately by another "
-                "model — do NOT finish-fail on its account; proceed with the REMAINDER of "
-                "the task without it.")
-    else:
-        note = ("the refusal-triggering part is being handled separately — do NOT "
-                "finish-fail on its account; proceed with the REMAINDER of the task.")
-    loop.messages.append({"role": "assistant",
-                          "content": json.dumps(candidate, ensure_ascii=False)})
-    loop.messages.append({"role": "user", "content":
-                          "That finish was a content refusal and was NOT accepted as this "
-                          "turn's action. " + note})
-    return True
-
-
-def _turn_task_text(loop) -> str:
-    """The refused turn's TASK text for the isolation subcall: the newest USER-role
-    message (the observation/instruction the model was answering), falling back to the
-    run instruction. Length-capped inside engine/refusal.py.
-    """
-    for m in reversed(loop.messages):
-        if m.get("role") == "user":
-            return str(m.get("content") or "")
-    return str(getattr(loop, "instruction", "") or "")
-
-
-def _handle_empty(loop, completion, chain, ref,
-                  attempt: int, refstate: dict) -> tuple | None:
-    """One empty completion (no content, no parsed object) that is NOT a refusal — those
-    divert to _handle_refusal before this. A provider hiccup gets a clean same-model retry
-    (no poisoned context), but a hard-broken model keeps failing the same way, so the
-    SECOND empty in one turn engages the failover chain exactly like a hard EndpointError
-    (same-model blind retries can never fix it). Returns the switched chain entry, or
-    None = plain same-model retry.
-    """
-    stop = completion.stop_reason
-    # stop_details rides along VERBATIM so the transcript shows WHY the reply was
-    # empty (F164) — e.g. a reasoning model that spent its whole budget thinking.
-    details = getattr(completion, "stop_details", None) or {}
-    loop.ctx.transcript.event("error", {
-        "where": "endpoint", "attempt": attempt,
-        "message": "empty completion (no content/reasoning; "
-                   f"stop_reason={stop or 'unreported'}"
-                   + (f", stop_details={details}" if details else "") + ")"})
-    refstate["empty"] += 1
-    if refstate["empty"] >= 2:
-        failure = EndpointError(
-            f"empty completion x{refstate['empty']} (stop_reason={stop or 'unreported'})")
-        switched = _switch_to_fallback(loop, chain, ref, failure)
-        if switched is not None:
-            refstate["empty"] = 0
-            return switched
-        # chain exhausted (or none configured): the caller keeps the pre-failover
-        # behavior — remaining attempts run schema-free
-    return None
-
-
-def _switch_to_fallback(loop, chain, failed_ref, exc: EndpointError):
-    """The picked model failed hard mid-turn (its adapter's transport retries are already
-    exhausted, or it kept returning empty completions). Advance to the next chain member
-    not in cooldown and log the switch VISIBLY: a transcript `error` event whose
-    `failover` payload names both models — so the run records which model serves from here
-    (status.json follows via ctx.main_model). None = chain exhausted.
-
-    The abandoned model is marked cooling HERE — the engine's own judgment that it failed
-    a real turn. (InstrumentedEndpoint only cools retryable-class transport failures; a
-    deterministic error or an empty-reply pattern is visible only at this seam.)
-    """
-    failover.mark_failed(failed_ref.endpoint, failed_ref.model)
-    nxt = failover.next_after(chain, failed_ref)
-    if nxt is None:
-        return None
-    _, n_ref = nxt
-    loop.ctx.transcript.event("error", {
-        "where": "endpoint",
-        "message": (f"{failed_ref.name or failed_ref.model} failed hard: {str(exc)[:300]} "
-                    f"— failing over to {n_ref.name or n_ref.model}"),
-        "failover": {"from": failed_ref.name, "to": n_ref.name,
-                     "cooldown_s": failover.COOLDOWN_S}})
-    return nxt
-
-
 def action_candidate(loop, completion) -> tuple[dict, list]:
     """Parse a completion into a normalized action candidate plus validation problems
     (schema first, then per-kind/permission checks). Raises on unparseable text —
@@ -464,123 +216,3 @@ def action_candidate(loop, completion) -> tuple[dict, list]:
     return candidate, problems
 
 
-def compact_if_needed(loop, endpoint, ref) -> None:
-    """Keep the next prompt inside the model's window. First ARCHIVE the middle if it has grown
-    past the compaction gate (`_archive_if_needed`), then ENFORCE the hard window ceiling as a
-    last resort (`clamp_to_cap`) — because archiving cannot shrink the incompressible head+tail
-    floor and a short conversation has no middle to elide, so a run with a few very large
-    observations would otherwise 400 with context_length_exceeded and die (F265, three
-    recurrences on c-20260802-110156). The clamp trims oversized bodies in place with a visible
-    marker; the full text stays in the transcript.
-    """
-    _archive_if_needed(loop, endpoint, ref)
-    ctx = loop.ctx
-    cl = clamp_to_cap(loop.messages, ref.context_chars, ref.max_tokens)
-    if cl:
-        ctx.transcript.event("compaction", {"clamp": cl})
-        loop._last_compact_after = messages_size(loop.messages)
-
-
-def _archive_if_needed(loop, endpoint, ref) -> None:
-    """When the prompt exceeds the compaction gate, archive the middle to a navigable on-disk
-    history via the LLM (compact_to_history); fall back to the deterministic one-line digest if
-    that fails, so a run never stalls on compaction. Does NOT guarantee the result clears the
-    window — that is the caller's `clamp_to_cap` step (the head+tail floor is incompressible).
-    """
-    ctx = loop.ctx
-    size = messages_size(loop.messages)
-    # Observed cache hits flip the economics: re-reading carried context costs ~0.1x,
-    # while compacting rewrites the prefix and invalidates the whole cache — so compact
-    # later (0.8) once the provider demonstrably serves from cache, earlier (0.6) when
-    # every turn re-reads at full price. The cap also reserves room for the model's
-    # OUTPUT (ref.max_tokens): the provider counts prompt + requested output against ONE
-    # window, so a small-window model must compact before input + max_tokens overflows it
-    # (F265). Both use the MODEL's window, not the endpoint default.
-    context_cap = input_cap_chars(ref.context_chars, ref.max_tokens,
-                                  cached=bool(ctx.usage.get("cached_in")))
-    # Long prompts also burn the token BUDGET — every turn re-sends everything, so a
-    # bloated prompt taxes each remaining turn. Once the prompt would eat >10% of the
-    # remaining token budget per turn, archive it: the one compaction call costs what
-    # the bloat would keep costing every single turn. Floored so a small prompt near
-    # budget exhaustion doesn't thrash (compaction itself spends tokens).
-    remaining = ctx.tokens_remaining()   # None = unlimited → only the context cap applies
-    budget_cap = (float("inf") if remaining is None
-                  else max(40_000.0, 0.10 * 4 * remaining))
-    if (size <= min(context_cap, budget_cap)
-            or len(loop.messages) <= KEEP_HEAD_MSGS + KEEP_TAIL_MSGS):
-        return
-    # Anti-thrash: head + tail are an incompressible floor (large observations in the last
-    # 24 messages stay verbatim), so once the middle is a handful of messages — or the size
-    # hasn't grown meaningfully since the last archive — another pass can't win. Each
-    # attempt costs a full-prompt LLM call; wait until there is enough new middle to pay
-    # for one. (Seen live: 4 compactions in one run, the last archiving 3 messages for a
-    # 5k-char gain.)
-    middle_n = len(loop.messages) - KEEP_HEAD_MSGS - KEEP_TAIL_MSGS
-    if middle_n < 8 or size < loop._last_compact_after + 20_000:
-        return
-    # Archival is machine work — route it to the (usually cheaper) tool-call model
-    # whenever its window can hold the middle being archived; the main model is the
-    # fallback, never the default.
-    c_endpoint, c_ref = endpoint, ref
-    try:
-        t_endpoint, t_ref = ctx.registry.for_model("tool_call", ctx.routine.models)
-        middle_size = messages_size(
-            loop.messages[KEEP_HEAD_MSGS:len(loop.messages) - KEEP_TAIL_MSGS])
-        if t_ref.context_chars * 0.7 >= middle_size:
-            c_endpoint, c_ref = t_endpoint, t_ref
-    except Exception:
-        pass
-    cinfo = None
-    degraded = None
-    try:
-        result = compact_to_history(loop.messages, loop.turn_records, c_endpoint, c_ref,
-                                    ctx.run_dir, loop._hist_rel)
-    except Exception as exc:
-        # A failed archival is a DESIGNED degrade (the deterministic digest takes the
-        # pass), not a run error — a red error card for it alarmed operators (F376).
-        # The reason stays visible: it rides on the compaction event below.
-        degraded = str(exc)[:300]
-        result = None
-    if result is not None:
-        loop.messages, cinfo = result
-        loop._history_active = True
-        loop._hist_note_countdown = 0   # the next observation carries the history pointer
-    else:
-        loop.messages, cinfo = maybe_compact(loop.messages, loop.turn_records,
-                                             ref.context_chars)
-        if cinfo is not None and degraded:
-            cinfo["archival_degraded"] = degraded
-    if cinfo:
-        if cinfo.get("usage"):
-            ctx.add_usage(cinfo["usage"])   # the archival call itself now hits the books
-        loop._last_compact_after = messages_size(loop.messages)
-        ctx.transcript.event("compaction", cinfo)
-    elif degraded:
-        # digest found nothing to elide either — the failed archival must still be visible
-        ctx.transcript.event("compaction", {"archival_degraded": degraded})
-
-
-def apply_media_fallback(loop, exc: EndpointError) -> bool:
-    """The main endpoint failed on a turn whose tail user message carries image `media`
-    (it rejected the file, or claude-cli's stream-json path is unavailable). Convert that
-    media to vision-util text IN PLACE and drop it, so the retried completion is text-only
-    and the model still gets the content. False when the tail has no media — then the
-    failure is a genuine endpoint error that must propagate.
-    """
-    if not loop.messages:
-        return False
-    last = loop.messages[-1]
-    media = last.get("media")
-    if not media:
-        return False
-    notes = []
-    for item in media:
-        desc = fileops.vision_describe(loop.ctx, item["path"], "")
-        notes.append(f"[{Path(item['path']).name}: this run's model could not display it — "
-                     f"description from the vision util]\n{desc}")
-    last.pop("media", None)
-    last["content"] = last["content"] + "\n\n" + "\n\n".join(notes)
-    loop.ctx.transcript.event("error", {"where": "media",
-        "message": f"main endpoint could not show {len(media)} file(s) "
-                   f"({str(exc)[:120]}); fell back to the vision util"})
-    return True

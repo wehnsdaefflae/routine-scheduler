@@ -34,7 +34,7 @@ from . import (
     requests,
     secretgate,
 )
-from .actions import BRIEF_FIELD
+from .actionschema import BRIEF_FIELD
 from .autocommit import autocommit as _autocommit
 from .boot import boot
 from .completion import MAX_SCHEMA_ATTEMPTS, next_action
@@ -42,10 +42,6 @@ from .control import (
     _ABORT,
     RunAborted,
     announce_finished_subruns,
-    apply_config_change,
-    apply_deliberation_switch,
-    apply_model_switch,
-    apply_rule_additions,
     drain_injections,
     pause_gate,
     request_abort,
@@ -54,6 +50,12 @@ from .finish_guard import normalize_escaped_newlines, unbacked_action_claims
 from .observations import format_observation
 from .run_context import RunContext
 from .subruns import SubrunManager
+from .switches import (
+    apply_config_change,
+    apply_deliberation_switch,
+    apply_model_switch,
+    apply_rule_additions,
+)
 
 POLL_S = 2.0
 REPEAT_WARN = 3
@@ -182,7 +184,7 @@ class EngineLoop:
         #                                      or a stubborn pair livelocks the run
         # A signal already applied by an earlier leg must not re-fire on this one —
         # the run's applied ledger (engine-owned) seeds the edge-triggers.
-        from .control import load_applied_baselines
+        from .switches import load_applied_baselines
         load_applied_baselines(self)
         ctx.deliberation = ctx.routine.deliberation   # live level; control.json may re-set it
         # Repeat-streak escape hatch: identical-but-valid actions in a row are the second

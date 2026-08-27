@@ -108,7 +108,7 @@ def _handle_for(conv_dir: Path, name: str) -> tuple[Path, dict]:
 @router.get("/conversations/{slug}/browser")
 def list_browser(request: Request, slug: str) -> list[dict]:
     """The conversation's persisted browser sessions — for the right-rail 'browser' section."""
-    from .api_conversations import conversation_info
+    from .conversations_common import conversation_info
 
     info = conversation_info(request, slug)   # 404 if the conversation is gone
     return browser_rows(info.cfg.dir)
@@ -117,7 +117,7 @@ def list_browser(request: Request, slug: str) -> list[dict]:
 @router.get("/conversations/{slug}/browser/view")
 def browser_view(request: Request, slug: str, name: str = "default"):
     """The session's latest screenshot (fetched with the auth header, blob-rendered)."""
-    from .api_conversations import conversation_info
+    from .conversations_common import conversation_info
 
     info = conversation_info(request, slug)
     _, handle = _handle_for(info.cfg.dir, name)
@@ -137,7 +137,7 @@ def stop_browser(request: Request, slug: str, name: str) -> dict:
     group; a handle whose pid resolves into the DAEMON'S group is wrong or forged, and
     signalling it would kill the scheduler — refuse the kill, still drop the handle.
     """
-    from .api_conversations import conversation_info
+    from .conversations_common import conversation_info
 
     info = conversation_info(request, slug)
     hf, handle = _handle_for(info.cfg.dir, name)

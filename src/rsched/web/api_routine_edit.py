@@ -44,7 +44,7 @@ def apply_rule_edit(request: Request, routine_dir: Path, body: RulesBody,
     writes routine.yaml, so the web layer is the only writer and no two-writer race exists.
     When a run IS live, the config alone would not reach it — its prompt was composed at
     boot and is immutable under the prompt-caching contract — so an `add_rules` signal goes
-    into the run's control.json and `engine/control.apply_rule_additions` appends the prose
+    into the run's control.json and `engine/switches.apply_rule_additions` appends the prose
     at the next turn boundary. Removal has no live counterpart on purpose: prose already in
     the context cannot be unsaid, so an unbind takes effect at the next run.
     """

@@ -10,7 +10,7 @@ import json
 from pathlib import Path
 
 from . import deliberation, notes, outputs
-from .actions import example_action
+from .actionschema import example_action
 from .capabilities import capabilities_digest
 from .kindsurface import effective_kinds, kind_bullets, schema_for_kinds
 from .run_context import RunContext

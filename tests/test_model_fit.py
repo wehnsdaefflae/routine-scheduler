@@ -6,7 +6,7 @@ labels "impossible" is exactly what dies with context_length_exceeded on turn on
 from types import SimpleNamespace
 
 from rsched.config import EndpointConfig, ModelConfig
-from rsched.engine.history import window_ceiling_chars
+from rsched.engine.compaction import window_ceiling_chars
 from rsched.web.model_fit import (
     TIGHT_INPUT_CHARS,
     effective_window_pair,

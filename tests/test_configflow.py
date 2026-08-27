@@ -104,7 +104,7 @@ def _signal(run_dir, fields, values, ts="2026-08-27T07:05:00+02:00"):
 
 
 def test_live_run_adopts_the_live_half_and_is_told_about_both(make_routine, tmp_path):
-    from rsched.engine.control import apply_config_change
+    from rsched.engine.switches import apply_config_change
 
     loop, run_dir = _loop(make_routine, tmp_path)
     before = loop.ctx.budgets.max_turns
@@ -126,7 +126,7 @@ def test_live_run_adopts_the_live_half_and_is_told_about_both(make_routine, tmp_
 def test_the_signal_is_edge_triggered_not_re_fired_every_turn(make_routine, tmp_path):
     """Same discipline as the model/deliberation/rule switches — otherwise every turn boundary
     re-injects the same note for the rest of the run."""
-    from rsched.engine.control import apply_config_change
+    from rsched.engine.switches import apply_config_change
 
     loop, run_dir = _loop(make_routine, tmp_path)
     _signal(run_dir, ["budgets"], {"budgets": {"max_turns": 99}})
@@ -138,7 +138,7 @@ def test_the_signal_is_edge_triggered_not_re_fired_every_turn(make_routine, tmp_
 
 
 def test_a_later_change_fires_again(make_routine, tmp_path):
-    from rsched.engine.control import apply_config_change
+    from rsched.engine.switches import apply_config_change
 
     loop, run_dir = _loop(make_routine, tmp_path)
     _signal(run_dir, ["budgets"], {"budgets": {"max_turns": 99}})
@@ -154,7 +154,7 @@ def test_the_change_lands_in_the_transcript_not_only_in_the_prompt(make_routine,
     """It must be a visible in-flow event, never a second invisible mutation path."""
     import json
 
-    from rsched.engine.control import apply_config_change
+    from rsched.engine.switches import apply_config_change
 
     loop, run_dir = _loop(make_routine, tmp_path)
     _signal(run_dir, ["deliberation"], {"deliberation": "brief"})
@@ -169,7 +169,7 @@ def test_the_change_lands_in_the_transcript_not_only_in_the_prompt(make_routine,
 def test_a_junk_value_does_not_kill_a_live_run(make_routine, tmp_path):
     """Best-effort per field: a value the run cannot use is the operator's to see on the page,
     never a crash mid-run — and the note still says the field changed."""
-    from rsched.engine.control import apply_config_change
+    from rsched.engine.switches import apply_config_change
 
     loop, run_dir = _loop(make_routine, tmp_path)
     before = loop.ctx.budgets.max_turns
@@ -183,7 +183,7 @@ def test_a_junk_value_does_not_kill_a_live_run(make_routine, tmp_path):
 
 
 def test_no_signal_is_a_no_op(make_routine, tmp_path):
-    from rsched.engine.control import apply_config_change
+    from rsched.engine.switches import apply_config_change
 
     loop, _run_dir = _loop(make_routine, tmp_path)
     apply_config_change(loop)

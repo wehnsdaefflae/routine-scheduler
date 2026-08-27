@@ -23,7 +23,8 @@ import yaml
 
 from rsched.config import ServerConfig
 from rsched.engine import create_routine
-from rsched.engine.actions import KINDS, validate_action
+from rsched.engine.actions import validate_action
+from rsched.engine.actionschema import KINDS
 from rsched.engine.create_routine import DRAFT_RELPATH
 
 REPO = Path(__file__).resolve().parents[1]

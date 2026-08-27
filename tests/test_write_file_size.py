@@ -7,7 +7,7 @@ had clobbered a file's existing content.
 from __future__ import annotations
 
 from rsched.config import ServerConfig, load_routine
-from rsched.engine.executor import do_write_file
+from rsched.engine.fileops import do_write_file
 from rsched.engine.observations import format_observation
 from rsched.engine.run_context import Budgets, RunContext
 from rsched.engine.transcript import Transcript

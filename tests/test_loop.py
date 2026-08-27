@@ -76,9 +76,9 @@ def test_apply_model_switch(make_routine):
     """The engine applies a mid-run model switch from control.json, edge-triggered on its ts, and
     ignores an unknown endpoint. for_model re-resolves every turn, so the next turn uses it."""
     from rsched.config import ModelConfig, load_routine
-    from rsched.engine.control import apply_model_switch
     from rsched.engine.loop import EngineLoop
     from rsched.engine.run_context import Budgets, RunContext
+    from rsched.engine.switches import apply_model_switch
     from rsched.engine.transcript import Transcript
 
     d = make_routine(slug="sw")
@@ -2195,13 +2195,13 @@ def test_compaction_antithrash(make_routine, monkeypatch):
     """Head + tail are an incompressible floor: once the middle is a handful of messages, or
     the prompt hasn't grown since the last archive, compact_if_needed must SKIP — each attempt
     costs a full-prompt LLM call (seen live: 4 compactions/run, the last saving 5k chars)."""
-    import rsched.engine.completion as completion_mod
+    import rsched.engine.window as window_mod
     from rsched.config import load_routine
-    from rsched.engine.completion import compact_if_needed
-    from rsched.engine.history import KEEP_HEAD_MSGS, KEEP_TAIL_MSGS
+    from rsched.engine.compaction import KEEP_HEAD_MSGS, KEEP_TAIL_MSGS
     from rsched.engine.loop import EngineLoop
     from rsched.engine.run_context import Budgets, RunContext
     from rsched.engine.transcript import Transcript
+    from rsched.engine.window import compact_if_needed
 
     d = make_routine(slug="cmp")
     run_dir = d / "runs" / TS
@@ -2212,7 +2212,7 @@ def test_compaction_antithrash(make_routine, monkeypatch):
                      budgets=Budgets.from_config(cfg.budgets))
     loop = EngineLoop(ctx, "## Run flow", "instr")
     attempts = []
-    monkeypatch.setattr(completion_mod, "compact_to_history",
+    monkeypatch.setattr(window_mod, "compact_to_history",
                         lambda *a, **k: attempts.append(1) or None)   # None → digest fallback
 
     class _Tiny:   # a resolved ModelRef stand-in: context_chars drives the compaction cap
@@ -2242,12 +2242,12 @@ def test_failed_archival_degrades_without_error_card(make_routine, monkeypatch):
     takes the pass and the reason rides the neutral `compaction` event; no red `error`
     event may be emitted for it."""
     from rsched.config import load_routine
-    from rsched.engine import completion as completion_mod
-    from rsched.engine.completion import compact_if_needed
-    from rsched.engine.history import KEEP_HEAD_MSGS, KEEP_TAIL_MSGS
+    from rsched.engine import window as window_mod
+    from rsched.engine.compaction import KEEP_HEAD_MSGS, KEEP_TAIL_MSGS
     from rsched.engine.loop import EngineLoop
     from rsched.engine.run_context import Budgets, RunContext
     from rsched.engine.transcript import Transcript, read_events
+    from rsched.engine.window import compact_if_needed
 
     d = make_routine(slug="cmpdeg")
     run_dir = d / "runs" / TS
@@ -2260,7 +2260,7 @@ def test_failed_archival_degrades_without_error_card(make_routine, monkeypatch):
 
     def _boom(*a, **k):
         raise RuntimeError("claude-cli: call timed out after 599s")
-    monkeypatch.setattr(completion_mod, "compact_to_history", _boom)
+    monkeypatch.setattr(window_mod, "compact_to_history", _boom)
 
     class _Tiny:
         context_chars = 1000
@@ -2512,7 +2512,7 @@ def test_loop_compaction_archives_middle_to_history(make_routine, scripted, monk
     import yaml as _yaml
 
     import rsched.engine.runtime as runtime_mod
-    from rsched.engine.history import KEEP_HEAD_MSGS, KEEP_TAIL_MSGS
+    from rsched.engine.compaction import KEEP_HEAD_MSGS, KEEP_TAIL_MSGS
 
     d = make_routine(slug=f"cmp-{archival_model.split('-')[0]}", budgets={"max_turns": 40})
     raw = _yaml.safe_load((d / "routine.yaml").read_text())

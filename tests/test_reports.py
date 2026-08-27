@@ -16,7 +16,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from rsched.engine.actions import ALWAYS_KINDS, KIND_EXAMPLES, KINDS, validate_action
+from rsched.engine.actions import ALWAYS_KINDS, KIND_EXAMPLES, validate_action
+from rsched.engine.actionschema import KINDS
 from rsched.engine.inbox import drain_messages
 from rsched.engine.interact import handle_report
 from rsched.engine.observations import format_observation

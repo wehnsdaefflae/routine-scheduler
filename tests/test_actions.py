@@ -5,7 +5,8 @@ import json
 import jsonschema
 import pytest
 
-from rsched.engine.actions import ACTION_SCHEMA, KINDS, example_action, validate_action
+from rsched.engine.actions import validate_action
+from rsched.engine.actionschema import ACTION_SCHEMA, KINDS, example_action
 from rsched.schema_guard import SchemaViolation, extract_json, parse_reply, retry_message
 
 
@@ -35,7 +36,7 @@ def test_transcript_js_brief_field_mirrors_python():
     import re
     from pathlib import Path
 
-    from rsched.engine.actions import BRIEF_FIELD
+    from rsched.engine.actionschema import BRIEF_FIELD
 
     js = (Path(__file__).resolve().parents[1] / "static" / "components"
           / "transcript.js").read_text(encoding="utf-8")
@@ -189,7 +190,8 @@ def test_normalize_action_strips_grammar_padding():
 
 
 def test_every_kind_has_a_valid_example():
-    from rsched.engine.actions import ACTION_SCHEMA, KIND_EXAMPLES, KINDS, validate_action
+    from rsched.engine.actions import KIND_EXAMPLES, validate_action
+    from rsched.engine.actionschema import ACTION_SCHEMA, KINDS
     from rsched.schema_guard import validate
     assert set(KIND_EXAMPLES) == set(KINDS)
     for kind, example in KIND_EXAMPLES.items():

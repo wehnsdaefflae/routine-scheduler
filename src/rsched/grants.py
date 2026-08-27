@@ -52,7 +52,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from .engine.actions import KINDS
+from .engine.actionschema import KINDS
 from .ids import is_slug
 
 # `read_rule` is deliberately NOT gated: a routine must be able to read the general rules

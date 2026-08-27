@@ -10,7 +10,8 @@ from conftest import WORKFLOW_MD, finish
 from rsched import grants
 from rsched.config import ServerConfig
 from rsched.engine import detach
-from rsched.engine.actions import KINDS, validate_action
+from rsched.engine.actions import validate_action
+from rsched.engine.actionschema import KINDS
 from rsched.engine.runtime import run_routine
 
 

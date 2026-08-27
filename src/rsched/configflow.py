@@ -18,7 +18,7 @@ mechanism: a new config field cannot be added without declaring which half it is
 silent divergence this module exists to end cannot quietly come back.
 
 The delivery seam is the one that already exists for reaching a running run — a signal in the
-run's `control.json`, applied at the next turn boundary by `engine/control.apply_config_change`,
+run's `control.json`, applied at the next turn boundary by `engine/switches.apply_config_change`,
 which appends an ENGINE NOTE and records a `user_injection` transcript event. So the change is
 IN the conversation the model can see, never a second invisible mutation path.
 """

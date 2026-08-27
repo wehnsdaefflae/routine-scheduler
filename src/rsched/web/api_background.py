@@ -44,7 +44,7 @@ def list_background_rows(request: Request, slug: str) -> list[dict]:
 @router.get("/conversations/{slug}/background")
 def list_background(request: Request, slug: str) -> list[dict]:
     """The detached tasks this conversation launched — for the run-view rail and monitoring."""
-    from .api_conversations import conversation_info
+    from .conversations_common import conversation_info
 
     conversation_info(request, slug)   # 404 if the conversation is gone
     return list_background_rows(request, slug)
@@ -57,7 +57,7 @@ def launch_background(request: Request, slug: str, prompt: Annotated[str, Form()
     """Drop a detached-task intent for the DetachedManager to pick up next tick. Mirrors what
     the engine `detach` action does — exposed so a human (or a test) can launch one directly.
     """
-    from .api_conversations import conversation_info
+    from .conversations_common import conversation_info
 
     info = conversation_info(request, slug)
     if not prompt.strip():

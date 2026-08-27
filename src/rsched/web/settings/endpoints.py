@@ -20,7 +20,7 @@ from ...config import (
 )
 from ...endpoints import EndpointRegistry
 from ...endpoints.base import EndpointError, api_key_source
-from ...endpoints.claude_cli import token_source
+from ...endpoints.claude_cli_wire import token_source
 from ...schema_guard import SchemaViolation, parse_reply
 from ..model_fit import fit_fields
 from .common import server_of, update_config

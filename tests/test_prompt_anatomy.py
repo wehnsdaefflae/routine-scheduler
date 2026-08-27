@@ -6,7 +6,8 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from rsched.config import ServerConfig, load_routine
-from rsched.engine.actions import KIND_EXAMPLES, KINDS
+from rsched.engine.actions import KIND_EXAMPLES
+from rsched.engine.actionschema import KINDS
 from rsched.engine.composer import build_system_prompt, kickoff_message, state_digest
 from rsched.engine.run_context import Budgets, RunContext
 from rsched.engine.transcript import Transcript
