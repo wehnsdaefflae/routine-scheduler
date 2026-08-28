@@ -7,6 +7,8 @@ REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CONFIG_DIR="${HOME}/.config/routine-scheduler"
 CONFIG="${CONFIG_DIR}/config.yaml"
 ROUTINES="${HOME}/routines"
+CONVERSATIONS="${HOME}/conversations"
+BACKGROUND="${HOME}/background"
 LIBRARIES="${HOME}/.local/share/routine-scheduler-libraries"
 UNIT_DIR="${HOME}/.config/systemd/user"
 
@@ -16,7 +18,11 @@ command -v uv >/dev/null || { echo "uv is required (https://docs.astral.sh/uv/)"
 (cd "${REPO}" && uv sync --quiet)
 echo "venv synced"
 
-mkdir -p "${ROUTINES}" "${CONFIG_DIR}"
+# The three data homes (server config: routines_home / conversations_home / background_home).
+# Conversations and background tasks create their own home lazily on first use, but an install
+# that has never had either still OWNS those dirs: docker-compose.yml bind-mounts them and
+# deploy/bundle.sh requires them, so a fresh install is complete rather than half-migratable.
+mkdir -p "${ROUTINES}" "${CONVERSATIONS}" "${BACKGROUND}" "${CONFIG_DIR}"
 
 if [ ! -f "${CONFIG}" ]; then
   TOKEN="$(python3 -c "import secrets; print(secrets.token_urlsafe(24))")"

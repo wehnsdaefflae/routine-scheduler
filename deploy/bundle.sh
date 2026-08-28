@@ -10,21 +10,36 @@ set -euo pipefail
 
 OUT="${1:-${HOME}/rsched-migration-$(date +%Y%m%d-%H%M%S).tgz}"
 
-# home-relative so `tar xzf … -C <RSCHED_HOME>` recreates the exact layout the compose file mounts
+# home-relative so `tar xzf … -C <RSCHED_HOME>` recreates the exact layout the compose file mounts.
+#
+# THE INVARIANT: every bind mount in docker-compose.yml that holds DATA appears in one of the two
+# lists below. A data home that is bind-mounted but unbundled dies on the migration instead of on
+# the recreate — the same loss, one host later — so the two files are read together.
 PATHS=(
   git-repos/routine-scheduler          # the source tree self-audit edits + the daemon runs from
   .config/routine-scheduler            # config.yaml (token, endpoints, source_repo)
   .credentials                         # SECRETS: endpoint keys + claude-code OAuth token
   routines                             # the routine repos, their runs, state, ledgers
+  conversations                        # interactive sessions: routine-shaped, un-versioned, irreplaceable
+  background                           # detached background runs a conversation launched, mid-flight
   .local/share/routine-scheduler-libraries   # the library repo: workflows/ + fragments/ + utils/ (git)
 )
 
-# State a SIDECAR writes: real data, but it only exists once that sidecar has run, so its absence
-# is a fresh install rather than a broken one. Listed apart from PATHS so the difference is
-# declared instead of inferred from a missing-file fallback.
+# State that only exists once a FEATURE has been used — a sidecar that has run, a messenger that
+# has been paired. Real data, but its absence is a fresh install rather than a broken one. Listed
+# apart from PATHS so the difference is declared instead of inferred from a missing-file fallback.
 OPTIONAL_PATHS=(
   chrome-profile                       # the logged-in browser sessions (docs/browser-sessions.md)
+  telegram-sessions                    # a LINKED SESSION is the credential — there is no API key to
+  signal-sessions                      # re-enter, so losing one of these unlinks the account and
+  whatsapp-sessions                    # the operator has to re-pair by phone
+  .config/gh                           # `gh auth login`'s token, re-mintable only by a device flow
 )
+
+# Deliberately NOT bundled, so their absence is a decision and not an oversight:
+#   .cache/ms-playwright  — a ~170 MB browser download the `page-fetch` util re-fetches on first
+#                           use. Bind-mounted to survive a RECREATE, worthless in a tarball.
+#   tor-data (volume)     — Tor's guard/consensus state: regenerable, and meaningless on a new host.
 
 for p in "${PATHS[@]}"; do
   [ -e "${HOME}/${p}" ] || { echo "MISSING: ${HOME}/${p} — run deploy/install.sh first?" >&2; exit 1; }
@@ -34,7 +49,7 @@ for p in "${OPTIONAL_PATHS[@]}"; do
   if [ -e "${HOME}/${p}" ]; then
     PATHS+=("${p}")
   else
-    echo "skipping ${p} (sidecar has not run here)"
+    echo "skipping ${p} (feature never used on this host)"
   fi
 done
 

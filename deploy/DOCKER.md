@@ -1,9 +1,9 @@
 # Running rsched in Docker + migrating to another host
 
 The container is the **engine environment only** — Python + `uv` + `git` + Node + the `claude` CLI.
-Everything mutable (the source tree, `config.yaml`, `~/.credentials`, `~/routines`, and the
-library repo) is **bind-mounted**, so the whole system moves as a tarball of those directories and
-the container itself stays disposable.
+Everything mutable is **bind-mounted**, so the whole system moves as a tarball of those directories
+and the container itself stays disposable. Every data home is a bind for that reason: one that
+isn't dies in the container's writable layer on the next recreate.
 
 Compose defines two **sidecar services**, for the same reason each time: the engine image stays
 engine-only and the daemon supervises no second process. `docker compose build` builds all three
@@ -44,6 +44,32 @@ docker compose down                         # stop the test container
 ```bash
 deploy/bundle.sh                            # → ~/rsched-migration-<ts>.tgz  (contains secrets!)
 ```
+
+`deploy/bundle.sh` is the authority on what a migration carries, and its two lists mirror the
+bind mounts in `docker-compose.yml` — a data home that is mounted but unbundled would die on the
+migration instead of on the recreate, which is the same loss one host later. What it takes:
+
+| Path (`${RSCHED_HOME}`-relative) | Why it must travel |
+| --- | --- |
+| `git-repos/routine-scheduler` | the source tree self-audit edits and the daemon runs from |
+| `.config/routine-scheduler` | `config.yaml` — token, endpoints, homes, `source_repo` |
+| `.credentials` | **secrets**: endpoint keys + the claude-code OAuth token |
+| `routines` | the routine repos, their runs, state and ledgers |
+| `conversations` | interactive sessions — routine-shaped, un-versioned, irreplaceable |
+| `background` | detached background runs a conversation launched, possibly mid-flight |
+| `.local/share/routine-scheduler-libraries` | the library repo: `workflows/`, `rules/`, `utils/` |
+
+Plus four homes that exist only once a feature has been used, taken when present and reported as
+skipped when not (`OPTIONAL_PATHS`): `chrome-profile` (the logged-in browser —
+[docs/browser-sessions.md](../docs/browser-sessions.md)), `telegram-sessions`, `signal-sessions`
+and `whatsapp-sessions` (a **linked session on disk IS the credential** — there is no API key to
+re-enter, so losing one unlinks the account and someone has to re-pair by phone), and
+`.config/gh` (`gh auth login`'s token, re-mintable only by another device flow).
+
+Two mounts are deliberately left out, so their absence is a decision rather than an oversight:
+`.cache/ms-playwright` is a ~170 MB browser download `page-fetch` re-fetches on first use (bound
+to survive a *recreate*, worthless in a tarball), and `tor-data` is a named volume holding
+regenerable guard state that means nothing on a new host.
 
 ## 3. On the server (192.168.0.128)
 

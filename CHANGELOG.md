@@ -19,6 +19,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.248.1] — 2026-08-28
+
+### Fixed
+- **`deploy/bundle.sh` left five data homes out of the migration tarball** — every conversation,
+  every detached background run and all three messenger links. `docker-compose.yml` binds each of
+  them and says in as many words why (they "DIE on every recreate" without the bind; a linked
+  messenger session on disk IS the credential, so losing the dir unlinks the account and someone
+  re-pairs by phone), but the bundler's `PATHS` had never been widened past routines, config,
+  credentials and the library repo. A data home that is mounted but unbundled does not survive
+  the migration either — it is the same loss, one host later, and quieter, because a bundle that
+  ran clean looks like a complete one. `conversations` and `background` join `PATHS` (core data,
+  their absence is a broken install); the three messenger session stores join `OPTIONAL_PATHS`
+  alongside `chrome-profile`, since they exist only once that messenger has been paired.
+  `.config/gh` — `gh auth login`'s token, re-mintable only by another device flow — was omitted on
+  the same terms and joins them.
+  The two lists now carry the invariant they answer to: **every DATA bind mount in
+  `docker-compose.yml` appears in one of them.** The two exceptions are named in the script as
+  decisions rather than left to be re-derived — `.cache/ms-playwright` is a re-downloadable
+  browser cache bound to survive a *recreate*, and `tor-data` is regenerable guard state in a
+  named volume.
+- **`deploy/install.sh` now creates `~/conversations` and `~/background`.** Both homes were built
+  lazily on first use, so a fresh install had neither — and `bundle.sh`'s missing-path error
+  points the operator at `install.sh`, which would not have made them. The three data homes are
+  created together, so a fresh install is complete rather than half-migratable.
+
+### Changed
+- `deploy/DOCKER.md`'s migration step now tabulates what the tarball actually carries, what rides
+  along only when the feature has been used, and what is deliberately excluded — it had described
+  the contents in prose that predated three of the homes.
+
 ## [0.248.0] — 2026-08-28
 
 ### Fixed
