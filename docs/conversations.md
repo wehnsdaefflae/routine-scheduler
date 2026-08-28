@@ -310,6 +310,12 @@ A conversation is deliberately **unversioned** — deleting it is permanent (the
 If any of the work matters, make sure it landed as an artifact, or as a commit in a project
 directory, before you delete.
 
+A nightly state mirror (`deploy/backup.sh`) does **not** change that, and should not be mistaken
+for an archive. It is a *converging* mirror: a deleted conversation survives in it only until the
+next run, which propagates the deletion. That leaves a recovery window of at most a day — real,
+but not something to rely on. Restoring from it means copying the directory back out of the
+mirror before that run.
+
 ## See also
 
 - **Playbooks** — turn a conversation into a reusable one-shot brief, and reuse it.

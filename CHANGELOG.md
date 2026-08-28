@@ -19,6 +19,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.251.1] — 2026-08-28
+
+### Fixed
+- **`docs/conversations.md` still said deletion was simply permanent**, which stopped being the
+  whole truth the moment a nightly mirror existed (0.251.0). The doc-sweep for that release
+  covered the deploy surfaces and missed the one page that makes a claim about losing a
+  conversation. It now says what the mirror is and is not: a *converging* mirror, in which a
+  deleted conversation survives only until the next run propagates the deletion — a recovery
+  window of at most a day, real but not to be relied on, and not an archive. The existing advice
+  (land the work as an artifact or a project commit) stands unchanged.
+
 ## [0.251.0] — 2026-08-28
 
 ### Added
