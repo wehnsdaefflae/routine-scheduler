@@ -19,6 +19,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.247.0] — 2026-08-28
+
+### Added
+- **A `chrome` sidecar: the logged-in browser the `--cdp` utils drive** (`deploy/Dockerfile.chrome`,
+  `deploy/chrome-entrypoint.sh`, `docs/browser-sessions.md`). Some sources are only readable while
+  signed in — a freelance board's inbox, an application form — and for those the session IS a
+  cookie jar inside a browser. Until now that browser lived on an operator's laptop, so every util
+  taking `--cdp` (`job-scrape`, `job-inbox`, `job-apply`, `browser-session`) could only run there.
+  It is now a compose service, a sibling of `tor` and for the same reason: the engine image stays
+  engine-only and the daemon supervises no second process.
+  Three choices carry the design. It is **headful under Xvfb, never `--headless=new`** —
+  freelancermap's invisible reCAPTCHA scores headless Chrome badly enough to refuse the
+  application form. It uses **`network_mode: "service:rsched"`**, which puts CDP on the engine's
+  own loopback so `http://127.0.0.1:9222` — the default those utils already ship — resolves with
+  no wiring; over the compose network it would fail twice over, because DevTools rejects a `Host`
+  header that is not an IP literal and the `webSocketDebuggerUrl` it returns names the address
+  Chrome bound rather than the one the client dialled. And it forces **`--password-store=basic`**,
+  because there is no keyring in a container and a guessed backend reads as "logged out" on every
+  start.
+  The profile (`${RSCHED_HOME}/chrome-profile`) is a bind mount and is now part of the migration
+  bundle: it holds the sessions, so it is a credential, not a cache. A profile copied off a
+  desktop machine does **not** carry its logins — desktop Chrome wraps cookie values under `v11`
+  with a key held by gnome-keyring and absent from the profile directory entirely — so signing in
+  is a one-time human step, done over noVNC. noVNC is published on the **host's loopback only**
+  (`127.0.0.1:6080`): it is a keyboard and mouse on a browser holding live sessions, never a LAN
+  port.
+
 ## [0.246.1] — 2026-08-27
 
 ### Fixed

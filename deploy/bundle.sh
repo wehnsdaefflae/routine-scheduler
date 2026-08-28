@@ -19,8 +19,23 @@ PATHS=(
   .local/share/routine-scheduler-libraries   # the library repo: workflows/ + fragments/ + utils/ (git)
 )
 
+# State a SIDECAR writes: real data, but it only exists once that sidecar has run, so its absence
+# is a fresh install rather than a broken one. Listed apart from PATHS so the difference is
+# declared instead of inferred from a missing-file fallback.
+OPTIONAL_PATHS=(
+  chrome-profile                       # the logged-in browser sessions (docs/browser-sessions.md)
+)
+
 for p in "${PATHS[@]}"; do
   [ -e "${HOME}/${p}" ] || { echo "MISSING: ${HOME}/${p} — run deploy/install.sh first?" >&2; exit 1; }
+done
+
+for p in "${OPTIONAL_PATHS[@]}"; do
+  if [ -e "${HOME}/${p}" ]; then
+    PATHS+=("${p}")
+  else
+    echo "skipping ${p} (sidecar has not run here)"
+  fi
 done
 
 echo "bundling state → ${OUT}"

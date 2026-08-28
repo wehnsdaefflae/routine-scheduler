@@ -5,3 +5,5 @@
 !deploy/docker-entrypoint.sh
 # The tor service's config (deploy/Dockerfile.tor COPYs it) — same shared build context.
 !deploy/torrc
+# The chrome service's entrypoint (deploy/Dockerfile.chrome COPYs it) — same shared context.
+!deploy/chrome-entrypoint.sh

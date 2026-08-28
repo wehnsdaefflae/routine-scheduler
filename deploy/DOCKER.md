@@ -5,10 +5,19 @@ Everything mutable (the source tree, `config.yaml`, `~/.credentials`, `~/routine
 library repo) is **bind-mounted**, so the whole system moves as a tarball of those directories and
 the container itself stays disposable.
 
-Compose defines a **second service, `tor`** (`deploy/Dockerfile.tor`) — the SOCKS proxy the
-`darknet` util egresses through, reachable only from the compose network. Its state is the one
-named volume (`tor-data`, regenerable guard state, so it is deliberately not part of the tarball);
-`docker compose build` builds both images. See `docs/darknet.md`.
+Compose defines two **sidecar services**, for the same reason each time: the engine image stays
+engine-only and the daemon supervises no second process. `docker compose build` builds all three
+images.
+
+- **`tor`** (`deploy/Dockerfile.tor`) — the SOCKS proxy the `darknet` util egresses through,
+  reachable only from the compose network. Its state is the one named volume (`tor-data`,
+  regenerable guard state, so it is deliberately not part of the tarball). See `docs/darknet.md`.
+- **`chrome`** (`deploy/Dockerfile.chrome`) — a headful Chrome on a virtual display holding
+  LOGGED-IN site sessions, which every `--cdp` util drives. It shares the engine's network
+  namespace, so CDP lands on the engine's own loopback at `127.0.0.1:9222`. Unlike tor it
+  carries real state: `${RSCHED_HOME}/chrome-profile` is a **bind mount and part of the
+  tarball** — lose it and every site is signed out. A person signs in over noVNC, published on
+  the host's loopback only. See `docs/browser-sessions.md`.
 
 Container paths are always `/home/mark/...` (routines and config bake absolute paths, so they must
 not change). Host paths are `${RSCHED_HOME}`-relative (default `/home/mark`).

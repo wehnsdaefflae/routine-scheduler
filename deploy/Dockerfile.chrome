@@ -1,0 +1,56 @@
+# Headful Chrome on a virtual display — the LOGGED-IN browser the CDP utils drive.
+#
+# Its own service for the same reason tor is: the engine image stays engine-only and the daemon
+# supervises no second process. What is different here is that this browser carries STATE — the
+# site sessions live in the bind-mounted profile, so a person logs in once and every later run
+# inherits it. Nothing is baked in: no profile, no credentials, no site list.
+#
+# Google Chrome, not Debian's chromium, on purpose. The sites these utils read (freelancermap,
+# freelance.de, GULP, LinkedIn, XING) score the browser, and a distribution build several major
+# versions behind advertises itself in the user agent. This is also the exact browser the
+# profile was written by, so a seeded profile opens without a version migration.
+#
+# HEADFUL under Xvfb, never `--headless=new`. freelancermap's invisible reCAPTCHA scores
+# headless Chrome badly enough to block the application form; under Xvfb the browser genuinely
+# is not headless, it just renders into a framebuffer nobody displays. Do not "simplify" this
+# into a headless flag.
+FROM debian:bookworm-slim
+
+# chrome              — the browser itself, from Google's own repo (stable channel)
+# xvfb/xauth          — the virtual display it renders into
+# x11vnc + novnc      — the hands-on path: a person opens the noVNC page and logs a site in
+# websockify          — noVNC's websocket bridge to x11vnc
+# dbus-x11            — Chrome expects a session bus; without it every start logs errors
+# procps              — the entrypoint's process supervision
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ca-certificates curl gnupg procps \
+    && install -d -m 755 /etc/apt/keyrings \
+    && curl -fsSL https://dl.google.com/linux/linux_signing_key.pub \
+        | gpg --dearmor -o /etc/apt/keyrings/google-chrome.gpg \
+    && chmod go+r /etc/apt/keyrings/google-chrome.gpg \
+    && echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/google-chrome.gpg] https://dl.google.com/linux/chrome/deb/ stable main" \
+        > /etc/apt/sources.list.d/google-chrome.list \
+    && apt-get update && apt-get install -y --no-install-recommends \
+        google-chrome-stable \
+        xvfb xauth x11-utils x11vnc novnc websockify dbus-x11 gosu \
+        fonts-liberation fonts-noto-color-emoji fonts-unifont \
+    && rm -rf /var/lib/apt/lists/*
+
+# uid/gid match the host owner of the bind-mounted profile, so a person can still read and back
+# up what the browser writes — the same rule the engine image follows.
+ARG UID=1000
+ARG GID=1000
+RUN groupadd -g "${GID}" mark 2>/dev/null || true \
+    && useradd -m -u "${UID}" -g "${GID}" -s /bin/bash mark
+
+ENV HOME=/home/mark \
+    CHROME_PROFILE=/home/mark/chrome-profile \
+    DISPLAY=:99 \
+    SCREEN_GEOMETRY=1920x1080x24 \
+    CDP_PORT=9222 \
+    VNC_PORT=6080
+
+COPY deploy/chrome-entrypoint.sh /usr/local/bin/chrome-entrypoint.sh
+RUN chmod +x /usr/local/bin/chrome-entrypoint.sh
+
+ENTRYPOINT ["/usr/local/bin/chrome-entrypoint.sh"]
