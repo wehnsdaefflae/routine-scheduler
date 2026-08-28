@@ -16,6 +16,11 @@ FROM python:3.12-slim-bookworm
 #     bind-mounted ~/.cache/ms-playwright — image carries the stable root-owned libs only)
 #   xvfb/xauth — virtual X display so a browser util can run HEADFUL Chrome on this headless
 #     host when a site defeats headless mode; opt-in per util via xvfb-run, no global DISPLAY
+#   wngerman/wswiss/wamerican — system word lists at /usr/share/dict/. A routine that writes
+#     German prose checks its own output against them: without a list the lexical tier stands
+#     DOWN and every ASCII digraph reads as a transliteration, which is 159 false positives a
+#     run and a check its reader learns to ignore (R1009). ~10 MB, and the check states which
+#     lists it had in its own summary line, so the evidence it ran on is never implicit.
 #   build-essential — a C toolchain for util dependency installs (F341, operator choice
 #     2026-08-26). A util declares its deps as PEP 723 inline metadata and uv builds them at
 #     call time; a package published only as an sdist (or one whose wheel misses this
@@ -39,6 +44,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libx11-6 libxcb1 libxcomposite1 libxdamage1 libxext6 libxfixes3 \
         libxkbcommon0 libxrandr2 libfontconfig1 libfreetype6 \
         fonts-liberation fonts-noto-color-emoji fonts-unifont \
+        wngerman wswiss wamerican \
         xvfb xauth \
     && npm install -g @anthropic-ai/claude-code \
     && npm cache clean --force \

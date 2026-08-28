@@ -19,6 +19,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.250.0] — 2026-08-28
+
+### Added
+- **System word lists in the engine image** (`wngerman`, `wswiss`, `wamerican`, ~10 MB). A routine
+  that writes German prose checks its own output for ASCII transliteration — `fuer` where `für`
+  belongs — and the check's most precise tier weighs each candidate against the real word lists at
+  `/usr/share/dict/`. The image shipped without them, so that tier stood down and every ASCII
+  digraph read as a transliteration: **159 false positives in one run** (R1009, freelance-radar,
+  2026-08-28), against a genuine finding count in the low tens. A check that cries wolf every run
+  is one its reader learns to ignore, which costs more than the check was worth.
+  The lists are the fix rather than a threshold, because the check already degrades honestly
+  without them — it names in its own summary line which lists it had, so a run always states the
+  evidence its verdict rests on. The paths it looks for (`ngerman`, `swiss`, `words`) are exactly
+  what these three packages provide; verified before the image changed rather than after.
+
 ## [0.249.0] — 2026-08-28
 
 ### Added
