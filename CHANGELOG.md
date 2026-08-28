@@ -19,6 +19,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.249.0] — 2026-08-28
+
+### Added
+- **`deploy/backup.sh` — a recurring incremental mirror, because the tarball was never a backup.**
+  `bundle.sh` writes a frozen snapshot for a ONE-SHOT host move, and DOCKER.md's flow ends by
+  decommissioning the source, which is the only reason staleness is acceptable there. This data
+  does not hold still: `routines` and `conversations` are rewritten by every run — measured on the
+  live instance at ~1600 files and ~90 MB a day — so a nightly re-tar would move ~3.6 GB to
+  capture ~90 MB, and between runs there would be no copy at all. Worse, the instance had no
+  second copy of anything: 26 of its 29 routine repos have no git remote, and all 85 conversation
+  dirs are un-versioned by design. rsync moves the delta and converges.
+  Two guards carry the design, both load-bearing rather than defensive. It **refuses a
+  destination on the same device as `$HOME`**: the intended target is an autofs/sshfs mount of
+  another machine, and when that share is down its mountpoint is an ordinary empty local
+  directory — so the mirror would land on the very disk it exists to survive and report success.
+  And it passes **`--one-file-system`**, because a routine bound to a remote machine has that
+  machine's share sshfs-mounted at `<routine>/mnt/<name>` while it runs
+  (docs/remote-machines.md), so a backup firing at that moment would otherwise copy another
+  host's filesystem into the mirror. A `flock` stops two scheduled runs racing on one tree, and
+  the root is created mode 700 for the secrets it carries.
+  Deletion is **`--delete-excluded`**, not plain `--delete`, which the first live run proved
+  necessary: rsync PROTECTS excluded files on the receiving side, so anything the exclude list
+  gains later sits in the mirror forever. Chrome's `SingletonLock`/`SingletonSocket`/
+  `SingletonCookie` are now excluded (shared list, so the tarball drops them too) — they are
+  DANGLING symlinks naming the host and pid holding the profile, they made rsync exit 23 trying
+  to set times on targets that do not exist, and a restored `SingletonLock` tells a fresh Chrome
+  that another instance already owns the profile.
+  Measured on the live instance: first mirror 4.5 GB in 27 min, second 50 MB in 85 s.
+- **`deploy/state-paths.sh` — ONE copy of the state inventory**, sourced by both `bundle.sh` and
+  `backup.sh`. A second consumer with its own path list is exactly how five data homes went
+  unbundled for a release (0.248.1), so the list does not get copied; it gets shared.
+
+### Fixed
+- **`bundle.sh` could not succeed on a live instance.** `tar` exits 1 for warnings and ≥2 for a
+  real failure, and warnings are the NORM here — the chrome sidecar rewrites its profile
+  continuously, so files change or vanish between tar's stat and its read. Under `set -e` that
+  turned a complete, readable archive into a failed run that printed no summary and no
+  next-steps. The two exit classes are now distinguished, and a warning is never swallowed: the
+  unstable paths are named, with the note that `chrome-profile` is the one that matters, since a
+  torn LevelDB copy restores as a signed-out browser and `docker compose stop chrome` avoids it.
+
+### Changed
+- `deploy/DOCKER.md` gains a backup section drawing the migration/backup line explicitly, and
+  points at `state-paths.sh` rather than `bundle.sh` as the inventory's authority; CLAUDE.md and
+  README.md carry the same distinction.
+
 ## [0.248.1] — 2026-08-28
 
 ### Fixed

@@ -45,9 +45,10 @@ docker compose down                         # stop the test container
 deploy/bundle.sh                            # → ~/rsched-migration-<ts>.tgz  (contains secrets!)
 ```
 
-`deploy/bundle.sh` is the authority on what a migration carries, and its two lists mirror the
-bind mounts in `docker-compose.yml` — a data home that is mounted but unbundled would die on the
-migration instead of on the recreate, which is the same loss one host later. What it takes:
+`deploy/state-paths.sh` is the authority on what a migration carries, and its two lists mirror
+the bind mounts in `docker-compose.yml` — a data home that is mounted but unlisted would die on
+the migration instead of on the recreate, which is the same loss one host later. Both
+`bundle.sh` and `backup.sh` source that one file, so they cannot drift apart. What it takes:
 
 | Path (`${RSCHED_HOME}`-relative) | Why it must travel |
 | --- | --- |
@@ -70,6 +71,44 @@ Two mounts are deliberately left out, so their absence is a decision rather than
 `.cache/ms-playwright` is a ~170 MB browser download `page-fetch` re-fetches on first use (bound
 to survive a *recreate*, worthless in a tarball), and `tor-data` is a named volume holding
 regenerable guard state that means nothing on a new host.
+
+On a **live instance the tarball is not a consistent snapshot.** `tar` exits 1 with warnings when
+a file changes under it, which the chrome sidecar guarantees by rewriting its profile
+continuously; `bundle.sh` distinguishes that from a real failure (exit ≥ 2), completes the
+archive, and then names the unstable paths. Only `chrome-profile` actually matters — it is a
+LevelDB store, and a torn copy restores as a signed-out browser. For a clean capture:
+
+```bash
+docker compose stop chrome && deploy/bundle.sh && docker compose start chrome
+```
+
+## Backups — a different job from migration
+
+`bundle.sh` is a **one-shot migration** tool. Step 4 below decommissions the source host, which
+is the only reason a frozen snapshot is acceptable: nothing writes to it afterwards. Used on a
+schedule it is the wrong shape — `routines` and `conversations` are rewritten by every run
+(~1600 files, ~90 MB a day on this instance), so the tarball is stale within minutes and a
+nightly rebuild moves ~3.6 GB to capture ~90 MB.
+
+`deploy/backup.sh` mirrors the same inventory incrementally instead:
+
+```bash
+deploy/backup.sh                                  # → /mnt/sshd_volume1/rsched-backup
+deploy/backup.sh /path/to/some/other/mirror       # …or anywhere else
+```
+
+It refuses to run unless the destination is on a **different device** than `$HOME`. That check is
+load-bearing rather than defensive: the default target is an autofs/sshfs mount of another
+machine, and when that share is down its mountpoint is an ordinary empty local directory — so the
+mirror would land on the very disk it is meant to survive, and report success. It also passes
+`--one-file-system`, because a routine bound to a remote machine has that machine's share
+sshfs-mounted at `<routine>/mnt/<name>` while it runs, and a backup firing at that moment would
+otherwise copy another host's filesystem into the mirror.
+
+`--delete` makes the mirror converge rather than accumulate, a `flock` keeps two scheduled runs
+from racing, and the mirror root is created mode 700 because it contains `~/.credentials` — check
+the mode the script reports, since a network share may not honour it. `chrome-profile` carries the
+same torn-copy caveat as the tarball, and the script says so on every run.
 
 ## 3. On the server (192.168.0.128)
 

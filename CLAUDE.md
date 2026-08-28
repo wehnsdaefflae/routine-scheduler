@@ -306,7 +306,13 @@ or Docker (`docker compose up -d` — a disposable engine-only image; source, co
 (`~/{telegram,signal,whatsapp}-sessions` — a linked session IS the credential, so losing one
 unlinks the account), and the library repo are all bind-mounted, so the
 whole system migrates as a tarball of those dirs — EVERY data home must be a bind, or it dies with
-the container layer on recreate. **`docker compose up -d` NEVER reloads code**: the source is
+the container layer on recreate. That inventory has ONE copy, `deploy/state-paths.sh`, read by both
+consumers: `bundle.sh` writes the one-shot migration tarball (DOCKER.md's flow ends by
+decommissioning the source, which is why a frozen snapshot is fine there) and `backup.sh` mirrors
+the same homes incrementally with rsync. **The tarball is not a backup** — `routines` and
+`conversations` are rewritten by every run, so it is stale within minutes, and a nightly re-tar
+moves gigabytes to capture megabytes. Keep the two lists in the one file: a second copy is how five
+data homes went unbundled for a release. **`docker compose up -d` NEVER reloads code**: the source is
 bind-mounted, so compose compares the CONFIG, finds no drift and no-ops while the running process
 keeps the modules it imported at boot — a green `compose config` and a `Container rsched Running`
 both look like success and mean nothing about what is live (probe a changed behaviour through the
