@@ -1,0 +1,23 @@
+[Unit]
+Description=rsched state mirror — incremental backup of every data home
+Documentation=file:%h/git-repos/routine-scheduler/deploy/DOCKER.md
+
+[Service]
+Type=oneshot
+
+# The mirror root. Override per host with a drop-in rather than editing this file:
+#   systemctl --user edit rsched-backup.service
+#   [Service]
+#   Environment=RSCHED_MIRROR=/some/other/mount/rsched-backup
+# backup.sh refuses any target on the same device as $HOME, so a share that failed to mount
+# fails the unit instead of quietly filling the local disk with a copy of itself.
+Environment=RSCHED_MIRROR=/mnt/sshd_volume1/rsched-backup
+ExecStart=/bin/bash %h/git-repos/routine-scheduler/deploy/backup.sh ${RSCHED_MIRROR}
+
+# The mirror runs against a network share. If the NAS wedges mid-transfer, rsync blocks in
+# uninterruptible IO forever and every later firing skips on the lock — so bound the run and
+# let the next night try again cleanly.
+TimeoutStartSec=2h
+
+# The daemon is doing real work on this box; a backup never deserves to compete with a run.
+Nice=10

@@ -1,0 +1,17 @@
+[Unit]
+Description=Nightly rsched state mirror
+Documentation=file:%h/git-repos/routine-scheduler/deploy/DOCKER.md
+
+[Timer]
+# 03:30, off the hour and away from the cron lanes routines actually fire on. An incremental
+# mirror is ~90 seconds, so the slot barely matters — what matters is that it is not competing
+# with a run for the same routine dirs it is reading.
+OnCalendar=*-*-* 03:30:00
+RandomizedDelaySec=15m
+
+# Persistent, because a backup that silently skips the nights the host was down is not a backup:
+# a missed firing runs once the machine is back rather than waiting for tomorrow.
+Persistent=true
+
+[Install]
+WantedBy=timers.target

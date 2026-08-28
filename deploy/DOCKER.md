@@ -105,10 +105,34 @@ mirror would land on the very disk it is meant to survive, and report success. I
 sshfs-mounted at `<routine>/mnt/<name>` while it runs, and a backup firing at that moment would
 otherwise copy another host's filesystem into the mirror.
 
-`--delete` makes the mirror converge rather than accumulate, a `flock` keeps two scheduled runs
-from racing, and the mirror root is created mode 700 because it contains `~/.credentials` — check
-the mode the script reports, since a network share may not honour it. `chrome-profile` carries the
-same torn-copy caveat as the tarball, and the script says so on every run.
+Deletion is `--delete-excluded` rather than plain `--delete`: rsync **protects** excluded files on
+the receiving side, so anything the exclude list gains later would sit in the mirror forever —
+which is how a stale Chrome `SingletonLock` survived being excluded on the first live run. A
+`flock` keeps two scheduled runs from racing, and the mirror root is created mode 700 because it
+carries the bearer tokens and Secrets store from `config.yaml` — check the mode the script
+reports, since a network share may not honour it. `chrome-profile` carries the same torn-copy
+caveat as the tarball, and the script says so on every run.
+
+### Running it nightly
+
+`deploy/rsched-backup.{service,timer}` are systemd **user** units — 03:30 with a 15-minute
+jitter, `Persistent=true` so a night the host was down runs once it is back, and a 2-hour
+`TimeoutStartSec` so a wedged NAS fails the unit instead of blocking every later firing on the
+lock. They are NOT installed by `deploy/install.sh`, deliberately: the mirror root is
+host-specific, and a default install has nowhere correct to point.
+
+```bash
+install -m 0644 deploy/rsched-backup.service ~/.config/systemd/user/
+install -m 0644 deploy/rsched-backup.timer   ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now rsched-backup.timer
+systemctl --user start rsched-backup.service     # prove it once, then read the journal
+journalctl --user -u rsched-backup.service -n 30
+```
+
+Needs `loginctl enable-linger <user>` (which `install.sh` already does) or the timer only runs
+while someone is logged in. Point it elsewhere with a drop-in — `systemctl --user edit
+rsched-backup.service`, then `Environment=RSCHED_MIRROR=…` — rather than editing the tracked unit.
 
 ## 3. On the server (192.168.0.128)
 

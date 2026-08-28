@@ -19,6 +19,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.251.0] — 2026-08-28
+
+### Added
+- **`deploy/rsched-backup.{service,timer}` — the state mirror runs nightly.** 0.249.0 gave the
+  instance an incremental backup; a backup nobody runs is not one, and this is the schedule.
+  03:30 with a 15-minute jitter, off the hour and clear of the cron lanes routines fire on — at
+  ~90 seconds an incremental run barely occupies a slot, but it should not be reading routine
+  dirs while a run writes them. Three settings carry the rest.
+  **`Persistent=true`**, because a backup that silently skips every night the host was down is
+  not a backup: a missed firing runs once the machine is back rather than waiting for tomorrow.
+  **`TimeoutStartSec=2h`**, because the target is a network share — if the NAS wedges, rsync
+  blocks in uninterruptible IO indefinitely and every later firing would then skip on the
+  `flock`, so the run is bounded and tomorrow starts clean. And **`Nice=10`**, since a backup
+  never deserves to compete with a run.
+  The units are **not** installed by `deploy/install.sh`, deliberately: the mirror root is
+  host-specific and a default install has nowhere correct to point it. Install and enable them
+  by hand (deploy/DOCKER.md), and point a host elsewhere with a `systemctl --user edit` drop-in
+  setting `RSCHED_MIRROR` rather than by editing the tracked unit.
+
+### Changed
+- `deploy/DOCKER.md` gains the enable-it recipe and the linger prerequisite; CLAUDE.md notes the
+  timer alongside `backup.sh`, including why `install.sh` leaves it alone.
+
 ## [0.250.0] — 2026-08-28
 
 ### Added
