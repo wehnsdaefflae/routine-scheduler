@@ -98,8 +98,12 @@ systemctl --user disable --now routine-scheduler.service
   default; most setups can use API keys instead.
 - **Headless browsing works out of the box.** The image carries Chromium's system libraries;
   the `page-fetch` util downloads Playwright's Chromium itself on first use (once — the
-  browser cache `~/.cache/ms-playwright` is bind-mounted). The personal CDP utils
-  (freelance/gulp/xing/…) additionally need a logged-in profile — out of scope here.
+  browser cache `~/.cache/ms-playwright` is bind-mounted). That covers every util that drives a
+  THROWAWAY browser. The utils that need a **logged-in** one (`job-scrape`, `job-inbox`,
+  `job-apply`, `browser-session`) are served by the `chrome` sidecar instead, at
+  `http://172.30.7.10:9222` — see [docs/browser-sessions.md](../docs/browser-sessions.md). Its
+  profile is a bind mount and part of the migration bundle, but the sessions inside it are not
+  portable off a desktop machine: signing in is a one-time human step per host.
 - **Dependency changes** committed by self-audit are picked up on the next restart (`uv run`
   re-syncs from the mounted `pyproject.toml`), exactly like the systemd unit.
 - **Host mounts (`/mnt`) are bind-mounted with `rslave` propagation** so the fs-roots picker

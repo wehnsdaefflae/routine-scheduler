@@ -11,9 +11,12 @@ engine-only and the daemon supervises no second process.
 ## What talks to it
 
 Any util that takes `--cdp URL` — today `job-scrape` (freelance-de, freelancermap, gulp),
-`job-inbox` (all five boards), `job-apply` (the send path) and `browser-session`. Their
-default is `http://127.0.0.1:9222`, and that default is correct here with no configuration:
-see the network note below.
+`job-inbox` (all five boards), `job-apply` (the send path) and `browser-session`.
+
+**The endpoint is `http://172.30.7.10:9222`**, and it has to be passed explicitly: their default
+is `127.0.0.1:9222`, which is not where this browser lives. The address is pinned in
+`docker-compose.yml` and is a constant a routine can name — see the network note below for why it
+is an IP and not a service name.
 
 This is a different mechanism from `page-fetch` / `captcha-fetch`, which drive a **throwaway**
 Playwright browser per call. Those need no session and no sidecar. Reach for the sidecar only
@@ -27,13 +30,26 @@ is not headless — it renders into a framebuffer nobody looks at — so the sco
 A "simplification" to a headless flag silently breaks sending, and breaks it in the one place
 where the failure looks like a site problem.
 
-**`network_mode: "service:rsched"`.** Chrome shares the engine container's network stack, which
-puts CDP on the engine's own loopback. Going over the compose network instead breaks twice, and
-both breakages are obscure: DevTools rejects any `Host` header that is not an IP literal or
-`localhost` (so `http://chrome:9222` is refused), and the `webSocketDebuggerUrl` it returns
-names the address Chrome bound rather than the one the client dialled. A shared namespace has
-neither problem and needs no wiring. The cost is that the service can publish no ports of its
-own, so noVNC's `6080` is declared on `rsched`.
+**Its own network, at a fixed address.** The obvious design is to share the engine's network
+namespace: CDP then lands on the engine's own loopback and needs no configuration at all. It was
+built that way first, and it is wrong, because it couples the two containers' lifetimes. A network
+namespace does not survive its owner being restarted, and the engine restarts itself routinely —
+self-audit's drain-and-exit path is a normal event, not an exception. Every one of those restarts
+strands the browser in a dead namespace, with its sessions unreachable and **nothing reporting
+it**: the container still shows as running. Found on 2026-08-28, when a routine deploy took the
+browser down mid-login and the symptom that reached a person was "fails to connect".
+
+So the browser sits on its own network at a pinned address instead, and neither container depends
+on the other's uptime. Two things make CDP work across that boundary, and both are non-obvious:
+
+- **Chrome refuses to bind DevTools to anything but loopback.** No flag changes that. The
+  entrypoint therefore runs DevTools on `127.0.0.1:9223` and forwards `0.0.0.0:9222` to it with
+  socat.
+- **DevTools rejects any `Host` header that is not an IP literal or `localhost`**, so
+  `http://chrome:9222` is refused and the address must be numeric. Chrome then echoes that same
+  host back in the `webSocketDebuggerUrl` it hands out, so a CDP client connects to the address it
+  dialled rather than to `127.0.0.1` — which is what makes the forward work at all rather than
+  half-work.
 
 **`--password-store=basic`.** There is no keyring in a container. Left to its own
 desktop-environment heuristics Chrome can wrap the cookie key in a backend that is not present,
@@ -96,16 +112,18 @@ the profile is written as you go.
 - **`docker compose up -d` does not restart a running service** whose config has not changed
   (see the note in `CLAUDE.md`). To pick up an image rebuild:
   `docker compose up -d --force-recreate chrome`.
+- **Restarting the engine does not touch this container**, and that is the point of the network
+  design above. Restarting this one does not touch the engine either.
 - **Chrome's own renderer sandbox is kept**, which is why the service relaxes seccomp: this is
   the one process here that renders untrusted pages, and `--no-sandbox` would trade a
   container-level restriction for no browser-level one at all.
 
 ## Checking it is alive
 
-From the engine container, the browser answers on the loopback it shares:
+From the engine container, at the address the routines name:
 
 ```bash
-docker exec -u 1000:1000 rsched curl -s http://127.0.0.1:9222/json/version
+docker exec -u 1000:1000 rsched curl -s http://172.30.7.10:9222/json/version
 ```
 
 A JSON body naming the Chrome build means CDP is up. Whether a given site is *signed in* is a

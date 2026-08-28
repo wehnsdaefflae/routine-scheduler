@@ -21,6 +21,11 @@ FROM debian:bookworm-slim
 # x11vnc + novnc      — the hands-on path: a person opens the noVNC page and logs a site in
 # websockify          — noVNC's websocket bridge to x11vnc
 # dbus-x11            — Chrome expects a session bus; without it every start logs errors
+# socat               — the CDP forwarder. Chrome refuses to bind a non-loopback address at all,
+#                       so reaching DevTools from another container means forwarding to its own
+#                       loopback. It also fixes the Host-header check for free: the client dials
+#                       an IP literal, which DevTools accepts, and Chrome echoes that same host
+#                       back in the websocket URL it hands out.
 # procps              — the entrypoint's process supervision
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates curl gnupg procps \
@@ -32,7 +37,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         > /etc/apt/sources.list.d/google-chrome.list \
     && apt-get update && apt-get install -y --no-install-recommends \
         google-chrome-stable \
-        xvfb xauth x11-utils x11vnc novnc websockify dbus-x11 gosu \
+        xvfb xauth x11-utils x11vnc novnc websockify dbus-x11 socat gosu \
         fonts-liberation fonts-noto-color-emoji fonts-unifont \
     && rm -rf /var/lib/apt/lists/*
 
@@ -48,6 +53,7 @@ ENV HOME=/home/mark \
     DISPLAY=:99 \
     SCREEN_GEOMETRY=1920x1080x24 \
     CDP_PORT=9222 \
+    CDP_INTERNAL_PORT=9223 \
     VNC_PORT=6080
 
 COPY deploy/chrome-entrypoint.sh /usr/local/bin/chrome-entrypoint.sh

@@ -13,6 +13,7 @@ PROFILE="${CHROME_PROFILE:-/home/mark/chrome-profile}"
 DISPLAY_NUM="${DISPLAY:-:99}"
 GEOMETRY="${SCREEN_GEOMETRY:-1920x1080x24}"
 CDP_PORT="${CDP_PORT:-9222}"
+CDP_INTERNAL_PORT="${CDP_INTERNAL_PORT:-9223}"
 VNC_PORT="${VNC_PORT:-6080}"
 # "1920x1080x24" (an Xvfb screen spec) -> "1920,1080" (what Chrome's --window-size wants)
 WINDOW_SIZE="$(printf '%s' "$GEOMETRY" | cut -d x -f1,2 | tr x ,)"
@@ -45,6 +46,13 @@ x11vnc -display "$DISPLAY_NUM" -rfbport 5900 -localhost -forever -shared -nopw -
 log "starting noVNC on :$VNC_PORT"
 websockify --web=/usr/share/novnc "$VNC_PORT" 127.0.0.1:5900 &
 
+# Chrome refuses to bind DevTools anywhere but loopback, so this is how another container reaches
+# it. socat also settles the Host-header check for free: the client dials this container by IP,
+# DevTools accepts an IP literal, and Chrome echoes that same host back in the websocket URL it
+# hands out — so a CDP client connects to the address it asked for rather than to 127.0.0.1.
+log "forwarding CDP :$CDP_PORT -> 127.0.0.1:$CDP_INTERNAL_PORT"
+socat "TCP-LISTEN:${CDP_PORT},fork,reuseaddr" "TCP:127.0.0.1:${CDP_INTERNAL_PORT}" &
+
 # --password-store=basic: there is no keyring in a container. Left to guess, Chrome picks a
 # backend per desktop-environment heuristics and can wrap the cookie key in something that is
 # not here, which reads as "logged out" every start. `basic` is deterministic and portable —
@@ -53,10 +61,10 @@ websockify --web=/usr/share/novnc "$VNC_PORT" 127.0.0.1:5900 &
 # small window on a large black desktop — there is no window manager here to maximize it.
 # dbus-launch gives Chrome the session bus it expects; without one every start buries the real
 # log lines under a screenful of "Failed to connect to the bus".
-log "starting Chrome (headful under Xvfb, CDP on 127.0.0.1:$CDP_PORT)"
+log "starting Chrome (headful under Xvfb, DevTools on 127.0.0.1:$CDP_INTERNAL_PORT)"
 exec dbus-launch --exit-with-session google-chrome-stable \
     --user-data-dir="$PROFILE" \
-    --remote-debugging-port="$CDP_PORT" \
+    --remote-debugging-port="$CDP_INTERNAL_PORT" \
     --remote-allow-origins=* \
     --password-store=basic \
     --window-position=0,0 \

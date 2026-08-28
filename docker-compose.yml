@@ -20,11 +20,6 @@ services:
     stop_grace_period: 20s           # matches the old systemd TimeoutStopSec (uvicorn bounds its own to 10s)
     ports:
       - "${RSCHED_PORT:-8321}:8321"  # reachable at http://192.168.0.128:8321
-      # noVNC for the `chrome` sidecar below, which shares this container's network stack.
-      # Bound to the HOST'S LOOPBACK: this is a keyboard and mouse on a browser holding live
-      # site sessions, so it is never a LAN port. Reach it over an SSH tunnel or a tailnet
-      # proxy — see docs/browser-sessions.md.
-      - "127.0.0.1:${RSCHED_VNC_PORT:-6080}:6080"
     environment:
       HOME: /home/mark
       RSCHED_BIND: "0.0.0.0"         # bind the LAN inside the container without editing the mounted config
@@ -87,21 +82,28 @@ services:
       - SYS_ADMIN
     security_opt:
       - apparmor:unconfined
+    networks:
+      default:
+      browser:
     depends_on:
       - tor
 
   # Headful Chrome on a virtual display — the LOGGED-IN browser behind every `--cdp` util
   # (job-scrape / job-inbox / job-apply, browser-session). See docs/browser-sessions.md.
   #
-  # `network_mode: service:rsched` is the load-bearing line. Sharing the engine's network stack
-  # puts Chrome's CDP on the engine's OWN loopback, so `--cdp http://127.0.0.1:9222` — the
-  # default every one of those utils already ships — resolves with no wiring. Going over the
-  # compose network instead would break twice: DevTools rejects a Host header that is not an IP
-  # or localhost, and the websocket URL it hands back names the address Chrome bound, not the
-  # one the client dialled. A shared namespace has neither problem.
+  # It sits on its OWN network at a FIXED address, and that is deliberate. Sharing the engine's
+  # network namespace would put CDP on the engine's own loopback and need no configuration at all
+  # — but it couples the two containers' lifetimes: a namespace does not survive its owner being
+  # restarted, and the engine restarts itself routinely (self-audit's drain-and-exit). Every one
+  # of those restarts would strand this browser in a dead namespace, with its sessions unreachable
+  # and nothing reporting it. Measured the hard way on 2026-08-28. A fixed address has neither
+  # container depending on the other's uptime.
   #
-  # The cost of that choice: this service can publish no ports of its own, so noVNC's 6080 is
-  # declared on `rsched` above.
+  # Two things make CDP work across that boundary, both handled in the entrypoint: Chrome refuses
+  # to bind DevTools anywhere but loopback (hence the socat forward), and DevTools rejects a Host
+  # header that is not an IP literal or localhost (hence the fixed IP rather than the service
+  # name). Chrome then echoes that host back in the websocket URL it hands out, so a client
+  # reaches the address it dialled.
   chrome:
     build:
       context: .
@@ -112,9 +114,16 @@ services:
     image: rsched-chrome:latest
     container_name: rsched-chrome
     restart: unless-stopped
-    network_mode: "service:rsched"
-    depends_on:
-      - rsched
+    networks:
+      browser:
+        ipv4_address: 172.30.7.10     # CDP endpoint: http://172.30.7.10:9222 — a FIXED address,
+                                      # because DevTools will not accept a Host header that is a
+                                      # service name. Change it here and in docs/browser-sessions.md.
+    ports:
+      # noVNC, bound to the HOST'S LOOPBACK. This is a keyboard and mouse on a browser holding
+      # live site sessions, so it is never a LAN port. Reach it over an SSH tunnel or a tailnet
+      # proxy — see docs/browser-sessions.md.
+      - "127.0.0.1:${RSCHED_VNC_PORT:-6080}:6080"
     # Chrome's own renderer sandbox needs unshare(); Docker's default seccomp profile blocks it.
     # Relaxing seccomp KEEPS that sandbox working, which is the stronger of the two options —
     # `--no-sandbox` would trade a container-level restriction for no browser-level one at all,
@@ -148,6 +157,14 @@ services:
       # recreation (the failure the bind rule exists to prevent), and inherits the image's
       # debian-tor ownership so the daemon needs no privileged setup.
       - tor-data:/var/lib/tor
+
+networks:
+  # A dedicated network with a pinned subnet, so the browser's address is a constant the routines
+  # can name. The default project network keeps its generated addressing.
+  browser:
+    ipam:
+      config:
+        - subnet: 172.30.7.0/24
 
 volumes:
   tor-data:

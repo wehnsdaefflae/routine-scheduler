@@ -19,6 +19,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.248.0] — 2026-08-28
+
+### Fixed
+- **The `chrome` sidecar no longer shares the engine's network namespace, because that coupled
+  their lifetimes.** 0.247.0 used `network_mode: "service:rsched"`, which put CDP on the engine's
+  own loopback and needed no configuration — and which breaks every time the engine restarts. A
+  network namespace does not survive its owner being restarted, and the engine restarts itself
+  routinely (self-audit's drain-and-exit is a normal event). The browser is then stranded in a dead
+  namespace with its sessions unreachable while the container still reports as running, so
+  **nothing surfaces it**. Found the same day it shipped: an ordinary version deploy took the
+  browser down mid-login, and the symptom that reached a person was "fails to connect".
+  The browser now sits on its own network at a pinned address (`172.30.7.10`), and neither
+  container depends on the other's uptime. Two non-obvious things make CDP work across that
+  boundary, both handled in the entrypoint: **Chrome refuses to bind DevTools to anything but
+  loopback** (no flag changes it — DevTools runs on `127.0.0.1:9223` and socat forwards
+  `0.0.0.0:9222` to it), and **DevTools rejects a `Host` header that is not an IP literal or
+  `localhost`** (so the endpoint is numeric, not the service name). Chrome then echoes that host
+  back in the `webSocketDebuggerUrl` it returns, which is what makes a forwarded CDP connection
+  work rather than half-work — verified against a real CDP client, not assumed.
+  The consequence for callers: `--cdp http://172.30.7.10:9222` is now explicit, where the
+  namespace-sharing version inherited the utils' `127.0.0.1:9222` default. noVNC moves to the
+  `chrome` service's own port mapping, still bound to the host's loopback only.
+
 ## [0.247.0] — 2026-08-28
 
 ### Added
