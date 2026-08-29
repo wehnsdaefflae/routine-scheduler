@@ -36,6 +36,8 @@ one you are about to touch, not all of them.
   conversation's spine is EMERGENT: it writes its own `state/plan.md` (inlined at the top of every
   reply by `state_digest`) where a routine gets `stages/` + `phase.json` compiled at creation —
   don't "fix" a conversation by giving it a compiled workflow
+- `docs/status-pages.md` — the shared web UI routines publish to (one shell, one
+  append-only feedback contract, the `status-page` rule that makes it opt-in)
 - `docs/items.md` — the maintenance-item index (findings, decisions, bug reports): the
   item shape, the status vocabulary and its precedence, and the changelog join;
   `docs/messages.md` — a routine's four message folders (the Messages page/D74), the

@@ -19,6 +19,87 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.255.0] — 2026-08-29
+
+### Every routine web UI is one notebook
+
+Seven project pages had grown independently on `steward.markwernsdorfer.com`, and each had
+re-implemented the same four things — a masthead, a feedback channel, a list of the user's
+unconsumed input, and a webhook ping. So they carried the same bugs at different times and got
+them fixed at different times, or never. **Two** of the seven could show the user the feedback he
+had already sent; **one** refreshed that list after a submission; **one** rendered an approval
+draft in a box he could edit. Three feedback contracts were live at once.
+
+There is now one shell. `docs/status-pages.md` is the map.
+
+- **New general rule `status-page`** — the modular half. Publishing a web UI is opt-in per
+  routine (`rules:` in routine.yaml, bound to the ten that publish), and a routine that does not
+  publish never reads a word of it. It is the first curated rule written from this instance's own
+  observed failures rather than from an upstream source: every clause answers a complaint in the
+  feedback stores, most repeated across unconnected projects. A `web-publishing` PERMISSION was
+  considered and rejected — `requires: {utils: [ftp]}` would gate `ftp` for every routine and
+  break the four that publish to other hosts, and the access that matters is already the
+  four-state `secret:FTP_SOURCES` grant.
+- **One interface and one storage layout, not just one shell.** `/api.php` is the only way any
+  page reads or writes anything: `what=state|items|model|feedback|log|all` to read,
+  `op=say|revise|retract|advance|put-state|put-items|put-model` to write. Under
+  `_store/<project>/` every project has the same six things — a state document, a collection, a
+  model of what its item states mean, an append-only feedback log, an append-only write trail and
+  snapshots. Three storage designs and three answers to "what has he told us that we have not
+  acted on" collapse into one.
+- **`migrate.php`** converts every pre-unification store in place — idempotent, additive, deletes
+  nothing, dry-runs by default. The one genuine shape change is each radar's feedback
+  (`{id, opp_id, verdict, reason}` → the shared row), so a reason Mark typed on the radar months
+  ago now appears in the same rail as everything else, editable and retractable.
+- **`put-items` floors, for every project.** The collection is the only copy of his decisions, so
+  an empty set, a shrink past half of what is stored, and an item without an id are all refused,
+  and the previous set is snapshotted first — generalised from the floors `freelance-radar` had
+  already earned the hard way. `advance` is gated by the project's own transition model, and a
+  refused move is recorded, so "why did nothing happen when I clicked" has an answer.
+- **New shared kit**, mastered in the library repo at `<libraries_home>/web/steward/`: the design
+  system, the shell, a `status` body module, a `board` body module for the two radars, the hub,
+  and the data layer. A routine links them and never edits them; it uploads one only if that path
+  is absent on the host, so the first routine to run bootstraps and the rest no-op.
+- **The whole design is new** — "field notebook": warm grained paper, a red margin rule down the
+  sheet that means one thing only (something here is waiting for you), markers in the margin that
+  encode state, and three typefaces that separate the page's own voice from a person's from the
+  machine's. Light and dark on tokens with a persisted three-state toggle.
+- **The radars are rebuilt, not restyled.** ~150 KB of per-radar markup, rendering and CSS is
+  deleted in favour of `board.js`, and their `api.php`/`lib.php`/`stage_*.php` go with it;
+  `config/pipeline.json` becomes `model.json` and drives the entire pipeline surface, with the
+  module hard-coding no stage, label, button or help text. The measured filter tuning is carried
+  over verbatim — it is measurement, not design. An intermediate *token bridge* that recoloured
+  the old stylesheets was built, verified and then rejected for exactly that reason.
+
+### Fixed
+
+- **Feedback could be permanently lost.** `feedback.php` derived the next sequence number from
+  the store's LINE COUNT, which is only correct while the file has never been touched. After any
+  truncation, rotation or hand repair it re-issued numbers below every routine's consumed-cursor,
+  and everything written from then on was filtered out as "already read" and never surfaced
+  again. It now takes the highest stored seq plus one. (Reproduced against the real endpoint.)
+- The read endpoint's project allowlist covered two of seven projects, so five pages accepted
+  feedback they could never display back. The allowlist now lives once, in `store.php`.
+- A `revise` can no longer re-file one entry's revision under another entry's id: the id is
+  carried forward from the row being replaced rather than taken from the client.
+- A submission no longer appears to vanish: every control refreshes the pending list after it
+  writes, on every page (was ards-only — R129/R134).
+- Every approval draft is editable and the text approved is the text in the box; every question
+  takes a free-text answer, with quick answers as an addition rather than the whole vocabulary;
+  every generated document carries its own "not ready" control.
+- A status payload missing `feedback_cursor` now says so on the page instead of silently
+  re-listing months of already-answered notes.
+- A short write to the store returns an error rather than a sequence number for a row that is not
+  on disk.
+
+### Hand-off
+
+Ten reports (R1040–R1044, R1047–R1051) carry the migration to each publishing routine; nothing
+on the host changes until a routine runs. `sprind` and `birthday-admin` move under the hub with
+their own markup; `weightloss` is BLOCKED on a Basic-Auth exception only the operator can make,
+and says so rather than publishing into a wall. `grantsforbina` and the guest half of the
+birthday site stay where they are, by operator decision.
+
 ## [0.254.0] — 2026-08-29
 
 ### Removed
