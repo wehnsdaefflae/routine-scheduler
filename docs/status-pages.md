@@ -33,7 +33,9 @@ one storage layout, so a fix lands on every page at once.
 ## The layout on the host
 
 ```
-/                          hub — one card per project, sorted by what is waiting on the user
+/index.php                 hub — one card per project, sorted by what is waiting on the user
+/gate.php                  the front door: a session cookie for people, HTTP Basic for routines
+/cgi-bin/gate.json.php     the one secret, self-guarding like the store
 /api.php                   THE interface. every read and every write, for every page
 /store.php                 what a project's data IS — layout, row shape, folds, floors
 /migrate.php               the one-shot converter; idempotent, additive, deletes nothing
@@ -48,7 +50,7 @@ one storage layout, so a fix lands on every page at once.
 /_shared/steward.js        the shell: masthead, feedback rail, run trigger, the API client
 /_shared/modules/status.js the status body — gate, question, state, deliverables, documents
 /_shared/modules/board.js  the radar body — Radar, Pipeline, Done, Self-audit (+ board.css)
-/<project>/index.html      a ~25-line shell naming the project, language, title and module
+/<project>/index.php       a ~25-line shell naming the project, language, title and module
 ```
 
 The master of all of it lives in the library repo at `<libraries_home>/web/steward/` — version
@@ -82,11 +84,38 @@ every routine rewrote daily, so editing a stale copy silently clobbered a siblin
 routine had to be told to re-fetch first. And `needs_you` is *counted* server-side — an open gate
 plus an open question — so a routine cannot understate what is waiting on him.
 
-The whole host is behind HTTP Basic Auth, which is the real gate — a browser carries it and a
-routine sends it. The token in the client JS is a namespace marker, not a credential. The
-reader's operations are not separately authenticated because they cannot be: the page runs as
-him. What protects the data is not an ACL but the shape of the operations — nothing can destroy a
-record, and the one destructive operation floors and snapshots first.
+`gate.php` runs before anything else. The token in the client JS is a namespace marker, not a
+credential. The reader's operations are not separately authenticated because they cannot be: the
+page runs as him. What protects the data is not an ACL but the shape of the operations — nothing
+can destroy a record, and the one destructive operation floors and snapshots first.
+
+## The gate
+
+nginx-level HTTP Basic Auth was the host's front door until 2026-08-29 and it broke three things,
+all the same way: an installed Firefox-Android PWA opens in a fresh context with no credential and
+no way to prompt (which is why the weight-loss app grew its own passphrase gate); the Withings
+OAuth callback 401'd on the post-consent redirect; and a Plesk http→https 301 dropped the
+credential, so a routine parsed an HTML error page as data and lost a run's intake.
+
+Basic Auth is a credential the *browser* holds for a session. A cookie is one an *application*
+carries — into an installed PWA, through a service worker's own fetches, and back from a
+cross-site redirect (`SameSite=Lax` is sent on top-level navigations).
+
+So `gate.php` takes either form and checks both against the same secret:
+
+- **a person** signs in once per device and gets an HttpOnly, Secure, `SameSite=Lax` cookie whose
+  value is `hmac(secret)`, so the secret itself is never stored client-side.
+- **a routine** sends HTTP Basic exactly as it always did. Set the gate secret to the password
+  already in `WEB_AUTH_SOURCES.steward` and the machine side needs no migration at all — same
+  util, same source name, same credential.
+
+`/_shared/*` is deliberately public: a stylesheet, the shell and two body modules, no data. Every
+page is `index.php` and opens with `gate_require()`. The secret lives in `cgi-bin/gate.json.php`,
+self-guarding like the store — `cgi-bin` being unserved is a property of one host, not a fact.
+
+Retiring it is a two-step with no exposed window: deploy the gate *behind* the existing Plesk
+protection, verify, then turn Plesk's protection off. If the gate were wrong you would never be
+open, and turning Plesk back on is the rollback.
 
 **`put-items` floors**, because the collection is the only copy of his decisions: an empty set is
 refused, a shrink past half of what is stored is refused, an item without an id is refused, and

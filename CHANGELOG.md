@@ -51,6 +51,12 @@ There is now one shell. `docs/status-pages.md` is the map.
   nothing, dry-runs by default. The one genuine shape change is each radar's feedback
   (`{id, opp_id, verdict, reason}` → the shared row), so a reason Mark typed on the radar months
   ago now appears in the same rail as everything else, editable and retractable.
+- **One gate for the host, and it is a cookie.** nginx-level Basic Auth broke three things the
+  same way — an installed PWA (which is why weightloss grew its own passphrase gate), the Withings
+  OAuth callback, and a 301 that dropped the credential and cost a routine its intake. `gate.php`
+  takes a session cookie *or* HTTP Basic against the same secret, so routines keep working
+  untouched while people and PWAs get something they can carry. Weightloss's separate passphrase
+  gate is retired, and no per-path exception is needed to host it under the hub.
 - **The store now refuses a direct GET on any server.** It held Mark's own words behind a
   `.htaccess`, which does nothing on nginx — and this hosting is nginx. Every stored file ends in
   `.php` and opens with a guard line, so the denial is in the file rather than in a config that
