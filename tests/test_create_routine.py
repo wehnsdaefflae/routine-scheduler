@@ -52,7 +52,8 @@ def _ctx(server, *, home: str, slug="c-1", depth=0):
     routine = SimpleNamespace(slug=slug, dir=getattr(server, home) / slug)
     routine.dir.mkdir(parents=True, exist_ok=True)
     return SimpleNamespace(server=server, routine=routine, depth=depth,
-                           run_id=f"{slug}:20260827-030000")
+                           run_id=f"{slug}:20260827-030000",
+                           tokens_remaining=lambda: None, add_usage=lambda _usage: None)
 
 
 def _age_draft(ctx):
@@ -126,28 +127,69 @@ def test_unknown_workflow_is_rejected_at_draft_time(tmp_path):
     assert {w["slug"] for w in obs["workflow_catalog"]}     # the catalog is offered instead
 
 
-def test_generate_is_rejected_as_a_subtask_capability(tmp_path):
-    """F387: `workflow: generate` drafts a NEW pattern in a subtask — it is not a library
-    slug. It used to store cleanly and fail at materialize, i.e. after confirmation."""
+def test_generate_is_the_last_choice_in_every_catalog(tmp_path):
+    """The workflow question is never a closed list: `generate` rides the catalog so "none of
+    these fit, build one for this task" is always among the options the user is shown."""
     server = _server(tmp_path)
     ctx = _ctx(server, home="conversations_home")
+    obs = create_routine.handle_create_routine(ctx, dict(ACTION))
+    assert obs["workflow_catalog"][-1]["slug"] == create_routine.GENERATE_SLUG
+    assert obs["workflow_catalog"][-1]["description"]
+
+
+def test_generate_drafts_the_fitted_pattern_then_builds_on_it(tmp_path, monkeypatch):
+    """Picking `generate` is the user's own answer to the workflow question, so the confirming
+    call drafts the pattern inline and materializes from the slug it wrote."""
+    server = _server(tmp_path)
+    ctx = _ctx(server, home="conversations_home")
+    seen = {}
+
+    def fake_generate(srv, instruction, hint="", on_usage=None):
+        seen.update(instruction=instruction, hint=hint)
+        shutil.copy(SEED / "workflows" / "general-task.py",
+                    srv.libraries_home / "workflows" / "fitted-pattern.py")
+        return "fitted-pattern", ""
+
+    monkeypatch.setattr("rsched.workflows.generate.generate", fake_generate)
+    create_routine.handle_create_routine(ctx, {**ACTION, "workflow": "generate"})
+    _age_draft(ctx)
     obs = create_routine.handle_create_routine(ctx, {**ACTION, "workflow": "generate"})
-    assert obs.get("rejected")
-    assert "subtask capability" in obs["reason"]
-    assert not (ctx.routine.dir / DRAFT_RELPATH).exists()
+    assert obs.get("created") and obs["workflow"] == "fitted-pattern"
+    assert seen["instruction"] == ACTION["prompt"] and seen["hint"] == ACTION["name"]
+    assert (server.routines_home / ACTION["target"] / "main.md").is_file()
 
 
-def test_draft_carries_the_pattern_catalog_and_demands_an_alternative(tmp_path):
+def test_generate_failure_creates_nothing_and_never_falls_back(tmp_path, monkeypatch):
+    """The user chose `generate` OVER every catalog entry — silently building on one of them
+    would materialize the option they rejected, under the name they approved."""
+    server = _server(tmp_path)
+    ctx = _ctx(server, home="conversations_home")
+
+    def boom(*_a, **_k):
+        raise RuntimeError("the draft never linted clean")
+
+    monkeypatch.setattr("rsched.workflows.generate.generate", boom)
+    create_routine.handle_create_routine(ctx, {**ACTION, "workflow": "generate"})
+    _age_draft(ctx)
+    obs = create_routine.handle_create_routine(ctx, {**ACTION, "workflow": "generate"})
+    assert obs.get("rejected") and "never linted clean" in obs["reason"]
+    assert not (server.routines_home / ACTION["target"]).exists()
+    assert (ctx.routine.dir / DRAFT_RELPATH).is_file()      # the draft stands, re-askable
+
+
+def test_draft_carries_the_catalog_and_demands_a_decision_not_prose(tmp_path):
     """F383: the pattern choice is surfaced MECHANICALLY — the draft observation lists the
-    library catalog one line each, and the relay contract requires naming the chosen pattern
-    plus one alternative, so `general-task` can no longer be a silent default."""
+    catalog one line each, and the `next` contract puts every open point to the user as an
+    ask_user carrying options, so `general-task` can no longer be a silent default and the
+    user is never asked to compose an answer that could have been offered."""
     server = _server(tmp_path)
     ctx = _ctx(server, home="conversations_home")
     obs = create_routine.handle_create_routine(ctx, dict(ACTION))
     catalog = obs["workflow_catalog"]
     assert len(catalog) > 1 and all(c["slug"] and c["description"] for c in catalog)
     assert ACTION["workflow"] in {c["slug"] for c in catalog}
-    assert "one alternative" in obs["next"] and "DONE" in obs["next"]
+    assert "ask_user" in obs["next"] and "`options`" in obs["next"]
+    assert "PRODUCES" in obs["next"] and "DONE" in obs["next"]
 
 
 def test_same_leg_confirm_is_held(tmp_path):

@@ -19,6 +19,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.253.0] — 2026-08-29
+
+### Changed
+- **Routine creation asks in DECISIONS, and the workflow list is no longer closed.** The draft
+  observation's `next` contract told the agent to "relay this draft to the user in your reply" —
+  so the clarification arrived as prose and the user answered a blank text box, composing by hand
+  an answer the agent already knew how to offer. Every point still open now goes out as its own
+  `ask_user` carrying `options`, which the console renders as numbered picks; the workflow
+  question is always one of them, and PRODUCES / DONE must be the user's own words or be asked
+  the same way. `kindsurface`'s create_routine PRECONDITION says the same thing to the model.
+- **`generate` is a first-class workflow choice.** The pattern catalog now always ends with
+  "draft a NEW pattern fitted to this task", because no catalog covers every task and a routine
+  built on a pattern that merely almost fits carries that mismatch for its whole life. Picking it
+  makes the confirming call draft the pattern inline (`workflows.generate`, folded into the run's
+  budget) and build on the slug it wrote. This reverses F387's rejection: the user PICKING it is
+  the gate — the `workflows: generate` capability governs a subtask drafting a pattern on its own
+  initiative, unwatched, which is a different situation. Generation failure creates nothing and
+  never falls back to a catalog pattern: the user chose `generate` over all of them, so building
+  on one anyway would materialize the option they rejected under the name they approved.
+  The confirmed half moves into `_materialize` — its own step, its own failure modes.
+
 ## [0.252.0] — 2026-08-29
 
 ### Removed

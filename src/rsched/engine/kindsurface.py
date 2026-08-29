@@ -223,16 +223,22 @@ a milestone run on a sibling routine — gated by the scheduling permission.""")
 THIS conversation into a real \
 scheduled routine — `target` (its new kebab-case slug), `name` (its display name), `prompt` (the \
 clarified task, decomposed into the routine's stages — say WHAT it does, not when), and optional \
-`workflow` (the library pattern to build from, default general-task). PRECONDITION — walk the \
+`workflow` (the library pattern to build from, default general-task). PRECONDITION — settle the \
 clarification WITH the user BEFORE the first call: what the routine PRODUCES each run (the \
-artefact, named, and where it lands), what "done" looks like for ONE run, and which library \
-pattern fits versus the nearest alternative. The test is whether you could QUOTE the user's own \
-answer for the first two; if you would be inferring either, ask instead of drafting — a draft \
-that guesses them presents your assumption as their decision, and the routine then runs for \
-months on it. It is a TWO-STEP flow: the first call stores a DRAFT and returns a preview — relay \
-that preview to the \
-user and finish your reply; after the user confirms, call it again with the SAME fields to \
-materialize (its own dir, its held rules, git repo). A changed field updates the draft instead. \
+artefact, named, and where it lands), what "done" looks like for ONE run, and which pattern it \
+is built on. ASK THESE AS DECISIONS, NOT AS PROSE: one `ask_user` per open point, each carrying \
+`options`, which the console renders as numbered picks — an option-less question is a blank box \
+that makes the user compose an answer you already knew how to offer. The test is whether you \
+could QUOTE the user's own answer for each; if you would be inferring one, it is still open, so \
+ask it. A draft that guesses presents your assumption as their decision, and the routine then \
+runs for months on it. The WORKFLOW question is always asked this way, and its options are the \
+catalog the draft observation carries — which always ends in `generate`, "draft a NEW pattern \
+fitted to this task", because no catalog covers every task and "none of these fit" must always \
+be one of the choices; picking it makes the confirming call draft that pattern and build on it. \
+It is a TWO-STEP flow: the first call stores a DRAFT and returns a preview — put its open \
+points to the user as those decisions and finish your reply; after the user answers, call it \
+again with the SAME fields to materialize (its own dir, its held rules, git repo). A changed \
+field updates the draft instead. \
 The daemon picks the new routine up on its next registry rescan; tell the user it exists and \
 what to set next (its schedule). This is the ONLY way a routine is created. WITHOUT a user in \
 the loop (a scheduled run) the same call QUEUES a proposal on the Decisions page instead of \
