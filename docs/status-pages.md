@@ -37,12 +37,12 @@ one storage layout, so a fix lands on every page at once.
 /api.php                   THE interface. every read and every write, for every page
 /store.php                 what a project's data IS — layout, row shape, folds, floors
 /migrate.php               the one-shot converter; idempotent, additive, deletes nothing
-/_store/<project>/         denied to HTTP, reached only through the API
-    state.json               the state document: phase, prose, deliverables, gate, question
-    items.json               {generated_at, items:[{id, state, ...}]} — the collection
-    model.json               what the item states mean: labels, help, tabs, legal transitions
-    feedback.jsonl           append-only, everything the reader has said
-    log.jsonl                append-only, every item write and every refusal
+/_store/<project>/         reached only through the API; every file refuses a direct GET
+    state.json.php           the state document: phase, prose, deliverables, gate, question
+    items.json.php           {generated_at, items:[{id, state, ...}]} — the collection
+    model.json.php           what the item states mean: labels, help, tabs, legal transitions
+    feedback.jsonl.php       append-only, everything the reader has said
+    log.jsonl.php            append-only, every item write and every refusal
     snapshots/               the collection as it was before each replace
 /_shared/steward.css       the design system, and the type: it loads its own webfonts
 /_shared/steward.js        the shell: masthead, feedback rail, run trigger, the API client
@@ -54,6 +54,14 @@ one storage layout, so a fix lands on every page at once.
 The master of all of it lives in the library repo at `<libraries_home>/web/steward/` — version
 controlled there because it is shared across routines and the library is the one repo that
 already is. `pages/generate.py` emits every project shell from one template.
+
+**Why every stored file ends in `.php` and opens with a guard line.** The store holds the
+reader's own words and the only copy of his decisions, and "the directory is denied to HTTP" was
+a claim resting on a `.htaccess` — which does nothing on nginx, and this hosting is nginx. So the
+denial lives in the file: the server executes it, the guard sends 403 and stops, and a direct GET
+returns nothing whatever the server config says. Our own reads skip that first line. Basic Auth
+still covers the whole host; this is what holds if it ever comes off, which has happened on a
+sibling host before.
 
 ## The interface
 

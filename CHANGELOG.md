@@ -51,6 +51,11 @@ There is now one shell. `docs/status-pages.md` is the map.
   nothing, dry-runs by default. The one genuine shape change is each radar's feedback
   (`{id, opp_id, verdict, reason}` → the shared row), so a reason Mark typed on the radar months
   ago now appears in the same rail as everything else, editable and retractable.
+- **The store now refuses a direct GET on any server.** It held Mark's own words behind a
+  `.htaccess`, which does nothing on nginx — and this hosting is nginx. Every stored file ends in
+  `.php` and opens with a guard line, so the denial is in the file rather than in a config that
+  may not apply. Basic Auth still covers the host; this is what holds if it ever comes off, which
+  has happened on a sibling host before.
 - **The hub's cards are derived, and `projects.json` is gone.** It was one file every routine
   rewrote daily, so editing a stale copy clobbered a sibling's card and every routine had to be
   told to re-fetch first. `?what=hub` now reads each project's own state document, and
