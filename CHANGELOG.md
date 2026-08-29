@@ -19,6 +19,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.255.1] — 2026-08-29
+
+### Decisions answers survive a live-run refresh (mobile keyboard fix)
+
+- **The Decisions page no longer yanks focus out of the answer field while you type.** Every
+  global SSE event dispatches an `rsched-bus` tick — several a second while a run is live — and
+  the inbox reloaded the whole list on each one (`renderList` → `list.replaceChildren`), which
+  dropped focus from the answer `<input>`/`<textarea>` mid-type. On desktop that was a flicker; on
+  mobile it dismissed the keyboard and the caret every few seconds, so typed answers never landed
+  (operator report). `static/views/questions.js` now DEFERS the bus-driven reload while an answer
+  control in the list holds focus and flushes it once focus leaves. Covered by a new
+  `tests/ui` flow test (focus + in-progress text both survive a bus tick).
+
+### Test reliability
+
+- **`test_kill_child` no longer flakes under parallel-suite load.** The killed child slept only
+  0.5s before `finish`, which could beat the parent's kill under `xdist` load and leave the subrun
+  `ok` instead of `aborted`. It now sleeps long enough that the kill reliably lands first (the kill
+  interrupts the sleep instantly on success), matching the test's own "sleep forever" intent.
+
 ## [0.255.0] — 2026-08-29
 
 ### Every routine web UI is one notebook

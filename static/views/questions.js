@@ -349,7 +349,29 @@ export async function render(view, query = {}) {
   }
 
   await load();
-  const onBus = () => load({ focus: false }).catch(() => {});
+  // A bus tick fires on EVERY global SSE event — several a second while a run is live — and
+  // load() rebuilds the whole list (renderList → list.replaceChildren). That rebuild yanks
+  // focus out of the answer field you are typing into: on mobile it dismisses the keyboard
+  // and drops the caret, so the answer never lands. Defer the refresh while an answer control
+  // in this list holds focus, and flush the deferred one once focus leaves.
+  let deferredReload = false;
+  const typingHere = () => {
+    const a = document.activeElement;
+    return Boolean(a && list.contains(a) && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName));
+  };
+  const onBus = () => {
+    if (typingHere()) { deferredReload = true; return; }
+    load({ focus: false }).catch(() => {});
+  };
   window.addEventListener("rsched-bus", onBus);
+  list.addEventListener("focusout", () => {
+    // focusout fires before focus settles on the next node — re-check on the next tick
+    setTimeout(() => {
+      if (deferredReload && !typingHere()) {
+        deferredReload = false;
+        load({ focus: false }).catch(() => {});
+      }
+    }, 0);
+  });
   return () => window.removeEventListener("rsched-bus", onBus);
 }

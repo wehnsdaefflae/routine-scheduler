@@ -1144,7 +1144,10 @@ def test_wait_returns_at_once_when_nothing_left_to_wait_for(make_routine, script
 
 def test_kill_child(make_routine, scripted):
     def sleepy():
-        time.sleep(0.5)
+        # "sleep forever": long enough that the kill RELIABLY lands while the child is still
+        # running (a 0.5s sleep raced the kill under parallel-suite load and flaked, asserting
+        # status "ok" not "aborted"); on success the kill interrupts this instantly.
+        time.sleep(30)
         return finish(summary="should never land")
 
     _d, _ep, status, _run_dir, events = _run(make_routine, scripted, [

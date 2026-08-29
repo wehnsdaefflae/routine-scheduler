@@ -121,6 +121,28 @@ def test_decisions_inbox_groups(ui, ui_page):
     assert ui_page.evaluate("document.activeElement.dataset.persist") == "answer-q-b1"
 
 
+def test_decisions_answer_keeps_focus_across_bus_refresh(ui, ui_page):
+    """A live-run SSE bus tick must NOT rebuild the inbox out from under the answer field
+    you are mid-typing: renderList's list.replaceChildren would drop focus, and on mobile
+    that dismisses the keyboard so the answer never lands. The deferred-reload guard keeps
+    the focused input alive across the tick."""
+    ui.seed_run("uir", "20260715-090000", "waiting_user",
+                question={"qid": "q-go", "question": "Ship it?", "options": [],
+                          "default": "", "asked": "20260715-090000"})
+    ui.seed_question("uir", "q-go", "Ship it?", mode="blocking", default="")
+    ui_page.goto(f"{ui.url}/#/questions")
+    box = ui_page.locator('textarea[data-persist="answer-q-go"]')
+    expect(box).to_be_visible()
+    box.click()
+    box.type("half an answer")
+    # a global bus tick arrives while the user is still typing (several a second during a
+    # live run) — before the fix this rebuilt the list and yanked focus to <body>
+    ui_page.evaluate(
+        "window.dispatchEvent(new CustomEvent('rsched-bus', {detail: {event: 'run_started'}}))")
+    assert ui_page.evaluate("document.activeElement.dataset.persist") == "answer-q-go"
+    expect(box).to_have_value("half an answer")
+
+
 def test_state_graph_shows_phase_instrumentation(ui, ui_page):
     """The run view's state-graph rail shows per-phase turns/tokens/time from the
     transcript — the instrument panel, not just a highlighted chain. The current phase
