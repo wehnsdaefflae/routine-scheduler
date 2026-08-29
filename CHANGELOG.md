@@ -51,6 +51,11 @@ There is now one shell. `docs/status-pages.md` is the map.
   nothing, dry-runs by default. The one genuine shape change is each radar's feedback
   (`{id, opp_id, verdict, reason}` → the shared row), so a reason Mark typed on the radar months
   ago now appears in the same rail as everything else, editable and retractable.
+- **The hub's cards are derived, and `projects.json` is gone.** It was one file every routine
+  rewrote daily, so editing a stale copy clobbered a sibling's card and every routine had to be
+  told to re-fetch first. `?what=hub` now reads each project's own state document, and
+  `needs_you` is counted server-side from the open gate and the open question — so it cannot be
+  understated by the routine it reflects.
 - **`put-items` floors, for every project.** The collection is the only copy of his decisions, so
   an empty set, a shrink past half of what is stored, and an item without an id are all refused,
   and the previous set is snapshotted first — generalised from the floors `freelance-radar` had

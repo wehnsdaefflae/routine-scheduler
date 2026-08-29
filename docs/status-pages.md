@@ -34,7 +34,6 @@ one storage layout, so a fix lands on every page at once.
 
 ```
 /                          hub — one card per project, sorted by what is waiting on the user
-/projects.json             the shared card registry; every routine upserts ONLY its own row
 /api.php                   THE interface. every read and every write, for every page
 /store.php                 what a project's data IS — layout, row shape, folds, floors
 /migrate.php               the one-shot converter; idempotent, additive, deletes nothing
@@ -59,14 +58,21 @@ already is. `pages/generate.py` emits every project shell from one template.
 ## The interface
 
 ```
+GET  /api.php?what=hub&token=<t>                        one card per project, derived
 GET  /api.php?project=<p>&what=state|items|model|feedback|log|all&token=<t>
 POST /api.php  {token, project, op, …}
        op=say | revise | retract | advance          the reader's, from the page
        op=put-state | put-items | put-model          the routine's
 ```
 
-`what=all` is what a page actually calls: state, items, model and unconsumed feedback in one
-round trip. A page never fetches a file.
+`what=all` is what a project page calls: state, items, model and unconsumed feedback in one round
+trip. A page never fetches a file.
+
+`what=hub` is DERIVED from every project's own state document. There is no shared registry file,
+which removes a class of bug rather than documenting it: the old `projects.json` was one file
+every routine rewrote daily, so editing a stale copy silently clobbered a sibling's card and every
+routine had to be told to re-fetch first. And `needs_you` is *counted* server-side — an open gate
+plus an open question — so a routine cannot understate what is waiting on him.
 
 The whole host is behind HTTP Basic Auth, which is the real gate — a browser carries it and a
 routine sends it. The token in the client JS is a namespace marker, not a credential. The
@@ -100,8 +106,8 @@ left in place.
 
 ## Who may write what
 
-A routine owns its own project's data and one row in `projects.json`. It does **not** own the
-shared assets: it carries a byte-identical copy and uploads one only if that path is ABSENT on
+A routine owns its own project's data and nothing else — there is no shared file left for it to
+edit by hand. It does **not** own the shared assets: it carries a byte-identical copy and uploads one only if that path is ABSENT on
 the host. First routine to run bootstraps them, every other one no-ops, and no ordering between
 routines is needed. Overwriting an existing shared file is forbidden — a stale copy out of one
 repo would silently downgrade every sibling's page.
