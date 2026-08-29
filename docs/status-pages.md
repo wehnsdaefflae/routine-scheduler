@@ -270,10 +270,16 @@ waiting on Mark, when what they wait on is their own reply.
 ## What is deliberately not here
 
 - **`grantsforbina.markwernsdorfer.com`** stays on its own host (operator decision, 2026-08-29).
-- **The guest half of the birthday site** stays on `44.markwernsdorfer.com`, untouched. It is for
-  party guests and this host is private; only the admin half moves. The one thing that needs the
-  routine's judgement is whether the guest write path touches `admin/data/roster.json` — if it
-  does, the roster's master stays on 44 and the steward copy is a published mirror.
+- **The guest half of the birthday site** stays on `44.markwernsdorfer.com`, untouched — and so
+  does the roster's master, which is a harder constraint than it first looks. That site keeps two
+  rosters: an off-web authoritative one the guest invite gate reads, and a git-tracked seed the
+  routine regenerates. The authoritative one has **two** writers — the admin roster-board save and
+  **guests themselves**, who can drop a stray member from their own party through a token-gated
+  endpoint. Since a removal has to kill an invite link at once, and `birthday` has no webhook
+  trigger and an empty cron, this host cannot hold that guarantee. So membership stays on 44 and
+  the steward guest list is a published mirror; only *attendance* state (invited / coming / maybe
+  / declined) is set here and reconciled on the routine's next run. Its `model.json` carries no
+  membership action and records why.
 - **The weight-loss PWA** was blocked on the host's Basic Auth, which an installed PWA cannot
   replay. That is what `gate.php` fixed: a cookie is carried by a PWA, so the app moves under the
   hub with no exception and its own passphrase gate is retired.
