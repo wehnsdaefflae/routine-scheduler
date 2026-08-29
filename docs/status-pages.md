@@ -49,7 +49,7 @@ one storage layout, so a fix lands on every page at once.
 /_shared/steward.css       the design system, and the type: it loads its own webfonts
 /_shared/steward.js        the shell: masthead, feedback rail, run trigger, the API client
 /_shared/modules/status.js the status body — gate, question, state, deliverables, documents
-/_shared/modules/board.js  the radar body — Radar, Pipeline, Done, Self-audit (+ board.css)
+/_shared/modules/board.js  the collection body — views come from the model (+ board.css)
 /<project>/index.php       a ~25-line shell naming the project, language, title and module
 ```
 
@@ -242,18 +242,45 @@ Their `api.php`, `lib.php`, `stage_rules.php` and `stage_log.php` are gone too: 
 shared one now, and `config/pipeline.json` became `model.json`. A radar's self-audit rides on
 its state document as `state.self_audit`, like everything else a routine says about itself.
 
+## The collection module takes its views from the model
+
+`board.js` started as the radar body and is now the body for anything with a collection. A
+project's `model.json` says what its tabs are and what each one shows, so no project is a special
+case in the module:
+
+| `type` | shows |
+|---|---|
+| `triage` | the undecided items, filtered, with the adaptive floors |
+| `board` | stage columns — every `stages` entry whose `tab` is this view's key |
+| `journal` | the state document's own prose and entry lists (`source` picks which) |
+
+A model with no `views` falls back to the radar's four, which is the shape that existed when the
+module was written.
+
+That generalisation is what let `birthday-admin` — a journal plus **two** collections, guests and
+venues — render on the same module as a radar, and `sprind` on it too. Venue states there are
+prefixed `venue_` because `transitions` is a flat map keyed by the from-state, and a guest and a
+venue can both be "declined".
+
+**"Waiting on you" is counted from `next_actor`, not `actor`.** They are different fields and the
+radar's own config documents why: `actor` decides whether a stage renders buttons, `next_actor`
+says whose move is next. Counting `actor` made a party's 63 invited guests read as 63 things
+waiting on Mark, when what they wait on is their own reply.
+
 ## What is deliberately not here
 
 - **`grantsforbina.markwernsdorfer.com`** stays on its own host (operator decision, 2026-08-29).
-- **The guest half of the birthday site** stays on `44.markwernsdorfer.com`. It is for party
-  guests, and this host is Basic-Auth private; only the admin half moves.
-- **The weight-loss PWA** is scheduled to move but is BLOCKED on a host-config change only the
-  operator can make: the hub is Basic-Auth-wide, and Basic Auth is exactly what the app's
-  passphrase gate was built to replace after a Firefox-Android PWA could not replay it. The path
-  needs a Basic-Auth exception first; the app's own gate is the real protection either way.
-- **`sprind`** moves under the hub and adopts the stylesheet but keeps its own generator and
-  markup — it is a document-review site, not a status page. Its publish is separately blocked by
-  R444 (routine scripts do not receive declared secrets).
+- **The guest half of the birthday site** stays on `44.markwernsdorfer.com`, untouched. It is for
+  party guests and this host is private; only the admin half moves. The one thing that needs the
+  routine's judgement is whether the guest write path touches `admin/data/roster.json` — if it
+  does, the roster's master stays on 44 and the steward copy is a published mirror.
+- **The weight-loss PWA** was blocked on the host's Basic Auth, which an installed PWA cannot
+  replay. That is what `gate.php` fixed: a cookie is carried by a PWA, so the app moves under the
+  hub with no exception and its own passphrase gate is retired.
+- **`sprind`** and **`birthday-admin`** are built on the collection module, not adapted: their
+  own markup, stylesheets and rendering are superseded. R444, which reported sprind's publisher as
+  blocked, was stale — R445 had diagnosed it (engine keys in the PEP 723 block, not the
+  docstring) and the fix was applied on 2026-08-29.
 
 ## The rule
 
