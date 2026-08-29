@@ -19,6 +19,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.254.0] — 2026-08-29
+
+### Removed
+- **The `clarification` template routine, and the `kind: template` protection built around it.**
+  Nothing read it. The standalone new-routine wizard that copied its budgets, models and rules
+  into a clarify session was retired with D59 — clarifying now happens in the conversation's own
+  chat — so what remained was a routine on the Routines page that existed only to be protected:
+  `guard_template` / `guard_template_dir` and nine call sites refusing to run, archive, message,
+  trigger, resume or rewind it, a `protected` flag on its card, and frontend special-cases
+  including one still keyed off the literal slug. `web/routines_common.py`'s docstring claimed
+  "every clarify session copies" its config; no live code path did.
+  Gone with it: `migrate_template_kind` and its test, `test_template_routine`, the `protected`
+  option on the triggers and schedule-once cards (`opts` existed only to carry it), and the
+  `kind != "template"` filter on the dashboard's meta list. `kind` keeps its one real value,
+  `conversation`. The live routine was archived rather than deleted — it holds 18 runs of
+  history, and `.archive/` is what this system's delete affordance does.
+
+### Fixed
+- **Two `docs/architecture.md` claims that were already false.** It described `wizard_store.py`
+  as retaining "the on-disk helpers for that template" (the module was deleted in 0.230.0) and
+  said live clarify runs hold the restart drain via `restart.clarify_states` reading
+  `clarification/runs/*` (no such function, and `daemon/restart.py` works from `active_states`).
+  Both now describe what the code does. The creation section also documents the decision-element
+  intake and the always-open workflow list from 0.253.0.
+
 ## [0.253.0] — 2026-08-29
 
 ### Changed

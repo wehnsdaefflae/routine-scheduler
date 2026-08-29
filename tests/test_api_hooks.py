@@ -179,7 +179,6 @@ def test_create_and_delete_trigger(api_client, make_routine):
 def test_trigger_crud_guards(api_client, make_routine):
     c, tmp = api_client
     make_routine(slug="testr")
-    make_routine(slug="clarification", kind="template")   # the protected wizard template
     _mk_active_run(tmp, "testr")
     # D78-A: an active run no longer bounces trigger create with a 409 — it is QUEUED and
     # applied at run end (the webhook's URL is still returned; the config is untouched).
@@ -190,8 +189,7 @@ def test_trigger_crud_guards(api_client, make_routine):
     assert pending_edits.pending_count(tmp / "routines", "testr") == 1
     assert not (yaml.safe_load(
         (tmp / "routines" / "testr" / "routine.yaml").read_text()).get("triggers"))
-    # the protected template and unknown routines still refuse outright (guards run first)
-    assert c.post("/api/routines/clarification/triggers", json={}).status_code == 403
+    # an unknown routine still refuses outright (the guard runs first)
     assert c.post("/api/routines/ghost/triggers", json={}).status_code == 404
     # CRUD stays bearer-gated (only the hook ingest is public)
     bare = TestClient(c.app)

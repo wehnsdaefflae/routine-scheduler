@@ -154,9 +154,9 @@ export async function render(view, runId, query = {}) {
   recipeChk.onchange = syncPlaceholder;
   function setModes(terminal) {
     isTerminal = terminal;
-    // recipe editing targets this routine's OWN files (routine runs only; never the
-    // protected clarification template) and unlocks on resuming a FINISHED run.
-    const recipeOk = terminal && slug !== "clarification";
+    // recipe editing targets this routine's OWN files (routine runs only) and unlocks on
+    // resuming a FINISHED run.
+    const recipeOk = terminal;
     recipeLbl.hidden = !recipeOk;
     if (!recipeOk) recipeChk.checked = false;
     syncPlaceholder();

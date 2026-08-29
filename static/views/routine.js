@@ -51,15 +51,11 @@ export async function render(view, slug, query = {}) {
       el("div", { class: "kicker" }, "routine"),
       titleH1),
     el("div", { class: "row" }, chipHost,
-      // the clarification template is clarify-flow configuration: no run, no archive — the
-      // server 403s both anyway; hiding the buttons says so up front
-      ...(d.protected
-        ? [chip("protected template", "disabled")]
-        : [d.active_run
-            ? el("a", { class: "btn primary", href: `#/run/${d.active_run}` }, "◉ watch live")
-            : el("button", { class: "btn primary", disabled: !llmReady,
-                title: llmReady ? "" : "connect an LLM endpoint in Settings first", onclick: runNow }, "▶ run now"),
-          el("button", { class: "btn danger", onclick: archive }, "archive")]))));
+      d.active_run
+        ? el("a", { class: "btn primary", href: `#/run/${d.active_run}` }, "◉ watch live")
+        : el("button", { class: "btn primary", disabled: !llmReady,
+            title: llmReady ? "" : "connect an LLM endpoint in Settings first", onclick: runNow }, "▶ run now"),
+      el("button", { class: "btn danger", onclick: archive }, "archive"))));
   if (d.problems?.length) {
     view.append(el("div", { class: "panel err", style: "margin-top:14px" },
       d.problems.map((p) => el("div", { style: "color:var(--err)" }, `⚠ ${p}`))));
@@ -102,10 +98,9 @@ export async function render(view, slug, query = {}) {
 
   // -- messages (D74): the four folders — inbox (write/edit/withdraw until a run drains
   // it; this is where a "note for the next run" lives), outbox (retractable hand-offs),
-  // read + received (history). Hidden for the protected clarification template (it never
-  // runs directly, so nothing is ever for or from it).
+  // read + received (history).
   let messagesPane = null;
-  if (!d.protected) {
+  {
     view.append(el("h2", {}, "Messages"));
     const msgHost = el("div", {});
     view.append(msgHost);

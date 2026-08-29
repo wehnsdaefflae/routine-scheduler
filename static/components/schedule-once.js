@@ -9,7 +9,7 @@ import { api } from "/static/api.js";
 import { confirmDialog } from "/static/components/dialog.js";
 import { el, toast, when } from "/static/util.js";
 
-export function scheduleOnceCard(slug, opts = {}) {
+export function scheduleOnceCard(slug) {
   const body = el("div", { class: "oneshot-body" });
   const host = el("div", { class: "panel" },
     el("div", { class: "muted small", style: "margin-bottom:8px" },
@@ -33,7 +33,7 @@ export function scheduleOnceCard(slug, opts = {}) {
         : el("div", { class: "muted small" }, "no one-shot armed — this routine fires on schedule or manually only"),
       d.fires ? el("div", { class: "muted small mt" },
         `fired ${d.fires}× as a one-shot · last ${d.last_fired ? when(d.last_fired) : "never"}`) : "",
-      opts.protected ? "" : armForm());
+      armForm());
   }
 
   function row(o) {
@@ -43,7 +43,7 @@ export function scheduleOnceCard(slug, opts = {}) {
           el("span", { class: "ref-tag" }, "one-shot"),
           el("span", { title: o.fire_at }, "fires ", when(o.fire_at)),
           el("span", { class: "muted small" }, o.id)),
-        opts.protected ? "" : el("button", { class: "btn small danger", onclick: () => cancel(o) }, "cancel")),
+        el("button", { class: "btn small danger", onclick: () => cancel(o) }, "cancel")),
       o.reason ? el("div", { class: "muted small" }, o.reason) : "",
       el("div", { class: "muted small" }, `armed by ${o.requested_by || "?"}`));
   }

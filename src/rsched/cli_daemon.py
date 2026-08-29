@@ -35,11 +35,6 @@ def cmd_daemon(_args) -> int:
     from .migrate_library_sync import migrate_library_sync
 
     migrate_library_sync(server)
-    from .migrate_template_kind import migrate_template_kind
-
-    # MIGRATION(expires=2026-09-30): the template's guards key off `kind:` now, and only an
-    # existing instance's own routine.yaml can be given that marker
-    migrate_template_kind(server)
     # new default permissions reach existing routines once, at boot
     adopt_permissions(server.routines_home, server.permissions_home)
     sync_seed_utils(server.libraries_home)    # utils added to util-seed since bootstrap

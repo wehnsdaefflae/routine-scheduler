@@ -21,7 +21,6 @@ from .routines_common import (
     _state,
     active_run_dir,
     guard_not_active,
-    guard_template,
 )
 
 router = APIRouter(tags=["routines"])
@@ -69,7 +68,6 @@ def set_routine_rules(request: Request, slug: str, body: RulesBody) -> dict:
     apply_rule_edit); otherwise it lands at the next run.
     """
     info = _info(request, slug)
-    guard_template(info.cfg, "the clarification template's rules are fixed")
     return apply_rule_edit(request, info.cfg.dir, body, active_run_dir(info))
 
 
@@ -154,7 +152,6 @@ def set_permissions(request: Request, slug: str, body: PermissionsBody) -> dict:
 @router.post("/routines/{slug}/run")
 async def run_now(request: Request, slug: str) -> dict:
     info = _info(request, slug)
-    guard_template(info.cfg, "it never runs directly (clarify sessions start from it)")
     run_id = await _state(request).runner.fire(info.cfg, reason="manual")
     if run_id is None:
         raise HTTPException(409, f"routine {slug!r} already has an active run")
@@ -164,7 +161,6 @@ async def run_now(request: Request, slug: str) -> dict:
 @router.post("/routines/{slug}/archive")
 def archive_routine(request: Request, slug: str) -> dict:
     info = _info(request, slug)
-    guard_template(info.cfg, "it cannot be archived (sessions copy their config from it)")
     guard_not_active(request, info)
     home = _state(request).server.routines_home
     target = home / ".archive" / f"{slug}-{run_ts()}"

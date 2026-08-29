@@ -1,4 +1,4 @@
-"""Shared routine-endpoint plumbing: template guards, catalog lookups, the locked
+"""Shared routine-endpoint plumbing: catalog lookups, the locked
 git-commit, and the permission-layer detail — imported by api_routines,
 api_routine_edit, api_conversations, api_hooks, and api_runs alike (it used to live
 inside api_routines, which every sibling then reached into).
@@ -13,7 +13,6 @@ from pathlib import Path
 from fastapi import HTTPException, Request
 
 from .. import registry
-from ..config import RoutineConfig, load_routine
 from ..grants import EMPTY_CAPABILITIES, GATED_KINDS
 from ..ids import now_iso, parse_run_id
 from ..paths import atomic_write_json, read_json
@@ -29,29 +28,6 @@ def merge_control(run_dir: Path, updates: dict) -> None:
     ctrl.update(updates)
     atomic_write_json(run_dir / "control.json", ctrl)
 
-
-
-def guard_template(cfg: RoutineConfig, refusal: str) -> None:
-    """A `kind: template` routine is configuration the user edits, never a runnable or
-    removable job — today that is the clarify flow's clarification template, whose budgets, models
-    and rules every clarify session copies. 403 keeps it on the page regardless.
-
-    Keyed off the DECLARED kind rather than the slug: the slug was hardcoded across the web
-    layer, so a second template would have silently been runnable.
-    """
-    if cfg.kind == "template":
-        raise HTTPException(403, f"{cfg.slug!r} is a protected template — {refusal}")
-
-
-def guard_template_dir(routine_dir: Path, refusal: str) -> None:
-    """The same guard where only the on-disk dir is in hand. The run routes resolve a RUN ID
-    to a directory rather than a registry entry, and that directory may live under either home
-    — a conversation is not in the routine registry at all — so the kind is read from the
-    config on disk. An unreadable config is simply not a template.
-    """
-    cfg, _problems = load_routine(routine_dir)
-    if cfg is not None:
-        guard_template(cfg, refusal)
 
 
 def _state(request: Request):

@@ -23,7 +23,6 @@ from .routines_common import (  # noqa: F401 — re-exported: siblings historica
     _state,
     active_run_dir,
     guard_not_active,
-    guard_template,
     permission_layers_detail,
     queue_or_apply,
 )
@@ -71,8 +70,6 @@ def _card(request: Request, info: registry.RoutineInfo, *, monthly: dict | None 
     last = info.last_run
     return {
         "slug": info.slug,
-        # a template renders with run/archive hidden (config the user edits, not a job)
-        "protected": info.cfg.kind == "template",
         "name": info.cfg.name,
         "description": info.cfg.description,
         "enabled": info.cfg.enabled,

@@ -129,13 +129,13 @@ export function renderConfigSections(view, d, { slug, titleH1, chipHost, runChip
   view.append(...settingsSection("Triggers",
     "event-driven fires that run this routine alongside its cron schedule — each webhook trigger "
     + "gives a URL that starts a run when called (with coalescing so a burst fires once).",
-    triggersCard(slug, d.triggers || [], { protected: !!d.protected })));
+    triggersCard(slug, d.triggers || [])));
 
   // -- schedule once: a one-shot future run that fires once then auto-removes --------
   view.append(...settingsSection("Schedule once",
     "arm a single future run at a specific time — it fires exactly once, then removes itself "
     + "(the recurring schedule above is unaffected).",
-    scheduleOnceCard(slug, { protected: !!d.protected })));
+    scheduleOnceCard(slug)));
 
   // -- permissions: conduct docs + machine-enforced capabilities (user-only) --------
   // The server re-applies the activation cascade on save, so the panel re-renders from a

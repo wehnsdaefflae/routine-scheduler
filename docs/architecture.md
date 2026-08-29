@@ -634,14 +634,18 @@ util stays deleted (git-recoverable — seed utils only land at repo creation).
   refused outright at every depth > 0 and the kinds are not even surfaced to it — a sub-workflow
   must not create routines or reshape groups as a side effect, and a proposal from one traces back
   to nothing the user reasoned about. The queue is for a run that HAS a user, just not right now.
-  daemon's `registry_rescan_s` timer picks the new dir up). The protected `clarification` template routine
-  still backs the clarify flow and its questions/decisions surface through `/api/questions`; `wizard_store.py`
-  now retains only the on-disk helpers for that template.
-  The intake is held to a WALKED clarification, in prose rather than by a gate (F383) — a machine check
-  cannot tell a real answer from a plausible one, and the cause of a thin intake is the generation copy, not
-  a missing validator. Three answers must be SETTLED before a draft is presented as decided: what the routine
+  daemon's `registry_rescan_s` timer picks the new dir up). There is no clarification ROUTINE behind
+  any of this: the standalone wizard that copied a template's budgets/models/rules into a session was
+  retired with D59, and the clarifying now happens in the conversation's own chat.
+  The intake is held to a WALKED clarification, and the walking is done in DECISIONS (F383): every point
+  still open goes to the user as its own `ask_user` carrying `options`, which the console renders as
+  numbered picks — prose in the reply makes the user compose an answer the agent already knew how to
+  offer. What cannot be a gate is whether the answers are REAL: a machine check cannot tell a settled
+  answer from a plausible one, and the cause of a thin intake is the generation copy, not a missing
+  validator. Three answers must be SETTLED before a draft is presented as decided: what the routine
   PRODUCES each run (the artefact, named, and where it lands), what DONE looks like for ONE run, and which
-  pattern was chosen versus the nearest alternative. `clarify-instruction` makes the first two mandatory
+  pattern it is built on — that last one chosen from a catalog that always ends in `generate`, drafting a
+  NEW pattern fitted to this task, so the workflow question is never a closed list. `clarify-instruction` makes the first two mandatory
   questions that the "stop asking once it wouldn't change how the routine runs" rule explicitly does NOT
   reach, and requires the runner-up pattern named with its reason; the `create_routine` kind surface states
   the same as a precondition with a checkable test (could you QUOTE the user's own answer? if not, ask
@@ -1010,8 +1014,6 @@ util stays deleted (git-recoverable — seed utils only land at repo creation).
 - **Self-update restart** (`restart.py`): a sentinel triggers a drain, then a clean exit; systemd
   `Restart=always` relaunches on the committed code (`uv run` re-syncs deps). A parked run
   (`waiting_user`/`paused`) DEFERS the drain's start (never freeze scheduling on a human); once
-  draining, active runs are waited out. In-flight creation builds AND live clarify runs (spawned by
-  the web layer, invisible to the runner — `restart.clarify_states` reads
-  `clarification/runs/*`) hold the drain the same way. Orphaned runs claiming to be alive are
+  draining, active runs are waited out. Orphaned runs claiming to be alive are
   closed out at boot.
 

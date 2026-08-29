@@ -110,8 +110,3 @@ def test_outbox_retract(client):
     assert c.delete(f"/api/routines/peer/outbox/{rid2}").status_code == 404  # not the filer
     assert c.delete("/api/routines/apir/outbox/R99").status_code == 404
 
-
-def test_template_routine_cannot_be_messaged(client, make_routine):
-    c, _tmp = client
-    make_routine(slug="tmpl", kind="template")
-    assert c.post("/api/routines/tmpl/messages", json={"text": "hi"}).status_code == 403

@@ -32,7 +32,7 @@ from ..ids import now_iso
 from ..paths import atomic_write_json, read_json
 from ..readmodels import messages
 from ..reports import read_reports, reports_path, retract_report
-from .routines_common import _info, _state, guard_template
+from .routines_common import _info, _state
 
 router = APIRouter(tags=["messages"])
 
@@ -93,7 +93,6 @@ def create_message(request: Request, slug: str, body: MessageBody) -> dict:
     from ..engine import inbox
 
     info = _info(request, slug)
-    guard_template(info.cfg, "the clarification template backs clarify sessions, never messaged")
     path = inbox.file_message(info.cfg.dir, _clean_text(body), source="web-routine-queue")
     return {"ok": True, "id": path.stem, "delivery": _delivery(request, slug)}
 

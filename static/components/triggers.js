@@ -15,7 +15,7 @@ const CAP_HINT = "most trigger-initiated fires this routine may spend in one day
   + "Work that arrives past the cap waits for the next scheduled run.";
 const LABEL = { cooldown_s: "cooldown", max_fires_per_day: "daily cap" };
 
-export function triggersCard(slug, initial, opts = {}) {
+export function triggersCard(slug, initial) {
   const body = el("div", { class: "triggers-body" });
   const host = el("div", { class: "panel" },
     el("div", { class: "muted small", style: "margin-bottom:8px" },
@@ -43,11 +43,11 @@ export function triggersCard(slug, initial, opts = {}) {
     body.replaceChildren(
       rows.length ? el("div", {}, ...rows.map(row))
         : el("div", { class: "muted small" }, "no triggers yet — this routine fires on schedule or manually only"),
-      opts.protected ? "" : el("div", { class: "row mt", style: "gap:8px;flex-wrap:wrap" },
+      el("div", { class: "row mt", style: "gap:8px;flex-wrap:wrap" },
         el("span", { class: "muted small" }, "cooldown (s)"), webhookCooldown,
         el("button", { class: "btn primary", onclick: () => create(webhookCooldown) },
           "+ add webhook trigger")),
-      opts.protected ? "" : el("div", { class: "row", style: "gap:8px;flex-wrap:wrap;margin-top:6px" },
+      el("div", { class: "row", style: "gap:8px;flex-wrap:wrap;margin-top:6px" },
         el("span", { class: "muted small" }, "cooldown (s)"), reportCooldown,
         el("button", { class: "btn", ...(hasReport ? { disabled: "" } : {}),
           title: hasReport
@@ -74,14 +74,13 @@ export function triggersCard(slug, initial, opts = {}) {
         el("div", { class: "row", style: "gap:10px" },
           el("span", { class: "ref-tag" }, t.type),
           el("span", { class: "muted small" }, t.id)),
-        opts.protected ? "" : el("button", { class: "btn small danger", onclick: () => remove(t) }, "delete")),
+        el("button", { class: "btn small danger", onclick: () => remove(t) }, "delete")),
       urlLine, meta);
   }
 
   // The row's cooldown is the LIVE value and edits in place — the stored number is the
   // truth, so a rejected or malformed edit snaps the field back to it.
   function cooldownCell(t) {
-    if (opts.protected) return el("span", { title: COOLDOWN_HINT }, `cooldown · ${t.cooldown_s}s`);
     const input = el("input", { type: "number", min: "0", value: String(t.cooldown_s),
       class: "cooldown-in", style: "width:70px", title: COOLDOWN_HINT,
       onchange: () => retune(t, input) });
@@ -95,7 +94,6 @@ export function triggersCard(slug, initial, opts = {}) {
     const label = t.max_fires_per_day
       ? `fires today · ${t.fires_today}/${t.max_fires_per_day}`
       : `fires today · ${t.fires_today} (uncapped)`;
-    if (opts.protected) return el("span", { title: CAP_HINT }, label);
     const input = el("input", { type: "number", min: "0", value: String(t.max_fires_per_day),
       class: "cap-in", style: "width:70px", title: CAP_HINT,
       onchange: () => retune(t, input, "max_fires_per_day") });

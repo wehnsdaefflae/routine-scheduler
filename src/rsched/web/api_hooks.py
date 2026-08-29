@@ -33,7 +33,6 @@ from .routines_common import (
     _git_commit,
     _info,
     _state,
-    guard_template,
     queue_or_apply,
 )
 
@@ -153,7 +152,6 @@ def create_trigger(request: Request, slug: str, body: TriggerCreate) -> dict:
     routine's inbox (web records, daemon fires).
     """
     info = _info(request, slug)
-    guard_template(info.cfg, "it never runs, so nothing can trigger it")
     if body.type == "report":
         if any(t.get("type") == "report" for t in info.cfg.triggers):
             raise HTTPException(409, "this routine already has a report trigger — one "

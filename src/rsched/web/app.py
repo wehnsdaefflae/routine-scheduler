@@ -160,7 +160,7 @@ def create_app(server: ServerConfig | None = None, *, with_scheduler: bool = Tru
         # to notice that self-improvement is off on a fresh instance
         meta_routines = [{"slug": info.slug, "enabled": info.cfg.enabled}
                          for info in registry.scan(server).values()
-                         if "meta" in info.cfg.tags and info.cfg.kind != "template"]
+                         if "meta" in info.cfg.tags]
         return {"version": __version__, "build": build, "server_tz": server_tz(),
                 "needs_setup": needs_setup, "llm_ready": llm_ready,
                 "meta_routines": meta_routines, **scheduler.snapshot()}
