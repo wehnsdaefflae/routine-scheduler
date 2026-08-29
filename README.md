@@ -44,7 +44,7 @@ path: this scheduler is the only harness.
   stamped with the recipe version that produced it, the routine page's Recipe-health view
   buckets outcomes by version, a deterministic heuristic flags a change whose runs got
   clearly worse — and one click rolls the recipe back (the improver never auto-reverts).
-- **As a whole**: two more bundled meta routines use the exact same building blocks —
+- **As a whole**: two more meta routines use the exact same building blocks —
   `self-audit` (audits this codebase, logs, and outputs; reporting is unconditional, acting
   is lens-scoped and test-gated, with bigger decisions on the **Messages** page) and `token-lab`
   (measures token usage and A/B-tests efficiency methods via `llm` subcalls only — never
@@ -229,7 +229,7 @@ user-facing here.
   the Help tab next to the pdoc-generated API reference (`docs_build.py`, at boot)
 - `library-seed/` + `util-seed/` — seeded to `~/.local/share/routine-scheduler-libraries`,
   ONE git repo holding `workflows/`, `rules/`, `permissions/`, `playbooks/` and `utils/` (with the `gu` dispatcher at
-  the root); `routine-seed/` — the five meta routines, installed disabled
+  the root). Routines are never seeded from the repo — they are authored on the instance
 - Routine dirs: `routine.yaml`, `main.md` (the workflow, materialized) + `stages/` modules
   (the routine's sole source of truth — no persisted instruction, no recompile),
   `state/`, `LEDGER.md`, `inbox/`, `questions/`, `runs/<ts>/` (transcripts, gitignored,

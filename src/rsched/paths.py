@@ -28,7 +28,7 @@ def config_file() -> Path:
 
 
 def repo_root() -> Path:
-    """The source checkout's root — where deploy/, library-seed/ and routine-seed/ live."""
+    """The source checkout's root — where deploy/, library-seed/ and util-seed/ live."""
     return Path(__file__).resolve().parents[2]
 
 

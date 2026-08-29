@@ -1,20 +1,12 @@
 """MIGRATION(expires=2026-09-30): the library sync goes back to being a routine (0.165.0).
 
 Publishing the instance to its library repo was a routine, was retired into a daemon job in
-0.29.0, and is a routine again now. Two pieces of instance state still describe the daemon era
-and would each break the new arrangement silently:
+0.29.0, and is a routine again now. One piece of instance state still describes the daemon era
+and breaks the new arrangement silently: `library_sync:` in config.yaml. The key no longer
+exists on ServerConfig, and unknown top-level keys are reported as config problems on every
+boot — a permanent warning about a setting nobody can act on.
 
-  1. `library_sync:` in config.yaml. The key no longer exists on ServerConfig, and unknown
-     top-level keys are reported as config problems on every boot — a permanent warning about
-     a setting nobody can act on.
-  2. `<routines>/.archive/library-sync-retired/`. `bootstrap.adopt_seed_routine` treats an
-     archived copy as "the user removed this on purpose" and matches by slug PREFIX, so that
-     tombstone silently blocks the new `library-sync` routine from ever installing. It is
-     renamed rather than deleted — it holds real run history from July 2026, and the point is
-     to stop it matching, not to lose it.
-
-Runs once at daemon boot, before seed adoption, then gets deleted (the delete-after-convergence
-policy — CLAUDE.md).
+Runs once at daemon boot, then gets deleted (the delete-after-convergence policy — CLAUDE.md).
 """
 
 from __future__ import annotations
@@ -27,11 +19,6 @@ import yaml
 from .paths import atomic_write, config_file
 
 log = logging.getLogger("rsched.migrate_library_sync")
-
-RETIRED_DIR = "library-sync-retired"
-# deliberately does NOT start with "library-sync" — that prefix is what blocks adoption
-RENAMED_DIR = "daemon-era-instance-sync"
-
 
 def _strip_config_key(path: Path | None = None) -> bool:
     path = path or config_file()
@@ -50,26 +37,10 @@ def _strip_config_key(path: Path | None = None) -> bool:
     return True
 
 
-def _clear_archive_tombstone(routines_home: Path) -> bool:
-    archive = routines_home / ".archive"
-    src = archive / RETIRED_DIR
-    if not src.is_dir():
-        return False
-    dst = archive / RENAMED_DIR
-    if dst.exists():
-        return False
-    src.rename(dst)
-    log.warning("renamed %s -> %s so the library-sync routine can install (its run history "
-                "is kept)", src, dst)
-    return True
-
-
 def migrate_library_sync(server) -> bool:
-    """Both steps, independently idempotent. True when anything changed."""
-    changed = False
+    """Idempotent. True when the retired key was actually removed."""
     try:
-        changed |= _strip_config_key(server.source)
-        changed |= _clear_archive_tombstone(server.routines_home)
+        return _strip_config_key(server.source)
     except OSError as exc:
         log.warning("library-sync migration failed: %s", exc)
-    return changed
+        return False

@@ -123,30 +123,6 @@ def test_sync_seed_utils_no_library_yet(tmp_path, monkeypatch):
     assert bootstrap.sync_seed_utils(tmp_path / "nolib") == 0
 
 
-def test_adopt_seed_routine_installs_once_and_respects_archive(tmp_path):
-    """A seed added after first boot lands ONCE on an existing instance; an installed or
-    archived copy is never clobbered (archived = the user removed it on purpose)."""
-    from rsched.bootstrap import adopt_seed_routine
-
-    routines = tmp_path / "routines"
-    (routines / "worker").mkdir(parents=True)          # existing instance, not fresh
-    assert adopt_seed_routine(routines, "token-lab") is True
-    assert (routines / "token-lab" / "routine.yaml").is_file()
-    assert (routines / "token-lab" / "artifacts").exists() is False   # seed ships no artifacts
-    assert adopt_seed_routine(routines, "token-lab") is False         # idempotent
-
-    # archived copy → respected, never re-installed
-    import shutil
-    archive = routines / ".archive"
-    archive.mkdir()
-    shutil.move(str(routines / "token-lab"), str(archive / "token-lab"))
-    assert adopt_seed_routine(routines, "token-lab") is False
-    assert not (routines / "token-lab").exists()
-
-    # unknown seed slug → no-op
-    assert adopt_seed_routine(routines, "no-such-seed") is False
-
-
 def test_adopt_library_edits_commits_out_of_band_writes(tmp_path):
     """R332/R335: files written into the live library by a conversation's fs grant (or
     the user's editor) have no committing writer — boot adopts them so they get history.

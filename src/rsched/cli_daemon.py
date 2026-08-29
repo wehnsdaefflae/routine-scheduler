@@ -1,7 +1,7 @@
 """`rsched daemon` — the boot sequence systemd actually runs.
 
 Split out of `cli.py` (F393). This is not one command among many: it is the ordered boot of a
-live instance — config bootstrap, seed adoption, permission adoption, library sync, then the web
+live instance — config bootstrap, permission adoption, library sync, then the web
 app and scheduler. The ORDER is load-bearing and commented as such, which is exactly why it does
 not belong inside a dispatcher that otherwise just parses argv.
 """
@@ -24,24 +24,17 @@ def cmd_daemon(_args) -> int:
     from .bootstrap import (
         adopt_library_edits,
         adopt_permissions,
-        adopt_seed_routine,
         ensure_config,
-        seed_routines,
         sync_seed_library_docs,
         sync_seed_utils,
     )
     ensure_config()   # fresh deploy: generate config+token so the API isn't open
     server, problems = load_server_config()
-    # MIGRATION(expires=2026-09-30): BEFORE seed adoption — it clears the archive tombstone
-    # that would otherwise block the library-sync routine from installing
+    # MIGRATION(expires=2026-09-30): drops the `library_sync:` key the daemon era left in
+    # config.yaml, which no longer exists on ServerConfig and warns on every boot
     from .migrate_library_sync import migrate_library_sync
 
     migrate_library_sync(server)
-    seed_routines(server.routines_home)   # fresh deploy: install bundled meta routines (off)
-    adopt_seed_routine(server.routines_home, "token-lab")  # seeds added after first boot land once
-    adopt_seed_routine(server.routines_home, "clarification")  # the clarify template (D10)
-    adopt_seed_routine(server.routines_home, "rules-review")    # owns the general-rule library
-    adopt_seed_routine(server.routines_home, "library-sync")    # publishes the instance off-box
     from .migrate_template_kind import migrate_template_kind
 
     # MIGRATION(expires=2026-09-30): the template's guards key off `kind:` now, and only an

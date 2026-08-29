@@ -1,15 +1,14 @@
 """Every bundled seed artifact validated against the LIVE contracts it must satisfy.
 
-The seeds drifted through three renames because nothing pinned them: a routine-seed
-referencing a retired module layout, a workflow naming a kind that no longer exists, a
-permission whose `requires:` stopped normalizing — all invisible until a fresh install
-broke. This suite makes seed drift a test failure in the same commit as the rename.
+The seeds drifted through three renames because nothing pinned them: a workflow naming a kind
+that no longer exists, a permission whose `requires:` stopped normalizing — all invisible until
+a fresh install broke. This suite makes seed drift a test failure in the same commit as the
+rename.
 
-Covered: routine-seed/ (routine.yaml via load_routine, stage-module references, held rules
-that exist in library-seed, `state/phase.json` instructions in the canonical {"phase": ...}
-shape, action-kind references, permissions that exist in library-seed), library-seed/
-(workflows parse via pyworkflow and lint clean; rules/permissions/playbooks lint clean;
-permission `requires:` normalize), and util-seed/ (docstring headers pass the engine's own gate).
+Covered: library-seed/ (workflows parse via pyworkflow and lint clean; rules/permissions/
+playbooks lint clean; permission `requires:` normalize; `state/phase.json` instructions in the
+canonical {"phase": ...} shape; action-kind references), and util-seed/ (docstring headers pass
+the engine's own write_util gate).
 """
 
 import re
@@ -17,79 +16,20 @@ from pathlib import Path
 
 import pytest
 
-from rsched.config import load_routine
 from rsched.engine.actionschema import KINDS
-from rsched.grants import normalize_capabilities
 from rsched.utils_header import header_problems
 from rsched.workflows.lint import lint_all
 from rsched.workflows.pyworkflow import parse_py
 
 REPO = Path(__file__).resolve().parent.parent
-ROUTINE_SEEDS = sorted(p for p in (REPO / "routine-seed").iterdir() if p.is_dir())
 LIBRARY_SEED = REPO / "library-seed"
 UTIL_SEEDS = sorted((REPO / "util-seed" / "utils").glob("*/main.py"))
 
-SEED_MD = sorted([*(REPO / "routine-seed").rglob("*.md"),
-                  *(REPO / "library-seed").rglob("*.md")])
+SEED_MD = sorted((REPO / "library-seed").rglob("*.md"))
 
 
 def _ids(paths):
     return [str(p.relative_to(REPO)) for p in paths]
-
-
-# ---- routine-seed: config loads clean against the live schema ----------------------------
-
-
-@pytest.mark.parametrize("seed", ROUTINE_SEEDS, ids=_ids(ROUTINE_SEEDS))
-def test_routine_seed_config_loads_clean(seed):
-    cfg, problems = load_routine(seed)
-    assert cfg is not None, problems
-    assert problems == [], f"{seed.name}/routine.yaml: {problems}"
-    # capabilities must normalize without complaint (the engine builds run policy from them)
-    _caps, cap_problems = normalize_capabilities(cfg.capabilities)
-    assert cap_problems == []
-    # held permission docs must exist in library-seed (a fresh install seeds exactly those)
-    have = {p.stem for p in (LIBRARY_SEED / "permissions").glob("*.md")}
-    missing = [p for p in cfg.permissions if p not in have]
-    assert not missing, f"{seed.name} holds permissions with no seed doc: {missing}"
-
-
-@pytest.mark.parametrize("seed", ROUTINE_SEEDS, ids=_ids(ROUTINE_SEEDS))
-def test_routine_seed_recipe_structure(seed):
-    main = seed / "main.md"
-    assert main.is_file(), f"{seed.name} has no main.md"
-    body = main.read_text(encoding="utf-8")
-    assert "## Standing practices" in body, (
-        f"{seed.name}/main.md lacks the Standing practices tail "
-        "(scaffold.with_practices_tail guarantees it on every real routine)")
-    # the tail is DERIVED from routine.yaml's `rules:` — every held rule must be named in it,
-    # and every rule named must exist in the library seed (a rule has no per-routine copy)
-    import yaml
-    held = yaml.safe_load((seed / "routine.yaml").read_text(encoding="utf-8")).get("rules") or []
-    assert held, f"{seed.name}/routine.yaml holds no rules — every seed routine should"
-    tail = body[body.index("## Standing practices"):]
-    for slug in held:
-        assert f"`{slug}`" in tail, (
-            f"{seed.name}/main.md's Standing practices tail does not name the held rule {slug!r}")
-        assert (REPO / "library-seed" / "rules" / f"{slug}.md").is_file(), (
-            f"{seed.name} holds rule {slug!r}, which library-seed/rules/ does not carry")
-    assert not (seed / "rules").exists(), (
-        f"{seed.name} carries a rules/ directory — a rule has ONE copy, in the library")
-
-
-@pytest.mark.parametrize("seed", ROUTINE_SEEDS, ids=_ids(ROUTINE_SEEDS))
-def test_routine_seed_stage_references_resolve(seed):
-    """Every stages/<name>.md mentioned anywhere in the recipe exists on disk — the drift
-    class that broke twice through the step→stage renames."""
-    sources = [seed / "main.md", *sorted((seed / "stages").glob("*.md"))]
-    problems = []
-    for src in sources:
-        body = src.read_text(encoding="utf-8")
-        problems.extend(
-            f"{src.relative_to(REPO)} references stages/{name} (missing)"
-            for name in sorted(set(re.findall(r"stages/([a-z0-9-]+\.md)", body)))
-            if not (seed / "stages" / name).is_file())
-    assert not problems, "\n".join(problems)
 
 
 # ---- all seed markdown: phase.json shape + action-kind references ------------------------

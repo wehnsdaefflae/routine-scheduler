@@ -1,8 +1,8 @@
 """MIGRATION(expires=2026-09-30) guard: the clarification template declares `kind: template`.
 
 Without the marker an existing instance's template silently becomes runnable and archivable,
-because the guards read the declared kind now instead of comparing slugs. `adopt_seed_routine`
-only installs a MISSING routine, so nothing else would ever write it.
+because the guards read the declared kind now instead of comparing slugs. Nothing else would
+ever write it.
 """
 
 import pytest

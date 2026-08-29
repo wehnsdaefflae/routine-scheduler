@@ -6,14 +6,13 @@ and the routine card's `protected` flag keyed off a string comparison. `kind` is
 declared field, and the guards read it, so a second template would be protected by
 construction rather than by remembering to add its slug in five places.
 
-An existing instance needs the marker written into its own `routine.yaml`: `adopt_seed_routine`
-only installs a routine that is MISSING, so nothing else would ever add it, and without it the
-live template silently becomes runnable and archivable.
+An existing instance needs the marker written into its own `routine.yaml` — nothing else
+would ever add it, and without it the live template silently becomes runnable and archivable.
 
 Also repairs one stale line the 0.164.0 rules rename missed in the template's `main.md`. That
 file IS user-editable (the recipe editor does not guard it), so the repair is a targeted
-replace of the exact retired sentence — never a rewrite from the seed, which would discard
-whatever the user has since written there.
+replace of the exact retired sentence — never a wholesale rewrite, which would discard whatever
+the user has since written there.
 
 Runs once at daemon boot, then gets deleted (delete-after-convergence — CLAUDE.md).
 """

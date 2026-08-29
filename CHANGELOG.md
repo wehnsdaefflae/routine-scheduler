@@ -19,6 +19,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.252.0] — 2026-08-29
+
+### Removed
+- **`routine-seed/` and the routine-seeding boot path.** A fresh instance no longer arrives with
+  six bundled meta routines, and `bootstrap.seed_routines` / `adopt_seed_routine` are gone with
+  the directory they read. The seed had stopped describing anything real: its `self-audit` was
+  weeks behind the live routine (eight stages against nine, without the ten-oldest quota or the
+  status vocabulary), it hardcoded one machine's `/home/mark/...` paths, and its evidence step
+  still tailed `.control/bug-reports.jsonl` — a file renamed to `reports.jsonl` long ago. A seed
+  that installs a routine which fails on its own first run is worse than no seed, and `test_seeds`
+  could not catch it: the suite pins config, stage references and action kinds, never a path named
+  in prose. Meta routines are authored on the instance through the scaffold path like every other
+  routine. `library-seed/` and `util-seed/` are unaffected — they seed a library, not a routine,
+  and they are still synced at boot.
+
 ## [0.251.1] — 2026-08-28
 
 ### Fixed

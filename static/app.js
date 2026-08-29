@@ -149,8 +149,8 @@ function renderCrumbs(path) {
 }
 
 // ---- first-launch notice: self-improvement routines are off ---------------------------------
-// The bundled meta routines install disabled (no hidden costs). Until at least one is enabled
-// the system never improves itself — surface that once, dismissible, with one-click enables.
+// A meta routine is created disabled (no hidden costs). Until at least one is enabled the
+// system never improves itself — surface that once, dismissible, with one-click enables.
 const META_DISMISS_KEY = "rsched_meta_notice_dismissed";
 
 function renderMetaBanner(metaRoutines) {
@@ -175,7 +175,7 @@ function renderMetaBanner(metaRoutines) {
   banner.replaceChildren(
     el("span", { class: "nb-text" },
       el("b", {}, "Self-improvement is off. "),
-      "The bundled meta routines ship disabled so a fresh install never spends tokens on its own — ",
+      "Meta routines start disabled so an instance never spends tokens on its own — ",
       "but the system won't audit or improve itself until you enable them."),
     ...all.map(enableBtn),
     el("button", { class: "nb-close", title: "dismiss (stays dismissed on this browser)",

@@ -569,10 +569,9 @@ docs whose `requires:` frontmatter names the capabilities they presume), **playb
 one-shot conversation briefs — the save/use-instruction analog), and **utils/** (the ONLY way
 routines run code, with the `gu` dispatcher at the root). Repo seeds: `library-seed/` (workflows +
 rules + permissions + playbooks),
-`util-seed/` (utils), `routine-seed/` (bundled meta routines `self-audit`, `routine-improver`,
-`token-lab` — installed **disabled**; the dashboard shows a notice until
-enabled; a seed added after first boot reaches existing instances via
-`bootstrap.adopt_seed_routine` at daemon boot, which respects an archived copy). `self-audit`
+`util-seed/` (utils). There is NO routine seed: a meta routine is authored like any other
+routine, through the scaffold path, and a fresh instance starts with none — the dashboard shows
+a notice while every meta routine it does have is disabled. `self-audit`
 works LOOKUP-FIRST from `.codemap/` — a compact derived map of this repo (module API surface,
 routes + JS callers, contract literals, mechanical audit flags — orphan candidates
 pre-verified by a whole-repo reference scan) the library `codemap` util regenerates at orient

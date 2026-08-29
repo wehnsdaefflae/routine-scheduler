@@ -1,16 +1,13 @@
 """MIGRATION(expires=2026-09-30) guard: the library sync goes back to being a routine.
 
-Two pieces of daemon-era instance state have to be cleared, and BOTH fail silently if they
-are not: a `library_sync:` key that now reads as an unknown-config warning on every boot, and
-an `.archive/library-sync-retired/` tombstone that `adopt_seed_routine` matches BY PREFIX —
-which would block the new routine from ever installing, with nothing in the logs saying so.
+One piece of daemon-era instance state has to be cleared, and it fails silently if it is
+not: a `library_sync:` key that now reads as an unknown-config warning on every boot.
 """
 
 import yaml
 
-from rsched.bootstrap import adopt_seed_routine
 from rsched.config import load_server_config
-from rsched.migrate_library_sync import RENAMED_DIR, RETIRED_DIR, migrate_library_sync
+from rsched.migrate_library_sync import migrate_library_sync
 
 
 def _server(tmp_path, raw):
@@ -34,25 +31,4 @@ def test_strips_the_retired_config_key(tmp_path):
     assert "library_sync" not in raw and raw["port"] == 8321      # siblings untouched
     _after, problems = load_server_config(server.source)
     assert not any("library_sync" in p for p in problems)
-    assert migrate_library_sync(server) is False                  # idempotent
-
-
-def test_archive_tombstone_is_renamed_not_deleted_so_adoption_can_proceed(tmp_path):
-    server = _server(tmp_path, {"port": 8321})
-    archive = server.routines_home / ".archive" / RETIRED_DIR
-    archive.mkdir(parents=True)
-    (archive / "LEDGER.md").write_text("real run history from July 2026\n", encoding="utf-8")
-
-    # BEFORE: the prefix match makes adoption a silent no-op
-    assert adopt_seed_routine(server.routines_home, "library-sync") is False
-
-    assert migrate_library_sync(server) is True
-    moved = server.routines_home / ".archive" / RENAMED_DIR
-    assert moved.is_dir() and not archive.exists()
-    assert "July 2026" in (moved / "LEDGER.md").read_text(encoding="utf-8")   # kept, not lost
-    assert not RENAMED_DIR.startswith("library-sync")     # the whole point of the rename
-
-    # AFTER: the seed installs
-    assert adopt_seed_routine(server.routines_home, "library-sync") is True
-    assert (server.routines_home / "library-sync" / "main.md").is_file()
     assert migrate_library_sync(server) is False                  # idempotent

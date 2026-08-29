@@ -59,51 +59,6 @@ def ensure_config() -> bool:
     return True
 
 
-def _install_seed_routine(src: Path, dst: Path) -> None:
-    shutil.copytree(src, dst)
-    if not (dst / ".git").is_dir():
-        libgit.init_repo(dst, first_commit=f"seed {src.name} routine")
-    else:
-        libgit.commit(dst, f"seed {src.name} routine")
-
-
-def adopt_seed_routine(routines_home: Path, slug: str) -> bool:
-    """Install ONE bundled meta routine into an EXISTING instance — how a seed added
-    after first boot reaches deployments (seed_routines runs only on fresh installs).
-    Idempotent, and an archived copy is respected: the user removed it on purpose.
-    """
-    seed = repo_root() / "routine-seed" / slug
-    dst = routines_home / slug
-    if not seed.is_dir() or not routines_home.is_dir() or dst.exists():
-        return False
-    archive = routines_home / ".archive"
-    if archive.is_dir() and any(d.name == slug or d.name.startswith(f"{slug}-")
-                                for d in archive.iterdir()):
-        return False
-    _install_seed_routine(seed, dst)
-    log.warning("installed the %s meta routine (disabled) — enable it on its routine page", slug)
-    return True
-
-
-def seed_routines(routines_home: Path) -> int:
-    """On a fresh install (no routines yet), install the bundled meta routines — disabled, so they
-    show up under the 'meta' tag for the user to enable, but don't run anything on their own.
-    """
-    routines_home.mkdir(parents=True, exist_ok=True)
-    if any(d.is_dir() and not d.name.startswith(".") for d in routines_home.iterdir()):
-        return 0                                    # not a fresh install — never clobber
-    seed = repo_root() / "routine-seed"
-    if not seed.is_dir():
-        return 0
-    n = 0
-    for src in sorted(p for p in seed.iterdir() if p.is_dir()):
-        _install_seed_routine(src, routines_home / src.name)
-        n += 1
-    if n:
-        log.warning("first boot: installed %d bundled meta routines (disabled)", n)
-    return n
-
-
 # DEFAULT_PERMISSIONS entries introduced AFTER routines already existed never reach them via
 # scaffold. Slugs listed here are added ONCE to every existing routine at daemon boot —
 # tracked in a marker file, so a user who later revokes one is never overridden.

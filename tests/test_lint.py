@@ -140,21 +140,6 @@ def test_bootstrap_generates_config_with_token(tmp_path, monkeypatch):
     assert ensure_config() is False                 # idempotent — no-op once present
 
 
-def test_bootstrap_seeds_meta_routines(tmp_path):
-    """Fresh install installs the bundled meta routines — disabled, generic (no hardcoded endpoints)."""
-    import yaml
-
-    from rsched.bootstrap import seed_routines
-    home = tmp_path / "routines"
-    assert seed_routines(home) >= 1
-    for slug in ("self-audit", "routine-improver", "token-lab"):
-        p = home / slug
-        assert (p / "main.md").exists() and (p / ".git").is_dir()
-        cfg = yaml.safe_load((p / "routine.yaml").read_text())
-        assert cfg["enabled"] is False and "endpoints" not in cfg
-    assert seed_routines(home) == 0                  # idempotent — never clobbers an install
-
-
 def test_bootstrap_seeds_libraries(tmp_path):
     """seed_libraries populates an empty library repo (workflows/ + rules/ + permissions/ +
     utils/) from the built-in defaults + git-inits it."""
