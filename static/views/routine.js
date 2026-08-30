@@ -19,14 +19,22 @@ import { chip, el, emptyState, fmtDur, fmtNum, fmtTokens, skeleton, toast, when 
 const SECTION_GROUPS = [
   { title: "Schedule & triggers", hint: "when and how it fires",
     headings: ["Schedule", "Triggers", "Schedule once"] },
-  { title: "Permissions & practices", hint: "what it may do, and how it works",
-    headings: ["Permissions & capabilities", "Practice modules"] },
+  // "Settings template" leads this group: it is the LAYER the other two override, so an
+  // operator reading "what may it do?" should meet the shared starting point before the
+  // per-routine edits on top of it. Unclaimed, it fell into the trailing "More" fold and the
+  // control was effectively unreachable.
+  { title: "Permissions & practices", hint: "its starting point, what it may do, and how it works",
+    headings: ["Settings template", "Permissions & capabilities", "General rules",
+               "Effective surface"] },
   // D103: the two secret scopes read together — what this routine OWNS, and which shared
   // names it may be handed. Before this group they fell into the trailing "More" fold.
   { title: "Secrets & access", hint: "its own credentials · shared-store exposure · settled denials",
     headings: ["Own secrets", "Secret exposure", "Declined access"] },
-  { title: "Budgets & limits", hint: "per-run ceilings · retention · filesystem reach",
-    headings: ["Budgets", "Retention", "Filesystem roots"] },
+  // "Goal" leads this group, ahead of the budgets: F334/D98's whole claim is that budgets are a
+  // runaway BACKSTOP and the stopping conditions are what decides when a job is finished, so
+  // the group that holds the ceilings has to say the meaning-level bound first.
+  { title: "Goal & limits", hint: "what DONE means · per-run ceilings · retention · filesystem reach",
+    headings: ["Goal", "Budgets", "Retention", "Filesystem roots"] },
   { title: "Models & resources", hint: "models · connections · machines",
     headings: ["Models", "Connections", "Machines"] },
   { title: "Recipe & memory", hint: "the workflow files, their health, and run state",

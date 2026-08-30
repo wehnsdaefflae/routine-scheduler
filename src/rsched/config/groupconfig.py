@@ -20,10 +20,16 @@ CAPABILITY_DIALS = ("confirm", "rule_confirm", "runs", "workflows")
 
 
 
-def apply_group_config(raw: dict, group_config: dict) -> tuple[dict, dict[str, str]]:
-    """Merge ONE group's shared config into a member's raw routine.yaml (D82), returning
-    (merged, provenance) where provenance maps each key the group contributed to a short note
+def apply_group_config(raw: dict, group_config: dict,
+                       *, source: str = "the group") -> tuple[dict, dict[str, str]]:
+    """Merge ONE shared config layer into a member's raw routine.yaml (D82), returning
+    (merged, provenance) where provenance maps each key the layer contributed to a short note
     for the UI ("permissions" → "3 from the group", "grants" → "2 from the group").
+
+    `source` NAMES that layer in the provenance note, because two layers use this merge on the
+    same terms — a group's shared block and a settings TEMPLATE (rsched/templates.py) — and the
+    routine page has to tell an operator which one supplied a value. Composing the phrase at the
+    call site instead produced "3 from the group from the template" for every templated routine.
 
     The group is a DEFAULT, never an override:
 
@@ -54,7 +60,7 @@ def apply_group_config(raw: dict, group_config: dict) -> tuple[dict, dict[str, s
             if not added:
                 continue
             merged[key] = own_list + added
-            provenance[key] = f"{len(added)} from the group"
+            provenance[key] = f"{len(added)} from {source}"
         elif isinstance(shared, dict):
             own_map = dict(own) if isinstance(own, dict) else {}
             if key == "capabilities":
@@ -64,7 +70,7 @@ def apply_group_config(raw: dict, group_config: dict) -> tuple[dict, dict[str, s
                 merged[key] = {**shared, **own_map}
                 count = len(added_keys)
             if count:
-                provenance[key] = f"{count} from the group"
+                provenance[key] = f"{count} from {source}"
     return merged, provenance
 
 def strip_group_dials(caps: dict, group_caps: dict, submitted: dict) -> dict:

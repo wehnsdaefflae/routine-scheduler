@@ -15,8 +15,11 @@ import { rootsEditor } from "/static/components/fsroots.js";
 import { routineSecretsCard } from "/static/components/routine-secrets.js";
 import { scheduleEditor } from "/static/components/schedule.js";
 import { scheduleOnceCard } from "/static/components/schedule-once.js";
+import { createStopping } from "/static/components/stopping.js";
 import { settingsSection } from "/static/components/settings-section.js";
+import { surfaceView } from "/static/components/surface-view.js";
 import { tagsEditor } from "/static/components/tags.js";
+import { templatePanel } from "/static/components/template-panel.js";
 import { rulePicker } from "/static/components/rulepicker.js";
 import { triggersCard } from "/static/components/triggers.js";
 
@@ -137,7 +140,10 @@ export function renderConfigSections(view, d, { slug, titleH1, chipHost, runChip
     + "(the recurring schedule above is unaffected).",
     scheduleOnceCard(slug)));
 
-  // -- settings template: the named starting point the four panels below layer over -------
+  // -- settings template: the named starting point the panels below layer over ------------
+  // The panel itself lives in components/template-panel.js: picking a template is one control,
+  // but READING one — what it supplies, what this routine drops from it, what is set here —
+  // is the part that was missing — and it is too much to inline here.
   const tplHost = el("div", {});
   view.append(...settingsSection("Settings template",
     ["a named starting point for this routine's whole conduct surface — its conduct docs, ",
@@ -145,45 +151,7 @@ export function renderConfigSections(view, d, { slug, titleH1, chipHost, runChip
      "everything below stays editable and anything you set here wins. Nothing is copied: ",
      "editing the template in the library reaches every routine that adopted it."],
     tplHost));
-  (async () => {
-    let lib;
-    try { lib = await api("/api/library"); } catch { return; }
-    const tpls = lib.templates || [];
-    const sel = el("select", {},
-      el("option", { value: "" }, "— none (set everything on this routine) —"),
-      ...tpls.map((t) => el("option", { value: t.slug, selected: d.template === t.slug ? "" : null },
-                            `${t.slug} — ${t.summary}`)));
-    const detail = el("div", { class: "muted small mt" });
-    const paint = () => {
-      const t = tpls.find((x) => x.slug === sel.value);
-      if (!t) {
-        detail.replaceChildren("Nothing is inherited — every setting below is this routine's own.");
-        return;
-      }
-      const c = t.config || {};
-      const caps = c.capabilities || {};
-      detail.replaceChildren(
-        el("div", { class: "prose" }, t.summary),
-        el("div", { class: "mt" }, "supplies ",
-          el("b", {}, `${(c.permissions || []).length} conduct docs`), ", ",
-          el("b", {}, `${(c.rules || []).length} general rules`), ", ",
-          el("b", {}, `${(caps.actions || []).length} actions`),
-          (caps.utils || []).length ? ` and ${caps.utils.length} reserved util(s)` : "",
-          " · previous runs: ", el("code", {}, caps.runs || "none"),
-          el("a", { href: `#/library?doc=templates/${t.slug}`, style: "margin-left:10px" },
-             "read it")));
-    };
-    sel.onchange = paint;
-    paint();
-    tplHost.replaceChildren(el("div", { class: "row" }, sel,
-      el("button", { class: "btn primary", onclick: async () => {
-        try {
-          await api(`/api/routines/${slug}`, { method: "PATCH", body: { template: sel.value } });
-          toast(sel.value ? `template: ${sel.value} — applies from the next run`
-                          : "template cleared");
-        } catch (err) { toast(err.message, 4000, { error: true }); }
-      } }, "save template")), detail);
-  })();
+  templatePanel(tplHost, slug, d);
 
   // -- permissions: conduct docs + machine-enforced capabilities (user-only) --------
   // The server re-applies the activation cascade on save, so the panel re-renders from a
@@ -228,6 +196,21 @@ export function renderConfigSections(view, d, { slug, titleH1, chipHost, runChip
      "but never change this set."],
       ruleHost));
 
+  // -- effective surface: the whole join, read-only, satisfied rows included --------
+  // The setup-check strip above shows only what is UNMET (a strip that is always there is a
+  // strip nobody reads). That leaves "what does this add up to when it IS satisfied?" with no
+  // answer anywhere, because every panel above shows exactly one layer.
+  const surfaceHost = el("div", {});
+  view.append(...settingsSection("Effective surface",
+    ["every dependency this routine's setup resolves to — secrets, roots, machines, ",
+     "connections, reserved utils — with the conduct doc or util that declares each one. ",
+     "Read-only: each row is edited in the panel that owns it; a second place to change ",
+     "one value is a second place for it to be wrong."],
+    surfaceHost));
+  // `d.surface` is the fetch routine.js already made for the strip and the ability cards —
+  // one read feeds all three readers rather than three requests for one answer.
+  surfaceView(surfaceHost, slug, d.surface);
+
   // -- budgets (per-run ceilings — every invisible limit, surfaced) -----------------
   const budgetInputs = {};
   const budgetRows = BUDGET_FIELDS.map(([key, label, help]) => {
@@ -239,6 +222,21 @@ export function renderConfigSections(view, d, { slug, titleH1, chipHost, runChip
       el("span", { style: "min-width:220px" }, label),
       el("span", { class: "muted small" }, help));
   });
+  // -- goal: the MEANING-level bounds (F334/D98), directly above the budgets they are not --
+  // The panel existed only in a RUN's rail, so a routine that had never run had no surface for
+  // its stopping conditions at all; one that had meant opening a run to find them. It
+  // belongs on the routine, beside the budgets — the pairing is the point: budgets are a
+  // runaway backstop; this is what actually decides when a job is finished.
+  const goalHost = el("div", {});
+  view.append(...settingsSection("Goal",
+    ["what DONE means for one run, in your own words — conditions the run must account for in ",
+     "its finish summary (`[s1] met — …`), combined with all/any and optionally scoped to a ",
+     "stage. Reported, never enforced: the engine judges no semantics, it makes them impossible ",
+     "to ignore. Without any, a run is bounded only by its budgets."],
+    goalHost));
+  // showStage: a per-stage condition is a ROUTINE concept — a conversation has no stages
+  createStopping(goalHost, { url: `/api/routines/${slug}/stopping`, showStage: true });
+
   view.append(...settingsSection("Budgets",
     ["hard per-run ceilings, checked at every turn — the run is told at 85% so it can wind down ",
      "deliberately. Resources, not permissions."],

@@ -1007,3 +1007,22 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
   border: 1px solid var(--line-2); border-radius: 3px; background: var(--surface-2);
 }
 .rule-erase[hidden] { display: none; }
+
+/* --- settings-template panel: what the template supplies, what this routine sets ------- */
+.tpl-head {
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--faint);
+  margin: 16px 0 6px; font-weight: 600;
+}
+.tpl-row { display: flex; gap: 10px; align-items: baseline; padding: 3px 0; flex-wrap: wrap; }
+.tpl-row-label {
+  flex: 0 0 150px; font-size: 11px; color: var(--muted); text-align: right;
+}
+.tpl-row-body { flex: 1 1 260px; display: flex; gap: 5px; flex-wrap: wrap; }
+.tpl-chip {
+  display: inline-flex; align-items: center; gap: 5px; font-size: 11px; padding: 2px 4px 2px 9px;
+  border-radius: 20px; border: 1px solid var(--line-2); background: var(--surface-2);
+}
+.tpl-chip.own { padding-right: 9px; color: var(--muted); }
+.tpl-chip.dropped { opacity: 0.55; }
+.tpl-chip.dropped .tpl-chip-name { text-decoration: line-through; }
+.tpl-chip .btn.small { padding: 0 5px; line-height: 16px; font-size: 10px; }

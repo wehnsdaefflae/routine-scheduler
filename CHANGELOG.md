@@ -17,6 +17,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.265.0] — 2026-08-30
+
+### The routine page's setup layer: reachable, subtractable, and honest about what it inherited
+
+- **"Settings template" was unreachable.** `routine-config.js` has rendered the picker since
+  0.262.0, but `SECTION_GROUPS` never claimed its heading, so `groupSections` dropped it into
+  the trailing "More" fold. It now leads **Permissions & practices** — it is the layer
+  everything under it overrides, so it is read first. **"General rules" was in the same fold**
+  for longer: the group claimed `Practice modules`, a heading that no longer exists.
+  A test now asserts the routine page renders NO "More" group at all, so the next unclaimed
+  section fails the gate instead of quietly going missing.
+- **The picker could not read back what the routine adopted.** `template` was not in the
+  `/api/routines/{slug}` payload at all, so a routine running on `basic` showed "none".
+- **`template_except:` had no UI anywhere.** A routine could add to its template but never drop
+  anything from it — the subtraction the field exists for was config-file-only. Each entry the
+  template supplies now carries a drop/restore control; the panel splits what is
+  **inherited from the template** from what is **set on this routine**, exactly (the template's
+  own config says what it supplies; no guessing from counts). A drop that no longer matches
+  anything the template supplies is named rather than left as dead weight.
+- **Inheritance provenance was malformed and mis-attributed.** `apply_group_config` hard-coded
+  "from the group" into its note, so a template's contribution read `3 from the group from the
+  template`; the merge now takes the layer's name. And `inherited_from` was set to the GROUP's
+  name whenever anything was inherited — a template-only routine got an empty one, which the
+  page rendered as "Some settings below come from the group ''".
+- **Goal conditions had no authoring surface on the routine.** The stopping-conditions panel
+  (F334/D98) existed only in a RUN's rail, so a routine that had never run could not be given
+  one at all; one that had meant opening a run to find it. It is now a section of the
+  routine page, leading **Goal & limits** — ahead of the budgets, which is the whole claim of
+  D98: budgets are a runaway backstop; this is what decides when a job is finished.
+  A note reporting the ABSENCE of conditions was built and then removed: it would have fired
+  for every routine (all 28 have none), which makes the always-on setup strip and the engine's
+  every-boot note exactly the panels their own docs say nobody reads. Two existing tests said
+  so. The panel being where you look is the fix; a permanent banner is not.
+- **The effective surface is readable.** The setup-check strip shows only what is UNMET, by
+  design — which left "what does this add up to when it IS satisfied?" unanswered anywhere,
+  because every panel above shows exactly one layer. A read-only **Effective surface** section
+  renders the whole join, satisfied rows included, grouped by the conduct doc or util that
+  declares each one (`node.source` is machine-readable for exactly this). It edits nothing: a
+  second place to change one value is a second place for it to be wrong.
+
 ## [0.264.0] — 2026-08-30
 
 ### The gate is 22% faster — and a real failure is reported in half the time

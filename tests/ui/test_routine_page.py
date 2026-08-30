@@ -4,6 +4,7 @@ server FS, pick a real path — no more free-text textarea)."""
 
 import json
 
+import yaml
 from playwright.sync_api import expect
 
 from rsched import reports
@@ -216,3 +217,71 @@ def test_weekly_schedule_day_set_roundtrips(ui, ui_page, make_routine):
             expect(chips.nth(i)).to_be_checked()
         else:
             expect(chips.nth(i)).not_to_be_checked()
+
+
+def test_settings_template_panel_is_reachable_and_edits_its_exceptions(ui, ui_page):
+    """The SETTINGS TEMPLATE panel (0.264.0). Three things had to be true before a user could
+    set a routine's template at all; none of them were: the heading has to be CLAIMED by a
+    named section group (unclaimed, it fell into the trailing "More" fold and nobody found it),
+    the picker has to preselect what the routine actually adopted (`template` was missing from
+    the detail payload, so it always read "none") — and `template_except:` — the only way to drop
+    something a template supplies — had no control anywhere on the page.
+    """
+    cfg = yaml.safe_load((ui.routine_dir("uir") / "routine.yaml").read_text(encoding="utf-8"))
+    cfg["template"] = "basic"
+    cfg["permissions"] = ["scheduling"]          # set HERE, not supplied by the template
+    (ui.routine_dir("uir") / "routine.yaml").write_text(yaml.safe_dump(cfg), encoding="utf-8")
+
+    ui_page.goto(f"{ui.url}#/routine/uir")
+    ui_page.wait_for_selector("h2:has-text('Settings template')", timeout=10_000)
+
+    # 1. claimed by a named group and FIRST in it — it is the layer the rest overrides
+    group = ui_page.locator(".rgroup", has=ui_page.locator(
+        ".rgroup-title", has_text="Permissions & practices"))
+    expect(group.locator("h2").first).to_have_text("Settings template")
+    expect(ui_page.locator(".rgroup", has=ui_page.locator(".rgroup-title", has_text="More"))
+           .locator("h2:has-text('Settings template')")).to_have_count(0)
+
+    # 2. the picker reads the routine's adopted template back
+    expect(ui_page.locator("[data-tpl-select]")).to_have_value("basic", timeout=10_000)
+
+    # 3. the two layers are told apart: `memory` comes from the template, `scheduling` does not
+    layers = ui_page.locator("[data-tpl-layers]")
+    expect(layers).to_contain_text("Inherited from “basic”")
+    expect(layers.locator('[data-tpl-supplies="memory"]')).to_be_visible()
+    expect(layers.locator('[data-tpl-own="scheduling"]')).to_be_visible()
+    expect(layers.locator('[data-tpl-supplies="scheduling"]')).to_have_count(0)
+
+    # 4. dropping a template-supplied entry writes template_except and marks the chip
+    layers.locator('[data-tpl-supplies="memory"] button').click()
+    expect(layers.locator('[data-tpl-supplies="memory"][data-dropped]')).to_be_visible(
+        timeout=10_000)
+    saved = yaml.safe_load((ui.routine_dir("uir") / "routine.yaml").read_text(encoding="utf-8"))
+    assert saved["template_except"] == ["memory"]
+
+    # 5. …and restoring it takes the subtraction back off
+    layers.locator('[data-tpl-supplies="memory"] button').click()
+    expect(layers.locator('[data-tpl-supplies="memory"][data-dropped]')).to_have_count(
+        0, timeout=10_000)
+    saved = yaml.safe_load((ui.routine_dir("uir") / "routine.yaml").read_text(encoding="utf-8"))
+    assert saved["template_except"] == []
+
+
+def test_every_config_section_is_claimed_by_a_named_group(ui, ui_page):
+    """`groupSections` drops any heading `SECTION_GROUPS` does not claim into a trailing "More"
+    fold. Nothing errors, nothing is lost — the control just stops being where anyone looks for
+    it, which is how BOTH "Settings template" (never added) and "General rules" (added as
+    "Practice modules", then renamed) became unreachable without a single failing test.
+
+    So the guard is the ABSENCE of the fold: every section routine-config.js emits must be
+    claimed; a new one that is not fails here rather than after a user cannot find it.
+    """
+    ui_page.goto(f"{ui.url}#/routine/uir")
+    ui_page.wait_for_selector(".rgroup", timeout=10_000)
+    expect(ui_page.locator(".rgroup-title", has_text="More")).to_have_count(0)
+    # …and the groups really did claim them: a section that vanished entirely would also
+    # produce no "More" fold.
+    for heading in ("Settings template", "Permissions & capabilities", "General rules",
+                    "Effective surface", "Goal", "Budgets", "Own secrets", "Models",
+                    "Machines", "Recipe", "State & memory", "Origin"):
+        expect(ui_page.locator(".rgroup-body h2", has_text=heading).first).to_have_count(1)

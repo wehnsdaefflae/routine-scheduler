@@ -115,11 +115,14 @@ class RoutineConfig(_Config):
     # Whether the routine-improver meta routine visits this routine (default: yes; the
     # toggle on the routine page opts out with `improve: false`).
     improve: bool = True
-    # What this routine INHERITED from its group's shared config (D82): {field: "<n> from the
-    # group"} plus the group's name. Runtime handles like `deliberation` — computed at load,
+    # What this routine INHERITED from a SHARED layer — its group's config (D82) or its
+    # settings template: {field: "<n> from the group" | "<n> from the template"}. The note
+    # names the layer, because both merge on the same terms and only the note can tell an
+    # operator which one supplied a value. `inherited_from` names the GROUP alone (a template
+    # names itself in `template`). Runtime handles like `deliberation` — computed at load,
     # never written to routine.yaml (the file stays the routine's OWN authority, so removing
     # it from a group cleanly returns it to what its file says). The routine page reads these
-    # to mark a value as coming from the group rather than from this routine.
+    # to mark a value as coming from a shared layer rather than from this routine.
     inherited: dict[str, str] = Field(default_factory=dict)
     inherited_from: str = ""
     # How much thinking lands on paper (see DELIBERATION_LEVELS). The runtime handle
@@ -328,9 +331,9 @@ def load_routine(routine_dir: Path, *,
         lib_home = libraries_home or _libraries_home_for(routine_dir)
         tpl = _template_config(lib_home, template_slug) if lib_home else {}
         if tpl:
-            raw, from_template = apply_group_config(raw, tpl)
+            raw, from_template = apply_group_config(raw, tpl, source="the template")
             for key in from_template:
-                inherited.setdefault(key, f"{from_template[key]} from the template")
+                inherited.setdefault(key, from_template[key])
     drop = {str(x) for x in (raw.get("template_except") or []) if isinstance(x, str)}
     if drop:
         for key in ("permissions", "rules"):
@@ -343,7 +346,10 @@ def load_routine(routine_dir: Path, *,
             raw["capabilities"] = caps
     cfg = _validate_lenient(RoutineConfig, {**raw, "slug": slug, "dir": routine_dir}, problems) \
         or RoutineConfig(slug=slug, dir=routine_dir)
-    cfg.inherited, cfg.inherited_from = inherited, (group_name if inherited else "")
+    # `inherited_from` names the GROUP and nothing else: a template names itself in `template`
+    # and in each key's provenance note, so a template-only routine leaves this empty rather
+    # than borrowing a group name it does not have.
+    cfg.inherited, cfg.inherited_from = inherited, (group_name if group_config else "")
     cfg.name = cfg.name or slug
     if not cfg.description:
         problems.append("description is empty — every routine needs a one-line "

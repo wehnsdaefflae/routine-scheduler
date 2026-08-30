@@ -309,8 +309,12 @@ def routine_surface(server: Any, cfg: RoutineConfig) -> dict:
     from ..grants import _DEFAULT_KIND_SOURCE, split_util_verb
     held_docs = set(cfg.permissions or [])
     covering_names = {split_util_verb(u)[0] for u in covering}
+    # Provenance is the whole value of these rows ("you did not set this, your GROUP did" /
+    # "…your TEMPLATE did"), so the phrase follows the note the loader wrote: a template-only
+    # routine has no group name to borrow and used to read "inherited from the group ''".
+    cap_prov = (getattr(cfg, "inherited", None) or {}).get("capabilities")
     where = (f" (inherited from the group {cfg.inherited_from!r})"
-             if "capabilities" in (getattr(cfg, "inherited", None) or {}) else "")
+             if cap_prov and cfg.inherited_from else f" ({cap_prov})" if cap_prov else "")
     for util in caps.get("utils") or []:
         if util not in covering and split_util_verb(util)[0] not in covering_names:
             nodes.append(_node(f"util:{util}", "uncovered", NOTE,
