@@ -276,3 +276,33 @@ def test_declared_path_under_a_granted_root_is_admitted(tmp_path, monkeypatch):
                                    fs_roots=False,
                                    fs_paths=(("rw", str(tmp_path / "w" / "inner")),))[2])
     assert str(tmp_path / "w" / "inner") in spec["rw"]
+
+
+def test_unset_env_var_in_a_declaration_names_no_path(tmp_path, monkeypatch):
+    """`fs: rw $SIGNAL_SESSION_DIR` with the variable unset daemon-side must resolve to
+    nothing — not to a literal '$SIGNAL_SESSION_DIR' entry in the jail spec or in the set
+    subtracted from `roots`."""
+    _force_abi(monkeypatch, 4)
+    monkeypatch.delenv("NOT_SET_ANYWHERE", raising=False)
+    lib = _lib_with(tmp_path / "lib", ghost="rw $NOT_SET_ANYWHERE")
+    assert sandbox.private_store_paths(lib) == frozenset()
+    policy = sandbox.SandboxPolicy(mode="permissive", write_roots=(tmp_path / "w",),
+                                   own_dir=tmp_path / "own")
+    spec = json.loads(sandbox.wrap(CMD, policy=policy, libraries_home=lib, net=False,
+                                   fs_roots=False,
+                                   fs_paths=(("rw", "$NOT_SET_ANYWHERE"),))[2])
+    assert not any("$" in p for p in spec["rw"] + spec["ro"])
+
+
+def test_a_set_env_var_resolves_daemon_side(tmp_path, monkeypatch):
+    _force_abi(monkeypatch, 4)
+    store = tmp_path / "sessions"
+    monkeypatch.setenv("TEST_SESSION_DIR", str(store))
+    lib = _lib_with(tmp_path / "lib", messenger="rw $TEST_SESSION_DIR")
+    assert sandbox.private_store_paths(lib) == frozenset({store})
+    policy = sandbox.SandboxPolicy(mode="permissive", write_roots=(store,),
+                                   own_dir=tmp_path / "own")
+    spec = json.loads(sandbox.wrap(CMD, policy=policy, libraries_home=lib, net=False,
+                                   fs_roots=False,
+                                   fs_paths=(("rw", "$TEST_SESSION_DIR"),))[2])
+    assert str(store) in spec["rw"]

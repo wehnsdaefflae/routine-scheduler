@@ -17,6 +17,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.256.1] — 2026-08-30
+
+### An unset `$VAR` in an `fs:` declaration names no path
+
+- `fs: rw $SIGNAL_SESSION_DIR` with the variable unset daemon-side resolved to the literal
+  string `$SIGNAL_SESSION_DIR` — harmless in the jail spec (no real root matches it) but wrong
+  in `sandbox.private_store_paths`, which is the set subtracted from every `fs: roots` util's
+  mount. A bogus member of a security-relevant set is a bug even when it is inert. Both the
+  admission check and the private-store scan now drop an entry that still contains `$` after
+  expansion. Found by probing the running daemon after the 0.256.0 deploy.
+
+
 ## [0.256.0] — 2026-08-30
 
 ### The setup graph gets its two missing declarations, and the util jail gets a filesystem axis

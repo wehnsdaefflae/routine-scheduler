@@ -171,7 +171,9 @@ def _private_store_paths_cached(libraries_home: str,
     try:
         for util in list_utils(Path(libraries_home)):
             for _mode, declared in util.get("fs_paths") or ():
-                out.add(expand(os.path.expandvars(declared)))
+                expanded = os.path.expandvars(declared)
+                if "$" not in expanded:      # an unset variable names no path to subtract
+                    out.add(expand(expanded))
     except OSError:
         return frozenset()
     return frozenset(out)
@@ -201,7 +203,10 @@ def _admit(declared: str, granted: tuple[Path, ...]) -> Path | None:
     or contains it: a declaration narrows what the run holds, it can never widen it, which is
     what keeps a routine holding `write_util` from authoring itself a wider jail.
     """
-    resolved = expand(os.path.expandvars(declared))
+    expanded = os.path.expandvars(declared)
+    if "$" in expanded:
+        return None          # the variable is not set daemon-side: it names no path at all
+    resolved = expand(expanded)
     for root in granted:
         if resolved == root or root in resolved.parents:
             return resolved
