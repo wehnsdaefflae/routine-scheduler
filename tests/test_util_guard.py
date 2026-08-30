@@ -26,6 +26,7 @@ UTIL_BODY = '''# /// script
 usage: gu doomed [--selftest]
 tags: test
 net: none
+fs: roots
 """
 import sys
 if "--selftest" in sys.argv:

@@ -11,7 +11,7 @@ action per turn. **A second AGENT LOOP in the path is banned**: it fights this h
 conversation. Endpoints are model TRANSPORTS only (docs/architecture.md). Routines have **no shell** — the
 only way to run code is a global util (a reserved `shell` util exists behind the `shell`
 permission), and every util subprocess runs inside a Landlock sandbox scoped to the run's
-permissions (docs/sandboxing.md). The instruction contains only the task; cross-cutting conduct is
+permissions INTERSECTED with the util's own `fs:` declaration (docs/sandboxing.md). The instruction contains only the task; cross-cutting conduct is
 a set of GENERAL RULES with ONE library copy each (`rules:` in routine.yaml holds slugs — the run
 reads the prose with `read_rule` and applies the principle to its own case); schedule, PERMISSIONS,
 workdir, budgets, and model roles are routine config (`routine.yaml` / UI).
@@ -180,7 +180,9 @@ one you are about to touch, not all of them.
   `rule-authoring` permission and carries its OWN approval dial `rule_confirm` — a rule revision
   lands on every holder at its next run, which is not the decision `confirm` (write_util) governs.
   The two halves are owned apart: WHICH rules bind a routine is config (`rules:`, user-only, and no
-  run writes routine.yaml), the TEXT is the library's. There is deliberately **no remove_rule** —
+  run writes routine.yaml), the TEXT is the library's. A rule may carry `expects:` — the SOFT
+  edge, entities its prose presumes (a write root to publish into), advisory forever — but never
+  `requires:`, which would switch a capability on. There is deliberately **no remove_rule** —
   deleting a rule silently un-binds every holder with nothing to catch it, so a run reports it and
   the user deletes it. The `rules-review` meta routine owns the layer: it reads how runs actually
   interpreted each rule and revises the shared text from that evidence.

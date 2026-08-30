@@ -69,7 +69,13 @@ def lint_rule_text(raw: str, *, filename: str) -> list[str]:
     """A rule is pure principle prose: titled, tagged, non-trivial — and NEVER carries
     capabilities (requires belongs to permissions; a rule carrying one would silently do
     nothing, which is worse than an error).
+
+    It MAY carry `expects:` — the soft edge. A rule cannot switch a capability on, but it has
+    to be able to say what it presumes: `status-page` tells a run to publish, which is useless
+    without a write root to publish into. That edge grants nothing and blocks nothing; it is
+    read by the setup resolver so the gap is visible before a run hits it.
     """
+    from ..grants import normalize_expects
     problems: list[str] = []
     try:
         meta, body = frontmatter.parse(raw)
@@ -80,7 +86,9 @@ def lint_rule_text(raw: str, *, filename: str) -> list[str]:
                         "(after any frontmatter)")
     if "grants" in meta or "requires" in meta:
         problems.append(f"{filename}: rules must not carry grants/requires — move the "
-                        "capability to a permission doc under permissions/")
+                        "capability to a permission doc under permissions/ (a rule may "
+                        "declare `expects:`, which presumes without granting)")
+    problems += [f"{filename}: {p}" for p in normalize_expects(meta.get("expects"))[1]]
     tags = meta.get("tags")
     tag_list = tags if isinstance(tags, list) else []
     if "tags" in meta and not isinstance(tags, list):
@@ -96,8 +104,12 @@ def lint_permission_text(raw: str, *, filename: str) -> list[str]:
     """A permission is a conduct doc: titled, with a well-formed `requires:` key naming
     the capabilities its instructions presume, and a SHORT body (it doubles as the
     prompt's capability note when held).
+
+    `expects:` is the optional counterpart: entities the conduct presumes but nothing
+    enforces — a bound machine for remote-machines, a session store for a messenger. It is
+    validated here so a typo is caught at authoring time, never at 3am in a run.
     """
-    from ..grants import normalize_capabilities
+    from ..grants import normalize_capabilities, normalize_expects
 
     problems = []
     try:
@@ -123,6 +135,7 @@ def lint_permission_text(raw: str, *, filename: str) -> list[str]:
         _req, req_problems = normalize_capabilities(meta["requires"], label="requires",
                                                     requires=True)
         problems += [f"{filename}: {p}" for p in req_problems]
+    problems += [f"{filename}: {p}" for p in normalize_expects(meta.get("expects"))[1]]
     return problems
 
 

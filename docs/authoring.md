@@ -26,6 +26,7 @@ calls: (none)
 secrets: (none)
 tags: files, listing, meta
 net: none
+fs: roots
 
 The routine-safe replacement for `ls`/`find`: prints each entry as an indented name…
 """

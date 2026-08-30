@@ -29,6 +29,7 @@ SCRIPT = '''# /// script
 """probe — env and args probe for the scripts tests.
 
 net: none
+fs: roots
 secrets: PROC_TOKEN, OPT_TOKEN?
 """
 import json
@@ -50,6 +51,7 @@ CALLER = '''# /// script
 """caller — probes the util-library handle a declared `calls:` line earns.
 
 net: none
+fs: roots
 secrets: (none)
 calls: mailer
 """

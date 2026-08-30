@@ -17,6 +17,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.256.0] — 2026-08-30
+
+### The setup graph gets its two missing declarations, and the util jail gets a filesystem axis
+
+The routine setup surface was confusing for a structural reason, not a layout one: the system
+declared exactly ONE of its dependencies — a permission doc's `requires:`, pointing at a
+capability. Everything else was real but unwritten, so nothing could render it, lint it or warn
+about it. This is stage one of fixing that: the two missing declarations, plus the enforcement
+the filesystem one unlocks.
+
+- **`fs:` is now a required util-header line**, on exactly the terms `net:` already had —
+  undeclared is treated as none, and `header_problems` refuses a util without it. Values:
+  `roots` (the run's granted roots, for a util acting on caller-supplied paths), `none`, or
+  `rw <path>` / `ro <path>` for a private store the util reaches on its own. Entries combine and
+  resolve transitively over `calls:`, like secrets and network. `sandbox.wrap` takes the
+  declaration alongside `net` and INTERSECTS it with the run's grants — a declaration narrows
+  what the routine already holds and can never widen it, which is what keeps a routine holding
+  `write_util` from authoring itself a wider jail.
+- **A messenger's session store stops leaking to every other util in the run.** Signal, Telegram
+  and WhatsApp authenticate by a linked session on disk — the session directory IS the
+  credential — and the only way to reach it was a routine-wide `fs_write_root`, which the jail
+  mounted into every util the run called. A path some util claims private is now subtracted from
+  the wholesale `roots` mount (`sandbox.private_store_paths`), so the grant stays one explicit,
+  auditable, four-state decision while its blast radius drops from every util to one.
+- **`SandboxPolicy.own_dir`** holds the routine's own directory apart from its granted roots: it
+  is the working directory relative paths resolve against, not a grant to be narrowed, so every
+  util keeps it whatever its `fs:` line says.
+- **`expects:` — the soft dependency edge** — is now legal in permission AND rule frontmatter
+  (`grants.normalize_expects`, `grants.read_library_expects`, both linters). It names entities
+  the prose PRESUMES but nothing enforces: `remote-machines` requires the `remote` util and
+  expects a bound machine; the `status-page` and `git-checkpoint` rules expect a write root. A
+  rule may expect, it may never `require` — that would switch a capability on. Advisory forever
+  by design.
+- **Zulip's credential moved into the secrets store** (`ZULIP_EMAIL`, `ZULIP_API_KEY`,
+  `ZULIP_SITE`). It was the one messenger whose credential was a FILE — `~/.config/zulip/zuliprc`
+  — which is invisible inside the sandbox and, unlike the three session stores, is neither
+  bind-mounted nor in `deploy/state-paths.sh`, so it did not survive a container recreate. The
+  `--config` flag and the `$ZULIPRC` / `~/.config` fallbacks are gone rather than kept alongside.
+- **Library migration**: all 136 utils in the live library and all 10 in `util-seed/` carry an
+  `fs:` line, derived from their source and biased toward `roots` so nothing changes behaviour;
+  the credential-grade cases were reviewed by hand and narrowed. The write_util prompt surface
+  (`engine/kindsurface.py`, mirrored in `docs/prompt-anatomy.md`) teaches the new line, so
+  authored utils get it right at the cause.
+
+
 _Nothing yet._
 
 ## [0.255.1] — 2026-08-29

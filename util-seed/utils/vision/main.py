@@ -8,6 +8,7 @@ calls: (none)
 tags: image, pdf, multimodal, vision
 secrets: OPENROUTER_VISION_KEY
 net: outbound
+fs: roots
 
 Compensates for a non-multimodal main model: pass local image files (png/jpeg/webp/gif) or
 https URLs plus a prompt; the answer comes back as text. --task picks the best model for the

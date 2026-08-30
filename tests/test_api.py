@@ -1413,7 +1413,7 @@ def test_secrets_injected_into_utils_and_endpoints(tmp_path, monkeypatch):
     utils_lib.ensure_library(home)
     utils_lib.write_util_file(home, "declarer", (
         "# /// script\n# ///\n"
-        '"""declarer — d.\n\nusage: gu declarer\nsecrets: FOO_TOKEN\ntags: t\nnet: none\n"""\n'))
+        '"""declarer — d.\n\nusage: gu declarer\nsecrets: FOO_TOKEN\ntags: t\nnet: none\nfs: roots\n"""\n'))
     env = utils_run._child_env(home, "declarer")
     assert env["FOO_TOKEN"] == "tok"                 # the declared credential flows through
     assert "BAR_TOKEN" not in env                    # …an UNdeclared store key does not

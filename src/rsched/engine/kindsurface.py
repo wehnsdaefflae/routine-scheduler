@@ -133,7 +133,13 @@ hardcode or prompt for it, AND declare the names in a header `secrets: NAME1, NA
 UI tells the user what to set (they set it once in the Secrets store; the engine injects it — \
 ONLY declared secrets reach the util). Declare network use with a `net: outbound` (or \
 `net: none`) header line: utils run in a filesystem/network sandbox and an undeclared \
-network need fails.{util_confirm}"""),
+network need fails. Declare filesystem use the same way, on an `fs:` header line — \
+`fs: roots` when the util opens paths its CALLER passes it (the common case), `fs: none` when \
+it touches no file outside its own temp space, or `fs: rw <path>` / `fs: ro <path>` for a \
+private store the util reaches on its own (a session directory, a state file). A declared \
+path is mounted only when the routine was already granted it, so declaring one asks for \
+nothing — it narrows what this util sees, and keeps a store like that out of every OTHER \
+util's jail.{util_confirm}"""),
     (("remove_util",), """- remove_util: delete a global util the library no longer needs — \
 name (kebab-case). The \
 curation counterpart to write_util, gated by the same util-authoring capability (and, unless \

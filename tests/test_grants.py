@@ -591,7 +591,7 @@ def test_write_util_revise_branch_uses_the_live_catalog(tmp_path):
     home = _lib(tmp_path, {"util-authoring": AUTHORING, "util-revision": REVISION})
     (home.parent / "utils" / "existing").mkdir(parents=True)
     (home.parent / "utils" / "existing" / "main.py").write_text(
-        '"""does a thing.\n\ntags: a, b, c\nsecrets: (none)\ncalls: (none)\nnet: none\n'
+        '"""does a thing.\n\ntags: a, b, c\nsecrets: (none)\ncalls: (none)\nnet: none\nfs: roots\n'
         'usage: gu existing\n"""\n', encoding="utf-8")
     creator = load_policy(home, ["util-authoring"], {"actions": ["write_util"]})
     reviser = load_policy(home, ["util-revision"], {"actions": ["revise_util"]})
@@ -634,3 +634,45 @@ def test_verb_scoped_grant_survives_the_floor_and_stays_gated(tmp_path):
     pol = load_policy(verb_only, [], {})
     assert "signal" in pol.gated_utils
     assert pol.deny({"kind": "util", "name": "signal", "args": ["send"]})
+
+
+# --- expects: the SOFT dependency edge ---------------------------------------------------
+
+def test_normalize_expects_validates_class_and_name():
+    """`expects:` is entity CLASS → names, with '*' for 'at least one'. A bad row is dropped
+    and reported, never raised — a soft edge must not be able to break a run."""
+    from rsched.grants import normalize_expects
+
+    out, problems = normalize_expects({"machine": ["*"], "secret": ["STATUS_HOST_TOKEN"],
+                                       "fs-write": "/srv/site"})
+    assert out == {"machine": ["*"], "secret": ["STATUS_HOST_TOKEN"],
+                   "fs-write": ["/srv/site"]}
+    assert problems == []
+    out, problems = normalize_expects({"nonsense": ["x"]})
+    assert out == {} and any("unknown entity class" in p for p in problems)
+    out, problems = normalize_expects({"secret": ["not a secret name"]})
+    assert out == {} and any("not a valid secret entity name" in p for p in problems)
+    assert normalize_expects(None) == ({}, [])
+    assert normalize_expects(["not", "a", "mapping"])[1]
+
+
+def test_read_library_expects_reads_permissions_and_rules(tmp_path):
+    """One reader for both halves: a permission may require AND expect, a rule may only
+    expect. Docs declaring neither are simply absent from the map."""
+    from rsched.grants import read_library_expects
+
+    (tmp_path / "permissions").mkdir()
+    (tmp_path / "rules").mkdir()
+    (tmp_path / "permissions" / "remote-machines.md").write_text(
+        "---\ntags: [a]\nrequires:\n  utils: [remote]\nexpects:\n  machine: ['*']\n---\n"
+        "# permission: remote-machines — x\n", encoding="utf-8")
+    (tmp_path / "permissions" / "plain.md").write_text(
+        "---\ntags: [a]\nrequires: {}\n---\n# permission: plain — x\n", encoding="utf-8")
+    (tmp_path / "rules" / "status-page.md").write_text(
+        "---\ntags: [a, b, c]\nexpects:\n  fs-write: ['*']\n---\n# rule: status page — x\n",
+        encoding="utf-8")
+
+    assert read_library_expects(tmp_path / "permissions") == {
+        "remote-machines": {"machine": ["*"]}}
+    assert read_library_expects(tmp_path / "rules") == {"status-page": {"fs-write": ["*"]}}
+    assert read_library_expects(tmp_path / "nope") == {}

@@ -298,7 +298,7 @@ and the capabilities digest's catalog listing):
   PEP 723 + the util docstring-header standard minus the catalog lines. There is no model
   channel — a judgment call belongs in the recipe — but the library IS reachable: the utils
   a script names on its `calls:` line resolve through `gu` exactly as a util's own siblings
-  do, and `utils_run.util_needs` folds their `secrets:` and `net:` into the script's single
+  do, and `utils_run.util_needs` folds their `secrets:`, `net:` and `fs:` into the script's single
   jail and env (`scripts.needs`). Access is DECLARED-ONLY: a script naming no calls gets no
   `GLOBAL_UTILS_HOME` and no `gu` on PATH, and `scripts.call_problems` refuses one that
   execs an undeclared sibling or declares a util the library does not have, rather than let
@@ -746,7 +746,7 @@ util stays deleted (git-recoverable — seed utils only land at repo creation).
   `bootstrap.sync_seed_library_docs` (subfolder-aware). See docs/playbooks.md.
 - **Utils** are self-contained PEP 723 scripts: a docstring header (`<name> — summary`, `usage:`,
   `calls:` (sibling utils exec'd via `gu` — drives transitive secret/net resolution), `tags:`,
-  `secrets: NAME,…`, `net: outbound|none` — the docstring is the ONLY machine-read surface;
+  `secrets: NAME,…`, `net: outbound|none`, `fs: roots|none|rw <path>|ro <path>` — the docstring is the ONLY machine-read surface;
   comment-form declarations above it are invisible), and a `--selftest` the engine runs before
   saving. `write_util` is gated twice: `utils_lib.header_problems` rejects a missing `tags:`/`net:`
   line or a credential env var the code reads but `secrets:` doesn't declare (the Settings page can

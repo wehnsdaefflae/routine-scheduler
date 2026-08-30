@@ -274,7 +274,7 @@ ALWAYS_FAILS_NEEDING_GOOGLE = (
     "calls: (none)\n"
     "secrets: GOOGLE_ACCESS_TOKEN\n"
     "tags: demo, testing\n"
-    "net: none\n"
+    "net: none\nfs: roots\n"
     '"""\n'
     'import sys\n'
     'print("$GOOGLE_ACCESS_TOKEN is not set", file=sys.stderr); sys.exit(1)\n'
@@ -348,6 +348,7 @@ GOOD_UTIL = (
     "secrets: DEMO_API_KEY\n"
     "tags: demo, testing\n"
     "net: none\n"
+    "fs: none\n"
     '"""\n'
     'import os\nkey = os.environ.get("DEMO_API_KEY")\n'
 )
@@ -379,12 +380,21 @@ def test_header_problems_gate():
     bad_net = GOOD_UTIL.replace("net: none\n", "net: sometimes\n")
     assert any("net:" in p for p in header_problems(bad_net))
     assert header_problems(GOOD_UTIL.replace("net: none\n", "net: outbound\n")) == []
+    # the fs: line is required on the same terms, and its entries are validated
+    no_fs = GOOD_UTIL.replace("fs: none\n", "")
+    assert any("'fs:'" in p for p in header_problems(no_fs))
+    bad_fs = GOOD_UTIL.replace("fs: none\n", "fs: rw relative/path\n")
+    assert any("absolute path" in p for p in header_problems(bad_fs))
+    both = GOOD_UTIL.replace("fs: none\n", "fs: none, roots\n")
+    assert any("cannot be combined" in p for p in header_problems(both))
+    assert header_problems(GOOD_UTIL.replace("fs: none\n",
+                                             "fs: roots, rw $SESSION_DIR\n")) == []
     # grouped read (the `ftp` pattern): names in a tuple looped over os.environ — the
     # credential-shaped one must be declared even though it never appears at an environ[...] site.
     grouped = (
         "# /// script\n# dependencies = []\n# ///\n"
         '"""grp — grouped-read util.\n\n'
-        "usage: gu grp\ncalls: (none)\ntags: test\nnet: outbound\n"
+        "usage: gu grp\ncalls: (none)\ntags: test\nnet: outbound\nfs: none\n"
         '"""\n'
         "import os\n"
         '_KEYS = ("FTP_HOST", "FTP_USER", "FTP_PASS", "FTP_PORT")\n'
@@ -417,11 +427,12 @@ def test_parse_header_net_and_calls():
     assert utils_header.parse_header(GOOD_UTIL)["optional_secrets"] == []
 
 
-def _write_header_util(home, name, *, secrets="(none)", net="none", calls="(none)"):
+def _write_header_util(home, name, *, secrets="(none)", net="none", calls="(none)",
+                       fs="none"):
     utils_lib.write_util_file(home, name, (
         "# /// script\n# dependencies = []\n# ///\n"
         f'"""{name} — fixture.\n\nusage: gu {name}\ncalls: {calls}\n'
-        f"secrets: {secrets}\ntags: t\nnet: {net}\n"
+        f"secrets: {secrets}\ntags: t\nnet: {net}\nfs: {fs}\n"
         '"""\nprint("ok")\n'
     ))
 
@@ -434,19 +445,19 @@ def test_util_needs_transitive_closure(tmp_path):
     _write_header_util(tmp_path, "middle", calls="leaf")
     _write_header_util(tmp_path, "top", calls="middle", secrets="TOP_KEY")
     _write_header_util(tmp_path, "loner")
-    secrets, net, optional = utils_run.util_needs(tmp_path, "top")
+    secrets, net, optional, *_ = utils_run.util_needs(tmp_path, "top")
     assert secrets == {"TOP_KEY", "LEAF_TOKEN"} and net is True and optional == set()
-    secrets, net, optional = utils_run.util_needs(tmp_path, "loner")
+    secrets, net, optional, *_ = utils_run.util_needs(tmp_path, "loner")
     assert secrets == set() and net is False
     # cycles terminate; a missing callee contributes nothing
     _write_header_util(tmp_path, "a", calls="b")
     _write_header_util(tmp_path, "b", calls="a, ghost")
-    assert utils_run.util_needs(tmp_path, "a") == (set(), False, set())
+    assert utils_run.util_needs(tmp_path, "a") == (set(), False, set(), False, ())
     # `?`-marked names resolve as OPTIONAL across the tree — unless ANY declarer
     # requires them (one required declaration wins, F290)
     _write_header_util(tmp_path, "opt-leaf", secrets="SHARED?, ONLY_OPT?")
     _write_header_util(tmp_path, "opt-top", calls="opt-leaf", secrets="SHARED")
-    secrets, _, optional = utils_run.util_needs(tmp_path, "opt-top")
+    secrets, _net, optional, *_ = utils_run.util_needs(tmp_path, "opt-top")
     assert secrets == {"SHARED", "ONLY_OPT"} and optional == {"ONLY_OPT"}
 
 
@@ -596,7 +607,7 @@ def test_header_problems_flags_undeclared_gu_calls():
     """Code exec'ing a sibling via ["gu", "<name>"] without declaring it on `calls:` is
     rejected — transitive secret/net resolution only walks DECLARED calls."""
     base = ('"""caller — calls a sibling.\n\nusage: gu caller\ntags: test\n'
-            'secrets: (none)\n{calls_line}net: none\n"""\n'
+            'secrets: (none)\n{calls_line}net: none\nfs: none\n"""\n'
             'import subprocess\n'
             'subprocess.run(["gu", "adder", "1", "2"])\n')
     problems = utils_header.header_problems(base.format(calls_line=""))
@@ -610,6 +621,7 @@ PWD_UTIL = '''# /// script
 """pwd-util — print the current working directory. usage: gu pwd-util [--selftest]
 tags: test
 net: none
+fs: roots
 """
 import os, sys
 if "--selftest" in sys.argv:

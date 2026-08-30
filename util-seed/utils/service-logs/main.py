@@ -8,6 +8,7 @@ calls: (none)
 secrets: (none)
 tags: logs, daemon, health
 net: outbound
+fs: none
 
 Wraps `journalctl --user -u routine-scheduler.service` for routine consumption: entries since
 --since (default the last 24 hours), capped at --lines (default 500), optionally filtered with

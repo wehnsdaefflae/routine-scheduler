@@ -12,7 +12,7 @@ def test_needed_secret_shows_format(ui, ui_page):
         "# /// script\n# dependencies = []\n# ///\n"
         '"""ftpdemo — demo util.\n\n'
         "usage: gu ftpdemo --source NAME\ncalls: (none)\n"
-        "secrets: FTP_SOURCES\ntags: test\nnet: outbound\n\n"
+        "secrets: FTP_SOURCES\ntags: test\nnet: outbound\nfs: roots\n\n"
         "FTP_SOURCES is a JSON map {name: {host, user, pass, port?, tls?, dir?}}.\n"
         '"""\n', encoding="utf-8")
 
@@ -32,7 +32,7 @@ def test_optional_secret_shows_optional_not_unset(ui, ui_page):
         "# /// script\n# dependencies = []\n# ///\n"
         '"""optdemo — demo util.\n\n'
         "usage: gu optdemo\ncalls: (none)\n"
-        "secrets: OPT_DEMO_KEY?\ntags: test\nnet: none\n"
+        "secrets: OPT_DEMO_KEY?\ntags: test\nnet: none\nfs: roots\n"
         '"""\n', encoding="utf-8")
 
     ui_page.goto(f"{ui.url}/#/settings?section=secrets")

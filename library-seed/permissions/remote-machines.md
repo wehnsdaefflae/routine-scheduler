@@ -2,6 +2,8 @@
 tags: [tool-use, ssh, remote, machines]
 requires:
   utils: [remote]
+expects:
+  machine: ["*"]
 ---
 # permission: remote-machines — act on bound remote machines over SSH
 

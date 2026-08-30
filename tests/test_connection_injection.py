@@ -17,6 +17,7 @@ usage: gu notionish
 tags: test
 secrets: NOTION_ACCESS_TOKEN
 net: outbound
+fs: roots
 """
 print("hi")
 '''

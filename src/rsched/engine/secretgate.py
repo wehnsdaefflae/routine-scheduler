@@ -63,7 +63,7 @@ def withheld_optional_secrets(ctx, name: str) -> list[str]:
     home = ctx.server.libraries_home
     if not utils_lib.exists(home, name):
         return []
-    _needed, _net, optional = utils_run.util_needs(home, name)
+    optional = utils_run.util_needs(home, name).optional
     return withheld_optional(ctx, optional)
 
 
@@ -86,7 +86,8 @@ def gate_util_secrets(loop, action: dict, poll_s: float) -> dict | None:
     home = ctx.server.libraries_home
     if name in ("list", "show") or not utils_lib.exists(home, name):
         return None                     # discovery / missing-util paths expose no secrets
-    needed, _net, optional = utils_run.util_needs(home, name)
+    needs = utils_run.util_needs(home, name)
+    needed, optional = needs.secrets, needs.optional
     return _gate_secrets(loop, kind="util", name=name, needed=needed, optional=optional,
                          poll_s=poll_s)
 

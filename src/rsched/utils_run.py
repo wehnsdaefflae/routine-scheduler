@@ -13,6 +13,7 @@ import os
 import shutil
 import subprocess
 from pathlib import Path
+from typing import NamedTuple
 
 from . import sandbox
 from .ids import is_slug
@@ -24,18 +25,35 @@ STRIP_VARS = ("ANTHROPIC_API_KEY", "ANTHROPIC_KEY", "ANTHROPIC_AUTH_TOKEN",
               "OPENROUTER_KEY", "OPENROUTER_API_KEY", "OPENAI_API_KEY",
               "SSH_AUTH_SOCK", "SSH_AGENT_PID")
 
-def util_needs(home: Path, name: str) -> tuple[set[str], bool, set[str]]:
-    """(declared secret env vars, net-outbound?, the OPTIONAL subset) for one util, resolved
-    TRANSITIVELY across its docstring `calls:` siblings — the whole call tree runs inside ONE
-    jail and ONE env, so a caller inherits what its callees declared (gmail-body-dump calls
-    gmail → gets the GMAIL_* secrets; anything calling a net: outbound sibling needs the
-    network open too). Undeclared = not granted: an unknown net line (or none at all)
-    contributes nothing. A name is optional only if EVERY declarer marks it `?` — one
-    required declaration anywhere in the tree makes it required.
+
+class UtilNeeds(NamedTuple):
+    """What one util's whole call tree declares it needs — the inputs the jail is built from."""
+
+    secrets: set[str]
+    net: bool
+    optional: set[str]
+    fs_roots: bool
+    fs_paths: tuple[tuple[str, str], ...]
+
+
+def util_needs(home: Path, name: str) -> UtilNeeds:
+    """What one util declares, resolved TRANSITIVELY across its docstring `calls:` siblings —
+    the whole call tree runs inside ONE jail and ONE env, so a caller inherits what its callees
+    declared (gmail-body-dump calls gmail → gets the GMAIL_* secrets; anything calling a
+    net: outbound sibling needs the network open too, and anything calling a sibling that
+    declares a private path needs that path mounted). Undeclared = not granted: an unknown
+    net line, a missing fs line, or none at all contributes nothing. A secret is optional only
+    if EVERY declarer marks it `?` — one required declaration anywhere in the tree makes it
+    required.
+
+    The fs half only ever names what the jail MAY mount. Whether it actually does is decided
+    in `sandbox.wrap`, against the grants the run holds — a declaration narrows, never widens.
     """
     secrets: set[str] = set()
     required: set[str] = set()
     net = False
+    fs_roots = False
+    fs_paths: list[tuple[str, str]] = []
     seen: set[str] = set()
     stack = [name]
     while stack:
@@ -52,8 +70,10 @@ def util_needs(home: Path, name: str) -> tuple[set[str], bool, set[str]]:
         secrets.update(declared)
         required.update(declared - opt)
         net = net or header["net"] == "outbound"
+        fs_roots = fs_roots or header["fs_roots"]
+        fs_paths += [p for p in header["fs_paths"] if p not in fs_paths]
         stack += header["calls"]
-    return secrets, net, secrets - required
+    return UtilNeeds(secrets, net, secrets - required, fs_roots, tuple(fs_paths))
 
 
 def scoped_env(declared: set[str], extra_secrets: dict[str, str] | None = None,
@@ -89,8 +109,7 @@ def _child_env(home: Path, name: str, extra_secrets: dict[str, str] | None = Non
     """A util subprocess's environment: `scoped_env` over the util's transitive
     declarations (`calls:` siblings included — one jail, one env).
     """
-    declared, _, _ = util_needs(home, name)
-    return scoped_env(declared, extra_secrets, withhold)
+    return scoped_env(util_needs(home, name).secrets, extra_secrets, withhold)
 
 
 def prewarm_script_deps(script: str, policy: sandbox.SandboxPolicy, home: Path) -> None:
@@ -102,7 +121,8 @@ def prewarm_script_deps(script: str, policy: sandbox.SandboxPolicy, home: Path) 
     """
     try:
         cmd = sandbox.wrap(["uv", "sync", "--script", script],
-                           policy=policy, libraries_home=home, net=True)
+                           policy=policy, libraries_home=home, net=True,
+                           fs_roots=False, fs_paths=())
     except sandbox.SandboxRefusal:
         return
     try:
@@ -137,7 +157,8 @@ def run_util(home: Path, name: str, args: list[str], *, timeout: int = 300,
     # Point the `gu` dispatcher (on PATH, for sibling calls) at THIS library, so a util that
     # shells out to `gu <sibling>` always resolves siblings here.
     env["GLOBAL_UTILS_HOME"] = str(home)
-    _, net, _ = util_needs(home, name)
+    needs = util_needs(home, name)
+    net = needs.net
     script = str(util_dir(home, name) / "main.py")
     # Build-time dependency install is a SEPARATE phase from the util's own execution: a
     # `net: none` util still needs PyPI to fetch its (non-cached) PEP 723 deps the first
@@ -155,7 +176,8 @@ def run_util(home: Path, name: str, args: list[str], *, timeout: int = 300,
         prewarm_script_deps(script, policy, home)
     try:
         cmd = sandbox.wrap(["uv", "run", "--script", script, *args],
-                           policy=policy, libraries_home=home, net=net)
+                           policy=policy, libraries_home=home, net=net,
+                           fs_roots=needs.fs_roots, fs_paths=needs.fs_paths)
     except sandbox.SandboxRefusal as exc:
         return 2, "", str(exc)
     # File-backed capture + own process GROUP: `uv run` re-execs the script as a grandchild,
@@ -205,7 +227,7 @@ def selftest(home: Path, name: str, *, timeout: int = 120,
     # timeout on the toolchain and fail a correct util. Prewarm here (same best-effort
     # jail as the run path) so the timed window below covers the selftest, never the
     # install.
-    _, net, _ = util_needs(home, name)
+    net = util_needs(home, name).net
     if net:
         prewarm_script_deps(str(util_dir(home, name) / "main.py"), policy, home)
     code, out, err = run_util(home, name, ["--selftest"], timeout=timeout, policy=policy)

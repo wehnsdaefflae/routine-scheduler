@@ -1,5 +1,7 @@
 ---
 tags: [git, safety, undo]
+expects:
+  fs-write: ["*"]
 ---
 # rule: git checkpoint — undo points for project repos you edit
 

@@ -107,7 +107,7 @@ def _unbound_connection_request(ctx: RunContext, name: str) -> str:
     """
     from ..oauth.providers import access_token_var, provider_ids
 
-    declared, _net, _opt = utils_run.util_needs(ctx.server.libraries_home, name)
+    declared = utils_run.util_needs(ctx.server.libraries_home, name).secrets
     upper = {d.upper() for d in declared}
     bound = dict(getattr(ctx.routine, "connections", None) or {})
     missing = [pid for pid in provider_ids()

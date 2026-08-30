@@ -128,7 +128,9 @@ def needs(routine_dir: Path, name: str,
     required = declared - {s.upper() for s in header["optional_secrets"]}
     net = header["net"] == "outbound"
     for callee in header["calls"]:
-        c_secrets, c_net, c_optional = utils_run.util_needs(libraries_home, callee)
+        callee_needs = utils_run.util_needs(libraries_home, callee)
+        c_secrets, c_net, c_optional = (callee_needs.secrets, callee_needs.net,
+                                        callee_needs.optional)
         declared |= c_secrets
         required |= c_secrets - c_optional
         net = net or c_net
@@ -236,6 +238,7 @@ def ensure_env(routine_dir: Path, name: str, *,
     for step in steps:
         try:
             cmd = sandbox.wrap(step, policy=policy, libraries_home=libraries_home,
+                               fs_roots=True, fs_paths=(),
                                net=True)
             r = subprocess.run(cmd, capture_output=True, text=True,
                                timeout=_INSTALL_TIMEOUT_S, stdin=subprocess.DEVNULL,
@@ -283,7 +286,7 @@ def run_script(routine_dir: Path, name: str, args: list[str], *,
         cmd = sandbox.wrap(
             [str(venv_python(routine_dir)), str(script_path(routine_dir, name)),
              *[str(a) for a in args]], policy=policy, libraries_home=libraries_home,
-            net=net)
+            net=net, fs_roots=True, fs_paths=())
     except sandbox.SandboxRefusal as exc:
         return 2, "", str(exc)
     try:

@@ -131,8 +131,8 @@ def _once_match(eid: str, action: dict, ctx) -> bool:  # noqa: PLR0911 — one e
     if cls == "secret":     # spent by the util call the var is actually injected into:
         if kind != "util":  # only utils DECLARING it (calls: tree included) receive it
             return False
-        needed, _net, _opt = utils_run.util_needs(ctx.server.libraries_home,
-                                                  str(action.get("name") or ""))
+        needed = utils_run.util_needs(ctx.server.libraries_home,
+                                      str(action.get("name") or "")).secrets
         return name in needed
     if cls in ("fs-read", "fs-write"):
         return _fs_once_match(name, action, ctx)

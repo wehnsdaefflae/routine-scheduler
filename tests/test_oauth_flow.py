@@ -133,7 +133,7 @@ def test_needed_secrets_excludes_connection_tokens(oauth_client):
         '"""connu — util needing tokens.\n\n'
         "usage: gu connu\ncalls: (none)\n"
         "secrets: NOTION_ACCESS_TOKEN, NOTION_TOKEN, FTP_SOURCES\n"
-        "tags: test\nnet: outbound\n"
+        "tags: test\nnet: outbound\nfs: roots\n"
         '"""\n', encoding="utf-8")
     entries = {n["key"]: n for n in client.get("/api/settings/secrets").json()["needed"]}
     assert "NOTION_ACCESS_TOKEN" not in entries       # engine-injected from a connection, not user-set
@@ -156,7 +156,7 @@ def test_needed_secret_set_from_environment(oauth_client, monkeypatch):
         "# /// script\n# dependencies = []\n# ///\n"
         '"""envu — util needing an env secret.\n\n'
         "usage: gu envu\ncalls: (none)\n"
-        "secrets: WEBAUTHSOURCES\ntags: test\nnet: outbound\n"
+        "secrets: WEBAUTHSOURCES\ntags: test\nnet: outbound\nfs: roots\n"
         '"""\n', encoding="utf-8")
     # not in the store → reads unset
     entries = {n["key"]: n for n in client.get("/api/settings/secrets").json()["needed"]}

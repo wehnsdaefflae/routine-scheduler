@@ -1,5 +1,7 @@
 ---
 tags: [steward, web, ui, feedback, publishing, reporting]
+expects:
+  fs-write: ["*"]
 ---
 # rule: status page — publishing and tending your web UI on the shared steward host
 

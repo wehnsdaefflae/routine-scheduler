@@ -66,6 +66,51 @@ else — gets that property from the util's own code, not the kernel (see
 the `calls:` graph, so a util calling a `net: outbound` sibling gets (and needs) the open
 network, and inherits the sibling's declared secrets.
 
+## Filesystem — a per-util declaration too
+
+The same header declares what the util needs to SEE, on the same terms as `net:`:
+
+- `fs: roots` — the run's granted read/write roots wholesale. The right answer for a util
+  that opens paths its CALLER hands it (`dir-tree ROOT`, `batch-replace MANIFEST`), and what
+  every util got before this axis existed.
+- `fs: none` — nothing beyond the always-mounted base (the routine's own dir, tmp, the
+  toolchain caches). A util that only talks to an API needs no more.
+- `fs: rw <path>` / `fs: ro <path>` — a PRIVATE store the util reaches on its own rather than
+  being told about: a messenger's session directory, a state file. `$VAR` and `~` are allowed
+  and resolved DAEMON-side, never from the run's environment — a run that could set the
+  variable could aim the mount.
+
+**Undeclared = none — fail closed**, and `header_problems` rejects a util without the line.
+Entries combine (`fs: roots, rw $SIGNAL_SESSION_DIR`), and they resolve transitively over
+`calls:` exactly as secrets and network do.
+
+### A declaration only ever subtracts
+
+A declared path is mounted **only when the run already holds a grant covering it**. Declaring
+one asks for nothing. That is what keeps the axis safe in a system where a routine can author
+its own utils: a util declaring `rw ~/.ssh` mounts nothing, because no grant covers it (and
+`entities.never_grantable_fs` would refuse the grant anyway).
+
+### Why a private store is subtracted from `roots`
+
+The case the axis exists for is a credential that lives in a directory. Signal, Telegram and
+WhatsApp authenticate by a LINKED SESSION on disk — the session store *is* the credential.
+Before this, the only way to give `signal` its store was a routine-wide `fs_write_root`, and
+the jail mounted the run's roots into **every** util it called: granting Signal its session
+directory handed the Signal identity to every other util in the same run, which is a
+prompt-injection away from exfiltration.
+
+So a path some util claims as private is removed from the wholesale `roots` mount
+(`sandbox.private_store_paths`, computed across the library and cached on the newest util
+directory mtime). Claiming a path private is a statement about the PATH, so it binds every
+util that did not claim it. The grant stays exactly what it was — one explicit, auditable,
+four-state decision on `fs-write:<path>` — but its blast radius is now one util instead of all
+of them.
+
+The routine's OWN directory is held apart from all of this (`SandboxPolicy.own_dir`): it is the
+working directory relative paths resolve against, not a grant to be narrowed, so every util
+keeps it whatever its `fs:` line says.
+
 ## Secrets — declared-only injection (every mode)
 
 `_child_env` injects from the stores ONLY the vars the util (or a `calls:`

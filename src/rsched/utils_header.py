@@ -1,7 +1,7 @@
 """The util HEADER contract — what a util must declare about itself, and what it may read.
 
-Split out of `utils_lib.py` (F393). This is the authoring contract, not the store: the six-line
-docstring header every util carries (summary, usage, calls, tags, secrets, net) and the checks
+Split out of `utils_lib.py` (F393). This is the authoring contract, not the store: the seven-line
+docstring header every util carries (summary, usage, calls, tags, secrets, net, fs) and the checks
 that make a header honest. `header_problems` is what gates `write_util`, so an over-tolerant
 reading here silently admits a util nobody can audit.
 
@@ -21,11 +21,57 @@ from .ids import is_slug
 _SUMMARY_RE = re.compile(r'"""(.+?)"""', re.DOTALL)
 GU_CALL_RE = re.compile(r"""\[\s*["']gu["']\s*,\s*["']([a-z0-9][a-z0-9-]*)["']""")
 
+# `fs:` entry grammar — the seventh header line, read by sandbox.wrap the way `net:` is.
+#   none              nothing beyond the always-mounted base (own dir, tmp, caches, toolchain)
+#   roots             the RUN's granted fs roots — for utils that act on caller-supplied paths
+#   rw <path>         one private path, read-write   ($VAR and ~ allowed; resolved daemon-side)
+#   ro <path>         one private path, read-only
+# Entries are comma-separated and combine (`fs: roots, rw $SIGNAL_SESSION_DIR`). A declaration
+# only ever SUBTRACTS: a declared path is mounted solely when the run already holds a grant
+# covering it, so a routine that can author utils cannot write itself a wider jail.
+_FS_ENTRY_RE = re.compile(r"^(ro|rw)\s+(\S.*)$")
+
+
+def parse_fs(value: str) -> tuple[bool, list[tuple[str, str]], list[str]]:
+    """`(wants the run's roots?, [(mode, path)], problems)` for an `fs:` line's value.
+
+    Paths are returned VERBATIM — `$VAR` and `~` are resolved at dispatch, daemon-side, never
+    from the run's environment (a run that could set the variable could aim the mount).
+    """
+    roots = False
+    paths: list[tuple[str, str]] = []
+    problems: list[str] = []
+    entries = [e.strip() for e in value.split(",") if e.strip()]
+    if not entries:
+        return False, [], ["fs: needs at least one entry (none | roots | rw <path> | ro <path>)"]
+    for entry in entries:
+        low = entry.lower()
+        if low in ("none", "(none)"):
+            continue
+        if low == "roots":
+            roots = True
+            continue
+        m = _FS_ENTRY_RE.match(entry)
+        if not m:
+            problems.append(f"fs: {entry!r} is not a valid entry — use none, roots, "
+                            f"'rw <path>' or 'ro <path>'")
+            continue
+        mode, path = m.group(1), m.group(2).strip()
+        if not (path.startswith(("/", "~", "$"))):
+            problems.append(f"fs: {path!r} must be an absolute path, a ~ path, or a $VAR")
+            continue
+        paths.append((mode, path))
+    if len(entries) > 1 and any(e.lower() in ("none", "(none)") for e in entries):
+        problems.append("fs: 'none' cannot be combined with other entries")
+    return roots, paths, problems
+
+
 def parse_header(src: str) -> dict:
     """The docstring header — the util's ONLY machine-read surface: summary, usage, tags,
-    declared secrets, declared sibling `calls:` (drives transitive secret/net resolution,
-    see util_needs), and the `net:` declaration ("outbound" | "none"; "" = undeclared,
-    which the sandbox treats as none — fail closed).
+    declared secrets, declared sibling `calls:` (drives transitive secret/net/fs resolution,
+    see util_needs), the `net:` declaration ("outbound" | "none"; "" = undeclared, which the
+    sandbox treats as none — fail closed) and the `fs:` declaration, which reads the same way:
+    `fs_roots` / `fs_paths` are what the jail may mount, and an absent line yields neither.
 
     A `secrets:` entry may carry a trailing `?` (e.g. `secrets: FOO_KEY, BAR_TOKEN?`) to mark
     an OPTIONAL secret (D51): injected when the store has it, but the Settings page does not
@@ -56,8 +102,12 @@ def parse_header(src: str) -> dict:
              and is_slug(c.strip())] if calls_line else []
     net_line = next((ln for ln in lines if ln.lower().startswith("net:")), "")
     net = net_line[len("net:"):].strip().lower() if net_line else ""
+    fs_line = next((ln for ln in lines if ln.lower().startswith("fs:")), "")
+    fs = fs_line[len("fs:"):].strip() if fs_line else ""
+    fs_roots, fs_paths, _ = parse_fs(fs) if fs else (False, [], [])
     return {"summary": summary, "usage": usage, "tags": tags, "secrets": secrets,
-            "optional_secrets": optional_secrets, "calls": calls, "net": net, "doc": doc}
+            "optional_secrets": optional_secrets, "calls": calls, "net": net,
+            "fs": fs, "fs_roots": fs_roots, "fs_paths": fs_paths, "doc": doc}
 
 
 # env-var names that smell like credentials — used by header_problems to catch a util that
@@ -115,9 +165,9 @@ def header_problems(content: str) -> list[str]:
     """Doc-standard gate for saving a util. The docstring header is the util's ONLY
     machine-read surface (catalog, Settings secrets page, the sandbox): it must carry a
     summary, a usage: line, at least one tag, a secrets: declaration covering every
-    credential-looking env var the code reads, and a net: declaration. Comment-form
-    `# secrets:` lines above the docstring are invisible to the parser — that is exactly
-    the failure this gate stops.
+    credential-looking env var the code reads, a net: declaration, and an fs: declaration.
+    Comment-form `# secrets:` lines above the docstring are invisible to the parser —
+    that is exactly the failure this gate stops.
     """
     h = parse_header(content)
     problems = []
@@ -131,6 +181,14 @@ def header_problems(content: str) -> list[str]:
         problems.append("docstring needs a 'net: outbound' or 'net: none' line — declare "
                         "whether this util opens network connections; the sandbox denies "
                         "all TCP to a util declaring none (or declaring nothing)")
+    if not h["fs"]:
+        problems.append("docstring needs an 'fs:' line — declare what filesystem this util "
+                        "needs: 'none', 'roots' (the run's granted roots, for a util that "
+                        "acts on caller-supplied paths), or 'rw <path>' / 'ro <path>' for a "
+                        "private store. Undeclared is treated as none, and the declaration "
+                        "only ever narrows what the run already granted")
+    else:
+        problems += parse_fs(h["fs"])[2]
     undeclared = undeclared_secrets(content)
     if undeclared:
         problems.append("code reads credential env var(s) not declared in the docstring's "

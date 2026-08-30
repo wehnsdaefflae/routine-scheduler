@@ -8,6 +8,7 @@ usage: gu dir-tree <root> [--depth <n>] [--max <n>] [--json]
 calls: (none)
 tags: files, listing, meta
 net: none
+fs: roots
 
 Walks <root> up to --depth levels (default 2), listing dirs and files with
 sizes. Skips nothing by default. Caps entries at --max (default 400). Data on

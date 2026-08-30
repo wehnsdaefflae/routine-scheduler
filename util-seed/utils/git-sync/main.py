@@ -7,6 +7,7 @@ usage: gu git-sync REPO_PATH [-m MESSAGE] [--no-push] [--no-pull] [--on-conflict
 calls: (none)
 tags: git, dev, sync
 net: outbound
+fs: roots
 
 Commits any local changes in REPO_PATH under a neutral identity, pulls remote updates
 (--rebase), and pushes — keeping local and remote in sync in one call.

@@ -72,5 +72,5 @@ def _hdr(home, name, *, secrets):
     utils_lib.write_util_file(home, name, (
         "# /// script\n# dependencies = []\n# ///\n"
         f'"""{name} — fixture.\n\nusage: gu {name}\n'
-        f'secrets: {secrets}\ntags: t\nnet: none\n"""\nprint("ok")\n'
+        f'secrets: {secrets}\ntags: t\nnet: none\nfs: roots\n"""\nprint("ok")\n'
     ))

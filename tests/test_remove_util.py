@@ -20,6 +20,7 @@ UTIL = '''# /// script
 usage: gu {name}
 tags: test
 net: none
+fs: roots
 {calls}"""
 X = 1
 '''

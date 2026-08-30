@@ -5,8 +5,11 @@ notify channel) runs inside a Landlock jail (landlock.py) whose visible filesyst
 from the RUN's permissions: the routine's working dir + its fs_read_roots/fs_write_roots,
 plus the fixed toolchain a util needs to execute at all (interpreter, uv + its cache, the
 util library, system trees). Network is a per-util declaration (docstring `net:` line —
-utils_run.util_needs): `none` (or undeclared) denies all TCP. Secrets scoping (declared-only
-env injection, utils_run._child_env) is independent of this module and applies in every mode.
+utils_run.util_needs): `none` (or undeclared) denies all TCP. FILESYSTEM is a per-util
+declaration on the same terms (docstring `fs:` line): `roots` takes the run's granted roots,
+`rw`/`ro <path>` names a private store, and either way the declaration is INTERSECTED with what
+the run was granted — it narrows, never widens. Secrets scoping (declared-only env injection,
+utils_run._child_env) is independent of this module and applies in every mode.
 
 The server-config `sandbox:` mode is the escape hatch (docs/sandboxing.md):
 - strict     — refuse to run utils when the jail can't engage as specified,
@@ -22,13 +25,16 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import shutil
 import sys
 import tempfile
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 
 from . import landlock
+from .paths import expand
 
 log = logging.getLogger("rsched.sandbox")
 
@@ -58,13 +64,19 @@ class SandboxRefusal(Exception):  # noqa: N818 — a refusal decision, not an er
 @dataclass(frozen=True)
 class SandboxPolicy:
     """One caller's sandbox inputs: the server mode + the RUN-derived filesystem roots.
-    Per-util facts (declared net, declared secrets) are resolved inside utils_lib at
-    dispatch — this carries only what the run/permission layer knows.
+    Per-util facts (declared net, declared secrets, declared fs) are resolved inside
+    utils_lib at dispatch — this carries only what the run/permission layer knows.
+
+    `own_dir` is held apart from `write_roots` because it is not a grant to be narrowed: a
+    util always needs the routine's own directory (it is the working directory relative paths
+    resolve against). Everything in `read_roots`/`write_roots` IS a grant, and a util sees it
+    only when its `fs:` line declares it.
     """
 
     mode: str = "permissive"
     read_roots: tuple[Path, ...] = ()
     write_roots: tuple[Path, ...] = ()
+    own_dir: Path | None = None
 
 
 # Read-only asset dirs the util sandbox may see on EVERY run regardless of the calling
@@ -94,7 +106,8 @@ def policy_for_ctx(ctx) -> SandboxPolicy:
     """
     return SandboxPolicy(mode=ctx.server.sandbox,
                          read_roots=(*ctx.read_roots(), *_shared_read_roots(ctx.server)),
-                         write_roots=(ctx.routine.dir, *ctx.write_roots()))
+                         write_roots=tuple(ctx.write_roots()),
+                         own_dir=ctx.routine.dir)
 
 
 def base_policy(server) -> SandboxPolicy:
@@ -137,7 +150,7 @@ def _ensure_write_roots(policy: SandboxPolicy) -> None:
     jail is assembled. Read roots are NOT created (reading a directory into existence would
     mask a config typo) — a missing one is warned about instead, once per path.
     """
-    for root in policy.write_roots:
+    for root in [*policy.write_roots, *([policy.own_dir] if policy.own_dir else [])]:
         try:
             Path(root).mkdir(parents=True, exist_ok=True)
         except OSError as exc:   # e.g. the root is actually a file, or a parent is read-only
@@ -148,14 +161,68 @@ def _ensure_write_roots(policy: SandboxPolicy) -> None:
                                      f"it grants nothing until created")
 
 
+@lru_cache(maxsize=8)
+def _private_store_paths_cached(libraries_home: str,
+                                stamp: float) -> frozenset[Path]:  # noqa: ARG001
+    # `stamp` is the CACHE KEY, not an input: it is the newest util-dir mtime, so a
+    # write_util revision produces a different key and the scan reruns.
+    from .utils_lib import list_utils
+    out: set[Path] = set()
+    try:
+        for util in list_utils(Path(libraries_home)):
+            for _mode, declared in util.get("fs_paths") or ():
+                out.add(expand(os.path.expandvars(declared)))
+    except OSError:
+        return frozenset()
+    return frozenset(out)
+
+
+def private_store_paths(libraries_home: Path) -> frozenset[Path]:
+    """Every path some util's `fs:` line claims as a PRIVATE store, across the whole library.
+
+    These are subtracted from the wholesale `roots` mount, so a grant that exists to let one
+    util reach its credential store does not hand that store to every other util in the run.
+    Keyed on the newest util directory mtime, so a `write_util` revision (an atomic
+    tmp+rename inside that directory) invalidates the cache without needing a restart.
+    """
+    root = Path(libraries_home) / "utils"
+    try:
+        stamp = max((d.stat().st_mtime for d in root.iterdir() if d.is_dir()), default=0.0)
+    except OSError:
+        return frozenset()
+    return _private_store_paths_cached(str(libraries_home), stamp)
+
+
+def _admit(declared: str, granted: tuple[Path, ...]) -> Path | None:
+    """A declared private path, resolved and checked against the grants the run holds.
+
+    `$VAR` is expanded from the DAEMON's environment, never the run's — a run that could set
+    the variable could aim the mount. The path is admitted only when a granted root equals it
+    or contains it: a declaration narrows what the run holds, it can never widen it, which is
+    what keeps a routine holding `write_util` from authoring itself a wider jail.
+    """
+    resolved = expand(os.path.expandvars(declared))
+    for root in granted:
+        if resolved == root or root in resolved.parents:
+            return resolved
+    return None
+
+
 def wrap(cmd: list[str], *, policy: SandboxPolicy, libraries_home: Path,
-         net: bool) -> list[str]:
+         net: bool, fs_roots: bool, fs_paths: tuple[tuple[str, str], ...]) -> list[str]:
     """The command that actually runs: `cmd` wrapped in the landlock.py child wrapper when
     the sandbox engages, `cmd` itself when the mode says (or allows) running bare. Raises
     SandboxRefusal when mode=strict and the jail can't close as specified — the caller
     turns that into the call's error observation. ONE jail composition for both callable
-    kinds: utils AND per-routine scripts get the run's fs roots + the shared library
-    read-only + the exec toolchain.
+    kinds: utils AND per-routine scripts get the shared library read-only + the exec
+    toolchain + the routine's own dir.
+
+    What varies per callable is the GRANTED roots, and `fs_roots` / `fs_paths` are the
+    caller's declaration of which of them it needs (utils_run.util_needs, resolved over the
+    `calls:` tree). `fs_roots` takes the run's granted roots wholesale — right for a util
+    acting on caller-supplied paths, and what every util got before this axis existed.
+    `fs_paths` names private stores (a messenger's session directory) that are mounted only
+    for the declarer, so granting one no longer hands it to every util in the run.
     """
     _ensure_write_roots(policy)   # mode-independent: the grant implies the directory
     if policy.mode == "off":
@@ -179,8 +246,25 @@ def wrap(cmd: list[str], *, policy: SandboxPolicy, libraries_home: Path,
         net = True
     ro, rw = _toolchain()
     ro.append(str(libraries_home))
-    ro += [str(p) for p in policy.read_roots]
-    rw += [str(p) for p in policy.write_roots]
+    if policy.own_dir is not None:
+        rw.append(str(policy.own_dir))       # never narrowed: the working dir, not a grant
+    if fs_roots:
+        # The run's granted roots wholesale — MINUS every path some util claims as a private
+        # store. Without that subtraction the narrowing would be worthless for the case it
+        # exists for: granting a routine its Signal session directory would still hand that
+        # credential to every `fs: roots` util in the same run. Claiming a path private is a
+        # statement about the PATH, so it binds every util in the library that did not claim it.
+        private = private_store_paths(libraries_home)
+        ro += [str(p) for p in policy.read_roots if p not in private]
+        rw += [str(p) for p in policy.write_roots if p not in private]
+    else:
+        # Declared private stores only, each admitted against the grant that covers it. A
+        # write grant carries read, so an `ro` declaration checks both sets.
+        for mode, declared in fs_paths:
+            if (p := _admit(declared, policy.write_roots)) is not None:
+                (rw if mode == "rw" else ro).append(str(p))
+            elif mode == "ro" and (p := _admit(declared, policy.read_roots)) is not None:
+                ro.append(str(p))
     spec = {"ro": sorted(set(ro)), "rw": sorted(set(rw)), "net": bool(net)}
     wrapper = str(Path(landlock.__file__).resolve())
     return [sys.executable, wrapper, json.dumps(spec, separators=(",", ":")), "--", *cmd]

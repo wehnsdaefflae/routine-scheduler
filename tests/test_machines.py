@@ -23,6 +23,7 @@ usage: gu remoteish
 tags: test
 secrets: RSCHED_MACHINES, RSCHED_MACHINE_KEYS
 net: outbound
+fs: roots
 """
 print("hi")
 '''

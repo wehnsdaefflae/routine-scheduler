@@ -43,6 +43,31 @@ capability is only the means of asking for it. (The policy dials that ride a
 capability — write_util's approval level, the run-history depth — stay yours and are
 preserved across the floor.)
 
+### `expects:` — the soft edge
+
+`requires:` is the NECESSARY edge: activating a doc switches its capabilities on, and the
+floor keeps them on. `expects:` is the optional counterpart — entities the instructions
+*presume* but nothing enforces. It grants nothing, blocks nothing, and never fails a save.
+
+It exists because the necessary edge was the only one the system could see. `remote-machines`
+requires the `remote` util — and is useless without a bound MACHINE, which no declaration named,
+so the gap only ever surfaced as a run burning a turn on an empty host list. Now the doc says
+`expects: {machine: ["*"]}` and the setup surface can show the gap before the run.
+
+Two rules keep it from turning into a second `requires:`:
+
+- **It is legal on a RULE**, where `requires:` stays a lint error. A rule must never switch a
+  capability on; it must be able to say what it presumes. `status-page` tells a run to publish,
+  which needs a write root to publish into — that is an `expects:`, not a grant.
+- **It stays advisory forever.** The moment it blocks a save it is a worse `requires:`, and the
+  value of naming a soft dependency is precisely that it stays soft.
+
+Values are entity CLASS → names from the `entities.py` vocabulary, with `"*"` for "at least one
+of this class"; the prose explaining WHICH one belongs in the doc body. Nothing is declared here
+that some other declaration already carries: a reserved util's secrets and its private
+filesystem stores come from the util's own docstring header, which the resolver walks
+transitively over `calls:`. Duplicating them here would be a second copy that can drift.
+
 Enforcement reads **capabilities only** (`grants.py` builds the run policy from the
 routine's own mapping); a doc-without-capability misconfiguration therefore fails
 closed. Which utils are reservable at all is library-defined (the union of every doc's
@@ -244,6 +269,8 @@ requires:
   utils: [discord]             # reserved utils these instructions presume, BY NAME
   util_tags: [messaging]       # reserved util CLASSES presumed, by docstring tag
   runs: last                   # minimum previous-run depth presumed: last | all
+expects:                       # the SOFT edge — presumed, never enforced (see below)
+  machine: ["*"]               # entity CLASS → names; "*" = at least one of the class
 ---
 # permission: <name> — <summary>
 <a SHORT body: shown in the UI, and appended to the prompt's CAPABILITIES section when held>

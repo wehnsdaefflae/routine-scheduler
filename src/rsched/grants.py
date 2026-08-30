@@ -118,6 +118,52 @@ EMPTY_CAPABILITIES = {"actions": [], "utils": [], "util_tags": [], "confirm": "a
                       "rule_confirm": "always", "runs": "none", "workflows": "catalog"}
 
 
+# The SOFT edge (`expects:`), the counterpart to `requires:`. A permission doc's `requires:`
+# names capabilities the cascade SWITCHES ON and the floor keeps on — necessary, enforced.
+# `expects:` names entities the doc's (or rule's) instructions PRESUME but the engine will
+# never force: a bound machine, an exposed secret, a write root to publish into. It grants
+# nothing, blocks nothing and is legal on a RULE, where `requires:` stays a lint error —
+# a rule may say what it presumes, it may never switch a capability on.
+#
+# Shape: entity CLASS → names (entities.py), where "*" means "at least one of this class".
+# The prose explaining WHICH one belongs in the doc body, never here: this key is joined
+# against declarations, never read for meaning.
+def normalize_expects(raw: object, *, label: str = "expects") -> tuple[dict, list[str]]:
+    """Validate + normalize an `expects:` mapping. Returns (mapping, problems); an invalid
+    row is dropped and reported, never raised — a soft edge must not be able to break a run.
+    """
+    from .entities import CLASSES, parse_entity
+
+    if raw is None:
+        return {}, []
+    if not isinstance(raw, dict):
+        return {}, [f"{label} must be a mapping of entity class → names "
+                    f"({' / '.join(CLASSES)}; '*' means at least one)"]
+    out: dict[str, list[str]] = {}
+    problems: list[str] = []
+    for cls, vals in raw.items():
+        if cls not in CLASSES:
+            problems.append(f"{label}.{cls}: unknown entity class "
+                            f"(expected {' / '.join(CLASSES)})")
+            continue
+        items = vals if isinstance(vals, list) else [vals]
+        keep: list[str] = []
+        for item in items:
+            if not isinstance(item, str) or not item.strip():
+                problems.append(f"{label}.{cls}: entries must be non-empty strings")
+                continue
+            name = item.strip()
+            if name != "*" and parse_entity(f"{cls}:{name}") is None:
+                problems.append(f"{label}.{cls}: {name!r} is not a valid {cls} entity name "
+                                f"(or use '*' for 'at least one')")
+                continue
+            if name not in keep:
+                keep.append(name)
+        if keep:
+            out[cls] = keep
+    return out, problems
+
+
 def normalize_capabilities(raw: object, *, label: str = "capabilities",
                            requires: bool = False) -> tuple[dict, list[str]]:
     """Validate + normalize one capabilities mapping (routine.yaml `capabilities:` or,
@@ -196,6 +242,25 @@ def _catalog_tags(permissions_home: Path) -> list[dict]:
                 for u in utils_lib.list_utils(Path(permissions_home).parent)]
     except OSError:
         return []
+
+
+def read_library_expects(docs_home: Path) -> dict[str, dict]:
+    """Slug → normalized `expects:` for every doc in `docs_home` that declares one — the SOFT
+    half of the dependency map, read from permissions/ and rules/ alike (a rule may expect,
+    it may never require). Nothing under a routine dir is ever consulted.
+    """
+    out: dict[str, dict] = {}
+    if not docs_home.is_dir():
+        return out
+    for path in sorted(docs_home.glob("*.md")):
+        try:
+            meta = _parse(path.read_text(encoding="utf-8"))
+        except OSError:
+            continue
+        exp, _ = normalize_expects(meta.get("expects"))
+        if exp:
+            out[path.stem] = exp
+    return out
 
 
 def read_library_requires(permissions_home: Path) -> dict[str, dict]:

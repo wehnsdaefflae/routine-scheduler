@@ -7,6 +7,7 @@ usage: gu shell COMMAND [--timeout SECS] [--cwd DIR] [--json]
 calls: (none)
 tags: shell, system, escape-hatch
 net: outbound
+fs: roots
 
 The deliberate escape hatch around the no-shell design, reserved for routines holding the
 `shell` permission (the engine rejects it for everyone else). Runs COMMAND through

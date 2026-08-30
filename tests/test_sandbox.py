@@ -21,7 +21,7 @@ def _force_abi(monkeypatch, version: int) -> None:
 def test_mode_off_never_wraps(tmp_path, monkeypatch):
     _force_abi(monkeypatch, 4)
     policy = sandbox.SandboxPolicy(mode="off")
-    assert sandbox.wrap(CMD, policy=policy, libraries_home=tmp_path, net=True) == CMD
+    assert sandbox.wrap(CMD, policy=policy, libraries_home=tmp_path, net=True, fs_roots=True, fs_paths=()) == CMD
 
 
 def test_available_wraps_with_spec(tmp_path, monkeypatch):
@@ -29,7 +29,7 @@ def test_available_wraps_with_spec(tmp_path, monkeypatch):
     policy = sandbox.SandboxPolicy(mode="permissive",
                                    read_roots=(Path("/data/in"),),
                                    write_roots=(tmp_path / "routine",))
-    cmd = sandbox.wrap(CMD, policy=policy, libraries_home=tmp_path, net=False)
+    cmd = sandbox.wrap(CMD, policy=policy, libraries_home=tmp_path, net=False, fs_roots=True, fs_paths=())
     assert cmd[:2] == [__import__("sys").executable, str(Path(landlock.__file__).resolve())]
     assert cmd[-len(CMD):] == CMD and cmd[-len(CMD) - 1] == "--"
     spec = json.loads(cmd[2])
@@ -50,7 +50,7 @@ def test_unavailable_strict_refuses(tmp_path, monkeypatch):
     _force_abi(monkeypatch, 0)
     policy = sandbox.SandboxPolicy(mode="strict")
     with pytest.raises(sandbox.SandboxRefusal, match="strict"):
-        sandbox.wrap(CMD, policy=policy, libraries_home=tmp_path, net=True)
+        sandbox.wrap(CMD, policy=policy, libraries_home=tmp_path, net=True, fs_roots=True, fs_paths=())
 
 
 def test_unavailable_permissive_runs_bare_and_warns_once(tmp_path, monkeypatch, caplog):
@@ -58,8 +58,8 @@ def test_unavailable_permissive_runs_bare_and_warns_once(tmp_path, monkeypatch, 
     monkeypatch.setattr(sandbox, "_warned", set())
     policy = sandbox.SandboxPolicy(mode="permissive")
     with caplog.at_level("WARNING", logger="rsched.sandbox"):
-        assert sandbox.wrap(CMD, policy=policy, libraries_home=tmp_path, net=True) == CMD
-        assert sandbox.wrap(CMD, policy=policy, libraries_home=tmp_path, net=True) == CMD
+        assert sandbox.wrap(CMD, policy=policy, libraries_home=tmp_path, net=True, fs_roots=True, fs_paths=()) == CMD
+        assert sandbox.wrap(CMD, policy=policy, libraries_home=tmp_path, net=True, fs_roots=True, fs_paths=()) == CMD
     assert sum("UNSANDBOXED" in r.message for r in caplog.records) == 1
 
 
@@ -70,13 +70,13 @@ def test_net_denial_needs_abi4(tmp_path, monkeypatch):
     monkeypatch.setattr(sandbox, "_warned", set())
     with pytest.raises(sandbox.SandboxRefusal, match="ABI"):
         sandbox.wrap(CMD, policy=sandbox.SandboxPolicy(mode="strict"),
-                     libraries_home=tmp_path, net=False)
+                     libraries_home=tmp_path, net=False, fs_roots=True, fs_paths=())
     cmd = sandbox.wrap(CMD, policy=sandbox.SandboxPolicy(mode="permissive"),
-                       libraries_home=tmp_path, net=False)
+                       libraries_home=tmp_path, net=False, fs_roots=True, fs_paths=())
     assert json.loads(cmd[2])["net"] is True     # fs jail engages, TCP stays open
     # net: outbound utils are unaffected by the ABI gap
     cmd = sandbox.wrap(CMD, policy=sandbox.SandboxPolicy(mode="strict"),
-                       libraries_home=tmp_path, net=True)
+                       libraries_home=tmp_path, net=True, fs_roots=True, fs_paths=())
     assert json.loads(cmd[2])["net"] is True
 
 
@@ -116,7 +116,7 @@ def test_wrap_creates_missing_granted_write_roots(tmp_path, monkeypatch, caplog)
     policy = sandbox.SandboxPolicy(mode="permissive", read_roots=(gone,),
                                    write_roots=(fresh,))
     with caplog.at_level("WARNING", logger="rsched.sandbox"):
-        cmd = sandbox.wrap(CMD, policy=policy, libraries_home=tmp_path, net=False)
+        cmd = sandbox.wrap(CMD, policy=policy, libraries_home=tmp_path, net=False, fs_roots=True, fs_paths=())
     assert fresh.is_dir()                            # the grant implies the directory
     assert str(fresh) in json.loads(cmd[2])["rw"]    # so the jail rule can attach to it
     assert not gone.exists()                         # read roots are never created
@@ -138,7 +138,8 @@ def test_policy_for_ctx_derives_from_the_run(tmp_path):
     policy = sandbox.policy_for_ctx(_ctx(server, routine))
     assert policy.mode == "strict"
     assert policy.read_roots == (Path("/data"),)
-    assert policy.write_roots == (tmp_path / "r", Path("/proj"))   # own dir always writable
+    assert policy.write_roots == (Path("/proj"),)
+    assert policy.own_dir == tmp_path / "r"   # held apart: never narrowed by an fs: line
     base = sandbox.base_policy(server)
     assert base.mode == "strict" and base.read_roots == () and base.write_roots == ()
 
@@ -193,3 +194,85 @@ def test_strict_refusal_reaches_util_observation(tmp_path, monkeypatch):
     code, _out, err = utils_run.run_util(tmp_path, "demo", [],
                                          policy=sandbox.SandboxPolicy(mode="strict"))
     assert code == 2 and "strict" in err and "unsandboxed" in err
+
+
+# --- per-util filesystem: the declaration narrows what the run granted -------------------
+# The case these exist for: a routine granted its Signal session directory must not thereby
+# hand that credential to every OTHER util it calls in the same run (docs/sandboxing.md).
+
+def _lib_with(tmp_path, **utils) -> Path:
+    """A minimal util library: {name: fs_line}."""
+    for name, fs_line in utils.items():
+        d = tmp_path / "utils" / name
+        d.mkdir(parents=True)
+        (d / "main.py").write_text(
+            f'"""{name} — t.\n\nusage: gu {name}\ncalls: (none)\ntags: t\n'
+            f'secrets: (none)\nnet: none\nfs: {fs_line}\n"""\n', encoding="utf-8")
+    return tmp_path
+
+
+def test_fs_roots_takes_the_granted_roots(tmp_path, monkeypatch):
+    _force_abi(monkeypatch, 4)
+    lib = _lib_with(tmp_path / "lib", plain="roots")
+    policy = sandbox.SandboxPolicy(mode="permissive", read_roots=(tmp_path / "r",),
+                                   write_roots=(tmp_path / "w",), own_dir=tmp_path / "own")
+    spec = json.loads(sandbox.wrap(CMD, policy=policy, libraries_home=lib, net=False,
+                                   fs_roots=True, fs_paths=())[2])
+    assert str(tmp_path / "r") in spec["ro"]
+    assert str(tmp_path / "w") in spec["rw"]
+    assert str(tmp_path / "own") in spec["rw"]        # own dir is not a grant to narrow
+
+
+def test_fs_none_sees_neither_root_but_keeps_its_own_dir(tmp_path, monkeypatch):
+    _force_abi(monkeypatch, 4)
+    lib = _lib_with(tmp_path / "lib", quiet="none")
+    policy = sandbox.SandboxPolicy(mode="permissive", read_roots=(tmp_path / "r",),
+                                   write_roots=(tmp_path / "w",), own_dir=tmp_path / "own")
+    spec = json.loads(sandbox.wrap(CMD, policy=policy, libraries_home=lib, net=False,
+                                   fs_roots=False, fs_paths=())[2])
+    assert str(tmp_path / "r") not in spec["ro"]
+    assert str(tmp_path / "w") not in spec["rw"]
+    assert str(tmp_path / "own") in spec["rw"]
+
+
+def test_declared_private_store_mounts_only_for_its_declarer(tmp_path, monkeypatch):
+    """The whole point of the axis: `signal` reaches the session dir, `page-fetch` — running in
+    the SAME run, under the SAME grant — does not, because signal claimed the path private."""
+    _force_abi(monkeypatch, 4)
+    sessions = tmp_path / "signal-sessions"
+    lib = _lib_with(tmp_path / "lib", signal=f"rw {sessions}", fetcher="roots")
+    policy = sandbox.SandboxPolicy(mode="permissive", write_roots=(sessions,),
+                                   own_dir=tmp_path / "own")
+
+    declarer = json.loads(sandbox.wrap(CMD, policy=policy, libraries_home=lib, net=False,
+                                       fs_roots=False, fs_paths=(("rw", str(sessions)),))[2])
+    assert str(sessions) in declarer["rw"]
+
+    other = json.loads(sandbox.wrap(CMD, policy=policy, libraries_home=lib, net=False,
+                                    fs_roots=True, fs_paths=())[2])
+    assert str(sessions) not in other["rw"]
+
+
+def test_a_declaration_can_never_widen_the_grant(tmp_path, monkeypatch):
+    """A routine holding write_util could author a util declaring any path. Declaring one it
+    was not granted must mount nothing — the declaration filters, it never requests."""
+    _force_abi(monkeypatch, 4)
+    lib = _lib_with(tmp_path / "lib", greedy="rw /nowhere/secret")
+    policy = sandbox.SandboxPolicy(mode="permissive", write_roots=(tmp_path / "w",),
+                                   own_dir=tmp_path / "own")
+    spec = json.loads(sandbox.wrap(CMD, policy=policy, libraries_home=lib, net=False,
+                                   fs_roots=False,
+                                   fs_paths=(("rw", "/nowhere/secret"),))[2])
+    assert "/nowhere/secret" not in spec["rw"]
+    assert "/nowhere/secret" not in spec["ro"]
+
+
+def test_declared_path_under_a_granted_root_is_admitted(tmp_path, monkeypatch):
+    _force_abi(monkeypatch, 4)
+    lib = _lib_with(tmp_path / "lib", nested=f"rw {tmp_path / 'w' / 'inner'}")
+    policy = sandbox.SandboxPolicy(mode="permissive", write_roots=(tmp_path / "w",),
+                                   own_dir=tmp_path / "own")
+    spec = json.loads(sandbox.wrap(CMD, policy=policy, libraries_home=lib, net=False,
+                                   fs_roots=False,
+                                   fs_paths=(("rw", str(tmp_path / "w" / "inner")),))[2])
+    assert str(tmp_path / "w" / "inner") in spec["rw"]

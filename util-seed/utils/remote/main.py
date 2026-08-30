@@ -8,6 +8,7 @@ calls: (none)
 tags: ssh, remote, machines, gpu, execute
 secrets: RSCHED_MACHINES, RSCHED_MACHINE_KEYS
 net: outbound
+fs: roots
 
 Runs commands and moves files on the SSH hosts the routine is BOUND to (Settings → Machines,
 then bind on the routine page). The engine injects the bound machines' connection details

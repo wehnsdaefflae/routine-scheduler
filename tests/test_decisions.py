@@ -126,7 +126,7 @@ def test_util_approval_is_the_same_record_with_its_own_type(make_routine, script
     d = make_routine(slug="approval", budgets={"ask_timeout_min": 0})
     scripted([
         {"say": "new util", "kind": "write_util", "name": "frob",
-         "content": '"""frob — test util.\n\nusage: gu frob\ntags: test, demo\nnet: none\n"""\n'},
+         "content": '"""frob — test util.\n\nusage: gu frob\ntags: test, demo\nnet: none\nfs: roots\n"""\n'},
         finish(),
     ])
     status, run_dir = run_routine(d, _server(d), run_ts=TS)
@@ -228,7 +228,7 @@ def test_util_secret_gate_files_one_request_covering_the_run(make_routine, scrip
                         **_kw: (ran.append((name, list(args))) or (0, "ran", "")))
     monkeypatch.setattr(utils_lib, "exists", lambda home, name: True)
     monkeypatch.setattr(utils_run, "util_needs",
-                        lambda home, name: ({"FOO_KEY"}, False, set()))
+                        lambda home, name: utils_run.UtilNeeds({"FOO_KEY"}, False, set(), True, ()))
     monkeypatch.setattr(secrets_mod, "load_secrets", lambda: {"FOO_KEY": "x"})
     d = make_routine(slug="secgate", budgets={"ask_timeout_min": 1})
 
@@ -280,7 +280,7 @@ def test_optional_secret_never_asks_and_is_withheld(make_routine, scripted, monk
                                 or (0, "fetched", "")))
     monkeypatch.setattr(utils_lib, "exists", lambda home, name: True)
     monkeypatch.setattr(utils_run, "util_needs",
-                        lambda home, name: ({"WEB_AUTH_SOURCES"}, True, {"WEB_AUTH_SOURCES"}))
+                        lambda home, name: utils_run.UtilNeeds({"WEB_AUTH_SOURCES"}, True, {"WEB_AUTH_SOURCES"}, True, ()))
     monkeypatch.setattr(secrets_mod, "load_secrets", lambda: {"WEB_AUTH_SOURCES": "x"})
     d = make_routine(slug="optsec")
     scripted([
@@ -309,7 +309,7 @@ def test_secret_grant_row_covers_runs_without_asking(make_routine, scripted, mon
                         lambda home, name, args, timeout=0, policy=None, extra_secrets=None,
                         **_kw: (ran.append((name, list(args))) or (0, "ran", "")))
     monkeypatch.setattr(utils_lib, "exists", lambda home, name: True)
-    monkeypatch.setattr(utils_run, "util_needs", lambda home, name: ({"FOO_KEY"}, False, set()))
+    monkeypatch.setattr(utils_run, "util_needs", lambda home, name: utils_run.UtilNeeds({"FOO_KEY"}, False, set(), True, ()))
     monkeypatch.setattr(secrets_mod, "load_secrets", lambda: {"FOO_KEY": "x"})
     d = make_routine(slug="secgate2", budgets={"ask_timeout_min": 1})
     import yaml as _yaml
@@ -337,7 +337,7 @@ def test_util_secret_gate_recorded_decline_refuses_without_asking(make_routine, 
                         (ran.append((name, list(args))) or (0, "ran", "")))
     monkeypatch.setattr(utils_lib, "exists", lambda home, name: True)
     monkeypatch.setattr(utils_run, "util_needs",
-                        lambda home, name: ({"FOO_KEY"}, False, set()))
+                        lambda home, name: utils_run.UtilNeeds({"FOO_KEY"}, False, set(), True, ()))
     monkeypatch.setattr(secrets_mod, "load_secrets", lambda: {"FOO_KEY": "x"})
     d = make_routine(slug="secdeny")
     import yaml as _yaml
@@ -374,7 +374,7 @@ def test_secret_decline_observation_names_no_secrets(make_routine, scripted, mon
                         **_kw: (ran.append(name) or (0, "ran", "")))
     monkeypatch.setattr(utils_lib, "exists", lambda home, name: True)
     monkeypatch.setattr(utils_run, "util_needs",
-                        lambda home, name: ({"FOO_KEY", "BAR_KEY"}, False, set()))
+                        lambda home, name: utils_run.UtilNeeds({"FOO_KEY", "BAR_KEY"}, False, set(), True, ()))
     monkeypatch.setattr(secrets_mod, "load_secrets", lambda: {"FOO_KEY": "x", "BAR_KEY": "y"})
     d = make_routine(slug="secmute")
     import yaml as _yaml
@@ -407,7 +407,7 @@ def test_secret_decline_after_ask_stays_generic(make_routine, scripted, monkeypa
                         lambda home, name, args, timeout=0, policy=None, extra_secrets=None,
                         **_kw: (0, "ran", ""))
     monkeypatch.setattr(utils_lib, "exists", lambda home, name: True)
-    monkeypatch.setattr(utils_run, "util_needs", lambda home, name: ({"FOO_KEY"}, False, set()))
+    monkeypatch.setattr(utils_run, "util_needs", lambda home, name: utils_run.UtilNeeds({"FOO_KEY"}, False, set(), True, ()))
     monkeypatch.setattr(secrets_mod, "load_secrets", lambda: {"FOO_KEY": "x"})
     d = make_routine(slug="secmute2", budgets={"ask_timeout_min": 1})
 
@@ -467,7 +467,7 @@ def test_ambiguous_approval_reply_is_held_not_consumed(make_routine, scripted):
     t.start()
     scripted([
         {"say": "new util", "kind": "write_util", "name": "frob",
-         "content": '"""frob — test util.\n\nusage: gu frob\ntags: test, demo\nnet: none\n"""\n'},
+         "content": '"""frob — test util.\n\nusage: gu frob\ntags: test, demo\nnet: none\nfs: roots\n"""\n'},
         finish(),
     ])
     status, run_dir = run_routine(d, _server(d), run_ts=TS)
