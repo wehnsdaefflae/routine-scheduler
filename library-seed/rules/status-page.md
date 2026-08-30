@@ -103,3 +103,8 @@ so it cannot be overstated and is not yours to write.
 What is yours is the card's one paragraph, and it carries the whole weight: in your own voice, in
 the second person, saying what changed since he last looked and what now waits on him. Not a
 summary of your run. The answer to "do I need to open this today".
+
+The card's `tab` is the name of the ROUTINE GROUP you belong to — exactly as the scheduler spells
+it, punctuation and all. Not a category you invent: the grouping already exists and is the one he
+reasons about, so a second taxonomy for the hub just gives the same set two names and gets one of
+them wrong. If you are moved to another group, your tab moves with you at your next run.
