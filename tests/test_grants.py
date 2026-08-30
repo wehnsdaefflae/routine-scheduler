@@ -341,22 +341,29 @@ def test_deny_gates_previous_runs_but_not_the_live_run():
 def test_deny_gates_edit_file_like_write_file():
     none = GrantPolicy()
     denial = none.deny({"kind": "edit_file", "path": "main.md", "anchor": "a", "replacement": "b"})
-    assert denial and "routine-improver" in denial
+    assert denial and "recipe-authoring" in denial
     w = none.deny({"kind": "edit_file", "path": "runs/20260101-000000/x.md", "anchor": "a"})
     assert w and "read-only" in w
     assert none.deny({"kind": "edit_file", "path": "state/notes.md", "anchor": "a"}) is None
 
 
 def test_deny_blocks_own_recipe_and_config_writes():
-    """Own recipe writes (main.md/stages/traits/tuning.yaml) are a FIXED rule, unlocked
-    only via recipe_unlocked (a user fs_write_root covering the dir). routine.yaml is
-    config: denied for EVERYONE — the denial routes machine-tunable knobs to tuning.yaml."""
+    """Own recipe writes (main.md/stages/tuning.yaml) need the `write_recipe` capability, held
+    through the recipe-authoring conduct doc (0.261.0). They used to unlock as a side effect of
+    an fs_write_root covering the routine dir, which conflated "may write files here" with "may
+    reword its own task". routine.yaml is config: denied for EVERYONE — the denial routes
+    machine-tunable knobs to tuning.yaml."""
     none = GrantPolicy()
-    for path in ("main.md", "stages/collect.md", "./main.md",
-                 "tuning.yaml", "routine.yaml"):
+    for path in ("main.md", "stages/collect.md", "./main.md", "tuning.yaml"):
         denial = none.deny({"kind": "write_file", "path": path, "content": "x"})
-        assert denial and "routine-improver" in denial, path
+        assert denial and "recipe-authoring" in denial, path
         assert none.deny({"kind": "read_file", "path": path}) is None, path
+    # routine.yaml is CONFIG, not recipe: its denial is absolute and names no permission,
+    # because no capability unlocks it — not recipe-authoring, not admin
+    cfg_denial = none.deny({"kind": "write_file", "path": "routine.yaml", "content": "x"})
+    assert cfg_denial and "recipe-authoring" not in cfg_denial
+    assert "would change routine config" in cfg_denial
+    assert none.deny({"kind": "read_file", "path": "routine.yaml"}) is None
     # instruction.md is no longer a recipe file (the seed isn't persisted) — writes are open
     assert none.deny({"kind": "write_file", "path": "instruction.md", "content": "x"}) is None
     # non-recipe writes stay open
@@ -454,7 +461,7 @@ def test_admin_lifts_capability_gating_only(tmp_path):
     assert w and "read-only" in w
     #  - the routine's own recipe stays sealed (admin ≠ recipe_unlocked)
     r = admin.deny({"kind": "write_file", "path": "main.md", "content": "x"})
-    assert r and "routine-improver" in r
+    assert r and "recipe-authoring" in r
     #  - routine.yaml config is the user's, denied for everyone including admin
     c = admin.deny({"kind": "write_file", "path": "routine.yaml", "content": "x"})
     assert c is not None

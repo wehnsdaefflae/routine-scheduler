@@ -292,9 +292,11 @@ class GrantPolicy:
                             f"File a deferred ask_user describing the change you need.")
                 if writes and is_recipe_path(path) and not self.recipe_unlocked:
                     return (f"writing {_norm_rel(path)!r} would modify this routine's own recipe "
-                            f"(main.md / stages/ / tuning.yaml) — a run never edits its own "
-                            f"recipe; the routine-improver meta routine refines it. File a "
-                            f"deferred ask_user describing the change instead.")
+                            f"(main.md / stages/ / tuning.yaml), which needs the recipe-authoring "
+                            f"permission — this routine does not hold it, so its instructions are "
+                            f"the user's. Describe the change you need in a deferred ask_user "
+                            f"(or a report), or request it: "
+                            f"{self.request_route('action:write_recipe')}")
         return None
 
 

@@ -139,9 +139,10 @@ def _write_gate(ctx: RunContext, resolved) -> str | None:
         except ValueError:
             return None
         if is_recipe_path(str(rel)):
-            return ("a run never edits its own recipe (main.md / stages/ / "
-                    "tuning.yaml) — the routine-improver refines it; file a deferred "
-                    "ask_user instead")
+            return ("editing this routine's own recipe (main.md / stages/ / tuning.yaml) "
+                    "needs the recipe-authoring permission, which this routine does not "
+                    "hold — its instructions are the user's. File a deferred ask_user (or a "
+                    "report) describing the change instead")
     return None
 
 

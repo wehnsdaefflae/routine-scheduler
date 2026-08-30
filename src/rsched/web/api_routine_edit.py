@@ -28,6 +28,10 @@ router = APIRouter(tags=["routines"])
 class RulesBody(BaseModel):
     add: list[str] = []
     remove: list[str] = []
+    # Also withdraw the unbound rules' TEXT from a live run's context, not just their
+    # authority. Rewrites the messages carrying it, which invalidates the provider's prompt
+    # cache from that point — so it is a deliberate escalation, never the default.
+    erase: bool = False
 
 
 def apply_rule_edit(request: Request, routine_dir: Path, body: RulesBody,
@@ -41,8 +45,14 @@ def apply_rule_edit(request: Request, routine_dir: Path, body: RulesBody,
     When a run IS live, the config alone would not reach it — its prompt was composed at
     boot and is immutable under the prompt-caching contract — so an `add_rules` signal goes
     into the run's control.json and `engine/switches.apply_rule_additions` appends the prose
-    at the next turn boundary. Removal has no live counterpart on purpose: prose already in
-    the context cannot be unsaid, so an unbind takes effect at the next run.
+    at the next turn boundary.
+
+    Removal is now symmetric. "Prose already in the context cannot be unsaid" is true of the
+    TEXT and false of its AUTHORITY: telling the run the rule no longer binds costs one
+    appended note, so `drop_rules` lands on a live run exactly as `add_rules` does. `erase`
+    is the escalation for when the text itself is the problem — it rewrites the messages
+    carrying that rule into a tombstone, which INVALIDATES the provider's prompt cache from
+    the first edited message on. Opt-in for that reason, and the caller is told the cost.
     """
     server = request.app.state.server
     try:
@@ -54,11 +64,19 @@ def apply_rule_edit(request: Request, routine_dir: Path, body: RulesBody,
         return {"ok": True, "added": [], "removed": [],
                 "rules": rules_mod.current_rules(routine_dir)}
     _git_commit(routine_dir, f"rules via web (+{len(added)}/-{len(removed)})")
-    if added and active_run_dir is not None:
+    if active_run_dir is not None:
         from .routines_common import merge_control
-        merge_control(active_run_dir, {"add_rules": {"slugs": added, "ts": now_iso()}})
+        signal: dict = {}
+        if added:
+            signal["add_rules"] = {"slugs": added, "ts": now_iso()}
+        if removed:
+            signal["drop_rules"] = {"slugs": removed, "ts": now_iso(),
+                                    "erase": bool(body.erase)}
+        if signal:
+            merge_control(active_run_dir, signal)
+    live = bool((added or removed) and active_run_dir is not None)
     return {"ok": True, "added": added, "removed": removed,
-            "live": bool(added and active_run_dir is not None),
+            "live": live, "erased": bool(removed and body.erase and live),
             "rules": rules_mod.current_rules(routine_dir)}
 
 

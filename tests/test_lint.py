@@ -104,8 +104,12 @@ def test_tags_on_library_elements():
                           "scheduling", "global-utils", "rule-authoring",
                           "remote-machines", "darknet", "outbound-mail",
                           "messaging-signal", "messaging-telegram", "messaging-whatsapp",
-                          "messaging-zulip", "usenet", "scripts"}  # variants collapsed: level = capability
-    assert "self-modification" not in perms          # retired: a fixed engine rule now
+                          "messaging-zulip", "usenet", "scripts",
+                          "recipe-authoring"}  # variants collapsed: level = capability
+    # `self-modification` was retired when own-recipe writes became a fixed engine rule; 0.261.0
+    # brought the DECISION back as `recipe-authoring`, because keying it on an fs write root
+    # meant granting a working directory silently granted the right to reword the task.
+    assert "self-modification" not in perms
     # Each act gets its own permission: writing a util adds a capability, removing one takes
     # it away from every caller, and each messenger reaches a different person differently.
     assert perms["util-authoring"]["requires"]["actions"] == ["write_util"]

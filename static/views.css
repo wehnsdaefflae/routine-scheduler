@@ -995,3 +995,15 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
   background: rgba(133, 152, 169, 0.07); border-left-color: var(--faint); opacity: 0.72;
 }
 .ability.pending { border-color: rgba(255, 180, 84, 0.45); }
+
+/* what a staged rule change will actually DO — the two directions are not symmetric */
+.rule-why { display: block; color: var(--amber); padding: 0 12px 7px 34px; }
+.rule-why:empty { display: none; }
+.avail-row .rule-why { grid-column: 2 / -1; padding: 2px 0 0; }
+.rule-bound.pending-drop .rule-why { color: var(--faint); }
+
+.rule-erase {
+  display: block; margin-top: 8px; padding: 8px 10px; font-size: 12px;
+  border: 1px solid var(--line-2); border-radius: 3px; background: var(--surface-2);
+}
+.rule-erase[hidden] { display: none; }

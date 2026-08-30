@@ -21,7 +21,7 @@ from ..paths import atomic_write_json, read_json
 def merge_control(run_dir: Path, updates: dict) -> None:
     """Merge `updates` into the run's web-owned control.json (read-modify-write, atomic).
     ONE writer path for every mid-run signal — pause, switch_model, set_deliberation,
-    add_rules — so no endpoint can drop a sibling's pending signal.
+    add_rules / drop_rules — so no endpoint can drop a sibling's pending signal.
     """
     ctrl = read_json(run_dir / "control.json")
     ctrl = dict(ctrl) if isinstance(ctrl, dict) else {}

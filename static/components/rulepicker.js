@@ -45,8 +45,21 @@ export function rulePicker(available, held, opts = {}) {
   const host = el("div", { class: "rulepicker" });
   const status = el("div", { class: "muted small" });
 
+  // Withdrawing the TEXT is a separate, dearer decision from withdrawing the rule's
+  // authority: it rewrites the messages carrying it, which costs the provider's prompt cache
+  // from that point on. Offered only while a run is live, because otherwise there is no
+  // context to withdraw anything from.
+  const eraseBox = el("input", { type: "checkbox", "data-nopersist": true });
+  const eraseLabel = el("label", { class: "rule-erase", hidden: true },
+    eraseBox,
+    el("span", {}, "also withdraw their text from the running context"),
+    el("span", { class: "muted small" },
+      " — telling the run they no longer bind is enough on its own; erasing rewrites the "
+      + "conversation and loses the prompt cache from that point, which costs tokens and "
+      + "latency on the next turn"));
+
   const save = el("button", { class: "btn", disabled: true, onclick: async () => {
-    const payload = value();
+    const payload = { ...value(), erase: eraseBox.checked };
     save.disabled = true;
     try {
       await opts.onSave?.(payload);
@@ -69,9 +82,10 @@ export function rulePicker(available, held, opts = {}) {
     const bits = [];
     if (add.length) bits.push(`+${add.join(", +")}`);
     if (remove.length) bits.push(`−${remove.join(", −")}`);
-    status.textContent = bits.join("  ") + (opts.live && add.length
-      ? " — newly bound rules reach the run in flight" : "");
+    status.textContent = bits.join("  ") + (opts.live
+      ? " — reaches the run in flight at its next turn" : "");
     save.disabled = false;
+    eraseLabel.hidden = !(opts.live && remove.length);
   }
 
   // Sections are built from the COMMITTED set; a toggle only stages a change and marks the
@@ -79,11 +93,19 @@ export function rulePicker(available, held, opts = {}) {
   // threw away the one thing this panel is for — showing what you are about to change.
   const marks = [];        // [{slug, node}] — repainted on every toggle, rebuilt on save
 
+  // The two directions are NOT symmetric, and the panel has to say so: binding reaches a run
+  // already in flight (control.json appends the prose at the next turn boundary), unbinding
+  // only lands at the next run, because prose already in a live context cannot be unsaid.
+  const WILL_BIND = "will bind — takes effect on the next turn, this run included";
+  const WILL_DROP = "will unbind — takes effect on the next turn, this run included";
+
   function repaint() {
-    for (const { slug, node } of marks) {
+    for (const { slug, node, why } of marks) {
       const staged = now.has(slug) !== start.has(slug);
+      const dropping = staged && start.has(slug);
       node.classList.toggle("pending", staged);
-      node.classList.toggle("pending-drop", staged && start.has(slug));
+      node.classList.toggle("pending-drop", dropping);
+      if (why) why.textContent = staged ? (dropping ? WILL_DROP : WILL_BIND) : "";
     }
     paintStatus();
   }
@@ -93,31 +115,33 @@ export function rulePicker(available, held, opts = {}) {
     const doc = docExpander("rules", rule.slug);
     const box = el("input", { type: "checkbox", checked: "", "data-nopersist": true,
                               title: "unbind — takes effect at the next run" });
+    const why = el("span", { class: "rule-why small" });
     const node = el("div", { class: "rule-bound", "data-rule": rule.slug },
       el("div", { class: "rule-line" }, box,
         el("span", { class: "rule-name" }, rule.slug),
         el("span", { class: "muted small prose" }, rule.summary || ""),
         doc.btn),
-      doc.body);
+      why, doc.body);
     box.onchange = () => {
       if (box.checked) now.add(rule.slug); else now.delete(rule.slug);
       repaint();
     };
-    marks.push({ slug: rule.slug, node });
+    marks.push({ slug: rule.slug, node, why });
     return node;
   }
 
   /** A catalogue row: name, one line, and a bind control. */
   function availRow(rule) {
     const box = el("input", { type: "checkbox", "data-nopersist": true });
+    const why = el("span", { class: "rule-why small" });
     const node = el("label", { class: "avail-row", "data-rule": rule.slug }, box,
       el("span", { class: "avail-name" }, rule.slug),
-      el("span", { class: "muted small prose" }, rule.summary || ""));
+      el("span", { class: "muted small prose" }, rule.summary || ""), why);
     box.onchange = () => {
       if (box.checked) now.add(rule.slug); else now.delete(rule.slug);
       repaint();
     };
-    marks.push({ slug: rule.slug, node });
+    marks.push({ slug: rule.slug, node, why });
     return node;
   }
 
@@ -130,7 +154,15 @@ export function rulePicker(available, held, opts = {}) {
       host.append(el("div", { class: "muted small" }, "the library carries no general rules"));
       return;
     }
-    host.append(el("div", { class: "lbl" }, `Practises · ${bound.length}`));
+    host.append(
+      el("div", { class: "lbl" }, `Practises · ${bound.length}`),
+      el("div", { class: "muted small prose", style: "margin:-4px 0 9px" },
+        "Standing practices: the run reads each one before the situation it governs, from the "
+        + "single copy in the library — the prose is never pasted into the prompt, so binding "
+        + "one costs nothing until it is needed. A run may read ANY rule at any time; binding "
+        + "is what makes one standing, listed in this routine's ",
+        el("span", { class: "ref-tag" }, "Standing practices"),
+        " and in every run's digest."));
     host.append(bound.length
       ? el("div", { class: "rule-bounds" }, ...bound.map(boundRow))
       : el("div", { class: "muted small" },
@@ -155,6 +187,7 @@ export function rulePicker(available, held, opts = {}) {
     }
     host.append(el("div", { class: "row mt", style: "gap:9px;align-items:center" },
       opts.onSave ? save : null, status));
+    host.append(eraseLabel);
     repaint();
   }
 

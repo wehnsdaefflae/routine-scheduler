@@ -17,6 +17,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.261.0] — 2026-08-30
+
+### Editing your own instructions is a permission; unbinding a rule now lands on a live run
+
+- **`recipe-authoring` / the `write_recipe` capability.** A run's writes into its own recipe
+  (`main.md`, `stages/`, `tuning.yaml`) used to unlock as a SIDE EFFECT of a user-granted
+  `fs_write_root` covering the routine's own directory. That conflated two different
+  decisions — "may write files here" and "may reword its own task" — so granting a routine
+  access to its working directory silently handed it the right to change what it is for.
+  It is a switch now, with its own conduct doc. `routine.yaml` stays sealed under both.
+  The three routines that relied on the old coupling were granted it explicitly.
+- **Unbinding a general rule takes effect immediately**, symmetric with binding. "Prose
+  already in a live context cannot be unsaid" is true of the TEXT and false of its
+  AUTHORITY: telling the run the rule no longer binds costs one appended note, so
+  `drop_rules` now lands at the next turn boundary exactly as `add_rules` does.
+- **…and optionally withdraws the text too.** `erase` rewrites the messages carrying the
+  unbound rule into a tombstone — content only, so the transport's user/assistant
+  alternation survives. That INVALIDATES the provider's prompt cache from the first edited
+  message on, which is why it is opt-in, offered only while a run is live, and why the
+  control says what it costs.
+- **The general-rules panel says what on and off actually DO** — the two directions, the
+  fact that the prose is never inlined (the run reads the library's single copy on demand),
+  and that a run may read any rule regardless: binding is what makes one standing.
+- The setup surface emits **one row per entity**; two checks reaching the same id (a
+  capability worth naming that is also uncovered) collapse to the worst-severity row.
+
+
 ## [0.260.0] — 2026-08-30
 
 ### The two setup panels are legible: hold vs available, and a toggle stops rebuilding the page

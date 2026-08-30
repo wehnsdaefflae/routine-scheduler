@@ -4,7 +4,8 @@ finished sub-workflow announcements).
 
 Everything here runs BETWEEN turns and mutates only the loop's message list / context —
 never the model call itself. control.json stays web-owned: the engine only reads it
-(pause, switch_model, set_deliberation, add_rules) and reacts at the next turn boundary.
+(pause, switch_model, set_deliberation, add_rules, drop_rules) and reacts at the
+next turn boundary.
 """
 
 from __future__ import annotations

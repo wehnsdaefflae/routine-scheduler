@@ -58,17 +58,26 @@ from .ids import is_slug
 # `read_rule` is deliberately NOT gated: a routine must be able to read the general rules
 # it holds, and reading library prose has no side effect worth a decision. The catalog
 # (`name: "list"`) is open for the same reason.
-GATED_KINDS = ("write_util", "revise_util", "remove_util", "write_rule", "memory_read",
-               "memory_write", "detach", "schedule_run", "script")
+GATED_KINDS = ("write_util", "revise_util", "remove_util", "write_rule", "write_recipe",
+               "memory_read", "memory_write", "detach", "schedule_run", "script")
+# `write_recipe` is a capability TOKEN too, on the same terms: the model emits write_file /
+# edit_file and the engine decides from the PATH whether the target is this routine's own
+# recipe (grantpolicy.is_recipe_path). Before 0.261.0 that was not a capability at all — it
+# unlocked as a SIDE EFFECT of a user-granted fs_write_root covering the routine's own dir,
+# which meant granting a routine write access to its own working directory silently handed it
+# the right to rewrite its own instructions. Now it is a switch you throw on purpose.
 # `revise_util` is a CAPABILITY token, NOT an action kind: the model always emits
 # kind=write_util, and the engine decides create-vs-revise from whether the target slug
 # already exists in the library (see GrantPolicy.deny). Keeping it out of the action schema
 # is deliberate — the flat kind surface is what weak models and Ollama grammars handle well,
 # and the model has no reliable way to know which mode it is in before it looks.
-CAPABILITY_ACTIONS = (*KINDS, "revise_util")
+# The two capability TOKENS (`revise_util`, `write_recipe`) are not emittable kinds, so
+# they join the vocabulary here rather than in KINDS.
+CAPABILITY_ACTIONS = (*KINDS, "revise_util", "write_recipe")
 # When no library permission doc requires a gated kind (e.g. the library predates it),
 # denials still name the doc that canonically covers its conduct.
 _DEFAULT_KIND_SOURCE = {"write_util": "util-authoring", "revise_util": "util-revision",
+                        "write_recipe": "recipe-authoring",
                         "remove_util": "util-removal",
                         "memory_read": "memory", "memory_write": "memory",
                         "write_rule": "rule-authoring",

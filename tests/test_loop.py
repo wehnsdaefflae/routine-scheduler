@@ -1645,12 +1645,16 @@ def test_schema_storm_streak_resets_on_a_clean_turn(make_routine, scripted):
     assert st["schema_retries"] == 4
 
 
-def test_own_recipe_writes_blocked_unless_write_root_covers_dir(make_routine, scripted):
-    """write_file into own main.md/stages/traits is rejected for every routine (inside the
-    schema-retry cycle) — no permission unlocks it. A user-granted fs_write_root covering the
-    routine dir (the routine-improver's case) does (routine.yaml stays blocked even then)."""
-    import yaml as _yaml
+def test_own_recipe_writes_need_the_recipe_authoring_capability(make_routine, scripted):
+    """write_file into own main.md/stages/ is rejected inside the schema-retry cycle unless the
+    routine holds `write_recipe` (the recipe-authoring conduct doc). Before 0.261.0 it unlocked
+    as a SIDE EFFECT of an fs_write_root covering the routine dir, so granting a routine write
+    access to its own working directory silently handed it the right to reword its own task.
+    routine.yaml stays blocked either way.
 
+    The UNLOCKED direction is covered by test_revise_marker_unlocks_recipe_for_the_leg (the
+    same `recipe_unlocked` flag, driven the other way) plus the derivation test below; here the
+    subject is the denial and what it teaches."""
     from rsched.engine.transcript import read_events as _read
 
     d = make_routine(slug="frozen")
@@ -1663,20 +1667,49 @@ def test_own_recipe_writes_blocked_unless_write_root_covers_dir(make_routine, sc
     events, _ = _read(run_dir / "transcript.jsonl")
     assert status == "ok"
     errs = [e for e in events if e["type"] == "error"]
-    assert len(errs) == 1 and "routine-improver" in errs[0]["payload"]["message"]
+    assert len(errs) == 1 and "recipe-authoring" in errs[0]["payload"]["message"]
     assert not (d / "stages" / "collect.md").exists()
 
-    d2 = make_routine(slug="unfrozen")
-    cfg2 = _yaml.safe_load((d2 / "routine.yaml").read_text())
-    cfg2["fs_write_roots"] = [str(d2.parent)]      # user-granted root covers the own dir
-    (d2 / "routine.yaml").write_text(_yaml.safe_dump(cfg2))
-    scripted([
-        write_file("stages/collect.md", content="rewritten"),
-        finish(),
-    ])
-    status2, _run_dir2 = run_routine(d2, _server(d2), run_ts=TS)
-    assert status2 == "ok"
-    assert (d2 / "stages" / "collect.md").read_text().strip() == "rewritten"
+
+def test_the_recipe_unlock_is_derived_from_the_capability(make_routine):
+    """The derivation 0.261.0 changed, on its own: the flag comes from `write_recipe` in the
+    capabilities mapping, and an fs_write_root over the routine's own dir no longer implies it."""
+    import yaml as _yaml
+
+    from rsched.config import load_routine
+
+    def unlocked_for(**over) -> bool:
+        d = make_routine(slug=f"deriv{abs(hash(str(over))) % 9999}")
+        cfg = _yaml.safe_load((d / "routine.yaml").read_text())
+        cfg.update(over)
+        (d / "routine.yaml").write_text(_yaml.safe_dump(cfg))
+        loaded, _ = load_routine(d)
+        return "write_recipe" in ((loaded.capabilities or {}).get("actions") or [])
+
+    assert unlocked_for(capabilities={"actions": ["write_recipe"]}) is True
+    assert unlocked_for(fs_write_roots=["~"]) is False          # the retired coupling
+    assert unlocked_for(capabilities={"actions": ["write_util"]}) is False
+
+
+def test_a_write_root_over_the_own_dir_no_longer_unlocks_the_recipe(make_routine, scripted):
+    """The coupling 0.261.0 broke: granting a routine write access to its own working
+    directory used to hand it the right to reword its own task as a side effect. Those are
+    different decisions and the second one now has its own switch."""
+    import yaml as _yaml
+
+    from rsched.engine.transcript import read_events as _read
+
+    d = make_routine(slug="rooted")
+    cfg = _yaml.safe_load((d / "routine.yaml").read_text())
+    cfg["fs_write_roots"] = [str(d.parent)]        # covers the routine's own dir
+    (d / "routine.yaml").write_text(_yaml.safe_dump(cfg))
+    scripted([write_file("stages/collect.md", content="rewritten"), probe(), finish()])
+    status, run_dir = run_routine(d, _server(d), run_ts=TS)
+    events, _ = _read(run_dir / "transcript.jsonl")
+    assert status == "ok"
+    errs = [e for e in events if e["type"] == "error"]
+    assert errs and "recipe-authoring" in errs[0]["payload"]["message"]
+    assert not (d / "stages" / "collect.md").exists()
 
 
 def test_write_file_overwrite_outside_own_dir_requires_a_read(make_routine, scripted, tmp_path):
@@ -2323,7 +2356,7 @@ def test_edit_file_respects_recipe_write_gate(make_routine, scripted):
     ])
     assert status == "ok"
     errors = [e for e in events if e["type"] == "error" and e["payload"].get("where") == "schema"]
-    assert errors and "routine-improver" in errors[0]["payload"]["message"]
+    assert errors and "recipe-authoring" in errors[0]["payload"]["message"]
     assert "Hacked" not in (d / "main.md").read_text()
 
 

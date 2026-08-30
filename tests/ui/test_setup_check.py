@@ -47,24 +47,31 @@ def test_a_blocking_gap_is_named_above_the_panels(ui_page, ui):
 
 def test_a_note_renders_without_making_the_strip_look_broken(ui_page, ui):
     """The three severities have to READ apart, or the strip is a wall of equal-looking rows.
-    A write root over the routine's own dir is the note case: intended for the improver,
-    frequently unintended elsewhere, and nothing is failing.
+    A routine that may rewrite its own instructions is the note case: intended for an
+    improver, worth saying out loud everywhere else, and nothing is failing.
 
     (What each severity MEANS is pinned in tests/test_surface.py — the store cannot be seeded
     from here, so this asserts what the page can actually show: the row, its class, its wording.)
     """
     path = ui.routines / "uir" / "routine.yaml"
     cfg = yaml.safe_load(path.read_text(encoding="utf-8"))
-    cfg["fs_write_roots"] = [str(ui.routines / "uir")]
+    # hold nothing else: an explicit capabilities mapping replaces the model default, which
+    # would orphan the default permissions and add rows this test is not about
+    cfg["permissions"] = []
+    cfg["capabilities"] = {"actions": ["write_recipe"], "utils": [], "util_tags": []}
     path.write_text(yaml.safe_dump(cfg), encoding="utf-8")
 
     ui_page.goto(f"{ui.url}/#/routine/uir")
     strip = ui_page.locator("[data-setup-check]")
     strip.wait_for(state="visible", timeout=10000)
     assert "has-blocks" not in (strip.get_attribute("class") or "")   # a note is not a failure
-    row = ui_page.locator(".setup-row.sev-note")
+    row = ui_page.locator('.setup-row[data-entity="action:write_recipe"]')
     assert row.count() == 1
-    assert "own-recipe editing is unlocked" in row.inner_text()
+    assert "sev-note" in (row.get_attribute("class") or "")
+    assert "rewrite its own instructions" in row.inner_text()
+    # the orphan check reaches the same entity (nothing here requires the capability), and one
+    # entity gets ONE row — two rows saying different things about it would read as a bug
+    assert ui_page.locator(".setup-row.sev-note").count() == 1
 
 
 # --- ability cards: the join the two-column panel asked the reader to do -------------------

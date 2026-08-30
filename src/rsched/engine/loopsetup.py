@@ -58,12 +58,12 @@ def configure(loop, ctx: RunContext, workflow_body: str, instruction: str,
     # routine's CAPABILITIES mapping — user-set config a routine cannot loop-grant
     # (its own routine.yaml is write-protected like the recipe); the library docs'
     # requires: contribute only the reserved-util vocabulary and denial wording.
-    # Own recipe/config writes unlock ONLY when a user-granted fs_write_root covers
-    # the routine dir — the routine-improver's case. Enforced per turn by
-    # validate_action.
-    from ..paths import within
-    unlocked = any(within(root, ctx.routine.dir)
-                   for root in ctx.routine.fs_write_roots or [])
+    # Own-recipe writes are a CAPABILITY (`write_recipe`, held through the recipe-authoring
+    # conduct doc) — not, as before 0.261.0, a side effect of a user-granted fs_write_root
+    # covering the routine's own dir. That coupling meant giving a routine write access to its
+    # working directory silently also gave it the right to rewrite its own instructions, which
+    # is a different decision and deserves its own switch. routine.yaml stays sealed either way.
+    unlocked = "write_recipe" in ((ctx.routine.capabilities or {}).get("actions") or [])
     # A "revise recipe" run (the user asked from the run view to change this routine's OWN
     # files) is granted recipe loop-write + the file-edit kinds for THIS leg only — a marker
     # the /revise endpoint drops in the run dir, read once and cleared here. No persisted
@@ -118,6 +118,7 @@ def configure(loop, ctx: RunContext, workflow_body: str, instruction: str,
     loop._last_switch_ts = ""   # edge-trigger for mid-run model switches (control.json)
     loop._last_deliberation_ts = ""   # edge-trigger for mid-run deliberation switches
     loop._last_rules_ts = ""    # edge-trigger for user-bound general rules
+    loop._last_rule_drop_ts = ""   # …and for unbinding one mid-run (symmetric)
     loop._last_config_ts = ""   # edge-trigger for a live config PATCH (F337)
     loop._challenged = set()   # F334 v2: conditions the verifier has
     #                                      already objected to — at most once each,

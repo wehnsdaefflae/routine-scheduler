@@ -366,6 +366,7 @@ The shipped set:
 | `global-utils` | nothing (`requires: {}`) — the `util` action is a base kind; this doc is pure conduct: discovery, composition, never silently routing around a broken util | ✅ |
 | `rule-authoring` | the `write_rule` action — author or revise a general rule in the shared library (the approval level is `rule_confirm`) | opt-in |
 | `scheduling` | the `schedule_run` action — arm/cancel a one-shot future run of a routine | opt-in |
+| `recipe-authoring` | the `write_recipe` capability — revise this routine's OWN `main.md` / `stages/` / `tuning.yaml`. Hold it where refining the recipe IS the job; `routine.yaml` stays sealed regardless | opt-in |
 | `scripts` | the `script` action — run the routine's OWN persistent `scripts/<name>.py` helpers (tooling, not a second interpreter; declared secrets only, no util/model access inside) | opt-in |
 
 ### What enforcement looks like
@@ -373,8 +374,11 @@ The shipped set:
 A run's allowed action kinds are **workflow `tools:` ∩ (base ∪ enabled capabilities)**
 (`finish` always allowed). Gated calls — `write_util` switched off, a reserved
 util, a `read_file` into `runs/` beyond the enabled depth, and any `write_file` into the run's
-OWN recipe — `main.md` / `stages/` (a fixed rule, not a capability — unlocked only
-when a user-granted fs_write_root covers the routine dir, the routine-improver's case) — are
+OWN recipe — `main.md` / `stages/` / `tuning.yaml`, gated by the **`write_recipe`** capability
+(held through the `recipe-authoring` doc). Until 0.261.0 this was not a capability at all: it
+unlocked as a SIDE EFFECT of a user-granted fs_write_root covering the routine's own dir, so
+granting a routine write access to its working directory silently also granted it the right to
+reword its own task. Those are different decisions; `routine.yaml` stays sealed under both — are
 rejected inside the schema-retry cycle by `validate_action`, with an error naming the way out:
 a typed ACCESS REQUEST for the denied entity (see the grant model below), or the settled
 do-not-re-request wording when the user already declined it. A run NEVER writes

@@ -35,6 +35,7 @@ def load_applied_baselines(loop) -> None:
         loop._last_switch_ts = str(applied.get("switch_model") or "")
         loop._last_deliberation_ts = str(applied.get("set_deliberation") or "")
         loop._last_rules_ts = str(applied.get("add_rules") or "")
+        loop._last_rule_drop_ts = str(applied.get("drop_rules") or "")
         loop._last_config_ts = str(applied.get("config_change") or "")
 
 def _mark_applied(loop, signal: str, ts: str) -> None:
@@ -187,3 +188,62 @@ def apply_rule_additions(loop) -> None:
                 f"now on, and is one of your standing practices from the next run:\n\n{text}")
         ctx.transcript.event("user_injection", {"text": f"[engine] {note}", "source": "engine"})
         loop.messages.append({"role": "user", "content": f"ENGINE NOTE: {note}"})
+
+
+# The two carriers of a rule's prose inside a live thread. A bound rule is NOT inlined in the
+# composed prompt — the digest lists slugs and the run reads what it needs — so the text can
+# only be in a mid-run bind note or in a read_rule observation.
+def _carries_rule(content: str, slug: str) -> bool:
+    return (f"the user bound the general rule {slug!r}" in content
+            or f"OBSERVATION (read_rule {slug}," in content)
+
+
+def apply_rule_drop(loop) -> None:
+    """Turn-boundary: honour a mid-run UNBIND written to control.json by the web layer.
+
+    Binding already reached a live run; unbinding used to wait for the next one, on the
+    reasoning that prose already in a context cannot be unsaid. That is true of the TEXT and
+    false of its authority: the run can simply be told the rule no longer binds, which costs
+    one appended note and nothing else. So an unbind now takes effect immediately, symmetric
+    with a bind.
+
+    `erase` is the escalation, for when the prose itself is the problem rather than its
+    standing. It rewrites the messages that carry the rule into a tombstone — content, never
+    the entries themselves, so the user/assistant alternation the transport requires survives.
+    Rewriting the list INVALIDATES the provider's prompt cache from the first edited message
+    on, which is why it is opt-in and why the note says so: the composed prompt is a caching
+    contract, and compaction, schema-retry cleanup and the media fallback are the only other
+    things allowed to break it.
+    """
+    ctx = loop.ctx
+    obj = read_json(ctx.root_run_dir / "control.json")
+    sw = obj.get("drop_rules") if isinstance(obj, dict) else None
+    if not isinstance(sw, dict) or not sw.get("ts") or sw["ts"] == loop._last_rule_drop_ts:
+        return
+    loop._last_rule_drop_ts = str(sw["ts"])
+    _mark_applied(loop, "drop_rules", str(sw["ts"]))
+    slugs = [s for s in (sw.get("slugs") or []) if isinstance(s, str)]
+    if not slugs:
+        return
+    erase = bool(sw.get("erase"))
+    erased = 0
+    if erase:
+        for i, msg in enumerate(loop.messages):
+            content = str(msg.get("content") or "")
+            hit = [s for s in slugs if _carries_rule(content, s)]
+            if not hit:
+                continue
+            loop.messages[i] = {**msg, "content":
+                                f"[removed: the general rule(s) {', '.join(hit)} were unbound "
+                                f"by the user and their text was withdrawn from this context]"}
+            erased += 1
+    for slug in slugs:
+        ctx.consulted_rules.discard(slug)
+    named = ", ".join(repr(s) for s in slugs)
+    note = (f"the user UNBOUND the general rule(s) {named} — they no longer bind this routine. "
+            f"Stop applying them from now on; they are not standing practices any more.")
+    if erased:
+        note += (f" Their text has been withdrawn from the conversation above "
+                 f"({erased} message(s) rewritten).")
+    ctx.transcript.event("user_injection", {"text": f"[engine] {note}", "source": "engine"})
+    loop.messages.append({"role": "user", "content": f"ENGINE NOTE: {note}"})

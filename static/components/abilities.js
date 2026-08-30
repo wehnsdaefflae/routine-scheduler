@@ -62,6 +62,9 @@ const ACTION_HELP = {
   write_rule: "author or revise a general rule in the shared library — the text every routine "
     + "holding that rule follows from its next run",
   script: "run the routine's own persistent scripts/<name>.py helpers",
+  write_recipe: "rewrite this routine's OWN instructions — main.md, stages/ and tuning.yaml. "
+    + "Its config (routine.yaml) stays sealed either way. Hold it where refining the recipe "
+    + "IS the job; an ordinary routine reports a wrong instruction instead of rewording it",
 };
 const UTIL_HELP = {
   discord: "the phone channel: blocking questions mirror to Discord and are answerable in one "

@@ -240,17 +240,21 @@ def routine_surface(server: Any, cfg: RoutineConfig) -> dict:
     nodes += _secret_nodes(cfg, secret_needs, set(load_secrets()))
     nodes += _fs_nodes(cfg, fs_needs)
 
-    # -- a write root over the routine's own dir unlocks own-recipe editing (a fixed rule,
-    #    not a capability) — never wrong, frequently unintended, so: a note. ----------------
-    if _covered(Path(cfg.dir), [Path(p) for p in cfg.fs_write_roots or []]):
-        nodes.append(_node(f"fs-write:{cfg.dir}", "granted", NOTE,
-                           "a write root covers this routine's own directory",
-                           "own-recipe editing is unlocked — the routine-improver's lever"))
 
     # -- held docs whose requirements the mapping does not cover. The save-time floor makes
     #    this impossible through the UI, so a hit means the file was edited by hand. --------
     lib_requires = grants_mod.read_library_requires(server.permissions_home)
     caps = cfg.capabilities or {}
+    # -- a routine that may rewrite its OWN instructions. Never wrong — it is the whole job of
+    #    an improver — but it is the one capability whose effect is the routine itself, so it
+    #    is always said out loud. (Before 0.261.0 this was a side effect of an fs write root
+    #    covering the routine dir; it is a switch now, which is why the note names the switch.)
+    if "write_recipe" in (caps.get("actions") or []):
+        nodes.append(_node("action:write_recipe", "on", NOTE,
+                           "this routine may rewrite its own instructions",
+                           "main.md / stages/ / tuning.yaml are writable by its runs; "
+                           "routine.yaml stays sealed", source={"doc": "recipe-authoring"}))
+
     covered_utils = set(_held_utils(cfg, catalog))    # names AND everything a gated tag covers
     for slug in cfg.permissions or []:
         req = lib_requires.get(slug) or {}
@@ -293,6 +297,17 @@ def routine_surface(server: Any, cfg: RoutineConfig) -> dict:
                                "switched on, but no held conduct doc requires it" + where,
                                "the run may use it, with none of the conduct prose that "
                                "normally comes with it"))
+
+    # One row per entity. Two checks can legitimately reach the same id — a capability that is
+    # both worth naming in its own right and uncovered by any held doc — and two rows saying
+    # different things about `action:write_recipe` reads as a bug, not as thoroughness. The
+    # worst-severity row wins; the rest are dropped.
+    best: dict[str, dict] = {}
+    for n in nodes:
+        prev = best.get(n["id"])
+        if prev is None or _ORDER[n["severity"]] < _ORDER[prev["severity"]]:
+            best[n["id"]] = n
+    nodes = list(best.values())
 
     counts = {BLOCKS: 0, INTERRUPTS: 0, NOTE: 0}
     for n in nodes:

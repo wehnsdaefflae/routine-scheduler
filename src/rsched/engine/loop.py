@@ -51,6 +51,7 @@ from .switches import (
     apply_deliberation_switch,
     apply_model_switch,
     apply_rule_additions,
+    apply_rule_drop,
 )
 
 REPEAT_WARN = 3
@@ -90,6 +91,7 @@ class EngineLoop:
     _last_config_ts: Any
     _last_deliberation_ts: Any
     _last_rules_ts: Any
+    _last_rule_drop_ts: Any
     _last_switch_ts: Any
     _schema_off: Any
     _schema_storm_streak: Any
@@ -152,6 +154,7 @@ class EngineLoop:
                 apply_model_switch(self)
                 apply_deliberation_switch(self)
                 apply_rule_additions(self)
+                apply_rule_drop(self)
                 apply_config_change(self)
                 drain_injections(self)
                 announce_finished_subruns(self)

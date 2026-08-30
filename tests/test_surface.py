@@ -201,13 +201,23 @@ def test_a_permission_expecting_a_machine_reports_the_unbound_case(tmp_path):
 
 
 @pytest.mark.usefixtures("empty_store")
-def test_a_write_root_over_the_own_dir_is_a_note_not_a_problem(tmp_path):
-    """The routine-improver's lever, and never wrong — but frequently unintended, so it is
-    surfaced without being counted against the routine."""
+def test_recipe_authoring_is_a_note_not_a_problem(tmp_path):
+    """A routine that may rewrite its own instructions is never WRONG — it is an improver's
+    whole job — but it is the one capability whose effect is the routine itself, so it is
+    always said out loud.
+
+    It is also no longer implied by a write root over the routine's own dir: that coupling
+    meant granting write access to a working directory silently granted the right to reword
+    the task. The note names the switch because there now is one."""
     server = _server(tmp_path)
     own = tmp_path / "r"
-    surface = routine_surface(server, _cfg(tmp_path, fs_write_roots=[str(own)]))
-    assert _by_id(surface, f"fs-write:{own}")["severity"] == NOTE
+    plain = routine_surface(server, _cfg(tmp_path, fs_write_roots=[str(own)]))
+    assert _by_id(plain, "action:write_recipe") is None      # a root implies nothing now
+
+    surface = routine_surface(server, _cfg(tmp_path,
+                                           capabilities={"actions": ["write_recipe"]}))
+    node = _by_id(surface, "action:write_recipe")
+    assert node["severity"] == NOTE and "own instructions" in node["why"]
     assert surface["verdict"]["ready"] is True
 
 
@@ -321,3 +331,13 @@ def test_a_gated_action_with_no_covering_doc_is_reported_too(tmp_path):
     covered = _cfg(tmp_path, permissions=["util-authoring"],
                    capabilities={"actions": ["write_util"]})
     assert _by_id(routine_surface(server, covered), "action:write_util") is None
+
+
+@pytest.mark.usefixtures("empty_store")
+def test_one_row_per_entity(tmp_path):
+    """Two checks can legitimately reach the same id — a capability worth naming in its own
+    right that is ALSO uncovered by any held doc. Two rows about one entity reads as a bug."""
+    server = _server(tmp_path)
+    cfg = _cfg(tmp_path, permissions=[], capabilities={"actions": ["write_recipe"]})
+    ids = [n["id"] for n in routine_surface(server, cfg)["nodes"]]
+    assert ids.count("action:write_recipe") == 1
