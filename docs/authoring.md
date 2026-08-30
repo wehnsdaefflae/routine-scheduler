@@ -217,4 +217,4 @@ See also: [Getting started](getting-started.md) · [Rules & permissions](rules-p
 
 ## Settings templates
 
-A new routine adopts one at creation and its own `routine.yaml` records only what differs. See [rules-permissions](rules-permissions.md#settings-templates--the-named-starting-point) for the layering, the six shipped templates and `template_except:`.
+A new routine starts from one at creation: the fitted template's values are COPIED into its own `routine.yaml` in full, so the file says what the routine is from its first line. See [rules-permissions](rules-permissions.md#settings-templates--the-named-starting-point) for why a template is a preselection rather than a layer, and for the six shipped templates.

@@ -19,12 +19,11 @@ import { chip, el, emptyState, fmtDur, fmtNum, fmtTokens, skeleton, toast, when 
 const SECTION_GROUPS = [
   { title: "Schedule & triggers", hint: "when and how it fires",
     headings: ["Schedule", "Triggers", "Schedule once"] },
-  // "Settings template" leads this group: it is the LAYER the other two override, so an
-  // operator reading "what may it do?" should meet the shared starting point before the
-  // per-routine edits on top of it. Unclaimed, it fell into the trailing "More" fold and the
-  // control was effectively unreachable.
+  // "Start from a template" leads this group: it is the one control that writes the other
+  // two wholesale, so an operator reading "what may it do?" meets the starting point before
+  // the per-routine edits. Unclaimed, it fell into the trailing "More" fold and was unreachable.
   { title: "Permissions & practices", hint: "its starting point, what it may do, and how it works",
-    headings: ["Settings template", "Permissions & capabilities", "General rules",
+    headings: ["Start from a template", "Permissions & capabilities", "General rules",
                "Effective surface"] },
   // D103: the two secret scopes read together — what this routine OWNS, and which shared
   // names it may be handed. Before this group they fell into the trailing "More" fold.

@@ -191,32 +191,6 @@ def _expects_nodes(cfg: RoutineConfig, expects: dict[str, dict],
     return out
 
 
-def _template_nodes(cfg: RoutineConfig, lib_home: Path) -> list[dict]:
-    """What the routine's SETTINGS TEMPLATE is doing for it, and what it is not.
-
-    Both rows exist because the alternative is invisible: a subtraction shows up in the panels
-    as an entry simply not being there, and a template the library has lost shows up as a
-    routine quietly running on its own config alone.
-    """
-    from ..templates import read_template
-
-    out: list[dict] = []
-    dropped = [x for x in (getattr(cfg, "template_except", None) or []) if isinstance(x, str)]
-    if dropped:
-        out.append(_node("template:except", "set", NOTE,
-                         "this routine drops " + ", ".join(sorted(dropped))
-                         + " from what its template supplies",
-                         "a subtraction is invisible in the panels below — the entry simply "
-                         "is not there — so it is named here"))
-    tpl = getattr(cfg, "template", "")
-    if tpl and read_template(lib_home, tpl) is None:
-        out.append(_node(f"template:{tpl}", "missing", NOTE,
-                         "this routine names a settings template the library does not have",
-                         "it runs on its own config alone — nothing is inherited",
-                         source={"doc": tpl}))
-    return out
-
-
 def routine_surface(server: Any, cfg: RoutineConfig) -> dict:
     """The full setup surface for one routine: `{nodes, verdict}`.
 
@@ -309,12 +283,10 @@ def routine_surface(server: Any, cfg: RoutineConfig) -> dict:
     from ..grants import _DEFAULT_KIND_SOURCE, split_util_verb
     held_docs = set(cfg.permissions or [])
     covering_names = {split_util_verb(u)[0] for u in covering}
-    # Provenance is the whole value of these rows ("you did not set this, your GROUP did" /
-    # "…your TEMPLATE did"), so the phrase follows the note the loader wrote: a template-only
-    # routine has no group name to borrow and used to read "inherited from the group ''".
+    # Provenance is the whole value of these rows: "you did not set this, your GROUP did".
     cap_prov = (getattr(cfg, "inherited", None) or {}).get("capabilities")
     where = (f" (inherited from the group {cfg.inherited_from!r})"
-             if cap_prov and cfg.inherited_from else f" ({cap_prov})" if cap_prov else "")
+             if cap_prov and cfg.inherited_from else "")
     for util in caps.get("utils") or []:
         if util not in covering and split_util_verb(util)[0] not in covering_names:
             nodes.append(_node(f"util:{util}", "uncovered", NOTE,
@@ -338,11 +310,6 @@ def routine_surface(server: Any, cfg: RoutineConfig) -> dict:
         if prev is None or _ORDER[n["severity"]] < _ORDER[prev["severity"]]:
             best[n["id"]] = n
     nodes = list(best.values())
-
-    # -- a template the library no longer has. The routine keeps running on its own config
-    #    (failing to load would turn a library edit into an outage), so this is a note that
-    #    says what it is silently NOT getting. ---------------------------------------------
-    nodes += _template_nodes(cfg, lib_home)
 
     counts = {BLOCKS: 0, INTERRUPTS: 0, NOTE: 0}
     for n in nodes:

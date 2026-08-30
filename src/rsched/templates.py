@@ -9,18 +9,21 @@ tends a project, something that acts on files and machines, something that maint
 instance itself. Configuring each of those five layers per routine was busywork that produced
 the same answer most of the time and hid the interesting differences in the noise.
 
-A template carries the same keys a GROUP's shared config carries (`groups.CONFIG_KEYS`), and
-layers under it:
+A template is a PRESELECTION, not a layer (operator decision 2026-08-30, reversing 0.262.0's
+layering). Adopting one COPIES its values into the routine's own `routine.yaml`, once, and the
+routine owns them from that moment: lists union, maps fill only what the routine left unset —
+the same rules the group merge uses, applied as a WRITE instead of as an inheritance.
 
-    the routine's own routine.yaml   >   its group's config   >   its template
+Layering was tried first and read badly. A routine's own file recorded only its DIFFERENCES from
+its template, so opening `routine.yaml` told you almost nothing about what the routine could do;
+the page had to explain a second inheritance chain stacked on the group's; and `template_except:`
+existed purely to subtract from a layer nobody could see. The cost of copying is the leverage —
+editing a template no longer reaches its adopters — which is the correct trade for a
+STARTING POINT. A live shared config is what a GROUP is, and that layer stays.
 
-Each layer only fills what the one above left unset, with the identical union/merge rules the
-group merge already uses — so adopting a template SUBTRACTS nothing. Every field stays editable
-per routine, and a routine that overrides half of one is a perfectly ordinary routine.
-
-Templates live in the library beside rules and permissions, so they are versioned, shared and
-editable in one place, and a revision reaches every adopter at its next run — the same leverage,
-and the same hazard, which is why `library_impact` treats them like any other library document.
+So a template has no runtime existence: nothing resolves one at config load, and no field on
+`RoutineConfig` names one. It is read by creation (`workflows.scaffold`) and by the routine
+page's adopt action, and nowhere else.
 """
 
 from __future__ import annotations
@@ -79,10 +82,10 @@ def normalize_config(raw: object) -> dict:
 
 
 def config_for(libraries_home: Path, slug: str) -> dict:
-    """The config a routine adopting `slug` inherits — empty for an unknown template.
+    """The config a routine adopting `slug` would copy in — empty for an unknown template.
 
-    Unknown is deliberately not an error: a routine naming a template the library has lost
-    should keep running on its own config, not fail to load. `rsched validate` reports it.
+    Unknown is deliberately not an error: a caller naming a template the library has lost gets
+    nothing copied rather than a failure, and the adopt route says so.
     """
     if not slug:
         return {}
@@ -91,6 +94,26 @@ def config_for(libraries_home: Path, slug: str) -> dict:
         log.warning("routine references unknown template %r", slug)
         return {}
     return rec["config"]
+
+
+def adopt_into(raw: dict, config: dict) -> tuple[dict, list[str]]:
+    """Copy a template's `config` into a routine's raw `routine.yaml` mapping, once.
+
+    Returns `(merged, added)` where `added` names, in plain words, what the write CONTRIBUTED —
+    the routine page shows it back, because an adoption that silently changed nine things is
+    the layer's illegibility in a different costume.
+
+    The merge rules are the group merge's, which is deliberate: union for the list keys, fill
+    per key for the maps, the routine's own value always winning. What differs is only that the
+    result is WRITTEN. `grants` is never copied — a grant is a settled decision a person made
+    about one routine, and a template pre-answering one would be a template exposing a secret.
+    """
+    from .config.groupconfig import apply_group_config
+
+    shareable = {k: v for k, v in (config or {}).items() if k != "grants"}
+    merged, provenance = apply_group_config(raw, shareable, source="the template")
+    return merged, [f"{note.split(' from ')[0]} {key}"
+                    for key, note in sorted(provenance.items())]
 
 
 def suggest(libraries_home: Path, permissions: list[str], rules: list[str] | None = None) -> str:

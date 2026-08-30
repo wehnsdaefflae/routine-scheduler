@@ -1,19 +1,21 @@
-"""Settings templates — a named starting point a routine or a group adopts.
+"""Settings templates — a named starting point a routine COPIES IN, once.
 
-The property everything else rests on: adopting a template SUBTRACTS nothing, and a routine can
-still express any setting it could before. A template that quietly took something away, or that
-could not be overridden, would trade the decluttering for exactly the granularity it was
-supposed to preserve.
+A template is a PRESELECTION, not a layer (operator decision 2026-08-30, reversing 0.262.0).
+Adopting one writes its values into the routine's own `routine.yaml` and the link is gone: the
+file then says what the routine IS, every value is editable in the panel that owns it, and
+removing one is removing it. The property everything rests on is unchanged — adopting SUBTRACTS
+nothing — but it is now a property of one WRITE rather than of a merge repeated on every load.
+
+Nothing resolves a template at config load any more, which is why there is no test here for a
+routine's `template:` key: there is no such key.
 """
 from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
 import yaml
 
-from rsched.config import load_routine
-from rsched.templates import config_for, list_templates, read_template
+from rsched.templates import adopt_into, config_for, list_templates, read_template
 from rsched.workflows.lint import lint_template_text
 
 
@@ -27,85 +29,57 @@ def _library(tmp_path: Path, **templates: dict) -> Path:
     return lib
 
 
-@pytest.fixture
-def routine(tmp_path, monkeypatch):
-    """A routine dir whose loader resolves templates out of a tmp library."""
-    def _make(lib: Path, **raw) -> Path:
-        monkeypatch.setattr("rsched.config.routine._libraries_home_for", lambda _d: lib)
-        d = tmp_path / "routines" / "r"
-        d.mkdir(parents=True, exist_ok=True)
-        (d / "routine.yaml").write_text(yaml.safe_dump({"description": "t", **raw}),
-                                        encoding="utf-8")
-        return d
-    return _make
-
-
-def test_a_template_supplies_what_the_routine_does_not_set(tmp_path, routine):
+def test_adopting_copies_what_the_routine_does_not_have(tmp_path):
     lib = _library(tmp_path, watcher={"permissions": ["memory", "run-history"],
                                       "rules": ["decision-record"],
                                       "capabilities": {"actions": ["memory_read"],
                                                        "runs": "last"}})
-    cfg, _ = load_routine(routine(lib, template="watcher"))
-    assert sorted(cfg.permissions) == ["memory", "run-history"]
-    assert cfg.rules == ["decision-record"]
-    assert cfg.capabilities["actions"] == ["memory_read"]
-    assert cfg.capabilities["runs"] == "last"
+    merged, added = adopt_into({"description": "t"}, config_for(lib, "watcher"))
+    assert sorted(merged["permissions"]) == ["memory", "run-history"]
+    assert merged["rules"] == ["decision-record"]
+    assert merged["capabilities"]["actions"] == ["memory_read"]
+    assert merged["capabilities"]["runs"] == "last"
+    # what the write contributed is REPORTED — an adoption that silently changed nine things
+    # is the layer's illegibility in a different costume
+    assert added and all(a.split()[0].isdigit() for a in added)
 
 
-def test_the_routines_own_settings_win_and_add(tmp_path, routine):
-    """The layering is own > group > template, and list keys UNION — so adopting a template
-    can only ever add to what the routine already said."""
+def test_the_routines_own_settings_win_and_the_lists_union(tmp_path):
+    """Adopting can only ever ADD: the routine's own values survive, the template's join them."""
     lib = _library(tmp_path, watcher={"permissions": ["memory"], "rules": ["decision-record"],
                                       "capabilities": {"runs": "last", "confirm": "always"}})
-    cfg, _ = load_routine(routine(lib, template="watcher", permissions=["shell"],
-                                  rules=["web-research"],
-                                  capabilities={"confirm": "never"}))
-    assert sorted(cfg.permissions) == ["memory", "shell"]
-    assert sorted(cfg.rules) == ["decision-record", "web-research"]
-    assert cfg.capabilities["confirm"] == "never"      # the routine's own dial wins
-    assert cfg.capabilities["runs"] == "last"          # …and the rest still comes through
+    merged, _ = adopt_into({"permissions": ["shell"], "capabilities": {"confirm": "never"}},
+                           config_for(lib, "watcher"))
+    assert sorted(merged["permissions"]) == ["memory", "shell"]
+    assert merged["rules"] == ["decision-record"]
+    assert merged["capabilities"]["confirm"] == "never"      # the routine's own dial wins
+    assert merged["capabilities"]["runs"] == "last"          # the template fills what it left
 
 
-def test_template_except_lets_a_routine_subtract(tmp_path, routine):
-    """Without this, a routine could add to a template but never drop from one, and adopting
-    a template would cost exactly the granularity it is supposed to preserve."""
-    lib = _library(tmp_path, watcher={"permissions": ["memory", "shell"],
-                                      "rules": ["decision-record", "web-research"],
-                                      "capabilities": {"actions": ["memory_read", "detach"],
-                                                       "utils": ["remote"]}})
-    cfg, _ = load_routine(routine(lib, template="watcher",
-                                  template_except=["shell", "web-research", "detach", "remote"]))
-    assert cfg.permissions == ["memory"]
-    assert cfg.rules == ["decision-record"]
-    assert cfg.capabilities["actions"] == ["memory_read"]
-    assert cfg.capabilities["utils"] == []
+def test_adopting_twice_is_harmless(tmp_path):
+    """The write is a union that never overwrites, so a second press changes nothing — and
+    adopting a DIFFERENT template afterwards adds to the first rather than replacing it."""
+    lib = _library(tmp_path, a={"permissions": ["memory"]}, b={"permissions": ["shell"]})
+    once, _ = adopt_into({"description": "t"}, config_for(lib, "a"))
+    twice, added = adopt_into(dict(once), config_for(lib, "a"))
+    assert twice["permissions"] == once["permissions"] and added == []
+    both, _ = adopt_into(dict(once), config_for(lib, "b"))
+    assert sorted(both["permissions"]) == ["memory", "shell"]
 
 
-def test_an_unknown_template_does_not_break_the_routine(tmp_path, routine):
-    """A routine naming a template the library lost keeps running on its own config. Failing
-    to load would turn a library edit into an outage."""
-    lib = _library(tmp_path)
-    cfg, problems = load_routine(routine(lib, template="gone", permissions=["memory"]))
-    assert cfg is not None and cfg.permissions == ["memory"]
-    assert not [p for p in problems if "gone" in p and "traceback" in p.lower()]
+def test_a_template_never_pre_answers_a_grant(tmp_path):
+    """A grant is a settled DECISION a person made about one routine. A template carrying one
+    would be a template exposing a secret, so `grants` is the one shared key adoption drops."""
+    lib = _library(tmp_path, w={"permissions": ["memory"], "grants": {"secret:FOO": True}})
+    merged, _ = adopt_into({"description": "t"}, config_for(lib, "w"))
+    assert "grants" not in merged
 
 
-def test_adopting_a_template_subtracts_nothing(tmp_path, routine):
-    """The migration invariant, as a test: whatever a routine held before, it still holds."""
-    lib = _library(tmp_path, watcher={"permissions": ["memory"], "rules": ["decision-record"]})
-    before, _ = load_routine(routine(lib, permissions=["shell", "memory"],
-                                     rules=["web-research"]))
-    after, _ = load_routine(routine(lib, template="watcher", permissions=["shell", "memory"],
-                                    rules=["web-research"]))
-    assert set(before.permissions) <= set(after.permissions)
-    assert set(before.rules) <= set(after.rules)
-
-
-def test_provenance_says_what_came_from_the_template(tmp_path, routine):
-    """The routine page marks an inherited value so it never reads as one set here."""
-    lib = _library(tmp_path, watcher={"permissions": ["memory", "run-history"]})
-    cfg, _ = load_routine(routine(lib, template="watcher"))
-    assert "template" in (cfg.inherited.get("permissions") or "")
+def test_an_unknown_template_copies_nothing(tmp_path):
+    lib = _library(tmp_path, watcher={"permissions": ["memory"]})
+    assert config_for(lib, "nope") == {}
+    merged, added = adopt_into({"description": "t"}, config_for(lib, "nope"))
+    assert added == [] and "permissions" not in merged
 
 
 def test_lint_rejects_a_template_that_carries_nothing_or_the_wrong_keys(tmp_path):
@@ -169,16 +143,13 @@ def test_suggest_fits_a_permission_set_to_the_closest_template():
     assert suggest(seed, []) == "basic"          # nothing fitting falls to the floor
 
 
-def test_a_scaffolded_routine_records_only_its_differences(tmp_path, monkeypatch):
-    """The point of adopting one: the routine's own file carries what it does DIFFERENTLY,
-    not a copy of the template's contents."""
-    from rsched.templates import config_for
-
+def test_a_scaffolded_routine_carries_the_template_in_full(tmp_path):
+    """The reversal, at creation: the new routine's own file holds the WHOLE set, not the set
+    difference. Reading `routine.yaml` has to tell you what the routine can do — under the layer
+    it told you only what it did differently from a template resolved somewhere else."""
     seed = Path(__file__).resolve().parents[1] / "library-seed"
     watcher = config_for(seed, "watcher")
-    # what scaffold persists is the set difference, which is what the migration proved on the
-    # 28 live routines and what keeps a new routine's file short
-    asked_perms = [*watcher["permissions"], "shell"]
-    own = [p for p in asked_perms if p not in set(watcher["permissions"])]
-    assert own == ["shell"]
-    assert all(p not in own for p in watcher["permissions"])
+    merged, _ = adopt_into({"permissions": ["shell"]}, watcher)
+    for p in watcher["permissions"]:
+        assert p in merged["permissions"], f"{p} must be written into the routine's own file"
+    assert "shell" in merged["permissions"]

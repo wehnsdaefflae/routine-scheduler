@@ -219,58 +219,42 @@ def test_weekly_schedule_day_set_roundtrips(ui, ui_page, make_routine):
             expect(chips.nth(i)).not_to_be_checked()
 
 
-def test_settings_template_panel_is_reachable_and_edits_its_exceptions(ui, ui_page):
-    """The SETTINGS TEMPLATE panel (0.264.0). Three things had to be true before a user could
-    set a routine's template at all; none of them were: the heading has to be CLAIMED by a
-    named section group (unclaimed, it fell into the trailing "More" fold and nobody found it),
-    the picker has to preselect what the routine actually adopted (`template` was missing from
-    the detail payload, so it always read "none") — and `template_except:` — the only way to drop
-    something a template supplies — had no control anywhere on the page.
+def test_the_template_panel_applies_a_template_as_a_one_shot_copy(ui, ui_page):
+    """A settings template is a PRESELECTION (0.269.0, reversing 0.262.0's layer): applying one
+    WRITES its values into this routine's own routine.yaml and the link is gone. So the panel is
+    an action — it previews what would be ADDED, applies it, and afterwards those values are
+    ordinary entries in the panels that own them.
+
+    The heading also has to be CLAIMED by a named section group: unclaimed, `groupSections`
+    drops it into the trailing "More" fold, which is how the control was unreachable for two
+    releases while it existed.
     """
     cfg = yaml.safe_load((ui.routine_dir("uir") / "routine.yaml").read_text(encoding="utf-8"))
-    cfg["template"] = "basic"
-    cfg["permissions"] = ["scheduling"]          # set HERE, not supplied by the template
+    cfg["permissions"] = ["scheduling"]          # already here — the preview must grey it out
     (ui.routine_dir("uir") / "routine.yaml").write_text(yaml.safe_dump(cfg), encoding="utf-8")
 
     ui_page.goto(f"{ui.url}#/routine/uir")
-    ui_page.wait_for_selector("h2:has-text('Settings template')", timeout=10_000)
+    ui_page.wait_for_selector("h2:has-text('Start from a template')", timeout=10_000)
 
-    # 1. claimed by a named group and FIRST in it — it is the layer the rest overrides
     group = ui_page.locator(".rgroup", has=ui_page.locator(
         ".rgroup-title", has_text="Permissions & practices"))
-    expect(group.locator("h2").first).to_have_text("Settings template")
-    expect(ui_page.locator(".rgroup", has=ui_page.locator(".rgroup-title", has_text="More"))
-           .locator("h2:has-text('Settings template')")).to_have_count(0)
+    expect(group.locator("h2").first).to_have_text("Start from a template")
 
-    # 2. the picker reads the routine's adopted template back
-    expect(ui_page.locator("[data-tpl-select]")).to_have_value("basic", timeout=10_000)
+    ui_page.locator("[data-tpl-select]").select_option("basic")
+    preview = ui_page.locator("[data-tpl-preview]")
+    expect(preview.locator('[data-tpl-adds="memory"]')).to_be_visible(timeout=10_000)
+    expect(preview).not_to_contain_text("null")
 
-    # 3. the two layers are told apart: `memory` comes from the template, `scheduling` does not
-    layers = ui_page.locator("[data-tpl-layers]")
-    expect(layers).to_contain_text("Inherited from “basic”")
-    expect(layers.locator('[data-tpl-supplies="memory"]')).to_be_visible()
-    expect(layers.locator('[data-tpl-own="scheduling"]')).to_be_visible()
-    expect(layers.locator('[data-tpl-supplies="scheduling"]')).to_have_count(0)
-    # …and nothing renders the literal word "null": append/replaceChildren stringify a null
-    # argument, unlike el(), and this panel shipped with one after "read it" and a "nullnull"
-    # between its two layer lists (reported from the live console). tests/test_static_dom.py
-    # is the general guard; this is the one that would have caught it on the page.
-    expect(layers).not_to_contain_text("null")
-    expect(ui_page.locator("[data-tpl-layers]").locator("..")).not_to_contain_text("nullnull")
+    ui_page.get_by_role("button", name="apply to this routine").click()
+    expect(_toast(ui_page)).to_contain_text("applied basic", timeout=10_000)
 
-    # 4. dropping a template-supplied entry writes template_except and marks the chip
-    layers.locator('[data-tpl-supplies="memory"] button').click()
-    expect(layers.locator('[data-tpl-supplies="memory"][data-dropped]')).to_be_visible(
-        timeout=10_000)
+    # the write lands in the routine's OWN file, in full — no `template:` key resolves it later
     saved = yaml.safe_load((ui.routine_dir("uir") / "routine.yaml").read_text(encoding="utf-8"))
-    assert saved["template_except"] == ["memory"]
-
-    # 5. …and restoring it takes the subtraction back off
-    layers.locator('[data-tpl-supplies="memory"] button').click()
-    expect(layers.locator('[data-tpl-supplies="memory"][data-dropped]')).to_have_count(
-        0, timeout=10_000)
-    saved = yaml.safe_load((ui.routine_dir("uir") / "routine.yaml").read_text(encoding="utf-8"))
-    assert saved["template_except"] == []
+    assert "memory" in saved["permissions"] and "scheduling" in saved["permissions"]
+    assert "template" not in saved and "template_except" not in saved
+    # …and applying again adds nothing, because the merge is a union that never overwrites
+    ui_page.get_by_role("button", name="apply to this routine").click()
+    expect(_toast(ui_page)).to_contain_text("already has everything", timeout=10_000)
 
 
 def test_every_config_section_is_claimed_by_a_named_group(ui, ui_page):
@@ -287,7 +271,7 @@ def test_every_config_section_is_claimed_by_a_named_group(ui, ui_page):
     expect(ui_page.locator(".rgroup-title", has_text="More")).to_have_count(0)
     # …and the groups really did claim them: a section that vanished entirely would also
     # produce no "More" fold.
-    for heading in ("Settings template", "Permissions & capabilities", "General rules",
+    for heading in ("Start from a template", "Permissions & capabilities", "General rules",
                     "Effective surface", "Goal", "Budgets", "Own secrets", "Models",
                     "Machines", "Recipe", "State & memory", "Origin"):
         expect(ui_page.locator(".rgroup-body h2", has_text=heading).first).to_have_count(1)

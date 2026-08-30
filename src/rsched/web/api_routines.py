@@ -155,17 +155,12 @@ def routine_detail(request: Request, slug: str) -> dict:
     return {
         **_card(request, info, monthly=monthly),
         "referrals_total": referrals_total,
-        # D82: which config fields this routine got from a SHARED layer and — for a group —
-        # which group. The page marks them so an inherited value never reads as one set on
-        # this routine; each note names its layer ("3 from the group" / "2 from the template").
+        # D82: which config fields this routine got from its GROUP's shared config, and which
+        # group. The page marks them so an inherited value never reads as one set here. A
+        # settings template is NOT among them: it is copied in at adoption, so its values ARE
+        # this routine's own from that moment.
         "inherited": dict(info.cfg.inherited),
         "inherited_from": info.cfg.inherited_from,
-        # The settings TEMPLATE this routine adopts and what it DROPS from it. Both are needed
-        # by the panel that edits them: without `template` the picker could not preselect the
-        # routine's current template; without `template_except` a subtraction was invisible
-        # AND uneditable — the page could add to a template but never take anything back.
-        "template": info.cfg.template,
-        "template_except": list(info.cfg.template_except),
         "schedule_friendly": schedule.cron_to_friendly(info.cfg.cron),
         "server_tz": schedule.server_tz(),
         "catchup": info.cfg.catchup,   # skip | run_once when a scheduled fire was missed

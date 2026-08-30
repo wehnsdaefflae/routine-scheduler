@@ -51,6 +51,11 @@ def cmd_daemon(_args) -> int:
     from .migrate_group_members import migrate_group_members
 
     migrate_group_members(server)  # MIGRATION(expires=2026-09-30): members -> records (F292)
+    from .migrate_template_layer import migrate_template_layer
+
+    # MIGRATION(expires=2026-09-30): a differences-only routine.yaml would silently LOSE what
+    # its template used to supply now that nothing resolves one — materialize it first.
+    migrate_template_layer(server)
     for pr in problems:
         logging.getLogger("rsched").warning("config: %s", pr)
     app = create_app(server)

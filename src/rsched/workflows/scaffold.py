@@ -82,32 +82,49 @@ def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,  #
     # used to raise only, so a floor violation surfaced on first edit instead of at birth
     lib = read_library_requires(server.permissions_home)
     capabilities = floor_capabilities(active_perms, lib, capabilities_for(active_perms, lib))
-    # A new routine ADOPTS a settings template rather than being born with the whole conduct
-    # surface inlined in its own file (0.262.0). `template=""` opts out explicitly; None means
-    # "fit one", which is a deterministic best fit over what creation already decided — an LLM
-    # guess here would write a wrong DEFAULT into a config file, which is worse than a
-    # slightly-narrow one the user widens on the routine page.
+    # A settings template is a PRESELECTION, not a layer (operator decision 2026-08-30,
+    # reversing 0.262.0): the template's values are copied into this file once, here, and the
+    # routine owns them from that moment. `template=""` opts out explicitly; None means "fit
+    # one", a deterministic best fit over what creation already decided — an LLM guess here
+    # would write a wrong DEFAULT into a config file, which is worse than a slightly-narrow one
+    # the user widens on the routine page.
+    #
+    # Copying rather than layering is what makes routine.yaml say what the routine IS. Under the
+    # layer, a routine's own file recorded only its DIFFERENCES from a template, so reading it
+    # told you almost nothing and the page had to explain a second inheritance chain on top of
+    # the group's. The cost is the leverage: editing a template no longer reaches its adopters.
     from ..templates import config_for as _template_config
     from ..templates import suggest as _suggest_template
 
     chosen = _suggest_template(server.libraries_home, active_perms,
                                active_rules) if template is None else template
     tpl_conf = _template_config(server.libraries_home, chosen) if chosen else {}
-    tpl_perms = set(tpl_conf.get("permissions") or [])
-    tpl_rules = set(tpl_conf.get("rules") or [])
+    own_perms = list(dict.fromkeys([*(tpl_conf.get("permissions") or []), *active_perms]))
+    own_rules = list(dict.fromkeys([*(tpl_conf.get("rules") or []), *active_rules]))
     tpl_caps = tpl_conf.get("capabilities") or {}
-    # Persist only what the template does NOT already supply: the routine's own file records
-    # its differences, which is the whole point of adopting one.
-    own_perms = [p for p in active_perms if p not in tpl_perms]
-    own_rules = [r for r in active_rules if r not in tpl_rules]
     own_caps: dict = {}
     for key in ("actions", "utils", "util_tags"):
-        extra = [v for v in (capabilities.get(key) or []) if v not in (tpl_caps.get(key) or [])]
-        if extra:
-            own_caps[key] = extra
+        merged = list(dict.fromkeys([*(tpl_caps.get(key) or []), *(capabilities.get(key) or [])]))
+        if merged:
+            own_caps[key] = merged
     for key in ("confirm", "rule_confirm", "runs", "workflows"):
-        if capabilities.get(key) and capabilities[key] != tpl_caps.get(key):
-            own_caps[key] = capabilities[key]
+        # the routine's own dial wins over the template's; either is written in full
+        if capabilities.get(key) or tpl_caps.get(key):
+            own_caps[key] = capabilities.get(key) or tpl_caps[key]
+    # The remaining shared keys a template may carry, merged into what the caller passed:
+    # lists union (template first, so the caller's additions read after), maps fill only what
+    # the caller left unset. `grants` is deliberately absent — a grant is a settled DECISION a
+    # person made about one routine, and a template pre-answering one would be a template
+    # granting a secret.
+    tags = list(dict.fromkeys([*(tpl_conf.get("tags") or []), *(tags or [])])) or None
+    machines = list(dict.fromkeys(tpl_conf.get("machines") or [])) or None
+    fs_read_roots = list(dict.fromkeys([*(tpl_conf.get("fs_read_roots") or []),
+                                        *(fs_read_roots or [])])) or None
+    fs_write_roots = list(dict.fromkeys([*(tpl_conf.get("fs_write_roots") or []),
+                                         *(fs_write_roots or [])])) or None
+    models = {**(tpl_conf.get("models") or {}), **(models or {})} or None
+    connections = dict(tpl_conf.get("connections") or {}) or None
+    budgets = {**(tpl_conf.get("budgets") or {}), **(budgets or {})} or None
     commit = library.head_commit(server.libraries_home)
 
     from .adapt import decompose, dump_markdown
@@ -170,7 +187,8 @@ def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,  #
         "schedule": {"cron": cron, "tz": tz, "catchup": "skip"},
         "workflow": {"library_slug": workflow_slug, "library_commit": commit},
         **({"models": models} if models else {}),
-        **({"template": chosen} if chosen else {}),
+        **({"connections": connections} if connections else {}),
+        **({"machines": machines} if machines else {}),
         "permissions": own_perms,
         "rules": own_rules,
         **({"capabilities": own_caps} if own_caps else {}),

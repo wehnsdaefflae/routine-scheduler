@@ -96,7 +96,7 @@ def run_routine(routine_dir: Path, server: ServerConfig, *, run_ts: str | None =
     """
     # the server is right here: pass its library so the template resolves against THIS
     # instance, never whichever config the process happened to load last
-    cfg, problems = load_routine(routine_dir, libraries_home=server.libraries_home)
+    cfg, problems = load_routine(routine_dir)
     if cfg is None:
         raise RuntimeError("; ".join(problems))
     # every non-fatal load problem is best-effort by design (the registry surfaces them);

@@ -310,17 +310,28 @@ Reading the 28 live routines, the five setup layers are almost never chosen inde
 eight rules are held by two thirds of them, `memory` + `util-authoring` + `util-revision` by
 nearly all, and the differences fall into a handful of recognisable JOBS. A **template**
 (`<libraries_home>/templates/<slug>.md`) bundles that: the same keys a group's shared config
-carries, adopted with one `template:` key.
+carries.
 
-The layering, most specific first:
+**A template is a PRESELECTION, not a layer.** Adopting one COPIES its values into the routine's
+own `routine.yaml` — once, at creation or from the routine page's *Start from a template* action
+(`POST /api/routines/{slug}/adopt-template`) — and the link is then gone. Lists union, maps fill
+only what the routine left unset, the routine's own value always winning: the group merge's rules
+applied as a WRITE. `grants` is the one shared key adoption never copies; a grant is a settled
+decision a person made about one routine, and a template pre-answering one would be a template
+exposing a secret.
 
-    the routine's own routine.yaml   >   its group's config   >   its template
+Layering was tried first (0.262.0) and reversed on the operator's order (2026-08-30). It read
+badly for a reason worth keeping written down: a routine's own file recorded only its
+DIFFERENCES from its template, so opening `routine.yaml` told you almost nothing about what the
+routine could do; the routine page had to explain a second inheritance chain stacked on the
+group's; and `template_except:` existed purely to subtract from a layer nobody could see. The
+cost of copying is the leverage — editing a template no longer reaches its adopters — which is
+the correct trade for a *starting point*. A live shared config is what a GROUP is, and that
+layer stays.
 
-Each layer fills only what the one above left unset, with the union/merge rules the group merge
-already uses — so adopting a template SUBTRACTS nothing. To go the other way, `template_except:`
-names permission slugs, rule slugs, utils or gated actions to drop after the merge; without it a
-routine could add to a template but never subtract from one, and adopting one would cost exactly
-the granularity it exists to preserve.
+Consequently nothing resolves a template at config load, `RoutineConfig` has no field naming
+one, and adopting twice is harmless: the write is a union that never overwrites, so a second
+press changes nothing and a second template ADDS to the first.
 
 The shipped six, inferred from what the live routines actually hold rather than invented:
 
@@ -338,16 +349,16 @@ instance itself and they deserve a per-routine decision: `recipe-authoring` (rew
 routine's own instructions) and `shell`. Filesystem roots and machine bindings are absent for a
 different reason — they name paths and hosts specific to this instance, so they stay per routine.
 
-A template is an ordinary library document: versioned, linted (`lint_template_text`), editable
-on the Library tab, and a revision reaches every adopter at its next run — which is why
-`library_impact` treats it like any other.
+A template is an ordinary library document: versioned, linted (`lint_template_text`) and
+editable on the Library tab. A revision reaches nobody retroactively — adopters copied their
+values — so editing one only changes what the NEXT adoption writes.
 
-**A new routine adopts one at creation.** `workflows/scaffold` fits a template to what the
-creation flow already decided — `templates.suggest`, a deterministic score over the requested
-permissions and rules, not a model call: a wrong guess here writes a wrong DEFAULT into a config
-file, which is worse than a slightly-narrow one you widen on the page. Only the DIFFERENCES are
-written to the new routine.yaml, and the `create_routine` observation names the template and
-carries the link to the routine's own page, so "it exists" always comes with "here it is".
+**A new routine starts from one.** `workflows/scaffold` fits a template to what the creation
+flow already decided — `templates.suggest`, a deterministic score over the requested permissions
+and rules, not a model call: a wrong guess here writes a wrong DEFAULT into a config file, which
+is worse than a slightly-narrow one you widen on the page. The fitted template's values are
+written into the new `routine.yaml` in FULL, so the file says what the routine is from its first
+line.
 
 ### A group can hold the shared half (D82)
 

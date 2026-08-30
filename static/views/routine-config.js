@@ -145,11 +145,11 @@ export function renderConfigSections(view, d, { slug, titleH1, chipHost, runChip
   // but READING one — what it supplies, what this routine drops from it, what is set here —
   // is the part that was missing — and it is too much to inline here.
   const tplHost = el("div", {});
-  view.append(...settingsSection("Settings template",
-    ["a named starting point for this routine's whole conduct surface — its conduct docs, ",
-     "capabilities, general rules and grants. It layers UNDER this routine's own settings, so ",
-     "everything below stays editable and anything you set here wins. Nothing is copied: ",
-     "editing the template in the library reaches every routine that adopted it."],
+  view.append(...settingsSection("Start from a template",
+    ["a named starting point — applying one COPIES its conduct docs, rules and capabilities ",
+     "into this routine, once. They become the routine's own: every one is then editable and ",
+     "removable in the panel that owns it, and editing the template in the library afterwards ",
+     "changes nothing here."],
     tplHost));
   templatePanel(tplHost, slug, d);
 

@@ -86,21 +86,7 @@ class ServerConfig(_Config):
 
 
 
-# The library home of the config THIS PROCESS loaded. `load_routine` needs it to resolve a
-# routine's settings template, and it has no server to ask — while reading `config_file()` there
-# would resolve the AMBIENT default, which for an engine subprocess started with `--config X` is
-# the wrong file and, per CLAUDE.md, the class of bug that once spent real money in production.
-# Whoever loads a config declares it here; nobody guesses.
-_ACTIVE_LIBRARIES: Path | None = None
-
-
-def active_libraries_home() -> Path | None:
-    """The libraries home of the most recently loaded server config, or None if none was."""
-    return _ACTIVE_LIBRARIES
-
-
 def load_server_config(path: Path | None = None) -> tuple[ServerConfig, list[str]]:
-    global _ACTIVE_LIBRARIES  # noqa: PLW0603 — one process, one active config, set where it loads
     path = path or config_file()
     problems: list[str] = []
     raw: object = {}
@@ -152,5 +138,4 @@ def load_server_config(path: Path | None = None) -> tuple[ServerConfig, list[str
         problems.append(f"system_model: {cfg.system_model!r} is not a catalog model")
     for name, mac in cfg.machines.items():
         mac.name = name
-    _ACTIVE_LIBRARIES = cfg.libraries_home
     return cfg, problems

@@ -194,7 +194,7 @@ def _clean_members(members: object) -> list[dict]:
 # playbook/retention/triggers/improve — which say WHICH routine this is and when it runs, and
 # would be meaningless (or destructive) shared. What is left is the policy surface a group of
 # related routines genuinely shares: what they may do, what they know, and where they may look.
-CONFIG_KEYS = ("template", "permissions", "capabilities", "rules", "machines", "tags",
+CONFIG_KEYS = ("permissions", "capabilities", "rules", "machines", "tags",
                "models", "connections", "grants", "budgets",
                "fs_read_roots", "fs_write_roots")
 # Merged as a UNION with the member's own (the group is a floor a routine adds to); every other

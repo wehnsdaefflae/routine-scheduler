@@ -180,7 +180,7 @@ def scan(server: ServerConfig, home: Path | None = None) -> dict[str, RoutineInf
         if not (d / "routine.yaml").exists():
             continue
         visited.add(str(d))
-        cfg, problems = _load_routine_memo(d, server.libraries_home)
+        cfg, problems = _load_routine_memo(d)
         if cfg is None:
             cfg = RoutineConfig(slug=d.name, dir=d, enabled=False)
             problems = [*problems, "unloadable routine.yaml — treated as disabled"]
@@ -194,14 +194,13 @@ def scan(server: ServerConfig, home: Path | None = None) -> dict[str, RoutineInf
     return catalog
 
 
-def _load_routine_memo(d: Path, libraries_home: Path | None = None,
-                       ) -> tuple[RoutineConfig | None, list[str]]:
+def _load_routine_memo(d: Path) -> tuple[RoutineConfig | None, list[str]]:
     # both config AND tuning feed the parsed RoutineConfig — a tuning-only edit (the
     # slider, or the improver re-levelling deliberation) must miss the memo too
     fp = _fingerprint(d / "routine.yaml", d / "tuning.yaml")
     hit = _cfg_memo.get(str(d))
     if hit is None or hit[0] != fp:
-        hit = (fp, load_routine(d, libraries_home=libraries_home))
+        hit = (fp, load_routine(d))
         _cfg_memo[str(d)] = hit
     cfg, problems = hit[1]
     return (cfg.model_copy(deep=True) if cfg is not None else None), list(problems)

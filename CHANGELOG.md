@@ -17,6 +17,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.269.0] — 2026-08-30
+
+### A settings template is a preselection again, not a layer
+
+Operator decision, reversing 0.262.0. Adopting a template now COPIES its values into the
+routine's own `routine.yaml`, once, and the link is gone.
+
+**Why the layer read badly.** A routine's own file recorded only its DIFFERENCES from its
+template, so opening `routine.yaml` told you almost nothing about what the routine could do; the
+routine page had to explain a second inheritance chain stacked on the group's; and
+`template_except:` existed purely to subtract from a layer nobody could see. The cost of copying
+is the leverage — editing a template no longer reaches its adopters — which is the correct trade
+for a *starting point*. A live shared config is what a GROUP is, and that layer stays (D82).
+
+- **Nothing resolves a template at runtime.** `RoutineConfig` has no `template` or
+  `template_except` field, `load_routine` no longer takes a `libraries_home` (it was threaded
+  solely to resolve one, along with the `_ACTIVE_LIBRARIES` process-global — both gone), a group
+  can no longer name a template, and the setup surface has no template rows.
+- **`POST /api/routines/{slug}/adopt-template`** is the write. Lists union, maps fill only what
+  the routine left unset, its own value always winning — the group merge's rules applied once.
+  It returns what it CONTRIBUTED, because an adoption that silently changed nine things is the
+  layer's illegibility in a different costume. Adopting twice is harmless; adopting a second
+  template adds to the first. `grants` is never copied: a grant is a settled decision a person
+  made about one routine, and a template pre-answering one would be a template exposing a secret.
+- **The panel is an action, not a view.** "Start from a template" previews what applying would
+  ADD (already-held entries greyed), applies it, and then those values are ordinary entries in
+  the panels that own them — editable and removable there. Three concepts (inherited / set here /
+  subtracted) collapse to one button.
+- **`workflows.scaffold` writes the fitted template in FULL**, so a new routine's file says what
+  it is from its first line.
+- **MIGRATION(expires=2026-09-30)** — `migrate_template_layer` materializes every existing
+  routine's template contribution into its own file at daemon boot, applying `template_except:`
+  on the way in and then dropping both keys. Without it a differences-only file would silently
+  lose its permissions, rules and capabilities the moment nothing resolved a template. The test
+  asserts the EFFECTIVE config is unchanged, which is the actual contract.
+
+
 ## [0.268.0] — 2026-08-30
 
 ### A new routine is born knowing what DONE means, and the console stops printing "null"

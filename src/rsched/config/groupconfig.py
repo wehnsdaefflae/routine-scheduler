@@ -26,10 +26,9 @@ def apply_group_config(raw: dict, group_config: dict,
     (merged, provenance) where provenance maps each key the layer contributed to a short note
     for the UI ("permissions" → "3 from the group", "grants" → "2 from the group").
 
-    `source` NAMES that layer in the provenance note, because two layers use this merge on the
-    same terms — a group's shared block and a settings TEMPLATE (rsched/templates.py) — and the
-    routine page has to tell an operator which one supplied a value. Composing the phrase at the
-    call site instead produced "3 from the group from the template" for every templated routine.
+    `source` NAMES the layer in the provenance note. Only the group uses this merge live today;
+    template ADOPTION reuses the same union/fill rules to copy values in once (rsched/templates.py),
+    where the note describes a write rather than an inheritance.
 
     The group is a DEFAULT, never an override:
 

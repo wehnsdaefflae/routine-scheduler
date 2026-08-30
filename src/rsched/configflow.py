@@ -32,10 +32,6 @@ NEXT_RUN = "next_run"
 #: in the message, so it must say what the run actually does with the field.
 CLASSIFICATION: dict[str, tuple[str, str]] = {
     # ---- adopted at the next turn boundary -------------------------------------------------
-    "template": (NEXT_RUN, "the whole conduct surface is composed at boot — permissions, "
-                           "capabilities and rules are read once, so a new template takes "
-                           "effect at the next run"),
-    "template_except": (NEXT_RUN, "same layer as the template it subtracts from"),
     "budgets": (LIVE, "the run's remaining window is re-derived from the new ceilings"),
     "deliberation": (LIVE, "the say contract changes from the next turn"),
     "grants": (LIVE, "the policy is rebuilt and the action schema re-projected"),

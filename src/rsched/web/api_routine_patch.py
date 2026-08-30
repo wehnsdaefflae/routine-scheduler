@@ -37,8 +37,6 @@ class RoutinePatch(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     enabled: bool | None = None
-    template: str | None = None             # the library settings template this routine adopts
-    template_except: list[str] | None = None   # what it drops from that template
     schedule: dict | None = None            # {"friendly":…, "catchup":…} (cron built server-side)
     budgets: dict | None = None
     models: dict | None = None              # {main|tool_call|uncensored: catalog name}
@@ -124,11 +122,6 @@ def patch_routine(request: Request, slug: str, patch: RoutinePatch) -> dict:
     path = info.cfg.dir / "routine.yaml"
     raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     updates = patch.model_dump(exclude_none=True)
-    if patch.template_except is not None:
-        # Deduped and order-stable: this list is read by name at config load, and a duplicate
-        # or a stray blank would be a silent no-op rather than an error.
-        updates["template_except"] = list(dict.fromkeys(
-            x.strip() for x in patch.template_except if isinstance(x, str) and x.strip()))
     # `updated` reports every field this PATCH applied. Captured BEFORE the appliers pop
     # what they consume (models/connections/machines/grants/keep_runs/schedule) — the
     # response and commit message must not under-report, because the Decisions page's
@@ -211,3 +204,38 @@ def patch_routine(request: Request, slug: str, patch: RoutinePatch) -> dict:
     # some fields silently did and most silently did not.
     live = signal_config_change(info, requested, patch.model_dump(exclude_none=True))
     return {"ok": True, "updated": requested, **({"told_live_run": True} if live else {})}
+
+
+class AdoptTemplate(BaseModel):
+    template: str          # the library template slug to copy in ("" is rejected — say what)
+
+
+@router.post("/routines/{slug}/adopt-template")
+def adopt_template(request: Request, slug: str, body: AdoptTemplate) -> dict:
+    """Copy a settings template's values into this routine's `routine.yaml`, once.
+
+    A template is a PRESELECTION, not a layer (2026-08-30). Nothing about this write is
+    remembered: afterwards the routine's file says what the routine IS, every value is editable
+    in the panel that owns it, and removing one is removing it — there is no `template_except:`
+    because there is nothing left to subtract from. Adopting twice is harmless (the merge is a
+    union that never overwrites), and adopting a second template ADDS to the first.
+
+    Returns what the write contributed, so an adoption that changed nine things says so.
+    """
+    from ..templates import adopt_into, read_template
+
+    info = _info(request, slug)
+    server = _state(request).server
+    tpl = read_template(server.libraries_home, body.template.strip())
+    if tpl is None:
+        raise HTTPException(404, f"no settings template {body.template!r} in the library")
+    path = info.cfg.dir / "routine.yaml"
+    raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    merged, added = adopt_into(raw, tpl["config"])
+    if not added:
+        return {"ok": True, "template": tpl["slug"], "added": [],
+                "note": "this routine already has everything the template supplies"}
+    atomic_write(path, yaml.safe_dump(merged, sort_keys=False, allow_unicode=True))
+    _git_commit(info.cfg.dir, f"adopt settings template {tpl['slug']} via web")
+    _state(request).scheduler.rescan()
+    return {"ok": True, "template": tpl["slug"], "added": added}

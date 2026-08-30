@@ -38,16 +38,6 @@ class RoutineConfig(_Config):
 
     slug: str
     dir: Path
-    # The SETTINGS TEMPLATE this routine adopts (library `templates/<slug>.md`) — a named
-    # starting point for permissions, capabilities, rules, grants and roots. It layers UNDER
-    # the group's shared config, which layers under this file: every field stays editable
-    # here and an override is an ordinary routine.yaml key (rsched/templates.py).
-    template: BlankableStr = ""
-    # What this routine DROPS from what its template (or group) supplies. The shared layers
-    # merge as a UNION — the group model's rule, kept — so without this a routine could add to
-    # a template but never subtract from one, and adopting a template would cost granularity.
-    # Names a permission slug, a rule slug, a util or a gated action; anything else is ignored.
-    template_except: list[str] = Field(default_factory=list)
     name: BlankableStr = ""
     enabled: bool = True
     tags: list[str] = Field(default_factory=list)  # freeform, for filtering (e.g. "meta")
@@ -115,11 +105,10 @@ class RoutineConfig(_Config):
     # Whether the routine-improver meta routine visits this routine (default: yes; the
     # toggle on the routine page opts out with `improve: false`).
     improve: bool = True
-    # What this routine INHERITED from a SHARED layer — its group's config (D82) or its
-    # settings template: {field: "<n> from the group" | "<n> from the template"}. The note
-    # names the layer, because both merge on the same terms and only the note can tell an
-    # operator which one supplied a value. `inherited_from` names the GROUP alone (a template
-    # names itself in `template`). Runtime handles like `deliberation` — computed at load,
+    # What this routine INHERITED from its GROUP's shared config (D82): {field: "<n> from the
+    # group"} plus the group's name. A settings template is NOT here — it is copied in at
+    # adoption, so its values are the routine's own from that moment (see the loader below).
+    # Runtime handles like `deliberation` — computed at load,
     # never written to routine.yaml (the file stays the routine's OWN authority, so removing
     # it from a group cleanly returns it to what its file says). The routine page reads these
     # to mark a value as coming from a shared layer rather than from this routine.
@@ -259,29 +248,7 @@ def record_grants(routine_dir: Path, updates: dict[str, bool]) -> None:
 
 
 
-def _libraries_home_for(_routine_dir: Path) -> Path | None:
-    """Where the templates live, for resolving a routine's `template:`.
-
-    Unlike the groups store — which sits beside the routine by filesystem convention — the
-    library home is server config, and `load_routine` has no server to ask. It is taken from
-    the config THIS PROCESS loaded (`config.server.active_libraries_home`), never from the
-    ambient `config_file()`: an engine subprocess is started with an explicit `--config` and
-    reading the default there would silently resolve a different instance's library.
-
-    None means no config has been loaded in this process, and the template is simply not
-    resolved — the routine runs on its own config, which is the safe direction. A caller that
-    HAS a server should pass `libraries_home` explicitly rather than rely on this: one process
-    may legitimately load several configs (the test suite does), and then "the last one loaded"
-    is not the same as "this routine's".
-    """
-    from .server import active_libraries_home
-
-    return active_libraries_home()
-
-
-def load_routine(routine_dir: Path, *,
-                 libraries_home: Path | None = None,
-                 ) -> tuple[RoutineConfig | None, list[str]]:
+def load_routine(routine_dir: Path) -> tuple[RoutineConfig | None, list[str]]:
     """Parse <dir>/routine.yaml, then layer the shared config of any group the routine belongs
     to underneath it (D82 — the group is a default, the routine's own keys win). Returns
     (config, problems); config is None only when the file is missing/unreadable — otherwise
@@ -321,34 +288,15 @@ def load_routine(routine_dir: Path, *,
     inherited: dict[str, str] = {}
     if group_config:
         raw, inherited = apply_group_config(raw, group_config)
-    # …then the TEMPLATE, which is the broadest default. Order matters: each merge only fills
-    # what is still unset, so applying the group first keeps own > group > template. The group
-    # may also NAME the template, which is why it is resolved after that merge.
-    template_slug = str(raw.get("template") or "")
-    if template_slug:
-        from ..templates import config_for as _template_config
-
-        lib_home = libraries_home or _libraries_home_for(routine_dir)
-        tpl = _template_config(lib_home, template_slug) if lib_home else {}
-        if tpl:
-            raw, from_template = apply_group_config(raw, tpl, source="the template")
-            for key in from_template:
-                inherited.setdefault(key, from_template[key])
-    drop = {str(x) for x in (raw.get("template_except") or []) if isinstance(x, str)}
-    if drop:
-        for key in ("permissions", "rules"):
-            raw[key] = [v for v in (raw.get(key) or []) if v not in drop]
-        caps = dict(raw.get("capabilities") or {})
-        for key in ("actions", "utils", "util_tags"):
-            if caps.get(key):
-                caps[key] = [v for v in caps[key] if v not in drop]
-        if caps:
-            raw["capabilities"] = caps
+    # A settings TEMPLATE does not appear here. It is a PRESELECTION, not a layer (operator
+    # decision 2026-08-30, reversing 0.262.0): adopting one COPIES its values into this file,
+    # once, and the routine owns them from then on. Under the layer, a routine's own file
+    # recorded only its DIFFERENCES from a template, so reading routine.yaml told you almost
+    # nothing about the routine and the page had to explain a second inheritance chain on top
+    # of the group's. The GROUP layer above stays: a group is a live shared config a member
+    # belongs to, which is a different claim from "this is where I started".
     cfg = _validate_lenient(RoutineConfig, {**raw, "slug": slug, "dir": routine_dir}, problems) \
         or RoutineConfig(slug=slug, dir=routine_dir)
-    # `inherited_from` names the GROUP and nothing else: a template names itself in `template`
-    # and in each key's provenance note, so a template-only routine leaves this empty rather
-    # than borrowing a group name it does not have.
     cfg.inherited, cfg.inherited_from = inherited, (group_name if group_config else "")
     cfg.name = cfg.name or slug
     if not cfg.description:
