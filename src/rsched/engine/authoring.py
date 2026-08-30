@@ -119,7 +119,8 @@ def handle_write_util(loop, action: dict, poll_s: float) -> dict:  # noqa: PLR09
                    f"{str(action.get('replacement') or '')[:180]}" if edit_mode
                    else f"First lines:\n{content.strip()[:400]}")
         ask = handle_ask(loop, {
-            "question": f"Approve {verb} of global util '{name}'? "
+            "question": f"Approve {verb} of global util '{name}'?"
+                        f"{_impact_note(ctx, 'util', name, content)} "
                         f"{'In-place patch — ' if edit_mode else ''}{excerpt}",
             "mode": "blocking", "options": ["approve", "decline"],
             "default": "the util is NOT applied until approved"}, poll_s,
@@ -152,6 +153,20 @@ def handle_write_util(loop, action: dict, poll_s: float) -> dict:  # noqa: PLR09
     utils_lib.git_commit(home, f"{'create' if creating else 'revise'} {name}",
                          paths=[f"utils/{name}"])
     return {"kind": "write_util", "name": name, "created": creating, "selftest_ok": True}
+
+
+
+def _impact_note(ctx, kind: str, name: str, content: str | None) -> str:
+    """The blast radius, for the approval question. Advisory and best-effort: an impact that
+    could REFUSE a write would make a diagnostic the reason authoring fails, and the write gate
+    is the selftest and the linter, not this.
+    """
+    from ..library_impact import impact, impact_lines
+
+    try:
+        return " " + " | ".join(impact_lines(impact(ctx.server, kind, name, content)))
+    except (OSError, ValueError, AttributeError):
+        return ""
 
 
 def handle_write_rule(loop, action: dict, poll_s: float) -> dict:  # noqa: PLR0911 — gate ladder: every refusal is its own teaching exit
@@ -223,9 +238,9 @@ def handle_write_rule(loop, action: dict, poll_s: float) -> dict:  # noqa: PLR09
         excerpt = (f"anchor:\n{str(action.get('anchor'))[:200]}\nreplacement:\n"
                    f"{str(action.get('replacement') or '')[:200]}" if raw_content is None
                    else f"First lines:\n{content.strip()[:400]}")
-        who = (", ".join(holders) if holders else "no routine yet")
         ask = handle_ask(loop, {
-            "question": f"Approve {verb} of general rule '{name}'? It binds: {who}. {excerpt}",
+            "question": f"Approve {verb} of general rule '{name}'?"
+                        f"{_impact_note(ctx, 'rule', name, content)}. {excerpt}",
             "mode": "blocking", "options": ["approve", "decline"],
             "default": "the rule is NOT changed until approved"}, poll_s,
             qtype="rule-approval")

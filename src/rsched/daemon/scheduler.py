@@ -26,6 +26,7 @@ from . import pause, restart, runner_reap
 from .detached import DetachedManager
 from .events import EventBus
 from .group_runs import GroupRunManager
+from .library_watch import LibraryWatch
 from .oauth_refresh import OAuthRefreshManager
 from .runner import Runner
 from .schedule_once import OneShotManager
@@ -71,6 +72,10 @@ class Scheduler:
         # OAuth token upkeep: refresh expiring connections before they lapse so a run always
         # reads a live token (a no-op for non-expiring providers). See daemon/oauth_refresh.py.
         self.oauth = OAuthRefreshManager(server)
+        # The library MOVES under its holders — a sync pull, a hand edit, a restored
+        # bundle — with no writer to gate. This notices and files the breakage as a
+        # decision (daemon/library_watch.py).
+        self.library = LibraryWatch(server)
         self.catalog: dict[str, registry.RoutineInfo] = {}
         self.next_fires: dict[str, datetime] = {}
         # D71: groups with a cron of their own. A due group fire ARMS the sequential
@@ -227,6 +232,7 @@ class Scheduler:
                     await self.group_runs.tick(self.catalog)
                 # OAuth token upkeep: refresh expiring connections nearing their deadline
                 await self.oauth.tick()
+                await self.library.tick()
             except _TickSkip:
                 continue  # draining / shutting down: fire nothing this tick
             except Exception:

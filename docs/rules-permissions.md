@@ -91,6 +91,36 @@ lets one function answer at all four moments it matters:
 The engine note is advisory and never refuses to start: a diagnostic that can stop a run is
 worse than the gap it reports, so a broken library yields no note rather than a dead run.
 
+#### The reverse reading: who depends on THIS?
+
+`library_impact.py` asks the same join backwards, because the library MOVES: one copy of every
+util and rule, reaching every holder at its next run, with no migration and nothing to review.
+That leverage is the design's best property, and it is why a routine nobody touched can stop
+working overnight.
+
+The break analysis is deliberately not a per-kind diff of headers and frontmatter. It computes
+each holder's surface against the CURRENT library and against the PROPOSED one — over a shadow
+library of symlinks, so the real one is never touched — and reports whoever gains a blocking or
+interrupting row. The approval question and the routine page therefore cannot disagree about
+what a gap means: one function, read forwards, twice.
+
+Three writers, and each gets what it can carry:
+
+- **the engine's authoring actions** — `write_util` and `write_rule` fold the blast radius into
+  their existing approval question. `write_rule` already said "It binds: …"; now both say what
+  the change would BREAK. Best-effort: an impact that could refuse a write would make a
+  diagnostic the reason authoring fails, and the write gate is the selftest and the linter.
+- **the Library tab** — no approval to hang it on, so `POST /api/library/{kind}/{slug}/impact`
+  previews and the save carries the returned `impact_digest` back. A library that moved in
+  between yields a different digest and the save is refused (409). Only a BREAKING change is
+  gated: requiring a round-trip for every edit would train you to paste the token unread.
+- **nothing at all** — a `git pull` by library-sync, an edit on disk, a restored bundle.
+  `daemon/library_watch.py` compares the library's git HEAD on each scheduler tick and queues a
+  `library-drift` record per newly-broken routine. A break is a DECISION (expose the secret,
+  withhold it, unbind the rule), which is what the Decisions page already settles on entity ids
+  — so it rides `pending.py` and inherits the page, the audit trail and browser push without
+  inventing an outbound send.
+
 #### The gap it also closes: a capability no held doc asks for
 
 Three deliberate designs meet at one blind spot, and each correctly declines to catch it:

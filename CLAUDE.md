@@ -28,7 +28,8 @@ one you are about to touch, not all of them.
   change to composer / loop / actions / schema_guard wording; `tests/test_prompt_anatomy.py`
   fails on drift
 - `docs/rules-permissions.md`, `docs/curated-rules.md` — the general-rules layer, the two-layer
-  permission set, the ACCESS-REQUEST grant model (entities.py ids; allow/deny × now/forever, plus
+  permission set, the SETUP SURFACE (`readmodels/surface.py` forwards, `library_impact.py`
+  backwards, `daemon/library_watch.py` for changes with no writer), the ACCESS-REQUEST grant model (entities.py ids; allow/deny × now/forever, plus
   allow-once for turn-action classes), and each curated rule's provenance
 - `docs/child-runs.md`, `docs/background-tasks.md`, `docs/triggers.md`, `docs/schedule-once.md`
   — the child-run and firing mechanisms

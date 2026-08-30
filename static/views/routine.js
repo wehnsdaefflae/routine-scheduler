@@ -3,6 +3,7 @@
 
 import { api } from "/static/api.js";
 import { renderConfigSections } from "/static/views/routine-config.js";
+import { setupCheck } from "/static/components/setupcheck.js";
 import { mountHealth } from "/static/views/routine-health.js";
 import { mountMessages } from "/static/views/routine-messages.js";
 import { mountRecipe } from "/static/views/routine-recipe.js";
@@ -63,6 +64,13 @@ export async function render(view, slug, query = {}) {
 
   // --- overview hero: the informative first screen (status · last run · spend · decisions) ---
   view.append(routineHero(d, slug));
+
+  // --- setup check: what the panels below ADD UP TO. Above the fold and above the hero's
+  // detail, because a routine that cannot do its job should say so before it says anything
+  // else. Rendered async and silent when there is nothing outstanding.
+  const setupHost = el("div", {});
+  view.append(setupHost);
+  setupCheck(setupHost, slug);
 
   async function runNow(e) {
     e.target.disabled = true;

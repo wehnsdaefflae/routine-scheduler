@@ -17,6 +17,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.258.0] — 2026-08-30
+
+### The setup surface gets its reverse reading, and a page to show it on
+
+Stage three. 0.256 declared the missing edges, 0.257 read them forwards; this reads them
+backwards and puts the forward reading where somebody will see it.
+
+- **`library_impact.py`** answers "who depends on this, and does this change break them?".
+  Not a per-kind diff: it computes each holder's surface against the current library and
+  against the proposed one — over a shadow library of symlinks, so the real one is untouched —
+  and reports whoever gains a blocking or interrupting row. The approval and the routine page
+  therefore cannot disagree about what a gap means.
+- **Both interactive writers now carry it.** `write_util`'s approval named nobody at all and
+  `write_rule`'s named WHO but never what it broke; both now state the blast radius. The
+  Library tab, which has no approval, gets `POST /api/library/{kind}/{slug}/impact` plus an
+  `impact_digest` confirm token — a library that moved between preview and save yields a
+  different digest and the save 409s. Only a breaking change is gated.
+- **`daemon/library_watch.py`** covers what arrives with no writer: a sync pull, a hand edit, a
+  restored bundle. It compares the library's git HEAD each scheduler tick (~1ms) and queues a
+  `library-drift` pending record per newly-broken routine. A break is a decision, not a
+  notification, so it rides the existing `pending.py` queue and inherits the Decisions page,
+  the audit trail and browser push — no new outbound channel, which 0.230.0 forbids.
+- **The setup check on the routine page** (`components/setupcheck.js`) renders the forward
+  surface above the panels, ordered by what each gap COSTS and worded in those terms. A routine
+  with nothing outstanding renders nothing at all: a panel that is always there is a panel
+  nobody reads.
+
+
 ## [0.257.1] — 2026-08-30
 
 ### A capability no held doc asks for is now reported, at both ends

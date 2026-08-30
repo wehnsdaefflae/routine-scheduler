@@ -97,6 +97,52 @@ class DocBody(BaseModel):
     # permissions only: the structured requires panel's value — merged into the doc's
     # frontmatter server-side, so the client never assembles YAML
     requires: dict | None = None
+    # the token a `.../impact` preview returned, echoed back to confirm a breaking save
+    impact_digest: str | None = None
+
+
+# The Library tab is the SECOND writer of every library document (the engine's authoring
+# actions are the first). Only the engine's path had an approval to hang a blast radius on, so
+# a hand edit here reached every holder with nothing said. `impact_digest` is the confirm token
+# that closes it: the client previews, the preview returns a digest, and the save carries it
+# back. A library that MOVED in between yields a different digest and the save is refused —
+# which is the point, since the whole hazard is a change nobody saw the consequences of.
+_IMPACT_KIND = {"utils": "util", "rules": "rule", "permissions": "permission"}
+
+
+def _impact_for(request: Request, kind: str, slug: str, content: str | None) -> dict:
+    from ..library_impact import impact
+
+    server = request.app.state.server
+    return impact(server, _IMPACT_KIND[kind], slug, content)
+
+
+def _require_digest(request: Request, kind: str, slug: str, content: str | None,
+                    supplied: str | None) -> None:
+    """Refuse a save whose impact the caller has not seen (or saw before the library moved).
+
+    Informational, not an approval: on the Library tab YOU are the authority, so a matching
+    digest always passes and only a MISSING or STALE one stops. A save with no holders at all
+    needs no token — there is nothing to have been shown.
+    """
+    result = _impact_for(request, kind, slug, content)
+    if not result["breaks"]:
+        return
+    if supplied == result["digest"]:
+        return
+    raise HTTPException(409, "this change breaks routines that hold it: "
+                        + "; ".join(f"{b['slug']} ({', '.join(b['gains'])})"
+                                    for b in result["breaks"])
+                        + f" — re-request the preview and save with impact_digest="
+                          f"{result['digest']} to confirm")
+
+
+@router.post("/library/{kind}/{slug}/impact")
+def preview_impact(request: Request, kind: str, slug: str, body: DocBody) -> dict:
+    """Who holds this document, and what would this content do to them (D-setup-coherence)."""
+    if kind not in _IMPACT_KIND:
+        raise HTTPException(404, f"unknown library kind {kind!r}")
+    return _impact_for(request, kind, slug, body.content)
 
 
 @router.put("/library/{kind}/{slug}")
@@ -104,7 +150,8 @@ def put_library_doc(request: Request, kind: str, slug: str, body: DocBody) -> di
     from .. import library_docs
 
     if kind == "utils":
-        return put_util(request, slug, UtilBody(content=body.content))
+        return put_util(request, slug, UtilBody(content=body.content,
+                                                impact_digest=body.impact_digest))
     home = _docs_home(request, kind)
     content = body.content
     if kind == "permissions" and body.requires is not None:
@@ -125,6 +172,7 @@ def put_library_doc(request: Request, kind: str, slug: str, body: DocBody) -> di
                 if kind == "rules" else lint_permission_text(content, filename=f"{slug}.md"))
     if problems:
         raise HTTPException(422, "; ".join(problems))
+    _require_digest(request, kind, slug, content, body.impact_digest)
     library_docs.write_doc(home, slug, content.rstrip() + "\n")
     library_docs.git_commit(home, f"edit {kind[:-1]} {slug} via web", paths=[f"{slug}.md"])
     return {"ok": True}
@@ -181,6 +229,7 @@ def util_detail(request: Request, name: str) -> dict:
 
 class UtilBody(BaseModel):
     content: str
+    impact_digest: str | None = None
 
 
 def put_util(request: Request, name: str, body: UtilBody) -> dict:
@@ -191,6 +240,7 @@ def put_util(request: Request, name: str, body: UtilBody) -> dict:
     problems = utils_header.header_problems(body.content)
     if problems:
         raise HTTPException(422, "header problems (not saved): " + "; ".join(problems))
+    _require_digest(request, "utils", name, body.content, body.impact_digest)
     utils_lib.ensure_library(server.libraries_home, remote=server.libraries_remote)
     utils_lib.write_util_file(server.libraries_home, name, body.content)
     ok, output = utils_run.selftest(server.libraries_home, name,
