@@ -1,7 +1,7 @@
 ---
-tags: [web, feedback, reporting, ui]
+tags: [steward, web, ui, feedback, publishing, reporting]
 ---
-# rule: the status page — one notebook, many projects, and the reader's words are sacred
+# rule: status page — publishing and tending your web UI on the shared steward host
 
 A routine that works on something over weeks needs a place the person it works for can look at
 between runs: what happened, what is waiting, and one control per decision. That place is a
