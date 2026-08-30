@@ -38,6 +38,7 @@ def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,  #
              fs_write_roots: list[str] | None = None,
              stages: dict[str, str] | None = None, enabled: bool = True,
              tags: list[str] | None = None, deliberation: str = "",
+             template: str | None = None,
              progress=None) -> Path:
     """Create ~/routines/<slug>. The workflow is REFERENCED (edited only in the library);
     the routine holds general-rule SLUGS in routine.yaml (`rules:`, indexed by main.md's
@@ -80,6 +81,32 @@ def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,  #
     # used to raise only, so a floor violation surfaced on first edit instead of at birth
     lib = read_library_requires(server.permissions_home)
     capabilities = floor_capabilities(active_perms, lib, capabilities_for(active_perms, lib))
+    # A new routine ADOPTS a settings template rather than being born with the whole conduct
+    # surface inlined in its own file (0.262.0). `template=""` opts out explicitly; None means
+    # "fit one", which is a deterministic best fit over what creation already decided — an LLM
+    # guess here would write a wrong DEFAULT into a config file, which is worse than a
+    # slightly-narrow one the user widens on the routine page.
+    from ..templates import config_for as _template_config
+    from ..templates import suggest as _suggest_template
+
+    chosen = _suggest_template(server.libraries_home, active_perms,
+                               active_rules) if template is None else template
+    tpl_conf = _template_config(server.libraries_home, chosen) if chosen else {}
+    tpl_perms = set(tpl_conf.get("permissions") or [])
+    tpl_rules = set(tpl_conf.get("rules") or [])
+    tpl_caps = tpl_conf.get("capabilities") or {}
+    # Persist only what the template does NOT already supply: the routine's own file records
+    # its differences, which is the whole point of adopting one.
+    own_perms = [p for p in active_perms if p not in tpl_perms]
+    own_rules = [r for r in active_rules if r not in tpl_rules]
+    own_caps: dict = {}
+    for key in ("actions", "utils", "util_tags"):
+        extra = [v for v in (capabilities.get(key) or []) if v not in (tpl_caps.get(key) or [])]
+        if extra:
+            own_caps[key] = extra
+    for key in ("confirm", "rule_confirm", "runs", "workflows"):
+        if capabilities.get(key) and capabilities[key] != tpl_caps.get(key):
+            own_caps[key] = capabilities[key]
     commit = library.head_commit(server.libraries_home)
 
     from .adapt import decompose, dump_markdown
@@ -142,9 +169,10 @@ def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,  #
         "schedule": {"cron": cron, "tz": tz, "catchup": "skip"},
         "workflow": {"library_slug": workflow_slug, "library_commit": commit},
         **({"models": models} if models else {}),
-        "permissions": active_perms,
-        "rules": active_rules,
-        "capabilities": capabilities,
+        **({"template": chosen} if chosen else {}),
+        "permissions": own_perms,
+        "rules": own_rules,
+        **({"capabilities": own_caps} if own_caps else {}),
         # unknown keys are dropped, not persisted — a caller typo must not seed junk
         # config that the strict loader then flags on every read
         "budgets": {**DEFAULT_BUDGETS,

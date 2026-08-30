@@ -284,7 +284,7 @@ def test_scaffold_creates_valid_routine(tmp_path):
     d = scaffold(server, slug="papers-radar", name="Papers radar",
                  instruction="# Instruction\n\nCollect papers.",
                  workflow_slug="general-task", cron="0 8 * * 1")
-    cfg, problems = load_routine(d)
+    cfg, problems = load_routine(d, libraries_home=server.libraries_home)
     assert cfg is not None and problems == [], problems
     assert cfg.cron == "0 8 * * 1" and cfg.workflow_slug == "general-task"
     assert (d / ".git").is_dir()
@@ -294,17 +294,22 @@ def test_scaffold_creates_valid_routine(tmp_path):
     assert (d / "main.md").exists()
     raw = yaml.safe_load((d / "routine.yaml").read_text())
     assert raw["budgets"]["max_turns"] == 60
-    # rules = the workflow's includes, recorded as SLUGS in routine.yaml and referenced from
-    # main.md's Standing practices tail. Nothing is copied into the routine dir: one library
-    # copy is the whole point, so a revision reaches every holder.
-    assert set(raw["rules"]) >= {"web-research", "decision-record"}
+    # rules = the workflow's includes, recorded as SLUGS and referenced from main.md's
+    # Standing practices tail. Nothing is copied into the routine dir: one library copy is the
+    # whole point, so a revision reaches every holder. Since 0.263.0 a new routine ADOPTS a
+    # settings template, so its own file records only the differences — the EFFECTIVE set is
+    # what the run sees, and what has to carry the workflow's includes.
+    assert set(cfg.rules) >= {"web-research", "decision-record"}
     assert not (d / "rules").exists()
     assert "- `web-research` —" in (d / "main.md").read_text(encoding="utf-8")
     main_text = (d / "main.md").read_text()
     assert "## Standing practices" in main_text
     assert "improve-" not in main_text
-    # permissions default in and are pure config (no local copies)
-    assert set(cfg.permissions) == set(raw["permissions"])
+    # permissions are pure config (no local copies). Since 0.263.0 they mostly arrive through
+    # the adopted TEMPLATE, so the routine's own file holds only its differences — and the
+    # EFFECTIVE set is the union, which is what the run actually gets.
+    assert raw.get("template"), "a scaffolded routine adopts a settings template"
+    assert set(raw["permissions"]) <= set(cfg.permissions)
     assert "util-authoring" in cfg.permissions and "memory" in cfg.permissions
     # recipe improvement is centralized — self-modification is NOT a default anymore
     assert "self-modification" not in cfg.permissions

@@ -153,15 +153,15 @@ def _merge_caps(caps: dict, extra: dict) -> None:
 
 
 def seed_libraries(home: Path) -> None:
-    """Populate an empty library repo (workflows/ + rules/ + permissions/ + utils/) from the
-    built-in seeds + git-init it (matches deploy/install.sh). The `gu` dispatcher is installed
-    by utils_lib.ensure_library on first use.
+    """Populate an empty library repo (workflows/ + rules/ + permissions/ + templates/ +
+    utils/) from the built-in seeds + git-init it (matches deploy/install.sh). The `gu`
+    dispatcher is installed by utils_lib.ensure_library on first use.
     """
     root = repo_root()
     home.mkdir(parents=True, exist_ok=True)
     if (root / "library-seed" / "workflows").is_dir():
         shutil.copytree(root / "library-seed" / "workflows", home / "workflows", dirs_exist_ok=True)
-    for kind in ("rules", "permissions"):
+    for kind in ("rules", "permissions", "templates"):
         (home / kind).mkdir(exist_ok=True)
         if (root / "library-seed" / kind).is_dir():
             for f in sorted((root / "library-seed" / kind).glob("*.md")):

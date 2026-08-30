@@ -196,9 +196,27 @@ def _materialize(ctx: RunContext, *, slug: str, name: str, instruction: str,
                 "error": f"materialization failed mid-build ({exc}); nothing usable was "
                          "created — check the routines home and try again"}
     _draft_path(ctx).unlink(missing_ok=True)
+    import contextlib
+
+    import yaml as _yaml
+
+    adopted = ""
+    with contextlib.suppress(OSError, _yaml.YAMLError):
+        adopted = str((_yaml.safe_load((routine_dir / "routine.yaml").read_text(
+            encoding="utf-8")) or {}).get("template") or "")
     return {"kind": "create_routine", "slug": slug, "name": name,
             "workflow": workflow_slug, "created": True, "dir": str(routine_dir),
+            "template": adopted, "url": routine_page_url(ctx.server, slug),
             "rescan_s": ctx.server.registry_rescan_s}
+
+
+def routine_page_url(server, slug: str) -> str:
+    """Where the user can open the routine. An absolute URL when the instance knows its own
+    (`public_url`), else the in-app route — a link the reader can act on either way, which is
+    the point: "it exists" without "here it is" makes the user go looking for it.
+    """
+    base = str(getattr(server, "public_url", "") or "").rstrip("/")
+    return f"{base}/#/routine/{slug}" if base else f"#/routine/{slug}"
 
 
 def _queued_obs(ctx: RunContext, fields: dict) -> dict:

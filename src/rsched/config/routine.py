@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from functools import lru_cache
 from pathlib import Path
 from typing import Literal, cast
 
@@ -257,31 +256,29 @@ def record_grants(routine_dir: Path, updates: dict[str, bool]) -> None:
 
 
 
-@lru_cache(maxsize=4)
-def _libraries_home_cached(config_path: str, stamp: float) -> Path:  # noqa: ARG001
-    # `stamp` is the cache KEY (config.yaml's mtime), not an input.
-    from .server import load_server_config
+def _libraries_home_for(_routine_dir: Path) -> Path | None:
+    """Where the templates live, for resolving a routine's `template:`.
 
-    return load_server_config(Path(config_path))[0].libraries_home
+    Unlike the groups store — which sits beside the routine by filesystem convention — the
+    library home is server config, and `load_routine` has no server to ask. It is taken from
+    the config THIS PROCESS loaded (`config.server.active_libraries_home`), never from the
+    ambient `config_file()`: an engine subprocess is started with an explicit `--config` and
+    reading the default there would silently resolve a different instance's library.
 
-
-def _libraries_home_for(_routine_dir: Path) -> Path:
-    """Where the templates live. Unlike the groups store — which sits beside the routine by
-    filesystem convention — the library home is server config, so it is read from there and
-    cached on the config file's mtime: `load_routine` runs on every registry scan and must not
-    re-parse config.yaml per routine.
+    None means no config has been loaded in this process, and the template is simply not
+    resolved — the routine runs on its own config, which is the safe direction. A caller that
+    HAS a server should pass `libraries_home` explicitly rather than rely on this: one process
+    may legitimately load several configs (the test suite does), and then "the last one loaded"
+    is not the same as "this routine's".
     """
-    from .server import config_file
+    from .server import active_libraries_home
 
-    path = config_file()
-    try:
-        stamp = path.stat().st_mtime
-    except OSError:
-        return Path("/nonexistent")
-    return _libraries_home_cached(str(path), stamp)
+    return active_libraries_home()
 
 
-def load_routine(routine_dir: Path) -> tuple[RoutineConfig | None, list[str]]:
+def load_routine(routine_dir: Path, *,
+                 libraries_home: Path | None = None,
+                 ) -> tuple[RoutineConfig | None, list[str]]:
     """Parse <dir>/routine.yaml, then layer the shared config of any group the routine belongs
     to underneath it (D82 — the group is a default, the routine's own keys win). Returns
     (config, problems); config is None only when the file is missing/unreadable — otherwise
@@ -328,7 +325,8 @@ def load_routine(routine_dir: Path) -> tuple[RoutineConfig | None, list[str]]:
     if template_slug:
         from ..templates import config_for as _template_config
 
-        tpl = _template_config(_libraries_home_for(routine_dir), template_slug)
+        lib_home = libraries_home or _libraries_home_for(routine_dir)
+        tpl = _template_config(lib_home, template_slug) if lib_home else {}
         if tpl:
             raw, from_template = apply_group_config(raw, tpl)
             for key in from_template:

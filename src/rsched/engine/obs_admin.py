@@ -50,10 +50,16 @@ def format_admin(obs: dict, kind: str) -> str | None:  # noqa: C901, PLR0911, PL
                     f"{state}. name {obs.get('name')!r}, workflow {obs.get('workflow')!r}, "
                     f"instruction {obs.get('instruction_chars')} chars, beginning: "
                     f"{obs.get('instruction_preview', '')[:200]!r}. {obs.get('next')}{held})")
+        tpl = obs.get("template")
+        adopted = (f" It adopted the {tpl!r} settings template — its conduct docs, "
+                   f"capabilities and general rules come from there, and its own routine.yaml "
+                   f"records only what differs." if tpl else "")
         return (f"OBSERVATION (create_routine: created routine {slug!r} from workflow "
-                f"{obs.get('workflow')!r} — the daemon's registry rescan (every "
+                f"{obs.get('workflow')!r}.{adopted} The daemon's registry rescan (every "
                 f"~{obs.get('rescan_s') or 30}s) picks it up and it appears on the dashboard. "
-                "Tell the user it exists and what to set next, e.g. its schedule.)")
+                f"Tell the user it exists, GIVE THEM THE LINK {obs.get('url')} to its page, "
+                f"and say what to set next — its schedule, and anything the template does not "
+                f"cover such as filesystem roots or a bound machine.)")
     if kind == "manage_group":
         if obs.get("rejected"):
             return f"OBSERVATION (manage_group REJECTED): {obs['reason']}"

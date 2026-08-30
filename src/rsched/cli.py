@@ -136,7 +136,7 @@ def cmd_validate(args) -> int:
     from .readmodels.surface import routine_surface, surface_lines
 
     for d in targets:
-        cfg, problems = load_routine(d)
+        cfg, problems = load_routine(d, libraries_home=server.libraries_home)
         # Setup COHERENCE is a second, independent question from "is the file well-formed":
         # a routine can parse perfectly and still hold a rule that tells it to publish into a
         # directory it cannot write. Only a blocking row fails the command — an interrupt or a

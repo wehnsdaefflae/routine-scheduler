@@ -91,3 +91,40 @@ def config_for(libraries_home: Path, slug: str) -> dict:
         log.warning("routine references unknown template %r", slug)
         return {}
     return rec["config"]
+
+
+def suggest(libraries_home: Path, permissions: list[str], rules: list[str] | None = None) -> str:
+    """The template that best fits a requested permission set — deterministically.
+
+    Creation already knows what the routine asked for (the clarify flow's preselection, the
+    workflow's `includes`); the question is only which named starting point that set is closest
+    to. So this is a fit, not a judgement, and it costs no model call: a wrong guess from an
+    LLM here would be a wrong DEFAULT written into a config file, which is worse than a
+    slightly-too-narrow one the user widens on the page.
+
+    Scoring rewards coverage and penalises excess, so a template that supplies something the
+    routine did not ask for has to earn it by covering more. Ties go to the NARROWER template —
+    adding a capability later is a click, taking one back after a run has used it is a
+    conversation. Nothing fitting means `basic`, the floor.
+    """
+    available = list_templates(libraries_home)
+    if not available:
+        return ""          # a library with no templates must not get a dangling reference
+    want = set(permissions or [])
+    want_rules = set(rules or [])
+    best, best_score = "basic", 0
+    for tpl in available:
+        conf = tpl["config"]
+        perms = set(conf.get("permissions") or [])
+        covered = len(want & perms)
+        excess = len(perms - want)
+        score = covered * 2 - excess + len(want_rules & set(conf.get("rules") or []))
+        if score > best_score or (score == best_score and score > 0
+                                  and len(perms) < len(_perms_of(libraries_home, best))):
+            best, best_score = tpl["slug"], score
+    return best if any(t["slug"] == best for t in available) else available[0]["slug"]
+
+
+def _perms_of(libraries_home: Path, slug: str) -> set[str]:
+    rec = read_template(libraries_home, slug)
+    return set((rec or {}).get("config", {}).get("permissions") or [])

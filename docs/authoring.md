@@ -214,3 +214,7 @@ playbook** — the system distils it from the transcript. See the [Playbooks](pl
 guide.
 
 See also: [Getting started](getting-started.md) · [Rules & permissions](rules-permissions.md) · [Playbooks](playbooks.md)
+
+## Settings templates
+
+A new routine adopts one at creation and its own `routine.yaml` records only what differs. See [rules-permissions](rules-permissions.md#settings-templates--the-named-starting-point) for the layering, the six shipped templates and `template_except:`.

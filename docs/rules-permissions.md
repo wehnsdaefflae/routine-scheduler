@@ -333,6 +333,13 @@ A template is an ordinary library document: versioned, linted (`lint_template_te
 on the Library tab, and a revision reaches every adopter at its next run — which is why
 `library_impact` treats it like any other.
 
+**A new routine adopts one at creation.** `workflows/scaffold` fits a template to what the
+creation flow already decided — `templates.suggest`, a deterministic score over the requested
+permissions and rules, not a model call: a wrong guess here writes a wrong DEFAULT into a config
+file, which is worse than a slightly-narrow one you widen on the page. Only the DIFFERENCES are
+written to the new routine.yaml, and the `create_routine` observation names the template and
+carries the link to the routine's own page, so "it exists" always comes with "here it is".
+
 ### A group can hold the shared half (D82)
 
 Routines that belong to a **group** inherit its `config:` block — permissions, capabilities,

@@ -17,6 +17,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.263.0] — 2026-08-30
+
+### A routine created from a conversation adopts a template, and you get a link to it
+
+- **`workflows.scaffold` fits a settings template** to what the creation flow already decided
+  (`templates.suggest`) and writes only the DIFFERENCES into the new `routine.yaml`. The fit is
+  a deterministic score over the requested permissions and rules rather than a model call: a
+  wrong guess here writes a wrong DEFAULT into a config file, which is worse than a
+  slightly-narrow one you widen on the page. Ties go to the narrower template, and nothing
+  fitting falls to `basic`.
+- `steward` and `correspondent` hold the same permissions on purpose (the shell is not a
+  publishing tool), so the RULES are what tell them apart — a request carrying `status-page`
+  resolves to `steward`, one without it to `correspondent`.
+- **`load_routine` takes the library home explicitly** (`libraries_home=`), because resolving a
+  routine's template needs one and it had no server to ask. Reading the ambient `config_file()`
+  there would resolve the DEFAULT config — for an engine subprocess started with `--config X`,
+  a different instance's library, which is precisely the class of bug CLAUDE.md warns about.
+  The registry scan, `rsched validate` and the engine runtime all pass their own; the fallback
+  is the config this process actually loaded, never the ambient path.
+- **`bootstrap.seed_libraries` seeds `templates/`** — without it a fresh install would adopt
+  templates that were not there.
+- **The `create_routine` observation carries the link** to the new routine's page
+  (`public_url` when the instance knows its own, the in-app route otherwise) and names the
+  template it adopted, so a conversation can hand the user somewhere to go instead of "it
+  exists, look for it on the dashboard".
+
+
 ## [0.262.0] — 2026-08-30
 
 ### Settings templates: one named starting point instead of five scattered decisions

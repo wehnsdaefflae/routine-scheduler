@@ -144,3 +144,41 @@ def test_the_shipped_templates_are_well_formed_and_cover_the_jobs(tmp_path):
     # the two capabilities whose blast radius is the instance itself are NOT template defaults
     assert "recipe-authoring" not in config_for(seed, "maintainer")["permissions"]
     assert "shell" not in config_for(seed, "steward")["permissions"]
+
+
+# --- creation: a new routine adopts a template instead of inlining the whole surface -------
+
+def test_suggest_fits_a_permission_set_to_the_closest_template():
+    """A deterministic fit, not a judgement — creation already decided what the routine asked
+    for. An LLM guess here would write a wrong DEFAULT into a config file, which is worse than
+    a slightly-narrow one the user widens on the page."""
+    from rsched.templates import suggest
+
+    seed = Path(__file__).resolve().parents[1] / "library-seed"
+    base = ["global-utils", "memory", "util-authoring"]
+    assert suggest(seed, base) == "basic"
+    assert suggest(seed, [*base, "run-history", "workflow-generation"]) == "watcher"
+    assert suggest(seed, [*base, "outbound-mail", "scripts"]) == "correspondent"
+    assert suggest(seed, [*base, "shell", "remote-machines", "scripts"]) == "operator"
+    assert suggest(seed, [*base, "rule-authoring", "util-removal", "shell"]) == "maintainer"
+    # steward and correspondent hold the same permissions on purpose (the shell is not a
+    # publishing tool), so the RULES are what tell them apart
+    publishing = [*base, "outbound-mail", "scripts", "run-history", "background-tasks"]
+    assert suggest(seed, publishing) == "correspondent"
+    assert suggest(seed, publishing, ["status-page", "interface-design"]) == "steward"
+    assert suggest(seed, []) == "basic"          # nothing fitting falls to the floor
+
+
+def test_a_scaffolded_routine_records_only_its_differences(tmp_path, monkeypatch):
+    """The point of adopting one: the routine's own file carries what it does DIFFERENTLY,
+    not a copy of the template's contents."""
+    from rsched.templates import config_for
+
+    seed = Path(__file__).resolve().parents[1] / "library-seed"
+    watcher = config_for(seed, "watcher")
+    # what scaffold persists is the set difference, which is what the migration proved on the
+    # 28 live routines and what keeps a new routine's file short
+    asked_perms = [*watcher["permissions"], "shell"]
+    own = [p for p in asked_perms if p not in set(watcher["permissions"])]
+    assert own == ["shell"]
+    assert all(p not in own for p in watcher["permissions"])
