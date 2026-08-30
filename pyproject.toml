@@ -67,11 +67,20 @@ asyncio_mode = "auto"
 # ~1530 fast unit tests + ~110 slow browser tests, and the default `load` scheduler
 # pre-assigns chunks — the run's tail left workers idle while one worker held several
 # queued UI tests; work stealing rebalances exactly that shape.
+# `auto` is redefined by tests/conftest.py's pytest_xdist_auto_num_workers hook — cores minus
+# one, because a browser-test worker is several processes, not one (the measurements are there).
 addopts = ["-n", "auto", "--dist", "worksteal", "-rR"]  # -rR: name any flaky rerun in the summary (RERUN <nodeid>) so an intermittent UI flake is diagnosable, not just counted
 # `flaky` is applied to tests/ui by tests/ui/conftest.py. Registered here so it is a known
 # marker even before pytest-rerunfailures is installed in the venv — otherwise the unknown-mark
 # warning would become an error under filterwarnings=error. The marker is inert (no reruns)
 # until the plugin is present; then it retries flaky browser tests instead of failing the gate.
+# Remove a PASSING test's tmp dir at its own teardown instead of keeping three whole
+# generations. The default (`all`, retention 3) left 85 000 files / 394 MB under
+# /tmp/pytest-of-<user> on the deployment — including an abandoned `garbage-*` tree pytest
+# had renamed for deletion and never finished removing — and every session paid to prune the
+# oldest generation before it could start. `failed` still keeps the tmp dir of any test that
+# FAILED, which is the only one anybody ever opens.
+tmp_path_retention_policy = "failed"
 markers = [
     "flaky: retry a flaky test on failure (pytest-rerunfailures; inert until the plugin is installed)",
 ]

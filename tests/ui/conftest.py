@@ -195,11 +195,24 @@ def ui(tmp_path, make_routine, library_template) -> UiHarness:
     thread.join(timeout=10)
 
 
+# Playwright's default ACTION timeout is 30 s. Nothing this console does takes 30 s — a page
+# renders in under two; the slowest whole test in a clean parallel run is under 17. The 30 s
+# ceiling therefore never rescued a passing test; it only set the price of a failing one —
+# the flaky shield multiplies that price by five. A real regression cost 5 x 30 s before it was
+# reported (baseline: one flake burned 31 s, then passed in 8 s on retry).
+#
+# 15 s is still ~7x the normal render, so a contended-but-fine page has ample room, while a
+# genuinely broken locator is reported in half the time — reruns included. `expect()` keeps its
+# own 5 s default, which tests already raise to 10 s where they mean to wait for a poll.
+ACTION_TIMEOUT_MS = 15_000
+
+
 @pytest.fixture
 def ui_page(ui, page):
     """A signed-in page: token pre-seeded, JS errors collected. Asserts NO uncaught JS
     error happened during the test — a page that throws is broken even if it renders.
     """
+    page.set_default_timeout(ACTION_TIMEOUT_MS)
     page.add_init_script(f"localStorage.setItem('rsched_token', {TOKEN!r})")
     page.on("pageerror", lambda exc: ui.js_errors.append(str(exc)))
 

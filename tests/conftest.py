@@ -35,6 +35,26 @@ from rsched.endpoints import EndpointRegistry
 from rsched.endpoints.base import Completion
 
 
+def pytest_xdist_auto_num_workers(config) -> int:
+    """What `-n auto` means for THIS suite: one worker fewer than the machine has cores.
+
+    xdist's own `auto` is `os.cpu_count()`, which assumes one busy process per worker. That
+    holds for the ~1750 unit tests and is badly wrong for the ~155 browser tests: each of those
+    workers drives a chromium (several processes) AND serves a uvicorn in-process, so `-n 4` on
+    a 4-core box runs three times that many runnable processes and the box thrashes instead of
+    working. Measured on the 4-core deployment (2026-08-30, whole suite):
+
+        -n 4 (auto)   574 s   149 % cpu     ← 4 cores available, under 1.5 used
+        -n 3          445 s   179 % cpu     ← 22 % faster AND better utilised
+        -n 6          browser tests collapse: 13 failures in one file alone
+
+    Fewer workers is faster because the loss is contention, not idleness — the workers were
+    never CPU-bound, they were waiting on a box that had been oversubscribed. Reserving a core
+    keeps `auto` portable (a 16-core CI machine still gets 15) instead of pinning a literal.
+    """
+    return max(2, (os.cpu_count() or 4) - 1)
+
+
 @pytest.fixture(autouse=True)
 def _hermetic_home(tmp_path, monkeypatch):
     """Tests must NEVER touch the real ~/routines: a bare ServerConfig() defaults its

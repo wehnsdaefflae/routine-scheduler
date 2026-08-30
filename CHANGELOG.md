@@ -17,6 +17,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.264.0] — 2026-08-30
+
+### The gate is 22% faster — and a real failure is reported in half the time
+
+Measured on the 4-core deployment before changing anything — the whole suite, then each half:
+
+| | tests | wall | cpu (of 400%) |
+|---|---|---|---|
+| whole suite, `-n auto` (=4) | 1899 | **574 s** | 149% |
+| non-UI only | 1744 | 252 s | 213% |
+| `tests/ui` only | 155 | 361 s | 151% |
+
+The suite was never CPU-bound: at `-n 4` the box used under 1.5 of its 4 cores. The UI half is
+the reason — each of those workers drives a chromium (several processes) and serves a uvicorn
+in-process, so `-n cores` runs about three times that many runnable processes and the machine
+thrashes instead of working. `tests/ui` alone takes ~347 s serially and 361 s on four workers:
+four-way parallelism bought it nothing and cost it flakes.
+
+- **`-n auto` now means cores MINUS ONE** (`pytest_xdist_auto_num_workers` in
+  `tests/conftest.py`, so `auto` stays portable rather than pinning a literal). Whole suite:
+  **574 s → 445 s, 149% → 179% cpu.** Fewer workers is faster because the loss was contention,
+  not idleness. `-n 6` was measured too; browser tests collapse: 13 failures in one file.
+- **Playwright's action timeout drops 30 s → 15 s for the UI suite.** Nothing this console does
+  takes 30 s — a page renders in under two; the slowest whole test in a clean parallel run
+  is under 17 — so the old ceiling never rescued a passing test; it only set the price of a
+  failing one, which the flaky shield then multiplies by five. In the baseline one flake burned
+  31 s and then passed in 8 s on retry. 15 s is still ~7× a normal render.
+- **A passing test's tmp dir is removed at its own teardown** (`tmp_path_retention_policy =
+  "failed"`). The default kept three whole generations: 85 000 files / 394 MB had accumulated
+  under `/tmp/pytest-of-<user>` on the deployment, including an abandoned `garbage-*` tree
+  pytest had renamed for deletion and never finished removing — and every session paid to prune
+  before it could start. Failed tests keep their directory, which is the only one anyone opens.
+
+Measured and NOT changed, with the reasons:
+
+- **The flaky shield stays at `reruns=4` over all of `tests/ui`.** It cannot be narrowed by
+  failure signature: a contention flake and a genuine regression both surface as a Playwright
+  timeout (`expect` raises `AssertionError` on one), so `only_rerun`/`rerun_except` cannot tell
+  them apart. Narrowing it to a curated list of "genuinely flaky" tests re-creates exactly the
+  cost F261 exists to avoid — the run above, taken without reruns, flaked in
+  `test_conversation_rail.py`, which no such list would have contained. What was actually
+  reducible is the PRICE of each attempt; the timeout change halves it.
+- **The three quality gates stay three pytest cases.** Measured standalone: ruff 1.9 s, mypy
+  3.0 s, vulture 8.9 s — 14 s of a 574 s run; they run beside everything else under xdist.
+  Merging them would save about a second of process spawn and lose which gate went red.
+- **Sharing the UI fixture more aggressively is not where the time is.** The library template is
+  already session-scoped per worker and copying it costs 0.05 s; a non-first UI test's whole
+  setup is ~0.3 s. The per-test cost is the browser work itself.
+
+
 ## [0.263.0] — 2026-08-30
 
 ### A routine created from a conversation adopts a template, and you get a link to it
