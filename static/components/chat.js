@@ -8,7 +8,10 @@
 //   loadSub(n, off)   — subrun expansion inside the work fold
 //   isLive()          — live-run predicate for subrun polling
 //   onArtifact(path)  — a write_file into artifacts/ landed (the panel refreshes)
-//   onFork(title, qt) — the user clicked the [new-topic] fork button
+//   onFork(title, qt) — the user clicked the [new-topic] fork button (a NEW conversation
+//                       from a topic shift — not a branch; see onBranch)
+//   onBranch(turn)    — the user clicked "⑂ branch from here" on a reply: fork the
+//                       conversation at THAT reply's turn (F325 / R1006)
 //   onRefer({label, snippet}) — "refer to" on any message primes the composer (also passed
 //                       into the work-fold transcripts, so a single step is referable)
 
@@ -88,6 +91,20 @@ export function userEcho(text) {
   return node;
 }
 
+// "Branch from here" (R1006): forking is conceptually "fork AT a turn" — and the only control
+// for it lived in the conversation HEADER behind a free-text prompt asking the user to type a
+// turn number — a translation from "this reply, here" into an integer they had to go and count.
+// A REPLY is a clean turn boundary (its `turns` is the turn its finish action ran on, the exact
+// number `cut_index_for_turn` snaps to), so the reply itself can be the fork point and the
+// number never has to be spoken. The header control stays for the cases a reply cannot name.
+function branchBtn(turn, onBranch) {
+  if (!onBranch || !Number.isInteger(turn)) return null;
+  return el("button", { class: "branch-msg", "data-branch-turn": String(turn),
+    title: `branch the conversation from here (turn ${turn}) — the new one inherits `
+         + "everything up to and including this reply; this one is untouched",
+    onclick: () => onBranch(turn) }, "⑂");
+}
+
 export function createChat(container, opts = {}) {
   const root = el("div", { class: "chat" });
   container.append(root);
@@ -139,7 +156,8 @@ export function createChat(container, opts = {}) {
         ev.ts ? el("span", { title: ev.ts }, fmtTime(ev.ts)) : null),
       referButton(opts.onRefer, `your reply${ev.ts ? ` at ${fmtTime(ev.ts)}` : ""}`,
         (summary || "").split("\n")[0]),
-      copyBtn(() => summary || ""));
+      copyBtn(() => summary || ""),
+      branchBtn(ev.turns, opts.onBranch));
     return node;
   }
 

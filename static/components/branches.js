@@ -11,6 +11,27 @@ import { promptDialog } from "/static/components/dialog.js";
 import { navigate } from "/static/router.js";
 import { el, toast } from "/static/util.js";
 
+// Fork this conversation at `turn` — the ONE fork path, shared by the header's ⑂ button (which
+// asks for a turn number) and by the per-message "branch from here" control in the chat (where
+// the clicked reply IS the fork point, R1006). Two call sites, one set of guards, one toast.
+export async function forkAt(slug, turn, { isLive } = {}) {
+  if (isLive?.()) {
+    toast("this conversation is mid-reply — branch it once the reply has finished", 4000,
+      { error: true });
+    return null;
+  }
+  if (!Number.isInteger(turn) || turn < 1) {
+    toast("a branch needs a turn number (1 or higher)", 4000, { error: true });
+    return null;
+  }
+  try {
+    const r = await api(`/api/conversations/${slug}/branch`, { method: "POST", body: { turn } });
+    toast(`branched at turn ${r.at_turn} — opening the branch`);
+    navigate(`#/conversations/${r.slug}`);
+    return r;
+  } catch (err) { toast(err.message, 4000, { error: true }); return null; }
+}
+
 // Fork button + hand-back button (the latter only on a conversation that HAS a parent), plus a
 // lineage line. Returns { node, refresh } — refresh re-reads the lineage after a fork.
 export function branchControls(slug, { isLive }) {
@@ -49,6 +70,9 @@ export function branchControls(slug, { isLive }) {
   const refresh = () => api(`/api/conversations/${slug}/lineage`)
     .then(renderLineage).catch(() => {});
 
+  // The header entry point stays, as the way to fork at a turn you can NAME (a step deep
+  // inside a reply's work fold, say) — but it is no longer the only one: typing a turn number
+  // to split a conversation you are reading is a translation the reader should not have to do.
   forkBtn.onclick = async () => {
     if (isLive()) {
       toast("this conversation is mid-reply — branch it once the reply has finished", 4000,
@@ -57,20 +81,12 @@ export function branchControls(slug, { isLive }) {
     }
     const ans = await promptDialog(
       "Branch this conversation: it inherits the history THROUGH which turn? The new "
-      + "conversation starts from that point with this one's config; this one is untouched.",
+      + "conversation starts from that point with this one's config; this one is untouched. "
+      + "(Or use ⑂ on the reply you want to branch from, in the conversation itself.)",
       { placeholder: "turn number" });
     if (ans == null) return;
-    const turn = parseInt(ans, 10);
-    if (!Number.isInteger(turn) || turn < 1) {
-      toast("enter a turn number (1 or higher)", 4000, { error: true }); return;
-    }
     forkBtn.disabled = true;
-    try {
-      const r = await api(`/api/conversations/${slug}/branch`,
-        { method: "POST", body: { turn } });
-      toast(`branched at turn ${r.at_turn} — opening the branch`);
-      navigate(`#/conversations/${r.slug}`);
-    } catch (err) { toast(err.message, 4000, { error: true }); }
+    try { await forkAt(slug, parseInt(ans, 10), { isLive }); }
     finally { forkBtn.disabled = false; }
   };
 

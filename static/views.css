@@ -384,6 +384,15 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
    affordance, not a feature */
 .msg:hover .copy-msg { opacity: .45; }
 .msg .copy-msg:hover, .msg .copy-msg:focus-visible { opacity: .9; color: var(--text); }
+/* "branch from here" (R1006): the third quiet corner control on a reply bubble, left of copy.
+   Only replies carry it — a reply IS a clean turn boundary, which is what a fork point must be. */
+.msg .branch-msg {
+  position: absolute; top: 3px; right: 52px; background: none; border: none; cursor: pointer;
+  color: var(--faint); font-size: 12px; line-height: 1; padding: 3px 5px;
+  opacity: 0; transition: opacity 0.12s;
+}
+.msg:hover .branch-msg { opacity: .45; }
+.msg .branch-msg:hover, .msg .branch-msg:focus-visible { opacity: .9; color: var(--text); }
 /* F385: per-fence copy — the bubble button's quieter sibling, pinned to the block corner */
 .msg-body pre { position: relative; }
 .msg-body pre .copy-fence {

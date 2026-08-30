@@ -17,6 +17,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.266.0] — 2026-08-30
+
+### Branch a conversation from the reply you are reading
+
+- **`⑂` on every reply bubble.** Branching is conceptually *fork AT a turn* — the API requires
+  one — but the only control lived in the conversation header behind a prompt asking you to
+  TYPE that turn number, which meant counting turns in a transcript to split a conversation you
+  were already reading (R1006, filed 2026-08-28). A reply IS a clean turn boundary: its `turns`
+  is the turn its finish action ran on, exactly what `cut_index_for_turn` snaps to. So the fork
+  point is now implied by which reply you clicked and the number is never spoken.
+- A user message carries no such control, deliberately: it sits BETWEEN turns, so offering one
+  there would have to invent a fork point the API would refuse.
+- The header's `⑂ branch` stays, for the fork points a reply cannot name — both entry points
+  now run the same `forkAt`, one set of guards and one toast.
+
 ## [0.265.0] — 2026-08-30
 
 ### The routine page's setup layer: reachable, subtractable, and honest about what it inherited

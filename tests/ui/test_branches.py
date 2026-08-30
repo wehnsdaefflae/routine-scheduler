@@ -129,3 +129,60 @@ def test_branch_refuses_while_a_reply_is_live(ui, ui_page):
     ui_page.get_by_role("button", name="⑂ branch").click()
     expect(ui_page.locator("#toast")).to_contain_text("mid-reply")
     assert not (ui.conversations / f"{slug}-b1").exists()
+
+
+# A conversation with a finished REPLY — a finish event carrying the turn it ran on, which is
+# what a per-message fork control reads. The plain EVENTS above stop before one.
+REPLY_EVENTS = [
+    *EVENTS,
+    {"type": "finish", "turns": 2, "usage_total": {"in": 18, "out": 2},
+     "payload": {"status": "ok", "summary": "Option B, on the cost curve."}},
+]
+
+
+def test_a_reply_carries_a_branch_from_here_control_that_needs_no_turn_number(ui, ui_page):
+    """R1006: forking is "fork AT a turn", but the only control was in the conversation HEADER
+    behind a prompt asking the user to TYPE that turn — a number they had to go and count. A
+    reply is itself a clean turn boundary, so the reply carries the control and the number is
+    implied by which one was clicked. The header entry point stays for the rest.
+    """
+    slug, conv_dir = _start_conversation(ui, ui_page)
+    run_dir = conv_dir / "runs" / "20260827-100000"
+    run_dir.mkdir(parents=True, exist_ok=True)
+    (run_dir / "transcript.jsonl").write_text(
+        "".join(json.dumps(e) + "\n" for e in REPLY_EVENTS), encoding="utf-8")
+    atomic_write_json(run_dir / "status.json", {"state": "finished", "turn": 2})
+    ui_page.reload()
+
+    reply = ui_page.locator(".msg.assistant", has_text="Option B, on the cost curve")
+    expect(reply).to_be_visible(timeout=10_000)
+    fork = reply.locator(".branch-msg")
+    # the fork point is the reply's own turn — no modal, no typed number
+    expect(fork).to_have_attribute("data-branch-turn", "2")
+    fork.click()
+
+    ui_page.wait_for_url(f"**/conversations/{slug}-b1")
+    expect(ui_page.locator(".conv-head-row").first).to_contain_text("at turn 2")
+    branch_run = next((ui.conversations / f"{slug}-b1" / "runs").iterdir())
+    evs = [json.loads(x) for x in
+           (branch_run / "transcript.jsonl").read_text().splitlines()]
+    # through turn 2 — the branch inherits the reply it was forked from — and stops there
+    assert [e["type"] for e in evs] == [
+        "header", "assistant_action", "observation", "assistant_action", "observation"]
+    assert not any(e["type"] == "finish" for e in evs)
+
+
+def test_a_user_message_carries_no_fork_control(ui, ui_page):
+    """Only a REPLY is a turn boundary. A user message sits between turns, so offering a fork
+    on it would have to invent a fork point — the API refuses one that is not in the transcript.
+    """
+    _slug, conv_dir = _start_conversation(ui, ui_page, text="Weigh the two options.")
+    run_dir = conv_dir / "runs" / "20260827-100000"
+    run_dir.mkdir(parents=True, exist_ok=True)
+    (run_dir / "transcript.jsonl").write_text(
+        "".join(json.dumps(e) + "\n" for e in REPLY_EVENTS), encoding="utf-8")
+    atomic_write_json(run_dir / "status.json", {"state": "finished", "turn": 2})
+    ui_page.reload()
+
+    expect(ui_page.locator(".msg.assistant .branch-msg")).to_have_count(1, timeout=10_000)
+    expect(ui_page.locator(".msg.user .branch-msg")).to_have_count(0)
