@@ -17,6 +17,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.271.0] — 2026-08-30
+
+### The on / off / when rows lay out correctly
+
+0.270.0 shipped the right three fields in a broken box (operator: *"ugly AND broken"*). Three
+faults, all the same shape — text that silently overflows instead of wrapping, which no
+assertion about CONTENT can see:
+
+- **A grid item defaults to `min-width: auto`,** so a bare `1fr` text column refuses to shrink
+  below its longest line: the sentence was CLIPPED at the ability card's edge instead of
+  wrapping. Every column holding a description is `minmax(0, 1fr)` now.
+- **`.when` is the console's TIMESTAMP class** (`base.css`, `white-space: nowrap`), and the
+  third row carried it as a modifier — so that one row alone never wrapped and ran off the
+  card. It is `.advice` now.
+- **`.rule-line`'s template did not line up with its children:** `190px` was landing on the
+  checkbox, so the description got an `auto` (max-content) column and the name was drawn on top
+  of it. Tolerable while the description was one line; not with a block.
+- The third label is **`when`**, not `hold it when`: all three share one column, so the longest
+  one sizes it — a phrase there overran into the sentence with no gap. Italic, under `on`/`off`,
+  is what makes the short word read as "when to use it". `▸ full description` no longer wraps
+  to two lines either.
+
+`tests/ui/test_setup_check.py` now asserts `scrollWidth == clientWidth` on every effect row and
+that the name and description boxes do not overlap — the machine check for exactly this class,
+none of which reproduces in a unit test of the component.
+
+
 ## [0.270.0] — 2026-08-30
 
 ### Every toggle states both sides, and when to hold it

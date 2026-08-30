@@ -38,7 +38,13 @@ export function effectLine(doc, on) {
     : null);
   return el("div", { class: "effect-line", "data-effect": doc.slug },
     ...[side("with", "on", on), side("without", "off", !on),
-        e.when ? el("div", { class: "effect-side when" },
-          el("span", { class: "effect-tag" }, "hold it when"),
+        // "when" and not "hold it when": all three labels share one column, so the longest
+        // one sizes it — a phrase there either overruns into the sentence or steals the width
+        // the sentence needs. Italic, and sitting under on/off, is what makes the short word
+        // read as "when to use it". The MODIFIER is `advice`, not `when`: `.when` is the
+        // console's timestamp class and carries white-space:nowrap, which silently stopped
+        // this one row from wrapping and pushed it off the card.
+        e.when ? el("div", { class: "effect-side advice" },
+          el("span", { class: "effect-tag" }, "when"),
           el("span", { class: "effect-text" }, e.when)) : null].filter(Boolean));
 }

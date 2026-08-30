@@ -138,7 +138,8 @@ def test_a_toggle_states_both_sides_and_when_to_hold_it(ui, ui_page):
     expect(held.locator('[data-effect-side="without"]')).not_to_have_class("effect-side active")
     expect(held).to_contain_text("notebook")
     expect(held).to_contain_text("starts every run knowing only its recipe")
-    expect(held).to_contain_text("hold it when")
+    # …and the third field, which answers whether this one is for THIS routine
+    expect(held.locator(".effect-side.advice")).to_contain_text("keeps hitting the same surprises")
 
     # …and an ability it does NOT hold emphasises the other side, from the same three fields
     avail = ui_page.locator('.avail-row[data-ability="shell"] [data-effect="shell"]')
@@ -160,3 +161,49 @@ def test_a_rule_toggle_states_both_sides_too(ui, ui_page):
     expect(bound).to_contain_text("asks you whenever it is unsure")
     expect(bound).to_contain_text("runs unattended")
     expect(bound.locator('[data-effect-side="with"]')).to_have_class("effect-side active")
+
+
+def test_no_effect_row_overflows_the_box_it_is_in(ui, ui_page):
+    """The layout half of the same order — "ugly AND broken" (operator, 2026-08-30).
+
+    Three separate faults shipped in one row, and all three are the same shape: text that
+    silently overflows instead of wrapping, which no assertion about CONTENT can see.
+
+    1. A grid item defaults to `min-width: auto`, so a bare `1fr` text column refuses to
+       shrink below its longest line — the sentence was clipped at the card edge.
+    2. The `when` row carried a `.when` class, which is the console's TIMESTAMP class in
+       base.css and brings `white-space: nowrap`; that one row alone never wrapped.
+    3. `.rule-line`'s template did not line up with its children — `190px` was landing on the
+       checkbox — so the description got an `auto` (max-content) column and the name was drawn
+       on top of it.
+
+    scrollWidth > clientWidth is what all three look like from the outside, so that is the
+    assertion. It is made on the REAL page at a real width, because none of it reproduces in
+    a unit test of the component.
+    """
+    ui_page.set_viewport_size({"width": 1400, "height": 1000})
+    ui_page.goto(f"{ui.url}/#/routine/uir")
+    ui_page.wait_for_selector("h2:has-text('General rules')", timeout=10_000)
+    ui_page.wait_for_selector(".effect-side", timeout=10_000)
+    over = ui_page.evaluate("""() => {
+      const bad = [];
+      for (const n of document.querySelectorAll('.effect-side, .effect-text')) {
+        if (n.scrollWidth > n.clientWidth + 1) {
+          bad.push(n.className + ' ' + n.clientWidth + '<' + n.scrollWidth
+                   + ' :: ' + n.textContent.slice(0, 40));
+        }
+      }
+      return bad;
+    }""")
+    assert over == [], f"effect rows overflow their box (clipped, not wrapped): {over}"
+
+    # …and the row's own columns line up with its children: the name and the description must
+    # not share a cell, which is what drew one on top of the other.
+    boxes = ui_page.evaluate("""() => {
+      const r = document.querySelector('.rule-bound .rule-line');
+      const name = r.querySelector('.rule-name').getBoundingClientRect();
+      const eff = r.querySelector('.effect-line').getBoundingClientRect();
+      return {nameRight: name.right, effLeft: eff.left};
+    }""")
+    assert boxes["effLeft"] >= boxes["nameRight"], (
+        f"the rule name and its description overlap: {boxes}")

@@ -854,6 +854,7 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
 .doc-expand-btn {
   background: none; border: 0; padding: 0; margin-top: 3px; cursor: pointer;
   font: 500 11px var(--mono); color: var(--faint); text-decoration: underline dotted;
+  white-space: nowrap;      /* an auto column let it wrap to "▸ full / description" */
 }
 .doc-expand-btn:hover { color: var(--amber); }
 .doc-expand-body {
@@ -928,8 +929,8 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
 .ability.blocks { border-color: rgba(242, 105, 92, 0.4); }
 .ability.orphan { border-color: rgba(179, 161, 247, 0.4); grid-column: 1 / -1; }
 .ability-head {
-  display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: start;
-  padding: 11px 13px; cursor: pointer;
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px;
+  align-items: start; padding: 11px 13px; cursor: pointer;
 }
 .ability.orphan .ability-head { cursor: default; }
 .ability-name { font-size: 13px; color: var(--text); }
@@ -958,7 +959,8 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
 /* the catalogue: one line each, no state, no stack */
 .avail { border: 1px solid var(--line); border-radius: 3px; overflow: hidden; }
 .avail-row {
-  display: grid; grid-template-columns: auto 190px 1fr; gap: 10px; align-items: baseline;
+  display: grid; grid-template-columns: auto 190px minmax(0, 1fr); gap: 10px;
+  align-items: baseline;
   padding: 7px 12px; border-top: 1px solid var(--line); cursor: pointer; font-size: 12px;
 }
 .avail-row:first-child { border-top: 0; }
@@ -980,7 +982,11 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
 .rule-bound { border-top: 1px solid var(--line); background: var(--surface); }
 .rule-bound:first-child { border-top: 0; }
 .rule-line {
-  display: grid; grid-template-columns: 190px 1fr auto auto; gap: 10px; align-items: baseline;
+  /* checkbox · name · description · expander — the template MUST line up with those four,
+     and it did not: `190px` was landing on the checkbox and the description got an `auto`
+     column, which sizes to max-content and collapsed the name on top of it. */
+  display: grid; grid-template-columns: auto 190px minmax(0, 1fr) auto; gap: 10px;
+  align-items: baseline;
   padding: 8px 12px; font-size: 12px;
 }
 .rule-name { color: var(--text); white-space: nowrap; }
@@ -1043,14 +1049,24 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
 .impact-gains { margin: 4px 0 0; padding-left: 18px; }
 .impact-gains li { margin-bottom: 4px; }
 
-/* --- what a toggle MEANS: on / off / when, beside every ability and rule checkbox -------- */
-.effect-line { font-size: 11.5px; line-height: 1.5; display: grid; gap: 1px; }
-.effect-side { display: grid; grid-template-columns: 72px 1fr; gap: 8px; color: var(--faint); }
+/* --- what a toggle MEANS: on / off / when, beside every ability and rule checkbox --------
+   `minmax(0, 1fr)` on the TEXT column, never a bare `1fr`: a grid item defaults to
+   min-width:auto, so a bare 1fr refuses to shrink below its longest line and the sentence is
+   clipped at the card edge instead of wrapping (which is exactly what shipped). The label
+   column is sized for the longest label — which is why the labels are one short word each:
+   "hold it when" overran its column and butted straight against the text with no gap. */
+.effect-line { font-size: 11.5px; line-height: 1.5; display: grid; gap: 1px; min-width: 0; }
+.effect-side {
+  display: grid; grid-template-columns: 2.6rem minmax(0, 1fr); gap: 8px;
+  color: var(--faint); min-width: 0;
+}
 .effect-side.active { color: var(--text); }
 .effect-tag {
-  font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; text-align: right;
+  font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em;
   padding-top: 2px; opacity: 0.7;
 }
 .effect-side.active .effect-tag { color: var(--accent); opacity: 1; font-weight: 600; }
-.effect-side.when { color: var(--muted); font-style: italic; }
+/* `.advice`, not `.when`: base.css `.when` is the timestamp class (nowrap) */
+.effect-side.advice { color: var(--muted); font-style: italic; }
+.effect-text { overflow-wrap: anywhere; }
 .effect-text.missing { font-style: italic; color: var(--faint); }
