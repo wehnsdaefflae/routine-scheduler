@@ -1,4 +1,8 @@
 ---
+effect:
+  with: writes down what it tried, rejected and why, where a later run will find it
+  without: leaves only the finished artefact — the reasoning behind it is gone
+  when: the routine works the same problem over many runs, or hands work to another routine
 tags: [self-management, record-keeping, review]
 ---
 # rule: decision record — keep the reasoning the artefacts cannot carry

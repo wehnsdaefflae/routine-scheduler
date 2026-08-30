@@ -1999,7 +1999,11 @@ def test_library_permission_doc_requires_roundtrip(client):
     perms_home = tmp / "library" / "permissions"
     perms_home.mkdir(parents=True, exist_ok=True)
     (perms_home / "messaging-discord.md").write_text(
-        "---\ntags: [a, b, c]\nrequires:\n  utils: [discord]\n---\n"
+        "---\ntags: [a, b, c]\n"
+        "effect:\n  with: post to a Discord channel as your linked account\n"
+        "  without: cannot reach Discord at all\n"
+        "  when: the task needs to reach a person there\n"
+        "requires:\n  utils: [discord]\n---\n"
         "# permission: discord messaging\nbody\nmore lines here\n", encoding="utf-8")
     d = c.get("/api/library/permissions/messaging-discord").json()
     assert d["requires"] == {"utils": ["discord"]}

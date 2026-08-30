@@ -1,4 +1,8 @@
 ---
+effect:
+  with: start a long job that keeps running after the reply ends
+  without: everything it starts has to finish inside the current run
+  when: the task has steps that take longer than one run should
 tags: [conversation, background, delegation]
 requires:
   actions: [detach]

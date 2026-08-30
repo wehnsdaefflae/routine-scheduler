@@ -1,4 +1,8 @@
 ---
+effect:
+  with: writes interface text as part of the design
+  without: writes placeholder-grade labels, buttons and error text
+  when: it produces something people read as a product surface
 tags: [writing, ui, communication]
 ---
 # rule: interface copy — words are design material, not decoration

@@ -1,4 +1,8 @@
 ---
+effect:
+  with: explains the reasoning behind a result, not only the result
+  without: delivers the answer alone, which you can only accept or reject
+  when: you read its output as it happens and want to argue with the reasoning
 tags: [communication, teaching, conversation]
 ---
 # rule: teaching insights — explain the reasoning where someone is reading

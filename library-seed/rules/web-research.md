@@ -1,4 +1,8 @@
 ---
+effect:
+  with: looks a fact about the world up before it uses it
+  without: answers from what the model already knows, which is stale and sometimes silently wrong
+  when: the task turns on outside facts — prices, availability, news, anything dated
 tags: [tool-use, research, web]
 ---
 # rule: web-research — verify external facts by searching, don't guess from memory

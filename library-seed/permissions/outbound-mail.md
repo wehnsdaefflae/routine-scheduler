@@ -1,4 +1,8 @@
 ---
+effect:
+  with: send email from your own address
+  without: can read and draft mail, but never send it
+  when: sending is the point of the task — a sent message cannot be recalled
 tags: [communication, email, outbound]
 requires:
   utils: [fau-mail-send]

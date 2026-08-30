@@ -1,4 +1,8 @@
 ---
+effect:
+  with: reports everything it found before filtering, so nothing it saw is dropped silently
+  without: filters while it looks, and what it judged unimportant is never mentioned
+  when: the task is to review, audit or scan something
 tags: [review, audit, reporting]
 ---
 # rule: review recall — report everything, filter afterwards

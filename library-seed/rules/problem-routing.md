@@ -1,4 +1,8 @@
 ---
+effect:
+  with: sends a problem it finds to whoever owns that class of problem
+  without: escalates everything it notices straight to you
+  when: other routines or people own parts of what this one touches
 tags: [maintenance, escalation, routing]
 ---
 # rule: problem routing — send a problem to whoever owns it, not upward

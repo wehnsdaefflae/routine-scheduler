@@ -1,4 +1,8 @@
 ---
+effect:
+  with: publishes a page you can check between runs, in the shared house layout
+  without: leaves its state in run summaries you have to go and read
+  when: it works on something over weeks and you want one place to look
 tags: [steward, web, ui, feedback, publishing, reporting]
 expects:
   fs-write: ["*"]

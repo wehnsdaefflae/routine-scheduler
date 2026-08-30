@@ -1,4 +1,8 @@
 ---
+effect:
+  with: read Tor hidden services through the instance's anonymising proxy
+  without: cannot reach .onion addresses at all
+  when: the task genuinely needs sources that exist only there
 tags: [tool-use, web, research, tor, darknet]
 requires:
   utils: [darknet]

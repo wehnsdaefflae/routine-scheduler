@@ -43,6 +43,23 @@ capability is only the means of asking for it. (The policy dials that ride a
 capability — write_util's approval level, the run-history depth — stay yours and are
 preserved across the floor.)
 
+### `effect:` — what a toggle MEANS
+
+Every rule and permission carries a one-line `effect:` in its frontmatter: what a routine
+holding it DOES differently. The routine page labels its on/off control with that sentence, and
+the linter requires the key.
+
+It exists because the doc's TITLE cannot do the job. A title names a topic — `ask policy — when
+and how to involve the user` — which tells a reader nothing they can act on, and beside a bare
+checkbox it does not even say what ticking the box would do (operator, 2026-08-30). The two
+facts a control needs are what changes, and that this control is what changes it; `effect:`
+carries the first, and the panel frames it with the second ("on — this routine can: …" for a
+permission, "bound — every run reads it and: …" for a rule, since holding one and binding the
+other are not the same act).
+
+The linter can only check presence and a length floor — whether a sentence is really a behaviour
+is the author's job — so it also refuses one short enough to be a restatement of the title.
+
 ### `expects:` — the soft edge
 
 `requires:` is the NECESSARY edge: activating a doc switches its capabilities on, and the

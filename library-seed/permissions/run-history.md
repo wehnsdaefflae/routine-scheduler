@@ -1,4 +1,8 @@
 ---
+effect:
+  with: read its own previous runs — transcripts, results, archived state
+  without: sees only its most recent result
+  when: continuity across runs matters more to you than a lean, cheap context
 tags: [self-management, record-keeping, history]
 requires:
   runs: last

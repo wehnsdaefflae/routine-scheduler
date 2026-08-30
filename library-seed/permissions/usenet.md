@@ -1,4 +1,8 @@
 ---
+effect:
+  with: read, search and post on Usenet through the configured news server
+  without: cannot reach Usenet at all
+  when: the sources it needs, or the audience it serves, are there
 tags: [tool-use, research, usenet, nntp, communication]
 requires:
   utils: [usenet, usenet-nzb]

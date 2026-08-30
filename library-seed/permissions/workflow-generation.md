@@ -1,4 +1,8 @@
 ---
+effect:
+  with: draft a new workflow pattern for a sub-task when no existing one fits
+  without: picks a sub-task pattern from the catalogue instead
+  when: its sub-tasks are unlike anything already in the library
 tags: [decomposition, workflows, self-management]
 requires:
   workflows: generate

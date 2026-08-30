@@ -1,4 +1,8 @@
 ---
+effect:
+  with: rewrite its own instructions — main.md, stages/ and tuning.yaml
+  without: reports an instruction it thinks is wrong instead of rewording it
+  when: refining the recipe IS the job; an ordinary routine should not hold it
 tags: [self-management, authoring, recipe]
 requires:
   actions: [write_recipe]

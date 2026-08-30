@@ -1,4 +1,8 @@
 ---
+effect:
+  with: fixes whatever produced the defect rather than the instance in front of it
+  without: patches the symptom, so the same defect returns wearing different clothes
+  when: the routine repairs things — code, data, configuration
 tags: [diagnosis, prevention, self-management]
 ---
 # rule: root cause fix — repair the cause, never the symptom

@@ -1,4 +1,8 @@
 ---
+effect:
+  with: changes only what was asked, leaving the cleanup it noticed for a separate decision
+  without: may tidy, rename and refactor around the task while it is in there
+  when: it edits code or documents that somebody else reviews
 tags: [code, scope, safety]
 ---
 # rule: change restraint — the smallest change that does the job

@@ -1,4 +1,8 @@
 ---
+effect:
+  with: read mirrored WhatsApp history and send messages as your paired account
+  without: cannot reach WhatsApp at all
+  when: the task needs to reach a person there — it speaks as you
 tags: [communication, messaging, outbound]
 requires:
   utils: [whatsapp]

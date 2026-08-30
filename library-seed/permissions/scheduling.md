@@ -1,4 +1,8 @@
 ---
+effect:
+  with: arm a one-shot future run of itself, or of another routine you name
+  without: runs only on its own schedule, or when you press run
+  when: the work has a 'come back to this on Thursday' shape
 tags: [scheduling, automation, delegation]
 requires:
   actions: [schedule_run]

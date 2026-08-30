@@ -1,4 +1,8 @@
 ---
+effect:
+  with: write a new util into the shared library, which every routine can then call
+  without: uses only the utils that already exist
+  when: it keeps needing a tool nobody has written yet
 tags: [tool-use, utils, authoring]
 requires:
   actions: [write_util]

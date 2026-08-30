@@ -1,4 +1,8 @@
 ---
+effect:
+  with: run commands and move files on the SSH machines you bound to it
+  without: cannot reach any machine but the one it runs on
+  when: the work actually happens on another box you own
 tags: [tool-use, ssh, remote, machines]
 requires:
   utils: [remote]

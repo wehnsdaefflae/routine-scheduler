@@ -7,7 +7,12 @@ import yaml
 
 from rsched.config import ServerConfig, load_routine
 from rsched.workflows.adapt import materialize
-from rsched.workflows.lint import lint_all, lint_workflow_py
+from rsched.workflows.lint import (
+    lint_all,
+    lint_permission_text,
+    lint_rule_text,
+    lint_workflow_py,
+)
 from rsched.workflows.scaffold import scaffold
 
 SEED = Path(__file__).resolve().parents[1] / "library-seed"
@@ -400,3 +405,24 @@ def test_merged_seed_library_is_clean(tmp_path):
     results = lint_all(merged_library(tmp_path))
     problems = {k: v for k, v in results.items() if v}
     assert problems == {}, problems
+
+
+def test_every_seed_conduct_doc_states_its_effect():
+    """The shipped set has to pass the bar it sets. A conduct doc's TITLE names a topic —
+    "ask policy — when and how to involve the user" — which tells a reader nothing they can act
+    on and, beside a bare checkbox on the routine page, does not even say what ticking it would
+    do (operator, 2026-08-30). `effect:` is the sentence the control is labelled with, so a doc
+    without one ships a toggle nobody can read.
+    """
+    import frontmatter
+
+    seed = Path(__file__).resolve().parents[1] / "library-seed"
+    checked = 0
+    for sub, linter in (("rules", lint_rule_text), ("permissions", lint_permission_text)):
+        for path in sorted((seed / sub).glob("*.md")):
+            raw = path.read_text(encoding="utf-8")
+            meta, _ = frontmatter.parse(raw)
+            assert str(meta.get("effect") or "").strip(), f"{sub}/{path.name} has no effect:"
+            assert not linter(raw, filename=path.name), f"{sub}/{path.name} fails its linter"
+            checked += 1
+    assert checked >= 40, "the seed library lost most of its conduct docs"

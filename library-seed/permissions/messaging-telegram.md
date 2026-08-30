@@ -1,4 +1,8 @@
 ---
+effect:
+  with: read your Telegram chats and send messages as you
+  without: cannot reach Telegram at all
+  when: the task needs to reach a person there — it speaks as you
 tags: [communication, messaging, outbound]
 requires:
   utils: [telegram]

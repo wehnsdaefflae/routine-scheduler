@@ -1,4 +1,8 @@
 ---
+effect:
+  with: run arbitrary shell commands on the host
+  without: runs code only through selftested, sandboxed utils
+  when: the task genuinely cannot be done by a util — this is the escape hatch
 tags: [tool-use, shell, escape-hatch]
 requires:
   utils: [shell]

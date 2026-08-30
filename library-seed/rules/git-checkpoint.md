@@ -1,4 +1,8 @@
 ---
+effect:
+  with: commits an undo point before editing a project repo, and names it in the reply
+  without: edits in place with no undo point — the engine does not version your project dirs
+  when: it has write access to a git project whose history you care about
 tags: [git, safety, undo]
 ---
 # rule: git checkpoint — undo points for project repos you edit

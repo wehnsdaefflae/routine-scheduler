@@ -31,7 +31,9 @@ one you are about to touch, not all of them.
 - `docs/prompt-anatomy.md` — every string the orchestrator sees, and why. Revise it with ANY
   change to composer / loop / actions / schema_guard wording; `tests/test_prompt_anatomy.py`
   fails on drift
-- `docs/rules-permissions.md`, `docs/curated-rules.md` — the general-rules layer, the two-layer
+- `docs/rules-permissions.md`, `docs/curated-rules.md` — the general-rules layer (each doc's
+  `effect:` line — what a routine holding it DOES differently — is what the page labels its
+  on/off control with, and the linter requires it), the two-layer
   permission set, the SETUP SURFACE (`readmodels/surface.py` forwards, `library_impact.py`
   backwards, `daemon/library_watch.py` for changes with no writer), the ACCESS-REQUEST grant model (entities.py ids; allow/deny × now/forever, plus
   allow-once for turn-action classes), and each curated rule's provenance

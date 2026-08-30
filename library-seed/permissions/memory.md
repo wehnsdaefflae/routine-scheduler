@@ -1,4 +1,8 @@
 ---
+effect:
+  with: keep its own notebook of what it learned the hard way, and read it back later
+  without: starts every run knowing only its recipe and its last result
+  when: it keeps hitting the same surprises run after run
 tags: [self-management, record-keeping, memory]
 requires:
   actions: [memory_read, memory_write]

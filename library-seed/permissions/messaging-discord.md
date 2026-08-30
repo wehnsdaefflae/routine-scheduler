@@ -1,4 +1,8 @@
 ---
+effect:
+  with: read a Discord channel and post to it as your linked account
+  without: cannot reach Discord at all
+  when: the task needs to reach a person there — it speaks as you
 tags: [communication, messaging, outbound]
 requires:
   utils: [discord]

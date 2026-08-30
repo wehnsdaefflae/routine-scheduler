@@ -1,4 +1,8 @@
 ---
+effect:
+  with: reports only what an observation in that run actually showed
+  without: may report what it set out to do as though it had happened
+  when: you act on its summaries without re-checking them yourself
 tags: [reporting, verification, self-management]
 ---
 # rule: evidence discipline — every claim traced to an observation

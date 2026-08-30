@@ -1,4 +1,8 @@
 ---
+effect:
+  with: delete a util from the shared library, for every routine that calls it
+  without: reports a dead util instead of removing it
+  when: curating the library is the job
 tags: [tool-use, utils, authoring]
 requires:
   actions: [remove_util]

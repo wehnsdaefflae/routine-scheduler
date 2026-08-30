@@ -405,7 +405,11 @@ def test_lint_flags_bad_requires():
     problems = lint_permission_text(bad, filename="x.md")
     text = " | ".join(problems)
     assert "not an action kind" in text and "runs must be" in text
-    good = ("---\ntags: [a, b, c]\nrequires:\n  actions: [write_util]\n---\n"
+    good = ("---\ntags: [a, b, c]\n"
+            "effect:\n  with: write a util every routine can then call\n"
+            "  without: uses only the utils that already exist\n"
+            "  when: it keeps needing a tool nobody has written yet\n"
+            "requires:\n  actions: [write_util]\n---\n"
             "# permission: x — y\n\nlong enough body\nmore\n")
     assert lint_permission_text(good, filename="x.md") == []
     # a permission without requires is an error; the legacy grants: key is called out;

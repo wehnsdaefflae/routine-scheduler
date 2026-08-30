@@ -1,4 +1,8 @@
 ---
+effect:
+  with: read mirrored Signal history and send messages as your linked account
+  without: cannot reach Signal at all
+  when: the task needs to reach a person there — it speaks as you
 tags: [communication, messaging, outbound]
 requires:
   utils: [signal]

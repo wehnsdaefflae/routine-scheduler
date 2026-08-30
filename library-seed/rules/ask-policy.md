@@ -1,4 +1,8 @@
 ---
+effect:
+  with: answers its own questions first and interrupts you only for a decision that is genuinely yours
+  without: asks you whenever it is unsure, and waits — or decides alone without saying which it did
+  when: the routine runs unattended and you do not want pinging for things it could look up
 tags: [policy, communication, self-management]
 ---
 # rule: ask policy — when and how to involve the user

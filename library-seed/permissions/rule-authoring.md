@@ -1,4 +1,8 @@
 ---
+effect:
+  with: write and revise the general rules every other routine reads
+  without: can read any rule but change none of them
+  when: curating shared conduct is the job — it changes how other routines behave
 tags: [conduct, rules, authoring]
 requires:
   actions: [write_rule]

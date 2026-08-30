@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import yaml
+from playwright.sync_api import expect
 
 
 def _hold_util(ui, slug: str, name: str, *, secrets: str = "(none)", fs: str = "none") -> None:
@@ -115,3 +116,47 @@ def test_an_ability_that_is_off_is_a_catalogue_row_not_an_alarm(ui_page, ui):
     assert row.locator("input[type=checkbox]").is_checked() is False
     assert row.locator(".dot").count() == 0
     assert ui_page.locator('.ability[data-ability="shell"]').count() == 0
+
+
+def test_a_toggle_states_both_sides_and_when_to_hold_it(ui, ui_page):
+    """Operator, 2026-08-30: the descriptions "don't provide actionable information" and "the
+    control element is a toggle?! how are you supposed to know what 'on' means?!".
+
+    Neither the doc's TITLE nor its BODY can answer that. A title names a topic ("ask policy —
+    when and how to involve the user"); the body is written to the RUN in the imperative ("read
+    the error before you try again"), which instructs the agent rather than describing anything
+    to the person choosing. A toggle is a COMPARISON, so the row carries both sides plus the
+    decision it actually asks: is this one for THIS routine?
+    """
+    ui_page.goto(f"{ui.url}/#/routine/uir")
+    ui_page.wait_for_selector("h2:has-text('Permissions & capabilities')", timeout=10_000)
+
+    held = ui_page.locator('.ability[data-ability="memory"] [data-effect="memory"]')
+    expect(held).to_be_visible(timeout=10_000)
+    # both sides are present, and the one the routine is actually in is the emphasised one
+    expect(held.locator('[data-effect-side="with"]')).to_have_class("effect-side active")
+    expect(held.locator('[data-effect-side="without"]')).not_to_have_class("effect-side active")
+    expect(held).to_contain_text("notebook")
+    expect(held).to_contain_text("starts every run knowing only its recipe")
+    expect(held).to_contain_text("hold it when")
+
+    # …and an ability it does NOT hold emphasises the other side, from the same three fields
+    avail = ui_page.locator('.avail-row[data-ability="shell"] [data-effect="shell"]')
+    expect(avail.locator('[data-effect-side="without"]')).to_have_class("effect-side active")
+    expect(avail).to_contain_text("run arbitrary shell commands")
+    expect(avail).to_contain_text("escape hatch")
+    # nothing anywhere falls back to the placeholder, which is what a missing effect: renders
+    expect(ui_page.locator(".effect-text.missing")).to_have_count(0)
+
+
+def test_a_rule_toggle_states_both_sides_too(ui, ui_page):
+    """Same three fields on the rules panel — a rule's on/off difference is the one thing the
+    principle prose never states, because it is written as if it always applies."""
+    ui_page.goto(f"{ui.url}/#/routine/uir")
+    ui_page.wait_for_selector("h2:has-text('General rules')", timeout=10_000)
+    bound = ui_page.locator('.rule-bound[data-rule="ask-policy"] [data-effect="ask-policy"]')
+    expect(bound).to_be_visible(timeout=10_000)
+    expect(bound).to_contain_text("interrupts you only for a decision that is genuinely yours")
+    expect(bound).to_contain_text("asks you whenever it is unsure")
+    expect(bound).to_contain_text("runs unattended")
+    expect(bound.locator('[data-effect-side="with"]')).to_have_class("effect-side active")

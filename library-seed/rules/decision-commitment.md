@@ -1,4 +1,8 @@
 ---
+effect:
+  with: acts once it has enough and stops re-opening questions it already settled
+  without: may keep re-deciding, and reach its budget with the work half done
+  when: runs tend to end without a deliverable
 tags: [self-management, decision-making, efficiency]
 ---
 # rule: decision commitment — choose, act, and stop re-deciding

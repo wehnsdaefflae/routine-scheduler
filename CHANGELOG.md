@@ -17,6 +17,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.270.0] — 2026-08-30
+
+### Every toggle states both sides, and when to hold it
+
+Operator, on the routine page: *"permission, capability, and general rule descriptions still
+don't provide actionable information — `ask-policy`: `when and how to involve the user` — wtf
+does that mean?! the control element is a toggle?! how are you supposed to know what 'on'
+means?!"* Right on both counts, and neither thing a conduct doc already has can fix it: the
+TITLE names a topic, and the BODY is written to the RUN in the imperative ("read the error
+before you try again") — an instruction for the agent, not a description for the person
+deciding whether to switch it on.
+
+A toggle is a COMPARISON. So every rule and permission now carries an `effect:` block of three
+fields, and the row shows all three:
+
+    with:    answers its own questions first and interrupts you only for a decision that is yours
+    without: asks you whenever it is unsure, and waits — or decides alone without saying which
+    when:    the routine runs unattended and you do not want pinging for things it could look up
+
+- **The side the routine is actually in is emphasised**, the other dimmed, so the row reads as
+  "this is what you have, and this is what you would have instead". An earlier one-line version
+  of this shipped a prefix identical on all 25 rows, which carried no information and ate the
+  width the description needed; it is gone.
+- **`when:` answers the decision the control actually asks** — not "what is this rule about" but
+  "is it for THIS routine".
+- All 48 live docs and all 42 seed docs have the block; the linter requires all three fields,
+  a length floor, and refuses `with` and `without` being the same sentence with a negation. A
+  test asserts the shipped set passes the bar it sets.
+- The keys are `with`/`without`, not `on`/`off`: YAML 1.1 reads a bare `on:` as the boolean
+  true, so a hand-edit on the Library tab would silently produce a key nothing reads. The UI
+  still labels the two sides "on" and "off", which is the toggle's language rather than YAML's.
+- A slug no longer wraps mid-word in the two lists (`ask-` / `policy` read as two words).
+
 ## [0.269.0] — 2026-08-30
 
 ### A settings template is a preselection again, not a layer

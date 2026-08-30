@@ -1,4 +1,8 @@
 ---
+effect:
+  with: reads a failure before reacting to it, and never repeats the identical call
+  without: may retry the same failing call until the budget is gone
+  when: the routine touches anything that can fail — networks, files, other machines
 tags: [tool-use, diagnosis, self-management]
 ---
 # rule: error recovery — read the error before you try again

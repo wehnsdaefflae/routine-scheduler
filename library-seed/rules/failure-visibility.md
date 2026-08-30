@@ -1,4 +1,8 @@
 ---
+effect:
+  with: writes code that fails loudly instead of swallowing the exception
+  without: may write error handling that hides a failure until months later
+  when: the routine writes code that other runs or people will rely on
 tags: [code, error-handling, safety]
 ---
 # rule: failure visibility — code you write must fail loudly

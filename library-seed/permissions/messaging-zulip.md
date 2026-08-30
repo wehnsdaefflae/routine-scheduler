@@ -1,4 +1,8 @@
 ---
+effect:
+  with: read your Zulip streams and post to them as you
+  without: cannot reach Zulip at all
+  when: the task needs to reach a room there — it speaks as you
 tags: [communication, messaging, outbound]
 requires:
   utils: [zulip]

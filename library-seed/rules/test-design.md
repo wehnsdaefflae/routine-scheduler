@@ -1,4 +1,8 @@
 ---
+effect:
+  with: writes tests that can actually fail, naming the regression before the assertion
+  without: may write tests that assert the implementation and stay green while it breaks
+  when: the routine writes or maintains tests
 tags: [code, testing, quality]
 ---
 # rule: test design — a test earns its place by failing

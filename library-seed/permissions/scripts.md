@@ -1,4 +1,8 @@
 ---
+effect:
+  with: run its own helper scripts from scripts/, in its own virtualenv
+  without: every repeated computation goes through the recipe and a shared util
+  when: it repeats a deterministic step often enough to be worth writing down once
 tags: [tool-use, scripts, authoring]
 requires:
   actions: [script]

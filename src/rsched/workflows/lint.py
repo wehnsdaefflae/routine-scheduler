@@ -97,6 +97,45 @@ def lint_rule_text(raw: str, *, filename: str) -> list[str]:
         problems.append(f"{filename}: needs at least 3 tags")
     if len(raw.strip().splitlines()) < 4:
         problems.append(f"{filename}: suspiciously short for a general rule")
+    problems += _effect_problems(meta, filename, "the run reads it and applies it")
+    return problems
+
+
+def _effect_problems(meta: dict, filename: str, subject: str) -> list[str]:
+    """Every conduct doc must state three things about the toggle that holds it: what the
+    routine does WITH it (`on`), what it does WITHOUT it (`off`), and when to hold it (`when`).
+
+    None of them can be recovered from what a doc already has. The title names a topic ("ask
+    policy — when and how to involve the user"), which tells a reader nothing they can act on;
+    the body is written to the RUN in the imperative ("read the error before you try again"),
+    which is an instruction for the agent and not a description for the person choosing. A
+    toggle is a COMPARISON, so both sides have to be on the page, and the decision it actually
+    asks — is this one for THIS routine? — is what `when` answers (operator, 2026-08-30).
+
+    A machine can only check presence and a length floor; whether a sentence is really a
+    behaviour is the author's job. `off` is checked against `on` because the failure mode is
+    writing the same sentence twice with a negation and calling it a contrast.
+    """
+    from ..library_docs import EFFECT_FIELDS
+
+    eff = meta.get("effect")
+    if not isinstance(eff, dict):
+        return [f"{filename}: needs an effect: block with {list(EFFECT_FIELDS)} — what the "
+                f"routine does with this ({subject}), what it does without it, and when to "
+                "hold it. The title and the body cannot stand in: one names a topic, the "
+                "other instructs the run"]
+    problems = []
+    for key in EFFECT_FIELDS:
+        text = str(eff.get(key) or "").strip()
+        if not text:
+            problems.append(f"{filename}: effect.{key} is missing")
+        elif len(text) < 20:
+            problems.append(f"{filename}: effect.{key} is too short to say what changes "
+                            f"({text!r})")
+    a, b = str(eff.get("with") or "").strip(), str(eff.get("without") or "").strip()
+    if a and a == b:
+        problems.append(f"{filename}: effect.with and effect.without are the same sentence — "
+                        "the row exists to show the DIFFERENCE between holding it and not")
     return problems
 
 
@@ -172,6 +211,7 @@ def lint_permission_text(raw: str, *, filename: str) -> list[str]:
                                                     requires=True)
         problems += [f"{filename}: {p}" for p in req_problems]
     problems += [f"{filename}: {p}" for p in normalize_expects(meta.get("expects"))[1]]
+    problems += _effect_problems(meta, filename, "the routine can do the thing")
     return problems
 
 

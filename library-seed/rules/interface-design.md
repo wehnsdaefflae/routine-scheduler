@@ -1,4 +1,8 @@
 ---
+effect:
+  with: makes design choices it can defend for this brief
+  without: reaches for the same fonts, palette and layout it always does
+  when: it builds pages or visuals somebody will actually look at
 tags: [frontend, design, ui]
 ---
 # rule: interface design — build something that looks chosen, not generated

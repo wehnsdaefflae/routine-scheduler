@@ -1,4 +1,8 @@
 ---
+effect:
+  with: checks its work from outside the reasoning that produced it
+  without: re-reads its own work, which confirms a mistake about as often as it catches one
+  when: a wrong result is expensive and would not be obvious to you
 tags: [verification, subruns, quality]
 ---
 # rule: independent verification — check work with fresh context, not fresh confidence

@@ -15,6 +15,7 @@
 //
 // Dumb by design: it paints and reports a diff; the caller owns the POST.
 
+import { effectLine } from "/static/components/effectline.js";
 import { el, toast } from "/static/util.js";
 import { docExpander } from "/static/components/docexpand.js";
 
@@ -119,7 +120,7 @@ export function rulePicker(available, held, opts = {}) {
     const node = el("div", { class: "rule-bound", "data-rule": rule.slug },
       el("div", { class: "rule-line" }, box,
         el("span", { class: "rule-name" }, rule.slug),
-        el("span", { class: "muted small prose" }, rule.summary || ""),
+        effectLine(rule, true),
         doc.btn),
       why, doc.body);
     box.onchange = () => {
@@ -136,7 +137,7 @@ export function rulePicker(available, held, opts = {}) {
     const why = el("span", { class: "rule-why small" });
     const node = el("label", { class: "avail-row", "data-rule": rule.slug }, box,
       el("span", { class: "avail-name" }, rule.slug),
-      el("span", { class: "muted small prose" }, rule.summary || ""), why);
+      effectLine(rule, false), why);
     box.onchange = () => {
       if (box.checked) now.add(rule.slug); else now.delete(rule.slug);
       repaint();

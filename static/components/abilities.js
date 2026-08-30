@@ -17,6 +17,7 @@
 // `opts.surface` is optional — a group's shared config and an unsaved conversation have no
 // routine to resolve, and the cards degrade to the two-layer view those cases can support.
 
+import { effectLine } from "/static/components/effectline.js";
 import { el, toast } from "/static/util.js";
 import { docExpander } from "/static/components/docexpand.js";
 
@@ -188,7 +189,7 @@ export function abilitiesPanel(permissions, capabilities, opts = {}) {
                          title: doc.routine_only ? "only meaningful for scheduled routines" : "" },
       box,
       el("span", { class: "avail-name" }, doc.slug),
-      el("span", { class: "muted small prose" }, doc.summary || ""));
+      effectLine(doc, false));
     marks.push({ slug: doc.slug, node, box });
     return node;
   }
@@ -239,7 +240,7 @@ export function abilitiesPanel(permissions, capabilities, opts = {}) {
         el("div", {},
           el("div", { class: "ability-name" }, doc.slug,
              doc.routine_only ? " (routines only)" : ""),
-          el("div", { class: "muted small prose" }, doc.summary || "")),
+          effectLine(doc, true)),
         badge),
       rows.length ? el("ul", { class: "ability-stack" }, ...rows.map(stackRow)) : null,
       el("div", { class: "ability-foot" }, doc_.btn), doc_.body);

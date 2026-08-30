@@ -92,7 +92,8 @@ def permission_layers_detail(server, cfg, *,
 
     all_perms = library_docs.list_docs(server.permissions_home)
     held = set(cfg.permissions)
-    permissions = [{"slug": p["slug"], "summary": p["summary"], "title": p["title"],
+    permissions = [{"slug": p["slug"], "summary": p["summary"], "effect": p["effect"],
+                    "title": p["title"],
                     "requires": p["requires"], "active": p["slug"] in held,
                     **({"routine_only": p["slug"] in routine_only}
                        if routine_only is not None else {})}

@@ -1,4 +1,8 @@
 ---
+effect:
+  with: change a util the library already has, for every routine that calls it
+  without: reports a broken util instead of repairing it
+  when: it uses utils heavily enough to run into their bugs
 tags: [tool-use, utils, authoring]
 requires:
   actions: [revise_util]

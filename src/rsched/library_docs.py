@@ -59,6 +59,20 @@ def ensure_dir(home: Path) -> None:
     home.mkdir(parents=True, exist_ok=True)
 
 
+# `with`/`without` rather than `on`/`off`: YAML 1.1 reads a bare `on:` key as the BOOLEAN true,
+# so an author hand-editing a doc on the Library tab would silently produce a key nothing reads.
+# The UI still labels the two sides "on" and "off" — that is the toggle's language, not YAML's.
+EFFECT_FIELDS = ("with", "without", "when")
+
+
+def _effect(raw: object) -> dict[str, str]:
+    """`{on, off, when}` as strings — missing keys read as empty rather than absent, so the
+    page renders the gap instead of a hole and the linter is the thing that fails on it.
+    """
+    src = raw if isinstance(raw, dict) else {}
+    return {k: str(src.get(k) or "").strip() for k in EFFECT_FIELDS}
+
+
 def list_docs(home: Path) -> list[dict]:
     from .grants import normalize_capabilities
 
@@ -71,6 +85,15 @@ def list_docs(home: Path) -> list[dict]:
         m = DOC_RE.search(text)
         out.append({"slug": path.stem,
                     "summary": (m.group("summary").strip() if m else ""),
+                    # The three things a person deciding this toggle needs (operator,
+                    # 2026-08-30): what the routine does WITH it, what it does WITHOUT it, and
+                    # when to hold it. The title cannot be any of them — it names a topic
+                    # ("ask policy — when and how to involve the user"), and the doc BODY is
+                    # written to the run in the imperative, which is not a description for the
+                    # person choosing. `on`/`off` make the toggle a comparison instead of a
+                    # label; `when` answers the actual question, which is whether it is for
+                    # THIS routine.
+                    "effect": _effect(meta.get("effect")),
                     "title": _title(path.stem),
                     "tags": meta.get("tags") or [],
                     # the capabilities this doc's instructions presume (permissions dir only)

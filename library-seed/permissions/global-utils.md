@@ -1,4 +1,8 @@
 ---
+effect:
+  with: run the shared toolbox of utils
+  without: cannot run any code at all — there is no shell behind it
+  when: always, unless the routine is pure prose and touches nothing
 tags: [tool-use, utils, discovery]
 requires: {}
 ---

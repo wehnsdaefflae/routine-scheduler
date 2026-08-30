@@ -1,4 +1,8 @@
 ---
+effect:
+  with: treats each time you stepped in as a standing correction
+  without: takes each correction as a one-off and may need the same one next time
+  when: you find yourself correcting the same thing more than once
 tags: [policy, communication, self-management]
 ---
 # rule: intent inference — read every intervention as a standing preference
