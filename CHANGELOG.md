@@ -17,6 +17,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.268.0] — 2026-08-30
+
+### A new routine is born knowing what DONE means, and the console stops printing "null"
+
+- **`create_routine` carries `stopping`.** The creation flow has always asked what DONE looks
+  like for one run, in the user's own words (F383) — the answer went into the instruction prose
+  and nowhere else, so every routine ever created started with an EMPTY goal document and was
+  bounded by its budgets alone. That is precisely the state D98 was taken to end, and it is why
+  no routine on the instance has a populated `state/stopping.json`. The answer now rides the
+  call as one condition per entry and `workflows.scaffold` seeds the store from it. Omitted
+  rather than invented: a condition the user did not state is one every later run must account
+  for. The queued-proposal path materializes through the same argument, so a routine created
+  from the Decisions page is born the same way.
+- **`append` / `replaceChildren` stringify a `null` argument into the literal text "null".**
+  `util.el()` drops null children, which makes `el("div", {}, cond ? node : null)` the house
+  idiom and safe; the DOM methods do not, and the two read identically at the call site. The
+  settings-template panel shipped with a stray "null" after "read it" and a "nullnull" between
+  its two layer lists (reported from the live console). The same bug was already in two other
+  places nobody had noticed: Settings → Public URL rendered one once a URL was set, and a queued
+  message row rendered one where its timestamp would be.
+- **`expects:` gets the criterion it was missing** (`docs/rules-permissions.md`): declare it
+  only for an UNCONDITIONAL presumption, one where a holder without the entity can do nothing
+  the doc describes. It produces an `interrupts` row on EVERY holder, so a doc whose prose
+  applies only sometimes turns that row into noise — which is why `git-checkpoint`'s was added
+  and removed within a day. A survey of all 48 live rules and permissions against that bar
+  found no fourth candidate: the messaging and mail docs presume SECRETS and session dirs,
+  which the util-header join already carries, and the rest presume nothing external at all.
+  Three declarations is the whole set, not a starting point.
+- **`tests/test_static_dom.py`** is the guard. The console is no-build vanilla ES modules, so
+  nothing but the browser catches this, and a stray word of text raises no JS error for the UI
+  suite's collector to see. The check reads every `append`/`replaceChildren`/`prepend` call and
+  fails on a bare `null` at the top level — nested `el()` children, which are filtered, are
+  deliberately not flagged.
+
+
 ## [0.267.0] — 2026-08-30
 
 ### The library's blast radius is on the page; three read-only answers stopped being invisible

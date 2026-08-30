@@ -61,6 +61,15 @@ Two rules keep it from turning into a second `requires:`:
   which needs a write root to publish into — that is an `expects:`, not a grant.
 - **It stays advisory forever.** The moment it blocks a save it is a worse `requires:`, and the
   value of naming a soft dependency is precisely that it stays soft.
+- **Declare it only for an UNCONDITIONAL presumption** — one where a holder without the entity
+  can do nothing the doc describes. `expects:` produces an `interrupts` row on EVERY holder, so
+  a doc whose prose applies only sometimes turns that row into noise on every routine that holds
+  it. `git-checkpoint` is the worked example: it presumes a git-tracked project dir, which most
+  of its holders simply never touch, so its `expects: {fs-write: ["*"]}` was added and removed
+  within a day (library `512ef3a`, "noise on every holder"). `remote-machines` and `status-page`
+  pass the bar because a holder with no machine and no write root can do nothing either doc asks
+  for. This is why three declarations is the whole set and not a starting point: adding more is
+  only cheap when the presumption is total.
 
 Values are entity CLASS → names from the `entities.py` vocabulary, with `"*"` for "at least one
 of this class"; the prose explaining WHICH one belongs in the doc body. Nothing is declared here

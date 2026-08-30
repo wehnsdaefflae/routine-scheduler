@@ -38,10 +38,15 @@ def _materialize_routine(server, fields: dict) -> dict:
         raise HTTPException(409, f"a routine {slug!r} already exists — discard this proposal or "
                                  "rename it before creating")
     name = str(fields.get("name") or "").strip()
+    raw_stopping = fields.get("stopping")
     routine_dir = scaffold(server, slug=slug, name=name,
                            instruction=str(fields.get("instruction") or ""),
                            workflow_slug=str(fields.get("workflow") or ""),
-                           description=name)
+                           description=name,
+                           # the queued proposal carries the DONE answer the same way a
+                           # conversation's confirmed call does — one materializer, one path
+                           stopping=[t for t in raw_stopping if isinstance(t, str) and t.strip()]
+                           if isinstance(raw_stopping, list) else None)
     return {"created": "routine", "slug": slug, "dir": str(routine_dir)}
 
 

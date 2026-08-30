@@ -70,7 +70,9 @@ export function renderConnections(view) {
         el("button", { class: "btn small", style: "margin-left:8px",
           onclick: () => { navigator.clipboard?.writeText(cb); toast("callback URL copied"); } }, "copy"));
     }
-    connBox.append(
+    // filter(Boolean): append stringifies a null argument into the text "null" (el() drops
+    // null children, append does not) — the optional prefill hint rendered one once set.
+    connBox.append(...[
       el("div", { class: "mt small", style: "font-weight:600" }, "Public URL"),
       el("div", { class: "muted small" },
         "Your instance's external https BASE url (e.g. your Tailscale Serve URL) — the base, ",
@@ -80,7 +82,8 @@ export function renderConnections(view) {
         ? el("div", { class: "muted small mt" }, "Pre-filled from this browser's address (",
             el("code", {}, originGuess), ") — click save to use it.")
         : null,
-      callbackLine);
+      callbackLine,
+    ].filter(Boolean));
 
     // Providers — connect a new account (disabled until the redirect URL + the app creds are set).
     connBox.append(el("div", { class: "mt small", style: "font-weight:600" }, "Providers"));

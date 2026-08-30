@@ -166,7 +166,9 @@ one you are about to touch, not all of them.
   **`create_routine` / `manage_group` are conversation-INITIATED, not conversation-only** (F328):
   a root conversation materializes them, and a run with no user in the loop writes a PROPOSAL to
   `.control/pending-creations/` that the Decisions page materializes with one click through the
-  same `workflows.scaffold` / `rsched.groups` path — so the engine still never writes
+  same `workflows.scaffold` / `rsched.groups` path. `create_routine` carries an optional
+  `stopping:` — the user's own words for what DONE looks like for one run — which seeds the new
+  routine's STOPPING CONDITIONS instead of evaporating into the instruction prose — so the engine still never writes
   `routine.yaml`, and a scheduled run holding a finished design no longer has to hand it back to
   the operator by hand (R353). `manage_group list` still answers directly; every mutating verb
   queues. A within-reply CHILD (depth > 0) is still refused outright and never sees the kinds:

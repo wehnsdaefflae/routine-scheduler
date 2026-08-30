@@ -289,3 +289,50 @@ def test_mid_build_oserror_is_teaching_error_and_leaves_no_dir(tmp_path, monkeyp
     obs = create_routine.handle_create_routine(ctx, dict(ACTION))
     assert "materialization failed mid-build" in obs.get("error", "")
     assert not (server.routines_home / ACTION["target"]).exists()
+
+
+def test_the_done_answer_becomes_the_new_routine_s_stopping_conditions(tmp_path):
+    """F334/D98 made stopping conditions what decides when a job is finished, and F383 already
+    makes creation ask "what DONE looks like for one run, in the user's own words" — but that
+    answer only ever reached the instruction prose, so every routine ever created started with
+    an empty goal document, bounded by its budgets alone. `stopping` carries it through.
+    """
+    from rsched.engine import stopping as stopping_mod
+
+    server = _server(tmp_path)
+    ctx = _ctx(server, home="conversations_home")
+    action = dict(ACTION, stopping=["the digest is published", "  ", "the link resolves"])
+    create_routine.handle_create_routine(ctx, action)
+    _age_draft(ctx)
+    obs = create_routine.handle_create_routine(ctx, action)
+    assert obs.get("created")
+
+    doc = stopping_mod.load(server.routines_home / ACTION["target"])
+    # blank entries are dropped, order is kept, ids are assigned by the store
+    assert [c["text"] for c in doc["conditions"]] == ["the digest is published",
+                                                      "the link resolves"]
+    assert [c["id"] for c in doc["conditions"]] == ["s1", "s2"]
+    assert all(c["status"] == "open" and c["group"] == "g1" for c in doc["conditions"])
+
+
+def test_no_stopping_answer_seeds_no_conditions(tmp_path):
+    """An invented condition is worse than none — every later run has to account for it."""
+    from rsched.engine import stopping as stopping_mod
+
+    server = _server(tmp_path)
+    ctx = _ctx(server, home="conversations_home")
+    create_routine.handle_create_routine(ctx, dict(ACTION))
+    _age_draft(ctx)
+    create_routine.handle_create_routine(ctx, dict(ACTION))
+    assert stopping_mod.load(server.routines_home / ACTION["target"])["conditions"] == []
+
+
+def test_a_changed_stopping_answer_restarts_the_confirmation(tmp_path):
+    """`stopping` is part of the draft's identity like every other field: changing what DONE
+    means is a design change, and a design change must go back to the user."""
+    server = _server(tmp_path)
+    ctx = _ctx(server, home="conversations_home")
+    create_routine.handle_create_routine(ctx, dict(ACTION, stopping=["the digest is published"]))
+    _age_draft(ctx)
+    obs = create_routine.handle_create_routine(ctx, dict(ACTION, stopping=["something else"]))
+    assert obs.get("draft") and obs.get("updated") and not obs.get("created")

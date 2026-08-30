@@ -157,7 +157,13 @@ def _preview_obs(draft: dict, catalog: list[dict], *, updated: bool,
                     "chosen. State what the routine PRODUCES each run and what DONE looks "
                     "like for one run in the user's own words; if either is YOUR inference, "
                     "it is an open point and it goes out as an ask_user with options like the "
-                    "rest. Then finish the reply. Once the user has answered, call "
+                    "rest. Their answer to the DONE question is not prose to paraphrase into "
+                    "the instruction: put it in `stopping`, one condition per entry, in their "
+                    "words. That becomes the routine's stopping conditions, which every run "
+                    "must account for in its finish summary — without them a run is bounded "
+                    "only by its budgets, which are a runaway backstop and not a definition of "
+                    "done. Omit `stopping` rather than inventing conditions they did not "
+                    "state. Then finish the reply. Once the user has answered, call "
                     "create_routine again with the SAME fields to materialize it; a call with "
                     "changed fields updates the draft and restarts the confirmation.")}
     if blocked_same_leg:
@@ -168,7 +174,7 @@ def _preview_obs(draft: dict, catalog: list[dict], *, updated: bool,
 
 
 def _materialize(ctx: RunContext, *, slug: str, name: str, instruction: str,
-                 workflow_slug: str) -> dict:
+                 workflow_slug: str, stopping: list[str] | None = None) -> dict:
     """The confirmed half: draft the fitted pattern if that is what the user picked, then build
     the routine from `workflow_slug`. Every failure here is an OBSERVATION the model can act on
     — a conversation run must never die because a build step did.
@@ -182,7 +188,8 @@ def _materialize(ctx: RunContext, *, slug: str, name: str, instruction: str,
         workflow_slug = drafted
     try:
         routine_dir = scaffold(ctx.server, slug=slug, name=name, instruction=instruction,
-                               workflow_slug=workflow_slug, description=name)
+                               workflow_slug=workflow_slug, description=name,
+                               stopping=stopping)
     except ValueError as exc:
         # bad slug, unknown workflow, or a dir that appeared mid-flight — a teaching rejection,
         # corrected by the model, never a crash
@@ -269,11 +276,17 @@ def handle_create_routine(ctx: RunContext, action: dict) -> dict:
       name     — its human display name (required)
       prompt   — the clarified task instruction, decomposed into the routine's stages (required)
       workflow — the library workflow pattern to materialize from (optional; DEFAULT_WORKFLOW)
+      stopping — what DONE looks like for one run, in the USER's words (optional); seeded into
+                 the new routine's state/stopping.json. Part of the draft's identity, so
+                 changing it restarts the confirmation like any other field.
     """
     slug = str(action.get("target") or "").strip()
     name = str(action.get("name") or "").strip()
     instruction = str(action.get("prompt") or "").strip()
     workflow_slug = str(action.get("workflow") or "").strip() or DEFAULT_WORKFLOW
+    raw_stopping = action.get("stopping")
+    stopping = [t.strip() for t in raw_stopping
+                if isinstance(t, str) and t.strip()] if isinstance(raw_stopping, list) else []
     server = ctx.server
 
     if (server.routines_home / slug).exists():
@@ -286,7 +299,7 @@ def handle_create_routine(ctx: RunContext, action: dict) -> dict:
         return _unknown_workflow_obs(slug, workflow_slug, catalog)
 
     fields = {"slug": slug, "name": name, "instruction": instruction,
-              "workflow": workflow_slug}
+              "workflow": workflow_slug, "stopping": stopping}
     # A run with no user in the loop QUEUES instead of creating (F328). It is the same D92
     # draft, with a longer gap before the confirmation: the operator sees it on the Decisions
     # page and one click materializes it through this very scaffold path. Nothing is created
@@ -306,4 +319,4 @@ def handle_create_routine(ctx: RunContext, action: dict) -> dict:
 
     # Confirmed: identical fields, a later leg — the user has spoken since the preview.
     return _materialize(ctx, slug=slug, name=name, instruction=instruction,
-                        workflow_slug=workflow_slug)
+                        workflow_slug=workflow_slug, stopping=stopping)

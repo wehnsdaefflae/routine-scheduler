@@ -201,6 +201,14 @@ ACTION_SCHEMA: dict = {
                                     "(default general-task) — pick the pattern matching its "
                                     "purpose · create_routine: the library workflow pattern the "
                                     "new routine is materialized from (default general-task)"},
+        "stopping": {"type": "array", "items": {"type": "string"}, "maxItems": 6,
+                     "description": "create_routine: what DONE looks like for ONE run of the "
+                                    "new routine, in the USER's own words — one condition per "
+                                    'entry ("the digest is published and the link works"). '
+                                    "These become its stopping conditions: every run must "
+                                    "account for each one in its finish summary. Carry the "
+                                    "user's answer here verbatim; omit it rather than "
+                                    "inventing conditions they did not state"},
         "label": {"type": "string",
                   "description": "spawn/subtask/detach: short name shown in the run tree"},
         "turns": {"type": "integer", "minimum": 1,

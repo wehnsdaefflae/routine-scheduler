@@ -37,10 +37,13 @@ function details(rec) {
   const body = el("div", { class: "small mt" });
   if (rec.kind === DRIFT) {
     const node = f.node || {};
-    body.append(
+    // .filter(Boolean): append STRINGIFIES a null argument into the text "null" (el() drops
+    // null children; append does not).
+    body.append(...[
       el("div", {}, node.why || rec.summary || ""),
       node.effect ? el("div", { class: "faint mt" }, node.effect) : null,
-      el("div", { class: "faint mt" }, `after library commit ${String(f.head || "").slice(0, 8)}`));
+      el("div", { class: "faint mt" }, `after library commit ${String(f.head || "").slice(0, 8)}`),
+    ].filter(Boolean));
     return el("details", { class: "small mt", open: true },
       el("summary", { style: "cursor:pointer;color:var(--muted)" }, "what broke"), body);
   }

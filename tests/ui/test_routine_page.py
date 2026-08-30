@@ -251,6 +251,12 @@ def test_settings_template_panel_is_reachable_and_edits_its_exceptions(ui, ui_pa
     expect(layers.locator('[data-tpl-supplies="memory"]')).to_be_visible()
     expect(layers.locator('[data-tpl-own="scheduling"]')).to_be_visible()
     expect(layers.locator('[data-tpl-supplies="scheduling"]')).to_have_count(0)
+    # …and nothing renders the literal word "null": append/replaceChildren stringify a null
+    # argument, unlike el(), and this panel shipped with one after "read it" and a "nullnull"
+    # between its two layer lists (reported from the live console). tests/test_static_dom.py
+    # is the general guard; this is the one that would have caught it on the page.
+    expect(layers).not_to_contain_text("null")
+    expect(ui_page.locator("[data-tpl-layers]").locator("..")).not_to_contain_text("nullnull")
 
     # 4. dropping a template-supplied entry writes template_except and marks the chip
     layers.locator('[data-tpl-supplies="memory"] button').click()

@@ -18,7 +18,7 @@ from ..config import (
     write_tuning,
 )
 from ..health_events import log_health_event
-from ..ids import is_slug
+from ..ids import is_slug, now_iso
 
 # mnt/ = transient remote-machine share mounts; .util_outputs/ = spilled util output
 # (engine-owned and pruned, and it can carry whatever a util printed — never committed)
@@ -38,9 +38,10 @@ def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,  #
              fs_write_roots: list[str] | None = None,
              stages: dict[str, str] | None = None, enabled: bool = True,
              tags: list[str] | None = None, deliberation: str = "",
-             template: str | None = None,
+             template: str | None = None, stopping: list[str] | None = None,
              progress=None) -> Path:
     """Create ~/routines/<slug>. The workflow is REFERENCED (edited only in the library);
+    `stopping` seeds `state/stopping.json` — what DONE means for one run, in the USER's words;
     the routine holds general-rule SLUGS in routine.yaml (`rules:`, indexed by main.md's
     Standing practices tail — the prose stays in the library) + stages/ modules. The clarified
     `instruction` is the compile SEED: it is decomposed into the stages and NOT persisted (the
@@ -185,6 +186,22 @@ def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,  #
         cfg["fs_write_roots"] = [_tilde(p) for p in fs_write_roots]
     (routine_dir / "routine.yaml").write_text(
         yaml.safe_dump(cfg, sort_keys=False, allow_unicode=True), encoding="utf-8")
+    # STOPPING CONDITIONS (F334/D98) — what DONE means for one run, seeded from the answer the
+    # creation flow already collected. The flow has always asked ("what DONE looks like for one
+    # run, in the user's own words"; F383) and the answer went nowhere but the recipe prose, so
+    # every routine ever created started with an empty goal document and was bounded only by its
+    # budgets — the exact state D98 was taken to end. Written here rather than by a run, because
+    # `state/stopping.json` is the USER's list; this IS their words, collected at the one moment
+    # they were in the loop. Absent or empty seeds nothing: an invented condition is worse than
+    # none, since every later run has to account for it.
+    if stopping:
+        from ..engine import stopping as stopping_mod
+        stopping_mod.save(routine_dir,
+                          {"mode": "all",
+                           "groups": [{"id": "g1", "name": "", "mode": "all"}],
+                           "conditions": [{"text": t, "status": "open", "group": "g1"}
+                                          for t in stopping if str(t).strip()]},
+                          now=now_iso())
     # tuning.yaml (recipe-classed, improver-editable): the deliberation level, creation-
     # suggested per task. Always written, so the file exists for later tuning edits.
     write_tuning(routine_dir, {"deliberation": deliberation

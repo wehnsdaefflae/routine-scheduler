@@ -114,7 +114,10 @@ export function templatePanel(host, slug, d) {
       summary.replaceChildren("Nothing is inherited — every setting below is this routine's own.");
     } else {
       const c = chosen.config || {};
-      summary.replaceChildren(
+      // .filter(Boolean): replaceChildren/append STRINGIFY a null argument into the text
+      // "null" — unlike el(), which drops null children. Every conditional child here goes
+      // through the filter for that reason.
+      summary.replaceChildren(...[
         el("div", { class: "prose" }, chosen.summary),
         el("div", { class: "mt" }, "supplies ",
           el("b", {}, `${(c.permissions || []).length} conduct docs`), ", ",
@@ -130,7 +133,8 @@ export function templatePanel(host, slug, d) {
               detail.template
                 ? `not saved yet — this routine still runs on “${detail.template}”`
                 : "not saved yet — this routine still runs on its own config alone")
-          : null);
+          : null,
+      ].filter(Boolean));
     }
 
     const dropped = new Set(detail.template_except || []);
@@ -169,7 +173,7 @@ export function templatePanel(host, slug, d) {
     const stale = [...dropped].filter((n) =>
       !DROPPABLE.some(({ key }) => supplied(adopted, key).includes(n)));
 
-    layers.append(
+    layers.append(...[
       el("h3", { class: "tpl-head" }, `Inherited from “${adopted.slug}”`),
       fromTpl.length ? el("div", {}, ...fromTpl)
         : el("div", { class: "muted small" },
@@ -181,7 +185,8 @@ export function templatePanel(host, slug, d) {
       el("h3", { class: "tpl-head" }, "Set on this routine"),
       ownRows.length ? el("div", {}, ...ownRows)
         : el("div", { class: "muted small" },
-            "nothing beyond the template — this routine is the template"));
+            "nothing beyond the template — this routine is the template"),
+    ].filter(Boolean));
   }
 
   (async () => {

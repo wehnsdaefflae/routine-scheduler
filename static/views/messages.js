@@ -131,8 +131,10 @@ export async function render(view, query = {}) {
       row.replaceChildren(chip("queued", "waiting_user"), ta, save, cancel, drop);
       ta.focus();
     };
-    row.append(chip("queued", "waiting_user"), el("span", { class: "p-text" }, p.text),
-      p.ts ? when(p.ts) : null, edit, drop);
+    // filter(Boolean): append stringifies a null argument into the text "null" (el() drops
+    // null children, append does not) — a queued item with no ts rendered a literal "null".
+    row.append(...[chip("queued", "waiting_user"), el("span", { class: "p-text" }, p.text),
+      p.ts ? when(p.ts) : null, edit, drop].filter(Boolean));
     return row;
   }
 
