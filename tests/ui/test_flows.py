@@ -576,15 +576,13 @@ def test_composer_picks_rules_pre_start(ui, ui_page):
     expect(picker).to_be_visible()
     expect(picker.locator("button", has_text="apply")).to_have_count(0)   # pre-start: no save
 
-    rows = picker.locator(".rule-doc")
+    rows = picker.locator(".rule-bound")
     expect(rows.first).to_be_visible(timeout=10_000)
-    checked = [i for i in range(rows.count())
-               if rows.nth(i).locator('input[type="checkbox"]').is_checked()]
-    before = len(checked)
+    before = rows.count()
     assert before > 0, "a new conversation should start with rules bound"
-    row = rows.nth(checked[0])
-    dropped = row.locator(".t-title").inner_text()
-    row.locator('input[type="checkbox"]').uncheck()
+    row = rows.first
+    dropped = row.locator(".rule-name").inner_text()
+    row.locator('input[type="checkbox"]').uncheck()   # stages the unbind; the row stays put
 
     ui_page.locator(".conv-new textarea").fill("Rules picked up front.")
     ui_page.get_by_role("button", name="start conversation").click()
@@ -962,9 +960,15 @@ def test_routine_page_permission_help_and_doc_expand(ui, ui_page):
     ui_page.goto(f"{ui.url}/#/routine/uir")
     perm_panel = ui_page.locator(
         ".panel", has=ui_page.get_by_role("button", name="save permissions"))
-    # capability rows explain themselves with examples (bare kind/util names told nothing)
-    expect(perm_panel.get_by_text("become a proper util", exact=False)).to_be_visible()
-    expect(perm_panel.get_by_text("two-hour bulk conversion", exact=False)).to_be_visible()
+    # capability rows explain themselves with examples (bare kind/util names told nothing).
+    # The help rides the card of the doc that REQUIRES the capability, so it is asserted on
+    # what this routine holds — util-authoring and memory (config.base.DEFAULT_PERMISSIONS).
+    expect(perm_panel.get_by_text("pdf-stamp", exact=False)).to_be_visible()
+    expect(perm_panel.get_by_text("facts earlier runs paid to learn", exact=False)).to_be_visible()
+    # an ability the routine does NOT hold is a catalogue row: no stack, no state, no alarm
+    shell = perm_panel.locator('.avail-row[data-ability="shell"]')
+    expect(shell).to_be_visible()
+    expect(shell.locator(".dot")).to_have_count(0)
 
     # an ability card expands to the full library doc without flipping its checkbox
     row = perm_panel.locator('.ability[data-ability="memory"]').first
@@ -975,8 +979,8 @@ def test_routine_page_permission_help_and_doc_expand(ui, ui_page):
     expect(row.locator(".doc-expand-body")).to_contain_text("notebook")
     assert box.is_checked() == checked_before
 
-    # general-rule rows expand the same way
-    rule_row = ui_page.locator(".rule-doc").first
+    # a practised rule expands the same way
+    rule_row = ui_page.locator(".rule-bound").first
     rule_row.get_by_role("button", name="full description").click()
     expect(rule_row.locator(".doc-expand-body")).to_be_visible()
     expect(rule_row.locator(".doc-expand-body")).not_to_be_empty()
@@ -1214,7 +1218,7 @@ def test_new_conversation_composer_offers_caps_and_budgets(ui, ui_page):
     ui_page.goto(f"{ui.url}/#/conversations")
     expect(ui_page.get_by_role("heading", name="Permissions & capabilities",
                                exact=True)).to_be_visible()
-    shell_row = ui_page.locator('.ability[data-ability="shell"]')
+    shell_row = ui_page.locator('.avail-row[data-ability="shell"]')
     shell_row.locator('input[type="checkbox"]').check()
     ui_page.locator('input[title="max tokens per reply (-1 = unlimited)"]').fill("55000")
     ui_page.locator(".conv-new textarea").fill("Need a shell for this.")
@@ -1700,7 +1704,7 @@ def test_routine_page_rule_picker_binds_a_general_rule(ui, ui_page):
     ui_page.goto(f"{ui.url}/#/routine/uir")
     panel = ui_page.locator(".panel", has=ui_page.locator(".rulepicker"))
     expect(panel).to_be_visible()
-    row = panel.locator("label.toggle-row", has_text="evidence-discipline")
+    row = panel.locator('.avail-row[data-rule="evidence-discipline"]')
     expect(row).to_be_visible()
     row.locator('input[type="checkbox"]').check()
     panel.get_by_role("button", name="apply").click()
@@ -1712,8 +1716,9 @@ def test_routine_page_rule_picker_binds_a_general_rule(ui, ui_page):
 
     ui_page.reload()                                   # the tick survives a fresh detail read
     reloaded = ui_page.locator(".panel", has=ui_page.locator(".rulepicker"))
-    expect(reloaded.locator("label.toggle-row", has_text="evidence-discipline")
-           .locator('input[type="checkbox"]')).to_be_checked()
+    # a bound rule leaves the catalogue and reads as something the routine practises
+    expect(reloaded.locator('.rule-bound[data-rule="evidence-discipline"]')).to_be_visible()
+    expect(reloaded.locator('.avail-row[data-rule="evidence-discipline"]')).to_have_count(0)
 
 
 def test_conversation_header_rule_picker(ui, ui_page):
@@ -1731,10 +1736,9 @@ def test_conversation_header_rule_picker(ui, ui_page):
     picker = ui_page.locator(".rulepicker")
     expect(picker).to_be_visible()
     # conversations start with their default set already ticked
-    expect(picker.locator("label.toggle-row", has_text="ask-policy")
-           .locator('input[type="checkbox"]')).to_be_checked()
-    row = picker.locator("label.toggle-row", has_text="interface-design")
-    expect(row.locator('input[type="checkbox"]')).not_to_be_checked()
+    expect(picker.locator('.rule-bound[data-rule="ask-policy"]')).to_be_visible()
+    row = picker.locator('.avail-row[data-rule="interface-design"]')
+    expect(row).to_be_visible()
     row.locator('input[type="checkbox"]').check()
     picker.get_by_role("button", name="apply").click()
     expect(_toast(ui_page)).to_contain_text("rules updated")

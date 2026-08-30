@@ -95,6 +95,8 @@ export function abilitiesPanel(permissions, capabilities, opts = {}) {
     workflows: capabilities?.active?.workflows || "catalog",
   };
   const surface = opts.surface?.nodes || null;
+  const committed = new Set(held);          // what the sections are built from
+  const marks = [];                         // [{slug, node}] — repainted on every toggle
 
   const needs = (p) => p.requires || {};
   // the activation cascade: raise the mapping to cover one doc's requires
@@ -129,17 +131,16 @@ export function abilitiesPanel(permissions, capabilities, opts = {}) {
     });
   }
 
-  const host = el("div", { class: "abilities" });
+  const host = el("div", { class: "ability-panel" });
 
-  function stackRow({ state, kind, entity, note, need, control }) {
-    return el("li", { class: `ab-row st-${state}`, "data-entity": entity },
+  function stackRow({ state, kind, entity, note, control }) {
+    return el("li", { class: `ab-row st-${state}${control ? " has-control" : ""}`,
+                      "data-entity": entity },
       el("span", { class: "dot" }),
       el("span", { class: "kind" }, kind),
       el("div", { class: "ent" },
-        el("span", { class: "ent-id" }, entity),
-        need ? el("span", { class: "need" }, ` · ${need}`) : null,
-        note ? el("div", { class: "muted small prose" }, note) : null),
-      control || null);
+        control || el("span", { class: "ent-id" }, entity),
+        note ? el("div", { class: "muted small prose" }, note) : null));
   }
 
   function dialFor(doc) {
@@ -169,50 +170,66 @@ export function abilitiesPanel(permissions, capabilities, opts = {}) {
     return sel;
   }
 
+  /** A compact catalogue row for an ability the routine does NOT hold. No stack, no state:
+   *  nothing is outstanding for something the routine is not doing, and painting its
+   *  requirements red said the opposite. */
+  function availableRow(doc) {
+    const box = el("input", { type: "checkbox",
+                              disabled: doc.routine_only ? "" : null });
+    box.onchange = () => {
+      if (box.checked) { held.add(doc.slug); raiseFor(needs(doc)); }
+      else held.delete(doc.slug);
+      repaint();
+    };
+    const node = el("label", { class: "avail-row", "data-ability": doc.slug,
+                         title: doc.routine_only ? "only meaningful for scheduled routines" : "" },
+      box,
+      el("span", { class: "avail-name" }, doc.slug),
+      el("span", { class: "muted small prose" }, doc.summary || ""));
+    marks.push({ slug: doc.slug, node, box });
+    return node;
+  }
+
   function card(doc) {
-    const on = held.has(doc.slug);
     const r = needs(doc);
+    const on = true;      // cards are built only for what the routine holds
     const rows = [];
     for (const a of r.actions || []) {
       rows.push({ state: caps.actions.has(a) ? "ok" : "blocks", kind: "action", entity: a,
-                  note: ACTION_HELP[a] || "", need: "necessary" });
+                  note: ACTION_HELP[a] || "" });
     }
     for (const u of r.utils || []) {
       rows.push({ state: caps.utils.has(u) ? "ok" : "blocks", kind: "util", entity: u,
-                  note: UTIL_HELP[String(u).split(":")[0]] || "", need: "necessary" });
+                  note: UTIL_HELP[String(u).split(":")[0]] || "" });
     }
     for (const t of r.util_tags || []) {
-      rows.push({ state: "ok", kind: "util class", entity: t, need: "necessary" });
+      rows.push({ state: "ok", kind: "util class", entity: t });
     }
     const derived = on ? resourceRows(doc) : [];
     for (const n of derived) {
       const [cls, ...rest] = n.id.split(":");
-      rows.push({ state: n.severity, kind: KIND_LABEL[cls] || cls, entity: rest.join(":") || n.id,
-                  note: n.effect || n.why,
-                  need: n.severity === "ok" ? "" : "outstanding" });
+      rows.push({ state: n.severity, kind: KIND_LABEL[cls] || cls,
+                  entity: rest.join(":") || n.id, note: n.effect || n.why });
     }
     const dial = dialFor(doc);
-    if (dial && on) {
-      rows.push({ state: "ok", kind: dial[0], entity: "your policy", control: dial[1] });
-    }
+    if (dial && on) rows.push({ state: "ok", kind: dial[0], entity: "policy", control: dial[1] });
 
     const box = el("input", { type: "checkbox", checked: on ? "" : null,
                               disabled: doc.routine_only ? "" : null });
     box.onchange = () => {
       if (box.checked) { held.add(doc.slug); raiseFor(r); }
       else { held.delete(doc.slug); dropUnsatisfied(); }
-      render();
+      repaint();
     };
     // the card's own verdict: the worst state in its stack, which is the whole reason the
     // stack lives inside the card rather than across three other panels
-    const bad = on ? worst(rows.map((r2) => ({ severity: r2.state }))) : "";
-    const badge = !on ? el("span", { class: "pill" }, "off")
-      : bad === "blocks" ? el("span", { class: "pill err" }, "will fail")
+    const bad = worst(rows.map((r2) => ({ severity: r2.state })));
+    const badge = bad === "blocks" ? el("span", { class: "pill err" }, "will fail")
       : bad === "interrupts" ? el("span", { class: "pill warn" }, "needs a decision")
       : el("span", { class: "pill ok" }, "ready");
     const doc_ = docExpander("permissions", doc.slug);
-    return el("div", { class: `ability${on ? " on" : ""}${bad ? ` ${bad}` : ""}`,
-                       "data-ability": doc.slug },
+    const node = el("div", { class: `ability${bad ? ` ${bad}` : ""}`,
+                             "data-ability": doc.slug },
       el("label", { class: "ability-head",
                     title: doc.routine_only ? "only meaningful for scheduled routines" : "" },
         box,
@@ -223,6 +240,8 @@ export function abilitiesPanel(permissions, capabilities, opts = {}) {
         badge),
       rows.length ? el("ul", { class: "ability-stack" }, ...rows.map(stackRow)) : null,
       el("div", { class: "ability-foot" }, doc_.btn), doc_.body);
+    marks.push({ slug: doc.slug, node, box });
+    return node;
   }
 
   /** Capabilities switched on that no held doc requires — the group-inheritance blind spot. */
@@ -246,15 +265,43 @@ export function abilitiesPanel(permissions, capabilities, opts = {}) {
       })));
   }
 
+  /** Appearance only: which rows are staged for a change, and whether save is live. */
+  function repaint() {
+    for (const { slug, node, box } of marks) {
+      const staged = held.has(slug) !== committed.has(slug);
+      node.classList.toggle("pending", staged);
+      node.classList.toggle("pending-drop", staged && committed.has(slug));
+      if (box) box.checked = held.has(slug);
+    }
+  }
+
   function render() {
-    host.replaceChildren(
-      el("div", { class: "muted small", style: "margin-bottom:10px" },
-        "One card per thing this routine can do. Switching a card on switches on the ",
-        "capabilities it needs; everything the ability depends on is listed inside it."),
-      ...docs.map(card).filter(Boolean));
-    const orphan = orphanCard();
-    if (orphan) host.append(orphan);
-    if (!docs.length) host.append(el("div", { class: "muted" }, "no permissions in the library"));
+    marks.length = 0;
+    const on = docs.filter((p) => (p.routine_only ? p.active : committed.has(p.slug)));
+    const off = docs.filter((p) => !on.includes(p));
+    host.replaceChildren();
+    if (!docs.length) {
+      host.append(el("div", { class: "muted" }, "no permissions in the library"));
+      return;
+    }
+    host.append(el("div", { class: "lbl" }, `Holds · ${on.length}`));
+    if (on.length) {
+      const grid = el("div", { class: "abilities" }, ...on.map(card));
+      host.append(grid);
+      const orphan = orphanCard();
+      if (orphan) grid.append(orphan);
+    } else {
+      host.append(el("div", { class: "muted small" },
+        "this routine holds no conduct permissions — it can read, write in its own dir and "
+        + "call ungated utils, nothing more"));
+    }
+    if (off.length) {
+      host.append(el("div", { class: "lbl mt" }, `Available · ${off.length}`),
+        el("div", { class: "muted small", style: "margin:-4px 0 8px" },
+          "switching one on switches on the capabilities it needs; it moves up once saved"),
+        el("div", { class: "avail" }, ...off.map(availableRow)));
+    }
+    repaint();
   }
   render();
 

@@ -904,25 +904,30 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
   .setup-row { grid-template-columns: 1fr; gap: 3px; }
 }
 
-/* --- ability cards (components/abilities.js) ----------------------------------------------
-   One card per thing the routine can do. The card carries the verdict; the STACK inside it
-   carries the reasons, so the reader never joins two columns by eye. */
-.abilities { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 12px; }
-.ability { border: 1px solid var(--line); border-radius: 3px; background: var(--surface); }
-.ability.on { border-color: var(--line-2); }
+/* --- ability cards + catalogue (components/abilities.js) ---------------------------------
+   Held abilities are CARDS with their whole requirement stack; everything else is a compact
+   catalogue row. An ability that is off has nothing outstanding, so it gets no stack and no
+   status dots — painting its requirements red said the opposite of the truth. */
+.ability-panel .lbl { margin: 16px 0 8px; }
+.ability-panel .lbl:first-child { margin-top: 0; }
+.abilities {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(330px, 1fr)); gap: 12px;
+  align-items: start;            /* cards size to their content, never to the tallest sibling */
+}
+.ability { border: 1px solid var(--line-2); border-radius: 3px; background: var(--surface); }
 .ability.interrupts { border-color: rgba(242, 193, 78, 0.4); }
 .ability.blocks { border-color: rgba(242, 105, 92, 0.4); }
 .ability.orphan { border-color: rgba(179, 161, 247, 0.4); grid-column: 1 / -1; }
 .ability-head {
   display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: start;
-  padding: 12px 13px; cursor: pointer;
+  padding: 11px 13px; cursor: pointer;
 }
 .ability.orphan .ability-head { cursor: default; }
 .ability-name { font-size: 13px; color: var(--text); }
-.ability-stack { list-style: none; margin: 0; padding: 0 0 4px; border-top: 1px solid var(--line); }
+.ability-stack { list-style: none; margin: 0; padding: 0 0 2px; border-top: 1px solid var(--line); }
 .ab-row {
-  display: grid; grid-template-columns: 10px 74px 1fr auto; gap: 9px; align-items: start;
-  padding: 7px 13px; border-top: 1px solid rgba(30, 42, 55, 0.55); font-size: 12px;
+  display: grid; grid-template-columns: 9px 76px 1fr; gap: 9px; align-items: start;
+  padding: 6px 13px; border-top: 1px solid rgba(30, 42, 55, 0.5); font-size: 12px;
 }
 .ab-row:first-child { border-top: 0; }
 .ab-row .dot {
@@ -933,15 +938,60 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
 .ab-row.st-blocks .dot { background: var(--err); }
 .ab-row.st-note .dot { background: var(--violet); }
 .ab-row .kind {
-  font-size: 10px; letter-spacing: 0.09em; text-transform: uppercase; color: var(--faint);
+  font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--faint);
   padding-top: 3px;
 }
+.ab-row .ent { min-width: 0; }            /* let the grid shrink it instead of the select */
 .ab-row .ent-id { color: var(--text); word-break: break-all; }
-.ab-row .need { color: var(--faint); font-size: 11px; }
-.ab-row select { max-width: 210px; }
-.ability-foot { padding: 6px 13px 10px; }
-@media (max-width: 560px) {
-  .ab-row { grid-template-columns: 10px 1fr; }
-  .ab-row .kind { grid-column: 2; padding-top: 0; }
-  .ab-row select { grid-column: 2; max-width: 100%; }
+.ab-row.has-control select { width: 100%; max-width: 260px; }
+.ability-foot { padding: 5px 13px 9px; }
+
+/* the catalogue: one line each, no state, no stack */
+.avail { border: 1px solid var(--line); border-radius: 3px; overflow: hidden; }
+.avail-row {
+  display: grid; grid-template-columns: auto 190px 1fr; gap: 10px; align-items: baseline;
+  padding: 7px 12px; border-top: 1px solid var(--line); cursor: pointer; font-size: 12px;
 }
+.avail-row:first-child { border-top: 0; }
+.avail-row:hover { background: var(--surface-2); }
+.avail-name { color: var(--text); }
+@media (max-width: 620px) {
+  .ab-row { grid-template-columns: 9px 1fr; }
+  .ab-row .kind { grid-column: 2; padding-top: 0; }
+  .avail-row { grid-template-columns: auto 1fr; }
+  .avail-row .muted { grid-column: 2; }
+}
+
+/* --- general rules (components/rulepicker.js) ---------------------------------------------
+   Same shape as the ability panel: what the routine PRACTISES reads as a short list, and the
+   rest is a grouped catalogue. Twenty equal checkboxes answered a question nobody asks. */
+.rulepicker .lbl { margin: 0 0 8px; }
+.rulepicker .lbl.mt { margin-top: 18px; }
+.rule-bounds { border: 1px solid var(--line-2); border-radius: 3px; overflow: hidden; }
+.rule-bound { border-top: 1px solid var(--line); background: var(--surface); }
+.rule-bound:first-child { border-top: 0; }
+.rule-line {
+  display: grid; grid-template-columns: 190px 1fr auto auto; gap: 10px; align-items: baseline;
+  padding: 8px 12px; font-size: 12px;
+}
+.rule-name { color: var(--text); }
+.rule-group { margin-top: 12px; }
+.rule-group-name {
+  font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--faint);
+  margin-bottom: 5px;
+}
+@media (max-width: 620px) {
+  .rule-line { grid-template-columns: 1fr auto; }
+  .rule-line .muted { grid-column: 1 / -1; }
+}
+
+/* Staged, not yet saved. A toggle marks its row and leaves the layout alone — restructuring
+   under the pointer both destroyed the control being clicked and threw away the diff these
+   panels exist to show. */
+.avail-row.pending, .rule-bound.pending, .ability.pending {
+  background: rgba(255, 180, 84, 0.07); border-left: 2px solid var(--amber);
+}
+.avail-row.pending-drop, .rule-bound.pending-drop, .ability.pending-drop {
+  background: rgba(133, 152, 169, 0.07); border-left-color: var(--faint); opacity: 0.72;
+}
+.ability.pending { border-color: rgba(255, 180, 84, 0.45); }

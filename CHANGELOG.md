@@ -17,6 +17,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.260.0] — 2026-08-30
+
+### The two setup panels are legible: hold vs available, and a toggle stops rebuilding the page
+
+Operator review of 0.259.0's cards found three real faults and one that was never fixed at all.
+
+- **An ability that is OFF no longer renders a requirement stack.** Every unheld ability painted
+  its capabilities with red dots, so a page of perfectly fine configuration read as alarming —
+  and said the opposite of the truth: nothing is outstanding for something the routine is not
+  doing. Held abilities are cards with their stack; everything else is a compact catalogue row
+  with no state at all. Most abilities are off, so this removes most of the panel's noise.
+- **Cards no longer stretch to the tallest sibling** (`align-items: start`), which had left
+  half-empty cards beside tall ones.
+- **The policy dial had its label crushed to one character per line** — a `1fr` column squeezed
+  by a `select` in an `auto` column beside it. The dial is now its own row shape; its options
+  already say what it is, so the label went.
+- **General rules got the same treatment**, which is the part 0.259.0 never touched: twenty
+  equal checkboxes in one list answered a question nobody asks. Bound rules read as a short list
+  of what the routine PRACTISES; the rest is a catalogue grouped by what the rules are for. The
+  two panels now answer the same shape of question and look like it.
+- **A toggle stages a change instead of re-laying out the panel.** Both panels build their
+  sections from the COMMITTED state and only mark rows as pending, so clicking a control no
+  longer destroys it under the pointer — which was breaking the interaction, not just the tests
+  — and the diff these panels exist to show survives until you apply it.
+
+
 ## [0.259.0] — 2026-08-30
 
 ### Ability cards replace the two-column permissions panel

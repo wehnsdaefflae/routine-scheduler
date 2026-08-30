@@ -98,11 +98,13 @@ def test_a_resolved_need_appears_inside_the_ability_that_owns_it(ui_page, ui):
     assert "will fail" in card.locator(".pill").inner_text()
 
 
-def test_an_ability_that_is_off_shows_no_resolved_needs(ui_page, ui):
-    """An unheld doc has no resolved needs to show — listing them would read as outstanding
-    work for something the routine is not doing."""
+def test_an_ability_that_is_off_is_a_catalogue_row_not_an_alarm(ui_page, ui):
+    """An unheld ability has nothing outstanding, so it gets no requirement stack and no state
+    dots. Rendering its requirements as unmet painted the page red for things that were merely
+    not switched on — which said the opposite of the truth."""
     ui_page.goto(f"{ui.url}/#/routine/uir")
-    card = ui_page.locator('.ability[data-ability="shell"]')
-    card.wait_for(state="visible", timeout=10000)
-    assert card.locator("input[type=checkbox]").is_checked() is False
-    assert "off" in card.locator(".pill").inner_text()
+    row = ui_page.locator('.avail-row[data-ability="shell"]')
+    row.wait_for(state="visible", timeout=10000)
+    assert row.locator("input[type=checkbox]").is_checked() is False
+    assert row.locator(".dot").count() == 0
+    assert ui_page.locator('.ability[data-ability="shell"]').count() == 0
