@@ -64,16 +64,47 @@ def _config_layers(request: Request, config: dict) -> dict:
     return {"permissions": perms, "capabilities": caps}
 
 
+def _orphan_capabilities(server, config: dict) -> list[str]:
+    """Capabilities this group switches on that none of its OWN permissions requires.
+
+    Not an error: a member may hold the covering doc itself, which is the arrangement the
+    floor cannot see and must not break. But it is nearly always a mistake — the group grants
+    the means without the conduct — so whoever saves it is told, by name.
+    """
+    from ..grants import _DEFAULT_KIND_SOURCE, read_library_requires, split_util_verb
+
+    caps = config.get("capabilities") or {}
+    if not caps:
+        return []
+    lib = read_library_requires(server.permissions_home)
+    held = list(config.get("permissions") or [])
+    req_utils = {u for slug in held for u in (lib.get(slug) or {}).get("utils") or []}
+    req_names = {split_util_verb(u)[0] for u in req_utils}
+    req_actions = {a for slug in held for a in (lib.get(slug) or {}).get("actions") or []}
+    out = [f"util {u!r}" for u in caps.get("utils") or []
+           if u not in req_utils and split_util_verb(u)[0] not in req_names]
+    out += [f"action {a!r}" for a in caps.get("actions") or []
+            if a not in req_actions and _DEFAULT_KIND_SOURCE.get(a) not in held]
+    return out
+
+
 def _validate_config(request: Request, config: dict | None) -> dict | None:
     """Validate the group's SHARED routine config (D82) exactly as the routine save path
     validates a member's own: unknown permission/rule slugs and unknown machines are
     rejected by name, and the capability mapping is normalized. `groups._clean_config` keeps
     shape; existence is ours, because we hold the library and the machine catalog.
 
-    Deliberately NOT floored against the group's permissions here. The floor binds a
-    ROUTINE's two layers, and it can only be applied once the member's own permissions are
-    merged in — which `load_routine` does. Flooring the group document in isolation would
-    delete a capability whose covering permission the member holds.
+    Deliberately NOT floored against the group's permissions: the floor binds a ROUTINE's two
+    layers, and flooring the group document in isolation would delete a capability whose
+    covering permission the member holds itself.
+
+    Nothing floors the MERGED config either, and that is deliberate too — enforcement reads
+    capabilities ONLY (test_policy_enforces_capabilities_not_docs), precisely so the doc layer
+    can never widen what a run may do. The cost is that a group CAN hand its members a reserved
+    util or gated kind with no conduct doc behind it, and the three invariants above each
+    correctly decline to catch it. So it is REPORTED instead, twice: `_orphan_capabilities`
+    below warns whoever saves the group, and `readmodels/surface.py` shows it per routine
+    however it got there — a hand-edited file and a restored backup arrive with no save at all.
     """
     if config is None:
         return None
@@ -229,7 +260,14 @@ def update_group(request: Request, gid: str, body: GroupPatch) -> dict:
         raise HTTPException(404, f"no group {gid!r}")
     if sched is not None or members is not None or body.paused is not None:
         _rescan(request)   # membership + pause changes move the fire/suppression tables too
-    return {"ok": True, "group": rec}
+    # An orphan capability is legal (a member may hold the covering doc) but nearly always a
+    # mistake, and nothing downstream can catch it — so say so at the one moment somebody is
+    # looking. Returned, never raised: refusing would break the legitimate arrangement.
+    warnings = _orphan_capabilities(_state(request).server, body.config or {})
+    return {"ok": True, "group": rec,
+            **({"warnings": [f"{w} is switched on, but no permission in this group requires it "
+                             "— it takes effect only for members holding a covering doc "
+                             "themselves" for w in warnings]} if warnings else {})}
 
 
 @router.delete("/groups/{gid}")

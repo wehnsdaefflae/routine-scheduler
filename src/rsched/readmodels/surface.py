@@ -254,6 +254,38 @@ def routine_surface(server: Any, cfg: RoutineConfig) -> dict:
                                "enforcement reads capabilities only, so it fails closed: "
                                + ", ".join(missing)))
 
+    # -- the INVERSE misconfiguration: a capability no held doc asks for. -----------------
+    # Three deliberate designs meet here and none of them catches it on its own. The floor is
+    # a WRITE-time invariant on a routine's OWN mapping. A GROUP's config block is deliberately
+    # not floored at its own save, because a member may hold the covering doc itself. And
+    # enforcement is deliberately capabilities-ONLY, so that prose can never widen anything —
+    # which also means an orphan capability is simply obeyed. So a group can hand its members a
+    # reserved util with no conduct doc behind it, and nothing said a word.
+    #
+    # Nothing is broken when it happens: the routine really can do the thing. What is wrong is
+    # that it can do it for a reason the permissions panel does not show, so it is reported.
+    covering = {u for slug in cfg.permissions or []
+                for u in (lib_requires.get(slug) or {}).get("utils") or []}
+    covering_actions = {a for slug in cfg.permissions or []
+                        for a in (lib_requires.get(slug) or {}).get("actions") or []}
+    from ..grants import _DEFAULT_KIND_SOURCE, split_util_verb
+    held_docs = set(cfg.permissions or [])
+    covering_names = {split_util_verb(u)[0] for u in covering}
+    where = (f" (inherited from the group {cfg.inherited_from!r})"
+             if "capabilities" in (getattr(cfg, "inherited", None) or {}) else "")
+    for util in caps.get("utils") or []:
+        if util not in covering and split_util_verb(util)[0] not in covering_names:
+            nodes.append(_node(f"util:{util}", "uncovered", NOTE,
+                               "switched on, but no held conduct doc requires it" + where,
+                               "the run may call it, with none of the conduct prose that "
+                               "normally comes with it"))
+    for action in caps.get("actions") or []:
+        if action not in covering_actions and _DEFAULT_KIND_SOURCE.get(action) not in held_docs:
+            nodes.append(_node(f"action:{action}", "uncovered", NOTE,
+                               "switched on, but no held conduct doc requires it" + where,
+                               "the run may use it, with none of the conduct prose that "
+                               "normally comes with it"))
+
     counts = {BLOCKS: 0, INTERRUPTS: 0, NOTE: 0}
     for n in nodes:
         if n["severity"] in counts:

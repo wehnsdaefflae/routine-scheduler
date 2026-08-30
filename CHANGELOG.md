@@ -17,6 +17,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.257.1] — 2026-08-30
+
+### A capability no held doc asks for is now reported, at both ends
+
+Found by applying a real config decision: dropping `messaging-discord` from a routine did not
+clear its failures, because the capability came from its GROUP — whose config block switched
+`util:discord` on without holding `messaging-discord` at all.
+
+Three deliberate designs meet at that blind spot and each correctly declines to catch it: the
+floor binds a routine's OWN mapping at save; a group's block is not floored (a member may hold
+the covering doc itself); and enforcement reads capabilities ONLY, so the doc layer can never
+widen a run. A stale docstring claimed `load_routine` floored the merged config — nothing does,
+and nothing should.
+
+Nothing is broken when it happens — the routine really can do the thing — so it is reported,
+not corrected:
+
+- `readmodels/surface.py` adds a `note` row per uncovered util and gated kind, naming the group
+  when the group supplied it. It catches every provenance, including a hand-edited file or a
+  restored backup that arrives with no save at all.
+- `PATCH /api/groups/{id}` returns a `warnings` list naming each orphan, at the one moment
+  somebody is looking. Returned, never raised: refusing would break the legitimate arrangement.
+
+
 ## [0.257.0] — 2026-08-30
 
 ### The setup surface: one join that answers "what does this routine still need?"

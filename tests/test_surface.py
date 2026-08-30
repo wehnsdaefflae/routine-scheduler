@@ -27,7 +27,8 @@ def _server(tmp_path: Path, machines: dict | None = None) -> SimpleNamespace:
 def _cfg(tmp_path: Path, **over) -> SimpleNamespace:
     base = {"slug": "r", "dir": tmp_path / "r", "permissions": [], "rules": [],
             "capabilities": {"actions": [], "utils": [], "util_tags": []}, "grants": {},
-            "fs_read_roots": [], "fs_write_roots": [], "machines": [], "connections": {}}
+            "fs_read_roots": [], "fs_write_roots": [], "machines": [], "connections": {},
+            "inherited": {}, "inherited_from": ""}
     base.update(over)
     return SimpleNamespace(**base)
 
@@ -271,3 +272,52 @@ def test_boot_note_never_stops_a_run_when_the_library_is_broken(tmp_path, monkey
         transcript=SimpleNamespace(event=lambda k, p: None)))
     boot_mod._setup_gap_note(loop)      # server has no libraries_home at all
     assert loop.messages == []
+
+
+# --- the inverse misconfiguration: a capability no held doc asks for ----------------------
+
+@pytest.mark.usefixtures("empty_store")
+def test_a_capability_no_held_doc_requires_is_reported(tmp_path):
+    """Three deliberate designs each correctly decline to catch this one: the floor binds a
+    routine's OWN mapping at save; a group's block is not floored (a member may hold the doc);
+    and enforcement is capabilities-only so prose can never widen anything. So a group can hand
+    a member a reserved util with no conduct doc behind it and every layer stays silent."""
+    server = _server(tmp_path)
+    _util(server, "discord")
+    _doc(server, "permissions", "messaging-discord",
+         "---\ntags: [a]\nrequires:\n  utils: [discord]\n---\n# permission: x — y\n")
+    orphan = _cfg(tmp_path, permissions=[], capabilities={"utils": ["discord"]})
+    node = _by_id(routine_surface(server, orphan), "util:discord")
+    assert node and node["severity"] == NOTE
+    assert "no held conduct doc requires it" in node["why"]
+    # nothing is BROKEN — the routine really can call it, which is the point of reporting
+    assert routine_surface(server, orphan)["verdict"]["ready"] is True
+
+    covered = _cfg(tmp_path, permissions=["messaging-discord"],
+                   capabilities={"utils": ["discord"]})
+    assert _by_id(routine_surface(server, covered), "util:discord") is None
+
+
+@pytest.mark.usefixtures("empty_store")
+def test_an_orphan_capability_names_the_group_it_came_from(tmp_path):
+    """Provenance is the whole value here: 'you did not set this, your group did' is what
+    turns an unexplained capability into a fixable one."""
+    server = _server(tmp_path)
+    _util(server, "discord")
+    cfg = _cfg(tmp_path, capabilities={"utils": ["discord"]})
+    cfg.inherited = {"capabilities": "1 from the group"}
+    cfg.inherited_from = "Morning Brief"
+    node = _by_id(routine_surface(server, cfg), "util:discord")
+    assert "Morning Brief" in node["why"]
+
+
+@pytest.mark.usefixtures("empty_store")
+def test_a_gated_action_with_no_covering_doc_is_reported_too(tmp_path):
+    server = _server(tmp_path)
+    cfg = _cfg(tmp_path, capabilities={"actions": ["write_util"]})
+    assert _by_id(routine_surface(server, cfg), "action:write_util")["severity"] == NOTE
+    # the library-predates-the-kind fallback still counts: holding the canonical source doc
+    # covers the kind even when that doc's requires: never named it
+    covered = _cfg(tmp_path, permissions=["util-authoring"],
+                   capabilities={"actions": ["write_util"]})
+    assert _by_id(routine_surface(server, covered), "action:write_util") is None

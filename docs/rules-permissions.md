@@ -91,6 +91,24 @@ lets one function answer at all four moments it matters:
 The engine note is advisory and never refuses to start: a diagnostic that can stop a run is
 worse than the gap it reports, so a broken library yields no note rather than a dead run.
 
+#### The gap it also closes: a capability no held doc asks for
+
+Three deliberate designs meet at one blind spot, and each correctly declines to catch it:
+
+1. the **floor** binds a routine's OWN mapping, at save;
+2. a **group's** config block is deliberately not floored at its own save — a member may hold
+   the covering doc itself, and flooring the group in isolation would delete a capability that
+   is legitimately covered;
+3. **enforcement reads capabilities only**, precisely so the doc layer can never widen what a
+   run may do.
+
+So a group can hand its members a reserved util or a gated kind with no conduct doc behind it,
+and every layer stays silent. Nothing is broken when it happens — the routine really can do the
+thing — which is why it is REPORTED rather than corrected: the surface shows it per routine
+however it got there (naming the group when the group supplied it), and the group PATCH returns
+a warning naming it at the moment somebody saves. Neither refuses, because refusing would break
+the legitimate member-holds-the-doc arrangement.
+
 Enforcement reads **capabilities only** (`grants.py` builds the run policy from the
 routine's own mapping); a doc-without-capability misconfiguration therefore fails
 closed. Which utils are reservable at all is library-defined (the union of every doc's
