@@ -139,3 +139,36 @@ part retention deletes first. So the case index needs its own durable record fro
 it will confidently report convergence over whatever window happens to survive.
 
 ---
+
+---
+
+## `fs:` narrowing review — the candidate set is five utils, not a hundred
+
+**Decided in conversation 2026-08-30; no finding.** 0.256.0 gave every util an `fs:` header and
+narrowed each subprocess jail to `grant ∩ declaration`. The ~110 already-existing utils were
+migrated MECHANICALLY to `fs: roots`, which preserved their previous exposure exactly and was the
+only safe move at the time — but nobody has since asked which of them declare more than they use.
+
+**What the review found (static pass over the live library, 136 utils).** There is no bulk edit
+to make; the intuition that "utils touching only caller-supplied paths could be narrowed" does
+not survive contact with the header vocabulary: `roots` MEANS the run's granted roots, so a util
+that opens whatever path its caller names needs exactly `roots` and cannot be narrowed without a
+new declaration form (`fs: args`, only the paths on the command line) that does not exist and
+would be its own decision.
+
+- 113 of the 123 `fs: roots` utils perform a filesystem operation in their own source.
+- 10 do not. Five of those spawn a child that plausibly does and must keep `roots`:
+  `captcha-fetch`, `job-scrape`, `rsched-lint`, `shell`, `surface-captcha-to-user`.
+- **The candidate set is the other five** — no filesystem call and no subprocess anywhere in
+  their source, i.e. pure network clients that could declare `fs: none`:
+  `darknet`, `proemion`, `remote`, `rutorrent-rpc`, `uncensored-model-list`.
+
+**First increment.** Read those five and change the ones that are genuinely path-free, one at a
+time, each with its `--selftest` still green. `remote` needs the closest look: the engine mounts a
+machine's sshfs share under `<routine>/mnt/<name>/`, so the question is whether the util itself
+ever reaches into that mount or only ever execs over SSH.
+
+**Not a linter.** The signal is "declares more than it uses", which no check can assert without
+knowing what a util is for; a rule that fires on 113 correct declarations would be turned off in a
+week. This is a review somebody does once, then re-does when the count of `fs: roots` utils has
+grown enough to be worth it.

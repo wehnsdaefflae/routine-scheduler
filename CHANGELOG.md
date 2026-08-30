@@ -17,6 +17,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.267.0] — 2026-08-30
+
+### The library's blast radius is on the page; three read-only answers stopped being invisible
+
+- **The Library tab previews what a save would break — and asks.** `library_impact` has computed
+  each holder's setup surface against the current library and against the proposed one since
+  0.256.0; `POST /api/library/{kind}/{slug}/impact` has served it — with no caller. The tab
+  saved blind; the server's only defence was a 409 naming an `impact_digest` no UI could
+  echo back, so a breaking save was a dead end rather than a decision. Now the preview runs
+  BEFORE every write: a change that breaks nobody goes straight through; one that breaks
+  somebody names each routine and the rows it gains, then confirms with that digest. Opening a
+  document states who holds it, because "one copy, no migration, reaches every holder at its
+  next run" is the fact you need before you start typing, not after.
+- **Deleting is previewed too** — the widest change of all and the one path with no impact
+  check at all. `preview_impact` grew its own body (`ImpactBody`, `content` optional) so the
+  deletion question the module always modelled is finally askable; `DocBody.content` is
+  required, which is why it was not.
+- **`library-drift` records have a renderer.** `daemon/library_watch.py` files one whenever a
+  library commit newly BLOCKS a routine that holds the changed document; `pending.js` knew
+  only the two creation kinds — so a drift record fell through to the group branch and rendered
+  as `group: ?` beside a "create it" button whose only possible answer was a 400. They get
+  their own band: what broke, what it costs, a link to the routine where the fix lives, and
+  dismiss. Nothing proposed them, so nothing tells a "proposer" they were discarded either
+  (`notify_proposer` returns False for a record no run queued — that routine is the victim).
+- **A group's orphan-capability warnings are shown.** `PATCH /api/groups/{id}` has returned
+  `warnings` naming every capability switched on in the shared config that no permission in
+  that config requires; nothing read them. The editor now renders them and keeps them across
+  its own re-render, so the one moment somebody is looking is the moment they are told.
+- **`docs/prompt-anatomy.md` caught up with 0.261.0.** It still said the recipe unlocks when a
+  write root covers the routine's own dir; own-recipe writes have been the `write_recipe`
+  capability (via `recipe-authoring`) since that release; `routine.yaml` — which the same
+  sentence lumped in with them — stays never-writable by any run. The `harness.py` comment
+  carried the same stale derivation.
+- **`docs/designs.md`** records the `fs:` narrowing review: of 123 utils mechanically migrated
+  to `fs: roots`, 113 perform a filesystem operation in their own source and 5 of the
+  remaining 10 spawn a child that plausibly does. The candidate set is five, not a hundred — and
+  the "narrow the caller-supplied-path utils" idea needs a declaration form that does not exist.
+
 ## [0.266.0] — 2026-08-30
 
 ### Branch a conversation from the reply you are reading

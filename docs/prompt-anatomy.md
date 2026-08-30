@@ -258,8 +258,14 @@ Reply again with ONLY one JSON object matching the action schema — no prose ou
 
 Up to 3 attempts; the last drops the provider-side schema constraint. Disallowed kinds and
 switched-off capabilities (`write_util`, `memory_*`, reserved utils, previous-run reads) and
-own-recipe/config writes (never permitted — the routine-improver's beat) are corrected the
-same way — the error names the way out. For a switched-off capability the way out is a
+own-recipe/config writes are corrected the same way — the error names the way out. The two
+halves of that last pair part company since 0.261.0: **routine.yaml stays never-writable by
+any run** ("no run edits it, not even the routine-improver … file a deferred ask_user
+instead"), while an own-RECIPE write (`main.md` / `stages/` / `tuning.yaml`) is a capability
+the routine may hold — denied without it as "editing this routine's own recipe (main.md /
+stages/ / tuning.yaml) needs the recipe-authoring permission, which this routine does not hold
+— its instructions are the user's. File a deferred ask_user (or a report) describing the
+change instead" (engine/fileops.py `_write_gate`). For a switched-off capability the way out is a
 typed ACCESS REQUEST (grants.request_route): `If it is essential, request it: ask_user
 with request: "<entity-id>" and a question saying what you need it for` (with mode
 "blocking" if the run cannot proceed without it, deferred otherwise), closing with
@@ -376,10 +382,13 @@ You have NO shell. The ONLY way to run code is a global util (the `util` action)
 
 Ownership of prose: your recipe is self-contained — the WORKFLOW below (its main.md entry and the stages/<name>.md modules it routes to) fully defines your task: goal, deliverable, constraints, completion criteria. It is the single source of truth for what to do. Cross-cutting conduct (when to ask the user, research discipline, what to record) is set by the GENERAL RULES that bind you — named at the end of the workflow below and read with read_rule before the situation each one governs. A rule states a principle, not a procedure: apply it to the case in front of you. The prose lives once in the shared library, so a revision reaches every routine holding that rule; WHICH rules bind you is the user's config, and rewriting one needs the rule-authoring capability. Your own recipe (main.md, stages/) is READ-ONLY to you — the routine-improver meta routine refines recipes; routine.yaml config is the user's — file a deferred ask_user for changes you believe are needed. What you are ALLOWED to do (util authoring, reserved channels, memory, previous runs) is a separate matter: CAPABILITIES, set only by the user and enforced by the engine on every action — the held permissions' notes below state the conduct for each.
 
-> **Variant — recipe unlocked:** when a user-granted `fs_write_root` covers the routine's own
-> dir (the routine-improver's case; `grants.recipe_unlocked`), the recipe sentence instead
-> reads "Your own recipe (main.md, stages/, tuning.yaml) IS WRITABLE to you this
-> run…" — the prompt always states what the engine actually enforces.
+> **Variant — recipe unlocked:** own-recipe writes are a CAPABILITY since 0.261.0 —
+> `write_recipe`, held through the **recipe-authoring** conduct doc (`engine/loopsetup.py`
+> derives `grants.recipe_unlocked` from it, plus the `revise` leg). A write root covering the
+> routine's own dir no longer unlocks anything, so the routine-improver holds the doc like any
+> other holder. When it is held, the recipe sentence instead reads "Your own recipe (main.md,
+> stages/, tuning.yaml) IS WRITABLE to you this run…" — the prompt always states what the
+> engine actually enforces.
 
 Budgets for this run: 60 turns, 45 minutes, unlimited total tokens, at most 8 subruns (depth ≤ 2). Spend them on the workflow's priorities. These are a CEILING, not a pace: work until the job (or a step of it worth handing over) is actually done, then `finish` deliberately. When the budget runs out you get exactly ONE reserved turn and it can only be a finish — so a summary you wrote at a point you chose always beats one written against that wall.
 

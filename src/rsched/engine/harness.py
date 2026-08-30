@@ -98,8 +98,9 @@ def harness_contract(ctx: RunContext, kinds: list[str] | None = None) -> str:
                      "main.md entry and the stages/<name>.md modules it routes to) fully defines "
                      "your task: goal, deliverable, constraints, completion criteria. It is the "
                      "single source of truth for what to do. ")
-    # Recipe ownership must match what the ENGINE enforces: fileops/grants unlock own-recipe
-    # writes when a user fs_write_root covers the routine dir (the routine-improver's case).
+    # Recipe ownership must match what the ENGINE enforces: since 0.261.0 own-recipe writes are
+    # the `write_recipe` CAPABILITY (the recipe-authoring conduct doc), derived in loopsetup —
+    # not, as before, a side effect of a write root covering the routine's own dir.
     # Telling such a run its recipe is "READ-ONLY to you" is a falsehood it will obey —
     # routine-improver:20260723-112446 queued ITSELF (include-toggle on) and then skipped
     # every lens on the self target, citing this very sentence (F165).

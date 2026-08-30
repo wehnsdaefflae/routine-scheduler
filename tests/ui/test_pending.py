@@ -79,3 +79,40 @@ def test_a_group_proposal_reads_as_a_group_change(ui, ui_page):
 def test_no_proposals_means_no_band_at_all(ui, ui_page):
     ui_page.goto(f"{ui.url}/#/questions")
     expect(ui_page.locator(".q-group-head", has_text="queued creations")).to_be_hidden()
+
+
+def test_a_library_drift_record_gets_its_own_band_and_no_create_button(ui, ui_page):
+    """`daemon/library_watch.py` has filed `library-drift` records since 0.257.0, but the band
+    only ever knew the two CREATION kinds: a drift record fell through to the group branch and
+    rendered as "group: ?" beside a "create it" button whose only possible answer is a 400.
+    Nothing proposed a drift record and nothing can materialize one — the fix is on the routine.
+    """
+    d = ui.routines / ".control" / "pending-creations"
+    d.mkdir(parents=True, exist_ok=True)
+    atomic_write_json(d / "pc-20260828-040000-bbbbbb.json", {
+        "id": "pc-20260828-040000-bbbbbb", "kind": "library-drift", "routine": "uir",
+        "run_id": "", "created_at": "2026-08-28T04:00:00+02:00",
+        "summary": "uir: secret:ZULIP_API_KEY — needed by zulip. After library change abc12345",
+        "fields": {"entity": "uir:secret:ZULIP_API_KEY", "head": "abc12345deadbeef",
+                   "node": {"id": "secret:ZULIP_API_KEY", "severity": "blocks",
+                            "why": "needed by zulip",
+                            "effect": "not in the secrets store — the call runs without it"}}})
+    ui_page.goto(f"{ui.url}/#/questions")
+
+    band = ui_page.locator(".q-group-head", has_text="library drift")
+    expect(band).to_be_visible(timeout=10_000)
+    card = ui_page.locator("[data-drift]")
+    expect(card).to_contain_text("uir")
+    expect(card).to_contain_text("secret:ZULIP_API_KEY")
+    expect(card).to_contain_text("needed by zulip")
+    # the fix lives on the routine, so that is where the record points — and nothing here
+    # pretends the record can be materialized
+    expect(card.get_by_role("link", name="open the routine")).to_have_attribute(
+        "href", "#/routine/uir")
+    expect(ui_page.get_by_role("button", name="create it")).to_have_count(0)
+
+    card.get_by_role("button", name="dismiss").click()
+    expect(ui_page.locator("[data-drift]")).to_have_count(0, timeout=10_000)
+    assert list(d.glob("pc-*.json")) == []
+    # nothing was messaged: `uir` is the routine the drift BROKE, not a proposer
+    assert list((ui.routine_dir("uir") / "inbox").glob("msg-pending-*.json")) == []

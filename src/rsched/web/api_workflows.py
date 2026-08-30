@@ -150,9 +150,23 @@ def _require_digest(request: Request, kind: str, slug: str, content: str | None,
                           f"{result['digest']} to confirm")
 
 
+class ImpactBody(BaseModel):
+    """The preview's own body, because it asks a QUESTION rather than proposing a save: an
+    absent `content` means DELETION, which `library_impact.impact` has always modelled and no
+    caller could ask for — `DocBody.content` is required, so the most destructive case was the
+    one the endpoint could not answer.
+    """
+
+    content: str | None = None
+
+
 @router.post("/library/{kind}/{slug}/impact")
-def preview_impact(request: Request, kind: str, slug: str, body: DocBody) -> dict:
-    """Who holds this document, and what would this content do to them (D-setup-coherence)."""
+def preview_impact(request: Request, kind: str, slug: str, body: ImpactBody) -> dict:
+    """Who holds this document; what would this content do to them (D-setup-coherence).
+
+    Read-only: it writes nothing and decides nothing. The Library tab calls it before every
+    save and before every delete, so the blast radius is seen rather than discovered.
+    """
     if kind not in _IMPACT_KIND:
         raise HTTPException(404, f"unknown library kind {kind!r}")
     return _impact_for(request, kind, slug, body.content)

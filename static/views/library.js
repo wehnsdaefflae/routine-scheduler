@@ -5,6 +5,7 @@
 
 import { api } from "/static/api.js";
 import { confirmDialog } from "/static/components/dialog.js";
+import { impactPanel } from "/static/components/impact.js";
 import { codeEditor } from "/static/components/code.js";
 import { replaceHash, remount } from "/static/router.js";
 import { el, emptyState, requiresSummary, skeleton, tagChip, toast, when } from "/static/util.js";
@@ -135,9 +136,11 @@ export async function render(view, sub, query = {}) {
       await api(`/api/workflows/${slug}`, { method: "DELETE" });
       return true;
     };
+    // A workflow PATTERN has no holders: a routine is born from one and keeps its own recipe,
+    // so editing it reaches nobody retroactively and there is no blast radius to preview.
     showEditor(`workflow: ${slug}`, d.content, d.log, async (content) =>
-      api(`/api/workflows/${slug}`, { method: "PUT", body: { content } }), "python",
-      wfDelete);
+      api(`/api/workflows/${slug}`, { method: "PUT", body: { content } }),
+      { lang: "python", del: wfDelete });
   }
   async function openDoc(kind, slug) {
     openSub = `${kind.slice(0, -1)}/${slug}`; updateURL();
@@ -155,10 +158,11 @@ export async function render(view, sub, query = {}) {
       await api(`/api/library/rules/${slug}`, { method: "DELETE" });
       return true;
     } : undefined;
-    showEditor(`${kind.slice(0, -1)}: ${slug}`, d.content, d.log, async (content) =>
+    showEditor(`${kind.slice(0, -1)}: ${slug}`, d.content, d.log, async (content, digest) =>
       api(`/api/library/${kind}/${slug}`, { method: "PUT",
-        body: { content, ...(requires ? { requires: requires.value() } : {}) } }),
-      undefined, docDelete, requires?.node);
+        body: { content, ...(requires ? { requires: requires.value() } : {}),
+                ...(digest ? { impact_digest: digest } : {}) } }),
+      { del: docDelete, extra: requires?.node, impact: impactPanel(kind, slug) });
   }
 
   // Author a fresh rule/permission doc: a lint-satisfying template plus a slug field; save
@@ -187,7 +191,8 @@ export async function render(view, sub, query = {}) {
       await api(`/api/library/${kind}/${slug}`, { method: "PUT",
         body: { content, ...(requires ? { requires: requires.value() } : {}) } });
       await openDoc(kind, slug);   // reopen as the saved doc: URL, git history, panel state
-    }, undefined, undefined, requires ? el("div", {}, head, requires.node) : head);
+      // a doc that does not exist yet is held by nobody — no impact panel until it is saved
+    }, { extra: requires ? el("div", {}, head, requires.node) : head });
   }
 
   // The capabilities a permission doc's instructions presume. Prefilled from the doc's
@@ -227,15 +232,18 @@ export async function render(view, sub, query = {}) {
   async function openUtil(name) {
     openSub = `util/${name}`; updateURL();
     const d = await api(`/api/library/utils/${name}`);
-    showEditor(`util: ${name} (selftest-gated)`, d.content, null, async (content) =>
-      api(`/api/library/utils/${name}`, { method: "PUT", body: { content } }), "python",
-      async () => {
-        if (!(await confirmDialog(`Delete util "${name}"? Every routine loses it at its next run. `
-                     + "It is git-versioned — recoverable from history.",
-                     { confirmLabel: "delete" }))) return false;
-        await api(`/api/library/utils/${name}`, { method: "DELETE" });
-        return true;
-      });
+    showEditor(`util: ${name} (selftest-gated)`, d.content, null, async (content, digest) =>
+      api(`/api/library/utils/${name}`, { method: "PUT",
+        body: { content, ...(digest ? { impact_digest: digest } : {}) } }),
+      { lang: "python",
+        del: async () => {
+          if (!(await confirmDialog(`Delete util "${name}"? Every routine loses it at its next run. `
+                       + "It is git-versioned — recoverable from history.",
+                       { confirmLabel: "delete" }))) return false;
+          await api(`/api/library/utils/${name}`, { method: "DELETE" });
+          return true;
+        },
+        impact: impactPanel("utils", name) });
   }
 
   // A playbook is a subfolder (MAIN.md + optional detail files) — the editor edits MAIN.md; its
@@ -264,18 +272,23 @@ export async function render(view, sub, query = {}) {
             return el("div", {}, link, pre);
           }))
       : null;
+    // A playbook is picked up per conversation, never HELD in a routine's config — nothing to
+    // preview a blast radius over.
     showEditor(`playbook: ${slug} (MAIN.md)`, d.content, d.log, async (content) =>
-      api(`/api/playbooks/${slug}`, { method: "PUT", body: { content } }), undefined,
-      async () => {
+      api(`/api/playbooks/${slug}`, { method: "PUT", body: { content } }),
+      { del: async () => {
         if (!(await confirmDialog(`Delete playbook "${slug}"? It is git-versioned — recoverable from history.`, { confirmLabel: "delete" }))) return false;
         await api(`/api/playbooks/${slug}`, { method: "DELETE" });
         return true;
-      }, extra);
+      }, extra });
   }
 
   // workflows + utils are Python → highlighted editor; rules/permissions are markdown → plain.
   // `extra` renders above the editor (the permissions requires: panel).
-  function showEditor(label, content, log, save, lang, del, extra) {
+  // `impact` is the blast-radius panel (components/impact.js) for the kinds one copy of which
+  // reaches every holder: it states WHO holds the doc on open; it gates both save and delete
+  // on what a change would cost them. Kinds nobody HOLDS (workflows, playbooks) pass none.
+  function showEditor(label, content, log, save, { lang, del, extra, impact } = {}) {
     editor.replaceChildren();
     const ed = codeEditor(content, { lang, minHeight: 360 });
     const errBox = el("div", {});
@@ -284,6 +297,12 @@ export async function render(view, sub, query = {}) {
       delBtn.onclick = async () => {
         delBtn.disabled = true;
         try {
+          // A deletion is the widest change of all — the holders lose the document with
+          // nothing to fall back on — and it was the one path with no impact check at all.
+          if (impact && (await impact.gate(null, { verb: "delete" })) === null) {
+            delBtn.disabled = false;
+            return;
+          }
           if (await del()) {
             toast("deleted + committed");
             openSub = null;     // the deep link points at a file that no longer exists
@@ -300,7 +319,11 @@ export async function render(view, sub, query = {}) {
       btn.disabled = true;
       errBox.replaceChildren();
       try {
-        await save(ed.value);
+        // Preview BEFORE the write, always: a breaking save is confirmed with the digest the
+        // preview returned, so the server's 409 (which no UI could answer) never fires.
+        const digest = impact ? await impact.gate(ed.value, { verb: "save" }) : "";
+        if (digest === null) { btn.disabled = false; return; }
+        await save(ed.value, digest);
         toast("saved + committed");
         remount();   // refresh the list/tags in place; the deep link reopens this editor
         return;
@@ -315,6 +338,7 @@ export async function render(view, sub, query = {}) {
     };
     editor.append(el("h2", {}, label),
       extra || "",
+      impact ? el("div", { class: "panel" }, impact.node) : "",
       el("div", { class: "panel" }, ed.node,
         el("div", { class: "row mt" }, btn, delBtn),
         errBox,

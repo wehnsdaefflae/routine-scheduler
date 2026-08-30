@@ -150,10 +150,18 @@ export function openGroupEditor(group, data, { reload }) {
   const body = el("div", { class: "mt", "data-group": g.id });
   const ov = overlay(`Group “${g.name}”`, body, { onClose: reload });
 
+  // A save's `warnings` name ORPHAN capabilities — switched on in the group's shared config
+  // with no permission in that config requiring them, so they reach only the members that
+  // happen to hold a covering doc themselves. Legal, nearly always a mistake — and impossible
+  // to notice anywhere downstream: the server has said this since the shared-config editor
+  // shipped and nothing had ever shown it. They survive the re-render, so the operator reads
+  // them after the panel repaints rather than losing them to it.
+  let warnings = [];
   const patch = async (fields) => {
     try {
       const r = await api(`/api/groups/${g.id}`, { method: "PATCH", body: fields });
       g = r.group;
+      warnings = r.warnings || [];
       render();
     } catch (ex) { err(ex); render(); }
   };
@@ -161,6 +169,12 @@ export function openGroupEditor(group, data, { reload }) {
 
   function render() {
     body.replaceChildren();
+    if (warnings.length) {
+      body.append(el("div", { class: "panel warn", "data-group-warnings": "" },
+        el("div", { class: "small" }, el("b", {}, "⚠ switched on, but nothing here asks for it")),
+        el("ul", { class: "small", style: "margin:6px 0 0;padding-left:18px" },
+          warnings.map((w) => el("li", {}, w)))));
+    }
 
     // rename — applies on change (blur/Enter), like every other immediate-save control here
     const nameIn = el("input", { type: "text", value: g.name, "data-group-name": "",

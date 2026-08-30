@@ -1035,3 +1035,10 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
 .tpl-chip.dropped { opacity: 0.55; }
 .tpl-chip.dropped .tpl-chip-name { text-decoration: line-through; }
 .tpl-chip .btn.small { padding: 0 5px; line-height: 16px; font-size: 10px; }
+
+/* --- library blast radius: who holds this doc; what a change costs them -------------- */
+.impact-panel { padding: 11px 14px; }
+.impact-breaks { border-top: 1px solid var(--line); padding-top: 8px; }
+.impact-break { margin-top: 6px; font-size: 12px; }
+.impact-gains { margin: 4px 0 0; padding-left: 18px; }
+.impact-gains li { margin-bottom: 4px; }

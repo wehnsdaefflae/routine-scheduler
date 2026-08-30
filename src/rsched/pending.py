@@ -101,6 +101,11 @@ def notify_proposer(server: ServerConfig, rec: dict, outcome: str) -> bool:
     NEXT scheduled run drains. Returns False when the proposing routine is gone (a proposal can
     outlive its author; that is not an error, it just has nobody to tell).
     """
+    # A record no RUN queued has no proposer to tell. `library-drift` (daemon/library_watch.py)
+    # is filed BY the daemon ABOUT a routine, so its `routine` is the victim, not the author —
+    # messaging it "your proposal was discarded" would be a message about something it never did.
+    if not rec.get("run_id"):
+        return False
     routine_dir = server.routines_home / str(rec.get("routine") or "")
     if not (routine_dir / "routine.yaml").is_file():
         return False
