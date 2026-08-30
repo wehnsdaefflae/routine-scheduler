@@ -137,6 +137,54 @@ export function renderConfigSections(view, d, { slug, titleH1, chipHost, runChip
     + "(the recurring schedule above is unaffected).",
     scheduleOnceCard(slug)));
 
+  // -- settings template: the named starting point the four panels below layer over -------
+  const tplHost = el("div", {});
+  view.append(...settingsSection("Settings template",
+    ["a named starting point for this routine's whole conduct surface — its conduct docs, ",
+     "capabilities, general rules and grants. It layers UNDER this routine's own settings, so ",
+     "everything below stays editable and anything you set here wins. Nothing is copied: ",
+     "editing the template in the library reaches every routine that adopted it."],
+    tplHost));
+  (async () => {
+    let lib;
+    try { lib = await api("/api/library"); } catch { return; }
+    const tpls = lib.templates || [];
+    const sel = el("select", {},
+      el("option", { value: "" }, "— none (set everything on this routine) —"),
+      ...tpls.map((t) => el("option", { value: t.slug, selected: d.template === t.slug ? "" : null },
+                            `${t.slug} — ${t.summary}`)));
+    const detail = el("div", { class: "muted small mt" });
+    const paint = () => {
+      const t = tpls.find((x) => x.slug === sel.value);
+      if (!t) {
+        detail.replaceChildren("Nothing is inherited — every setting below is this routine's own.");
+        return;
+      }
+      const c = t.config || {};
+      const caps = c.capabilities || {};
+      detail.replaceChildren(
+        el("div", { class: "prose" }, t.summary),
+        el("div", { class: "mt" }, "supplies ",
+          el("b", {}, `${(c.permissions || []).length} conduct docs`), ", ",
+          el("b", {}, `${(c.rules || []).length} general rules`), ", ",
+          el("b", {}, `${(caps.actions || []).length} actions`),
+          (caps.utils || []).length ? ` and ${caps.utils.length} reserved util(s)` : "",
+          " · previous runs: ", el("code", {}, caps.runs || "none"),
+          el("a", { href: `#/library?doc=templates/${t.slug}`, style: "margin-left:10px" },
+             "read it")));
+    };
+    sel.onchange = paint;
+    paint();
+    tplHost.replaceChildren(el("div", { class: "row" }, sel,
+      el("button", { class: "btn primary", onclick: async () => {
+        try {
+          await api(`/api/routines/${slug}`, { method: "PATCH", body: { template: sel.value } });
+          toast(sel.value ? `template: ${sel.value} — applies from the next run`
+                          : "template cleared");
+        } catch (err) { toast(err.message, 4000, { error: true }); }
+      } }, "save template")), detail);
+  })();
+
   // -- permissions: conduct docs + machine-enforced capabilities (user-only) --------
   // The server re-applies the activation cascade on save, so the panel re-renders from a
   // fresh detail read IN PLACE — the old full page reload is gone.

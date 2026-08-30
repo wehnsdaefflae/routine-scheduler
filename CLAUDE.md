@@ -14,7 +14,10 @@ permission), and every util subprocess runs inside a Landlock sandbox scoped to 
 permissions INTERSECTED with the util's own `fs:` declaration (docs/sandboxing.md). The instruction contains only the task; cross-cutting conduct is
 a set of GENERAL RULES with ONE library copy each (`rules:` in routine.yaml holds slugs — the run
 reads the prose with `read_rule` and applies the principle to its own case); schedule, PERMISSIONS,
-workdir, budgets, and model roles are routine config (`routine.yaml` / UI).
+workdir, budgets, and model roles are routine config (`routine.yaml` / UI) — usually adopted
+wholesale from a library **settings TEMPLATE** (`rsched/templates.py`) that layers under the
+group's shared config, which layers under the routine's own file; `template_except:` subtracts,
+so adopting one costs no granularity.
 
 ## Where the detail lives
 

@@ -295,6 +295,44 @@ A new routine's default: `write_util` (confirm `always`) + the memory pair, no r
 no run history, no rule authoring — matching the default permission set below. `read_rule` is
 not listed because it is not gated.
 
+### Settings templates — the named starting point
+
+Reading the 28 live routines, the five setup layers are almost never chosen independently:
+eight rules are held by two thirds of them, `memory` + `util-authoring` + `util-revision` by
+nearly all, and the differences fall into a handful of recognisable JOBS. A **template**
+(`<libraries_home>/templates/<slug>.md`) bundles that: the same keys a group's shared config
+carries, adopted with one `template:` key.
+
+The layering, most specific first:
+
+    the routine's own routine.yaml   >   its group's config   >   its template
+
+Each layer fills only what the one above left unset, with the union/merge rules the group merge
+already uses — so adopting a template SUBTRACTS nothing. To go the other way, `template_except:`
+names permission slugs, rule slugs, utils or gated actions to drop after the merge; without it a
+routine could add to a template but never subtract from one, and adopting one would cost exactly
+the granularity it exists to preserve.
+
+The shipped six, inferred from what the live routines actually hold rather than invented:
+
+| template | for |
+|---|---|
+| `basic` | thinks, reads and reports — nothing outside its own directory |
+| `watcher` | checks the world on a schedule and records what changed |
+| `correspondent` | drafts and sends things to people in your name |
+| `steward` | tends one project over weeks and publishes a page you can check |
+| `operator` | acts on files, folders and machines you own |
+| `maintainer` | maintains this instance — its library, its routines, itself |
+
+Two capabilities are deliberately NOT template defaults, because their blast radius is the
+instance itself and they deserve a per-routine decision: `recipe-authoring` (rewriting a
+routine's own instructions) and `shell`. Filesystem roots and machine bindings are absent for a
+different reason — they name paths and hosts specific to this instance, so they stay per routine.
+
+A template is an ordinary library document: versioned, linted (`lint_template_text`), editable
+on the Library tab, and a revision reaches every adopter at its next run — which is why
+`library_impact` treats it like any other.
+
 ### A group can hold the shared half (D82)
 
 Routines that belong to a **group** inherit its `config:` block — permissions, capabilities,

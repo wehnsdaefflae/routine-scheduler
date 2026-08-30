@@ -8,10 +8,16 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
-from .. import utils_header, utils_run
+from .. import templates, utils_header, utils_run
 from ..paths import atomic_write
 from ..workflows import library
-from ..workflows.lint import lint_all, lint_permission_text, lint_rule_text, lint_workflow_py
+from ..workflows.lint import (
+    lint_all,
+    lint_permission_text,
+    lint_rule_text,
+    lint_template_text,
+    lint_workflow_py,
+)
 
 router = APIRouter(tags=["workflows"])
 
@@ -45,6 +51,10 @@ def library_overview(request: Request) -> dict:
                   for r in library_docs.list_docs(server.rules_home)],
         "permissions": [{**p, "problems": lint.get(f"permissions/{p['slug']}.md", [])}
                         for p in library_docs.list_docs(server.permissions_home)],
+        # Settings TEMPLATES: the named starting points a routine or a group adopts. Carried
+        # in the same payload as the docs they bundle, because the routine page's picker and
+        # the Library tab's editor read the one call.
+        "templates": templates.list_templates(server.libraries_home),
         "playbooks": [{**p, "problems": lint.get(f"playbooks/{p['slug']}/MAIN.md", [])}
                       for p in playbooks.list_playbooks(home)],
         "utils": utils_lib.list_utils(server.libraries_home),
@@ -62,6 +72,8 @@ def _docs_home(request: Request, kind: str):
         return server.rules_home
     if kind == "permissions":
         return server.permissions_home
+    if kind == "templates":
+        return templates.templates_home(server.libraries_home)
     raise HTTPException(404, f"unknown library doc kind {kind!r}")
 
 
@@ -107,7 +119,8 @@ class DocBody(BaseModel):
 # that closes it: the client previews, the preview returns a digest, and the save carries it
 # back. A library that MOVED in between yields a different digest and the save is refused —
 # which is the point, since the whole hazard is a change nobody saw the consequences of.
-_IMPACT_KIND = {"utils": "util", "rules": "rule", "permissions": "permission"}
+_IMPACT_KIND = {"utils": "util", "rules": "rule", "permissions": "permission",
+                "templates": "template"}
 
 
 def _impact_for(request: Request, kind: str, slug: str, content: str | None) -> dict:
@@ -168,8 +181,9 @@ def put_library_doc(request: Request, kind: str, slug: str, body: DocBody) -> di
             raise HTTPException(422, f"invalid frontmatter: {exc}") from exc
         post.metadata["requires"] = req
         content = fm.dumps(post, sort_keys=False)
-    problems = (lint_rule_text(content, filename=f"{slug}.md")
-                if kind == "rules" else lint_permission_text(content, filename=f"{slug}.md"))
+    linter = {"rules": lint_rule_text, "templates": lint_template_text}.get(
+        kind, lint_permission_text)
+    problems = linter(content, filename=f"{slug}.md")
     if problems:
         raise HTTPException(422, "; ".join(problems))
     _require_digest(request, kind, slug, content, body.impact_digest)

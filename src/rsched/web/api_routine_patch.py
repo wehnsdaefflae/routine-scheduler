@@ -37,6 +37,8 @@ class RoutinePatch(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     enabled: bool | None = None
+    template: str | None = None             # the library settings template this routine adopts
+    template_except: list[str] | None = None   # what it drops from that template
     schedule: dict | None = None            # {"friendly":…, "catchup":…} (cron built server-side)
     budgets: dict | None = None
     models: dict | None = None              # {main|tool_call|uncensored: catalog name}
@@ -122,6 +124,11 @@ def patch_routine(request: Request, slug: str, patch: RoutinePatch) -> dict:
     path = info.cfg.dir / "routine.yaml"
     raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     updates = patch.model_dump(exclude_none=True)
+    if patch.template_except is not None:
+        # Deduped and order-stable: this list is read by name at config load, and a duplicate
+        # or a stray blank would be a silent no-op rather than an error.
+        updates["template_except"] = list(dict.fromkeys(
+            x.strip() for x in patch.template_except if isinstance(x, str) and x.strip()))
     # `updated` reports every field this PATCH applied. Captured BEFORE the appliers pop
     # what they consume (models/connections/machines/grants/keep_runs/schedule) — the
     # response and commit message must not under-report, because the Decisions page's

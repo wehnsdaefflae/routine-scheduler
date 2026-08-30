@@ -17,6 +17,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.262.0] — 2026-08-30
+
+### Settings templates: one named starting point instead of five scattered decisions
+
+A routine's setup was five separate decisions — held conduct docs, the capability mapping,
+secret exposure, filesystem roots, bound rules — spread across as many panels and almost never
+made independently. Reading the 28 live routines makes that concrete: eight rules are held by
+two thirds of them, `memory` + `util-authoring` + `util-revision` by nearly all, and the
+differences fall into a handful of recognisable JOBS.
+
+- **`rsched/templates.py` + `<libraries_home>/templates/*.md`.** A template carries the same
+  keys a GROUP's shared config carries and layers under it:
+  `the routine's own routine.yaml > its group's config > its template`. Each layer fills only
+  what the one above left unset, with the union/merge rules the group merge already uses, so
+  adopting a template **subtracts nothing**.
+- **`template_except:` subtracts.** Without it a routine could add to a template but never drop
+  from one, and adopting one would cost exactly the granularity it exists to preserve. It names
+  permission slugs, rule slugs, utils or gated actions to remove after the merge.
+- **Six templates, inferred from the live routines rather than invented**: `basic`, `watcher`,
+  `correspondent`, `steward`, `operator`, `maintainer`. Two capabilities are deliberately NOT
+  template defaults because their blast radius is the instance itself — `recipe-authoring` and
+  `shell`; filesystem roots and machine bindings are absent because they name paths and hosts
+  specific to one instance.
+- **A group can name a template too** (`template` joins `groups.CONFIG_KEYS`), resolved after
+  the group merge so a member's own choice still wins.
+- Templates are ordinary library documents: linted (`lint_template_text`), editable on the
+  Library tab, carried in the `/api/library` payload, and covered by `library_impact` — a
+  revision reaches every adopter at its next run, like every other library edit.
+- The routine page gains a **Settings template** section naming what the template supplies, and
+  `rsched validate` reports a routine pointing at a template the library no longer has (a note:
+  it runs on its own config rather than failing to load).
+
+**Migration**: all 28 live routines adopted a template. **326 permission and rule entries moved
+out of 28 routine files into 6 templates**, verified against a before/after snapshot of every
+routine's EFFECTIVE config: **nothing was lost**, and the 16 capability-level gains are named in
+the release notes rather than left to be discovered.
+
+
 ## [0.261.0] — 2026-08-30
 
 ### Editing your own instructions is a permission; unbinding a rule now lands on a live run

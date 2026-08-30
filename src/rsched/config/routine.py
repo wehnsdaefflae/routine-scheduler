@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from functools import lru_cache
 from pathlib import Path
 from typing import Literal, cast
 
@@ -38,6 +39,16 @@ class RoutineConfig(_Config):
 
     slug: str
     dir: Path
+    # The SETTINGS TEMPLATE this routine adopts (library `templates/<slug>.md`) — a named
+    # starting point for permissions, capabilities, rules, grants and roots. It layers UNDER
+    # the group's shared config, which layers under this file: every field stays editable
+    # here and an override is an ordinary routine.yaml key (rsched/templates.py).
+    template: BlankableStr = ""
+    # What this routine DROPS from what its template (or group) supplies. The shared layers
+    # merge as a UNION — the group model's rule, kept — so without this a routine could add to
+    # a template but never subtract from one, and adopting a template would cost granularity.
+    # Names a permission slug, a rule slug, a util or a gated action; anything else is ignored.
+    template_except: list[str] = Field(default_factory=list)
     name: BlankableStr = ""
     enabled: bool = True
     tags: list[str] = Field(default_factory=list)  # freeform, for filtering (e.g. "meta")
@@ -244,6 +255,32 @@ def record_grants(routine_dir: Path, updates: dict[str, bool]) -> None:
     atomic_write(path, yaml.safe_dump(raw, sort_keys=False, allow_unicode=True))
 
 
+
+
+@lru_cache(maxsize=4)
+def _libraries_home_cached(config_path: str, stamp: float) -> Path:  # noqa: ARG001
+    # `stamp` is the cache KEY (config.yaml's mtime), not an input.
+    from .server import load_server_config
+
+    return load_server_config(Path(config_path))[0].libraries_home
+
+
+def _libraries_home_for(_routine_dir: Path) -> Path:
+    """Where the templates live. Unlike the groups store — which sits beside the routine by
+    filesystem convention — the library home is server config, so it is read from there and
+    cached on the config file's mtime: `load_routine` runs on every registry scan and must not
+    re-parse config.yaml per routine.
+    """
+    from .server import config_file
+
+    path = config_file()
+    try:
+        stamp = path.stat().st_mtime
+    except OSError:
+        return Path("/nonexistent")
+    return _libraries_home_cached(str(path), stamp)
+
+
 def load_routine(routine_dir: Path) -> tuple[RoutineConfig | None, list[str]]:
     """Parse <dir>/routine.yaml, then layer the shared config of any group the routine belongs
     to underneath it (D82 — the group is a default, the routine's own keys win). Returns
@@ -284,6 +321,28 @@ def load_routine(routine_dir: Path) -> tuple[RoutineConfig | None, list[str]]:
     inherited: dict[str, str] = {}
     if group_config:
         raw, inherited = apply_group_config(raw, group_config)
+    # …then the TEMPLATE, which is the broadest default. Order matters: each merge only fills
+    # what is still unset, so applying the group first keeps own > group > template. The group
+    # may also NAME the template, which is why it is resolved after that merge.
+    template_slug = str(raw.get("template") or "")
+    if template_slug:
+        from ..templates import config_for as _template_config
+
+        tpl = _template_config(_libraries_home_for(routine_dir), template_slug)
+        if tpl:
+            raw, from_template = apply_group_config(raw, tpl)
+            for key in from_template:
+                inherited.setdefault(key, f"{from_template[key]} from the template")
+    drop = {str(x) for x in (raw.get("template_except") or []) if isinstance(x, str)}
+    if drop:
+        for key in ("permissions", "rules"):
+            raw[key] = [v for v in (raw.get(key) or []) if v not in drop]
+        caps = dict(raw.get("capabilities") or {})
+        for key in ("actions", "utils", "util_tags"):
+            if caps.get(key):
+                caps[key] = [v for v in caps[key] if v not in drop]
+        if caps:
+            raw["capabilities"] = caps
     cfg = _validate_lenient(RoutineConfig, {**raw, "slug": slug, "dir": routine_dir}, problems) \
         or RoutineConfig(slug=slug, dir=routine_dir)
     cfg.inherited, cfg.inherited_from = inherited, (group_name if inherited else "")

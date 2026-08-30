@@ -100,6 +100,42 @@ def lint_rule_text(raw: str, *, filename: str) -> list[str]:
     return problems
 
 
+def lint_template_text(raw: str, *, filename: str) -> list[str]:
+    """A settings template: titled, tagged, and carrying a `config:` block restricted to the
+    keys a GROUP may share — one vocabulary for both layers, so "where do I set this?" has one
+    answer. The named permissions and rules must exist; a template pointing at a doc the
+    library lost would silently give its adopters nothing.
+    """
+    from ..grants import normalize_capabilities
+    from ..groups import CONFIG_KEYS
+
+    problems: list[str] = []
+    try:
+        meta, body = frontmatter.parse(raw)
+    except yaml.YAMLError as exc:
+        return [f"{filename}: invalid YAML frontmatter: {exc}"]
+    if not body.strip().startswith("# template:"):
+        problems.append(f"{filename}: body must start with '# template: <name> — <summary>'")
+    tags = meta.get("tags")
+    if len([t for t in (tags if isinstance(tags, list) else []) if str(t).strip()]) < 3:
+        problems.append(f"{filename}: needs at least 3 tags")
+    config = meta.get("config")
+    if not isinstance(config, dict) or not config:
+        problems.append(f"{filename}: needs a non-empty config: block — a template that "
+                        "carries nothing is a name with no meaning")
+        return problems
+    problems += [f"{filename}: config.{k}: not a shareable key "
+                 f"(expected one of {', '.join(CONFIG_KEYS)})"
+                 for k in config if k not in CONFIG_KEYS]
+    if "capabilities" in config:
+        problems += [f"{filename}: {p}" for p in
+                     normalize_capabilities(config["capabilities"],
+                                            label="config.capabilities")[1]]
+    if "template" in config:
+        problems.append(f"{filename}: a template cannot name another template")
+    return problems
+
+
 def lint_permission_text(raw: str, *, filename: str) -> list[str]:
     """A permission is a conduct doc: titled, with a well-formed `requires:` key naming
     the capabilities its instructions presume, and a SHORT body (it doubles as the

@@ -29,7 +29,7 @@ from .paths import atomic_write
 
 # Title before the em-dash may be a kebab slug OR a readable phrase ("ask policy"); the summary is
 # whatever follows the em-dash. (Splitting on a bare hyphen would swallow hyphens inside a slug.)
-DOC_RE = re.compile(r"^#\s*(?:rule|permission):\s*(?P<slug>.+?)\s*—\s*(?P<summary>.+)$",
+DOC_RE = re.compile(r"^#\s*(?:rule|permission|template):\s*(?P<slug>.+?)\s*—\s*(?P<summary>.+)$",
                     re.MULTILINE)
 
 
