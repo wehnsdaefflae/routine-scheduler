@@ -111,6 +111,19 @@ def list_routines(request: Request) -> list[dict]:
     return [_card(request, info, monthly=monthly) for info in _catalog(request).values()]
 
 
+@router.get("/routines/{slug}/surface")
+def routine_setup_surface(request: Request, slug: str) -> dict:
+    """What this routine still needs — the forward reading of the dependency graph.
+
+    Derived live on every call, never stored: the library moves under a routine (a run may
+    revise the utils and rules it is made of), so a persisted answer would be stale the first
+    time somebody ran write_util.
+    """
+    from ..readmodels.surface import routine_surface
+
+    return routine_surface(_state(request).server, _info(request, slug).cfg)
+
+
 @router.get("/routines/{slug}")
 def routine_detail(request: Request, slug: str) -> dict:
     info = _info(request, slug)

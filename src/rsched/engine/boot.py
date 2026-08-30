@@ -158,7 +158,44 @@ def boot(loop) -> None:
                 ctx.routine.dir, loop.consumed_dir,
                 vias=inbox.LIVE_MESSAGE_VIAS if resuming else None):
             _ingest(loop, extra, resuming=True)
+        _setup_gap_note(loop)     # fresh boot AND resume: the library may have moved between
     ctx.write_status("running")
+
+
+
+def _setup_gap_note(loop) -> None:
+    """The fourth evaluation moment: tell the run what its setup is MISSING, before turn one.
+
+    The other three (the routine page, `rsched validate`, the authoring approval) all address a
+    person. This one addresses the run, and it exists because the alternative is the failure
+    mode the whole surface was built to remove: a run discovers at turn nine that the util it
+    needs cannot reach its credential store, having already spent nine turns planning around a
+    capability it does not really have.
+
+    Advisory only — it never refuses to start. A broken library or an unreadable store yields
+    no note rather than a dead run: a diagnostic that can stop a run is worse than the gap it
+    reports.
+    """
+    from ..readmodels.surface import routine_surface, surface_lines
+
+    ctx = loop.ctx
+    if ctx.depth > 0:                # a child inherits its parent's resources, not its config
+        return
+    try:
+        lines = surface_lines(routine_surface(ctx.server, ctx.routine))
+    except (OSError, ValueError, AttributeError):
+        return
+    if not lines:
+        return
+    body = "\n".join(f"- {ln}" for ln in lines)
+    note = ("ENGINE NOTE: this routine's setup has gaps its own config cannot close. Plan "
+            "around them — do not spend turns discovering them.\n" + body
+            + "\nFAIL means the call will be rejected or fail outright; WARN means it will "
+              "stop to ask you. Report anything that blocks the task in your finish summary "
+              "so the user can grant it.")
+    ctx.transcript.event("user_injection", {"text": "[engine] setup gaps at boot",
+                                            "source": "engine"})
+    loop.messages.append({"role": "user", "content": note})
 
 
 def _ingest(loop, msgs: list[dict], *, resuming: bool) -> None:

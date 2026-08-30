@@ -79,8 +79,10 @@ one you are about to touch, not all of them.
   path), streaming events. `--model kind=catalog-name` overrides a model role (catalog names, not endpoint:model pairs); `--quiet` drops the stream.
 - `uv run rsched daemon` — scheduler + web UI in one process (what systemd runs).
 - `uv run rsched validate | lint | suggest --instruction … | scaffold <slug> --workflow … | abort <slug>[:<ts>]`
-  — see `rsched --help`. `validate` checks every routine's `routine.yaml` AND lints its recipe
-  prose (`main.md`, `stages/`); `lint` covers the library. `engine-run` is internal
+  — see `rsched --help`. `validate` checks every routine's `routine.yaml`, lints its recipe
+  prose (`main.md`, `stages/`) AND reports its SETUP SURFACE (`readmodels/surface.py`: what the
+  held docs, bound rules and reserved utils still need — a `blocks` row fails the command, a
+  `warn`/`note` row is reported only); `lint` covers the library. `engine-run` is internal
   (daemon-spawned).
 
 ## Core contracts — extend, never repurpose

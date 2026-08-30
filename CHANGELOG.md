@@ -17,6 +17,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.257.0] — 2026-08-30
+
+### The setup surface: one join that answers "what does this routine still need?"
+
+Stage two of the setup-coherence work. 0.256.0 added the missing DECLARATIONS; this reads them.
+
+- **`readmodels/surface.py`** joins a routine's effective config (group inheritance merged) with
+  the library's `requires:`/`expects:` and with the util HEADERS of every reserved util it holds
+  — walked transitively over `calls:` — plus the live secrets store, machine catalog and
+  connection registry. Every unmet need is reported with what it will COST: `blocks` (the call
+  is rejected or fails), `interrupts` (the run stops mid-way to ask you) or `note`.
+- **Nothing is stored.** The library moves under a routine, so a persisted resolution would be
+  stale the first time somebody ran `write_util`. One function, recomputed at every read,
+  answers at all four moments: the routine page, `validate`, run boot, the turn boundary.
+- **`GET /api/routines/{slug}/surface`** — the read-only endpoint.
+- **`rsched validate` now checks coherence**, not only well-formedness. A routine can parse
+  perfectly and still hold a rule telling it to publish into a directory it cannot write. A
+  `blocks` row fails the command; a warn or a note is reported and leaves the exit code green.
+- **Run boot files an engine note** naming the gaps, so a run plans around them instead of
+  discovering at turn nine that a util cannot reach its credential store. Advisory: a broken
+  library yields no note rather than a dead run, and a child (which inherits its parent's
+  resources, not its config) never gets one.
+- **`expects:` stays advisory in the read model too** — it can produce an `interrupts` row but
+  never a `blocks` one. A soft edge that fails a build is just a worse `requires:`.
+- Two library corrections the first run of the linter earned: `git-checkpoint` lost the
+  `expects: fs-write` it briefly had (its own prose already handles "this is not a repo", so the
+  row was noise on every holder), and `telegram` marks `TELEGRAM_2FA_PASSWORD` OPTIONAL — only a
+  2FA-enabled account needs it, which is exactly what the `?` marker is for.
+
+**First run against the live instance: 28 routines, 11 blocking rows across 5 of them** —
+including a routine holding three messengers whose session stores no grant covers, one whose
+Discord secrets are declined forever while it holds `messaging-discord`, and two holding conduct
+docs whose capabilities are switched off (enforcement reads capabilities only, so they fail
+closed). None of these was visible anywhere in the console before.
+
+
 ## [0.256.1] — 2026-08-30
 
 ### An unset `$VAR` in an `fs:` declaration names no path

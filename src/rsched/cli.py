@@ -133,13 +133,29 @@ def cmd_validate(args) -> int:
                sorted(p for p in server.routines_home.iterdir()
                       if p.is_dir() and not p.name.startswith("."))
                if server.routines_home.is_dir() else [])
+    from .readmodels.surface import routine_surface, surface_lines
+
     for d in targets:
         cfg, problems = load_routine(d)
-        status = "ok" if cfg and not problems else "PROBLEMS"
+        # Setup COHERENCE is a second, independent question from "is the file well-formed":
+        # a routine can parse perfectly and still hold a rule that tells it to publish into a
+        # directory it cannot write. Only a blocking row fails the command — an interrupt or a
+        # note is reported and does not turn the exit code red.
+        lines: list[str] = []
+        if cfg:
+            try:
+                lines = surface_lines(routine_surface(server, cfg))
+            except (OSError, ValueError) as exc:      # a broken library must not fail validate
+                lines = [f"NOTE  setup surface unavailable: {exc}"]
+        blocking = [ln for ln in lines if ln.startswith("FAIL")]
+        status = "ok" if cfg and not problems and not blocking else "PROBLEMS"
         print(f"{d.name}: {status}")
         for pr in problems:
             print(f"  - {pr}")
+        for ln in lines:
+            print(f"  {ln}")
         total.extend(problems)
+        total.extend(blocking)
     return 1 if total else 0
 
 

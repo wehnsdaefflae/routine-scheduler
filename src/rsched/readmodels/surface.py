@@ -1,0 +1,281 @@
+"""The SETUP SURFACE — one join answering "what does this routine still need?".
+
+The setup layers (rules, conduct docs, capabilities, secrets, filesystem roots, machines,
+connections) have real interdependencies, but until now the system declared exactly ONE of
+them: a permission doc's `requires:`, pointing at a capability. Everything else was true but
+unwritten, so nothing could render it, lint it or warn about it — a routine holding
+`remote-machines` with no bound machine looked identical to one that was ready, and the gap
+surfaced only when a run burned a turn on an empty host list.
+
+This module is the forward reading of the dependency graph. It joins, per routine:
+
+- the EFFECTIVE config (group inheritance already merged by the registry): held permissions,
+  bound rules, the capability mapping, grants, fs roots, machines, connections;
+- the library's declarations: a permission's `requires:` (necessary, enforced by the cascade)
+  and `expects:` (optional, presumed — legal on rules too, where `requires:` is a lint error);
+- the UTIL HEADERS of every reserved util the routine holds, walked transitively over `calls:`
+  — their `secrets:` and their `fs:` private stores are dependency edges nobody had joined to
+  the routine that holds them;
+- the live stores: the secrets store, the machine catalog, the connection registry.
+
+Nothing is stored. The library MOVES — routines author and revise the utils and rules it is
+made of, one copy each, reaching every holder at its next run — so a resolution persisted into
+routine.yaml would be stale the first time somebody ran `write_util`. It is recomputed at every
+read, which is what lets the same function answer for the routine page, for `rsched validate`
+and at run boot.
+
+The reverse reading ("who depends on this thing?") is a separate question with a separate
+consumer — the authoring approval — and lives apart.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    from ..config.routine import RoutineConfig
+
+# What an unmet need COSTS, worst first. The vocabulary is deliberately about consequence, not
+# about severity in the abstract: the operator's question is "will this break, or interrupt, or
+# is it just worth knowing?", and every row has to answer it.
+BLOCKS = "blocks"           # the call is rejected or fails — the run cannot do the thing
+INTERRUPTS = "interrupts"   # the run stops mid-way to ask, spending a turn and your attention
+NOTE = "note"               # worth knowing; nothing is broken
+OK = "ok"
+_ORDER = {BLOCKS: 0, INTERRUPTS: 1, NOTE: 2, OK: 3}
+
+
+def _covered(path: Path, roots: list[Path]) -> bool:
+    """Is `path` inside (or equal to) one of `roots`? The same containment the sandbox uses."""
+    return any(path == root or root in path.parents for root in roots)
+
+
+def _held_utils(cfg: RoutineConfig, catalog: list[dict]) -> list[str]:
+    """Every reserved util this routine may call: the names it holds, plus every util carrying
+    a gated TAG. Tag gating covers utils the library gains later, so it is read from the live
+    catalog rather than from the mapping.
+    """
+    caps = cfg.capabilities or {}
+    names = set(caps.get("utils") or [])
+    tags = set(caps.get("util_tags") or [])
+    if tags:
+        names |= {u["name"] for u in catalog if tags & set(u.get("tags") or [])}
+    return sorted(names)
+
+
+def _node(eid: str, state: str, severity: str, why: str, effect: str = "",
+          fix: dict | None = None) -> dict:
+    return {"id": eid, "state": state, "severity": severity, "why": why,
+            "effect": effect, "fix": fix or {}}
+
+
+def _secret_nodes(cfg: RoutineConfig, needed: dict[str, list[str]],
+                  store_keys: set[str]) -> list[dict]:
+    """A declared secret is a dependency of whoever declares it. Four outcomes, and the
+    distinction between them is the whole point: absent from the store BLOCKS, undecided
+    INTERRUPTS (one blocking access request at the first call), denied forever BLOCKS.
+
+    Two families are NOT store secrets and must not be reported as missing from it: the machine
+    vars the engine injects from a binding, and a connection's `<PROVIDER>_ACCESS_TOKEN`. Their
+    real dependency is the binding, which the expects: join already covers.
+    """
+    from ..machines import machine_env_vars
+
+    out = []
+    engine_injected = machine_env_vars()
+    grants = cfg.grants or {}
+    for name in sorted(needed):
+        if name in engine_injected or name.endswith("_ACCESS_TOKEN"):
+            continue
+        eid = f"secret:{name}"
+        why = "needed by " + ", ".join(sorted(needed[name]))
+        decided = grants.get(eid)
+        if name not in store_keys:
+            out.append(_node(eid, "absent", BLOCKS, why,
+                             "not in the secrets store — the call runs without it",
+                             {"kind": "add_secret", "name": name}))
+        elif decided is False:
+            out.append(_node(eid, "denied", BLOCKS, why,
+                             "declined forever — the run no longer asks and the call fails",
+                             {"kind": "clear_grant", "entity": eid}))
+        elif decided is True:
+            out.append(_node(eid, "exposed", OK, why))
+        else:
+            out.append(_node(eid, "undecided", INTERRUPTS, why,
+                             "the first call declaring it stops the run to ask you",
+                             {"kind": "grant", "entity": eid}))
+    return out
+
+
+def _fs_nodes(cfg: RoutineConfig, needed: list[tuple[str, str, str]]) -> list[dict]:
+    """`needed` is (mode, path, why). A private store a util declares is only reachable when a
+    granted root covers it — the declaration narrows, it never asks — so an uncovered one is a
+    hard block, not a prompt.
+
+    `$VAR` resolves exactly as `sandbox.wrap` resolves it (daemon environment, never the run's),
+    and an UNSET variable names no path at all, so it is skipped rather than reported: the
+    messengers declare both `$X_SESSION_DIR` and its literal default, and only one of the two
+    ever resolves.
+    """
+    import os
+
+    out = []
+    write_roots = [Path(p) for p in cfg.fs_write_roots or []]
+    read_roots = [Path(p) for p in cfg.fs_read_roots or []]
+    seen: set[str] = set()
+    for mode, declared, why in needed:
+        raw = os.path.expandvars(declared)
+        if "$" in raw or raw in seen:
+            continue
+        seen.add(raw)
+        path = Path(raw).expanduser()
+        eid = f"fs-{'write' if mode == 'rw' else 'read'}:{raw}"
+        ok = (_covered(path, write_roots) if mode == "rw"
+              else _covered(path, write_roots + read_roots))
+        if ok:
+            out.append(_node(eid, "granted", OK, why))
+        else:
+            out.append(_node(eid, "missing", BLOCKS, why,
+                             "no granted root covers it — the util cannot reach it",
+                             {"kind": "add_root", "mode": mode, "path": raw}))
+    return out
+
+
+def _expects_nodes(cfg: RoutineConfig, expects: dict[str, dict],
+                   machine_catalog: dict) -> list[dict]:
+    """The SOFT edge: entities a doc's or a rule's prose presumes. `"*"` means "at least one of
+    this class" — the prose explaining which one lives in the doc body, never in the key.
+    """
+    out: list[dict] = []
+    write_roots = [Path(p) for p in cfg.fs_write_roots or []]
+    read_roots = [Path(p) for p in cfg.fs_read_roots or []]
+    for slug, mapping in sorted(expects.items()):
+        for cls, names in sorted(mapping.items()):
+            for name in names:
+                eid = f"{cls}:{name}"
+                why = f"{slug} expects it"
+                if cls == "machine":
+                    bound = list(cfg.machines or [])
+                    if name == "*":
+                        ok, detail = bool(bound), "no machine is bound to this routine"
+                    else:
+                        ok, detail = name in bound, f"machine {name!r} is not bound"
+                    if not ok and not machine_catalog:
+                        detail += " (and the machine catalog is empty)"
+                    out.append(_node(eid, "bound" if ok else "missing", OK if ok else INTERRUPTS,
+                                     why, "" if ok else detail + " — every call returns nothing",
+                                     {} if ok else {"kind": "bind_machine"}))
+                elif cls in ("fs-write", "fs-read"):
+                    roots = write_roots if cls == "fs-write" else write_roots + read_roots
+                    ok = bool(roots) if name == "*" else _covered(Path(name), roots)
+                    out.append(_node(eid, "granted" if ok else "missing",
+                                     OK if ok else INTERRUPTS, why,
+                                     "" if ok else "the routine has no root the prose can use",
+                                     {} if ok else {"kind": "add_root", "mode": "rw",
+                                                    "path": "" if name == "*" else name}))
+                elif cls == "connection":
+                    ok = bool(cfg.connections) if name == "*" else name in (cfg.connections or {})
+                    out.append(_node(eid, "bound" if ok else "missing",
+                                     OK if ok else INTERRUPTS, why,
+                                     "" if ok else "no account is bound for it"))
+                # secret: expectations are covered by the util-header join, which is the
+                # authority — re-deriving them here would be a second copy that can drift.
+    return out
+
+
+def routine_surface(server: Any, cfg: RoutineConfig) -> dict:
+    """The full setup surface for one routine: `{nodes, verdict}`.
+
+    `nodes` are typed, each carrying WHY it is needed and what an unmet need costs. `verdict`
+    counts them so a caller can decide at a glance whether to shout.
+    """
+    from .. import grants as grants_mod
+    from .. import utils_lib, utils_run
+    from ..secrets import load_secrets
+
+    lib_home = server.libraries_home
+    catalog = utils_lib.list_utils(lib_home)
+    by_name = {u["name"]: u for u in catalog}
+
+    nodes: list[dict] = []
+
+    # -- the soft edge, from held docs AND bound rules (a rule may expect, never require) ----
+    expects = {}
+    perm_expects = grants_mod.read_library_expects(server.permissions_home)
+    rule_expects = grants_mod.read_library_expects(server.rules_home)
+    for slug in cfg.permissions or []:
+        if slug in perm_expects:
+            expects[slug] = perm_expects[slug]
+    for slug in cfg.rules or []:
+        if slug in rule_expects:
+            expects[slug] = rule_expects[slug]
+    machine_catalog = getattr(server, "machines", {}) or {}
+    nodes += _expects_nodes(cfg, expects, machine_catalog)
+
+    # -- the util-header join: what the RESERVED utils this routine holds actually need ------
+    # Utils already declare their secrets and their private filesystem stores; this is the
+    # first thing that reads those declarations on behalf of the routine holding the util.
+    secret_needs: dict[str, list[str]] = {}
+    fs_needs: list[tuple[str, str, str]] = []
+    for name in _held_utils(cfg, catalog):
+        if name not in by_name:
+            nodes.append(_node(f"util:{name}", "absent", BLOCKS,
+                               "held as a reserved util",
+                               "no util by that name is in the library"))
+            continue
+        needs = utils_run.util_needs(lib_home, name)
+        for secret in sorted(needs.secrets - needs.optional):
+            secret_needs.setdefault(secret, []).append(name)
+        for mode, path in needs.fs_paths:
+            fs_needs.append((mode, path, f"the {name} util declares it as a private store"))
+    nodes += _secret_nodes(cfg, secret_needs, set(load_secrets()))
+    nodes += _fs_nodes(cfg, fs_needs)
+
+    # -- a write root over the routine's own dir unlocks own-recipe editing (a fixed rule,
+    #    not a capability) — never wrong, frequently unintended, so: a note. ----------------
+    if _covered(Path(cfg.dir), [Path(p) for p in cfg.fs_write_roots or []]):
+        nodes.append(_node(f"fs-write:{cfg.dir}", "granted", NOTE,
+                           "a write root covers this routine's own directory",
+                           "own-recipe editing is unlocked — the routine-improver's lever"))
+
+    # -- held docs whose requirements the mapping does not cover. The save-time floor makes
+    #    this impossible through the UI, so a hit means the file was edited by hand. --------
+    lib_requires = grants_mod.read_library_requires(server.permissions_home)
+    caps = cfg.capabilities or {}
+    covered_utils = set(_held_utils(cfg, catalog))    # names AND everything a gated tag covers
+    for slug in cfg.permissions or []:
+        req = lib_requires.get(slug) or {}
+        missing = [a for a in req.get("actions") or [] if a not in (caps.get("actions") or [])]
+        missing += [f"util:{u}" for u in req.get("utils") or [] if u not in covered_utils]
+        if missing:
+            nodes.append(_node(f"permission:{slug}", "unsatisfied", BLOCKS,
+                               "held, but its requires: are not switched on",
+                               "enforcement reads capabilities only, so it fails closed: "
+                               + ", ".join(missing)))
+
+    counts = {BLOCKS: 0, INTERRUPTS: 0, NOTE: 0}
+    for n in nodes:
+        if n["severity"] in counts:
+            counts[n["severity"]] += 1
+    nodes.sort(key=lambda n: (_ORDER[n["severity"]], n["id"]))
+    return {
+        "nodes": nodes,
+        "verdict": {"ready": counts[BLOCKS] == 0 and counts[INTERRUPTS] == 0,
+                    "blocks": counts[BLOCKS], "interrupts": counts[INTERRUPTS],
+                    "notes": counts[NOTE]},
+    }
+
+
+def surface_lines(surface: dict) -> list[str]:
+    """The surface as flat text — what `rsched validate` prints and what the engine files as a
+    boot note. One line per unmet node; a ready routine yields nothing at all.
+    """
+    label = {BLOCKS: "FAIL ", INTERRUPTS: "WARN ", NOTE: "NOTE "}
+    out = []
+    for n in surface["nodes"]:
+        if n["severity"] == OK:
+            continue
+        tail = f" — {n['effect']}" if n["effect"] else ""
+        out.append(f"{label[n['severity']]} {n['id']}: {n['why']}{tail}")
+    return out

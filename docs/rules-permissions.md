@@ -68,6 +68,29 @@ that some other declaration already carries: a reserved util's secrets and its p
 filesystem stores come from the util's own docstring header, which the resolver walks
 transitively over `calls:`. Duplicating them here would be a second copy that can drift.
 
+### The setup surface — what reads all of this
+
+`readmodels/surface.py` is the forward reading of the whole dependency graph: it joins the
+routine's EFFECTIVE config (group inheritance merged) with the library's `requires:`/`expects:`
+and with the util HEADERS of every reserved util the routine holds, then reports what is still
+unmet and what an unmet need will COST — `blocks` (the call is rejected or fails), `interrupts`
+(the run stops mid-way to ask you) or `note`.
+
+Nothing is stored. The library MOVES — a run may revise the utils and rules its routine is made
+of, one copy each, reaching every holder at its next run — so a persisted resolution would be
+stale the first time somebody ran `write_util`. It is recomputed at every read, which is what
+lets one function answer at all four moments it matters:
+
+| moment | who reads it | what it catches |
+|---|---|---|
+| the routine page (`GET /api/routines/{slug}/surface`) | you | first setup, and drift that landed since |
+| `rsched validate` | CI and the deploy path | the same, with no page open; a `blocks` row fails the command |
+| run boot (an engine note) | the RUN | gaps it would otherwise discover at turn nine |
+| the turn boundary | the engine | live grants folding into the policy (unchanged) |
+
+The engine note is advisory and never refuses to start: a diagnostic that can stop a run is
+worse than the gap it reports, so a broken library yields no note rather than a dead run.
+
 Enforcement reads **capabilities only** (`grants.py` builds the run policy from the
 routine's own mapping); a doc-without-capability misconfiguration therefore fails
 closed. Which utils are reservable at all is library-defined (the union of every doc's
