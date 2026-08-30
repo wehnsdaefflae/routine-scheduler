@@ -17,6 +17,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.259.0] — 2026-08-30
+
+### Ability cards replace the two-column permissions panel
+
+The last stage of the setup-coherence work, and the one that removes the confusion rather than
+annotating it.
+
+- **`components/abilities.js`** renders one card per conduct doc — which already IS an ability,
+  prose plus the capabilities it presumes — with the whole requirement stack inside it: the
+  capabilities from `requires:`, plus the secrets, private stores and bindings
+  `readmodels/surface.py` derived from the util headers. The card's badge states the verdict
+  (`ready` / `needs a decision` / `will fail`); the stack states why.
+- **The old two-column panel is gone** (`components/permissions.js` deleted). It was faithful
+  to the model and asked the reader to do the join by eye — and only two of an ability's four
+  halves were on that screen at all: the secrets lived in one panel and the filesystem roots in
+  another. Seeing whether "reach a person on Discord" actually worked meant reading four places.
+- **Rows are attributed by machine-readable provenance.** Surface nodes gained a `source`
+  naming the doc or the utils that put them there, so the cards group by declaration rather
+  than by parsing `why` — the join-on-prose mistake invariant 5 exists to prevent.
+- A trailing card collects capabilities no held doc asked for (the group-inheritance blind
+  spot 0.257.1 made visible), so the panel shows what the routine can do AND what nothing on
+  it asked for.
+- One fetch of `/surface` feeds both readers on the routine page: the setup check at the top
+  and the cards below.
+- The panel is used by four surfaces — the routine page, the conversation rail, the new
+  conversation composer and the group editor — so the cards are a drop-in with the same
+  signature. `opts.surface` is optional: a group's shared config and an unsaved conversation
+  have no routine to resolve against and degrade to the two-layer view.
+
+The 153-test browser suite is what made replacing a load-bearing panel safe; three assertions
+moved from the old markup to the cards, and five new ones cover what the cards add.
+
+
 ## [0.258.0] — 2026-08-30
 
 ### The setup surface gets its reverse reading, and a page to show it on

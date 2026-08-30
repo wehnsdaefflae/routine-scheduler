@@ -14,7 +14,7 @@ import { promptDialog } from "/static/components/dialog.js";
 import { filePicker } from "/static/components/filepicker.js";
 import { rootsEditor } from "/static/components/fsroots.js";
 import { connectionsCard } from "/static/components/connections.js";
-import { permissionsPanel } from "/static/components/permissions.js";
+import { abilitiesPanel } from "/static/components/abilities.js";
 import { rulePicker } from "/static/components/rulepicker.js";
 import { settingsSection } from "/static/components/settings-section.js";
 import { forgetField } from "/static/formpersist.js";
@@ -96,7 +96,7 @@ export function mountComposerOnly(main) {
     if (b.max_turns != null) turnsIn.placeholder = String(b.max_turns);
     if (b.max_wall_clock_min != null) minsIn.placeholder = String(b.max_wall_clock_min);
     if (b.max_total_tokens != null) tokIn.placeholder = String(b.max_total_tokens);
-    permPanel = permissionsPanel(d.permissions, d.capabilities, {
+    permPanel = abilitiesPanel(d.permissions, d.capabilities, {
       disableRuns: "a conversation is one continuous run — previous-run depth is routine-only" });
     permsHost.replaceChildren(permPanel.node);
     // no onSave → the picker renders no apply button; its `selected` rides the form

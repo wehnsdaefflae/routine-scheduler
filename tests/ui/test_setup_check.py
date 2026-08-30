@@ -65,3 +65,44 @@ def test_a_note_renders_without_making_the_strip_look_broken(ui_page, ui):
     row = ui_page.locator(".setup-row.sev-note")
     assert row.count() == 1
     assert "own-recipe editing is unlocked" in row.inner_text()
+
+
+# --- ability cards: the join the two-column panel asked the reader to do -------------------
+
+def test_a_resolved_need_appears_inside_the_ability_that_owns_it(ui_page, ui):
+    """The point of the card view. Under the two-column panel, seeing whether "reach a person
+    on Discord" actually worked meant reading the doc column, the capability column, and then
+    two other panels. Here the session store the util declares sits in the card for the doc
+    that reserves it, attributed by the surface's machine-readable `source` rather than by
+    parsing its prose."""
+    d = ui.server_cfg.libraries_home / "utils" / "discord"
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "main.py").write_text(
+        '"""discord — t.\n\nusage: gu discord\ncalls: (none)\ntags: t\n'
+        'secrets: (none)\nnet: none\nfs: rw /srv/discord-state\n"""\n', encoding="utf-8")
+    path = ui.routines / "uir" / "routine.yaml"
+    cfg = yaml.safe_load(path.read_text(encoding="utf-8"))
+    cfg["permissions"] = ["messaging-discord"]
+    cfg["capabilities"] = {"actions": [], "utils": ["discord"], "util_tags": []}
+    path.write_text(yaml.safe_dump(cfg), encoding="utf-8")
+
+    ui_page.goto(f"{ui.url}/#/routine/uir")
+    card = ui_page.locator('.ability[data-ability="messaging-discord"]')
+    card.wait_for(state="visible", timeout=10000)
+    # the capability it requires AND the store that capability turned out to need, together
+    assert card.locator('.ab-row[data-entity="discord"]').count() >= 1
+    store = card.locator('.ab-row[data-entity="/srv/discord-state"]')
+    assert store.count() == 1
+    assert "blocks" in (store.get_attribute("class") or "")
+    # and the card's own badge states the verdict without the reader adding it up
+    assert "will fail" in card.locator(".pill").inner_text()
+
+
+def test_an_ability_that_is_off_shows_no_resolved_needs(ui_page, ui):
+    """An unheld doc has no resolved needs to show — listing them would read as outstanding
+    work for something the routine is not doing."""
+    ui_page.goto(f"{ui.url}/#/routine/uir")
+    card = ui_page.locator('.ability[data-ability="shell"]')
+    card.wait_for(state="visible", timeout=10000)
+    assert card.locator("input[type=checkbox]").is_checked() is False
+    assert "off" in card.locator(".pill").inner_text()

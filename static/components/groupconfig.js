@@ -2,7 +2,7 @@
 // here instead of N times across the members. Mounted as a collapsible section inside the
 // group editor overlay (components/groupmanage.js).
 //
-// It deliberately reuses the ROUTINE page's own controls — permissionsPanel, rulePicker,
+// It deliberately reuses the ROUTINE page's own controls — abilitiesPanel, rulePicker,
 // rootsEditor, connectionsCard — so a group's permissions look and behave exactly like a
 // routine's. A lookalike built here would drift from them the first time either changes.
 //
@@ -15,7 +15,7 @@
 import { api } from "/static/api.js";
 import { connectionsCard } from "/static/components/connections.js";
 import { rootsEditor } from "/static/components/fsroots.js";
-import { permissionsPanel } from "/static/components/permissions.js";
+import { abilitiesPanel } from "/static/components/abilities.js";
 import { rulePicker } from "/static/components/rulepicker.js";
 import { el, toast } from "/static/util.js";
 
@@ -51,7 +51,7 @@ export function groupConfigPanel(g, { save }) {
 
   // -- permissions + capabilities: the routine page's own two-layer control -----------------
   const permHost = el("div", { class: "mt" });
-  const buildPerms = (layers) => permissionsPanel(layers.permissions, layers.capabilities, {
+  const buildPerms = (layers) => abilitiesPanel(layers.permissions, layers.capabilities, {
     onSave: async (payload) => {
       const next = cfg();
       next.permissions = payload.active || [];

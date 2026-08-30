@@ -68,9 +68,11 @@ export async function render(view, slug, query = {}) {
   // --- setup check: what the panels below ADD UP TO. Above the fold and above the hero's
   // detail, because a routine that cannot do its job should say so before it says anything
   // else. Rendered async and silent when there is nothing outstanding.
+  // ONE fetch feeds both readers of the surface: the strip here, and the ability cards
+  // below, which hang each resolved need under the ability that owns it.
   const setupHost = el("div", {});
   view.append(setupHost);
-  setupCheck(setupHost, slug);
+  d.surface = await setupCheck(setupHost, slug);
 
   async function runNow(e) {
     e.target.disabled = true;

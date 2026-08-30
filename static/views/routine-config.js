@@ -10,7 +10,7 @@ import { connectionsCard } from "/static/components/connections.js";
 import { deliberationControl } from "/static/components/deliberation.js";
 import { el, skeleton, toast, when } from "/static/util.js";
 import { machinesCard } from "/static/components/machines.js";
-import { permissionsPanel } from "/static/components/permissions.js";
+import { abilitiesPanel } from "/static/components/abilities.js";
 import { rootsEditor } from "/static/components/fsroots.js";
 import { routineSecretsCard } from "/static/components/routine-secrets.js";
 import { scheduleEditor } from "/static/components/schedule.js";
@@ -141,7 +141,8 @@ export function renderConfigSections(view, d, { slug, titleH1, chipHost, runChip
   // The server re-applies the activation cascade on save, so the panel re-renders from a
   // fresh detail read IN PLACE — the old full page reload is gone.
   const permHost = el("div", {});
-  const buildPermPanel = (perms, caps) => permissionsPanel(perms, caps, {
+  const buildPermPanel = (perms, caps) => abilitiesPanel(perms, caps, {
+    surface: d.surface,
     onSave: async (payload) => {
       try {
         await api(`/api/routines/${slug}/permissions`, { method: "PUT", body: payload });

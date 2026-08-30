@@ -65,9 +65,13 @@ def _held_utils(cfg: RoutineConfig, catalog: list[dict]) -> list[str]:
 
 
 def _node(eid: str, state: str, severity: str, why: str, effect: str = "",
-          fix: dict | None = None) -> dict:
+          fix: dict | None = None, source: dict | None = None) -> dict:
+    """One typed need. `source` is machine-readable PROVENANCE — which conduct doc or which
+    util put this row here — so a UI can group rows under the ability that owns them without
+    parsing `why`. Joining on prose is exactly what invariant 5 forbids.
+    """
     return {"id": eid, "state": state, "severity": severity, "why": why,
-            "effect": effect, "fix": fix or {}}
+            "effect": effect, "fix": fix or {}, "source": source or {}}
 
 
 def _secret_nodes(cfg: RoutineConfig, needed: dict[str, list[str]],
@@ -90,25 +94,26 @@ def _secret_nodes(cfg: RoutineConfig, needed: dict[str, list[str]],
             continue
         eid = f"secret:{name}"
         why = "needed by " + ", ".join(sorted(needed[name]))
+        src = {"utils": sorted(needed[name])}
         decided = grants.get(eid)
         if name not in store_keys:
             out.append(_node(eid, "absent", BLOCKS, why,
                              "not in the secrets store — the call runs without it",
-                             {"kind": "add_secret", "name": name}))
+                             {"kind": "add_secret", "name": name}, src))
         elif decided is False:
             out.append(_node(eid, "denied", BLOCKS, why,
                              "declined forever — the run no longer asks and the call fails",
-                             {"kind": "clear_grant", "entity": eid}))
+                             {"kind": "clear_grant", "entity": eid}, src))
         elif decided is True:
-            out.append(_node(eid, "exposed", OK, why))
+            out.append(_node(eid, "exposed", OK, why, source=src))
         else:
             out.append(_node(eid, "undecided", INTERRUPTS, why,
                              "the first call declaring it stops the run to ask you",
-                             {"kind": "grant", "entity": eid}))
+                             {"kind": "grant", "entity": eid}, src))
     return out
 
 
-def _fs_nodes(cfg: RoutineConfig, needed: list[tuple[str, str, str]]) -> list[dict]:
+def _fs_nodes(cfg: RoutineConfig, needed: list[tuple[str, str, str, str]]) -> list[dict]:
     """`needed` is (mode, path, why). A private store a util declares is only reachable when a
     granted root covers it — the declaration narrows, it never asks — so an uncovered one is a
     hard block, not a prompt.
@@ -124,7 +129,7 @@ def _fs_nodes(cfg: RoutineConfig, needed: list[tuple[str, str, str]]) -> list[di
     write_roots = [Path(p) for p in cfg.fs_write_roots or []]
     read_roots = [Path(p) for p in cfg.fs_read_roots or []]
     seen: set[str] = set()
-    for mode, declared, why in needed:
+    for mode, declared, why, util in needed:
         raw = os.path.expandvars(declared)
         if "$" in raw or raw in seen:
             continue
@@ -133,12 +138,13 @@ def _fs_nodes(cfg: RoutineConfig, needed: list[tuple[str, str, str]]) -> list[di
         eid = f"fs-{'write' if mode == 'rw' else 'read'}:{raw}"
         ok = (_covered(path, write_roots) if mode == "rw"
               else _covered(path, write_roots + read_roots))
+        src = {"utils": [util]}
         if ok:
-            out.append(_node(eid, "granted", OK, why))
+            out.append(_node(eid, "granted", OK, why, source=src))
         else:
             out.append(_node(eid, "missing", BLOCKS, why,
                              "no granted root covers it — the util cannot reach it",
-                             {"kind": "add_root", "mode": mode, "path": raw}))
+                             {"kind": "add_root", "mode": mode, "path": raw}, src))
     return out
 
 
@@ -155,6 +161,7 @@ def _expects_nodes(cfg: RoutineConfig, expects: dict[str, dict],
             for name in names:
                 eid = f"{cls}:{name}"
                 why = f"{slug} expects it"
+                src = {"doc": slug}
                 if cls == "machine":
                     bound = list(cfg.machines or [])
                     if name == "*":
@@ -165,7 +172,7 @@ def _expects_nodes(cfg: RoutineConfig, expects: dict[str, dict],
                         detail += " (and the machine catalog is empty)"
                     out.append(_node(eid, "bound" if ok else "missing", OK if ok else INTERRUPTS,
                                      why, "" if ok else detail + " — every call returns nothing",
-                                     {} if ok else {"kind": "bind_machine"}))
+                                     {} if ok else {"kind": "bind_machine"}, src))
                 elif cls in ("fs-write", "fs-read"):
                     roots = write_roots if cls == "fs-write" else write_roots + read_roots
                     ok = bool(roots) if name == "*" else _covered(Path(name), roots)
@@ -173,12 +180,12 @@ def _expects_nodes(cfg: RoutineConfig, expects: dict[str, dict],
                                      OK if ok else INTERRUPTS, why,
                                      "" if ok else "the routine has no root the prose can use",
                                      {} if ok else {"kind": "add_root", "mode": "rw",
-                                                    "path": "" if name == "*" else name}))
+                                                    "path": "" if name == "*" else name}, src))
                 elif cls == "connection":
                     ok = bool(cfg.connections) if name == "*" else name in (cfg.connections or {})
                     out.append(_node(eid, "bound" if ok else "missing",
                                      OK if ok else INTERRUPTS, why,
-                                     "" if ok else "no account is bound for it"))
+                                     "" if ok else "no account is bound for it", source=src))
                 # secret: expectations are covered by the util-header join, which is the
                 # authority — re-deriving them here would be a second copy that can drift.
     return out
@@ -217,7 +224,7 @@ def routine_surface(server: Any, cfg: RoutineConfig) -> dict:
     # Utils already declare their secrets and their private filesystem stores; this is the
     # first thing that reads those declarations on behalf of the routine holding the util.
     secret_needs: dict[str, list[str]] = {}
-    fs_needs: list[tuple[str, str, str]] = []
+    fs_needs: list[tuple[str, str, str, str]] = []
     for name in _held_utils(cfg, catalog):
         if name not in by_name:
             nodes.append(_node(f"util:{name}", "absent", BLOCKS,
@@ -228,7 +235,8 @@ def routine_surface(server: Any, cfg: RoutineConfig) -> dict:
         for secret in sorted(needs.secrets - needs.optional):
             secret_needs.setdefault(secret, []).append(name)
         for mode, path in needs.fs_paths:
-            fs_needs.append((mode, path, f"the {name} util declares it as a private store"))
+            fs_needs.append((mode, path,
+                             f"the {name} util declares it as a private store", name))
     nodes += _secret_nodes(cfg, secret_needs, set(load_secrets()))
     nodes += _fs_nodes(cfg, fs_needs)
 
@@ -252,7 +260,7 @@ def routine_surface(server: Any, cfg: RoutineConfig) -> dict:
             nodes.append(_node(f"permission:{slug}", "unsatisfied", BLOCKS,
                                "held, but its requires: are not switched on",
                                "enforcement reads capabilities only, so it fails closed: "
-                               + ", ".join(missing)))
+                               + ", ".join(missing), source={"doc": slug}))
 
     # -- the INVERSE misconfiguration: a capability no held doc asks for. -----------------
     # Three deliberate designs meet here and none of them catches it on its own. The floor is

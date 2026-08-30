@@ -475,9 +475,18 @@ docs (they ride the cascade; they grant nothing).
 
 ## Working with them
 
-- **See** a routine's surface: the routine page's *Permissions & capabilities* panel —
-  conduct docs left (each with its `▸ needs …` line), capabilities right (each badged
-  with the held docs requiring it). Its rules: the *General rules* panel below it.
+- **See** a routine's surface: the routine page's *Permissions & capabilities* panel — one
+  ABILITY CARD per conduct doc, with everything that ability depends on inside it: the
+  capabilities its `requires:` names, and the secrets, private stores and bindings the resolver
+  derived from the util headers. The card's badge states the verdict (`ready` / `needs a
+  decision` / `will fail`) so the reader never adds it up. A final card collects capabilities no
+  held doc asked for. Its rules: the *General rules* panel below it.
+
+  This replaced a two-column layout (docs left, capabilities right, each badged with what
+  required it). That was faithful to the model and asked the reader to do the join by eye —
+  and only two of an ability's four halves were even on that screen; the secrets and the
+  filesystem roots were on other panels. Rows are attributed by the surface's machine-readable
+  `source`, never by parsing its prose.
 - **Change** either layer there (takes effect next run; the cascades keep them
   consistent). Bind or unbind a rule in the *General rules* panel; change what a rule SAYS on
   the Library tab — or let the rules-review routine revise it from run evidence.

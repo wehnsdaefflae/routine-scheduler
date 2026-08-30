@@ -9,7 +9,7 @@ import { machinesCard } from "/static/components/machines.js";
 import { deliberationControl } from "/static/components/deliberation.js";
 import { confirmDialog } from "/static/components/dialog.js";
 import { rootsEditor } from "/static/components/fsroots.js";
-import { permissionsPanel } from "/static/components/permissions.js";
+import { abilitiesPanel } from "/static/components/abilities.js";
 import { tagsEditor } from "/static/components/tags.js";
 import { rulePicker } from "/static/components/rulepicker.js";
 import { navigate } from "/static/router.js";
@@ -148,7 +148,7 @@ export function renderHead(head, detail, stateChip, { slug, isLive, onListChange
     el("span", { class: "faint small", style: "min-width:150px;padding-top:4px" },
       "deliberation — thinking on paper"),
     delib.node));
-  capBody.append(permissionsPanel(detail.permissions, detail.capabilities, {
+  capBody.append(abilitiesPanel(detail.permissions, detail.capabilities, {
     disableRuns: "a conversation is one continuous run — previous-run depth is routine-only",
     saveLabel: "save permissions",
     onSave: async (payload) => {

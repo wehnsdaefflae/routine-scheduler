@@ -945,7 +945,7 @@ def test_routine_page_saves(ui, ui_page):
     # permissions: the panel re-renders in place from the server's post-cascade state
     perm_panel = ui_page.locator(
         ".panel", has=ui_page.get_by_role("button", name="save permissions"))
-    perm_panel.locator(".toggle-row input").first.check()
+    perm_panel.locator(".ability-head input").first.check()
     ui_page.get_by_role("button", name="save permissions").click()
     expect(_toast(ui_page)).to_contain_text("permissions saved")
     ui_page.wait_for_timeout(600)
@@ -966,9 +966,8 @@ def test_routine_page_permission_help_and_doc_expand(ui, ui_page):
     expect(perm_panel.get_by_text("become a proper util", exact=False)).to_be_visible()
     expect(perm_panel.get_by_text("two-hour bulk conversion", exact=False)).to_be_visible()
 
-    # a conduct-permission row expands to the full library doc without flipping its checkbox
-    row = perm_panel.locator(
-        ".perm-doc", has=ui_page.locator(".t-title", has_text="memory")).first
+    # an ability card expands to the full library doc without flipping its checkbox
+    row = perm_panel.locator('.ability[data-ability="memory"]').first
     box = row.locator('input[type="checkbox"]')
     checked_before = box.is_checked()
     row.get_by_role("button", name="full description").click()
@@ -1215,8 +1214,7 @@ def test_new_conversation_composer_offers_caps_and_budgets(ui, ui_page):
     ui_page.goto(f"{ui.url}/#/conversations")
     expect(ui_page.get_by_role("heading", name="Permissions & capabilities",
                                exact=True)).to_be_visible()
-    shell_row = ui_page.locator(".toggle-row").filter(
-        has=ui_page.get_by_text("shell", exact=True))
+    shell_row = ui_page.locator('.ability[data-ability="shell"]')
     shell_row.locator('input[type="checkbox"]').check()
     ui_page.locator('input[title="max tokens per reply (-1 = unlimited)"]').fill("55000")
     ui_page.locator(".conv-new textarea").fill("Need a shell for this.")
