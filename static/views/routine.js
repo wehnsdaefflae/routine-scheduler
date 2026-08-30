@@ -23,8 +23,8 @@ const SECTION_GROUPS = [
   // two wholesale, so an operator reading "what may it do?" meets the starting point before
   // the per-routine edits. Unclaimed, it fell into the trailing "More" fold and was unreachable.
   { title: "Permissions & practices", hint: "its starting point, what it may do, and how it works",
-    headings: ["Start from a template", "Permissions & capabilities", "General rules",
-               "Effective surface"] },
+    headings: ["Start from a template", "Recommended setup", "Permissions & capabilities",
+               "General rules", "Effective surface"] },
   // D103: the two secret scopes read together — what this routine OWNS, and which shared
   // names it may be handed. Before this group they fell into the trailing "More" fold.
   { title: "Secrets & access", hint: "its own credentials · shared-store exposure · settled denials",

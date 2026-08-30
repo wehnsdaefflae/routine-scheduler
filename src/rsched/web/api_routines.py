@@ -124,6 +124,18 @@ def routine_setup_surface(request: Request, slug: str) -> dict:
     return routine_surface(_state(request).server, _info(request, slug).cfg)
 
 
+@router.get("/routines/{slug}/recommendations")
+def routine_recommendations(request: Request, slug: str) -> dict:
+    """Which general rules and permissions this routine SHOULD hold, each with a one-line
+    why/why-not — the INVERSE of /surface (which reads forward from what is held). One system-model
+    pass over the routine's recipe and the two catalogs, computed live and never stored; degrades
+    to advice-less rows (available=false) when no endpoint answers, so the page never 500s.
+    """
+    from ..workflows.suggest import recommend_setup
+
+    return recommend_setup(_state(request).server, _info(request, slug).cfg)
+
+
 @router.get("/routines/{slug}")
 def routine_detail(request: Request, slug: str) -> dict:
     info = _info(request, slug)

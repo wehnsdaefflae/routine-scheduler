@@ -21,6 +21,7 @@ import { surfaceView } from "/static/components/surface-view.js";
 import { tagsEditor } from "/static/components/tags.js";
 import { templatePanel } from "/static/components/template-panel.js";
 import { rulePicker } from "/static/components/rulepicker.js";
+import { recommendPanel } from "/static/components/recommend.js";
 import { triggersCard } from "/static/components/triggers.js";
 
 const INHERIT_LABEL = {
@@ -152,6 +153,17 @@ export function renderConfigSections(view, d, { slug, titleH1, chipHost, runChip
      "changes nothing here."],
     tplHost));
   templatePanel(tplHost, slug, d);
+
+  // -- recommended setup: the INVERSE of the surface — what SHOULD this routine hold, and why --
+  // A second reading of the recipe against the two panels below: given what this routine DOES,
+  // which rules and permissions it should hold, each suggested change carrying a one-line why.
+  // Advisory only — the panels below are where a toggle actually changes.
+  view.append(...settingsSection("Recommended setup",
+    ["a second opinion on the two panels below. Given what this routine DOES — its recipe — it ",
+     "judges which general rules and permissions it should hold, and lists only the suggested ",
+     "changes, each with a one-line reason. Nothing here is applied: you change anything in the ",
+     "Permissions and General rules panels below."],
+      recommendPanel(slug)));
 
   // -- permissions: conduct docs + machine-enforced capabilities (user-only) --------
   // The server re-applies the activation cascade on save, so the panel re-renders from a

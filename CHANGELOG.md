@@ -17,6 +17,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.272.0] — 2026-08-30
+
+### "Recommended setup" — a second reading of the recipe, with reasons
+
+The setup surface answers the FORWARD question — "given what this routine holds, what does it
+still need?". It had no inverse: nothing looked at what a routine actually DOES and asked whether
+its rules and permissions are the right set for that. So the choice of which rules bind and which
+permissions are held rested on the operator reading each of ~40 toggles against the recipe by
+hand (a routine page rage-click on the description expander made the friction visible).
+
+A new **Recommended setup** panel on the routine page, sitting above Permissions & General rules,
+now provides it. One system-model pass reads the routine's recipe (its description + `main.md`)
+against both catalogs — using each doc's `effect.when` ("hold it when …") clause as the test —
+and returns, per item, whether this routine should hold it and a one-line reason. The panel
+surfaces only the MISMATCHES: *consider adding* (recommended but unheld) and *consider removing*
+(held but unneeded), with the already-aligned ones counted, not listed; a set that matches reads
+as "Looks right".
+
+- **Advisory, never automatic.** It flips no switch — the Permissions and General rules panels
+  below remain the only place a toggle changes, so the operator stays the one who decides and can
+  ignore any suggestion. "The user must be able to change it if they disagree" is the default,
+  not a feature: the recommendation is a reading, the toggles are the control.
+- **Backend** `workflows/suggest.recommend_setup(server, cfg)` — the reasoning-carrying inverse of
+  `readmodels/surface.py`, mirroring the sibling suggesters' schema-guarded retry and graceful
+  degradation (no endpoint → `available: false`, the toggles still work, the page never 500s).
+  Served read-only at `GET /api/routines/{slug}/recommendations`, computed live and never stored
+  (the library moves under a routine, so a persisted answer would be stale).
+- Hallucinated slugs are dropped against the live catalog; an item the model does not mention
+  keeps its current state as the default verdict.
+
 ## [0.271.0] — 2026-08-30
 
 ### The on / off / when rows lay out correctly

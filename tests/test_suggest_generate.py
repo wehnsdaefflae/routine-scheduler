@@ -216,3 +216,61 @@ def test_suggest_rules_permissions_empty_library_never_calls_the_model(tmp_path,
     assert sug_mod.suggest_rules_permissions(s, "x") == {
         "rules": [], "permissions": [], "deliberation": "standard"}
     assert ep.calls == []
+
+
+# ---------------------------------------------------- recommend_setup()
+
+
+def _make_routine(server, *, rules, permissions, description="Watches a git repo.", main=""):
+    from rsched.config.routine import RoutineConfig
+
+    d = server.routines_home / "watcher"
+    d.mkdir(parents=True, exist_ok=True)
+    if main:
+        (d / "main.md").write_text(main, encoding="utf-8")
+    return RoutineConfig(slug="watcher", dir=d, name="Watcher",
+                         description=description, rules=rules, permissions=permissions)
+
+
+def test_recommend_setup_marks_held_validates_and_carries_reasons(server, monkeypatch):
+    from rsched.workflows import suggest as sug_mod
+
+    cfg = _make_routine(server, rules=["ask-policy"], permissions=["memory"],
+                        main="# main\nWatch a git repo daily and look up release notes online.")
+    ep = _SysEndpoint([{"items": [
+        {"slug": "web-research", "recommend": True, "reason": "looks up release notes online"},
+        {"slug": "memory", "recommend": False, "reason": "no cross-run state is needed"},
+        {"slug": "ghost-rule", "recommend": True, "reason": "hallucinated"},
+    ]}])
+    _patch_system_model(monkeypatch, "rsched.workflows.suggest", ep)
+    out = sug_mod.recommend_setup(server, cfg)
+    assert out["available"] is True
+    by = {i["slug"]: i for i in out["items"]}
+    # every catalog rule + permission gets a row, typed and held-marked
+    assert by["ask-policy"]["held"] is True and by["ask-policy"]["kind"] == "rule"
+    assert by["memory"]["held"] is True and by["memory"]["kind"] == "permission"
+    # verdicts + reasons land; held-but-not-recommended is a drop suggestion
+    assert by["web-research"]["recommend"] is True
+    assert "release notes" in by["web-research"]["reason"]
+    assert by["memory"]["recommend"] is False
+    assert "ghost-rule" not in by                       # hallucinated slug dropped
+    # a row the model never mentioned keeps its held state as the default verdict
+    assert by["ask-policy"]["recommend"] == by["ask-policy"]["held"]
+    # the recipe text and each doc's 'hold it when' clause + held marks reach the prompt
+    prompt = ep.calls[0]["messages"][0]["content"]
+    assert "Watch a git repo" in prompt
+    assert "hold it when:" in prompt and "CURRENTLY HELD" in prompt
+
+
+def test_recommend_setup_falls_back_without_advice_when_no_endpoint(server, monkeypatch):
+    from rsched.workflows import suggest as sug_mod
+
+    cfg = _make_routine(server, rules=["ask-policy"], permissions=["memory"])
+    ep = _SysEndpoint([RuntimeError("endpoint down")])
+    _patch_system_model(monkeypatch, "rsched.workflows.suggest", ep)
+    out = sug_mod.recommend_setup(server, cfg)
+    assert out["available"] is False
+    by = {i["slug"]: i for i in out["items"]}
+    assert by["ask-policy"]["held"] is True
+    assert by["memory"]["recommend"] == by["memory"]["held"]   # no advice → mirror held state
+    assert all(i["reason"] == "" for i in out["items"])
