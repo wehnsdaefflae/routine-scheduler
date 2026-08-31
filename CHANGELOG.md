@@ -17,6 +17,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.273.1] — 2026-08-31
+
+### A util that declares both `roots` and its own private store now reaches that store
+
+A conversation trying to pair WhatsApp hit `sqlite3.OperationalError: unable to open database
+file` even with `fs-write` granted for the session dir (R1136). Root cause: `sandbox.wrap` chose
+the wholesale-`roots` mount and the private-store admission by an exclusive `if/else`. A util that
+declares BOTH — `whatsapp`: `fs: roots, rw $WHATSAPP_SESSION_DIR, rw /home/mark/whatsapp-sessions` —
+took only the `roots` branch, which subtracts EVERY library-declared private store (its own
+included) from the wholesale mount and never ran the admission loop, so the util lost access to the
+very store it declared. The private-store admission now runs unconditionally after the (still
+subtractive) `roots` mount, re-admitting each of the util's OWN declared stores against the grant
+that covers it — strictly additive, grant-bounded, and deduped by the spec. (R1136, F415)
+
 ## [0.273.0] — 2026-08-31
 
 ### Answered decisions withdraw their phone notification

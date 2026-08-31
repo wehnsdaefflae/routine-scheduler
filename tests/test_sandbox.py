@@ -253,6 +253,21 @@ def test_declared_private_store_mounts_only_for_its_declarer(tmp_path, monkeypat
     assert str(sessions) not in other["rw"]
 
 
+def test_fs_roots_util_keeps_its_own_declared_private_store(tmp_path, monkeypatch):
+    """R1136: a util declaring BOTH `roots` AND its own private store (e.g. whatsapp:
+    `fs: roots, rw $WHATSAPP_SESSION_DIR`) must still reach that store. The fs_roots
+    subtraction strips every private store — the util's OWN included — out of the wholesale
+    mount, so the declared store has to be re-admitted or its session sqlite cannot open."""
+    _force_abi(monkeypatch, 4)
+    sessions = tmp_path / "whatsapp-sessions"
+    lib = _lib_with(tmp_path / "lib", whatsapp=f"roots, rw {sessions}")
+    policy = sandbox.SandboxPolicy(mode="permissive", write_roots=(sessions,),
+                                   own_dir=tmp_path / "own")
+    spec = json.loads(sandbox.wrap(CMD, policy=policy, libraries_home=lib, net=False,
+                                   fs_roots=True, fs_paths=(("rw", str(sessions)),))[2])
+    assert str(sessions) in spec["rw"]        # its OWN store survives the private subtraction
+
+
 def test_a_declaration_can_never_widen_the_grant(tmp_path, monkeypatch):
     """A routine holding write_util could author a util declaring any path. Declaring one it
     was not granted must mount nothing — the declaration filters, it never requests."""

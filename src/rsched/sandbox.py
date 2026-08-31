@@ -262,14 +262,18 @@ def wrap(cmd: list[str], *, policy: SandboxPolicy, libraries_home: Path,
         private = private_store_paths(libraries_home)
         ro += [str(p) for p in policy.read_roots if p not in private]
         rw += [str(p) for p in policy.write_roots if p not in private]
-    else:
-        # Declared private stores only, each admitted against the grant that covers it. A
-        # write grant carries read, so an `ro` declaration checks both sets.
-        for mode, declared in fs_paths:
-            if (p := _admit(declared, policy.write_roots)) is not None:
-                (rw if mode == "rw" else ro).append(str(p))
-            elif mode == "ro" and (p := _admit(declared, policy.read_roots)) is not None:
-                ro.append(str(p))
+    # A util's OWN declared private stores are admitted whether or not it ALSO takes wholesale
+    # `roots`. The fs_roots subtraction above strips EVERY private store — this util's own
+    # included — out of the wholesale mount, so a util declaring both `roots` AND a private
+    # store (e.g. `whatsapp`: `fs: roots, rw $WHATSAPP_SESSION_DIR`) would otherwise lose the
+    # very store it declared (R1136: its session sqlite could not open). Re-admit each declared
+    # store against the grant that covers it; a write grant carries read, so an `ro` declaration
+    # checks both sets. Idempotent — `spec` dedups, so this never double-mounts.
+    for mode, declared in fs_paths:
+        if (p := _admit(declared, policy.write_roots)) is not None:
+            (rw if mode == "rw" else ro).append(str(p))
+        elif mode == "ro" and (p := _admit(declared, policy.read_roots)) is not None:
+            ro.append(str(p))
     spec = {"ro": sorted(set(ro)), "rw": sorted(set(rw)), "net": bool(net)}
     wrapper = str(Path(landlock.__file__).resolve())
     return [sys.executable, wrapper, json.dumps(spec, separators=(",", ":")), "--", *cmd]
