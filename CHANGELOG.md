@@ -17,6 +17,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.272.1] — 2026-08-31
+
+### The ability & rule cards no longer break on a phone
+
+Operator, on mobile (screenshots): *"The cards look awful and are broken on mobile."* Below the
+620px breakpoint the ability-card / rule-card grid templates dropped content into the wrong
+column, so text was crushed to a sliver and wrapped one word — or one **letter** — per line:
+
+- **A stack row's entity fell into the 9px dot column.** `.ab-row` becomes `9px 1fr` on mobile
+  with `.kind` pinned to column 2, so the entity div auto-placed into column 1 (the 9px dot
+  column) on the next row — a value like `detach` wrapped vertically, one character per line.
+  The entity now shares column 2 with the kind.
+- **An available ability's on/off/when block fell into the checkbox column.** `.avail-row`
+  becomes `auto 1fr`, and the effect block auto-placed into the narrow `auto` (checkbox) column,
+  wrapping the sentence to one word per line. It spans the full width on its own row now.
+- **The rule row kept the "full description" expander in a ~150px side column.** `.rule-line`'s
+  `1fr auto` mobile template left the effect text barely a third of the row. The expander and the
+  effect block each take the full width below the checkbox·name row now.
+
+Pure CSS (the three `@media (max-width: 620px)` placements). New phone-viewport UI test
+`tests/ui/test_setup_check.py::test_cards_keep_real_columns_on_a_phone_viewport` asserts the
+entity and effect columns keep real width and the page does not overflow horizontally.
+
 ## [0.272.0] — 2026-08-30
 
 ### "Recommended setup" — a second reading of the recipe, with reasons

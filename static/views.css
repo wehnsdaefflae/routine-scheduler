@@ -969,8 +969,14 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
 @media (max-width: 620px) {
   .ab-row { grid-template-columns: 9px 1fr; }
   .ab-row .kind { grid-column: 2; padding-top: 0; }
+  /* the entity/control belongs UNDER the kind in the 1fr column; auto-placement otherwise
+     drops it into the 9px dot column, where a value like `detach` wraps one letter per line. */
+  .ab-row .ent { grid-column: 2; }
   .avail-row { grid-template-columns: auto 1fr; }
   .avail-row .muted { grid-column: 2; }
+  /* the on/off/when block spans the full width on its own row — auto-placement otherwise
+     drops it into the narrow checkbox column, crushing the sentence to one word per line. */
+  .avail-row .effect-line { grid-column: 1 / -1; }
 }
 
 /* --- general rules (components/rulepicker.js) ---------------------------------------------
@@ -996,8 +1002,14 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
   margin-bottom: 5px;
 }
 @media (max-width: 620px) {
-  .rule-line { grid-template-columns: 1fr auto; }
+  /* checkbox · name on the top row; the on/off/when block and the "full description"
+     expander each take the FULL width below. The old `1fr auto` kept the expander in an
+     auto side column that sized to "▸ full description" (~150px) and left the effect text
+     barely a third of the row, wrapping it to one word per line. */
+  .rule-line { grid-template-columns: auto 1fr; }
   .rule-line .muted { grid-column: 1 / -1; }
+  .rule-line .effect-line { grid-column: 1 / -1; }
+  .rule-line .doc-expand-btn { grid-column: 1 / -1; justify-self: start; }
 }
 
 /* Staged, not yet saved. A toggle marks its row and leaves the layout alone — restructuring

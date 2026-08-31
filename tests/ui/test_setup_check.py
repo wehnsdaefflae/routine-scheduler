@@ -207,3 +207,40 @@ def test_no_effect_row_overflows_the_box_it_is_in(ui, ui_page):
     }""")
     assert boxes["effLeft"] >= boxes["nameRight"], (
         f"the rule name and its description overlap: {boxes}")
+
+
+def test_cards_keep_real_columns_on_a_phone_viewport(ui, ui_page):
+    """The mobile half of "the cards look awful and are broken on mobile" (operator,
+    2026-08-31, screenshots). At a phone width the ≤620px grid templates dropped content into
+    the wrong column:
+
+    - a stack row's entity auto-flowed into the 9px DOT column, so a value like `detach`
+      wrapped one letter per line down the card;
+    - an available ability's on/off/when block auto-flowed into the narrow CHECKBOX column,
+      wrapping the sentence to one word per line;
+    - the rule row kept the "full description" expander in a ~150px side column that left the
+      effect text a third of the row.
+
+    A crushed column is a box a few px wide, so width is the assertion — made on the real page
+    at a real phone width, because none of it reproduces below the breakpoint.
+    """
+    ui_page.set_viewport_size({"width": 390, "height": 844})
+    ui_page.goto(f"{ui.url}/#/routine/uir")
+    ui_page.wait_for_selector("h2:has-text('Permissions & capabilities')", timeout=10_000)
+
+    # a held ability's stack row: its entity id must get a real column, not the 9px dot column
+    ent = ui_page.locator('.ability[data-ability="memory"] .ab-row .ent').first
+    ent.wait_for(state="visible", timeout=10_000)
+    ent_w = (ent.bounding_box() or {}).get("width", 0)
+    assert ent_w > 150, f"stack-row entity is crushed into the dot column ({ent_w}px wide)"
+
+    # an available ability's effect sentence must span, not fold into the checkbox column
+    eff = ui_page.locator('.avail-row[data-ability="shell"] .effect-text').first
+    eff.wait_for(state="visible", timeout=10_000)
+    eff_w = (eff.bounding_box() or {}).get("width", 0)
+    assert eff_w > 150, f"available-ability effect text is crushed ({eff_w}px wide)"
+
+    # and the page itself does not overflow the phone horizontally
+    overflow = ui_page.evaluate(
+        "() => document.documentElement.scrollWidth - document.documentElement.clientWidth")
+    assert overflow <= 1, f"page overflows the viewport horizontally by {overflow}px"
