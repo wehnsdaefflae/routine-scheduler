@@ -186,9 +186,15 @@ def _materialize(ctx: RunContext, *, slug: str, name: str, instruction: str,
         if isinstance(drafted, dict):
             return drafted          # refused or failed — the draft stands, nothing created
         workflow_slug = drafted
+    from ..workflows.suggest import generate_description
     try:
+        # A COMPREHENSIVE generated description (purpose / requirements / side effects /
+        # inter-routine dependencies) replaces the old `description = name`; it falls back to
+        # the name itself when no endpoint answers, so this never fails the creation.
+        description = generate_description(ctx.server, name=name, instruction=instruction,
+                                           workflow_slug=workflow_slug)
         routine_dir = scaffold(ctx.server, slug=slug, name=name, instruction=instruction,
-                               workflow_slug=workflow_slug, description=name,
+                               workflow_slug=workflow_slug, description=description,
                                stopping=stopping)
     except ValueError as exc:
         # bad slug, unknown workflow, or a dir that appeared mid-flight — a teaching rejection,

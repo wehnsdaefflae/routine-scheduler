@@ -39,10 +39,17 @@ def _materialize_routine(server, fields: dict) -> dict:
                                  "rename it before creating")
     name = str(fields.get("name") or "").strip()
     raw_stopping = fields.get("stopping")
+    instruction = str(fields.get("instruction") or "")
+    workflow_slug = str(fields.get("workflow") or "")
+    from ..workflows.suggest import generate_description
     routine_dir = scaffold(server, slug=slug, name=name,
-                           instruction=str(fields.get("instruction") or ""),
-                           workflow_slug=str(fields.get("workflow") or ""),
-                           description=name,
+                           instruction=instruction, workflow_slug=workflow_slug,
+                           # a COMPREHENSIVE generated description — the same one a
+                           # conversation's confirmed create gets; falls back to the name
+                           # when no endpoint answers, so materialization never fails on it
+                           description=generate_description(server, name=name,
+                                                            instruction=instruction,
+                                                            workflow_slug=workflow_slug),
                            # the queued proposal carries the DONE answer the same way a
                            # conversation's confirmed call does — one materializer, one path
                            stopping=[t for t in raw_stopping if isinstance(t, str) and t.strip()]

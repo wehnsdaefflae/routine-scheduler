@@ -17,6 +17,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.274.0] — 2026-08-31
+
+### Routines get a comprehensive generated description, not just their name
+
+Operator: *"routine descriptions must be generated way more comprehensively … wrt purpose,
+requirements, side effects, and dependencies w other routines."* Until now both create paths wrote
+`description = name` — the description field was literally the routine's name, carrying nothing.
+Creating a routine now generates a comprehensive description via one system-model pass
+(`workflows/suggest.generate_description`): from the routine's own task plus the catalog of
+sibling routines that already exist, it writes flowing prose covering **purpose** (what one run
+produces and why), **requirements** (permissions / secrets / inputs / external services),
+**side effects** (what it writes, publishes or sends outside itself), and **dependencies with
+other routines** (which it feeds, consumes from, or shares a store / group with — named only from
+the real sibling catalog, never invented). Wired into BOTH materializers — the conversation's
+confirmed `create_routine` (`engine/create_routine._materialize`) and the queued-proposal path
+(`web/api_pending._materialize_routine`) — so a routine born either way gets the same description.
+It degrades gracefully: an empty task, a missing system model, or a blank reply all fall back to
+the name, so creation never fails on it. Existing routines' descriptions are unchanged by this
+commit (backfilling them is a separate, operator-gated step — see the open decision). (F414)
+
 ## [0.273.1] — 2026-08-31
 
 ### A util that declares both `roots` and its own private store now reaches that store

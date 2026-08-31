@@ -274,3 +274,39 @@ def test_recommend_setup_falls_back_without_advice_when_no_endpoint(server, monk
     assert by["ask-policy"]["held"] is True
     assert by["memory"]["recommend"] == by["memory"]["held"]   # no advice → mirror held state
     assert all(i["reason"] == "" for i in out["items"])
+
+
+# ---------------------------------------------------- generate_description()
+
+
+def test_generate_description_returns_the_generated_text(server, monkeypatch):
+    ep = _SysEndpoint([{"description": "Polls the arxiv grammar feed each run and publishes a "
+                        "deduped digest; needs the websearch util; writes digest.html."}])
+    _patch_system_model(monkeypatch, "rsched.workflows.suggest", ep)
+    from rsched.workflows import suggest as sug_mod
+
+    out = sug_mod.generate_description(
+        server, name="Arxiv Digest",
+        instruction="Watch the arxiv grammar feed and publish a digest")
+    assert out.startswith("Polls the arxiv grammar feed")
+    prompt = ep.calls[0]["messages"][0]["content"]
+    assert "PURPOSE" in prompt and "DEPENDENCIES WITH OTHER ROUTINES" in prompt
+    assert "Watch the arxiv grammar feed" in prompt      # the task rides the prompt
+
+
+def test_generate_description_falls_back_to_name_when_no_endpoint(server, monkeypatch):
+    ep = _SysEndpoint([RuntimeError("no endpoint")])
+    _patch_system_model(monkeypatch, "rsched.workflows.suggest", ep)
+    from rsched.workflows import suggest as sug_mod
+
+    assert sug_mod.generate_description(server, name="Fallback Name",
+                                        instruction="do a thing") == "Fallback Name"
+
+
+def test_generate_description_empty_task_never_calls_the_model(server, monkeypatch):
+    ep = _SysEndpoint([])            # would raise "ran out of replies" if the model were called
+    _patch_system_model(monkeypatch, "rsched.workflows.suggest", ep)
+    from rsched.workflows import suggest as sug_mod
+
+    assert sug_mod.generate_description(server, name="Just A Name", instruction="  ") == "Just A Name"
+    assert ep.calls == []

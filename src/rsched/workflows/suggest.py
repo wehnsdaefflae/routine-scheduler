@@ -340,3 +340,99 @@ def recommend_setup(server: ServerConfig, cfg) -> dict:
         return _rows(recommend_of, reason_of, available=True)
     return fallback
 
+
+# ---------------------------------------------------- generate_description() -------------------
+# Routine descriptions used to be the routine's NAME (scaffold wrote `description = name`). This
+# generates a COMPREHENSIVE one — purpose, requirements, side effects, and dependencies with other
+# routines — at create time, from the routine's own task plus the catalog of siblings that already
+# exist (so a named dependency is a real routine, not an invention). Same graceful discipline as
+# the sibling suggesters: it never fails the creation flow, it falls back to the name.
+
+DESCRIBE_SCHEMA = {
+    "type": "object", "additionalProperties": False,
+    "required": ["description"],
+    "properties": {"description": {"type": "string"}},
+}
+
+
+def _sibling_catalog(server: ServerConfig) -> str:
+    """Compact list of the OTHER routines that already exist — slug · name · tags — so a
+    generated description can name real inter-routine dependencies instead of inventing them.
+    Bounded (60 rows) so a large instance never blows the prompt; best-effort per file.
+    """
+    import yaml
+
+    lines: list[str] = []
+    for y in sorted(server.routines_home.glob("*/routine.yaml")):
+        try:
+            cfg = yaml.safe_load(y.read_text(encoding="utf-8")) or {}
+        except (OSError, yaml.YAMLError):
+            continue
+        nm = str(cfg.get("name") or y.parent.name)
+        tags = ", ".join(t for t in (cfg.get("tags") or []) if isinstance(t, str))
+        lines.append(f"- {y.parent.name}: {nm}" + (f" [{tags}]" if tags else ""))
+        if len(lines) >= 60:
+            break
+    return "\n".join(lines)
+
+
+def generate_description(server: ServerConfig, *, name: str, instruction: str,
+                         workflow_slug: str = "", recipe_text: str = "") -> str:
+    """A COMPREHENSIVE routine description generated from its task: what one run PRODUCES and why
+    (purpose), what it REQUIRES (permissions / secrets / inputs / external services), its SIDE
+    EFFECTS (what it writes, publishes or sends outside itself), and its DEPENDENCIES with other
+    routines (which it feeds, consumes from, or shares a store / group with). Replaces the old
+    `description = name`. Returns a dense multi-sentence string; falls back to `name` whenever the
+    task is empty, no endpoint answers, or the reply is blank — the creation flow never fails on
+    this. `recipe_text` (an existing routine's main.md) is used in place of `instruction` when
+    regenerating a description for a routine that already exists.
+    """
+    task = (recipe_text or instruction or "").strip()
+    if not task:
+        return name
+    wf_note = ""
+    if workflow_slug:
+        wf = next((w for w in list_workflows(server.libraries_home)
+                   if w["slug"] == workflow_slug), None)
+        if wf:
+            wf_note = f"\nWORKFLOW PATTERN: {wf['slug']} — {wf['description']}"
+    siblings = _sibling_catalog(server)
+    sib_note = ("\n\nOTHER ROUTINES THAT ALREADY EXIST (name dependencies ONLY from these — "
+                f"omit the dependencies sentence if none apply):\n{siblings}" if siblings else "")
+    prompt = (
+        "Write a COMPREHENSIVE description of the recurring LLM-agent routine below, for the "
+        "person who manages it. Do NOT restate the name; describe what the routine actually does, "
+        "as flowing prose (no headings, no bullet list). Cover, in this order and only where they "
+        "apply:\n"
+        "1. PURPOSE — what one run produces and why it matters.\n"
+        "2. REQUIREMENTS — the permissions, secrets, inputs or external services it depends on.\n"
+        "3. SIDE EFFECTS — what it writes, publishes, sends or changes OUTSIDE itself each run.\n"
+        "4. DEPENDENCIES WITH OTHER ROUTINES — which existing routines it feeds, consumes from, "
+        "or shares a store / group with.\n\n"
+        f"ROUTINE NAME: {name}{wf_note}\n\nTASK:\n{task[:8000]}{sib_note}\n\n"
+        "Keep it factual and specific — 3 to 6 sentences, at most ~700 characters. Reply with "
+        "ONLY one JSON object matching this schema (no prose):\n" + json.dumps(DESCRIBE_SCHEMA)
+    )
+    try:
+        endpoint, ref = EndpointRegistry(server).for_system()
+    except Exception:
+        return name                              # no system model configured — keep the name
+    messages = [{"role": "user", "content": prompt}]
+    for _attempt in range(2):
+        try:
+            completion = endpoint.complete(messages, model=ref.model, schema=DESCRIBE_SCHEMA,
+                                           temperature=ref.temperature, effort=ref.effort,
+                                           max_tokens=ref.max_tokens, timeout=120,
+                                           purpose="Generate routine description", kind="suggest")
+        except Exception:
+            return name
+        try:
+            obj = completion.parsed if completion.parsed is not None else parse_reply(
+                completion.text, DESCRIBE_SCHEMA)
+            return str(obj.get("description") or "").strip() or name
+        except SchemaViolation as exc:
+            messages.append({"role": "assistant", "content": completion.text[:2000]})
+            messages.append({"role": "user", "content":
+                             f"Invalid: {exc}. Reply again with ONLY the JSON object."})
+    return name
+

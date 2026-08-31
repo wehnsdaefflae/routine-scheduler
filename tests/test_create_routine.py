@@ -336,3 +336,39 @@ def test_a_changed_stopping_answer_restarts_the_confirmation(tmp_path):
     _age_draft(ctx)
     obs = create_routine.handle_create_routine(ctx, dict(ACTION, stopping=["something else"]))
     assert obs.get("draft") and obs.get("updated") and not obs.get("created")
+
+
+def test_materialize_generates_a_comprehensive_description(tmp_path, monkeypatch):
+    """The materialized routine.yaml carries a GENERATED description (purpose / requirements /
+    side effects / dependencies with other routines), not just the routine's name."""
+    from rsched.config import ModelRef
+    from rsched.endpoints.base import Completion
+
+    generated = ("Collects new AI papers each run and maintains a deduped reading list; uses the "
+                 "websearch util; writes list.md to its own dir; feeds no other routine.")
+
+    class _Ep:
+        def complete(self, messages, **kw):
+            return Completion(text=json.dumps({"description": generated}),
+                              parsed={"description": generated} if kw.get("schema") else None,
+                              usage={"in": 7, "out": 3})
+
+    class _Reg:
+        def __init__(self, server):
+            pass
+
+        def for_system(self):
+            return _Ep(), ModelRef(endpoint="scripted", model="sys", name="system")
+
+    monkeypatch.setattr("rsched.workflows.suggest.EndpointRegistry", _Reg)
+
+    server = _server(tmp_path)
+    ctx = _ctx(server, home="conversations_home")
+    create_routine.handle_create_routine(ctx, dict(ACTION))
+    _age_draft(ctx)
+    obs = create_routine.handle_create_routine(ctx, dict(ACTION))
+    assert obs.get("created")
+    cfg = yaml.safe_load(
+        (server.routines_home / ACTION["target"] / "routine.yaml").read_text(encoding="utf-8"))
+    assert cfg["description"] == generated
+    assert cfg["description"] != ACTION["name"]         # not the old `description = name`
