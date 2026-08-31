@@ -17,6 +17,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.273.0] — 2026-08-31
+
+### Answered decisions withdraw their phone notification
+
+Operator: *"can you withdraw phone notifications on decisions once they've been responded to?"*
+A Web Push notification for a decision (`tag: rsched-<qid>`) stayed in the phone's tray after the
+operator answered it — a stale alert for a settled decision. Now `web/push.py::notify_new_decisions`
+diffs the already-pushed set against the still-open-and-unanswered decisions and, for each one that
+has since been answered or withdrawn, sends a same-tag `{close: true}` push; `static/sw.js` handles
+that payload by clearing the tagged notification (`getNotifications({tag})` → `close()`) instead of
+showing a new one, and the qid is dropped from `push-notified.json` so a decision that re-opens
+later alerts afresh. (msg-4, F409)
+
+### The Settings page no longer shows a phantom "none" secret
+
+Operator: *"why is there a 'none' secret in settings?"* Six utils declare `secrets: none` (an
+explicit "no secrets", symmetric with `net: none` / `calls: none`) — but the header parser stripped
+only `(none)`, not bare `none`, so it read "none" as a secret NAME and surfaced it as a needed
+credential. `utils_header.parse_header` now excludes `none` too, matching the `calls:` line's
+handling. (msg-5, F410)
+
+### Internal: single source for the engine poll interval
+
+`engine/subruns.py` carried a dead duplicate `POLL_S = 2.0`; the constant now lives only in
+`engine/loopconst.py` (its stated purpose). No behaviour change. (F396)
+
 ## [0.272.1] — 2026-08-31
 
 ### The ability & rule cards no longer break on a phone

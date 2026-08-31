@@ -89,7 +89,7 @@ def parse_header(src: str) -> dict:
             if tags_line else [])
     sec_line = next((ln for ln in lines if ln.lower().startswith("secrets:")), "")
     sec_raw = [s.strip() for s in sec_line[len("secrets:"):].split(",")
-               if s.strip() and s.strip().lower() != "(none)"] if sec_line else []
+               if s.strip() and s.strip().lower() not in ("(none)", "none")] if sec_line else []
     # A trailing '?' marks an OPTIONAL secret (D51): the sandbox injects it when the store has it
     # but the Settings page never prompts for it and its absence is not a missing credential. The
     # name (marker stripped) still appears in `secrets`, so injection and the undeclared-read gate

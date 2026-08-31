@@ -69,6 +69,35 @@ def test_notify_pushes_each_new_decision_once(make_routine, tmp_path, monkeypatc
     assert sent[-1]["tag"] == "rsched-q-2"
 
 
+def test_answered_decision_is_withdrawn(make_routine, tmp_path, monkeypatch):
+    """msg-4 (2026-08-31): once a decision is answered its phone notification must be retracted.
+    The sender pushes a same-tag `close` payload (sw.js clears the tray notification) and forgets
+    the qid so a decision that re-opens later alerts afresh."""
+    import json as _json
+
+    server = _server(tmp_path)
+    d = make_routine(slug="asker")
+    inbox.file_question(d, "q-1", "Ship it?", ["yes", "no"], "20260712-070000")
+    push.add_subscription(server, SUB_A)
+    sent: list[dict] = []
+    monkeypatch.setattr(push, "_send_one", lambda _srv, sub, payload: sent.append(payload) or True)
+
+    assert push.notify_new_decisions(server) == 1        # the ask goes out
+    assert not sent[-1].get("close")
+
+    # the operator answers it — an inbox answer file is the durable answered marker
+    (d / "inbox").mkdir(parents=True, exist_ok=True)
+    (d / "inbox" / "answer-q-1.json").write_text(_json.dumps({"text": "yes"}))
+
+    assert push.notify_new_decisions(server) == 1        # exactly one withdrawal push
+    assert sent[-1]["close"] is True and sent[-1]["tag"] == "rsched-q-1"
+
+    # idempotent: the qid was forgotten, so a further pass sends nothing
+    before = len(sent)
+    assert push.notify_new_decisions(server) == 0
+    assert len(sent) == before
+
+
 def test_notify_is_a_noop_without_subscribers(make_routine, tmp_path, monkeypatch):
     server = _server(tmp_path)
     d = make_routine(slug="quiet")

@@ -415,6 +415,12 @@ def test_parse_header_net_and_calls():
     h = utils_header.parse_header(bare)
     assert h["net"] == "" and h["calls"] == [] and h["secrets"] == []
     assert h["optional_secrets"] == []
+    # msg-5 (2026-08-31): `secrets: none` is an explicit "no secrets" declaration (symmetric with
+    # `net: none` / `calls: none`) — it must NOT surface a phantom secret literally named "none" on
+    # the Settings page (six utils write it: archive-extract, fs-ops, random-strings, …).
+    for spelling in ("secrets: none\n", "secrets: (none)\n", "secrets: NONE\n"):
+        hn = utils_header.parse_header(GOOD_UTIL.replace("secrets: DEMO_API_KEY\n", spelling))
+        assert hn["secrets"] == [], spelling
     # D51: a trailing '?' marks a secret OPTIONAL — the name (marker stripped) still appears in
     # `secrets` (injection + undeclared-read gate unchanged) and is ALSO listed in optional_secrets.
     opt = GOOD_UTIL.replace("secrets: DEMO_API_KEY\n", "secrets: DEMO_API_KEY, EXTRA_TOKEN?\n")

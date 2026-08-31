@@ -11,9 +11,18 @@ self.addEventListener("push", (event) => {
   let data = {};
   try { data = event.data ? event.data.json() : {}; }
   catch { data = { body: event.data && event.data.text() }; }
+  const tag = data.tag || "rsched-decision";   // one notification per decision, however many pushes
+  if (data.close) {
+    // The decision was answered (or withdrawn): the server sends a same-tag "close" push so we
+    // clear the tray notification instead of showing another one — no stale alert for a settled
+    // decision.
+    event.waitUntil(self.registration.getNotifications({ tag })
+      .then((ns) => ns.forEach((n) => n.close())));
+    return;
+  }
   event.waitUntil(self.registration.showNotification(data.title || "rsched", {
     body: data.body || "a routine needs a decision",
-    tag: data.tag || "rsched-decision",     // one notification per decision, however many pushes
+    tag,
     data: { url: data.url || "/#/questions" },
   }));
 });

@@ -4,7 +4,8 @@ store, and the decision sender the daemon drives off the event bus.
 Opt-in like the Discord mirror: nothing is sent until a browser subscribes (Settings →
 Notifications). State lives in the config dir (mounted in Docker, never inside a routine):
 `vapid-private.pem` (generated on first use), `push-subscriptions.json` (one entry per
-browser), `push-notified.json` (qids already pushed — the sender's dedupe memory).
+browser), `push-notified.json` (qids already pushed — the sender's dedupe memory, and the set it
+diffs to withdraw a notification once its decision is answered).
 A dead subscription (push service answers 404/410) is dropped on sight. Everything is
 best-effort: push failures never disturb the daemon.
 """
@@ -140,14 +141,21 @@ def notify_new_decisions(server) -> int:
     from .decisions_read import open_decisions
 
     qs = [q for q in open_decisions(server) if q.get("qid") and not q.get("answered")]
+    open_qids = {q["qid"] for q in qs}
     with _lock:
         notified = read_json(push_dir(server) / _NOTIFIED_FILE)
         notified = notified if isinstance(notified, list) else []
         known = set(notified)
         fresh = [q for q in qs if q["qid"] not in known]
-        if not fresh:
+        # A decision we already pushed that is no longer open+unanswered has been answered (or
+        # withdrawn): send a same-tag "close" push so the phone notification is retracted, and
+        # drop the qid so a decision that re-opens later notifies afresh.
+        stale = [qid for qid in notified if qid not in open_qids]
+        if not fresh and not stale:
             return 0
-        notified = (notified + [q["qid"] for q in fresh])[-_NOTIFIED_CAP:]
+        stale_set = set(stale)
+        notified = ([qid for qid in notified if qid not in stale_set]
+                    + [q["qid"] for q in fresh])[-_NOTIFIED_CAP:]
         atomic_write_json(push_dir(server) / _NOTIFIED_FILE, notified)
     sent = 0
     for q in fresh:
@@ -158,6 +166,10 @@ def notify_new_decisions(server) -> int:
             "tag": f"rsched-{q['qid']}",
             "url": "/#/questions",
         })
+    for qid in stale:
+        # `close: true` tells the service worker to clear the tray notification with this tag
+        # rather than show a new one (sw.js) — the answered decision's alert is retracted.
+        sent += send_to_all(server, {"tag": f"rsched-{qid}", "close": True})
     return sent
 
 

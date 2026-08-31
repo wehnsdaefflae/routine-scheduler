@@ -21,7 +21,6 @@ from .observations import truncate
 
 MAX_PARALLEL = 4
 KILL_JOIN_S = 12.0
-POLL_S = 2.0
 # Below this many tokens left, skip in-run workflow generation (≈2 full-context system-model
 # calls) and fall back to the default pattern — generation must not tip a run over its budget.
 GEN_FLOOR_TOKENS = 20_000
