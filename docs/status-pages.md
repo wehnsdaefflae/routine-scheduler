@@ -410,6 +410,42 @@ Their `api.php`, `lib.php`, `stage_rules.php` and `stage_log.php` are gone too: 
 shared one now, and `config/pipeline.json` became `model.json`. A radar's self-audit rides on
 its state document as `state.self_audit`, like everything else a routine says about itself.
 
+## A project can own its body
+
+The shell used to offer two bodies, `status` and `board`, and nothing else. A project whose data
+did not fit either had no move except to report it. `module: "own"` loads a project's own
+`page.js` and `page.css` from its directory; it still gets the whole shell, and colour, type and
+spacing still come from the shared tokens. What it owns is the shape of its own data — the part
+that genuinely differs between a grant deadline, a guest list and a scored pipeline.
+
+**What made that safe to offer** was moving the approval gate and the open question out of
+`status.js` and into the shell, above every body. They had lived in one module, so every other
+module had to remember to render them, and `board.js` never did: a radar, a review site and a
+party's admin page could each report a waiting decision on the hub and then show nothing when
+opened. Four of nine pages. No body can forget now, because no body renders them.
+
+`_shared/ui.js` + `ui.css` are the vocabulary bodies build from — figures that count up on
+arrival, sparklines, meters, timelines, things that open, view switches — so a reader who learns a
+gesture on one page finds it means the same on the next. Ten bespoke bodies would have been ten
+copies of this, drifting apart, which is exactly the failure the payload contract exists to
+prevent. It is dependency-free on purpose.
+
+**Three bugs came out of building it, and all three had the same shape: an effect that was also
+load-bearing for the content.**
+
+- `IntersectionObserver` silently ignores a node that is still inside a `DocumentFragment`, and
+  bodies are built in one. Every reveal, counter and meter sat at its starting value. Nothing
+  errored — figures just rendered empty. Work is queued at build time and armed once attached.
+- An observer only fires on a **rendering step**, so a document that is never composited — a
+  background tab, a PWA launched behind, a scraper — gets no callback at all. Reveals start at
+  `opacity: 0`, so such a page was not un-animated, it was blank. Every deferred job now carries a
+  deadline; whichever comes first runs it exactly once.
+- `requestAnimationFrame` does not run there either, so a counter that produced its value through
+  rAF produced nothing. The true value is written first and the count animates over it.
+
+The rule states the principle those share: an animation is a nicety, the content underneath it is
+not, and motion marks arrival or change rather than idleness.
+
 ## The collection module takes its views from the model
 
 `board.js` started as the radar body and is now the body for anything with a collection. A
