@@ -57,6 +57,14 @@ The master of all of it lives in the library repo at `<libraries_home>/web/stewa
 controlled there because it is shared across routines and the library is the one repo that
 already is. `pages/generate.py` emits every project shell from one template.
 
+**What makes that true is a mechanism, not a sentence.** For a while it was only the sentence, and
+the two copies drifted: the feedback-cursor default in `api.php` and the 16 MiB `MAX_BODY` in
+`store.php` were fixed straight on the host and existed nowhere else, one re-bootstrap away from
+being silently reverted — because a routine uploads a shared asset only when the path is ABSENT,
+so nothing propagates in either direction on its own. `steward-hub-maintainer` now holds a write
+root on `web/steward/` and reconciles BOTH directions every run: master ahead of host is deployed,
+host ahead of master is committed back, and "byte-identical" is one of its stopping conditions.
+
 **Why every stored file ends in `.php` and opens with a guard line.** The store holds the
 reader's own words and the only copy of his decisions, and "the directory is denied to HTTP" was
 a claim resting on a `.htaccess` — which does nothing on nginx, and this hosting is nginx. So the
@@ -116,6 +124,32 @@ self-guarding like the store — `cgi-bin` being unserved is a property of one h
 Retiring it is a two-step with no exposed window: deploy the gate *behind* the existing Plesk
 protection, verify, then turn Plesk's protection off. If the gate were wrong you would never be
 open, and turning Plesk back on is the rollback.
+
+### What arming it actually cost, twice
+
+**The blanket came off everything, and the gate only covers what calls it.** Plesk's Basic Auth
+protected every byte on the domain; `gate_require()` protects one file at a time. Every legacy
+path that had never needed to protect itself went world-readable the moment Plesk was turned off,
+silently and with no error anywhere: `/freelance-radar/api.php` (4.6 MB — the whole opportunity
+store, with which ones Mark pursued and what he drafted), `/freelance-radar/`, `/nanogeofeld/`
+plus its `data.json`, and an orphan `/suedlink-wlf/data.json`. The `_store/` guard lines held
+perfectly; nothing that had been designed for this era leaked. So the invariant is now stated and
+swept every run by the maintainer (`stages/close-ungated-surfaces.md`):
+
+> Outside `/_shared/`, nothing on this host is served to an unauthenticated request. Pages are
+> `index.php` and call the gate. Data files end in `.php` and open with the guard line. There is
+> no third category.
+
+**And a refusal could not say which refusal it was.** Arming the gate without updating
+`WEB_AUTH_SOURCES.steward` to the same passphrase locked out all ten publishing routines at once
+(R1143). The rollout note above says to set them to the same value; it was skipped, and the
+resulting 401 is indistinguishable from a header the server ate — `PHP_AUTH_PW` is filled only
+under mod_php, and a FastCGI bridge drops `Authorization` unless the vhost forwards it. Both
+causes now have one answer: `gate.php?diag` reports which credential channels carried anything on
+the caller's own request and whether each was accepted. It reveals nothing — armed state is
+already visible from any 401, and the rest is a fact about the caller's own request — and it is
+reachable without a credential on purpose, because it is needed exactly when you cannot get one
+in.
 
 **`put-items` floors**, because the collection is the only copy of his decisions: an empty set is
 refused, a shrink past half of what is stored is refused, an item without an id is refused, and
@@ -214,11 +248,18 @@ animations; `prefers-reduced-motion` removes it.
 ## The radars
 
 `freelance-radar` and `grants-radar` were ~150 KB of hand-rolled markup, rendering and CSS each,
-with their own palette, their own type and their own copy of the feedback plumbing. None of it
-survives: `app.js`, `radar.js`, `pipeline.js`, `pipeline-channels.js`, `filters.js`,
-`healthcheck.js`, `urlstate.js`, `util.js`, `timeline.js`, `styles.css` and `mobile.css` are
-deleted from both repos. What runs now is the shared shell plus `_shared/modules/board.js`
-(+`board.css`) and a ~25-line page, exactly like a status page.
+with their own palette, their own type and their own copy of the feedback plumbing. The unified
+replacement is the shared shell plus `_shared/modules/board.js` (+`board.css`) and a ~25-line
+page, exactly like a status page.
+
+**`freelance-radar` has not finished moving, and the honest statement of that is here rather than
+in a routine's memory.** Its working dashboard is still the old static app reading its own
+per-project store, which `build.py` writes every run; the unified board is a second, stale copy of
+the same project. The blocker is not the shell — it is that `board.js` drops the engagement
+pipeline detail the old app shows (R1073/R1089), and until that lands, deleting the old app costs
+Mark the surface he actually uses. `grants-radar` has the same shape. Treat the paragraph above as
+the target, not the host: read `state/kit-versions.json` and the maintainer's exposure sweep for
+what is actually deployed.
 
 An intermediate approach — a *token bridge* that re-pointed the old stylesheets' twenty custom
 properties at the shared tokens — was built, verified and then rejected: it recoloured the old
