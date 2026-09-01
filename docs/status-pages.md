@@ -246,9 +246,30 @@ re-listing months of already-answered notes.
 
 ## The state document
 
-One canonical shape for every status page; the four steward pages previously disagreed on it.
-`generated` and `feedback_cursor` are required, everything else is optional and a section with
-no data does not render. A routine publishes it with `op=put-state`.
+One canonical shape for every status page, and since 2026-09-01 the write path ENFORCES it.
+
+It had to. The renderer reads the keys it knows and ignores the rest, so a misspelled key was
+never an error — it was an invisible section, and six of nine publishers had drifted apart that
+way without one of them finding out. `nanogeofeld` published `signoff` and `mail` where the shell
+reads `gate` and `mails`, so the day it had an approval to show, the panel would not have rendered
+and the hub would have counted zero things waiting on him. `sprind` published `feedback_seen`,
+hardcoded to `0`, so its rail could never hide what had been acted on. `freelance-radar` and
+`birthday-admin` published no cursor at all. Prose in a rule could not stop any of it; a refusal
+naming the key can.
+
+`put-state` now refuses an unknown top-level key, listing it and the accepted set, and refuses a
+document missing `generated`, `feedback_cursor` (a whole number) or `card` — the three with no
+safe default. `store.php`'s `STATE_KEYS` is the one list, and the `status-page` rule states it in
+the routine's own terms.
+
+**The extension point is the model, not the data.** A project that needs a section of its own
+declares a journal view whose `source` names the key; `board.js` already renders exactly that, so
+the new section is visible in the model rather than guessed at from the payload. `sprind` uses it
+(`review`), and `birthday-admin` (`planning`).
+
+Two dual conventions went with it: the shell read `question || open_question` and
+`mails || correspondence`. Two spellings for one thing is how two publishers can be differently
+wrong and both look fine.
 
 | key | renders as |
 |---|---|
