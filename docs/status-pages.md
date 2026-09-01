@@ -86,6 +86,12 @@ POST /api.php  {token, project, op, …}
 `what=all` is what a project page calls: state, items, model and unconsumed feedback in one round
 trip. A page never fetches a file.
 
+The hub groups its cards into **expandable lists**, not tabs. Tabs showed one group and hid the
+rest, so "what needs me today" cost seven clicks to answer and a second group with something
+waiting stayed invisible behind the one that opened. Every group is on the page; one with nothing
+waiting starts collapsed, the summary carries the counts so a collapsed group still tells you
+whether to open it, and the choice is remembered.
+
 `what=hub` is DERIVED from every project's own state document. There is no shared registry file,
 which removes a class of bug rather than documenting it: the old `projects.json` was one file
 every routine rewrote daily, so editing a stale copy silently clobbered a sibling's card and every
@@ -283,6 +289,74 @@ wrong and both look fine.
 | `charts[]` | routine-rendered SVG, wrapped so it inherits the page's type and colours |
 | `direction_field{id}` | the id the free-text steer box posts to |
 | `hook_url` | the webhook a submission pings, so a run fires on real input |
+
+## Who is reading, and what a visit means
+
+Until 2026-09-01 this host had exactly one identity: everyone who knew the passphrase got a cookie
+whose value was the same digest for everybody, and could read and write every project. There was
+no way to show one page to one person, and no way to tell afterwards whose "looks right" was on
+the record.
+
+**An invitation is a link and a label.** `invites.php` folds an append-only log into the current
+set; the link carries the invite id plus a digest of it keyed by the host secret, so the server
+looks the invitation up directly and cannot be handed a forged one. Following `/i.php?t=…` swaps
+the token for a cookie and redirects — a token in a URL survives in history, in a chat log and in
+a screenshot of the address bar, and every request after the first carries a cookie instead.
+
+| role | may |
+|---|---|
+| `viewer` | read |
+| `commenter` | read, say things, revise or retract their own (the default) |
+| `decider` | also answer a gate and advance an item |
+
+Nobody but the owner writes a routine's own documents. A guest with `put-state` could rewrite a
+project's whole record, which is not something a link should ever carry — and only the owner mints
+an invitation, or the first guest could mint a second for the rest of the host. **Scope is checked
+twice**, in the page and again on every read and write, because a control the page did not draw is
+not a control the caller cannot reach. Revoking is one appended row and takes effect on the next
+request; the rows stay, so what a withdrawn guest said keeps its author.
+
+Every feedback row now carries `who` and `role`, and the rule tells routines what to do with that:
+a guest's approval is not his, and reading one as the go-ahead is how a mail goes out on the wrong
+person's say-so.
+
+**Two marks, two meanings.** `needs_you` is an open decision and only answering clears it; `unseen`
+is "changed since you last looked" and opening the page clears that. Collapsing them into one mark
+was tempting and would have been wrong — a hub that forgets what is waiting the moment you glance
+at it has stopped doing its one job. The revision counter behind `unseen` is the API's, bumped on
+every `put-state`, and it is deliberately NOT in the state document: that document has a closed key
+set, so a routine amending its own state and writing it back would hand the counter straight back
+and be refused for a key it never wrote.
+
+`needs_you` also counts an unanswered document now. Counting only the gate and the question meant
+the two radars — the pages with the most sitting on him — reported the quietest cards.
+
+## Where a run is, while it is running
+
+Between runs the page showed a date; during a run it showed nothing, so two routines could work
+for half an hour while every card claimed yesterday. `put-progress` fixes that, and the run
+publishes it itself at each stage boundary — the engine sends nothing outward on a routine's
+behalf, and one turn per stage is what stage-level honesty costs.
+
+It is a **heartbeat, not a flag**: the store stamps each update and computes `live` from its age
+against a 25-minute TTL, so a run that dies mid-stage decays to "last seen" rather than leaving a
+spinner that outlives it. The page renders a chip, a step count and a rule that fills; the pip's
+pulse is the only animation on the host that is not the load reveal, and it is there because it
+encodes the one thing on the page that is changing while you look at it.
+
+## Submitting, and what it is for
+
+Every control writes immediately and stays revisable until the routine consumes it. What used to
+also happen was a webhook ping per control, so one sitting could start a run per click.
+
+Now starting a run is a separate, deliberate act: a checkbox — off by default, remembered per
+project — and a button that is dead without it and says why. The panel offers to run on anything
+the routine has *not consumed*, not merely what you changed in this sitting, so coming back
+tomorrow to an unsent note still offers to wake the routine. Where a project has no webhook, the
+panel is a sentence rather than a dead control.
+
+The reach is the remaining half: the hook URLs point at the console's Tailscale name, so a
+submission only arrives from the tailnet until `/api/hooks/*` is published.
 
 ## The design
 
