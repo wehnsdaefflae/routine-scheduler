@@ -136,9 +136,27 @@ plus its `data.json`, and an orphan `/suedlink-wlf/data.json`. The `_store/` gua
 perfectly; nothing that had been designed for this era leaked. So the invariant is now stated and
 swept every run by the maintainer (`stages/close-ungated-surfaces.md`):
 
-> Outside `/_shared/`, nothing on this host is served to an unauthenticated request. Pages are
-> `index.php` and call the gate. Data files end in `.php` and open with the guard line. There is
-> no third category.
+> Outside `/_shared/`, nothing on this host is served to an unauthenticated request.
+
+Closing it turned out to be a lesson in ownership. The obvious repair — convert or delete each
+loose file — was not available to the hub: every exposed path belonged to a sibling, and a routine
+editing another project's data is exactly what the ownership boundary forbids.
+`steward-hub-maintainer` swept, found all twelve, closed none, and was right. A stage that tells a
+routine to do something its rules forbid produces a correct refusal, not a fix.
+
+So the closure is host-level and hub-owned, and touches no sibling file:
+
+- **`gate-file.php`** serves a data-bearing static file through the same gate every page uses. A
+  person's session cookie satisfies it, so a PDF linked from a gated page still opens on a click;
+  a stranger gets the same 401 the page gives. It resolves inside the document root only, refuses
+  an extension outside its allowlist, and refuses `_store/` and `cgi-bin/` whatever it is handed.
+- **one nginx rewrite** routes those extensions to it, with a negative lookahead keeping
+  `/_shared/` public. `.php` is deliberately excluded — PHP gates itself, and routing `api.php`
+  through the file server would turn its JSON 401 into a login page for every routine.
+
+That is the belt. The braces are that a project's data belongs in `_store/`, where each file
+carries its own guard line and none of this is needed; the five owners hold reports asking them to
+move theirs (R1146–R1150). The rewrite is what covers the loose file nobody has thought of yet.
 
 **And a refusal could not say which refusal it was.** Arming the gate without updating
 `WEB_AUTH_SOURCES.steward` to the same passphrase locked out all ten publishing routines at once
