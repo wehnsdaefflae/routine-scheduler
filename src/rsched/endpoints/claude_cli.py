@@ -50,8 +50,8 @@ from .base import (
     with_retries,
 )
 
-# Re-exports: tests and the Settings card import the wire vocabulary from the adapter
-# (its historical home). noqa F401 — imported for that surface, not used here.
+# Re-export surface: tests import STRIP_VARS from the adapter (its historical home); the rest
+# are the wire functions this adapter wraps. noqa F401 — re-exported / used below.
 from .claude_cli_wire import (  # noqa: F401
     STRIP_VARS,
     TOKEN_VAR,
@@ -65,7 +65,6 @@ from .claude_cli_wire import (  # noqa: F401
     resolve_token,
     scrub_env,
     stream_json_stdin,
-    token_source,
 )
 
 

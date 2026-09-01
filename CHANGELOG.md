@@ -17,6 +17,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.274.1] — 2026-09-01
+
+### Hygiene: drop two dead re-exports and a retired `manage_group` prompt parameter
+
+A fresh-eyes sweep (self-audit) found three stale surfaces, each proven with a repo-wide
+reference search:
+
+- **`manage_group` prompt taught a retired parameter.** The capability digest in
+  `engine/capabilities.py` still told every `manage_group`-capable routine that `` `split`
+  marks two-phase members `` — but the F292 two-pass `split` machinery was retired (D90,
+  2026-08-16), the action schema defines no `split` field, and no handler reads one. A routine
+  that followed it would emit a `split` the schema rejects. Clause removed.
+- **`web/api_routines.py`** re-exported `active_run_dir` and `guard_not_active` under a
+  now-false `# noqa: F401 — siblings historically import from here`; nothing imports from that
+  module (every real consumer imports the two from `routines_common`). Dead names and the
+  stale noqa dropped.
+- **`endpoints/claude_cli.py`** re-exported `token_source` (dead — its real consumers, the
+  Settings endpoint and a test, import it from `claude_cli_wire` directly) under a stale
+  comment claiming the Settings card imports the wire vocabulary from the adapter. Entry
+  removed, comment corrected to name only the `STRIP_VARS` test surface.
+
 ## [0.274.0] — 2026-08-31
 
 ### Routines get a comprehensive generated description, not just their name

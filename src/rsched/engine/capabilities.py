@@ -284,8 +284,8 @@ def capabilities_digest(ctx: RunContext, allowed_kinds: set[str] | None = None) 
         if "manage_group" in kinds:
             cap_bits.append("manage_group (create/update/delete/order/schedule/fire routine "
                             "GROUPS from this conversation — the routines page's group "
-                            "surface as an action; `cron` sets the group schedule, `split` "
-                            "marks two-phase members, no operator needed)")
+                            "surface as an action; `cron` sets the group schedule, no "
+                            "operator needed)")
         cap_bits += [f"reserved util {u!r}" for u in sorted(g.utils)]
         cap_bits += [f"every util tagged {t!r}" for t in sorted(getattr(g, "util_tags", ()))]
         if g.run_history != "none":

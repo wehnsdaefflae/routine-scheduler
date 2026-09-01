@@ -16,13 +16,11 @@ from ..paths import resolve_rel
 from ..readmodels.stats import monthly_spend
 from . import artifacts
 from .decisions_read import _snooze_active
-from .routines_common import (  # noqa: F401 — re-exported: siblings historically import from here
+from .routines_common import (
     _catalog,
     _git_commit,
     _info,
     _state,
-    active_run_dir,
-    guard_not_active,
     permission_layers_detail,
     queue_or_apply,
 )
