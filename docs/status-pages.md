@@ -456,6 +456,19 @@ waiting on Mark, when what they wait on is their own reply.
   blocked, was stale — R445 had diagnosed it (engine keys in the PEP 723 block, not the
   docstring) and the fix was applied on 2026-08-29.
 
+## Verification is the rule's, not the operator's
+
+Every check that found something today was run by hand: reading a stored document back, fetching a
+path with no credential, opening a listed deliverable. Each of them had been passing for weeks in
+the routines' own words, because a routine verifies while signed in and therefore never sees what a
+stranger sees.
+
+So the `status-page` rule now states three proofs, each named after the failure it catches — a
+write refused for a misspelled key, twelve loose files world-readable behind a removed blanket, and
+a deliverable advertised that had never been uploaded. `steward-hub-maintainer` carries a fourth,
+because it owns the kit in two places: host and master compared both ways, with both hashes
+recorded, since one hash cannot show a drift.
+
 ## The rule
 
 `status-page` in the library is what actually binds a routine to any of this, held by slug in
