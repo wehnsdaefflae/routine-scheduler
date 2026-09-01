@@ -144,19 +144,33 @@ editing another project's data is exactly what the ownership boundary forbids.
 `steward-hub-maintainer` swept, found all twelve, closed none, and was right. A stage that tells a
 routine to do something its rules forbid produces a correct refusal, not a fix.
 
-So the closure is host-level and hub-owned, and touches no sibling file:
+So the closure is host-level and hub-owned, touches no sibling file, and — the operator's
+constraint — requires no server configuration at all:
 
-- **`gate-file.php`** serves a data-bearing static file through the same gate every page uses. A
-  person's session cookie satisfies it, so a PDF linked from a gated page still opens on a click;
-  a stranger gets the same 401 the page gives. It resolves inside the document root only, refuses
-  an extension outside its allowlist, and refuses `_store/` and `cgi-bin/` whatever it is handed.
-- **one nginx rewrite** routes those extensions to it, with a negative lookahead keeping
-  `/_shared/` public. `.php` is deliberately excluded — PHP gates itself, and routing `api.php`
-  through the file server would turn its JSON 401 into a login page for every routine.
+- **`/.htaccess`** denies every data-bearing extension to HTTP, inherited by every project
+  directory. **`.htaccess` works on this host.** Plesk fronts Apache with nginx and Apache honours
+  it; measured 2026-09-01 against a probe directory, after the opposite had been written down and
+  believed for months. `.html` is deliberately not denied — a page protects itself by being `.php`
+  and calling the gate, and denying `.html` would take out pages published as deliverables.
+  `manifest.json` and `*.webmanifest` are explicitly granted: a browser fetches a web app manifest
+  before any credential exists, which is the whole reason this host has a cookie gate, and denying
+  it breaks installing the PWA.
+- **`gate-file.php`** reads those same files off disk and serves them to a caller the gate
+  accepts, so a document a stranger cannot fetch is still one click away for the reader. A session
+  cookie satisfies it. It resolves inside the document root only, allowlists extensions rather
+  than guessing a content type, and refuses `_store/` and `cgi-bin/` whatever it is handed. Pages
+  link a document as `/gate-file.php?p=<path>`.
+
+**One trap, and it took every gated page down for a minute.** Adding any `Require` directive makes
+Apache process authorization, and Apache does not hand `Authorization` to a FastCGI script unless
+told to — it only looked like it did because nothing here had made Apache process authorization
+before. The instant the deny block landed, every page 401'd a *valid* credential. `CGIPassAuth On`
+plus a `SetEnvIf` fallback lives in the same `.htaccess` and must stay; `gate.php?diag` is what
+tells "the credential was wrong" apart from "the credential never arrived".
 
 That is the belt. The braces are that a project's data belongs in `_store/`, where each file
 carries its own guard line and none of this is needed; the five owners hold reports asking them to
-move theirs (R1146–R1150). The rewrite is what covers the loose file nobody has thought of yet.
+move theirs (R1146–R1150). The deny is what covers the loose file nobody has thought of yet.
 
 **And a refusal could not say which refusal it was.** Arming the gate without updating
 `WEB_AUTH_SOURCES.steward` to the same passphrase locked out all ten publishing routines at once
