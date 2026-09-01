@@ -105,6 +105,17 @@ function branchBtn(turn, onBranch) {
     onclick: () => onBranch(turn) }, "⑂");
 }
 
+// ⟲ rewind-from-here: the clicked reply's turn IS the cut point (R1006-style), so rewind gets a
+// per-message control beside ⑂ instead of only the run view's turn-prompt. Terminal-only; the
+// onRewind wiring toasts if the conversation is still mid-reply.
+function rewindBtn(turn, onRewind) {
+  if (!onRewind || !Number.isInteger(turn)) return null;
+  return el("button", { class: "rewind-msg", "data-rewind-turn": String(turn),
+    title: `rewind the conversation to here (turn ${turn}) — everything after this reply is `
+         + "archived (reversible) and the conversation re-opens live from this point",
+    onclick: () => onRewind(turn) }, "⟲");
+}
+
 export function createChat(container, opts = {}) {
   const root = el("div", { class: "chat" });
   container.append(root);
@@ -157,7 +168,8 @@ export function createChat(container, opts = {}) {
       referButton(opts.onRefer, `your reply${ev.ts ? ` at ${fmtTime(ev.ts)}` : ""}`,
         (summary || "").split("\n")[0]),
       copyBtn(() => summary || ""),
-      branchBtn(ev.turns, opts.onBranch));
+      branchBtn(ev.turns, opts.onBranch),
+      rewindBtn(ev.turns, opts.onRewind));
     return node;
   }
 

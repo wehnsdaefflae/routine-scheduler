@@ -16,7 +16,7 @@ import { questionPanel } from "/static/components/answerform.js";
 import { navigate } from "/static/router.js";
 import { liveTail } from "/static/stream.js";
 import { forgetField } from "/static/formpersist.js";
-import { forkAt } from "/static/components/branches.js";
+import { forkAt, rewindTo } from "/static/components/branches.js";
 import { createChat, typedBody, userEcho } from "/static/components/chat.js";
 import { createArtifacts } from "/static/components/artifacts.js";
 import { createRail } from "/static/components/rail.js";
@@ -299,6 +299,7 @@ export async function render(view, slug, _query = {}) {
       // R1006: fork the conversation AT the reply the user clicked. The header's ⑂ still
       // takes a typed turn number; this is the same call with the number already known.
       onBranch: (turn) => forkAt(slug, turn, { isLive: () => !TERMINAL.has(curState) }),
+      onRewind: (turn) => rewindTo(slug, detail.run_id, turn, { isLive: () => !TERMINAL.has(curState) }),
       onRefer: composer.setRef,
       // message attachments render inline (attachments/ is a servable subdir of the route)
       fileUrl: (rel) => `/api/conversations/${slug}/file?path=${encodeURIComponent(rel)}`,

@@ -186,3 +186,38 @@ def test_a_user_message_carries_no_fork_control(ui, ui_page):
 
     expect(ui_page.locator(".msg.assistant .branch-msg")).to_have_count(1, timeout=10_000)
     expect(ui_page.locator(".msg.user .branch-msg")).to_have_count(0)
+
+
+def test_a_reply_carries_a_rewind_to_here_control_that_posts_the_reply_turn(ui, ui_page):
+    """F416 (operator msg 2026-09-01): rewind used to live ONLY in the run view's ⟲ control,
+    behind a prompt asking the user to TYPE a turn. A reply is a clean turn boundary, so — like
+    the ⑂ branch control (R1006) — each reply now carries a per-message ⟲ rewind whose cut point
+    is its own turn. Clicking it confirms, then POSTs /rewind with that turn (the server-side
+    truncate + re-open is covered in test_api.py::test_rewind_run_endpoint).
+    """
+    _slug, conv_dir = _start_conversation(ui, ui_page)
+    run_dir = conv_dir / "runs" / "20260827-100000"
+    run_dir.mkdir(parents=True, exist_ok=True)
+    (run_dir / "transcript.jsonl").write_text(
+        "".join(json.dumps(e) + "\n" for e in REPLY_EVENTS), encoding="utf-8")
+    atomic_write_json(run_dir / "status.json", {"state": "finished", "turn": 2})
+
+    posted = {}
+
+    def handle(route):
+        posted["body"] = json.loads(route.request.post_data or "{}")
+        route.fulfill(status=200, content_type="application/json",
+                      body=json.dumps({"ok": True, "kept_through_turn": posted["body"].get("turn"),
+                                       "archive": "rewind-x.jsonl"}))
+    ui_page.route("**/rewind", handle)
+    ui_page.reload()
+
+    reply = ui_page.locator(".msg.assistant", has_text="Option B, on the cost curve")
+    expect(reply).to_be_visible(timeout=10_000)
+    rewind = reply.locator(".rewind-msg")
+    expect(rewind).to_have_attribute("data-rewind-turn", "2")   # the reply's own turn — no prompt
+    rewind.click()
+    # confirmDialog (destructive): a themed modal whose confirm button is labelled "rewind"
+    ui_page.locator(".modal-overlay").get_by_role("button", name="rewind", exact=True).click()
+    ui_page.wait_for_timeout(400)   # < the 800ms reload; the POST body is the real contract
+    assert posted.get("body") == {"turn": 2}, posted

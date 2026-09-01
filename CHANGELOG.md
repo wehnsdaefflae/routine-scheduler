@@ -17,6 +17,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.275.0] — 2026-09-01
+
+### A reply carries a ⟲ rewind-to-here control, beside ⑂ branch
+
+Operator: *"rewind is a button at the top instead a small button at the message the user wants
+to rewind to."* Rewinding a conversation (D69: truncate the transcript at a turn, archive the
+tail, re-open live) lived only in the run view's `⟲ rewind` control, behind a prompt asking the
+user to TYPE the turn number — the same translation-from-"this reply"-to-a-number that R1006
+removed for forking. Now each assistant reply carries a per-message `⟲` next to its `⑂` branch:
+the clicked reply's own turn is the cut point, so no number is typed. It confirms (the cut is
+destructive, though archived and reversible), then POSTs `/api/runs/{run_id}/rewind`. Like a
+fork it is terminal-only — on a still-live conversation the control toasts "rewind it once the
+reply has finished" rather than acting. The run view's turn-prompt `⟲ rewind` stays for cutting
+at a turn no reply names. New shared `rewindTo()` in `branches.js`, a `.rewind-msg` corner
+control in `chat.js`, wired through the conversation view; covered by a `tests/ui` flow test.
+
 ## [0.274.1] — 2026-09-01
 
 ### Hygiene: drop two dead re-exports and a retired `manage_group` prompt parameter

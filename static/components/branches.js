@@ -7,7 +7,7 @@
 // merge: the branch keeps its own conversation, and the parent receives a summary plus files.
 
 import { api } from "/static/api.js";
-import { promptDialog } from "/static/components/dialog.js";
+import { confirmDialog, promptDialog } from "/static/components/dialog.js";
 import { navigate } from "/static/router.js";
 import { el, toast } from "/static/util.js";
 
@@ -28,6 +28,33 @@ export async function forkAt(slug, turn, { isLive } = {}) {
     const r = await api(`/api/conversations/${slug}/branch`, { method: "POST", body: { turn } });
     toast(`branched at turn ${r.at_turn} — opening the branch`);
     navigate(`#/conversations/${r.slug}`);
+    return r;
+  } catch (err) { toast(err.message, 4000, { error: true }); return null; }
+}
+
+// Rewind this conversation to `turn` — the D69 remedy for a reply you want to redo: everything
+// after that turn is archived (reversible) and the conversation re-opens LIVE from there. The ONE
+// rewind path for the chat's per-message ⟲ control (R1006-style: the clicked reply's turn IS the
+// cut point, so the reader never translates "this reply" into a number). Terminal-only, like a
+// fork — the run view's ⟲ control still owns the fork-at-a-named-turn (prompt) entry.
+export async function rewindTo(slug, runId, turn, { isLive } = {}) {
+  if (isLive?.()) {
+    toast("this conversation is mid-reply — rewind it once the reply has finished", 4000,
+      { error: true });
+    return null;
+  }
+  if (!runId || !Number.isInteger(turn) || turn < 1) {
+    toast("a rewind needs a finished turn to cut at", 4000, { error: true });
+    return null;
+  }
+  const ok = await confirmDialog(
+    `Rewind to turn ${turn}? Every reply after this one is archived (reversible) and the `
+    + "conversation re-opens live from here.", { confirmLabel: "rewind" });
+  if (!ok) return null;
+  try {
+    const r = await api(`/api/runs/${runId}/rewind`, { method: "POST", body: { turn } });
+    toast(`rewound to turn ${r.kept_through_turn} — reopening…`);
+    setTimeout(() => window.location.reload(), 800);
     return r;
   } catch (err) { toast(err.message, 4000, { error: true }); return null; }
 }
