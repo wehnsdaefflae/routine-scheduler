@@ -51,6 +51,7 @@ one storage layout, so a fix lands on every page at once.
 /_shared/modules/status.js the status body — gate, question, state, deliverables, documents
 /_shared/modules/board.js  the collection body — views come from the model (+ board.css)
 /<project>/index.php       a ~25-line shell naming the project, language, title and module
+                          — EXCEPT where the project's page is its own (see the coach, below)
 ```
 
 The master of all of it lives in the library repo at `<libraries_home>/web/steward/` — version
@@ -454,6 +455,69 @@ load-bearing for the content.**
 The rule states the principle those share: an animation is a nicety, the content underneath it is
 not, and motion marks arrival or change rather than idleness.
 
+### The limit of that: a project whose page IS an app
+
+`weightloss` moved here on 2026-09-01 and it takes the freedom further than a body module. The
+weight-loss coach is a PWA — roughly 160 KB of markup, style and script that its routine rewrites
+every morning, with a service worker and a manifest scoped to `/weightloss/` — so there is no
+shell to generate and no body to load. Its `index.php` calls `gate_require('page','weightloss')`
+and is otherwise the app.
+
+What it still shares is the part that matters: it reads and writes `/api.php` like every other
+page, it publishes a state document with a card, and its data lives in `_store/weightloss/`. What
+it does NOT share is a shell, and two consequences follow that are easy to get wrong:
+
+- **Its page is that project's data, not kit.** `pages/generate.py` is the list of which pages the
+  template emits; a page it does not emit is nobody else's to deploy. Treating a daily-rewritten
+  page as kit fires "host ahead of master" every morning, and "master ahead of host — deploy it"
+  would put yesterday's copy over today's.
+- **It must not publish `gate` or `question`.** The shell is what renders those, above every body,
+  and no shell runs here — so a question in its state document would count on the hub and then
+  show nothing when opened, which is the exact failure that moving them into the shell fixed.
+
+It also shows what the gate bought. Basic Auth is a credential the browser holds, and an installed
+Firefox-Android PWA opens in a fresh context with no way to prompt for one — which is why this app
+had grown a passphrase gate of its own, with the secret echoed into the page as a token every
+fetch then carried. A cookie an application can hold retired all of it: no lock screen, no
+plaintext secret file, no token in a query string.
+
+The one thing the root `.htaccess` does not cover is worth stating, because it is a whole class:
+it denies data-bearing EXTENSIONS, and this project stores `.jpg` photos, `.kml` and `.gpx`
+tracks, none of which are on that list. Its `uploads/`, `GPSLogger/` and `config/` directories
+therefore carry their own `Require all denied` — 403 even to a valid credential, reachable only
+through PHP and FTP. A project that stores a file type the root rule does not name has to close
+that itself.
+
+**And an OAuth callback is the one page that cannot call the gate.** A provider validates a
+registered callback by fetching it from its own servers, with nobody signed in; Withings answers a
+401 with "Fail to connect to callback url" and refuses to register the URL at all. The
+post-consent redirect arrives the same way. So `/weightloss/oauth/` is ungated — the third
+documented exception to "outside `/_shared/`, nothing is served to an unauthenticated request",
+after the web app manifest and an installed app's own shell.
+
+The precise requirement is worth naming, because guessing at it cost an afternoon: Withings sends
+a **HEAD** request to the URL, from their servers, with nobody signed in, and stores the URL only
+on a 2xx. A gated page answers 401 and is refused.
+
+The rest of that afternoon is the more useful lesson, and it is about diagnosis rather than about
+OAuth. Their validator is rate-limited, and it reports that in the same place and nearly the same
+words as an unreachable URL — so a registration that will not save looks exactly like a URL being
+rejected. Every consent then fails `redirect_uri_mismatch` against a value nobody can see. Chasing
+that produced a confident wrong theory (a 64-character column limit), which was written into a
+util's docstring, its selftest, two memories and this document before the provider's own page gave
+the real numbers: 255 characters, nothing about path depth or extension. The correction is cheap;
+believing it for a week would not have been. When an external system refuses something, measure
+your own side first — twenty rapid anonymous probes returned twenty 200s — and read the provider's
+stated requirements before inferring one from the shape of the failures.
+
+What makes an exception safe is never where the file sits but what it HOLDS. That page reads no
+disk, no store and no config; it echoes back one query parameter, HTML-escaped — an authorization
+code the provider has just handed to whoever completed consent, which is already in their address
+bar, is single-use, and expires in thirty seconds. It shows the code rather than merely existing
+because thirty seconds is the whole budget and reading it out of a truncated phone address bar has
+lost it before. Completing the exchange there would need the client secret on the web host, which
+is why it does not.
+
 ## The collection module takes its views from the model
 
 `board.js` started as the radar body and is now the body for anything with a collection. A
@@ -492,9 +556,6 @@ waiting on Mark, when what they wait on is their own reply.
   the steward guest list is a published mirror; only *attendance* state (invited / coming / maybe
   / declined) is set here and reconciled on the routine's next run. Its `model.json` carries no
   membership action and records why.
-- **The weight-loss PWA** was blocked on the host's Basic Auth, which an installed PWA cannot
-  replay. That is what `gate.php` fixed: a cookie is carried by a PWA, so the app moves under the
-  hub with no exception and its own passphrase gate is retired.
 - **`sprind`** and **`birthday-admin`** are built on the collection module, not adapted: their
   own markup, stylesheets and rendering are superseded. R444, which reported sprind's publisher as
   blocked, was stale — R445 had diagnosed it (engine keys in the PEP 723 block, not the
