@@ -379,14 +379,22 @@ with their own palette, their own type and their own copy of the feedback plumbi
 replacement is the shared shell plus `_shared/modules/board.js` (+`board.css`) and a ~25-line
 page, exactly like a status page.
 
-**`freelance-radar` has not finished moving, and the honest statement of that is here rather than
-in a routine's memory.** Its working dashboard is still the old static app reading its own
-per-project store, which `build.py` writes every run; the unified board is a second, stale copy of
-the same project. The blocker is not the shell — it is that `board.js` drops the engagement
-pipeline detail the old app shows (R1073/R1089), and until that lands, deleting the old app costs
-Mark the surface he actually uses. `grants-radar` has the same shape. Treat the paragraph above as
-the target, not the host: read `state/kit-versions.json` and the maintainer's exposure sweep for
-what is actually deployed.
+**`freelance-radar` has not finished moving.** Its working dashboard is still the old static app
+reading its own per-project store, which `build.py` writes every run; the unified board is a
+second copy of the same project.
+
+The blocker that stood — `board.js` dropping the engagement pipeline detail (R1073/R1089) — is
+gone: the card now shows what blocks it, what the routine plans next, the flags it raised, a
+reply that came back, and the channel an application would go out on. What remains is data
+freshness, not features. The unified store was last written on 2026-08-31 and holds 990 items
+against the old store's 1018, because `publish_unified` was blocked by the gate lockout for a
+day. **Swap the page only after the routine has published to the unified store again** — a page
+that is complete and stale is worse than the old one, which is at least current.
+
+The funnel is the other half of why the unified board is now the better surface. A triage board
+narrowed by three defensible filters reads as broken: 748 undecided become 411 past the score
+floor and 20 past the fit floor, and the tiles say only "748" and "20". Each bar names the
+control that cut it, so the narrowness is legible and undoable rather than mysterious.
 
 An intermediate approach — a *token bridge* that re-pointed the old stylesheets' twenty custom
 properties at the shared tokens — was built, verified and then rejected: it recoloured the old
