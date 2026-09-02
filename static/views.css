@@ -632,9 +632,16 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
 /* a condition waiting on another is visibly NOT yours to act on yet, and says what it waits
    for — "dormant" alone would leave the reader guessing */
 .goal-row.blocked { opacity: .6; font-style: italic; }
-.goal-text { min-width: 0; flex: 1; }
+/* The condition is what the row is FOR, so it keeps a readable width no matter what else the
+   row carries. `min-width: 0` alone let a long note win the flex negotiation and squeeze the
+   condition to one word per line — a run that writes a paragraph of accounting destroyed the
+   panel it was reporting into. */
+.goal-text { flex: 1 1 auto; min-width: 22ch; }
 .goal-text:focus { outline: 1px solid var(--rule-2); border-radius: 4px; }
-.goal-meta { font-size: 10px; min-width: 0; overflow-wrap: anywhere; }
+/* F421 let the note WRAP so it stopped running off the sidebar — necessary, and not sufficient:
+   wrapping says how the note breaks, not how much of the row it may claim, so a paragraph-long
+   note still won the flex negotiation and starved the condition. A shrinkable basis bounds it. */
+.goal-meta { font-size: 10px; min-width: 0; flex: 0 1 34ch; overflow-wrap: anywhere; }
 .goal-note { color: var(--ink-3); }
 /* v2: a verdict the verifier objected to and the run re-asserted. Amber, not red — the run
    is not wrong, the two disagreed, and the operator decides. */

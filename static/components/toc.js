@@ -1,7 +1,8 @@
 // Sticky side table-of-contents. On wide viewports it parks a fixed rail in the right margin
-// (like the run/conversation rails — same 1560px breakpoint) listing the page's <h2> sections,
-// with click-to-scroll and the in-view section highlighted. Purely additive: no layout change,
-// hidden below 1560px, and skipped on views that already carry their own rail/nav.
+// (like the run/conversation rails — same 1900px breakpoint, which is where a margin exists once
+// the navigation rail has taken its 212px) listing the page's <h2> sections, with click-to-scroll
+// and the in-view section highlighted. Purely additive: no layout change, hidden below that
+// width, and skipped on views that already carry their own rail/nav.
 
 import { el } from "/static/util.js";
 

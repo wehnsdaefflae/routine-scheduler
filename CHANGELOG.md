@@ -17,6 +17,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.280.0] — 2026-09-02
+
+### Fixed — three console regressions from the 0.277.0 redesign, all found by measuring
+
+- **`position: fixed` was broken on every page.** The page-enter animation ended on
+  `transform: none` with `animation-fill-mode: both`, and a *filled* `transform: none` computes to
+  the identity matrix rather than the keyword — so every view container stayed a containing block
+  for its fixed descendants, permanently. The conversation and run rails measured from the reading
+  column instead of the viewport and sat on top of the text they belong beside: the left rail
+  landed at x=634 instead of 230 on a 2000px viewport. The enter animation is opacity-only now,
+  and a comment says why it must stay that way. Measured after: rails at 230–474 and 1738–1982,
+  chat 510–1702, both clear.
+- **The "On this page" navigation had been invisible since 0.277.0.** `components/toc.js` was never
+  removed and `app.js` still mounted it — the palette migration deleted its entire stylesheet block
+  (it used the retired `--line`/`--muted`/`--amber` tokens), so Settings and every routine page
+  built a nav with no styles. Restored on the current palette. Its breakpoint moves 1560 → 1900:
+  the navigation rail takes 212px off the left, so the margin it parks in opens up that much later,
+  and the two tests asserting it at 1600/1700 were asserting something the layout cannot deliver.
+- **A long note still collapsed the goal panel** — the other half of F421, which fixed the note
+  *overflowing* by letting it wrap. Wrapping says how a note breaks, not how much of the row it
+  may claim, so a paragraph of stopping-condition accounting still won the width negotiation and
+  squeezed the condition itself — `flex: 1; min-width: 0` — to one word per line, destroying the
+  panel that was reporting it. The condition keeps a 22ch floor and the note a shrinkable 34ch
+  basis; it still wraps, as F421 requires. A test now pins the starving half too.
+
+### Changed
+
+- `miz-grant-steward`'s recipe builds the single-editor lock, the ten-minute inactivity logout and
+  the visible countdown its original brief asked for. The routine had reasoned them away as
+  unnecessary over an append-only store — sound about data safety, and beside the point: the ask
+  was about two people not talking over each other. It needs nothing the host does not already
+  offer, so it was work misfiled as a question.
+
 ## [0.279.0] — 2026-09-02
 
 ### Changed — nobody deploys for anybody: `steward-hub-maintainer` retired

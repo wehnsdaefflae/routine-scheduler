@@ -134,7 +134,7 @@ def test_sections_side_toc(ui, ui_page):
     """On a wide viewport the routine page grows a sticky "On this page" rail listing its
     <h2> sections — the same mountToc rail Settings uses (routine.js's recipe file tree is a
     within-section nav and no longer suppresses it)."""
-    ui_page.set_viewport_size({"width": 1700, "height": 950})
+    ui_page.set_viewport_size({"width": 1960, "height": 950})
     ui_page.goto(f"{ui.url}#/routine/uir")
     ui_page.wait_for_selector("h2:has-text('Filesystem roots')", timeout=10_000)
     toc = ui_page.locator(".side-toc")

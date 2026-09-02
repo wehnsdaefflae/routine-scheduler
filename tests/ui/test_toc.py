@@ -1,11 +1,15 @@
 """Side table-of-contents (toc.js): on a wide viewport a sticky rail lists the page's h2 sections
-and jumps to them; on a narrow viewport it's hidden (no margin to park in)."""
+and jumps to them; on a narrow viewport it's hidden (no margin to park in).
+
+"Wide" is 1900px, not the 1560px of the horizontal-tab era: the navigation rail takes 212px off
+the left, so the margin the TOC parks in only opens up that much later. A test asserting it at
+1600 was asserting something the layout cannot deliver — the margin there is 74px."""
 
 from playwright.sync_api import expect
 
 
 def test_toc_lists_sections_and_jumps(ui, ui_page):
-    ui_page.set_viewport_size({"width": 1600, "height": 1000})
+    ui_page.set_viewport_size({"width": 1960, "height": 1000})
     ui_page.goto(f"{ui.url}/#/settings")
     ui_page.wait_for_selector("#sec-connections", timeout=10_000)
     toc = ui_page.locator(".side-toc")

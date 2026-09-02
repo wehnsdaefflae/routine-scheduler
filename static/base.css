@@ -170,7 +170,13 @@ h3 { font-size: var(--t-l); font-weight: 600; letter-spacing: -0.01em; margin: v
 @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.32; } }
 @keyframes spin { to { transform: rotate(360deg); } }
 @keyframes shimmer { to { background-position: -200% 0; } }
-@keyframes rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+/* The page-enter fade is opacity ONLY, and must stay that way. A transform on the view
+   container — even the identity one a filled `transform: none` keyframe computes to — makes that
+   container a containing block for every `position: fixed` descendant, so the run and
+   conversation rails and the side table-of-contents stop measuring from the viewport and park
+   inside the reading column, on top of the text they sit beside. The 6px rise this replaces cost
+   exactly that, on every page, for the life of the document. */
+@keyframes rise { from { opacity: 0; } to { opacity: 1; } }
 
 #view > * { animation: rise 0.26s var(--ease) both; }
 
@@ -672,4 +678,35 @@ label.field > span, .field > .lbl {
   /* the composer's message input takes its own full-width line; the buttons wrap beneath it */
   .composer > input[type="text"], .composer > textarea, .row > .answer-input { flex: 1 1 100%; }
   .filterbar select, .filterbar input[type="search"] { flex: 1 1 140px; }
+}
+
+/* Side table-of-contents (components/toc.js): "On this page" for the long configuration pages —
+   Settings and a routine's detail view. It parks in the RIGHT margin on viewports wide enough to
+   have one, by the same arithmetic as the run/conversation rails: the navigation rail takes
+   --rail-w off the left, the reading column takes --shell-max, and what is left over is split
+   between the two margins. Below that there is no margin to park in and the page is read
+   top-to-bottom, which is why it hides rather than reflowing into the column it indexes.
+
+   This block was lost in the 0.277.0 palette migration — the markup and the mount in app.js
+   survived, so the page kept building a nav nothing could see. */
+.side-toc { display: none; }
+@media (min-width: 1900px) {
+  .side-toc {
+    display: flex; flex-direction: column; gap: 1px;
+    position: fixed; top: 118px; right: 18px; bottom: 90px;
+    width: calc((100vw - var(--rail-w) - var(--shell-max)) / 2 - 30px); max-width: 240px;
+    overflow-y: auto; z-index: 5; padding-left: 12px; border-left: 1px solid var(--rule);
+  }
+  .side-toc-cap {
+    color: var(--ink-3); font-size: 10.5px; text-transform: uppercase; letter-spacing: .08em;
+    margin-bottom: 6px;
+  }
+  .side-toc .toc-link {
+    color: var(--ink-2); font-size: 12.5px; line-height: 1.5; text-decoration: none;
+    cursor: pointer; padding: 2px 8px; border-radius: 6px; border-left: 2px solid transparent;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .side-toc .toc-link:hover { color: var(--ink); background: var(--plate-2); }
+  /* the section you are IN — signal, because it tracks you as you scroll */
+  .side-toc .toc-link.on { color: var(--signal); border-left-color: var(--signal); }
 }

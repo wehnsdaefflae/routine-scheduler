@@ -99,6 +99,30 @@ def test_a_long_condition_note_wraps_instead_of_overflowing(ui, ui_page):
     assert note.evaluate("el => getComputedStyle(el).whiteSpace") != "nowrap"
 
 
+def test_a_paragraph_long_note_does_not_starve_the_condition(ui, ui_page):
+    """The other half of F421, still live in 0.279.0 (operator screenshot): letting the note WRAP
+    says how it breaks, not how much of the row it may claim. A paragraph-long note still won the
+    flex negotiation and squeezed .goal-text — `flex: 1; min-width: 0` — to one word per line, so
+    the panel reporting the accounting was destroyed by the accounting."""
+    _slug, conv_dir = _start_conversation(ui, ui_page)
+    _goal(conv_dir, {**DOC, "conditions": [
+        {"id": "s1", "status": "open", "group": "g1",
+         "text": "the collaborative steward page is published with login as Mark or Florence, "
+                 "read-only lock for the other, and a ten-minute inactivity auto-logout",
+         "note": "** — Seite nicht live: Hub-Slug unregistriert (400), Registrierung owned by "
+                 "the hub maintainer (R1164 steht + frischer Gruppen-Note). Login/Lock/"
+                 "Auto-Logout laufen ueber die Shell des Hubs (append-only Modell). Mockup "
+                 "live als Interim, Dokumente liegen als PDF vor und warten auf das Deploy."},
+    ]})
+    ui_page.reload()
+    text = ui_page.locator(".goal-text").first
+    expect(text).to_be_visible()
+    width = text.evaluate("el => el.getBoundingClientRect().width")
+    # One word per line is what a starved column looks like; a readable one is far wider than
+    # the longest word in it. 160px is well below any sane column and far above a starved one.
+    assert width > 160, f".goal-text starved to {width}px by its own note"
+
+
 def test_the_verdict_chip_reads_met_only_when_the_goal_is_satisfied(ui, ui_page):
     _slug, conv_dir = _start_conversation(ui, ui_page)
     _goal(conv_dir, DOC)
