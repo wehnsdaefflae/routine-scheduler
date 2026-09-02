@@ -1,6 +1,6 @@
 ---
 effect:
-  with: publishes a page you can check between runs, in the shared house layout
+  with: publishes a page you can check between runs, in the shared house layout, its links proven to open
   without: leaves its state in run summaries you have to go and read
   when: it works on something over weeks and you want one place to look
 tags: [steward, web, ui, feedback, publishing, reporting]
@@ -17,6 +17,15 @@ own is a page whose bugs have to be found and fixed again from scratch, which is
 five sibling pages each ended up unable to show the reader what he had already sent.
 
 Hold this rule when you publish a page. If you do not publish one, it does not bind you.
+
+Read it here, every run, and do not copy any of it into a note of your own. There is one copy
+of this text on purpose: it is revised when the host changes, and a copy in your own memory is
+not. Nine routines transcribed the paragraph below about linking a document. The paragraph was
+corrected; the nine transcriptions were not, and for weeks they taught a link form the host had
+never accepted — one of them sitting nineteen lines above that same routine's own, correct
+version of it. What belongs in your memory is what you measured about YOUR project: the
+directory you were given on the host, the credential entry that works, what a deploy of yours
+needs. What this rule says is not yours to remember.
 
 ## The gate lets you in, or nothing else here can happen
 
@@ -167,7 +176,19 @@ That needs two things you may not have — a way to move a file onto the host, p
 write it while you work. If either is missing, do not link the document anyway. List it as
 PENDING, in your own words, saying what exists and what is stopping it from reaching him, then
 report what you are missing. A document he is told about and cannot open is worse than one he is
-told is still coming: the first is a broken promise, the second is true.
+told is still coming: the first is a broken promise, the second is true. But PENDING is a reading
+of the host, not a decision you have made once: take it again each run — ask the host itself
+whether the document is there now, instead of reusing the answer you wrote down last time. What
+blocked you may have been cleared for you since — he may have put the file there himself — and a
+document still announced as coming on the day he can already open it is the same broken promise
+pointing the other way.
+
+The host now holds you to this at the moment you write. A publish carrying a document link the host
+cannot answer is refused outright, with the reason and the file named — it is not stored and it
+does not reach the page. Read that refusal as the finding it is: the link is wrong, or the file is
+not where you said, and no amount of re-sending the same document will change either. Publishing
+the document with an empty url and saying in its note that it is still coming is always accepted,
+because that is true and a dead link is not.
 
 ## Say where you are while you are working
 
@@ -237,30 +258,74 @@ the original wording is always still there. Uphold that from your side too:
 An upload that returned no error is not a published page. Each of these checks exists because the
 thing it catches actually happened, silently, and stood for weeks.
 
-**1. Read it back through the same interface you wrote it with.** Not your local copy of the
-payload — the stored document. A write can be refused for a key you misspelled, and a run that
-assumes success moves on believing the reader can see something he cannot. Check the fields that
-carry the weight: your feedback marker is there and is the number you meant, your card says what
-you think it says.
+**1. Read back every stored copy your page renders from — then compare each against what you
+built.** Not your local copy of the payload: the stored copy, fetched through the same interface
+you wrote it with. Not only the state document either — the item collection too if your project
+has one, plus the model that decides which of your keys is rendered at all. Read them whether or
+not you wrote them this run. The store you left alone is the one free to be a version old, and
+nothing else in the run will notice.
 
-**2. Fetch your own page with NO credential and require a refusal.** Signing in first proves
-nothing: the question is what a stranger gets. Anything holding data must answer 401 or 403 — and
-that includes the files beside the page, not only the page. When the host's blanket protection was
-removed, twelve loose files became world-readable in silence, among them a generated invoice
-draft, and every routine's own verification had passed the whole time because every one of them
-checked while signed in.
+Two failures hide here, both silent. A write can be refused for a key you misspelled — a run that
+assumes success then moves on believing the reader can see something he cannot. And a document you
+corrected on your own disk but never sent reads back as the version before the correction, which
+is the version he is looking at.
 
-**3. Confirm every document you listed is present and linked through the gate.** You are not the
-reader and hold none of his credentials, so you cannot open a gated file as he will — that half is
-the gate's to serve, and a check that claims you opened it is one you did not run. What is yours is
-to confirm the file is actually there, at the exact path in the link, by the same interface you
-uploaded it with, and that the link is the gate form and not a raw path he would be refused. A
-deliverable whose file has moved or was never uploaded, or one linked by a raw path, is one he
-cannot read, and the list saying otherwise is worse than not listing it — one project advertised a
-deliverable that had never existed on the host at all.
+Compare the parts that carry the weight, field by field: your feedback marker is there and is the
+number you meant, your card says what you think it says, every link is the one your builder
+produces now. A stored copy that differs from what you built is not a discrepancy to note in your
+summary — it means you have not published. Send it again, then read it again. If that send is
+refused, the refusal is the finding: report it rather than working around it.
 
-If a check fails, say so in your summary and fix it next run rather than reporting a publish that
-did not land. "Uploaded" is not the claim; "he can see it, and nobody else can" is.
+One run built its document links wrong, learned the rule it had broken four turns later, fixed the
+builder along with its own copy on disk, then published its state document again — never the
+collection those links live in. The corrected values sat on its disk for five hours while the page
+served the broken ones. He found it by clicking.
+
+**2. Fetch your own page with NO credential and require a refusal — and fetch a DATA file too.**
+Signing in first proves nothing: the question is what a stranger gets. Anything holding data must
+answer 401 or 403. When the host's blanket protection was removed, twelve loose files became
+world-readable in silence, among them a generated invoice draft, and every routine's own
+verification had passed the whole time because every one of them checked while signed in.
+
+The data file is not an extra: it is the only half of this check that can fail. Your page is
+`.php` and refuses a stranger by calling the gate itself, so it answers 401 whether or not the
+host's `/.htaccess` is intact — while everything else you have uploaded is protected by that file
+and nothing else. Removing it re-opens every document on the host and leaves every human-facing
+page working perfectly, which is exactly how it would go unnoticed (R1159). So each run, ask for
+one file of yours that is NOT a page — a PDF, a JSON, anything the allowlist denies — with no
+credential, and require 403. Ten routines publish here; each one asking that question once a day
+is what keeps the invariant honest without anybody sweeping the host.
+
+**3. Fetch every document link your page renders and require the file back.** What is checked is
+the links, not the payload key you happened to build them in: gather them from everywhere the page
+draws them — the state document, the item collection, a body you wrote yourself — and check every
+one. This is about the documents you put on the host, not the addresses you cite: somewhere else's
+page is not yours to prove. One run proved its document list honestly and in full — while every
+link its page actually showed came from the collection beside it, and went unchecked.
+
+You can run this yourself. The gate serves the same bytes to any caller it accepts; the credential
+you publish with is one it accepts. So ask for each link exactly as it stands in what you published
+and require the file itself back — a status code alone proves nothing, least of all a refusal or a
+sign-in page served as a 200. A link that resolves nowhere answers 404 and is indistinguishable
+from a working one until somebody clicks it; a file that was never uploaded answers the same way —
+one project advertised a deliverable that had never existed on the host at all. A raw path fails
+for you exactly as it fails for him — the host denies a data-bearing file by its TYPE, not by who
+is asking — so there is nothing left here you could settle by reading your own payload instead.
+
+Ask the same of every document you called PENDING. That is a fact about the host, not a decision
+you made once: what blocked you last run may have been done for you since, so fetch the link that
+document would have before you republish the excuse. A page that promises a document he cannot open
+and a page that withholds one he can are the same failure — the page and the host disagree; the
+page is the one that is wrong.
+
+If a check fails, the publish is not finished. When the repair is yours — your own payload to send
+again, a link to rebuild, a file of yours to upload — make it in this run, then check again. Values
+you corrected on disk are not values he can see; a page you already know is wrong is not one to
+leave standing until tomorrow. When the repair is not yours — the host's own protection, a floor
+that fired, a way onto the host you do not hold — say so in your summary and report it rather than
+reporting a publish that did not land. Either way, your summary states what your LAST check
+returned, not what you intended it to return. "Uploaded" is not the claim; "he can see it, and
+nobody else can" is.
 
 ## Link the change where you report it
 

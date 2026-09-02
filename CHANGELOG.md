@@ -17,6 +17,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.278.0] — 2026-09-02
+
+### Fixed — a page whose every document link 404'd, and the proof that said otherwise
+
+A project corrected its document links four turns after publishing them, re-sent its state
+document, and never re-sent the collection those links live in. The corrected values sat on disk
+for five hours while the page served the broken ones, and the run reported the page verified in
+full — because the `status-page` rule's third proof was scoped to the `documents` key of the state
+document, while a `module:"own"` page renders its links out of the item collection beside it. The
+proof was also written on a false premise: that a run holds no credential the gate accepts, so it
+must reason about its own payload rather than fetch. A proof a run reasons about is a proof that
+never fails.
+
+- **`status-page` rule.** Proof 1 reads back *every* stored copy the page renders from and diffs
+  it against what was built — a store corrected locally but never re-sent reads back as the
+  version before the correction. Proof 3 is stated over the links the page RENDERS, wherever the
+  project keeps them, and performed by FETCHING each one and requiring the file back; a status
+  code alone proves nothing, least of all a sign-in page served as a 200. A failed check whose
+  repair is the run's own is repaired in that run, not deferred. PENDING became a reading of the
+  host to be re-taken each run rather than a decision made once. `effect.with` follows.
+- **The rule now forbids transcribing itself.** Nine routines had copied the document-linking
+  paragraph into their own `.memory/`, where nothing updates it — one of them nineteen lines above
+  that routine's own correct version. All nine corrected; three were publishing dead links because
+  of it (`ards-consulting-steward`, `fau-grant-application-prep`, `aisafety-grant-steward`).
+- **`web/steward/links.php` (new).** The extension allowlist, the never-served trees and the
+  resolution predicate, in one file required from `store.php` — what every entry point reaches.
+  The tables used to live in `gate-file.php`, where only the serve path could read them, which is
+  why the write path stored links nothing had ever evaluated. `api.php` now refuses a `put-items`
+  or `put-state` carrying a gate link this host cannot serve, naming the link and the reason; an
+  empty url stays legal, because that is how a document says it is not on the host yet. The check
+  reads values, not field names — checking by name would have missed `pdf_url`.
+  **`store.php` and `links.php` deploy together**: the former without the latter is fatal on every
+  request.
+- **`_shared/modules/status.js`.** Documents are no longer filtered on the presence of a url. A
+  document with no url is listed unlinked and reads as pending instead of vanishing — five
+  compiled PDFs read to their author as missing because the page that listed them showed nothing.
+- **`gate-file.php`.** Refusals leave with `X-Content-Type-Options` and `Referrer-Policy`, which
+  only the success path had been sending.
+
 ## [0.277.0] — 2026-09-02
 
 ### A queued proposal no longer renders as a completed action (R1200, R1183, F328)

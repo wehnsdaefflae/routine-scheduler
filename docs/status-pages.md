@@ -200,6 +200,15 @@ swept every run by the maintainer (`stages/close-ungated-surfaces.md`):
 
 > Outside `/_shared/`, nothing on this host is served to an unauthenticated request.
 
+The check that verifies it (`scripts/hubcheck.py sweep`) LISTS the host rather than re-requesting
+a remembered inventory. It used to read a frozen path list out of `state/exposure.json` and probe
+those — so a file a sibling uploaded after the baseline was invisible to it, which is the only way
+this invariant actually breaks. It now walks every directory over FTP, classifies each file
+against the same allowlist the `.htaccess` enforces, and then makes a handful of unauthenticated
+requests to prove the policy is in force at all: a listing looks perfect on a host whose
+`.htaccess` was deleted, and deleting it re-opens everything while every human-facing page keeps
+working (R1159).
+
 Closing it turned out to be a lesson in ownership. The obvious repair — convert or delete each
 loose file — was not available to the hub: every exposed path belonged to a sibling, and a routine
 editing another project's data is exactly what the ownership boundary forbids.
@@ -209,14 +218,20 @@ routine to do something its rules forbid produces a correct refusal, not a fix.
 So the closure is host-level and hub-owned, touches no sibling file, and — the operator's
 constraint — requires no server configuration at all:
 
-- **`/.htaccess`** denies every data-bearing extension to HTTP, inherited by every project
-  directory. **`.htaccess` works on this host.** Plesk fronts Apache with nginx and Apache honours
-  it; measured 2026-09-01 against a probe directory, after the opposite had been written down and
-  believed for months. `.html` is deliberately not denied — a page protects itself by being `.php`
-  and calling the gate, and denying `.html` would take out pages published as deliverables.
-  `manifest.json` and `*.webmanifest` are explicitly granted: a browser fetches a web app manifest
-  before any credential exists, which is the whole reason this host has a cookie gate, and denying
-  it breaks installing the PWA.
+- **`/.htaccess`** is an ALLOWLIST, inherited by every project directory: everything is denied to
+  HTTP, and exactly four things are granted back — `.php` (which protects itself by calling the
+  gate), `.html` (a deliverable the reader opens; a page holding DATA is written as `.php`), the
+  asset types a page renders with (css/js/map/svg/images/fonts), and the web app manifest (a
+  browser fetches it BEFORE any credential exists, which is the whole reason this host has a
+  cookie gate, so denying it breaks installing the PWA). **`.htaccess` works on this host** —
+  Plesk fronts Apache with nginx and Apache honours it; measured 2026-09-01 against a probe
+  directory, after the opposite had been written down and believed for months.
+
+  It began as a deny list of data-bearing extensions, and that is why the nightly sweep existed:
+  a deny list cannot cover a type nobody thought of, so something had to go looking for what it
+  had missed. Inverted, the invariant is ENFORCED instead of audited — `.env`, `.sql`, `.bak`,
+  `.orig`, `.docx`, a stray `.tex` are all covered by never having been granted — and the sweep
+  stops being the thing that keeps the host closed.
 - **`gate-file.php`** reads those same files off disk and serves them to a caller the gate
   accepts, so a document a stranger cannot fetch is still one click away for the reader. A session
   cookie satisfies it. It resolves inside the document root only, allowlists extensions rather
@@ -623,10 +638,48 @@ the routines' own words, because a routine verifies while signed in and therefor
 stranger sees.
 
 So the `status-page` rule now states three proofs, each named after the failure it catches — a
-write refused for a misspelled key, twelve loose files world-readable behind a removed blanket, and
-a deliverable advertised that had never been uploaded. `steward-hub-maintainer` carries a fourth,
-because it owns the kit in two places: host and master compared both ways, with both hashes
-recorded, since one hash cannot show a drift.
+write refused for a misspelled key, twelve loose files world-readable behind a removed blanket,
+and a page whose every document link 404'd for five hours because the run that corrected them
+re-sent its state document and not the collection those links live in.
+
+That third proof is stated over what the page RENDERS and performed by FETCHING — both halves are
+that failure talking. A check scoped to the `documents` key passes in full on a page whose links
+come out of the collection beside it, so the proof follows the links the reader is actually
+handed, wherever this project keeps them. And a check that inspects the payload it just built
+cannot see a store that was never written, while one that reads the store back still cannot see a
+file that was never uploaded or a path the gate will refuse; asking the gate for the link is the
+only form that covers all three. A routine holds a credential the gate accepts, the same one it
+publishes with, so this was always a check a run could perform. The proof it replaces told it
+otherwise and left it reasoning instead; a proof a run reasons about is a proof that never fails.
+Every listed link is asked for rather than one of them, because each document is its own path and
+its own upload, so one that resolves says nothing about the next.
+
+`steward-hub-maintainer` carries a fourth, because it owns the kit in two places: host and master
+compared both ways, with both hashes recorded, since one hash cannot show a drift.
+
+### And the host stopped taking the run's word for it
+
+A proof a run performs is a proof a run can skip, and this one was skipped honestly for hours. So
+the question moved to the only party that can always answer it: `api.php` now refuses a `put-items`
+or a `put-state` carrying a gate link this host cannot serve, on the same terms and with the same
+wording, because holding the rule for one of the two documents a page reads is a rule a run can
+satisfy while publishing a broken page.
+
+What decides is `links.php` — the extension allowlist, the never-served trees and the resolution
+itself, in one file. Those tables used to live in `gate-file.php`, where only the serve path could
+read them, which is precisely why the write path stored five links nothing had ever evaluated. It
+is required from `store.php` rather than from each caller, because `store.php` is what every entry
+point reaches — `api.php` and `gate.php` include it directly, and `gate-file.php`, `p.php`,
+`index.php`, `i.php` and `invites-page.php` through `gate.php`. **Deploy the two together**: a
+`store.php` without `links.php` beside it is a fatal error on every request the host serves.
+
+The check reads values, not field names — any string beginning with the gate prefix, at any depth.
+Checking by name would have missed `pdf_url`, which is the field that broke. An empty url stays
+legal and always will: it is how a document says it is not on the host yet. An outside address is
+nobody's business here. And what the page does with an unlinked document changed to match — the
+collection module used to filter `documents` on the presence of a url, so a file listed as pending
+was not shown as pending, it was absent. A row that is never drawn is the one thing a reader cannot
+notice, which is why five compiled PDFs read to their author as missing rather than as waiting.
 
 ## The rule
 
