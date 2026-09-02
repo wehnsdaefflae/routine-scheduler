@@ -216,3 +216,21 @@ def test_manage_group_pause_toggle(tmp_path):
     assert obs["group"]["paused"] is False
     assert validate_action({"say": "s", "kind": "manage_group", "verb": "update",
                             "target": gid, "paused": True}) == []
+
+
+def test_manage_group_list_names_its_members(tmp_path):
+    """F424/R1142: the listing answers WHICH routines are in a group, in fire order — a count
+    answers "how big" and nothing else does. A group's members are its whole semantics, so a
+    run reasoning about one had to guess before this."""
+    from rsched.engine.obs_admin import format_admin
+
+    server = _server(tmp_path, members=("weight-coach", "tv-tracker"))
+    ctx = _ctx(server, home="conversations_home")
+    manage_group.handle_manage_group(
+        ctx, {"kind": "manage_group", "verb": "create", "name": "Professional · Daily",
+              "members": ["weight-coach", "tv-tracker"], "cron": "0 6 * * *"})
+    obs = manage_group.handle_manage_group(ctx, {"kind": "manage_group", "verb": "list"})
+    line = format_admin(obs, "manage_group")
+    assert "'Professional · Daily'" in line
+    assert "weight-coach → tv-tracker" in line     # fire order, not a count
+    assert "cron '0 6 * * *'" in line

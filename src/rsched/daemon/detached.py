@@ -29,11 +29,9 @@ import shutil
 from datetime import UTC, datetime
 from pathlib import Path
 
-import yaml
-
 from .. import registry
 from ..config import DEFAULT_BUDGETS, ServerConfig, load_routine
-from ..paths import atomic_write, atomic_write_json, read_json
+from ..paths import atomic_write_json, atomic_write_yaml, read_json, read_yaml
 from ..schedule import server_tz
 from . import detached_delivery
 from .detached_delivery import _has_pending_bg_message
@@ -146,7 +144,7 @@ class DetachedManager:
                          workflow: str) -> None:
         from ..workflows.library import head_commit
 
-        raw = yaml.safe_load((owner_dir / "routine.yaml").read_text(encoding="utf-8")) or {}
+        raw = read_yaml(owner_dir / "routine.yaml", {})
         label = str(req.get("label") or taskid)
         caps = _strip_capabilities(raw.get("capabilities"))
         cfg: dict = {
@@ -168,16 +166,9 @@ class DetachedManager:
         for key in ("fs_read_roots", "fs_write_roots"):
             if raw.get(key):
                 cfg[key] = list(raw[key])
-        atomic_write(task_dir / "routine.yaml",
-                     yaml.safe_dump(cfg, sort_keys=False, allow_unicode=True))
+        atomic_write_yaml(task_dir / "routine.yaml", cfg)
 
-    # -- 2. deliver -------------------------------------------------------------------------
-
-
-    # -- 3. wake ----------------------------------------------------------------------------
-
-
-    # -- 4. digest --------------------------------------------------------------------------
+    # -- 2. digest --------------------------------------------------------------------------
 
     def _rebuild_digests(self, catalog: dict[str, registry.RoutineInfo]) -> None:
         by_owner: dict[str, tuple[Path, list[dict]]] = {}
@@ -206,7 +197,7 @@ class DetachedManager:
         path.parent.mkdir(parents=True, exist_ok=True)
         atomic_write_json(path, rows)
 
-    # -- 5. gc ------------------------------------------------------------------------------
+    # -- 3. gc ------------------------------------------------------------------------------
 
     def _gc(self, catalog: dict[str, registry.RoutineInfo]) -> None:
         now = datetime.now(UTC).timestamp()

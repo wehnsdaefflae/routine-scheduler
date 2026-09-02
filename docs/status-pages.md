@@ -38,7 +38,7 @@ one storage layout, so a fix lands on every page at once.
 /cgi-bin/gate.json.php     the one secret, self-guarding like the store
 /api.php                   THE interface. every read and every write, for every page
 /store.php                 what a project's data IS — layout, row shape, folds, floors
-/migrate.php               the one-shot converter; idempotent, additive, deletes nothing
+/p.php                     the one page shell, built from a project's own state document
 /_store/<project>/         reached only through the API; every file refuses a direct GET
     state.json.php           the state document: phase, prose, deliverables, gate, question
     items.json.php           {generated_at, items:[{id, state, ...}]} — the collection
@@ -50,13 +50,58 @@ one storage layout, so a fix lands on every page at once.
 /_shared/steward.js        the shell: masthead, feedback rail, run trigger, the API client
 /_shared/modules/status.js the status body — gate, question, state, deliverables, documents
 /_shared/modules/board.js  the collection body — views come from the model (+ board.css)
-/<project>/index.php       a ~25-line shell naming the project, language, title and module
-                          — EXCEPT where the project's page is its own (see the coach, below)
+/<project>/index.php       only where a project OWNS its body (its own page.js/page.css);
+                          every other project is served generically by /p.php
 ```
 
 The master of all of it lives in the library repo at `<libraries_home>/web/steward/` — version
 controlled there because it is shared across routines and the library is the one repo that
-already is. `pages/generate.py` emits every project shell from one template.
+already is. `pages/generate.py` emits a project shell from one template, for the projects that
+own a directory.
+
+## A project registers itself
+
+Publishing to this host used to take three registrations, all of them the hub maintainer's and
+all on its schedule: the slug in `store.php`'s `PROJECTS` constant, the title, standfirst,
+language, module and sheet width in `pages/generate.py`, and a generated `index.php` uploaded
+into the project's own directory. Until all three landed, `api.php` answered `400 unknown
+project` — so a routine that was publishing perfectly correct state was simply invisible.
+`miz-grant-steward` lost three runs and part of a 27 September deadline to that queue, with
+`aisafety-grant-steward` behind it. The old `projects.json` was removed because one shared file
+every routine rewrote was a bug factory; moving that list into PHP kept the coupling and added a
+deploy.
+
+All three are gone. `store.php` has no project list: `known_projects()` scans `_store/` for a
+directory holding a state document, which is the same set `what=hub` already derived its cards
+from, and `require_project()` validates the SHAPE of a slug (`^[a-z0-9][a-z0-9-]{1,39}$`) rather
+than membership of a list. `put-state` — the only op that can bring a project into being, and one
+no guest may call — accepts a well-formed slug it has not seen, so a routine's first publish
+creates its project. The root `.htaccess` routes `/<slug>/` to `p.php` for any path that is not a
+real file or directory, and `p.php` reads the project's own state document for everything the
+generator used to be told: `card.name` is the title, and an optional `page` key carries `lang`,
+`title`, `standfirst`, `module` (`status` or `board`) and `wide`. A project that publishes none
+of them still gets a correct page — a narrow English status sheet titled with its card name.
+
+Nothing that already works changes: the rewrite fires only where no directory exists, so every
+project that owns its body — `module: "own"` with its own `page.js` and `page.css`, and the
+coach whose page IS its app — keeps serving exactly as it did, and those are what
+`pages/generate.py` is still for. What the maintainer has left in this path is deploying a page
+somebody genuinely wrote by hand.
+
+`migrate.php` is gone with them. It converted the pre-unification stores once, it had already
+been deleted from the host, and a one-shot migration is not kept after it converges.
+
+**Reading that master needs a grant — and every publisher needs to read it.** A routine building
+to this contract has to see `_shared/steward.js`, `_shared/steward.css`, `_shared/ui.js`,
+`_shared/ui.css`, `_shared/modules/*`, `pages/generate.py` and its own `models/<slug>.json`.
+`read_file` resolves against the routine's granted fs roots; a publisher's roots are usually
+nothing but its own directory. The consequence was not a failed run — it was a duplicated one:
+routines wrote themselves a private helper script to `open()` those same files directly, once per
+project, each copy free to rot (R1160). So `status-page` carries
+`expects: fs-read: ["/home/mark/.local/share/routine-scheduler-libraries/web/steward"]` — the SOFT
+edge, reported by the setup surface for every holder — and every routine holding the rule now
+carries that read root. `steward-hub-maintainer` already had it: it owns the master in both
+directions.
 
 **What makes that true is a mechanism, not a sentence.** For a while it was only the sentence, and
 the two copies drifted: the feedback-cursor default in `api.php` and the 16 MiB `MAX_BODY` in
@@ -124,6 +169,16 @@ So `gate.php` takes either form and checks both against the same secret:
   already in `WEB_AUTH_SOURCES.steward` and the machine side needs no migration at all — same
   util, same source name, same credential.
 
+**A routine holding no `WEB_AUTH_SOURCES` grant cannot tell that apart from a broken host.** The
+grant is four-state and per-routine, so "publishes to the steward host" and "may read the
+password for it" are two separate decisions; a routine can hold the first without the second. It
+then gets `401 {"ok":false,"error":"not signed in"}` on every call — the same body a wrong
+password gets, the same body a dropped `Authorization` header gets. `miz-grant-steward` lost runs
+to exactly that (R1143, R1175), reporting the host as unreachable while every part of its publish
+path was in fact correct: granting the secret fixed it on the first attempt with nothing else
+changed. So the `status-page` rule tells a routine to request the grant BEFORE its first publish
+— and to fetch `gate.php?diag` before concluding anything from a 401.
+
 `/_shared/*` is deliberately public: a stylesheet, the shell and two body modules, no data. Every
 page is `index.php` and opens with `gate_require()`. The secret lives in `cgi-bin/gate.json.php`,
 self-guarding like the store — `cgi-bin` being unserved is a property of one host, not a fact.
@@ -168,6 +223,18 @@ constraint — requires no server configuration at all:
   than guessing a content type, and refuses `_store/` and `cgi-bin/` whatever it is handed. Pages
   link a document as `/gate-file.php?p=<path>`.
 
+**That `p=` is DOCROOT-relative — reading it as anything else publishes a 404.** The
+resolution is `realpath(__DIR__ . '/' . ltrim($p, '/'))`: the parameter is joined to the
+directory the site itself lives in, then required to still be inside it. A routine that read
+"path" as "path on the machine I am running on" linked
+`/gate-file.php?p=/home/mark/routines/<slug>/proposal.pdf`, which resolves to a docroot path that
+never existed — so the reader got a 404 on a document the page said was ready (R1199). A
+generated document has to be DEPLOYED before it can be linked — uploaded under the hub docroot as
+`<slug>/<file>`, which costs the file-transfer capability plus somewhere on the host the routine
+may write — then linked by the short docroot path it has there. A routine that cannot deploy lists
+the document as pending instead, because the rule already holds that an advertised document the
+reader cannot open is worse than one that is not listed at all.
+
 **One trap, and it took every gated page down for a minute.** Adding any `Require` directive makes
 Apache process authorization, and Apache does not hand `Authorization` to a FastCGI script unless
 told to — it only looked like it did because nothing here had made Apache process authorization
@@ -199,20 +266,6 @@ already earned the hard way.
 `log.jsonl` — "why did nothing happen when I clicked" should have an answer. A model with no
 transitions permits everything: a project that has not described its states should not have its
 writes refused for it.
-
-## The migration
-
-`migrate.php` converts every pre-unification store in place. It is idempotent and additive: it
-never deletes a source and never overwrites a destination that already exists, so running it
-twice changes nothing and a half-finished run is simply repeated. Fetch it once without `apply`
-for a dry run, once with `&apply=1` to write, then verify through the API before deleting
-anything.
-
-The only genuine shape change is each radar's feedback: `{id, opp_id, verdict, reason, ts}`
-becomes the shared row, with `id` (a row number) becoming `seq` and `id` becoming what the
-feedback is *about*. Items keep every field they had; `status` is copied to `state`, and an
-application draft nested under `engagement.draft.body` is lifted to `artifact` with the original
-left in place.
 
 ## Who may write what
 
@@ -290,6 +343,7 @@ wrong and both look fine.
 | `charts[]` | routine-rendered SVG, wrapped so it inherits the page's type and colours |
 | `direction_field{id}` | the id the free-text steer box posts to |
 | `hook_url` | the webhook a submission pings, so a run fires on real input |
+| `page{lang,title,standfirst,module,wide}` | how `p.php` presents this project — the facts that used to be hard-coded per project in `pages/generate.py`. All optional: a project that says nothing gets a narrow English status sheet titled with its `card.name` |
 
 ## Who is reading, and what a visit means
 
@@ -579,7 +633,10 @@ recorded, since one hash cannot show a drift.
 `status-page` in the library is what actually binds a routine to any of this, held by slug in
 `routine.yaml` — so publishing a web UI is opt-in per routine, and a routine that does not
 publish never reads a word of it. The rule states the payload invariants, the publish order, the
-append-only discipline and what a run owes the user back when he edits one of its drafts.
+append-only discipline and what a run owes the user back when he edits one of its drafts. Since
+the gate was armed it also states the two things a publisher must hold before its first run — the
+`WEB_AUTH_SOURCES` grant and read access to the kit — plus what `gate-file.php?p=` is actually
+relative to.
 
 **A permission was considered and rejected.** Gating this behind a `web-publishing` permission
 doc would mean `requires: {utils: [ftp]}`, which moves `ftp` into the engine's gated-util set for

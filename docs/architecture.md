@@ -658,9 +658,12 @@ util stays deleted (git-recoverable — seed utils only land at repo creation).
   library text reaches every holder at its next run with no migration and no fork to drift. Nothing
   is copied into a routine dir and no LLM adapts anything at creation — a rule is general by
   construction, so the decompose pipeline only receives the held slugs as an index.
-  The SET is preselected at creation (`suggest_rules_permissions` — which also suggests the
-  routine's `deliberation` level — from the refined instruction + chosen pattern) and changed
-  afterwards ONLY by the user (`rules.py`, `POST /{routines,conversations}/{slug}/rules` — one
+  The SET a new routine starts with comes from its PATTERN (`META.includes`, falling back to
+  `DEFAULT_RULES`), not from a judgement made at creation: nothing has read the recipe yet,
+  because the recipe is what creation is about to write. Judging a routine's setup is
+  `recommend_setup`'s job, on the routine page, once there is a recipe to judge — and it puts
+  advice beside every toggle rather than flipping one, so the user stays the one who decides
+  (D108). The set is changed afterwards ONLY by the user (`rules.py`, `POST /{routines,conversations}/{slug}/rules` — one
   shared impl): the config list is the state, the tail is DERIVED and rebuilt from it. Deliberately
   not 409-guarded — no run writes routine.yaml, so the web layer is the sole writer; a newly bound
   rule even reaches a LIVE run via control.json `add_rules` → `control.apply_rule_additions` (an

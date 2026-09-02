@@ -153,12 +153,10 @@ def _is_stub(body: str) -> bool:
     """The observed failure: a stage module of one thin line that a run cannot act from."""
     return len([ln for ln in body.strip().splitlines() if ln.strip()]) < 2
 
-def _pipeline(resolve, raw: str, instruction: str, *, params: dict, pins: list[str],
-              rule_lines: str, slug: str, progress=None) -> dict:
+def _pipeline(resolve, raw: str, instruction: str, *, pins: list[str],
+              rule_lines: str, slug: str) -> dict:
     """Outline → main → one call per stage. Raises on any hard failure (the caller falls
-    back to materialize). `progress(step: str, done: int, total: int)` — best-effort
-    live reporting (F192: the creation surface shows WHICH step the build is on); total grows once
-    the outline fixes the stage count.
+    back to materialize).
 
     `resolve() -> (endpoint, ref)` is called for the initial pick AND again after every
     failed attempt: a hard endpoint failure (provider outage, spent credits) marks the
@@ -168,11 +166,6 @@ def _pipeline(resolve, raw: str, instruction: str, *, params: dict, pins: list[s
     same exhausted claude endpoint while the clarify RUN had failed over fine).
     """
     endpoint, ref = resolve()
-
-    def report(step: str, done: int, total: int) -> None:
-        if progress is not None:
-            with contextlib.suppress(Exception):   # reporting must never break a build
-                progress(step, done, total)
 
     def complete(prompt: str, schema: dict, max_tokens: int, what: str, check=None):
         nonlocal endpoint, ref
@@ -198,12 +191,6 @@ def _pipeline(resolve, raw: str, instruction: str, *, params: dict, pins: list[s
                     endpoint, ref = resolve()
         raise last or RuntimeError(f"decompose {what} failed")
 
-    param_note = ("\n\nPARAMETERS (the pattern's contract, resolved with the user):\n"
-                  + "\n".join(f"- {k}: {v}" for k, v in params.items())
-                  + "\nBind each resolved VALUE inline into main and every stage that "
-                    "uses it — these parameter NAMES will not exist at run time; prose "
-                    "that defers to a parameter name instead of its concrete value is a "
-                    "failure.") if params else ""
     pin_note = ("\n\nPINNED DELIVERABLES — the generated main/stages MUST keep these "
                 "literal paths, serving the same role they have in the workflow "
                 "pattern:\n" + "\n".join(f"- {p}" for p in pins)) if pins else ""
@@ -223,11 +210,8 @@ def _pipeline(resolve, raw: str, instruction: str, *, params: dict, pins: list[s
             raise ValueError("outline produced no usable stages")
         return outline
 
-    report("planning the stage outline", 0, 3)
-    outline = complete(context + _OUTLINE_TAIL + param_note + pin_note,
+    outline = complete(context + _OUTLINE_TAIL + pin_note,
                        OUTLINE_SCHEMA, OUTLINE_MAX_TOKENS, "outline", check=check_outline)
-    # total = outline + main + each stage
-    total = 2 + len(outline)
     outline_txt = _render_outline(outline)
 
     standing = ""
@@ -246,10 +230,9 @@ def _pipeline(resolve, raw: str, instruction: str, *, params: dict, pins: list[s
             raise ValueError(f"main.md does not route to stage(s): {missing}")
         return main
 
-    report("writing main.md (the entry state machine)", 1, total)
     main = complete(context + "The routine's stages are already planned — the OUTLINE (each "
                     "stage is generated as its own module):\n" + outline_txt + "\n\n"
-                    + _MAIN_RULES + standing + _SELF_CONTAINED + param_note + pin_note,
+                    + _MAIN_RULES + standing + _SELF_CONTAINED + pin_note,
                     MAIN_SCHEMA, MAIN_MAX_TOKENS, "main", check=check_main)
 
     def check_stage(data: dict) -> str:
@@ -259,15 +242,14 @@ def _pipeline(resolve, raw: str, instruction: str, *, params: dict, pins: list[s
         return body
 
     stages: dict[str, str] = {}
-    for k, s in enumerate(outline):
-        report(f"writing stage {k + 1}/{len(outline)}: {s['name']}", 2 + k, total)
+    for s in outline:
         prompt = (context + "The routine's main.md (already generated):\n---\n" + main
                   + "\n---\n\nThe full stage OUTLINE (each stage is its own module):\n"
                   + outline_txt + "\n\nWrite the COMPLETE module for the stage "
                   + f"`{s['name']}` (file `stages/{s['name']}.md`) and ONLY that stage.\n"
                   + f"- Its scope: {s['scope']}\n- Its inputs: {s['inputs']}\n"
                   + f"- Its outputs: {s['outputs']}\n" + _STAGE_RULES
-                  + _SELF_CONTAINED + param_note + pin_note)
+                  + _SELF_CONTAINED + pin_note)
         stages[s["name"]] = complete(prompt, STAGE_SCHEMA, STAGE_MAX_TOKENS,
                                      f"stage {s['name']}", check=check_stage)
 

@@ -58,7 +58,6 @@ const sourceLink = (q) => (q.wizard
 export async function render(view, query = {}) {
   view.append(el("div", { class: "page-head" },
     el("div", {},
-      el("div", { class: "kicker" }, "console / decisions"),
       el("h1", {}, "Decisions"),
       el("div", { class: "sub" }, "answers the routines need from you — one inbox, blocking first")),
     el("div", { class: "kbd-hint" },

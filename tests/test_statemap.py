@@ -68,10 +68,6 @@ def test_state_graph_current_from_latest_run_status(tmp_path):
     assert statemap.state_graph(d)["current"] == ""
 
 
-def test_norm_matches_loosely():
-    assert statemap.norm("Gather Evidence") == statemap.norm("gather-evidence")
-
-
 def test_outline_extracts_headings_skipping_fences():
     md = ("# Title\n\n## Run flow\n\n```python\n# not a heading\ndef run(): ...\n```\n\n"
           "## Completion criteria\n### Sub point\ntext\n#### deep\n")

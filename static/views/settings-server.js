@@ -3,17 +3,12 @@
 // promise so settings.js can await all sections before the anchor jump.
 
 import { api } from "/static/api.js";
-import { el, skeleton, toast, when } from "/static/util.js";
+import { el, toast, when } from "/static/util.js";
+import { panelSection } from "/static/views/settings-common.js";
 
 export function renderServerConfig(view) {
   // -- server process: runtime config knobs, then a graceful restart onto committed code ----
-  const srvCfgBox = el("div", { class: "panel" });
-  srvCfgBox.append(skeleton(["50%", "70%"]));
-  view.append(srvCfgBox);
-  async function fill() {
-    let c;
-    try { c = await api("/api/settings/server"); }
-    catch (err) { srvCfgBox.replaceChildren(el("div", { class: "muted" }, err.message)); return; }
+  return panelSection(view, "/api/settings/server", ["50%", "70%"], (srvCfgBox, c, reload) => {
     const sandboxSel = el("select", {}, ["strict", "permissive", "off"].map((m) => el("option", {}, m)));
     sandboxSel.value = c.sandbox || "permissive";
     const concIn = el("input", { type: "number", min: "1", value: String(c.max_concurrent_runs ?? 2), style: "width:90px" });
@@ -44,18 +39,11 @@ export function renderServerConfig(view) {
       el("div", { class: "faint small", style: "margin-top:6px" },
         "sandbox: strict = refuse to run a util unsandboxed · permissive = jail when the kernel ",
         "allows, warn and run bare otherwise · off = never jail"));
-  }
-  return fill();
+  });
 }
 
 export function renderServer(view) {
-  const srvBox = el("div", { class: "panel" });
-  srvBox.append(skeleton(["50%", "80%"]));
-  view.append(srvBox);
-  async function fill() {
-    let s;
-    try { s = await api("/api/status"); }
-    catch (err) { srvBox.replaceChildren(el("div", { class: "muted" }, err.message)); return; }
+  return panelSection(view, "/api/status", ["50%", "80%"], (srvBox, s) => {
     srvBox.replaceChildren(el("div", { class: "muted small", style: "margin-bottom:6px" },
       "Restart the daemon to load committed code — the same graceful path the self-audit ",
       "routine uses: nothing new fires, active runs finish (a run parked on a question defers ",
@@ -84,7 +72,7 @@ export function renderServer(view) {
         }
         if (st.started && st.started !== initialStarted) {
           toast("server restarted — running the committed code");
-          fill();
+          reload();
           return;
         }
         if (!st.restart_requested) {  // withdrawn (here or elsewhere) and same process → resume
@@ -144,6 +132,5 @@ export function renderServer(view) {
       statusLine.textContent = "⟳ a restart is already requested…";
       watch(s.started);
     }
-  }
-  return fill();
+  });
 }

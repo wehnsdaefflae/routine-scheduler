@@ -17,7 +17,6 @@ contract is untouched. A sink failure never breaks a real LLM call (recording is
 from __future__ import annotations
 
 import contextlib
-import contextvars
 import json
 import threading
 import uuid
@@ -27,29 +26,6 @@ from typing import IO
 from ..ids import now_iso
 from . import failover
 from .base import DEFAULT_TIMEOUT, ChatEndpoint, Completion, EndpointError, Message
-
-# --- parent-process context --------------------------------------------------
-# A frontend-initiated process (routine creation) sets this so the complete()
-# calls it triggers attach as children. It propagates across asyncio.to_thread (the context
-# is copied into the worker thread), so a request handler sets it once and the deep workflow
-# call picks it up without an id plumbed through every function.
-_process: contextvars.ContextVar[str | None] = contextvars.ContextVar("llm_process", default=None)
-
-
-def current_process() -> str | None:
-    return _process.get()
-
-
-@contextlib.contextmanager
-def process_scope(process_id: str | None):
-    """Attribute every complete() in this block (incl. ones dispatched to to_thread) to
-    `process_id`. A no-op when process_id is None.
-    """
-    token = _process.set(process_id)
-    try:
-        yield
-    finally:
-        _process.reset(token)
 
 
 # --- records -----------------------------------------------------------------
@@ -153,12 +129,12 @@ class InstrumentedEndpoint:
             raise AttributeError(item)
         return getattr(self._inner, item)
 
-    def complete(self, messages: list[Message], *,  # noqa: PLR0913 — protocol + audit kwargs
+    def complete(self, messages: list[Message], *,
                  model: str, schema: dict | None = None,
                  effort: str | None = None, max_tokens: int | None = None,
                  timeout: int = DEFAULT_TIMEOUT, session: str | None = None,
                  temperature: float | None = None,
-                 purpose: str | None = None, process: str | None = None,
+                 purpose: str | None = None,
                  kind: str | None = None) -> Completion:
         inner_kwargs = {"model": model, "schema": schema, "effort": effort,
                         "max_tokens": max_tokens, "timeout": timeout, "session": session,
@@ -170,9 +146,11 @@ class InstrumentedEndpoint:
             except EndpointError as exc:
                 self._mark_health(exc, model)
                 raise
+        # No `process_id` here on purpose: the one live attributor is the daemon, which stamps
+        # `rec.setdefault("process_id", run.run_id)` on the way into the task centre
+        # (daemon/runner.py). `make_record` omits falsy keys, so nothing downstream changes.
         common = {"id": uuid.uuid4().hex[:12], "endpoint": self._inner.name, "model": model,
-                  "purpose": purpose or "LLM call", "kind": kind,
-                  "process_id": process if process is not None else current_process()}
+                  "purpose": purpose or "LLM call", "kind": kind}
         _emit(sink, make_record("started", **common))
         try:
             comp = self._inner.complete(messages, **inner_kwargs)

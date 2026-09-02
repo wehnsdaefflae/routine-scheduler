@@ -14,7 +14,6 @@ const FILTERS = [["all", "All"], ["unread", "Unread"]];
 export async function render(view, query = {}) {
   view.append(el("div", { class: "page-head" },
     el("div", {},
-      el("div", { class: "kicker" }, "console / summary"),
       el("h1", {}, "Summary"),
       el("div", { class: "sub" }, "the latest finish message from every routine — newest first"))));
 

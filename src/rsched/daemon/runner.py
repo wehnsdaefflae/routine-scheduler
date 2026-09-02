@@ -35,19 +35,6 @@ from .runner_state import (
 log = logging.getLogger("rsched.runner")
 
 
-# The injection channels that count as "a user is talking to this run" for the
-# post-finish sweep (R108/F268): the conversation composer and the run page. Everything
-# else that lands in an inbox — report deliveries, trigger events, one-shot provenance,
-# background results, audit feedback — has its own wake policy and must never re-open a
-# finished run from the reap. The tuple itself lives with the engine's inbox
-# (engine.inbox.USER_MESSAGE_VIAS): the resume-boot drain (F359) keys on the same
-# channels, so wake policy and consumption policy stay ONE vocabulary.
-
-
-                               # kill leaves no engine finish, _reap logs run_canceled —
-                               # a deliberate cancel must not masquerade as orphaned_run
-
-
 class Runner:
     """Spawns and supervises one `engine-run` subprocess per firing routine — never two
     of the same routine at once, `max_concurrent_runs` slots overall (conversations draw

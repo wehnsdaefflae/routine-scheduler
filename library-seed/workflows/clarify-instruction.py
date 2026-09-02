@@ -11,7 +11,9 @@ draft describes. Your sole product is state/wizard_result.json.
 
 # --- Parameter contract -------------------------------------------------------------------------
 from routine.params import (
-    DRAFT,        # str — the raw draft instruction to clarify (this run's INSTRUCTION)
+    DRAFT,        # str — the raw draft to clarify (this run's INSTRUCTION; persisted VERBATIM
+                  # at instruction.md in the working dir — read_file THAT for the exact text;
+                  # no params.* file ever exists at run time)
     CANDIDATES,   # the ranked workflow patterns to choose from, written to state/candidates.md
 )
 from routine.actions import read_file, write_file, ask_user, finish
@@ -24,7 +26,7 @@ META = {
     "when_to_use": "Internal: drives the new-routine wizard. Applied to a raw draft, it picks the "
                    "fitting workflow pattern, asks the user blocking questions that overlay the task "
                    "on that pattern, then writes state/wizard_result.json. Not for scheduled use.",
-    "version": 9,
+    "version": 12,
     "tags": ["meta", "wizard", "intake"],
     "includes": ["ask-policy"],
     # The deliverable must survive decomposition: applied to a draft that itself describes a
@@ -52,7 +54,9 @@ def main():
 
 
 def analyze_draft():
-    """The DRAFT is your INSTRUCTION — the raw text to clarify (you do not perform it). Hunt for:
+    """The DRAFT is your INSTRUCTION — the raw text to clarify (you do not perform it); the
+    verbatim draft also sits on disk at `instruction.md` in the working dir, so `read_file
+    instruction.md` recovers it exactly — never look for a `params.*` file. Hunt for:
     ambiguity (what exactly is the deliverable? for whom? where does it live?), contradictions,
     missing constraints (budget, language, sources, tone), outward acts (does this routine send /
     publish / spend — what needs a per-item confirmation vs standing authorization?), and success
@@ -69,6 +73,28 @@ def analyze_draft():
     marry() as a blocking question — those two are asked FIRST and are never resolved by assuming
     a sensible default. A routine born without them cannot tell a finished run from an abandoned
     one, and every later run inherits the ambiguity.
+
+    INGEST/OUTBOUND SPLIT — when the task BOTH ingests/processes signal (reads sources, updates
+    state, computes) AND sends outbound communication (email / messages / publishing), especially
+    if the routine will run inside a routine GROUP, offer the user (a blocking question in marry())
+    the option to SPLIT it into TWO routines: an ingestion+processing routine and an
+    outbound-communication routine placed in the same group. The payoff: grouped members can all
+    ingest/process first and all communicate after (same order), so a member's outbound can depend
+    on another member's freshly-processed state instead of waiting a whole cadence for a reaction.
+    If the user takes the split, write_result() emits the two routines' instructions (each
+    self-contained); if not, keep it as one. (Operator standing rule, 2026-08-05, R214.3.)
+
+    RECIPE vs PROCEDURE — a routine has a prose recipe (LLM-interpreted judgment) and may also carry
+    its OWN Python under scripts/ (deterministic mechanism the recipe calls). At creation, judge which
+    parts of the task are judgment-free and repeated identically every run — fetching / polling (mail,
+    feeds, APIs), parsing or reformatting structured data, arithmetic on updated data,
+    filtering / sorting / dedup, threshold checks, assembling a fixed artifact — and mark those for the
+    routine's own scripts/ (the recipe stays the single interpreter and delegates to them), while
+    genuinely generative work (drafting prose, evaluating fit, deciding what matters) stays in the
+    recipe. Record the intended split in write_result()'s notes so the new routine is BORN with a
+    sensible recipe/procedure distribution instead of doing mechanism by hand each run. A capability
+    reusable across routines is a shared util, not this routine's script. (Operator standing rule,
+    2026-08-12, via R305.)
 
     OUT OF SCOPE — never ask about, never include: scheduling / frequency, the improvement standards,
     the working directory, and model / endpoint choices. Those are routine CONFIGURATION, set

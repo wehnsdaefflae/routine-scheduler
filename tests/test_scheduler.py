@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+import signal
 from datetime import UTC, datetime, timedelta
 
 import rsched.daemon.scheduler as sched_mod
@@ -373,6 +374,12 @@ async def test_user_cancel_logs_run_canceled_not_orphaned(make_routine, tmp_path
     assert mine and mine[-1]["event"] == "run_canceled"
     assert all(e["event"] != "orphaned_run" for e in mine)
     assert "engine exited" in mine[-1]["detail"] and mine[-1]["run_id"].startswith("cancelee:")
+    # F422: the exit status is a FIELD, not prose. The two close-out events differ by who
+    # asked for the death, not by how the process died — so a sweep for "did anything die by
+    # signal in this window" is only answerable from `rc`. Five real rc=-9 deaths were logged
+    # as run_canceled and read as a clean window, because the signal sat inside `detail`.
+    assert mine[-1]["rc"] in (-signal.SIGTERM, -signal.SIGKILL)
+    assert f"rc={mine[-1]['rc']}" in mine[-1]["detail"]
 
 
 def test_dead_pid_recovery_still_logs_orphaned_run(make_routine, tmp_path):
@@ -387,7 +394,11 @@ def test_dead_pid_recovery_still_logs_orphaned_run(make_routine, tmp_path):
     server = _server(tmp_path)
     runner = Runner(server, EventBus())
     assert runner_reap.recover_orphans(runner, scan(server)) == 1
-    assert [e["event"] for e in _health_events(server, "orphan2")] == ["orphaned_run"]
+    events = _health_events(server, "orphan2")
+    assert [e["event"] for e in events] == ["orphaned_run"]
+    # a boot-time orphan has no process left to report on: the optional fields are DROPPED
+    # rather than written as nulls every reader would then have to handle
+    assert "rc" not in events[0] and "vm_hwm_kb" not in events[0]
 
 
 # --- D99: a kernel-killed run (rc=-9) auto-resumes exactly once ------------------------

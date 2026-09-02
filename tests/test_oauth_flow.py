@@ -9,7 +9,7 @@ from urllib.parse import parse_qs, urlparse
 import pytest
 
 from rsched import secrets
-from rsched.oauth import store
+from rsched.oauth import exchange, store
 from rsched.web.settings import oauth as oauth_mod
 
 
@@ -82,7 +82,7 @@ def test_authorize_requires_creds(oauth_client):
 def test_callback_exchanges_and_stores(oauth_client, monkeypatch):
     client, _ = oauth_client
     flow_id, state = _start(client, "acme")
-    monkeypatch.setattr(oauth_mod.httpx, "post",
+    monkeypatch.setattr(exchange.httpx, "post",
                         lambda *a, **k: _Resp(200, {"access_token": "AT",
                                                     "workspace_name": "ACME Inc"}))
     page = client.get(f"/oauth/callback?state={state}&code=the-code")
@@ -114,7 +114,7 @@ def test_callback_provider_error(oauth_client):
 def test_delete_connection(oauth_client, monkeypatch):
     client, _ = oauth_client
     _flow, state = _start(client, "acme")
-    monkeypatch.setattr(oauth_mod.httpx, "post",
+    monkeypatch.setattr(exchange.httpx, "post",
                         lambda *a, **k: _Resp(200, {"access_token": "AT"}))
     client.get(f"/oauth/callback?state={state}&code=c")
     assert store.get_connection("notion", "acme") is not None

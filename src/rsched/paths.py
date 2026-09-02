@@ -14,6 +14,9 @@ import time
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from pathlib import Path
+from typing import Any
+
+import yaml
 
 
 def expand(p: str | Path) -> Path:
@@ -73,6 +76,42 @@ def read_json(path: str | Path, default: object = None) -> object:
         return json.loads(Path(path).read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return default
+
+
+def atomic_write_yaml(path: str | Path, obj: object) -> Path:
+    """Serialize `obj` as YAML and atomic_write it — the ONE writer for every YAML file this
+    system owns (routine.yaml, tuning.yaml, config.yaml).
+
+    The two dump options ARE the reason this exists rather than being spelled at each call
+    site. `sort_keys=False` keeps the key order a human wrote: routine.yaml is read and
+    hand-edited far more often than it is written, and an alphabetised rewrite would reorder
+    the whole file under the user on every web save. `allow_unicode=True` keeps a name with an
+    umlaut readable instead of escaped code points. Open-coded at twenty call sites they were one
+    forgotten kwarg away from a routine's config silently changing shape depending on which
+    module last wrote it — which is not a diff anyone reviews, because nobody wrote it.
+    """
+    return atomic_write(path, yaml.safe_dump(obj, sort_keys=False, allow_unicode=True))
+
+
+def read_yaml(path: str | Path, default: object = None) -> Any:
+    """Parse a YAML file, reading an EMPTY document as `default` — `yaml.safe_load` returns
+    None for an empty file, which is why every call site spelled `or {}` after it.
+
+    Unlike `read_json`, errors PROPAGATE: a missing file raises OSError and a malformed one
+    raises yaml.YAMLError. The asymmetry is deliberate. Nearly every YAML read here is the
+    first half of a read-modify-write of `routine.yaml`, and a default handed back for an
+    unparseable file would rewrite the user's hand-broken config FROM that default, dropping
+    every key that failed to parse. That path is reachable, not theoretical: `registry.scan`
+    catalogs an unloadable routine.yaml as a disabled routine rather than hiding it, so the
+    routine page still offers every editor that writes the file back. The readers that must
+    turn a broken file into a PROBLEM STRING rather than an exception (the config loaders)
+    catch OSError/yaml.YAMLError around this call and say which one they got.
+
+    Returns `Any` where `read_json` returns `object`: read_json's callers validate an
+    untrusted record before touching it, while these callers index a mapping they then hand
+    to pydantic, so `object` would buy nothing but an isinstance narrowing at every site.
+    """
+    return yaml.safe_load(Path(path).read_text(encoding="utf-8")) or default
 
 
 def within(root: Path, candidate: Path) -> bool:

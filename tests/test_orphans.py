@@ -128,3 +128,40 @@ def test_the_api_surfaces_it(api_client, make_routine):
     got = c.get("/api/items/orphans").json()
     assert len(got) == 1 and got[0]["carrier"] == "F324"
     assert got[0]["source_ids"] == ["D98", "F334"]
+
+
+# --- the second loss mechanism: an addressed report whose message was never written ----------
+
+
+def test_an_addressed_report_with_no_message_in_the_inbox_is_surfaced(tmp_path):
+    """D114: `file_report` writes the ledger row and the target's inbox message in one call, so
+    an addressed report always has a message waiting. A row appended any OTHER way — an operator
+    batch written straight to the stream — has a target and no message, so the target can never
+    drain it and it counts as open forever. Twelve rows from the 2026-08-29 migration are that.
+    """
+    from rsched.readmodels.orphans import find_undelivered
+
+    for slug in ("radar", "improver"):
+        (tmp_path / slug / "inbox").mkdir(parents=True)
+        (tmp_path / slug / "routine.yaml").write_text(f"slug: {slug}\n", encoding="utf-8")
+    # delivered normally: the message is sitting in the inbox, waiting for the next run
+    (tmp_path / "radar" / "inbox" / "msg-rep-R1.json").write_text("{}", encoding="utf-8")
+
+    rows = [
+        {"id": "R1", "target": "radar", "routine": "operator", "ts": "2026-08-29T10:00:00+02:00",
+         "title": "waiting normally"},
+        {"id": "R2", "target": "improver", "routine": "operator", "ts": "2026-08-29T11:00:00+02:00",
+         "title": "batch-appended, never delivered"},
+        {"id": "R3", "target": "gone", "routine": "operator", "ts": "2026-08-29T12:00:00+02:00",
+         "title": "addressed to a routine that does not exist"},
+        {"id": "R4", "target": "improver", "routine": "self-audit", "ts": "2026-08-30T09:00:00+02:00",
+         "title": "already read", "delivered": {"ts": "…", "run_id": "improver:x"}},
+        {"id": "R5", "target": "improver", "routine": "self-audit", "ts": "2026-08-30T10:00:00+02:00",
+         "title": "withdrawn on purpose", "retracted": {"ts": "…"}},
+        {"id": "R6", "routine": "self-audit", "ts": "2026-08-30T11:00:00+02:00",
+         "title": "unaddressed — there is no delivery to miss"},
+    ]
+    found = find_undelivered(rows, tmp_path)
+    assert [o["id"] for o in found] == ["R3", "R2"]          # newest first
+    assert found[0]["target_exists"] is False and found[1]["target_exists"] is True
+    assert all(o["kind"] == "undelivered" for o in found)

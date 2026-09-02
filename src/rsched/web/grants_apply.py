@@ -10,12 +10,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import yaml
 from fastapi import HTTPException
 
 from .. import entities
 from ..config.routine import record_grants
-from ..paths import atomic_write
+from ..paths import atomic_write_yaml, read_yaml
 
 
 def resolve_account(provider: str) -> str:
@@ -114,7 +113,7 @@ def apply_forever(server, routine_dir: Path, ids: list[str],
         record_grants(routine_dir, dict.fromkeys(ids, False))
         return {}
     path = routine_dir / "routine.yaml"
-    raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    raw = read_yaml(path, {})
     if not isinstance(raw, dict):
         raise HTTPException(500, f"{path}: expected a mapping at top level")
     extra: dict[str, str] = {}
@@ -142,7 +141,7 @@ def apply_forever(server, routine_dir: Path, ids: list[str],
                 raw[key] = [*roots, name]
         else:   # action / util / runs / workflows — the two-layer cascade
             _apply_capability(server, raw, cls, name)
-    atomic_write(path, yaml.safe_dump(raw, sort_keys=False, allow_unicode=True))
+    atomic_write_yaml(path, raw)
     if grant_rows:
         record_grants(routine_dir, grant_rows)   # the ONE writer for grants: rows
     return extra

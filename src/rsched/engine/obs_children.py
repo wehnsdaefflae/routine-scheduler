@@ -8,6 +8,8 @@ run would otherwise assume it shares the parent's working directory.
 
 from __future__ import annotations
 
+from . import child
+
 
 def format_children(obs: dict, kind: str) -> str | None:  # noqa: PLR0911 — one flat renderer per domain, by design: observation wording is PROMPT SURFACE (docs/prompt-anatomy.md) and every branch is a distinct string for a distinct kind. Collapsing them would scatter a kind's wording, which is exactly what this shape exists to prevent.
     """Wording for this domain's kinds; None when `kind` is not one of them."""
@@ -55,7 +57,7 @@ def format_children(obs: dict, kind: str) -> str | None:  # noqa: PLR0911 — on
             return f"OBSERVATION (wait FAILED): {obs['error']}"
         parts = []
         for f in obs.get("finished", []):
-            noun = "SUBTASK" if f.get("mode") == "sequential" else "SUB-WORKFLOW"
+            noun = child.mode_shout(str(f.get("mode") or ""))
             # F338: name the deliverables the engine copied up. The WAIT is one of the two
             # paths that report a child's exit (the turn-boundary announcement is the other),
             # and which one wins is a timing race — so both must say where the files landed,

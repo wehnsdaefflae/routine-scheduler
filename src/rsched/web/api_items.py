@@ -39,14 +39,19 @@ def _report_header(routine_dir: Path) -> dict | None:
 
 @router.get("/items/orphans")
 def orphans(request: Request) -> list[dict]:
-    """Deferrals whose CARRIER closed without delivering them (readmodels/orphans.py).
+    """The two ways work leaves the ledger without becoming an open item anywhere
+    (readmodels/orphans.py). Both are invisible to every filter on the Messages page, so the
+    page banners them above the list; both are surfaced rather than gated — a human judges.
 
-    The gap the ledger could not see: an item defers part of its scope into another, the
-    carrier ships its own scope and closes `addressed`, and the deferred piece becomes an
-    open item nowhere. It is surfaced rather than gated — a human judges the promise.
+    `kind: "deferral"` — an item deferred part of its scope into another, the carrier shipped
+    its own scope and closed, and the deferred piece became an open item nowhere.
+    `kind: "undelivered"` — an ADDRESSED report whose message never reached its target's inbox,
+    so the target can never drain it and it sits open forever (D114).
     """
     from ..readmodels import orphans as orphans_model
-    return orphans_model.load(_routine_dir(request))
+
+    home = request.app.state.server.routines_home
+    return orphans_model.load(_routine_dir(request)) + orphans_model.load_undelivered(home)
 
 
 @router.get("/items")

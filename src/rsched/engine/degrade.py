@@ -117,7 +117,7 @@ def _turn_task_text(loop) -> str:
     for m in reversed(loop.messages):
         if m.get("role") == "user":
             return str(m.get("content") or "")
-    return str(getattr(loop, "instruction", "") or "")
+    return str(loop.instruction or "")
 
 def _handle_empty(loop, completion, chain, ref,
                   attempt: int, refstate: dict) -> tuple | None:
@@ -131,7 +131,7 @@ def _handle_empty(loop, completion, chain, ref,
     stop = completion.stop_reason
     # stop_details rides along VERBATIM so the transcript shows WHY the reply was
     # empty (F164) — e.g. a reasoning model that spent its whole budget thinking.
-    details = getattr(completion, "stop_details", None) or {}
+    details = completion.stop_details or {}
     loop.ctx.transcript.event("error", {
         "where": "endpoint", "attempt": attempt,
         "message": "empty completion (no content/reasoning; "

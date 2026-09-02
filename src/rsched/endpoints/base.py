@@ -108,6 +108,26 @@ class Completion:
     stop_details: dict = field(default_factory=dict)
 
 
+def fold_usage(total: dict, delta: dict) -> None:
+    """Add one usage reading into a running total, IN PLACE, by the vocabulary above.
+
+    Four hand-rolled versions of this existed — the turn sum, the run context's accumulator,
+    the resumed-legs replay, and the per-completion fold — so growing the vocabulary meant
+    remembering four places. `cost` rounds to six places on every add rather than once at the
+    end, because these totals are read back and re-added across a resumed run's legs, where
+    float error compounds.
+
+    Zero and absent are the same thing here, so a delta carrying no cache traffic and no cost
+    adds no key. That is why a total which must always REPORT `in` and `out` — a run's
+    status.json — seeds them before folding: `{"in": 0, "out": 0}` first, then fold.
+    """
+    for key in ("in", "out", "cached_in", "cache_write"):
+        if delta.get(key):
+            total[key] = total.get(key, 0) + int(delta[key])
+    if delta.get("cost"):
+        total["cost"] = round(total.get("cost", 0.0) + float(delta["cost"]), 6)
+
+
 class ChatEndpoint(Protocol):
     """What every adapter implements: one stateless completion in, a Completion out.
     No streaming, no state, no tools — endpoints are transports, never a second harness.

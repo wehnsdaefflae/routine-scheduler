@@ -4,17 +4,12 @@
 
 import { api } from "/static/api.js";
 import { confirmDialog } from "/static/components/dialog.js";
-import { el, skeleton, toast } from "/static/util.js";
+import { el, toast } from "/static/util.js";
+import { panelSection } from "/static/views/settings-common.js";
 
 export function renderConnections(view) {
   // -- OAuth connections (external accounts routines act on behalf of) --------------
-  const connBox = el("div", { class: "panel" });
-  connBox.append(skeleton(["60%", "85%"]));
-  view.append(connBox);
-  async function fill() {
-    let d;
-    try { d = await api("/api/settings/oauth"); }
-    catch (err) { connBox.replaceChildren(el("div", { class: "muted" }, err.message)); return; }
+  return panelSection(view, "/api/settings/oauth", ["60%", "85%"], (connBox, d, reload) => {
     connBox.replaceChildren(el("div", { class: "muted small", style: "margin-bottom:6px" },
       "Connect external accounts (e.g. Notion) via OAuth so routines can act on your behalf. Bind a ",
       "connection on a routine's page; its access token is injected only into utils that declare it."));
@@ -23,7 +18,7 @@ export function renderConnections(view) {
       const b = el("button", { class: "btn small danger" }, "disconnect");
       b.onclick = async () => {
         if (!(await confirmDialog(`Disconnect ${provider}:${account}?`, { confirmLabel: "disconnect" }))) return;
-        try { await api(`/api/settings/oauth/${provider}/${encodeURIComponent(account)}`, { method: "DELETE" }); fill(); }
+        try { await api(`/api/settings/oauth/${provider}/${encodeURIComponent(account)}`, { method: "DELETE" }); reload(); }
         catch (err) { toast(err.message, 4000, { error: true }); }
       };
       return b;
@@ -43,7 +38,7 @@ export function renderConnections(view) {
         if (Date.now() > deadline) return;
         let p;
         try { p = await api(`/api/settings/oauth/flow/${f.flow_id}`); } catch { return; }
-        if (p.status === "connected") { toast(`${providerId} connected`); fill(); return; }
+        if (p.status === "connected") { toast(`${providerId} connected`); reload(); return; }
         if (p.status === "error") { toast(`✗ ${p.error || "authorization failed"}`, 6000, { error: true }); return; }
         setTimeout(tick, 2000);
       };
@@ -58,7 +53,7 @@ export function renderConnections(view) {
     const urlIn = el("input", { type: "text", placeholder: "https://host.ts.net", style: "flex:1", value: d.public_url || originGuess });
     const urlSave = el("button", { class: "btn small" }, "save");
     urlSave.onclick = async () => {
-      try { await api("/api/settings/oauth/public-url", { method: "PUT", body: { public_url: urlIn.value.trim() } }); toast("public URL saved"); fill(); }
+      try { await api("/api/settings/oauth/public-url", { method: "PUT", body: { public_url: urlIn.value.trim() } }); toast("public URL saved"); reload(); }
       catch (err) { toast(err.message, 5000, { error: true }); }
     };
     const callbackLine = el("div", { class: "small mt" });
@@ -116,6 +111,5 @@ export function renderConnections(view) {
         el("td", { class: "small", style: `color:${c.needs_reauth ? "var(--warn)" : "var(--ok)"}` },
           c.needs_reauth ? "needs re-auth" : "ok"),
         el("td", {}, disconnectBtn(c.provider, c.account))))))));
-  }
-  return fill();
+  });
 }

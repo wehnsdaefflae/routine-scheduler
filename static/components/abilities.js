@@ -80,13 +80,6 @@ const KIND_LABEL = { "secret": "secret", "fs-write": "write root", "fs-read": "r
                      "machine": "machine", "connection": "connection", "util": "util",
                      "action": "action", "permission": "conduct" };
 
-/** The severity of the worst row in a list, or "" when they are all satisfied. */
-function worst(rows) {
-  if (rows.some((r) => r.severity === "blocks")) return "blocks";
-  if (rows.some((r) => r.severity === "interrupts")) return "interrupts";
-  return "";
-}
-
 export function abilitiesPanel(permissions, capabilities, opts = {}) {
   const docs = permissions || [];
   const held = new Set(docs.filter((p) => p.active && !p.routine_only).map((p) => p.slug));
@@ -167,7 +160,10 @@ export function abilitiesPanel(permissions, capabilities, opts = {}) {
   }
 
   function selectDial(options, current, set, disabled) {
-    const sel = el("select", { disabled: disabled ? "" : null },
+    // `disabled` is the caller's SENTENCE saying why this dial cannot move (a conversation is
+    // one continuous run, so previous-run depth means nothing there). A greyed control with no
+    // explanation is a dead end, so the sentence rides the control as its tooltip.
+    const sel = el("select", { disabled: disabled ? "" : null, title: disabled || null },
       ...options.filter(([v]) => v !== "off").map(([v, label]) =>
         el("option", { value: v, selected: current === v ? "" : null }, label)));
     sel.onchange = () => { set(sel.value); render(); };
@@ -196,7 +192,6 @@ export function abilitiesPanel(permissions, capabilities, opts = {}) {
 
   function card(doc) {
     const r = needs(doc);
-    const on = true;      // cards are built only for what the routine holds
     const rows = [];
     for (const a of r.actions || []) {
       rows.push({ state: caps.actions.has(a) ? "ok" : "blocks", kind: "action", entity: a,
@@ -209,16 +204,16 @@ export function abilitiesPanel(permissions, capabilities, opts = {}) {
     for (const t of r.util_tags || []) {
       rows.push({ state: "ok", kind: "util class", entity: t });
     }
-    const derived = on ? resourceRows(doc) : [];
+    const derived = resourceRows(doc);   // a card is built only for what the routine holds
     for (const n of derived) {
       const [cls, ...rest] = n.id.split(":");
       rows.push({ state: n.severity, kind: KIND_LABEL[cls] || cls,
                   entity: rest.join(":") || n.id, note: n.effect || n.why });
     }
     const dial = dialFor(doc);
-    if (dial && on) rows.push({ state: "ok", kind: dial[0], entity: "policy", control: dial[1] });
+    if (dial) rows.push({ state: "ok", kind: dial[0], entity: "policy", control: dial[1] });
 
-    const box = el("input", { type: "checkbox", checked: on ? "" : null,
+    const box = el("input", { type: "checkbox", checked: "",
                               disabled: doc.routine_only ? "" : null });
     box.onchange = () => {
       if (box.checked) { held.add(doc.slug); raiseFor(r); }
@@ -227,7 +222,8 @@ export function abilitiesPanel(permissions, capabilities, opts = {}) {
     };
     // the card's own verdict: the worst state in its stack, which is the whole reason the
     // stack lives inside the card rather than across three other panels
-    const bad = worst(rows.map((r2) => ({ severity: r2.state })));
+    const bad = rows.some((r2) => r2.state === "blocks") ? "blocks"
+      : rows.some((r2) => r2.state === "interrupts") ? "interrupts" : "";
     const badge = bad === "blocks" ? el("span", { class: "pill err" }, "will fail")
       : bad === "interrupts" ? el("span", { class: "pill warn" }, "needs a decision")
       : el("span", { class: "pill ok" }, "ready");
@@ -319,7 +315,7 @@ export function abilitiesPanel(permissions, capabilities, opts = {}) {
 
   let footer = null;
   if (opts.onSave) {
-    const saveBtn = el("button", { class: "btn primary" }, opts.saveLabel || "save permissions");
+    const saveBtn = el("button", { class: "btn primary" }, "save permissions");
     saveBtn.onclick = async () => {
       saveBtn.disabled = true;
       try { await opts.onSave(value()); } finally { saveBtn.disabled = false; }

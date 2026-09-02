@@ -30,11 +30,9 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-import yaml
-
 from . import libgit, recipes, spool
 from .ids import now_iso
-from .paths import atomic_write, read_json, resolve_rel
+from .paths import atomic_write_yaml, read_json, read_yaml, resolve_rel
 
 # Edit kinds that may be queued. Keep in sync with APPLIERS below and the web endpoints
 # that queue them; a kind with no applier is rejected at queue time (fail closed).
@@ -44,14 +42,6 @@ MAX_PENDING_EDITS = 64   # spool cap per routine — past it the web rejects wit
 
 
 # -- appliers: pure (routine_dir, payload) -> result dict; raise on invalid ------------
-
-def _load_yaml(path: Path) -> dict:
-    return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-
-
-def _save_yaml(path: Path, raw: dict) -> None:
-    atomic_write(path, yaml.safe_dump(raw, sort_keys=False, allow_unicode=True))
-
 
 def apply_file(routine_dir: Path, payload: dict) -> dict:
     """Write one of the routine's own files (main.md, a stage module, state, or
@@ -78,14 +68,14 @@ def apply_trigger_create(routine_dir: Path, payload: dict) -> dict:
     """
     entry = dict(payload["entry"])
     path = routine_dir / "routine.yaml"
-    raw = _load_yaml(path)
+    raw = read_yaml(path, {})
     entries = [t for t in raw.get("triggers") or [] if isinstance(t, dict)]
     # a report trigger is unique per routine — if one slipped in meanwhile, keep the first
     if entry.get("type") == "report" and any(t.get("type") == "report" for t in entries):
         return {"skipped": "a report trigger already exists", "id": entry.get("id")}
     entries.append(entry)
     raw["triggers"] = entries
-    _save_yaml(path, raw)
+    atomic_write_yaml(path, raw)
     libgit.commit(routine_dir, f"add trigger {entry.get('id')} via web (queued mid-run)")
     return {"id": entry.get("id")}
 
@@ -95,14 +85,14 @@ def apply_trigger_update(routine_dir: Path, payload: dict) -> dict:
     trigger_id = str(payload["trigger_id"])
     fields = dict(payload.get("fields") or {})
     path = routine_dir / "routine.yaml"
-    raw = _load_yaml(path)
+    raw = read_yaml(path, {})
     entries = [t for t in raw.get("triggers") or [] if isinstance(t, dict)]
     target = next((t for t in entries if str(t.get("id")) == trigger_id), None)
     if target is None:
         return {"skipped": f"no trigger {trigger_id!r}", "id": trigger_id}
     target.update(fields)
     raw["triggers"] = entries
-    _save_yaml(path, raw)
+    atomic_write_yaml(path, raw)
     libgit.commit(routine_dir, f"retune trigger {trigger_id} via web (queued mid-run)")
     return {"id": trigger_id}
 
@@ -111,13 +101,13 @@ def apply_trigger_delete(routine_dir: Path, payload: dict) -> dict:
     """Remove a trigger by id."""
     trigger_id = str(payload["trigger_id"])
     path = routine_dir / "routine.yaml"
-    raw = _load_yaml(path)
+    raw = read_yaml(path, {})
     entries = [t for t in raw.get("triggers") or [] if isinstance(t, dict)]
     kept = [t for t in entries if str(t.get("id")) != trigger_id]
     if len(kept) == len(entries):
         return {"skipped": f"no trigger {trigger_id!r}", "id": trigger_id}
     raw["triggers"] = kept
-    _save_yaml(path, raw)
+    atomic_write_yaml(path, raw)
     libgit.commit(routine_dir, f"remove trigger {trigger_id} via web (queued mid-run)")
     return {"id": trigger_id}
 

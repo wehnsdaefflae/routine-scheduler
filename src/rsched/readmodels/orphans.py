@@ -1,4 +1,7 @@
-"""Deferrals whose CARRIER closed without delivering them — the loss mechanism itself.
+"""The two ways work is lost from the ledger without ever becoming an open item.
+
+Both are invisible to every filter on the Messages page, which is why they are banners above it
+rather than rows inside it, and both are SURFACED rather than gated — a human judges the promise.
 
 An item routinely defers part of its scope into another item: "the sidebar panel ships with
 F324's shared component". The carrier then ships its OWN scope, closes, and the changelog `items`
@@ -24,6 +27,21 @@ Rule 2 is the whole check: an item that delivered what was deferred into it says
 that is how every closure note in this ledger is written. F336 was deferred into F324 the same
 day as D98's panel and F324's closure names F336 — so F336 reads as delivered and D98 does not,
 which is exactly the distinction that was missed by eye.
+
+## The second: an addressed report that was never delivered
+
+`file_report` writes the ledger row and the target's `inbox/msg-rep-<id>.json` in one call, so an
+addressed report always has a message waiting. A row written any OTHER way — an operator batch
+appended straight to the stream — has a `target` and no message, and the target can therefore
+never see it, never drain it, and never stamp it `delivered`. It sits `open` forever, counted in
+every backlog figure, addressed to a routine that has never heard of it. Twelve rows from the
+2026-08-29 web-UI migration are exactly that (D114).
+
+A row is UNDELIVERED when it names a target, carries no `delivered` and no `retracted` stamp, and
+no `msg-rep-<id>.json` for it exists in that target's inbox — or the target is not a routine at
+all. A retracted report is excluded by definition: retraction unlinks the message on purpose. A
+report whose message is still SITTING in the inbox is not this — that is the normal state of a
+report waiting for its target's next run, and the ledger already shows it.
 
 ## Why prose matching is acceptable here
 
@@ -106,6 +124,32 @@ def find(findings: list[dict], rows: list[dict]) -> list[dict]:
     return out
 
 
+def find_undelivered(reports: list[dict], routines_home: Path) -> list[dict]:
+    """Every addressed report whose message never reached its target's inbox, newest first.
+
+    `reports` is the folded stream (`rsched.reports.read_reports`). The check is the FILE, not the
+    stamp: the stamp says a run has read the message, while the file's absence says no run ever
+    can.
+    """
+    out: list[dict] = []
+    for row in reports:
+        target = str(row.get("target") or "")
+        if not target or row.get("delivered") or row.get("retracted"):
+            continue
+        item_id = str(row.get("id") or "")
+        inbox = Path(routines_home) / target / "inbox"
+        if (inbox / f"msg-rep-{item_id}.json").exists():
+            continue                      # waiting normally for the target's next run
+        out.append({
+            "kind": "undelivered", "id": item_id, "target": target,
+            "target_exists": (Path(routines_home) / target / "routine.yaml").exists(),
+            "from": str(row.get("routine") or ""), "ts": str(row.get("ts") or ""),
+            "title": str(row.get("title") or ""),
+        })
+    out.sort(key=lambda o: o["ts"], reverse=True)
+    return out
+
+
 def load(routine_dir: Path) -> list[dict]:
     """`find` over the self-audit routine's own two files."""
     from ..paths import read_json
@@ -114,4 +158,14 @@ def load(routine_dir: Path) -> list[dict]:
     audit = routine_dir / "audit"
     report = read_json(audit / "report.json")
     findings = report.get("findings") or [] if isinstance(report, dict) else []
-    return find(findings, read_changelog(audit / "changelog.jsonl"))
+    rows = find(findings, read_changelog(audit / "changelog.jsonl"))
+    for row in rows:
+        row.setdefault("kind", "deferral")
+    return rows
+
+
+def load_undelivered(routines_home: Path) -> list[dict]:
+    """`find_undelivered` over the live report stream."""
+    from ..reports import read_reports, reports_path
+
+    return find_undelivered(read_reports(reports_path(routines_home)), routines_home)

@@ -32,7 +32,16 @@ from ..registry import homes_fingerprint
 _NOTABLE_RE = re.compile(r"\b(?:WARNING|ERROR|CRITICAL)\b|Traceback \(most recent call last\)")
 
 def _stranded_user_messages(routine_dir: Path) -> bool:
-    """An unconsumed USER message is waiting in the dir's inbox (USER_MESSAGE_VIAS)."""
+    """An unconsumed USER message is waiting in the dir's inbox.
+
+    USER_MESSAGE_VIAS is the injection channels that count as "a user is talking to this run"
+    for the post-finish sweep (R108/F268): the conversation composer and the run page.
+    Everything else that lands in an inbox — report deliveries, trigger events, one-shot
+    provenance, background results, audit feedback — has its own wake policy and must never
+    re-open a finished run from the reap. The tuple lives with the engine's inbox
+    (`engine.inbox.USER_MESSAGE_VIAS`) because the resume-boot drain (F359) keys on the same
+    channels, so wake policy and consumption policy stay ONE vocabulary.
+    """
     from ..engine.inbox import USER_MESSAGE_VIAS
     inbox = routine_dir / "inbox"
     if not inbox.is_dir():
@@ -123,7 +132,10 @@ class ActiveRun:
     sem: asyncio.Semaphore | None = None  # the pool this run draws from (cron vs interactive)
     background: bool = False  # a detached task — excluded from the self-update drain gate
     cancelled: bool = False   # aborted while still QUEUED — the supervisor spawns nothing
-    user_cancel: bool = False  # user-requested abort of a RUNNING process (F188): when the
+    # user-requested abort of a RUNNING process (F188): the kill leaves no engine finish, so
+    # the reap closes the run out itself — and logs `run_canceled` rather than `orphaned_run`,
+    # because a deliberate cancel must not masquerade as a crash in the health stream.
+    user_cancel: bool = False
 
 def _last_vm_hwm_kb(run_dir: Path) -> int | None:
     """The dead engine's peak resident memory, from its LAST status.json write (the

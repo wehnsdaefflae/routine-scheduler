@@ -282,13 +282,15 @@ def put_util(request: Request, name: str, body: UtilBody) -> dict:
 @router.get("/workflows/{slug}")
 def workflow_detail(request: Request, slug: str) -> dict:
     home = _home(request)
+    # `_workflow_file` returns the path only when it exists, and only ever builds
+    # `workflows/<slug>.py` — a pattern is a Python file, so there is no second format to
+    # report and no second existence check to make.
     path = _workflow_file(home, slug)
-    if not path or not path.exists():
+    if path is None:
         raise HTTPException(404, f"no workflow {slug!r}")
     rel = str(path.relative_to(home))
     return {"slug": slug, "content": path.read_text(encoding="utf-8"),
-            "log": library.git_log(home, rel),
-            "format": "py" if path.suffix == ".py" else "md"}
+            "log": library.git_log(home, rel)}
 
 
 class PutBody(BaseModel):

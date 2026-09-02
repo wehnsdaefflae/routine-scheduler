@@ -10,7 +10,7 @@ import yaml
 from pydantic import AliasPath, Field, ValidationInfo, field_validator
 
 from ..ids import is_slug
-from ..paths import atomic_write
+from ..paths import atomic_write_yaml, read_yaml
 from .base import (
     DEFAULT_BUDGETS,
     DEFAULT_CAPABILITIES,
@@ -197,7 +197,7 @@ def load_tuning(routine_dir: Path) -> tuple[dict, list[str]]:
     if not path.is_file():
         return {}, []
     try:
-        raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        raw = read_yaml(path, {})
     except (OSError, yaml.YAMLError) as exc:
         return {}, [f"tuning.yaml: {exc}"]
     if not isinstance(raw, dict):
@@ -221,12 +221,12 @@ def write_tuning(routine_dir: Path, updates: dict) -> None:
     """
     path = routine_dir / TUNING_FILE
     try:
-        raw = yaml.safe_load(path.read_text(encoding="utf-8")) if path.is_file() else {}
+        raw = read_yaml(path, {})
     except (OSError, yaml.YAMLError):
         raw = {}
     raw = raw if isinstance(raw, dict) else {}
     raw.update(updates)
-    atomic_write(path, yaml.safe_dump(raw, sort_keys=False, allow_unicode=True))
+    atomic_write_yaml(path, raw)
 
 
 def record_grants(routine_dir: Path, updates: dict[str, bool]) -> None:
@@ -236,14 +236,14 @@ def record_grants(routine_dir: Path, updates: dict[str, bool]) -> None:
     routine.yaml at all: a run's one-time grants live in memory on its RunContext.
     """
     path = routine_dir / "routine.yaml"
-    raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    raw = read_yaml(path, {})
     if not isinstance(raw, dict):
         raise TypeError(f"{path}: expected a mapping at top level")
     grants = raw.get("grants")
     grants = dict(grants) if isinstance(grants, dict) else {}
     grants.update({str(k): bool(v) for k, v in updates.items()})
     raw["grants"] = grants
-    atomic_write(path, yaml.safe_dump(raw, sort_keys=False, allow_unicode=True))
+    atomic_write_yaml(path, raw)
 
 
 
@@ -257,7 +257,7 @@ def load_routine(routine_dir: Path) -> tuple[RoutineConfig | None, list[str]]:
     path = routine_dir / "routine.yaml"
     problems: list[str] = []
     try:
-        raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        raw = read_yaml(path, {})
     except OSError as exc:
         return None, [f"{path}: {exc}"]
     except yaml.YAMLError as exc:

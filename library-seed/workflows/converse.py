@@ -33,12 +33,11 @@ META = {
     "when_to_use": "Conversations only — the Conversations tab materializes this pattern into "
                    "each new conversation. Not for scheduled routines: there is no schedule, "
                    "and the reply cycle assumes a user who reads the answer and writes back.",
-    "version": 3,
+    "version": 4,
     # "meta" keeps it out of spawn-pattern lists and wizard suggestions — a conversation
     # harness assumes a present user; it is materialized ONLY by the Conversations tab.
     "tags": ["conversation", "interactive", "assistant", "meta"],
-    "includes": ["ask-policy", "web-research", "decision-record", "intent-inference",
-                 "git-checkpoint"],
+    "includes": ["ask-policy", "web-research", "decision-record", "git-checkpoint"],
     "tools": None,          # a conversation may use every action kind its permissions allow
 }
 
@@ -78,7 +77,16 @@ def triage(message):
       shrink it to fit an imagined reply length.
     - new-topic: clearly departs from this conversation's task (unrelated subject, different
       project). Still handle it, but flag it in the reply (see reply()) so the user can fork
-      a fresh conversation — one conversation, one topic keeps context useful."""
+      a fresh conversation — one conversation, one topic keeps context useful.
+
+    Read the message LITERALLY and at the granularity it states before you act. A request for
+    'a' (one) X is answered with one, not a six-row comparison table; a short request with an
+    obvious literal reading — a lightly mistyped name, a shorthand — is committed to, not turned
+    into a menu of interpretations. Reserve a blocking ask for ambiguity that genuinely blocks
+    the work; never reach for one to hedge after the user pushes back on a plain miss. When a
+    short request has an obvious literal reading, that reading IS the task — the sibling of the
+    ask-policy rule's 'execute or question an explicit directive': read it before inventing
+    ambiguity."""
 
 
 def answer(message):
@@ -174,7 +182,8 @@ def reply(result, new_topic=False):
     plan now stands if there is one, and open questions. If new_topic, make the summary's
     FIRST line exactly `[new-topic] <a short title for the suggested new conversation>` and
     answer on the lines below — the UI turns that marker into a one-click fork button. Do NOT
-    ask 'anything else?' filler — end when answered.
+    ask 'anything else?' filler, and do NOT tail a reply with defensive 'if this still isn't
+    what you meant…' hedging — answer plainly and end when answered.
 
     The conversation CONTINUES in place: phrase remaining work as picked up in THIS
     conversation when the user next writes — never as what 'the next run picks up'. A

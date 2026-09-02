@@ -87,6 +87,40 @@ def _members_or_error(ctx: RunContext, action: dict):
     return [{"slug": s} for s in slugs], None
 
 
+def _proposal_line(ctx: RunContext, action: dict, verb: str) -> str:
+    """What this proposal would DO, in one line, with the target group named as the operator
+    will see it. Resolved here rather than in the renderer because this is where the store is:
+    a run told only "queued" cannot name the pending change in its own finish summary (R1183,
+    R1200), and a `run` proposal that does not say how many members it would fire is
+    indistinguishable from one that would fire none.
+    """
+    gid = str(action.get("target") or "").strip()
+    group = groups.get(ctx.server.routines_home, gid) if gid else None
+    if gid and group is None:
+        named = f"the unknown group {gid!r} (no such group — the proposal will fail review)"
+    elif group:
+        members = len(group.get("members") or [])
+        named = f"group {str(group.get('name') or gid)!r} ({gid}, {members} member(s) today)"
+    else:
+        named = f"a new group {str(action.get('name') or '').strip()!r}"
+    if verb == "run":
+        return f"proposed: fire {named} as one sequential chain"
+    changes = []
+    if "name" in action:
+        changes.append(f"name → {str(action.get('name') or '').strip()!r}")
+    if isinstance(action.get("members"), list):
+        changes.append(f"members → {list(action['members'])}")
+    if "on_failure" in action:
+        changes.append(f"on_failure → {str(action.get('on_failure') or '').strip()!r}")
+    if "cron" in action:
+        cron = str(action.get("cron") or "").strip()
+        changes.append(f"schedule → {cron!r}" if cron else "schedule → cleared")
+    if "paused" in action:
+        changes.append(f"paused → {bool(action.get('paused'))}")
+    detail = f" — {'; '.join(changes)}" if changes else ""
+    return f"proposed: {verb} {named}{detail}"
+
+
 def _queued_obs(ctx: RunContext, action: dict, verb: str) -> dict:
     """A scheduled run's group proposal, filed for the operator (F328) — the twin of
     create_routine's. R353 needed BOTH: a routine plus the two-phase group it belongs in.
@@ -96,10 +130,11 @@ def _queued_obs(ctx: RunContext, action: dict, verb: str) -> dict:
     fields = {k: action[k] for k in ("verb", "target", "name", "members",
                                      "on_failure", "cron", "paused") if k in action}
     fields["verb"] = verb
-    what = f"group {str(action.get('name') or action.get('target') or '').strip()!r}"
+    proposal = _proposal_line(ctx, action, verb)
     rec = queue(ctx.server.routines_home, kind="manage_group", routine=ctx.routine.slug,
-                run_id=ctx.run_id, fields=fields, summary=f"{verb} {what}")
+                run_id=ctx.run_id, fields=fields, summary=proposal)
     return {"kind": "manage_group", "verb": verb, "queued": True, "id": rec["id"],
+            "proposal": proposal,
             "next": ("Nothing changed yet, and nothing will until the user approves it — you "
                      "have no user in the loop, so this went to the Decisions page as a "
                      "proposal. Do NOT re-issue it: a second call queues a second proposal. "

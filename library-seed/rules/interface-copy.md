@@ -26,3 +26,12 @@ labels, error text, notifications, report headings.
   Plain verbs, sentence case, tone matched to the audience.
 - **One job per element.** A label labels, an example demonstrates, a hint hints. Nothing
   quietly does double duty — that is where interface text turns into prose nobody reads.
+
+**Provenance & freshness.** This rule mirrors the *More on writing in design* section of
+Anthropic's `frontend-design` skill — its opening line, *"words are design material, not
+decoration"*, is this rule's title. The writing guidance is largely timeless and fully
+captured here, but the upstream is the canonical source; pull it at read-time if you need the
+current wording (**live copy wins**, snapshot **2026-08-13**):
+- raw — `https://raw.githubusercontent.com/anthropics/claude-code/main/plugins/frontend-design/skills/frontend-design/SKILL.md` (§ *More on writing in design*)
+
+The visual/layout half of the same skill is captured by the sibling rule `interface-design`.

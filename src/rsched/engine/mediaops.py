@@ -62,9 +62,8 @@ def _view_one(rel_path: str, prompt: str, endpoint, ctx: RunContext, multimodal:
         return {"path": rel_path, "error": "not a viewable image/PDF (png/jpeg/webp/gif/pdf) — "
                                            "read text files with read_file instead"}
     ctx.seen_paths.add(str(path))   # viewed = seen: grounds a later overwrite of this file
-    supports = getattr(endpoint, "supports_media", None)
-    native = (supports is not None and path.stat().st_size <= NATIVE_MEDIA_MAX_BYTES
-              and supports(mime, multimodal=multimodal))
+    native = (endpoint is not None and path.stat().st_size <= NATIVE_MEDIA_MAX_BYTES
+              and endpoint.supports_media(mime, multimodal=multimodal))
     if native:
         return {"path": rel_path, "media_type": mime, "native": True, "abspath": str(path)}
     return _view_via_vision(rel_path, str(path), prompt, ctx)
@@ -79,9 +78,6 @@ def media_from_paths(ctx: RunContext, rels: list[str]) -> list[dict]:
         endpoint, ref = ctx.registry.for_model("main", ctx.routine.models)
     except Exception:
         return []
-    supports = getattr(endpoint, "supports_media", None)
-    if supports is None:
-        return []
     out: list[dict] = []
     for rel in rels:
         try:
@@ -90,7 +86,7 @@ def media_from_paths(ctx: RunContext, rels: list[str]) -> list[dict]:
             continue
         mime = guess_media_type(path)
         if (mime and path.is_file() and path.stat().st_size <= NATIVE_MEDIA_MAX_BYTES
-                and supports(mime, multimodal=ref.multimodal)):
+                and endpoint.supports_media(mime, multimodal=ref.multimodal)):
             out.append({"path": str(path), "media_type": mime})
     return out
 

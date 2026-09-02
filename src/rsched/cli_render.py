@@ -9,6 +9,7 @@ dropped.
 
 from __future__ import annotations
 
+from .engine import child
 from .engine.actionschema import BRIEF_FIELD
 
 
@@ -76,7 +77,7 @@ def _render_event(obj: dict) -> str | None:  # noqa: PLR0911 — one return per 
     if t == "compaction":
         return f"    ⇣ compacted context ({p.get('before_chars')} → {p.get('after_chars')} chars)"
     if t in ("subrun_start", "subrun_end"):
-        label = "subtask" if p.get("mode") == "sequential" else "subrun"
+        label = child.mode_short(str(p.get("mode") or ""))
         if t == "subrun_start":
             return f'    ↳ {label} #{p.get('n')} "{p.get('label')}" started ({p.get('workflow')})'
         return f"    ↰ {label} #{p.get('n')} {p.get('status')} — {p.get('turns')} turns"

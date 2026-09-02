@@ -69,7 +69,7 @@ export function triggersCard(slug, initial) {
         ? el("div", { class: "muted small" },
             "fires when a report or message lands in this routine's inbox — deliveries within the cooldown coalesce into one run")
         : el("div", { class: "muted small" }, "reserved trigger type — nothing fires it yet");
-    return el("div", { class: "trigger-row", style: "padding:8px 0;border-bottom:1px solid var(--line)" },
+    return el("div", { class: "trigger-row", style: "padding:8px 0;border-bottom:1px solid var(--rule)" },
       el("div", { class: "row spread", style: "margin-bottom:6px" },
         el("div", { class: "row", style: "gap:10px" },
           el("span", { class: "ref-tag" }, t.type),
@@ -91,9 +91,6 @@ export function triggersCard(slug, initial) {
   // The day's cap is the loop backstop the cooldown can't be (it bounds rate, not total).
   // 0 = uncapped; the count resets on the server's date.
   function capCell(t) {
-    const label = t.max_fires_per_day
-      ? `fires today · ${t.fires_today}/${t.max_fires_per_day}`
-      : `fires today · ${t.fires_today} (uncapped)`;
     const input = el("input", { type: "number", min: "0", value: String(t.max_fires_per_day),
       class: "cap-in", style: "width:70px", title: CAP_HINT,
       onchange: () => retune(t, input, "max_fires_per_day") });

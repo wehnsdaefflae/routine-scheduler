@@ -88,7 +88,7 @@ def _extra_secrets(ctx: RunContext) -> dict[str, str]:
     here, it never writes it (bootstrap.ensure_config generates it).
     """
     out = {**_routine_secrets(ctx), **_connection_env(ctx), **_machine_env(ctx)}
-    routine_token = str(getattr(ctx.server, "routine_token", "") or "")
+    routine_token = str(ctx.server.routine_token or "")
     if routine_token:
         out["RSCHED_API_TOKEN"] = routine_token
     return out
@@ -109,7 +109,7 @@ def _unbound_connection_request(ctx: RunContext, name: str) -> str:
 
     declared = utils_run.util_needs(ctx.server.libraries_home, name).secrets
     upper = {d.upper() for d in declared}
-    bound = dict(getattr(ctx.routine, "connections", None) or {})
+    bound = dict(ctx.routine.connections or {})
     missing = [pid for pid in provider_ids()
                if access_token_var(pid) in upper and not bound.get(pid)]
     if not missing:

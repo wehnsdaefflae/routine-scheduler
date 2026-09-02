@@ -37,7 +37,7 @@ export function scheduleOnceCard(slug) {
   }
 
   function row(o) {
-    return el("div", { class: "oneshot-row", style: "padding:8px 0;border-bottom:1px solid var(--line)" },
+    return el("div", { class: "oneshot-row", style: "padding:8px 0;border-bottom:1px solid var(--rule)" },
       el("div", { class: "row spread", style: "margin-bottom:4px" },
         el("div", { class: "row", style: "gap:10px" },
           el("span", { class: "ref-tag" }, "one-shot"),

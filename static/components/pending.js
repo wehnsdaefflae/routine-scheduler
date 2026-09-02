@@ -45,7 +45,7 @@ function details(rec) {
       el("div", { class: "faint mt" }, `after library commit ${String(f.head || "").slice(0, 8)}`),
     ].filter(Boolean));
     return el("details", { class: "small mt", open: true },
-      el("summary", { style: "cursor:pointer;color:var(--muted)" }, "what broke"), body);
+      el("summary", { style: "cursor:pointer;color:var(--ink-2)" }, "what broke"), body);
   }
   if (rec.kind === "create_routine") {
     body.append(el("div", { class: "faint" }, `name: ${f.name || "(none)"}`),
@@ -58,7 +58,7 @@ function details(rec) {
       : el("div", { class: "faint" }, "no fields beyond the verb"));
   }
   return el("details", { class: "small mt" },
-    el("summary", { style: "cursor:pointer;color:var(--muted)" }, "what would be created"), body);
+    el("summary", { style: "cursor:pointer;color:var(--ink-2)" }, "what would be created"), body);
 }
 
 export function pendingBand({ onChanged } = {}) {

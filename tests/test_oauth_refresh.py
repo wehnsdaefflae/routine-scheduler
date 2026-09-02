@@ -10,9 +10,8 @@ import pytest
 
 from rsched import secrets
 from rsched.config import ServerConfig
-from rsched.daemon import oauth_refresh
 from rsched.daemon.oauth_refresh import OAuthRefreshManager
-from rsched.oauth import store
+from rsched.oauth import exchange, store
 from rsched.oauth.store import Connection
 
 
@@ -45,7 +44,7 @@ def test_refreshes_near_expiry_and_rotates(monkeypatch):
         seen["data"] = kw.get("data")
         return _Resp(200, {"access_token": "NEW", "refresh_token": "RT2", "expires_in": 3600})
 
-    monkeypatch.setattr(oauth_refresh.httpx, "post", fake_post)
+    monkeypatch.setattr(exchange.httpx, "post", fake_post)
     _mgr()._refresh_due(time.time())
     conn = store.get_connection("google", "me")
     assert conn is not None
@@ -59,7 +58,7 @@ def test_refreshes_near_expiry_and_rotates(monkeypatch):
 def test_skips_non_expiring(monkeypatch):
     store.set_connection(Connection(provider="notion", account="a", access_token="AT"))
     calls = []
-    monkeypatch.setattr(oauth_refresh.httpx, "post", lambda *a, **k: calls.append(1))
+    monkeypatch.setattr(exchange.httpx, "post", lambda *a, **k: calls.append(1))
     _mgr()._refresh_due(time.time())
     assert calls == []                                 # Notion: no refresh work at all
 
@@ -68,7 +67,7 @@ def test_skips_not_yet_due(monkeypatch):
     store.set_connection(Connection(provider="google", account="me", access_token="AT",
                                     refresh_token="RT", expires_at=time.time() + 4000))
     calls = []
-    monkeypatch.setattr(oauth_refresh.httpx, "post", lambda *a, **k: calls.append(1))
+    monkeypatch.setattr(exchange.httpx, "post", lambda *a, **k: calls.append(1))
     _mgr()._refresh_due(time.time())
     assert calls == []
 
@@ -79,7 +78,7 @@ def test_rejection_marks_reauth_and_the_record_is_the_notification(monkeypatch):
     Settings → Connections badge is the only surface (docs/notifications.md)."""
     store.set_connection(Connection(provider="google", account="me", access_token="AT",
                                     refresh_token="RT", expires_at=time.time() + 60))
-    monkeypatch.setattr(oauth_refresh.httpx, "post",
+    monkeypatch.setattr(exchange.httpx, "post",
                         lambda *a, **k: _Resp(400, {"error": "invalid_grant"}))
     _mgr()._refresh_due(time.time())
     conn = store.get_connection("google", "me")

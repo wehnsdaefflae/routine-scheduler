@@ -11,13 +11,12 @@ fields are adopted at its next turn boundary, and it is told about the rest.
 
 from __future__ import annotations
 
-import yaml
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, ConfigDict
 
 from .. import conversations as conv_mod
 from ..config import DELIBERATION_LEVELS, MODEL_KINDS, write_tuning
-from ..paths import atomic_write
+from ..paths import atomic_write_yaml, read_yaml
 from .api_background import list_background_rows
 from .api_routine_edit import (
     PermissionsBody,
@@ -43,7 +42,7 @@ def _raw_roots(conv_dir, key: str) -> list[str]:
     """A root list as routine.yaml literally carries it (~ unexpanded) — what the UI shows
     and what the PATCH below edits, so display and write stay in one string domain.
     """
-    raw = yaml.safe_load((conv_dir / "routine.yaml").read_text(encoding="utf-8")) or {}
+    raw = read_yaml(conv_dir / "routine.yaml", {})
     return [str(r) for r in raw.get(key) or []]
 
 @router.get("/conversations/{slug}")
@@ -132,7 +131,7 @@ def patch_conversation(request: Request, slug: str, patch: ConversationPatch) ->
     info = conversation_info(request, slug)
     updates = patch.model_dump(exclude_none=True)
     path = info.cfg.dir / "routine.yaml"
-    raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    raw = read_yaml(path, {})
     if "title" in updates:
         raw["name"] = raw["description"] = updates["title"].strip() or info.cfg.name
     if "tags" in updates:
@@ -192,7 +191,7 @@ def patch_conversation(request: Request, slug: str, patch: ConversationPatch) ->
                                      f"{updates['deliberation']!r}")
         write_tuning(info.cfg.dir, {"deliberation": updates["deliberation"]})
     if set(updates) - {"deliberation"}:   # a tuning-only patch never rewrites routine.yaml
-        atomic_write(path, yaml.safe_dump(raw, sort_keys=False, allow_unicode=True))
+        atomic_write_yaml(path, raw)
     # F337: a reply already in flight booted from the OLD config. Tell it what changed and
     # which half reaches it now — the same one classification the routine page's PATCH uses,
     # so "I changed it mid-reply" means the same thing in both homes.
@@ -219,8 +218,8 @@ def set_permissions(request: Request, slug: str, body: PermissionsBody) -> dict:
     active, caps = resolve_permission_layers(request.app.state.server, body,
                                              info.cfg.capabilities or {})
     path = info.cfg.dir / "routine.yaml"
-    raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    raw = read_yaml(path, {})
     raw["permissions"] = active
     raw["capabilities"] = caps
-    atomic_write(path, yaml.safe_dump(raw, sort_keys=False, allow_unicode=True))
+    atomic_write_yaml(path, raw)
     return {"ok": True, "active": active, "capabilities": caps}

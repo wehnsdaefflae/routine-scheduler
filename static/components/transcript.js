@@ -217,7 +217,7 @@ export function createTranscript(container, opts = {}) {
   // Tool/observation return values are collapsed by default (expandable). The summary carries the
   // first line, so short one-line results stay fully readable without expanding. `rich` renders
   // the body as simple markdown (model-authored prose — llm replies); program output stays literal.
-  function obsBody(kind, text, rich = false) {
+  function obsBody(text, rich = false) {
     const firstLine = (text.split("\n")[0] || "").slice(0, 120);
     const more = text.length > firstLine.length;
     return el("details", { class: "obs-collapse" },
@@ -280,7 +280,7 @@ export function createTranscript(container, opts = {}) {
     } else {
       text = JSON.stringify(o, null, 1);
     }
-    const obs = obsBody(o.kind, text, (o.kind === "llm" && !o.error)
+    const obs = obsBody(text, (o.kind === "llm" && !o.error)
       || (o.kind === "memory_read" && !o.missing));
     if (openTurn) { openTurn.append(obs); openTurn = null; }
     else root.append(el("div", { class: "turn" }, obs));

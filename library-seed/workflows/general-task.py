@@ -5,7 +5,7 @@ PATTERN, not a program: the orchestrator never executes it —
 it *acts it out*, one engine action per turn, following the control flow below (its branches,
 loops, and error handling). The dummy imports name the parameters this routine works with; the
 clarifier pins them down for the concrete task, and `decompose` turns this pattern into the
-routine's own markdown state-machine (main.md + stages/).
+routine's own markdown state-machine (main.md + steps/).
 """
 
 # --- Parameter contract -------------------------------------------------------------------------
@@ -20,8 +20,7 @@ from routine.params import (
 
 # The engine actions the orchestrator may take — exactly one per turn, each answered by an
 # OBSERVATION the next turn reasons about. Shown as ordinary calls for readability.
-from routine.actions import (read_file, write_file, util, write_util, llm,
-                             spawn, subtask, wait, ask_user, finish)
+from routine.actions import read_file, write_file, util, write_util, llm, spawn, wait, ask_user, finish
 from routine.state import phase, ledger    # state/phase.json helper, LEDGER.md append helper
 
 META = {
@@ -33,9 +32,9 @@ META = {
                    "/ maintain something on a schedule, tend a long-running goal, run a periodic "
                    "check. Use it when the instruction says WHAT to deliver and the HOW is "
                    "ordinary tool work.",
-    "version": 9,
+    "version": 10,
     "tags": ["general", "research", "tool-use"],
-    "includes": ["ask-policy", "web-research", "decision-record", "intent-inference"],
+    "includes": ["ask-policy", "web-research", "decision-record"],
     "tools": None,          # None = every action kind is allowed
 }
 
@@ -68,20 +67,12 @@ def main():
     if not work:
         return finish("ok", "Nothing due this run; standing obligations guarded.")
 
-    mode = decompose_decision(work)             # inline | sequential | parallel — the DECOMPOSITION GATE
-    if mode == "parallel":
-        # Many INDEPENDENT items with disjoint outputs → fan out parallel children; keep working,
-        # then fold in their results.
+    if len(work) > PARALLEL_THRESHOLD:
+        # Separable bulk work → parallel children, each with a self-contained prompt + disjoint
+        # outputs. Keep working, then fold in their results.
         children = [spawn(chunk) for chunk in batches(work)]
         while children:
             children = wait(children)           # blocks until the next child finishes; returns the rest
-    elif mode == "sequential":
-        # ONE large task that splits into ORDERED steps, each depending on the previous →
-        # run each as a subtask (a fresh-context child run with its own pattern + budget), in
-        # order, folding each result into the next step's brief.
-        result = None
-        for step in ordered_subtasks(work):
-            result = subtask(brief_for(step, result))   # BLOCKS until this step finishes
     else:
         for item in work:
             try:
@@ -125,41 +116,21 @@ def verify(result):
     A claimed-but-unverified outcome is the worst failure this system knows."""
 
 
-def decompose_decision(work):
-    """The DECOMPOSITION GATE — decide HOW to tackle this run's work before doing it. Return one of:
-    - "inline": do it directly in this run's own turns. The default; most runs are small enough.
-    - "sequential": ONE large task that splits into ORDERED steps where each depends on the previous
-      (e.g. research -> draft -> review, or scrape -> normalize -> report). Each step runs as a
-      `subtask`: a fresh-context child with its OWN pattern + budget, executed in order, its finish
-      summary folded into the next step's brief. Prefer this when a single run's context would get
-      bloated carrying every stage, or a stage clearly wants a different workflow pattern.
-    - "parallel": many INDEPENDENT items with disjoint outputs (PARALLEL_THRESHOLD is a rough size
-      cue) → fan them out as concurrent `spawn` children.
-    Decompose only when it EARNS the coordination cost; a handful of steps you can verify inline
-    should stay inline. Decomposition is recursive — a child may hit its own gate."""
-
-
-def ordered_subtasks(work):
-    """The ORDERED list of sequential steps this task decomposes into — each a self-contained unit
-    that consumes the previous step's result. Keep it short (2-5 steps): over-decomposing spends
-    child budgets on hand-offs instead of work."""
-
-
-def brief_for(step, prior_result):
-    """Compose one subtask's self-contained `prompt`: what THIS step must produce and where, plus
-    the concrete facts it needs from `prior_result` (the previous subtask's finish summary — the
-    child sees nothing else of this run). Pick the `workflow` pattern that fits the step's purpose
-    (or omit for the default, or 'generate' when none fits and that capability is on) and a `turns`
-    budget proportional to the step."""
-
-
 def batches(work):
     """Split large work into disjoint chunks for parallel sub-workflows (one prompt each)."""
 
 
 def record():
     """Update state/phase.json and any state files; append exactly one LEDGER entry for the run
-    (what changed, why, decisions, and candidates rejected + why)."""
+    (what changed, why, decisions, and candidates rejected + why). Then sweep the run once for
+    machinery friction you merely worked around — an action or tool that failed or misled you, a
+    consent flow that asked for too much or too little — and file each real hitch with the
+    `report` action before finishing (leave `target` unset if you cannot name the owner; triage
+    routes it). A finish summary is read as the task's outcome, not as a defect stream.
+    When LEDGER.md grows past ~400 lines or ~40 entries, rotate it THAT run as a required
+    part of recording (not deferrable housekeeping): archive the older entries with a
+    one-line rollup note pointing at the archive, keeping only the recent tail — an
+    unbounded LEDGER is its own defect."""
     ledger.append("what changed, why, decisions, rejected candidates")
 
 

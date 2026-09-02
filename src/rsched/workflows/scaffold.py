@@ -6,8 +6,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import yaml
-
 from .. import libgit
 from ..config import (
     DEFAULT_BUDGETS,
@@ -19,6 +17,7 @@ from ..config import (
 )
 from ..health_events import log_health_event
 from ..ids import is_slug, now_iso
+from ..paths import atomic_write_yaml
 
 # mnt/ = transient remote-machine share mounts; .util_outputs/ = spilled util output
 # (engine-owned and pruned, and it can carry whatever a util printed — never committed)
@@ -31,15 +30,12 @@ GITIGNORE = "runs/\ninbox/\nquestions/\nmnt/\n.util_outputs/\n"
 def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,  # noqa: PLR0913
              workflow_slug: str, cron: str = "", tz: str = "Europe/Berlin",
              description: str = "", models: dict[str, str] | None = None,
-             params: dict | None = None, budgets: dict | None = None,
-             rules: list[str] | None = None,
-             permissions: list[str] | None = None,
+             budgets: dict | None = None,
              fs_read_roots: list[str] | None = None,
              fs_write_roots: list[str] | None = None,
              stages: dict[str, str] | None = None, enabled: bool = True,
              tags: list[str] | None = None, deliberation: str = "",
-             template: str | None = None, stopping: list[str] | None = None,
-             progress=None) -> Path:
+             template: str | None = None, stopping: list[str] | None = None) -> Path:
     """Create ~/routines/<slug>. The workflow is REFERENCED (edited only in the library);
     `stopping` seeds `state/stopping.json` — what DONE means for one run, in the USER's words;
     the routine holds general-rule SLUGS in routine.yaml (`rules:`, indexed by main.md's
@@ -68,12 +64,14 @@ def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,  #
         meta, _ = library.read_workflow(server.libraries_home, workflow_slug)
     except FileNotFoundError as exc:
         raise ValueError(f"workflow {workflow_slug!r} not found in the library") from exc
+    # The rules a new routine holds come from the PATTERN it was built on, and the permissions
+    # from the defaults — never from a judgement made at creation. Judging a routine's setup is
+    # `recommend_setup`'s job, which runs on the routine PAGE, after the routine exists and has
+    # a recipe to judge, and puts advice beside every toggle rather than flipping one (D108).
     available_rules = set(library_docs.slugs(server.rules_home))
-    active_rules = rules if rules is not None else (meta.get("includes") or DEFAULT_RULES)
-    active_rules = [r for r in active_rules if r in available_rules]
+    active_rules = [r for r in (meta.get("includes") or DEFAULT_RULES) if r in available_rules]
     available_perms = set(library_docs.slugs(server.permissions_home))
-    active_perms = permissions if permissions is not None else list(DEFAULT_PERMISSIONS)
-    active_perms = [p for p in active_perms if p in available_perms]
+    active_perms = [p for p in DEFAULT_PERMISSIONS if p in available_perms]
     # the activation cascade: the capabilities the chosen conduct docs require, switched
     # on from the start (the user tunes both layers on the routine page afterwards)
     from ..grants import capabilities_for, floor_capabilities, read_library_requires
@@ -138,8 +136,7 @@ def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,  #
     # routine dir must not exist until every file's content is in hand — a half-made skeleton
     # sitting in the routines home for minutes reads as a broken build (R478: the user watched
     # empty dirs, deleted them mid-flight, and the writes that followed crashed the run).
-    result = decompose(server, workflow_slug, instruction, params=params,
-                       rules=active_rules, progress=progress)
+    result = decompose(server, workflow_slug, instruction, rules=active_rules)
     for sub in ("state", "stages", "inbox"):
         (routine_dir / sub).mkdir(parents=True)
     main_meta = {
@@ -202,8 +199,7 @@ def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,  #
         cfg["fs_read_roots"] = [_tilde(p) for p in fs_read_roots]
     if fs_write_roots:
         cfg["fs_write_roots"] = [_tilde(p) for p in fs_write_roots]
-    (routine_dir / "routine.yaml").write_text(
-        yaml.safe_dump(cfg, sort_keys=False, allow_unicode=True), encoding="utf-8")
+    atomic_write_yaml(routine_dir / "routine.yaml", cfg)
     # STOPPING CONDITIONS (F334/D98) — what DONE means for one run, seeded from the answer the
     # creation flow already collected. The flow has always asked ("what DONE looks like for one
     # run, in the user's own words"; F383) and the answer went nowhere but the recipe prose, so

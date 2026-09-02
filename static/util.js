@@ -24,6 +24,26 @@ export function el(tag, attrs = {}, ...children) {
   return node;
 }
 
+// The SVG twin of el(), for the console's hand-drawn graphics (heartbeat strip, week grid,
+// charts, activity ribbon). It cannot share el(): document.createElement builds an HTML-
+// namespaced node, and an <svg> subtree assembled that way parses fine and renders NOTHING,
+// which is a silent blank rectangle rather than an error. Attributes all go through
+// setAttribute — SVG has no className property to special-case and these graphics wire their
+// events on the returned node — and `title` becomes a <title> CHILD, which is how SVG spells
+// the hover/accessible label that HTML spells as a `title=` attribute. Every tooltip on those
+// four graphics is one of these.
+const SVG_NS = "http://www.w3.org/2000/svg";
+export function svgEl(tag, attrs = {}, title = "") {
+  const n = document.createElementNS(SVG_NS, tag);
+  for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v);
+  if (title) {
+    const t = document.createElementNS(SVG_NS, "title");
+    t.textContent = title;
+    n.append(t);
+  }
+  return n;
+}
+
 // ---- time: absolute + relative, always together ---------------------------------------------
 // Accepts an ISO string or a run-ts ("20260708-220004"). A run-ts is ALWAYS UTC (see
 // ids.run_ts) and carries no offset, so it is parsed as UTC (Date.UTC) and then rendered in

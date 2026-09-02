@@ -53,7 +53,8 @@ def reap(runner, run: ActiveRun, cfg: RoutineConfig, stderr: bytes) -> None:
                         f"engine exited rc={rc} without a finish "
                         f"({stderr.decode('utf-8', 'replace')[-400:].strip() or 'no stderr'}"
                         f"{hwm_note})",
-                        event="run_canceled" if run.user_cancel else "orphaned_run")
+                        event="run_canceled" if run.user_cancel else "orphaned_run",
+                        rc=rc, vm_hwm_kb=hwm)
         info = registry.read_run(run.run_dir, run.slug)
         if rc == -9 and not run.user_cancel:
             retry_sigkilled(runner, run, cfg, hwm)
@@ -175,10 +176,16 @@ def apply_pending_edits(runner, cfg: RoutineConfig, slug: str) -> None:
 
 
 def close_out(runner, run_dir: Path, run_id: str, message: str, *,
-               event: str = "orphaned_run") -> None:
+               event: str = "orphaned_run", rc: int | None = None,
+               vm_hwm_kb: int | None = None) -> None:
     """Append a synthetic finish to a dead run (single writer: the engine is gone).
     `event` names the health-stream entry: orphaned_run for a crash/dead pid,
     run_canceled when the death was a user-requested abort (F188) — same payload shape.
+
+    `rc` and `vm_hwm_kb` ride along as STRUCTURED health fields when the reap knows them
+    (F422): the two events differ by who asked for the death, not by how the process died,
+    so "was this a signal kill?" is only answerable from the exit status. An orphan
+    recovered at boot has no process left to report on and passes neither.
     """
     try:
         with (run_dir / "transcript.jsonl").open("a", encoding="utf-8") as fh:
@@ -194,7 +201,7 @@ def close_out(runner, run_dir: Path, run_id: str, message: str, *,
     atomic_write(run_dir / "result.md", message + "\n")
     log_health_event(runner.server.routines_home, event,
                      routine=run_id.split(":", maxsplit=1)[0] if ":" in run_id else run_id,
-                     run_id=run_id, detail=message[:500])
+                     run_id=run_id, detail=message[:500], rc=rc, vm_hwm_kb=vm_hwm_kb)
 
 
 def recover_orphans(runner, catalog: dict[str, registry.RoutineInfo]) -> int:

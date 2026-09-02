@@ -20,12 +20,11 @@ import secrets
 import time
 from urllib.parse import urlencode
 
-import httpx
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
-from ...oauth import providers, store
+from ...oauth import exchange, providers, store
 from ...oauth.store import Connection
 from .common import server_of, update_config
 
@@ -169,19 +168,7 @@ def _exchange(entry: dict, code: str) -> Connection:
                             "redirect_uri": entry["redirect_uri"]}
     if prov.uses_pkce:
         data["code_verifier"] = entry["code_verifier"]
-    auth: tuple[str, str] | None = None
-    if prov.exchange_auth == "basic":
-        auth = (creds.client_id, creds.client_secret)
-    else:
-        data["client_id"] = creds.client_id
-        if creds.client_secret:
-            data["client_secret"] = creds.client_secret
-    if prov.exchange_encoding == "json":
-        resp = httpx.post(prov.token_url, json=data, auth=auth,
-                          headers={"Accept": "application/json"}, timeout=20)
-    else:
-        resp = httpx.post(prov.token_url, data=data, auth=auth,
-                          headers={"Accept": "application/json"}, timeout=20)
+    resp = exchange.post_token(prov, creds, data)
     if resp.status_code != 200:
         raise RuntimeError(f"token endpoint returned HTTP {resp.status_code}")
     return _connection_from(provider, entry["account"], prov, resp.json())

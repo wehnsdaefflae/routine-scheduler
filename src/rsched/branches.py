@@ -45,12 +45,10 @@ import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-import yaml
-
 from .engine.history import cut_index_for_turn
 from .engine.transcript import read_events
 from .ids import now_iso, run_ts
-from .paths import atomic_write, atomic_write_json
+from .paths import atomic_write, atomic_write_json, atomic_write_yaml, read_yaml
 
 if TYPE_CHECKING:
     from .config import ServerConfig
@@ -114,14 +112,13 @@ def fork_conversation(server: ServerConfig, *, parent_dir: Path, parent_slug: st
         if src.is_file():
             shutil.copy(src, branch_dir / fname)
 
-    raw = yaml.safe_load((parent_dir / "routine.yaml").read_text(encoding="utf-8")) or {}
+    raw = read_yaml(parent_dir / "routine.yaml", {})
     parent_name = str(raw.get("name") or parent_slug)
     raw["name"] = name.strip() or f"{parent_name} (branch)"
     raw["description"] = raw["name"]
     # The provenance the whole feature hangs on: which conversation, and where it split.
     raw["parent"] = {"slug": parent_slug, "turn": at_turn, "forked": now_iso()}
-    atomic_write(branch_dir / "routine.yaml",
-                 yaml.safe_dump(raw, sort_keys=False, allow_unicode=True))
+    atomic_write_yaml(branch_dir / "routine.yaml", raw)
 
     ts = run_ts()
     run_dir = branch_dir / "runs" / ts
@@ -172,7 +169,7 @@ def hand_back(server: ServerConfig, *, branch_dir: Path, slug: str, summary: str
     every other inbox message reaches a conversation. Raises ValueError when the conversation is
     not a branch or its parent is gone.
     """
-    raw = yaml.safe_load((branch_dir / "routine.yaml").read_text(encoding="utf-8")) or {}
+    raw = read_yaml(branch_dir / "routine.yaml", {})
     parent = raw.get("parent") or {}
     parent_slug = str(parent.get("slug") or "")
     if not parent_slug:

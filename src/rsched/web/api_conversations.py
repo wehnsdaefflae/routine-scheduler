@@ -13,15 +13,13 @@ here for the chat's artifact panel. Its detached background tasks live in api_ba
 from __future__ import annotations
 
 import shutil
-import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 
 from .. import conversations as conv_mod
 from .. import registry
-from ..ids import now_iso
-from ..paths import atomic_write_json
+from ..engine import inbox
 from . import artifacts
 from .api_background import teardown_background
 from .routines_common import (
@@ -93,11 +91,9 @@ async def message(request: Request, slug: str, text: Annotated[str, Form()],
                  "moment, after the server is back (repeated resends only pile up duplicates).")
     rels = await _save_attachments(conv_dir, files or [])
     full = text.rstrip() + conv_mod.attachment_note(rels)
-    atomic_write_json(conv_dir / "inbox"
-                      / f"msg-{now_iso().replace(':', '')}-{uuid.uuid4().hex[:8]}.json",
-                      {"text": full, "ts": now_iso(), "via": "conversation",
-                       **({"command": True} if command.strip() else {}),
-                       **({"attachments": rels} if rels else {})})
+    inbox.file_message(conv_dir, full, via="conversation",
+                       extra={**({"command": True} if command.strip() else {}),
+                              **({"attachments": rels} if rels else {})})
     if is_mid_run:
         # R108 residual (F268): the liveness snapshot above predates the file write — a
         # run that finished inside that window would leave this message queued with

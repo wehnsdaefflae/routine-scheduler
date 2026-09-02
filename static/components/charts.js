@@ -4,7 +4,7 @@
 // series beyond the sixth fold into a gray "other". Colors follow the ENTITY (a key
 // keeps its color when the range filter changes), text wears text tokens only.
 
-import { el, fmtNum, fmtUsd } from "/static/util.js";
+import { el, fmtNum, fmtUsd, svgEl } from "/static/util.js";
 
 const SERIES_COLORS = ["#cc7f1f", "#3d8fe0", "#219e8e", "#a86fd1", "#d16a92", "#7fa03f"];
 const OTHER_COLOR = "#56697e";
@@ -74,12 +74,7 @@ function showTip(evt, lines) {
 }
 export function hideTip() { if (tip) tip.hidden = true; }
 
-const NS = "http://www.w3.org/2000/svg";
-function s(tag, attrs = {}) {
-  const n = document.createElementNS(NS, tag);
-  for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v);
-  return n;
-}
+const s = svgEl;   // this file builds an SVG node on nearly every line; one letter earns its keep
 
 // ---- the chart: {metric, group, range, type} × per-run records → node ------------
 export function chartNode(spec, runs, colorOf) {
@@ -165,7 +160,7 @@ export function chartNode(spec, runs, colorOf) {
         const y1 = y(acc + v), y0 = y(acc);
         svg.append(s("rect", {
           x: x(i) + 1, y: y1, width: bw, height: Math.max(1, y0 - y1),
-          fill: colorOf(k), stroke: "var(--surface)", "stroke-width": 1,
+          fill: colorOf(k), stroke: "var(--plate)", "stroke-width": 1,
           ...(acc === 0 && spec.group === "none" ? { rx: 2 } : {}),
         }));
         acc += v;

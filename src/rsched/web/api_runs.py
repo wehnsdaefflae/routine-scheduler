@@ -139,17 +139,30 @@ def run_file(request: Request, run_id: str, path: str):
     path outside both (files a run touched under an fs-root grant) is listed but not
     served: the 400 names the boundary instead of opening an arbitrary-file read
     through the web tier.
+
+    A relative path is resolved against the directory of the run that TOUCHED it, which the
+    file-activity read model records per row (`bases`): a child's working-dir file lives under
+    `sub/<n>/`, and resolving it against the parent alone made it a dead row that 404'd while
+    a sibling in the same directory opened (R1193). The recorded bases are tried first, the
+    two tree roots after, and every candidate still has to land inside one of them.
     """
     import mimetypes
 
     from fastapi.responses import FileResponse
 
     from ..paths import within
+    from ..readmodels.fileactivity import file_activity
 
     _, run_dir = _run_dir(request, run_id)
     routine_dir = run_dir.parent.parent
     rel = Path(path)
-    candidates = [rel] if rel.is_absolute() else [routine_dir / rel, run_dir / rel]
+    if rel.is_absolute():
+        candidates = [rel]
+    else:
+        bases = next((row.get("bases") or [] for row in file_activity(run_dir)
+                      if row.get("path") == path), [])
+        candidates = [run_dir / b / rel for b in bases if b]
+        candidates += [routine_dir / rel, run_dir / rel]
     for cand in candidates:
         try:
             resolved = cand.resolve()

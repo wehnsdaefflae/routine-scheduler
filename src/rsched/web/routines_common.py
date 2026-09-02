@@ -8,6 +8,7 @@ inside api_routines, which every sibling then reached into).
 # drop a sibling's pending signal.
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from fastapi import HTTPException, Request
@@ -16,6 +17,11 @@ from .. import registry
 from ..grants import EMPTY_CAPABILITIES, GATED_KINDS
 from ..ids import now_iso, parse_run_id
 from ..paths import atomic_write_json, read_json
+
+#: The only inbox filenames a web write endpoint may address. `answer-*` files belong to the
+#: Decisions page and a path segment belongs to nobody: this pattern, not any caller, is what
+#: keeps both out of a message PUT or DELETE.
+_MSG_ID_RE = re.compile(r"^msg-[\w.+-]+$")
 
 
 def merge_control(run_dir: Path, updates: dict) -> None:
@@ -27,6 +33,30 @@ def merge_control(run_dir: Path, updates: dict) -> None:
     ctrl = dict(ctrl) if isinstance(ctrl, dict) else {}
     ctrl.update(updates)
     atomic_write_json(run_dir / "control.json", ctrl)
+
+
+def queued_message(inbox: Path, msg_id: str, *, via: str = "",
+                   noun: str = "message") -> tuple[Path, dict]:
+    """Resolve a message id to its still-queued inbox file, or 404.
+
+    ONE implementation for every endpoint that rewrites or withdraws a queued inbox file —
+    the routine Messages page and the audit feedback editor address the SAME directory, so a
+    second copy of the id pattern is a guard that gets hardened on one endpoint and left
+    alone on the other. `via` narrows resolution to the messages one channel wrote: the audit
+    editor passes "web-audit" so it can only ever re-format its own tagged feedback, never a
+    routine-page injection or a question answer. That keyword is stated at the audit call
+    site and must stay there — the default here is NO filter, so dropping it silently widens
+    the feedback editor to every queued file in the inbox. `noun` names the thing in
+    both 404s.
+    """
+    if not _MSG_ID_RE.fullmatch(msg_id):
+        raise HTTPException(404, f"malformed {noun} id {msg_id!r}")
+    path = inbox / f"{msg_id}.json"
+    obj = read_json(path)
+    if not (isinstance(obj, dict) and (not via or obj.get("via") == via)):
+        raise HTTPException(404,
+                            f"this {noun} is no longer queued — a run already consumed it")
+    return path, obj
 
 
 

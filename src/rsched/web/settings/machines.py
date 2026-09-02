@@ -8,15 +8,16 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+from collections.abc import Callable
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from ... import machines as machines_mod
 from ... import sandbox, utils_run
-from ...config import MachineConfig, load_server_config
+from ...config import MachineConfig
 from ...secrets import load_secrets
-from .common import server_of, update_config
+from .common import rewrite_block, server_of
 
 router = APIRouter()
 
@@ -39,17 +40,9 @@ def list_machines(request: Request) -> dict:
     return {"machines": [_machine_view(m, have) for m in server.machines.values()]}
 
 
-def _rewrite_machines(request: Request, mutate) -> dict:
-    def apply(raw: dict) -> None:
-        machines = raw.get("machines") or {}
-        mutate(machines)
-        raw["machines"] = machines
-
-    path = update_config(request, apply)
-    fresh, problems = load_server_config(path)
-    server = server_of(request)
-    server.machines = fresh.machines
-    return {"ok": True, "problems": problems}
+def _rewrite_machines(request: Request, mutate: Callable[[dict], None]) -> dict:
+    """Every machine-catalog save, named once: the block plus the one live field it refreshes."""
+    return rewrite_block(request, "machines", mutate, "machines")
 
 
 class MachineBody(BaseModel):

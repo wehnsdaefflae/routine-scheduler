@@ -24,7 +24,7 @@ import yaml
 
 from . import library_docs
 from .ids import is_slug
-from .paths import atomic_write
+from .paths import atomic_write, atomic_write_yaml, read_yaml
 
 CONFIG_FILE = "routine.yaml"
 
@@ -65,12 +65,9 @@ def current_rules(routine_dir: Path) -> list[str]:
     Lenient on purpose: a hand-broken yaml reads as "no rules" rather than crashing the
     routine page or a run boot. The strict parse belongs to config.load_routine.
     """
-    path = routine_dir / CONFIG_FILE
-    if not path.is_file():
-        return []
     try:
-        raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    except yaml.YAMLError:
+        raw = read_yaml(routine_dir / CONFIG_FILE, {})
+    except (OSError, yaml.YAMLError):
         return []
     held = raw.get("rules") if isinstance(raw, dict) else None
     return [str(s) for s in held] if isinstance(held, list) else []
@@ -79,9 +76,9 @@ def current_rules(routine_dir: Path) -> list[str]:
 def _write_rules(routine_dir: Path, slugs: list[str]) -> None:
     """Persist the held set into routine.yaml, leaving every other key untouched."""
     path = routine_dir / CONFIG_FILE
-    raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    raw = read_yaml(path, {})
     raw["rules"] = slugs
-    atomic_write(path, yaml.safe_dump(raw, sort_keys=False, allow_unicode=True))
+    atomic_write_yaml(path, raw)
 
 
 def summaries(rules_home: Path, slugs: list[str]) -> dict[str, str]:

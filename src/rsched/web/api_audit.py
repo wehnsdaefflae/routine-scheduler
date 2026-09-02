@@ -14,7 +14,6 @@ fields (kind/target/choice/raw) alongside the formatted text so an edit can re-f
 
 from __future__ import annotations
 
-import re
 import uuid
 from pathlib import Path
 
@@ -24,6 +23,7 @@ from pydantic import BaseModel
 from ..ids import now_iso
 from ..paths import atomic_write_json, read_json
 from ..readmodels.items import SELF_AUDIT_SLUG
+from .routines_common import queued_message
 
 router = APIRouter(tags=["audit"])
 
@@ -144,23 +144,6 @@ def write_feedback(routine_dir, body: Feedback) -> str:
     return Path(fname).stem
 
 
-_MSG_ID_RE = re.compile(r"^msg-[\w.+-]+$")
-
-
-def _queued_message(request: Request, msg_id: str) -> tuple[Path, dict]:
-    """Resolve a feedback id to its still-queued inbox file, or 404. Only web-audit messages
-    are reachable — the id pattern plus the `via` check keep every other inbox file (question
-    answers, routine-page injections) out of this endpoint's hands.
-    """
-    if not _MSG_ID_RE.fullmatch(msg_id):
-        raise HTTPException(404, f"malformed feedback id {msg_id!r}")
-    path = _routine_dir(request) / "inbox" / f"{msg_id}.json"
-    obj = read_json(path)
-    if not (isinstance(obj, dict) and obj.get("via") == "web-audit"):
-        raise HTTPException(404, "this feedback is no longer queued — a run already consumed it")
-    return path, obj
-
-
 @router.post("/audit/feedback")
 def audit_feedback(request: Request, body: Feedback) -> dict:
     routine_dir = _routine_dir(request)
@@ -176,7 +159,11 @@ def audit_feedback_edit(request: Request, msg_id: str, body: Feedback) -> dict:
     """Rewrite a queued message in place (same file, so its inbox position holds); the
     original ts is kept and `edited` stamped. Gone from the inbox = consumed = immutable.
     """
-    path, prev = _queued_message(request, msg_id)
+    # via="web-audit" is what confines this editor to its OWN tagged messages: the shared
+    # resolver defaults to no filter, and without it a feedback PUT would rewrite any queued
+    # inbox file — a question answer, a routine-page injection, a report delivery.
+    path, prev = queued_message(_routine_dir(request) / "inbox", msg_id,
+                                via="web-audit", noun="feedback")
     atomic_write_json(path, _message_payload(body, str(prev.get("ts") or now_iso()),
                                              edited=now_iso()))
     active = request.app.state.runner.is_active(SELF_AUDIT_SLUG)

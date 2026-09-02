@@ -19,6 +19,7 @@ from .base import (
     EndpointError,
     Message,
     anthropic_usage,
+    key_from_env_file,
     read_media_b64,
 )
 
@@ -91,15 +92,10 @@ def resolve_token(credentials_env: str, inline: str = "") -> str | None:
         return os.environ[TOKEN_VAR]
     if inline:
         return inline
-    path = expand(credentials_env)
-    if path.exists():
-        for line in path.read_text(encoding="utf-8").splitlines():
-            line = line.strip()
-            if line and not line.startswith("#") and "=" in line:
-                k, v = line.split("=", 1)
-                if k.strip() == TOKEN_VAR:
-                    return v.strip().strip('"').strip("'")
-    return None
+    # The env-file rung is the generic one every endpoint kind uses (`~/.credentials/*.env`,
+    # comments and quotes tolerated) — only the var name differs, so it stays one reader in
+    # endpoints.base rather than a second parser drifting from it here.
+    return key_from_env_file(credentials_env, TOKEN_VAR)
 
 
 def token_source(credentials_env: str, inline: str) -> dict:

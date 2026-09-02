@@ -21,7 +21,6 @@ import { renderSource } from "/static/views/settings-source.js";
 export async function render(view, query = {}) {
   view.append(el("div", { class: "page-head" },
     el("div", {},
-      el("div", { class: "kicker" }, "console / configuration"),
       el("h1", {}, "Settings"))));
 
   const st = await api("/api/status").catch(() => ({}));

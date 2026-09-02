@@ -153,10 +153,23 @@ hypothetical: D98's stopping-conditions panel was deferred into F324 on 2026-08-
 whose carrier is CLOSED and whose closure evidence — the carrier's own `detail` plus the
 changelog rows whose `items` name it — never mentions the deferring ids. (Prose mentions are
 deliberately not evidence: the deferring sentence names both the source and the carrier, so
-counting them would make every deferral its own proof of delivery.) `GET /api/items/orphans`
-serves them and the Messages page banners them above the list, because they are invisible to
-every filter below it. It SURFACES rather than gates — a human judges the promise, and the fix
-for a false positive is to write the closure note so it names what it delivered.
+counting them would make every deferral its own proof of delivery.)
+
+**An addressed report whose message was never written.** The same module carries the second loss
+mechanism, because it is lost the same way — off every filter, counted in every backlog figure,
+and owned by nobody. `file_report` writes the ledger row and the target's `inbox/msg-rep-<id>.json`
+in ONE call, so an addressed report always has a message waiting for its target's next run. A row
+appended any other way — an operator batch written straight to the stream — has a `target` and no
+message, so the target can never drain it, never stamp it `delivered`, and it reads `open`
+forever. Twelve rows from the 2026-08-29 web-UI migration are exactly that (D114). The check is
+the FILE, not the stamp: a stamp says a run has read the message, while the file's absence says no
+run ever can. Retracted rows are excluded — retraction unlinks the message on purpose — and a
+message still sitting in the inbox is the normal waiting state, not this.
+
+`GET /api/items/orphans` serves both, tagged `kind: "deferral"` / `kind: "undelivered"`, and the
+Messages page banners them above the list in two groups, because they are invisible to every
+filter below it. It SURFACES rather than gates — a human judges the promise, and the fix for a
+false-positive deferral is to write the closure note so it names what it delivered.
 
 The stream is append-only. The report row is written by the `report` action; the `delivered`
 and `retracted` events are further rows, folded onto it by `reports.read_reports`.

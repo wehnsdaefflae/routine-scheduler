@@ -7,22 +7,12 @@
 // ts · outcome · turns · tokens · cost · duration; click opens that run. Missing history
 // pads with faint stubs so every strip spans the same width across cards.
 
-import { fmtAbs, fmtDur, fmtNum, fmtUsd } from "/static/util.js";
+import { fmtAbs, fmtDur, fmtNum, fmtUsd, svgEl } from "/static/util.js";
 
-const NS = "http://www.w3.org/2000/svg";
 const SLOTS = 15, BAR_W = 7, GAP = 3, H = 24, MIN_H = 5, MAX_H = 20;
 const W = SLOTS * (BAR_W + GAP) - GAP;
 
-function s(tag, attrs = {}, title = "") {
-  const n = document.createElementNS(NS, tag);
-  for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v);
-  if (title) {
-    const t = document.createElementNS(NS, "title");
-    t.textContent = title;
-    n.append(t);
-  }
-  return n;
-}
+const s = svgEl;   // this file builds an SVG node on nearly every line; one letter earns its keep
 
 function bucket(run) {
   if (run.state === "failed") return "failed";

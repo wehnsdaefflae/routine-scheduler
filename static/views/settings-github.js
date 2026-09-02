@@ -4,17 +4,12 @@
 
 import { api } from "/static/api.js";
 import { setQuery } from "/static/router.js";
-import { el, skeleton, toast } from "/static/util.js";
+import { el, toast } from "/static/util.js";
+import { panelSection } from "/static/views/settings-common.js";
 
 export function renderGithub(view, query) {
   // -- GitHub connection (device flow — no container terminal) ---------------------
-  const ghBox = el("div", { class: "panel" });
-  ghBox.append(skeleton(["50%", "80%"]));
-  view.append(ghBox);
-  async function fill() {
-    let g;
-    try { g = await api("/api/settings/github"); }
-    catch (err) { ghBox.replaceChildren(el("div", { class: "muted" }, err.message)); return; }
+  return panelSection(view, "/api/settings/github", ["50%", "80%"], (ghBox, g, reload) => {
     ghBox.replaceChildren();
     if (!g.gh) { ghBox.append(el("div", { class: "muted" }, g.error || "gh CLI not available")); return; }
     ghBox.append(el("div", { class: "muted small", style: "margin-bottom:6px" },
@@ -47,7 +42,7 @@ export function renderGithub(view, query) {
         let p;
         try { p = await api("/api/settings/github/device-poll", { method: "POST", body: { flow_id: f.flow_id } }); }
         catch (err) { stop(`✗ ${err.message}`, "var(--err)"); return; }
-        if (p.status === "connected") { toast(`GitHub connected as ${p.login}`); connect.disabled = false; setQuery({ flow: "" }); fill(); return; }
+        if (p.status === "connected") { toast(`GitHub connected as ${p.login}`); connect.disabled = false; setQuery({ flow: "" }); reload(); return; }
         if (p.status === "error") { stop(`✗ ${p.error}`, "var(--err)"); return; }
         setTimeout(tick, (f.interval || 5) * 1000);
       };
@@ -70,6 +65,5 @@ export function renderGithub(view, query) {
         .then((f) => runFlow(f))
         .catch(() => setQuery({ flow: "" }));   // gone/expired → just show the connect button
     }
-  }
-  return fill();
+  });
 }

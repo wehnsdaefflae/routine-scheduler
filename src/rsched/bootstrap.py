@@ -16,7 +16,7 @@ from pathlib import Path
 import yaml
 
 from . import libgit
-from .paths import atomic_write, config_file, repo_root
+from .paths import atomic_write, atomic_write_yaml, config_file, read_yaml, repo_root
 
 log = logging.getLogger("rsched.bootstrap")
 
@@ -105,7 +105,7 @@ def adopt_permissions(routines_home: Path, permissions_home: Path) -> int:
             if rdir.name.startswith(".") or not (rdir / "routine.yaml").is_file():
                 continue                            # clarify workspaces and strays stay untouched
             try:
-                raw = yaml.safe_load((rdir / "routine.yaml").read_text(encoding="utf-8")) or {}
+                raw = read_yaml(rdir / "routine.yaml", {})
             except yaml.YAMLError:
                 continue
             perms = raw.get("permissions")
@@ -119,8 +119,7 @@ def adopt_permissions(routines_home: Path, permissions_home: Path) -> int:
 
                 _merge_caps(raw["capabilities"],
                             read_library_requires(permissions_home).get(slug) or {})
-            atomic_write(rdir / "routine.yaml",
-                         yaml.safe_dump(raw, sort_keys=False, allow_unicode=True))
+            atomic_write_yaml(rdir / "routine.yaml", raw)
             libgit.commit(rdir, f"adopt default permission: {slug}")
             touched += 1
         newly_done.add(slug)

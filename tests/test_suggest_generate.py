@@ -1,4 +1,4 @@
-"""workflows/generate.generate + workflows/suggest.suggest / suggest_rules_permissions:
+"""workflows/generate.generate + workflows/suggest.suggest:
 the system-model completions are scripted — under test is everything AROUND the model
 (prompt assembly, lint gating + one repair round, slug uniquing, reply validation against
 the library, schema retries, and the no-endpoint fallbacks)."""
@@ -172,52 +172,6 @@ def test_suggest_empty_library_short_circuits(tmp_path, monkeypatch):
     result = sug_mod.suggest(s, "task")
     assert result["none_fit"] is True and "no workflows" in result["new_workflow_hint"]
     assert ep.calls == []                             # no model call without candidates
-
-
-# ---------------------------------------------------- suggest_rules_permissions()
-
-
-def test_suggest_rules_permissions_validates_against_the_library(server, monkeypatch):
-    from rsched.workflows import suggest as sug_mod
-
-    ep = _SysEndpoint([{"rules": ["ask-policy", "made-up-rule"],
-                        "permissions": ["memory", "cosmic-powers"],
-                        "deliberation": "deliberate"}])
-    _patch_system_model(monkeypatch, "rsched.workflows.suggest", ep)
-    out = sug_mod.suggest_rules_permissions(server, "watch a git repo",
-                                             workflow_slug="general-task")
-    assert out == {"rules": ["ask-policy"], "permissions": ["memory"],
-                   "deliberation": "deliberate"}   # unknowns dropped, level passes
-    prompt = ep.calls[0]["messages"][0]["content"]
-    assert "CHOSEN WORKFLOW: general-task" in prompt  # the picked pattern informs the pick
-
-
-def test_suggest_rules_permissions_falls_back_when_no_endpoint_answers(server, monkeypatch):
-    from rsched.config import DEFAULT_PERMISSIONS, DEFAULT_RULES
-    from rsched.workflows import suggest as sug_mod
-
-    ep = _SysEndpoint([RuntimeError("endpoint down")])
-    _patch_system_model(monkeypatch, "rsched.workflows.suggest", ep)
-    out = sug_mod.suggest_rules_permissions(server, "anything")
-    # the defaults, validated against the seeded library (all present there)
-    assert out["rules"] == list(DEFAULT_RULES)
-    assert out["permissions"] == list(DEFAULT_PERMISSIONS)
-
-
-def test_suggest_rules_permissions_empty_library_never_calls_the_model(tmp_path, monkeypatch):
-    from rsched.workflows import suggest as sug_mod
-
-    s = ServerConfig()
-    s.libraries_home = tmp_path / "empty-lib"
-    (s.libraries_home / "rules").mkdir(parents=True)
-    (s.libraries_home / "permissions").mkdir(parents=True)
-    ep = _SysEndpoint([])
-    _patch_system_model(monkeypatch, "rsched.workflows.suggest", ep)
-    assert sug_mod.suggest_rules_permissions(s, "x") == {
-        "rules": [], "permissions": [], "deliberation": "standard"}
-    assert ep.calls == []
-
-
 # ---------------------------------------------------- recommend_setup()
 
 

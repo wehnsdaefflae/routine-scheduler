@@ -4,17 +4,12 @@
 
 import { api } from "/static/api.js";
 import { confirmDialog } from "/static/components/dialog.js";
-import { el, skeleton, toast } from "/static/util.js";
+import { el, toast } from "/static/util.js";
+import { panelSection } from "/static/views/settings-common.js";
 
 export function renderSecrets(view) {
   // -- central secrets store ------------------------------------------------------
-  const secBox = el("div", { class: "panel" });
-  secBox.append(skeleton(["60%", "90%"]));
-  view.append(secBox);
-  async function fill() {
-    let s;
-    try { s = await api("/api/settings/secrets"); }
-    catch (err) { secBox.replaceChildren(el("div", { class: "muted" }, err.message)); return; }
+  return panelSection(view, "/api/settings/secrets", ["60%", "90%"], (secBox, s, reload) => {
     secBox.replaceChildren(el("div", { class: "muted small", style: "margin-bottom:6px" },
       "One store for every credential — injected into all utils, LLM endpoints, and the Claude ",
       "subscription (as CLAUDE_CODE_OAUTH_TOKEN) at run time. Values are write-only — never shown back."));
@@ -30,7 +25,7 @@ export function renderSecrets(view) {
       const b = el("button", { class: "btn small danger" }, "delete");
       b.onclick = async () => {
         if (!(await confirmDialog(`Delete secret ${k}?`, { confirmLabel: "delete" }))) return;
-        try { await api(`/api/settings/secrets/${encodeURIComponent(k)}`, { method: "DELETE" }); fill(); }
+        try { await api(`/api/settings/secrets/${encodeURIComponent(k)}`, { method: "DELETE" }); reload(); }
         catch (err) { toast(err.message, 4000, { error: true }); }
       };
       return b;
@@ -48,12 +43,12 @@ export function renderSecrets(view) {
           const fmt = (n.doc || n.usage)
             ? el("details", { class: "small", "data-secret-fmt": n.key },
                 el("summary", { class: "muted", style: "cursor:pointer" }, "format / help"),
-                el("pre", { style: "white-space:pre-wrap;font-size:11px;margin:4px 0;padding:6px 8px;background:var(--ink);border:1px solid var(--line);border-radius:6px" },
+                el("pre", { style: "white-space:pre-wrap;font-size:11px;margin:4px 0;padding:6px 8px;background:var(--deck);border:1px solid var(--rule);border-radius:6px" },
                   [n.usage, n.doc].filter(Boolean).join("\n\n")))
             : null;
           // An OPTIONAL secret (D51: every declaring util marked it `NAME?`) that is unset is not
           // a missing credential — show a calm muted "optional", not an amber "unset" nag.
-          const statusColor = n.set ? "var(--ok)" : (n.optional ? "var(--muted)" : "var(--warn)");
+          const statusColor = n.set ? "var(--ok)" : (n.optional ? "var(--ink-2)" : "var(--warn)");
           const statusText = n.set ? "✓ set" : (n.optional ? "optional" : "unset");
           return el("tr", {},
             el("td", {}, el("div", { class: "mono" }, n.key), fmt),
@@ -81,7 +76,7 @@ export function renderSecrets(view) {
       if (!key || !valIn.value) { toast("enter a KEY and a value"); return; }
       try {
         await api("/api/settings/secrets", { method: "PUT", body: { key, value: valIn.value } });
-        toast(`${key} saved`); keyIn.value = ""; valIn.value = ""; fill();
+        toast(`${key} saved`); keyIn.value = ""; valIn.value = ""; reload();
       } catch (err) { toast(err.message, 5000, { error: true }); }
     };
     // show/hide the value while typing — a JSON map is unreadable when masked
@@ -106,7 +101,7 @@ export function renderSecrets(view) {
           const x = el("button", { class: "btn small danger", title: `delete ${name}` }, `${name} ✕`);
           x.onclick = async () => {
             if (!(await confirmDialog(`Delete entry “${name}” from ${k}?`, { confirmLabel: "delete" }))) return;
-            try { await api(`/api/settings/secrets/${encodeURIComponent(k)}/entry/${encodeURIComponent(name)}`, { method: "DELETE" }); fill(); }
+            try { await api(`/api/settings/secrets/${encodeURIComponent(k)}/entry/${encodeURIComponent(name)}`, { method: "DELETE" }); reload(); }
             catch (err) { toast(err.message, 4000, { error: true }); }
           };
           return x;
@@ -132,7 +127,7 @@ export function renderSecrets(view) {
       }
       try {
         await api(`/api/settings/secrets/${encodeURIComponent(key)}/entry`, { method: "PUT", body: { name, value } });
-        toast(`${key} · ${name} saved`); mName.value = ""; mVal.value = ""; fill();
+        toast(`${key} · ${name} saved`); mName.value = ""; mVal.value = ""; reload();
       } catch (err) { toast(err.message, 5000, { error: true }); }
     };
     secBox.append(
@@ -141,6 +136,5 @@ export function renderSecrets(view) {
       el("div", { class: "row mt" }, mKey, mName),
       el("div", { class: "mt" }, mVal),
       el("div", { class: "row mt" }, mSave));
-  }
-  return fill();
+  });
 }

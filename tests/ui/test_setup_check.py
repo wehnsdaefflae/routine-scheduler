@@ -185,6 +185,11 @@ def test_no_effect_row_overflows_the_box_it_is_in(ui, ui_page):
     ui_page.goto(f"{ui.url}/#/routine/uir")
     ui_page.wait_for_selector("h2:has-text('General rules')", timeout=10_000)
     ui_page.wait_for_selector(".effect-side", timeout=10_000)
+    # The rules panel paints after the abilities one, and `.effect-side` belongs to both — so
+    # waiting on it proved only that the ABILITIES had arrived, and the second half of this test
+    # read `.rule-bound` out of a panel that was not there yet. Wait for the element the
+    # measurement is actually about.
+    ui_page.wait_for_selector(".rule-bound .rule-line", timeout=10_000)
     over = ui_page.evaluate("""() => {
       const bad = [];
       for (const n of document.querySelectorAll('.effect-side, .effect-text')) {

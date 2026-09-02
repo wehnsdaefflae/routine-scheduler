@@ -16,6 +16,16 @@ survives, but every such event is a standing config defect an audit should surfa
 run_canceled: a user-requested abort killed the engine before it could write its own
 finish (same payload shape as orphaned_run, which is reserved for genuine crashes).
 
+Both of those close-out events carry two OPTIONAL structured fields the reap fills in:
+`rc` (the engine process's exit status — negative means it died on that signal, so
+rc=-9 is a SIGKILL) and `vm_hwm_kb` (its peak resident memory, F348). They are fields
+rather than prose because the question they answer — "did anything die by signal in this
+window?" — has to be answerable by a filter. It was not: the five rc=-9 deaths of
+2026-09-01 were all recorded, but as `run_canceled` with the signal buried in `detail`,
+so a health sweep looking for failures read the window as clean (F422, whose premise —
+"rc=-9 emits no health-event" — was wrong; what it could not do was FIND them). Absent on
+every other event: only a close-out has a process to report on.
+
 fire_refused: a DUE scheduled (cron) fire produced no run — the routine was still active
 from a prior run (overrun) or the daemon was draining for a self-update restart. run_id
 empty (no run was created). Makes a routine that goes chronically un-fired for one of those
@@ -58,8 +68,12 @@ WORKFLOW_USAGE_FILE = "workflow-usage.jsonl"
 
 
 def log_health_event(routines_home: Path, event: str, *, routine: str,
-                     run_id: str, detail: str = "") -> None:
+                     run_id: str, detail: str = "", **fields: object) -> None:
     """Append a health event to the JSONL log under routines_home/.control/.
+
+    `fields` adds event-specific STRUCTURED keys beside the five common ones (today: `rc`
+    and `vm_hwm_kb` on a close-out). A None value is dropped rather than written, so a
+    caller can pass an unknown reading without minting a null the readers must handle.
 
     Best-effort: silently ignores I/O errors so logging never blocks the daemon or engine.
     """
@@ -73,6 +87,7 @@ def log_health_event(routines_home: Path, event: str, *, routine: str,
                 "routine": routine,
                 "run_id": run_id,
                 "detail": detail[:500],
+                **{k: v for k, v in fields.items() if v is not None},
             }) + "\n")
     except OSError:
         pass

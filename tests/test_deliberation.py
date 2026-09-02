@@ -187,12 +187,3 @@ def test_control_switch_applies_once_and_notes_the_new_contract(make_routine, tm
 
 
 # ---- wizard suggestion fallback ------------------------------------------------------------
-
-
-def test_suggest_falls_back_to_default_level(tmp_path):
-    from rsched.workflows.suggest import suggest_rules_permissions
-
-    server = ServerConfig()
-    server.libraries_home = tmp_path / "libraries"    # empty library → no LLM call
-    out = suggest_rules_permissions(server, "Watch arxiv and rank new agent papers.")
-    assert out["deliberation"] == DEFAULT_DELIBERATION

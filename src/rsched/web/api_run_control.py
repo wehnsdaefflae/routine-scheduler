@@ -11,7 +11,6 @@ from out here, because the engine is the single writer of everything under `runs
 
 from __future__ import annotations
 
-import uuid
 from pathlib import Path
 from typing import Annotated
 
@@ -21,7 +20,7 @@ from pydantic import BaseModel
 from ..config import DELIBERATION_LEVELS, load_routine
 from ..daemon.runner_state import abort_process
 from ..ids import now_iso
-from ..paths import atomic_write_json, read_json
+from ..paths import read_json
 from ..registry import TERMINAL_STATES
 from .api_runs import _run_dir
 from .routines_common import merge_control
@@ -38,13 +37,13 @@ async def _file_inbox_message(run_dir: Path, text: str,
     (engine/inbox.py → engine/control.py).
     """
     from ..conversations import attachment_note
+    from ..engine import inbox
     from .conversations_common import _save_attachments
 
-    inbox = run_dir.parent.parent / "inbox"
-    rels = await _save_attachments(inbox.parent, files or [])
-    atomic_write_json(inbox / f"msg-{now_iso().replace(':', '')}-{uuid.uuid4().hex[:8]}.json",
-                      {"text": text.rstrip() + attachment_note(rels), "ts": now_iso(),
-                       "via": via, **({"attachments": rels} if rels else {})})
+    routine_dir = run_dir.parent.parent
+    rels = await _save_attachments(routine_dir, files or [])
+    inbox.file_message(routine_dir, text.rstrip() + attachment_note(rels), via=via,
+                       extra={"attachments": rels} if rels else None)
 
 @router.post("/runs/{run_id}/inject")
 async def inject(request: Request, run_id: str, text: Annotated[str, Form()],

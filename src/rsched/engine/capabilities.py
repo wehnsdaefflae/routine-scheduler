@@ -106,8 +106,7 @@ def _util_catalog_block(utils: list[dict], kinds: list[str], g) -> str:
         # A tag-class grant covers the util just as a by-name grant does — annotating it
         # "not granted" would tell the run it cannot call something it can.
         by_tag = g is not None and bool(
-            set(getattr(g, "util_tag_index", {}).get(u["name"], ()))
-            & getattr(g, "util_tags", frozenset()))
+            set(g.util_tag_index.get(u["name"], ())) & g.util_tags)
         if (g is not None and u["name"] in g.gated_utils and u["name"] not in g.utils
                 and not by_tag):
             # a deny-forever tombstone reads differently from merely-not-granted:
@@ -176,7 +175,7 @@ def _machine_notes(ctx: RunContext) -> str:
     behind read as an empty source. Now a share is advertised only once proven live, and a
     share that did not come up says so with its reason.
     """
-    bound = getattr(ctx.routine, "machines", None)
+    bound = ctx.routine.machines
     if not bound:
         return ""
     catalog = ctx.server.machines
@@ -287,12 +286,12 @@ def capabilities_digest(ctx: RunContext, allowed_kinds: set[str] | None = None) 
                             "surface as an action; `cron` sets the group schedule, no "
                             "operator needed)")
         cap_bits += [f"reserved util {u!r}" for u in sorted(g.utils)]
-        cap_bits += [f"every util tagged {t!r}" for t in sorted(getattr(g, "util_tags", ()))]
+        cap_bits += [f"every util tagged {t!r}" for t in sorted(g.util_tags)]
         if g.run_history != "none":
             cap_bits.append("read previous runs under runs/ "
                             + ("(the last run only)" if g.run_history == "last"
                                else "(all of them)"))
-        if getattr(g, "workflows", "catalog") == "generate":
+        if g.workflows == "generate":
             cap_bits.append("generate a NEW workflow pattern for a subtask when none in the "
                             "catalog fits (set that subtask's workflow to 'generate')")
         parts.append("Capabilities enabled (user-set, engine-enforced): "

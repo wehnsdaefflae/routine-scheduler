@@ -10,7 +10,7 @@ import { mountRecipe } from "/static/views/routine-recipe.js";
 import { groupSections, routineHero } from "/static/views/routine-overview.js";
 import { confirmDialog } from "/static/components/dialog.js";
 import { mdInline } from "/static/md.js";
-import { chip, el, emptyState, fmtDur, fmtNum, fmtTokens, skeleton, toast, when } from "/static/util.js";
+import { chip, el, emptyState, fmtDur, fmtTokens, skeleton, toast, when } from "/static/util.js";
 
 // The config sections (rendered flat by routine-config.js + the recipe/state blocks below)
 // are regrouped into these labeled, collapsible groups — an operator scans the group they
@@ -56,7 +56,6 @@ export async function render(view, slug, query = {}) {
   const titleH1 = el("h1", {}, d.name || slug);
   view.append(el("div", { class: "page-head" },
     el("div", {},
-      el("div", { class: "kicker" }, "routine"),
       titleH1),
     el("div", { class: "row" }, chipHost,
       d.active_run

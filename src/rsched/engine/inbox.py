@@ -15,6 +15,7 @@ import json
 import logging
 from pathlib import Path
 
+from ..ids import now_iso
 from ..paths import read_json
 
 log = logging.getLogger("rsched.inbox")
@@ -125,24 +126,29 @@ def has_pending_messages(routine_dir: Path, *, vias: tuple[str, ...] | None = No
 
 
 def file_message(routine_dir: Path, text: str, *, source: str = "",
-                 via: str = "") -> Path:
-    """Queue TEXT as an injected user message — the exact msg-* shape the web layer
-    writes. `via` decides WHEN it is consumed: a via in LIVE_MESSAGE_VIAS reaches the
-    running run at its next turn boundary (the D38 held-reply path stamps "web" — the
-    text IS the user talking to this run); no via means queued freight, consumed only
-    by the next fresh run's boot (the routine-page queue).
+                 via: str = "", extra: dict | None = None) -> Path:
+    """Queue TEXT as an injected user message — the ONE writer of the msg-* shape, for the
+    engine and the web layer alike. `via` decides WHEN it is consumed: a via in
+    LIVE_MESSAGE_VIAS reaches the running run at its next turn boundary (the D38 held-reply
+    path stamps "web" — the text IS the user talking to this run); no via means queued
+    freight, consumed only by the next fresh run's boot (the routine-page queue).
+
+    `extra` is merged into the record for the keys ONE channel adds on top of that shape (a
+    conversation or run-page message's `attachments` rels and its `command` flag), so such a
+    caller still files through this writer instead of hand-rolling the filename beside it —
+    which is how the unique-suffix rule and the `ts` spelling start differing per endpoint.
     """
     import uuid
-    from datetime import datetime
 
     from ..paths import atomic_write_json
 
-    ts = datetime.now().astimezone().isoformat(timespec="seconds")
+    ts = now_iso()
     path = (routine_dir / "inbox"
             / f"msg-{ts.replace(':', '')}-{uuid.uuid4().hex[:8]}.json")
     atomic_write_json(path, {"text": text, "ts": ts,
                              **({"source": source} if source else {}),
-                             **({"via": via} if via else {})})
+                             **({"via": via} if via else {}),
+                             **(extra or {})})
     return path
 
 

@@ -29,11 +29,6 @@ STAGES_DIR = "stages"   # THE module dir — every routine on disk follows it (0
 _FRONTMATTER = re.compile(r"\A---\s*\n.*?\n---\s*\n", re.DOTALL)
 
 
-def norm(name: str) -> str:
-    """Loose state identity: 'Gather Evidence' == 'gather-evidence'."""
-    return re.sub(r"[^a-z0-9]+", "-", str(name).lower()).strip("-")
-
-
 def module_dir(routine_dir: Path) -> Path | None:
     """The routine's stage-module dir, or None when it has no stage modules."""
     d = routine_dir / STAGES_DIR
@@ -161,8 +156,9 @@ def _phase_stats(run_dir: Path) -> list[dict]:
 
 def state_graph(routine_dir: Path) -> dict:
     """{states: [{name, desc}], current: str} for one routine dir — the stage modules +
-    the live phase. `current` is the raw recorded phase — the client matches it against
-    states via norm().
+    the live phase. `current` is the RAW recorded phase: the client loosens it to match a
+    state name (`static/components/stategraph.js`), because the loosening is a rendering
+    decision and doing it here would throw away what the run actually recorded.
     """
     return {"states": stage_states(routine_dir), "current": current_phase(routine_dir)}
 

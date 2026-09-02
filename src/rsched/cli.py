@@ -156,7 +156,29 @@ def cmd_validate(args) -> int:
             print(f"  {ln}")
         total.extend(problems)
         total.extend(blocking)
+    for line in _instance_problems(server):
+        print(f"instance: {line}")
     return 1 if total else 0
+
+
+def _instance_problems(server) -> list[str]:
+    """Coherence checks that belong to no single routine, so no routine's surface can see them.
+
+    A GROUP is the case: a scheduled group with no members fires nothing on every tick of its
+    cron, forever, and leaves a `group_chain_done: 0 member runs` in the health stream that
+    reads exactly like a group whose members all completed. Two of them had been running empty
+    for weeks. Reported, never fatal — an empty group is a normal intermediate state while you
+    are building one.
+    """
+    from . import groups as groups_mod
+
+    try:
+        all_groups = groups_mod.list_groups(server.routines_home)
+    except OSError:
+        return []
+    return [f"group {g['name']!r} ({g['id']}) has a schedule ({g['cron']!r}) but no members — "
+            "it fires nothing on every tick"
+            for g in all_groups if g.get("cron") and not groups_mod.member_slugs(g)]
 
 
 def cmd_abort(args) -> int:

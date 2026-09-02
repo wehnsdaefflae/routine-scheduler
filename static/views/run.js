@@ -141,7 +141,7 @@ export async function render(view, runId, query = {}) {
   let isTerminal = false;
   const recipeChk = el("input", { type: "checkbox", "data-nopersist": true });
   const recipeLbl = el("label", { class: "row small", hidden: true,
-    style: "gap:4px;align-items:center;white-space:nowrap;color:var(--muted)",
+    style: "gap:4px;align-items:center;white-space:nowrap;color:var(--ink-2)",
     title: "when checked, the continued conversation may edit this routine's recipe files "
       + "(main.md, stages/, tuning.yaml) — it still sees this whole conversation" },
     recipeChk, el("span", {}, "editable recipe"));
@@ -172,7 +172,7 @@ export async function render(view, runId, query = {}) {
   let autoscroll = true;
   const followChk = el("input", { type: "checkbox", checked: true });
   followChk.onchange = () => { autoscroll = followChk.checked; if (autoscroll) scrollDown(); };
-  view.append(el("label", { class: "row mt small", style: "gap:6px;color:var(--muted)" },
+  view.append(el("label", { class: "row mt small", style: "gap:6px;color:var(--ink-2)" },
     followChk, el("span", {}, "auto-scroll to the newest message")));
 
   let paused = false;
@@ -214,7 +214,7 @@ export async function render(view, runId, query = {}) {
 
   // Live model + mid-run switch (applies at the next turn; the engine re-resolves every turn).
   const switchBox = el("details", { class: "small" },
-    el("summary", { style: "cursor:pointer;color:var(--muted)" }, "⚙ switch model"));
+    el("summary", { style: "cursor:pointer;color:var(--ink-2)" }, "⚙ switch model"));
   let mSelRef = null, curModel = "";   // the switch-select mirrors the LIVE model (F166)
   // F191: status.json reports the live model as an "endpoint/model" id while the switch
   // select lists catalog NAMES — resolve either form to the catalog name, otherwise the
@@ -253,7 +253,7 @@ export async function render(view, runId, query = {}) {
 
   // Mid-run deliberation re-level (run-scoped, like the model switch: the durable value
   // stays on the routine page). Applied at the next turn boundary via control.json.
-  const delibSummary = el("summary", { style: "cursor:pointer;color:var(--muted)" },
+  const delibSummary = el("summary", { style: "cursor:pointer;color:var(--ink-2)" },
     "⚙ deliberation");
   const delibBox = el("details", { class: "small" }, delibSummary);
   const delib = deliberationControl("standard", {

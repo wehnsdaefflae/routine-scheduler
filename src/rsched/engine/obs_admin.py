@@ -5,13 +5,38 @@ Split out of `observations.py` (F393). Each one either changes instance state or
 of a person, so the wording's job is to be honest about what did NOT happen yet: a draft is not
 a routine, a queued proposal is not a creation, a filed report starts no run, and a deferred
 question may never be answered.
+
+That honesty is the whole reason `queued` is checked FIRST, in one shared branch, before any
+kind's success wording. F328 gave `create_routine` and `manage_group` a proposal path for a
+scheduled run, but taught only the HANDLERS about it: the queued observation then fell through
+to each kind's success line and read as a completed action over a payload that was not there —
+"created routine 'x' from workflow None" (the F378 false-success class, again), "armed a
+sequential fire of group None (0 member(s))" (R1200) and "group None (None) now has members []"
+(R1183), the last of which reads as a group that was just emptied. One shared branch is also
+why the two cannot drift apart again.
 """
 
 from __future__ import annotations
 
+#: The kinds that can come back QUEUED — a scheduled run's proposal for the Decisions page
+#: (F328). Both carry the same three keys (`queued`, `id`, `next`) plus a self-describing
+#: `proposal` line written by the handler, so one branch renders both.
+QUEUEABLE_KINDS = ("create_routine", "manage_group")
+
+
+def _queued_line(obs: dict, kind: str) -> str:
+    """The one wording for a proposal that was filed instead of applied. It must name what was
+    proposed: a run that cannot tell WHICH change is waiting cannot say so in its summary, and
+    an ack that names nothing reads as a change that lost its payload.
+    """
+    return (f"OBSERVATION ({kind} QUEUED as proposal {obs.get('id')} — NOTHING CHANGED): "
+            f"{obs.get('proposal') or 'the change you asked for'}. {obs.get('next', '')}").strip()
+
 
 def format_admin(obs: dict, kind: str) -> str | None:  # noqa: C901, PLR0911, PLR0912 — one flat renderer per domain, by design: observation wording is PROMPT SURFACE (docs/prompt-anatomy.md) and every branch is a distinct string for a distinct kind. Collapsing them would scatter a kind's wording, which is exactly what this shape exists to prevent.
     """Wording for this domain's kinds; None when `kind` is not one of them."""
+    if kind in QUEUEABLE_KINDS and obs.get("queued"):
+        return _queued_line(obs, kind)
     if kind == "schedule_run":
         target = obs.get("target")
         if obs.get("unknown_target"):
@@ -66,10 +91,20 @@ def format_admin(obs: dict, kind: str) -> str | None:  # noqa: C901, PLR0911, PL
         verb = obs.get("verb")
         if verb == "list":
             gs = obs.get("groups") or []
-            names = ", ".join(f"{g.get('name')!r} ({g.get('id')}, {len(g.get('members') or [])} "
-                              f"member(s))" for g in gs) or "none"
+            # F424/R1142: the listing names its MEMBERS, in fire order. A count answered
+            # "how big" and nothing answered "which routines are in it" — and no other tool
+            # does, so a run reasoning about a group had to guess. Slugs are short; the fire
+            # order is the group's whole semantics.
+            def _one(g: dict) -> str:
+                slugs = [str(m.get("slug", "")) for m in (g.get("members") or [])]
+                who = " → ".join(slugs) if slugs else "no members"
+                sched = f", cron {g['cron']!r}" if g.get("cron") else ""
+                paused = ", PAUSED" if g.get("paused") else ""
+                return f"{g.get('name')!r} ({g.get('id')}{sched}{paused}): {who}"
+
+            names = "; ".join(_one(g) for g in gs) or "none"
             return (f"OBSERVATION (manage_group list: default_on_failure="
-                    f"{obs.get('default_on_failure')!r}; groups: {names}).")
+                    f"{obs.get('default_on_failure')!r}; groups — {names}).")
         if verb == "set-default":
             return (f"OBSERVATION (manage_group: instance default_on_failure set to "
                     f"{obs.get('default_on_failure')!r}).")

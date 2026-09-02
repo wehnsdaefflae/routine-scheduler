@@ -322,12 +322,24 @@ def cmd_push(m: dict, keys: dict, src: str, dest: str) -> dict:
     return {"command": "push", "machine": m["name"], "src": src, "dest": dest, "bytes": size}
 
 
+def _resolve_pull_dest(src: str, dest: str) -> str:
+    """Resolve the final LOCAL path for `pull` and ensure its parent dir exists. If dest is an
+    existing directory the file lands inside it under src's basename; then the parent of the
+    final path is created (mkdir -p) so SFTP get()'s local open never fails with a bare
+    FileNotFoundError on a missing --dest parent (R1140 / R1176). Pure except for the mkdir."""
+    if os.path.isdir(dest):
+        dest = os.path.join(dest, os.path.basename(src))
+    parent = os.path.dirname(os.path.abspath(dest))
+    if parent:
+        os.makedirs(parent, exist_ok=True)
+    return dest
+
+
 def cmd_pull(m: dict, keys: dict, src: str, dest: str) -> dict:
     client = connect(m, keys)
     try:
         sftp = client.open_sftp()
-        if os.path.isdir(dest):
-            dest = os.path.join(dest, os.path.basename(src))
+        dest = _resolve_pull_dest(src, dest)  # mkdir -p the local parent before SFTP get()
         sftp.get(_strip_home(src), dest)
         size = os.path.getsize(dest)
     finally:
@@ -400,6 +412,14 @@ def selftest() -> int:
     assert load_machines()[0] == {}, "bad json → no machines"
     out, trunc = _capped("x" * (CAP + 50))
     assert trunc and len(out) < CAP + 60, "over-cap output is elided"
+    # pull dest resolution creates the local parent dir (R1140/R1176: no bare FileNotFoundError)
+    import tempfile
+    td = tempfile.mkdtemp()
+    nested = os.path.join(td, "a", "b", "out.bin")
+    assert _resolve_pull_dest("/remote/x.bin", nested) == nested
+    assert os.path.isdir(os.path.dirname(nested)), "pull must mkdir -p the dest parent"
+    got = _resolve_pull_dest("/remote/name.txt", td)
+    assert got == os.path.join(td, "name.txt") and os.path.isdir(td), "existing-dir dest lands inside it"
     print("selftest: ok", file=sys.stderr)
     return 0
 

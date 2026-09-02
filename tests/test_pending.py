@@ -216,3 +216,53 @@ def test_group_update_leaves_unproposed_fields_alone(server, sched_ctx, client):
     assert after["name"] == "G2"
     assert after["on_failure"] == "continue"          # untouched
     assert yaml.safe_load(json.dumps(after))["cron"] == "0 7 * * *"
+
+
+def test_a_queued_proposal_never_renders_as_a_completed_action(server, sched_ctx):
+    """The observation a queued proposal RENDERS to is the half F328 forgot. Both kinds fell
+    through to their success wording over a payload that was not there, so the run was told it
+    had created a routine it had not (`created routine 'x' from workflow None`), armed a fire of
+    `group None (0 member(s))` (R1200), or emptied a group (`group None (None) now has members
+    []`, R1183). Every queued shape must say QUEUED, name the proposal, and name nothing it did
+    not do.
+    """
+    from rsched.engine.obs_admin import format_admin
+    from rsched.groups import create as create_group
+
+    grp = create_group(server.routines_home, name="Professional · Daily",
+                       members=[{"slug": "routine-improver"}])
+
+    created = handle_create_routine(sched_ctx, {
+        "target": "fau-comms-steward", "name": "FAU comms steward",
+        "prompt": "Watch the comms inbox.", "workflow": "general-task"})
+    line = format_admin(created, "create_routine")
+    assert "QUEUED" in line and "NOTHING CHANGED" in line
+    assert "fau-comms-steward" in line and "general-task" in line
+    assert "created routine" not in line          # the false success it used to render
+
+    for action, must_contain in (
+        ({"verb": "run", "target": grp["id"]}, ("fire", "Professional · Daily", "1 member")),
+        ({"verb": "update", "target": grp["id"], "members": ["routine-improver"]},
+         ("update", "Professional · Daily", "members → ['routine-improver']")),
+        ({"verb": "delete", "target": grp["id"]}, ("delete", "Professional · Daily")),
+    ):
+        obs = handle_manage_group(sched_ctx, action)
+        line = format_admin(obs, "manage_group")
+        assert obs["queued"] is True
+        assert "QUEUED" in line and "NOTHING CHANGED" in line
+        assert "group None" not in line and "0 member(s)" not in line
+        for fragment in must_contain:
+            assert fragment in line, (fragment, line)
+        # the operator's Decisions row says the same thing the run was told
+        rec = next(r for r in pending.load_all(server.routines_home) if r["id"] == obs["id"])
+        assert rec["summary"] == obs["proposal"]
+
+
+def test_a_queued_proposal_naming_an_unknown_group_says_so(server, sched_ctx):
+    """A proposal is filed without validating the target (the review is the gate), so the ack
+    must not imply the group exists — that is how `group None` read as a real group."""
+    from rsched.engine.obs_admin import format_admin
+
+    obs = handle_manage_group(sched_ctx, {"verb": "run", "target": "grp-nope"})
+    line = format_admin(obs, "manage_group")
+    assert "unknown group 'grp-nope'" in line and "will fail review" in line

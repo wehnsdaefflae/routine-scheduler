@@ -10,10 +10,20 @@ import { codeEditor } from "/static/components/code.js";
 import { replaceHash, remount } from "/static/router.js";
 import { el, emptyState, requiresSummary, skeleton, tagChip, toast, when } from "/static/util.js";
 
+// The confirm-then-DELETE protocol showEditor's delete button runs on, written once: false when
+// the reader backs out (the button re-enables, nothing else happens), true once the file is gone
+// (the deep link is dropped and the list remounts). Everything that varies between the four
+// kinds is the WARNING — what that deletion costs and what, if anything, brings the file back —
+// so the message is the argument and each caller keeps its own sentence.
+const deleter = (path, message) => async () => {
+  if (!(await confirmDialog(message, { confirmLabel: "delete" }))) return false;
+  await api(path, { method: "DELETE" });
+  return true;
+};
+
 export async function render(view, sub, query = {}) {
   view.append(el("div", { class: "page-head" },
     el("div", {},
-      el("div", { class: "kicker" }, "console / library"),
       el("h1", {}, "Library"))));
   const countLine = el("div", { class: "sub muted" });
   const filterBar = el("div", { class: "filterbar" });
@@ -104,7 +114,7 @@ export async function render(view, sub, query = {}) {
     sections.append(el("h2", {}, title));
     sections.append(el("div", { class: "panel", style: "padding:0" },
       el("div", { class: "muted small",
-        style: "padding:11px 16px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;gap:12px" },
+        style: "padding:11px 16px;border-bottom:1px solid var(--rule);display:flex;justify-content:space-between;align-items:center;gap:12px" },
         el("span", {}, desc), action || ""),
       el("div", { class: "tablewrap" },
         el("table", { class: "list" }, el("tbody", {}, rows.length ? rows
@@ -129,13 +139,10 @@ export async function render(view, sub, query = {}) {
     openSub = `workflow/${slug}`; updateURL();
     const d = await api(`/api/workflows/${slug}`);
     // clarify-instruction is undeletable (routine creation runs it) — no button
-    const wfDelete = slug === "clarify-instruction" ? undefined : async () => {
-      if (!(await confirmDialog(`Delete workflow "${slug}"? Routines born from it keep their own `
-                   + "recipes. A seed pattern returns at the next daemon boot.",
-                   { confirmLabel: "delete" }))) return false;
-      await api(`/api/workflows/${slug}`, { method: "DELETE" });
-      return true;
-    };
+    const wfDelete = slug === "clarify-instruction" ? undefined
+      : deleter(`/api/workflows/${slug}`,
+                `Delete workflow "${slug}"? Routines born from it keep their own `
+                + "recipes. A seed pattern returns at the next daemon boot.");
     // A workflow PATTERN has no holders: a routine is born from one and keeps its own recipe,
     // so editing it reaches nobody retroactively and there is no blast radius to preview.
     showEditor(`workflow: ${slug}`, d.content, d.log, async (content) =>
@@ -151,13 +158,11 @@ export async function render(view, sub, query = {}) {
     // rules are deletable (a seed rule returns at the next boot) — permission docs are NOT
     // (the capability layer's conduct surface). There is only ONE copy of a rule, so a
     // deletion reaches every routine that holds it at its next run.
-    const docDelete = kind === "rules" ? async () => {
-      if (!(await confirmDialog(`Delete rule "${slug}"? Every routine holding it loses it at `
-                   + "the next run; a seed rule returns at the next daemon boot.",
-                   { confirmLabel: "delete" }))) return false;
-      await api(`/api/library/rules/${slug}`, { method: "DELETE" });
-      return true;
-    } : undefined;
+    const docDelete = kind === "rules"
+      ? deleter(`/api/library/rules/${slug}`,
+                `Delete rule "${slug}"? Every routine holding it loses it at `
+                + "the next run; a seed rule returns at the next daemon boot.")
+      : undefined;
     showEditor(`${kind.slice(0, -1)}: ${slug}`, d.content, d.log, async (content, digest) =>
       api(`/api/library/${kind}/${slug}`, { method: "PUT",
         body: { content, ...(requires ? { requires: requires.value() } : {}),
@@ -201,17 +206,15 @@ export async function render(view, sub, query = {}) {
     const actions = new Set(req.actions || []);
     const utils = new Set(req.utils || []);
     const GATED = ["write_util", "memory_read", "memory_write"];
-    const actionBoxes = GATED.map((a) => {
-      const cb = el("input", { type: "checkbox", checked: actions.has(a) ? "" : null });
-      cb.onchange = () => cb.checked ? actions.add(a) : actions.delete(a);
-      return el("label", { class: "row", style: "gap:5px" }, cb, a);
+    // One labelled checkbox per name, ticking membership in `set` and writing straight back to
+    // it — value() below reads the two sets, never the DOM, so the boxes and the saved
+    // frontmatter cannot drift apart.
+    const boxes = (list, set) => list.map((name) => {
+      const cb = el("input", { type: "checkbox", checked: set.has(name) ? "" : null });
+      cb.onchange = () => cb.checked ? set.add(name) : set.delete(name);
+      return el("label", { class: "row", style: "gap:5px" }, cb, name);
     });
     const utilNames = [...new Set([...(data.utils || []).map((u) => u.name), ...utils])].sort();
-    const utilBoxes = utilNames.map((u) => {
-      const cb = el("input", { type: "checkbox", checked: utils.has(u) ? "" : null });
-      cb.onchange = () => cb.checked ? utils.add(u) : utils.delete(u);
-      return el("label", { class: "row", style: "gap:5px" }, cb, u);
-    });
     const runsSel = el("select", {}, ...[["", "(none)"], ["last", "last run"], ["all", "all runs"]]
       .map(([v, label]) => el("option", { value: v, selected: (req.runs || "") === v ? "" : null }, label)));
     const node = el("div", { class: "panel", style: "margin-bottom:10px" },
@@ -220,9 +223,9 @@ export async function render(view, sub, query = {}) {
         "activating the permission on a routine switches these on; switching one off there ",
         "deactivates the permission. This panel is authoritative for the requires: key on save."),
       el("div", { class: "row", style: "gap:16px;flex-wrap:wrap;align-items:flex-start" },
-        el("div", {}, el("div", { class: "muted small" }, "gated actions"), ...actionBoxes),
+        el("div", {}, el("div", { class: "muted small" }, "gated actions"), ...boxes(GATED, actions)),
         el("div", {}, el("div", { class: "muted small" }, "reserved utils"),
-          el("div", { style: "max-height:130px;overflow:auto" }, ...utilBoxes)),
+          el("div", { style: "max-height:130px;overflow:auto" }, ...boxes(utilNames, utils))),
         el("div", {}, el("div", { class: "muted small" }, "previous runs"), runsSel)));
     return { node, value: () => ({
       ...(actions.size ? { actions: [...actions] } : {}),
@@ -236,13 +239,9 @@ export async function render(view, sub, query = {}) {
       api(`/api/library/utils/${name}`, { method: "PUT",
         body: { content, ...(digest ? { impact_digest: digest } : {}) } }),
       { lang: "python",
-        del: async () => {
-          if (!(await confirmDialog(`Delete util "${name}"? Every routine loses it at its next run. `
-                       + "It is git-versioned — recoverable from history.",
-                       { confirmLabel: "delete" }))) return false;
-          await api(`/api/library/utils/${name}`, { method: "DELETE" });
-          return true;
-        },
+        del: deleter(`/api/library/utils/${name}`,
+                     `Delete util "${name}"? Every routine loses it at its next run. `
+                     + "It is git-versioned — recoverable from history."),
         impact: impactPanel("utils", name) });
   }
 
@@ -276,11 +275,9 @@ export async function render(view, sub, query = {}) {
     // preview a blast radius over.
     showEditor(`playbook: ${slug} (MAIN.md)`, d.content, d.log, async (content) =>
       api(`/api/playbooks/${slug}`, { method: "PUT", body: { content } }),
-      { del: async () => {
-        if (!(await confirmDialog(`Delete playbook "${slug}"? It is git-versioned — recoverable from history.`, { confirmLabel: "delete" }))) return false;
-        await api(`/api/playbooks/${slug}`, { method: "DELETE" });
-        return true;
-      }, extra });
+      { del: deleter(`/api/playbooks/${slug}`,
+                     `Delete playbook "${slug}"? It is git-versioned — recoverable from history.`),
+        extra });
   }
 
   // workflows + utils are Python → highlighted editor; rules/permissions are markdown → plain.

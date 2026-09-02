@@ -491,7 +491,7 @@ def test_run_files_endpoint(client):
             "kind": "write_file", "path": "artifacts/out.md", "bytes": 42}}) + "\n")
     files = c.get("/api/runs/apir:20260707-080000/files").json()["files"]
     assert files == [{"path": "artifacts/out.md", "reads": 0, "writes": 1, "edits": 0,
-                      "bytes": 42, "errors": 0, "sub": False}]
+                      "bytes": 42, "errors": 0, "sub": False, "bases": [""]}]
     assert c.get("/api/runs/apir:20990101-000000/files").status_code == 404
 
 
@@ -523,6 +523,27 @@ def test_run_file_endpoint(client):
     assert outside.status_code == 400 and "outside" in outside.json()["detail"]
     assert c.get("/api/runs/apir:20260707-081500/file",
                  params={"path": "nope.md"}).status_code == 404
+
+
+def test_run_file_serves_a_child_runs_working_directory(client):
+    """R1193: a relative row is resolved against the directory of the run that TOUCHED it. A
+    child works under `sub/<n>/`, so resolving its rows against the parent alone made the
+    sidebar list openable links that 404'd — inconsistently, because a sibling that happened
+    to exist under the parent opened fine."""
+    c, tmp = client
+    run_dir = _mk_run(tmp / "routines", "apir", "20260707-082000", "finished")
+    sub = run_dir / "sub" / "1"
+    (sub / "build").mkdir(parents=True)
+    (sub / "build" / "page-1.png").write_text("child bytes", encoding="utf-8")
+    (sub / "transcript.jsonl").write_text(json.dumps({
+        "type": "observation", "turn": 1,
+        "payload": {"kind": "write_file", "path": "build/page-1.png", "bytes": 11}}) + "\n",
+        encoding="utf-8")
+    row = next(f for f in c.get("/api/runs/apir:20260707-082000/files").json()["files"]
+               if f["path"] == "build/page-1.png")
+    assert row["sub"] is True and row["bases"] == ["sub/1"]
+    r = c.get("/api/runs/apir:20260707-082000/file", params={"path": "build/page-1.png"})
+    assert r.status_code == 200 and r.text == "child bytes"
 
 
 def test_run_plan_endpoint(client):

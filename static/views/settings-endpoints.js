@@ -21,7 +21,6 @@ const KIND = {
 const KINDS = ["openai", "anthropic", "claude-cli"];
 const SCHEMA_MODES = ["json_schema", "json_object", "ollama_native", "none"];
 const EFFORTS = ["", "low", "medium", "high", "xhigh", "max"];   // "" = inherit / provider default
-const NATIVE_MM = ["anthropic", "claude-cli"];   // mirrors config.NATIVE_MM_KINDS
 
 export async function renderEndpoints(view) {
   view.append(el("div", { class: "muted small", style: "margin-bottom:8px" },
@@ -133,7 +132,7 @@ export async function renderEndpoints(view) {
       try { await api(`/api/settings/models/${encodeURIComponent(m.name)}`, { method: "DELETE" }); await load(); }
       catch (err) { toast(err.message, 4000, { error: true }); }
     };
-    return el("div", { class: "panel mt", style: "background:var(--ink-2)" },
+    return el("div", { class: "panel mt", style: "background:var(--deck-2)" },
       el("div", { class: "row spread" },
         el("div", {}, el("strong", {}, m.name), " ",
           el("span", { class: "muted small" }, `${m.endpoint} / ${m.model}`), " ",

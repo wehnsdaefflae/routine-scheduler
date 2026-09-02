@@ -4,17 +4,12 @@
 
 import { api } from "/static/api.js";
 import { confirmDialog } from "/static/components/dialog.js";
-import { el, skeleton, toast } from "/static/util.js";
+import { el, toast } from "/static/util.js";
+import { panelSection } from "/static/views/settings-common.js";
 
 export function renderMachines(view) {
   // -- remote machines (SSH catalog) ----------------------------------------------
-  const machBox = el("div", { class: "panel" });
-  machBox.append(skeleton(["60%", "85%"]));
-  view.append(machBox);
-  async function fill() {
-    let d;
-    try { d = await api("/api/settings/machines"); }
-    catch (err) { machBox.replaceChildren(el("div", { class: "muted" }, err.message)); return; }
+  return panelSection(view, "/api/settings/machines", ["60%", "85%"], (machBox, d, reload) => {
     machBox.replaceChildren(el("div", { class: "muted small", style: "margin-bottom:6px" },
       "SSH hosts a routine can act on (a GPU box, a build server). Add one here, set its private ",
       "key as the ", el("code", {}, "key_var"), " secret in ",
@@ -44,7 +39,7 @@ export function renderMachines(view) {
         const delBtn = el("button", { class: "btn small danger" }, "delete");
         delBtn.onclick = async () => {
           if (!(await confirmDialog(`Delete machine ${m.name}?`, { confirmLabel: "delete" }))) return;
-          try { await api(`/api/settings/machines/${m.name}`, { method: "DELETE" }); fill(); }
+          try { await api(`/api/settings/machines/${m.name}`, { method: "DELETE" }); reload(); }
           catch (err) { toast(err.message, 4000, { error: true }); }
         };
         const flags = [
@@ -102,7 +97,7 @@ export function renderMachines(view) {
         (r.problems || []).forEach((p) => toast(p, 5000, { error: true }));
         toast(`machine ${name} saved`);
         [nameIn, hostIn, userIn, keyVarIn, wdIn, shareIn, descIn, tagsIn, hkIn].forEach((i) => (i.value = ""));
-        portIn.value = "22"; fill();
+        portIn.value = "22"; reload();
       } catch (err) { toast(err.message, 5000, { error: true }); }
     };
     machBox.append(
@@ -128,6 +123,5 @@ export function renderMachines(view) {
           "you normally never type here. Your login key does NOT go in this box (see ",
           el("code", {}, "KEY_VAR"), " above).")),
       el("div", { class: "row mt" }, saveBtn));
-  }
-  return fill();
+  });
 }

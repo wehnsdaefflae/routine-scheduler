@@ -4,6 +4,8 @@ and a live test call.
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
@@ -13,12 +15,11 @@ from ...config import (
     NATIVE_MM_KINDS,
     EndpointConfig,
     ModelConfig,
-    load_server_config,
 )
 from ...endpoints.base import api_key_source
 from ...endpoints.claude_cli_wire import token_source
 from ..model_fit import fit_fields
-from .common import server_of, update_config
+from .common import reload_into, rewrite_block, server_of, update_config
 
 router = APIRouter()
 
@@ -109,18 +110,9 @@ def list_models(request: Request) -> dict:
             "system_model": server.system_model or None}
 
 
-def _rewrite_endpoints(request: Request, mutate) -> dict:
-    def apply(raw: dict) -> None:
-        endpoints = raw.get("endpoints") or {}
-        mutate(endpoints)
-        raw["endpoints"] = endpoints
-
-    path = update_config(request, apply)
-    fresh, problems = load_server_config(path)
-    server = server_of(request)
-    server.endpoints = fresh.endpoints
-    server.system_model = fresh.system_model
-    return {"ok": True, "problems": problems}
+def _rewrite_endpoints(request: Request, mutate: Callable[[dict], None]) -> dict:
+    """Every endpoints save, named once: the block plus the two live fields it refreshes."""
+    return rewrite_block(request, "endpoints", mutate, "endpoints", "system_model")
 
 
 class EndpointBody(BaseModel):
@@ -184,17 +176,9 @@ def delete_endpoint(request: Request, name: str) -> dict:
 
 
 # --- the model catalog: named models bound to an endpoint, carrying per-model attrs ----------
-def _rewrite_models(request: Request, mutate) -> dict:
-    def apply(raw: dict) -> None:
-        models = raw.get("models") or {}
-        mutate(models)
-        raw["models"] = models
-
-    path = update_config(request, apply)
-    fresh, problems = load_server_config(path)
-    server = server_of(request)
-    server.models = fresh.models
-    return {"ok": True, "problems": problems}
+def _rewrite_models(request: Request, mutate: Callable[[dict], None]) -> dict:
+    """Every catalog save, named once: the block plus the one live field it refreshes."""
+    return rewrite_block(request, "models", mutate, "models")
 
 
 class ModelBody(BaseModel):
@@ -261,8 +245,7 @@ def set_system_model(request: Request, body: SystemModelBody) -> dict:
     if body.name not in s.models:
         raise HTTPException(400, f"unknown model {body.name!r} — add it to the catalog first")
     path = update_config(request, lambda raw: raw.update(system_model=body.name))
-    fresh, _ = load_server_config(path)
-    s.system_model = fresh.system_model
+    reload_into(request, path, "system_model")
     return {"ok": True, "system_model": s.system_model or None}
 
 

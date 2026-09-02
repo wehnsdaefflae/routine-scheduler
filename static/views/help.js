@@ -9,7 +9,6 @@ import { el } from "/static/util.js";
 export async function render(view, sub, query = {}) {
   view.append(el("div", { class: "page-head" },
     el("div", {},
-      el("div", { class: "kicker" }, "console / documentation"),
       el("h1", {}, "Help"))));
 
   let index = null;

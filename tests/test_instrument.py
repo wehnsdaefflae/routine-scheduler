@@ -13,9 +13,7 @@ from rsched.endpoints.base import Completion, EndpointError
 from rsched.endpoints.instrument import (
     FileSink,
     InstrumentedEndpoint,
-    current_process,
     make_record,
-    process_scope,
     set_sink,
 )
 
@@ -93,7 +91,7 @@ def test_records_started_and_finished():
 def test_purpose_and_kind_not_forwarded_to_adapter():
     stub = StubEndpoint()
     set_sink(CapturingSink())
-    InstrumentedEndpoint(stub).complete([], model="m", purpose="p", process="proc-1", kind="k")
+    InstrumentedEndpoint(stub).complete([], model="m", purpose="p", kind="k")
     assert "purpose" not in stub.calls[0] and "process" not in stub.calls[0]
     assert set(stub.calls[0]) == {"messages", "model", "schema", "effort", "max_tokens",
                                   "timeout", "session", "temperature"}
@@ -108,22 +106,6 @@ def test_exception_emits_failed_and_reraises():
     assert [r["phase"] for r in sink.records] == ["started", "failed"]
     assert sink.records[1]["error"] == "nope"
     assert sink.records[0]["id"] == sink.records[1]["id"]
-
-
-def test_process_scope_attributes_records():
-    sink = CapturingSink()
-    set_sink(sink)
-    ep = InstrumentedEndpoint(StubEndpoint())
-    assert current_process() is None
-    with process_scope("create:abc"):
-        ep.complete([], model="m", purpose="Decompose")
-    assert current_process() is None  # restored on exit
-    assert sink.records[0]["process_id"] == "create:abc"
-    # an explicit process= arg overrides the ambient scope
-    ep.complete([], model="m", purpose="x", process="explicit")
-    assert sink.records[-1]["process_id"] == "explicit"
-
-
 def test_sink_failure_never_breaks_the_call():
     class BoomSink:  # a sink whose record() always raises
         def record(self, rec):
@@ -132,22 +114,6 @@ def test_sink_failure_never_breaks_the_call():
     set_sink(BoomSink())
     out = InstrumentedEndpoint(StubEndpoint()).complete([], model="m", purpose="p")
     assert out.text == "ok"  # the real call still returns
-
-
-def test_process_scope_propagates_across_to_thread():
-    import asyncio
-
-    sink = CapturingSink()
-    set_sink(sink)
-    ep = InstrumentedEndpoint(StubEndpoint())
-
-    async def driver():
-        with process_scope("wiz-1"):
-            # workflow calls run under asyncio.to_thread — the context must copy into the worker
-            await asyncio.to_thread(ep.complete, [], model="m", purpose="suggest tags")
-
-    asyncio.run(driver())
-    assert sink.records[0]["process_id"] == "wiz-1"
 
 
 def test_filesink_writes_valid_jsonl(tmp_path):

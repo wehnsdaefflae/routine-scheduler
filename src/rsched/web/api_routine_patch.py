@@ -11,14 +11,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import yaml
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, ConfigDict
 
 from .. import rules as rules_mod
 from .. import schedule
 from ..config import DELIBERATION_LEVELS, MODEL_KINDS, write_tuning
-from ..paths import atomic_write
+from ..paths import atomic_write_yaml, read_yaml
 from .routines_common import (
     _git_commit,
     _info,
@@ -120,7 +119,7 @@ def patch_routine(request: Request, slug: str, patch: RoutinePatch) -> dict:
     # No busy-guard (D35): pure routine.yaml config, read at run START only — saving
     # mid-run applies at the next run. Destructive ops (archive) keep their guard.
     path = info.cfg.dir / "routine.yaml"
-    raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    raw = read_yaml(path, {})
     updates = patch.model_dump(exclude_none=True)
     # `updated` reports every field this PATCH applied. Captured BEFORE the appliers pop
     # what they consume (models/connections/machines/grants/keep_runs/schedule) — the
@@ -196,7 +195,7 @@ def patch_routine(request: Request, slug: str, patch: RoutinePatch) -> dict:
             raw[key].update(val)
         else:
             raw[key] = val
-    atomic_write(path, yaml.safe_dump(raw, sort_keys=False, allow_unicode=True))
+    atomic_write_yaml(path, raw)
     _git_commit(info.cfg.dir, f"routine.yaml edit via web ({', '.join(requested)})")
     _state(request).scheduler.rescan()
     # F337: a run already in flight booted its policy, schema and prompt from the OLD config.
@@ -230,12 +229,12 @@ def adopt_template(request: Request, slug: str, body: AdoptTemplate) -> dict:
     if tpl is None:
         raise HTTPException(404, f"no settings template {body.template!r} in the library")
     path = info.cfg.dir / "routine.yaml"
-    raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    raw = read_yaml(path, {})
     merged, added = adopt_into(raw, tpl["config"])
     if not added:
         return {"ok": True, "template": tpl["slug"], "added": [],
                 "note": "this routine already has everything the template supplies"}
-    atomic_write(path, yaml.safe_dump(merged, sort_keys=False, allow_unicode=True))
+    atomic_write_yaml(path, merged)
     _git_commit(info.cfg.dir, f"adopt settings template {tpl['slug']} via web")
     _state(request).scheduler.rescan()
     return {"ok": True, "template": tpl["slug"], "added": added}

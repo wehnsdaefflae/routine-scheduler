@@ -16,6 +16,8 @@ This module is the forward reading of the dependency graph. It joins, per routin
 - the UTIL HEADERS of every reserved util the routine holds, walked transitively over `calls:`
   — their `secrets:` and their `fs:` private stores are dependency edges nobody had joined to
   the routine that holds them;
+- the SCHEDULE, against the group store: a member cron a group's schedule silently suppresses,
+  and a routine nothing on a clock ever starts;
 - the live stores: the secrets store, the machine catalog, the connection registry.
 
 Nothing is stored. The library MOVES — routines author and revise the utils and rules it is
@@ -191,6 +193,47 @@ def _expects_nodes(cfg: RoutineConfig, expects: dict[str, dict],
     return out
 
 
+def _schedule_nodes(server: Any, cfg: RoutineConfig) -> list[dict]:
+    """Does this routine's file say WHEN it actually runs?
+
+    Two ways it can stop saying so, both silent. A group with a cron SUPPRESSES its members'
+    own crons (D71), so a member that kept one has a file naming a time it will never fire at —
+    `steward-hub-maintainer` recorded 23:00 while firing at 06:30 in its group's chain, and
+    nothing anywhere said the two disagreed. The other way is the mirror: a routine with no
+    cron of its own, in no scheduled group, is never started by anything on a clock, which is a
+    perfectly good on-demand design and indistinguishable from an oversight.
+
+    Neither breaks a run, so neither shouts. What they cost is the operator's belief about when
+    the routine runs, which is exactly what a NOTE is for.
+    """
+    from .. import groups as groups_mod
+
+    if not cfg.enabled:
+        return []                       # a disabled routine already says it does not run
+    try:
+        all_groups = groups_mod.list_groups(server.routines_home)
+    except OSError:
+        return []
+    mine = [g for g in all_groups if cfg.slug in groups_mod.member_slugs(g)]
+    scheduling = next((g for g in mine if g.get("cron")), None)
+    if scheduling and cfg.cron:
+        paused = " (currently PAUSED, so nothing fires at all)" if scheduling.get("paused") else ""
+        return [_node("schedule:cron", "suppressed", NOTE,
+                      f"its group {scheduling['name']!r} carries a schedule, which suppresses "
+                      "every member's own cron",
+                      f"this file records {cfg.cron!r}, and the routine actually fires with the "
+                      f"group at {scheduling['cron']!r}{paused} — clear the routine's own cron "
+                      "so the file says what happens",
+                      {"kind": "clear_cron"}, {"group": scheduling["id"]})]
+    if not scheduling and not cfg.cron:
+        how = ("a trigger, a hand fire, or another run's schedule_run" if cfg.triggers
+               else "a hand fire from the console, or another run's schedule_run")
+        return [_node("schedule:none", "unscheduled", NOTE,
+                      "it has no cron of its own and no group schedules it",
+                      f"nothing on a clock starts this routine; it runs only on {how}")]
+    return []
+
+
 def routine_surface(server: Any, cfg: RoutineConfig) -> dict:
     """The full setup surface for one routine: `{nodes, verdict}`.
 
@@ -219,6 +262,7 @@ def routine_surface(server: Any, cfg: RoutineConfig) -> dict:
             expects[slug] = rule_expects[slug]
     machine_catalog = getattr(server, "machines", {}) or {}
     nodes += _expects_nodes(cfg, expects, machine_catalog)
+    nodes += _schedule_nodes(server, cfg)
 
     # -- the util-header join: what the RESERVED utils this routine holds actually need ------
     # Utils already declare their secrets and their private filesystem stores; this is the

@@ -44,21 +44,24 @@ def test_file_activity_aggregates_per_path(tmp_path):
     ])
     assert file_activity(tmp_path) == [
         {"path": "state/notes.md", "reads": 2, "writes": 0, "edits": 0, "bytes": 0,
-         "errors": 0, "sub": False},
+         "errors": 0, "sub": False, "bases": [""]},
         {"path": "missing.md", "reads": 0, "writes": 0, "edits": 0, "bytes": 0,
-         "errors": 1, "sub": False},
+         "errors": 1, "sub": False, "bases": [""]},
         {"path": "artifacts/report.html", "reads": 0, "writes": 2, "edits": 1, "bytes": 150,
-         "errors": 0, "sub": False},
+         "errors": 0, "sub": False, "bases": [""]},
         {"path": "shot.png", "reads": 1, "writes": 0, "edits": 0, "bytes": 0,
-         "errors": 0, "sub": False},
+         "errors": 0, "sub": False, "bases": [""]},
         {"path": "routine.yaml", "reads": 0, "writes": 0, "edits": 0, "bytes": 0,
-         "errors": 1, "sub": False},
+         "errors": 1, "sub": False, "bases": [""]},
     ]
 
 
 def test_file_activity_includes_children(tmp_path):
     """A subtask's touches fold into the parent's rows (recursively), flagged `sub` —
-    a path the parent also touched keeps one row."""
+    a path the parent also touched keeps one row, and `bases` records every run-relative
+    directory the path was touched under, in first-touched order. That is what the file
+    server resolves a relative row against (R1193): a child's working-dir file lives under
+    its own `sub/<n>/`, not the parent's dir."""
     _write_transcript(tmp_path, [
         {"type": "observation", "turn": 1,
          "payload": {"kind": "write_file", "path": "state/shared.md", "bytes": 10}},
@@ -75,11 +78,11 @@ def test_file_activity_includes_children(tmp_path):
     ])
     assert file_activity(tmp_path) == [
         {"path": "state/shared.md", "reads": 0, "writes": 2, "edits": 0, "bytes": 15,
-         "errors": 0, "sub": True},
+         "errors": 0, "sub": True, "bases": ["", "sub/1"]},
         {"path": "docs/child-only.md", "reads": 1, "writes": 0, "edits": 0, "bytes": 0,
-         "errors": 0, "sub": True},
+         "errors": 0, "sub": True, "bases": ["sub/1"]},
         {"path": "deep.md", "reads": 0, "writes": 0, "edits": 1, "bytes": 0,
-         "errors": 0, "sub": True},
+         "errors": 0, "sub": True, "bases": ["sub/1/sub/1"]},
     ]
 
 

@@ -61,7 +61,7 @@ def rebuild_policy(loop) -> None:
     ctx = loop.ctx
     loop.grants = ctx.grants = loop.base_grants.with_overlay(ctx.granted_now,
                                                              ctx.denied_now)
-    if getattr(loop, "_finish_reserved", False):
+    if loop._finish_reserved:
         # The reserved finish turn's finish-only grammar must survive a decision that
         # lands at the same boundary (the drain bridge) — the policy update above still
         # matters (resource consumers read it), but the last turn stays a finish.

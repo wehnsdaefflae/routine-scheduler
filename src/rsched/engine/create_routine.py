@@ -213,10 +213,11 @@ def _materialize(ctx: RunContext, *, slug: str, name: str, instruction: str,
 
     import yaml as _yaml
 
+    from ..paths import read_yaml
+
     adopted = ""
     with contextlib.suppress(OSError, _yaml.YAMLError):
-        adopted = str((_yaml.safe_load((routine_dir / "routine.yaml").read_text(
-            encoding="utf-8")) or {}).get("template") or "")
+        adopted = str(read_yaml(routine_dir / "routine.yaml", {}).get("template") or "")
     return {"kind": "create_routine", "slug": slug, "name": name,
             "workflow": workflow_slug, "created": True, "dir": str(routine_dir),
             "template": adopted, "url": routine_page_url(ctx.server, slug),
@@ -228,7 +229,7 @@ def routine_page_url(server, slug: str) -> str:
     (`public_url`), else the in-app route — a link the reader can act on either way, which is
     the point: "it exists" without "here it is" makes the user go looking for it.
     """
-    base = str(getattr(server, "public_url", "") or "").rstrip("/")
+    base = str(server.public_url or "").rstrip("/")
     return f"{base}/#/routine/{slug}" if base else f"#/routine/{slug}"
 
 
@@ -242,10 +243,13 @@ def _queued_obs(ctx: RunContext, fields: dict) -> dict:
     """
     from ..pending import queue
 
+    proposal = (f"proposed: create routine {fields['slug']!r} from pattern "
+                f"{fields['workflow']!r}")
     rec = queue(ctx.server.routines_home, kind="create_routine", routine=ctx.routine.slug,
                 run_id=ctx.run_id, fields=fields,
                 summary=f"routine {fields['slug']!r} from pattern {fields['workflow']!r}")
     return {"kind": "create_routine", "slug": fields["slug"], "queued": True, "id": rec["id"],
+            "proposal": proposal,
             "next": ("Nothing is created yet, and nothing will be until the user approves it — "
                      "you have no user in the loop, so this went to the Decisions page as a "
                      "proposal. Do NOT re-issue it: a second call queues a second proposal. "

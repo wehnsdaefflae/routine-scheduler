@@ -14,6 +14,7 @@ import time
 
 from ..endpoints import failover
 from ..endpoints.base import EndpointError
+from ..endpoints.base import fold_usage as base_fold
 from ..schema_guard import SchemaViolation, extract_json, retry_message, validate
 from . import refusal
 from .actions import KIND_EXAMPLES, normalize_action, util_rejection_outcome, validate_action
@@ -47,13 +48,7 @@ def fold_usage(usage_sum: dict, completion) -> None:
     itself is stamped by the caller (`usage["model"]`) once an action is accepted, so a
     failed-over or referred turn stays attributable to the model that actually produced it.
     """
-    usage_sum["in"] += completion.usage["in"]
-    usage_sum["out"] += completion.usage["out"]
-    for cache_key in ("cached_in", "cache_write"):
-        if completion.usage.get(cache_key):
-            usage_sum[cache_key] = usage_sum.get(cache_key, 0) + int(completion.usage[cache_key])
-    if completion.usage.get("cost"):
-        usage_sum["cost"] = round(usage_sum.get("cost", 0.0) + float(completion.usage["cost"]), 6)
+    base_fold(usage_sum, completion.usage)
     if completion.provider:
         usage_sum["provider"] = completion.provider
 

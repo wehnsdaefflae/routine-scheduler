@@ -99,6 +99,17 @@ function chartsSection(runs) {
   return box;
 }
 
+// The frame every stat table on this page shares: a titled section, an optional sub-line
+// explaining where the numbers come from, and one horizontally scrollable table. `sub` takes a
+// string, an array of strings (el flattens its children), or null when the title already says
+// everything — el drops the null child, so there is no empty .sub div to style around.
+const statSection = (title, sub, head, body) => el("div", { class: "stat-section" },
+  el("h2", {}, title),
+  sub ? el("div", { class: "sub" }, sub) : null,
+  el("div", { class: "table-wrap" },
+    el("table", { class: "stat-table" },
+      el("thead", {}, head), el("tbody", {}, ...body))));
+
 // Recipe length by routine (F371): how much INSTRUCTION each routine carries — one
 // violet bar per routine (deliberately not a usage-series color: this is prose mass,
 // not spend) plus a trend chip against the recipe as committed ~30 days ago (from each
@@ -123,18 +134,14 @@ function recipeSection(recipes) {
       el("div", { class: "recipe-bar", style: `width:${Math.max(1, Math.round((d.chars / max) * 100))}%` })),
     el("td", { class: "num" }, fmtInt(d.chars)),
     el("td", {}, trendChip(d))));
-  return el("div", { class: "stat-section" },
-    el("h2", {}, "Recipe length by routine"),
-    el("div", { class: "sub" },
-      `instruction mass (main.md + stages/ + tuning.yaml, chars) with its trend vs the recipe ${days} days ago — from each routine's git history`),
-    el("div", { class: "table-wrap" },
-      el("table", { class: "stat-table" },
-        el("thead", {}, el("tr", {},
-          el("th", {}, "routine"),
-          el("th", { style: "width:40%" }, "length"),
-          el("th", { class: "num" }, "chars"),
-          el("th", {}, "trend"))),
-        el("tbody", {}, ...body))));
+  return statSection("Recipe length by routine",
+    `instruction mass (main.md + stages/ + tuning.yaml, chars) with its trend vs the recipe ${days} days ago — from each routine's git history`,
+    el("tr", {},
+      el("th", {}, "routine"),
+      el("th", { style: "width:40%" }, "length"),
+      el("th", { class: "num" }, "chars"),
+      el("th", {}, "trend")),
+    body);
 }
 
 // Deep link for a routine/conversation row — null (plain text) when the home is unknown.
@@ -162,11 +169,7 @@ function sliceTable(title, slice, keyLabel, extraCols, link) {
     el("td", { class: "num" }, fmtInt(d.tokens_out)),
     el("td", { class: "num" }, fmtUsd(d.cost)),
     el("td", { class: "num" }, fmtDur(d.elapsed_s))));
-  return el("div", { class: "stat-section" },
-    el("h2", {}, title),
-    el("div", { class: "table-wrap" },
-      el("table", { class: "stat-table" },
-        el("thead", {}, head), el("tbody", {}, ...body))));
+  return statSection(title, null, head, body);
 }
 
 // Monthly spend by routine — the durable series (workflow-usage stream, survives run
@@ -195,12 +198,9 @@ function monthlySection(monthly, kinds) {
         : shrinking ? el("span", { class: "chip ok" }, "↓ shrinking")
         : before && cur ? el("span", { class: "chip bare" }, "→ steady") : NBSP));
   });
-  return el("div", { class: "stat-section" },
-    el("h2", {}, "Monthly spend by routine"),
-    el("div", { class: "sub" },
-      "tokens · cost per calendar month, from the durable usage stream — unlike the tables above, this survives run retention"),
-    el("div", { class: "table-wrap" },
-      el("table", { class: "stat-table" }, el("thead", {}, head), el("tbody", {}, ...body))));
+  return statSection("Monthly spend by routine",
+    "tokens · cost per calendar month, from the durable usage stream — unlike the tables above, this survives run retention",
+    head, body);
 }
 
 // Per-util execution stats — every global util's life story: created / last revised
@@ -243,20 +243,16 @@ function utilsSection(u) {
       el("td", { class: "muted" }, day(r.first_executed)),
       el("td", { class: "muted" }, day(r.last_executed)));
   });
-  return el("div", { class: "stat-section" },
-    el("h2", {}, "Global utils"),
-    el("div", { class: "sub" },
-      "per-util reliability: dates from the library's git history; counts from each run's usage record ",
-      `(durable) plus ${fmtInt(u.backfill_runs || 0)} pre-stream runs backfilled from retained transcripts. `,
-      "Denied/rejected calls never ran (caught at validation), so those counts begin with the stream."),
-    el("div", { class: "table-wrap" },
-      el("table", { class: "stat-table" }, el("thead", {}, head), el("tbody", {}, ...body))));
+  return statSection("Global utils",
+    ["per-util reliability: dates from the library's git history; counts from each run's usage record ",
+     `(durable) plus ${fmtInt(u.backfill_runs || 0)} pre-stream runs backfilled from retained transcripts. `,
+     "Denied/rejected calls never ran (caught at validation), so those counts begin with the stream."],
+    head, body);
 }
 
 export async function render(view) {
   view.append(el("div", { class: "page-head" },
     el("div", {},
-      el("div", { class: "kicker" }, "console / analytics"),
       el("h1", {}, "Stats"),
       el("div", { class: "sub" }, "time, tokens & cost across every routine, conversation & endpoint")),
     el("div", { class: "row" }, el("button", { class: "btn small", onclick: () => load() }, "↻ refresh"))));

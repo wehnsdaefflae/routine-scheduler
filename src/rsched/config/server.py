@@ -8,7 +8,7 @@ from typing import Literal
 import yaml
 from pydantic import Field
 
-from ..paths import config_file, expand
+from ..paths import config_file, expand, read_yaml
 from .base import BlankableStr, HomePath, _Config, _validate_lenient
 from .modelconf import EndpointConfig, MachineConfig, ModelConfig
 
@@ -92,7 +92,7 @@ def load_server_config(path: Path | None = None) -> tuple[ServerConfig, list[str
     raw: object = {}
     if path.exists():
         try:
-            raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+            raw = read_yaml(path, {})
         except yaml.YAMLError as exc:
             return ServerConfig(source=path), [f"{path}: invalid YAML: {exc}"]
         except OSError as exc:

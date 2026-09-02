@@ -80,7 +80,6 @@ export async function render(view) {
   view.append(
     el("div", { class: "page-head" },
       el("div", {},
-        el("div", { class: "kicker" }, "console / routines"),
         el("h1", {}, "Routines")),
       pauseBtn));
   const banner = el("div", {});

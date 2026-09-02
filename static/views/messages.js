@@ -43,7 +43,6 @@ export async function render(view, query = {}) {
 
   view.append(el("div", { class: "page-head" },
     el("div", {},
-      el("div", { class: "kicker" }, "console / maintenance"),
       el("h1", {}, "Messages"),
       el("div", { class: "sub" },
         "findings, decisions and reports — what it is, where it came from, when it was addressed")),
@@ -54,24 +53,40 @@ export async function render(view, query = {}) {
   const filterBar = el("div", { class: "filterbar" });
   const body = el("div", {});
   body.append(skeleton());
-  // Deferrals whose CARRIER closed without delivering them. Above the list because they are
-  // invisible to every filter below it: the deferred piece never became an item at all, which
-  // is exactly how D98's stopping panel was lost for six days (readmodels/orphans.py).
+  // The two ways work leaves this ledger without becoming an open item anywhere. Above the list
+  // because they are invisible to every filter below it: a deferred piece never became an item
+  // at all (that is how D98's stopping panel was lost for six days), and an undelivered report
+  // is addressed to a routine that has never heard of it (readmodels/orphans.py).
   const orphanBox = el("div", { hidden: true });
   view.append(header, orphanBox, filterBar, body);
+  const orphanGroup = (title, rows, card) => {
+    if (!rows.length) return null;
+    return el("div", {},
+      el("div", { class: "q-group-head" },
+        el("span", {}, title),
+        el("span", { class: "q-group-count" }, String(rows.length))),
+      ...rows.map(card));
+  };
   api("/api/items/orphans").then((rows) => {
     if (!rows?.length) return;
+    const deferrals = rows.filter((o) => o.kind !== "undelivered");
+    const undelivered = rows.filter((o) => o.kind === "undelivered");
     orphanBox.hidden = false;
-    orphanBox.replaceChildren(el("div", { class: "q-group-head" },
-      el("span", {}, "deferred, then lost — a carrier item closed without delivering these"),
-      el("span", { class: "q-group-count" }, String(rows.length))));
-    for (const o of rows) {
-      orphanBox.append(el("div", { class: "card mt" },
-        el("div", {}, el("strong", {}, o.source_ids.join(", ")),
-          " was deferred into ", el("a", { href: `#/messages?focus=${o.carrier}` }, o.carrier),
-          `, which closed ${o.carrier_status} without naming it.`),
-        el("div", { class: "faint small mt" }, o.promise)));
-    }
+    orphanBox.replaceChildren(...[
+      orphanGroup("deferred, then lost — a carrier item closed without delivering these",
+        deferrals, (o) => el("div", { class: "card mt" },
+          el("div", {}, el("strong", {}, o.source_ids.join(", ")),
+            " was deferred into ", el("a", { href: `#/messages?focus=${o.carrier}` }, o.carrier),
+            `, which closed ${o.carrier_status} without naming it.`),
+          el("div", { class: "faint small mt" }, o.promise))),
+      orphanGroup("addressed, never delivered — the target has no message for these and never will",
+        undelivered, (o) => el("div", { class: "card mt" },
+          el("div", {}, el("strong", {}, o.id), " from ", el("span", { class: "mono" }, o.from),
+            " is addressed to ", el("span", { class: "mono" }, o.target),
+            o.target_exists ? ", whose inbox holds no message for it."
+                            : ", which is not a routine on this instance."),
+          el("div", { class: "prose mt" }, o.title))),
+    ].filter(Boolean));
   }).catch(() => {});
 
   // ---- feedback → the routine's inbox → consumed by the next (or current) run -----------

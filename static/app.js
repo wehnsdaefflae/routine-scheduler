@@ -1,6 +1,6 @@
 // Entry: hash router (path + query), location indicators (active nav + breadcrumb), the
-// in-flight setup banner, the first-launch self-improvement notice, the topbar clock, and
-// the global SSE stream (badges + daemon lamp).
+// in-flight setup banner, the first-launch self-improvement notice, the rail's clock and theme
+// control, the watch ribbon, and the global SSE stream (badges + daemon lamp).
 
 import { api, sse } from "/static/api.js";
 import { parseHash } from "/static/router.js";
@@ -11,6 +11,7 @@ import { initNotifications } from "/static/notify.js";
 import { initTaskManager } from "/static/components/taskmanager.js";
 import { initSearchBox } from "/static/components/searchbox.js";
 import { mountToc } from "/static/components/toc.js";
+import { mountRibbon } from "/static/components/ribbon.js";
 
 installTracing();
 installFormPersistence();
@@ -192,15 +193,27 @@ function renderVersion(s) {
   node.title = s.build ? `v${s.version} · ${s.build}` : `v${s.version}`;
 }
 
+// ONE status path: the boot render and the 30s poll are the same call, and it returns the
+// payload so boot can read `needs_setup` without a second fetch. They used to be two copies of
+// the same three lines, and that duplication is why a dead `gateNav(...)` call at the head of
+// the poll went unnoticed: it threw a ReferenceError on every tick, so the catch below ran
+// instead and the daemon lamp was switched OFF thirty seconds after every load and stayed off —
+// a console permanently claiming the daemon was down, while the boot copy kept working. Nothing
+// caught it because the poll was reached only on a timer no test outlives; sharing the path puts
+// it under every UI test's js_errors collector. (Navigation gating moved into the views
+// themselves — dashboard.js / routine.js read `llm_ready` and disable their own run controls.)
 async function refreshStatus() {
+  const clock = document.getElementById("clock");
   try {
     const s = await api("/api/status");
-    gateNav(s.llm_ready !== false);
     renderMetaBanner(s.meta_routines);
     renderVersion(s);
+    if (clock && s.server_tz) clock.title = `server tz: ${s.server_tz}`;
     document.getElementById("daemon-dot").classList.add("on");
+    return s;
   } catch {
     document.getElementById("daemon-dot").classList.remove("on");
+    return null;
   }
 }
 
@@ -271,39 +284,64 @@ function globalStream() {
   connect();
 }
 
-// ---- topbar clock ----------------------------------------------------------------------------
+// ---- the rail's clock ------------------------------------------------------------------------
 function startClock() {
   const node = document.getElementById("clock");
   const p2 = (n) => String(n).padStart(2, "0");
   const tick = () => {
     const d = new Date();
-    node.textContent = `${p2(d.getHours())}:${p2(d.getMinutes())}:${p2(d.getSeconds())}`;
+    node.textContent = `${p2(d.getHours())}:${p2(d.getMinutes())}`;
   };
   tick();
   setInterval(tick, 1000);
-  api("/api/status").then((s) => { if (s.server_tz) node.title = `server tz: ${s.server_tz}`; }).catch(() => {});
+}
+
+// ---- theme: auto / light / dark ---------------------------------------------------------------
+// Dark is the shipped default, so a console nobody has touched looks exactly as it did. `auto`
+// is an explicit CHOICE to follow the machine, not the absence of one — which is why the stored
+// value is written for all three and the inline script in index.html applies it before paint.
+const THEME_KEY = "rsched_theme";
+const THEMES = [["auto", "follow this device's light or dark setting"],
+                ["light", "always light"], ["dark", "always dark"]];
+
+function initTheme() {
+  const host = document.getElementById("theme-toggle");
+  if (!host) return;
+  const current = () => document.documentElement.dataset.theme || "dark";
+  const paint = () => {
+    host.replaceChildren(...THEMES.map(([name, why]) => {
+      const b = el("button", { type: "button", title: why,
+                               "aria-pressed": String(current() === name) }, name);
+      b.onclick = () => {
+        document.documentElement.dataset.theme = name;
+        storage.set(THEME_KEY, name);
+        paint();
+      };
+      return b;
+    }));
+  };
+  paint();
 }
 
 window.addEventListener("hashchange", route);
 
 (async function boot() {
   startClock();
+  initTheme();
+  const ribbonHost = document.getElementById("ribbon");
+  if (ribbonHost) mountRibbon(ribbonHost);
   initNotifications();
   initTaskManager();
   initSearchBox();
   startTimeTicker();
-  try {
-    const s = await api("/api/status");
-    renderMetaBanner(s.meta_routines);
-    renderVersion(s);
-    // First launch: send the user to setup (Settings) until they finish it. The redirect fires a
-    // hashchange → route(), so we don't call route() again in that branch.
-    if (s.needs_setup && !location.hash.startsWith("#/settings")) {
-      toast("Welcome! Finish setup: add a model provider, connect GitHub, and point at your repos", 6000);
-      location.hash = "#/settings";
-      return;
-    }
-  } catch { /* the view will surface the failure */ }
+  const s = await refreshStatus();   // renders version, meta banner, lamp and clock tooltip
+  // First launch: send the user to setup (Settings) until they finish it. The redirect fires a
+  // hashchange → route(), so we don't call route() again in that branch.
+  if (s?.needs_setup && !location.hash.startsWith("#/settings")) {
+    toast("Welcome! Finish setup: add a model provider, connect GitHub, and point at your repos", 6000);
+    location.hash = "#/settings";
+    return;
+  }
   route();
 })();
 refreshBadges();

@@ -9,11 +9,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import yaml
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from .. import branches
+from ..paths import read_yaml
 from ..registry import TERMINAL_STATES
 from .conversations_common import conversation_info
 
@@ -30,7 +30,7 @@ class HandBackBody(BaseModel):
 
 
 def _parent_record(conv_dir: Path) -> dict:
-    raw = yaml.safe_load((conv_dir / "routine.yaml").read_text(encoding="utf-8")) or {}
+    raw = read_yaml(conv_dir / "routine.yaml", {})
     rec = raw.get("parent")
     return rec if isinstance(rec, dict) else {}
 
@@ -84,8 +84,7 @@ def lineage(request: Request, slug: str) -> dict:
     parent = _parent_record(info.cfg.dir)
     if parent.get("slug"):
         pdir = server.conversations_home / str(parent["slug"])
-        raw = (yaml.safe_load((pdir / "routine.yaml").read_text(encoding="utf-8")) or {}
-               if (pdir / "routine.yaml").is_file() else {})
+        raw = read_yaml(pdir / "routine.yaml", {}) if (pdir / "routine.yaml").is_file() else {}
         # A deleted parent leaves the record standing: the branch's history still came from
         # somewhere, and saying so beats silently reading as a root conversation.
         parent = {**parent, "name": str(raw.get("name") or parent["slug"]),
@@ -99,7 +98,7 @@ def lineage(request: Request, slug: str) -> dict:
             rec = _parent_record(d)
             if rec.get("slug") != slug:
                 continue
-            raw = yaml.safe_load((d / "routine.yaml").read_text(encoding="utf-8")) or {}
+            raw = read_yaml(d / "routine.yaml", {})
             kids.append({"slug": d.name, "name": str(raw.get("name") or d.name),
                          "turn": rec.get("turn"), "forked": rec.get("forked")})
     return {"parent": parent or None, "branches": kids}

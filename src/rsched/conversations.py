@@ -16,8 +16,6 @@ import logging
 import re
 from pathlib import Path
 
-import yaml
-
 from .config import (
     CONVERSATION_DELIBERATION,
     DEFAULT_BUDGETS,
@@ -27,7 +25,7 @@ from .config import (
     write_tuning,
 )
 from .ids import run_ts
-from .paths import atomic_write
+from .paths import atomic_write_yaml, read_yaml
 from .schedule import server_tz
 
 log = logging.getLogger("rsched.conversations")
@@ -245,8 +243,7 @@ def create_conversation(server: ServerConfig, *, slug: str, first_message: str, 
         cfg["fs_read_roots"] = read_roots
     if write_roots:
         cfg["fs_write_roots"] = write_roots
-    atomic_write(conv_dir / "routine.yaml",
-                 yaml.safe_dump(cfg, sort_keys=False, allow_unicode=True))
+    atomic_write_yaml(conv_dir / "routine.yaml", cfg)
     # tuning.yaml: chat is judgment-heavy — context-on-paper by default (composer +
     # header-panel slider; a pre-start pick governs reply #1 already)
     write_tuning(conv_dir, {"deliberation": deliberation or CONVERSATION_DELIBERATION})
@@ -275,12 +272,7 @@ def autolabel(server: ServerConfig, conv_dir: Path, text: str) -> None:
     try:
         from .endpoints import EndpointRegistry
 
-        models: dict = {}
-        try:
-            conv_cfg = yaml.safe_load((conv_dir / "routine.yaml").read_text(encoding="utf-8")) or {}
-            models = conv_cfg.get("models") or {}
-        except Exception:
-            models = {}
+        models = read_yaml(conv_dir / "routine.yaml", {}).get("models") or {}
         endpoint, ref = EndpointRegistry(server).for_model("main", models)
         comp = endpoint.complete(
             [{"role": "user", "content":
@@ -298,13 +290,12 @@ def autolabel(server: ServerConfig, conv_dir: Path, text: str) -> None:
         tags = [t for t in tags if t]
         if not title:
             return
-        raw = yaml.safe_load((conv_dir / "routine.yaml").read_text(encoding="utf-8")) or {}
+        raw = read_yaml(conv_dir / "routine.yaml", {})
         raw["name"] = title
         raw["description"] = title
         if tags:
             raw["tags"] = tags
         # atomic: the daemon scans routine.yaml between replies — never let it read a torn file
-        atomic_write(conv_dir / "routine.yaml",
-                     yaml.safe_dump(raw, sort_keys=False, allow_unicode=True))
+        atomic_write_yaml(conv_dir / "routine.yaml", raw)
     except Exception as exc:
         log.info("autolabel skipped for %s: %s", conv_dir.name, exc)

@@ -23,6 +23,7 @@ from croniter import croniter
 from .config import RoutineConfig, ServerConfig, load_routine
 from .engine.inbox import open_questions
 from .paths import read_json
+from .readmodels.memo import fingerprint
 
 GZIP_AFTER_RUNS = 5  # transcripts older than the N most recent runs get gzipped
 
@@ -91,17 +92,6 @@ _cfg_memo: dict[str, tuple[tuple, tuple[RoutineConfig | None, list[str]]]] = {}
 _questions_memo: dict[str, tuple[tuple, list[dict]]] = {}
 
 
-def _fingerprint(*paths: Path) -> tuple:
-    out: list[tuple[int, int, int] | None] = []
-    for p in paths:
-        try:
-            st = p.stat()
-            out.append((st.st_ino, st.st_mtime_ns, st.st_size))
-        except OSError:
-            out.append(None)
-    return tuple(out)
-
-
 def _prune(memo: dict, home: Path, visited: set[str]) -> None:
     prefix = f"{home}/"
     for key in [k for k in memo if k.startswith(prefix) and k not in visited]:
@@ -109,7 +99,7 @@ def _prune(memo: dict, home: Path, visited: set[str]) -> None:
 
 
 def read_run(run_dir: Path, slug: str) -> RunInfo:
-    fp = _fingerprint(run_dir / "status.json", run_dir / "result.md")
+    fp = fingerprint([run_dir / "status.json", run_dir / "result.md"])
     hit = _run_memo.get(str(run_dir))
     if hit is not None and hit[0] == fp:
         return _copy_run(hit[1])
@@ -197,7 +187,7 @@ def scan(server: ServerConfig, home: Path | None = None) -> dict[str, RoutineInf
 def _load_routine_memo(d: Path) -> tuple[RoutineConfig | None, list[str]]:
     # both config AND tuning feed the parsed RoutineConfig — a tuning-only edit (the
     # slider, or the improver re-levelling deliberation) must miss the memo too
-    fp = _fingerprint(d / "routine.yaml", d / "tuning.yaml")
+    fp = fingerprint([d / "routine.yaml", d / "tuning.yaml"])
     hit = _cfg_memo.get(str(d))
     if hit is None or hit[0] != fp:
         hit = (fp, load_routine(d))
@@ -209,7 +199,7 @@ def _load_routine_memo(d: Path) -> tuple[RoutineConfig | None, list[str]]:
 def _open_questions_memo(d: Path) -> list[dict]:
     # keyed on BOTH dirs: a new/rewritten question touches questions/pending, an answer
     # (which flips a question's `answered` flag) lands in inbox/ — either changes the result.
-    fp = _fingerprint(d / "questions" / "pending", d / "inbox")
+    fp = fingerprint([d / "questions" / "pending", d / "inbox"])
     hit = _questions_memo.get(str(d))
     if hit is None or hit[0] != fp:
         hit = (fp, open_questions(d))

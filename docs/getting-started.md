@@ -84,18 +84,16 @@ scope, deliverable shape, hard constraints. The chat is a real run of the protec
 `clarification` routine and lives on the standard run page — leave and come back any time
 (the setup banner up top brings you back); its questions also appear on the Decisions page.
 
-**4 · Review the create page.** Everything is preselected from your task, everything is
-editable before anything is created:
+**4 · Confirm the draft in the chat.** There is no create page: the conversation shows you a
+DRAFT — slug, name, workflow pattern (or `generate` when nothing in the catalog fits), the
+instruction it compiled, and what DONE looks like for one run in your own words — and creates
+nothing until you answer. Every point still open comes back as its own numbered question.
 
-- the **workflow pattern** (or generate a new one when nothing fits),
-- the **rules** — the general rules that will bind the routine,
-- the **permissions** — granted conservatively; you can widen them any time later,
-- the **budgets** — the per-run ceilings,
-- slug, name, tags, and the **schedule** (or manual-only).
-
-**5 · Create.** The system decomposes the pattern against your instruction into the
-routine's own `main.md` + `stages/`, records the chosen rules in `routine.yaml`, writes the
-config, and git-inits the directory. The instruction was only the compile seed — from here
+**5 · Create.** The system decomposes the pattern against your instruction into the routine's
+own `main.md` + `stages/`, records the pattern's rules and the default permissions in
+`routine.yaml`, writes the config, and git-inits the directory. Setup is tuned AFTERWARDS on the
+routine page, where the *Recommend* button reads the finished recipe and puts advice beside every
+rule and permission toggle — you flip the switches. The instruction was only the compile seed — from here
 on the stage modules are the routine's recipe, edited directly. Optionally the first run
 fires immediately.
 

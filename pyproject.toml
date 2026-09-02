@@ -187,4 +187,9 @@ ignore_decorators = ["@*.get", "@*.post", "@*.put", "@*.delete", "@*.patch", "@*
                      "@*.websocket", "@*validator", "@app.*", "@pytest.*"]
 # model_config is pydantic's ConfigDict; pytestmark/should_exit/pytest_* are framework hooks read
 # by name; capture_output is a subprocess kwarg a monkeypatch stub must accept but need not use.
-ignore_names = ["model_config", "pytestmark", "should_exit", "pytest_*", "capture_output"]
+# `stage` is a REQUEST-CONTRACT field on api_stopping.Condition: the model is `extra="forbid"`,
+# so declaring it is what lets a client send it at all, and the round-trip is asserted through
+# the JSON (`rows["s3"]["stage"]`) rather than through the attribute — which vulture cannot see.
+# It went unreported for months only because an unrelated test held a local of the same name.
+ignore_names = ["model_config", "pytestmark", "should_exit", "pytest_*", "capture_output",
+                "stage"]

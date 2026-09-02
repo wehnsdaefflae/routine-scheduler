@@ -52,11 +52,30 @@ MODE_NOUN = {
 HANDBACK_SUBDIR = "artifacts"
 
 
+#: The SHOUTED form, for an observation that announces a child's exit — and the lower-case
+#: form the CLI transcript renders. Both were spelled inline at their call sites as
+#: `"SUBTASK" if mode == "sequential" else "SUB-WORKFLOW"`, which is the drift this module
+#: exists to prevent: a fourth mode would have read as a sub-workflow in one place, a subrun in
+#: another, and by its real name only here.
+MODE_SHOUT = {PARALLEL: "SUB-WORKFLOW", SEQUENTIAL: "SUBTASK", BRANCH: "BRANCH"}
+MODE_SHORT = {PARALLEL: "subrun", SEQUENTIAL: "subtask", BRANCH: "branch"}
+
+
 def mode_noun(mode: str) -> str:
     """How this mode is named to the model. An unknown mode reads as a plain child run rather
     than leaking a raw enum value into the prompt.
     """
     return MODE_NOUN.get(mode, "child run")
+
+
+def mode_shout(mode: str) -> str:
+    """The mode as an observation headline names it (`SUBTASK 2 'x' FINISHED`)."""
+    return MODE_SHOUT.get(mode, "CHILD RUN")
+
+
+def mode_short(mode: str) -> str:
+    """The mode as one lower-case word, for the CLI transcript's one-line rows."""
+    return MODE_SHORT.get(mode, "child")
 
 
 def handback_dirname(n: int) -> str:

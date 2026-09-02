@@ -3,16 +3,24 @@
 Both conversations subpages (list + detail) mount the run view's .run-rail pattern:
 the chat owns the main column, the conversation list parks in the LEFT rail and
 state/tasks/artifacts in the RIGHT one — and the rails PERSIST at every desktop
-width: fixed viewport margins >=1560px, sticky grid columns beside the chat at
-1200-1559px (the view escapes the 1180px column), stacked only below 1200px.
+width: fixed viewport margins at the top end, sticky grid columns beside the chat
+below that (the view escapes the reading column), stacked only on a narrow screen.
 The old three-pane grid (conv-layout + drag handles + fold rails) must stay gone,
 and views.css must style BOTH rail positions the views mount.
+
+The WIDTHS moved with the 0.277.0 console rework and are read from the stylesheet
+rather than pinned here: the navigation rail now takes 212px of the viewport, so the
+free margin a fixed rail parks in starts much later, and pinning the old numbers
+would assert the layout of a shell that no longer exists. What is asserted is the
+REGIME — that a mid-width grid exists, escapes the reading column, and sticks.
 """
+import re
 from pathlib import Path
 
 STATIC = Path(__file__).resolve().parents[1] / "static"
 
-MID_QUERY = "@media (min-width: 1200px) and (max-width: 1559.9px)"
+#: the mid-width regime's own query, found by its shape so a breakpoint move is not a failure
+MID_QUERY_RE = re.compile(r"@media \(min-width: \d+px\) and \(max-width: [\d.]+px\)")
 
 
 def test_conversations_mounts_run_rails():
@@ -41,12 +49,22 @@ def test_css_styles_both_rail_positions():
 
 
 def test_rails_persist_at_mid_widths():
-    """User order 2026-07-16: the rails must REMAIN beside the chat below 1560px too —
-    a sticky three-column grid regime, with the view freed from the 1180px column."""
+    """User order 2026-07-16: the rails must REMAIN beside the chat below the fixed-margin
+    width too — a sticky three-column grid regime, with the view freed from the reading column.
+
+    The escape is `main:has(.conv-view)`, never `main.conv-view`: app.js renders every view into
+    its OWN container inside `main`, so the class lands on that container and the element
+    selector matched nothing at all — the escape had never once fired.
+    """
     css = (STATIC / "views.css").read_text(encoding="utf-8")
-    assert MID_QUERY in css, "mid-width grid regime missing"
-    block = css.split(MID_QUERY, 1)[1].split("@media", 1)[0]
-    assert "main.conv-view { max-width: none; }" in block, "view must escape the 1180px column"
+    m = MID_QUERY_RE.search(css)
+    assert m, "mid-width grid regime missing"
+    block = css.split(m.group(0), 1)[1].split("@media", 1)[0]
+    assert "main:has(.conv-view) { max-width: none; }" in block, \
+        "the view must escape the reading column, through a selector that can match"
+    # the comment above the rule NAMES the dead selector to explain it; strip comments first
+    rules = re.sub(r"/\*.*?\*/", "", css, flags=re.DOTALL)
+    assert "main.conv-view" not in rules, "the dead element selector must not come back"
     assert "display: grid" in block, "mid widths must lay the rails out as grid columns"
     assert "position: sticky" in block, "grid rails must stick (remain on scroll)"
 

@@ -22,21 +22,16 @@ kept — delivery stamping matches on them.
 
 from __future__ import annotations
 
-import re
-from pathlib import Path
-
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from ..ids import now_iso
-from ..paths import atomic_write_json, read_json
+from ..paths import atomic_write_json
 from ..readmodels import messages
 from ..reports import read_reports, reports_path, retract_report
-from .routines_common import _info, _state
+from .routines_common import _info, _state, queued_message
 
 router = APIRouter(tags=["messages"])
-
-_MSG_ID_RE = re.compile(r"^msg-[\w.+-]+$")
 
 #: Structured reviewer-feedback fields (api_audit) — stale after a free-text edit.
 _FEEDBACK_FIELDS = ("kind", "target", "choice", "raw")
@@ -58,19 +53,6 @@ def _delivery(request: Request, slug: str) -> str:
     next run — the toast wording the console shows on create/edit.
     """
     return "mid-run" if _state(request).runner.is_active(slug) else "next-run"
-
-
-def _queued(inbox: Path, msg_id: str) -> tuple[Path, dict]:
-    """Resolve a message id to its still-queued inbox file, or 404. The id pattern keeps
-    `answer-*` files (and any path trick) out of this endpoint's hands.
-    """
-    if not _MSG_ID_RE.fullmatch(msg_id):
-        raise HTTPException(404, f"malformed message id {msg_id!r}")
-    path = inbox / f"{msg_id}.json"
-    obj = read_json(path)
-    if not isinstance(obj, dict):
-        raise HTTPException(404, "this message is no longer queued — a run already consumed it")
-    return path, obj
 
 
 @router.get("/routines/{slug}/messages")
@@ -104,7 +86,7 @@ def edit_message(request: Request, slug: str, msg_id: str, body: MessageBody) ->
     immutable — the transcript now owns it.
     """
     info = _info(request, slug)
-    path, prev = _queued(info.cfg.dir / "inbox", msg_id)
+    path, prev = queued_message(info.cfg.dir / "inbox", msg_id)
     rec = {k: v for k, v in prev.items() if k not in _FEEDBACK_FIELDS}
     rec.update(text=_clean_text(body), edited=now_iso())
     atomic_write_json(path, rec)
@@ -114,7 +96,7 @@ def edit_message(request: Request, slug: str, msg_id: str, body: MessageBody) ->
 @router.delete("/routines/{slug}/messages/{msg_id}")
 def delete_message(request: Request, slug: str, msg_id: str) -> dict:
     info = _info(request, slug)
-    path, _ = _queued(info.cfg.dir / "inbox", msg_id)
+    path, _ = queued_message(info.cfg.dir / "inbox", msg_id)
     try:
         path.unlink()
     except FileNotFoundError:  # a run consumed it between the check and now — same outcome

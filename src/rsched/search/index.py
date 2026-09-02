@@ -123,6 +123,7 @@ class SearchIndex:
                 self._remove_db_files()
                 conn = sqlite3.connect(self.path, check_same_thread=False)
                 conn.execute("PRAGMA journal_mode=WAL")
+                conn.execute("PRAGMA synchronous=NORMAL")   # a cache never needs full fsync
                 conn.execute("PRAGMA busy_timeout=5000")
                 conn.executescript(_SCHEMA)
                 conn.execute(f"PRAGMA user_version={SCHEMA_VERSION}")

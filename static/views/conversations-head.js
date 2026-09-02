@@ -84,7 +84,7 @@ export function renderHead(head, detail, stateChip, { slug, isLive, onListChange
   // capabilities: budgets (per-reply ceilings) + permission toggles (routine-only ones
   // greyed) + rules read-only
   const caps = el("details", { class: "small conv-caps" },
-    el("summary", { style: "cursor:pointer;color:var(--muted)" },
+    el("summary", { style: "cursor:pointer;color:var(--ink-2)" },
       `⚙ capabilities & budgets${detail.workdir ? ` · project: ${detail.workdir}` : ""}`));
   const capBody = el("div", { class: "conv-opts" });
   const b = detail.budgets || {};
@@ -150,7 +150,6 @@ export function renderHead(head, detail, stateChip, { slug, isLive, onListChange
     delib.node));
   capBody.append(abilitiesPanel(detail.permissions, detail.capabilities, {
     disableRuns: "a conversation is one continuous run — previous-run depth is routine-only",
-    saveLabel: "save permissions",
     onSave: async (payload) => {
       try {
         await api(`/api/conversations/${slug}/permissions`, { method: "PUT", body: payload });

@@ -8,13 +8,12 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
-import yaml
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from .. import rules as rules_mod
 from ..ids import now_iso, run_ts
-from ..paths import atomic_write
+from ..paths import atomic_write_yaml, read_yaml
 from .routines_common import (
     _git_commit,
     _info,
@@ -156,10 +155,10 @@ def set_permissions(request: Request, slug: str, body: PermissionsBody) -> dict:
     # would shadow the group's value and no later group change could reach this routine.
     caps = strip_group_dials(caps, group_cfg.get("capabilities") or {}, body.capabilities or {})
     path = info.cfg.dir / "routine.yaml"
-    raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    raw = read_yaml(path, {})
     raw["permissions"] = active
     raw["capabilities"] = caps
-    atomic_write(path, yaml.safe_dump(raw, sort_keys=False, allow_unicode=True))
+    atomic_write_yaml(path, raw)
     _git_commit(info.cfg.dir, f"permissions: {', '.join(active) or '(none)'}")
     return {"ok": True, "active": active, "capabilities": caps}
 

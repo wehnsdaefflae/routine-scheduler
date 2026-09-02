@@ -12,8 +12,8 @@ from typing import get_args
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
-from ...config import ServerConfig, load_server_config
-from .common import server_of, update_config
+from ...config import ServerConfig
+from .common import reload_into, server_of, update_config
 
 router = APIRouter()
 
@@ -52,11 +52,7 @@ def set_server(request: Request, body: ServerBody) -> dict:
     if not updates:
         return {"ok": True, "updated": []}
     path = update_config(request, lambda raw: raw.update(updates))
-    fresh, _ = load_server_config(path)
-    s = server_of(request)
-    s.sandbox = fresh.sandbox
-    s.max_concurrent_runs = fresh.max_concurrent_runs
-    s.registry_rescan_s = fresh.registry_rescan_s
-    s.github_client_id = fresh.github_client_id
+    reload_into(request, path, "sandbox", "max_concurrent_runs", "registry_rescan_s",
+                "github_client_id")
     return {"ok": True, "updated": list(updates),
             "restart_for": ["max_concurrent_runs"] if "max_concurrent_runs" in updates else []}

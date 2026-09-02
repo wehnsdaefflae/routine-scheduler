@@ -169,11 +169,14 @@ one you are about to touch, not all of them.
   **`create_routine` / `manage_group` are conversation-INITIATED, not conversation-only** (F328):
   a root conversation materializes them, and a run with no user in the loop writes a PROPOSAL to
   `.control/pending-creations/` that the Decisions page materializes with one click through the
-  same `workflows.scaffold` / `rsched.groups` path. `create_routine` carries an optional
+  same `workflows.scaffold` / `rsched.groups` path. A queued proposal is rendered by ONE shared
+  branch checked before any kind's success wording (`obs_admin.QUEUEABLE_KINDS`): teaching the
+  handlers about the queue and not the renderers is how a proposal came back reading as a
+  completed action over an absent payload (R1200/R1183). `create_routine` carries an optional
   `stopping:` — the user's own words for what DONE looks like for one run — which seeds the new
   routine's STOPPING CONDITIONS instead of evaporating into the instruction prose — so the engine still never writes
   `routine.yaml`, and a scheduled run holding a finished design no longer has to hand it back to
-  the operator by hand (R353). `manage_group list` still answers directly; every mutating verb
+  the operator by hand (R353). `manage_group list` still answers directly (naming each group's MEMBERS in fire order, F424); every mutating verb
   queues. A within-reply CHILD (depth > 0) is still refused outright and never sees the kinds:
   the queue is for a run that HAS a user, just not right now. Ungated like `report` — the
   approval is the gate, and it is a human.
@@ -272,6 +275,16 @@ by a test, by the engine, or by a past incident.
   spawner is using. A spawner whose config was never loaded from a file is refused before a
   process exists. Never give either flag a default — the fallback is `~`, i.e. production,
   and a tmp-homed test once spent real money and real ledger rows there.
+- **The setup surface answers "what does this routine still need?" — including WHEN it runs.**
+  `readmodels/surface.py` joins the effective config against the library's `requires:`/`expects:`,
+  the util headers, the live stores AND the group store: a member cron a group's schedule
+  suppresses (D71) is a routine.yaml naming a time it will never fire at, and a routine in no
+  scheduled group with no cron of its own is started by nothing on a clock. Both are NOTE rows —
+  nothing is broken, the file is misleading. `rsched validate` adds the instance-level case no
+  routine's surface can see (a scheduled group with no members). An `expects:` row must be an
+  UNCONDITIONAL presumption: it fires on EVERY holder, and it has been wrong twice the same way
+  (`git-checkpoint`, then `status-page`'s write root — false for all seven holders, because a page
+  is published through an upload channel and a routine's own dir is always writable).
 - **A config field must declare whether it reaches a LIVE run.** `configflow.CLASSIFICATION`
   (F337) maps every `RoutinePatch`/`ConversationPatch` field to LIVE (adopted at a turn boundary
   — budgets, deliberation, grants) or NEXT_RUN, with the reason the operator is shown;
@@ -285,8 +298,21 @@ by a test, by the engine, or by a past incident.
 - Prefer a fitting, well-maintained package over hand-rolled plumbing (pydantic validates config,
   tenacity retries, python-frontmatter parses frontmatter, sse-starlette speaks SSE). The bar is net
   reduction AND net clarity — `paths.atomic_write` and `schema_guard` stay bespoke on purpose.
-- Cross-process files are written atomic (tmp+rename) via `paths.atomic_write` — never ad-hoc.
-- `static/` is no-build vanilla-JS ES modules (no bundler, no node, no external assets). Keep it that way.
+- Cross-process files are written atomic (tmp+rename) via `paths.atomic_write` — never ad-hoc, and
+  through its typed pairs where one fits: `atomic_write_json`/`read_json`, and
+  `atomic_write_yaml`/`read_yaml`. Those two carry the dump options (`sort_keys=False` keeps the
+  key order a human wrote; `allow_unicode=True` keeps an umlaut readable), so no call site spells
+  them and none can drift. `read_yaml` deliberately does NOT swallow errors the way `read_json`
+  does: nearly every YAML read here is the first half of a read-modify-write of `routine.yaml`,
+  and a default returned for an unparseable file would rewrite the user's hand-broken config FROM
+  that default. The loaders that must turn a broken file into a problem STRING catch around it.
+- `static/` is no-build vanilla-JS ES modules (no bundler, no node, no external assets). Keep it
+  that way. The design system is `base.css` ("watchfloor"): colour is STATE, and the palette turns
+  on one distinction — SIGNAL (cyan) is the machine working and is the interactive colour, SUMMONS
+  (coral) is what waits on a PERSON, IRIS (violet) is structure. Type says who wrote the words:
+  system-ui for the console's own voice, mono for anything a counter emitted, a reading serif for
+  anything a mind wrote. Dark is the default with a real three-state theme; every token is defined
+  for both. `views.css` builds only on those tokens and adds no colour of its own.
 - Tests accompany every module in the same commit; `ScriptedEndpoint` in `tests/conftest.py` replays
   canned actions and is the main engine harness. Endpoint adapters are mock-tested; anything touching the
   network hides behind `RSCHED_LIVE_TESTS=1`.

@@ -31,12 +31,10 @@ is the same pass or the next one.
 from __future__ import annotations
 
 import logging
-import uuid
 from pathlib import Path
 
 from .groups import list_groups, member_slugs, store_dir
-from .ids import now_iso, run_ts
-from .paths import atomic_write_json, read_json
+from .paths import read_json
 
 log = logging.getLogger("rsched.groupnotes")
 
@@ -49,38 +47,6 @@ TEXT_CAP = 2000
 
 def notes_dir(store: Path, to_slug: str) -> Path:
     return store / NOTES_DIRNAME / to_slug
-
-
-def shared_group(routines_home: Path, a: str, b: str) -> str | None:
-    """The id of a group holding BOTH slugs, or None. The membership check the whole
-    approval-free argument rests on — a note may only ever cross between teammates.
-    """
-    for g in list_groups(routines_home):
-        members = member_slugs(g)
-        if a in members and b in members:
-            return str(g["id"])
-    return None
-
-
-def write_note(routines_home: Path, *, sender: str, to: str, text: str) -> Path:
-    """File a note from `sender` for sibling `to`. Raises ValueError when they share no group —
-    the boundary IS the safety model, so crossing it is an error, never a silent drop.
-    """
-    text = (text or "").strip()
-    if not text:
-        raise ValueError("a note needs text")
-    if sender == to:
-        raise ValueError("a note goes to a SIBLING — write your own state to your own dir")
-    gid = shared_group(routines_home, sender, to)
-    if gid is None:
-        raise ValueError(f"{sender!r} and {to!r} share no group — an intra-group note cannot "
-                         "leave the group. Use a report to reach a routine outside it.")
-    d = notes_dir(store_dir(routines_home, gid), to)
-    d.mkdir(parents=True, exist_ok=True)
-    path = d / f"note-{run_ts()}-{uuid.uuid4().hex[:6]}.json"
-    atomic_write_json(path, {"from": sender, "ts": now_iso(), "text": text[:TEXT_CAP]})
-    log.info("groupnotes: %s -> %s in %s", sender, to, gid)
-    return path
 
 
 def drain(routines_home: Path, slug: str) -> list[dict]:
@@ -100,8 +66,13 @@ def drain(routines_home: Path, slug: str) -> list[dict]:
             rec = read_json(path)
             path.unlink(missing_ok=True)
             if isinstance(rec, dict) and str(rec.get("text") or "").strip():
+                # The cap belongs HERE, on the read, because reading is the only half this
+                # module owns: a note is written by the sibling routine itself, with an ordinary
+                # file write into the shared store (`contract_line` below hands it the literal
+                # path). Nothing validates that write, so a note of any length would otherwise
+                # go straight into the reader's state digest and its prompt.
                 out.append({"from": str(rec.get("from") or "?"), "ts": str(rec.get("ts") or ""),
-                            "text": str(rec["text"])})
+                            "text": str(rec["text"])[:TEXT_CAP]})
     return out
 
 

@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from ..endpoints.base import fold_usage
 from .actionschema import BRIEF_FIELD
 from .observations import format_observation
 
@@ -176,11 +177,7 @@ def prior_usage(events: list[dict]) -> dict:
             continue
         if not isinstance(u, dict):
             continue
-        for key in ("in", "out", "cached_in", "cache_write"):
-            if u.get(key):
-                total[key] = total.get(key, 0) + int(u[key])
-        if u.get("cost"):
-            total["cost"] = round(total.get("cost", 0.0) + float(u["cost"]), 6)
+        fold_usage(total, u)
     return total
 
 

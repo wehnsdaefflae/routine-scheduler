@@ -21,8 +21,11 @@ work.
   most valuable thing in the entry and the first thing a hurried run drops.
 - **Write for a reader without your context.** Name the artefact, give the evidence, say what
   "done" looked like. A note only you could decode has recorded nothing.
-- **Keep it readable.** Once the record outgrows what a run can usefully read, fold the
-  oldest entries into a few summary lines and archive the rest. The version history is the
-  real archive, so pruning loses nothing.
+- **Rotate before it outgrows a reader.** The record is a working surface, not an archive.
+  When it passes roughly 400 lines or 40 entries, act in that same run: move the older
+  entries to an archive file beside the record and leave one rollup entry in their place
+  summarizing what was moved and the lessons that must stay. The version history keeps the
+  bytes; the rollup keeps the lessons. Noticing the overflow and deferring the rotation is
+  how records reach hundreds of unreadable entries.
 - **Artefacts stay present-tense.** Do not narrate previous versions inside the work itself —
   what a thing is now belongs in the thing; how it got there belongs in the record.

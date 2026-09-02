@@ -23,11 +23,10 @@
 // draggable — onto a sibling bar to reorder the group, onto another group's lane to join it,
 // onto the remove strip to leave the group, or along their own lane to reschedule.
 
-import { el, fmtDur } from "/static/util.js";
+import { el, fmtDur, svgEl } from "/static/util.js";
 import { slugColor } from "/static/components/charts.js";
 import { weekDrag } from "/static/components/weekgrid-drag.js";
 
-const NS = "http://www.w3.org/2000/svg";
 const DAY_MS = 86_400_000, DAY_SECONDS = 86_400;
 const DAYS = 7, HEAD_H = 22, ROW_H = 22, PAD_B = 8;
 // The zoom: how many day columns share the visible strip width — the other days scroll.
@@ -42,16 +41,7 @@ const BAR_H = 8, MIN_BAR_W = 2;
 const fmtDay = new Intl.DateTimeFormat(undefined, { weekday: "short", day: "numeric" });
 const fmtAt = new Intl.DateTimeFormat(undefined, { weekday: "short", hour: "2-digit", minute: "2-digit" });
 
-function s(tag, attrs = {}, title = "") {
-  const n = document.createElementNS(NS, tag);
-  for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v);
-  if (title) {
-    const t = document.createElementNS(NS, "title");
-    t.textContent = title;
-    n.append(t);
-  }
-  return n;
-}
+const s = svgEl;   // this file builds an SVG node on nearly every line; one letter earns its keep
 
 function text(x, y, str, cls, anchor = "start") {
   const n = s("text", { x, y, class: cls, "text-anchor": anchor });

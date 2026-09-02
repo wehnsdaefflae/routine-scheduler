@@ -14,7 +14,11 @@
 import { api } from "/static/api.js";
 import { el } from "/static/util.js";
 
-const LABEL = { blocks: "fails", interrupts: "interrupts", note: "note" };
+// Severity → what it COSTS, in the reader's terms rather than the surface's abstractions. One
+// copy, because surface-view.js renders the very same join unfiltered and the two strips would
+// otherwise be free to disagree about what "blocks" means to a person. `ok` only ever shows up
+// there — this strip renders nothing that is already satisfied.
+export const LABEL = { blocks: "fails", interrupts: "interrupts", note: "note", ok: "ok" };
 
 /** One row: what it is, why it is needed, what it costs. */
 function row(node) {

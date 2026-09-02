@@ -17,8 +17,8 @@ REQUIRED_META = ("name", "slug", "description", "when_to_use", "version")
 
 def parse_py(source: str) -> dict:
     """Statically parse a Python-workflow file (no execution). Returns a meta dict: the META keys
-    plus `phases` (from PHASES), `completion` (from COMPLETION), `funcs` (top-level def names) and
-    `has_main`. Raises SyntaxError on invalid Python, ValueError if META is missing / not a literal.
+    plus `phases` (from PHASES), `completion` (from COMPLETION) and `has_main`. Raises SyntaxError
+    on invalid Python, ValueError if META is missing / not a literal.
     """
     tree = ast.parse(source)                      # SyntaxError on malformed Python
     meta: dict | None = None
@@ -44,9 +44,7 @@ def parse_py(source: str) -> dict:
     out = dict(meta)
     out["phases"] = phases
     out["completion"] = completion
-    out["funcs"] = funcs
     out["has_main"] = "main" in funcs
-    out["format"] = "py"
     return out
 
 

@@ -25,7 +25,6 @@ missing (no such util) / denied (permission refusal) / rejected (malformed actio
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 import subprocess
@@ -35,8 +34,10 @@ from .. import libgit, utils_lib
 from ..config import ServerConfig
 from ..engine.transcript import read_events
 from ..ids import now_iso
+from ..paths import atomic_write_json
 from ..utils_lib import USAGE_ERROR_EXIT
 from ..workflows.library import head_commit
+from .memo import fingerprint
 
 log = logging.getLogger("rsched.util_stats")
 
@@ -49,17 +50,6 @@ _PSEUDO = ("list", "show")                   # catalog discovery, not execution
 # each is parsed exactly once per process; the git walk re-runs only when HEAD moves.
 _transcript_memo: dict[str, tuple[tuple, dict]] = {}
 _git_dates_memo: dict[str, tuple[str, dict]] = {}
-
-
-def _fingerprint(*paths: Path) -> tuple:
-    out: list[tuple[int, int, int] | None] = []
-    for p in paths:
-        try:
-            st = p.stat()
-            out.append((st.st_ino, st.st_mtime_ns, st.st_size))
-        except OSError:
-            out.append(None)
-    return tuple(out)
 
 
 def _git_dates(home: Path) -> dict[str, dict]:
@@ -135,7 +125,7 @@ def _scan_transcript(path: Path) -> dict:
     (plain or .gz), memoized behind its stat fingerprint.
     """
     gz = path.with_suffix(path.suffix + ".gz")
-    fp = _fingerprint(path, gz)
+    fp = fingerprint([path, gz])
     hit = _transcript_memo.get(str(path))
     if hit is not None and hit[0] == fp:
         return hit[1]
@@ -282,10 +272,7 @@ def write_util_stats_snapshot(server: ServerConfig) -> dict:
                 "backfill_runs": 0, "error": "util_stats computation failed"}
     path = snapshot_path()
     try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_name(path.name + ".tmp")
-        tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
-        tmp.replace(path)
+        atomic_write_json(path, data)
     except OSError as exc:
         # Silent-by-design (telemetry must never break a finished run) — but a PERSISTENT
         # write failure, e.g. an unwritable state dir (a root-owned ~/.local blocks the

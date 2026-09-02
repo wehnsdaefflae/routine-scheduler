@@ -30,32 +30,11 @@ def cmd_daemon(_args) -> int:
     )
     ensure_config()   # fresh deploy: generate config+token so the API isn't open
     server, problems = load_server_config()
-    # MIGRATION(expires=2026-09-30): drops the `library_sync:` key the daemon era left in
-    # config.yaml, which no longer exists on ServerConfig and warns on every boot
-    from .migrate_library_sync import migrate_library_sync
-
-    migrate_library_sync(server)
     # new default permissions reach existing routines once, at boot
     adopt_permissions(server.routines_home, server.permissions_home)
     sync_seed_utils(server.libraries_home)    # utils added to util-seed since bootstrap
-    from .migrate_seed_utils import migrate_seed_utils
-
-    # MIGRATION(expires=2026-09-30): sync_seed_utils never overwrites, so a util FIXED in the
-    # seed cannot reach a live library on its own — three have to this release
-    migrate_seed_utils(server)
     sync_seed_library_docs(server.libraries_home)  # workflows/rules/permissions added since, too
     adopt_library_edits(server.libraries_home)  # out-of-band writes (user/conversation) get history
-    from .migrate_rules import migrate_rules
-
-    migrate_rules(server)  # MIGRATION(expires=2026-09-30): traits -> library-global rules
-    from .migrate_group_members import migrate_group_members
-
-    migrate_group_members(server)  # MIGRATION(expires=2026-09-30): members -> records (F292)
-    from .migrate_template_layer import migrate_template_layer
-
-    # MIGRATION(expires=2026-09-30): a differences-only routine.yaml would silently LOSE what
-    # its template used to supply now that nothing resolves one — materialize it first.
-    migrate_template_layer(server)
     for pr in problems:
         logging.getLogger("rsched").warning("config: %s", pr)
     app = create_app(server)

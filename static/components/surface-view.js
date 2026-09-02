@@ -12,9 +12,8 @@
 // is why grouping here never has to parse the prose in `why`.
 
 import { api } from "/static/api.js";
+import { LABEL } from "/static/components/setupcheck.js";
 import { el } from "/static/util.js";
-
-const LABEL = { blocks: "fails", interrupts: "interrupts", note: "note", ok: "ok" };
 
 function sourceKey(node) {
   const src = node.source || {};

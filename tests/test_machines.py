@@ -153,7 +153,8 @@ def test_extra_secrets_merges_connections_and_machines(monkeypatch):
     monkeypatch.setattr(secrets, "load_secrets", lambda: {"GPU_KEY": "PEM"})
     ctx = SimpleNamespace(routine=SimpleNamespace(slug="mach", connections={}, machines=["gpu"]),
                           granted_now=set(), grant_args={},
-                          server=SimpleNamespace(machines={"gpu": _mac("gpu", key_var="GPU_KEY")}))
+                          server=SimpleNamespace(machines={"gpu": _mac("gpu", key_var="GPU_KEY")},
+                                                 routine_token=""))
     env = _extra_secrets(ctx)
     assert machines.MACHINE_KEYS_VAR in env
 

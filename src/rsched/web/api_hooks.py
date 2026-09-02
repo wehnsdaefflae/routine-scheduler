@@ -23,12 +23,11 @@ import time
 from collections import deque
 from typing import Literal, NoReturn
 
-import yaml
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
 
 from .. import registry, triggers
-from ..paths import atomic_write
+from ..paths import atomic_write_yaml, read_yaml
 from .routines_common import (
     _git_commit,
     _info,
@@ -166,11 +165,11 @@ def create_trigger(request: Request, slug: str, body: TriggerCreate) -> dict:
 
     def _apply() -> dict:
         path = info.cfg.dir / "routine.yaml"
-        raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        raw = read_yaml(path, {})
         entries = [t for t in raw.get("triggers") or [] if isinstance(t, dict)]
         entries.append(trigger)
         raw["triggers"] = entries
-        atomic_write(path, yaml.safe_dump(raw, sort_keys=False, allow_unicode=True))
+        atomic_write_yaml(path, raw)
         _git_commit(info.cfg.dir, f"add {body.type} trigger {trigger['id']}")
         _state(request).scheduler.rescan()
         extra = ({"url_path": triggers.hook_path(slug, trigger)}
@@ -211,14 +210,14 @@ def patch_trigger(request: Request, slug: str, trigger_id: str, body: TriggerPat
 
     def _apply() -> dict:
         path = info.cfg.dir / "routine.yaml"
-        raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        raw = read_yaml(path, {})
         entries = [t for t in raw.get("triggers") or [] if isinstance(t, dict)]
         target = next((t for t in entries if str(t.get("id")) == trigger_id), None)
         if target is None:
             raise HTTPException(404, f"no trigger {trigger_id!r} on {slug!r}")
         target.update(fields)
         raw["triggers"] = entries
-        atomic_write(path, yaml.safe_dump(raw, sort_keys=False, allow_unicode=True))
+        atomic_write_yaml(path, raw)
         _git_commit(info.cfg.dir, f"retune trigger {trigger_id}: "
                                   + ", ".join(f"{k}={v}" for k, v in sorted(fields.items())))
         _state(request).scheduler.rescan()
@@ -241,13 +240,13 @@ def delete_trigger(request: Request, slug: str, trigger_id: str) -> dict:
 
     def _apply() -> dict:
         path = info.cfg.dir / "routine.yaml"
-        raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        raw = read_yaml(path, {})
         entries = [t for t in raw.get("triggers") or [] if isinstance(t, dict)]
         kept = [t for t in entries if str(t.get("id")) != trigger_id]
         if len(kept) == len(entries):
             raise HTTPException(404, f"no trigger {trigger_id!r} on {slug!r}")
         raw["triggers"] = kept
-        atomic_write(path, yaml.safe_dump(raw, sort_keys=False, allow_unicode=True))
+        atomic_write_yaml(path, raw)
         _git_commit(info.cfg.dir, f"remove trigger {trigger_id}")
         _state(request).scheduler.rescan()
         return {"ok": True}

@@ -20,15 +20,21 @@ def _server(tmp_path: Path, machines: dict | None = None) -> SimpleNamespace:
     (lib / "permissions").mkdir(parents=True)
     (lib / "rules").mkdir(parents=True)
     (lib / "utils").mkdir(parents=True)
+    routines = tmp_path / "routines"
+    routines.mkdir(exist_ok=True)
     return SimpleNamespace(libraries_home=lib, permissions_home=lib / "permissions",
-                           rules_home=lib / "rules", machines=machines or {})
+                           rules_home=lib / "rules", machines=machines or {},
+                           routines_home=routines)
 
 
 def _cfg(tmp_path: Path, **over) -> SimpleNamespace:
+    # a scheduled, enabled routine by default: the schedule join has something coherent to
+    # read, so a "ready" fixture keeps reporting nothing
     base = {"slug": "r", "dir": tmp_path / "r", "permissions": [], "rules": [],
             "capabilities": {"actions": [], "utils": [], "util_tags": []}, "grants": {},
             "fs_read_roots": [], "fs_write_roots": [], "machines": [], "connections": {},
-            "inherited": {}, "inherited_from": ""}
+            "inherited": {}, "inherited_from": "", "enabled": True, "cron": "0 7 * * 1",
+            "triggers": []}
     base.update(over)
     return SimpleNamespace(**base)
 
@@ -341,3 +347,42 @@ def test_one_row_per_entity(tmp_path):
     cfg = _cfg(tmp_path, permissions=[], capabilities={"actions": ["write_recipe"]})
     ids = [n["id"] for n in routine_surface(server, cfg)["nodes"]]
     assert ids.count("action:write_recipe") == 1
+
+
+# --- the schedule join: does the file say when this routine runs? ---------------------------
+
+
+def test_a_member_cron_a_group_suppresses_is_reported(tmp_path):
+    """D71: a group with a cron suppresses every member's own cron. A member that kept one has
+    a routine.yaml naming a time it will never fire at — steward-hub-maintainer recorded 23:00
+    while firing at 06:30 in its group's chain — and nothing said the two disagreed."""
+    from rsched import groups as groups_mod
+
+    server = _server(tmp_path)
+    groups_mod.create(server.routines_home, name="Professional · Daily",
+                      members=[{"slug": "r"}], cron="30 6 * * *", tz="Europe/Berlin")
+    surface = routine_surface(server, _cfg(tmp_path, cron="0 23 * * *"))
+    node = _by_id(surface, "schedule:cron")
+    assert node and node["severity"] == NOTE
+    assert "'0 23 * * *'" in node["effect"] and "'30 6 * * *'" in node["effect"]
+    assert "Professional · Daily" in node["why"]
+    # a NOTE never fails the command — nothing is broken, the file is just misleading
+    assert surface["verdict"]["ready"] is True
+    # and clearing the routine's own cron settles it
+    assert _by_id(routine_surface(server, _cfg(tmp_path, cron="")), "schedule:cron") is None
+
+
+def test_a_routine_nothing_ever_starts_is_reported(tmp_path):
+    """The mirror case: no cron of its own, no group with a schedule. A perfectly good
+    on-demand design, and indistinguishable from an oversight until it is said out loud."""
+    server = _server(tmp_path)
+    node = _by_id(routine_surface(server, _cfg(tmp_path, cron="")), "schedule:none")
+    assert node and node["severity"] == NOTE
+    assert "nothing on a clock starts this routine" in node["effect"]
+    # a routine with triggers is started by events — the wording says so instead
+    triggered = _by_id(routine_surface(server, _cfg(tmp_path, cron="", triggers=[
+        {"id": "t-1", "type": "report", "cooldown_s": 900}])), "schedule:none")
+    assert triggered and "a trigger" in triggered["effect"]
+    # a DISABLED routine already says it does not run — no second row for the same fact
+    assert _by_id(routine_surface(server, _cfg(tmp_path, cron="", enabled=False)),
+                  "schedule:none") is None

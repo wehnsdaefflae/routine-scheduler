@@ -276,14 +276,14 @@ def test_group_notes_reach_the_prompt_and_drain_once(make_routine, tmp_path):
     channel a run does not know about is a channel that does not exist), and the state digest
     carries what teammates left — once, then it is gone.
     """
-    from rsched import groupnotes, groups
+    from rsched import groups
     from rsched.engine.composer import state_digest
     from rsched.engine.harness import harness_contract
 
     ctx = _ctx(make_routine, tmp_path, slug="steward")
     ctx.server.routines_home = tmp_path / "routines"
-    groups.create(ctx.server.routines_home, name="FAU",
-                  members=[{"slug": "steward"}, {"slug": "ingest"}])
+    gid = groups.create(ctx.server.routines_home, name="FAU",
+                        members=[{"slug": "steward"}, {"slug": "ingest"}])["id"]
     ctx.group_store_roots = groups.member_store_roots(ctx.server.routines_home, "steward",
                                                       create=True)
 
@@ -291,8 +291,13 @@ def test_group_notes_reach_the_prompt_and_drain_once(make_routine, tmp_path):
     assert "write a note for them" in contract and "ingest" in contract
     assert "`report` when someone must ACT" in contract      # and when NOT to use it
 
-    groupnotes.write_note(ctx.server.routines_home, sender="ingest", to="steward",
-                          text="staged the batch for you")
+    # written the way a routine writes one: an ordinary file into the group's shared store,
+    # which is the only writer this channel has (`groupnotes` exposes none by design)
+    store = groups.store_dir(ctx.server.routines_home, gid) / "notes" / "steward"
+    store.mkdir(parents=True, exist_ok=True)
+    (store / "note-20260902-120000-aaaaaa.json").write_text(
+        json.dumps({"from": "ingest", "ts": "2026-09-02T12:00:00+02:00",
+                    "text": "staged the batch for you"}), encoding="utf-8")
     kw = {"routines_home": ctx.server.routines_home, "slug": "steward"}
     digest = state_digest(ctx.routine.dir, [], [], **kw)
     assert "NOTES FROM YOUR GROUP" in digest and "staged the batch for you" in digest

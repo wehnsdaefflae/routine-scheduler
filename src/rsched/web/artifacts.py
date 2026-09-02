@@ -58,12 +58,15 @@ def list_artifacts(base_dir: Path) -> list[dict]:
     return out
 
 
-def delete_artifact(base_dir: Path, path: str,
-                    subdirs: tuple[str, ...] = ARTIFACT_DIRS) -> dict:
-    """Delete ONE artifact file — the sidebar's user-facing remove (2026-08-14 order:
-    artifacts must be deletable from the web UI). Same resolved-path containment as
-    serve_file: only files under the allowed subdirs are deletable, so
-    'artifacts/../routine.yaml' can never pass.
+def _resolve_deliverable(base_dir: Path, path: str, subdirs: tuple[str, ...],
+                         verb: str) -> Path:
+    """Resolve a client-supplied path to one real file under `subdirs`, or raise.
+
+    The path-traversal guard this module's docstring calls load-bearing, in ONE place:
+    delete and serve take the same client string, so a check hardened on one endpoint and
+    not the other is a hole nobody sees. Containment is tested on the RESOLVED path — a
+    lexical prefix test would wave 'artifacts/../routine.yaml' through. `verb` only
+    completes the 400's wording; it never changes what is allowed.
     """
     try:
         p = resolve_rel(base_dir, path.lstrip("/"))
@@ -71,27 +74,29 @@ def delete_artifact(base_dir: Path, path: str,
         raise HTTPException(400, str(exc)) from exc
     if not any(within(base_dir / sub, p) for sub in subdirs):
         allowed = " and ".join(f"{s}/" for s in subdirs)
-        raise HTTPException(400, f"only {allowed} files can be deleted")
+        raise HTTPException(400, f"only {allowed} files {verb}")
     if not p.is_file():
         raise HTTPException(404, f"no file {path!r}")
+    return p
+
+
+def delete_artifact(base_dir: Path, path: str) -> dict:
+    """Delete ONE artifact file — the sidebar's user-facing remove (2026-08-14 order:
+    artifacts must be deletable from the web UI). Deletion is scoped to ARTIFACT_DIRS and
+    nothing wider — a conversation's `attachments/` are the USER'S uploads, servable but
+    never removable by a panel click — which is why this takes no subdirs argument.
+    """
+    p = _resolve_deliverable(base_dir, path, ARTIFACT_DIRS, "can be deleted")
     p.unlink()
     return {"ok": True, "deleted": str(p.relative_to(base_dir))}
 
 
 def serve_file(base_dir: Path, path: str,
                subdirs: tuple[str, ...] = ARTIFACT_DIRS) -> FileResponse:
-    """Serve one file raw (blob-rendered client-side) from the allowed subdirs ONLY.
-    The containment check runs on the RESOLVED path — 'artifacts/../routine.yaml' must
-    not pass.
+    """Serve one file raw (blob-rendered client-side) from the allowed subdirs ONLY. The
+    conversation panel widens them to include `attachments/` — the one reason serving
+    takes the dirs as an argument at all.
     """
-    try:
-        p = resolve_rel(base_dir, path.lstrip("/"))
-    except PermissionError as exc:
-        raise HTTPException(400, str(exc)) from exc
-    if not any(within(base_dir / sub, p) for sub in subdirs):
-        allowed = " and ".join(f"{s}/" for s in subdirs)
-        raise HTTPException(400, f"only {allowed} files are served")
-    if not p.is_file():
-        raise HTTPException(404, f"no file {path!r}")
+    p = _resolve_deliverable(base_dir, path, subdirs, "are served")
     media = mimetypes.guess_type(p.name)[0] or "application/octet-stream"
     return FileResponse(p, media_type=media, filename=p.name)

@@ -101,41 +101,6 @@ def test_load_normalizes_corrupt_shape(tmp_path):
     assert data["groups"][0]["on_failure"] is None          # bad value → inherit
 
 
-def test_migration_converts_string_members_and_drops_old_chains(tmp_path):
-    """MIGRATION(F292): a pre-record store (members as plain slug strings) converts once;
-    an old-shape in-flight chain file is dropped (transient state the manager cannot
-    advance), while a record-shape chain survives."""
-    from types import SimpleNamespace
-
-    from rsched import group_runs
-    from rsched.migrate_group_members import migrate_group_members
-    from rsched.paths import atomic_write_json
-    home = tmp_path
-    atomic_write_json(groups.groups_file(home),
-                      {"default_on_failure": "stop",
-                       "groups": [{"id": "grp-old", "name": "Old",
-                                   "members": ["a", "b"], "on_failure": "continue",
-                                   "cron": "0 7 * * *", "tz": "UTC", "paused": False,
-                                   "created": "t"}]})
-    old_chain = {"id": "gr-old", "group_id": "grp-old", "members": ["a", "b"],
-                 "on_failure": "stop", "cursor": 0, "current_run": None,
-                 "status": "pending", "log": []}
-    group_runs.save(home, old_chain)
-    new_chain = {"id": "gr-new", "group_id": "grp-new", "members": [m("c")],
-                 "on_failure": "stop", "cursor": 0,
-                 "current_run": None, "status": "pending", "log": []}
-    group_runs.save(home, new_chain)
-
-    assert migrate_group_members(SimpleNamespace(routines_home=home)) is True
-    g = groups.load(home)["groups"][0]
-    assert g["members"] == [m("a"), m("b")]
-    assert g["cron"] == "0 7 * * *"                     # everything else untouched
-    assert group_runs.read(home, "grp-old") is None     # old-shape chain dropped
-    assert group_runs.read(home, "grp-new") is not None
-    # idempotent: a second pass changes nothing
-    assert migrate_group_members(SimpleNamespace(routines_home=home)) is False
-
-
 # -- API -----------------------------------------------------------------------------------
 
 def _mk(tmp_path: Path, slug: str) -> None:

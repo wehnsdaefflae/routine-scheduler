@@ -17,6 +17,248 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.277.0] — 2026-09-02
+
+### A queued proposal no longer renders as a completed action (R1200, R1183, F328)
+
+F328 gave `create_routine` and `manage_group` a proposal path for a run with no user in the loop,
+and taught only the HANDLERS about it. The queued observation then fell straight through to each
+kind's success wording over a payload that was not there, so the run was told it had done the
+thing: `created routine 'x' from workflow None`, `armed a sequential fire of group None (0
+member(s))` (R1200 — a routine trying to accelerate a sibling read that as success and moved on),
+and `group None (None) now has members []` (R1183 — which reads as a group that was just emptied).
+The same false-success class as F378.
+
+One shared branch in `engine/obs_admin.py` (`QUEUEABLE_KINDS` + `_queued_line`) now renders every
+queued shape, checked BEFORE any kind's success line, so the two cannot drift apart again. It
+names the proposal id, says NOTHING CHANGED, and carries a self-describing `proposal` line the
+HANDLER writes — `manage_group` resolves the target group's real name and member count where it
+has the store (`_proposal_line`), and says so plainly when the target does not exist rather than
+implying it does. The same line is the summary on the Decisions-page row, so the operator and the
+run read the same words. New tests in `tests/test_pending.py` pin every queued shape.
+
+### `manage_group list` names its members (F424, R1142)
+
+The listing gave a name, an id and a member COUNT, and nothing anywhere answered "which routines
+are in this group" — which is the group's entire semantics, since the member order is the fire
+order. It now lists the slugs in fire order, with the cron and a paused marker.
+
+### A run's file sidebar serves a child's working directory (R1193)
+
+A relative path only means something against the directory of the run that touched it, and the
+file-activity read model keyed its rows on the path string alone. The file server then resolved
+every row against the parent, so a subtask's working-dir file (`build/page-1.png` under `sub/1/`)
+was listed as an openable link and 404'd, while a sibling in the same directory that happened to
+exist under the parent opened fine. Rows now carry `bases` — the run-relative directories the path
+was seen under — and `GET /runs/{id}/file` tries them first.
+
+### The health stream can be asked whether anything died by signal (F422)
+
+F422's premise was wrong and is corrected here: the five rc=-9 deaths of 2026-09-01 DID produce
+health events. They were recorded as `run_canceled` with the signal buried in free-text `detail`,
+so a sweep looking for failures read the window as clean. The two close-out events differ by who
+asked for the death, not by how the process died, so `rc` and `vm_hwm_kb` are now structured
+fields on the row (`log_health_event(**fields)`, dropped when unknown — a boot-recovered orphan
+has no process to report on).
+
+### The setup surface reads the SCHEDULE (new)
+
+Two ways a routine's file could stop saying when it runs, both silent. A group with a cron
+suppresses its members' own crons (D71), so a member that kept one names a time it will never fire
+at — `steward-hub-maintainer` recorded 23:00 while firing at 06:30 in its group's chain, and
+`moltbook-heartbeat` recorded 00:00 while firing with Morning Brief. The mirror is a routine with
+no cron in no scheduled group, which is a good on-demand design and indistinguishable from an
+oversight. Both are now NOTE rows on the setup surface. `rsched validate` also reports the
+instance-level case no routine's surface can see: a scheduled group with no members, which fires
+nothing on every tick and leaves a `group_chain_done: 0 member runs` that reads like success.
+(Two live groups are in that state.)
+
+### The workflow matcher ranks on MECHANISM before subject (R1181/R1165)
+
+Two patterns can describe the same subject and differ only in the machinery a routine is born
+with. Ranked on subject words, the matcher picked the one whose prose was most colourful, and a
+steward-page task was born wired to an external JSON store that 403s from this host. The suggest
+prompt now states the deciding dimension first: how state persists, what is published, what is
+read each run, and whether a human edits the output in between.
+
+### The console, reworked — "watchfloor"
+
+A new design system (`static/base.css` rewritten, `views.css` migrated onto it), built on one
+distinction: **the two kinds of urgency here are not the same kind**. SIGNAL (cyan) is the machine
+working — a live run, an open stream, the daemon link — and is the interactive colour. SUMMONS
+(coral) is what waits on a PERSON: an open decision, a gate, a blocking ask, the badge. IRIS
+(violet) is structure. A single amber accent used to carry the brand, every heading, every link
+AND every warning, so "this is a heading" and "answer me" were the same colour.
+
+Type now says who wrote the words, from system faces only (the no-webfont rule is absolute):
+system-ui for the console's own voice, mono for anything a counter emitted, and a reading SERIF
+for anything a mind wrote — run summaries, a transcript's narration, questions, chat, markdown
+bodies. The longest screen in the product is an agent explaining what it did.
+
+Structure: the nine-tab strip that overflowed into a sideways scroll became a left RAIL grouped by
+what a destination is for (Work / Fleet / System), collapsing to an icon rail and then to a bottom
+tab bar. Location is said ONCE — the page kicker that repeated the breadcrumb on ten views is
+gone. A three-state theme control (auto / light / dark) ships with a real light theme, applied
+before first paint; dark stays the default so nobody's console changes under them.
+
+New: the **watch ribbon** (`static/components/ribbon.js`), a band of the last 24 hours and the
+next 6 on every page — every run coloured by how it ended, every fire still to come, a hairline
+at now. A console for work that happens while you are away should not make you navigate to find
+out whether any did.
+
+Fixed while rebuilding: `refreshStatus()` opened with a call to `gateNav`, a function deleted in
+0.142.0. It threw a ReferenceError on every 30-second tick, so the catch ran instead and the
+daemon lamp was switched OFF thirty seconds after every load and stayed off — a console
+permanently claiming the daemon was down. Nothing caught it because the poll was reached only on a
+timer no test outlives; the boot path and the poll are now the same call, which puts it under
+every UI test. And a dropdown is sized by its options rather than by the page: four stacked
+full-width selects on a chart card are one inline toolbar.
+
+### The steward hub: a project registers itself
+
+Answering "does a hub of child pages really need a routine firing at it every night" — for
+registration, no. A project needed its slug in `store.php`, its title/standfirst/module/width in
+`pages/generate.py`, and a generated `index.php` uploaded, all three the maintainer's and all on
+its schedule; until they landed `api.php` answered `400 unknown project` to a routine publishing
+perfectly correct state. `miz-grant-steward` lost three runs and part of a deadline to that queue.
+
+`store.php` now derives the project set from the store (`known_projects()`) and validates a slug's
+SHAPE rather than its membership of a list; `put-state` accepts a well-formed slug it has not seen,
+so a routine's first publish creates its project. `p.php` is one page shell that reads the
+project's own state document for its title, standfirst, language, body module and width (the new
+optional `page` key), and the root `.htaccess` routes `/<slug>/` to it for any path that is not a
+real directory — so a project that owns its body keeps serving exactly as it did. The converged
+one-shot `migrate.php` is deleted. The maintainer's recipe now says the sweep, the byte-diff and
+the root check are a script's job, not a turn's, and it holds the `scripts` capability and a
+`report` trigger so a sibling's ask reaches it when it arrives.
+
+### The reduction pass the revision owed
+
+A six-slice adversarial audit of the whole tree — every candidate refuted before it was
+proposed — produced 28 verified items. What it found is worth stating plainly: **the fat is
+thin, mechanical and everywhere**, and the largest single win was policy residue rather than
+duplication. Six surveyors independently reported `engine/`, `web/` routing, `readmodels/`,
+`search/`, the config/endpoint/daemon layer and `static/`'s shared modules as already clean,
+with their deliberate non-DRY choices (the flat per-kind observation renderers, the four
+`for_*` fallback rules, the three item-status precedences) correctly marked do-not-collapse.
+
+Removed outright, all verified reachable-by-nothing:
+
+- **`suggest_rules_permissions`** — the creation-time rules/permissions/deliberation
+  preselection. It has had no caller since 0.164.0 and is superseded by `recommend_setup`,
+  which judges a routine's setup on its PAGE, against the finished recipe, as advice beside
+  every toggle (D108) — creation cannot judge a recipe it is about to write. Three docs
+  asserted the opposite and were corrected. Its three `scaffold()` parameters went with it.
+- **The `params` and `progress` channels** through `scaffold → decompose → _pipeline`: no
+  caller ever supplied either, so `_params_markdown` always returned `""` and the three
+  generation prompts always concatenated an empty note.
+- **The `llm_process` contextvar** in `endpoints/instrument.py`, plus the `process=` parameter
+  the `ChatEndpoint` protocol never declared. The one live attributor is the daemon, which
+  stamps `process_id` on the way into the task centre.
+- **`existing_tags` / `normalize_tags`, `statemap.norm`, `groupnotes.write_note` /
+  `shared_group`, `pyworkflow`'s `funcs` and `format` keys, `api_workflows`' unreachable
+  markdown branch.** Each was alive through its own test and nothing else — the shape vulture
+  cannot see, because a test IS a caller.
+
+Written once instead of N times, where N had already drifted:
+
+- **`fold_usage`** (`endpoints/base.py`), beside the usage vocabulary it folds. Four
+  hand-rolled accumulators. `usage_total` now seeds `in`/`out` explicitly, because a fold adds
+  no key for a zero reading and status.json must carry both even for a run that spent nothing.
+- **`memo.fingerprint`** — `registry` and `util_stats` each carried a byte-identical nine-line
+  copy of a function documented as canonical. `util_stats`' snapshot also wrote through an
+  ad-hoc tmp+rename instead of `paths.atomic_write_json`, against the house rule.
+- **The child-run MODE vocabulary.** `engine/child.py` declares itself the single owner "so the
+  kind copy, the observations and the docs cannot drift apart" — while `obs_children.py` and
+  `cli_render.py` each hardcoded their own `"sequential" ? … : …` pair. Both now ask the owner.
+- **`queued_message`**, **`post_token`**, **`reload_into`/`rewrite_block`**, **`panelSection`**,
+  **`svgEl`**, **`deleter`**, **`statSection`**, the admin-token toggle, `resolve_token`'s copy
+  of `key_from_env_file`. Several of these are net-zero or slightly net-positive once the
+  docstring is counted, and they were kept for one reason each: the message-id regex is the only
+  thing keeping `answer-*` files out of a PUT, the OAuth POST is the one place a client secret
+  goes on the wire and its two copies are exercised a token-lifetime apart, and the admin header
+  name pairs with `engine/admin.py`'s constant.
+
+**And two the reduction pass itself caused, both caught by the gate.** The `panelSection`
+extraction removed the per-section `fill()` the Settings controls call to show the result of a
+delete or an add — the helper now hands `render` a `reload` callback, which is the honest shape
+anyway. And the console rework had renamed the palette in the stylesheets but not in the inline
+styles the views build in JS: `--muted`, `--line` and `--surface` no longer existed, so those
+rules resolved to nothing, while `--ink` and `--ink-2` still existed and now mean TEXT, so two
+panels were painting their background in the foreground colour. Every token referenced from JS
+now resolves against the real palette.
+
+**Two bugs found in passing.** `search/index.py` set `synchronous=NORMAL` on the first
+connection but not on the schema-mismatch rebuild — and it is the rebuilt connection that is
+cached for the process lifetime, so after any `SCHEMA_VERSION` bump the index fsynced every
+commit of what its own docstring calls a pure cache. And `groupnotes.TEXT_CAP` was applied only
+in the dead writer, so a real note — written by the sibling routine itself, unvalidated — reached
+the reader's state digest and prompt uncapped. The cap now runs on the read, which is the only
+half this module owns.
+
+Six colour regressions from the console rework were repaired too: the mechanical `--amber →
+--signal` migration had made the budget meter's warning state identical to its normal state, a
+finished child identical to a running one, and a tone literally named `amber` render cyan. Two
+hardcoded hexes that escaped the token migration (a group lane, the recipe-length bars) could not
+follow the theme and are now tokens.
+
+### Five converged migrations deleted, and one of them was reverting live work
+
+The rule is "historical data migrations are NOT kept: each runs once on the production instance
+and is deleted after convergence". Five were still in the daemon's boot path — traits→rules
+(0.164.0), the `library_sync:` config key (0.165.0), three forced seed utils (0.166.0), group
+members as records (0.181.0) and the settings-template layer (0.269.0). All five verified
+converged against the live instance, all five gone, with their call sites and their tests: about
+590 lines of `src/` and 250 of `tests/`, and the daemon's boot is five lines of real work again
+instead of five migrations interleaved with it.
+
+**`migrate_seed_utils` was not merely dead.** It force-copies `git-sync`, `instance-export` and
+`remote` from `util-seed/` over the live library on EVERY boot, and `remote` had since been
+revised twice by a routine — 509 lines to 529, adding the `pull` mkdir-p fix for R1140/R1176 with
+its own selftest. The library's own log carries two `migrate: install 1 seed util(s) over live`
+commits, so it had already thrown routine-authored work away twice, and the next restart would
+have done it again. The live version is synced back into `util-seed` first; all ten seed utils now
+match their live copies.
+
+### One LLM-JSON call, written once instead of four times
+
+Every suggester in `workflows/suggest.py` — rank the workflows, propose rules and permissions,
+recommend setup, write a routine's description — carried its own copy of the same twenty-line
+"ask, and retry once on a schema violation" loop. The copies had drifted: three called
+`for_system()` OUTSIDE the try, so an instance with no `system_model` configured got an
+`EndpointError` out of a function whose own comment promised it "never 500s the creation flow".
+Extracted to `_ask_json`, which returns `(obj, why)` so `suggest()` keeps telling the user whether
+the suggester was unavailable or its reply was malformed — a distinction a test pins, and which a
+first pass at this had quietly dropped.
+
+### The console palette was declared three times
+
+`:root`, `:root[data-theme="light"]` and a `prefers-color-scheme` copy each carried the whole
+token set, which is the shape that drifts: a colour corrected in one and not the others is a bug
+nobody sees until they switch theme. One `light-dark(light, dark)` declaration per token now, with
+the three states selected by `color-scheme` alone, and the two elevation shadows built from colour
+tokens because `light-dark()` takes colours only. Verified against the live daemon in all three
+states.
+
+### The seed library was months behind the live one
+
+`sync_seed_library_docs` only ever ADDS, so live edits win and `library-seed/` rots silently: six
+rules had drifted and six more existed only live, along with a permission and six workflow
+patterns. A fresh install was getting materially worse prose than the instance that authored it.
+Synced, and the two tests that pinned an exact workflow/version set now assert what actually
+matters (the three the system itself depends on are present; the version is read from the pattern).
+
+### `status-page`: the write-root expectation was wrong on every holder
+
+`expects: {fs-write: ["*"]}` produced an `interrupts` row on all seven holders and was false for
+each: a status page is published through an upload channel, and the documents a routine generates
+land in its own routine directory, which the sandbox always permits. Dropped — the same mistake
+`git-checkpoint` made and reverted within a day. The rule instead gains what its holders genuinely
+could not do without: fs-READ on the shared kit (R1160), plus the `WEB_AUTH_SOURCES` requirement
+and `gate.php?diag` (R1143/R1175) and the docroot-relative meaning of `gate-file.php?p=` (R1199).
+Thirteen holders were granted the read root.
+
+
 ## [0.276.0] — 2026-09-02
 
 ### The conversation-header fork button is gone; forking is per-message only (D113)

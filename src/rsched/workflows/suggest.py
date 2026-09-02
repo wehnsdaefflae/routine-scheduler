@@ -1,11 +1,19 @@
-"""LLM workflow matcher: rank library workflows against a refined instruction."""
+"""The suggesters: everything the console asks the SYSTEM MODEL on a person's behalf.
+
+Four of them, all the same shape — build a prompt, get one JSON object back, degrade quietly if
+it does not come: rank the library's workflows against an instruction, propose the rules and
+permissions a new routine should hold, recommend setup for an existing one, and write a routine's
+description at create time. None of them may fail the flow they sit in; a person is waiting on a
+form, and "pick it yourself" is always an acceptable answer where "500" is not.
+"""
 
 from __future__ import annotations
 
 import json
 
-from ..config import DEFAULT_DELIBERATION, DELIBERATION_LEVELS, ServerConfig
+from ..config import ServerConfig
 from ..endpoints import EndpointRegistry
+from ..paths import read_yaml
 from ..schema_guard import SchemaViolation, parse_reply
 from .library import list_workflows
 
@@ -31,6 +39,51 @@ SUGGEST_SCHEMA = {
     },
 }
 
+
+def _ask_json(server: ServerConfig, prompt: str, schema: dict, *,
+              purpose: str) -> tuple[dict | None, str]:
+    """One schema-valid JSON object from the system model: `(obj, "")`, or `(None, why)`.
+
+    Every suggester in this module wants exactly this and nothing more: ask once, and if the
+    reply does not satisfy the schema, show the model its own reply plus the violation and ask
+    again. One retry, because a model that cannot produce the shape twice will not produce it on
+    a third try either, and these calls sit in front of a person waiting on a form.
+
+    `why` is `"unavailable"` (no system model, or the endpoint failed) or `"malformed"` (it
+    answered twice and neither answer fit the schema). Both mean "pick it yourself", so most
+    callers drop it — but they are different facts about the instance, one a configuration
+    problem and one a model problem, and `suggest()` puts which it was in front of the user.
+
+    Written once because it was written four times, and the copies had already drifted: three of
+    them called `for_system()` OUTSIDE the try, so an instance with no system_model configured
+    got an EndpointError out of a function whose own comment promised it "never 500s the creation
+    flow". The fourth copy had the guard, and nothing made the other three grow one.
+    """
+    try:
+        endpoint, ref = EndpointRegistry(server).for_system()
+    except Exception:
+        return None, "unavailable"
+    messages = [{"role": "user", "content": prompt}]
+    for _attempt in range(2):
+        try:
+            completion = endpoint.complete(messages, model=ref.model, schema=schema,
+                                           temperature=ref.temperature, effort=ref.effort,
+                                           max_tokens=ref.max_tokens, timeout=120,
+                                           purpose=purpose, kind="suggest")
+        except Exception:
+            return None, "unavailable"
+        try:
+            obj = completion.parsed if completion.parsed is not None else parse_reply(
+                completion.text, schema)
+        except SchemaViolation as exc:
+            messages.append({"role": "assistant", "content": completion.text[:2000]})
+            messages.append({"role": "user", "content":
+                             f"Invalid: {exc}. Reply again with ONLY the JSON object."})
+        else:
+            return obj, ""
+    return None, "malformed"
+
+
 def suggest(server: ServerConfig, instruction: str) -> dict:
     candidates = list(list_workflows(server.libraries_home))
     if not candidates:
@@ -43,177 +96,32 @@ def suggest(server: ServerConfig, instruction: str) -> dict:
         "An instruction for a recurring LLM agent routine needs a control-flow workflow from "
         "the library below. Rank up to 3 fitting workflows with confidence 0-1 and a one-line "
         "reason each; set none_fit=true (with new_workflow_hint) if nothing fits well.\n\n"
+        # R1165/R1181: two patterns can describe the same SUBJECT ("coach an application",
+        # "steward a project") and differ only in the machinery a routine is born with — where
+        # its state lives, what it publishes to, which services it assumes. Ranked on subject
+        # words alone the matcher picks the one whose prose is most colourful, and the routine
+        # is born wired to a store or a host it will never reach. So the deciding dimension is
+        # stated, and stated first.
+        "Rank on MECHANISM before subject. What decides the fit is the shape of the work — how "
+        "the routine's state persists between runs, what it publishes or delivers, what it "
+        "reads each run, and whether a human edits its output in between — not how many of the "
+        "instruction's topic words a workflow's prose happens to repeat. Two workflows that "
+        "describe the same subject with different machinery are NOT close: picking the wrong "
+        "one gives the routine a persistence or publishing model it cannot reach. Where a "
+        "workflow states which mechanism it is for, treat that as binding.\n\n"
         f"INSTRUCTION:\n{instruction}\n\nLIBRARY:\n{listing}\n\n"
         "Reply with ONLY one JSON object matching this schema (no prose):\n"
         + json.dumps(SUGGEST_SCHEMA)
     )
-    endpoint, ref = EndpointRegistry(server).for_system()
-    messages = [{"role": "user", "content": prompt}]
-    obj = None
-    for _attempt in range(2):
-        try:
-            completion = endpoint.complete(messages, model=ref.model,
-                                           schema=SUGGEST_SCHEMA, temperature=ref.temperature,
-                                           effort=ref.effort, max_tokens=ref.max_tokens,
-                                           timeout=120, purpose="Rank library workflows",
-                                           kind="suggest")
-        except Exception:
-            # same graceful discipline as the sibling suggesters: creation flows degrade
-            # to manual picking, they never 500 the creation flow
-            return {"suggestions": [], "none_fit": True,
-                    "new_workflow_hint": "suggester unavailable; pick manually"}
-        try:
-            obj = completion.parsed if completion.parsed is not None else parse_reply(
-                completion.text, SUGGEST_SCHEMA)
-            break
-        except SchemaViolation as exc:
-            messages.append({"role": "assistant", "content": completion.text[:2000]})
-            messages.append({"role": "user", "content":
-                             f"Invalid: {exc}. Reply again with ONLY the JSON object."})
+    obj, why = _ask_json(server, prompt, SUGGEST_SCHEMA, purpose="Rank library workflows")
     if obj is None:
-        return {"suggestions": [], "none_fit": True,
-                "new_workflow_hint": "suggester reply was malformed; pick manually"}
+        hint = ("suggester reply was malformed; pick manually" if why == "malformed"
+                else "suggester unavailable; pick manually")
+        return {"suggestions": [], "none_fit": True, "new_workflow_hint": hint}
     known = {w["slug"] for w in candidates}
     obj["suggestions"] = [s for s in obj.get("suggestions", []) if s["slug"] in known]
     obj["suggestions"].sort(key=lambda s: -s["confidence"])
     return obj
-
-
-# --- tag vocabulary: every element carries >=3 tags; a new routine reuses the vocabulary --------
-
-
-def existing_tags(server: ServerConfig) -> list[str]:
-    """Union of tags already in use across every element — the vocabulary a new routine reuses."""
-    import yaml
-
-    from .. import library_docs, utils_lib
-    tags: set[str] = set()
-    for w in list_workflows(server.libraries_home):
-        tags.update(w.get("tags") or [])
-    for home in (server.rules_home, server.permissions_home):
-        for d in library_docs.list_docs(home):
-            tags.update(d.get("tags") or [])
-    for u in utils_lib.list_utils(server.libraries_home):
-        tags.update(u.get("tags") or [])
-    for y in sorted(server.routines_home.glob("*/routine.yaml")):
-        try:
-            tags.update((yaml.safe_load(y.read_text(encoding="utf-8")) or {}).get("tags") or [])
-        except Exception:
-            pass
-    return sorted(t for t in tags if isinstance(t, str) and t)
-
-
-def normalize_tags(raw: list) -> list[str]:
-    """Lowercase kebab-case, de-duplicated, at most 3 — the on-write shape for suggested tags."""
-    import re as _re
-    seen: set[str] = set()
-    out: list[str] = []
-    for t in raw or []:
-        t = _re.sub(r"[^a-z0-9]+", "-", str(t).strip().lower()).strip("-")
-        if t and t not in seen:
-            seen.add(t)
-            out.append(t)
-    return out[:3]
-
-
-RULES_PERMS_SCHEMA = {
-    "type": "object", "additionalProperties": False,
-    "required": ["rules", "permissions", "deliberation"],
-    "properties": {"rules": {"type": "array", "items": {"type": "string"}},
-                   "permissions": {"type": "array", "items": {"type": "string"}},
-                   "deliberation": {"type": "string", "enum": list(DELIBERATION_LEVELS)}},
-}
-
-
-def suggest_rules_permissions(server: ServerConfig, instruction: str,
-                              workflow_slug: str = "") -> dict:
-    """Preselect the general RULES that will bind a new routine, its permissions
-    (engine-enforced capabilities), and its deliberation level, from its
-    instruction + chosen workflow. Returns {'rules': [...], 'permissions': [...],
-    'deliberation': <level>}, validated against the library; falls back to the defaults
-    when no endpoint answers. The creation flow shows the result as an editable preselection —
-    this is a first pass, not a decision.
-    """
-    from .. import library_docs
-    from ..config import DEFAULT_PERMISSIONS, DEFAULT_RULES
-
-    rules = library_docs.list_docs(server.rules_home)
-    perms = library_docs.list_docs(server.permissions_home)
-    fallback = {"rules": [r for r in DEFAULT_RULES if r in {d["slug"] for d in rules}],
-                "permissions": [p for p in DEFAULT_PERMISSIONS if p in {d["slug"] for d in perms}],
-                "deliberation": DEFAULT_DELIBERATION}
-    if not rules and not perms:
-        return fallback
-    workflow_note = ""
-    if workflow_slug:
-        wf = next((w for w in list_workflows(server.libraries_home)
-                   if w["slug"] == workflow_slug), None)
-        if wf:
-            workflow_note = (f"\nCHOSEN WORKFLOW: {wf['slug']} — {wf['description']}\n"
-                             f"Its suggested rules: {wf.get('includes') or '(none)'}")
-    r_list = "\n".join(f"- {d['slug']}: {d['summary']}" for d in rules)
-    p_list = "\n".join(f"- {d['slug']}: {d['summary']}"
-                       + (f" [requires: {d['requires']}]" if d.get("requires") else "")
-                       for d in perms)
-    prompt = (
-        "A new recurring LLM-agent routine is being created. Pick the general RULES that will "
-        "bind it (shared library prose the run applies to its own case) and its PERMISSIONS "
-        "(conduct docs whose required capabilities the engine then enforces) from the catalogs "
-        "below.\n\n"
-        f"INSTRUCTION:\n{instruction}\n{workflow_note}\n\n"
-        f"RULES:\n{r_list}\n\nPERMISSIONS:\n{p_list}\n\n"
-        "Guidance: include ask-policy and decision-record for almost everything, and "
-        "intent-inference wherever the user will correct the routine's output. "
-        "From the rest take only what the task actually exercises: "
-        "evidence-discipline whenever the routine REPORTS findings someone acts on; "
-        "change-restraint and error-recovery for routines that edit code or drive tools; "
-        "independent-verification when the deliverable is irreversible, outward-facing, or "
-        "expensive to redo; review-recall for review/audit/scan tasks; decision-commitment for "
-        "open-ended work on a tight turn budget; teaching-insights only when a human reads the "
-        "output as it is produced; interface-design when the routine BUILDS or restyles UI; "
-        "interface-copy when it writes text a person reads as a product surface (UI labels, "
-        "notifications, report headings); test-design and failure-visibility when the routine "
-        "WRITES code that others will run. Each rule is one more thing the run must read and "
-        "honour — do not take the whole set by default.\n"
-        "Pick permissions conservatively: only what the task clearly needs (e.g. a "
-        "messaging-* channel only if the task must reach a person outside the web UI; "
-        "run-history only if runs build on each other's details beyond the last summary; "
-        "shell almost never).\n\n"
-        "Also pick DELIBERATION — how much of the model's thinking should land on paper "
-        "as it works: 'terse' for purely mechanical pipelines (fetch, convert, file); "
-        "'standard' for ordinary tasks; 'deliberate' when steps involve judgment that "
-        "benefits from world knowledge beyond the immediate inputs (evaluating, ranking, "
-        "curating, writing for a reader); 'think-on-paper' only for genuinely "
-        "decision-heavy analysis where reasoning must persist across a long run.\n\n"
-        "Reply with ONLY one JSON object matching this schema (no prose):\n"
-        + json.dumps(RULES_PERMS_SCHEMA)
-    )
-    endpoint, ref = EndpointRegistry(server).for_system()
-    messages = [{"role": "user", "content": prompt}]
-    for _attempt in range(2):
-        try:
-            completion = endpoint.complete(messages, model=ref.model,
-                                           schema=RULES_PERMS_SCHEMA, temperature=ref.temperature,
-                                           effort=ref.effort, max_tokens=ref.max_tokens,
-                                           timeout=120,
-                                           purpose="Suggest rules & permissions", kind="suggest")
-        except Exception:
-            return fallback
-        try:
-            obj = completion.parsed if completion.parsed is not None else parse_reply(
-                completion.text, RULES_PERMS_SCHEMA)
-            known_r = {d["slug"] for d in rules}
-            known_p = {d["slug"] for d in perms}
-            level = obj.get("deliberation")
-            return {"rules": [r for r in obj.get("rules", []) if r in known_r],
-                    "permissions": [p for p in obj.get("permissions", []) if p in known_p],
-                    "deliberation": level if level in DELIBERATION_LEVELS
-                                    else DEFAULT_DELIBERATION}
-        except SchemaViolation as exc:
-            messages.append({"role": "assistant", "content": completion.text[:2000]})
-            messages.append({"role": "user", "content":
-                             f"Invalid: {exc}. Reply again with ONLY the JSON object."})
-    return fallback
 
 
 # ---------------------------------------------------- recommend_setup() ------------------------
@@ -312,33 +220,17 @@ def recommend_setup(server: ServerConfig, cfg) -> dict:
         "Reply with ONLY one JSON object matching this schema (no prose):\n"
         + json.dumps(RECOMMEND_SCHEMA)
     )
-    endpoint, ref = EndpointRegistry(server).for_system()
-    messages = [{"role": "user", "content": prompt}]
-    for _attempt in range(2):
-        try:
-            completion = endpoint.complete(messages, model=ref.model, schema=RECOMMEND_SCHEMA,
-                                           temperature=ref.temperature, effort=ref.effort,
-                                           max_tokens=ref.max_tokens, timeout=120,
-                                           purpose="Recommend routine setup", kind="suggest")
-        except Exception:
-            return fallback
-        try:
-            obj = completion.parsed if completion.parsed is not None else parse_reply(
-                completion.text, RECOMMEND_SCHEMA)
-        except SchemaViolation as exc:
-            messages.append({"role": "assistant", "content": completion.text[:2000]})
-            messages.append({"role": "user", "content":
-                             f"Invalid: {exc}. Reply again with ONLY the JSON object."})
-            continue
-        recommend_of: dict[str, bool] = {}
-        reason_of: dict[str, str] = {}
-        for it in obj.get("items", []):
-            slug = it.get("slug")
-            if slug in kind_of:                       # drop hallucinated slugs
-                recommend_of[slug] = bool(it.get("recommend"))
-                reason_of[slug] = (it.get("reason") or "").strip()
-        return _rows(recommend_of, reason_of, available=True)
-    return fallback
+    obj, _why = _ask_json(server, prompt, RECOMMEND_SCHEMA, purpose="Recommend routine setup")
+    if obj is None:
+        return fallback
+    recommend_of: dict[str, bool] = {}
+    reason_of: dict[str, str] = {}
+    for it in obj.get("items", []):
+        slug = it.get("slug")
+        if slug in kind_of:                           # drop hallucinated slugs
+            recommend_of[slug] = bool(it.get("recommend"))
+            reason_of[slug] = (it.get("reason") or "").strip()
+    return _rows(recommend_of, reason_of, available=True)
 
 
 # ---------------------------------------------------- generate_description() -------------------
@@ -365,7 +257,7 @@ def _sibling_catalog(server: ServerConfig) -> str:
     lines: list[str] = []
     for y in sorted(server.routines_home.glob("*/routine.yaml")):
         try:
-            cfg = yaml.safe_load(y.read_text(encoding="utf-8")) or {}
+            cfg = read_yaml(y, {})
         except (OSError, yaml.YAMLError):
             continue
         nm = str(cfg.get("name") or y.parent.name)
@@ -413,26 +305,8 @@ def generate_description(server: ServerConfig, *, name: str, instruction: str,
         "Keep it factual and specific — 3 to 6 sentences, at most ~700 characters. Reply with "
         "ONLY one JSON object matching this schema (no prose):\n" + json.dumps(DESCRIBE_SCHEMA)
     )
-    try:
-        endpoint, ref = EndpointRegistry(server).for_system()
-    except Exception:
-        return name                              # no system model configured — keep the name
-    messages = [{"role": "user", "content": prompt}]
-    for _attempt in range(2):
-        try:
-            completion = endpoint.complete(messages, model=ref.model, schema=DESCRIBE_SCHEMA,
-                                           temperature=ref.temperature, effort=ref.effort,
-                                           max_tokens=ref.max_tokens, timeout=120,
-                                           purpose="Generate routine description", kind="suggest")
-        except Exception:
-            return name
-        try:
-            obj = completion.parsed if completion.parsed is not None else parse_reply(
-                completion.text, DESCRIBE_SCHEMA)
-            return str(obj.get("description") or "").strip() or name
-        except SchemaViolation as exc:
-            messages.append({"role": "assistant", "content": completion.text[:2000]})
-            messages.append({"role": "user", "content":
-                             f"Invalid: {exc}. Reply again with ONLY the JSON object."})
-    return name
+    obj, _why = _ask_json(server, prompt, DESCRIBE_SCHEMA, purpose="Generate routine description")
+    if obj is None:
+        return name                          # no system model, or no usable reply — keep the name
+    return str(obj.get("description") or "").strip() or name
 
