@@ -89,7 +89,9 @@ def _secret_nodes(cfg: RoutineConfig, needed: dict[str, list[str]],
     from ..machines import machine_env_vars
 
     out = []
-    engine_injected = machine_env_vars()
+    # Names the ENGINE supplies per run, not the store: reporting them as missing would send
+    # the operator looking for a secret to add that nothing can add.
+    engine_injected = machine_env_vars() | {"RSCHED_ROUTINE", "RSCHED_API_TOKEN"}
     grants = cfg.grants or {}
     for name in sorted(needed):
         if name in engine_injected or name.endswith("_ACCESS_TOKEN"):

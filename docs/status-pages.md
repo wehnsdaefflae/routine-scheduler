@@ -107,9 +107,10 @@ directions.
 the two copies drifted: the feedback-cursor default in `api.php` and the 16 MiB `MAX_BODY` in
 `store.php` were fixed straight on the host and existed nowhere else, one re-bootstrap away from
 being silently reverted — because a routine uploads a shared asset only when the path is ABSENT,
-so nothing propagates in either direction on its own. `steward-hub-maintainer` now holds a write
-root on `web/steward/` and reconciles BOTH directions every run: master ahead of host is deployed,
-host ahead of master is committed back, and "byte-identical" is one of its stopping conditions.
+so nothing propagates in either direction on its own. That reconciliation — master ahead of host is deployed, host ahead of master is committed back —
+was a routine's standing job for a while. It is now an operator step, for the reason in
+"Nobody deploys for anybody" below: the kit is the hub's own code, and there is no cadence at
+which it needs looking at. It changes when we change it.
 
 **Why every stored file ends in `.php` and opens with a guard line.** The store holds the
 reader's own words and the only copy of his decisions, and "the directory is denied to HTTP" was
@@ -654,8 +655,58 @@ otherwise and left it reasoning instead; a proof a run reasons about is a proof 
 Every listed link is asked for rather than one of them, because each document is its own path and
 its own upload, so one that resolves says nothing about the next.
 
-`steward-hub-maintainer` carries a fourth, because it owns the kit in two places: host and master
-compared both ways, with both hashes recorded, since one hash cannot show a drift.
+A fourth proof belongs to whoever deploys the kit, because it exists in two places: host and
+master compared both ways, with both hashes recorded, since one hash cannot show a drift.
+
+## Nobody deploys for anybody
+
+There was a routine whose job was putting other routines' files on the host: page bodies,
+stylesheets, documents. Everything else about it had already been removed — a project registers
+itself by publishing, `/<slug>/` is served generically by `p.php`, the hub's card order is derived
+from its own state — and what was left was file placement for ten siblings that each already run on
+their own schedule. So every document waited for a second routine's run, every deploy needed a
+staged copy in the group store and a report, and a page could stand broken for hours with its fix
+already written down on the first routine's disk. That is what happened.
+
+It needed to exist for one reason: the FTP credential for the host is one account rooted at the
+document root, so handing it to a publisher handed over every other project's directory, all of
+`_store/`, and the gate itself. The unit of the credential was the whole host; the unit of trust is
+one project.
+
+That is now closed in the `ftp` util rather than by a routine. A source that declares `dir` is
+CONFINED to it — paths are read relative to it, `..` may not climb out, an absolute path is refused
+— and `dir` may contain `{routine}`, which resolves to WHO is calling from the environment the
+engine sets. One credential, many callers, each in the directory named after it, and nothing
+configured per caller. A routine cannot forge its own environment, and a call with no caller name
+is refused rather than given the account root. `deny_ext: ["php"]` completes it: the directory is
+a publisher's as storage, not as a place to install code the server would run.
+
+Naming the directory after the caller is what removes the maintenance. Every other answer to "which
+directory is yours" is a thing to keep in step: an FTP account per project, a central map, or a
+variable set on each routine page — each of which is fine until the routine nobody thought about is
+created. Nine ROUTINES were renamed once so the derivation is always right — not the directories, which
+would have changed every page URL and, for the weight-loss coach, broken an installed PWA, a
+GPSLogger configuration and an OAuth redirect. Nothing outside this system knows a slug.
+
+What it does NOT close: the grant that lets a routine use the credential also lets that routine's
+own `scripts/` declare `FTP_SOURCES` and speak FTP directly, unconfined. The confinement binds the
+tool, not the credential. It stops the realistic failure — a misread path, an instruction arriving
+in ingested content — and it does not stop a routine that sets out to go around it. Closing that
+means the credential never reaching routine-authored code at all, which is the hub-side upload op
+this page's earlier draft describes and nobody has needed yet.
+
+Nothing sets the confinement automatically, and deliberately so: a project's name on the host need
+not match the routine's slug — `ards-consulting-steward` publishes to `/ards` — so a directory
+derived from the slug would be wrong for most of them, silently. It is one variable on the routine
+page, set where the FTP grant is decided anyway. What catches a publisher that has none is the rule,
+which tells it to ask for something one level above its own directory and require the refusal before
+it places anything. That is the same move as the link check: an unconfined publisher's only symptom
+is that nothing stops it, so the run goes looking for the symptom.
+
+Twelve publishers now carry their own confinement and place their own files. `steward-hub-maintainer`
+is disabled, its directory kept for its ledger and memory. Deploying the kit itself stays operator
+work — the unconfined source, used from the library repo when the kit changes, `links.php` before
+`store.php` — because a hub cannot safely update through itself, and a release is not a cadence.
 
 ### And the host stopped taking the run's word for it
 

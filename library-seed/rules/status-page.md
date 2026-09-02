@@ -172,6 +172,29 @@ directory the site lives in and refuses whatever resolves outside, so
 generated is on YOUR disk, not the host's. It has to be uploaded into your own directory on the
 site first, then linked by the short path it has there (`/gate-file.php?p=/<your slug>/report.pdf`).
 
+## Your directory on the host is yours to fill
+
+You have one, named for your project, and putting things in it is your own job — not another
+routine's. Your page's own script and stylesheet go there if your page has them; so does every
+document you list. Nothing is staged for somebody else to carry across and nothing is asked for:
+you place the file, then you fetch its link and require the file back, in the same run.
+
+You cannot reach any other project's directory: your access is confined to your own, and you are
+refused before a byte moves if you try. That confinement is why this is safe to be your job
+rather than one privileged routine's — so satisfy yourself that you actually have it, once, before
+you place anything. Ask for something one level above your own directory and require the refusal.
+If it answers instead, you are not confined: place nothing, and report it. An unconfined publisher
+can reach every other project's directory, everyone's stored decisions and the gate itself, and the
+only symptom is that nothing stops you.
+
+You may not put executable page code there either — anything the web server would RUN rather than
+serve. The directory is yours as storage, not as a place to install something.
+
+There used to be a routine that did this for everyone, and it is gone. It meant every document
+waited for a second routine's run, every deploy needed a handover, and a page could sit broken
+for hours with its fix already written down somewhere. You run on your own schedule; the work is
+small; do it yourself and prove it in the same breath.
+
 That needs two things you may not have — a way to move a file onto the host, plus somewhere to
 write it while you work. If either is missing, do not link the document anyway. List it as
 PENDING, in your own words, saying what exists and what is stopping it from reaching him, then

@@ -17,6 +17,64 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.279.0] — 2026-09-02
+
+### Changed — nobody deploys for anybody: `steward-hub-maintainer` retired
+
+The hub's maintainer had already lost every reason to run on a clock (0.277.0). What was left was
+file placement for ten siblings that each already run on their own schedule — so every document
+waited for a second routine's run, every deploy needed a staged copy and a report, and a page could
+stand broken for hours with its fix already sitting on the first routine's disk. It existed for one
+reason: the host's FTP credential is a single account rooted at the document root, so handing it to
+a publisher handed over every other project's directory, all of `_store/`, and the gate itself.
+
+That is now closed in the `ftp` util instead of by a routine, using what already existed rather
+than a new mechanism.
+
+- **`ftp` util — `dir` is a confinement, not a convenience.** It used to be a directory the util
+  `cd`'d into after login, which an absolute path or a `..` walked straight out of. Now every op
+  resolves its remote path under it and refuses anything that leaves. Sources without `dir` are
+  unchanged. New `deny_ext` refuses WRITING given extensions, for a source pointing at a web root.
+  Both pinned by the offline selftest. (Its missing PEP 723 block, a pre-existing nonconformance,
+  is fixed in the same pass.)
+- **`{routine}` in `dir` — the directory is named after whoever is calling.** The engine now
+  exports `RSCHED_ROUTINE` to util subprocesses (declared-only, like every other injected name),
+  so `"dir": "/{routine}"` gives one credential to many callers with each confined to its own
+  directory and NOTHING configured per caller — including a caller that does not exist yet. A
+  routine cannot forge its environment, and a call with no caller name is refused rather than
+  given the account root. Every other answer to "which directory is yours" needed maintaining: an
+  account per project, a central map, or a per-routine variable that is one more thing to set and
+  forget.
+- **Nine ROUTINES renamed to match their directory on the host**, which is what makes the
+  derivation possible — `ards-consulting-steward` → `ards`, `personal-weight-loss-coach` →
+  `weightloss`, and seven more. Renaming the directories instead was the obvious reading and the
+  wrong one: it would have changed every page URL, made every routine republish its card, and for
+  the weight-loss coach — whose directory is a published PWA — broken a service-worker scope, a
+  webmanifest, an installed app on a phone, a GPSLogger device configuration and an OAuth redirect
+  URI registered with Google. Nothing outside this system knows a routine slug, so the slugs moved
+  and the host stood still. The old slugs are long and distinctive, which also makes the textual
+  sweep safe; the reverse would not have been, since `ards` is also a medical term.
+- **A publisher proves its own confinement.** Nothing is auto-set at creation and no flag declares
+  the requirement: the confining directory is the project's name on the far side, which need not
+  match the routine's slug (`ards-consulting-steward` publishes to `/ards`), so guessing it would
+  write a wrong directory silently. Instead the rule makes the publisher ask for something one
+  level above its own and require the refusal — place nothing and report if it answers. That is
+  the same discipline as the link check beside it: an unconfined publisher's only symptom is that
+  nothing stops it. The confinement also binds the TOOL, not the credential: a routine's own
+  `scripts/` may declare `FTP_SOURCES` and speak FTP directly, so this stops a misread path or an
+  instruction arriving in ingested content, not a routine that sets out to go around it.
+- **`status-page` rule** gains "Your directory on the host is yours to fill": place your own page
+  assets and documents, in your own run, and prove them by fetching. One copy, reaching all
+  fourteen holders on their existing schedules.
+- **`steward-hub-maintainer` disabled**, trigger removed, directory kept for its ledger and memory.
+  `miz-grant-steward`'s recipe no longer stages assets for it or asks it to register anything —
+  registration has not existed since `p.php` — and three routine memories that still described the
+  old ownership are corrected.
+
+Deploying the kit itself stays operator work: the unconfined source, from the library repo, when
+the kit changes, `links.php` before `store.php`. A hub cannot safely update through itself, and a
+release is not a cadence.
+
 ## [0.278.0] — 2026-09-02
 
 ### Fixed — a page whose every document link 404'd, and the proof that said otherwise

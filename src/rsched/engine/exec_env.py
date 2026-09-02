@@ -80,6 +80,13 @@ def _extra_secrets(ctx: RunContext) -> dict[str, str]:
     value of the same name for its runs, and reaches no other routine. There is no grant to
     check: a scoped secret is the routine's own, implicitly exposed to it (secrets.py).
 
+    RSCHED_ROUTINE: WHO is calling, which is the one thing a util cannot be told by its own
+    caller. A routine cannot forge its environment, so a util handed this can scope itself to
+    the caller instead of to an argument — the `ftp` util resolves `{routine}` in a source's
+    base directory with it, which is what lets one shared credential serve many routines with
+    nothing configured per routine. Injected for every run and, like every other name here,
+    delivered only to a util that DECLARES it.
+
     RSCHED_API_TOKEN (R94, operator decision 2026-08-05: ENFORCE): the reserved name a
     util declares to talk to the daemon API resolves to the server's ROUTINE token — the
     read-only tier — and OVERRIDES any secrets-store value for it (extra_secrets win the
@@ -91,6 +98,7 @@ def _extra_secrets(ctx: RunContext) -> dict[str, str]:
     routine_token = str(ctx.server.routine_token or "")
     if routine_token:
         out["RSCHED_API_TOKEN"] = routine_token
+    out["RSCHED_ROUTINE"] = ctx.routine.slug
     return out
 
 def _unbound_connection_request(ctx: RunContext, name: str) -> str:

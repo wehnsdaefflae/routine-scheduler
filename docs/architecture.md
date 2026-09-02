@@ -993,7 +993,13 @@ util stays deleted (git-recoverable — seed utils only land at repo creation).
   boot) authorizes read-only methods plus an explicit non-config allowlist
   (`web/app.py ROUTINE_TOKEN_MUTATIONS`; empty today — the wild-usage survey found only
   reads plus the config writes this seal stops). The
-  engine injects the routine token into util subprocesses as `RSCHED_API_TOKEN`
+  engine injects the routine token into util subprocesses as `RSCHED_API_TOKEN`, and the
+  calling routine's slug as `RSCHED_ROUTINE` — both declared-only like every other injected
+  name. `RSCHED_ROUTINE` is WHO is calling, the one thing a util cannot be told by its own
+  caller: a routine cannot forge its environment, so a util handed it can scope itself to the
+  caller rather than to an argument (the `ftp` util resolves `{routine}` in a source's base
+  directory with it, which is how one shared credential serves many routines with nothing
+  configured per routine)
   (`engine/executor._extra_secrets`, overriding any secrets-store value for that reserved
   name), so a run holding the API secret can READ the daemon API but every config-mutating
   route (routine/conversation PATCH, permissions PUT, grant decisions, settings, triggers,
