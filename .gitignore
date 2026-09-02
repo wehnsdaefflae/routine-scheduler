@@ -17,3 +17,6 @@ audit/
 .mypy_cache/
 .coverage
 /LEDGER.md
+
+# Claude Code CLI writes local settings into the tree it works on — never commit it
+.claude/

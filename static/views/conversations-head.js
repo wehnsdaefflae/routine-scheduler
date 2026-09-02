@@ -194,7 +194,7 @@ export function renderHead(head, detail, stateChip, { slug, isLive, onListChange
   caps.append(capBody);
   // Branching (F325): fork this thread at a turn, or hand a branch's result back. Sits beside
   // delete because both are lifecycle decisions about the conversation as a whole.
-  const branchBar = branchControls(slug, { isLive });
+  const branchBar = branchControls(slug);
   head.replaceChildren(
     el("div", { class: "conv-head-row" }, stateChip, title,
       el("span", { style: "margin-left:auto" }), branchBar.node, del),

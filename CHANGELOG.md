@@ -17,6 +17,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.276.0] — 2026-09-02
+
+### The conversation-header fork button is gone; forking is per-message only (D113)
+
+Operator: the header `⑂ branch` button sat "at the top ... where we don't want it." It was the
+last entry point that forked at a TYPED turn number — the translation-from-"this reply"-to-a-number
+that R1006 already removed for the per-message control. Removed from `branchControls`
+(`static/components/branches.js`): the button, its prompt handler and the now-unused `isLive`
+parameter (dropped at the `conversations-head.js` call site too). Kept, exactly as the operator
+asked: the per-message `⑂ branch from here` on any reply (R1006), the lineage line, and the
+`↩ hand back` button. `forkAt` stays the one guarded fork path. `tests/ui/test_branches.py`
+now forks through the per-message control and asserts the header carries no fork button.
+
+### Goal-panel condition rows no longer break per-word or overflow the sidebar (F421)
+
+Operator: in the run/conversation sidebar goal panel, the condition text (`.goal-row`) broke at
+every word while a long `.goal-note` did not break at all, running past the viewport. Cause: the
+`.goal-meta` holding the note was `white-space: nowrap`, giving it an unshrinkable width that
+overflowed the narrow sidebar AND starved the flexible `.goal-text` down to ~0, forcing per-word
+wrapping. `.goal-meta` now shrinks and wraps (`min-width: 0; overflow-wrap: anywhere`, nowrap
+dropped), so the note wraps and the condition text keeps its width.
+
 ## [0.275.0] — 2026-09-01
 
 ### A reply carries a ⟲ rewind-to-here control, beside ⑂ branch

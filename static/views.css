@@ -623,7 +623,7 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
 .goal-row.blocked { opacity: .6; font-style: italic; }
 .goal-text { min-width: 0; flex: 1; }
 .goal-text:focus { outline: 1px solid var(--line-2); border-radius: 4px; }
-.goal-meta { font-size: 10px; white-space: nowrap; }
+.goal-meta { font-size: 10px; min-width: 0; overflow-wrap: anywhere; }
 .goal-note { color: var(--faint); }
 /* v2: a verdict the verifier objected to and the run re-asserted. Amber, not red — the run
    is not wrong, the two disagreed, and the operator decides. */

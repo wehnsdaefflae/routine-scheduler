@@ -11,9 +11,9 @@ import { confirmDialog, promptDialog } from "/static/components/dialog.js";
 import { navigate } from "/static/router.js";
 import { el, toast } from "/static/util.js";
 
-// Fork this conversation at `turn` — the ONE fork path, shared by the header's ⑂ button (which
-// asks for a turn number) and by the per-message "branch from here" control in the chat (where
-// the clicked reply IS the fork point, R1006). Two call sites, one set of guards, one toast.
+// Fork this conversation at `turn` — the fork path used by the per-message "branch from here"
+// control in the chat, where the clicked reply IS the fork point (R1006). One set of guards, one
+// toast. (The header fork button was removed in D113; forking is a per-message act now.)
 export async function forkAt(slug, turn, { isLive } = {}) {
   if (isLive?.()) {
     toast("this conversation is mid-reply — branch it once the reply has finished", 4000,
@@ -59,13 +59,11 @@ export async function rewindTo(slug, runId, turn, { isLive } = {}) {
   } catch (err) { toast(err.message, 4000, { error: true }); return null; }
 }
 
-// Fork button + hand-back button (the latter only on a conversation that HAS a parent), plus a
-// lineage line. Returns { node, refresh } — refresh re-reads the lineage after a fork.
-export function branchControls(slug, { isLive }) {
+// Hand-back button (only on a conversation that HAS a parent) plus a lineage line. Forking is
+// now a per-message control on the reply itself (R1006), not a header button (D113). Returns
+// { node, refresh } — refresh re-reads the lineage after a fork.
+export function branchControls(slug) {
   const lineage = el("span", { class: "faint small" });
-  const forkBtn = el("button", { class: "btn small",
-    title: "fork this conversation at a turn into a new one that inherits its history" },
-    "⑂ branch");
   const backBtn = el("button", { class: "btn small", hidden: true,
     title: "hand this branch's result back to the conversation it was forked from" },
     "↩ hand back");
@@ -97,26 +95,6 @@ export function branchControls(slug, { isLive }) {
   const refresh = () => api(`/api/conversations/${slug}/lineage`)
     .then(renderLineage).catch(() => {});
 
-  // The header entry point stays, as the way to fork at a turn you can NAME (a step deep
-  // inside a reply's work fold, say) — but it is no longer the only one: typing a turn number
-  // to split a conversation you are reading is a translation the reader should not have to do.
-  forkBtn.onclick = async () => {
-    if (isLive()) {
-      toast("this conversation is mid-reply — branch it once the reply has finished", 4000,
-        { error: true });
-      return;
-    }
-    const ans = await promptDialog(
-      "Branch this conversation: it inherits the history THROUGH which turn? The new "
-      + "conversation starts from that point with this one's config; this one is untouched. "
-      + "(Or use ⑂ on the reply you want to branch from, in the conversation itself.)",
-      { placeholder: "turn number" });
-    if (ans == null) return;
-    forkBtn.disabled = true;
-    try { await forkAt(slug, parseInt(ans, 10), { isLive }); }
-    finally { forkBtn.disabled = false; }
-  };
-
   backBtn.onclick = async () => {
     const summary = await promptDialog(
       "Hand this branch's result back to its parent. Your summary is what the parent reads — "
@@ -140,5 +118,5 @@ export function branchControls(slug, { isLive }) {
 
   refresh();
   return { node: el("span", { class: "row", style: "gap:6px;align-items:center" },
-    lineage, forkBtn, backBtn), refresh };
+    lineage, backBtn), refresh };
 }

@@ -38,7 +38,7 @@ def _finished_run(conv_dir, ts="20260827-100000"):
     run_dir = conv_dir / "runs" / ts
     run_dir.mkdir(parents=True, exist_ok=True)
     (run_dir / "transcript.jsonl").write_text(
-        "".join(json.dumps(e) + "\n" for e in EVENTS), encoding="utf-8")
+        "".join(json.dumps(e) + "\n" for e in REPLY_EVENTS), encoding="utf-8")
     atomic_write_json(run_dir / "status.json", {"state": "finished", "turn": 2})
 
 
@@ -51,9 +51,12 @@ def _answer_modal(ui_page, value):
     dlg.get_by_role("button", name="ok").click()
 
 
-def _fork_at(ui_page, turn=1):
-    ui_page.get_by_role("button", name="⑂ branch").click()
-    _answer_modal(ui_page, str(turn))
+def _fork_at(ui_page):
+    """Fork via the per-message control on the reply — the only fork path since the header
+    ⑂ branch button was removed (D113). The fork point is the reply's own turn (2 here)."""
+    reply = ui_page.locator(".msg.assistant", has_text="Option B, on the cost curve")
+    expect(reply).to_be_visible(timeout=10_000)
+    reply.locator(".branch-msg").click()
 
 
 def test_branch_button_forks_and_opens_the_branch_with_its_lineage(ui, ui_page):
@@ -61,28 +64,30 @@ def test_branch_button_forks_and_opens_the_branch_with_its_lineage(ui, ui_page):
     _finished_run(conv_dir)
     ui_page.reload()
 
-    _fork_at(ui_page, 1)
+    _fork_at(ui_page)
     # the console navigates to the new branch
     ui_page.wait_for_url(f"**/conversations/{slug}-b1")
     head = ui_page.locator(".conv-head-row").first
     expect(head).to_contain_text("branched from")
-    expect(head).to_contain_text("at turn 1")
+    expect(head).to_contain_text("at turn 2")
 
     branch_dir = ui.conversations / f"{slug}-b1"
     evs = [json.loads(x) for x in
            (next((branch_dir / "runs").iterdir()) / "transcript.jsonl").read_text().splitlines()]
-    assert [e["type"] for e in evs] == ["header", "assistant_action", "observation"]
-    assert not any("AFTER-THE-FORK" in json.dumps(e) for e in evs)
+    assert [e["type"] for e in evs] == [
+        "header", "assistant_action", "observation", "assistant_action", "observation"]
+    # the branch inherits THROUGH the forked reply (turn 2) and stops before its finish
+    assert not any(e["type"] == "finish" for e in evs)
     # the parent is untouched — the whole reason a fork copies
     parent_evs = (conv_dir / "runs" / "20260827-100000" / "transcript.jsonl").read_text()
-    assert parent_evs.count("\n") == len(EVENTS)
+    assert parent_evs.count("\n") == len(REPLY_EVENTS)
 
 
 def test_parent_lists_its_branches_and_has_no_hand_back(ui, ui_page):
     slug, conv_dir = _start_conversation(ui, ui_page)
     _finished_run(conv_dir)
     ui_page.reload()
-    _fork_at(ui_page, 1)
+    _fork_at(ui_page)
     ui_page.wait_for_url(f"**/conversations/{slug}-b1")
 
     # back on the parent: it names the branch, and offers no hand-back (it has no parent)
@@ -90,14 +95,16 @@ def test_parent_lists_its_branches_and_has_no_hand_back(ui, ui_page):
     head = ui_page.locator(".conv-head-row").first
     expect(head).to_contain_text("1 branch")
     expect(ui_page.get_by_role("button", name="↩ hand back")).to_be_hidden()
-    expect(ui_page.get_by_role("button", name="⑂ branch")).to_be_visible()
+    # D113: the header carries NO fork button anymore — forking is per-message only
+    expect(ui_page.get_by_role("button", name="⑂ branch", exact=True)).to_have_count(0)
+    expect(ui_page.locator(".msg.assistant .branch-msg")).to_have_count(1)
 
 
 def test_hand_back_delivers_summary_and_artifacts_to_the_parent(ui, ui_page):
     slug, conv_dir = _start_conversation(ui, ui_page)
     _finished_run(conv_dir)
     ui_page.reload()
-    _fork_at(ui_page, 1)
+    _fork_at(ui_page)
     ui_page.wait_for_url(f"**/conversations/{slug}-b1")
 
     branch_dir = ui.conversations / f"{slug}-b1"
@@ -126,7 +133,9 @@ def test_branch_refuses_while_a_reply_is_live(ui, ui_page):
     atomic_write_json(conv_dir / "runs" / "20260827-100000" / "status.json",
                       {"state": "running", "turn": 2})
     ui_page.reload()
-    ui_page.get_by_role("button", name="⑂ branch").click()
+    reply = ui_page.locator(".msg.assistant", has_text="Option B, on the cost curve")
+    expect(reply).to_be_visible(timeout=10_000)
+    reply.locator(".branch-msg").click()
     expect(ui_page.locator("#toast")).to_contain_text("mid-reply")
     assert not (ui.conversations / f"{slug}-b1").exists()
 
@@ -144,7 +153,8 @@ def test_a_reply_carries_a_branch_from_here_control_that_needs_no_turn_number(ui
     """R1006: forking is "fork AT a turn", but the only control was in the conversation HEADER
     behind a prompt asking the user to TYPE that turn — a number they had to go and count. A
     reply is itself a clean turn boundary, so the reply carries the control and the number is
-    implied by which one was clicked. The header entry point stays for the rest.
+    implied by which one was clicked. The header entry point has since been removed (D113):
+    forking is a per-message act, never a typed turn number.
     """
     slug, conv_dir = _start_conversation(ui, ui_page)
     run_dir = conv_dir / "runs" / "20260827-100000"

@@ -83,6 +83,22 @@ def test_a_blocked_condition_says_what_it_waits_for(ui, ui_page):
     expect(blocked).to_contain_text("waiting on s1")
 
 
+def test_a_long_condition_note_wraps_instead_of_overflowing(ui, ui_page):
+    """F421 (operator 2026-09-01): a long condition note sat in a nowrap .goal-meta, so it ran
+    off the sidebar AND starved .goal-text into per-word wrapping. The meta/note now wrap."""
+    _slug, conv_dir = _start_conversation(ui, ui_page)
+    _goal(conv_dir, {**DOC, "conditions": [
+        {"id": "s1", "text": "the digest is published and the shortlink resolves",
+         "status": "open", "group": "g1",
+         "note": "blocked on the CDN purge that finishes only after the nightly cache sweep"},
+    ]})
+    ui_page.reload()
+    note = ui_page.locator(".goal-note").first
+    expect(note).to_be_visible()
+    # F421: the note must be allowed to wrap, not nowrap (which overflowed the sidebar)
+    assert note.evaluate("el => getComputedStyle(el).whiteSpace") != "nowrap"
+
+
 def test_the_verdict_chip_reads_met_only_when_the_goal_is_satisfied(ui, ui_page):
     _slug, conv_dir = _start_conversation(ui, ui_page)
     _goal(conv_dir, DOC)
