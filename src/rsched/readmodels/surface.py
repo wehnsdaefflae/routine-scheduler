@@ -245,8 +245,13 @@ def _phase_nodes(server: Any, cfg: RoutineConfig) -> list[dict]:
     routine-improver an empty object. Nothing breaks — the digest dumps the whole object, so
     the run still reads it — but every stage-scoped condition silently never fires.
 
-    Only said for a routine whose recipe declares phases; one that never had any is not
-    missing anything. ABSENCE is only a gap once a run has COMPLETED without recording one —
+    Only said for a routine whose recipe actually TRACKS a phase — detected by the recipe
+    naming `state/phase.json`, not by a `## Phases` heading: the routines that get this wrong
+    are exactly the ones that describe their phase in prose (self-audit walks a state machine
+    through it, routine-improver a step cursor) and have no such heading. A routine that never
+    mentions the file is not missing anything.
+
+    ABSENCE is only a gap once a run has COMPLETED without recording one —
     the composer reads a missing file as "likely the first run", and the run in flight right
     now has not had its chance yet. A CONVERSATION is skipped outright: the converse pattern
     declares a phase, but conversations.py never writes one to state/phase.json by design, so
@@ -263,7 +268,12 @@ def _phase_nodes(server: Any, cfg: RoutineConfig) -> list[dict]:
         except OSError:
             return []
     main = routine_dir / "main.md"
-    if not main.is_file() or "## Phases" not in main.read_text(encoding="utf-8", errors="replace"):
+    if not main.is_file():
+        return []
+    recipe = main.read_text(encoding="utf-8", errors="replace")
+    for stage in sorted((routine_dir / "stages").glob("*.md")):
+        recipe += stage.read_text(encoding="utf-8", errors="replace")
+    if "phase.json" not in recipe and "## Phases" not in recipe:
         return []
     raw = read_json(routine_dir / "state" / "phase.json")
     if raw is None:

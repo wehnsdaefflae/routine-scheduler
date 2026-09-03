@@ -17,6 +17,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.286.1] — 2026-09-03
+
+### The phase-file check looks at the right signal (msg-13 follow-up)
+
+0.286.0's new setup-surface row detected "this routine tracks a phase" by a `## Phases` heading in
+main.md. The routines that get the phase key WRONG are exactly the ones with no such heading — they
+describe the phase in prose: self-audit walks a ten-stage state machine through `state/phase.json`,
+routine-improver keeps a step cursor in it. Both were invisible to the check that exists for them.
+It now looks for the recipe naming `state/phase.json` at all (main.md plus stages/), and a routine
+that never mentions the file is still silent.
+
+Against the live instance that flags three routines whose RECIPES instruct the wrong key — self-audit
+`state`, routine-improver `step`, funscript-trainer `lifecycle` — one concept under three names, none
+of them the `phase` the composer reads and stage-scoped stopping conditions match on. Fixed at the
+cause (the recipes) with the live files renamed to match.
+
+`src/rsched/readmodels/surface.py`.
+
 ## [0.286.0] — 2026-09-03
 
 ### The workflow layer stops teaching things that are not true (msg-13)
