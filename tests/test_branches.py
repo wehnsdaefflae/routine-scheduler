@@ -108,6 +108,23 @@ def test_fork_inherits_config_and_records_its_parent(server):
     assert raw["name"] != raw_parent["name"]        # it is a branch, and says so
 
 
+def test_fork_gets_its_own_slug_not_the_parents(server):
+    """The branch must load under its OWN slug (its dir name), never the parent's. The parent's
+    routine.yaml we copy carries the parent slug; if the fork keeps it, load_routine reads that
+    slug (raw["slug"] wins over the dir name) and the branch runs under the PARENT's slug — a
+    collision in the runner's slug-keyed active map that wedges both conversations (the parent
+    unreachable; a message to the branch refused as an overrun)."""
+    from rsched.config import load_routine
+
+    d = _parent(server)
+    made = branches.fork_conversation(server, parent_dir=d, parent_slug="c-p", at_turn=1)
+    raw = yaml.safe_load((server.conversations_home / made["slug"] / "routine.yaml").read_text())
+    assert raw["slug"] == made["slug"] != "c-p"          # its own dir slug, not the parent's
+    cfg, problems = load_routine(server.conversations_home / made["slug"])
+    assert cfg.slug == made["slug"]                       # loads under its own slug
+    assert not any("does not match directory name" in p for p in problems)
+
+
 def test_fork_carries_the_files_its_history_refers_to_but_not_artifacts(server):
     """A transcript mentioning attachments/shot.png with no such file is a broken history.
     artifacts/ is the exception: the branch produces its OWN and hands those back — copying

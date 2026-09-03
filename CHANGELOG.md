@@ -17,6 +17,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.283.0] — 2026-09-03
+
+### Conversation lifecycle: a fork no longer wedges its parent, and a pending restart never blocks a start
+
+**Forking a conversation collided the branch with its parent and wedged both.** `fork_conversation`
+(`branches.py`) copies the parent's `routine.yaml`, then sets the branch's name, description and
+`parent` provenance — but never reset the `slug`, so the branch kept the **parent's** slug. Because
+`load_routine` reads `raw["slug"]` before falling back to the directory name, the branch loaded
+*as the parent*, and the runner's slug-keyed `active` map cannot hold two runs under one key: the
+parent conversation became unreachable (its open question could not be answered — "I give
+permission, nothing happens") and a message to the branch was refused as an overrun of the parent's
+slug ("add a new message, nothing happens"). The fork now sets `raw["slug"] = slug` (its own
+directory name) so it loads as itself. Reproduced by the live fork `c-20260903-062355-b1`, which had
+carried `slug: c-20260903-062355`. `src/rsched/branches.py`; a `tests/test_branches.py` regression
+pins that a fork loads under its own slug with no slug/dir mismatch. (Existing wedged forks predating
+this fix must be discarded to free the parent's slug.)
+
+**A pending self-update restart no longer blocks starting a run or a conversation.** The daemon
+used to enter a *drain* the moment a restart was requested — firing nothing new until every active
+run finished — so a restart requested during a busy stretch left the operator unable to start a
+conversation (`could not start the conversation (daemon draining?)`) or resume a run for as long as
+anything was running. Per the operator's rule, a pending restart now keeps scheduling normally and
+simply **waits for a quiet gap**: it restarts only once nothing has been active for
+`RESTART_IDLE_S` (10s). The two safety invariants hold — it never restarts while a run is parked in
+`waiting_user`/`paused` (never out from under a live dialogue) and never interrupts an active run.
+`src/rsched/daemon/restart.py` (the pure `restart_action` state machine: `drain`→`wait`, gated on an
+idle-window flag instead of the draining bit), `src/rsched/daemon/scheduler.py` (a monotonic
+`_idle_since` clock drives the flag); `tests/test_restart.py` rewritten for the new semantics plus a
+test that the idle window is waited out before the restart fires.
+
 ## [0.282.0] — 2026-09-03
 
 ### Two bugs from the operator's screenshots: a dead group-`run` proposal, and a leaked NetworkError

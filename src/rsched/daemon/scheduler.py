@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from datetime import UTC, datetime
 from types import SimpleNamespace
 
@@ -88,6 +89,9 @@ class Scheduler:
         self._last_scan = 0.0
         self._shutting_down = False
         self._deferred_logged = False
+        # A pending restart waits for a quiet gap instead of blocking new runs (restart.py): the
+        # monotonic stamp of when runner.active last emptied, or None while a run is active.
+        self._idle_since: float | None = None
         self.started = now_iso()   # process birth — a restart is visible as a changed value
 
     def rescan(self) -> None:
@@ -255,33 +259,38 @@ class Scheduler:
             self._last_scan = loop.time()
 
     def _maybe_restart(self) -> bool:
-        """Drive the graceful self-restart state machine. Returns True when the scheduler
-        should fire nothing this tick (draining or shutting down).
+        """Drive the graceful self-restart state machine. Returns True only when the scheduler
+        should fire nothing this tick — i.e. it is shutting down. A pending restart NEVER blocks
+        starting a run or conversation while it waits (operator, 2026-09-03): it keeps scheduling
+        normally and fires only once the system has been idle for restart.RESTART_IDLE_S.
         """
         if self._shutting_down:
             return True
         requested = restart.restart_requested(self.server)
         active = self.runner.active_states()
-        action = restart.restart_action(requested, active, self.runner.draining)
+        # How long nothing has been active — the quiet gap a pending restart waits for.
+        now = time.monotonic()
+        if active:
+            self._idle_since = None
+        elif self._idle_since is None:
+            self._idle_since = now
+        idle_long_enough = (self._idle_since is not None
+                            and now - self._idle_since >= restart.RESTART_IDLE_S)
+        action = restart.restart_action(requested, active, idle_long_enough)
         if action == "idle":
-            if self.runner.draining:
-                log.info("restart request withdrawn — resuming normal scheduling")
+            if self.runner.draining:   # a request withdrawn in the SIGTERM window — undo the gate
                 self.runner.draining = False
             self._deferred_logged = False
             return False
-        if action == "defer":
+        if action in ("defer", "wait"):
             if not self._deferred_logged:
-                log.info("restart requested, but a run is parked (waiting_user/paused) — deferring")
+                log.info("restart requested — scheduling normally until idle for %ds, then "
+                         "restarting (a restart never blocks starting a run or conversation)",
+                         restart.RESTART_IDLE_S)
                 self._deferred_logged = True
-            return False  # not draining: keep scheduling normally until cleanly drainable
-        if action == "drain":
-            if not self.runner.draining:
-                log.warning("restart requested — draining: no new runs will start "
-                            "until active ones finish")
-                self.runner.draining = True
-            return True
-        # action == "restart": drained, nothing active
-        self.runner.draining = True
+            return False   # keep firing: a pending restart never blocks a start
+        # action == "restart": idle long enough — shut down so the supervisor relaunches new code
+        self.runner.draining = True   # refuse a fire racing the SIGTERM window
         self._shutting_down = True
         restart.clear_request(self.server)
         restart.trigger_shutdown()

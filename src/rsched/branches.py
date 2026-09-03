@@ -114,6 +114,12 @@ def fork_conversation(server: ServerConfig, *, parent_dir: Path, parent_slug: st
 
     raw = read_yaml(parent_dir / "routine.yaml", {})
     parent_name = str(raw.get("name") or parent_slug)
+    # The branch is a NEW routine and must load under its OWN slug (its dir name). The parent's
+    # routine.yaml we just copied carries the PARENT slug; leaving it makes the branch load AS the
+    # parent (load_routine reads raw["slug"] first, only then the dir name, and flags the mismatch)
+    # — a collision in the runner's slug-keyed active map that wedges BOTH conversations: the parent
+    # becomes unreachable and a message to the branch is refused as an overrun of the parent's slug.
+    raw["slug"] = slug
     raw["name"] = name.strip() or f"{parent_name} (branch)"
     raw["description"] = raw["name"]
     # The provenance the whole feature hangs on: which conversation, and where it split.
