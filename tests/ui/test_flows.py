@@ -887,9 +887,9 @@ def test_conversation_refer_to_message(ui, ui_page):
 
 def test_routine_page_saves(ui, ui_page):
     ui_page.goto(f"{ui.url}/#/routine/uir")
-    desc = ui_page.locator('input[placeholder="one-line description"]')
+    desc = ui_page.locator('textarea[placeholder^="what this routine does"]')
     expect(desc).to_have_value("A test routine.")
-    desc.fill("A sharper one-line description.")
+    desc.fill("A sharper description.\nnow spanning two lines.")
     ui_page.get_by_role("button", name="save description").click()
     expect(_toast(ui_page)).to_contain_text("description saved")
 
@@ -925,7 +925,7 @@ def test_routine_page_saves(ui, ui_page):
 
     raw = yaml.safe_load(
         (ui.routine_dir("uir") / "routine.yaml").read_text(encoding="utf-8"))
-    assert raw["description"] == "A sharper one-line description."
+    assert raw["description"] == "A sharper description.\nnow spanning two lines."
     assert raw["budgets"]["max_turns"] == 42
     assert raw["tags"] == ["nightly"]
     assert raw["enabled"] is False

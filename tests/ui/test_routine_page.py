@@ -153,6 +153,22 @@ def test_sections_side_toc(ui, ui_page):
     expect(budgets.locator(".muted.small").first).to_contain_text("per-run ceilings")
 
 
+def test_description_editor_is_multiline(ui, ui_page):
+    """msg-2 (2026-09-03): the editable routine-description field is a multi-line <textarea>,
+    not a single-line <input> — so the operator can write more than one line of summary."""
+    ui_page.goto(f"{ui.url}#/routine/uir")
+    ui_page.wait_for_selector("h2:has-text('Description')", timeout=10_000)
+    section = ui_page.locator("h2:has-text('Description')").locator(
+        "xpath=following-sibling::div[contains(@class,'panel')][1]")
+    ta = section.locator("textarea")
+    expect(ta).to_be_visible(timeout=10_000)
+    # the old single-line text input is gone
+    assert section.locator("input[type='text']").count() == 0
+    # and the field genuinely holds more than one line
+    ta.fill("line one\nline two")
+    assert "\n" in ta.input_value()
+
+
 def test_fs_root_directory_picker(ui, ui_page):
     """The fs-roots editor is a real directory picker: the old textarea is gone, and browsing
     to a server directory and selecting it adds it as a root."""

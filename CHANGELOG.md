@@ -17,6 +17,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.281.0] — 2026-09-03
+
+### The routine description is a multi-line field (msg-2)
+
+Operator: *"the editable description field for routines must be multi line."* The routine
+config page built the description editor as a single-line `<input type="text">` with a
+"one-line description" placeholder, so a summary longer than one line could be typed but never
+seen while editing — the field scrolled it out of view. It is now a three-row `<textarea>`
+(vertically resizable) that holds and shows multiple lines, and the per-control copy no longer
+promises "one-line". Read-back on save is unchanged (`.value.trim()` reads a textarea the same
+as an input), so the PATCH path and the empty-guard are untouched. `static/views/routine-config.js`;
+a `tests/ui/test_routine_page.py` case pins that the control is a textarea (the single-line input
+is gone) and genuinely holds a newline.
+
 ## [0.280.0] — 2026-09-02
 
 ### Fixed — three console regressions from the 0.277.0 redesign, all found by measuring

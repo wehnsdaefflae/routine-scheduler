@@ -68,10 +68,10 @@ export function renderConfigSections(view, d, { slug, titleH1, chipHost, runChip
         } }, "save name"))));
 
   // -- description (always present; shown here + on the dashboard) ----------------
-  const descInput = el("input", { type: "text", value: d.description || "", placeholder: "one-line description",
-    style: "width:100%;max-width:640px" });
+  const descInput = el("textarea", { rows: "3", placeholder: "what this routine does — a short summary shown on the dashboard and here",
+    style: "width:100%;max-width:640px;resize:vertical" }, d.description || "");
   view.append(...settingsSection("Description",
-    "a one-line summary of what this routine does — shown on the dashboard and here",
+    "a short summary of what this routine does — shown on the dashboard and here",
       descInput,
       el("div", { class: "row mt" }, el("button", { class: "btn primary",
         onclick: async () => {
