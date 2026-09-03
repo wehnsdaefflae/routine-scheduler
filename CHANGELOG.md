@@ -17,6 +17,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.284.0] — 2026-09-03
+
+### A long action can run: the `timeout_s` ceiling is raised from 600s to 1800s
+
+Operator: *"the default timeout must be overridable as an action parameter."* A `util`/`script`
+action's `timeout_s` was capped at 600s by the action schema, but the scheduler's own full test
+suite now takes ~900s — so a run could not gate itself in a single action, and self-audit had to
+split the suite into chunks by hand every run. The schema ceiling is now **1800s** (the 300s
+default is unchanged; blank still means 300). The executor already passes `timeout_s` through
+unclamped, so raising the schema `maximum` is the whole fix. `src/rsched/engine/actionschema.py`;
+a `tests/test_actions.py` case pins that an 1800s override validates and 1801 is rejected.
+(The run's wall-clock budget remains the real bound — a per-action timeout only decides when one
+subprocess is killed, not how long the run may live.)
+
 ## [0.283.0] — 2026-09-03
 
 ### Conversation lifecycle: a fork no longer wedges its parent, and a pending restart never blocks a start

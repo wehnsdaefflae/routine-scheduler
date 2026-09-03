@@ -62,9 +62,11 @@ ACTION_SCHEMA: dict = {
                            "(append '--json' for structured output)",
         },
         "timeout_s": {
-            "type": "integer", "minimum": 1, "maximum": 600,
+            "type": "integer", "minimum": 1, "maximum": 1800,
             "description": "util/script: seconds before the script is killed "
-                           "(default 300) · wait: max seconds to block (default 600)",
+                           "(default 300; raise it — up to 1800 — for a genuinely long job "
+                           "the 300s default would kill, e.g. running a full test suite) · "
+                           "wait: max seconds to block (default 600)",
         },
         # read_file / view_image / write_file / edit_file
         "path": {

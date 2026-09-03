@@ -28,6 +28,17 @@ def test_schema_compiles_and_example_passes():
     assert validate_action(obj) == []
 
 
+def test_timeout_s_ceiling_raised_for_long_jobs():
+    """A genuinely long job (e.g. running the full test suite) needs a util/script timeout above
+    the old 600s cap (operator, 2026-09-03: 'the default timeout must be overridable as an action
+    parameter'). The ceiling is 1800s — an override up to it validates, past it is rejected."""
+    v = jsonschema.Draft202012Validator(ACTION_SCHEMA)
+    v.validate({"say": "s", "kind": "util", "name": "pytest-run", "timeout_s": 1800})
+    v.validate({"say": "s", "kind": "util", "name": "pytest-run", "timeout_s": 900})
+    with pytest.raises(jsonschema.ValidationError):
+        v.validate({"say": "s", "kind": "util", "name": "pytest-run", "timeout_s": 1801})
+
+
 def test_transcript_js_brief_field_mirrors_python():
     """The web transcript keeps its own copy of BRIEF_FIELD (static/ is no-build, so it
     cannot import the Python map); a kind missing there silently renders an EMPTY turn
