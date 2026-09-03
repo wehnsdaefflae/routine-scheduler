@@ -17,6 +17,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.287.1] — 2026-09-03
+
+### The shell migration reaches GROUP config too
+
+0.287.0 deployed, and `rsched validate` against the running instance immediately reported four
+routines — `ards`, `fau-grant-prep`, `nanogeofeld`, `suedlink-wlf` — as `permission:shell held,
+but its requires: are not switched on` plus `util:shell held as a reserved util — no util by that
+name is in the library`. None of their `routine.yaml` files mentions shell at all.
+
+The grant came from their GROUP. A group's config block is a LIVE layer its members inherit at
+load time (D82), unlike a settings template's one-shot copy, and it lives in
+`.control/groups.json` — not in any routine dir. The migration walked routine, conversation and
+background dirs and never looked there, so the FAU group kept re-supplying `capabilities.utils:
+[shell]` to four members whose permission then had nothing behind it: fail-closed, exactly as the
+two-layer model promises, and exactly the silent capability loss the migration exists to prevent.
+
+`_migrate_groups` converts every group config block on the same terms, patching `groups.json` as
+raw JSON rather than round-tripping it through `groups.load`/`_save` (which normalizes, and would
+rewrite fields this migration has no business touching). Two tests cover it: the store-level
+conversion (asserting the untouched fields stay untouched) and the effective one — a member's
+config merged through `apply_group_config` yields a policy that allows the kind.
+
+The lesson is the migration's own docstring now: a dry run over copies of the routine files was
+not a verification, because a routine's effective config is not only its own file.
+
 ## [0.287.0] — 2026-09-03
 
 ### `shell` becomes an action kind, not a reserved util
