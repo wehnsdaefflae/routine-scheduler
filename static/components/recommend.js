@@ -27,8 +27,19 @@ export function recommendPanel(slug) {
     try {
       data = await api(`/api/routines/${slug}/recommendations`);
     } catch (e) {
+      // A fetch that never received a response — a dropped connection, a proxy idle-timeout, or a
+      // deploy in progress — rejects with a bare browser "NetworkError…" and carries no `e.status`
+      // (api.js sets that only on an HTTP error response). The recommend pass is one slow
+      // system-model read of the whole recipe, so this is the likely failure; say what happened
+      // and what to do, rather than leaking the raw string. An HTTP error keeps its legible detail.
+      const noResponse = e == null || e.status === undefined;
       out.replaceChildren(el("div", { class: "muted small" },
-        `couldn't get a recommendation: ${e?.message || e}`));
+        noResponse
+          ? "the recommender didn't answer in time — it reads the whole recipe with the system "
+            + "model, and the connection closed before it finished (a slow model, a proxy timeout, "
+            + "or a deploy in progress). Try again in a moment; the Permissions and General rules "
+            + "panels below work without it."
+          : `couldn't get a recommendation: ${e?.message || e}`));
       btn.disabled = false;
       return;
     }

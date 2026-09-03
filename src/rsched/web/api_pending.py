@@ -96,7 +96,12 @@ def _materialize_group(server, fields: dict) -> dict:
     if verb == "set-default":
         value = groups.set_default_on_failure(home, str(fields.get("on_failure") or ""))
         return {"default_on_failure": value}
-    raise HTTPException(400, f"cannot materialize group verb {verb!r}")
+    # Only config verbs (create/update/delete/set-default) are proposable — the engine stopped
+    # queuing `run` (a fire is ephemeral, not a creation). A non-config verb reaches here only as
+    # a LEGACY record queued before that fix; tell the operator to discard it and fire live.
+    raise HTTPException(
+        400, f"a group {verb!r} is not a creation and cannot be approved here — discard this "
+             "proposal and fire the group live from its row instead")
 
 
 @router.post("/pending-creations/{pid}/materialize")

@@ -83,6 +83,24 @@ def test_manage_group_queues_changes_outside_a_root_conversation(tmp_path):
     assert len(pending.load_all(server.routines_home)) == 1
 
 
+def test_manage_group_run_fails_loudly_with_no_user(tmp_path):
+    """A `run` fires an EPHEMERAL group chain: it writes no config and the materializer cannot
+    build it, so a no-user run must FAIL LOUDLY rather than queue a dead 'create it' card
+    (screenshots 2026-09-03; R1200). Config verbs (create/update/delete/set-default) still queue;
+    `run` does not — an approval hours later would fire a stale chain."""
+    from rsched import pending
+
+    server = _server(tmp_path)
+    grp = groups.create(server.routines_home, name="G", members=[{"slug": "weight-coach"}])
+    sched = _ctx(server, home="routines_home", slug="weight-coach")
+
+    obs = manage_group.handle_manage_group(
+        sched, {"kind": "manage_group", "verb": "run", "target": grp["id"]})
+    assert obs["rejected"] and not obs.get("queued")
+    assert "cannot be queued" in obs["reason"]
+    assert pending.load_all(server.routines_home) == []          # nothing queued
+
+
 def test_manage_group_create_validates_members(tmp_path):
     server = _server(tmp_path)
     ctx = _ctx(server, home="conversations_home")

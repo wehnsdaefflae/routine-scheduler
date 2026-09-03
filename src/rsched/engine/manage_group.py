@@ -171,6 +171,18 @@ def handle_manage_group(ctx: RunContext, action: dict) -> dict:  # noqa: PLR0911
             "not reshape routine groups as a side effect. Report what you would change in your "
             "finish summary and let the run that started you decide.")
     if not _is_root_conversation(ctx) and verb not in READ_ONLY_VERBS:
+        # `run` is NOT proposable. It arms an ephemeral group fire — it writes no config and the
+        # materializer (web/api_pending._materialize_group) cannot build it, so a queued `run`
+        # became a dead "create it" card the operator could only discard (screenshots 2026-09-03).
+        # Fire is time-sensitive: an approval hours later fires a stale chain. So it fails LOUDLY
+        # here (R1200's ask: fire, or fail with the reason), never a queue.
+        if verb == "run":
+            return _reject(
+                "manage_group run cannot fire a group from a run with no user in the loop. "
+                "Unlike a config change (create/update/delete/set-default), a fire is ephemeral "
+                "and cannot be queued for later approval — an approval hours later would fire a "
+                "stale chain. Ask the user to fire the group, or report in your finish summary "
+                "which group needs firing and why.")
         return _queued_obs(ctx, action, verb)
 
     if verb == "list":

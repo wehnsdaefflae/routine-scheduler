@@ -17,6 +17,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.282.0] — 2026-09-03
+
+### Two bugs from the operator's screenshots: a dead group-`run` proposal, and a leaked NetworkError
+
+**A `manage_group verb=run` from a run with no user queued a proposal that could never be built.**
+The engine queued every mutating verb outside a root conversation (F328), but `run` is not a
+mutation — it arms an *ephemeral* group fire, writes no config, and the materializer
+(`web/api_pending._materialize_group`) only knows create/update/delete/set-default. So a routine's
+`run` (miz-grant-steward, trying to accelerate a sibling — R1200) became a card on the Decisions
+page under "queued creations" with a **create it** button that errored `cannot materialize group
+verb 'run'` when clicked: a dead card the operator could only discard. `run` now **fails loudly**
+at the engine instead of queuing — a fire is time-sensitive and an approval hours later would fire
+a stale chain, so a no-user run is told to ask the user or report which group needs firing (R1200's
+own ask: fire, or fail with the reason). Config verbs still queue. The materialize fallback, which
+the one legacy `run` card still hits, now says to discard it and fire the group live rather than
+emitting internal jargon. `engine/manage_group.py`, `web/api_pending.py`; a test pins that a
+no-user `run` rejects and queues nothing.
+
+**The "Recommended setup" panel leaked a raw browser "NetworkError when attempting to fetch
+resource".** The recommendation is one system-model read of the whole recipe — a slow call the
+button holds the browser on, with no client-side timeout. When the connection is dropped (a proxy
+idle-limit, a slow model, or a deploy in progress) the fetch rejects with a bare browser string the
+panel printed verbatim. It now distinguishes a no-response failure (no `e.status`) from an HTTP
+error and reads honestly — what happened, to retry, and that the Permissions and General rules
+panels below work without it. `static/components/recommend.js`; a `tests/ui` test aborts the request
+and asserts the honest copy renders and the raw "NetworkError" never does. (The deeper fix — making
+the recommendation non-blocking so a slow model can't drop the browser at all — is left as an open
+question for the operator; it changes the interaction model.)
+
 ## [0.281.0] — 2026-09-03
 
 ### The routine description is a multi-line field (msg-2)

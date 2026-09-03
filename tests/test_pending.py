@@ -241,7 +241,6 @@ def test_a_queued_proposal_never_renders_as_a_completed_action(server, sched_ctx
     assert "created routine" not in line          # the false success it used to render
 
     for action, must_contain in (
-        ({"verb": "run", "target": grp["id"]}, ("fire", "Professional · Daily", "1 member")),
         ({"verb": "update", "target": grp["id"], "members": ["routine-improver"]},
          ("update", "Professional · Daily", "members → ['routine-improver']")),
         ({"verb": "delete", "target": grp["id"]}, ("delete", "Professional · Daily")),
@@ -257,12 +256,18 @@ def test_a_queued_proposal_never_renders_as_a_completed_action(server, sched_ctx
         rec = next(r for r in pending.load_all(server.routines_home) if r["id"] == obs["id"])
         assert rec["summary"] == obs["proposal"]
 
+    # `run` is NOT proposable — a fire is ephemeral and the materializer cannot build it, so a
+    # no-user run FAILS LOUDLY instead of queuing a dead "create it" card (2026-09-03 fix).
+    run_obs = handle_manage_group(sched_ctx, {"verb": "run", "target": grp["id"]})
+    assert run_obs.get("rejected") and not run_obs.get("queued")
+    assert "cannot be queued" in run_obs["reason"]
+
 
 def test_a_queued_proposal_naming_an_unknown_group_says_so(server, sched_ctx):
     """A proposal is filed without validating the target (the review is the gate), so the ack
     must not imply the group exists — that is how `group None` read as a real group."""
     from rsched.engine.obs_admin import format_admin
 
-    obs = handle_manage_group(sched_ctx, {"verb": "run", "target": "grp-nope"})
+    obs = handle_manage_group(sched_ctx, {"verb": "delete", "target": "grp-nope"})
     line = format_admin(obs, "manage_group")
     assert "unknown group 'grp-nope'" in line and "will fail review" in line

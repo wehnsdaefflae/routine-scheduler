@@ -61,3 +61,18 @@ def test_recommend_degrades_when_no_model_answers(ui, ui_page):
     ui_page.wait_for_selector("h2:has-text('Recommended setup')", timeout=10_000)
     ui_page.locator(".recommend-panel button").click()
     expect(ui_page.locator(".recommend-panel")).to_contain_text("unavailable", timeout=10_000)
+
+
+def test_recommend_dropped_connection_reads_honestly(ui, ui_page):
+    """The recommend pass is a slow system-model read, so its connection can be dropped by a
+    proxy timeout or a deploy. That surfaces as a bare browser 'NetworkError…'; the panel must
+    say what happened and what to do (retry; the panels below still work), never leak the raw
+    string (operator screenshot 2026-09-03)."""
+    ui_page.route("**/api/routines/uir/recommendations", lambda route: route.abort())
+    ui_page.goto(f"{ui.url}/#/routine/uir")
+    ui_page.wait_for_selector("h2:has-text('Recommended setup')", timeout=10_000)
+    ui_page.locator(".recommend-panel button").click()
+    out = ui_page.locator(".recommend-out")
+    expect(out).to_contain_text("didn't answer in time", timeout=10_000)
+    expect(out).to_contain_text("panels below")
+    assert "NetworkError" not in out.inner_text()
