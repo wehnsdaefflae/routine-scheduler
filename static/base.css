@@ -237,6 +237,9 @@ h3 { font-size: var(--t-l); font-weight: 600; letter-spacing: -0.01em; margin: v
   box-shadow: 0 0 0 3px var(--err-dim); flex: 0 0 auto; transition: background 0.2s, box-shadow 0.2s;
 }
 .lamp.on { background: var(--signal); box-shadow: 0 0 0 3px var(--signal-dim); }
+/* A self-update restart is queued: the daemon keeps working and restarts at the next idle gap
+   (restart.py), so the lamp goes amber and pulses rather than the process bouncing unannounced. */
+.lamp.restart-pending { background: var(--warn); box-shadow: 0 0 0 3px var(--warn-dim); animation: pulse 1.4s infinite; }
 
 /* three-state theme toggle: auto follows the machine, the other two overrule it */
 .theme-toggle { display: inline-flex; border: 1px solid var(--rule-2); border-radius: var(--r2); overflow: hidden; margin-left: auto; }

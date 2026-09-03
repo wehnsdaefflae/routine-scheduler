@@ -17,6 +17,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.285.0] — 2026-09-03
+
+### The daemon lamp shows when a restart is pending (msg-12)
+
+Operator: *"we need a visual indicator if the daemon is draining atm."* With 0.283.0 the daemon
+no longer blocks-drains — a requested restart waits for a quiet gap and fires at the next idle
+moment — so the thing worth seeing is that a restart is *queued*. `/api/status` already reports
+`restart_requested`; the rail's daemon lamp now turns **amber and pulses** while one is pending
+(green when connected and clear, red when the link is down), with a title that says the restart
+applies at the next idle moment. `static/app.js` (the shared boot+poll `refreshStatus` toggles the
+`restart-pending` class + title), `static/base.css` (the amber `.lamp.restart-pending` reusing the
+`--warn` token and the existing `pulse` keyframe); a `tests/ui/test_smoke.py` case drops the
+restart sentinel and asserts the lamp carries the class and the explaining title.
+
 ## [0.284.0] — 2026-09-03
 
 ### A long action can run: the `timeout_s` ceiling is raised from 600s to 1800s

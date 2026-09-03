@@ -69,3 +69,17 @@ def test_pause_scheduling_toggle(ui, ui_page):
     ui_page.click("button:has-text('resume scheduling')")
     expect(ui_page.locator("body")).not_to_contain_text("Scheduling is paused", timeout=10_000)
     expect(ui_page.locator("button:has-text('pause scheduling')")).to_be_visible(timeout=10_000)
+
+
+def test_daemon_lamp_shows_restart_pending(ui, ui_page):
+    """msg-12: a pending self-update restart no longer blocks work — it waits for a quiet gap —
+    so the operator needs to SEE that one is queued rather than meet a surprise bounce. /api/status
+    reports `restart_requested` from the sentinel; the daemon lamp then carries the amber
+    `restart-pending` class and a title that explains it."""
+    sentinel = ui.routines / ".control" / "restart.request"
+    sentinel.parent.mkdir(parents=True, exist_ok=True)
+    sentinel.write_text("{}", encoding="utf-8")
+    ui_page.goto(f"{ui.url}/#/routines")
+    dot = ui_page.locator("#daemon-dot")
+    expect(dot).to_have_class(re.compile(r"restart-pending"), timeout=10_000)
+    expect(dot).to_have_attribute("title", re.compile("restart pending"), timeout=10_000)

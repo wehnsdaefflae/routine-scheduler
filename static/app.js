@@ -204,15 +204,23 @@ function renderVersion(s) {
 // themselves — dashboard.js / routine.js read `llm_ready` and disable their own run controls.)
 async function refreshStatus() {
   const clock = document.getElementById("clock");
+  const dot = document.getElementById("daemon-dot");
   try {
     const s = await api("/api/status");
     renderMetaBanner(s.meta_routines);
     renderVersion(s);
     if (clock && s.server_tz) clock.title = `server tz: ${s.server_tz}`;
-    document.getElementById("daemon-dot").classList.add("on");
+    dot.classList.add("on");
+    // A pending self-update restart no longer blocks work — it waits for a quiet gap (restart.py) —
+    // so the lamp turns amber to say one is queued, rather than the daemon bouncing unannounced.
+    dot.classList.toggle("restart-pending", !!s.restart_requested);
+    dot.title = s.restart_requested
+      ? "daemon connected — restart pending (applies at the next idle moment)"
+      : "daemon link";
     return s;
   } catch {
-    document.getElementById("daemon-dot").classList.remove("on");
+    dot.classList.remove("on", "restart-pending");
+    dot.title = "daemon link — no connection";
     return null;
   }
 }
