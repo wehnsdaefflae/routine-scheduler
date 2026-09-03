@@ -63,13 +63,6 @@ META = {
 }
 
 PHASES = ["seed", "steady", "final-push"]   # tracked in state/phase.json; drives emphasis, not structure
-COMPLETION = (
-    "per run: state ingested, corpus grown, every segment/attachment scored and given actionable "
-    "feedback, attachments recompiled, checklist and rating refreshed, page republished, state "
-    "persisted, one LEDGER entry; "
-    "overall: the application is submitted (or the deadline passes) and both collaborators know "
-    "where the page and final documents live"
-)
 
 
 class NeedsDecision(Exception):
@@ -129,8 +122,8 @@ def orient_and_ingest():
     brief and let them drive the work. Detect whether this session was invoked by the page's
     RUN_TRIGGER ("run now") versus the scheduled cadence, and note the editor-lock / login /
     inactivity-countdown state so publishing and persistence respect a human who is mid-edit.
-    Return the live state object the rest of the run mutates."""
-    read_file("LEDGER.md")
+    Return the live state object the rest of the run mutates. The digest already carries the
+    LEDGER tail and says when there is more; read the file only if it says so."""
 
 
 def seed(state):

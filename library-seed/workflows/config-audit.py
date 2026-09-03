@@ -48,19 +48,10 @@ META = {
 }
 
 PHASES = ["discover", "steady"]     # discover: first-run location map; steady: full re-audit each run
-COMPLETION = (
-    "per run: every surface reviewed, a verdict + (where flagged) default and case-specific "
-    "recommendation emitted for each value examined, any confirmed changes applied and logged, "
-    "AUDIT_PATH written; overall: open-ended — a fresh full audit each scheduled run"
-)
 
 
 class Uncertain(Exception):
     """The inference for a value's case context is too weak to assert — flag it, don't guess."""
-
-
-class Unconfirmed(Exception):
-    """A proposed change lacked per-item confirmation — leave it pending in the report."""
 
 
 def main():
@@ -78,17 +69,17 @@ def main():
 
     write_report(findings, case, surface_map)   # COMPILE the structured audit, flagged items first
 
-    applied = apply_confirmed(findings, surface_map)  # OPTIONAL gated branch — per-item confirmation only
+    propose_changes(findings)                   # flagged items go out as DEFERRED decisions
 
-    record(findings, applied)
-    return finish("ok", summary(findings, applied))
+    record(findings)
+    return finish("ok", summary(findings))
 
 
 def orient():
-    """Read the state digest (phase, last result, LEDGER tail, user messages/answers) and the
-    existing config map before re-discovering anything — so known locations aren't rediscovered
-    from scratch."""
-    read_file("LEDGER.md")
+    """Consume the state digest (phase, last result, LEDGER tail, user messages/answers) and
+    read the existing config map before re-discovering anything — so known locations aren't
+    rediscovered from scratch. The digest already carries the LEDGER tail and says when there
+    is more; read the file only if it says so."""
     read_file(CONFIG_MAP_PATH)
 
 
@@ -147,49 +138,32 @@ def write_report(findings, case, surface_map):
     write_file(AUDIT_PATH, "flagged-first audit: per-surface value/verdict/recommendation/rationale")
 
 
-def apply_confirmed(findings, surface_map):
-    """OPTIONAL gated branch. Changing a live value is an outward act: for each flagged
-    recommendation, PROPOSE the specific change and get the user's per-item confirmation
-    (ask-policy). Only on an explicit yes, edit that one value at its source; never batch-apply and
-    never apply an unconfirmed change. Return the list of applied (surface, key, old→new)."""
-    applied = []
+def propose_changes(findings):
+    """File each flagged finding as a DEFERRED decision — the specific change, its source, and
+    old→new — so the user settles it on the Decisions page and applies it themselves.
+
+    This run does NOT change a live value. Changing one is an outward act needing the user's
+    confirmation, and this pattern's holders are SCHEDULED routines with nobody watching: a
+    blocking ask here waits out its timeout and settles nothing. The audit's deliverable is the
+    report plus a decidable proposal per flagged value, not a silent edit."""
     for f in flagged(findings):
-        try:
-            answer = ask_user(f.proposal, mode="blocking")   # per-item, before touching the source
-            if not accepted(answer):
-                raise Unconfirmed
-            edit_value_at_source(surface_map, f)             # edit exactly this value, at its source
-            applied.append(f)
-        except Unconfirmed:
-            leave_pending(f)                                 # stays in the report as a pending rec
-            continue
-    return applied
+        ask_user(f.proposal, mode="deferred")   # → Decisions page; nothing is touched this run
 
 
 def flagged(findings):
     """The sub-optimal / detrimental findings — the only candidates for a proposed change."""
 
 
-def edit_value_at_source(surface_map, finding):
-    """Write the accepted value back to the exact source the map names (file/export/util), touching
-    only that one key. Read it back to confirm the edit landed."""
-
-
-def leave_pending(finding):
-    """Record an accepted-in-report-but-unconfirmed recommendation as pending (e.g. when
-    confirmation isn't available) so it isn't lost and isn't silently applied."""
-
-
-def record(findings, applied):
+def record(findings):
     """Update state/phase.json and the config map; append exactly one LEDGER entry: what was
-    reviewed, how many values flagged, every applied change (surface, key, old→new), and any
-    pending items — plus rejected candidates and why."""
-    ledger.append("surfaces reviewed, flagged count, applied changes old→new, pending, rejected")
+    reviewed, how many values flagged, which proposals were filed — plus rejected candidates and
+    why."""
+    ledger.append("surfaces reviewed, flagged count, proposals filed, rejected + why")
 
 
-def summary(findings, applied):
-    """One-line run summary: what was reviewed, how many values flagged, how many changes applied,
-    and where the audit lives."""
+def summary(findings):
+    """One-line run summary: what was reviewed, how many values flagged, how many proposals are
+    waiting on the user, and where the audit lives."""
 
 
 if __name__ == "__main__":

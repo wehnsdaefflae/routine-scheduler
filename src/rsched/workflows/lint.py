@@ -1,9 +1,10 @@
 """Workflow/rule/permission conformance — the gu-lint equivalent for the library.
 
 Library workflows (Python patterns): META completeness, slug↔filename, resolvable includes,
-a main() entry, PHASES/COMPLETION. Materialized copies: provenance + no unresolved
-placeholders. Rules: titled principle prose, no capabilities. Permissions: titled, with a
-well-formed `requires:` key (the capabilities their instructions presume — see grants.py).
+a main() entry, PHASES, and an action-import line that agrees with the `tools:` allowlist.
+Materialized copies: provenance + no unresolved placeholders. Rules: titled principle prose,
+no capabilities. Permissions: titled, with a well-formed `requires:` key (the capabilities
+their instructions presume — see grants.py).
 """
 
 from __future__ import annotations
@@ -19,8 +20,7 @@ from .library import permissions_dir, rules_dir, workflows_dir
 
 def lint_workflow_py(source: str, *, filename: str, rule_slugs: list[str]) -> list[str]:
     """Validate a Python-workflow file: parseable, META completeness, slug↔filename, resolvable
-    includes, a main() entry, and PHASES/COMPLETION (the Python equivalents of the required
-    sections).
+    includes, a main() entry, PHASES, and an action-import line consistent with `tools:`.
     """
     from .pyworkflow import REQUIRED_META, parse_py
 
@@ -49,19 +49,36 @@ def lint_workflow_py(source: str, *, filename: str, rule_slugs: list[str]) -> li
         problems.append(f"{filename}: no top-level main() function (the per-run control flow)")
     if not meta.get("phases"):
         problems.append(f"{filename}: missing PHASES (the cross-run progression)")
-    if not str(meta.get("completion") or "").strip():
-        problems.append(f"{filename}: missing COMPLETION (done-for-run / done-overall)")
-    tools = meta.get("tools")
-    if tools is not None:
-        from ..engine.actions import KINDS
+    problems += _tools_problems(meta, filename)
+    return problems
 
-        if not isinstance(tools, list):
-            problems.append(f"{filename}: tools must be a list of action kinds")
-        else:
-            unknown = [t for t in tools if t not in KINDS]
-            if unknown:
-                problems.append(f"{filename}: tools names unknown action kind(s) "
-                                f"{unknown} — the vocabulary is engine/actionschema.KINDS")
+
+def _tools_problems(meta: dict, filename: str) -> list[str]:
+    """The `tools:` allowlist against the action kinds the pattern's import line names.
+
+    `kindsurface.effective_kinds` NARROWS the schema to the allowlist, so a kind the pattern
+    imports but `tools:` excludes is prose describing a channel the model cannot emit —
+    improvement-proposer imported write_util/spawn/wait while declaring itself record-only.
+    The import line is the pattern's own claim about what it uses, so the two must agree.
+    """
+    from ..engine.actions import ALWAYS_KINDS, KINDS
+
+    problems: list[str] = []
+    imported = [n for n in meta.get("action_imports") or [] if n in KINDS]
+    tools = meta.get("tools")
+    if tools is None:
+        return problems
+    if not isinstance(tools, list):
+        return [f"{filename}: tools must be a list of action kinds"]
+    unknown = [t for t in tools if t not in KINDS]
+    if unknown:
+        problems.append(f"{filename}: tools names unknown action kind(s) "
+                        f"{unknown} — the vocabulary is engine/actionschema.KINDS")
+    stray = [n for n in imported if n not in tools and n not in ALWAYS_KINDS]
+    if stray:
+        problems.append(f"{filename}: imports action kind(s) {stray} that tools: excludes — "
+                        "the schema is narrowed to tools, so the pattern would describe "
+                        "channels the run cannot emit. Trim the import or widen tools")
     return problems
 
 

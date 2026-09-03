@@ -1,6 +1,6 @@
 # Util sandboxing — the trust boundary around code execution
 
-Routines have no shell: the only way a run executes code is a **global util**. The engine
+A run executes code through a **global util**. The engine
 enforces its capability boundaries at the action layer (`read_file` is jailed to the
 routine's roots, `write_file` to its write roots) — but a util is a real subprocess, and
 without its own boundary it would run with the daemon user's full filesystem and network

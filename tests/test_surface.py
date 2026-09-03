@@ -7,12 +7,20 @@ failing at 3am, so the tests are written as "what would the operator have been t
 """
 from __future__ import annotations
 
+import pathlib
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
-from rsched.readmodels.surface import BLOCKS, INTERRUPTS, NOTE, routine_surface, surface_lines
+from rsched.readmodels.surface import (
+    BLOCKS,
+    BOOT_SEVERITIES,
+    INTERRUPTS,
+    NOTE,
+    routine_surface,
+    surface_lines,
+)
 
 
 def _server(tmp_path: Path, machines: dict | None = None) -> SimpleNamespace:
@@ -386,3 +394,70 @@ def test_a_routine_nothing_ever_starts_is_reported(tmp_path):
     # a DISABLED routine already says it does not run — no second row for the same fact
     assert _by_id(routine_surface(server, _cfg(tmp_path, cron="", enabled=False)),
                   "schedule:none") is None
+
+
+def _with_phases(server, cfg, phase_json: str | None) -> None:
+    """A routine dir whose recipe declares phases, optionally with a state/phase.json."""
+    d = pathlib.Path(cfg.dir)
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "main.md").write_text("## Run flow\ndo it\n\n## Phases\n- steady\n", encoding="utf-8")
+    if phase_json is not None:
+        (d / "state").mkdir(exist_ok=True)
+        (d / "state" / "phase.json").write_text(phase_json, encoding="utf-8")
+
+
+@pytest.mark.usefixtures("empty_store")
+def test_phase_file_keyed_wrong_is_a_note(tmp_path):
+    """The composer reads state/phase.json as .get("phase"), and that value scopes a stopping
+    condition to a stage. Routines that invented their own key (funscript-trainer wrote
+    `lifecycle`, self-audit `state`, routine-improver `{}`) wrote a file that looks right and
+    matches nothing — the digest still shows it, so nothing ever complained."""
+    server, cfg = _server(tmp_path), _cfg(tmp_path)
+    _with_phases(server, cfg, '{"lifecycle": "steady"}')
+    node = _by_id(routine_surface(server, cfg), "state:phase")
+    assert node and node["severity"] == NOTE and "lifecycle" in node["effect"]
+
+
+@pytest.mark.usefixtures("empty_store")
+def test_phase_file_absent_is_a_note_once_the_routine_has_run(tmp_path):
+    server, cfg = _server(tmp_path), _cfg(tmp_path)
+    _with_phases(server, cfg, None)
+    # no COMPLETED run yet → nothing has had its chance to record one, so nothing to say
+    run = pathlib.Path(cfg.dir) / "runs" / "20260101-000000"
+    run.mkdir(parents=True)
+    assert _by_id(routine_surface(server, cfg), "state:phase") is None
+    (run / "result.md").write_text("done", encoding="utf-8")
+    node = _by_id(routine_surface(server, cfg), "state:phase")
+    assert node and node["severity"] == NOTE
+
+
+@pytest.mark.usefixtures("empty_store")
+def test_phase_file_correct_says_nothing(tmp_path):
+    server, cfg = _server(tmp_path), _cfg(tmp_path)
+    _with_phases(server, cfg, '{"phase": "steady", "note": "n"}')
+    assert _by_id(routine_surface(server, cfg), "state:phase") is None
+
+
+@pytest.mark.usefixtures("empty_store")
+def test_recipe_without_phases_is_not_missing_one(tmp_path):
+    """A routine whose recipe declares no phases has nothing to record — silence, not a note."""
+    server, cfg = _server(tmp_path), _cfg(tmp_path)
+    d = pathlib.Path(cfg.dir)
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "main.md").write_text("## Run flow\ndo it\n", encoding="utf-8")
+    assert _by_id(routine_surface(server, cfg), "state:phase") is None
+
+
+def test_the_boot_note_carries_only_what_the_run_can_act_on():
+    """The engine's boot note explains FAIL and WARN and nothing else, because it exists to
+    save a run from discovering a gap at turn nine. A NOTE is addressed to the OPERATOR — a
+    cron the group suppresses, a phase file keyed wrong — and putting one in front of every
+    run buys prompt noise it cannot act on. `rsched validate` still prints all three."""
+    surface = {"nodes": [
+        {"id": "a", "severity": BLOCKS, "why": "w", "effect": "e"},
+        {"id": "b", "severity": INTERRUPTS, "why": "w", "effect": ""},
+        {"id": "c", "severity": NOTE, "why": "w", "effect": ""},
+    ]}
+    assert len(surface_lines(surface)) == 3                     # validate: everything
+    boot = surface_lines(surface, BOOT_SEVERITIES)
+    assert [ln.split()[1] for ln in boot] == ["a:", "b:"]       # boot: no NOTE

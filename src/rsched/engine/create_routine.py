@@ -75,16 +75,26 @@ def _load_draft(ctx: RunContext) -> dict | None:
     return draft if isinstance(draft, dict) and draft.get("slug") else None
 
 
+#: Patterns tagged `meta` are HARNESSES, not task patterns: `converse` assumes a present user
+#: who reads the reply and writes back, which a scheduled routine never has. The tag already
+#: existed for exactly this ("keeps it out of spawn-pattern lists and wizard suggestions") —
+#: the creation catalog was the one surface that never applied it, so it offered `converse`
+#: as a buildable choice against that pattern's own `when_to_use`.
+META_TAG = "meta"
+
+
 def _catalog(server) -> list[dict]:
-    """Every library pattern, one line each, and `generate` LAST: what the draft observation
-    shows so the choice is made against the real catalog rather than from memory (F383), and
-    against an open list rather than a closed one.
+    """Every BUILDABLE library pattern, one line each, and `generate` LAST: what the draft
+    observation shows so the choice is made against the real catalog rather than from memory
+    (F383), and against an open list rather than a closed one. Harness patterns (`meta`) are
+    excluded — see META_TAG.
     """
     from ..workflows import library
 
     return [{"slug": w["slug"], "description": w["description"] or w["name"],
              **({"when_to_use": w["when_to_use"]} if w["when_to_use"] else {})}
-            for w in library.list_workflows(server.libraries_home)] + [
+            for w in library.list_workflows(server.libraries_home)
+            if META_TAG not in (w.get("tags") or [])] + [
         {"slug": GENERATE_SLUG,
          "description": "draft a NEW pattern fitted to this task, and build the routine on it",
          "when_to_use": "no pattern above fits this task without stretching it"}]
@@ -132,11 +142,47 @@ def _unknown_workflow_obs(slug: str, workflow_slug: str, catalog: list[dict]) ->
                       "the user as an ask_user whose options are workflow_catalog below."}
 
 
+#: The design judgements a draft must have made before it is presented as decided. They are
+#: the operator's standing intake rules, and they live HERE because this observation is the
+#: only live copy of the intake contract — the `clarify-instruction` pattern that once held a
+#: second copy was never executed, so its copy silently went stale (it still described conduct
+#: as per-routine "traits" long after rules became one shared library doc).
+_DESIGN_CHECKS = (
+    "SHAPE — if the task BOTH ingests/processes signal (reads sources, updates state, "
+    "computes) AND sends outbound communication (mail, messages, publishing), offer the user "
+    "the choice of TWO routines in one group instead of one: grouped members all ingest "
+    "first and all communicate after, so one member's outbound can act on another's "
+    "freshly-processed state instead of waiting a whole cadence. Their call, not yours. "
+    "(Operator standing rule, 2026-08-05.)",
+    "MECHANISM — judge which parts of the task are judgment-free and repeated identically "
+    "every run (fetching/polling, parsing structured data, arithmetic, filtering/sorting/"
+    "dedup, threshold checks, assembling a fixed artifact) and say so in the instruction: "
+    "those belong in the routine's OWN scripts/, written once and called thereafter, with "
+    "the recipe staying the single interpreter. Genuinely generative work — drafting prose, "
+    "weighing fit, deciding what matters — stays in the recipe. A capability other routines "
+    "would share too is a util, not this routine's script. (Operator standing rule, "
+    "2026-08-12.)",
+    "OWNERSHIP — the instruction is the TASK and nothing else. Conduct is general RULES "
+    "(one copy each in the library, bound by slug in routine.yaml, read at run time with "
+    "read_rule) and capability is user-set PERMISSIONS. Put neither in the instruction, and "
+    "never let it assume a rule or permission is present. If the draft mixes conduct into "
+    "the task ('message me on discord when…', 'improve your own prompt each run'), do not "
+    "copy it in — name it to the user as a rule or permission choice. Conduct baked into "
+    "the instruction keeps acting after they change the routine's setup, which takes the "
+    "control surface away from them.",
+    "SCOPE — schedule and cadence, budgets, working directory, and model/endpoint choices "
+    "are routine CONFIG, set in the UI. Never ask about them and never write them into the "
+    "instruction. A draft that names a schedule ('every Monday…') is giving you a hint: "
+    "phrase the task per-run ('each run, cover what appeared since the last covered point, "
+    "tracked in state/') so it holds whatever the cadence turns out to be.",
+)
+
+
 def _preview_obs(draft: dict, catalog: list[dict], *, updated: bool,
                  blocked_same_leg: bool = False) -> dict:
     """The draft/preview observation: what WILL be created, the catalog the choice was made
-    against, and the exact next step. The teaching copy is the contract — a same-leg confirm
-    attempt gets told why it was held.
+    against, the design judgements the draft must have made, and the exact next step. The
+    teaching copy is the contract — a same-leg confirm attempt gets told why it was held.
     """
     instruction = draft["instruction"]
     obs = {"kind": "create_routine", "slug": draft["slug"], "name": draft["name"],
@@ -146,6 +192,7 @@ def _preview_obs(draft: dict, catalog: list[dict], *, updated: bool,
            # F383: the pattern catalog rides the observation so the relay compares against
            # what the library actually holds — the choice stops being an unexamined default.
            "workflow_catalog": catalog,
+           "design_checks": list(_DESIGN_CHECKS),
            "next": ("Nothing is created yet. Put this draft to the user as DECISIONS, not as "
                     "prose: every point still open goes out as its own `ask_user` carrying "
                     "`options`, which the console renders as numbered picks. A question "

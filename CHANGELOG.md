@@ -17,6 +17,85 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.286.0] — 2026-09-03
+
+### The workflow layer stops teaching things that are not true (msg-13)
+
+Operator: *"the workflow 'general-task' says to 'Do one small step and return its result.' … it also
+says 'There is NO shell' which is only true for routines that dont get the permission. as the
+workflows are the foundation for every new routine, this is a big problem."* An audit of all nine
+library patterns against the live engine, 32 routines and ~9,700 transcript actions found both, and
+ten more.
+
+**The claim that was false.** `shell` is a real permission unlocking a reserved util, held by **14 of
+32 routines** — so for those runs the CAPABILITIES section advertised "run arbitrary shell commands"
+in the same prompt where the recipe denied a shell existed. It was not only in the patterns: the
+HARNESS CONTRACT itself opened with "You have NO shell" for every run
+(`engine/harness.py`), and `utils_lib.py`, seven docs and the `global-utils` permission repeated it.
+All of them now say how code runs rather than what does not exist. (Shell becoming a first-class
+action kind is queued separately; this release only stops the lying.)
+
+**The claim that was a pace.** `pyworkflow.render_markdown` promotes each step function's docstring
+FIRST LINE into the prose step list, so general-task's central work step led with a pure pacing
+sentence carrying no task content — and decomposed into recipes like funscript-trainer's "never try
+to finish it all in one fire — do a single verified increment, record it, and stop." Median unused
+turn budget across the 31 routines with run records: **58%**. The step now names the work, and
+`pick_work` states the rule the engine already holds — the turn budget is a runaway backstop, not a
+ration.
+
+**One definition of done.** Patterns carried a `COMPLETION` literal and a `DONE_WHEN` param, both
+frozen into main.md where the user cannot edit them, while `state/stopping.json` — the surface the
+composer inlines, the finish gate enforces and `verifier.py` checks — went unmentioned by all nine.
+Both are gone, with the `COMPLETION` lint requirement, the renderer's `## Completion criteria`
+section and the `generate` template's line.
+
+**The step list is what `main()` sequences.** The renderer promoted EVERY module-level function,
+so materialized routines were told to act out `file_exists — Helper to check if a state file
+exists`. It now walks the calls `main()` makes, in source-position order (`ast.walk` is
+breadth-first and put `bootstrap` after `record`).
+
+**A second copy of the intake contract, unread and stale.** `clarify-instruction` was undeletable on
+the belief that "routine creation runs it" — nothing ever did; the live contract is the
+`create_routine` kind surface. Its copy had gone stale unnoticed, still describing conduct as
+per-routine "traits" long after rules became one shared library doc, and still headed "RECIPE vs
+PROCEDURE" after that doctrine was reversed. Deleted, with its four unique judgements lifted into the
+draft observation as `design_checks` (SHAPE / MECHANISM / OWNERSHIP / SCOPE). The undeletable guard
+moved to `converse`, which every conversation IS materialized from by slug and which had no guard at
+all.
+
+**Harness patterns are no longer offered as buildable.** `_catalog()` listed every library pattern
+unfiltered, so routine creation offered `converse` — whose own `when_to_use` says "Not for scheduled
+routines: … the reply cycle assumes a user who reads the answer and writes back". It now excludes the
+`meta` tag, which `converse` already carried for exactly this purpose.
+
+**Per-pattern fixes.** A bootstrap run now falls through into real work in all four patterns that
+returned early (application-coaching-steward already did — a first fire that delivers only setup
+costs a whole cadence). `general-task`'s `wait(children)` described a contract the engine does not
+have (real fields are `n`/`all`/`timeout_s`) and gated delegation on a magic `PARALLEL_THRESHOLD = 8`;
+both replaced. `improvement-proposer` imported `write_util`/`spawn`/`wait` while declaring itself
+record-only — and since `kindsurface` narrows the schema to `tools:`, that was prose for channels the
+run could not emit; `workflows/lint.py` now fails on the disagreement. `feed-monitor`'s hand-coded
+dedup algorithm became a step the routine owns as persistent tooling, and its per-item `llm` call
+became one batched judgement. `config-audit`'s per-item blocking apply-gate is gone: both holders are
+scheduled routines that correctly never blocked (0 blocking asks in 8 runs each), so the branch was
+dead and the audit now files deferred decisions. Every `orient()` stopped re-reading `LEDGER.md`,
+which the state digest already inlines (`composer.py:127`) — 15% of runs were spending a turn on it.
+
+**Two new setup-surface truths.** `readmodels/surface.py` now notes a `state/phase.json` that records
+the phase under some other key, or that no completed run ever wrote while the recipe declares
+phases: the composer reads `.get("phase")` and that value scopes a stopping condition to a stage, so
+funscript-trainer's `lifecycle`, self-audit's `state` and routine-improver's `{}` matched nothing,
+silently. Adding it exposed a second thing: the engine's BOOT note was carrying every unmet row
+including `note`, though its own closing sentence explains only FAIL and WARN. A note is addressed
+to the operator — a cron the group suppresses, a phase file keyed wrong — and a run can neither act
+on it nor be saved a turn by it, so the boot note now carries `blocks`/`interrupts` only
+(`surface.BOOT_SEVERITIES`). The routine page and `rsched validate` still show all three.
+
+`src/rsched/workflows/{pyworkflow,lint,generate}.py`, `src/rsched/engine/{create_routine,harness,
+actionschema,autocommit}.py`, `src/rsched/utils_lib.py`, `src/rsched/readmodels/surface.py`,
+`src/rsched/web/api_workflows.py`, `src/rsched/engine/boot.py`, `static/views/library.js`, all nine library patterns (one deleted),
+`library-seed/permissions/global-utils.md`, and the doc sweep across CLAUDE.md + seven `docs/` pages.
+
 ## [0.285.0] — 2026-09-03
 
 ### The daemon lamp shows when a restart is pending (msg-12)

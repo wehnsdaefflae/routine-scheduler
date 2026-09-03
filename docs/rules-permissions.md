@@ -121,11 +121,17 @@ lets one function answer at all four moments it matters:
 |---|---|---|
 | the routine page (`GET /api/routines/{slug}/surface`) | you | first setup, and drift that landed since |
 | `rsched validate` | CI and the deploy path | the same, with no page open; a `blocks` row fails the command |
-| run boot (an engine note) | the RUN | gaps it would otherwise discover at turn nine |
+| run boot (an engine note) | the RUN | `blocks`/`interrupts` it would otherwise discover at turn nine |
 | the turn boundary | the engine | live grants folding into the policy (unchanged) |
 
 The engine note is advisory and never refuses to start: a diagnostic that can stop a run is
 worse than the gap it reports, so a broken library yields no note rather than a dead run.
+
+It carries `blocks` and `interrupts` only (`surface.BOOT_SEVERITIES`), which is what its own
+closing sentence explains and nothing more. A `note` is addressed to the OPERATOR — a cron the
+group suppresses, a `state/phase.json` recorded under some other key — and the run can neither
+act on it nor be saved a turn by it, so one in front of every run buys prompt noise. The page
+and `rsched validate` still show all three.
 
 #### The reverse reading: who depends on THIS?
 

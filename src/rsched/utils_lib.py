@@ -6,8 +6,9 @@ A `gu` dispatcher lives at the library root so utils compose by calling each oth
 hook) and can bootstrap from / sync to a remote. It works empty — routines generate the
 utils they need.
 
-Routines have NO shell action; all code execution is mediated here, through named,
-selftested, git-committed (and optionally human-approved) utils.
+All code execution a routine does is mediated here, through named, selftested, git-committed
+(and optionally human-approved) utils — ad-hoc host commands only through the reserved `shell`
+util, behind its own permission.
 """
 
 from __future__ import annotations
@@ -158,7 +159,7 @@ def catalog_text(home: Path) -> str:
     utils = list_utils(home)
     if not utils:
         return ("(no global utils yet — create one with the write_util action when you need "
-                "to run code; there is NO shell action)")
+                "to run code)")
     # This IS the discovery surface (the util action's `name=list`) — each entry teaches the
     # parameters too, or the model's first call is a guess. Pass usage flags via `args` as a
     # JSON array of strings.

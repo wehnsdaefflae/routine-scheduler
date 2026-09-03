@@ -28,7 +28,6 @@ from routine.params import (
     DELIVERABLES,       # list      — the concrete obligations/milestones this project must meet, each with a due date and an owner (routine vs. user) — the seed of DELIVERABLES.md
     SITE,               # dict      — the status site, published into this project's OWN SUBFOLDER of a SHARED, access-restricted webroot that indexes ALL steward projects (ONE publish target for all of them): SUBDIR (this project's slug folder under the shared root), PUBLISH (the publish target + credentials, writing ONLY inside SUBDIR), HUB (the shared root index + a projects registry this routine upserts its own card into but never owns), FEEDBACK_ENDPOINT (the SHARED receiver at the root: token + input cap, ids namespaced by project slug), FEEDBACK_PRIVATE (the shared append-only store's PRIVATE path — never served, never a public URL), SECTIONS (fixed per-item sections)
     HANDOFF,            # dict      — reaching the user: REALTIME (a realtime message channel — send, then wait) for a same-run unblock, ASYNC (a calendar event) otherwise, and the GATES list (send/publish/spend/sign/public/first-time) that require a one-word go
-    DONE_WHEN,          # str       — the project's overall completion criterion (stewardship is open-ended; DONE_WHEN gates the project's END, not each run) or "" if perpetual
 )
 
 # The engine actions the orchestrator may take — exactly one per turn, each answered by an
@@ -66,15 +65,7 @@ META = {
     "tools": None,          # None = every action kind is allowed — a steward needs the full surface
 }
 
-PHASES = ["bootstrap", "steady", "wind-down"]   # steady stewards forever; wind-down runs once DONE_WHEN nears
-COMPLETION = (
-    "per run: prior site feedback ingested past the cursor and folded into direction; new signal "
-    "gathered and every referenced document indexed; no dated obligation left slipping; ONE "
-    "verified high-value increment landed and the work left better; state files + LEDGER refreshed; "
-    "the status site regenerated + published (state + deliverables + exactly one open question "
-    "surfaced, stable feedback ids preserved, the feedback data file never clobbered); "
-    "overall: DONE_WHEN is met and the user has been told where the deliverable lives."
-)
+PHASES = ["bootstrap", "steady", "wind-down"]   # steady stewards forever; wind-down runs once the end is in sight
 
 
 class NeedsDecision(Exception):
@@ -99,7 +90,8 @@ def main():
 
     if phase.current() == "bootstrap":
         bootstrap()                                 # first run(s): stand up state files + the site + endpoint
-        return finish("ok", "Bootstrapped: state files seeded, status site + feedback endpoint live.")
+        # fall through — a bootstrap run still lands one real increment, so the counterparty sees
+        # a project that has moved rather than one that has merely been set up.
 
     if already_ran_today():
         return light_delta_pass()                   # same-day re-fire: only process signal since the last run
@@ -242,9 +234,12 @@ def pick_one_thing(direction):
 def execute(item):
     """Do the one increment and return its result — and leave the work better than you found it: on
     any run that touches code/artifacts, also land at least one concrete, non-cosmetic quality lift.
-    There is NO shell — run code only via `util`, or `write_util` a selftested PEP-723 script (it may
-    call sibling utils) then call it. Read/write with read_file/write_file/edit_file; use `llm` for a
-    scoped one-shot judgment; `subtask`/`spawn` for a separable chunk. Run tests/build BEFORE
+    Code runs through a CAPABILITY, never ad hoc: take whichever your CAPABILITIES list offers. A
+    judgment-free step you repeat identically every run belongs in this routine's own persistent
+    tooling — written once, called thereafter — while a capability other routines would share too
+    belongs in the shared library, authored with a selftest before first use. Read/write with
+    read_file/write_file/edit_file; use `llm` for a scoped one-shot judgment; `subtask`/`spawn` for
+    a separable chunk. Run tests/build BEFORE
     claiming success — a claim without a passing run is the worst failure this system knows. If the
     change alters what the project does or claims, update ALL public surfaces (README/site/docs) in
     the SAME run so none lags."""
@@ -318,8 +313,9 @@ def verify(result):
 
 
 def done():
-    """True when DONE_WHEN is met (the project's obligations are all delivered). Open-ended by
-    default — this gates the project's end, not each run."""
+    """True when the project's obligations are all delivered — read it off `state/stopping.json`,
+    the user's own words for what DONE means. This gates the PROJECT's end, not each run, and is
+    open-ended by default."""
 
 
 if __name__ == "__main__":

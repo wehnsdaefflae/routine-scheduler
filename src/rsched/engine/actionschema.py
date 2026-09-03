@@ -46,7 +46,7 @@ ACTION_SCHEMA: dict = {
                            "turn; don't repeat it in say.",
         },
         "kind": {"type": "string", "enum": list(KINDS)},
-        # util / write_util (the ONLY way to run code — there is no shell)
+        # util / write_util (how a run executes code)
         "name": {
             "type": "string",
             "description": "util/write_util/remove_util: the global util's name (kebab-case) · "

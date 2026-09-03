@@ -10,7 +10,7 @@ save, versioned in the library repo.
 
 A util is a **self-contained PEP 723 Python script** (`utils/<name>/main.py` in the
 library) that any routine can call with `util name=<name> args=[…]` — and that you can run
-yourself as `gu <name> …`. Routines have no shell; the util catalog *is* their toolbox.
+yourself as `gu <name> …`. The util catalog *is* a routine's toolbox.
 
 The **docstring header is the only machine-read surface** — the engine, the catalog, and
 the Settings page all parse it:
@@ -19,7 +19,7 @@ the Settings page all parse it:
 # /// script
 # dependencies = []
 # ///
-"""dir-tree — list a directory tree to a bounded depth (routines have no shell).
+"""dir-tree — list a directory tree to a bounded depth.
 
 usage: gu dir-tree ROOT [--depth N] [--max N] [--all] [--json]
 calls: (none)
@@ -93,7 +93,6 @@ META = {
 }
 
 PHASES = ["bootstrap", "steady", "wrap-up"]       # the cross-run progression
-COMPLETION = "per run: a concrete increment, a LEDGER entry, everything committed"
 
 def main():
     """One run — the top-level control flow, one function per step below."""
@@ -105,10 +104,19 @@ Rules of the form:
   clarifier must pin down for a concrete task (type + meaning in the trailing comment).
   They resolve to nothing; they are the pattern's parameter contract.
 - **`META`** must be a literal dict; `tools:` restricts which action kinds materialized
-  routines may use (how `clarify-instruction` is held to ask/read/write/finish).
-- **`PHASES` / `COMPLETION`** are literals; PHASES names the cross-run progression (the
-  UI's state graph itself comes from the materialized routine's stage modules — the
-  engine tracks the run's live position from its stage-module reads).
+  routines may use. It must COVER the pattern's `from routine.actions import` line:
+  `kindsurface.effective_kinds` narrows the schema to `tools:`, so a kind the pattern
+  imports but the allowlist excludes is prose describing a channel the run cannot
+  emit. `workflows/lint.py` fails on the disagreement.
+- **`PHASES`** is a literal naming the cross-run progression (the UI's state graph
+  itself comes from the materialized routine's stage modules — the engine tracks the run's
+  live position from its stage-module reads). Record it under the `phase` key of
+  `state/phase.json`: that is what the composer reads and what scopes a stopping condition
+  to a stage, and a routine that invents its own key writes a file matching nothing.
+- There is deliberately **no `COMPLETION`** literal. What DONE means is the USER's, and it
+  lives in the routine's `state/stopping.json` where they can edit it and where the finish
+  gate makes it impossible to ignore. A completion text frozen into main.md is not editable
+  from there and could only ever disagree with it.
 - One top-level `main()` whose body is the per-run control flow; one function per step.
 
 `workflows/lint.py` gates every save (the Library editor shows the findings inline). A

@@ -71,13 +71,13 @@ def test_projection_drops_other_kinds_fields_and_prose():
 
 
 def test_projection_is_materially_smaller():
-    """The point of the exercise: a restricted workflow stops paying for 21 kinds. The
-    clarify-instruction allowlist is the real worst case in the library."""
+    """The point of the exercise: a restricted workflow stops paying for the kinds it may not
+    use. A four-kind allowlist is the realistic narrow case."""
     full = len(json.dumps(ACTION_SCHEMA, indent=1))
-    clarify = len(json.dumps(schema_for_kinds(
+    narrow = len(json.dumps(schema_for_kinds(
         {"ask_user", "read_file", "write_file", "finish"}), indent=1))
     # ~46% off at the time of writing; the floor guards the mechanism, not the exact ratio.
-    assert clarify < full * 0.6, f"projection saved too little: {clarify} vs {full}"
+    assert narrow < full * 0.6, f"projection saved too little: {narrow} vs {full}"
 
 
 def test_projection_never_mutates_the_global_schema():

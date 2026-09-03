@@ -24,7 +24,7 @@ from routine.params import (
     DECISIONS_MIRROR, # str       — the durable human-readable decisions.md in the working dir that mirrors the subpage
 )
 
-from routine.actions import read_file, write_file, util, write_util, llm, spawn, wait, ask_user, finish
+from routine.actions import read_file, write_file, util, llm, ask_user, finish
 from routine.state import phase, ledger    # state/phase.json helper, LEDGER.md append helper
 
 META = {
@@ -40,17 +40,12 @@ META = {
     "version": 2,
     "tags": ["research", "proposals", "decision-support", "record-only", "recurring"],
     "includes": ["ask-policy", "web-research", "decision-record"],
-    # Record-only: no spawn, no wait, no shell side effects — research, judge, write, and ask.
+    # Record-only: it researches, judges, writes and asks. No children, no authoring, no
+    # outward act but the deferred question itself.
     "tools": ["read_file", "write_file", "util", "llm", "ask_user", "finish"],
 }
 
 PHASES = ["steady"]     # no cross-run milestones — every run is the same review loop
-COMPLETION = (
-    "per run: all fixed axes reviewed, the strongest new proposals (≤CAP_PER_AXIS each) filed as "
-    "deferred decisions on the subpage and mirrored to decisions.md, PROPOSED_LEDGER updated, and "
-    "every axis that yielded nothing new noted explicitly; "
-    "overall: open-ended — the backlog keeps growing until the user stops the routine"
-)
 
 
 class NothingNew(Exception):
@@ -80,9 +75,10 @@ def main():
 
 
 def orient():
-    """Read the state digest (phase, last result, LEDGER tail, user messages) and PROPOSED_LEDGER
-    before exploring anything new — so you never re-propose a known idea or chase a dead end."""
-    read_file("LEDGER.md")
+    """Consume the state digest (phase, last result, LEDGER tail, user messages) and read
+    PROPOSED_LEDGER before exploring anything new — so you never re-propose a known idea or chase
+    a dead end. The digest already carries the LEDGER tail and says when there is more; read the
+    file only if it says so."""
     read_file(PROPOSED_LEDGER)
 
 

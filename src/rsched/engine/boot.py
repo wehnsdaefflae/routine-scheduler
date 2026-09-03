@@ -176,13 +176,13 @@ def _setup_gap_note(loop) -> None:
     no note rather than a dead run: a diagnostic that can stop a run is worse than the gap it
     reports.
     """
-    from ..readmodels.surface import routine_surface, surface_lines
+    from ..readmodels.surface import BOOT_SEVERITIES, routine_surface, surface_lines
 
     ctx = loop.ctx
     if ctx.depth > 0:                # a child inherits its parent's resources, not its config
         return
     try:
-        lines = surface_lines(routine_surface(ctx.server, ctx.routine))
+        lines = surface_lines(routine_surface(ctx.server, ctx.routine), BOOT_SEVERITIES)
     except (OSError, ValueError, AttributeError):
         return
     if not lines:

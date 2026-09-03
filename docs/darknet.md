@@ -1,6 +1,6 @@
 # Darknet access — reading Tor hidden services from a run
 
-A routine has no shell, so the only way it reaches anything is a global util. Darknet access is
+A routine reaches anything through a global util. Darknet access is
 therefore not an engine feature: it is **one util plus one permission plus one container**, and
 no engine code knows about it at all.
 

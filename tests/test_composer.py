@@ -28,13 +28,17 @@ def _ctx(make_routine, tmp_path, **kwargs) -> RunContext:
 
 
 def test_harness_contract_mentions_the_load_bearing_facts(make_routine, tmp_path):
-    # Only the BEHAVIORAL facts are pinned here: the one-action contract, the no-shell
-    # invariant, the ask modes, the configured budget rendered in, and the working dir.
+    # Only the BEHAVIORAL facts are pinned here: the one-action contract, how code runs, the
+    # ask modes, the configured budget rendered in, and the working dir.
     # Prose-level wording is owned by docs/prompt-anatomy.md + test_prompt_anatomy.py;
     # the write_util gloss variants are pinned by the grants tests below.
     ctx = _ctx(make_routine, tmp_path)
     text = harness_contract(ctx)
-    for needle in ("EXACTLY one JSON object", "NO shell", "10 turns",
+    # NOT "you have NO shell": that was false for the 14 routines holding the shell
+    # permission, which read it in the same prompt whose CAPABILITIES section granted them
+    # the reserved shell util. The contract says how code runs, not what does not exist.
+    assert "NO shell" not in text
+    for needle in ("EXACTLY one JSON object", "the `util` action", "10 turns",
                    "deferred", "blocking", str(ctx.routine.dir),
                    # the anti-batching override: the CLI harness advertises multi-tool
                    # batching, but the engine executes at most one action per reply

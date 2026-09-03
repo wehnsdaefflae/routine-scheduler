@@ -542,7 +542,7 @@ it does NOT share is a shell, and two consequences follow that are easy to get w
   page as kit fires "host ahead of master" every morning, and "master ahead of host — deploy it"
   would put yesterday's copy over today's.
 - **It must not publish `gate` or `question`.** The shell is what renders those, above every body,
-  and no shell runs here — so a question in its state document would count on the hub and then
+  and nothing here hosts a server — so a question in its state document would count on the hub and then
   show nothing when opened, which is the exact failure that moving them into the shell fixed.
 
 It also shows what the gate bought. Basic Auth is a credential the browser holds, and an installed

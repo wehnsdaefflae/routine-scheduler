@@ -372,3 +372,38 @@ def test_materialize_generates_a_comprehensive_description(tmp_path, monkeypatch
         (server.routines_home / ACTION["target"] / "routine.yaml").read_text(encoding="utf-8"))
     assert cfg["description"] == generated
     assert cfg["description"] != ACTION["name"]         # not the old `description = name`
+
+
+def test_harness_patterns_are_not_offered_as_buildable(tmp_path):
+    """`converse` is a HARNESS: it assumes a present user who reads the reply and writes back,
+    which a scheduled routine never has — its own when_to_use says "Not for scheduled
+    routines". The `meta` tag existed for exactly this ("keeps it out of spawn-pattern lists
+    and wizard suggestions"); the creation catalog was the one surface that never applied it,
+    so it offered converse as a choice against the pattern's own instructions.
+    """
+    from rsched.workflows.library import list_workflows
+
+    server = _server(tmp_path)
+    ctx = _ctx(server, home="conversations_home")
+    obs = create_routine.handle_create_routine(ctx, dict(ACTION))
+    offered = {w["slug"] for w in obs["workflow_catalog"]}
+    library = list_workflows(server.libraries_home)
+    meta_slugs = {w["slug"] for w in library if create_routine.META_TAG in (w["tags"] or [])}
+    assert meta_slugs, "the fixture library carries at least one harness pattern"
+    assert not (offered & meta_slugs), f"harness patterns offered: {offered & meta_slugs}"
+    # everything else still is, so the filter did not empty the catalog
+    assert offered - {create_routine.GENERATE_SLUG}
+
+
+def test_draft_carries_the_standing_design_checks(tmp_path):
+    """The intake contract has ONE live copy. The `clarify-instruction` pattern that once held
+    a second went stale unnoticed because nothing executed it — it still described conduct as
+    per-routine "traits" long after rules became one shared library doc."""
+    server = _server(tmp_path)
+    ctx = _ctx(server, home="conversations_home")
+    obs = create_routine.handle_create_routine(ctx, dict(ACTION))
+    checks = " ".join(obs["design_checks"])
+    for needle in ("SHAPE", "MECHANISM", "OWNERSHIP", "SCOPE"):
+        assert needle in checks, needle
+    assert "read_rule" in checks and "scripts/" in checks
+    assert "trait" not in checks.lower()

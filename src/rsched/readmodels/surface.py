@@ -236,6 +236,52 @@ def _schedule_nodes(server: Any, cfg: RoutineConfig) -> list[dict]:
     return []
 
 
+def _phase_nodes(server: Any, cfg: RoutineConfig) -> list[dict]:
+    """Does `state/phase.json` record the phase under the key the engine reads?
+
+    The composer reads it as `.get("phase")`, and that value is what scopes a stopping
+    condition to a stage. Routines that invented their own key wrote a file that LOOKS right
+    and matches nothing: funscript-trainer recorded `lifecycle`, self-audit `state`,
+    routine-improver an empty object. Nothing breaks — the digest dumps the whole object, so
+    the run still reads it — but every stage-scoped condition silently never fires.
+
+    Only said for a routine whose recipe declares phases; one that never had any is not
+    missing anything. ABSENCE is only a gap once a run has COMPLETED without recording one —
+    the composer reads a missing file as "likely the first run", and the run in flight right
+    now has not had its chance yet. A CONVERSATION is skipped outright: the converse pattern
+    declares a phase, but conversations.py never writes one to state/phase.json by design, so
+    every reply would carry a boot note about a file that is correctly absent.
+    """
+    from ..paths import read_json
+
+    routine_dir = Path(getattr(cfg, "dir", None) or server.routines_home / cfg.slug)
+    conversations = getattr(server, "conversations_home", None)
+    if conversations is not None:
+        try:
+            if routine_dir.resolve().parent == Path(conversations).resolve():
+                return []
+        except OSError:
+            return []
+    main = routine_dir / "main.md"
+    if not main.is_file() or "## Phases" not in main.read_text(encoding="utf-8", errors="replace"):
+        return []
+    raw = read_json(routine_dir / "state" / "phase.json")
+    if raw is None:
+        if not any((routine_dir / "runs").glob("*/result.md")):
+            return []
+        return [_node("state:phase", "absent", NOTE,
+                      "its recipe declares phases but no completed run has recorded one",
+                      "the digest reports no phase and any stage-scoped stopping condition "
+                      "never matches; the next run that records a phase fixes it")]
+    if not isinstance(raw, dict) or not str(raw.get("phase") or "").strip():
+        found = ", ".join(sorted(raw)) if isinstance(raw, dict) and raw else "nothing"
+        return [_node("state:phase", "mis-keyed", NOTE,
+                      "state/phase.json does not record the phase under the `phase` key",
+                      f"the engine reads `phase`; this file holds {found}. The digest still "
+                      "shows the object, but stage-scoped stopping conditions never match")]
+    return []
+
+
 def routine_surface(server: Any, cfg: RoutineConfig) -> dict:
     """The full setup surface for one routine: `{nodes, verdict}`.
 
@@ -265,6 +311,7 @@ def routine_surface(server: Any, cfg: RoutineConfig) -> dict:
     machine_catalog = getattr(server, "machines", {}) or {}
     nodes += _expects_nodes(cfg, expects, machine_catalog)
     nodes += _schedule_nodes(server, cfg)
+    nodes += _phase_nodes(server, cfg)
 
     # -- the util-header join: what the RESERVED utils this routine holds actually need ------
     # Utils already declare their secrets and their private filesystem stores; this is the
@@ -370,14 +417,23 @@ def routine_surface(server: Any, cfg: RoutineConfig) -> dict:
     }
 
 
-def surface_lines(surface: dict) -> list[str]:
+#: What the BOOT note carries. The note's own closing sentence explains FAIL and WARN and
+#: nothing else, because it exists for gaps the RUN would otherwise discover the hard way. A
+#: NOTE is addressed to the operator — a cron the group suppresses, a phase file keyed wrong —
+#: and the run can neither act on it nor be saved a turn by it, so putting one in front of
+#: every run buys prompt noise. `rsched validate` and the routine page still show all three.
+BOOT_SEVERITIES = (BLOCKS, INTERRUPTS)
+
+
+def surface_lines(surface: dict, severities: tuple[str, ...] | None = None) -> list[str]:
     """The surface as flat text — what `rsched validate` prints and what the engine files as a
-    boot note. One line per unmet node; a ready routine yields nothing at all.
+    boot note. One line per unmet node; a ready routine yields nothing at all. `severities`
+    narrows it (the engine passes BOOT_SEVERITIES); the default shows every unmet node.
     """
     label = {BLOCKS: "FAIL ", INTERRUPTS: "WARN ", NOTE: "NOTE "}
     out = []
     for n in surface["nodes"]:
-        if n["severity"] == OK:
+        if n["severity"] == OK or (severities and n["severity"] not in severities):
             continue
         tail = f" — {n['effect']}" if n["effect"] else ""
         out.append(f"{label[n['severity']]} {n['id']}: {n['why']}{tail}")

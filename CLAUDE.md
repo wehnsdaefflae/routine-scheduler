@@ -8,9 +8,9 @@ LLM agent routine scheduler. A **routine** = instruction + workflow + schedule, 
 git repo under `~/routines/<slug>`. Runs execute on a provider-agnostic engine where *the workflow
 is the harness* — the orchestrator LLM follows the workflow document and acts only through one JSON
 action per turn. **A second AGENT LOOP in the path is banned**: it fights this harness and hides the
-conversation. Endpoints are model TRANSPORTS only (docs/architecture.md). Routines have **no shell** — the
-only way to run code is a global util (a reserved `shell` util exists behind the `shell`
-permission), and every util subprocess runs inside a Landlock sandbox scoped to the run's
+conversation. Endpoints are model TRANSPORTS only (docs/architecture.md). Routines run code through a global util
+(including the reserved `shell` util, behind the `shell` permission) — there is no shell ACTION,
+and every util subprocess runs inside a Landlock sandbox scoped to the run's
 permissions INTERSECTED with the util's own `fs:` declaration (docs/sandboxing.md). The instruction contains only the task; cross-cutting conduct is
 a set of GENERAL RULES with ONE library copy each (`rules:` in routine.yaml holds slugs — the run
 reads the prose with `read_rule` and applies the principle to its own case); schedule, PERMISSIONS,
@@ -279,8 +279,13 @@ by a test, by the engine, or by a past incident.
   `readmodels/surface.py` joins the effective config against the library's `requires:`/`expects:`,
   the util headers, the live stores AND the group store: a member cron a group's schedule
   suppresses (D71) is a routine.yaml naming a time it will never fire at, and a routine in no
-  scheduled group with no cron of its own is started by nothing on a clock. Both are NOTE rows —
-  nothing is broken, the file is misleading. `rsched validate` adds the instance-level case no
+  scheduled group with no cron of its own is started by nothing on a clock. It also reads
+  `state/phase.json`: the composer looks the phase up as `.get("phase")` and that value is what
+  scopes a stopping condition to a stage, so a routine recording its own key (`lifecycle`,
+  `state`) or nothing at all wrote a file matching nothing. All of these are NOTE rows —
+  nothing is broken, the file is misleading — and the BOOT note carries only `blocks`/
+  `interrupts` (`surface.BOOT_SEVERITIES`): a NOTE is for the operator, and a run can neither
+  act on it nor be saved a turn by it. `rsched validate` adds the instance-level case no
   routine's surface can see (a scheduled group with no members). An `expects:` row must be an
   UNCONDITIONAL presumption: it fires on EVERY holder, and it has been wrong twice the same way
   (`git-checkpoint`, then `status-page`'s write root — false for all seven holders, because a page

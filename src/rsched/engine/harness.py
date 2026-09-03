@@ -4,7 +4,7 @@ Split out of `composer.py` (F393): assembling the prompt from parts is one job, 
 part that states the contract is another — this one is almost entirely prose the model obeys.
 
 Identity, one JSON action per turn, the `say` contract at the routine's deliberation level, the
-working directory and every extra root, group store and group notes, no shell, the concrete
+working directory and every extra root, group store and group notes, how code runs, the concrete
 budgets, a gloss of each action kind THIS run can use. Every sentence is load-bearing and
 `docs/prompt-anatomy.md` pins the wording — a change here without a change there fails
 `tests/test_prompt_anatomy.py`, deliberately.
@@ -153,7 +153,7 @@ are on with read_file, ON DEMAND, instead of loading them all up front. Keep you
 
 Working directory: {r.dir}. All relative paths resolve there.{extra}
 
-You have NO shell. The ONLY way to run code is a global util (the `util` action). {authoring} \
+You run code through a global util (the `util` action). {authoring} \
 You never run git yourself: the engine commits your working directory automatically at run end.
 
 {ownership}Cross-cutting conduct (when to ask the user, research discipline, what to \

@@ -42,11 +42,6 @@ META = {
 }
 
 PHASES = ["conversation"]   # a conversation has no cross-run milestones — it is one open thread
-COMPLETION = (
-    "per reply: the newest user message is answered, OR the plan step you were on is finished "
-    "or genuinely blocked — carried by an authored finish; "
-    "overall: open-ended — the conversation lives until the user stops writing or deletes it"
-)
 
 
 def main():

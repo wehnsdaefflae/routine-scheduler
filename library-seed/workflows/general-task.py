@@ -1,6 +1,6 @@
 """General task — the sane default workflow.
 
-Orient, do the instruction's work in small verified steps, record, commit. This file is a
+Orient, do the instruction's work in verified steps, record, commit. This file is a
 PATTERN, not a program: the orchestrator never executes it —
 it *acts it out*, one engine action per turn, following the control flow below (its branches,
 loops, and error handling). The dummy imports name the parameters this routine works with; the
@@ -15,36 +15,29 @@ from routine.params import (
     DELIVERABLE,    # str       — the concrete artifact this routine produces, and where it lives
     SOURCES,        # list[str] — the inputs/feeds each run draws from (may be empty)
     SINCE_MARKER,   # str       — how "new since the last run" is tracked (a file under state/)
-    DONE_WHEN,      # str       — the overall completion criterion, or "" if this is open-ended
 )
 
 # The engine actions the orchestrator may take — exactly one per turn, each answered by an
 # OBSERVATION the next turn reasons about. Shown as ordinary calls for readability.
-from routine.actions import read_file, write_file, util, write_util, llm, spawn, wait, ask_user, finish
+from routine.actions import (read_file, write_file, util, write_util, llm, spawn, subruns,
+                             wait, ask_user, finish)
 from routine.state import phase, ledger    # state/phase.json helper, LEDGER.md append helper
 
 META = {
     "name": "General task",
     "slug": "general-task",
-    "description": "The sane default — orient, do the work in small verified steps, "
-                   "record, commit.",
+    "description": "The sane default — orient, do the work in verified steps, record, commit.",
     "when_to_use": "Most recurring instructions with no more specific pattern: collect / produce "
                    "/ maintain something on a schedule, tend a long-running goal, run a periodic "
                    "check. Use it when the instruction says WHAT to deliver and the HOW is "
                    "ordinary tool work.",
-    "version": 10,
+    "version": 11,
     "tags": ["general", "research", "tool-use"],
     "includes": ["ask-policy", "web-research", "decision-record"],
     "tools": None,          # None = every action kind is allowed
 }
 
 PHASES = ["bootstrap", "steady", "wrap-up"]     # tracked in state/phase.json
-COMPLETION = (
-    "per run: a concrete increment, a LEDGER entry, everything committed; "
-    "overall: DONE_WHEN is met and the user has been told where the deliverable lives"
-)
-
-PARALLEL_THRESHOLD = 8      # delegate to sub-workflows only when the work is genuinely large
 
 
 class NeedsDecision(Exception):
@@ -57,26 +50,27 @@ class ExternalBlocker(Exception):
 
 def main():
     """One run of the routine — the top-level control flow."""
-    orient()                                    # consume the state digest + LEDGER before anything new
+    orient()                                    # consume the state digest before anything new
 
     if phase.current() == "bootstrap":
-        bootstrap()                             # first run(s): set up state/, first honest increment
-        return finish("ok", "Bootstrapped; advanced to steady.")
+        bootstrap()                             # first run(s): set up state/, then carry on
+        # fall through — a bootstrap run still delivers a first real increment, so the routine
+        # is useful after its FIRST fire rather than after its second.
 
     work = pick_work()                          # what THIS run delivers (finish in-progress work first)
     if not work:
         return finish("ok", "Nothing due this run; standing obligations guarded.")
 
-    if len(work) > PARALLEL_THRESHOLD:
+    if separable(work):
         # Separable bulk work → parallel children, each with a self-contained prompt + disjoint
         # outputs. Keep working, then fold in their results.
-        children = [spawn(chunk) for chunk in batches(work)]
-        while children:
-            children = wait(children)           # blocks until the next child finishes; returns the rest
+        for chunk in batches(work):
+            spawn(chunk)
+        collect_children()
     else:
         for item in work:
             try:
-                verify(execute(item))           # one small step, then read it back — never assume
+                verify(execute(item))           # do it, then read it back — never assume
             except NeedsDecision as decision:
                 ask_user(decision, mode="deferred")   # → Decisions page; this item waits for the answer
             except ExternalBlocker:
@@ -87,37 +81,62 @@ def main():
 
 
 def orient():
-    """Read the state digest (phase, last result, LEDGER tail, user messages/answers) and
-    LEDGER.md before exploring anything new — so you never re-try a known dead end."""
-    read_file("LEDGER.md")
+    """Consume the state digest (phase, last result, LEDGER tail, user messages/answers) before
+    exploring anything new — so you never re-try a known dead end. The digest already carries the
+    LEDGER tail and says when there is more; read the file only if it says so."""
 
 
 def bootstrap():
-    """First run(s): create state/, understand the instruction's domain, file deferred questions
-    for genuinely pivotal unknowns (ask-policy), and produce a first honest increment of
-    DELIVERABLE. Advance state/phase.json to 'steady' once the basic loop has produced output."""
+    """First run(s): create state/, understand the instruction's domain, and file deferred
+    questions for genuinely pivotal unknowns (ask-policy). Advance state/phase.json to 'steady'
+    once the basic loop can run, then continue into this run's normal work — a first fire that
+    delivers nothing but setup costs the user a whole cadence."""
 
 
 def pick_work():
     """From the instruction, the current phase, and any user messages, decide what this run
     delivers. Prefer finishing in-progress work; guard standing obligations first. Draw new items
-    from SOURCES since SINCE_MARKER."""
+    from SOURCES since SINCE_MARKER.
+
+    Take everything that is genuinely due — this is a work LIST, not a token gesture. What bounds
+    a run is the stopping conditions in `state/stopping.json` (the user's own words for what DONE
+    means, inlined above and accounted for in your finish summary). The turn budget is a runaway
+    BACKSTOP, not a ration: do not stop early because turns are being spent, and do not stretch a
+    finished job to fill them."""
+
+
+def separable(work):
+    """True when the work splits into independent chunks whose own context or budget would crowd
+    out the rest of this run if done inline. Judge the shape of the work, not its length."""
 
 
 def execute(item):
-    """Do one small step and return its result. There is NO shell — run code only via `util`; if
-    nothing fits, `write_util` a selftested PEP-723 script (it may call sibling utils), then call
-    it. Read/write files with read_file/write_file; verify external facts by searching, not from
+    """Do the next piece of the work and return its result.
+
+    Code runs through a CAPABILITY, never ad hoc: take whichever your CAPABILITIES list offers.
+    A judgment-free step you repeat identically every run belongs in this routine's own
+    persistent tooling — written once, called thereafter — while a capability other routines
+    would share too belongs in the shared library, authored with a selftest before first use.
+    Read/write files with read_file/write_file; verify external facts by searching, not from
     memory (web-research); use `llm` for a scoped one-shot judgment."""
 
 
 def verify(result):
-    """Confirm what was produced — read it back, check the util's exit code, count the results.
-    A claimed-but-unverified outcome is the worst failure this system knows."""
+    """Confirm what was produced — read it back, check the exit code, count the results, see the
+    test pass. A claimed-but-unverified outcome is the worst failure this system knows."""
 
 
 def batches(work):
     """Split large work into disjoint chunks for parallel sub-workflows (one prompt each)."""
+
+
+def collect_children():
+    """Watch the children through to their exits and fold in what they hand back.
+
+    `subruns` gives their status table; `wait` blocks until the next one finishes. Every child
+    hands back a summary, plus any files it wrote into its own artifacts/ — the engine copies
+    those to artifacts/from-sub-<n>/ and NAMES them in the one CHILD RUN FINISHED notification.
+    Read what you need from there before finishing; a child's context is gone once it exits."""
 
 
 def record():

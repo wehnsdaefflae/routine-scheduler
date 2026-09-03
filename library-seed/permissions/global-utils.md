@@ -1,14 +1,14 @@
 ---
 effect:
   with: run the shared toolbox of utils
-  without: cannot run any code at all — there is no shell behind it
+  without: cannot run any code at all — the util action is the whole channel
   when: always, unless the routine is pure prose and touches nothing
 tags: [tool-use, utils, discovery]
 requires: {}
 ---
 # permission: global utils — the shared toolbox, and how to reach into it
 
-You have NO shell: every bit of code you run is a global util — a named, selftested script
+Every bit of code you run is a global util — a named, selftested script
 shared across all routines. The CAPABILITIES list names them at one-line-summary altitude,
 which tells you WHAT exists but carries no flags. Before your FIRST call to a util, run the
 `util` action with name `list` and args `["<util-name>"]` for that util's exact `usage:` line

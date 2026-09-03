@@ -1,6 +1,6 @@
 """Autocommit the routine's working directory at run end (best-effort).
 
-Routines have no shell, so the engine owns version control of their state/outputs.
+Routines never run git themselves, so the engine owns version control of their state/outputs.
 This is a best-effort operation: failures are silently ignored so they never block
 the run's finish.
 """

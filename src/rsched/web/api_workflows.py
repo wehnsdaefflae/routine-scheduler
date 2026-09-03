@@ -317,12 +317,19 @@ def put_workflow(request: Request, slug: str, body: PutBody) -> dict:
 def delete_workflow(request: Request, slug: str) -> dict:
     """Delete a workflow pattern (committed). Routines materialized from it are untouched —
     they own their recipes. A deleted SEED pattern reappears at the next daemon boot
-    (sync_seed_library_docs restores missing seed docs). `clarify-instruction` is
-    undeletable: routine creation runs it for every routine.
+    (sync_seed_library_docs restores missing seed docs). `converse` is undeletable: every new
+    conversation is materialized from it BY SLUG (conversations.CONVERSE_WORKFLOW), so losing
+    it breaks conversation creation until the next boot restores the seed.
+
+    The guard used to name `clarify-instruction` instead, on the belief that creation ran it.
+    Nothing ever did — the intake contract lives in the `create_routine` kind surface — while
+    the pattern that IS read by slug had no guard at all.
     """
-    if slug == "clarify-instruction":
-        raise HTTPException(400, "clarify-instruction cannot be deleted — the new-routine "
-                                 "routine creation runs it for every routine")
+    from ..conversations import CONVERSE_WORKFLOW
+
+    if slug == CONVERSE_WORKFLOW:
+        raise HTTPException(400, f"{CONVERSE_WORKFLOW} cannot be deleted — every conversation "
+                                 "is materialized from it by slug")
     home = _home(request)
     path = _workflow_file(home, slug)
     if path is None:

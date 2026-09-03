@@ -1532,16 +1532,18 @@ def test_workflow_delete_and_no_proposals_flow(client):
     assert c.get("/api/proposals").status_code == 404          # flow retired
 
 
-def test_clarify_instruction_workflow_is_undeletable(client):
-    """Routine creation runs clarify-instruction for every routine — the API refuses to
-    delete it even though every other workflow is deletable."""
+def test_converse_workflow_is_undeletable(client):
+    """Every conversation is materialized from `converse` BY SLUG, so the API refuses to
+    delete it even though every other workflow is deletable. The guard used to name
+    clarify-instruction, on the belief that creation ran it — nothing ever did, while the
+    pattern that IS read by slug had no guard at all."""
     c, tmp = client
     wf_dir = tmp / "library" / "workflows"
     wf_dir.mkdir(parents=True, exist_ok=True)
-    (wf_dir / "clarify-instruction.py").write_text("META = {}\n")
-    r = c.delete("/api/workflows/clarify-instruction")
-    assert r.status_code == 400 and "creation" in r.json()["detail"]
-    assert (wf_dir / "clarify-instruction.py").exists()
+    (wf_dir / "converse.py").write_text("META = {}\n")
+    r = c.delete("/api/workflows/converse")
+    assert r.status_code == 400 and "conversation" in r.json()["detail"]
+    assert (wf_dir / "converse.py").exists()
 
 
 def test_library_trait_delete_and_permission_guard(client):

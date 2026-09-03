@@ -1073,8 +1073,9 @@ def test_library_delete_flows(ui, ui_page):
     expect(editor_panel.get_by_role("button", name="save + commit")).to_be_visible()
     expect(editor_panel.get_by_role("button", name="delete")).to_have_count(0)
 
-    # clarify-instruction: editable, NOT deletable; its sibling workflows are
-    ui_page.goto(f"{ui.url}/#/library/workflow/clarify-instruction")
+    # converse: editable, NOT deletable — every conversation is materialized from it BY SLUG,
+    # so losing it breaks conversation creation. Its sibling workflows delete normally.
+    ui_page.goto(f"{ui.url}/#/library/workflow/converse")
     expect(editor_panel.get_by_role("button", name="save + commit")).to_be_visible()
     expect(editor_panel.get_by_role("button", name="delete")).to_have_count(0)
     ui_page.goto(f"{ui.url}/#/library/workflow/general-task")

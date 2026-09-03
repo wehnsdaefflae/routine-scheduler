@@ -1,6 +1,6 @@
 # Usenet access — reading, searching and posting over NNTP
 
-A routine has no shell, so the only way it reaches anything is a global util. Usenet access is
+A routine reaches anything through a global util. Usenet access is
 therefore not an engine feature: it is **two utils plus one permission**, and no engine code
 knows about it at all. It mirrors [darknet](darknet.md) exactly — same shape, same gate.
 

@@ -40,7 +40,6 @@ suggests>],
 "finish"]
 }
 PHASES = [<cross-run phases>]       # or ["steady"] when there are no cross-run milestones
-COMPLETION = "<done-for-this-run; done-overall>"
 
 def main():
     """The per-run control flow. Use real Python — if/elif/else, for/while, try/except, match — and
@@ -53,7 +52,10 @@ def main():
 if __name__ == "__main__":
     main()
 
-META / PHASES / COMPLETION must be plain literals (they are parsed statically with ast, never run).
+META / PHASES must be plain literals (they are parsed statically with ast, never run).
+Do NOT write a COMPLETION literal: what DONE means is the user's, and it lives in the
+routine's state/stopping.json where they can edit it — a completion text frozen into the
+pattern could only ever disagree with it.
 Use the full range of Python control flow wherever it makes the process clearer.'''
 
 

@@ -29,7 +29,7 @@ Two design rules explain most of the system's shape:
   workflow and acts through exactly ONE JSON action per turn (run a util, read/write a
   file, ask you, spawn a sub-workflow, finish). Every action and its result is in the
   transcript you can read.
-- **Routines have no shell.** The only way a routine runs code is a **global util** — a
+- **Routines run code through utils.** The way a routine runs code is a **global util** — a
   named, selftested script shared by all routines (`websearch`, `gmail`, `page-fetch`, …).
   Routines can write new utils (permission-gated), and every util they build is available
   to every other routine. (There IS a `shell` util — reserved behind its own permission,

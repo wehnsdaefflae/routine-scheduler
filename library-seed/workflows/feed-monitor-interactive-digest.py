@@ -10,10 +10,10 @@ handling). The dummy imports name the parameters this routine works with; the cl
 down for the concrete task, and `decompose` turns this pattern into the routine's own markdown
 state-machine (main.md + steps/).
 
-Design note (v5): the environment has no shell and cannot host a long-lived web server, so this
-pattern does NOT stand up a `POST /vote` server. It needs exactly two outside capabilities, and
-names neither tool — the run finds both in its CAPABILITIES catalog and records in its own memory
-which one worked:
+Design note: nothing here hosts a long-lived web server — a run ends, and with it anything it
+started — so this pattern does NOT stand up a `POST /vote` server. It needs exactly two outside
+capabilities, and names neither tool — the run finds both in its CAPABILITIES catalog and records
+in its own memory which one worked:
 
 1. A SITE PUBLISHER: uploads a single HTML file and returns a public URL. Pick ONE and stay with
    it — one retry policy, never a paste-host lottery across services.
@@ -53,8 +53,9 @@ META = {
                    "upvote/downvote buttons, and PUBLISHES it to a public URL. Votes are written by "
                    "the browser into a shared feedback store and read back on the next run to "
                    "influence ranking. Use when the instruction involves processing new periodic "
-                   "inputs into a categorized, published, vote-weighted digest — in a no-shell, "
-                   "no-hosting environment (no local server). Needs two capabilities: a site "
+                   "inputs into a categorized, published, vote-weighted digest whose deliverable "
+                   "is a STATIC page — nothing here hosts a server, so the feedback loop runs "
+                   "through a shared store the browser writes to. Needs two capabilities: a site "
                    "publisher, and a browser-writable shared-state store.",
     "version": 7,
     "tags": ["monitor", "digest", "publishing", "feedback-loop", "categorization", "ranking"],
@@ -63,11 +64,6 @@ META = {
 }
 
 PHASES = ["bootstrap", "steady"]     # tracked in state/phase.json
-COMPLETION = (
-    "per run: prior votes read back from the shared vote store, new items processed, state markers "
-    "updated, HTML digest rendered and PUBLISHED to a public URL provided to the user; "
-    "overall: ongoing as long as the source yields new items"
-)
 
 class ExternalBlocker(Exception):
     """This run can't proceed right now (the source is down, a util failed)."""
@@ -79,8 +75,8 @@ def main():
 
     if phase.current() == "bootstrap":
         bootstrap()
-        return finish("ok", "Bootstrapped: registered the vote store, published empty digest, "
-                            "advanced to steady.")
+        # fall through — a bootstrap run still processes whatever the source already holds, so
+        # the first published digest has real items in it.
 
     votes = collect_feedback()          # read back what the last published page's readers wrote
     new_items = fetch_new_items()
@@ -92,9 +88,7 @@ def main():
         sub_items.extend(extract_sub_items(item))
 
     sub_items = deduplicate(sub_items)
-
-    for sub in sub_items:
-        categorize(sub)
+    categorize(sub_items)                   # ONE judgment over the batch, not one call per item
 
     ranked_items = rank_items(sub_items, votes)
 
@@ -108,9 +102,9 @@ def main():
 
 
 def orient():
-    """Read the state digest (phase, last result, LEDGER tail, user messages/answers) and
-    LEDGER.md before exploring anything new — so you never re-try a known dead end."""
-    read_file("LEDGER.md")
+    """Consume the state digest (phase, last result, LEDGER tail, user messages/answers) before
+    exploring anything new — so you never re-try a known dead end. The digest already carries the
+    LEDGER tail and says when there is more; read the file only if it says so."""
 
 
 def bootstrap():
@@ -172,28 +166,22 @@ def extract_sub_items(item):
 
 
 def deduplicate(sub_items):
-    """Remove duplicate sub-items by exact URL match, then by normalized title similarity (>90%)."""
-    unique = []
-    seen_urls = set()
-    for item in sub_items:
-        if item['url'] in seen_urls:
-            continue
-        seen_urls.add(item['url'])
-        if not any(is_similar_title(item['title'], u['title']) for u in unique):
-            unique.append(item)
-    return unique
+    """Drop duplicates: exact URL match first, then near-identical titles (normalized to
+    lowercase, whitespace collapsed).
+
+    This is judgment-free and runs identically every run, so it belongs in this routine's own
+    persistent tooling rather than being re-derived by hand each time — write it once through
+    whichever authoring capability your CAPABILITIES list offers, and call it thereafter."""
 
 
-def is_similar_title(t1, t2):
-    """Check if two titles are >90% similar (normalized lowercase, whitespace-collapsed)."""
-    # Use llm or a string-distance util here.
-    pass
+def categorize(sub_items):
+    """Assign every sub-item a category from CATEGORIES_HINT, or a new one where none fits.
 
-
-def categorize(sub_item):
-    """Use LLM subcall to categorize the sub_item into CATEGORIES_HINT or a new category."""
-    category = llm(f"Categorize this title: {sub_item['title']}. Options: {CATEGORIES_HINT}")
-    sub_item['category'] = category
+    ONE scoped `llm` judgment over the WHOLE batch, not one per item: the categories are chosen
+    against each other, and a per-item call spends a turn apiece to make a worse decision with
+    less context."""
+    return llm(f"Categorize each of these titles into {CATEGORIES_HINT} or a new category: "
+               f"{[s['title'] for s in sub_items]}")
 
 
 def rank_items(sub_items, votes):

@@ -138,8 +138,8 @@ export async function render(view, sub, query = {}) {
   async function openWorkflow(slug) {
     openSub = `workflow/${slug}`; updateURL();
     const d = await api(`/api/workflows/${slug}`);
-    // clarify-instruction is undeletable (routine creation runs it) — no button
-    const wfDelete = slug === "clarify-instruction" ? undefined
+    // converse is undeletable (every conversation is materialized from it by slug) — no button
+    const wfDelete = slug === "converse" ? undefined
       : deleter(`/api/workflows/${slug}`,
                 `Delete workflow "${slug}"? Routines born from it keep their own `
                 + "recipes. A seed pattern returns at the next daemon boot.");

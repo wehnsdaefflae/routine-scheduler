@@ -80,9 +80,11 @@ def decompose(server, slug: str, instruction: str, *,
     meta, raw = read_workflow(server.libraries_home, slug)
     # A pattern may PIN deliverable paths (META["pin"]: str | list) that MUST survive
     # decomposition — the tailored files must still name them. The observed failure mode:
-    # applied to a draft that itself describes a routine (clarify-instruction),
-    # the generator sometimes builds THAT routine and silently drops the pattern's real
-    # deliverable. A dropped pin falls back to the verbatim pattern, which always keeps it.
+    # applied to an instruction that itself describes a routine, the generator sometimes
+    # builds THAT routine and silently drops the pattern's real deliverable. A dropped pin
+    # falls back to the verbatim pattern, which always keeps it. No shipped pattern pins a
+    # path today; the mechanism stays because the failure it guards is generator behaviour,
+    # not one pattern's quirk.
     pins = [meta["pin"]] if isinstance(meta.get("pin"), str) else list(meta.get("pin") or [])
     # rules reach the generator as an INDEX only (slug + summary): main.md must route to
     # them, and must not paraphrase prose that lives in the library.

@@ -23,7 +23,6 @@ from routine.params import (
     ENRICH_SOURCES,     # list[str] — open-web inputs the cumulative research draws candidates from
     ITEM_SECTIONS,      # list[str] — the fixed per-item sections each subpage renders (each item gets its own controls)
     BATCH_RANGE,        # tuple     — bounded new/refreshed items per run (e.g. (3, 7)), so no run tries everything
-    DONE_WHEN,          # str       — the per-run completion criterion (this pipeline is open-ended overall)
 )
 
 # The engine actions the orchestrator may take — exactly one per turn, each answered by an
@@ -49,11 +48,6 @@ META = {
 }
 
 PHASES = ["bootstrap", "steady"]        # bootstrap stands up state/ + endpoint; steady compounds forever
-COMPLETION = (
-    "per run: new feedback ingested + preference model updated, corpus/evaluations extended by the "
-    "bounded batch, full site regenerated and published with stable ids preserved and the feedback "
-    "data file untouched; overall: open-ended (DONE_WHEN gates each run, never the operation)"
-)
 
 
 class NeedsDecision(Exception):
@@ -70,7 +64,8 @@ def main():
 
     if phase.current() == "bootstrap":
         bootstrap()                             # first run: stand up state/, endpoint, first thin site
-        return finish("ok", "Bootstrapped: state/ seeded, endpoint live, first site published.")
+        # fall through — a bootstrap run still ingests and publishes a real first batch, so the
+        # site is worth looking at after its FIRST fire rather than after its second.
 
     # 1. INGEST FEEDBACK FIRST — private fetch, cursor-guarded, feeds the preference model.
     prefs = ingest_feedback()
@@ -100,10 +95,10 @@ def main():
 
 
 def orient():
-    """Read the state digest (phase, last result, LEDGER tail, user messages/answers) and LEDGER.md
-    before exploring — recall the corpus, evaluations, preference model, and feedback cursor so no
-    prior work is redone and the stable-id convention stays consistent."""
-    read_file("LEDGER.md")
+    """Consume the state digest (phase, last result, LEDGER tail, user messages/answers) before
+    exploring — recall the corpus, evaluations, preference model, and feedback cursor so no prior
+    work is redone and the stable-id convention stays consistent. The digest already carries the
+    LEDGER tail and says when there is more; read the file only if it says so."""
 
 
 def bootstrap():
@@ -135,7 +130,9 @@ def evaluate(item, prefs):
     """Evaluate one item on (a) fit with the subject and (b) probability of acceptance under the best
     realistic framing. Ground every claim in GROUND_TRUTH (read-only) plus open-web verification
     (web-research), reconciled with weighted feedback from `prefs`. Use `llm` for scoped judgment;
-    run code only via `util` / a selftested PEP-723 `write_util` script. Return the evaluation."""
+    run code through a CAPABILITY your CAPABILITIES list offers — a judgment-free step you repeat
+    identically every run belongs in this routine's own persistent tooling, a capability other
+    routines would share too belongs in the shared library. Return the evaluation."""
 
 
 def persist_item(item, evaluation):

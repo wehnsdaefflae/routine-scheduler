@@ -46,7 +46,7 @@ def test_lint_catches_defects():
     problems = lint_workflow_py(bad, filename="bad.py", rule_slugs=traits)
     text = " | ".join(problems)
     for needle in ("filename does not match", "does not resolve",
-                   "no top-level main()", "PHASES", "COMPLETION"):
+                   "no top-level main()", "PHASES"):
         assert needle in text, needle
 
 
@@ -63,7 +63,10 @@ def test_materialize_carries_workflow_and_provenance():
     assert prov["slug"] == "general-task" and prov["version"] == seed_version
     meta, body = frontmatter.parse(content)
     assert meta["materialized_from"]["slug"] == "general-task" and meta["name"] == "General task"
-    assert "## Run flow" in body and "## Completion criteria" in body
+    assert "## Run flow" in body and "## Phases" in body
+    # No completion section: what DONE means lives in state/stopping.json, not in a
+    # frozen recipe heading that the user cannot edit.
+    assert "## Completion criteria" not in body
     assert "```python" in body and "def main():" in body          # the pattern is carried verbatim
     assert "## Standing practices" not in content and "# trait:" not in content
 
@@ -75,7 +78,7 @@ def test_python_workflow_parse_and_lint():
     src = (SEED / "workflows" / "general-task.py").read_text()
     meta = parse_py(src)                                  # parsed statically — never executed
     assert meta["slug"] == "general-task" and meta["has_main"]
-    assert meta["phases"] == ["bootstrap", "steady", "wrap-up"] and meta["completion"]
+    assert meta["phases"] == ["bootstrap", "steady", "wrap-up"]
     rules = ["ask-policy", "web-research", "decision-record", "intent-inference"]
     assert lint_workflow_py(src, filename="general-task.py", rule_slugs=rules) == []
     # defects: no META / no run()
@@ -85,7 +88,8 @@ def test_python_workflow_parse_and_lint():
     assert any("invalid Python" in p for p in lint_workflow_py("def (:\n", filename="x.py", rule_slugs=[]))
     # rendering carries the required routine sections
     md = render_markdown(src, meta)
-    assert all(s in md for s in ("## Run flow", "## Phases", "## Completion criteria", "```python"))
+    assert all(s in md for s in ("## Run flow", "## Phases", "```python"))
+    assert "## Completion criteria" not in md
 
 
 def test_tags_on_library_elements():
@@ -93,13 +97,14 @@ def test_tags_on_library_elements():
     from rsched.workflows.library import list_workflows
 
     wfs = {w["slug"]: w for w in list_workflows(SEED)}
-    # The three the system itself depends on must always ship: General Task (the user-facing
-    # default), the creation flow's clarify-instruction, and the Conversations tab's converse.
-    # The set is asserted as a SUBSET — the seed mirrors the live library, which grows patterns
-    # the routines author, and an exact set would red every time it did.
-    assert {"general-task", "clarify-instruction", "converse"} <= set(wfs)
+    # The two the system itself depends on must always ship: General Task (the user-facing
+    # default) and the Conversations tab's converse. The set is asserted as a SUBSET — the seed
+    # mirrors the live library, which grows patterns the routines author, and an exact set would
+    # red every time it did.
+    assert {"general-task", "converse"} <= set(wfs)
     assert "meta" not in wfs["general-task"]["tags"]      # not meta → stays user-facing
-    assert "meta" in wfs["clarify-instruction"]["tags"]   # meta → filtered out of user suggestions
+    # meta → a HARNESS, filtered out of the creation catalog and of spawn-pattern lists
+    assert "meta" in wfs["converse"]["tags"]
     # every library element carries at least three tags (the universal requirement)
     for w in wfs.values():
         assert len(w["tags"]) >= 3, (w["slug"], w["tags"])
@@ -187,7 +192,6 @@ def _py_workflow(tags: str) -> str:
             'META = {"name": "X", "slug": "x", "description": "d", "when_to_use": "w",\n'
             f'        "version": 1, "tags": {tags}}}\n'
             'PHASES = ["steady"]\n'
-            'COMPLETION = "done"\n'
             "def main():\n    pass\n")
 
 
@@ -247,17 +251,17 @@ def test_scaffold_degrade_names_the_cause_and_logs_a_health_event(tmp_path):
 
 def test_scaffold_stamps_tools_allowlist(tmp_path):
     """A workflow META `tools:` allowlist lands in the routine's main.md frontmatter, where
-    the engine reads and enforces it at run time (clarify-instruction is the shipped case)."""
+    the engine reads and enforces it at run time (improvement-proposer is the shipped case)."""
     import frontmatter
 
     server = ServerConfig()
     server.routines_home = tmp_path / "routines"
     server.routines_home.mkdir()
     server.libraries_home = SEED
-    d = scaffold(server, slug="clarify-sess", name="Clarify", instruction="x",
-                 workflow_slug="clarify-instruction")
+    d = scaffold(server, slug="proposer", name="Proposer", instruction="x",
+                 workflow_slug="improvement-proposer")
     meta = frontmatter.load(d / "main.md").metadata
-    assert meta["tools"] == ["ask_user", "read_file", "write_file", "finish"]
+    assert meta["tools"] == ["read_file", "write_file", "util", "llm", "ask_user", "finish"]
     # general-task has no tools META → no allowlist is stamped (unrestricted)
     d2 = scaffold(server, slug="unrestricted", name="U", instruction="x",
                   workflow_slug="general-task")
@@ -379,7 +383,11 @@ def test_lint_validates_meta_tools_vocabulary():
     src = (SEED / "workflows" / "general-task.py").read_text()
     assert '"tools": None,' in src
     rules = ["ask-policy", "web-research", "decision-record", "intent-inference"]
-    good = src.replace('"tools": None,', '"tools": ["read_file", "finish"],', 1)
+    # the allowlist must COVER the pattern's action imports, or the consistency rule
+    # fires instead of the vocabulary one under test
+    good = src.replace('"tools": None,',
+                       '"tools": ["read_file", "write_file", "util", "write_util", "llm", '
+                       '"spawn", "wait", "ask_user", "finish"],', 1)
     assert lint_workflow_py(good, filename="general-task.py", rule_slugs=rules) == []
     bad = src.replace('"tools": None,', '"tools": ["read_file", "reed_file"],', 1)
     probs = lint_workflow_py(bad, filename="general-task.py", rule_slugs=[])
@@ -416,3 +424,68 @@ def test_every_seed_conduct_doc_states_its_effect():
             assert not linter(raw, filename=path.name), f"{sub}/{path.name} fails its linter"
             checked += 1
     assert checked >= 40, "the seed library lost most of its conduct docs"
+
+
+def test_rendered_steps_are_what_main_sequences():
+    """The step list is introduced as the steps "in the order + control flow of `main()`", so
+    it must be exactly that. Promoting every module-level function instead put Python plumbing
+    in front of the orchestrator as work to act out (`file_exists — Helper to check if a state
+    file exists`), and ordered it by definition rather than by use.
+    """
+    from rsched.workflows.pyworkflow import parse_py, render_markdown
+
+    src = ('"""p"""\n'
+           'META = {"name": "X", "slug": "x", "description": "d", "when_to_use": "w",\n'
+           '        "version": 1, "tags": ["a", "b", "c"]}\n'
+           'PHASES = ["steady"]\n'
+           "def main():\n"
+           "    second()\n"
+           "    first()\n"
+           "def first():\n"
+           '    """First step."""\n'
+           "    helper()\n"
+           "def second():\n"
+           '    """Second step."""\n'
+           "def helper():\n"
+           '    """Pure plumbing nobody acts out."""\n')
+    md = render_markdown(src, parse_py(src))
+    assert "**second** — Second step." in md and "**first** — First step." in md
+    assert "helper" not in md.split("```python")[0]          # not in the step list
+    assert md.index("**second**") < md.index("**first**")    # call-site order, not def order
+
+
+def test_rendered_steps_fall_back_without_main():
+    """A pattern with no main() still gets a step list — rendering none of them would be worse
+    than rendering all of them.
+    """
+    from rsched.workflows.pyworkflow import parse_py, render_markdown
+
+    src = ('"""p"""\n'
+           'META = {"name": "X", "slug": "x", "description": "d", "when_to_use": "w",\n'
+           '        "version": 1, "tags": ["a", "b", "c"]}\n'
+           'PHASES = ["steady"]\n'
+           "def only():\n"
+           '    """The only step."""\n')
+    assert "**only** — The only step." in render_markdown(src, parse_py(src))
+
+
+def test_lint_rejects_action_import_the_tools_allowlist_excludes():
+    """`kindsurface.effective_kinds` narrows the schema to `tools:`, so a kind the pattern
+    imports but the allowlist excludes is prose describing a channel the run cannot emit —
+    improvement-proposer imported write_util/spawn/wait while declaring itself record-only.
+    """
+    from rsched.workflows.lint import lint_workflow_py
+
+    base = ('"""p"""\n'
+            'from routine.actions import read_file, write_util, finish\n'
+            'META = {"name": "X", "slug": "x", "description": "d", "when_to_use": "w",\n'
+            '        "version": 1, "tags": ["a", "b", "c"], "tools": %s}\n'
+            'PHASES = ["steady"]\n'
+            "def main():\n    pass\n")
+    stray = lint_workflow_py(base % '["read_file", "finish"]', filename="x.py", rule_slugs=[])
+    assert any("write_util" in p and "tools: excludes" in p for p in stray)
+    # widened allowlist → clean; `finish` is an ALWAYS kind and never needs listing
+    assert lint_workflow_py(base % '["read_file", "write_util"]',
+                            filename="x.py", rule_slugs=[]) == []
+    # tools: None means every kind — nothing to disagree with
+    assert lint_workflow_py(base % "None", filename="x.py", rule_slugs=[]) == []

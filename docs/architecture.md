@@ -593,22 +593,24 @@ values AND URL-embedded credentials redacted — into `config/`; then commit (sc
 failed pull). `bootstrap.py` seeds on
 first boot; `deploy/install.sh` for host installs. Everything in the library is user-EDITABLE from
 the Library tab, and DELETABLE except permission docs (the capability layer's conduct surface) and
-the `clarify-instruction` workflow (routine creation runs it) — both guards are server-side.
+the `converse` workflow (every conversation is materialized from it BY SLUG, so losing it
+breaks conversation creation) — both guards are server-side.
 A deleted seed workflow/rule returns at the next daemon boot (sync_seed_library_docs); a deleted
 util stays deleted (git-recoverable — seed utils only land at repo creation).
 - **Workflows** are self-contained **Python pattern files** (`.py`) that DEPICT a routine's control flow —
   never executed, parsed statically with `ast` (`workflows/pyworkflow.py`). Each has a `META = {...}` dict
   (`slug / name / description / when_to_use / version / tags / includes`, optional `tools:`
-  allowlist), `PHASES` / `COMPLETION` literals, a top-level `main()` whose body is the per-run control flow,
+  allowlist), a `PHASES` literal, a top-level `main()` whose body is the per-run control flow,
   one function per step, and dummy parameter imports (`from routine.params import …`) naming the routine's
   parameters by type+meaning. The runtime is
   unchanged — routines are still the markdown `main.md`+`stages/` the orchestrator interprets: `adapt.decompose`
   turns a Python pattern into that markdown at scaffold; `materialize` renders it whole (sub-routines/fallback).
-  A `tools:` list restricts action kinds (`finish` always allowed) — how `clarify-instruction` is held to
-  ask/read/write/finish. `workflows/lint.py` gates every change; `suggest`/`generate` rank/draft via the
+  A `tools:` list restricts action kinds (`finish` always allowed), and must COVER the pattern's
+  action-import line — the schema is narrowed to `tools:`, so an imported-but-excluded kind is prose
+  for a channel the run cannot emit. No pattern carries a COMPLETION literal: what DONE means is the
+  user's and lives in `state/stopping.json`. `workflows/lint.py` gates every change; `suggest`/`generate` rank/draft via the
   `system_model`. Routine creation is initiated from a CONVERSATION ONLY (D58/D59) — there is no standalone new-routine
-  wizard page. The conversation agent clarifies the task WITH the user in normal chat (`clarify-instruction`
-  SUGGESTS a pattern, or asks to generate one, and MARRIES the task to it), then emits the **`create_routine`**
+  wizard page. The conversation agent clarifies the task WITH the user in normal chat, then emits the **`create_routine`**
   action (`engine/create_routine.py`) — valid ONLY from a root conversation — which materializes the routine
   SYNCHRONOUSLY through the SAME `workflows.scaffold` path the retired wizard build once called (decompose the chosen
   workflow into main.md + stages/, record its held rules, write routine.yaml, init the auto-push git repo; the
@@ -645,12 +647,19 @@ util stays deleted (git-recoverable — seed utils only land at repo creation).
   validator. Three answers must be SETTLED before a draft is presented as decided: what the routine
   PRODUCES each run (the artefact, named, and where it lands), what DONE looks like for ONE run, and which
   pattern it is built on — that last one chosen from a catalog that always ends in `generate`, drafting a
-  NEW pattern fitted to this task, so the workflow question is never a closed list. `clarify-instruction` makes the first two mandatory
-  questions that the "stop asking once it wouldn't change how the routine runs" rule explicitly does NOT
-  reach, and requires the runner-up pattern named with its reason; the `create_routine` kind surface states
-  the same as a precondition with a checkable test (could you QUOTE the user's own answer? if not, ask
-  rather than draft), and the draft observation tells the relay to name any of the three that is still the
-  agent's inference rather than present it as the user's decision.
+  NEW pattern fitted to this task, so the workflow question is never a closed list — and that catalog
+  EXCLUDES harness patterns (`meta`, e.g. `converse`), which assume a present reader a scheduled routine
+  never has. The `create_routine` kind surface states the three as a precondition with a checkable test
+  (could you QUOTE the user's own answer? if not, ask rather than draft), and the draft observation tells
+  the relay to name any of the three that is still the agent's inference rather than present it as the
+  user's decision. That observation ALSO carries `design_checks` — the operator's standing intake rules
+  (SHAPE: offer the ingest/outbound split into two grouped routines · MECHANISM: mark the judgment-free
+  repeated steps for the routine's own `scripts/` · OWNERSHIP: the instruction is the TASK, conduct is
+  rules and capability is permissions · SCOPE: schedule/budgets/workdir/models are config, never the
+  instruction). This is the ONE live copy of the intake contract. A second copy lived in a
+  `clarify-instruction` pattern that nothing ever executed, so it went stale unnoticed — it still
+  described conduct as per-routine "traits" long after rules became one shared library doc. It was
+  deleted with its content lifted here.
 - **Rules** (`library-seed/rules/`, `# rule:` heading, NO requires — lint-enforced): GENERAL
   rules — principle prose a run applies to its own case. ONE copy each, in the library: a routine
   holds SLUGS (`routine.yaml` `rules:`), named in main.md's Standing practices tail
