@@ -222,8 +222,8 @@ connect (paramiko `RejectPolicy` — no TOFU in a headless run). Pieces:
   gate forces its declaration). `machine_env_vars()` keeps both out of the Settings "needed
   secrets" list (like `connection_token_vars()`).
 - **The reserved `remote` util** (`util-seed/utils/remote`, paramiko; needs the new
-  `remote-machines` permission → `requires: utils: [remote]`, the same reserved-util mechanism as
-  `shell`): `list` / `exec` (short blocking) / `submit`·`status`·`logs`·`cancel` (DETACHED jobs
+  `remote-machines` permission → `requires: utils: [remote]`, the reserved-util mechanism —
+  which is what `shell` used until 0.287.0 promoted it to an action kind): `list` / `exec` (short blocking) / `submit`·`status`·`logs`·`cancel` (DETACHED jobs
   for long GPU work — a setsid process group, killable; `--notify-webhook <the routine's own
   trigger URL>` lets the job ping the routine on completion instead of polling) / `push`·`pull`
   (SFTP) / `scan-host` · `test`. Host keys pinned; a mismatch refuses.
@@ -552,7 +552,7 @@ deliverable, a decision for the user, a blocker). A conversation's spine is its 
   (`PUT …/playbook` → revise that one) — both distil from the transcript via the `system_model`.
 - Defaults: routine default permissions+capabilities PLUS **`background-tasks`** (the `detach` action —
   conversation-shaped, since a finished task reports back into the chat), tuning.yaml
-  `deliberation: deliberate` (chat is judgment-heavy; slider in the header panel), shell OFF (one-click grant;
+  `deliberation: deliberate` (chat is judgment-heavy; slider in the header panel), the `shell` action OFF (one-click grant;
   run-history + the previous-runs depth greyed — routine-only); rules = ask-policy/web-research/decision-record/intent-inference/**git-checkpoint**
   (checkpoint commits in external project repos — the conversation dir itself is unversioned).
   Conversations feed workflow-usage + health events; they are EXCLUDED from the dashboard,
@@ -717,7 +717,9 @@ util stays deleted (git-recoverable — seed utils only land at repo creation).
   indexed ≤100-line notes in `.memory/`; INDEX.md engine-maintained, surfaced in the state digest;
   default), `messaging-discord` (requires the reserved `discord` util — one of the per-channel
   `messaging-*` docs), `run-history` (previous-run reads; depth last/all is the
-  capability), `shell` (requires the `shell` util — the escape hatch), `workflow-generation`
+  capability), `shell` (requires the `shell` ACTION KIND — the escape hatch; a reserved util until
+  0.287.0, where `capabilities.utils` gated it only as an exception instead of projecting it
+  out of the schema), `workflow-generation`
   (requires `workflows: generate` — a subtask may DRAFT a new library pattern when none fits, folding
   the system-model spend into the run; off by default), `background-tasks` (requires the `detach`
   action — launch a long fire-and-forget task that outlives a reply and reports back; default-ON for

@@ -1,6 +1,10 @@
 # Util sandboxing — the trust boundary around code execution
 
-A run executes code through a **global util**. The engine
+A run executes code three ways, and all three land in the same jail: a **global util** (the
+shared library), a **script** (the routine's own `scripts/<name>.py` helper) and — for the
+one-off, behind the `shell` capability — the **`shell` action**. "Util" below names the
+common case; every rule stated for a util holds for the other two, with the per-callable
+differences noted where they matter. The engine
 enforces its capability boundaries at the action layer (`read_file` is jailed to the
 routine's roots, `write_file` to its write roots) — but a util is a real subprocess, and
 without its own boundary it would run with the daemon user's full filesystem and network
@@ -23,7 +27,17 @@ jailed) plus **scoped secrets injection**. Three cooperating layers:
   decides strict/permissive/off, assembles the spec, wraps the command.
 - `rsched/utils_lib.py` — the dispatch seam: every `run_util` call (the `util` action,
   the vision fallback, `write_util` selftests, the web Library editor's selftest, the
-  notify channel) takes a `SandboxPolicy` and builds the scoped environment.
+  notify channel) takes a `SandboxPolicy` and builds the scoped environment. Its two
+  siblings pass the SAME policy through the same `sandbox.wrap`: `rsched/scripts.py`
+  (`fs_roots=True`, the script's declared `net:`, its declared secrets) and
+  `rsched/shellrun.py` (`fs_roots=True`, network open, **no secret at all** — a shell
+  command declares nothing, so `scoped_env(set())` scrubs the whole store out of its
+  environment). The `shell` action was a reserved util until 0.287.0 and that util
+  declared `fs: roots` + `net: outbound`, the widest terms available — so its
+  intersection term was already a no-op and the promotion to an action kind left the
+  jail byte-for-byte where it was. What changed is only what can GENERATE the call: a
+  gated kind is projected out of the schema, where `capabilities.utils` was an exception
+  list that gated 6 of 114 utils.
 
 ## What a util can see
 

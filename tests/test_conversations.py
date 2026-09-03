@@ -462,7 +462,7 @@ def test_create_conversation_accepts_prestart_layers(client):
     conv_dir = server.conversations_home / r.json()["slug"]
     raw = yaml.safe_load((conv_dir / "routine.yaml").read_text())
     assert "shell" in raw["permissions"]
-    assert "shell" in raw["capabilities"]["utils"]           # the requires cascade raised it
+    assert "shell" in raw["capabilities"]["actions"]         # the requires cascade raised it
     assert raw["budgets"]["max_wall_clock_min"] == 45
     assert raw["budgets"]["max_total_tokens"] == 123000
     tuning = yaml.safe_load((conv_dir / "tuning.yaml").read_text())

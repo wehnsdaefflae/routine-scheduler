@@ -1,5 +1,6 @@
-"""The util-output spill store — `.util_outputs/`, the engine's copy of output too large
-for the observation that carried it.
+"""The command-output spill store — `.util_outputs/`, the engine's copy of output too large
+for the observation that carried it. Every callable kind spills here: `util`, `script` and
+`shell` all capture far more than an observation can carry.
 
 A util's stdout is captured up to `utils_lib.OUTPUT_CAP` (1 MB) and then head+tail
 truncated to `OBS_CAP_CHARS` for the observation. The transcript records the TRUNCATED

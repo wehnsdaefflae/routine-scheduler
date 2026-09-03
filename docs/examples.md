@@ -154,7 +154,7 @@ grant-funded open-source project: deliverables register, worklog, public repo hy
 |---|---|---|
 | workflow | `general-task` | orient → decide one thing → execute → record |
 | rules | ask-policy, web-research, decision-record, change-restraint | engineering improvement arrives via the routine-improver's lenses |
-| permissions | **shell**, util-authoring, memory, run-history | **this is the routine the shell permission exists for**: `gu shell "cd ~/projects/llmsectest && uv run pytest -q"` — builds, test suites, linters. Repeatable operations still get promoted to utils (`pytest-run`, `git-sync` already exist) |
+| permissions | **shell**, util-authoring, memory, run-history | **this is the routine the shell permission exists for**: `{"kind": "shell", "command": "cd ~/projects/llmsectest && uv run pytest -q", "timeout_s": 900}` — builds, test suites, linters. Repeatable operations still get promoted to utils (`pytest-run`, `git-sync` already exist) |
 | fs roots | read+write: `~/projects/llmsectest` | the project lives outside the routine dir |
 | budgets | 80 turns · **90 min** · ask_timeout_min 480 | test suites take wall-clock time |
 | schedule | weekdays 07:00 | |

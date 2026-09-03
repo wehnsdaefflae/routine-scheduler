@@ -126,8 +126,17 @@ def harness_contract(ctx: RunContext, kinds: list[str] | None = None) -> str:
     standing = deliberation.standing_note(level)
     # Only the kinds this run may emit get a bullet — the same projection the ACTION SCHEMA
     # section uses, so the two never describe different vocabularies.
-    bullets = kind_bullets(kinds if kinds is not None else effective_kinds(None, g),
-                           util_confirm=util_confirm, ask_timeout_min=b.ask_timeout_min)
+    usable = kinds if kinds is not None else effective_kinds(None, g)
+    bullets = kind_bullets(usable, util_confirm=util_confirm,
+                           ask_timeout_min=b.ask_timeout_min)
+    # How code runs, stated for the channels this run actually HAS. `shell` is a capability
+    # (0.287.0, was a reserved util) held by a minority of routines, so the sentence names it
+    # only where it exists — and names it as the escape hatch, so a run holding it does not
+    # start reaching for it ahead of the library.
+    code_line = ("You run code through a global util (the `util` action)."
+                 if "shell" not in usable else
+                 "You run code through a global util (the `util` action); for a one-off no "
+                 "util covers, you also hold the `shell` escape hatch.")
     return f"""You are the orchestrator of the routine "{r.name}" ({r.slug}), run {ctx.run_id}\
 {f" (schedule: {r.cron})" if r.cron else ""}. This conversation IS the run: every turn you reply \
 with EXACTLY one JSON object matching the action schema below — no prose outside the JSON. \
@@ -153,7 +162,7 @@ are on with read_file, ON DEMAND, instead of loading them all up front. Keep you
 
 Working directory: {r.dir}. All relative paths resolve there.{extra}
 
-You run code through a global util (the `util` action). {authoring} \
+{code_line} {authoring} \
 You never run git yourself: the engine commits your working directory automatically at run end.
 
 {ownership}Cross-cutting conduct (when to ask the user, research discipline, what to \

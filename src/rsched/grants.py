@@ -59,7 +59,7 @@ from .ids import is_slug
 # it holds, and reading library prose has no side effect worth a decision. The catalog
 # (`name: "list"`) is open for the same reason.
 GATED_KINDS = ("write_util", "revise_util", "remove_util", "write_rule", "write_recipe",
-               "memory_read", "memory_write", "detach", "schedule_run", "script")
+               "memory_read", "memory_write", "detach", "schedule_run", "script", "shell")
 # `write_recipe` is a capability TOKEN too, on the same terms: the model emits write_file /
 # edit_file and the engine decides from the PATH whether the target is this routine's own
 # recipe (grantpolicy.is_recipe_path). Before 0.261.0 that was not a capability at all — it
@@ -82,7 +82,7 @@ _DEFAULT_KIND_SOURCE = {"write_util": "util-authoring", "revise_util": "util-rev
                         "memory_read": "memory", "memory_write": "memory",
                         "write_rule": "rule-authoring",
                         "detach": "background-tasks", "schedule_run": "scheduling",
-                        "script": "scripts"}
+                        "script": "scripts", "shell": "shell"}
 # A capabilities `utils:` entry is either a bare util name (every verb) or `name:verb`
 # (that ONE subcommand — the util's first positional argument). Verb-scoping is how a
 # routine gets read-only access to a channel it must not write to.

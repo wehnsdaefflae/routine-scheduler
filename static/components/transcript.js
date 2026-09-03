@@ -28,6 +28,7 @@ const BRIEF_FIELD = { util: "name", write_util: "name", remove_util: "name",
                       read_file: "path", view_image: "path", write_file: "path",
                       edit_file: "path", memory_read: "name", memory_write: "name",
                       read_rule: "name", write_rule: "name", script: "name",
+                      shell: "command",
                       llm: "prompt", spawn: "label", subtask: "label", detach: "label",
                       schedule_run: "target", create_routine: "target",
                       manage_group: "verb", kill: "n", wait: "n",
@@ -235,6 +236,9 @@ export function createTranscript(container, opts = {}) {
         : `${o.name} → exit ${o.exit}\n${o.stdout || ""}${o.stderr ? `\n[stderr] ${o.stderr}` : ""}`
           + fullOutput(o.full_output)
           + (o.usage ? `\n[usage] ${o.usage}` : "") + (o.hint ? `\n[hint] ${o.hint}` : "");
+    } else if (o.kind === "shell") {
+      text = `exit ${o.exit}${o.cwd ? ` (in ${o.cwd})` : ""}\n${o.stdout || ""}`
+        + (o.stderr ? `\n[stderr] ${o.stderr}` : "") + fullOutput(o.full_output);
     } else if (o.kind === "write_util") {
       text = o.pending_approval ? `write_util "${o.name}": awaiting user approval`
         : o.declined ? `write_util "${o.name}": declined`

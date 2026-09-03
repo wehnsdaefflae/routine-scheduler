@@ -35,6 +35,12 @@ def cmd_daemon(_args) -> int:
     sync_seed_utils(server.libraries_home)    # utils added to util-seed since bootstrap
     sync_seed_library_docs(server.libraries_home)  # workflows/rules/permissions added since, too
     adopt_library_edits(server.libraries_home)  # out-of-band writes (user/conversation) get history
+    from .migrate_shell_action import migrate_shell_action
+
+    # MIGRATION(expires=2026-10-03): the shell escape hatch is an ACTION KIND now, so a holder
+    # still naming it under capabilities.utils would lose it silently. Runs AFTER the seed
+    # syncs, so the library it rewrites is the one this boot will actually serve.
+    migrate_shell_action(server)
     for pr in problems:
         logging.getLogger("rsched").warning("config: %s", pr)
     app = create_app(server)

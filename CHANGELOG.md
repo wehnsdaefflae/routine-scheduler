@@ -17,6 +17,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.287.0] — 2026-09-03
+
+### `shell` becomes an action kind, not a reserved util
+
+The escape hatch was a global util at `<library>/utils/shell/`, unlocked by the `shell`
+permission's `requires: utils: [shell]`. It is now the `shell` ACTION KIND, gated by the `shell`
+capability. Two findings drove it, and only one of them was about the sandbox:
+
+- **Gating was fail-open.** `capabilities.utils` is an EXCEPTION list, not an allowlist — 6 of
+  114 utils are gated at all, and a util is gated only because some permission doc happens to
+  name it. A gated KIND goes through `validate_action` AND `kindsurface.effective_kinds`, so a
+  routine without the capability is not sent the kind: the call is ungeneratable rather than
+  generated and then rejected.
+- **The sandbox is a wash, and had to stay one.** The retired util declared `fs: roots` +
+  `net: outbound` — the widest terms available — so its intersection term was already a no-op
+  and its effective bound was exactly the run's granted roots; it declared no `secrets:`, so
+  declared-only injection handed it nothing. `rsched/shellrun.py` reproduces all three
+  (`fs_roots=True`, `net=True`, `scoped_env(set())`) through the same `sandbox.wrap`, and
+  `tests/test_shell_action.py` pins the jail's inputs directly so a later edit cannot quietly
+  turn a gating improvement into a sandbox regression.
+
+The surface is the util's: `command` (one string through `bash -c`), plus `timeout_s` (default
+120, the util's own) and `path` (the working directory) — both REUSED shared schema fields
+rather than shell-only ones. The 64 KB per-stream head+tail cap survives in `shellrun`, and the
+observation truncates and spills to `.util_outputs/` exactly as a `util` or `script` call does
+(`observations._run_body` is now the one copy of that body for all three callable kinds).
+
+- 27 action kinds (was 26; CLAUDE.md's list said 25 — it had been missing `list_models`, now
+  fixed alongside).
+- `library-seed/permissions/shell.md` requires `actions: [shell]` and its BODY describes the
+  action — that body is inlined into every holder's prompt, so a frontmatter-only change would
+  have taught 14 routines a call the engine now rejects.
+- `util-seed/utils/shell/` is deleted. It declared no private `fs:` store, so no other util's
+  jail changes; nothing in the library declares it on a `calls:` line.
+- The harness contract's "how code runs" sentence names the hatch only for a run that holds it.
+- MIGRATION(expires=2026-10-03): `migrate_shell_action` moves `shell` from `capabilities.utils`
+  to `capabilities.actions` in every routine/conversation/background config (14 routines and 12
+  conversations on the live instance), replaces the live library's permission doc with the
+  seed's, and deletes the installed util. Without it a holder keeps an inert `utils:` entry and
+  loses the hatch its permission says it has.
+
 ## [0.286.1] — 2026-09-03
 
 ### The phase-file check looks at the right signal (msg-13 follow-up)

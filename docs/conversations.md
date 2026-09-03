@@ -233,7 +233,7 @@ running conversation, where changes apply from the next reply:
   whole session. They are a runaway backstop — raise them for a conversation doing heavy work,
   lower them if you want short exchanges.
 - **Permissions** work exactly as they do for routines (see the *Traits & permissions* guide). A
-  conversation starts with the default set; **shell** is a one-click grant. Previous-run depth is
+  conversation starts with the default set; the **shell** action is a one-click grant. Previous-run depth is
   greyed out — a conversation is one continuous run, so it doesn't apply.
 - **Model** switches from the line at the top. Change it any time; if a reply is in flight, it
   switches at its next turn boundary too. The picker labels every model with its context window

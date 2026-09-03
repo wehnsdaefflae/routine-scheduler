@@ -35,6 +35,8 @@ KIND_EXAMPLES: dict[str, dict] = {
     "list_models": {"say": "<why model discovery now>", "kind": "list_models"},
     "script": {"say": "<why this deterministic step now>", "kind": "script",
                "name": "poll-inbox", "args": ["--json"]},
+    "shell": {"say": "<why an ad-hoc command instead of a util>", "kind": "shell",
+              "command": "<the ONE command line, as a single string>"},
     "write_util": {"say": "<why a new util>", "kind": "write_util", "name": "my-util",
                    "content": "<the complete PEP 723 script as ONE string>"},
     "remove_util": {"say": "<why remove this util>", "kind": "remove_util",
@@ -96,6 +98,7 @@ KIND_EXAMPLES: dict[str, dict] = {
 KIND_FIELDS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "util": (("name",), ("args", "timeout_s")),
     "script": (("name",), ("args", "timeout_s")),
+    "shell": (("command",), ("timeout_s", "path")),
     "write_util": (("name",), ("content", "path", "anchor", "replacement", "all")),
     "remove_util": (("name",), ()),
     "schedule_run": (("target",), ("fire_at", "reason", "cancel", "id")),

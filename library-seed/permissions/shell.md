@@ -5,14 +5,15 @@ effect:
   when: the task genuinely cannot be done by a util — this is the escape hatch
 tags: [tool-use, shell, escape-hatch]
 requires:
-  utils: [shell]
+  actions: [shell]
 ---
 # permission: shell — run arbitrary shell commands (escape hatch)
 
-Unlocks the reserved `shell` util: one-off shell commands on the host
-(`util` name `shell`, args `["<command>", "--json"]`; add `--timeout N` / `--cwd DIR`).
-This is the escape hatch AROUND the no-shell design — hold it only for routines whose task
-genuinely needs ad-hoc system access (builds, package queries, one-off host inspection).
-Prefer a proper util for ANYTHING you run twice: a shell one-liner helps once, a util
-helps every routine forever. Commands run non-interactively with the routine's
-environment; long or destructive operations belong in a reviewed util, not a shell call.
+Unlocks the `shell` ACTION: one ad-hoc command per turn (`command` as a single string, plus
+optional `timeout_s` and `path` for the working directory), run through `bash -c` inside the
+same Landlock jail a util gets — this routine's granted roots, no secret from the store, no
+interactive input. This is the escape hatch AROUND the util library — hold it only for
+routines whose task genuinely needs ad-hoc system access (builds, package queries, one-off
+host inspection). Prefer a proper util for ANYTHING you run twice: a shell one-liner helps
+once, a util helps every routine forever. Long or destructive operations belong in a
+reviewed util, not a shell call.

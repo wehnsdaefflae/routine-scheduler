@@ -1,19 +1,21 @@
 """Dispatch a validated action to its effect and return the observation dict.
 
 DISPATCH covers util / read_file / view_image / write_file / edit_file / memory_read /
-memory_write / read_rule / llm / list_models; `script` lives here too and is called
-directly from loop.py. Control-flow kinds (spawn, subruns, kill, wait, finish) live in
-loop.py — they change the run's state machine — and the user-facing kinds (ask_user,
-write_util, write_rule) in interact.py / authoring.py. Every observation dict feeds
-both the transcript event and (via observations.format_observation) the next user message.
+memory_write / read_rule / llm / list_models; `script` and `shell` — the other two ways a
+run executes code — live here too and are routed from actionroute.py. Control-flow kinds
+(spawn, subruns, kill, wait, finish) live in loop.py — they change the run's state machine
+— and the user-facing kinds (ask_user, write_util, write_rule) in interact.py /
+authoring.py. Every observation dict feeds both the transcript event and (via
+observations.format_observation) the next user message.
 """
 
 from __future__ import annotations
 
 import logging
 
-from .. import sandbox, utils_lib, utils_run
+from .. import sandbox, shellrun, utils_lib, utils_run
 from ..ids import is_slug
+from ..paths import expand
 from ..utils_lib import USAGE_ERROR_EXIT
 from . import outputs
 from .exec_env import _extra_secrets, _unbound_connection_request
@@ -231,8 +233,47 @@ def do_script(action: dict, ctx: RunContext) -> dict:
     return obs
 
 
+def do_shell(action: dict, ctx: RunContext) -> dict:
+    """Run ONE ad-hoc command through `bash -c` inside the run's Landlock jail — the escape
+    hatch, gated by the `shell` capability so a routine without it cannot even generate the
+    call. No call-time secret gate: the command is handed NO store secret at all, so there is
+    nothing to ask exposure for. The jail, the empty secret env and the 64 KB per-stream cap are
+    `shellrun`'s; the observation truncation and the `.util_outputs/` spill are the same ones a
+    util call gets, so a command that prints more than the observation carries is saved rather
+    than lost.
+
+    The observation carries no advisory tail, unlike `util`'s. A non-zero exit here is usually
+    the ANSWER (`grep -q`, `test -f`, a failing suite the run is iterating on), not a mistake to
+    be corrected — and "promote this to a util" is standing conduct that already lives in the
+    kind's prompt bullet and the shell permission's body, where it costs no turn to repeat.
+    """
+    command = str(action.get("command") or "")
+    cwd = ctx.routine.dir
+    if raw := str(action.get("path") or "").strip():
+        candidate = expand(raw)
+        cwd = candidate if candidate.is_absolute() else (ctx.routine.dir / candidate)
+    result = shellrun.run_shell(
+        command, policy=sandbox.policy_for_ctx(ctx),
+        libraries_home=ctx.server.libraries_home, cwd=cwd,
+        timeout=int(action.get("timeout_s") or shellrun.SHELL_DEFAULT_TIMEOUT_S))
+    stdout, trunc_out = truncate(result["stdout"], keep="head")
+    stderr, trunc_err = truncate(result["stderr"], cap=8000 if result["exit"] != 0 else 2000)
+    obs = {"kind": "shell", "command": command, "exit": result["exit"],
+           "stdout": stdout, "stderr": stderr,
+           "truncated": trunc_out or trunc_err or result["truncated"]}
+    if str(cwd) != str(ctx.routine.dir):
+        obs["cwd"] = str(cwd)
+    if result["timed_out"]:
+        obs["timed_out"] = True
+    if spilled := outputs.spill(ctx, "shell", result["stdout"], result["stderr"],
+                                out_truncated=trunc_out, err_truncated=trunc_err):
+        obs["full_output"] = spilled
+    return obs
+
+
 DISPATCH = {
     "util": do_util,
+    "shell": do_shell,
     "read_file": do_read_file,
     "view_image": do_view_image,
     "write_file": do_write_file,

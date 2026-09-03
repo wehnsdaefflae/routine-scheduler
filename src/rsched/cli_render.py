@@ -26,6 +26,7 @@ def _render_event(obj: dict) -> str | None:  # noqa: PLR0911 — one return per 
     if t == "assistant_action":
         say = p.get("say", "")
         brief = {"util": f"{p.get('name')} {' '.join(p.get('args') or [])}".strip(),
+                 "shell": (p.get("command") or "")[:80],
                  "write_util": p.get("name"),
                  "read_file": p.get("path") or ", ".join(p.get("paths") or []),
                  "write_file": p.get("path"), "edit_file": p.get("path"),
@@ -48,6 +49,8 @@ def _render_event(obj: dict) -> str | None:  # noqa: PLR0911 — one return per 
         if kind == "util":
             return f"    ← util {p.get('name')}: " + ("missing" if p.get("missing")
                                                       else f"exit {p.get('exit')}")
+        if kind == "shell":
+            return f"    ← shell: exit {p.get('exit')}"
         if kind == "write_util":
             state = ("pending approval" if p.get("pending_approval") else "declined"
                      if p.get("declined") else "selftest ok" if p.get("selftest_ok")

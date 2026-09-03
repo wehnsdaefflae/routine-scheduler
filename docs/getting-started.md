@@ -32,8 +32,10 @@ Two design rules explain most of the system's shape:
 - **Routines run code through utils.** The way a routine runs code is a **global util** — a
   named, selftested script shared by all routines (`websearch`, `gmail`, `page-fetch`, …).
   Routines can write new utils (permission-gated), and every util they build is available
-  to every other routine. (There IS a `shell` util — reserved behind its own permission,
-  for the rare routine that genuinely needs the escape hatch.)
+  to every other routine. (There IS a `shell` action too — the escape hatch, off unless you
+  grant it, for the rare routine that genuinely needs an ad-hoc command. It runs in the same
+  sandbox a util does and gets no secret at all; anything a routine runs twice should become
+  a util.)
 
 ## The pieces around routines
 

@@ -72,7 +72,7 @@ _UTIL_CATEGORIES: tuple[tuple[str, frozenset[str]], ...] = (
                 "featherless", "detection", "text"})),
     ("Data & formats", frozenset({"json", "schema", "validation", "data", "html", "static-site"})),
     ("System, remote & seedbox",
-     frozenset({"shell", "system", "escape-hatch", "ssh", "remote", "machines", "gpu",
+     frozenset({"system", "ssh", "remote", "machines", "gpu",
                 "seedbox", "rtorrent", "rutorrent", "xmlrpc"})),
 )
 _UTIL_CATEGORY_OTHER = "Other"
@@ -242,6 +242,10 @@ def capabilities_digest(ctx: RunContext, allowed_kinds: set[str] | None = None) 
         if g.allows_kind("remove_util"):
             cap_bits.append("remove_util (delete a global util the library no longer needs; "
                             "refused while another util still calls it)")
+        if g.allows_kind("shell"):
+            cap_bits.append("shell (run an ad-hoc command on the host — the ESCAPE HATCH "
+                            "around the util library; hold it, use it for the one-off, and "
+                            "turn anything you run twice into a util or a scripts/ helper)")
         if g.allows_kind("schedule_run"):
             cap_bits.append("schedule_run (arm/cancel a one-shot future run of a routine — "
                             "self-target always; other routines via the scheduling permission)")

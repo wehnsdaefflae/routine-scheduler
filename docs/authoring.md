@@ -6,11 +6,13 @@ guide shows how to write each one, with a working example per type. The general 
 always the same: a small file with a machine-read header and a human-read body, linted on
 save, versioned in the library repo.
 
-## Utils — the only way routines run code
+## Utils — how routines run code
 
 A util is a **self-contained PEP 723 Python script** (`utils/<name>/main.py` in the
 library) that any routine can call with `util name=<name> args=[…]` — and that you can run
-yourself as `gu <name> …`. The util catalog *is* a routine's toolbox.
+yourself as `gu <name> …`. The util catalog *is* a routine's toolbox. (The one thing that runs
+outside it is the `shell` action — the escape hatch, granted to few routines, meant for the
+command you run ONCE. Anything a routine runs twice belongs here, as a util.)
 
 The **docstring header is the only machine-read surface** — the engine, the catalog, and
 the Settings page all parse it:

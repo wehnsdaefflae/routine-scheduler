@@ -8,10 +8,13 @@ LLM agent routine scheduler. A **routine** = instruction + workflow + schedule, 
 git repo under `~/routines/<slug>`. Runs execute on a provider-agnostic engine where *the workflow
 is the harness* — the orchestrator LLM follows the workflow document and acts only through one JSON
 action per turn. **A second AGENT LOOP in the path is banned**: it fights this harness and hides the
-conversation. Endpoints are model TRANSPORTS only (docs/architecture.md). Routines run code through a global util
-(including the reserved `shell` util, behind the `shell` permission) — there is no shell ACTION,
-and every util subprocess runs inside a Landlock sandbox scoped to the run's
-permissions INTERSECTED with the util's own `fs:` declaration (docs/sandboxing.md). The instruction contains only the task; cross-cutting conduct is
+conversation. Endpoints are model TRANSPORTS only (docs/architecture.md). Routines run code through a global util,
+plus — for the ONE-OFF only — the `shell` ACTION behind the `shell` capability (0.287.0; it was a
+reserved util until then, where `capabilities.utils` gated it as an exception rather than
+projecting it out of the schema). Every util subprocess runs inside a Landlock sandbox scoped to
+the run's permissions INTERSECTED with the util's own `fs:` declaration, and a `shell` command
+runs in the same jail on the widest of those terms — the run's granted roots, no store secret
+(docs/sandboxing.md). The instruction contains only the task; cross-cutting conduct is
 a set of GENERAL RULES with ONE library copy each (`rules:` in routine.yaml holds slugs — the run
 reads the prose with `read_rule` and applies the principle to its own case); schedule, PERMISSIONS,
 workdir, budgets, and model roles are routine config (`routine.yaml` / UI), started from a

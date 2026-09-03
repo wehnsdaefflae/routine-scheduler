@@ -41,7 +41,7 @@ import sys
 
 _JOBID_RE = re.compile(r"[A-Za-z0-9_.-]+")
 
-CAP = 64_000               # per-stream output cap (head+tail), matching the shell util
+CAP = 64_000               # per-stream output cap (head+tail), matching the shell action
 JOBS_DIR = ".rsched-jobs"  # per-machine job root, under the machine's workdir (else $HOME)
 
 

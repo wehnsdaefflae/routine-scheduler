@@ -157,8 +157,10 @@ new declaration form (`fs: args`, only the paths on the command line) that does 
 would be its own decision.
 
 - 113 of the 123 `fs: roots` utils perform a filesystem operation in their own source.
-- 10 do not. Five of those spawn a child that plausibly does and must keep `roots`:
-  `captcha-fetch`, `job-scrape`, `rsched-lint`, `shell`, `surface-captcha-to-user`.
+- 10 do not. Four of those spawn a child that plausibly does and must keep `roots`:
+  `captcha-fetch`, `job-scrape`, `rsched-lint`, `surface-captcha-to-user`. (`shell` was a fifth
+  until 0.287.0 retired the util for the `shell` action, whose jail is composed on the same
+  `fs: roots` terms in code.)
 - **The candidate set is the other five** — no filesystem call and no subprocess anywhere in
   their source, i.e. pure network clients that could declare `fs: none`:
   `darknet`, `proemion`, `remote`, `rutorrent-rpc`, `uncensored-model-list`.

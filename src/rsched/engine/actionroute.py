@@ -33,6 +33,9 @@ def dispatch_action(loop, action: dict, ctx) -> dict:  # noqa: PLR0911 — a fla
         # the routine's own deterministic helper — same call-time secret gate
         return secretgate.gate_script_secrets(loop, action, poll_s=POLL_S) \
             or executor.do_script(action, ctx)
+    # `shell` has no branch here on purpose: it declares no secrets, so there is nothing for
+    # a call-time exposure gate to ask about, and it falls through to executor.dispatch with
+    # the other effect kinds. Its capability gate already ran inside the schema-retry cycle.
     if action["kind"] == "schedule_run":
         return interact.handle_schedule_run(loop, action)
     if action["kind"] == "report":

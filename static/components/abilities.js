@@ -63,6 +63,9 @@ const ACTION_HELP = {
   write_rule: "author or revise a general rule in the shared library — the text every routine "
     + "holding that rule follows from its next run",
   script: "run the routine's own persistent scripts/<name>.py helpers",
+  shell: "run one arbitrary command on the host — the escape hatch around the util library, "
+    + "e.g. a quick `git log` no util covers. It runs in the same sandbox a util does; "
+    + "anything the routine does twice should become a proper util instead",
   write_recipe: "rewrite this routine's OWN instructions — main.md, stages/ and tuning.yaml. "
     + "Its config (routine.yaml) stays sealed either way. Hold it where refining the recipe "
     + "IS the job; an ordinary routine reports a wrong instruction instead of rewording it",
@@ -70,9 +73,6 @@ const ACTION_HELP = {
 const UTIL_HELP = {
   discord: "the phone channel: blocking questions mirror to Discord and are answerable in one "
     + "reply — e.g. \"apply to this project? approve / decline\" reaches you away from the console",
-  shell: "arbitrary one-off shell commands on the host — the escape hatch around the no-shell "
-    + "design, e.g. a quick `git log` no util covers; anything a routine does twice should "
-    + "become a proper util instead",
   remote: "act on a bound remote machine over SSH — e.g. fetch a file from the NAS or restart "
     + "a service on another box",
 };

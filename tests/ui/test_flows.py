@@ -1229,7 +1229,7 @@ def test_new_conversation_composer_offers_caps_and_budgets(ui, ui_page):
     assert len(convs) == 1
     raw = yaml.safe_load((convs[0] / "routine.yaml").read_text(encoding="utf-8"))
     assert "shell" in raw["permissions"]
-    assert "shell" in raw["capabilities"]["utils"]
+    assert "shell" in raw["capabilities"]["actions"]
     assert raw["budgets"]["max_total_tokens"] == 55000
     tuning = yaml.safe_load((convs[0] / "tuning.yaml").read_text(encoding="utf-8"))
     assert tuning["deliberation"] == "deliberate"   # the untouched default rides along

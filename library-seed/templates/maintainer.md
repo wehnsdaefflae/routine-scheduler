@@ -43,8 +43,8 @@ config:
     - script
     - remove_util
     - write_rule
-    utils:
     - shell
+    utils: []
     util_tags: []
     confirm: always
     rule_confirm: always

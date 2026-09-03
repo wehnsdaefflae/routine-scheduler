@@ -3,8 +3,8 @@ projection of ACTION_SCHEMA onto them.
 
 `actions.py` stays the single source of truth for what a turn may do — this module only
 NARROWS what the model is shown to what the engine would accept anyway. A run whose
-workflow `tools:` allowlist and capabilities permit 8 of the 26 kinds was previously sent
-all 26 in the schema (8k chars, ~36% of the fixed prompt) plus a prose bullet each: the
+workflow `tools:` allowlist and capabilities permit 8 of the 27 kinds was previously sent
+all 27 in the schema (8k chars, ~36% of the fixed prompt) plus a prose bullet each: the
 model read, every turn, the full description of channels the validator would reject. The
 projection is derived from `actions.KIND_FIELDS` — the same map `validate_action` builds
 its allowed-field set from — so the shown schema and the enforced contract cannot drift.
@@ -116,6 +116,16 @@ Utils are your primary tools — the CAPABILITIES section below lists what exist
 summary); for ONE util's exact usage run `util name=list args=["<util-name>"]` before relying \
 on it (bare name=list re-dumps the whole catalog you already have). Observation = exit code + \
 captured output."""),
+    (("shell",), """- shell: run ONE ad-hoc command on the host — `command` (a single \
+string, handed to \
+`bash -c`, so pipes and `&&` work), optional `timeout_s` (default 120) and `path` (a working \
+directory; default yours). It runs NON-INTERACTIVELY inside your sandbox — the same filesystem \
+jail your utils get, and no secret from the store reaches it — so anything that waits for a \
+keystroke never returns, and a credential-needing command belongs in a util instead. \
+Observation = exit code + captured output (capped; the overflow is saved to a file the \
+observation names). This is the ESCAPE HATCH, not a tool: use it for the one-off look no util \
+covers, and the moment you run something a SECOND time, write the util (or a scripts/ helper) \
+that does it properly."""),
     (("write_util",), """- write_util: create or revise a global util — name (kebab-case) \
 + content (a complete
 PEP 723 script: `# /// script` deps block, a module docstring whose first line is

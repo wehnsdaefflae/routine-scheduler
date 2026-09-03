@@ -13,8 +13,8 @@ ownership:
   yours on the Library tab, and writable by a routine holding the **rule-authoring**
   permission.
 - **Capabilities** — the atomic, engine-enforced surface: gated action kinds
-  (`write_util`, `memory_read`, `memory_write`), reserved utils held by name (`shell`,
-  `remote`, `discord`, `darknet`, `usenet` / `usenet-nzb`) or by TAG CLASS (`util_tags:` —
+  (`write_util`, `memory_read`, `memory_write`, `shell`), reserved utils held by name
+  (`remote`, `discord`, `darknet`, `usenet` / `usenet-nzb`) or by TAG CLASS (`util_tags:` —
   every util carrying that docstring tag, including ones the library gains later), the
   write_util approval level, and the previous-run read depth. Held via `routine.yaml`'s
   `capabilities:` mapping, changed **only by you** (the routine page's panel; the web
@@ -457,7 +457,7 @@ The shipped set:
 | `memory` | `memory_read` / `memory_write` — the `.memory/` notebook | ✅ |
 | `messaging-discord` | the reserved `discord` util — post as the user in their Discord | opt-in |
 | `run-history` | previous-run reads (the depth — last / all — is the capability's setting) | opt-in |
-| `shell` | the reserved `shell` util — arbitrary host commands | opt-in |
+| `shell` | the `shell` ACTION — one arbitrary host command per turn, in the run's own jail with no secret injected | opt-in |
 | `remote-machines` | the reserved `remote` util — act on bound SSH hosts (see [remote-machines](remote-machines.md)) | opt-in |
 | `darknet` | the reserved `darknet` util — read Tor hidden services (see [darknet](darknet.md)) | opt-in |
 | `usenet` | the reserved `usenet` + `usenet-nzb` utils — read, search and post over NNTP (see [usenet](usenet.md)) | opt-in |

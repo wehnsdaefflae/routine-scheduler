@@ -35,10 +35,30 @@ def truncate(text: str, cap: int = OBS_CAP_CHARS, keep: str = "head+tail") -> tu
     return (text[:head] + marker + text[-tail:]), True
 
 
+def _run_body(obs: dict) -> str:
+    """The body every EXECUTED command shares — util, script and shell alike: what it printed,
+    plus the pointer to whatever the observation could not carry. One copy, so the three
+    callable kinds cannot start describing their output differently. Per-kind tails (a util's
+    usage line and repair route, its withheld optional secrets) stay with their kind.
+    """
+    body = obs.get("stdout") or "(no stdout)"
+    if obs.get("stderr"):
+        body += f"\n[stderr]\n{obs['stderr']}"
+    if full := obs.get("full_output"):
+        # The pointer rides the observation that lost the middle — the moment of need,
+        # so the store needs no index and costs nothing on an untruncated call.
+        body += "\n[full output] " + outputs.pointer_line(full)
+    return body
+
+
 # One flat renderer on purpose: observation wording is prompt surface (docs/prompt-anatomy.md)
 # and lives in ONE place per kind — a dispatch table would only scatter the strings.
 def format_observation(obs: dict) -> str:  # noqa: PLR0911
     kind = obs.get("kind")
+    if kind == "shell":
+        # No advisory tail: a non-zero exit here is usually the answer, not a mistake (do_shell).
+        where = f", in {obs['cwd']}" if obs.get("cwd") else ""
+        return f"OBSERVATION (shell, exit {obs['exit']}{where}):\n" + _run_body(obs)
     if kind in ("util", "script"):
         if kind == "util" and obs.get("name") == "search":
             return (f"OBSERVATION (util search {obs.get('query')!r} — closest utils "
@@ -93,13 +113,7 @@ def format_observation(obs: dict) -> str:  # noqa: PLR0911
                 text += f"\nThe user's verbatim reply: {obs['answer']}"
             return text
         head = f"OBSERVATION ({kind} {obs['name']}, exit {obs['exit']})"
-        body = obs.get("stdout") or "(no stdout)"
-        if obs.get("stderr"):
-            body += f"\n[stderr]\n{obs['stderr']}"
-        if full := obs.get("full_output"):
-            # The pointer rides the observation that lost the middle — the moment of need,
-            # so the store needs no index and costs nothing on an untruncated call.
-            body += "\n[full output] " + outputs.pointer_line(full)
+        body = _run_body(obs)
         if obs.get("usage"):
             body += f"\n[usage] {obs['usage']}"
         if wo := obs.get("withheld_optional"):

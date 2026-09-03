@@ -1,4 +1,4 @@
-"""Scheduler-managed global utils — the ONLY way routines run code.
+"""Scheduler-managed global utils — how routines run code, for everything but the one-off.
 
 Each util is a PEP 723 script at <library>/utils/<name>/main.py, run via `uv run --script`.
 A `gu` dispatcher lives at the library root so utils compose by calling each other
@@ -6,9 +6,10 @@ A `gu` dispatcher lives at the library root so utils compose by calling each oth
 hook) and can bootstrap from / sync to a remote. It works empty — routines generate the
 utils they need.
 
-All code execution a routine does is mediated here, through named, selftested, git-committed
-(and optionally human-approved) utils — ad-hoc host commands only through the reserved `shell`
-util, behind its own permission.
+Code execution is mediated here, through named, selftested, git-committed (and optionally
+human-approved) utils. The one exception is the `shell` ACTION KIND (engine/actions.py, gated
+by the `shell` capability): an ad-hoc command for what a routine runs ONCE, jailed on the same
+terms as a util. Anything run twice belongs back here.
 """
 
 from __future__ import annotations

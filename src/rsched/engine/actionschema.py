@@ -17,7 +17,7 @@ READ_PATHS_MAX = 8
 KINDS = ("util", "write_util", "remove_util", "read_file", "view_image", "write_file",
          "edit_file",
          "memory_read", "memory_write", "read_rule", "write_rule",
-         "script",
+         "script", "shell",
          "llm", "spawn", "subtask", "detach",
          "schedule_run", "create_routine", "manage_group",
          "list_models", "subruns", "kill", "wait", "ask_user", "report", "finish")
@@ -66,7 +66,15 @@ ACTION_SCHEMA: dict = {
             "description": "util/script: seconds before the script is killed "
                            "(default 300; raise it — up to 1800 — for a genuinely long job "
                            "the 300s default would kill, e.g. running a full test suite) · "
+                           "shell: seconds before the command is killed (default 120) · "
                            "wait: max seconds to block (default 600)",
+        },
+        "command": {
+            "type": "string",
+            "description": "shell: the ONE command line to run, as a single string — it is "
+                           "handed to `bash -c`, so pipes, redirection and `&&` work. It runs "
+                           "non-interactively inside your sandbox: nothing that waits for a "
+                           "keystroke will ever return",
         },
         # read_file / view_image / write_file / edit_file
         "path": {
@@ -74,7 +82,8 @@ ACTION_SCHEMA: dict = {
             "description": "read_file/view_image/write_file/edit_file: path relative to the "
                            "routine dir (or an allowed root) · write_util: install the util "
                            "script from this file's EXACT bytes (byte-faithful; instead of "
-                           "inline content)",
+                           "inline content) · shell: OPTIONAL working directory for the "
+                           "command (default: your working directory)",
         },
         "paths": {
             "type": "array", "items": {"type": "string"}, "maxItems": READ_PATHS_MAX,
@@ -290,7 +299,7 @@ ACTION_SCHEMA: dict = {
 # The one field that best identifies a turn of each kind — the one-line "briefs" used by
 # turn records, compaction digests, and transcript replay.
 BRIEF_FIELD = {"util": "name", "write_util": "name", "remove_util": "name", "read_file": "path",
-               "view_image": "path", "script": "name",
+               "view_image": "path", "script": "name", "shell": "command",
                "write_file": "path", "edit_file": "path", "memory_read": "name",
                "memory_write": "name", "read_rule": "name", "write_rule": "name",
                "llm": "prompt", "spawn": "label", "subtask": "label",

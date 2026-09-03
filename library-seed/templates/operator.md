@@ -36,8 +36,8 @@ config:
     - write_util
     - detach
     - script
-    utils:
     - shell
+    utils:
     - remote
     util_tags: []
     confirm: always
