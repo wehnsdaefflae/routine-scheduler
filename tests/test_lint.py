@@ -383,11 +383,13 @@ def test_lint_validates_meta_tools_vocabulary():
     src = (SEED / "workflows" / "general-task.py").read_text()
     assert '"tools": None,' in src
     rules = ["ask-policy", "web-research", "decision-record", "intent-inference"]
-    # the allowlist must COVER the pattern's action imports, or the consistency rule
-    # fires instead of the vocabulary one under test
-    good = src.replace('"tools": None,',
-                       '"tools": ["read_file", "write_file", "util", "write_util", "llm", '
-                       '"spawn", "wait", "ask_user", "finish"],', 1)
+    # The allowlist must COVER the pattern's action imports, or the consistency rule fires
+    # instead of the vocabulary one under test. DERIVED, not hardcoded: a hardcoded list goes
+    # stale the moment the pattern's import line changes (adding `subruns` to general-task
+    # reddened this test on the very next full run).
+    from rsched.workflows.pyworkflow import parse_py as _parse
+    imported = repr(list(_parse(src)["action_imports"]))
+    good = src.replace('"tools": None,', f'"tools": {imported},', 1)
     assert lint_workflow_py(good, filename="general-task.py", rule_slugs=rules) == []
     bad = src.replace('"tools": None,', '"tools": ["read_file", "reed_file"],', 1)
     probs = lint_workflow_py(bad, filename="general-task.py", rule_slugs=[])
