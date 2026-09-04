@@ -143,4 +143,5 @@ def check_finish(loop, action: dict, ctx) -> str | None:
                                  {"met": newly, "run_id": ctx.run_id,
                                   **({"disputed": sorted(disputes)}
                                      if disputes else {})})
-    return loop._finish_run(action["status"], action["summary"], authored=True)
+    return loop._finish_run(action["status"], action["summary"], authored=True,
+                            reply_to=action.get("reply_to"))

@@ -17,6 +17,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.288.0] — 2026-09-04
+
+### The agent can reply to an earlier message (D117)
+
+A conversation is a stream of messages, and until now the agent's reply was always implicitly an
+answer to the newest one. The user could already REFER to any earlier message — the ↩ on a bubble
+primes the composer and the sent message leads with a quoted `.reply-ref` chip. The agent had no
+equivalent: after doing async or out-of-order work it could not point its reply at the specific
+message it addressed.
+
+`finish` now takes an optional `reply_to` field (conversations only): a short reference to the
+earlier message this reply answers — quote it or name it. It rides the finish EVENT payload and
+the conversation chat renders it as the same ↩ `.reply-ref` chip above the reply that a user's
+reply-to renders, so at a glance you can see WHICH message a reply belongs to. Optional and ignored
+outside a conversation (a routine run has no chat), so nothing else changes.
+
+Wiring: `reply_to` declared on the flat action schema (`actionschema.py`) and added to finish's
+allowed fields so `normalize_action` keeps it (`actions.py`); threaded from the finish action
+through `finishgate.check_finish` → `EngineLoop._finish_run` onto the `finish` transcript event
+(`loop.py`); rendered in `chat.js` `replyNode`, mirroring `userNode`'s existing `.reply-ref`. Tests:
+`test_actions.py` (accepted on finish, stripped on other kinds), `test_loop.py` (threads onto the
+finish event; absent when unset), `tests/ui/test_branches.py` (the chip renders on the reply).
+Scoped increment (operator chose "design + build scoped"): the reference is free text like the
+user's, not yet a click-to-jump link — a natural later enhancement, and a precursor to out-of-order
+replies once actions can run in the background (D118).
+
 ## [0.287.1] — 2026-09-03
 
 ### The shell migration reaches GROUP config too

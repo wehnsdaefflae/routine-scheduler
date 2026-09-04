@@ -123,7 +123,7 @@ KIND_FIELDS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "wait": ((), ("n", "all", "timeout_s")),
     "ask_user": (("question",), ("mode", "options", "default", "config_patch", "request")),
     "report": (("title",), ("detail", "target", "answers", "closes")),
-    "finish": (("status", "summary"), ()),
+    "finish": (("status", "summary"), ("reply_to",)),
 }
 
 

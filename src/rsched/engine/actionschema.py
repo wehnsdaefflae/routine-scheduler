@@ -293,6 +293,14 @@ ACTION_SCHEMA: dict = {
                            "— bold, lists, `code`, links, pipe tables, > quotes — renders in "
                            "the UI)",
         },
+        "reply_to": {
+            "type": "string",
+            "description": "finish (conversations only): OPTIONAL — an earlier message THIS "
+                           "reply addresses. Quote it or name it (e.g. the message's opening "
+                           "words); it renders as a '↩ …' reference chip above your reply in "
+                           "the chat, the way the user replying to a message does. Ignored "
+                           "outside a conversation.",
+        },
     },
 }
 

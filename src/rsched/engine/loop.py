@@ -266,7 +266,8 @@ class EngineLoop:
             if self.ctx.depth == 0:
                 self.ctx.transcript.close()
 
-    def _finish_run(self, status: str, summary: str, *, authored: bool = False) -> str:
+    def _finish_run(self, status: str, summary: str, *, authored: bool = False,
+                    reply_to: str | None = None) -> str:
         ctx = self.ctx
         # R82: repair a summary whose newlines were double-escaped (literal ``\n`` and no real
         # newline) so result.md / the digest render real line breaks instead of verbatim "\n".
@@ -284,7 +285,10 @@ class EngineLoop:
             summary += ("\n[A user message arrived as this run ended — it could not be "
                         "delivered this run; it stays queued and opens the next "
                         "run/reply.]")
-        ctx.transcript.event("finish", {"status": status, "summary": summary, "authored": authored},
+        finish_payload = {"status": status, "summary": summary, "authored": authored}
+        if reply_to:   # F438/D117: the reply targets an earlier message (conversations)
+            finish_payload["reply_to"] = reply_to
+        ctx.transcript.event("finish", finish_payload,
                              usage_total=ctx.usage_total(), turns=ctx.turn)
         if status in ("partial", "failed", "aborted") and ctx.depth == 0:
             event_type = "budget_exhausted" if status == "partial" else "run_failed"

@@ -738,6 +738,28 @@ def test_finish_with_pending_user_message_defers_and_delivers(make_routine, scri
     assert not any(p.name.startswith("msg-") for p in (d / "inbox").iterdir())
 
 
+def test_finish_reply_to_reaches_the_finish_event(make_routine, scripted):
+    """D117: a finish action carrying `reply_to` threads it onto the finish EVENT payload
+    (finishgate -> _finish_run), so the conversation chat can render the ↩ reference chip.
+    A reply with no reply_to leaves the field off the payload entirely."""
+    d = make_routine(slug="repref")
+    scripted([probe(),
+              {"say": "answering the earlier question", "kind": "finish", "status": "ok",
+               "summary": "here is the answer", "reply_to": "your earlier question about X"}])
+    status, run_dir = run_routine(d, _server(d), run_ts=TS)
+    events, _ = read_events(run_dir / "transcript.jsonl")
+    assert status == "ok"
+    fin = next(e for e in events if e["type"] == "finish")
+    assert fin["payload"]["reply_to"] == "your earlier question about X"
+
+    d2 = make_routine(slug="norepref")
+    scripted([probe(), {"say": "plain finish", "kind": "finish", "status": "ok",
+                        "summary": "done"}])
+    _st, rd2 = run_routine(d2, _server(d2), run_ts=TS)
+    ev2, _ = read_events(rd2 / "transcript.jsonl")
+    assert "reply_to" not in next(e for e in ev2 if e["type"] == "finish")["payload"]
+
+
 def test_finish_gate_rejects_unaccounted_stopping_conditions(make_routine, scripted,
                                                              monkeypatch):
     """F334/D98 v1: a depth-0 finish whose summary ignores an OPEN stopping condition is

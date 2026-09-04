@@ -231,3 +231,25 @@ def test_a_reply_carries_a_rewind_to_here_control_that_posts_the_reply_turn(ui, 
     ui_page.locator(".modal-overlay").get_by_role("button", name="rewind", exact=True).click()
     ui_page.wait_for_timeout(400)   # < the 800ms reload; the POST body is the real contract
     assert posted.get("body") == {"turn": 2}, posted
+
+
+def test_agent_reply_can_target_an_earlier_message(ui, ui_page):
+    """D117 (operator msg-8): the agent's reply may target an earlier message — a finish event
+    carrying `reply_to` renders a ↩ reference chip above the reply, exactly the way a user's own
+    reply-to-a-message renders (`.reply-ref`)."""
+    _slug, conv_dir = _start_conversation(ui, ui_page)
+    run_dir = conv_dir / "runs" / "20260827-100000"
+    run_dir.mkdir(parents=True, exist_ok=True)
+    events = [*EVENTS,
+              {"type": "finish", "turns": 2, "usage_total": {"in": 18, "out": 2},
+               "payload": {"status": "ok", "summary": "Answering your deploy-target question.",
+                           "reply_to": "your question about the deploy target"}}]
+    (run_dir / "transcript.jsonl").write_text(
+        "".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
+    atomic_write_json(run_dir / "status.json", {"state": "finished", "turn": 2})
+    ui_page.reload()
+
+    reply = ui_page.locator(".msg.assistant", has_text="Answering your deploy-target question")
+    expect(reply).to_be_visible(timeout=10_000)
+    # the ↩ reference chip shows WHICH earlier message this reply addresses
+    expect(reply.locator(".reply-ref")).to_contain_text("your question about the deploy target")

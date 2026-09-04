@@ -262,3 +262,19 @@ def test_write_util_edit_mode_validation():
                for p in validate_action({**base, "content": "# x", "anchor": "old"}))
     assert any("replacement" in p
                for p in validate_action({**base, "anchor": "a", "replacement": 3}))
+
+
+def test_finish_reply_to_field():
+    """D117: the agent's conversation reply may target an earlier message via `reply_to`.
+    It rides finish through both schema layers and survives normalize; on any OTHER kind it
+    is a foreign field and is dropped (only finish declares it)."""
+    from rsched.engine.actions import normalize_action, validate_action
+    fin = {"say": "s", "kind": "finish", "status": "ok", "summary": "done",
+           "reply_to": "your earlier question about the deploy target"}
+    assert _parse_both_layers(json.dumps(fin)) == fin          # passes schema + semantic layers
+    assert normalize_action(dict(fin))["reply_to"] == fin["reply_to"]   # kept on finish
+    # a non-finish kind never carries reply_to — normalize drops the foreign field
+    other = {"say": "s", "kind": "write_file", "path": "p.json", "content": {"x": 1},
+             "reply_to": "nope"}
+    assert "reply_to" not in normalize_action(dict(other))
+    assert validate_action(normalize_action(dict(other))) == []

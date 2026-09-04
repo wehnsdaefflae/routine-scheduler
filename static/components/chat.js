@@ -155,6 +155,7 @@ export function createChat(container, opts = {}) {
       summary = summary.split("\n").slice(1).join("\n").trim();
     }
     const node = el("div", { class: "msg assistant" },
+      p.reply_to ? el("div", { class: "reply-ref", title: p.reply_to }, "↩ ", p.reply_to) : null,
       topic ? el("div", { class: "topic-shift" },
         el("span", {}, "⤴ this looks like a new topic"),
         opts.onFork ? el("button", { class: "btn small",
