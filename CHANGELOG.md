@@ -17,6 +17,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.289.0] — 2026-09-04
+
+### Resizable + hideable sidebars — the navigation rail first (operator request)
+
+The console has four sidebars — the main navigation rail, the page-nav, and the run view's left
+and right rails — and the operator asked to drag any of their vertical borders to resize, and to
+hide each one. This ships the shared mechanism and the FIRST surface (the main navigation rail);
+the other three follow on the same primitive.
+
+`static/resizable.js` (`wireSidebar`) turns a thin grip element on a sidebar's moving border into
+BOTH controls at once: a **drag** resizes, a **click** (no drag) hides or shows, and the grip is
+keyboard-focusable (Left/Right arrows resize, Enter/Space toggle). The load-bearing rule that keeps
+the responsive layouts intact: it writes a sidebar's width ONLY as a CSS custom property and its
+hidden state ONLY as a class — never inline geometry — so a `@media` collapse always stays
+authoritative. A dragged rail width lives in the new `--rail-w-set`, which only the wide layout
+reads; the ≤1180 narrow icon rail and the ≤860 mobile bottom bar drive `--rail-w` themselves and
+are untouched (the grip is `display:none` there). Width and hidden state persist to localStorage
+and restore before first paint.
+
+Wiring: `app.js` `initRailResize()` mounts the grip and calls `restore()`; `base.css` adds
+`--rail-w-set`, the grip, and the `.sb-hidden-rail` rules scoped to `@media (min-width: 1181px)`.
+Test: `tests/ui/test_sidebar_resize.py` drives real chromium — drag widens the rail and persists
+across a reload; a click hides it (width → 0, grip stays as the re-show target) and shows it again.
+
+**Next increments (same primitive):** the run view's left and right rails, then the settings /
+routine page-nav.
+
+
+
 ## [0.288.3] — 2026-09-04
 
 ### Theme: declare dual-scheme support so a "light" choice survives a force-darkening browser

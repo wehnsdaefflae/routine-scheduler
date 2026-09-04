@@ -12,6 +12,7 @@ import { initTaskManager } from "/static/components/taskmanager.js";
 import { initSearchBox } from "/static/components/searchbox.js";
 import { mountToc } from "/static/components/toc.js";
 import { mountRibbon } from "/static/components/ribbon.js";
+import { wireSidebar } from "/static/resizable.js";
 
 installTracing();
 installFormPersistence();
@@ -331,11 +332,29 @@ function initTheme() {
   paint();
 }
 
+// ---- resizable + hideable navigation rail (operator request 2026-09-04) ----------------------
+// The main nav is one of four sidebars sharing resizable.js. A grip on its right border (between
+// the rail and the workspace) resizes it on drag and hides/shows it on click — both persisted. It
+// is mounted always but is inert outside the wide layout: the grip's CSS is display:none at ≤1180,
+// and the dragged width lives in --rail-w-set which only the wide layout reads, so the narrow icon
+// rail and the mobile bottom bar are untouched.
+function initRailResize() {
+  const topbar = document.querySelector(".topbar");
+  if (!topbar) return;
+  const grip = el("div", { class: "sb-grip rail",
+    title: "drag to resize the navigation · click to hide or show it" });
+  document.body.appendChild(grip);
+  wireSidebar(grip, { key: "rail", cssVar: "--rail-w-set", hiddenClass: "sb-hidden-rail",
+                      edge: "right", min: 168, max: 340,
+                      measure: () => topbar.getBoundingClientRect().width }).restore();
+}
+
 window.addEventListener("hashchange", route);
 
 (async function boot() {
   startClock();
   initTheme();
+  initRailResize();
   const ribbonHost = document.getElementById("ribbon");
   if (ribbonHost) mountRibbon(ribbonHost);
   initNotifications();

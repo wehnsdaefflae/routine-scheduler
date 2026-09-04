@@ -98,7 +98,10 @@
   --s1: 4px;  --s2: 8px;  --s3: 12px; --s4: 16px; --s5: 24px; --s6: 32px; --s7: 48px;
   --r1: 4px;  --r2: 7px;  --r3: 12px;
 
-  --rail-w: 212px;
+  --rail-w-set: 212px;          /* the user-draggable desktop rail width (resizable.js writes it) */
+  --rail-w: var(--rail-w-set);  /* the EFFECTIVE width; the ≤1180 / ≤860 media queries below
+                                   override this directly, so a dragged width never defeats the
+                                   narrow icon rail or the mobile bottom bar */
   --rail-w-narrow: 68px;
   --shell-max: 1240px;
 
@@ -253,6 +256,33 @@ h3 { font-size: var(--t-l); font-weight: 600; letter-spacing: -0.01em; margin: v
 /* ── the workspace: banner, workbar, ribbon, view ───────────────────────────────────────── */
 
 .workspace { margin-left: var(--rail-w); min-height: 100vh; display: flex; flex-direction: column; }
+
+/* Drag-to-resize + hide for the main navigation rail (resizable.js, operator request 2026-09-04).
+   Scoped to the WIDE layout — the only mode where the rail is a vertical column with a border to
+   grab. At ≤1180 the rail is the fixed narrow icon rail and at ≤860 it is the bottom bar; both are
+   left untouched (the grip is display:none there, and --rail-w is driven by their own media
+   queries, never by a dragged width). The grip rides the rail's inner border: a drag resizes
+   (writing --rail-w-set), a click hides/shows (toggling .sb-hidden-rail). */
+.sb-grip { display: none; }
+body.sb-dragging { cursor: col-resize; user-select: none; }
+@media (min-width: 1181px) {
+  :root.sb-hidden-rail { --rail-w: 0px; }
+  .topbar { transition: transform 0.16s var(--ease); }
+  :root.sb-hidden-rail .topbar { transform: translateX(-100%); }
+  .sb-grip.rail {
+    display: block; position: fixed; z-index: 31; top: 0; bottom: 0;
+    left: var(--rail-w); width: 8px; margin-left: -4px; cursor: col-resize; touch-action: none;
+  }
+  .sb-grip.rail::before {
+    content: ""; position: absolute; inset: 0 3px; border-radius: 2px;
+    background: var(--rule-2); opacity: 0; transition: opacity 0.12s var(--ease);
+  }
+  .sb-grip.rail:hover::before, .sb-grip.rail:focus-visible::before { opacity: 0.7; }
+  .sb-grip.rail:focus-visible { outline: none; }
+  /* hidden: the grip stays pinned at the screen edge as the re-show target, tinted to invite it */
+  :root.sb-hidden-rail .sb-grip.rail { cursor: e-resize; }
+  :root.sb-hidden-rail .sb-grip.rail::before { opacity: 0.6; background: var(--signal); }
+}
 
 .workbar {
   position: sticky; top: 0; z-index: 20;
