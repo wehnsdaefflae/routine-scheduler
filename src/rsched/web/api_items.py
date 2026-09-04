@@ -54,6 +54,26 @@ def orphans(request: Request) -> list[dict]:
     return orphans_model.load(_routine_dir(request)) + orphans_model.load_undelivered(home)
 
 
+@router.post("/items/orphans/{report_id}/discard")
+def discard_orphan(request: Request, report_id: str) -> dict:
+    """Discard an "addressed, never delivered" orphan (readmodels/orphans.find_undelivered): a
+    row with a target but no inbox message, which no run can ever drain. Appends a `retracted`
+    event so it reads `dropped` and leaves the banner + backlog. 404 unknown id, 409 when the
+    row is not an undelivered orphan (delivered, already retracted, unaddressed, or its delivery
+    is still waiting — that one is retracted from the routine's outbox instead).
+    """
+    from ..reports import discard_undelivered_report
+
+    home = request.app.state.server.routines_home
+    try:
+        discard_undelivered_report(home, report_id)
+    except LookupError as exc:
+        raise HTTPException(404, str(exc)) from None
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from None
+    return {"ok": True, "id": report_id}
+
+
 @router.get("/items")
 def items(request: Request,
           type_: Annotated[str, Query(alias="type")] = "",

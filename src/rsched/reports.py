@@ -199,6 +199,39 @@ def retract_report(routines_home: Path, report_id: str) -> dict:
     return row
 
 
+def discard_undelivered_report(routines_home: Path, report_id: str) -> dict:
+    """Operator-discard an addressed report that was NEVER delivered — an orphan: a row with a
+    target but no `inbox/msg-rep-<id>.json`, appended straight to the stream so no run can ever
+    drain it (the "addressed, never delivered" banner, readmodels/orphans.find_undelivered).
+    Appends a `retracted` event under the ledger lock — reusing the existing fold vocabulary, so
+    the row reads `dropped` and leaves both the banner and the backlog with no read-model change.
+
+    The MIRROR of retract_report, guarded by the opposite precondition: retract withdraws a
+    delivery that is STILL WAITING in the inbox (and refuses once the file is gone); discard
+    clears a row whose delivery is genuinely ABSENT (and refuses while a pending file exists —
+    that one is retract's to withdraw). Returns the folded row before discard. Raises LookupError
+    for an unknown id and ValueError for a row that is not an undelivered orphan — the web layer
+    maps them to 404/409.
+    """
+    path = reports_path(routines_home)
+    with file_lock(path.with_suffix(".lock")):
+        row = next((r for r in read_reports(path) if str(r.get("id")) == report_id), None)
+        if row is None:
+            raise LookupError(f"no report {report_id!r}")
+        if not row.get("target"):
+            raise ValueError(f"{report_id} is unaddressed — there is no delivery to discard")
+        if row.get("retracted"):
+            raise ValueError(f"{report_id} is already retracted")
+        if row.get("delivered"):
+            raise ValueError(f"{report_id} was delivered — it is not an undelivered orphan")
+        inbox = Path(routines_home) / str(row["target"]) / "inbox"
+        if (inbox / f"msg-rep-{report_id}.json").exists():
+            raise ValueError(f"{report_id} has a delivery still waiting in {row['target']}'s "
+                             "inbox — retract it instead of discarding")
+        _append(path, {"id": report_id, "event": "retracted", "ts": now_iso()})
+    return row
+
+
 def read_reports(path: Path) -> list[dict]:
     """The stream folded into one row per report, in filing order. A `delivered` or
     `retracted` event row is merged into its report as a `delivered: {ts, run_id}` /

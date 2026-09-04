@@ -369,3 +369,58 @@ def test_observation_renders_the_filed_id(tmp_path):
     obs = handle_report(loop, {"title": "a defect", "detail": "d"})
     assert "R1" in format_observation(obs)
     assert home.is_dir()
+
+
+def test_a_targeted_report_always_writes_its_inbox_delivery(tmp_path):
+    """The invariant readmodels/orphans.find_undelivered depends on: the ONLY code producer of a
+    report row (file_report, via the report action) writes the target's inbox `msg-rep-<id>.json`
+    in the SAME call whenever the target resolves — so an addressed report can never be an orphan
+    at the source — and an UNKNOWN target files NOTHING at all (no ledger row, never a half-written
+    targeted row with no message). The 2026-08-29 / 2026-09-04 orphans came from an operator batch
+    appended straight to the stream, never from this path."""
+    loop, home = _loop(tmp_path, slug="self-audit")
+    target = _routine(home, "routine-improver")
+
+    handle_report(loop, {"target": "routine-improver", "title": "landed", "detail": "d"})
+    assert (target / "inbox" / "msg-rep-R1.json").is_file()      # delivered in the same call
+    # a closure is delivered too (it just does not buy the target a run)
+    handle_report(loop, {"target": "routine-improver", "title": "closed",
+                         "answers": "R1", "closes": True})
+    assert (target / "inbox" / "msg-rep-R2.json").is_file()
+
+    # an UNKNOWN target files NOTHING — no ledger row that could orphan
+    obs = handle_report(loop, {"target": "no-such-routine", "title": "misrouted"})
+    assert obs.get("unknown_target") is True
+    assert [r["id"] for r in _rows(home)] == ["R1", "R2"]        # no third row written
+
+
+def test_discard_undelivered_report_clears_an_orphan(tmp_path):
+    """discard_undelivered_report (F435): clear an 'addressed, never delivered' orphan — a targeted
+    row with no inbox message (batch-appended, so no run can ever drain it). It appends a retracted
+    event, so the row reads `dropped` and leaves the banner + backlog; it REFUSES a report whose
+    delivery is still waiting (retract's job) and an unknown id."""
+    from rsched.readmodels.orphans import find_undelivered
+    from rsched.reports import discard_undelivered_report
+
+    loop, home = _loop(tmp_path, slug="self-audit")
+    _routine(home, "routine-improver")
+
+    # an orphan: a targeted row with NO inbox delivery, exactly as an operator batch leaves it
+    path = reports_path(home)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps({"id": "R1", "ts": "2026-09-04T10:00:00+02:00", "routine": "operator",
+                             "target": "routine-improver", "title": "batch-appended orphan"}) + "\n")
+    assert [o["id"] for o in find_undelivered(_rows(home), home)] == ["R1"]
+
+    row = discard_undelivered_report(home, "R1")
+    assert row["id"] == "R1"
+    assert _items(home, home / "self-audit")["R1"]["status"] == "dropped"
+    assert find_undelivered(_rows(home), home) == []            # gone from the banner
+
+    # refuses a normally-delivered report whose message still waits — that is retract's job
+    handle_report(loop, {"target": "routine-improver", "title": "waiting normally"})
+    with pytest.raises(ValueError, match="still waiting"):
+        discard_undelivered_report(home, "R2")
+    with pytest.raises(LookupError):
+        discard_undelivered_report(home, "R404")

@@ -165,3 +165,23 @@ def test_an_addressed_report_with_no_message_in_the_inbox_is_surfaced(tmp_path):
     assert [o["id"] for o in found] == ["R3", "R2"]          # newest first
     assert found[0]["target_exists"] is False and found[1]["target_exists"] is True
     assert all(o["kind"] == "undelivered" for o in found)
+
+
+def test_an_undelivered_closure_is_not_a_lost_report(tmp_path):
+    """A closure (answers + closes) is born settled — the terminal acknowledgment of an
+    exchange, asking nothing back. An operator closure written straight to the stream
+    (R1152-R1156, 2026-09-04) lacks an inbox file like any batch-appended row, but being
+    settled is its whole point: there is nothing for the target to act on, so it is NOT lost
+    work and must not sit in the 'addressed, never delivered' banner."""
+    from rsched.readmodels.orphans import find_undelivered
+
+    (tmp_path / "radar" / "inbox").mkdir(parents=True)
+    (tmp_path / "radar" / "routine.yaml").write_text("slug: radar\n", encoding="utf-8")
+    rows = [
+        {"id": "R10", "target": "radar", "routine": "operator", "closes": True, "answers": "R9",
+         "ts": "2026-09-04T10:00:00+02:00", "title": "Closed: your exposure is shut"},
+        {"id": "R11", "target": "radar", "routine": "operator",
+         "ts": "2026-09-04T11:00:00+02:00", "title": "a real undelivered work order"},
+    ]
+    found = find_undelivered(rows, tmp_path)
+    assert [o["id"] for o in found] == ["R11"]        # the closure excluded, the work order kept

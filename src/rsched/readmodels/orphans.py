@@ -134,7 +134,13 @@ def find_undelivered(reports: list[dict], routines_home: Path) -> list[dict]:
     out: list[dict] = []
     for row in reports:
         target = str(row.get("target") or "")
-        if not target or row.get("delivered") or row.get("retracted"):
+        # A closure (answers + closes) is born settled — the terminal acknowledgment of an
+        # exchange, asking nothing back — so an undelivered one is not lost work and never
+        # belongs in this banner. Operator closures written straight to the stream
+        # (R1152-R1156, 2026-09-04) lack an inbox file like any batch-appended row, but being
+        # settled is exactly their point: there is nothing for the target to act on.
+        if (not target or row.get("delivered") or row.get("retracted")
+                or row.get("closes")):
             continue
         item_id = str(row.get("id") or "")
         inbox = Path(routines_home) / target / "inbox"

@@ -67,11 +67,29 @@ export async function render(view, query = {}) {
         el("span", { class: "q-group-count" }, String(rows.length))),
       ...rows.map(card));
   };
-  api("/api/items/orphans").then((rows) => {
-    if (!rows?.length) return;
+  async function loadOrphans() {
+    let rows;
+    try { rows = await api("/api/items/orphans"); } catch { return; }
+    if (!rows?.length) { orphanBox.hidden = true; orphanBox.replaceChildren(); return; }
     const deferrals = rows.filter((o) => o.kind !== "undelivered");
     const undelivered = rows.filter((o) => o.kind === "undelivered");
     orphanBox.hidden = false;
+    // An undelivered orphan can never be delivered (no run has a message to drain), so the only
+    // action is to clear it: discard marks it dropped, off this banner and out of the backlog.
+    const discard = (o) => {
+      const b = el("button", { class: "btn small ghost",
+        title: "discard this orphan — marks it dropped, off the banner and out of the backlog" },
+        "discard");
+      b.onclick = async () => {
+        b.disabled = true;
+        try {
+          await api(`/api/items/orphans/${encodeURIComponent(o.id)}/discard`, { method: "POST" });
+          toast(`${o.id} discarded — dropped from the backlog`);
+          await loadOrphans();
+        } catch (err) { toast(err.message, 4000, { error: true }); b.disabled = false; }
+      };
+      return b;
+    };
     orphanBox.replaceChildren(...[
       orphanGroup("deferred, then lost — a carrier item closed without delivering these",
         deferrals, (o) => el("div", { class: "card mt" },
@@ -81,13 +99,17 @@ export async function render(view, query = {}) {
           el("div", { class: "faint small mt" }, o.promise))),
       orphanGroup("addressed, never delivered — the target has no message for these and never will",
         undelivered, (o) => el("div", { class: "card mt" },
-          el("div", {}, el("strong", {}, o.id), " from ", el("span", { class: "mono" }, o.from),
-            " is addressed to ", el("span", { class: "mono" }, o.target),
-            o.target_exists ? ", whose inbox holds no message for it."
-                            : ", which is not a routine on this instance."),
+          el("div", { class: "row",
+            style: "justify-content:space-between;gap:8px;align-items:flex-start" },
+            el("div", {}, el("strong", {}, o.id), " from ", el("span", { class: "mono" }, o.from),
+              " is addressed to ", el("span", { class: "mono" }, o.target),
+              o.target_exists ? ", whose inbox holds no message for it."
+                              : ", which is not a routine on this instance."),
+            discard(o)),
           el("div", { class: "prose mt" }, o.title))),
     ].filter(Boolean));
-  }).catch(() => {});
+  }
+  loadOrphans();
 
   // ---- feedback → the routine's inbox → consumed by the next (or current) run -----------
   // Structured feedback (finding comments, decision answers) keeps the tagged audit

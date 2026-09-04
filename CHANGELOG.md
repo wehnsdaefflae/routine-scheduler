@@ -17,6 +17,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.288.2] — 2026-09-04
+
+### Messages: clear the "addressed, never delivered" orphans, and stop mislabelling closures (F435/F436)
+
+The Messages page banners reports that name a target routine but have no `inbox/msg-rep-<id>.json`
+for it — so no run can ever drain them (`readmodels/orphans.find_undelivered`). The operator asked
+why 17 such rows exist and whether they sit forever. They were two things: **12** stale 2026-08-29
+web-UI migration announcements (superseded), and **5** operator *closure* replies (`closes:true`,
+answering R1146–R1150) that a run's own `report` action would never orphan — the sole code producer
+(`file_report`, via the report action) writes the ledger row and the target's inbox message in one
+call, and refuses an unknown target outright. Both cohorts were an operator batch appended straight
+to the stream, and nothing drained or aged them out.
+
+Three changes:
+
+- **Closures are no longer flagged.** `find_undelivered` skips a `closes:true` row: a closure is
+  born settled — the terminal acknowledgment of an exchange, asking nothing back — so an undelivered
+  one is not lost work. The 5 "Closed:" rows drop off the banner.
+- **A discard affordance.** Each undelivered-orphan row gains a **discard** button
+  (`POST /api/items/orphans/{id}/discard` → `reports.discard_undelivered_report`) that appends a
+  `retracted` event, so the row reads `dropped` and leaves both the banner and the backlog. It is
+  the mirror of `retract_report`: retract withdraws a delivery still WAITING in the inbox; discard
+  clears one whose delivery is genuinely ABSENT (and refuses a row whose message still waits — that
+  is retract's). Clears the 12 stale announcements in one click each.
+- **A producer-invariant guard.** A regression test pins the invariant the whole orphans design
+  rests on: a targeted `file_report` always writes its inbox delivery in the same call, and an
+  unknown target files nothing at all — so an addressed report can never be orphaned at the source.
+  (There is no live buggy producer to fix; the 17 rows came from a one-off operator batch.)
+
+Wiring: `readmodels/orphans.py` (closure skip), `reports.py` (`discard_undelivered_report`),
+`web/api_items.py` (the discard endpoint), `static/views/messages.js` (the banner button + a
+re-render). Tests: `test_orphans.py` (closure excluded), `test_reports.py` (discard clears/refuses;
+the producer invariant), `tests/ui/test_messages_page.py` (the discard flow).
+
 ## [0.288.1] — 2026-09-04
 
 ### Goal panel: a long condition's meta no longer wraps one letter per line on a narrow screen (F421 v3)
