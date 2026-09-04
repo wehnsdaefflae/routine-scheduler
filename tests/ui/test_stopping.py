@@ -123,6 +123,39 @@ def test_a_paragraph_long_note_does_not_starve_the_condition(ui, ui_page):
     assert width > 160, f".goal-text starved to {width}px by its own note"
 
 
+def test_a_long_note_does_not_crush_the_meta_on_a_narrow_routine_run(ui, ui_page):
+    """F421 v3 (operator screenshot 2026-09-04, mobile miz-grant-steward run): the ROUTINE run
+    view renders the goal panel with showStage=true, so a condition row also carries the per-stage
+    'any stage' input. On a NARROW viewport that fixed input, the requires select and the
+    min-width:22ch condition text filled the single flex row, leaving .goal-meta ([s<n>] + its
+    note) — the only shrinkable child (min-width:0) — collapsed to ~1 char and wrapped one letter
+    per line: a tall, thin vertical column. .goal-row now wraps and .goal-meta keeps a min-width
+    floor, so the meta stays wider than it is tall."""
+    ui_page.set_viewport_size({"width": 390, "height": 900})
+    ui.seed_run("uir", "20260715-160000", "finished", summary="done")
+    (ui.routine_dir("uir") / "state").mkdir(parents=True, exist_ok=True)
+    atomic_write_json(ui.routine_dir("uir") / "state" / "stopping.json", {
+        "mode": "all", "groups": [{"id": "g1", "name": "review iteration", "mode": "all"}],
+        "conditions": [
+            {"id": "s1", "status": "met", "group": "g1",
+             "text": "the collaborative steward page is published with login as Mark or "
+                     "Florence, read-only lock for the other, and a ten-minute inactivity "
+                     "auto-logout with a visible explained countdown, and edits persisted",
+             "note": "with one host-limited caveat - the page cannot enforce a true concurrent "
+                     "lock, only a best-effort inactivity auto-logout"}]})
+    ui_page.goto(f"{ui.url}/#/run/uir:20260715-160000")
+
+    meta = ui_page.locator(".goal-meta").first
+    expect(meta).to_be_visible()
+    box = meta.evaluate("el => { const r = el.getBoundingClientRect(); "
+                        "return {w: r.width, h: r.height}; }")
+    # the crush symptom is a vertical character column: width << height. A readable meta wraps at
+    # ~34ch and is wider than it is tall, whatever the exact px.
+    assert box["w"] > box["h"], (
+        f".goal-meta is a {box['w']:.0f}x{box['h']:.0f} vertical column "
+        "(crushed one char per line) on a narrow run view")
+
+
 def test_the_verdict_chip_reads_met_only_when_the_goal_is_satisfied(ui, ui_page):
     _slug, conv_dir = _start_conversation(ui, ui_page)
     _goal(conv_dir, DOC)

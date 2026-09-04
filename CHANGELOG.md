@@ -17,6 +17,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.288.1] — 2026-09-04
+
+### Goal panel: a long condition's meta no longer wraps one letter per line on a narrow screen (F421 v3)
+
+The run view's goal/stopping panel renders each condition as a flex row —
+`[mark, text, [s<n>]+note meta, requires-select, "any stage" input, ✕]` — and on the ROUTINE run
+view the per-stage input is present (`showStage: true`). The row did not `flex-wrap`, so on a
+narrow (mobile) viewport the fixed edit controls plus the `min-width: 22ch` condition text filled
+the line and the only shrinkable child, `.goal-meta` (`min-width: 0`), collapsed to ~0 width;
+`overflow-wrap: anywhere` then broke its `[s1] · <note>` text into a tall single-character column
+(operator screenshot, `miz-grant-steward`). This is the third failure mode of the same row: F421
+first stopped the note running off the sidebar, then stopped it starving the condition text — and
+the `min-width: 0` added for that second fix is what let it over-collapse here.
+
+`.goal-row` now `flex-wrap: wrap`s so the meta and edit controls drop to their own line under
+width pressure instead of crushing, and `.goal-meta` gets a `min-width: 12ch` floor so it can
+never re-collapse to a character column even when it shares a wrapped line (`flex: 0 1 34ch` still
+lets it yield width to the condition text). Regression test on the previously-uncovered
+`showStage: true` run-view path at a 390px viewport asserts the meta stays wider than it is tall
+(`tests/ui/test_stopping.py`).
+
 ## [0.288.0] — 2026-09-04
 
 ### The agent can reply to an earlier message (D117)

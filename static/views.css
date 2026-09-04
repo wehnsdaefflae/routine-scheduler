@@ -617,8 +617,8 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
 }
 .goal-gname:focus { outline: 1px solid var(--rule-2); border-radius: 4px; }
 .goal-row {
-  display: flex; align-items: baseline; gap: 6px; font-size: 12.5px; color: var(--ink-2);
-  padding: 2px 2px; min-width: 0;
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; font-size: 12.5px;
+  color: var(--ink-2); padding: 2px 2px; min-width: 0;
 }
 .goal-row .goal-mark {
   flex: none; width: 14px; text-align: center; border: none; background: none; cursor: pointer;
@@ -641,7 +641,12 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
 /* F421 let the note WRAP so it stopped running off the sidebar — necessary, and not sufficient:
    wrapping says how the note breaks, not how much of the row it may claim, so a paragraph-long
    note still won the flex negotiation and starved the condition. A shrinkable basis bounds it. */
-.goal-meta { font-size: 10px; min-width: 0; flex: 0 1 34ch; overflow-wrap: anywhere; }
+/* F421 v3 (mobile, 2026-09-04): min-width:0 made the meta the ONLY child that could shrink, so on
+   a NARROW row where the min-width:22ch text and the fixed requires/stage controls already filled
+   the line it collapsed to ~0 and overflow-wrap:anywhere broke it one letter per line. .goal-row
+   now wraps so the meta drops to its own line; the min-width floor keeps it readable even when it
+   shares a wrapped line, while flex:0 1 34ch still lets it yield width to the condition text. */
+.goal-meta { font-size: 10px; min-width: 12ch; flex: 0 1 34ch; overflow-wrap: anywhere; }
 .goal-note { color: var(--ink-3); }
 /* v2: a verdict the verifier objected to and the run re-asserted. Amber, not red — the run
    is not wrong, the two disagreed, and the operator decides. */
