@@ -17,6 +17,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.288.3] — 2026-09-04
+
+### Theme: declare dual-scheme support so a "light" choice survives a force-darkening browser
+
+The operator reported that picking **light** in the theme toggle left everything dark. The
+in-browser mechanism is correct and now proven: every palette token is `light-dark(light, dark)`
+and the theme is `data-theme="light"` → `color-scheme: light` on the root, which makes both
+`light-dark()` and the browser's own page canvas go light. A new `tests/ui/test_theme.py` drives
+the REAL chromium and confirms picking light computes `color-scheme: light` and a light rail
+surface (and dark stays dark) — this whole surface previously had **no test at all**, which is how
+"light does nothing" reached a user.
+
+Since the code path is correct, a report of "light stays dark" is a browser **force-darkening** the
+page over the top — Android Chrome's *Auto Dark Theme*, or a desktop dark-mode extension
+(Dark Reader) — which overrides the site's `color-scheme`. The documented opt-out those features
+honor is a DOCUMENT-level `<meta name="color-scheme">`, which the console was missing (it set
+`color-scheme` only in `base.css`). Added `<meta name="color-scheme" content="dark light">` to
+`index.html` (`dark` first keeps the shipped default flash-free) and a test pinning its presence.
+If a page-served fix is not enough for a given browser, the theme is honoured once that browser's
+force-dark / dark-mode extension is disabled for this origin.
+
 ## [0.288.2] — 2026-09-04
 
 ### Messages: clear the "addressed, never delivered" orphans, and stop mislabelling closures (F435/F436)

@@ -3,6 +3,13 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<!-- Declare dual-scheme support at the DOCUMENT level, not only in base.css's `color-scheme`
+     property. This is the companion the CSS property is meant to have: a force-darkening browser
+     (Android "Auto Dark Theme", some desktop dark-mode extensions) keys its opt-out off THIS meta,
+     so without it a page whose CSS says `color-scheme: light` (the user picked light) can still be
+     re-darkened over the top — which is exactly "the light setting doesn't make anything light".
+     `dark light` keeps dark the expressed default so nothing flashes for the shipped dark theme. -->
+<meta name="color-scheme" content="dark light">
 <title>rsched · ops console</title>
 <link rel="stylesheet" href="/static/base.css">
 <link rel="stylesheet" href="/static/views.css">
