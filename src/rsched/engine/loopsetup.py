@@ -157,6 +157,14 @@ def configure(loop, ctx: RunContext, workflow_body: str, instruction: str,
     loop.reminder_nudge = 0
     loop.reminders = remind.load(loop)
     loop.reminders_level = remind.level_of(ctx.grants)   # what remind.refresh compares against
+    # Rule ASSISTS (rsched/assists.py): the curated half of the same relevance-trigger layer.
+    # Read once, like the reminder set — a library revision lands at the next run. Both guards
+    # are per-run: one fire per assist, and at most one finish held by one, ever.
+    from . import assist
+    loop.assists = assist.load(loop)
+    loop.assists_fired = set()
+    loop.assist_finish_deferred = False
+    loop.assist_user_replies = 0
     # Once the conversation has been archived to on-disk history, the model is reminded
     # to consult its index — right after each compaction, then every 10th turn (NOT every
     # turn: an identical tail on every observation is pure rent on the context).

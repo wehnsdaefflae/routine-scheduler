@@ -17,6 +17,83 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.305.0] — 2026-09-05
+
+### The rule that notices its own moment — assists
+
+The 26 curated general rules are advisory prose enforced by nothing, and the realistic failure
+is not a run that refuses one. It is a run that means to follow a rule and forgets it at the
+moment it applies. Most of a rule's length is scaffolding for that noticing — the "when" the
+model has to hold and match against the situation in front of it — and holding it is the part
+that fails.
+
+An **assist** takes the noticing off the model. A rule declares `(moment, predicate) → line`
+entries in its own frontmatter, and the engine surfaces the operative line exactly when the
+rule becomes relevant. This is the library-curated half of the relevance-trigger layer the
+consequence reminders (0.304.0) are the self-authored half of — same mechanism, different
+author.
+
+**Why timing rather than enforcement, stated plainly, because it is what makes this the
+primary mechanic and not a consolation prize.** A mechanical check is a function of the trace
+a run leaves behind, so it can separate compliance from violation only when the two leave
+DIFFERENT traces — and for most rules they do not. Two runs face the same failing test: one
+traces the cause and installs a general prevention, the other patches the symptom. Both leave
+the same diff, the same green check, the same plausible ledger entry. Whether the fix
+addressed the cause is a fact about the FUTURE inputs the diff will face, and no predicate
+over the trace can see it. Enforcement would have to grade the reasoning, and reasoning is
+never in the trace. Assistance only has to detect the moment the rule becomes relevant — and
+relevance is a property of the SITUATION, which IS in the trace. **The rule you can never
+check, you can still time.** That is why every rule has a usable assist, including the
+judgment-tier ones with no compliance check at all: the impossibility result blocked grading,
+not timing.
+
+The rule does not shrink, it FACTORS: the trigger moves off the model, the operative line
+becomes the surfaced payload, and the full rationale stays in the body where `read_rule`
+reaches it — which the surfaced line always names, because terseness is only honest if the
+rest is reachable. The line is its own authored field, never auto-excerpted from the body: the
+caveat-heavy rules are exactly the ones a machine-made excerpt would misrepresent.
+
+Three moments, and they cost differently. `observation` rides the tail of the observation the
+run was getting anyway; `boundary` is an appended ENGINE NOTE through the same carrier a
+mid-run rule binding already uses. Both are free and append-only, so the caching contract
+holds. `pre-finish` costs a turn and has to — a line surfaced as a run ends is one nobody can
+act on — so it is a finish-gate rung carrying the two guards its neighbours have (never a
+child run, never the reserved finish turn) plus its own: a run is held at its finish by an
+assist **at most once, ever**. A rule may ask for an ending to be reconsidered; it may not
+negotiate over it.
+
+There is deliberately no `pre-action` moment yet. Where an action is chosen but not executed,
+the only way to reach the model is to HOLD it — "remind and let it run" is not expressible
+there — so pre-action arrives with the hold payload, and it will feed the seam the consequence
+reminders already own rather than a second one.
+
+An assist fires at most once per run, the rule `reminder_held` and the stopping verifier's
+`_challenged` set already apply to their own interventions and for the same reason. A
+predicate that raises is inert, never fatal: a library document names the check, and the run's
+work is not this layer's to lose. Every fire is counted per assist in `state/assists.json` —
+just a counter, because at the `remind` rung nothing is spent and there is no confusion matrix
+to fill in; what it answers is which triggers fire and how often, so an imprecise one is
+visible before anyone promotes it to a rung that costs turns.
+
+Not a capability: holding the rule IS the decision, and an assist changes only when its line
+is read. A predicate is named, never shipped — a rule is prose in a git-synced multi-writer
+directory — and `lint_rule_text` validates the block, so one check covers `write_rule`, the
+Library PUT, `rsched lint` and the Library page.
+
+Also here: `observations.is_failure`, one answer to "did that fail?" for a question every
+consumer of an observation eventually asks, where failure had been spelled per kind (an exit
+code here, an `error` string there, `missing`/`rejected`/`declined_secrets` elsewhere).
+
+The first three, one per moment: **error-recovery** (a call just failed), **intent-inference**
+(the user just spoke to a run in flight), **decision-record** (this run is ending without a
+ledger entry). Because the seed sync is add-only and all 26 rules already exist live, a
+frontmatter block reaches no instance on its own — `migrate_rule_assists` carries these three
+across, skipping any rule an operator has edited and naming everything it skips.
+
+New: `rsched/assists.py`, `engine/assist.py`, `engine/assist_predicates.py`,
+`migrate_rule_assists.py`, `docs/rule-assists.md`. 36 tests in `tests/test_assists.py`.
+
+
 ## [0.304.0] — 2026-09-05
 
 ### A caution that fires at the action, not at the boot — consequence reminders

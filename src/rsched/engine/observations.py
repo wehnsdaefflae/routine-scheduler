@@ -36,6 +36,33 @@ def truncate(text: str, cap: int = OBS_CAP_CHARS, keep: str = "head+tail") -> tu
     return (text[:head] + marker + text[-tail:]), True
 
 
+#: Keys whose mere PRESENCE means the action did not do what it was asked. Failure is
+#: spelled differently per kind — an exit code here, a message there, a refusal somewhere
+#: else — and before this every reader of an observation had to know all of them.
+_FAILURE_KEYS = ("error", "missing", "rejected", "declined", "declined_secrets",
+                 "pending_secrets", "edit_failed", "callers")
+
+
+def is_failure(obs: dict) -> bool:
+    """Did this observation report a failure? The one classifier for a question every
+    consumer of an observation eventually asks.
+
+    Deliberately conservative about `exit`: a non-zero exit IS the failure signal for the
+    three callable kinds, but `shell` documents a non-zero exit as often being the answer
+    rather than a mistake (a grep that found nothing), so it counts here too only because a
+    caller asking "did that fail" wants the same answer a reader would give. `lint_ok: False`
+    and an empty `problems` list are distinguished: a present-but-empty list is a pass.
+    """
+    if int(obs.get("exit") or 0) != 0:
+        return True
+    if obs.get("lint_ok") is False or obs.get("selftest_ok") is False:
+        return True
+    if any(obs.get(k) for k in _FAILURE_KEYS):
+        return True
+    # a `paths` batch fails per file, and one bad file in eight is still a failure to report
+    return any(isinstance(f, dict) and f.get("error") for f in obs.get("files") or [])
+
+
 def _run_body(obs: dict) -> str:
     """The body every EXECUTED command shares — util, script and shell alike: what it printed,
     plus the pointer to whatever the observation could not carry. One copy, so the three

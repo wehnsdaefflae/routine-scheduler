@@ -22,6 +22,7 @@ from ..endpoints.base import EndpointError
 from ..health_events import log_health_event
 from . import (
     actionroute,
+    assist,
     finishgate,
     inbox,
     loopnudge,
@@ -102,6 +103,10 @@ class EngineLoop:
     action_schema: Any
     admin_leg: Any
     allowed_tools: Any
+    assist_finish_deferred: Any
+    assist_user_replies: Any
+    assists: Any
+    assists_fired: set[str]
     base_grants: Any
     consumed_dir: Any
     ctx: Any
@@ -165,6 +170,10 @@ class EngineLoop:
                 apply_config_change(self)
                 drain_injections(self)
                 announce_finished_subruns(self)
+                # Rule ASSISTS at the turn boundary: a rule whose moment has arrived says its
+                # operative line as an appended ENGINE NOTE. Append-only and turn-free, the
+                # same carrier a mid-run rule binding already uses.
+                assist.at_boundary(self)
                 retries_before = ctx.schema_retries
                 action, usage = next_action(self)
                 # Book the spend IMMEDIATELY: tokens burned by failed schema attempts or a
@@ -245,6 +254,9 @@ class EngineLoop:
                 # applied AFTER the interception check so a reminder authored this turn can
                 # never hold the very action it rode on.
                 text += remind.apply_ops(self, action, poll_s=POLL_S)
+                # …and the observation-moment assists ride the same tail, for the rules whose
+                # moment is "what just came back" rather than "what you are about to do".
+                text += assist.at_observation(self, action, obs)
                 # D65: an `allow once` grant is spent by THIS successfully-dispatched
                 # matching action — revoked here, at the same boundary, and announced so
                 # the next matching attempt is not an unexplained denial. A HELD action is

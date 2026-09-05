@@ -3,6 +3,15 @@ effect:
   with: writes down what it tried, rejected and why, where a later run will find it
   without: leaves only the finished artefact — the reasoning behind it is gone
   when: the routine works the same problem over many runs, or hands work to another routine
+assists:
+  - id: ledger-before-finish
+    moment: pre-finish
+    predicate: ledger-untouched
+    payload: remind
+    line: >-
+      The artefacts record what the state IS, not what you tried and rejected on the way.
+      Append one LEDGER.md entry — what changed, what you chose, what you rejected and
+      why — before this run ends and the reasoning goes with it.
 tags: [self-management, record-keeping, review]
 ---
 # rule: decision record — keep the reasoning the artefacts cannot carry

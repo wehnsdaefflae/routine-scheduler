@@ -35,7 +35,10 @@ one you are about to touch, not all of them.
   change to composer / loop / actions / schema_guard wording; `tests/test_prompt_anatomy.py`
   fails on drift
 - `docs/reminders.md` — the consequence-reminder layer (the pre-execution hold, the two
-  stores, the four-way tally that tunes a pattern)
+  stores, the four-way tally that tunes a pattern); `docs/rule-assists.md` — its curated
+  half: a rule's own `assists:` block surfacing its operative line at the moment it applies
+  (why timing is possible where compliance-checking is not, the three moments, and the
+  one-shot migration each batch needs to reach a live library)
 - `docs/rules-permissions.md`, `docs/curated-rules.md` — the general-rules layer (each doc's
   `effect:` line — what a routine holding it DOES differently — is what the page labels its
   on/off control with, and the linter requires it), the two-layer
@@ -203,7 +206,12 @@ one you are about to touch, not all of them.
   `memory_*` are the ONLY way into `.memory/` (generic file actions are rejected there); the engine
   owns `.memory/INDEX.md` (built from each write's `about`) and the 100-line note cap.
   **`read_rule` / `write_rule` are the general-rules layer** — ONE library copy per rule
-  (`<library>/rules/`), never a per-routine fork. `read_rule` is UNGATED (a routine must be able
+  (`<library>/rules/`), never a per-routine fork. A rule may also declare **`assists:`** —
+  `(moment, predicate) → line` entries that surface its operative line when it becomes
+  relevant, so noticing the moment is the engine's job and not the model's. It is not a
+  capability (holding the rule IS the decision), the predicate is named and resolved from
+  `engine/assist_predicates.py` because a rule may never ship code, and the seed sync being
+  ADD-ONLY means each batch needs a one-shot migration to reach live rules (docs/rule-assists.md). `read_rule` is UNGATED (a routine must be able
   to read what binds it, and library prose has no side effect); `write_rule` is gated by the
   `rule-authoring` permission and carries its OWN approval dial `rule_confirm` — a rule revision
   lands on every holder at its next run, which is not the decision `confirm` (write_util) governs.

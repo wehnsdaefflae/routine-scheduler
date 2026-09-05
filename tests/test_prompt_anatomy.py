@@ -130,6 +130,12 @@ def test_doc_pins_the_canonical_engine_strings(make_routine, tmp_path):
         "Saved, but it takes effect at your NEXT RUN",
         # F335: the light channel between teammates, named beside the store root it lives in
         "NOTES FROM YOUR GROUP",
+        # Rule ASSISTS: the one shape a curated rule takes when its moment arrives, at all
+        # three moments. The route back to the full rule is part of the wording — a surfaced
+        # line is deliberately terse, and terseness is only honest if the rest is reachable.
+        "[RULE ",
+        "the full rule: read_rule name=",
+        "a general rule you practise applies to how this run ends",
         # The consequence-reminder layer: the standing instruction (harness), the ONE
         # observation that is not a dispatch result (observations), the anti-livelock rule
         # that makes re-emitting the held action the confirmation, the engine note the ops

@@ -92,6 +92,7 @@ def lint_rule_text(raw: str, *, filename: str) -> list[str]:
     without a write root to publish into. That edge grants nothing and blocks nothing; it is
     read by the setup resolver so the gap is visible before a run hits it.
     """
+    from ..assists import normalize_assists
     from ..grants import normalize_expects
     problems: list[str] = []
     try:
@@ -114,6 +115,7 @@ def lint_rule_text(raw: str, *, filename: str) -> list[str]:
         problems.append(f"{filename}: needs at least 3 tags")
     if len(raw.strip().splitlines()) < 4:
         problems.append(f"{filename}: suspiciously short for a general rule")
+    problems += [f"{filename}: {p}" for p in normalize_assists(meta.get("assists"))[1]]
     problems += _effect_problems(meta, filename, "the run reads it and applies it")
     return problems
 

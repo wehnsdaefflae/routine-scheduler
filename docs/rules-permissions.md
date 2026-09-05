@@ -320,6 +320,34 @@ There is deliberately **no `remove_rule`**. Deleting a rule silently un-binds ev
 unlike a util there is no callers check to catch it, so a run that believes a rule should go
 says so in a `report` or a deferred `ask_user` and you delete it on the Library tab.
 
+### `assists:` — surfacing the rule at the moment it applies
+
+A rule may declare **assists**: `(moment, predicate) → line` entries in its own frontmatter
+that surface its operative line exactly when it becomes relevant, so noticing the moment stops
+being the model's job.
+
+```yaml
+assists:
+  - id: after-a-failed-call
+    moment: observation        # observation | boundary | pre-finish
+    predicate: observation-failed   # resolved by NAME from the engine's registry
+    payload: remind            # remind → scaffold → do → hold; only remind is built
+    line: >-
+      Read this failure before reacting to it — the message, the exit code, the usage line.
+```
+
+The rule does not shrink, it FACTORS: the trigger moves off the model, the operative line
+becomes the surfaced payload, and the rationale stays in the body where `read_rule` reaches
+it. A predicate is named, never shipped — a rule is prose in a git-synced multi-writer
+directory. Validation runs in `lint_rule_text`, so one check covers `write_rule`, the Library
+PUT, `rsched lint` and the Library page's per-rule problems.
+
+An assist is NOT a capability. The user already decided the routine practises the rule
+(`effect.when` is that decision), and an assist changes only when its line is read. It is
+also why the seed sync cannot deliver one: that sync is add-only and every rule already
+exists live, so each batch needs a one-shot migration. Full narration in
+[rule assists](rule-assists.md).
+
 ## Capabilities
 
 `routine.yaml`:

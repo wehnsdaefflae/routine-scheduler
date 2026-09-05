@@ -117,6 +117,17 @@ the limits (single-writer status.json preserved).
   measurable. One hold per action string per run, so re-emitting the held action is the
   confirmation to proceed — the same anti-livelock shape the stopping verifier uses. Full
   narration in [reminders](reminders.md).
+- **A curated rule surfaces itself at the moment it applies** (`rsched/assists.py` +
+  `engine/assist.py`, `engine/assist_predicates.py`). A rule declares `assists:` in its own
+  frontmatter — a deterministic predicate over the SITUATION plus the operative line to surface
+  when it fires. Three moments: an observation tail, a turn-boundary ENGINE NOTE (both free),
+  and a finish-gate deferral (one turn, because a line surfaced as a run ends is one nobody can
+  act on). The curated half of the same relevance-trigger layer the consequence reminders are
+  the self-authored half of. Compliance-CHECKING most rules is impossible — a compliant and a
+  violating run leave byte-identical traces differing only in reasoning — but relevance is a
+  property of the situation, which IS in the trace: the rule you cannot check, you can time.
+  One fire per assist per run; a predicate that raises is inert. Full narration in
+  [rule assists](rule-assists.md).
 - **A run resumes where it left off** (`run_routine(resume_from=…)`, `EngineLoop(resume=True)`): the
   transcript is replayed into the message list (`history.replay_messages`) with a fresh budget window
   (`budget_base_turn`); usage REPORTING stays cumulative across legs (`history.prior_usage` →

@@ -3,6 +3,15 @@ effect:
   with: reads a failure before reacting to it, and never repeats the identical call
   without: may retry the same failing call until the budget is gone
   when: the routine touches anything that can fail — networks, files, other machines
+assists:
+  - id: after-a-failed-call
+    moment: observation
+    predicate: observation-failed
+    payload: remind
+    line: >-
+      Read this failure before reacting to it — the message, the exit code, the usage line.
+      The same call with the same arguments returns the same outcome, so the next action
+      has to differ in a way the failure justifies.
 tags: [tool-use, diagnosis, self-management]
 ---
 # rule: error recovery — read the error before you try again

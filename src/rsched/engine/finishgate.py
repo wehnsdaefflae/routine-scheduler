@@ -64,6 +64,19 @@ def check_finish(loop, action: dict, ctx) -> str | None:
                 "`[s<n>] unmet — <why>` for each, then finish again."})
             ctx.write_status()
             return None   # deferred — the loop goes round again
+    # A general rule the routine PRACTISES whose moment is the ending itself (a ledger
+    # entry not written, a review with no denominator). Same deferral shape as the rungs
+    # around it, same two guards — never the reserved turn, never a child — plus its own:
+    # `assist.at_finish` allows this at most ONCE per run, so a rule can ask for the ending
+    # to be reconsidered but can never negotiate over it.
+    if ctx.depth == 0 and not loop._finish_reserved:
+        from . import assist
+        if message := assist.at_finish(loop, action):
+            obs = {"kind": "finish", "rejected": True, "assist": True}
+            ctx.transcript.event("observation", obs, turn=ctx.turn)
+            loop.messages.append({"role": "user", "content": message})
+            ctx.write_status()
+            return None   # deferred — the loop goes round again
     if action["status"] == "ok" and loop.executed_actions == 0 and ctx.depth == 0:
         # Fabrication guard: a top-level ok-finish as the very first action
         # is a hallucinated completion (the classic no-tools failure mode) —

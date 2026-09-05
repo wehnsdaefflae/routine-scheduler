@@ -48,6 +48,14 @@ def cmd_daemon(_args) -> int:
     # is DONE. Finish NOW" at the top of every run. Nothing here promotes a condition to `goal`:
     # which routines have a terminal state is the user's call, made in the panel.
     migrate_stopping_scope(server)
+    from .migrate_rule_assists import run as migrate_rule_assists
+    from .paths import repo_root
+
+    # MIGRATION(expires=2026-12-01): the first rule ASSISTS. The seed sync is add-only, so a
+    # frontmatter block added to a rule that already exists live reaches nobody — this carries
+    # the three declared in 0.305.0 across, skipping any rule an operator has since edited.
+    # Runs after the seed syncs, so it rewrites the library this boot will serve.
+    migrate_rule_assists(server.rules_home, repo_root() / "library-seed" / "rules")
     for pr in problems:
         logging.getLogger("rsched").warning("config: %s", pr)
     app = create_app(server)
