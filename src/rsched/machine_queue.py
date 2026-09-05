@@ -194,6 +194,7 @@ def refresh(server, *, timeout: int = 60) -> dict[str, dict]:
     collision this whole mechanism exists to prevent.
     """
     from . import sandbox, utils_run
+    from .machines import resolve_machines
     from .secrets import load_secrets
 
     out: dict[str, dict] = {}
@@ -202,16 +203,17 @@ def refresh(server, *, timeout: int = 60) -> dict[str, dict]:
         return out
     secrets = load_secrets()
     for name in exclusive:
-        mac = server.machines[name]
-        keys = {mac.key_var: secrets[mac.key_var]} if (mac.key_var and mac.key_var in secrets) \
-            else {}
+        # `resolve_machines` OWNS the two env-var shapes the util reads — the metadata list and
+        # `{machine NAME: PEM}`. Hand-rolling them here keyed the PEM by `key_var` instead, so the
+        # util reported "no private key available" and the mirror recorded UNKNOWN forever. One
+        # resolver, one contract.
+        meta, keys, _warnings = resolve_machines([name], server.machines, secrets)
         try:
             code, stdout, stderr = utils_run.run_util(
                 server.libraries_home, REMOTE_UTIL, ["queue", name, "--json"],
                 timeout=timeout, policy=sandbox.base_policy(server),
                 extra_secrets={"RSCHED_MACHINE_KEYS": json.dumps(keys),
-                               "RSCHED_MACHINES": json.dumps(
-                                   [machine_public_of(mac, name)])})
+                               "RSCHED_MACHINES": json.dumps(meta)})
         except OSError as exc:
             out[name] = save(server.routines_home, name, [], error=str(exc))
             continue
@@ -232,12 +234,3 @@ def refresh(server, *, timeout: int = 60) -> dict[str, dict]:
             continue
         out[name] = save(server.routines_home, name, tickets)
     return out
-
-
-def machine_public_of(mac, name: str) -> dict:
-    """The util's own metadata shape for one machine — imported lazily so this module stays
-    importable without the config package.
-    """
-    from .machines import machine_public
-
-    return machine_public(mac, name=name, key_set=bool(mac.key_var))

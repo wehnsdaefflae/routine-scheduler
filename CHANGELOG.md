@@ -17,6 +17,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.298.1] — 2026-09-05
+
+### The machine queue could never read its box
+
+Found by pointing 0.298.0 at the real machine rather than by testing it. `machine_queue.refresh`
+assembled the `remote` util's two env vars by hand and keyed the private-key dict by `key_var`
+(`PREDATOR_AGENT_KEY`) when the util's contract is `{machine NAME: PEM}`. So every read failed with
+"machine 'predator' has no private key available", every mirror recorded an error, and every bound
+run was told `COMPUTE QUEUE UNKNOWN` — indefinitely, and looking exactly like a network problem.
+
+`refresh` now goes through `machines.resolve_machines`, which already owns both shapes and is what
+the engine itself uses to bind a machine. One resolver, one contract. Pinned by a regression test
+asserting the util receives the PEM keyed by machine name.
+
+The failure did behave correctly while it lasted, which is the one consolation: an unreadable queue
+reported UNKNOWN and never *free*, so no run was told the GPU was available when it did not know.
+
 ## [0.298.0] — 2026-09-05
 
 ### A GPU box's compute is QUEUED, in turns — not locked, and not first-come

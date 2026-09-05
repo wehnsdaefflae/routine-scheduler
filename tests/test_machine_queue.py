@@ -150,14 +150,15 @@ def test_a_util_that_cannot_answer_records_why(tmp_path, monkeypatch):
     It must record a reason, not an empty queue."""
     from types import SimpleNamespace
 
-    from rsched import machine_queue
-
     mac = SimpleNamespace(exclusive=True, key_var="", name="predator", host="h", user="u",
                           port=22, host_key="", workdir="", share="", description="",
                           tags=[])
     server = SimpleNamespace(routines_home=tmp_path, libraries_home=tmp_path / "lib",
                              machines={"predator": mac})
-    monkeypatch.setattr(machine_queue, "machine_public_of", lambda m, n: {"name": n})
+    # `resolve_machines` owns BOTH env-var shapes the util reads — the metadata list and
+    # `{machine NAME: PEM}`. `refresh` must go through it rather than assembling either by hand.
+    monkeypatch.setattr("rsched.machines.resolve_machines",
+                        lambda names, catalog, secrets: ([{"name": n} for n in names], {}, []))
     monkeypatch.setattr("rsched.sandbox.base_policy", lambda s: None)
     monkeypatch.setattr("rsched.utils_run.run_util",
                         lambda *a, **k: (2, "", "unknown command 'queue'"))
@@ -165,3 +166,32 @@ def test_a_util_that_cannot_answer_records_why(tmp_path, monkeypatch):
     assert out["predator"]["tickets"] == []
     assert "unknown command" in out["predator"]["error"]
     assert "UNKNOWN" in mq.capability_note(tmp_path, "predator", "funscript")
+
+
+def test_refresh_hands_the_util_the_shapes_the_resolver_defines(tmp_path, monkeypatch):
+    """Regression, found live: the PEM dict was keyed by `key_var` instead of by MACHINE NAME, so
+    the util answered "no private key available" and every mirror recorded UNKNOWN forever. The
+    contract has one owner — `machines.resolve_machines` — and refresh must use it."""
+    import json
+    from types import SimpleNamespace
+
+    mac = SimpleNamespace(exclusive=True, key_var="PREDATOR_AGENT_KEY", name="predator",
+                          host="h", user="u", port=22, host_key="", workdir="", share="",
+                          description="", tags=[])
+    server = SimpleNamespace(routines_home=tmp_path, libraries_home=tmp_path / "lib",
+                             machines={"predator": mac})
+    monkeypatch.setattr("rsched.machines.resolve_machines",
+                        lambda names, catalog, secrets: ([{"name": "predator"}],
+                                                         {"predator": "PEM"}, []))
+    monkeypatch.setattr("rsched.sandbox.base_policy", lambda s: None)
+    seen = {}
+
+    def fake_run(lib, util, args, *, timeout, policy, extra_secrets):
+        seen.update(extra_secrets)
+        return 0, json.dumps({"tickets": []}), ""
+
+    monkeypatch.setattr("rsched.utils_run.run_util", fake_run)
+    mq.refresh(server)
+    # keyed by the machine NAME, which is what the util looks the PEM up under
+    assert json.loads(seen["RSCHED_MACHINE_KEYS"]) == {"predator": "PEM"}
+    assert json.loads(seen["RSCHED_MACHINES"]) == [{"name": "predator"}]
