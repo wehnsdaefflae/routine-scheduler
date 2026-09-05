@@ -1,4 +1,4 @@
-"""Queued creations: list, materialize, discard (F328).
+"""Queued proposals: list, materialize, discard (F328).
 
 The WEB layer materializes, exactly as it already applies forever-grants — that is the whole
 reason this file exists rather than the engine doing it. A run never writes `routine.yaml`, so a
@@ -6,6 +6,13 @@ scheduled run's proposal has to cross into the config-writing half somewhere, an
 one place it does. Materializing goes through the SAME `workflows.scaffold` / `rsched.groups`
 calls a conversation's confirmed creation uses — one materializer, not a second path that can
 drift from it.
+
+Three kinds ride this queue. Two are creations (`create_routine`, `manage_group`). The third,
+`goal-reached`, is the opposite: a routine reporting that it is FINISHED. It is queued by
+`engine/goalreached.py` the run its final goal is met, and by then the routine has already stopped
+running — that half is derived from its goal document and needs no click. Approving writes
+`enabled: false` through the ordinary PATCH; discarding reopens the goal, which puts the routine
+back on the schedule. Doing nothing leaves it paused with the proposal standing.
 """
 
 from __future__ import annotations
@@ -16,6 +23,8 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from .. import groups, pending
+from ..engine import stopping
+from ..ids import now_iso
 
 router = APIRouter(tags=["pending"])
 
@@ -104,6 +113,27 @@ def _materialize_group(server, fields: dict) -> dict:
              "proposal and fire the group live from its row instead")
 
 
+def _materialize_goal_reached(request: Request, rec: dict) -> dict:
+    """Confirm a retirement: write `enabled: false` through the ONE config writer.
+
+    The routine has ALREADY stopped running — the scheduler builds no fire table entry for a
+    routine whose goal is satisfied (registry.RoutineInfo.retired), which is what let it retire
+    itself without anything writing config. This click is what makes that permanent and legible:
+    after it, the routine reads as switched off in every surface that has ever meant it, and it
+    survives someone clearing a goal condition later.
+
+    Group membership is deliberately NOT touched. A retired member is skipped by its chains
+    without counting as a failure (daemon/group_runs.py), so removing it would buy nothing and
+    cost the D82 config it inherits and its access to the group store — and moving a member
+    between groups silently changing its effective config is a trap this codebase already knows.
+    """
+    from .api_routine_patch import RoutinePatch, patch_routine
+
+    slug = str(rec.get("routine") or "")
+    out = patch_routine(request, slug, RoutinePatch(enabled=False))
+    return {"retired": slug, "updated": out.get("updated", [])}
+
+
 @router.post("/pending-creations/{pid}/materialize")
 def materialize(request: Request, pid: str) -> dict:
     """Build what the run proposed. The record is dropped either way it ends — a proposal that
@@ -120,6 +150,8 @@ def materialize(request: Request, pid: str) -> dict:
             out = _materialize_routine(server, fields)
         elif rec.get("kind") == "manage_group":
             out = _materialize_group(server, fields)
+        elif rec.get("kind") == "goal-reached":
+            out = _materialize_goal_reached(request, rec)
         else:
             raise HTTPException(400, f"unknown proposal kind {rec.get('kind')!r}")
     except ValueError as exc:
@@ -140,6 +172,19 @@ def discard(request: Request, pid: str, body: Discard) -> dict:
     rec = pending.load(server.routines_home, pid)
     if rec is None:
         raise HTTPException(404, f"no pending creation {pid!r}")
+    reopened: list[str] = []
+    if rec.get("kind") == "goal-reached":
+        # Discarding a retirement means "not yet — keep going", and that has to change the goal
+        # document, because retirement is DERIVED from it. Dropping the record alone would leave
+        # the routine unscheduled with nothing left on the page to act on.
+        routine_dir = server.routines_home / str(rec.get("routine") or "")
+        if (routine_dir / "routine.yaml").is_file():
+            reopened = stopping.reopen_goal(routine_dir, now=now_iso())
+            request.app.state.scheduler.rescan()
     pending.drop(server.routines_home, pid)
     outcome = f"discarded ({body.reason.strip()})" if body.reason.strip() else "discarded"
-    return {"ok": True, "id": pid, "notified": pending.notify_proposer(server, rec, outcome)}
+    if reopened:
+        outcome = (f"declined — the goal is not reached, so {', '.join(reopened)} "
+                   "were reopened and the routine is scheduled again")
+    return {"ok": True, "id": pid, "reopened": reopened,
+            "notified": pending.notify_proposer(server, rec, outcome)}

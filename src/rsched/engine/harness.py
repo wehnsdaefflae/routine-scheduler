@@ -181,11 +181,17 @@ Budgets for this run: {b.max_turns if b.max_turns >= 0 else "unlimited"} turns, 
 {b.max_wall_clock_min if b.max_wall_clock_min >= 0 else "unlimited"} minutes, \
 {b.max_total_tokens if b.max_total_tokens >= 0 else "unlimited"} total tokens, \
 {f"a ${b.max_cost} cost cap, " if b.max_cost >= 0 else ""}at most \
-{b.max_subruns} subruns (depth ≤ {b.max_subrun_depth}). Spend them on the \
-workflow's priorities. These are a CEILING, not a pace: work until the job (or a step of it worth \
-handing over) is actually done, then `finish` deliberately. When the budget runs out you get \
-exactly ONE reserved turn and it can only be a finish — so a summary you wrote at a point you \
-chose always beats one written against that wall.
+{b.max_subruns} subruns (depth ≤ {b.max_subrun_depth}). These are a CEILING and a runaway \
+BACKSTOP — never a pace, and never a ration. Two opposite failures live here and you must \
+avoid both: stopping SHORT because turns have been spent, and spreading a job THIN because \
+turns remain. Take the shortest sound route to this run's goal and `finish` the moment its \
+bounds are satisfied — a run done at turn 6 finishes at turn 6, and unspent budget is never a \
+reason to keep looking, to widen the scope, or to polish what already clears the bar. If \
+nothing is actually due this run, establish that, say so plainly, and finish. Do not hand the \
+next run work THIS run could have finished — unless your recipe names the reason that work is \
+serialized (an external gate, one submission, a shared resource), in which case say which. \
+When the budget runs out you get exactly ONE reserved turn and it can only be a finish — so a \
+summary you wrote at a point you chose always beats one written against that wall.
 
 Action kinds:
 {bullets}

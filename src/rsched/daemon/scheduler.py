@@ -109,6 +109,13 @@ class Scheduler:
         for slug, info in self.catalog.items():
             if slug in self.suppressed_members:
                 continue
+            if info.retired:
+                # Every goal-scoped stopping condition is met: the routine is finished, so it
+                # gets no fire table entry at all. Derived from its own goal document, never
+                # written — clearing a goal condition puts it back on the next rescan, and
+                # `enabled` is untouched. A retirement proposal is waiting on the Decisions
+                # page to make it permanent (engine/goalreached.py).
+                continue
             nf = registry.next_fire(info.cfg, now)
             if nf is None:
                 continue
@@ -143,6 +150,8 @@ class Scheduler:
             if slug in self.suppressed_members:
                 # D71: a group-managed member's own cron never fires, catch-up included
                 continue
+            if info.retired:
+                continue     # a finished routine has no missed fire worth making up
             missed = registry.missed_fire(info.cfg, info.runs, _now())
             if missed is not None:
                 log.info("catchup routine=%s missed_fire=%s → one make-up run", slug, missed)

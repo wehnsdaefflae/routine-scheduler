@@ -17,6 +17,68 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.293.0] — 2026-09-05
+
+### Stopping conditions gain a SCOPE, and a routine that reaches its final goal retires itself
+
+The operator's report was that routines "take steps towards that goal that are way smaller than
+necessary", especially from run to run, and asked for "a new final state and the ability to
+disable themselves once they think they reached it". Investigating it turned up a live defect
+underneath: **22 of the 31 routines were being told "EVERY stopping condition is now met — the job
+is DONE. Finish NOW" at the top of every single run.**
+
+- **The defect.** `record_accounting` made a `met` condition STICKY — deliberately, so a user is
+  not told twice that a goal is done. The 0.286.x backfill wrote 96 conditions across 32 routines
+  as PER-RUN bounds ("exactly one bounded increment was produced") — also deliberately, because
+  the finish gate demands an accounting for every ACTIVE condition and a project milestone would
+  report `unmet` forever. Sticky + per-run is a contradiction: the first run satisfies the bound,
+  `active()` then drops it, the gate stops demanding it, the verifier stops checking it, and the
+  digest opens with a finish instruction forever. self-audit ran 271 of its 300 turns in that
+  state.
+- **The fix is a SCOPE on each condition.** `run` (the default) bounds one run: re-asked every
+  run, verdict recorded in `last_verdict` and rendered as "last run: met — …", never transitions.
+  `goal` is the state after which the ROUTINE is finished: sticky, and the only scope `evaluate()`
+  has an opinion about (`goal_satisfied`; `None` when no goal is declared, so nothing announces a
+  finish line nobody drew). A one-shot migration converts every live document — every condition
+  becomes a `run` bound again and every sticky `met` reopens, with the verdict, the note and the
+  run that wrote it all preserved. Nothing is promoted to `goal`: whose words draw a finish line
+  is the user's call, made in the panel.
+- **Retirement, without anything writing config.** Meeting every goal condition stops the routine
+  running, and it does so by DERIVATION: `registry.RoutineInfo.retired` reads the goal document,
+  the scheduler builds no fire-table entry and makes up no missed fire, and a group chain skips
+  the member. Clearing a goal condition puts it back on the next rescan; `enabled` is untouched.
+  So "a run never writes routine.yaml" and "the engine never writes config" both hold, and the
+  routine still disables itself. Making it permanent is a click: the finish that completes the
+  goal queues ONE `goal-reached` proposal on the Decisions page (deduped — a met goal is sticky,
+  so every later run would otherwise file the same row). **Retire it** writes `enabled: false`
+  through the ordinary PATCH, the one config writer; **not yet** reopens the goal and the routine
+  resumes. Doing nothing leaves it stopped with the proposal standing — an honest third state.
+  Two things make the derived half safe to act on unattended: only the web can CREATE a goal
+  condition, so a run reports against a finish line and can never draw its own; and every `met`
+  claim still passes the v2 verifier against the run's own transcript.
+- **FINISHED is not DISABLED.** The dashboard gets its own bucket and chip, the routine page its
+  own run chip, and the setup surface a NOTE saying the routine is done — instead of showing a
+  cron that will never fire again. Group membership is deliberately untouched: a retired member is
+  skipped cleanly, so removing it would only cost its D82 inherited config and its group store.
+- **A deliberately-off group member is no longer logged as a chain failure.** Missing, disabled and
+  crashed shared one branch, so a member that was simply switched off was recorded
+  `outcome: "failed"` — 28 such events on the live instance, all four FAU members among them — and
+  under `on_failure: stop` a retirement would have become a daily outage of every later member.
+  Absent is still a failure; deliberately off is now `outcome: "skipped"` and the chain continues.
+- **The budget paragraph no longer licenses pacing.** It told every run to "**Spend them** on the
+  workflow's priorities" and to "work until the job (**or a step of it worth handing over**) is
+  actually done" — an instruction to consume the ceiling, and an explicit permission to defer.
+  It now names both failures — stopping SHORT because turns have been spent, and spreading a job
+  THIN because turns remain — and asks for the shortest sound route: a run done at turn 6 finishes
+  at turn 6, unspent budget is never a reason to widen scope or gold-plate, a run with nothing due
+  establishes that and finishes, and work is not handed to the next run unless the recipe names
+  why it is serialized (an external gate, one submission, a shared resource). One string, in the
+  cached system prefix, so it costs nothing per turn.
+- `engine/stopping_digest.py` splits the prompt block out of `engine/stopping.py` — the same split
+  `harness.py` got from `composer.py`, and what keeps the module under the size rule.
+
+*Deploy note:* the migration runs at the next daemon boot, so it needs the restart sentinel.
+
 ## [0.292.0] — 2026-09-05
 
 ### The LLM activity dock had no stylesheet, and the class of loss is now closed

@@ -212,6 +212,16 @@ def _schedule_nodes(server: Any, cfg: RoutineConfig) -> list[dict]:
 
     if not cfg.enabled:
         return []                       # a disabled routine already says it does not run
+    from ..engine.stopping import goal_reached
+    if goal_reached(cfg.dir):
+        # Not a misconfiguration — the opposite. Every goal-scoped stopping condition is met, so
+        # the scheduler stops firing it. Said out loud because the page would otherwise show a
+        # cron that will never fire again with nothing explaining why.
+        return [_node("schedule:goal", "retired", NOTE,
+                      "every final-goal stopping condition is met, so this routine is FINISHED "
+                      "and nothing fires it any more",
+                      "reopen a goal condition in the goal panel to put it back on its "
+                      "schedule, or retire it for good from the Decisions page")]
     try:
         all_groups = groups_mod.list_groups(server.routines_home)
     except OSError:

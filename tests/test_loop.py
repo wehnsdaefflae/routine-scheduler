@@ -796,12 +796,19 @@ def test_finish_gate_rejects_unaccounted_stopping_conditions(make_routine, scrip
     from rsched.engine.composer import state_digest
     digest = state_digest(d, [], [])
     assert "STOPPING CONDITIONS" in digest and "[s1] stop once the PDF is verified" in digest
-    # ...and the model's own verdict was STAMPED BACK, so the panel and the next run see it
+    # ...and the model's own verdict was STAMPED BACK, so the panel and the next run see it.
+    # These are RUN bounds, so they record the verdict and stay OPEN — they are re-asked next
+    # run, and only a GOAL condition ever transitions (engine/stopping.py).
     rows = {c["id"]: c for c in stopping_mod.load(d)["conditions"]}
-    assert rows["s1"]["status"] == "met" and rows["s2"]["status"] == "met"
+    assert rows["s1"]["status"] == "open" and rows["s2"]["status"] == "open"
+    assert rows["s1"]["last_verdict"] == "met" and rows["s2"]["last_verdict"] == "met"
     assert rows["s1"]["note"].startswith("PDF verified")
     assert rows["s1"]["resolved_run"] == f"stopper:{TS}"
-    assert any(e["type"] == "stopping_update" for e in events)
+    upd = next(e for e in events if e["type"] == "stopping_update")
+    # run bounds do not transition, so `met` (what can retire a routine) is empty while
+    # `judged` still carries the whole accounting this run wrote
+    assert upd["payload"]["met"] == []
+    assert upd["payload"]["judged"] == {"s1": "met", "s2": "met"}
 
 
 def test_verifier_challenges_once_then_the_run_keeps_the_last_word(make_routine, scripted,
@@ -815,7 +822,7 @@ def test_verifier_challenges_once_then_the_run_keeps_the_last_word(make_routine,
     from rsched.engine import verifier
 
     d = make_routine(slug="verif")
-    stopping_mod.save(d, {"conditions": [{"text": "the PDF is verified"}]}, now="t")
+    stopping_mod.save(d, {"conditions": [{"text": "the PDF is verified", "scope": "goal"}]}, now="t")
     seen = []
     monkeypatch.setattr(verifier, "refuted", lambda loop, summary: (
         seen.append(summary), [{"id": "s1", "text": "the PDF is verified",
@@ -837,7 +844,7 @@ def test_verifier_challenges_once_then_the_run_keeps_the_last_word(make_routine,
 
     # the model's verdict stands, with the objection kept beside it
     row = stopping_mod.load(d)["conditions"][0]
-    assert row["status"] == "met"
+    assert row["status"] == "met"                          # a GOAL condition: it transitions
     assert row["disputed"] == "no action opened it"
     upd = next(e for e in events if e["type"] == "stopping_update")
     assert upd["payload"]["met"] == ["s1"] and upd["payload"]["disputed"] == ["s1"]
@@ -850,7 +857,8 @@ def test_a_verifier_that_accepts_never_touches_the_finish(make_routine, scripted
     from rsched.engine import verifier
 
     d = make_routine(slug="verif2")
-    stopping_mod.save(d, {"conditions": [{"text": "the PDF is verified"}]}, now="t")
+    stopping_mod.save(d, {"conditions": [{"text": "the PDF is verified", "scope": "goal"}]},
+                      now="t")
     monkeypatch.setattr(verifier, "refuted", lambda loop, summary: [])
     scripted([probe(), finish(summary="[s1] met — verified byte-identical")])
     status, run_dir = run_routine(d, _server(d), run_ts=TS)

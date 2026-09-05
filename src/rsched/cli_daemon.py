@@ -41,6 +41,13 @@ def cmd_daemon(_args) -> int:
     # still naming it under capabilities.utils would lose it silently. Runs AFTER the seed
     # syncs, so the library it rewrites is the one this boot will actually serve.
     migrate_shell_action(server)
+    from .migrate_stopping_scope import migrate_stopping_scope
+
+    # MIGRATION(expires=2026-11-05): stopping conditions gain a SCOPE. Every existing condition
+    # is a per-RUN bound and must stop being sticky — 22 of 31 routines were being told "the job
+    # is DONE. Finish NOW" at the top of every run. Nothing here promotes a condition to `goal`:
+    # which routines have a terminal state is the user's call, made in the panel.
+    migrate_stopping_scope(server)
     for pr in problems:
         logging.getLogger("rsched").warning("config: %s", pr)
     app = create_app(server)

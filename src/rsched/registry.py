@@ -65,6 +65,12 @@ class RoutineInfo:
     problems: list[str]
     runs: list[RunInfo]                  # newest first
     open_questions: list[dict]
+    # RETIRED: every goal-scoped stopping condition is met, so this routine is finished for good
+    # (engine/stopping.py). Derived, never written — the scheduler builds no fire table entry for
+    # it and group chains skip it, and clearing a goal condition brings it straight back. Distinct
+    # from `cfg.enabled`, which stays the user's switch: a retired routine is DONE, a disabled one
+    # was switched off. See engine/goalreached.py.
+    retired: bool = False
 
     @property
     def slug(self) -> str:
@@ -90,6 +96,7 @@ class RoutineInfo:
 _run_memo: dict[str, tuple[tuple, RunInfo]] = {}
 _cfg_memo: dict[str, tuple[tuple, tuple[RoutineConfig | None, list[str]]]] = {}
 _questions_memo: dict[str, tuple[tuple, list[dict]]] = {}
+_retired_memo: dict[str, tuple[tuple, bool]] = {}
 
 
 def _prune(memo: dict, home: Path, visited: set[str]) -> None:
@@ -176,9 +183,11 @@ def scan(server: ServerConfig, home: Path | None = None) -> dict[str, RoutineInf
             problems = [*problems, "unloadable routine.yaml — treated as disabled"]
         catalog[cfg.slug] = RoutineInfo(cfg=cfg, problems=problems,
                                         runs=run_index(d, cfg.slug),
-                                        open_questions=_open_questions_memo(d))
+                                        open_questions=_open_questions_memo(d),
+                                        retired=_retired_from_goal(d))
     _prune(_cfg_memo, home, visited)
     _prune(_questions_memo, home, visited)
+    _prune(_retired_memo, home, visited)
     _prune(_run_memo, home,
            {str(r.dir) for info in catalog.values() for r in info.runs})
     return catalog
@@ -194,6 +203,18 @@ def _load_routine_memo(d: Path) -> tuple[RoutineConfig | None, list[str]]:
         _cfg_memo[str(d)] = hit
     cfg, problems = hit[1]
     return (cfg.model_copy(deep=True) if cfg is not None else None), list(problems)
+
+
+def _retired_from_goal(d: Path) -> bool:
+    # keyed on the goal document alone — the ONLY thing that can change the answer, and it is
+    # written by the web (a user edit) and the engine's accounting (a finish), never elsewhere
+    fp = fingerprint([d / "state" / "stopping.json"])
+    hit = _retired_memo.get(str(d))
+    if hit is None or hit[0] != fp:
+        from .engine.stopping import goal_reached
+        hit = (fp, goal_reached(d))
+        _retired_memo[str(d)] = hit
+    return hit[1]
 
 
 def _open_questions_memo(d: Path) -> list[dict]:

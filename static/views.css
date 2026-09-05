@@ -667,6 +667,19 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
    shares a wrapped line, while flex:0 1 34ch still lets it yield width to the condition text. */
 .goal-meta { font-size: 10px; min-width: 12ch; flex: 0 1 34ch; overflow-wrap: anywhere; }
 .goal-note { color: var(--ink-3); }
+/* The SCOPE toggle. A per-run bound is ordinary machinery and stays quiet; a FINAL GOAL is
+   structure — it is what the routine is FOR, and meeting it stops the routine — so it takes
+   IRIS, the palette's structural colour, rather than SIGNAL (the machine working) or SUMMONS
+   (something waiting on a person). */
+.goal-scope {
+  flex: none; border: 1px solid var(--rule-2); background: var(--plate-2); cursor: pointer;
+  color: var(--ink-3); font-size: 9.5px; letter-spacing: .06em; font-weight: 700;
+  text-transform: uppercase; border-radius: 5px; padding: 1px 5px;
+  font-family: var(--f-display);
+}
+.goal-scope:hover { color: var(--ink); }
+.goal-scope.goal { color: var(--iris); border-color: var(--iris); }
+.goal-row.scope-goal .goal-text { color: var(--ink); }
 /* v2: a verdict the verifier objected to and the run re-asserted. Amber, not red — the run
    is not wrong, the two disagreed, and the operator decides. */
 .goal-disputed { color: var(--warn); font-weight: 700; cursor: help; }

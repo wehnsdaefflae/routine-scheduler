@@ -1,6 +1,11 @@
-"""Queued creations on the REAL Decisions page (F328): a scheduled run's proposal shows what
+"""Queued proposals on the REAL Decisions page (F328): a scheduled run's proposal shows what
 would be created, one click materializes it through the same scaffold path, and discarding tells
 the proposing routine so its next run stops waiting.
+
+The FINISHED band rides the same queue and is the odd one out: its subject has already changed
+state (a routine whose final goal is met has stopped running, derived from its goal document), so
+neither button is what stops it. The tests at the foot pin exactly that, because a card implying
+"click to stop it" would describe the wrong mechanism.
 """
 
 from __future__ import annotations
@@ -116,3 +121,51 @@ def test_a_library_drift_record_gets_its_own_band_and_no_create_button(ui, ui_pa
     assert list(d.glob("pc-*.json")) == []
     # nothing was messaged: `uir` is the routine the drift BROKE, not a proposer
     assert list((ui.routine_dir("uir") / "inbox").glob("msg-pending-*.json")) == []
+
+
+# ---- the FINISHED band: a routine reporting its final goal met ------------------------------------
+
+def _queue_goal(ui, *, routine="uir", pid="pc-20260905-090000-bbbbbb"):
+    return _queue(ui, pid=pid, kind="goal-reached", routine=routine,
+                  summary=f"{routine} reports its final goal met — 1 condition. It has stopped "
+                          "running; retire it or reopen the goal.",
+                  fields={"conditions": [
+                      {"id": "s1", "text": "the application is submitted",
+                       "note": "submitted 2026-09-05, receipt filed",
+                       "resolved_run": f"{routine}:20260905-080000", "disputed": ""}],
+                      "groups": []})
+
+
+def test_the_finished_band_says_the_routine_has_already_stopped(ui, ui_page):
+    _queue_goal(ui)
+    ui_page.goto(f"{ui.url}/#/questions")
+    card = ui_page.locator("[data-goal]")
+    expect(card).to_be_visible(timeout=10_000)
+    expect(card).to_contain_text("reports its final goal met")
+    # the mechanism, stated on the card: neither button is what stopped it
+    expect(card).to_contain_text("it has already stopped running")
+    expect(card.get_by_role("button", name="retire it")).to_be_visible()
+    expect(card.get_by_role("button", name="not yet")).to_be_visible()
+    # the EVIDENCE is open by default — this is the thing to read before agreeing a job is over
+    expect(card).to_contain_text("the application is submitted")
+    expect(card).to_contain_text("the run said: submitted 2026-09-05, receipt filed")
+
+
+def test_not_yet_reopens_the_goal_and_the_routine_is_scheduled_again(ui, ui_page):
+    """Declining has to change the goal DOCUMENT, because retirement is derived from it — dropping
+    the record alone would leave the routine unscheduled with nothing left on the page to act on."""
+    atomic_write_json(ui.routine_dir("uir") / "state" / "stopping.json", {
+        "mode": "all", "groups": [{"id": "g1", "name": "", "mode": "all"}],
+        "conditions": [{"id": "s1", "text": "the application is submitted", "status": "met",
+                        "group": "g1", "scope": "goal"}]})
+    _queue_goal(ui)
+    ui_page.goto(f"{ui.url}/#/questions")
+    expect(ui_page.locator("[data-goal]")).to_be_visible(timeout=10_000)
+
+    ui_page.get_by_role("button", name="not yet").click()
+    expect(ui_page.locator("#toast")).to_contain_text("goal reopened")
+    expect(ui_page.locator("[data-goal]")).to_have_count(0)
+
+    stored = json.loads(
+        (ui.routine_dir("uir") / "state" / "stopping.json").read_text(encoding="utf-8"))
+    assert stored["conditions"][0]["status"] == "open"

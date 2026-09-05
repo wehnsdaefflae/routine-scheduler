@@ -963,7 +963,16 @@ whose TEXT must change on a live instance is converted by a one-shot migration i
   combines the groups the same way (two levels — enough for "(A AND B) OR C", shallow enough that
   a UI and a weak model can both reason about it), `requires` holds a condition DORMANT until
   another is met, and `stage` scopes one to a routine stage module (the "per-stage routine
-  conditions" half of the order). Dropped conditions leave every verdict; an empty group is
+  conditions" half of the order). Every condition also declares a **SCOPE**, and the two ask the
+  model different questions. `scope: "run"` (the default) bounds ONE run: it is re-asked every
+  run, its verdict is recorded (`last_verdict`, rendered as "last run: met — …") and it NEVER
+  transitions, because a per-run bound cannot be "already met". `scope: "goal"` is the state
+  after which the ROUTINE is finished — sticky, and the only scope `evaluate()` has an opinion
+  about (`goal_satisfied`). The split exists because sticky + per-run is a contradiction that had
+  gone live: the 0.286.x backfill wrote 96 per-run conditions across 32 routines into a store
+  whose `met` was sticky, so 22 of the 31 read "EVERY stopping condition is now met — the job is
+  DONE. Finish NOW" at the top of every run while the gate demanded nothing and the verifier
+  checked nothing. Dropped conditions leave every verdict; an empty group is
   vacuously satisfied under either mode, because the strict reading of an empty `any` would let an
   emptied group block a job forever; a document with no conditions evaluates to `None` — no
   opinion — so nothing announces a goal nobody set. The composer inlines the whole structure
@@ -972,9 +981,30 @@ whose TEXT must change on a live instance is converted by a one-shot migration i
   conditions are never demanded). At the finish, `record_accounting` parses the model's own
   `[s<n>] met|unmet` lines and stamps them back, emitting a `stopping_update` transcript event —
   without that writer a condition stayed `open` however often a run reported it met, which is why
-  the status column was dead until 0.242.0. `met` is STICKY: a later run does not silently reopen
-  a goal the user has been told is done. Satisfaction is REPORTED, never enforced. Both homes
-  share ONE implementation and both get the GOAL rail panel (`static/components/stopping.js`).
+  the status column was dead until 0.242.0. A GOAL condition's `met` is STICKY: a later run does
+  not silently reopen a finish line the user has been told was crossed. Satisfaction is REPORTED,
+  never enforced WITHIN a run. Both homes share ONE implementation and both get the GOAL rail
+  panel (`static/components/stopping.js`), where a per-condition toggle switches its scope.
+- **Retirement — a routine that finishes for good** (`engine/goalreached.py`, operator order
+  2026-09-05: routines want "the ability to disable themselves once they think they reached it").
+  ACROSS runs a met goal does have a consequence, and it is arranged so that nothing writes
+  config. `registry.RoutineInfo.retired` is DERIVED from the goal document (memoized on
+  `state/stopping.json` alone); the scheduler builds no fire-table entry and makes up no missed
+  fire for a retired routine, and a group chain records the member `outcome: "skipped"` and moves
+  on. That is the whole of "disabling itself" — clearing a goal condition in the panel puts the
+  routine back on the next rescan, and `enabled` is untouched. Making it permanent is a CLICK: the
+  finish that completes the goal queues ONE `goal-reached` proposal on the existing `pending.py`
+  bridge (deduped, because a met goal is sticky and every later run would file the same row);
+  approving it writes `enabled: false` through `patch_routine`, the one config writer, and
+  declining it calls `stopping.reopen_goal` so the routine resumes. Doing nothing leaves it
+  stopped with the proposal standing, which is the honest third state. Two properties make the
+  derived half safe to act on without a human: only the web can CREATE a goal condition (a run
+  reports against a finish line, it cannot draw one), and every `met` claim passes the v2
+  verifier below. A retired routine reads as `finished` on the dashboard and the routine page —
+  distinct from `disabled`, because one is done and the other was switched off — and its setup
+  surface carries a NOTE saying so instead of a cron that will never fire again. Group membership
+  is deliberately untouched: a retired member is skipped cleanly, so removing it would only cost
+  its D82 inherited config and its group store.
 - **v2 — verifying the claims** (`engine/verifier.py`). v1 proves a run ACCOUNTED for its
   conditions; it cannot prove the account is TRUE, so a run could write `[s3] met — PDF verified`
   having never opened the PDF and the gate, the writer and the panel would all agree it was done.

@@ -49,8 +49,8 @@ def _loop(tmp_path, parsed=None, *, raises=None):
         {"role": "assistant", "content": "I ran the checksum and it matched"}], calls=calls)
 
 
-def _conditions(tmp_path, texts):
-    stopping.save(tmp_path, {"conditions": [{"text": t} for t in texts]}, now="t")
+def _conditions(tmp_path, texts, *, scope="run"):
+    stopping.save(tmp_path, {"conditions": [{"text": t, "scope": scope} for t in texts]}, now="t")
 
 
 # ---- the happy path ---------------------------------------------------------------------------
@@ -178,7 +178,9 @@ def test_the_challenge_message_says_the_check_can_be_wrong(tmp_path):
 def test_a_disputed_verdict_still_lands_and_keeps_the_objection(tmp_path):
     """The model keeps the last word — an engine that could veto it forever would hang the
     run, which is the outcome stopping conditions exist to replace."""
-    _conditions(tmp_path, ["verify it"])
+    # goal-scoped, because a run bound never transitions — the transition is what "the verdict
+    # stands" is about here (engine/stopping.py)
+    _conditions(tmp_path, ["verify it"], scope="goal")
     stopping.record_accounting(tmp_path, "[s1] met — I did verify it", run_id="r:1", now="t",
                                disputes={"s1": "no action opened the file"})
     row = stopping.load(tmp_path)["conditions"][0]

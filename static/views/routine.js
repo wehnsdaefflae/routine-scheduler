@@ -50,7 +50,10 @@ export async function render(view, slug, query = {}) {
   view.replaceChildren();
   const llmReady = st.llm_ready !== false;
 
+  // Three reasons a routine is not running, and they are not interchangeable: it is between
+  // runs, it reached its FINAL GOAL and is done, or you switched it off.
   const runChip = (x) => (x.active_state ? chip(x.active_state, x.active_state)
+    : x.retired ? chip("finished", "finished")
     : x.enabled ? chip("idle", "idle") : chip("disabled", "disabled"));
   const chipHost = el("span", {}, runChip(d));
   const titleH1 = el("h1", {}, d.name || slug);

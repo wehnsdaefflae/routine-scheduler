@@ -118,7 +118,12 @@ Rules of the form:
 - There is deliberately **no `COMPLETION`** literal. What DONE means is the USER's, and it
   lives in the routine's `state/stopping.json` where they can edit it and where the finish
   gate makes it impossible to ignore. A completion text frozen into main.md is not editable
-  from there and could only ever disagree with it.
+  from there and could only ever disagree with it. That store answers two questions, and a
+  pattern should be clear which one it is about: a `run`-scoped condition bounds ONE run, a
+  `goal`-scoped one is the state after which the ROUTINE is finished — and meeting every goal
+  condition RETIRES the routine (it stops firing, and the operator is asked to confirm). A
+  pattern for a job with an end should say so in its `when_to_use`, since that is what the
+  clarify flow ranks on.
 - One top-level `main()` whose body is the per-run control flow; one function per step.
 
 `workflows/lint.py` gates every save (the Library editor shows the findings inline). A

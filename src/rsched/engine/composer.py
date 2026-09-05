@@ -70,10 +70,10 @@ def state_digest(routine_dir: Path, deferred_qa: list[dict], open_qs: list[dict]
                      + plan)
     # F334/D98: the user's meaning-level bounds ride beside the plan — always visible, so
     # a finish can never claim it did not know them (the finish gate enforces the accounting).
-    from . import stopping
+    from . import stopping_digest
     # the phase drives stage-scoped conditions (the per-stage half of the original order);
     # `phase` here is the recipe's own state/phase.json, read just above
-    if stop_sec := stopping.digest_section(
+    if stop_sec := stopping_digest.digest_section(
             routine_dir, phase=str((phase or {}).get("phase") or "") if isinstance(phase, dict)
             else ""):
         parts.append(stop_sec)

@@ -27,9 +27,16 @@ into "finished") and `outcome` (the raw finish status: ok|partial|failed|aborted
 counts as FAILED for the on_failure policy when its outcome is anything but "ok" — a
 budget-exhausted "partial" did not complete its job, so `stop` halts the chain there
 (including the whole outbound pass: outbound reads state the halted ingest never staged).
-`on_failure="continue"` fires the remaining members regardless. A member that is missing,
-disabled, or crashed without finishing (pid dead, not active) is recorded as a failure too, so
-a broken member never hangs the chain forever.
+`on_failure="continue"` fires the remaining members regardless. A member that is MISSING (the
+chain names a routine that is not in any home) or that crashed without finishing (pid dead, not
+active) is recorded as a failure too, so a broken member never hangs the chain forever.
+
+A member that is deliberately OFF is not: `outcome: "skipped"`, the cursor advances, the chain
+continues under either policy and nothing is logged as a health event. That covers both the
+user switching a routine off and a routine RETIRING itself (every goal-scoped stopping condition
+met — registry.RoutineInfo.retired). The two used to share the missing-member branch, which put
+28 `group_chain_member_skipped` events on the live instance and would have turned a retirement
+into a daily outage of every later member under `on_failure: stop`.
 
 CONSUME ON TERMINAL: when a chain ends (done or stopped) the in-flight file is REMOVED — the
 per-member results were logged and each member's own run history is the durable record, and a
@@ -145,14 +152,29 @@ class GroupRunManager:
             return
         slug = fire_list[cursor]
         info = catalog.get(slug)
-        if info is None or not info.cfg.enabled:
+        # A member that is DELIBERATELY off — switched off by the user, or retired because it
+        # reached its final goal — is not a broken chain. It used to share one branch with a
+        # MISSING member and be logged `outcome: "failed"`, which put 28 health events on the
+        # live instance (all four FAU members among them) and would have stopped the chain
+        # outright under `on_failure: stop`. Absent is still a failure: the chain names a
+        # routine that is not there.
+        if info is not None and (not info.cfg.enabled or info.retired):
+            why = "retired (final goal met)" if info.retired else "switched off"
+            rec["log"].append({"slug": slug, "run_id": None, "state": "skipped",
+                               "outcome": "skipped"})
+            rec["cursor"] = cursor + 1
+            log.info("group member skipped group=%s slug=%s (%s)", gid, slug, why)
+            group_runs.save(self.home, rec)
+            return
+        if info is None:
             rec["log"].append({"slug": slug, "run_id": None, "state": "skipped",
                                "outcome": "failed"})
             rec["cursor"] = cursor + 1
-            log.warning("group member skipped group=%s slug=%s (missing or disabled)", gid, slug)
+            log.warning("group member missing group=%s slug=%s", gid, slug)
             log_health_event(
                 self.home, "group_chain_member_skipped", routine=slug, run_id="",
-                detail=f"group {rec.get('name') or gid} ({gid}): member missing or disabled - "
+                detail=f"group {rec.get('name') or gid} ({gid}): member is not a routine in any "
+                       "home - "
                        + ("chain stops (on_failure=stop)" if rec.get("on_failure") == "stop"
                           else "chain continues"))
             if rec.get("on_failure") == "stop":

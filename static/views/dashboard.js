@@ -40,7 +40,11 @@ const STATE_BUCKETS = {
   waiting: (c) => c.active_state === "waiting_user" || (c.open_questions || 0) > 0,
   ok: (c) => !c.active_state && c.last_run?.state === "finished",
   failed: (c) => !c.active_state && ["failed", "aborted"].includes(c.last_run?.state),
-  disabled: (c) => !c.enabled,
+  // FINISHED before DISABLED, and never both: a routine that reached its final goal is a
+  // different thing from one you switched off, and lumping them lost the only state that says
+  // "this job is over". `retired` is derived from the goal document; `enabled` is your switch.
+  finished: (c) => c.retired,
+  disabled: (c) => !c.enabled && !c.retired,
 };
 
 // "Jul: 1.2M tok · $4.31 (Jun: 0.9M · $3.10)" — the durable monthly series, not last-run
@@ -403,6 +407,7 @@ export async function render(view) {
 
   function card(c) {
     const stateChip = c.active_state ? chip(c.active_state, c.active_state)
+      : c.retired ? chip("finished", "finished")
       : c.enabled ? chip("idle", "idle") : chip("disabled", "disabled");
     const last = c.last_run;
     const blocked = c.active_state === "waiting_user";
@@ -484,7 +489,7 @@ export async function render(view) {
       const last = c.last_run;
       const rowCls = [RUNNING.has(c.active_state) ? "live" : "",
         c.active_state === "waiting_user" ? "attention" : "",
-        c.enabled ? "" : "disabled-row", extraCls]
+        c.enabled && !c.retired ? "" : "disabled-row", extraCls]
         .filter(Boolean).join(" ");
       const stats = statsLine(last);
       const tr = el("tr", { class: rowCls },
@@ -499,9 +504,14 @@ export async function render(view) {
           el("div", schedText(c)
             ? { title: "group-managed — the group's schedule fires this routine; its own cron is suppressed" }
             : {},
-            // a disabled routine's always-visible marker: the row dim alone was too subtle
-            c.enabled ? null : el("span", { class: "chip disabled", style: "margin-right:6px",
-              title: "paused — nothing fires until resumed" }, "off"),
+            // an always-visible marker: the row dim alone was too subtle. FINISHED and OFF are
+            // different answers to "why is nothing happening" — one is the job being over.
+            c.retired
+              ? el("span", { class: "chip finished", style: "margin-right:6px",
+                  title: "every final-goal condition is met — this routine is done and no "
+                       + "longer fires. Reopen a goal condition to bring it back." }, "done")
+              : c.enabled ? null : el("span", { class: "chip disabled", style: "margin-right:6px",
+                  title: "paused — nothing fires until resumed" }, "off"),
             schedText(c) || c.schedule_desc || "manual"),
           c.next_fire ? el("div", { class: "faint" }, "next ", when(c.next_fire, { mode: "rel" })) : null),
         el("td", {}, last

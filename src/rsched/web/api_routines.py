@@ -71,6 +71,11 @@ def _card(request: Request, info: registry.RoutineInfo, *, monthly: dict | None 
         "name": info.cfg.name,
         "description": info.cfg.description,
         "enabled": info.cfg.enabled,
+        # FINISHED, not switched off. Every goal-scoped stopping condition is met, so the
+        # scheduler stops firing this routine (registry.RoutineInfo.retired) — derived from its
+        # own goal document, nothing written. The two must read differently everywhere: one
+        # routine is DONE, the other was turned off, and a single "disabled" chip said neither.
+        "retired": info.retired,
         "tags": info.cfg.tags,
         "cron": info.cfg.cron,
         "tz": info.cfg.tz,

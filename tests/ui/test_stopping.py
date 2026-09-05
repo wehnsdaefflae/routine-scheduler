@@ -29,15 +29,20 @@ def _start_conversation(ui, ui_page, text="Publish the PDF."):
     return slug, ui.conversations / slug
 
 
+#: Goal-scoped on purpose: "publish the PDF" is a job with an END, and the verdict chip and the
+#: per-group tallies are about the FINAL GOAL only — a per-run bound has no durable verdict to
+#: show (engine/stopping.py). The scope toggle itself is covered at the foot of this file.
 DOC = {
     "mode": "any",
     "groups": [{"id": "g1", "name": "publish", "mode": "all"},
                {"id": "g2", "name": "hatch", "mode": "any"}],
     "conditions": [
-        {"id": "s1", "text": "the PDF is verified", "status": "met", "group": "g1"},
+        {"id": "s1", "text": "the PDF is verified", "status": "met", "group": "g1",
+         "scope": "goal"},
         {"id": "s2", "text": "it is published", "status": "open", "group": "g1",
-         "requires": ["s1"]},
-        {"id": "s3", "text": "the user says stop", "status": "open", "group": "g2"},
+         "requires": ["s1"], "scope": "goal"},
+        {"id": "s3", "text": "the user says stop", "status": "open", "group": "g2",
+         "scope": "goal"},
     ],
 }
 
@@ -165,9 +170,12 @@ def test_the_verdict_chip_reads_met_only_when_the_goal_is_satisfied(ui, ui_page)
     # the root is ANY, so satisfying the escape-hatch group alone ends the job
     _goal(conv_dir, {**DOC, "conditions": [
         *DOC["conditions"][:2],
-        {"id": "s3", "text": "the user says stop", "status": "met", "group": "g2"}]})
+        {"id": "s3", "text": "the user says stop", "status": "met", "group": "g2",
+         "scope": "goal"}]})
     ui_page.reload()
-    expect(ui_page.locator(".goal-verdict")).to_have_text("goal met")
+    # "retired" is in the chip because it is what actually happens: a satisfied final goal stops
+    # the routine running, and a chip that said only "goal met" would understate it
+    expect(ui_page.locator(".goal-verdict")).to_have_text("goal met — retired")
     expect(ui_page.locator(".goal-verdict")).to_have_class("goal-verdict met")
 
 
@@ -191,8 +199,11 @@ def test_clicking_a_mark_cycles_the_status_and_saves(ui, ui_page):
 def test_a_group_connective_is_editable_and_persists(ui, ui_page):
     _slug, conv_dir = _start_conversation(ui, ui_page)
     _goal(conv_dir, {"mode": "all", "groups": [{"id": "g1", "name": "", "mode": "all"}],
-                     "conditions": [{"id": "s1", "text": "a", "status": "open", "group": "g1"},
-                                    {"id": "s2", "text": "b", "status": "met", "group": "g1"}]})
+                     "conditions": [
+                         {"id": "s1", "text": "a", "status": "open", "group": "g1",
+                          "scope": "goal"},
+                         {"id": "s2", "text": "b", "status": "met", "group": "g1",
+                          "scope": "goal"}]})
     ui_page.reload()
     expect(ui_page.locator(".goal-verdict")).to_have_text("in progress")
 
@@ -200,7 +211,7 @@ def test_a_group_connective_is_editable_and_persists(ui, ui_page):
     ui_page.get_by_role("button", name="save goal").click()
     expect(ui_page.locator("#toast")).to_contain_text("goal saved")
     # one met member now satisfies the group, so the whole goal is met
-    expect(ui_page.locator(".goal-verdict")).to_have_text("goal met")
+    expect(ui_page.locator(".goal-verdict")).to_have_text("goal met — retired")
     assert json.loads((conv_dir / "state" / "stopping.json").read_text())["groups"][0]["mode"] \
         == "any"
 
@@ -227,3 +238,44 @@ def test_a_disputed_verdict_is_visible_not_buried(ui, ui_page):
     expect(disputed).to_be_visible()
     expect(disputed).to_have_attribute("title", "a check of the run's transcript disagreed: "
                                                 "no action opened the file")
+
+
+# ---- the scope toggle: which conditions can end the ROUTINE, not just the run --------------------
+
+def test_a_run_bound_shows_last_runs_verdict_and_no_goal_chip(ui, ui_page):
+    """The scope split made visible. A per-run bound is re-asked every run, so its mark is not a
+    state that carries forward — what the LAST run concluded is the only useful thing beside it,
+    and it must read as history. And with no goal declared there is no verdict chip at all: a
+    routine meant to run forever has no finish line to report on."""
+    _slug, conv_dir = _start_conversation(ui, ui_page)
+    _goal(conv_dir, {"mode": "all", "groups": [{"id": "g1", "name": "", "mode": "all"}],
+                     "conditions": [{"id": "s1", "text": "one increment landed", "status": "open",
+                                     "group": "g1", "scope": "run", "last_verdict": "met",
+                                     "note": "shipped the parser fix"}]})
+    ui_page.reload()
+    row = ui_page.locator(".goal-row").first
+    expect(row).to_have_class("goal-row open scope-run")
+    expect(row.locator(".goal-scope")).to_have_text("per run")
+    expect(row).to_contain_text("last run: met — shipped the parser fix")
+    expect(ui_page.locator(".goal-verdict")).to_have_count(0)
+
+
+def test_switching_a_condition_to_the_final_goal_persists(ui, ui_page):
+    """Only this panel can create a goal condition — no run writes this file — which is what
+    makes it safe for a met goal to retire the routine."""
+    _slug, conv_dir = _start_conversation(ui, ui_page)
+    _goal(conv_dir, {"mode": "all", "groups": [{"id": "g1", "name": "", "mode": "all"}],
+                     "conditions": [{"id": "s1", "text": "the application is submitted",
+                                     "status": "open", "group": "g1"}]})
+    ui_page.reload()
+    expect(ui_page.locator(".goal-scope")).to_have_text("per run")
+
+    ui_page.locator(".goal-scope").click()               # per run -> final goal
+    expect(ui_page.locator(".goal-scope")).to_have_text("final goal")
+    ui_page.get_by_role("button", name="save goal").click()
+    expect(ui_page.locator("#toast")).to_contain_text("goal saved")
+
+    stored = json.loads((conv_dir / "state" / "stopping.json").read_text())
+    assert stored["conditions"][0]["scope"] == "goal"
+    # a goal now exists, so the panel has a verdict to report
+    expect(ui_page.locator(".goal-verdict")).to_have_text("in progress")

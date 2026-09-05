@@ -11,6 +11,17 @@
 // carries ALL/ANY over the groups, and a condition waiting on another says so. A flat list of
 // ticks cannot express "either of these two ends the job", which is the whole reason the
 // conditions are logically connected in the first place.
+//
+// Each condition also carries a SCOPE, and the two mean very different things to a routine:
+//
+//   RUN  — a bound on one run, re-asked every run. It never transitions: the mark shows what
+//          the LAST run concluded, not a state that carries forward.
+//   GOAL — the state after which the routine is FINISHED. Sticky, and it has teeth: once every
+//          goal condition is met the scheduler stops firing the routine and asks you to confirm
+//          its retirement. That is why only this panel can create one — no run writes this file,
+//          so a routine can report against a finish line but never draw its own.
+//
+// The verdict chip is about GOALS only. Run bounds have no durable verdict to chip.
 
 import { api } from "/static/api.js";
 import { confirmDialog } from "/static/components/dialog.js";
@@ -18,6 +29,13 @@ import { el, toast } from "/static/util.js";
 
 const MARK = { met: "✓", dropped: "–", open: "○" };
 const NEXT_STATUS = { open: "met", met: "dropped", dropped: "open" };
+const NEXT_SCOPE = { run: "goal", goal: "run" };
+const SCOPE_LABEL = { run: "per run", goal: "final goal" };
+const SCOPE_TITLE = {
+  run: "a bound on THIS run, re-asked every run — click to make it the routine's final goal",
+  goal: "the routine's FINAL GOAL: once every goal condition is met the routine stops running "
+      + "and you are asked to retire it — click to make it a per-run bound instead",
+};
 
 export function createStopping(mount, { url, showStage = false, onVerdict } = {}) {
   const body = el("div", { class: "goals" });
@@ -47,7 +65,7 @@ export function createStopping(mount, { url, showStage = false, onVerdict } = {}
         // and the panel to disagree about which one is authoritative
         conditions: doc.conditions.map((c) => ({
           id: c.id, text: c.text, status: c.status, group: c.group,
-          requires: c.requires || [], stage: c.stage || "" })),
+          requires: c.requires || [], stage: c.stage || "", scope: c.scope || "run" })),
       } });
       doc = sent;
       dirty = false;
@@ -60,11 +78,14 @@ export function createStopping(mount, { url, showStage = false, onVerdict } = {}
 
   function verdictChip() {
     const v = doc.verdict || {};
-    if (v.satisfied === null || v.satisfied === undefined) return null;
-    return el("span", { class: `goal-verdict ${v.satisfied ? "met" : "open"}`,
-      title: v.satisfied ? "every condition the goal needs is met"
-        : "the goal is not satisfied yet" },
-      v.satisfied ? "goal met" : "in progress");
+    // null = no FINAL GOAL declared, which is the ordinary state for a routine meant to run
+    // forever. Silence, not "in progress" — a chip over a finish line nobody drew is a lie.
+    if (v.goal_satisfied === null || v.goal_satisfied === undefined) return null;
+    return el("span", { class: `goal-verdict ${v.goal_satisfied ? "met" : "open"}`,
+      title: v.goal_satisfied
+        ? "every final-goal condition is met — this routine has stopped running"
+        : "the final goal is not reached yet" },
+      v.goal_satisfied ? "goal met — retired" : "in progress");
   }
 
   function conditionRow(c) {
@@ -83,10 +104,24 @@ export function createStopping(mount, { url, showStage = false, onVerdict } = {}
       else text.textContent = c.text;
     };
 
+    // The scope toggle. A word rather than an icon: switching a condition to `goal` is what
+    // gives it the power to stop the routine, and that is not something to express as a glyph.
+    const scope = c.scope || "run";
+    const scopeBtn = el("button", { class: `goal-scope ${scope}`, title: SCOPE_TITLE[scope] },
+      SCOPE_LABEL[scope]);
+    scopeBtn.onclick = () => { c.scope = NEXT_SCOPE[scope] || "run"; markDirty(); };
+
     const meta = el("span", { class: "goal-meta faint" }, `[${c.id}]`);
     if (blocked) meta.append(` · ${c.blocked}`);
     if (c.stage) meta.append(` · stage ${c.stage}`);
-    if (c.note) meta.append(el("span", { class: "goal-note", title: c.note }, ` · ${c.note}`));
+    // A run bound's mark is not a state that carries forward, so what the LAST run concluded is
+    // the only thing worth showing beside it — and it has to read as history, not as status.
+    if (scope === "run" && c.last_verdict) {
+      meta.append(el("span", { class: "goal-note" },
+        ` · last run: ${c.last_verdict}${c.note ? ` — ${c.note}` : ""}`));
+    } else if (c.note) {
+      meta.append(el("span", { class: "goal-note", title: c.note }, ` · ${c.note}`));
+    }
     // v2: the verifier objected and the run re-asserted anyway. The verdict stands — the model
     // keeps the last word — but the disagreement is the operator's to judge, so it is visible
     // rather than buried in the store.
@@ -105,8 +140,8 @@ export function createStopping(mount, { url, showStage = false, onVerdict } = {}
       }
       markDirty();
     };
-    return el("div", { class: `goal-row ${c.status}${blocked ? " blocked" : ""}` },
-      mark, text, meta, requiresPicker(c), showStage ? stageInput(c) : null, del);
+    return el("div", { class: `goal-row ${c.status} scope-${scope}${blocked ? " blocked" : ""}` },
+      mark, text, meta, scopeBtn, requiresPicker(c), showStage ? stageInput(c) : null, del);
   }
 
   function requiresPicker(c) {

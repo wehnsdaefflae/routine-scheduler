@@ -6,9 +6,13 @@ semantics to drift. Routines were the "per-stage routine conditions LATER" half 
 2026-08-14 order; they get the same surface plus the `stage` field, which is what "per-stage"
 actually needs.
 
-The read returns the evaluated document — the group verdicts and the overall satisfaction —
-because every consumer needs them and recomputing the boolean structure in JavaScript is exactly
-how a panel ends up disagreeing with the prompt the run was given.
+The read returns the evaluated document — the group verdicts and `goal_satisfied` — because every
+consumer needs them and recomputing the boolean structure in JavaScript is exactly how a panel ends
+up disagreeing with the prompt the run was given.
+
+A condition carries a `scope`, and the GOAL scope is why this PUT being the only writer matters: a
+met goal RETIRES the routine, so the finish line has to be the user's own and reachable from
+nowhere else.
 """
 
 from __future__ import annotations
@@ -38,10 +42,14 @@ class Condition(BaseModel):
     group: str = ""
     requires: list[str] = []
     stage: str = ""          # routine conditions: live only while the run is in this stage
+    # "run" = a bound on THIS run, re-asked every run. "goal" = the state after which the ROUTINE
+    # is finished: sticky once met, and the scheduler stops firing the routine. Only this PUT can
+    # create one — no run writes this file — so a routine can never declare its own exit.
+    scope: str = "run"
     ts: str = ""
-    # `note` / `resolved_ts` / `resolved_run` are deliberately NOT accepted: the engine writes
-    # them at a finish (stopping.ENGINE_OWNED) and `save` carries them forward, so a client can
-    # neither fabricate a resolution nor erase one by editing a condition's text.
+    # `note` / `resolved_ts` / `resolved_run` / `last_verdict` are deliberately NOT accepted: the
+    # engine writes them at a finish (stopping.ENGINE_OWNED) and `save` carries them forward, so a
+    # client can neither fabricate a resolution nor erase one by editing a condition's text.
 
 
 class Group(BaseModel):
@@ -78,6 +86,8 @@ def _write(routine_dir: Path, body: StoppingBody) -> dict:
     for c in body.conditions:
         if c.status not in stopping.STATUSES:
             raise HTTPException(400, f"status must be one of {list(stopping.STATUSES)}")
+        if c.scope not in stopping.SCOPES:
+            raise HTTPException(400, f"scope must be one of {list(stopping.SCOPES)}")
     if body.mode not in stopping.MODES:
         raise HTTPException(400, f"mode must be one of {list(stopping.MODES)}")
     stopping.save(routine_dir, body.model_dump(), now=now_iso())

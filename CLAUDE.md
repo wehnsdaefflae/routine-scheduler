@@ -254,8 +254,21 @@ by a test, by the engine, or by a past incident.
   media fallback may rewrite it, each invalidating the provider cache by design.
 - **What DONE means is the user's, and it is not a budget.** A run's meaning-level bounds are
   STOPPING CONDITIONS (`engine/stopping.py`, F334/D98, user order 2026-08-14): user prose in
-  `state/stopping.json` that the composer inlines and the finish gate makes impossible to ignore.
+  `state/stopping.json` that the composer inlines (`engine/stopping_digest.py`) and the finish
+  gate makes impossible to ignore.
   Budgets stay a runaway BACKSTOP; this is what actually decides when a job is finished.
+  Every condition declares a **SCOPE** and the two are answered differently. `run` (the default)
+  bounds ONE run and is re-asked every run — it records its verdict (`last_verdict`) and NEVER
+  transitions, because a per-run bound cannot be "already met". `goal` is the state after which
+  the ROUTINE is finished: sticky, and it RETIRES the routine — `registry.RoutineInfo.retired` is
+  derived from it, the scheduler builds no fire entry, group chains skip the member as
+  `outcome: "skipped"` (not a failure), and `engine/goalreached.py` queues ONE Decisions-page
+  proposal whose approval writes `enabled: false` through the ordinary PATCH and whose refusal
+  REOPENS the goal. Nothing about retirement writes config: that is how a routine disables itself
+  without breaking "a run never writes routine.yaml". Only the web (`api_stopping`) creates a goal
+  condition, so a routine can report against a finish line but never draw its own. Sticky + per-run
+  was the defect the scope split undid: 22 of 31 live routines were reading "the job is DONE.
+  Finish NOW" at the top of every run.
   Conditions are LOGICALLY CONNECTED — groups combine with `all`/`any`, the document combines the
   groups the same way (two levels: enough for "(A AND B) OR C", shallow enough for a UI and a weak
   model), `requires` gates one condition on another, and `stage` scopes one to a routine phase.

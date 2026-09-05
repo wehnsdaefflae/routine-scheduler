@@ -138,10 +138,20 @@ def check_finish(loop, action: dict, ctx) -> str | None:
                 "error", {"where": "stopping.record_accounting",
                           "error": str(exc)})
             newly = []
-        if newly or disputes:
+        # `met` is the GOAL ids that newly transitioned — the ones that can retire a routine.
+        # `judged` is every verdict this run wrote, goal and run bound alike: a run bound never
+        # transitions, so without this the whole per-run accounting would leave no event at all.
+        judged = {cid: state for cid, (state, _note)
+                  in stopping.read_accounting(action["summary"]).items()}
+        if newly or disputes or judged:
             ctx.transcript.event("stopping_update",
-                                 {"met": newly, "run_id": ctx.run_id,
+                                 {"met": newly, "judged": judged, "run_id": ctx.run_id,
                                   **({"disputed": sorted(disputes)}
                                      if disputes else {})})
+        # A newly-met GOAL condition may be the one that finishes the ROUTINE. Only worth asking
+        # when something goal-shaped just landed — `record_accounting` returns goal ids only.
+        if newly:
+            from . import goalreached
+            goalreached.maybe_propose_retirement(ctx)
     return loop._finish_run(action["status"], action["summary"], authored=True,
                             reply_to=action.get("reply_to"))

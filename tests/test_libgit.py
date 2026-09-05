@@ -137,6 +137,9 @@ def test_ensure_library_refuses_to_reinit_a_repo_that_lost_its_git(tmp_path):
     """Re-initialising discarded the history (844 commits on the live instance), overwrote the
     real `.gitignore` with the two-line seed one, and then committed and PUSHED the runtime state
     that `.gitignore` existed to exclude. A loud refusal beats a silent rewrite.
+
+    The discriminator is the `gu` dispatcher — written by ensure_library and nothing else — so a
+    dir someone merely populated is still a fresh tree (see the test below).
     """
     lib = tmp_path / "lib"
     utils_lib.ensure_library(lib)
@@ -152,9 +155,12 @@ def test_ensure_library_refuses_to_reinit_a_repo_that_lost_its_git(tmp_path):
     assert ".active/" in (lib / ".gitignore").read_text(encoding="utf-8")   # not overwritten
 
 
-def test_ensure_library_still_creates_a_genuinely_empty_one(tmp_path):
-    """The refusal is scoped to a NON-EMPTY dir without .git — an empty dir is a fresh tree."""
+def test_ensure_library_still_creates_one_over_a_populated_but_never_used_dir(tmp_path):
+    """A dir with content but no dispatcher was never a library — a seed copy, a restore in
+    progress, a fixture. It still gets initialised, or a first boot could never complete."""
     lib = tmp_path / "fresh"
-    lib.mkdir()
+    (lib / "permissions").mkdir(parents=True)
+    (lib / "permissions" / "memory.md").write_text("# permission: memory — x\n", encoding="utf-8")
     utils_lib.ensure_library(lib)
     assert (lib / ".git").is_dir()
+    assert (lib / "permissions" / "memory.md").exists()

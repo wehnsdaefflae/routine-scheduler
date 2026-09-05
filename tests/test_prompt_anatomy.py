@@ -118,9 +118,11 @@ def test_doc_pins_the_canonical_engine_strings(make_routine, tmp_path):
         "Group shared store (read+write",
         # F334/D98: the stopping-conditions block renders the STRUCTURE — the joiner, each
         # group's connective, and the satisfied announcement. A run that cannot see two
-        # conditions are an OR treats them as an AND.
+        # conditions are an OR treats them as an AND. The two SCOPES render apart, and only
+        # the GOAL one announces that the routine itself is over.
         "STOPPING CONDITIONS",
-        "EVERY stopping condition is now met",
+        "FINAL GOAL",
+        "EVERY final-goal condition is met",
         "ANY of:",
         # F337: the one wording a live run gets for a config change — naming the fields that
         # WAIT is as load-bearing as naming the ones that land

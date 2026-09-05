@@ -104,21 +104,28 @@ def ensure_library(home: Path, *, remote: str = "") -> None:
     """Create the util library if absent (dir + dispatcher + git). If `remote` is set and
     the library does not exist yet, clone it to bootstrap; otherwise init empty.
 
-    A library that EXISTS but has lost its `.git` is a damaged repo, never a fresh one, and it
-    is refused rather than re-initialised. Re-initialising discarded the whole history (the live
-    library carries 844 commits), wrote the two-line seed `.gitignore` over the real one — which
-    excludes `.active/`, `INDEX.md` and `.venv/` — and then committed and PUSHED that runtime
-    state, because the library repo has a post-commit push hook. Recovery from that is manual
-    either way, so the loud refusal is strictly better than the silent rewrite. The caller
+    A library that ONCE WORKED and has lost its `.git` is a damaged repo, never a fresh one, and
+    it is refused rather than re-initialised. Re-initialising discarded the whole history (the
+    live library carries 844 commits), wrote the two-line seed `.gitignore` over the real one —
+    which excludes `.active/`, `INDEX.md` and `.venv/` — and then committed and PUSHED that
+    runtime state, because the library repo has a post-commit push hook. Recovery from that is
+    manual either way, so the loud refusal is strictly better than the silent rewrite. The caller
     (appwiring's lifespan) already tolerates a library failure, so boot is unaffected.
+
+    The discriminator is the `gu` DISPATCHER, not "the directory has files in it". `gu` is
+    installed by this function and by nothing else, so its presence means this call has succeeded
+    here before — and therefore that a repo existed. A directory someone has populated but never
+    run this against (a seed copy, a restore-in-progress, a test fixture) has no dispatcher and is
+    still a fresh tree.
     """
     if home.exists() and (home / ".git").exists():
         _install_dispatcher(home)
         return
-    if home.is_dir() and any(home.iterdir()):
-        log.error("library at %s has content but no .git — refusing to re-initialise it "
-                  "(that would discard its history and push runtime state). Restore the repo, "
-                  "or `git init` it by hand if this really is a fresh tree.", home)
+    if (home / "gu").exists():
+        log.error("library at %s has a dispatcher but no .git — it is a repo that lost its "
+                  "history, not a fresh tree, so it will NOT be re-initialised (that would "
+                  "discard the history and push runtime state). Restore the repo from a backup "
+                  "or its remote, or `git init` it by hand if you really want a new one.", home)
         return
     home.parent.mkdir(parents=True, exist_ok=True)
     if remote and not home.exists():
