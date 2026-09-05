@@ -15,6 +15,81 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.310.0] — 2026-09-05
+
+### Fixed — the reminders layer was switched on nowhere, and three separate places said nothing
+
+0.309.0 shipped the consequence-reminder layer "on by default". It was on for zero of the 32
+live routines. `bootstrap._merge_caps` carried a PRIVATE copy of the activation cascade that
+knew four of the nine capability keys, so adopting a permission whose `requires:` names any
+other DIAL wrote the doc into `permissions:` and left the capability at its default — the doc
+held, the capability off, and the engine (which enforces from capabilities alone, by design)
+behaving exactly as if the permission had never been adopted. `workflows` and `util_tags` had
+been falling through the same hole for longer; `reminders` only made it visible by being the
+first dial whose whole point was to arrive on.
+
+The same blindness appeared in two more places, each of which would have caught it:
+
+- the setup surface's "held, but its requires: are not switched on" check knew actions and
+  utils only, so a routine holding the doc with the dial off read as READY;
+- `DEFAULT_CAPABILITIES` — what a routine with no `capabilities:` block MEANS — omitted the
+  dial, so those routines were off too, with nothing to adopt them later.
+
+All three now go through `grants.capabilities_for`, the one cascade, so a dial added tomorrow
+reaches every one of them without being added anywhere. A one-shot
+`migrate_reminders_rollout.py` converges the routines the old code already wrote, and gives the
+live settings templates the two dials the seed now names (seed sync only ever ADDS).
+
+### Fixed — the transcript renderer had no branch for four things it was shown
+
+- HELD actions (`reminder_hold`, `assist_hold`) fell through to raw `JSON.stringify`: the one
+  observation whose whole job is to be re-read by a person was the least readable on the page.
+- All SIX finish-gate rungs rendered as the fabrication guard, the only one that existed when
+  the branch was written — so a run deferred for an open stopping condition was labelled a
+  hallucinated completion, which is the opposite diagnosis.
+- The background archive (0.308.0) carries no before/after chars, because the digest already
+  did the shrinking; it reached the branch that prints a span and said "undefined → undefined
+  chars". Abandoned, it said "nothing elided this pass" — the line for a no-op pass.
+- A transcript header with no orchestrator block printed "undefined:undefined" where the
+  workflow half beside it had always had a fallback.
+
+### Added — the tallies have a surface, and a local reminder can be deleted
+
+`state/reminders.json` and `state/assists.json` were engine-written and read by nothing a
+person opens, so reviewing whether a caution earns the turn it costs meant opening a file over
+ssh. Both now ride the routine page's health tab beside the recipe-version table, because they
+answer the question it asks: is this routine's behaviour getting better, and what changed.
+
+Each LOCAL reminder gets a delete button (`DELETE /api/routines/{slug}/reminders/{rid}`). A run
+writes one with no approval — that is the whole point of the local rung — so this is the user's
+only lever over one; without it a bad pattern kept costing a turn on every match. A curated
+reminder stays the library's copy, removed on the Library tab.
+
+A `remind` or `remind_feedback` now renders on the turn that wrote it, beside the `note` pin it
+rides with. They cost the same nothing and ride the same any-action seam, so hiding them in the
+action-json fold made a run teaching itself something invisible unless you already suspected it.
+
+### Removed — the synchronous archival path, which production stopped calling in 0.308.0
+
+`compact_to_history` and `history_pointer` had no caller outside their own tests once archival
+moved off the hot path: eight tests were pinning a path the daemon never took. Deleted, and the
+tests repointed at `archive_middle` and the background flow that actually ships. (Vulture could
+not see it — it scans `src` and `tests` together, so a src symbol used only by a test is not
+reported.)
+
+### Fixed — D38 covered one approval type of three
+
+`_held_not_settled` matched the literal `"util-approval"`, so an ambiguous reply to a
+`rule-approval` or a `reminder-approval` settled as a decision. Both write to the LIBRARY — a
+copy every holder reads at its next run — which is the last place a "hmm, maybe" should count
+as yes. Every approval qtype is named now.
+
+### Fixed — `lint_all` skipped two of the six directories the library holds
+
+The settings templates (whose linter existed, orphaned, called only by its own tests) and the
+shared reminder store. `rsched lint` is what says the library is clean, so a directory it skips
+is a directory nobody checks.
+
 ## [Unreleased]
 
 ## [0.309.0] — 2026-09-05

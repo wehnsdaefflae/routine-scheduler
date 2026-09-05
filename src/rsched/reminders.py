@@ -195,6 +195,18 @@ def save_local(routine_dir: Path, reminders: list[Reminder],
 
 # --- the global (library) store -----------------------------------------------------------
 
+#: The library repo's subdir for the shared store, beside rules/ and permissions/.
+REMINDERS_SUBDIR = "reminders"
+
+
+def reminders_home(libraries_home: Path) -> Path:
+    """The global store's directory inside a library repo. `ServerConfig.reminders_home` is
+    this function applied to the configured libraries home — anything that has the repo root
+    but no ServerConfig (the linter, a seed check) asks here.
+    """
+    return Path(libraries_home) / REMINDERS_SUBDIR
+
+
 def global_path(reminders_home: Path, rid: str) -> Path:
     """The file one curated reminder lives in. Raises on an id that is not a plain reminder
     id — an id is a path segment, and `..` in one would reach outside the library entirely.

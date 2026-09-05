@@ -316,6 +316,32 @@ def delete_artifact(request: Request, slug: str, path: str) -> dict:
     return artifacts.delete_artifact(info.cfg.dir, path)
 
 
+@router.delete("/routines/{slug}/reminders/{rid}")
+def delete_local_reminder(request: Request, slug: str, rid: str) -> dict:
+    """Drop one of this routine's OWN reminders, tally and all.
+
+    A local reminder is written by the run with no approval — that is the whole point of the
+    local rung — so the user's only lever over one is here. Without it a run that left itself
+    a bad pattern would keep paying a turn for it every time the pattern matched, and the only
+    remedy would be hand-editing `state/reminders.json` on the server.
+
+    Local only: a curated reminder is the library's copy, removed on the Library tab, and its
+    tally here is this routine's evidence about it rather than the reminder itself. Deleting a
+    local one takes its tally with it, because the tally is about a definition that is going.
+    """
+    from .. import reminders
+
+    info = _info(request, slug)
+    if not reminders.is_reminder_id(rid):
+        raise HTTPException(400, f"not a reminder id: {rid!r}")
+    local, gstats = reminders.load_local(info.cfg.dir)
+    kept = [r for r in local if r.id != rid]
+    if len(kept) == len(local):
+        raise HTTPException(404, f"{slug} has no local reminder {rid!r}")
+    reminders.save_local(info.cfg.dir, kept, gstats)
+    return {"ok": True, "remaining": len(kept)}
+
+
 @router.get("/routines/{slug}/artifact")
 def get_artifact(request: Request, slug: str, path: str):
     """Serve one artifact raw (blob-rendered client-side). ONLY artifacts/ is servable

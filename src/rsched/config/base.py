@@ -52,9 +52,15 @@ DEFAULT_BUDGETS = {
 # kind — and exists purely to teach discovery, composition, and never-silently-route-around
 # a broken util.
 DEFAULT_PERMISSIONS = ["util-authoring", "memory", "global-utils", "reminders"]
+# What a routine with no `capabilities:` block of its own MEANS. Keys absent here fall to the
+# all-off baseline (`grants.EMPTY_CAPABILITIES`) — which is why `reminders` has to be named:
+# it is the one dial whose default is NOT off, so leaving it out would say the opposite of
+# what the layer is. It is on the same footing as the permission behind it, which is in
+# DEFAULT_PERMISSIONS: a caution a run leaves itself about its own actions is ordinary
+# conduct, not a privilege, and the floor keeps it only while that permission is held.
 DEFAULT_CAPABILITIES = {"actions": ["write_util", "memory_read", "memory_write"],
                         "utils": [], "confirm": "always", "runs": "none",
-                        "workflows": "catalog"}
+                        "workflows": "catalog", "reminders": "local"}
 # RULES a new routine gets when creation picks none explicitly (creation normally
 # preselects per task). A rule is a GENERAL rule — principle prose the run applies to its
 # own particular case — and it lives in ONE place, the library. A routine holds slugs, not

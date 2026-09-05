@@ -369,10 +369,28 @@ def routine_surface(server: Any, cfg: RoutineConfig) -> dict:
                            "routine.yaml stays sealed", source={"doc": "recipe-authoring"}))
 
     covered_utils = set(_held_utils(cfg, catalog))    # names AND everything a gated tag covers
+    from ..grants import capabilities_for
+    # The same mapping with NO doc applied — `capabilities_for` normalizes its base, so this is
+    # what the live config means once the absent keys have their defaults. Comparing the raise
+    # against it (rather than against the raw dict) is what keeps an unset key from reading as
+    # a shortfall.
+    normalized = capabilities_for([], lib_requires, base=dict(caps))
     for slug in cfg.permissions or []:
         req = lib_requires.get(slug) or {}
         missing = [a for a in req.get("actions") or [] if a not in (caps.get("actions") or [])]
         missing += [f"util:{u}" for u in req.get("utils") or [] if u not in covered_utils]
+        # ...and every DIAL the doc requires. Asked by RAISING the live mapping through the one
+        # cascade instead of key by key: this check was written when `requires:` named actions
+        # and utils only, so every dial added since — `runs`, `workflows`, `util_tags`,
+        # `reminders` — fell straight through the guard whose whole job was to catch a held doc
+        # the capabilities do not honor. The adopt path had the identical blindness and shipped
+        # `reminders` "on by default" to zero of 32 routines with nothing anywhere to say so.
+        # A key the raise CHANGES is a key the live value sits below; a key it leaves alone is
+        # satisfied, including by a value above what the doc asks for. A dial added tomorrow
+        # lands here on its own, because the cascade returns it.
+        raised = capabilities_for([slug], lib_requires, base=dict(caps))
+        missing += [f"{k}={raised[k]}" for k in raised
+                    if k not in ("actions", "utils") and raised[k] != normalized[k]]
         if missing:
             nodes.append(_node(f"permission:{slug}", "unsatisfied", BLOCKS,
                                "held, but its requires: are not switched on",

@@ -432,23 +432,31 @@ def _history_messages():
     return head + middle + tail
 
 
-def test_compact_to_history_writes_navigable_files(tmp_path):
+def _history_middle():
+    """The slice `window._archive_if_needed` hands to `archival.start` — head and tail stay in
+    the prompt, the middle is what gets archived. The archival call takes exactly this and
+    touches no message list, which is what makes it safe to run off the hot path.
+    """
+    from rsched.engine.compaction import KEEP_HEAD_MSGS, KEEP_TAIL_MSGS
+
+    msgs = _history_messages()
+    return msgs[KEEP_HEAD_MSGS:len(msgs) - KEEP_TAIL_MSGS]
+
+
+def test_archive_middle_writes_navigable_files(tmp_path):
     from rsched.config import ModelRef
-    from rsched.engine.compaction import KEEP_HEAD_MSGS, KEEP_TAIL_MSGS, compact_to_history
+    from rsched.engine.compaction import archive_middle
 
     ep = _history_endpoint({"files": [
         {"name": "Research Notes!", "about": "what we found", "content": "found X\nfound Y"},
         {"name": "decisions", "about": "choices made", "content": "chose Z"}]})
     run_dir = tmp_path / "runs" / "20260710-070000"
     run_dir.mkdir(parents=True)
-    records = [{"turn": 12, "kind": "util", "brief": '"x"', "say": "s"}]
-    result = compact_to_history(_history_messages(), records, ep, ModelRef("e", "m"),
-                                run_dir, "runs/20260710-070000/history")
-    assert result is not None
-    new_msgs, info = result
+    middle = _history_middle()
+    info = archive_middle(middle, ep, ModelRef("e", "m"), run_dir, 12)
+    assert info is not None
     assert info["mode"] == "llm-history" and info["history_files"] == 2
-    assert len(new_msgs) == KEEP_HEAD_MSGS + 1 + KEEP_TAIL_MSGS     # head + pointer + tail
-    assert "INDEX.md" in new_msgs[KEEP_HEAD_MSGS]["content"]        # the pointer replaces the middle
+    assert info["elided_messages"] == len(middle)
     hist = run_dir / "history"
     names = sorted(p.name for p in hist.glob("*.md"))              # safe-slugged, turn-prefixed
     assert names == ["INDEX.md", "t12-decisions.md", "t12-research-notes.md"]
@@ -465,7 +473,7 @@ def test_compact_to_history_writes_navigable_files(tmp_path):
             assert (hist / line[3:].split("`")[0]).is_file(), line
 
 
-def test_compact_to_history_non_json_reply_names_the_model(tmp_path):
+def test_archive_middle_non_json_reply_names_the_model(tmp_path):
     """A weak archival model answering prose instead of the schema must raise the
     teaching error — model + reply head — not a bare json "Expecting value" (F309,
     c-20260810-213335: that bare error every message); the caller's deterministic
@@ -473,7 +481,7 @@ def test_compact_to_history_non_json_reply_names_the_model(tmp_path):
     import pytest
 
     from rsched.config import ModelRef
-    from rsched.engine.compaction import compact_to_history
+    from rsched.engine.compaction import archive_middle
 
     class _Comp:
         parsed = None
@@ -486,34 +494,33 @@ def test_compact_to_history_non_json_reply_names_the_model(tmp_path):
     run_dir = tmp_path / "runs" / "20260710-070000"
     run_dir.mkdir(parents=True)
     with pytest.raises(RuntimeError) as exc:
-        compact_to_history(_history_messages(), [], _Ep(), ModelRef("e", "m"),
-                           run_dir, "history")
+        archive_middle(_history_middle(), _Ep(), ModelRef("e", "m"), run_dir, 0)
     msg = str(exc.value)
     assert "e/m" in msg and "non-JSON" in msg and "Sorry, I cannot" in msg
 
 
-def test_compact_to_history_reports_its_own_usage(tmp_path):
-    """The archival call's spend rides the compaction info so the loop can fold it into
-    the run's usage — full-context calls must never be invisible to accounting."""
+def test_archive_middle_reports_its_own_usage(tmp_path):
+    """The archival call's spend rides the info so `archival._record` can fold it into the
+    run's usage on the turn the archive lands — full-context calls must never be invisible
+    to accounting."""
     from rsched.config import ModelRef
-    from rsched.engine.compaction import compact_to_history
+    from rsched.engine.compaction import archive_middle
 
     ep = _history_endpoint({"files": [{"name": "n", "about": "c", "content": "c"}]})
     run_dir = tmp_path / "runs" / "20260710-070000"
     run_dir.mkdir(parents=True)
-    _, info = compact_to_history(_history_messages(), [], ep, ModelRef("e", "m"),
-                                 run_dir, "history")
+    info = archive_middle(_history_middle(), ep, ModelRef("e", "m"), run_dir, 0)
     assert info["usage"] == {"in": 1, "out": 1} and info["model"] == "e/m"
 
 
-def test_compact_to_history_timeout_scales_with_middle_size(tmp_path):
+def test_archive_middle_timeout_scales_with_middle_size(tmp_path):
     """F376: the archival call's timeout grows with the middle being read — a fixed 180s
     died on a 1.25M-char middle while the digest fallback took every pass. 180s base
     + 60s/200k chars, capped at the endpoint default (600s)."""
     from typing import ClassVar
 
     from rsched.config import ModelRef
-    from rsched.engine.compaction import KEEP_HEAD_MSGS, KEEP_TAIL_MSGS, compact_to_history
+    from rsched.engine.compaction import archive_middle
 
     seen = []
 
@@ -526,16 +533,11 @@ def test_compact_to_history_timeout_scales_with_middle_size(tmp_path):
             seen.append(k["timeout"])
             return _Comp()
 
-    def _msgs(middle_chars):
-        head = [{"role": "system", "content": "S"}] * KEEP_HEAD_MSGS
-        tail = [{"role": "user", "content": "t"}] * KEEP_TAIL_MSGS
-        return [*head, {"role": "assistant", "content": "x" * middle_chars}, *tail]
-
     run_dir = tmp_path / "runs" / "20260710-070000"
     run_dir.mkdir(parents=True)
     for middle_chars in (1_000, 450_000, 1_300_000, 2_000_000):
-        compact_to_history(_msgs(middle_chars), [], _Ep(), ModelRef("e", "m"),
-                           run_dir, "history")
+        archive_middle([{"role": "assistant", "content": "x" * middle_chars}],
+                       _Ep(), ModelRef("e", "m"), run_dir, 0)
     assert seen[0] == 180                     # small middle keeps the old base
     assert seen[1] == 300                     # ~450k chars → 180 + 2*60
     assert seen[2] == 540                     # 1.3M chars (the F376 specimen) → 180 + 6*60
@@ -560,24 +562,20 @@ def test_prior_usage_sums_all_legs():
                                    "cache_write": 7, "cost": 0.01}
 
 
-def test_compact_to_history_second_pass_accumulates_atomically(tmp_path):
+def test_archive_middle_second_pass_accumulates_atomically(tmp_path):
     """A later compaction carries the earlier files over, rewrites INDEX.md, and leaves no
     temp/displaced siblings behind — the swap is all-or-nothing."""
     from rsched.config import ModelRef
-    from rsched.engine.compaction import compact_to_history
+    from rsched.engine.compaction import archive_middle
 
     run_dir = tmp_path / "runs" / "20260710-080000"
     run_dir.mkdir(parents=True)
     ep1 = _history_endpoint({"files": [{"name": "alpha", "about": "first findings",
                                         "content": "first findings"}]})
-    assert compact_to_history(_history_messages(), [{"turn": 10, "kind": "util", "brief": '"x"',
-                                                     "say": "s"}],
-                              ep1, ModelRef("e", "m"), run_dir, "history") is not None
+    assert archive_middle(_history_middle(), ep1, ModelRef("e", "m"), run_dir, 10) is not None
     ep2 = _history_endpoint({"files": [{"name": "beta", "about": "later findings",
                                         "content": "later findings"}]})
-    assert compact_to_history(_history_messages(), [{"turn": 20, "kind": "util", "brief": '"y"',
-                                                     "say": "s"}],
-                              ep2, ModelRef("e", "m"), run_dir, "history") is not None
+    assert archive_middle(_history_middle(), ep2, ModelRef("e", "m"), run_dir, 20) is not None
     # the prior index is NOT re-fed to the model: it silently dropped entries (one live
     # archive listed 13 of its 23 files) and the prompt grew to 20 KB by the 23rd pass
     assert "already a history index" not in ep2.last_prompt
@@ -596,7 +594,7 @@ def test_every_archived_file_gets_an_index_line(tmp_path):
     """The invariant the engine can now guarantee, and could not before: one line per file, and
     a file with no description still gets an entry rather than vanishing from the map."""
     from rsched.config import ModelRef
-    from rsched.engine.compaction import compact_to_history
+    from rsched.engine.compaction import archive_middle
 
     run_dir = tmp_path / "runs" / "20260710-100000"
     hist = run_dir / "history"
@@ -605,9 +603,7 @@ def test_every_archived_file_gets_an_index_line(tmp_path):
     (hist / "t1-orphan.md").write_text("older content\n", encoding="utf-8")
     (hist / "INDEX.md").write_text("# stale\n", encoding="utf-8")
     ep = _history_endpoint({"files": [{"name": "new-topic", "about": "", "content": "c"}]})
-    assert compact_to_history(_history_messages(),
-                              [{"turn": 7, "kind": "util", "brief": '"x"', "say": "s"}],
-                              ep, ModelRef("e", "m"), run_dir, "history") is not None
+    assert archive_middle(_history_middle(), ep, ModelRef("e", "m"), run_dir, 7) is not None
     index = (hist / "INDEX.md").read_text()
     listed = {ln[3:].split("`")[0] for ln in index.splitlines() if ln.startswith("- `")}
     on_disk = {p.name for p in hist.glob("*.md")} - {"INDEX.md"}
@@ -620,24 +616,24 @@ def test_the_archival_prompt_asks_for_a_description_not_an_index(tmp_path):
     """The model describes CONTENT; it never names a file. Naming is what made the index a map
     to files that did not exist."""
     from rsched.config import ModelRef
-    from rsched.engine.compaction import compact_to_history
+    from rsched.engine.compaction import archive_middle
 
     run_dir = tmp_path / "runs" / "20260710-110000"
     run_dir.mkdir(parents=True)
     ep = _history_endpoint({"files": [{"name": "n", "about": "a", "content": "c"}]})
-    compact_to_history(_history_messages(), [], ep, ModelRef("e", "m"), run_dir, "history")
+    archive_middle(_history_middle(), ep, ModelRef("e", "m"), run_dir, 0)
     prompt = ep.last_prompt
     assert "never refer to a file by name — not yours" in prompt
     assert "{files: [{name, about, content}]}" in prompt
 
 
-def test_compact_to_history_failure_leaves_prior_history_intact(tmp_path, monkeypatch):
+def test_archive_middle_failure_leaves_prior_history_intact(tmp_path, monkeypatch):
     """If the swap fails mid-way, the pre-existing history survives untouched and the temp
     build dir is cleaned up (the caller then falls back to the deterministic digest)."""
     import os
 
     from rsched.config import ModelRef
-    from rsched.engine.compaction import compact_to_history
+    from rsched.engine.compaction import archive_middle
 
     run_dir = tmp_path / "runs" / "20260710-090000"
     hist = run_dir / "history"
@@ -652,9 +648,7 @@ def test_compact_to_history_failure_leaves_prior_history_intact(tmp_path, monkey
 
     monkeypatch.setattr(os, "replace", boom)
     try:
-        compact_to_history(_history_messages(), [{"turn": 30, "kind": "util", "brief": '"z"',
-                                                  "say": "s"}],
-                           ep, ModelRef("e", "m"), run_dir, "history")
+        archive_middle(_history_middle(), ep, ModelRef("e", "m"), run_dir, 30)
     except OSError:
         pass
     else:
@@ -666,16 +660,16 @@ def test_compact_to_history_failure_leaves_prior_history_intact(tmp_path, monkey
     assert leftovers == []                                         # temp build dir was removed
 
 
-def test_compact_to_history_rejects_unusable_llm_output(tmp_path):
-    """Empty files/index → None (deterministic fallback) and nothing lands on disk."""
+def test_archive_middle_rejects_unusable_llm_output(tmp_path):
+    """Empty files/index → None (the digest stands and the archive is recorded as degraded)
+    and nothing lands on disk."""
     from rsched.config import ModelRef
-    from rsched.engine.compaction import compact_to_history
+    from rsched.engine.compaction import archive_middle
 
     run_dir = tmp_path / "runs" / "20260710-100000"
     run_dir.mkdir(parents=True)
     ep = _history_endpoint({"files": [], "index": ""})
-    assert compact_to_history(_history_messages(), [], ep, ModelRef("e", "m"),
-                              run_dir, "history") is None
+    assert archive_middle(_history_middle(), ep, ModelRef("e", "m"), run_dir, 0) is None
     assert list(run_dir.iterdir()) == []
 
 

@@ -194,4 +194,46 @@ def routine_health(server: ServerConfig, routine_dir: Path, slug: str) -> dict:
             "versions": shown,
             "untracked": untracked if untracked["runs"] else None,
             "regression": regression,
+            "cautions": cautions(server, routine_dir),
             "tracked": bool(versions)}
+
+
+def cautions(server: ServerConfig, routine_dir: Path) -> dict:
+    """What the between-turn feed has actually been doing here: every reminder in force with
+    this routine's own tally, and every rule assist that has fired, with its count.
+
+    These two stores are the feature's only evidence and they were WRITE-ONLY from the
+    console — engine-written JSON under `state/`, read by nothing a person opens. A caution
+    that fires on every run and is labelled `could_not` every time is a bad pattern, and
+    reviewing precision is the whole reason the tallies are kept; without a surface, the
+    review had to be done by reading files over ssh.
+
+    Degrades to empty rather than raising: this rides the health payload, and a routine whose
+    stores are missing or hand-broken is a routine with nothing to show, not a broken page.
+    """
+    from .. import assists as assists_mod
+    from .. import reminders as reminders_mod
+    from ..paths import read_json
+
+    try:
+        local, gstats = reminders_mod.load_local(routine_dir)
+        shared = reminders_mod.load_global(server.reminders_home, gstats)
+    except OSError:
+        local, shared = [], []
+    fired = read_json(assists_mod.state_path(routine_dir), {})
+    counts = fired if isinstance(fired, dict) else {}
+    known = {a.key: a for a in assists_mod.read_library_assists(server.rules_home)}
+    rows = []
+    for key, n in sorted(counts.items(), key=lambda kv: (-int(kv[1] or 0), kv[0])):
+        a = known.get(key)
+        rows.append({"key": key, "fires": int(n or 0),
+                     "rule": a.rule if a else key.split(":")[0],
+                     "moment": a.moment if a else "",
+                     "payload": a.payload if a else "",
+                     "predicate": a.predicate if a else "",
+                     # A key with no live assist behind it is the interesting row, not a
+                     # corrupt one: the rule was revised or unbound and the tally outlived it.
+                     "retired": a is None})
+    return {"reminders": [r.as_record() for r in [*local, *shared]],
+            "labels": list(reminders_mod.LABELS),
+            "assists": rows}

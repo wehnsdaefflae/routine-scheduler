@@ -45,6 +45,12 @@ def is_approval(text: str) -> bool:
     return _head_word(text) in _APPROVE_WORDS
 
 
+#: Question types settled ONLY by a clear approve/decline (D38). Every authoring approval
+#: belongs here — `authoring.py` files util- and rule-approvals, `remind.py` the global
+#: reminder one.
+_APPROVAL_QTYPES = frozenset({"util-approval", "rule-approval", "reminder-approval"})
+
+
 def _settles_approval(text: str) -> bool:
     """True when the text is a clear approve OR a clear decline — the only two replies
     that may settle a blocking util-approval (D38).
@@ -54,14 +60,20 @@ def _settles_approval(text: str) -> bool:
 
 
 def _held_not_settled(qtype: str, answer: dict) -> bool:
-    """D38 across record types: does this reply fail to SETTLE the question? A
-    util-approval settles only on a clear approve/decline, an access request only on one
-    of the typed decisions; defer markers and dialog replies pass through to their
-    own paths. A held reply becomes a delayed user message and the wait continues.
+    """D38 across record types: does this reply fail to SETTLE the question? An APPROVAL
+    settles only on a clear approve/decline, an access request only on one of the typed
+    decisions; defer markers and dialog replies pass through to their own paths. A held
+    reply becomes a delayed user message and the wait continues.
+
+    Every approval qtype is listed, not just the first one: the check reads the type, so a
+    type it has never heard of falls through to "settled" and an ambiguous reply lands as a
+    decision. `rule-approval` and `reminder-approval` write to the LIBRARY — a copy every
+    holder reads at its next run — which is the last place a "hmm, maybe" should count as
+    yes.
     """
     if not answer.get("text") or answer.get("defer") or answer.get("intermediate"):
         return False
-    if qtype == "util-approval":
+    if qtype in _APPROVAL_QTYPES:
         return not _settles_approval(str(answer["text"]))
     if qtype == "request":
         return answer.get("decision") not in requests.DECISIONS

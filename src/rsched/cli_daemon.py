@@ -56,6 +56,16 @@ def cmd_daemon(_args) -> int:
     # the three declared in 0.305.0 across, skipping any rule an operator has since edited.
     # Runs after the seed syncs, so it rewrites the library this boot will serve.
     migrate_rule_assists(server.rules_home, repo_root() / "library-seed" / "rules")
+    from .migrate_reminders_rollout import run as migrate_reminders_rollout
+
+    # MIGRATION(expires=2026-12-01): the adopt cascade carried a private copy of the capability
+    # raise that knew four of nine keys, so a permission whose requires: names any other DIAL
+    # was adopted with its capability left off — the doc held, the engine behaving as if it
+    # were not. Re-raise every routine's capabilities from the permissions it holds, and give
+    # the live settings templates the two dials the seed now names. After adopt_permissions,
+    # so this boot's adoptions are converged too.
+    migrate_reminders_rollout(server.routines_home, server.permissions_home,
+                              server.libraries_home)
     for pr in problems:
         logging.getLogger("rsched").warning("config: %s", pr)
     app = create_app(server)

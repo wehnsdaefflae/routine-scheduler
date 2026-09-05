@@ -2,6 +2,13 @@
 // produced them (engine-stamped commit; the durable usage stream survives retention),
 // a deterministic regression flag on the newest change, and the one-click roll-back.
 // mountHealth fills `box` and returns { reload } for the run-lifecycle bus handler.
+//
+// Plus the CAUTIONS the between-turn feed raises here — the reminders in force with this
+// routine's own tally, and the rule assists that have fired. Same tab because they answer
+// the same question the version table does: is this routine's behaviour getting better or
+// worse, and what changed. A caution that fires constantly and is labelled could_not every
+// time is a bad pattern, and the tally is kept precisely so that is reviewable — it just had
+// nowhere to be read.
 
 import { api } from "/static/api.js";
 import { confirmDialog } from "/static/components/dialog.js";
@@ -71,8 +78,70 @@ export function mountHealth(box, slug, { onRecipeChanged }) {
       parts.push(el("div", { class: "muted small mt" },
         `${h.untracked.runs} run(s) could not be attributed to any recipe version`));
     }
+    parts.push(...cautionSections(h.cautions || {}));
     box.replaceChildren(...parts);
   }
+  async function forget(rid, regex) {
+    if (!(await confirmDialog(
+      `Delete this routine's reminder ${rid} (${regex})? Its tally goes with it — the ` +
+      "definition is what the counts are about. Runs stop being held on it immediately.",
+      { confirmLabel: "delete" }))) return;
+    try {
+      await api(`/api/routines/${slug}/reminders/${rid}`, { method: "DELETE" });
+      toast("reminder deleted"); reload();
+    } catch (err) { toast(err.message, 5000, { error: true }); }
+  }
+
+  // The four labels in the order they read as a verdict: the first says the pattern is too
+  // broad, the last two say it fired on a real call. A row where could_not dominates is the
+  // one to delete, so it is the first number the eye lands on.
+  function cautionSections(c) {
+    const reminders = c.reminders || [], assists = c.assists || [];
+    if (!reminders.length && !assists.length) return [];
+    const labels = c.labels || [];
+    const out = [el("h3", { class: "mt" }, "cautions"),
+      el("div", { class: "muted small" },
+        "what the between-turn feed raised here — a hold costs the run a turn, so a pattern " +
+        "that fires without ever changing a decision is one to delete")];
+    if (reminders.length) {
+      const rows = reminders.map((r) => {
+        const st = r.stats || {};
+        return el("tr", {},
+          el("td", {}, el("span", { class: "ref-tag", title: r.id }, r.id),
+            el("span", { class: `chip ${r.scope === "global" ? "" : "ok"}`,
+                         style: "margin-left:6px" }, r.scope)),
+          el("td", { class: "mono small", title: r.regex }, r.regex),
+          el("td", { class: "muted", title: r.description }, r.description),
+          el("td", { class: "num" }, String(st.fires || 0)),
+          ...labels.map((k) => el("td", { class: "num" }, st[k] ? String(st[k]) : "—")),
+          el("td", {}, r.scope === "local"
+            ? el("button", { class: "btn small danger", onclick: () => forget(r.id, r.regex) },
+                "delete")
+            // A curated reminder belongs to the library; this routine owns only its tally.
+            : el("span", { class: "muted small", title: "curated — remove it on the Library tab" },
+                "library")));
+      });
+      out.push(el("div", { class: "tablewrap" }, el("table", { class: "list" },
+        el("thead", {}, el("tr", {}, ["reminder", "pattern", "consequence", "fires", ...labels, ""]
+          .map((x) => el("th", {}, x)))),
+        el("tbody", {}, ...rows))));
+    }
+    if (assists.length) {
+      out.push(el("div", { class: "muted small mt" }, "rule assists that have fired"),
+        el("div", { class: "tablewrap" }, el("table", { class: "list" },
+          el("thead", {}, el("tr", {}, ["rule", "moment", "payload", "fires"]
+            .map((x) => el("th", {}, x)))),
+          el("tbody", {}, ...assists.map((a) => el("tr", {},
+            el("td", { title: a.key }, a.rule,
+              a.retired ? el("span", { class: "muted small" },
+                " · no longer bound") : ""),
+            el("td", { class: "muted" }, a.moment || "—"),
+            el("td", { class: "muted" }, a.payload || "—"),
+            el("td", { class: "num" }, String(a.fires))))))));
+    }
+    return out;
+  }
+
   reload();
   return { reload };
 }

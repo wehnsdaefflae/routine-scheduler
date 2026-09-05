@@ -1,6 +1,6 @@
 """BACKGROUND archival — the navigable history is built off the hot path.
 
-Compaction has three tiers and the good one is slow: `compact_to_history` hands the elided
+Compaction has three tiers and the good one is slow: `archive_middle` hands the elided
 middle to a model and waits 180–600s for a set of navigable files back. That is a visible stall
 in the middle of a run, and it lands at exactly the moment the run is busiest.
 

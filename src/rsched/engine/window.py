@@ -165,10 +165,12 @@ def _warn_before_eviction(loop, size: float, ref) -> bool:
 
 
 def _archive_if_needed(loop, endpoint, ref) -> None:
-    """When the prompt exceeds the compaction gate, archive the middle to a navigable on-disk
-    history via the LLM (compact_to_history); fall back to the deterministic one-line digest if
-    that fails, so a run never stalls on compaction. Does NOT guarantee the result clears the
-    window — that is the caller's `clamp_to_cap` step (the head+tail floor is incompressible).
+    """When the prompt exceeds the compaction gate, elide the middle with the deterministic
+    one-line digest (`maybe_compact`) and hand the same middle to `archival.start`, which
+    builds the navigable on-disk history OFF the hot path and announces it when it lands. The
+    digest is what the run carries meanwhile, and what it keeps if the archival degrades — so a
+    run never stalls on compaction. Does NOT guarantee the result clears the window — that is
+    the caller's `clamp_to_cap` step (the head+tail floor is incompressible).
     """
     ctx = loop.ctx
     size = messages_size(loop.messages)

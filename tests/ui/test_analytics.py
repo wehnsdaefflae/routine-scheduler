@@ -124,3 +124,30 @@ def test_stats_recipe_length_section(ui, ui_page):
     row = section.locator("tr", has_text="uir")
     expect(row.locator(".recipe-bar")).to_be_visible()   # the bar renders
     expect(row).to_contain_text("↑ growing")             # v2 ≫ v1: the trend chip
+
+
+def test_cautions_table_shows_the_tallies_and_deletes_a_local_reminder(ui, ui_page):
+    """The reminder and assist tallies had no surface at all for a release: engine-written JSON
+    under state/, read by nothing a person opens. Reviewing whether a caution earns the turn it
+    costs meant opening a file over ssh — and a local reminder, written by the run with no
+    approval, could only be removed by editing that file by hand.
+    """
+    from rsched import reminders as store
+    from rsched.paths import atomic_write_json
+
+    d = ui.routine_dir("uir")
+    (d / "state").mkdir(parents=True, exist_ok=True)
+    store.save_local(d, [store.Reminder(
+        id="rem-mv", regex="^util:fs-ops mv ", description="it overwrites the destination",
+        scope="local", created_run="r:1",
+        stats={**store.blank_stats(), "fires": 3, "could_not": 2})], {})
+    atomic_write_json(d / "state" / "assists.json", {"git-checkpoint:pre-action": 4})
+
+    ui_page.goto(f"{ui.url}/#/routine/uir")
+    expect(ui_page.get_by_text("it overwrites the destination")).to_be_visible(timeout=10_000)
+    expect(ui_page.get_by_text("git-checkpoint")).to_be_visible()
+
+    ui_page.get_by_role("button", name="delete").first.click()
+    ui_page.get_by_role("button", name="delete", exact=True).last.click()
+    expect(ui_page.get_by_text("it overwrites the destination")).to_have_count(0, timeout=10_000)
+    assert store.load_local(d)[0] == []

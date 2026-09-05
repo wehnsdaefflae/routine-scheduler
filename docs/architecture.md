@@ -68,14 +68,15 @@ the limits (single-writer status.json preserved).
   that adapters may use as a cache hint. THREE sanctioned exceptions rewrite the list in place:
   compaction (below), schema-retry debris cleanup, and the media fallback (a failed image turn's
   tail message is rewritten text-only) — each invalidates the provider cache once, by design.
-- **Compaction archives context to a navigable on-disk history** (`history.compact_to_history`): when
+- **Compaction archives context to a navigable on-disk history** (`history.archive_middle`): when
   the prompt exceeds ~60% of the resolved model's `context_chars` — ~80% once cache hits are observed
   (compaction rewrites the prefix and invalidates the cache, so carried context is cheaper than
-  re-archiving) — the middle turns are reorganized into markdown files (~≤100 lines each) under
-  `runs/<ts>/history/` + `INDEX.md`; the prompt keeps only a pointer. The archival call runs on the
-  routine's `tool_call` model when its window fits (machine work; main model is the fallback) and its
-  spend is folded into the run's usage. Falls back to the deterministic one-line digest
-  (`history.maybe_compact`) on any failure. The on-disk transcript keeps everything regardless.
+  re-archiving) — the middle turns are elided by the deterministic one-line digest
+  (`history.maybe_compact`) and that same middle is reorganized into markdown files (~≤100 lines
+  each) under `runs/<ts>/history/` + `INDEX.md`. The archival call runs on the routine's `tool_call`
+  model when its window fits (machine work; main model is the fallback) and its spend is folded into
+  the run's usage. The digest is what the prompt carries meanwhile, and what it keeps if the archival
+  fails. The on-disk transcript keeps everything regardless.
 - **The archive is built OFF the hot path** (`engine/archival.py`). The archival call takes
   180-600s and it used to take them from the run, mid-work. The two tiers are now split in
   TIME rather than traded off: the deterministic digest lands instantly and the run carries

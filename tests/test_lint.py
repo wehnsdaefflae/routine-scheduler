@@ -491,3 +491,28 @@ def test_lint_rejects_action_import_the_tools_allowlist_excludes():
                             filename="x.py", rule_slugs=[]) == []
     # tools: None means every kind — nothing to disagree with
     assert lint_workflow_py(base % "None", filename="x.py", rule_slugs=[]) == []
+
+
+def test_lint_all_covers_every_directory_the_library_holds(tmp_path):
+    """`rsched lint` is what says the library is clean, so a directory `lint_all` skips is a
+    directory nobody checks. Two arrived after the first four and were never wired in — the
+    settings templates a routine is created FROM (whose linter existed, orphaned, called only
+    by its own tests) and the shared reminder store.
+    """
+    from rsched.workflows.lint import lint_all
+
+    home = merged_library(tmp_path)
+    (home / "templates").mkdir()
+    (home / "templates" / "broken.md").write_text(
+        "---\ntags: [a, b, c]\nconfig:\n  nonsense: 1\n---\n# template: broken — t\nb\n",
+        encoding="utf-8")
+    (home / "reminders").mkdir()
+    (home / "reminders" / "rem-wrong.json").write_text(
+        '{"id": "rem-other", "regex": ".*", "description": "d"}', encoding="utf-8")
+    results = lint_all(home)
+    assert "templates/broken.md" in results
+    assert any("not a shareable key" in p for p in results["templates/broken.md"])
+    assert "reminders/rem-wrong.json" in results
+    text = " | ".join(results["reminders/rem-wrong.json"])
+    assert "does not match the filename" in text     # id ≠ filename
+    assert "matches the EMPTY string" in text        # `.*` would hold every action ever taken

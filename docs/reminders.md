@@ -57,6 +57,27 @@ what is in it — and can remove one. That removal is not a nicety: an approval 
 gets IN, and without it nothing could take an entry out again short of editing the repo by
 hand. Each routine's own tally survives the removal, because it is that routine's evidence.
 
+### Reading the tallies back
+
+The stats are the whole point of keeping them, and for one release nothing read them: both
+stores are engine-written JSON under `state/`, so reviewing a pattern's precision meant opening
+a file on the server. The routine page's **health tab** now shows them beside the recipe-version
+table, because they answer the same question it does — is this routine's behaviour getting
+better, and what changed. One row per reminder in force with this routine's own tally, one row
+per rule assist that has fired with its count, and a **delete** button on each LOCAL reminder.
+
+That button is the user's only lever over a local reminder: a run writes one with no approval,
+which is what the local rung is for, so without it a bad pattern would keep costing a turn on
+every match and the only remedy would be hand-editing `state/reminders.json`. Deleting takes
+the tally with it — the tally is about a definition that is going. A curated reminder is the
+library's copy and is removed on the Library tab; the row here shows only what this routine
+learned about it.
+
+A reminder or a feedback label also renders **on the turn that wrote it**, next to the `note`
+pin it rides beside — ⚑ for the reminder, ⚐ for the label. They cost the same nothing and ride
+the same any-action seam, so hiding them inside the action-json fold made a run teaching itself
+something invisible unless you already suspected it.
+
 Reminders are **born local; global is earned.** A bad local reminder taxes one routine's turns; a
 bad global one taxes every capable routine at its next run, silently. Unsure is local. The match
 target usually settles it on its own: a pattern over a util invocation is probably universal, a

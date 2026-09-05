@@ -461,3 +461,40 @@ def test_the_boot_note_carries_only_what_the_run_can_act_on():
     assert len(surface_lines(surface)) == 3                     # validate: everything
     boot = surface_lines(surface, BOOT_SEVERITIES)
     assert [ln.split()[1] for ln in boot] == ["a:", "b:"]       # boot: no NOTE
+
+
+@pytest.mark.usefixtures("empty_store")
+def test_a_held_doc_whose_dial_is_not_switched_on_blocks(tmp_path):
+    """The guard that should have caught the reminders rollout, and could not.
+
+    "held, but its requires: are not switched on" was written when `requires:` named actions
+    and utils only. Every DIAL added since — `runs`, `workflows`, `util_tags`, `reminders` —
+    fell straight through it, so a routine could hold a doc, have its dial at the default, and
+    read as READY. It asks the one cascade now, so a dial added tomorrow lands here on its own.
+    """
+    server = _server(tmp_path)
+    _doc(server, "permissions", "reminders",
+         "---\ntags: [a, b, c]\nrequires:\n  reminders: local\n---\n"
+         "# permission: reminders — t\nb\n")
+    cfg = _cfg(tmp_path, permissions=["reminders"],
+               capabilities={"actions": [], "utils": [], "util_tags": [],
+                             "reminders": "none"})
+    node = _by_id(routine_surface(server, cfg), "permission:reminders")
+    assert node and node["severity"] == BLOCKS
+    assert "reminders=local" in node["effect"]
+
+
+@pytest.mark.usefixtures("empty_store")
+def test_a_dial_above_what_the_doc_asks_for_is_satisfied(tmp_path):
+    """The dials are RANKED, so "different" is not "short". A routine at `reminders: global`
+    honours a doc that requires `local` — reporting that as unsatisfied would tell the operator
+    to turn something DOWN to make a warning go away.
+    """
+    server = _server(tmp_path)
+    _doc(server, "permissions", "reminders",
+         "---\ntags: [a, b, c]\nrequires:\n  reminders: local\n---\n"
+         "# permission: reminders — t\nb\n")
+    cfg = _cfg(tmp_path, permissions=["reminders"],
+               capabilities={"actions": [], "utils": [], "util_tags": [],
+                             "reminders": "global"})
+    assert _by_id(routine_surface(server, cfg), "permission:reminders") is None

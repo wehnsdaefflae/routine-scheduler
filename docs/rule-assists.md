@@ -163,15 +163,17 @@ routine practises this rule — `effect.when` is exactly that decision — and a
 only WHEN its line is read, never what the routine may do. Nothing here can reach a routine
 that does not hold the rule.
 
-That is a real difference from the reminder layer, which defaults OFF: `DEFAULT_RULES` is not
-empty, so this layer is live in most routines from the day it ships. Which is why the first
-three assists are `remind`-only and why precision, not coverage, is the budget.
+`DEFAULT_RULES` is not empty, so this layer is live in most routines from the day it ships —
+which is why precision, not coverage, is the budget, and why only one of the six assists costs
+a turn.
 
 ## The payload axis, and what exists
 
-`remind → scaffold → do → hold`, ascending. Only `remind` is built. The others are not stubs
-in the schema either — `scaffold`/`do` need a helper channel and `hold` needs the pre-action
-seam, and an enum value the engine cannot honour would be a lie in the library's own contract.
+`remind → scaffold → do → hold`, ascending. `remind` and `hold` are built — `hold` once the
+pre-action seam existed (`engine/hold.py`, shared with the reminder layer). `scaffold` and
+`do` are not, and they are not stubs in the schema either: both need a helper channel the
+engine does not have, and an enum value it cannot honour would be a lie in the library's own
+contract. `PAYLOADS` names what works.
 
 ## Reaching a live instance
 

@@ -2,9 +2,11 @@
 transcript replay for resume.
 
 Compaction shrinks only the in-prompt conversation — the transcript on disk keeps
-everything. `compact_to_history` reorganizes the elided middle into navigable markdown
-files under runs/<ts>/history/ that the model reads back on demand; `maybe_compact` is
-the deterministic one-line-digest fallback when the LLM path fails.
+everything. `maybe_compact` elides the middle to a one-line digest per turn and lands
+instantly; `archive_middle` then reorganizes that same middle into navigable markdown
+files under runs/<ts>/history/ that the model reads back on demand, off the hot path
+(engine/archival.py). The digest is what the run carries meanwhile, and what it keeps if
+the archival degrades — never a summary standing in for the archive.
 """
 
 from __future__ import annotations

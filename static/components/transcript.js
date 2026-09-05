@@ -200,6 +200,19 @@ export function createTranscript(container, opts = {}) {
         el("span", { class: "saytext" }, mdInline(a.say || ""))),
       a.note ? el("div", { class: "note", title: "captured to state/notes.md" },
         "📌 ", mdInline(a.note)) : null,
+      // The other two side fields. They ride ANY action exactly as `note` does and cost the
+      // same nothing, so they render the same way — without this the only trace of a run
+      // writing itself a caution, or labelling how one turned out, was inside the action
+      // json fold, which is where a reader goes to check a suspicion rather than to have one.
+      a.remind ? el("div", { class: "note", title: "consequence reminder written this turn" },
+        "⚑ ", mdInline(a.remind.op === "delete"
+          ? `reminder ${a.remind.id} deleted`
+          : `${a.remind.op === "revise" ? `revised ${a.remind.id}` : "new reminder"}`
+            + `${a.remind.scope === "global" ? " (shared — needs approval)" : ""}: `
+            + `\`${a.remind.regex || ""}\` → ${a.remind.description || ""}`)) : null,
+      a.remind_feedback ? el("div", { class: "note", title: "how a hold turned out" },
+        "⚐ ", mdInline(`${a.remind_feedback.id || "?"} → **${a.remind_feedback.label || "?"}**`))
+        : null,
       el("div", { class: "act" },
         el("span", {}, a.kind),
         el("span", { class: "muted" }, brief),
@@ -279,8 +292,34 @@ export function createTranscript(container, opts = {}) {
       text = o.dialog ? `dialog reply (question stays open): ${o.user_message}`
         : o.answered ? `answered: ${o.answer}`
         : o.timed_out ? "timed out → deferred" : "filed as deferred";
+    } else if (o.kind === "reminder_hold") {
+      text = `HELD — "${o.action}" did NOT run. It matches a consequence reminder:\n`
+        + (o.reminders || []).map((r) => `· [${r.id} · ${r.scope}] ${r.description}`).join("\n")
+        + "\nEmitting the same action again runs it (one hold per action string per run).";
+    } else if (o.kind === "assist_hold") {
+      text = `HELD — "${o.action}" did NOT run. A general rule this routine practises `
+        + `governs this moment:\n`
+        + (o.lines || []).map((l) => `· ${l}`).join("\n")
+        + "\nEmitting the same action again runs it (one hold per action string per run).";
     } else if (o.kind === "finish" && o.rejected) {
-      text = "finish REJECTED — no action had been executed yet (fabrication guard)";
+      // SIX rungs reach this observation and each hands the turn back for its own reason.
+      // They were all rendered as the fabrication guard, which was the only one when the
+      // renderer was written — so a run deferred for an open stopping condition read as a
+      // hallucinated completion, which is the opposite diagnosis.
+      text = o.pending_user_input
+          ? "finish DEFERRED — a user message arrived mid-finish; it is delivered instead"
+        : o.stopping_unaccounted
+          ? "finish DEFERRED — the summary does not account for open stopping conditions: "
+            + o.stopping_unaccounted.join(", ")
+        : o.assist
+          ? "finish DEFERRED — a general rule this routine practises governs the ending itself"
+        : o.unbacked_claims
+          ? `finish REJECTED — the summary claims ${o.unbacked_claims.join(", ")}, `
+            + "which this run never did"
+        : o.stopping_unsupported
+          ? "finish DEFERRED — the transcript does not support the \"met\" claim on "
+            + o.stopping_unsupported.join(", ")
+        : "finish REJECTED — no action had been executed yet (fabrication guard)";
     } else {
       text = JSON.stringify(o, null, 1);
     }
@@ -358,6 +397,19 @@ export function createTranscript(container, opts = {}) {
       } else if (c) {
         text = `— window clamp: ${c.clamped_messages} oversized ` +
                `${c.clamped_messages === 1 ? "body" : "bodies"} trimmed in place, ${span(c)} —`;
+      } else if (p.archival_abandoned) {
+        // the run ended before the thread did — a designed outcome, not a loss
+        text = `— background archive abandoned: the run ended before the ${p.elided_messages} `
+             + `elided messages finished archiving; the digest and the full transcript stand —`;
+      } else if (p.background) {
+        // The archive that landed OFF the hot path (0.308.0). It carries no before/after
+        // chars — the digest already took the pass and did the shrinking — so it must not
+        // reach the branches that print a span, which is how it once read "undefined →
+        // undefined chars".
+        text = p.archival_degraded
+          ? "— background archive did not land —"
+          : `— background archive landed: ${p.elided_messages} messages → history/ `
+            + `(${p.history_files} files, browsable in the rail's files card) —`;
       } else if (p.mode === "llm-history") {
         text = `— context archived: ${p.elided_messages} messages → history/ ` +
                `(${p.history_files} files, browsable in the rail's files card), ${span(p)} —`;
@@ -386,7 +438,11 @@ export function createTranscript(container, opts = {}) {
     stopping_update: (ev) => el("div", { class: "ev compaction" },
       `— stopping conditions met: ${(ev.payload.met || []).join(", ")} —`),
     header: (ev) => el("div", { class: "ev system" },
-      `run ${ev.run_id} · ${ev.orchestrator?.endpoint}:${ev.orchestrator?.model} · workflow ${ev.workflow?.slug || "?"}`),
+      // every half falls back — the workflow one always did, and the model one printed a
+      // literal "undefined:undefined" on any header without an orchestrator block (a
+      // transcript from before the field, or one cut short before the run resolved a model)
+      `run ${ev.run_id} · ${ev.orchestrator?.endpoint || "?"}:${ev.orchestrator?.model || "?"}`
+      + ` · workflow ${ev.workflow?.slug || "?"}`),
   };
 
   // What a "refer to" on a simple event means to the model reading the quote later —

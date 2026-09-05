@@ -4,7 +4,13 @@ Library workflows (Python patterns): META completeness, slug↔filename, resolva
 a main() entry, PHASES, and an action-import line that agrees with the `tools:` allowlist.
 Materialized copies: provenance + no unresolved placeholders. Rules: titled principle prose,
 no capabilities. Permissions: titled, with a well-formed `requires:` key (the capabilities
-their instructions presume — see grants.py).
+their instructions presume — see grants.py). Templates: a settings PRESELECTION whose config
+block is complete and adoptable. Global reminders: a well-formed `(regex -> consequence)`.
+
+Everything the library HOLDS is linted, because `lint_all` is what `rsched lint` reports and a
+directory it skips is a directory nobody checks. Two arrived after the first four and were not
+added here — the templates a routine is created from, and the shared reminder store — so a
+malformed one of either was found by whatever read it next.
 """
 
 from __future__ import annotations
@@ -259,6 +265,36 @@ def lint_playbook_text(raw: str, *, filename: str = "MAIN.md") -> list[str]:
     return problems
 
 
+def lint_global_reminder(raw: str, *, filename: str) -> list[str]:
+    """A curated reminder in the shared store: parseable JSON with an id matching its
+    filename, a compilable non-empty-matching regex, and a consequence to state.
+
+    The same validators the `remind` action runs, applied to what is already on disk — a
+    reminder is written through an approval, and an approval is not a syntax check.
+    """
+    import json
+
+    from ..reminders import ID_RE, description_problem, regex_problem
+
+    try:
+        rec = json.loads(raw)
+    except ValueError as exc:
+        return [f"{filename}: invalid JSON: {exc}"]
+    if not isinstance(rec, dict):
+        return [f"{filename}: must be a JSON object"]
+    problems: list[str] = []
+    rid = str(rec.get("id") or "")
+    if not ID_RE.match(rid):
+        problems.append(f"{filename}: id {rid!r} is not a reminder id (rem-<slug>)")
+    elif f"{rid}.json" != filename:
+        problems.append(f"{filename}: id {rid!r} does not match the filename")
+    if problem := regex_problem(rec.get("regex")):
+        problems.append(f"{filename}: {problem}")
+    if problem := description_problem(rec.get("description")):
+        problems.append(f"{filename}: {problem}")
+    return problems
+
+
 def lint_all(home: Path) -> dict[str, list[str]]:
     """path-relative-name → problems. Empty lists mean clean. `home` is the library repo root
     (workflows/, rules/ and permissions/ subdirs).
@@ -280,6 +316,18 @@ def lint_all(home: Path) -> dict[str, list[str]]:
     if pdir.is_dir():
         for path in sorted(pdir.glob("*.md")):
             results[f"permissions/{path.name}"] = lint_permission_text(
+                path.read_text(encoding="utf-8"), filename=path.name)
+    from .. import templates
+    tdir = templates.templates_home(home)
+    if tdir.is_dir():
+        for path in sorted(tdir.glob("*.md")):
+            results[f"templates/{path.name}"] = lint_template_text(
+                path.read_text(encoding="utf-8"), filename=path.name)
+    from .. import reminders
+    remdir = reminders.reminders_home(home)
+    if remdir.is_dir():
+        for path in sorted(remdir.glob("*.json")):
+            results[f"reminders/{path.name}"] = lint_global_reminder(
                 path.read_text(encoding="utf-8"), filename=path.name)
     from .. import playbooks
     pbdir = playbooks.playbooks_dir(home)

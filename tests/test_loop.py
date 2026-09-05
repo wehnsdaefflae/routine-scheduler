@@ -2584,10 +2584,10 @@ def _role_registry(ep, windows):
 ])
 def test_loop_compaction_archives_middle_to_history(make_routine, scripted, monkeypatch,
                                                     tool_window, archival_model):
-    """End-to-end loop compaction: a prompt past the main model's window threshold triggers
-    compact_to_history mid-run — the elided middle lands as navigable files under
-    runs/<ts>/history/, the live prompt shrinks to head + pointer + tail, the archival call
-    is routed to the tool_call model when its window fits (main otherwise), and the archival
+    """End-to-end loop compaction: a prompt past the main model's window threshold elides the
+    middle to the instant digest and hands that same middle to the background archival — the
+    elided middle lands as navigable files under runs/<ts>/history/, the archival call is
+    routed to the tool_call model when its window fits (main otherwise), and the archival
     spend hits the run's books."""
     import yaml as _yaml
 

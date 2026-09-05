@@ -140,12 +140,12 @@ def clamp_to_cap(messages: list[dict], context_chars: int, max_output_tokens: in
                  ) -> dict | None:
     """LAST RESORT: force the in-prompt size under the hard window ceiling by truncating the
     LARGEST message bodies in place, biggest-first, until the total clears the ceiling.
-
-    Compaction (`maybe_compact` / `compact_to_history`) shrinks the prompt by ELIDING the
-    middle, but the retained head + tail are an incompressible floor — and a short conversation
-    (≤ KEEP_HEAD_MSGS + KEEP_TAIL_MSGS messages) has no middle at all. When that floor's own
-    observation bodies exceed the window minus the output reservation, EVERY compaction path
-    returns unchanged and the very next completion 400s with context_length_exceeded and DIES
+     Compaction (`maybe_compact`, plus the background `archive_middle`) shrinks the prompt by
+    ELIDING the middle, but the retained head + tail are an incompressible floor — and a short
+    conversation (≤ KEEP_HEAD_MSGS + KEEP_TAIL_MSGS messages) has no middle at all. When that
+    floor's own observation bodies exceed the window minus the output reservation, EVERY
+    compaction path returns unchanged and the very next completion 400s with
+    context_length_exceeded and DIES
     (non-retryable EndpointError). F265 recurred three times this way despite two margin fixes.
 
     This trims bodies (never message COUNT — structure and roles are preserved) with a visible
@@ -323,10 +323,13 @@ def archive_middle(middle: list[dict], endpoint, ref,
                    run_dir: Path, turn: int) -> dict | None:
     """Reorganize `middle` into the navigable on-disk history, and return the info dict.
 
-    The archival half of `compact_to_history`, split out so it can also run OFF the hot path
-    (engine/archival.py): it touches no message list, only the model and the filesystem, which
-    is exactly what makes it safe to run in a thread. Returns None when the model gives back
-    nothing usable; raises when it gives back non-JSON, so the caller can report the reason.
+    Touches no message list, only the model and the filesystem — which is exactly what makes
+    it safe to run in a thread, and it always does: `engine/archival.py` is the ONLY caller.
+    (There was a synchronous sibling that elided and archived in one blocking call. It was
+    the whole path until 0.308.0 moved archival off the hot path, and then it was reachable
+    only from its own tests — deleted, and the tests repointed here.) Returns None when the
+    model gives back nothing usable; raises when it gives back non-JSON, so the caller can
+    report the reason.
     """
     convo = "\n\n".join(f"[{m['role']}]\n{m['content']}" for m in middle)
     # Archival time scales with the middle being read: a fixed 180s died on a 1.25M-char
@@ -363,36 +366,3 @@ def archive_middle(middle: list[dict], endpoint, ref,
             # the compaction call's own spend — the caller folds it into the run's usage
             # (this was invisible before: full-context calls that never hit the books)
             "usage": dict(comp.usage)}
-
-
-def history_pointer(hist_rel: str, elided: int) -> dict:
-    """The in-prompt message that replaces an archived middle."""
-    return {"role": "user", "content":
-            f"CONTEXT COMPACTED — {elided} earlier messages have been archived to an on-disk, "
-            f"navigable history. Read `{hist_rel}/INDEX.md` (read_file) to see what's there, "
-            f"then read the specific {hist_rel}/*.md files relevant to your current step. Do "
-            "not rely on memory of the archived turns — consult the index."}
-
-
-def compact_to_history(messages: list[dict], turn_records: list[dict], endpoint, ref,
-                       run_dir: Path, hist_rel: str) -> tuple[list[dict], dict] | None:
-    """LLM-driven compaction, synchronously: archive the elided middle and replace it with the
-    pointer in one step. Returns (new_messages, info), or None when the model gives back
-    nothing usable (the caller falls back to the deterministic digest).
-
-    The live path takes the instant digest and archives in the BACKGROUND
-    (engine/archival.py); this stays the one-step form, which is what the archival behaviour
-    is specified and tested against.
-    """
-    head, tail = messages[:KEEP_HEAD_MSGS], messages[-KEEP_TAIL_MSGS:]
-    middle = messages[KEEP_HEAD_MSGS:len(messages) - KEEP_TAIL_MSGS]
-    if not middle:
-        return None
-    turn = max((r["turn"] for r in turn_records), default=0)   # unique prefix per compaction
-    info = archive_middle(middle, endpoint, ref, run_dir, turn)
-    if info is None:
-        return None
-    new_messages = [*head, history_pointer(hist_rel, len(middle)), *tail]
-    info["before_chars"] = messages_size(messages)
-    info["after_chars"] = messages_size(new_messages)
-    return new_messages, info

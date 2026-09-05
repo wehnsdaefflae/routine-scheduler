@@ -5,6 +5,7 @@ tags:
 - execution
 config:
   permissions:
+  - reminders
   - global-utils
   - memory
   - util-authoring
@@ -42,6 +43,8 @@ config:
     util_tags: []
     confirm: always
     rule_confirm: always
+    remind_confirm: always
+    reminders: local
     runs: last
     workflows: generate
 ---

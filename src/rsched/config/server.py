@@ -90,7 +90,9 @@ class ServerConfig(_Config):
         file per reminder beside the rules they complement. A routine's own reminders live
         in its state/, never here (rsched/reminders.py).
         """
-        return self.libraries_home / "reminders"
+        from ..reminders import reminders_home
+
+        return reminders_home(self.libraries_home)
 
 
 

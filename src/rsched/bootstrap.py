@@ -117,8 +117,8 @@ def adopt_permissions(routines_home: Path, permissions_home: Path) -> int:
             if isinstance(raw.get("capabilities"), dict):
                 from .grants import read_library_requires
 
-                _merge_caps(raw["capabilities"],
-                            read_library_requires(permissions_home).get(slug) or {})
+                _merge_caps(raw["capabilities"], slug,
+                            read_library_requires(permissions_home))
             atomic_write_yaml(rdir / "routine.yaml", raw)
             libgit.commit(rdir, f"adopt default permission: {slug}")
             touched += 1
@@ -130,25 +130,27 @@ def adopt_permissions(routines_home: Path, permissions_home: Path) -> int:
     return touched
 
 
-# Capability-mapping merge for adopt_permissions' activation cascade (most permissive
-# confirm/runs wins). Historical data migrations are deliberately NOT kept in this
-# module: each ran once on the production instance and was deleted after convergence —
-# to convert a pre-0.8 backup, boot it on the matching older tag first.
-_CONFIRM_RANK = {"always": 0, "creations": 1, "never": 2}
-_RUNS_RANK = {"none": 0, "last": 1, "all": 2}
+# Historical data migrations are deliberately NOT kept in this module: each ran once on the
+# production instance and was deleted after convergence — to convert a pre-0.8 backup, boot it
+# on the matching older tag first.
 
 
-def _merge_caps(caps: dict, extra: dict) -> None:
-    """Union `extra` into `caps` in place — additive: most permissive confirm/runs wins."""
-    for key in ("actions", "utils"):
-        caps.setdefault(key, [])
-        caps[key] += [v for v in extra.get(key) or [] if v not in caps[key]]
-    if _RUNS_RANK.get(extra.get("runs") or "none", 0) \
-            > _RUNS_RANK.get(caps.get("runs") or "none", 0):
-        caps["runs"] = extra["runs"]
-    if _CONFIRM_RANK.get(extra.get("confirm") or "always", 0) \
-            > _CONFIRM_RANK.get(caps.get("confirm") or "always", 0):
-        caps["confirm"] = extra["confirm"]
+def _merge_caps(caps: dict, slug: str, lib: dict) -> None:
+    """Raise `caps` in place until the newly adopted permission's `requires:` is covered.
+
+    Delegates to `grants.capabilities_for` — THE activation cascade, the one the routine page
+    and the conversation config already run. This used to be a second, private copy of that
+    raise, and the copy knew four keys of nine: `actions`, `utils`, `runs`, `confirm`. Every
+    DIAL outside that set fell through it silently, so adopting a permission whose `requires:`
+    names one wrote the doc into `permissions:` and left the capability at its default — the
+    doc held, the capability off, and the engine (which enforces from capabilities alone)
+    behaving as though the permission had never been adopted at all. `workflows` and
+    `util_tags` were already falling through; `reminders` made it visible by being the first
+    dial adopted this way (0.309.0 shipped "on by default" to zero routines).
+    """
+    from .grants import capabilities_for
+
+    caps.update(capabilities_for([slug], lib, base=caps))
 
 
 def seed_libraries(home: Path) -> None:
