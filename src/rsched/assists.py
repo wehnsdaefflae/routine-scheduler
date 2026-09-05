@@ -40,16 +40,22 @@ from pathlib import Path
 #: anyway, so they cost no turn. `pre-finish` costs one: it sets the finish aside so the
 #: model can act on the line, which is the only way a pre-finish assist can matter at all.
 #:
-#: There is deliberately no `pre-action` moment yet. At the point an action is chosen but not
-#: executed, the ONLY way to reach the model is to HOLD the action — a "remind and let it run"
-#: is not expressible there — so pre-action arrives with the hold payload, not before it.
-MOMENTS = ("observation", "boundary", "pre-finish")
+#: `pre-action` costs one too, and can only ever be a HOLD. At the point an action is chosen
+#: but not executed, the only way to reach the model is to stop the action — "remind and let
+#: it run" is not expressible there, because the action is already emitted. That is why the
+#: moment and the payload are coupled rather than free to combine.
+MOMENTS = ("pre-action", "observation", "boundary", "pre-finish")
 
-#: The payload axis is `remind -> scaffold -> do -> hold`; only the first rung exists so far.
-#: The others are not stubs: `scaffold`/`do` need a helper channel and `hold` needs the
-#: pre-action seam, and shipping an enum value the engine cannot honour would be a lie in the
-#: library's own schema.
-PAYLOADS = ("remind",)
+#: The payload axis is `remind -> scaffold -> do -> hold`. The two ends exist; `scaffold` and
+#: `do` do not, because each needs a helper channel that is not built — and shipping an enum
+#: value the engine cannot honour would be a lie in the library's own schema.
+PAYLOADS = ("remind", "hold")
+
+#: moment -> the payloads it can carry. `pre-action` can ONLY hold (there is no way to reach a
+#: chosen action without stopping it), and the free moments can only remind (a hold needs an
+#: action to stop, and neither of them has one).
+MOMENT_PAYLOADS = {"pre-action": ("hold",), "observation": ("remind",),
+                   "boundary": ("remind",), "pre-finish": ("remind",)}
 
 ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
 MAX_LINE_CHARS = 500
@@ -126,7 +132,13 @@ def normalize_assists(raw: object, *, rule: str = "", label: str = "assists",
         payload = str(item.get("payload") or "remind")
         if payload not in PAYLOADS:
             problems.append(f"{where}: 'payload' must be one of {list(PAYLOADS)} — the "
-                            "scaffold/do/hold rungs are not built yet")
+                            "scaffold/do rungs are not built yet")
+            continue
+        if payload not in MOMENT_PAYLOADS[moment]:
+            problems.append(f"{where}: the {moment!r} moment carries "
+                            f"{list(MOMENT_PAYLOADS[moment])}, not {payload!r} — a chosen "
+                            "action can only be reached by STOPPING it, and a moment with no "
+                            "action in hand has nothing to stop")
             continue
         line = " ".join(str(item.get("line") or "").split())
         if not line:

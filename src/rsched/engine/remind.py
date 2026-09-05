@@ -29,7 +29,13 @@ import json
 
 from .. import reminders as store
 from ..reminders import LABEL_HELP, Reminder
-from .actionschema import canon
+from . import hold as hold_seam
+
+#: This layer's name in the shared hold ledger. Each source gets its own
+#: one-hold-per-action budget: keyed on the bare action string, a reminder hold would
+#: silently spend the rule layer's only hold on that string, and its caution would
+#: never be seen.
+SOURCE = "reminder"
 
 
 def level_of(grants) -> str:
@@ -73,20 +79,21 @@ def refresh(loop) -> None:
         loop.reminders_level = level
 
 
-def intercept(loop, action: dict) -> dict | None:
-    """Hold the action if a reminder fires on it — or None to let it execute.
+def hold(loop, action: dict, rendered: str) -> dict | None:  # noqa: ARG001 — the seam calls every source with ONE signature; this layer matches on the rendering alone
+    """This layer's answer for the shared pre-execution seam (`engine/hold.py`): the
+    observation the model reads instead of the action's result, or None to let it execute.
 
-    Returns the observation the model reads instead of the action's result. The hold is
-    recorded as a `fires` on every matching reminder: the denominator of the tally that decides
-    whether the reminder keeps its place.
+    `rendered` is the canonical action string, computed ONCE by the seam and shared with
+    the other source, so the two can never disagree about what the action was. The hold
+    is recorded as a `fires` on every matching reminder: the denominator of the tally
+    that decides whether the reminder keeps its place.
     """
     if not loop.reminders:
         return None
-    rendered = canon(action)
     hits = store.matching(loop.reminders, rendered)
-    if not hits or rendered in loop.reminder_held:
+    if not hits or hold_seam.held_before(loop, SOURCE, rendered):
         return None
-    loop.reminder_held.add(rendered)
+    hold_seam.mark_held(loop, SOURCE, rendered)
     for hit in hits:
         # the tally is disk-owned (store.record); mirror it back so the in-memory set — which
         # is what a later definition write is built from — never carries a stale count

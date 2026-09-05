@@ -3,6 +3,15 @@ effect:
   with: answers its own questions first and interrupts you only for a decision that is genuinely yours
   without: asks you whenever it is unsure, and waits — or decides alone without saying which it did
   when: the routine runs unattended and you do not want pinging for things it could look up
+assists:
+  - id: when-asks-pile-up
+    moment: boundary
+    predicate: asks-piling-up
+    payload: remind
+    line: >-
+      Several decisions are now waiting on the user. Defer a JUDGMENT you cannot make, never a
+      lookup you have not attempted — and batch what can wait until this run ends rather than
+      spending their attention one question at a time.
 tags: [policy, communication, self-management]
 ---
 # rule: ask policy — when and how to involve the user

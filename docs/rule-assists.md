@@ -92,11 +92,18 @@ the per-rule `problems` the Library page shows.
 
 ## The three moments
 
-| moment | fires | delivery | cost |
-|---|---|---|---|
-| `observation` | on the observation that just came back | a tail on that observation | none |
-| `boundary` | at a turn boundary | an appended `ENGINE NOTE` | none |
-| `pre-finish` | as the run tries to end | a finish-gate deferral | one turn |
+| moment | fires | delivery | payload | cost |
+|---|---|---|---|---|
+| `pre-action` | on the action about to run | the action is HELD | `hold` | one turn |
+| `observation` | on the observation that just came back | a tail on that observation | `remind` | none |
+| `boundary` | at a turn boundary | an appended `ENGINE NOTE` | `remind` | none |
+| `pre-finish` | as the run tries to end | a finish-gate deferral | `remind` | one turn |
+
+**The moment and the payload are coupled, not free to combine**, and the linter enforces it.
+A chosen action can only be reached by STOPPING it — "remind and let it run" is not
+expressible once the action is emitted — so `pre-action` can only hold. And the free moments
+have no action in hand, so they have nothing to stop. A rule that pairs them wrongly is
+refused at authoring time rather than silently never firing.
 
 `observation` and `boundary` are free: they append to a message the run was getting anyway.
 `boundary` uses the same carrier a mid-run rule binding already does
@@ -110,11 +117,27 @@ reserved finish turn, which would force-finish the run with an engine string) pl
 own: a run may be held at its finish by an assist **at most once, ever**. A rule may ask for
 an ending to be reconsidered; it may not negotiate over it.
 
-There is deliberately **no `pre-action` moment yet**. At the point an action is chosen but not
-executed, the only way to reach the model is to HOLD the action — "remind and let it run" is
-not expressible there, because the action is already emitted. So pre-action arrives together
-with the hold payload, not before it, and it will feed the seam
-[consequence reminders](reminders.md) already own rather than a second one.
+### The shared hold seam
+
+`pre-action` feeds the SAME interception the [consequence reminders](reminders.md) use —
+`engine/hold.py`, extracted when this second caller appeared. Two things go wrong if each
+layer owns its own:
+
+**The ledger key.** A hold is remembered so re-emitting the action is the confirmation to
+proceed. Keyed on the bare action string, a reminder holding `util:fs-ops mv a b` would
+silently spend the rule layer's only hold on that same string, and the rule's caution would
+never be seen. The key carries the SOURCE, so each layer has its own budget.
+
+**One interruption per action.** However many sources match, the model is stopped once —
+the anti-livelock reasoning applies to the pair, not to each layer — so precedence resolves
+it rather than queueing a second hold behind the first. Precedence is
+specific-before-general: a reminder is evidence THIS routine gathered about THIS action, a
+rule is a standing principle that applies to everyone, so when both fire the run hears the one
+it learned itself.
+
+`hold.is_hold(obs)` is the predicate two counters depend on: a held action grounds no finish
+(live and rebuilt on resume) and spends no allow-once grant. It was a string literal tested in
+three modules, one of them negatively — exactly the check a second hold kind walks past.
 
 ## Guards
 
@@ -160,13 +183,42 @@ assists needs a one-shot `MIGRATION(expires=…)` that carries the block across 
 edit outranks the seed there too), and it names everything it skips rather than passing over
 it quietly.
 
-## The first three
+## The six
 
 | rule | moment | predicate | why this moment |
 |---|---|---|---|
+| `git-checkpoint` | pre-action | `uncheckpointed-repo-write` | the first edit into a git repo the ENGINE does not version — it commits its own working directory at run end, a granted project repo has no undo point unless the run makes one |
 | `error-recovery` | observation | `observation-failed` | the run has just been told something did not work, and the next action either reads the failure or repeats it |
 | `intent-inference` | boundary | `user-corrected` | an intervention has just landed, and "what standing preference does this imply" is answerable now and stale later |
+| `ask-policy` | boundary | `asks-piling-up` | several decisions are waiting on the user, which is the shape the rule is about |
 | `decision-record` | pre-finish | `ledger-untouched` | the reasoning behind the artefacts is lost at exactly this moment, and only here can the run still write it down |
+| `unexamined-is-not-clean` | pre-finish | `clean-claim-without-a-denominator` | an all-clear is only meaningful beside what was examined, and the summary is where it is claimed |
+
+`git-checkpoint` is the rung the design note reserves for HOLD: a crisp pre-action predicate
+AND an irreversible cost to skipping. It fires on the FIRST such write only, which is what
+makes "no checkpoint yet" true without having to DETECT a checkpoint commit — that happens
+inside a util or a shell command, where the engine sees a command string and an exit code and
+nothing more. It is overridable like every payload: re-emit the action and it runs.
+
+Two predicates read signals the engine already keeps, which is why they are cheap:
+`asks-piling-up` reads `ctx.asks_deferred` (the churn telemetry for a decision thrown over the
+wall), and `ledger-untouched` reads `turn_records`, the run history that SURVIVES compaction —
+a predicate that greps the message list silently stops working on exactly the long runs that
+need it most.
+
+`clean-claim-without-a-denominator` is deliberately crude: it asks whether the summary claims
+cleanliness and carries no number at all, so a summary that quantifies ANYTHING passes. One
+that tried to judge whether the denominator was the RIGHT one would be grading the reasoning
+again, which is the thing that cannot be done.
+
+## What is still deferred
+
+The four-way outcome label (`could_not` / `would_have` / `did` / `didnt`) that tunes a
+consequence reminder is NOT wired to assists yet. At the `remind` rung there is nothing to
+weigh — no turn is spent — and the fire counter already answers which triggers fire and how
+often. The `hold` rung does spend a turn, and its wording asks the run to say in its next
+`say` when a rule turned out not to apply; a structured label there is the next increment, not
+a gap left by accident. `scaffold` and `do` need a helper channel that does not exist.
 
 `ledger-untouched` reads `turn_records`, the run history that SURVIVES compaction — a
 predicate that greps the message list silently stops working on exactly the long runs that

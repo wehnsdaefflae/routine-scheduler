@@ -104,6 +104,72 @@ def _ledger_untouched(s: Situation) -> bool:
     return any(not path.startswith("state/") for path in wrote)
 
 
+def _uncheckpointed_repo_write(s: Situation) -> bool:
+    """This action is about to edit a file inside a git repo the engine does not version.
+
+    git-checkpoint's moment, and the one the design note reserves the HOLD rung for: the cost
+    of skipping is irreversible in a way a reminder afterwards cannot undo. The engine
+    autocommits the routine's OWN directory at run end, so that tree always has an undo point;
+    a project repo the routine was granted a write root into has none unless the run makes one.
+
+    Fires on the FIRST such write only — the one-fire-per-run rule is what makes "no checkpoint
+    yet" true without having to detect a checkpoint commit, which happens inside a util or a
+    shell command where the engine sees a command string and an exit code, nothing more.
+    """
+    action = s.action or {}
+    if action.get("kind") not in ("write_file", "edit_file"):
+        return False
+    target = str(action.get("path") or "").strip()
+    if not target:
+        return False
+    from ..paths import expand, within
+
+    path = expand(target)
+    if not path.is_absolute():
+        return False        # relative paths resolve inside the routine dir, which is versioned
+    routine_dir = s.ctx.routine.dir
+    if within(routine_dir, path) or path == routine_dir:
+        return False        # the engine commits this tree itself at run end
+    return any((parent / ".git").exists() for parent in [path, *path.parents])
+
+
+def _asks_piling_up(s: Situation) -> bool:
+    """This run has thrown several decisions over the wall without answers coming back.
+
+    ask-policy's moment. `ctx.asks_deferred` is the engine's own churn telemetry — a deferred
+    ask is a decision the run could not make and did not wait for — so a run accumulating them
+    is the exact shape the rule is about: exhaust your own reach first, then defer a JUDGMENT,
+    not a lookup.
+    """
+    return int(getattr(s.ctx, "asks_deferred", 0) or 0) >= _ASK_PILEUP
+
+
+def _clean_claim_without_a_denominator(s: Situation) -> bool:
+    """A finish summary reports all-clear without saying what was examined.
+
+    unexamined-is-not-clean's moment. A review that found nothing is only meaningful beside
+    the size of what it looked at, and the two readings — "I examined 40 files and found
+    nothing" and "I looked at one and found nothing" — are the same sentence without it.
+    Deliberately crude: it asks whether the summary claims cleanliness and carries no number
+    at all, so a summary that quantifies ANYTHING passes. A predicate that tried to judge
+    whether the denominator was the RIGHT one would be grading the reasoning again.
+    """
+    summary = str((s.action or {}).get("summary") or "").lower()
+    if not any(claim in summary for claim in _CLEAN_CLAIMS):
+        return False
+    return not any(ch.isdigit() for ch in summary)
+
+
+#: How many unanswered deferred asks make a run's ask policy worth surfacing. Low, because the
+#: rule is about the FIRST reflex to defer rather than about a specific count.
+_ASK_PILEUP = 3
+
+#: The phrasings a run reaches for when it found nothing. Substrings on purpose — "no issues"
+#: catches "no issues found" and "there were no issues".
+_CLEAN_CLAIMS = ("all clear", "no issues", "no problems", "nothing to report", "clean bill",
+                 "everything checks out", "no defects", "found nothing", "nothing wrong")
+
+
 #: name -> Predicate. The linter validates a rule's `predicate:` against these keys, so a
 #: name removed here turns every rule that declares it into a lint error rather than a
 #: silently dead assist.
@@ -117,4 +183,14 @@ PREDICATES: dict[str, Predicate] = {
     "ledger-untouched": Predicate(
         moment="pre-finish", check=_ledger_untouched,
         describes="this run has not written to LEDGER.md"),
+    "uncheckpointed-repo-write": Predicate(
+        moment="pre-action", check=_uncheckpointed_repo_write,
+        describes="this edits a git repo the engine does not version, and no undo point "
+                  "exists"),
+    "asks-piling-up": Predicate(
+        moment="boundary", check=_asks_piling_up,
+        describes="several decisions are waiting on the user"),
+    "clean-claim-without-a-denominator": Predicate(
+        moment="pre-finish", check=_clean_claim_without_a_denominator,
+        describes="the summary reports all-clear and names no number"),
 }

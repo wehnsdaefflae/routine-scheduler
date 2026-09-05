@@ -107,8 +107,15 @@ One turn, in order:
    this turn can never hold the very action it rode on, and the engine note naming what happened
    (`[REMINDERS: added rem-… ]`) rides A's observation.
 
-A `finish` is never held: it does not reach the dispatch path at all (the finish gate is its own
-seam, and pre-finish is where the sibling rule-assistance triggers land). Its side fields ARE
+A `finish` is never held: it does not reach the dispatch path at all (the finish gate is its
+own seam, and pre-finish is where a [rule assist](rule-assists.md) lands instead).
+
+The interception itself is shared. `engine/hold.py` computes the canonical string once, asks
+each source in precedence order — reminders first, because a pattern this routine learned
+about this action is more specific than a standing principle — and returns the FIRST hold, so
+the model is stopped once per action however many sources match. The per-run ledger is keyed
+`(source, canon)`: on the bare string the two layers would cannibalise each other's single
+allowed hold. Its side fields ARE
 applied, before that gate — the last turn of a run is very often the one the engine asked for a
 `did`/`didnt` label on, and dropping it there would throw away the evidence the layer exists to
 collect. If a finish guard sets the finish aside, the engine note rides the guard's own message.

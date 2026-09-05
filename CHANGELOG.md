@@ -17,6 +17,64 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.306.0] — 2026-09-05
+
+### One seam for every hold, and the rule that stops an action
+
+The two halves of the relevance-trigger layer both need to stop an action before it runs — a
+consequence reminder this routine learned (0.304.0) and now a general rule whose moment the
+action IS (0.305.0). They go through ONE interception (`engine/hold.py`), extracted when the
+second caller appeared rather than in advance of it, because two things go wrong if each layer
+owns its own.
+
+**The ledger key.** A hold is remembered so that re-emitting the action IS the confirmation to
+proceed. Keyed on the bare action string — as it was — a reminder holding `util:fs-ops mv a b`
+would silently spend the rule layer's only hold on that same string, and the rule's caution
+would never be seen at all. The key now carries the SOURCE, so each layer has its own
+one-hold-per-action budget.
+
+**One interruption per action.** However many sources match, the model is stopped once: the
+anti-livelock reasoning — a model and a gate that both refuse to yield burn the budget between
+them — applies to the PAIR, not to each layer separately. Precedence resolves it rather than
+queueing a second hold behind the first, and it is specific-before-general: a reminder is
+evidence this routine gathered about this action, a rule is a principle that applies to
+everyone, so when both fire the run hears the one it learned itself.
+
+`hold.is_hold(obs)` replaces a string literal that was tested in three modules, one of them
+NEGATIVELY (the resume rebuild of `executed_actions`) — precisely the check a second hold kind
+walks straight past, letting a held action re-ground the fabrication guard it was excluded
+from. The hold wording moved out of the flat observation renderer into `engine/obs_hold.py`,
+the pattern the per-domain formatters already establish.
+
+**The `pre-action` moment, and why it can only HOLD.** Once an action is emitted, stopping it
+is the only way to reach the model while the caution can still matter — "remind and let it
+run" is not expressible there. So the moment and the payload are COUPLED and the linter
+enforces it: `pre-action` carries only `hold`, and the free moments (which have no action in
+hand) carry only `remind`. A rule that pairs them wrongly is refused at authoring time instead
+of silently never firing.
+
+Three more rules declare their moment, taking the set to six across all four moments and both
+built payloads:
+
+- **git-checkpoint** (pre-action, HOLD) — the rung the design note reserves for a crisp
+  pre-action predicate with an irreversible cost to skipping. The engine autocommits its own
+  working directory at run end; a project repo the routine was granted a write root into has
+  no undo point unless the run makes one. It fires on the FIRST such write only, which is what
+  makes "no checkpoint yet" true without having to DETECT a checkpoint commit — that happens
+  inside a util or a shell command, where the engine sees a command string and an exit code
+  and nothing more. Overridable like every payload: re-emit the action and it runs.
+- **ask-policy** (boundary) — several decisions now waiting on the user, read off
+  `ctx.asks_deferred`, the churn telemetry that already counts a decision thrown over the wall.
+- **unexamined-is-not-clean** (pre-finish) — a summary that reports all-clear and names no
+  number. Deliberately crude: a summary that quantifies ANYTHING passes, because one that
+  judged whether the denominator was the RIGHT one would be grading the reasoning again, which
+  is the thing that cannot be done.
+
+The one-shot migration learns the second batch, so all six reach a live library.
+
+New: `engine/hold.py`, `engine/obs_hold.py`. 47 tests in `tests/test_assists.py`.
+
+
 ## [0.305.0] — 2026-09-05
 
 ### The rule that notices its own moment — assists

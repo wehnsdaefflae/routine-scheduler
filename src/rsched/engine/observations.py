@@ -8,8 +8,7 @@ from __future__ import annotations
 
 import json
 
-from ..reminders import LABEL_HELP
-from . import outputs
+from . import obs_hold, outputs
 
 OBS_CAP_CHARS = 8_000
 
@@ -83,22 +82,11 @@ def _run_body(obs: dict) -> str:
 # and lives in ONE place per kind — a dispatch table would only scatter the strings.
 def format_observation(obs: dict) -> str:  # noqa: PLR0911
     kind = obs.get("kind")
-    if kind == "reminder_hold":
-        # The consequence-reminder layer's ONE model-facing string (engine/remind.py holds
-        # the mechanism). It has to carry four things: that nothing ran, what the caution is,
-        # how to proceed anyway, and how to label the outcome — a hold the model cannot act
-        # on precisely is a turn spent for nothing.
-        cautions = "\n".join(f"- [{r['id']} · {r['scope']}] {r['description']}"
-                             for r in obs.get("reminders") or [])
-        return (f"ACTION HELD — it did NOT run. `{obs.get('action')}` matches a consequence "
-                f"reminder left for exactly this moment:\n{cautions}\n"
-                "Decide again with that in front of you. To go ahead anyway, emit the SAME "
-                "action again — it runs this time (one hold per action string per run). To "
-                "avoid the consequence, do something else instead.\n"
-                "Then LABEL what happened: carry `remind_feedback` with the id above and one "
-                "of could_not / would_have / did / didnt on the action where you know the "
-                "outcome — at once if you are changing course, on the turn AFTER the held "
-                f"action ran if you went ahead. {LABEL_HELP}")
+    if kind in obs_hold.RENDERERS:
+        # The one observation FAMILY that is not a dispatch result: the action was
+        # intercepted BEFORE execution, which is the entire point. Two sources word it
+        # differently and both live in obs_hold; engine/hold.py owns the mechanism.
+        return obs_hold.RENDERERS[kind](obs)
     if kind == "shell":
         # No advisory tail: a non-zero exit here is usually the answer, not a mistake (do_shell).
         where = f", in {obs['cwd']}" if obs.get("cwd") else ""

@@ -211,7 +211,14 @@ one you are about to touch, not all of them.
   relevant, so noticing the moment is the engine's job and not the model's. It is not a
   capability (holding the rule IS the decision), the predicate is named and resolved from
   `engine/assist_predicates.py` because a rule may never ship code, and the seed sync being
-  ADD-ONLY means each batch needs a one-shot migration to reach live rules (docs/rule-assists.md). `read_rule` is UNGATED (a routine must be able
+  ADD-ONLY means each batch needs a one-shot migration to reach live rules (docs/rule-assists.md).
+  The MOMENT and the PAYLOAD are coupled: `pre-action` can only HOLD (a chosen action is only
+  reachable by stopping it), the free moments can only REMIND. A hold — from either layer —
+  goes through ONE seam (`engine/hold.py`): the canonical string is computed once, sources are
+  asked in precedence order (reminder before rule: specific before general), the model is
+  stopped ONCE per action, and the per-run ledger is keyed `(source, canon)` so the two layers
+  cannot spend each other's single allowed hold. `hold.is_hold(obs)` is the predicate the
+  fabrication guard and the allow-once spend both read. `read_rule` is UNGATED (a routine must be able
   to read what binds it, and library prose has no side effect); `write_rule` is gated by the
   `rule-authoring` permission and carries its OWN approval dial `rule_confirm` — a rule revision
   lands on every holder at its next run, which is not the decision `confirm` (write_util) governs.

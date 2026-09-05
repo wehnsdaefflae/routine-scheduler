@@ -28,7 +28,12 @@ from __future__ import annotations
 
 from .. import assists as lib
 from ..assists import Assist
+from . import hold as hold_seam
 from .assist_predicates import PREDICATES, Situation
+
+#: This layer's name in the shared hold ledger (engine/hold.py). Its own budget: a reminder
+#: holding an action must not spend the rule layer's only hold on the same action string.
+SOURCE = "rule"
 
 
 def load(loop) -> list[Assist]:
@@ -73,6 +78,32 @@ def _rendered(assist: Assist) -> str:
     describes = PREDICATES[assist.predicate].describes
     return (f"[RULE {assist.rule} — {describes}] {assist.line} "
             f"(the full rule: read_rule name={assist.rule})")
+
+
+def hold(loop, action: dict, rendered: str) -> dict | None:
+    """This layer's answer for the shared pre-execution seam (`engine/hold.py`).
+
+    A `pre-action` assist is always a HOLD, and the coupling is not a policy choice: the
+    action has already been emitted, so stopping it is the only way to put the rule's line in
+    front of the model while it can still matter. The cost is a turn, which is why the design
+    note reserves this rung for rules with a crisp pre-action predicate AND an irreversible
+    cost to skipping — an undo point that does not exist yet, a reply that will not thread.
+
+    Overridable by design: the same escape a reminder hold offers, re-emit the action and it
+    runs. Assistance informs; even the strictest payload is a default, not a gate. The only
+    hard gates in this system are the capability checks, which are the user's.
+    """
+    if not loop.assists:
+        return None
+    if hold_seam.held_before(loop, SOURCE, rendered):
+        return None
+    fired = _matching(loop, "pre-action", Situation(loop=loop, action=action))
+    if not fired:
+        return None
+    hold_seam.mark_held(loop, SOURCE, rendered)
+    return {"kind": "assist_hold", "action": rendered,
+            "lines": [_rendered(a) for a in fired],
+            "assists": [a.key for a in fired]}
 
 
 def at_observation(loop, action: dict, obs: dict) -> str:

@@ -3,6 +3,15 @@ effect:
   with: commits an undo point before editing a project repo, and names it in the reply
   without: edits in place with no undo point — the engine does not version your project dirs
   when: it has write access to a git project whose history you care about
+assists:
+  - id: before-the-first-repo-edit
+    moment: pre-action
+    predicate: uncheckpointed-repo-write
+    payload: hold
+    line: >-
+      No undo point exists for this repo — the engine versions its own working directory, not
+      yours. Commit a checkpoint naming what you are about to do before the first edit, so
+      this run can be undone in one step if it goes wrong.
 tags: [git, safety, undo]
 ---
 # rule: git checkpoint — undo points for project repos you edit

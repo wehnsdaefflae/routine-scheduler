@@ -151,7 +151,8 @@ def configure(loop, ctx: RunContext, workflow_body: str, instruction: str,
     # within-run prefix — and kept in step with this run's own ops. `reminder_held` is what
     # makes re-emitting a held action the confirmation to proceed rather than a second hold.
     from . import remind
-    loop.reminder_held = set()
+    # the shared hold ledger, keyed (source, canonical action) — see engine/hold.py
+    loop.holds = set()
     loop.reminder_replayed = set()   # side-field payloads a re-driven finish already applied
     loop.reminder_pending = []
     loop.reminder_nudge = 0

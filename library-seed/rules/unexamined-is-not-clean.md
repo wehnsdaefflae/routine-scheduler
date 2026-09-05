@@ -3,6 +3,15 @@ effect:
   with: checks what its filters excluded, not only what passed them
   without: reports on whatever reached the check, which can be a quietly narrowed slice
   when: it reports 'all clear' on something you rely on
+assists:
+  - id: all-clear-needs-a-denominator
+    moment: pre-finish
+    predicate: clean-claim-without-a-denominator
+    payload: remind
+    line: >-
+      An all-clear is only meaningful beside what you examined. Say how much you looked at and
+      what you skipped — "checked 40 of 46, the rest need a running instance" — because
+      without the denominator a thorough pass and a glance read identically.
 tags: [verification, reporting, quality]
 ---
 # rule: unexamined is not clean — a check reports on what it read, never on what it skipped

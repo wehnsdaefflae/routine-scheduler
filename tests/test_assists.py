@@ -16,10 +16,24 @@ from rsched.engine.assist_predicates import PREDICATES
 from rsched.engine.observations import is_failure
 from rsched.engine.runtime import run_routine
 from rsched.engine.transcript import read_events
+from rsched.reminders import Reminder
 from rsched.workflows.lint import lint_rule_text
 
 TS = "20260905-190000"
 SEED = Path(__file__).resolve().parents[1] / "library-seed" / "rules"
+
+
+def _rem(rid="rem-1", regex="^util:danger", desc="it deletes the target"):
+    from rsched import reminders as rem_store
+    return Reminder(id=rid, regex=regex, description=desc, scope="local",
+                    created_run="r:1", stats=rem_store.blank_stats())
+
+
+def _capabilities(routine_dir, **updates):
+    path = routine_dir / "routine.yaml"
+    raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    raw["capabilities"] = {**(raw.get("capabilities") or {}), **updates}
+    path.write_text(yaml.safe_dump(raw), encoding="utf-8")
 
 
 def _assist(**over):
@@ -47,7 +61,10 @@ def test_no_block_is_not_a_problem():
     ({"id": "Not A Slug"}, "kebab-case"),
     ({"moment": "whenever"}, "'moment' must be one of"),
     ({"predicate": "reads-the-models-mind"}, "unknown predicate"),
-    ({"payload": "hold"}, "not built yet"),
+    ({"payload": "scaffold"}, "not built yet"),
+    ({"payload": "hold"}, "carries ['remind'], not 'hold'"),
+    ({"moment": "pre-action", "predicate": "uncheckpointed-repo-write"},
+     "carries ['hold'], not 'remind'"),
     ({"line": ""}, "operative instruction"),
     ({"line": "x" * (lib.MAX_LINE_CHARS + 1)}, "at most"),
     ({"extra": "key"}, "unknown key"),
@@ -98,9 +115,15 @@ def test_the_seed_rules_that_declare_assists_are_valid():
         assert problems == [], (path.stem, problems)
         if got:
             declared[path.stem] = got
-    assert set(declared) == {"error-recovery", "intent-inference", "decision-record"}
-    assert {a.moment for rule in declared.values() for a in rule} == {
-        "observation", "boundary", "pre-finish"}
+    assert set(declared) == {"error-recovery", "intent-inference", "decision-record",
+                             "git-checkpoint", "ask-policy", "unexamined-is-not-clean"}
+    # every moment is exercised by a real rule, and both built payloads with it
+    assert {a.moment for rule in declared.values() for a in rule} == set(lib.MOMENTS)
+    assert {a.payload for rule in declared.values() for a in rule} == set(lib.PAYLOADS)
+    # …and the migration carries exactly the rules that declare one, or a live library
+    # silently keeps the old text
+    from rsched.migrate_rule_assists import RULES
+    assert set(RULES) == set(declared)
 
 
 def test_only_the_rules_a_routine_holds_contribute(tmp_path):
@@ -147,12 +170,25 @@ def _server(routine_dir) -> ServerConfig:
 
 
 def _rule(server, slug: str, moment: str, predicate: str, line: str) -> None:
+    """A library rule declaring one assist. The payload follows the MOMENT, because the two
+    are coupled: a chosen action can only be reached by stopping it, and a moment with no
+    action in hand has nothing to stop."""
     home = server.rules_home
     home.mkdir(parents=True, exist_ok=True)
+    payload = lib.MOMENT_PAYLOADS[moment][0]
     (home / f"{slug}.md").write_text(
         f"---\ntags: [a, b, c]\nassists:\n  - id: m\n    moment: {moment}\n"
-        f"    predicate: {predicate}\n    payload: remind\n    line: {line}\n---\n"
+        f"    predicate: {predicate}\n    payload: {payload}\n    line: {line}\n---\n"
         f"# rule: {slug} — s\nbody\n", encoding="utf-8")
+
+
+def _write_root(routine_dir, path) -> None:
+    """Grant the routine a write root. Without one the engine refuses the write on its own
+    terms, and a test asserting the proceed path would prove nothing about the hold."""
+    cfg = routine_dir / "routine.yaml"
+    raw = yaml.safe_load(cfg.read_text(encoding="utf-8")) or {}
+    raw["fs_write_roots"] = [str(path)]
+    cfg.write_text(yaml.safe_dump(raw), encoding="utf-8")
 
 
 def _hold_rule(routine_dir, slugs: list[str]) -> None:
@@ -398,3 +434,134 @@ def test_the_migration_survives_a_missing_rule(tmp_path):
     assert "skipped" in notes["intent-inference"]
     assert "installed" in notes["error-recovery"]
     assert run(live, seed) == 0                        # already applied by migrate() above
+
+# --- the shared hold seam ------------------------------------------------------------------
+
+def test_is_hold_covers_every_hold_kind():
+    """The predicate two counters depend on — a held action grounds no finish and spends no
+    allow-once grant — must know about EVERY source, including a future third."""
+    from rsched.engine.hold import HOLD_KINDS, is_hold
+
+    assert {"reminder_hold", "assist_hold"} == HOLD_KINDS
+    for kind in HOLD_KINDS:
+        assert is_hold({"kind": kind}) is True
+    assert is_hold({"kind": "util", "exit": 0}) is False
+    assert is_hold({}) is False
+
+
+def test_the_two_sources_do_not_cannibalise_each_others_hold(make_routine, scripted):
+    """Keyed on the bare action string, a reminder hold would silently spend the rule layer's
+    only hold on the same action and the rule's caution would never be seen. The ledger
+    carries the SOURCE, so each layer gets its own budget — but the model is still stopped
+    ONCE per action, with precedence deciding which caution it hears first."""
+    from rsched import reminders as rem_store
+
+    d = make_routine(slug="assistr")
+    server = _server(d)
+    _rule(server, "git-checkpoint", "pre-action", "uncheckpointed-repo-write", "commit first")
+    _hold_rule(d, ["git-checkpoint"])
+    _capabilities(d, reminders="local")
+    repo = d.parent.parent / "project"
+    (repo / ".git").mkdir(parents=True)
+    target = repo / "src.py"
+    target.write_text("x", encoding="utf-8")
+    rem_store.save_local(d, [_rem(rid="rem-c", regex=r"^write_file path=", desc="mine first")],
+                         {})
+    scripted([write_file(str(target), content="y"),        # held by the REMINDER (precedence)
+                   write_file(str(target), content="y"),   # held by the RULE, not skipped
+                   write_file(str(target), content="y"),   # neither: both budgets spent
+                   finish()])
+    status, run_dir = run_routine(d, server, run_ts=TS)
+    events, _ = read_events(run_dir / "transcript.jsonl")
+    kinds = [e["payload"].get("kind") for e in events if e["type"] == "observation"]
+    assert kinds == ["reminder_hold", "assist_hold", "write_file"], kinds
+    assert status == "ok"
+
+
+def test_a_pre_action_assist_holds_the_write_and_re_emitting_it_proceeds(make_routine,
+                                                                        scripted):
+    """git-checkpoint's moment: the engine versions its OWN directory, not a project repo the
+    routine was granted a write root into."""
+    d = make_routine(slug="assistr")
+    server = _server(d)
+    _rule(server, "git-checkpoint", "pre-action", "uncheckpointed-repo-write",
+          "commit a checkpoint before the first edit")
+    _hold_rule(d, ["git-checkpoint"])
+    repo = d.parent.parent / "project"
+    (repo / ".git").mkdir(parents=True)
+    # a NEW file: overwriting an existing one outside the routine dir needs the run to have
+    # read it first (the write_file grounding gate), which is a different refusal entirely
+    target = repo / "auth.py"
+    _write_root(d, repo)
+    ep = scripted([write_file(str(target), content="changed"),
+                   write_file(str(target), content="changed"),
+                   finish()])
+    status, run_dir = run_routine(d, server, run_ts=TS)
+    events, _ = read_events(run_dir / "transcript.jsonl")
+    holds = [e for e in events if e["type"] == "observation"
+             and e["payload"].get("kind") == "assist_hold"]
+    assert len(holds) == 1
+    assert holds[0]["payload"]["assists"] == ["git-checkpoint/m"]
+    assert target.read_text(encoding="utf-8") == "changed"   # the SECOND write went through
+    assert target.exists()
+    shown = _shown(ep)
+    assert "ACTION HELD — it did NOT run." in shown
+    assert "commit a checkpoint before the first edit" in shown
+    assert "emit the SAME action again" in shown             # the escape is always offered
+    assert status == "ok"
+
+
+def test_the_routines_own_directory_is_never_held_for_a_checkpoint(make_routine, scripted):
+    """The engine autocommits the routine's own tree at run end, so it always has an undo
+    point — holding a write there would be a turn spent on a problem that does not exist."""
+    d = make_routine(slug="assistr")
+    server = _server(d)
+    _rule(server, "git-checkpoint", "pre-action", "uncheckpointed-repo-write", "commit first")
+    _hold_rule(d, ["git-checkpoint"])
+    (d / ".git").mkdir(exist_ok=True)          # the routine dir IS a git repo — still exempt
+    ep = scripted([write_file("state/a.txt"), write_file(str(d / "artifacts" / "b.md")),
+                   finish()])
+    status, run_dir = run_routine(d, server, run_ts=TS)
+    events, _ = read_events(run_dir / "transcript.jsonl")
+    assert not [e for e in events if e["type"] == "observation"
+                and e["payload"].get("kind") == "assist_hold"]
+    assert "[RULE" not in _shown(ep) and status == "ok"
+
+
+def test_a_held_action_grounds_no_finish_whichever_source_held_it(make_routine, scripted):
+    """The fabrication guard reads one counter, and both hold kinds must be absent from it."""
+    d = make_routine(slug="assistr")
+    server = _server(d)
+    _rule(server, "git-checkpoint", "pre-action", "uncheckpointed-repo-write", "commit first")
+    _hold_rule(d, ["git-checkpoint"])
+    repo = d.parent.parent / "project"
+    (repo / ".git").mkdir(parents=True)
+    scripted([write_file(str(repo / "x.py")), finish(),
+                   write_file("state/real.txt"), finish()])
+    status, run_dir = run_routine(d, server, run_ts=TS)
+    events, _ = read_events(run_dir / "transcript.jsonl")
+    rejected = [e for e in events if e["type"] == "observation"
+                and e["payload"].get("rejected")]
+    assert rejected, "a finish grounded only on a HELD action must be refused"
+    assert status == "ok"
+
+
+def test_the_new_predicates_read_the_signals_the_engine_already_keeps():
+    """asks-piling-up and the all-clear check, at the unit level — both are cheap because the
+    engine already counts what they ask about."""
+    from types import SimpleNamespace
+
+    from rsched.engine.assist_predicates import PREDICATES, Situation
+
+    asks = PREDICATES["asks-piling-up"].check
+    loop = SimpleNamespace(ctx=SimpleNamespace(asks_deferred=0))
+    assert asks(Situation(loop=loop)) is False
+    loop.ctx.asks_deferred = 3
+    assert asks(Situation(loop=loop)) is True
+
+    clean = PREDICATES["clean-claim-without-a-denominator"].check
+    def sit(summary):
+        return Situation(loop=loop, action={"kind": "finish", "summary": summary})
+    assert clean(sit("Reviewed the module. All clear.")) is True
+    assert clean(sit("Checked 40 of 46 files — all clear on those.")) is False
+    assert clean(sit("Found three defects and fixed them.")) is False

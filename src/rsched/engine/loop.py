@@ -24,6 +24,7 @@ from . import (
     actionroute,
     assist,
     finishgate,
+    hold,
     inbox,
     loopnudge,
     loopsetup,
@@ -114,12 +115,12 @@ class EngineLoop:
     executed_actions: Any
     final_summary: Any
     grants: Any
+    holds: set[tuple[str, str]]
     instruction: Any
     leg_after_authored: Any
     leg_commands: Any
     leg_prose: Any
     messages: list[dict]
-    reminder_held: set[str]
     reminder_nudge: Any
     reminder_pending: Any
     reminder_replayed: set[str]
@@ -234,13 +235,15 @@ class EngineLoop:
                             self.messages[-1]["content"] += remind_note
                         continue   # a guard set it aside; the model gets another turn
                     return outcome
-                # The pre-execution caution layer: a matching consequence reminder HOLDS
-                # the action — it does NOT run — and the model decides again with the caution
-                # in front of it. After execution would be after the consequence.
-                obs = (remind.intercept(self, action)
+                # The pre-execution caution layer (engine/hold.py): a consequence
+                # reminder this routine wrote, or a general rule whose moment this
+                # action IS, HOLDS the action — it does NOT run — and the model decides
+                # again with the caution in front of it. After execution would be after
+                # the consequence.
+                obs = (hold.before_dispatch(self, action)
                        or actionroute.dispatch_action(self, action, ctx))
                 ctx.transcript.event("observation", obs, turn=ctx.turn)
-                held = obs.get("kind") == "reminder_hold"
+                held = hold.is_hold(obs)
                 if not held:
                     self.executed_actions += 1   # a HELD action executed nothing
                 if self.admin_leg:

@@ -19,10 +19,11 @@ from pathlib import Path
 
 log = logging.getLogger("rsched.migrate")
 
-#: The rules whose seed copy gained an assist in 0.305.0. Named explicitly rather than
-#: derived from the seed: a migration that scans for "any rule with assists" would keep
+#: The rules whose seed copy gained an assist in 0.305.0 and 0.306.0. Named explicitly rather
+#: than derived from the seed: a migration that scans for "any rule with assists" would keep
 #: firing for every assist added later, long after this one-shot should be gone.
-RULES = ("error-recovery", "intent-inference", "decision-record")
+RULES = ("error-recovery", "intent-inference", "decision-record",
+         "git-checkpoint", "ask-policy", "unexamined-is-not-clean")
 
 
 def _block(seed_text: str) -> str | None:
