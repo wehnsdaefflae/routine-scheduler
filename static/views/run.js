@@ -12,6 +12,7 @@ import { setQuery, remount } from "/static/router.js";
 import { liveTail } from "/static/stream.js";
 import { createArtifacts } from "/static/components/artifacts.js";
 import { createRail } from "/static/components/rail.js";
+import { wireRunRail } from "/static/resizable.js";
 import { createFileActivity } from "/static/components/fileactivity.js";
 import { createPlanStrip } from "/static/components/planstrip.js";
 import { createStateGraph } from "/static/components/stategraph.js";
@@ -78,6 +79,7 @@ export async function render(view, runId, query = {}) {
   const railHost = el("details", { class: "run-rail", open: true },
     el("summary", { class: "small" }, "state & artifacts"));
   view.append(railHost);
+  wireRunRail(railHost, "right");
   const rail = createRail(railHost);
   const goalBody = rail.add("goal", el("div", {}));
   const graphBody = rail.add("state", el("div", {}));

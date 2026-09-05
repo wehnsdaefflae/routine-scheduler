@@ -10,6 +10,7 @@ import { mountRecipe } from "/static/views/routine-recipe.js";
 import { groupSections, routineHero } from "/static/views/routine-overview.js";
 import { confirmDialog } from "/static/components/dialog.js";
 import { mdInline } from "/static/md.js";
+import { wireRecipeNav } from "/static/resizable.js";
 import { chip, el, emptyState, fmtDur, fmtTokens, skeleton, toast, when } from "/static/util.js";
 
 // The config sections (rendered flat by routine-config.js + the recipe/state blocks below)
@@ -151,6 +152,7 @@ export async function render(view, slug, query = {}) {
       el("strong", {}, "stage"), " modules (in run-flow order). The general rules it holds "
       + "live in the library, not here. Edit freely; the routine-improver may also refine these."),
     el("div", { class: "recipe-wrap" }, navCol, editorCol)));
+  wireRecipeNav(navCol);
   const recipe = mountRecipe(navCol, editorCol, slug, query.file || "");
   const health = mountHealth(healthBox, slug, { onRecipeChanged: recipe.refreshTree });
 

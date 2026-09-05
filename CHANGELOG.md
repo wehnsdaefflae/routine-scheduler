@@ -17,6 +17,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.303.0] — 2026-09-05
+
+### The other three sidebars become resizable and hideable (F441 complete)
+
+0.289.0 shipped `static/resizable.js` and wired the first of the four sidebars the operator
+asked for on 2026-09-04 — the main navigation rail — and then stopped, because the
+conversation that raised it asked for the operator's ordering before the next surface. The
+remaining three are here, on that same primitive and its same invariant: the module writes a
+sidebar's width ONLY as a custom property and its hidden state ONLY as a class, so each
+stylesheet's responsive collapse stays authoritative.
+
+- **The routine page's recipe file-tree** (`.recipe-navcol`). Its grip is a flex sibling on the
+  column's own border, with negative margins that give back exactly the two extra flex gaps it
+  would otherwise add — so the gutter between tree and editor is unchanged, and the grip holds
+  its place when the column is hidden.
+- **The run and conversation views' LEFT and RIGHT rails**, which live in two different wide
+  layouts: fixed cards in the viewport margins at ≥1900px, sticky grid columns beside the chat
+  at 1100–1899px. Both read the same pair of width properties, so ONE dragged width follows a
+  rail across the breakpoint — resizable.js writes those properties inline on `<html>`, which
+  outranks the margin mode's own `calc()` default without either layout having to know about
+  the other.
+
+Each grip is a SIBLING of its rail, never a child. A rail is its own scroll container
+(`overflow-y: auto`) and clips anything sitting on its border, so a grip inside one is both
+invisible and unclickable — the first cut of this had exactly that bug, and the browser tests
+caught it. Outside, the grip is positioned by the rail's own width property, which is what lets
+a hidden rail be removed outright and still be brought back.
+
+Two things are pinned per surface in `tests/ui/test_sidebar_resize.py`, because both are silent
+when broken: the grip is `display: none` in the narrow layout, and a sidebar hidden on a wide
+screen must come BACK there — with no grip to click, a stored hidden state would otherwise be
+unrecoverable. A hidden rail also leaves the conversation grid's template rather than holding a
+zero-width column, or the chat would be auto-placed into the empty one.
+
+The finding also named the settings nav. That one is a horizontal `.filterbar`, not a column,
+so there is nothing there to resize; the surface count is three, not four.
+
 ## [0.301.0] — 2026-09-05
 
 ### A confirmed creation stops asking for a second "go"; a deleted routine stops locking its group

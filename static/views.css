@@ -764,13 +764,26 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
    now takes 212px of it: the margin is (100vw − rail − reading column) / 2, so the width this
    needs is the one below and not the old 1560px, which would have drawn a 14px sliver. Under
    it the rails are ordinary collapsible sections in the flow, which is a fine reading of them. */
+/* The two side rails' default widths in the GRID mode below; the ≥1900 margin mode overrides
+   them, and a user drag beats both — resizable.js writes these properties INLINE on <html>.
+   Declared here rather than later in the file because equal-specificity `:root` declarations
+   are won by the LAST one, and the ≥1900 override sits just below. */
+:root { --runrail-l-set: 218px; --runrail-r-set: 280px; }
 @media (min-width: 1900px) {
+  /* the DEFAULT rail width in this mode is the free margin, so it is written as the
+     `*-set` property's value here rather than as a fallback: resizable.js sets that property
+     INLINE on <html>, which outranks any stylesheet rule, so a dragged width wins in this
+     layout and in the grid one below without either needing to know about the other. */
+  :root {
+    --runrail-l-set: calc((100vw - var(--rail-w) - var(--shell-max)) / 2 - 30px);
+    --runrail-r-set: calc((100vw - var(--rail-w) - var(--shell-max)) / 2 - 30px);
+  }
   .run-rail {
     position: fixed; top: 118px; right: 18px; bottom: 90px;
-    width: calc((100vw - var(--rail-w) - var(--shell-max)) / 2 - 30px); max-width: 330px;
+    width: var(--runrail-r-w); max-width: 330px;
     overflow-y: auto; background: var(--plate); z-index: 5;
   }
-  .run-rail.left { right: auto; left: calc(var(--rail-w) + 18px); }
+  .run-rail.left { right: auto; left: calc(var(--rail-w) + 18px); width: var(--runrail-l-w); }
   .run-rail > summary { display: none; }
 }
 /* conversations below that: no margin to park in, and the rails must still PERSIST (user order
@@ -782,25 +795,114 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
    nothing and the escape never fired. */
 @media (min-width: 1100px) and (max-width: 1899.9px) {
   main:has(.conv-view) { max-width: none; }
-  .conv-view { display: grid; grid-template-columns: 218px minmax(0, 1fr) 280px;
+  .conv-view { display: grid;
+               grid-template-columns: var(--runrail-l-w) minmax(0, 1fr) var(--runrail-r-w);
                gap: var(--s4); align-items: start; }
   .conv-view > .run-rail { position: sticky; top: 116px; margin-top: var(--s3);
                            max-height: calc(100vh - 190px); overflow-y: auto; }
   .conv-view > .run-rail > summary { display: none; }
   /* list subpage: the artifact rail is [hidden] — give its column back to the chat */
-  .conv-view:has(> .run-rail[hidden]) { grid-template-columns: 218px minmax(0, 1fr); }
+  .conv-view:has(> .run-rail[hidden]) {
+    grid-template-columns: var(--runrail-l-w) minmax(0, 1fr); }
+}
+
+/* Drag-to-resize + hide for the two side rails (F441, surfaces 3 and 4 of the operator's
+   2026-09-04 request — static/resizable.js is the shared behaviour). Both WIDE modes above
+   read the same pair of width properties, so one dragged width follows a rail across the
+   1900px breakpoint.
+
+   A grip is a SIBLING of its rail, never a child: a rail is its own scroll container
+   (`overflow-y: auto`), which clips anything sitting on its border, so a grip inside one is
+   invisible and unclickable. Being outside also means a hidden rail can simply be removed —
+   the grip holds its place on the width property, which is what makes it the re-show target.
+
+   Everything is scoped to a layout that HAS a grip: the conversation grid (1100–1899) and the
+   fixed margin cards (≥1900). Below 1100 — and in the run view's own mid range, where the rail
+   is an ordinary collapsible block — the grips are gone and the hidden state must not apply,
+   because with nothing to click there would be no way to recover the rail. */
+.sb-grip.runrail-l, .sb-grip.runrail-r {
+  display: none; width: 8px; z-index: 6; cursor: col-resize; touch-action: none;
+}
+.sb-grip.runrail-l::before, .sb-grip.runrail-r::before {
+  content: ""; position: absolute; inset: 0 3px; border-radius: 2px;
+  background: var(--rule-2); opacity: 0; transition: opacity 0.12s var(--ease);
+}
+.sb-grip.runrail-l:hover::before, .sb-grip.runrail-l:focus-visible::before,
+.sb-grip.runrail-r:hover::before, .sb-grip.runrail-r:focus-visible::before { opacity: 0.7; }
+.sb-grip.runrail-l:focus-visible, .sb-grip.runrail-r:focus-visible { outline: none; }
+/* hidden: the grip stays put as the re-show target, tinted to invite it */
+:root.sb-hidden-runrail-l .sb-grip.runrail-l::before,
+:root.sb-hidden-runrail-r .sb-grip.runrail-r::before { opacity: 0.6; background: var(--signal); }
+
+@media (min-width: 1100px) {
+  :root { --runrail-l-w: var(--runrail-l-set); --runrail-r-w: var(--runrail-r-set); }
+  :root.sb-hidden-runrail-l { --runrail-l-w: 0px; }
+  :root.sb-hidden-runrail-r { --runrail-r-w: 0px; }
+}
+/* the conversation grid: the grips are positioned against the GRID, on the columns' inner
+   edges — half a gap in from each rail's own width */
+@media (min-width: 1100px) and (max-width: 1899.9px) {
+  .conv-view { position: relative; }
+  .conv-view > .sb-grip.runrail-l, .conv-view > .sb-grip.runrail-r {
+    display: block; position: absolute; top: 0; bottom: 0;
+  }
+  .conv-view > .sb-grip.runrail-l { left: var(--runrail-l-w); margin-left: calc(var(--s4) / 2 - 4px); }
+  .conv-view > .sb-grip.runrail-r { right: var(--runrail-r-w); margin-right: calc(var(--s4) / 2 - 4px); }
+  /* a hidden rail leaves the grid rather than holding a zero-width cell, so the template
+     drops the column with it — otherwise the chat would be auto-placed into the empty one */
+  :root.sb-hidden-runrail-l .conv-view > .run-rail.left,
+  :root.sb-hidden-runrail-r .conv-view > .run-rail:not(.left) { display: none; }
+  :root.sb-hidden-runrail-l .conv-view {
+    grid-template-columns: minmax(0, 1fr) var(--runrail-r-w); }
+  :root.sb-hidden-runrail-r .conv-view,
+  .conv-view:has(> .run-rail[hidden]) {
+    grid-template-columns: var(--runrail-l-w) minmax(0, 1fr); }
+  :root.sb-hidden-runrail-l.sb-hidden-runrail-r .conv-view,
+  :root.sb-hidden-runrail-l .conv-view:has(> .run-rail[hidden]) {
+    grid-template-columns: minmax(0, 1fr); }
+}
+/* the fixed margin cards: the grips are fixed too, exactly like the main nav rail's */
+@media (min-width: 1900px) {
+  .sb-grip.runrail-l, .sb-grip.runrail-r { display: block; position: fixed; top: 118px;
+                                           bottom: 90px; }
+  .sb-grip.runrail-l { left: calc(var(--rail-w) + 18px + var(--runrail-l-w)); margin-left: -4px; }
+  .sb-grip.runrail-r { right: calc(18px + var(--runrail-r-w)); margin-right: -4px; }
+  :root.sb-hidden-runrail-l .run-rail.left,
+  :root.sb-hidden-runrail-r .run-rail:not(.left) { display: none; }
 }
 
 /* the routine page's recipe file-tree: main.md + stage modules (run-flow order), each
    expandable to its heading outline; a nav | editor two-column that stacks narrow */
 .recipe-wrap { display: flex; gap: 14px; align-items: flex-start; }
-.recipe-navcol { flex: 0 0 236px; max-width: 236px; border-right: 1px solid var(--rule);
+.recipe-navcol { flex: 0 0 var(--pagenav-w); max-width: var(--pagenav-w);
+  border-right: 1px solid var(--rule);
   padding-right: 10px; max-height: 560px; overflow-y: auto; }
 .recipe-editorcol { flex: 1 1 auto; min-width: 0; }
+/* F441 surface 2. The grip is a flex SIBLING on the column's own border, so it keeps its place
+   when the column is hidden and stays the re-show target. (The finding also named the settings
+   nav; that one is a horizontal `.filterbar`, not a column, so there is nothing to resize.) */
+:root { --pagenav-w-set: 236px; --pagenav-w: var(--pagenav-w-set); }
+:root.sb-hidden-pagenav .recipe-navcol { display: none; }
+.sb-grip.pagenav {
+  /* the 8px grip straddles the column's border and the negative margins give back exactly the
+     two extra 14px flex gaps it would otherwise add, so the gutter is unchanged */
+  display: block; align-self: stretch; flex: 0 0 8px; margin: 0 -7px 0 -15px;
+  position: relative; cursor: col-resize; touch-action: none;
+}
+.sb-grip.pagenav::before {
+  content: ""; position: absolute; inset: 0 3px; border-radius: 2px;
+  background: var(--rule-2); opacity: 0; transition: opacity 0.12s var(--ease);
+}
+.sb-grip.pagenav:hover::before, .sb-grip.pagenav:focus-visible::before { opacity: 0.7; }
+.sb-grip.pagenav:focus-visible { outline: none; }
+:root.sb-hidden-pagenav .sb-grip.pagenav::before { opacity: 0.6; background: var(--signal); }
 @media (max-width: 760px) {
   .recipe-wrap { flex-direction: column; }
   .recipe-navcol { flex: none; max-width: none; width: 100%; border-right: 0; padding-right: 0;
     border-bottom: 1px solid var(--rule); padding-bottom: 8px; max-height: 240px; }
+  /* stacked: no grip to click, so a column hidden on a wide screen must come back */
+  .sb-grip.pagenav { display: none; }
+  :root.sb-hidden-pagenav .recipe-navcol { display: block; }
 }
 .recipe-nav { display: flex; flex-direction: column; gap: 10px; font-family: var(--f-display); }
 .rn-group { display: flex; flex-direction: column; gap: 1px; }

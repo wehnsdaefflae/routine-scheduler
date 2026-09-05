@@ -16,7 +16,7 @@
 // mouse-only. Everything persists to localStorage per key and is restored by `restore()` before
 // first paint of the surface.
 
-import { storage } from "/static/util.js";
+import { el, storage } from "/static/util.js";
 
 const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
 const DRAG_THRESHOLD = 3;   // px of movement that turns a click into a drag
@@ -106,4 +106,45 @@ export function wireSidebar(grip, { key, scope = document.documentElement, cssVa
   }
 
   return { restore, toggleHidden, setWidth };
+}
+
+// ---- the console's sidebars, each configured in exactly ONE place ---------------------------
+// A view says WHICH sidebar it is mounting; the identity — storage key, the width custom
+// property its stylesheet reads, the hidden class, the drag clamp — lives here beside the
+// behaviour. Three views mount run rails and each would otherwise repeat that contract, which
+// is how a stylesheet and its writer drift apart.
+
+function gripFor(place, cls, title, opts) {
+  const grip = el("div", { class: `sb-grip ${cls}`, title });
+  place(grip);
+  const handle = wireSidebar(grip, opts);
+  handle.restore();
+  return handle;
+}
+
+/** The run/conversation side rails: `side` is "left" (conversation index) or "right" (state &
+ *  artifacts). The grip is the rail's SIBLING, never its child — a rail is its own scroll
+ *  container and clips anything sitting on its border. Outside it, the grip is positioned by
+ *  the rail's own width property, so it holds its place when the rail is hidden and is what
+ *  brings it back. Its stylesheet decides where it lands in each of the two wide layouts. */
+export function wireRunRail(rail, side) {
+  const left = side === "left";
+  return gripFor((g) => rail.parentElement.insertBefore(g, rail.nextSibling),
+    left ? "runrail-l" : "runrail-r",
+    "drag to resize this rail · click to hide or show it",
+    { key: left ? "runrail-left" : "runrail-right",
+      cssVar: left ? "--runrail-l-set" : "--runrail-r-set",
+      hiddenClass: left ? "sb-hidden-runrail-l" : "sb-hidden-runrail-r",
+      edge: left ? "right" : "left", min: 180, max: 330,
+      measure: () => rail.getBoundingClientRect().width });
+}
+
+/** The routine page's recipe file-tree column. Its grip is a flex sibling on the column's own
+ *  border, so it holds its place when the column is hidden. */
+export function wireRecipeNav(navcol) {
+  return gripFor((g) => navcol.parentElement.insertBefore(g, navcol.nextSibling), "pagenav",
+    "drag to resize the file tree · click to hide or show it",
+    { key: "pagenav", cssVar: "--pagenav-w-set", hiddenClass: "sb-hidden-pagenav",
+      edge: "right", min: 170, max: 420,
+      measure: () => navcol.getBoundingClientRect().width });
 }

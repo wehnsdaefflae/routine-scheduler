@@ -26,6 +26,7 @@ import { createStopping } from "/static/components/stopping.js";
 import { createTaskTree } from "/static/components/tasktree.js";
 import { adminToggle } from "/static/components/admintoggle.js";
 import { busy, chip, el, emptyState, relTime, toast } from "/static/util.js";
+import { wireRunRail } from "/static/resizable.js";
 import { followScroll } from "/static/follow.js";
 import { enabled as notifyEnabled } from "/static/notify.js";
 import { TERMINAL, WORKING } from "/static/states.js";
@@ -44,15 +45,18 @@ export async function render(view, slug, _query = {}) {
 
   // Run-page layout (the run view's .run-rail pattern): the chat owns the main column and
   // the rails PERSIST at every desktop width (user order 2026-07-16) — the conversation
-  // list always LEFT, state/tasks/artifacts always RIGHT. ≥1560px they park fixed in the
-  // viewport margins; 1200–1559px they become sticky grid columns beside the chat (CSS);
-  // only below 1200px do they stack (list above the chat, artifacts below).
+  // list always LEFT, state/tasks/artifacts always RIGHT. ≥1900px they park fixed in the
+  // viewport margins; 1100–1899px they become sticky grid columns beside the chat (CSS);
+  // only below 1100px do they stack (list above the chat, artifacts below). Both are
+  // drag-resizable and hideable in either wide mode (F441, static/resizable.js).
   const sideRail = el("details", { class: "run-rail left", open: true },
     el("summary", { class: "small" }, "conversations"), sideBody);
   const artRail = el("details", { class: "run-rail", open: true },
     el("summary", { class: "small" }, "state & artifacts"), artBody);
   artRail.hidden = !slug;
   view.append(sideRail, main, artRail);
+  wireRunRail(sideRail, "left");
+  wireRunRail(artRail, "right");
 
   let items = [], activeTag = "";
   let cleanup = [];   // per-mount teardowns (tail, timers, artifact blobs)
