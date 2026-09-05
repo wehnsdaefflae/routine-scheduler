@@ -17,6 +17,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.291.0] — 2026-09-05
+
+### What a restart writes: the seed no longer un-deletes, the templates converge, a damaged library is refused
+
+An audit of every write the daemon performs at boot, prompted by the operator asking whether any
+of the structures built here get overwritten on restart. The headline answer is **no** — the seed
+syncs are add-only and were verified so — but three real hazards came out of it.
+
+- **A deleted library doc no longer comes back (and no longer gets pushed).** `sync_seed_library_docs`
+  installs whatever the seed carries and the library lacks, and a doc the operator DELETED in the
+  Library tab is also "missing" — so every restart resurrected it, then pushed it, since the library
+  repo has a post-commit push hook. Only utils had a never-resurrect guard. The git question behind
+  it is now `libgit.path_was_deleted`, shared by both syncs (`utils_lib.was_deleted` delegates to
+  it), and it covers workflows, rules, permissions, templates and playbooks. `converse` is
+  unaffected: it is refused at delete time by name, not restored after the fact.
+- **Settings templates are synced, and the two stale ones are converted.** `<library>/templates/`
+  was reachable by nothing: `seed_libraries` writes it only when the repo is CREATED, and the boot
+  top-up did not list it. So `maintainer.md` and `operator.md` still carried the pre-0.287.0
+  `capabilities.utils: [shell]` shape long after the seed copies were corrected — and **every
+  routine created from either was born holding the `shell` permission with the `shell` ACTION
+  switched off**, naming a util that no longer exists, which `rsched validate` fails on. Templates
+  now top up like any other doc kind, and the shell migration gained the templates pass it never
+  had (its fifth surface, after routine files, group config, the permission doc and the util).
+- **A library that lost its `.git` is refused, not re-initialised.** `utils_lib.ensure_library`
+  treated "directory exists, no repo" as a fresh tree: it would have discarded the live library's
+  844 commits, overwritten the real `.gitignore` (which excludes `.active/`, `INDEX.md`, `.venv/`)
+  with the two-line seed one, and committed and pushed that runtime state. It now logs what is
+  wrong and returns; boot is unaffected, since the lifespan already tolerates a library failure.
+- **`deploy/install.sh` seeds the library by calling `bootstrap.seed_libraries`** instead of its own
+  shell copy of it. That copy had drifted: it still created the retired `fragments/` directory and
+  copied neither rules, permissions, templates nor playbooks, so a host install began with four of
+  the library's five doc kinds absent and only the add-only boot sync ever filled them in.
+
+*Deploy note:* the template conversion runs at the next daemon boot, so it needs the restart
+sentinel (or a `docker compose restart`) — a `compose up -d` will not reload the code.
+
 ## [0.290.0] — 2026-09-05
 
 ### The phone's bottom nav: the bar was never dropping icons, the document was scrolling sideways

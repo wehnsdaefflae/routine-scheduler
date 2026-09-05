@@ -10,6 +10,11 @@ The GROUP half has its own test because it was the miss: a group's config is a L
 it lives in `groups.json` rather than in any routine dir, and the first deploy converted every
 routine file while leaving the FAU group re-supplying the dead entry to its four members —
 `rsched validate` against the running instance is what caught it.
+
+The TEMPLATE half was the second miss, and the worst-shaped one: it produces NEW broken routines
+rather than holding old ones wrong. A settings template's `config` block is stamped into every
+routine created from it, and nothing converges a live template — `seed_libraries` writes templates
+only when the repo is created, and `sync_seed_library_docs` is add-only by design.
 """
 from __future__ import annotations
 
@@ -24,6 +29,7 @@ from rsched.migrate_shell_action import migrate_shell_action
 from rsched.policyload import load_policy
 
 SEED_DOC = Path(__file__).resolve().parents[1] / "library-seed" / "permissions" / "shell.md"
+SEED_TEMPLATES = Path(__file__).resolve().parents[1] / "library-seed" / "templates"
 OLD_DOC = """---
 effect:
   with: run arbitrary shell commands on the host
@@ -40,9 +46,28 @@ Unlocks the reserved `shell` util: one-off shell commands on the host
 """
 
 
+STALE_TEMPLATE = """---
+tags: [meta]
+config:
+  permissions:
+  - shell
+  capabilities:
+    actions:
+    - memory_read
+    utils:
+    - shell
+---
+# template: maintainer — maintains this instance
+
+Body prose.
+"""
+
+
 def _server(tmp_path: Path):
     lib = tmp_path / "lib"
     (lib / "permissions").mkdir(parents=True)
+    (lib / "templates").mkdir(parents=True)
+    (lib / "templates" / "maintainer.md").write_text(STALE_TEMPLATE, encoding="utf-8")
     (lib / "utils" / "shell").mkdir(parents=True)
     (lib / "utils" / "shell" / "main.py").write_text('"""shell — old."""\n', encoding="utf-8")
     (lib / "permissions" / "shell.md").write_text(OLD_DOC, encoding="utf-8")
@@ -166,3 +191,31 @@ def test_a_member_inheriting_the_group_block_ends_up_able_to_use_the_kind(tmp_pa
     policy = load_policy(server.libraries_home / "permissions", merged["permissions"],
                          merged["capabilities"])
     assert policy.allows_kind("shell") is True
+
+
+def test_a_settings_template_stops_minting_broken_routines(tmp_path):
+    """The third surface. A template grants through its `config` block, so an unconverted one
+    keeps stamping `capabilities.utils: [shell]` into every routine created from it — the
+    permission held, the action off, and a util named that no longer exists.
+    """
+    from rsched.templates import config_for
+
+    server = _server(tmp_path)
+    assert migrate_shell_action(server) is True
+
+    caps = config_for(server.libraries_home, "maintainer")["capabilities"]
+    assert "shell" not in caps["utils"]
+    assert "shell" in caps["actions"]
+    seed = SEED_TEMPLATES / "maintainer.md"
+    assert (server.libraries_home / "templates" / "maintainer.md").read_text(encoding="utf-8") \
+        == seed.read_text(encoding="utf-8")
+
+
+def test_a_template_that_never_granted_the_util_is_untouched(tmp_path):
+    server = _server(tmp_path)
+    plain = server.libraries_home / "templates" / "watcher.md"
+    plain.write_text("---\nconfig:\n  capabilities:\n    utils: []\n---\n# t\n",
+                     encoding="utf-8")
+    before = plain.read_text(encoding="utf-8")
+    migrate_shell_action(server)
+    assert plain.read_text(encoding="utf-8") == before

@@ -99,6 +99,26 @@ def git_log(home: Path, rel_path: str | None = None, limit: int = 20) -> list[di
     return out
 
 
+def path_was_deleted(home: Path, rel_path: str) -> bool:
+    """Was `rel_path` ever DELETED from this repo's history? The never-resurrect rule keys off
+    this: the boot seed-syncs re-install anything the seed carries and the live library lacks,
+    which would otherwise undo an operator's deliberate deletion at the next restart — and then
+    push it, since every library commit is pushed.
+
+    Any prior deletion counts as intent. The web UI is the only deliberate delete path, and
+    treating a historical deletion as intent is the safe reading in both directions: the cost of
+    a false positive is one doc the operator re-adds by hand, the cost of a false negative is a
+    deletion that silently comes back forever.
+
+    Fails open to False (no repo, git error = nothing to guard).
+    """
+    try:
+        r = git(home, "log", "--diff-filter=D", "--format=%h", "--", rel_path)
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return r.returncode == 0 and bool(r.stdout.strip())
+
+
 def commit(home: Path, message: str, *, paths: Sequence[str] | None = None) -> bool:
     """Stage (scoped to `paths` when given) and commit under the repo lock. Returns True on
     a successful commit, False on nothing-to-commit or any git/OS error.

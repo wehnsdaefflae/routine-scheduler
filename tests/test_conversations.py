@@ -906,7 +906,29 @@ def test_sync_seed_library_docs(tmp_path):
     assert (lib / "workflows" / "converse.py").exists()
     assert (lib / "rules" / "git-checkpoint.md").exists()
     assert (lib / "rules" / "ask-policy.md").read_text() == "local edit — must survive"
+    assert (lib / "templates" / "maintainer.md").exists()            # templates top up too
     assert sync_seed_library_docs(lib) == 0                          # idempotent
+
+
+def test_sync_seed_library_docs_never_resurrects_a_deleted_doc(tmp_path):
+    """Add-only is not enough on its own: a doc the operator DELETED in the Library tab is also
+    "missing", so every restart used to bring it back — and PUSH it, since the library repo has a
+    post-commit push hook. The git history is what tells the two apart.
+    """
+    from rsched import libgit, utils_lib
+    from rsched.bootstrap import sync_seed_library_docs
+
+    lib = tmp_path / "lib"
+    utils_lib.ensure_library(lib)
+    assert sync_seed_library_docs(lib) > 0
+    libgit.commit(lib, "seed")
+
+    (lib / "rules" / "git-checkpoint.md").unlink()
+    libgit.commit(lib, "delete rules/git-checkpoint.md via web",
+                  paths=["rules/git-checkpoint.md"])
+
+    assert sync_seed_library_docs(lib) == 0
+    assert not (lib / "rules" / "git-checkpoint.md").exists()
 
 
 def test_conversation_runs_end_to_end(server, scripted):

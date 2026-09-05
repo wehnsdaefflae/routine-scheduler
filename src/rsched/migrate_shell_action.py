@@ -7,7 +7,7 @@ EXCEPTION list (only a handful of the library's utils are gated at all), while a
 projected out of the schema a run is sent, so a routine without the capability cannot even
 GENERATE the call.
 
-Four things on a live instance still say the old thing, and none of them converge on their own:
+Five things on a live instance still say the old thing, and none of them converge on their own:
 
 1. Every holder's `routine.yaml` names `shell` under `capabilities.utils`. Left alone the entry
    would gate nothing (no util by that name exists any more) and the ACTION would stay off — 14
@@ -28,6 +28,15 @@ Four things on a live instance still say the old thing, and none of them converg
 4. The util itself is still installed. `sync_seed_utils` will not re-add it (it is gone from
    util-seed, and the library's git history then records the deletion), but the copy already on
    disk would keep answering for anyone holding a stale grant.
+5. The live library's settings TEMPLATES (`<library>/templates/*.md`) say it too, in the `config`
+   frontmatter every routine created from them is stamped with. This is the surface the first two
+   passes missed, and it is the only one that keeps producing NEW broken routines rather than
+   holding old ones wrong: `maintainer` and `operator` list `shell` under `permissions:` (correct
+   — it is a real permission doc) while still granting it under `capabilities.utils`, so a routine
+   born today holds the permission with the ACTION switched off and names a util that no longer
+   exists. `readmodels/surface.py` reports that at `blocks` severity and `rsched validate` fails
+   on it. Nothing converged it: the seed copies were corrected on 2026-09-03, but `seed_libraries`
+   only writes templates when the repo is CREATED and `sync_seed_library_docs` is add-only.
 
 Runs once at daemon boot, then gets deleted (delete-after-convergence — CLAUDE.md).
 """
@@ -146,10 +155,40 @@ def _migrate_library(server) -> list[str]:
     return touched
 
 
+def _migrate_templates(server) -> list[str]:
+    """Replace every live settings template still granting the reserved util with the seed's copy.
+
+    Wholesale replacement rather than a frontmatter round-trip, for the same reason
+    `_migrate_library` replaces the permission doc: a YAML round-trip through this file would
+    re-serialize a `config` block a human wrote and reorder its keys, and the drift here IS only
+    the seed-vs-live difference (verified against the live library: the two stale templates differ
+    from their seed copies in the `shell` entry and nothing else).
+    """
+    touched: list[str] = []
+    seed_dir = repo_root() / "library-seed" / "templates"
+    live_dir = server.libraries_home / "templates"
+    if not seed_dir.is_dir() or not live_dir.is_dir():
+        return touched
+    for seed in sorted(seed_dir.glob("*.md")):
+        live = live_dir / seed.name
+        if not live.is_file():
+            continue
+        meta, _ = parse_lenient(live.read_text(encoding="utf-8"))
+        caps = ((meta.get("config") or {}).get("capabilities")
+                if isinstance(meta.get("config"), dict) else None)
+        if not isinstance(caps, dict):
+            continue
+        if NAME in [str(u).split(":")[0] for u in (caps.get("utils") or [])]:
+            atomic_write(live, seed.read_text(encoding="utf-8"))
+            touched.append(f"templates/{seed.name}")
+            log.warning("shell migration: template %s grants shell as an ACTION now", seed.stem)
+    return touched
+
+
 def migrate_shell_action(server) -> bool:
     """Convert the live instance to the shell ACTION. True when anything changed."""
     changed = _migrate_routines(server) + _migrate_groups(server)
-    touched = _migrate_library(server)
+    touched = _migrate_library(server) + _migrate_templates(server)
     if touched:
         log.warning("shell migration: library updated (%s)", ", ".join(touched))
         libgit.commit(server.libraries_home,

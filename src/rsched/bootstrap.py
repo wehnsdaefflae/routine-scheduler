@@ -178,32 +178,52 @@ def seed_libraries(home: Path) -> None:
         libgit.install_push_hook(home)
 
 
+#: The four flat library doc kinds the boot sync tops up, with the glob that finds them.
+#: `templates` is here because a settings TEMPLATE is read LIVE at creation and by the routine
+#: page's adopt action (templates.config_for) — a template that only ever lands when the repo is
+#: first created means a template added to the seed later reaches no existing instance at all.
+SEED_DOC_KINDS = (("workflows", "*.py"), ("rules", "*.md"), ("permissions", "*.md"),
+                  ("templates", "*.md"))
+
+
 def sync_seed_library_docs(libraries_home: Path) -> int:
-    """Install seed workflows/rules/permissions MISSING from the live library (runs at
-    every daemon boot, like sync_seed_utils). seed_libraries only runs at repo creation,
-    so a pattern or rule added to library-seed/ later — e.g. the `converse` workflow the
+    """Install seed workflows/rules/permissions/templates MISSING from the live library (runs at
+    every daemon boot, like sync_seed_utils). seed_libraries only runs at repo creation, so a
+    pattern or rule added to library-seed/ later — e.g. the `converse` workflow the
     Conversations tab materializes — would never reach an existing instance. Copies each
     absent file verbatim; NEVER overwrites (local edits win). Returns how many landed.
+
+    ADD-ONLY is not enough on its own: a doc the operator DELETED in the Library tab is also
+    "missing", so without a guard every restart resurrected it — and pushed it, since the library
+    repo has a post-commit push hook. `libgit.path_was_deleted` makes a deletion stick, exactly
+    as `sync_seed_utils` has always done for utils. (`converse` is not at risk: it is refused at
+    delete time by name, api_workflows.delete_workflow, rather than restored after the fact.)
+
+    Content DRIFT is deliberately still not synced. These files are user-editable, so an
+    overwrite would silently discard an operator's edit; a seed doc whose text must change on a
+    live instance is converted by a one-shot migration instead (the CLAUDE.md rule).
     """
     root = repo_root() / "library-seed"
     installed: list[str] = []
-    for kind, pattern in (("workflows", "*.py"), ("rules", "*.md"), ("permissions", "*.md")):
+    for kind, pattern in SEED_DOC_KINDS:
         src = root / kind
         dest = libraries_home / kind
         if not src.is_dir() or not libraries_home.is_dir():
             continue
         dest.mkdir(exist_ok=True)
         for f in sorted(src.glob(pattern)):
-            if not (dest / f.name).exists():
+            rel = f"{kind}/{f.name}"
+            if not (dest / f.name).exists() and not libgit.path_was_deleted(libraries_home, rel):
                 shutil.copy(f, dest / f.name)
-                installed.append(f"{kind}/{f.name}")
+                installed.append(rel)
     # playbooks are subfolders (MAIN.md + detail files), not flat files — copy whole
     # subfolders missing from the live library (mirrors sync_seed_utils).
     pb_src, pb_dest = root / "playbooks", libraries_home / "playbooks"
     if pb_src.is_dir() and libraries_home.is_dir():
         pb_dest.mkdir(exist_ok=True)
         for d in sorted(p for p in pb_src.iterdir() if p.is_dir()):
-            if not (pb_dest / d.name).exists():
+            if not (pb_dest / d.name).exists() \
+                    and not libgit.path_was_deleted(libraries_home, f"playbooks/{d.name}/MAIN.md"):
                 shutil.copytree(d, pb_dest / d.name)
                 installed.append(f"playbooks/{d.name}")
     if installed:

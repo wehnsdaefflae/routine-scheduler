@@ -14,6 +14,7 @@ terms as a util. Anything run twice belongs back here.
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 import shutil
@@ -25,6 +26,8 @@ from . import libgit
 from .ids import is_slug
 from .paths import atomic_write
 from .utils_header import parse_header
+
+log = logging.getLogger("rsched.utils_lib")
 
 # Vars scrubbed from util subprocesses UNCONDITIONALLY (declared or not). LLM-auth: a util
 # that needs an LLM (e.g. a `gu claude` equivalent) resolves its own credentials; it must
@@ -100,9 +103,22 @@ GITIGNORE = "__pycache__/\n*.pyc\n"
 def ensure_library(home: Path, *, remote: str = "") -> None:
     """Create the util library if absent (dir + dispatcher + git). If `remote` is set and
     the library does not exist yet, clone it to bootstrap; otherwise init empty.
+
+    A library that EXISTS but has lost its `.git` is a damaged repo, never a fresh one, and it
+    is refused rather than re-initialised. Re-initialising discarded the whole history (the live
+    library carries 844 commits), wrote the two-line seed `.gitignore` over the real one — which
+    excludes `.active/`, `INDEX.md` and `.venv/` — and then committed and PUSHED that runtime
+    state, because the library repo has a post-commit push hook. Recovery from that is manual
+    either way, so the loud refusal is strictly better than the silent rewrite. The caller
+    (appwiring's lifespan) already tolerates a library failure, so boot is unaffected.
     """
     if home.exists() and (home / ".git").exists():
         _install_dispatcher(home)
+        return
+    if home.is_dir() and any(home.iterdir()):
+        log.error("library at %s has content but no .git — refusing to re-initialise it "
+                  "(that would discard its history and push runtime state). Restore the repo, "
+                  "or `git init` it by hand if this really is a fresh tree.", home)
         return
     home.parent.mkdir(parents=True, exist_ok=True)
     if remote and not home.exists():
@@ -286,17 +302,10 @@ def remove_util_file(home: Path, name: str) -> None:
 
 def was_deleted(home: Path, name: str) -> bool:
     """Was utils/<name>/main.py ever DELETED from the library's git history? The engine's
-    never-recreate rule keys off this (interact.recreate_denial), as does the boot seed-sync
-    (a user-deleted seed util is never resurrected). Any deletion counts — the web UI is the
-    only deliberate delete path today, and treating every prior deletion as user intent is
-    the safe reading. Fails open to False (no repo / git error = nothing to guard).
+    never-recreate rule keys off this (interact.recreate_denial), as does the boot seed-sync.
+    The git question itself is `libgit.path_was_deleted`, shared with the library-doc sync.
     """
-    try:
-        r = libgit.git(home, "log", "--diff-filter=D", "--format=%h", "--",
-                 f"utils/{name}/main.py")
-    except (OSError, subprocess.TimeoutExpired):
-        return False
-    return r.returncode == 0 and bool(r.stdout.strip())
+    return libgit.path_was_deleted(home, f"utils/{name}/main.py")
 
 
 def git_commit(home: Path, message: str, *, paths: Sequence[str] | None = None) -> bool:

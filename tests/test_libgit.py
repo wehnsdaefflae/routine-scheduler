@@ -131,3 +131,30 @@ def test_commit_supplies_neutral_identity_without_repo_config(tmp_path, monkeypa
     assert libgit.commit(home, "first") is True
     r = libgit.git(home, "log", "-1", "--format=%an <%ae>")
     assert r.stdout.strip() == "routine-scheduler <noreply@routine-scheduler.local>"
+
+
+def test_ensure_library_refuses_to_reinit_a_repo_that_lost_its_git(tmp_path):
+    """Re-initialising discarded the history (844 commits on the live instance), overwrote the
+    real `.gitignore` with the two-line seed one, and then committed and PUSHED the runtime state
+    that `.gitignore` existed to exclude. A loud refusal beats a silent rewrite.
+    """
+    lib = tmp_path / "lib"
+    utils_lib.ensure_library(lib)
+    (lib / "utils" / "keeper").mkdir(parents=True)
+    (lib / "utils" / "keeper" / "main.py").write_text("# mine\n", encoding="utf-8")
+    (lib / ".gitignore").write_text(".active/\nINDEX.md\n.venv/\n", encoding="utf-8")
+    subprocess.run(["rm", "-rf", str(lib / ".git")], check=True)
+
+    utils_lib.ensure_library(lib)
+
+    assert not (lib / ".git").exists()                                  # no re-init
+    assert (lib / "utils" / "keeper" / "main.py").exists()              # nothing swept
+    assert ".active/" in (lib / ".gitignore").read_text(encoding="utf-8")   # not overwritten
+
+
+def test_ensure_library_still_creates_a_genuinely_empty_one(tmp_path):
+    """The refusal is scoped to a NON-EMPTY dir without .git — an empty dir is a fresh tree."""
+    lib = tmp_path / "fresh"
+    lib.mkdir()
+    utils_lib.ensure_library(lib)
+    assert (lib / ".git").is_dir()

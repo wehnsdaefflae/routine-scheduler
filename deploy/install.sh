@@ -32,19 +32,20 @@ else
   echo "config exists: ${CONFIG}"
 fi
 
-# The library — ONE git repo holding workflows/, fragments/ and utils/. Seed once, git-init
-# with best-effort auto-push hook. The `gu` dispatcher is installed by the engine
+# The library — ONE git repo holding workflows/, rules/, permissions/, templates/, playbooks/
+# and utils/. Seeded by bootstrap.seed_libraries, which git-inits it and installs the
+# best-effort auto-push hook; the `gu` dispatcher is installed by the engine
 # (utils_lib.ensure_library) on first use.
+#
+# This CALLS the one implementation rather than carrying a shell copy of it. The copy that used
+# to live here had drifted badly: it still created the `fragments/` directory retired when
+# traits/permissions replaced it, and it copied neither rules, permissions, templates nor
+# playbooks — so a host install started with four of the library's five doc kinds missing, and
+# only the add-only boot sync ever filled them in.
 if [ ! -d "${LIBRARIES}" ]; then
-  mkdir -p "${LIBRARIES}/fragments" "${LIBRARIES}/utils"
-  [ -d "${REPO}/library-seed/workflows" ] && cp -r "${REPO}/library-seed/workflows" "${LIBRARIES}/workflows"
-  cp "${REPO}/library-seed/fragments/"*.md "${LIBRARIES}/fragments/" 2>/dev/null || true
-  [ -d "${REPO}/util-seed/utils" ] && cp -r "${REPO}/util-seed/utils/." "${LIBRARIES}/utils/"
-  git -C "${LIBRARIES}" init -q -b main
-  git -C "${LIBRARIES}" config user.name "routine-scheduler"
-  git -C "${LIBRARIES}" config user.email "noreply@routine-scheduler.local"
-  git -C "${LIBRARIES}" add -A
-  git -C "${LIBRARIES}" commit -qm "seed library repo"
+  (cd "${REPO}" && uv run python -c \
+    'import sys; from pathlib import Path; from rsched.bootstrap import seed_libraries; seed_libraries(Path(sys.argv[1]))' \
+    "${LIBRARIES}")
   echo "library seeded: ${LIBRARIES}"
 fi
 if [ -d "${LIBRARIES}/.git" ]; then

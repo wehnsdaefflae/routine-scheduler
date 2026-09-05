@@ -557,8 +557,9 @@ deliverable, a decision for the user, a blocker). A conversation's spine is its 
   (checkpoint commits in external project repos — the conversation dir itself is unversioned).
   Conversations feed workflow-usage + health events; they are EXCLUDED from the dashboard,
   scheduler, and instance-export. `bootstrap.sync_seed_library_docs` (every boot) lands new seed
-  workflows/rules/permissions + playbooks (subfolder-aware) — how `converse`/`git-checkpoint` and
-  seed playbooks reach existing instances.
+  workflows/rules/permissions/templates + playbooks (subfolder-aware), skipping anything the
+  library's git history shows was deleted — how `converse`/`git-checkpoint` and seed playbooks
+  reach existing instances without un-deleting what an operator removed.
 
 ## Libraries & seeds
 
@@ -595,8 +596,14 @@ first boot; `deploy/install.sh` for host installs. Everything in the library is 
 the Library tab, and DELETABLE except permission docs (the capability layer's conduct surface) and
 the `converse` workflow (every conversation is materialized from it BY SLUG, so losing it
 breaks conversation creation) — both guards are server-side.
-A deleted seed workflow/rule returns at the next daemon boot (sync_seed_library_docs); a deleted
-util stays deleted (git-recoverable — seed utils only land at repo creation).
+A deletion STICKS, for every kind. The boot sync (`sync_seed_library_docs`, and `sync_seed_utils`
+before it) tops the live library up with anything the seed carries and it lacks — but it asks
+`libgit.path_was_deleted` first, so a doc the operator removed in the Library tab is not brought
+back at the next restart and pushed. (It used to be: only utils had that guard, so a deleted seed
+workflow or rule returned at every boot.) The sync covers the four flat kinds — workflows, rules,
+permissions and TEMPLATES — plus whole playbook folders. It is ADD-ONLY and stays that way: these
+files are user-editable, so overwriting one would discard an operator's edit silently. A seed doc
+whose TEXT must change on a live instance is converted by a one-shot migration instead.
 - **Workflows** are self-contained **Python pattern files** (`.py`) that DEPICT a routine's control flow —
   never executed, parsed statically with `ast` (`workflows/pyworkflow.py`). Each has a `META = {...}` dict
   (`slug / name / description / when_to_use / version / tags / includes`, optional `tools:`
