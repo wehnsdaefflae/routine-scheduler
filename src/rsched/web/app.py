@@ -59,7 +59,7 @@ def _is_sse_path(path: str) -> bool:
 # human/web credential and authorizes everything. The ROUTINE token (`routine_token:`,
 # injected into util subprocesses as RSCHED_API_TOKEN) authorizes READ-ONLY methods plus
 # the explicit non-config mutations below — so no run can rewrite ANY routine's config
-# (schedule, permissions, capabilities, grants, connections, settings, triggers, groups)
+# (schedule, permissions, capabilities, grants, connections, settings, triggers, domain)
 # through the HTTP API around the engine's "config is the user's" seal. Mutating routes
 # are therefore primary-only BY DEFAULT: a new endpoint is born sealed, and opening one to
 # routines is an explicit allowlist entry here, with its reason.

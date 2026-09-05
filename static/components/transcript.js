@@ -31,7 +31,7 @@ const BRIEF_FIELD = { util: "name", write_util: "name", remove_util: "name",
                       shell: "command",
                       llm: "prompt", spawn: "label", subtask: "label", detach: "label",
                       schedule_run: "target", create_routine: "target",
-                      manage_group: "verb", kill: "n", wait: "n",
+                      manage_lane: "verb", kill: "n", wait: "n",
                       ask_user: "question", report: "title", finish: "status" };
 
 // "Refer to" rides the message TEXT as one leading quoted line — `> re <label>: <snippet>`,

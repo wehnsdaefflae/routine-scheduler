@@ -8,14 +8,15 @@ gpu for one another… i would prefer they found a way to schedule it so everyon
 Not the RUN — the detached JOB. All three predator routines launch work with `remote submit`,
 which returns immediately and leaves a process on the box for hours. That is why the obvious fix
 was already in place and already failing: voice-model-trainer and funscript-trainer are both in
-the `Labs` group, whose chain is strictly sequential, and they still collided — member 0 finishes
-in minutes and leaves a training job on the card that member 1 walks straight into.
-eye-stabilize-folder is in a different group entirely and cannot see either of them.
+the `Labs` lane, whose chain is strictly sequential. They still collided — member 0 finishes in
+minutes and leaves a training job on the card that member 1 walks straight into.
+eye-stabilize-folder is in a different lane entirely and cannot see either of them. Sequencing
+the RUNS was never going to sequence the JOBS, which is the whole finding.
 
 Facing that vacuum the routines invented their own protocol: a `gpu_lease.py` inside
-funscript-trainer's `scripts/`, lease JSONs in the Labs group store, and a hand-reimplemented copy
-in voice-model-trainer that once had to reclaim an 18-hour-stale lease. Three incompatible
-protocols, owned by one routine, invisible to the daemon and to the console.
+funscript-trainer's `scripts/`, lease JSONs in the Labs domain's shared store, and a
+hand-reimplemented copy in voice-model-trainer that once had to reclaim an 18-hour-stale lease.
+Three incompatible protocols, owned by one routine, invisible to the daemon and to the console.
 
 ## Why a QUEUE and not a lock
 

@@ -10,7 +10,8 @@
  *                      is what you do with a machine that is running.
  *   SUMMONS (coral)  — this is waiting on a PERSON: an open decision, a gate, a blocking ask,
  *                      the badge that says how many. Nothing that is merely alive wears it.
- *   IRIS    (violet) — structure: groups, the library, meta routines. Organisation, not urgency.
+ *   IRIS    (violet) — structure: lanes and domains, the library, meta routines. Organisation,
+ *                      not urgency.
  * A single accent used to carry the brand, every heading, every link AND every warning, so "this
  * is a heading" and "answer me" were the same colour and neither could shout.
  *
@@ -425,13 +426,16 @@ main { max-width: var(--shell-max); width: 100%; margin: 0 auto; padding: var(--
 .chip.sev-info { color: var(--ink-2); }
 .chip.bare::before { display: none; }
 
-/* a group is structure, not a run state — iris, and no state dot */
-.groups-row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: var(--s1); }
-.groups-row .lbl { color: var(--ink-3); }
-.chip.group-chip { color: var(--iris); border-color: color-mix(in srgb, var(--iris) 42%, transparent); background: var(--iris-dim); }
-.chip.group-chip::before { display: none; }
-.chip.group-chip:hover { border-color: var(--iris); text-decoration: none; }
-button.chip.group-chip { cursor: pointer; }
+/* The two structures a routine sits in — its LANE (when it fires, with whom) and its DOMAIN
+   (what it shares) — are structure, not a run state: iris, with no state dot. They are separate
+   axes and so carry separate classes, but they read as ONE band of structure beside the run
+   chips, so the look is deliberately shared and the pair moves together. */
+.lanes-row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: var(--s1); }
+.lanes-row .lbl { color: var(--ink-3); }
+.chip.lane-chip, .chip.domain-chip { color: var(--iris); border-color: color-mix(in srgb, var(--iris) 42%, transparent); background: var(--iris-dim); }
+.chip.lane-chip::before, .chip.domain-chip::before { display: none; }
+.chip.lane-chip:hover, .chip.domain-chip:hover { border-color: var(--iris); text-decoration: none; }
+button.chip.lane-chip, button.chip.domain-chip { cursor: pointer; }
 
 .tags { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
 .tag {
@@ -503,11 +507,11 @@ table.list td.num { text-align: right; font-family: var(--f-mono); font-variant-
 table.list tr.attention td { background: var(--summons-dim); }
 table.list tr.live td { background: var(--signal-dim); }
 table.list tr.live td:first-child { box-shadow: inset 2px 0 0 0 var(--signal); }
-table.list tr.group-row td { cursor: pointer; font-weight: 600; background: var(--iris-dim); }
-table.list tr.group-row:hover td { background: color-mix(in srgb, var(--iris) 16%, transparent); }
-table.list tr.group-member td:first-child { padding-left: var(--s6); }
-table.list tr.group-member[draggable="true"] { cursor: grab; }
-table.list tr.group-member.drop-here td { box-shadow: inset 0 2px 0 var(--iris); }
+table.list tr.lane-row td { cursor: pointer; font-weight: 600; background: var(--iris-dim); }
+table.list tr.lane-row:hover td { background: color-mix(in srgb, var(--iris) 16%, transparent); }
+table.list tr.lane-member td:first-child { padding-left: var(--s6); }
+table.list tr.lane-member[draggable="true"] { cursor: grab; }
+table.list tr.lane-member.drop-here td { box-shadow: inset 0 2px 0 var(--iris); }
 table.list td.row-actions { white-space: nowrap; }
 table.list td.row-actions .btn { margin-right: 6px; }
 

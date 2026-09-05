@@ -52,7 +52,7 @@ These structural / ownership gates stay in force under admin, by design:
 - `routine.yaml` (a routine's or conversation's config) stays the user's — **no** run writes it,
   admin included.
 - A routine's own recipe stays sealed (unless a user `fs_write_root` already covers its dir).
-- The root-conversation-only gate on `create_routine`, `manage_group` and `detach` still holds.
+- The root-conversation-only gate on `create_routine`, `manage_lane` and `detach` still holds.
 - The workflow's `tools:` allowlist still applies — a kind must still be surfaced to the run.
 
 Admin means "the operator is driving this conversation by hand and wants the full toolset", not

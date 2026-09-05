@@ -6,19 +6,18 @@ nothing on — the permission would say they hold the escape hatch and the engin
 every call. The contract asserted here is therefore the EFFECTIVE one: after the migration the
 routine's policy allows the kind, and the reserved-util entry is gone rather than left inert.
 
-The GROUP half has its own test because it was the miss: a group's config is a LIVE layer (D82),
-it lives in `groups.json` rather than in any routine dir, and the first deploy converted every
-routine file while leaving the FAU group re-supplying the dead entry to its four members —
-`rsched validate` against the running instance is what caught it.
+Which surfaces exist is answered by the RUNNING instance, never by reading the tree the migration
+was written in. The first deploy converted every routine file while a live shared config layer
+went on handing the dead entry to the four routines that inherited it — a permission failing
+closed that only `rsched validate` against the real instance reports.
 
-The TEMPLATE half was the second miss, and the worst-shaped one: it produces NEW broken routines
-rather than holding old ones wrong. A settings template's `config` block is stamped into every
-routine created from it, and nothing converges a live template — `seed_libraries` writes templates
-only when the repo is created, and `sync_seed_library_docs` is add-only by design.
+The TEMPLATE half is the worst-shaped one: it produces NEW broken routines rather than holding
+old ones wrong. A settings template's `config` block is stamped into every routine created from
+it. Nothing converges a live template — `seed_libraries` writes templates only when the repo is
+created and `sync_seed_library_docs` is add-only by design.
 """
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -140,61 +139,8 @@ def test_it_is_idempotent_and_leaves_non_holders_alone(tmp_path):
     assert (holder / "routine.yaml").read_text(encoding="utf-8") == after
 
 
-def _group(server, gid: str, caps: dict, members: list[str]) -> Path:
-    from rsched.groups import groups_file
-
-    path = groups_file(server.routines_home)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({
-        "default_on_failure": "stop",
-        "groups": [{"id": gid, "name": "FAU", "cron": "0 5 * * *",
-                    "members": [{"slug": s} for s in members],
-                    "config": {"permissions": ["shell"], "capabilities": caps}}],
-    }), encoding="utf-8")
-    return path
-
-
-def test_a_group_config_block_is_converted_too(tmp_path):
-    """A group's config is a live layer, so an unconverted block keeps handing every member the
-    dead `utils:` entry — the permission then fails closed for all of them."""
-    from rsched.groups import list_groups
-
-    server = _server(tmp_path)
-    path = _group(server, "grp-fau", {"actions": ["memory_read"], "utils": ["fau-mail", "shell"]},
-                  ["ards", "nanogeofeld"])
-
-    assert migrate_shell_action(server) is True
-
-    caps = list_groups(server.routines_home)[0]["config"]["capabilities"]
-    assert caps["utils"] == ["fau-mail"]
-    assert "shell" in caps["actions"]
-    # the rest of the store is untouched — the patch is raw, not a normalize round-trip
-    raw = json.loads(path.read_text(encoding="utf-8"))
-    assert raw["groups"][0]["cron"] == "0 5 * * *"
-    assert raw["groups"][0]["config"]["permissions"] == ["shell"]
-    assert [m["slug"] for m in raw["groups"][0]["members"]] == ["ards", "nanogeofeld"]
-    assert migrate_shell_action(server) is False
-
-
-def test_a_member_inheriting_the_group_block_ends_up_able_to_use_the_kind(tmp_path):
-    """The effective contract, through the group merge a member actually loads."""
-    server = _server(tmp_path)
-    d = _routine(server, "ards", {"actions": ["memory_read"], "utils": []})
-    _group(server, "grp-fau", {"utils": ["shell"]}, ["ards"])
-
-    migrate_shell_action(server)
-
-    from rsched.config.groupconfig import apply_group_config
-    from rsched.groups import list_groups
-    raw = yaml.safe_load((d / "routine.yaml").read_text(encoding="utf-8"))
-    merged, _ = apply_group_config(raw, list_groups(server.routines_home)[0]["config"])
-    policy = load_policy(server.libraries_home / "permissions", merged["permissions"],
-                         merged["capabilities"])
-    assert policy.allows_kind("shell") is True
-
-
 def test_a_settings_template_stops_minting_broken_routines(tmp_path):
-    """The third surface. A template grants through its `config` block, so an unconverted one
+    """The TEMPLATE surface. A template grants through its `config` block, so an unconverted one
     keeps stamping `capabilities.utils: [shell]` into every routine created from it — the
     permission held, the action off, and a util named that no longer exists.
     """

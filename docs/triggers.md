@@ -1,7 +1,7 @@
 # Event triggers
 
-Routines fire on cron (their own — or their GROUP's, which suppresses the member crons
-while it is set: docs/architecture.md § Routine groups, D71), manually — or on an
+Routines fire on cron (their own — or their LANE's, which suppresses the member crons
+while it is set: docs/lanes-domains.md, D71), manually — or on an
 **external event**. A trigger is a routine.yaml
 config entry that lets the outside world start a run: today that means an authenticated
 **webhook** URL a third party POSTs to (CI finished, a form was submitted, a monitor

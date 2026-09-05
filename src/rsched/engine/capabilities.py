@@ -119,11 +119,11 @@ def _util_catalog_block(utils: list[dict], kinds: list[str], g) -> str:
     order = [label for label, _ in _UTIL_CATEGORIES] + [_UTIL_CATEGORY_OTHER]
     group_blocks = [f"### {label} ({len(buckets[label])})\n" + "\n".join(sorted(buckets[label]))
                     for label in order if buckets.get(label)]
-    header = (f'Global utils ({len(utils)}, grouped by domain; run '
+    header = (f'Global utils ({len(utils)}, grouped by category; run '
               '`util name=list args=["<name>"]` for one\'s exact usage before calling it, '
               'or `util name=search args=["<keywords>"]` to find one by need):'
               if "util" in kinds else
-              f"Global utils ({len(utils)}, grouped by domain — this workflow cannot CALL "
+              f"Global utils ({len(utils)}, grouped by category — this workflow cannot CALL "
               "utils; the list tells you what a routine can be built to do):")
     return header + "\n" + "\n\n".join(group_blocks)
 
@@ -293,11 +293,15 @@ def capabilities_digest(ctx: RunContext, allowed_kinds: set[str] | None = None) 
         if "create_routine" in kinds:
             cap_bits.append("create_routine (graduate THIS conversation into a new scheduled "
                             "routine — the only way a routine is created)")
-        if "manage_group" in kinds:
-            cap_bits.append("manage_group (create/update/delete/order/schedule/fire routine "
-                            "GROUPS from this conversation — the routines page's group "
-                            "surface as an action; `cron` sets the group schedule, no "
-                            "operator needed)")
+        if "manage_lane" in kinds:
+            cap_bits.append("manage_lane (create/update/delete/order/schedule/fire routine "
+                            "LANES from this conversation — the routines page's lane rows as "
+                            "an action; `cron` sets the lane schedule, no operator needed. It "
+                            "reaches the TEMPORAL axis only: when a set of routines fires and "
+                            "in what order. What those routines SHARE — config block, shared "
+                            "store, notes boundary — is their DOMAIN, a per-routine setting in "
+                            "the routine's own config, which no run writes: ask for a domain "
+                            "change with ask_user + config_patch instead)")
         cap_bits += [f"reserved util {u!r}" for u in sorted(g.utils)]
         cap_bits += [f"every util tagged {t!r}" for t in sorted(g.util_tags)]
         if g.run_history != "none":

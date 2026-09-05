@@ -166,12 +166,12 @@ def _effect_problems(meta: dict, filename: str, subject: str) -> list[str]:
 
 def lint_template_text(raw: str, *, filename: str) -> list[str]:
     """A settings template: titled, tagged, and carrying a `config:` block restricted to the
-    keys a GROUP may share — one vocabulary for both layers, so "where do I set this?" has one
+    keys a DOMAIN may share — one vocabulary for both layers, so "where do I set this?" has one
     answer. The named permissions and rules must exist; a template pointing at a doc the
     library lost would silently give its adopters nothing.
     """
+    from ..domains import CONFIG_KEYS
     from ..grants import normalize_capabilities
-    from ..groups import CONFIG_KEYS
 
     problems: list[str] = []
     try:

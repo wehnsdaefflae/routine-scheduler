@@ -1,14 +1,15 @@
 // Routine overview hero + section grouping — the "informative first screen" and the
-// progressive-disclosure regrouping of the config sections. The hero reads only fields the
-// detail payload already carries (status, last run, recent-run heartbeat, spend, open
-// decisions). groupSections reorganizes the flat <h2>+panel stream renderConfigSections and
+// progressive-disclosure regrouping of the config sections. The hero reads fields the detail
+// payload already carries (status, last run, recent-run heartbeat, spend, open decisions),
+// plus the one thing it cannot know about itself: the LANE it fires in, which is instance
+// state. groupSections reorganizes the flat <h2>+panel stream renderConfigSections and
 // routine.js produce into labeled, collapsible groups WITHOUT touching any section body — the
 // h2s are preserved so the side-TOC still lists them, and anything unclaimed falls into a
 // trailing group so no control is ever lost.
 
 import { api } from "/static/api.js";
 import { heartbeat } from "/static/components/heartbeat.js";
-import { chip, el, fmtDur, fmtNum, fmtUsd, toast, when } from "/static/util.js";
+import { chip, el, fmtDur, fmtNum, fmtUsd, when } from "/static/util.js";
 
 function tile(label, ...body) {
   return el("div", { class: "hero-tile" },
@@ -16,59 +17,44 @@ function tile(label, ...body) {
     ...body.filter(Boolean));
 }
 
-// Scheduling-group membership, right on the routine page (user order 2026-08-12): one
-// select — pick a group to join (leaving the previous one) or "none". Same PATCH the
-// Routines page's group surface uses; the daemon moves the fire/suppression tables itself.
+// The LANE this routine fires in — REPORTED here, never edited here. A lane decides the ORDER
+// several routines fire in and belongs to no single one of them, so it is instance state the
+// Routines page owns (docs/lanes-domains.md). Editing it here would put a control over OTHER
+// routines' firing among controls that are otherwise all this routine's own config — the blur
+// that let a TIMING decision silently change a routine's permissions and its shared store, with
+// nothing on either page to say so. What this routine decides for itself is its DOMAIN — that
+// IS a config save like every other one here (the Domain section further down).
 //
-// F388: the selection comes from MEMBERSHIP in /api/groups, never from the card's
-// `group_managed` — that field answers a different question ("does a SCHEDULED group drive
-// this routine's fires?", D71) and is null for a member of an unscheduled group. Reading it
-// as membership rendered a persisted assignment as "none" after reload, so users assigned
-// the group again and reported data loss (R499/R500).
-function groupTile(slug, current) {
-  const sel = el("select", { class: "hero-group-sel" });
-  const sub = el("div", { class: "hero-sub" }, current
-    ? "fires via the group's chain — its own cron is suppressed"
-    : "fires on its own cron");
-  let groupsData = null;
+// Membership comes from MEMBERSHIP in /api/lanes, never from the detail payload's
+// `lane_managed` — that field answers a different question ("does a SCHEDULED lane drive this
+// routine's fires?", D71) and is null for a member of an unscheduled lane. Reading it as
+// membership rendered a persisted assignment as "none" after a reload, so users assigned it
+// again and reported data loss (F388, R499/R500).
+function laneTile(slug) {
+  const name = el("div", { class: "hero-strong muted" }, "…");
+  const sub = el("div", { class: "hero-sub" }, "");
   (async () => {
     try {
-      groupsData = await api("/api/groups");
-      sel.replaceChildren(
-        el("option", { value: "" }, "none"),
-        ...(groupsData.groups || []).map((g) => el("option", { value: g.id }, g.name)));
-      const mine = (groupsData.groups || [])
-        .find((g) => (g.members || []).some((m) => m.slug === slug));
-      sel.value = mine?.id || "";
-      // An UNSCHEDULED group changes nothing about firing — say so instead of leaving the
-      // "fires on its own cron" line looking like the routine is in no group at all.
-      if (mine && !current)
-        sub.textContent = `member of ${mine.name} — the group has no schedule, so its own cron applies`;
-    } catch { sel.replaceChildren(el("option", {}, "unavailable")); sel.disabled = true; }
-  })();
-  const spec = (ms) => ms.map((m) => ({ slug: m.slug }));
-  sel.onchange = async () => {
-    const target = sel.value;
-    sel.disabled = true;
-    try {
-      const prev = (groupsData.groups || [])
-        .find((g) => (g.members || []).some((m) => m.slug === slug));
-      if (prev && prev.id !== target)
-        await api(`/api/groups/${prev.id}`, { method: "PATCH",
-          body: { members: spec((prev.members || []).filter((m) => m.slug !== slug)) } });
-      if (target && (!prev || prev.id !== target)) {
-        const g = (groupsData.groups || []).find((x) => x.id === target);
-        await api(`/api/groups/${target}`, { method: "PATCH",
-          body: { members: [...spec(g.members || []), { slug }] } });
+      const data = await api("/api/lanes");
+      const mine = (data.lanes || [])
+        .find((l) => (l.members || []).some((m) => m.slug === slug));
+      if (!mine) {
+        name.replaceChildren("none");
+        sub.replaceChildren("fires on its own cron · lanes are set on the ",
+          el("a", { class: "hero-link", href: "#/routines" }, "Routines page"));
+        return;
       }
-      const joined = (groupsData.groups || []).find((x) => x.id === target);
-      toast(!target ? "left the group — its own cron applies again"
-            : joined?.cron ? "joined — the group's schedule now drives this routine"
-                           : "joined — the group has no schedule, so its own cron still applies");
-      setTimeout(() => location.reload(), 600);   // hero + schedule tiles re-read the truth
-    } catch (err) { toast(err.message, 4000, { error: true }); sel.disabled = false; }
-  };
-  return tile("group", el("div", { class: "hero-strong" }, sel), sub);
+      name.className = "hero-strong";
+      name.replaceChildren(el("a", { class: "hero-link", href: "#/routines",
+        title: "lanes are edited on the Routines page" }, mine.name));
+      sub.replaceChildren(mine.cron
+        ? "fires via the lane's chain — its own cron is suppressed"
+        : "the lane has no schedule, so its own cron applies");
+    } catch { name.replaceChildren("unavailable"); }
+  })();
+  const node = tile("lane", name, sub);
+  node.setAttribute("data-hero-lane", "");   // filled async — a stable hook to wait on
+  return node;
 }
 
 // The hero: a compact instrument band an operator reads before touching any config.
@@ -85,7 +71,7 @@ export function routineHero(d, slug) {
                      : (d.schedule_desc || "manual only"))
       : "scheduler off")));
 
-  tiles.push(groupTile(slug, d.group_managed));
+  tiles.push(laneTile(slug));
 
   const lr = d.last_run;
   tiles.push(tile("last run",

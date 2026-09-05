@@ -8,8 +8,8 @@
 //
 // That is the whole point of the reversal. Under the layer this panel had to explain what was
 // inherited, what was set here, and what had been subtracted with `template_except:` — three
-// concepts stacked on the group's own inheritance, for a starting point nobody wanted to keep
-// tracking.
+// concepts stacked on the routine's DOMAIN inheritance, for a starting point nobody wanted to
+// keep tracking. The domain block is the one layer that stayed (D82); this one is a copy.
 
 import { api } from "/static/api.js";
 import { el, toast } from "/static/util.js";

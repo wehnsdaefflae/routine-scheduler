@@ -10,13 +10,13 @@ tags: [tool-use, research, web]
 When a step turns on a fact about the outside world you are not certain of, **look it up
 instead of recalling it**. Your training is stale and lossy; a wrong fact quietly poisons
 everything downstream of it. Your CAPABILITIES catalog lists a web-search tool returning ranked
-title/url/snippet results, and deeper retrieval ones (page fetch, scrapers).
+title/url/snippet results, plus deeper retrieval ones (page fetch, scrapers).
 
 **When to search (default to yes for these):**
 - Anything time-sensitive or that changes: prices, availability, versions, schedules, who
   currently holds a role, "latest"/"current"/"today".
 - Specifics you'd otherwise approximate: exact names, dates, figures, identifiers, URLs.
-- A domain the instruction cares about but you only half-know — confirm before you build on it.
+- A subject the instruction cares about but you only half-know — confirm before you build on it.
 - Any claim you're about to write into a deliverable as if it were established fact.
 
 **When not to:** settled general knowledge, this routine's own state, or arithmetic — searching

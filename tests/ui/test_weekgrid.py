@@ -1,8 +1,12 @@
 """The dashboard "this week" strip: the live green "now" cursor advances on its own between
-data refreshes (F230); same-group routines merge onto one labelled lane — a SCHEDULED group's
-lane chains its members at the GROUP's fires (D71/R313); and bars drag: onto a sibling to
-reorder the group, onto another group's lane to join it, onto the remove strip to leave, and
-along the own lane to reschedule.
+data refreshes (F230); the routines of one LANE merge onto a single labelled strip row — a
+SCHEDULED lane's row chains its members at the LANE's fires (D71/R313); and bars drag: onto a
+sibling to reorder the lane, onto another lane's row to join it, onto the remove strip to
+leave, and along the own row to reschedule.
+
+The strip calls its own rows "lanes" too (`.wg-row` / `.wg-lane-label`) — that is a geometry
+word this component has always used and it is NOT the routine lane, so the assertions below
+read the label's TEXT (a lane's row is prefixed ⛓) rather than any class modifier.
 """
 
 import re
@@ -84,77 +88,78 @@ def test_now_cursor_advances_on_its_own(ui, ui_page):
     assert x_after > x_before + 2, f"now-cursor did not advance: {x_before} -> {x_after}"
 
 
-def test_same_group_routines_share_one_week_row(ui, ui_page, make_routine):
-    """F271 (operator ask): routines in the same group are drawn on the SAME week-strip row, in
-    the group's member (execution) order — so a group reads as one chain on the timeline rather
-    than scattered across separate rows. Two grouped, scheduled routines → ONE wg-row carrying
-    both their bars; ungrouped routines keep their own row."""
-    from rsched import groups
+def test_same_lane_routines_share_one_week_row(ui, ui_page, make_routine):
+    """F271 (operator ask): routines in the same lane are drawn on the SAME week-strip row, in
+    the lane's member (execution) order — so a lane reads as one chain on the timeline rather
+    than scattered across separate rows. Two scheduled routines in one lane → ONE wg-row
+    carrying both their bars; a routine in no lane keeps its own row."""
+    from rsched import lanes
 
     # uir already exists (ui fixture); add a second scheduled routine and a solo one.
     make_routine(slug="uir2")
     make_routine(slug="solo")
-    # Group uir + uir2 in fire order; 'solo' stays ungrouped.
-    groups.create(ui.routines, name="Nightly", on_failure="stop",
-                  members=[{"slug": "uir"}, {"slug": "uir2"}])
+    # uir + uir2 share a lane, in fire order; 'solo' is in none.
+    lanes.create(ui.routines, name="Nightly", on_failure="stop",
+                 members=[{"slug": "uir"}, {"slug": "uir2"}])
 
     ui_page.goto(f"{ui.url}/#/routines")
     expect(ui_page.locator(".weekpanel svg.wg")).to_be_visible(timeout=10_000)
     rows = ui_page.locator(".weekpanel .wg-row")
-    # The two grouped routines collapse into ONE row; solo has its own → 2 rows, not 3.
+    # The lane's two routines collapse into ONE row; solo has its own → 2 rows, not 3.
     expect(rows).to_have_count(2, timeout=10_000)
-    # The merged row carries bars linking to BOTH grouped routines.
-    group_row = ui_page.locator(".weekpanel .wg-row",
-                                has=ui_page.locator("a[href='#/routine/uir2']")).first
-    expect(group_row.locator("a[href='#/routine/uir'] .wg-bar")).to_have_count(1)
-    expect(group_row.locator("a[href='#/routine/uir2'] .wg-bar")).to_have_count(1)
-    # The lane names itself in the name column (the legend is retired — color identity
+    # The merged row carries bars linking to BOTH of the lane's routines.
+    lane_row = ui_page.locator(".weekpanel .wg-row",
+                               has=ui_page.locator("a[href='#/routine/uir2']")).first
+    expect(lane_row.locator("a[href='#/routine/uir'] .wg-bar")).to_have_count(1)
+    expect(lane_row.locator("a[href='#/routine/uir2'] .wg-bar")).to_have_count(1)
+    # The row names itself in the name column (the legend is retired — color identity
     # lives on the routine rows/cards as swatches).
-    expect(ui_page.locator(".weekpanel .wg-lane-label.group", has_text="Nightly")).to_have_count(1)
+    expect(ui_page.locator(".weekpanel .wg-lane-label",
+                           has_text="⛓ Nightly")).to_have_count(1)
 
 
-def _chained_group(ui, make_routine):
-    """Two fresh routines in a SCHEDULED group 'Chained' (daily 09:30 — the members' own
+def _chained_lane(ui, make_routine):
+    """Two fresh routines in a SCHEDULED lane 'Chained' (daily 09:30 — the members' own
     weekly fixture crons are suppressed, D71); the harness routine 'uir' stays beside it
-    as an ungrouped lane."""
-    from rsched import groups
+    on a row of its own, in no lane."""
+    from rsched import lanes
 
     make_routine(slug="gm1")
     make_routine(slug="gm2")
-    return groups.create(ui.routines, name="Chained", on_failure="stop", cron="30 9 * * *",
-                         members=[{"slug": "gm1"}, {"slug": "gm2"}])
+    return lanes.create(ui.routines, name="Chained", on_failure="stop", cron="30 9 * * *",
+                        members=[{"slug": "gm1"}, {"slug": "gm2"}])
 
 
-def _members(ui, gid):
-    from rsched import groups
+def _members(ui, lane_id):
+    from rsched import lanes
 
-    g = groups.get(ui.routines, gid)
-    return [m["slug"] for m in (g["members"] if g else [])]
+    rec = lanes.get(ui.routines, lane_id)
+    return [m["slug"] for m in (rec["members"] if rec else [])]
 
 
-def test_scheduled_group_chains_on_one_labelled_lane(ui, ui_page, make_routine):
-    """D71/R313: a group WITH a cron owns its members' schedule. The lane draws the GROUP's
+def test_scheduled_lane_chains_on_one_labelled_row(ui, ui_page, make_routine):
+    """D71/R313: a lane WITH a cron owns its members' schedule. The row draws the LANE's
     fires — each member once per fire, chained — so both members carry the SAME bar count,
-    the daily count, not their own (suppressed) weekly crons' 1-2. Every lane names itself
-    in the name column, and the group label's hover carries the group's schedule."""
-    _chained_group(ui, make_routine)
+    the daily count, not their own (suppressed) weekly crons' 1-2. Every row names itself
+    in the name column; the lane label's hover carries the lane's schedule."""
+    _chained_lane(ui, make_routine)
 
     ui_page.goto(f"{ui.url}/#/routines")
     expect(ui_page.locator(".weekpanel svg.wg")).to_be_visible(timeout=10_000)
-    # two lanes: the group's + the solo harness routine's — each labelled
+    # two rows: the lane's + the solo harness routine's — each labelled
     expect(ui_page.locator(".weekpanel .wg-row")).to_have_count(2, timeout=10_000)
     expect(ui_page.locator(".weekpanel .wg-lane-label", has_text="Test uir")).to_have_count(1)
-    group_label = ui_page.locator(".weekpanel .wg-lane-label.group", has_text="Chained")
-    expect(group_label).to_have_count(1)
-    # the lane's schedule is the GROUP's, not the vestigial member cron
-    expect(group_label).to_have_attribute("title", re.compile("09:30"))
+    lane_label = ui_page.locator(".weekpanel .wg-lane-label", has_text="⛓ Chained")
+    expect(lane_label).to_have_count(1)
+    # the row's schedule is the LANE's, not the vestigial member cron
+    expect(lane_label).to_have_attribute("title", re.compile("09:30"))
     n1 = ui_page.locator(".weekpanel a[href='#/routine/gm1'] .wg-bar").count()
     n2 = ui_page.locator(".weekpanel a[href='#/routine/gm2'] .wg-bar").count()
-    assert n1 == n2 and 6 <= n1 <= 8, f"expected the daily group fires on both members, got {n1}/{n2}"
+    assert n1 == n2 and 6 <= n1 <= 8, f"expected the daily lane fires on both members, got {n1}/{n2}"
 
 
-def test_drag_onto_sibling_reorders_group(ui, ui_page, make_routine):
-    g = _chained_group(ui, make_routine)
+def test_drag_onto_sibling_reorders_the_lane(ui, ui_page, make_routine):
+    g = _chained_lane(ui, make_routine)
     ui_page.goto(f"{ui.url}/#/routines")
     expect(ui_page.locator(".weekpanel a[href='#/routine/gm2'] .wg-bar").first).to_be_visible(timeout=10_000)
 
@@ -165,8 +170,8 @@ def test_drag_onto_sibling_reorders_group(ui, ui_page, make_routine):
         f"reorder did not land: {_members(ui, g['id'])}"
 
 
-def test_drag_to_remove_strip_leaves_group(ui, ui_page, make_routine):
-    g = _chained_group(ui, make_routine)
+def test_drag_to_remove_strip_leaves_the_lane(ui, ui_page, make_routine):
+    g = _chained_lane(ui, make_routine)
     ui_page.goto(f"{ui.url}/#/routines")
     bar = ui_page.locator(".weekpanel a[href='#/routine/gm1'] .wg-bar").first
     expect(bar).to_be_visible(timeout=10_000)
@@ -176,20 +181,20 @@ def test_drag_to_remove_strip_leaves_group(ui, ui_page, make_routine):
     ui_page.mouse.down()
     ui_page.mouse.move(src[0] + 30, src[1] - 6, steps=3)   # cross the drag threshold
     zone = ui_page.locator(".weekpanel .wg-dropzone")
-    expect(zone).to_be_visible()   # the remove strip appears for a grouped bar
+    expect(zone).to_be_visible()   # the remove strip appears for a bar that is in a lane
     ui_page.mouse.move(*_center(zone), steps=6)
     ui_page.mouse.up()
     assert _poll(lambda: _members(ui, g["id"]) == ["gm2"]), \
         f"leave did not land: {_members(ui, g['id'])}"
 
 
-def test_drag_onto_group_lane_joins(ui, ui_page, make_routine):
-    g = _chained_group(ui, make_routine)
+def test_drag_onto_another_lanes_row_joins(ui, ui_page, make_routine):
+    g = _chained_lane(ui, make_routine)
     ui_page.goto(f"{ui.url}/#/routines")
     solo_bar = ui_page.locator(".weekpanel a[href='#/routine/uir'] .wg-bar").first
     expect(solo_bar).to_be_visible(timeout=10_000)
 
-    # the group lane's y from its row; the drop x must be INSIDE the visible strip (the row
+    # the lane row's y from its row; the drop x must be INSIDE the visible strip (the row
     # rect spans all seven laid-out days, so its center x sits scrolled out of view)
     _scroll_strip_to(ui_page, solo_bar)
     chained_bar = ui_page.locator(".weekpanel a[href='#/routine/gm1'] .wg-bar").first
@@ -200,9 +205,9 @@ def test_drag_onto_group_lane_joins(ui, ui_page, make_routine):
         f"join did not land: {_members(ui, g['id'])}"
 
 
-def test_drag_along_own_lane_reschedules(ui, ui_page, make_routine):
-    """A horizontal drag on an ungrouped routine's bar re-times its cron: one day-width to
-    the right moves the weekly fixture cron (Mon 07:00) to Tuesday, same cadence."""
+def test_drag_along_own_row_reschedules(ui, ui_page, make_routine):
+    """A horizontal drag on the bar of a routine in NO lane re-times its cron: one day-width
+    to the right moves the weekly fixture cron (Mon 07:00) to Tuesday, same cadence."""
     import yaml
 
     ui_page.goto(f"{ui.url}/#/routines")

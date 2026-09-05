@@ -94,7 +94,7 @@ def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,  #
     # Copying rather than layering is what makes routine.yaml say what the routine IS. Under the
     # layer, a routine's own file recorded only its DIFFERENCES from a template, so reading it
     # told you almost nothing and the page had to explain a second inheritance chain on top of
-    # the group's. The cost is the leverage: editing a template no longer reaches its adopters.
+    # the DOMAIN's. The cost is the leverage: editing a template no longer reaches its adopters.
     from ..templates import config_for as _template_config
     from ..templates import suggest as _suggest_template
 

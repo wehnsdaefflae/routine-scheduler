@@ -6,8 +6,8 @@ needs before touching anything; everything below is here to be looked up when th
 actually reaches a subsystem.
 
 Deeper single-topic guides live beside this one: subtasks, background tasks, triggers,
-schedule-once, conversations, playbooks, rules & permissions, sandboxing, OAuth
-connections, remote machines, notifications, search, run analytics, prompt anatomy,
+schedule-once, lanes & domains, conversations, playbooks, rules & permissions, sandboxing,
+OAuth connections, remote machines, notifications, search, run analytics, prompt anatomy,
 endpoints, authoring.
 
 ## How a run works (engine/)
@@ -708,7 +708,7 @@ whose TEXT must change on a live instance is converted by a one-shot migration i
   **A run without a user in the loop QUEUES instead of creating** (F328, `rsched/pending.py` +
   `web/api_pending.py`). The restriction to conversations was right — a scheduled run has nobody to
   design WITH — but its consequence was wrong: routine-improver reached a run holding a fully
-  designed, user-approved routine plus the group it belonged in and could not materialize either,
+  designed, user-approved routine plus the lane it belonged in and could not materialize either,
   so the design was hand-carried back to the operator to paste in (R353). The missing piece was
   never permission, it was a QUEUE. Both kinds are now surfaced to every run and the HANDLER
   decides: a root conversation materializes through D92's preview→confirm as before — whose
@@ -720,18 +720,18 @@ whose TEXT must change on a live instance is converted by a one-shot migration i
   the same call writes a proposal to `.control/pending-creations/<id>.json` and returns an
   observation saying plainly that nothing was created and not to re-issue it. The Decisions page
   carries a band of proposals — what would be created, from which routine and run, with the full
-  instruction — and one click materializes through the SAME `workflows.scaffold` / `rsched.groups`
+  instruction — and one click materializes through the SAME `workflows.scaffold` / `rsched.lanes`
   calls, or discards. **The engine still never writes `routine.yaml`**: the web layer materializes,
   exactly as it applies forever-grants, and that is why the materializer lives there. The proposing
   routine learns the outcome the ordinary way, from an inbox message its NEXT run drains — nothing
   is woken, because a creation is not urgent and a queue that started runs would be a scheduler in
   disguise. Ungated like `report`: a proposal nobody approved creates nothing and reaches nobody but
-  the operator's own page, so the approval IS the gate and it is a human. `manage_group`'s `list`
-  still answers directly (it writes nothing, and a run that cannot read the group store cannot
+  the operator's own page, so the approval IS the gate and it is a human. `manage_lane`'s `list`
+  still answers directly (it writes nothing — a run that cannot read the lane store cannot
   propose a correct change to it); every mutating verb queues. A within-reply CHILD is still
   refused outright at every depth > 0 and the kinds are not even surfaced to it — a sub-workflow
-  must not create routines or reshape groups as a side effect, and a proposal from one traces back
-  to nothing the user reasoned about. The queue is for a run that HAS a user, just not right now.
+  must not create routines or reshape lanes as a side effect, since a proposal from one traces
+  back to nothing the user reasoned about. The queue is for a run that HAS a user, just not now.
   daemon's `registry_rescan_s` timer picks the new dir up). There is no clarification ROUTINE behind
   any of this: the standalone wizard that copied a template's budgets/models/rules into a session was
   retired with D59, and the clarifying now happens in the conversation's own chat.
@@ -749,13 +749,13 @@ whose TEXT must change on a live instance is converted by a one-shot migration i
   (could you QUOTE the user's own answer? if not, ask rather than draft), and the draft observation tells
   the relay to name any of the three that is still the agent's inference rather than present it as the
   user's decision. That observation ALSO carries `design_checks` — the operator's standing intake rules
-  (SHAPE: offer the ingest/outbound split into two grouped routines · MECHANISM: mark the judgment-free
-  repeated steps for the routine's own `scripts/` · OWNERSHIP: the instruction is the TASK, conduct is
-  rules and capability is permissions · SCOPE: schedule/budgets/workdir/models are config, never the
-  instruction). This is the ONE live copy of the intake contract. A second copy lived in a
-  `clarify-instruction` pattern that nothing ever executed, so it went stale unnoticed — it still
-  described conduct as per-routine "traits" long after rules became one shared library doc. It was
-  deleted with its content lifted here.
+  (SHAPE: offer the ingest/outbound split into two routines in one lane · MECHANISM: mark the
+  judgment-free repeated steps for the routine's own `scripts/` · OWNERSHIP: the instruction is the
+  TASK, conduct is rules and capability is permissions · SCOPE: schedule/budgets/workdir/models are
+  config, never the instruction). This is the ONE live copy of the intake contract. A second copy
+  lived in a `clarify-instruction` pattern that nothing ever executed, so it went stale unnoticed
+  — it still described conduct as per-routine "traits" long after rules became one shared library
+  doc. It was deleted with its content lifted here.
 - **Rules** (`library-seed/rules/`, `# rule:` heading, NO requires — lint-enforced): GENERAL
   rules — principle prose a run applies to its own case. ONE copy each, in the library: a routine
   holds SLUGS (`routine.yaml` `rules:`), named in main.md's Standing practices tail
@@ -929,90 +929,126 @@ whose TEXT must change on a live instance is converted by a one-shot migration i
   ONCE then CONSUMES the file (auto-deactivate = deletion). A conversation's self-armed one-shot
   is namespaced `conv--<slug>` and wakes the conversation by RESUMING its run ("remind me in 3
   days"). Cooldowns/expiry per request; corrupt requests are dropped, not rescanned.
-- **Routine groups (D53/D61/D67/D71/F292/D80)**: a group is an ORDERED list of member records —
-  `{"slug"}` (the F292 two-pass `split` flag is retired — D90, 0.205.0: a chain fires ONCE over
-  the members) — plus a
-  mid-chain-failure policy, stored instance-level in `.control/groups.json` (`rsched/groups.py` —
-  web-written CRUD via `web/api_groups.py` and the Routines page's group rows (D80: the former
-  /groups subpage is retired — the group rows carry run-now/pause/edit, the toolbar above the list
-  creates groups and holds the instance default, and the editors are overlays in
-  `static/components/groupmanage.js`), or the `manage_group` action from a root conversation —
-  including the group's cron schedule (R312), so group scheduling needs no operator round-trip; a
-  group is never routine config).
-  - **Shared routine config (D82)**: a group also carries `config:` — routine.yaml keys its
-    members INHERIT. Related routines share a policy surface (the same permissions, capabilities,
-    rules, machines, connections, secret grants, models, budgets, fs roots, tags), and keeping N
-    copies of it in step is how they drift apart; the group holds one copy. The group is a
-    **default, never an override**: `config/routine.apply_group_config` merges it into the
-    member's RAW routine.yaml *before validation* — list keys UNION (the group is a floor a member
-    adds to), mapping keys merge per key with the member's value winning, and `capabilities` does
-    both (its lists union, its dials take the member's when set). Merging pre-validation is what
-    makes "the member set it" mean *the key is in its file* rather than *the model has a default*
-    — every field here has a non-empty default, so a post-validation merge could never tell the
-    two apart. `groups.CONFIG_KEYS` also fixes what may NOT be shared: slug/name/description/
-    enabled/schedule/workflow/retention/triggers/improve say which routine this is and when it
-    runs. Nothing is written back to routine.yaml, so leaving a group returns the routine to
-    exactly what its own file says; `load_routine` records `inherited`/`inherited_from` so the
-    routine page marks an inherited value instead of letting it read as one set there.
-  "Run group now" — or the group's OWN cron (below) — ARMS a
-  sequential chain (`rsched/group_runs.py`, one in-flight chain per group, snapshot of member
-  records + resolved policy at arm time); the scheduler-ticked **`GroupRunManager`**
-  (`daemon/group_runs.py`) advances it one transition per tick: fire the member at the cursor, wait
+- **How routines relate to each other — three axes** (docs/lanes-domains.md has the full
+  argument). A **LANE** decides WHEN a set of routines fires and in what order; a **DOMAIN**
+  decides WHAT THEY SHARE (the inherited config block, the shared store, the notes boundary);
+  **`tags:`** says what a routine is about and carries no behaviour. They are three objects
+  rather than one because they have different cardinalities and different owners. The temporal
+  axis is the strictest — cron exclusivity is a hard fact, since a routine in two scheduled
+  lanes fires twice — so anything sharing a record with it inherits that cardinality: "these
+  five routines share a permission surface" could not be said without also saying "and they fire
+  together", the shared surface would be copied once per cadence, the copies would drift, and
+  moving a routine to another clock would silently change what it may do. A timing decision
+  would be a permissions decision, with nothing to say so. None of that is hypothetical: four
+  `Instance ·` copies of one byte-identical 294-char config block, two `Professional ·` copies
+  of another, with the missing dimensions hand-encoded in the NAMES.
+- **Lanes — the temporal axis (D53/D61/D71/D80/D90)**: a lane is an ORDERED list of member
+  records — `{"slug"}` — plus a mid-chain-failure policy and, optionally, a cron of its own,
+  stored instance-level in `.control/lanes.json` (`rsched/lanes.py`). Ownership mirrors
+  `rsched/triggers.py` and `rsched/schedule_once.py`: the order several routines fire in belongs
+  to no single one of them, so a lane is daemon-owned instance state — **the web RECORDS, the
+  daemon FIRES** — and it CANNOT live in a routine.yaml. CRUD is web-written via
+  `web/api_lanes.py` and the Routines page's lane rows (D80: there is no standalone subpage —
+  the rows carry run-now/pause/edit, the toolbar above the list creates lanes and holds
+  the instance default, and the editors are overlays in `static/components/lanemanage.js`), or
+  the `manage_lane` action from a root conversation — including the lane's own cron (R312), so
+  lane scheduling needs no operator round-trip. **A routine belongs to AT MOST ONE lane and that
+  is ENFORCED**; a lane carries no config and no store, so DELETING one returns its members to
+  their own crons and changes nothing else about them.
+  A chain fires ONCE, every member in order. A flow with an inbound and an outbound end BRACKETS
+  the lane (D90): a dedicated inbound-router member placed first in the order and a dedicated
+  outbound-sender member placed last, two single-purpose routines rather than one routine run
+  twice.
+  "Run lane now" — or the lane's OWN cron (below) — ARMS a
+  sequential chain (`rsched/lane_runs.py`, one in-flight chain per lane, snapshot of member
+  records + resolved policy at arm time); the scheduler-ticked **`LaneRunManager`**
+  (`daemon/lane_runs.py`) advances it one transition per tick: fire the member at the cursor, wait
   for a terminal state, then per the outcome and `on_failure` (`stop` aborts the rest — any
   non-`ok` outcome counts as failure, a missing/disabled/crashed member too; `continue` fires on)
-  fire the next.
-  - **The two-phase fire (F292, operator standing order R214.3b)**: a chain runs in TWO PASSES —
-    the INGEST pass fires every member in group order; the OUTBOUND pass then fires the members
-    flagged `split` again, same order — so every member's ingestion/processing lands before any
-    split member's outbound communication, and a later member's ingest can read an earlier
-    member's fresh state. A SPLIT member is fired once per pass and told its half via a run-scoped
-    `phase=ingest|outbound` boot param: `Runner.fire` writes it into the run dir's `boot.json`
-    before the engine boots (so a resume keeps it — the file rides the dir), the engine reads it
-    at boot beside slug/run_ts (`RunContext.group_phase`, stamped into status.json as
-    `group_phase`), and the harness contract carries the pass's marching orders (`GROUP FIRE
-    PHASE: …` — ingest: process and stage only, NO outbound; outbound: read the staged state and
-    send, don't re-ingest; docs/prompt-anatomy.md). A NON-SPLIT member runs once, in the ingest
-    pass, with no param — its whole job in one run; a group with no split members chains once,
-    exactly as before. `stop` mid-ingest halts the outbound pass too (it would read state the
-    halted ingest never staged). `rsched run-once <slug> --phase ingest|outbound` exercises a
-    split routine's phase branch by hand through the same boot.json channel.
-  Two group-wide facilities ride membership:
-  - **The group schedule (D71)**: a group may carry its own `cron` (+ the server `tz`, written by
-    the web beside it — the group editor has the same friendly editor a routine's schedule uses;
-    web RECORDS, daemon FIRES). The scheduler arms the chain on the group's cron — member 0 fires,
-    the rest chain on completion — and while a routine belongs to a SCHEDULED group its OWN cron is
+  fire the next. The chain's end emits a `lane_chain_done` / `lane_chain_stopped` health event;
+  a member it cannot fire emits a `lane_chain_member_skipped`.
+  - **The lane schedule (D71)**: a lane may carry its own `cron` (+ the server `tz`, written by
+    the web beside it — the lane editor has the same friendly editor a routine's schedule uses;
+    web RECORDS, daemon FIRES). The scheduler arms the chain on the lane's cron — member 0 fires,
+    the rest chain on completion — and while a routine belongs to a SCHEDULED lane its OWN cron is
     SUPPRESSED from the fire table and boot catch-up (one fire path, no double-firing); its
-    Schedule dropdown renders a locked "group managed" state linking to the group, the routines
-    overview shows the GROUP's schedule on the member's row instead of the suppressed cron
-    (R313 — `/api/groups` ships each group's `schedule_desc` for it), and clearing the
-    group's schedule (or leaving the group) restores the member's own cron at the next rescan.
-    A group fire due while its chain is still in flight is SKIPPED (the chain analog of
-    `overrun_skipped`); there is no group catch-up. Manual "Run now" on a member is unaffected.
+    Schedule dropdown renders a locked "lane managed" state linking to the lane, the routines
+    overview shows the LANE's schedule on the member's row instead of the suppressed cron
+    (R313 — `/api/lanes` ships each lane's `schedule_desc` for it). Clearing the lane's
+    schedule (or leaving the lane) restores the member's own cron at the next rescan.
+    A lane fire due while its chain is still in flight is REFUSED (`lane_fire_refused`, the chain
+    analog of `overrun_skipped`); there is no lane catch-up. Manual "Run now" on a member is
+    unaffected.
     The dashboard's week strip renders the same rule: `/api/schedule/week` withholds a
     suppressed member's cron fires (drawing them would show runs the daemon never fires) and
-    ships the group's own fire times under `groups` instead; the strip draws a scheduled group
-    as ONE labelled lane whose members chain end-to-end at each group fire (member order, split
-    members again as the outbound pass), each segment sized by that member's average runtime.
-    The strip's bars also DRAG (weekgrid-drag.js): onto a sibling bar to reorder the group,
-    onto another group's lane to join it, onto the remove strip to leave it, and along their
-    own lane to re-time the schedule — the group's cron on a scheduled-group lane, the
+    ships the lane's own fire times instead; the strip draws a scheduled lane as ONE labelled
+    row whose members chain end-to-end at each lane fire (member order), each segment sized by
+    that member's average runtime.
+    The strip's bars also DRAG (weekgrid-drag.js): onto a sibling bar to reorder the lane,
+    onto another lane's row to join it, onto the remove strip to leave it, and along their
+    own row to re-time the schedule — the lane's cron on a scheduled-lane row, the
     routine's own otherwise, both through the same `schedule.friendly` PATCH the editors use
     (custom crons have no draggable shape and are refused with a pointer to their editor).
-  - **The shared group store (D67)**: every run of a grouped routine gets
-    `.control/group-stores/<group-id>/` injected into its effective fs read+write roots at boot
-    (`RunContext.group_store_roots`, created lazily engine-side — run data, not config; children
+- **Domains — the shared-surface axis (D67/D82/F335)**: a domain is a NAME, a `config:` block its
+  members inherit, and a shared directory their runs read and write. Those three are ONE object
+  on purpose — they answer the same question (which routines are close enough to share?) and have
+  the same cardinality; splitting them would dissolve the argument that makes a domain note
+  approval-free. The record lives in `.control/domains.json` (`rsched/domains.py`, web CRUD via
+  `web/api_domains.py`, the shared-config editor in `static/components/domainconfig.js`), but
+  MEMBERSHIP does not: **a routine names its domain in its own routine.yaml** (`domain:`, an
+  ordinary per-routine setting, user-only like every other key there and written by no run). That
+  is what makes "at most one domain" a fact of the file rather than a rule someone has to enforce
+  across a list — `domains.members()` reads the routines themselves, so membership cannot
+  disagree with itself and a routine deleted from disk is out of the domain by construction.
+  Deleting a domain is REFUSED (409) while routines still name it: pulling it out from under its
+  members would silently narrow what every one of them may do, discovered at 3am by a run that
+  can no longer reach a root. Empty it first, one routine config save at a time. The STORE is
+  left on disk either way — a config record disappearing is not consent to delete the files
+  members wrote — and `rsched validate` names a routine whose `domain:` answers to nothing,
+  because that routine inherits an EMPTY block rather than failing.
+  - **Shared routine config (D82)**: the `config:` block is routine.yaml keys its members
+    INHERIT. Related routines share a policy surface (the same permissions, capabilities,
+    rules, machines, connections, secret grants, models, budgets, fs roots, tags); keeping N
+    copies of it in step is how they drift apart, so the domain holds one copy. The domain is a
+    **default, never an override**: `config/domainconfig.apply_shared_config` merges it into the
+    member's RAW routine.yaml *before validation* — list keys UNION (the domain is a floor a
+    member adds to), mapping keys merge per key with the member's value winning, and
+    `capabilities` does both (its lists union, its dials take the member's when set). Merging
+    pre-validation is what makes "the member set it" mean *the key is in its file* rather than
+    *the model has a default* — every field here has a non-empty default, so a post-validation
+    merge could never tell the two apart. `domains.CONFIG_KEYS` also fixes what may NOT be
+    shared: slug/name/description/enabled/schedule/workflow/retention/triggers/improve say which
+    routine this is and when it runs. There is exactly ZERO OR ONE layer, so
+    `domainconfig.domain_config_for` looks the block up BY ID out of the routine's own key and
+    merges nothing across records. That is what a second layer would cost: combining whatever a
+    membership list turns up, under "first record's value wins the whole key" while unioning
+    WITHIN one, makes what a routine inherits depend on the order rows happen to sit in a JSON
+    file — an order no caller could name. Nothing is written back to routine.yaml, so
+    clearing `domain:` returns the routine to exactly what its own file says; `load_routine`
+    records `inherited`/`inherited_from` so the routine page marks an inherited value instead of
+    letting it read as one set there.
+  - **The shared domain store (D67)**: every run of a routine in a domain gets
+    `.control/group-stores/<domain-id>/` injected into its effective fs read+write roots at boot
+    (`RunContext.domain_store_roots`, created lazily engine-side — run data, not config; children
     inherit it like every resource). The harness contract names the root and its collision
     semantics: writes are whole-file atomic and LAST WRITE WINS PER FILE, so members exchange
     files under per-routine names (`<slug>-<topic>.md`) and treat shared files as read-mostly.
-    It is also the natural home for what an ingest-end member stages for the outbound-end member
-    that follows it in the chain (its own `state/` works too).
-  - **Intra-group NOTES (F335, `rsched/groupnotes.py`)**: the light channel between routines that
+    It is also the natural home for what an inbound-end member stages for the outbound-end member
+    that follows it in a lane chain (its own `state/` works too). The directory name and the
+    `grp-` ids most domains carry are DELIBERATE: routines address these paths in their own
+    memory — one live routine holds `READ /control/group-stores/grp-8bfd2aa6/…` as a standing
+    prevention rule it wrote for itself after an incident; several more name a store id in a
+    ledger — so moving the store would silently falsify agent-authored notes instead of failing
+    loudly. An id is an OPAQUE HANDLE: nothing parses its prefix, so it identifies neither the
+    kind of object nor which store it lives in. A `grp-` id can name a lane and a domain
+    at once; a newly created record is given a `lane-` or `dom-` id.
+  - **Domain NOTES (F335, `rsched/domainnotes.py`)**: the light channel between routines that
     are already teammates. Reaching a sibling used to go through the same `report` machinery as
     reaching a stranger — a ledger row, a delivery into the target's `inbox/`, and an open
     maintenance item on the Messages page until somebody closed it — which turns "here is the file
     I staged for you" into a tracked work item a human has to close. A NOTE is coordination; a
     REPORT is work somebody must ACT on, tracked until answered, and `report` keeps that meaning
-    unchanged. A member writes `<group-store>/notes/<to-slug>/note-*.json` with an ordinary file
+    unchanged. A member writes `<domain-store>/notes/<to-slug>/note-*.json` with an ordinary file
     write (the store is already writable to it — **no new action kind**); the engine renders the
     waiting notes into the state digest at boot and DELETES them as it reads, mirroring how
     `inbox/` drains, so a note is delivered exactly once and never becomes a backlog someone has
@@ -1020,12 +1056,13 @@ whose TEXT must change on a live instance is converted by a one-shot migration i
     the actual sibling slugs — a channel a run does not know about is a channel that does not
     exist, and "write to a member" is not actionable without their names.
     **No approval, no ledger row, no Messages-page item**: the safety argument is the BOUNDARY,
-    not a gate. A note lives in the group's own store, which is injected into every member's fs
-    roots and nobody else's, and `write_note` refuses a pair sharing no group — reaching outside
-    the group is not something this channel declines, it is something it cannot express. That is
-    exactly why it may be approval-free. Membership is read LIVE, so a routine removed from a
-    group loses the channel in both directions at once. Delivery never starts a run: a sibling
-    picks its notes up when it next runs, which for a group chain is the same pass or the next.
+    not a gate. A note lives in the domain's own store, which is in its members' fs roots and
+    nobody else's, so reaching outside the domain is not something this channel declines — it is
+    something it cannot express. That is exactly why it may be approval-free — and why config
+    clustering and the trust boundary are one object rather than two. Membership is read LIVE
+    from the routines' own files, so a routine that leaves a domain loses the channel in both
+    directions at once. Delivery never starts a run: a sibling picks its notes up when it next
+    runs, which for a lane chain is the same chain or the next.
 - **Config changed while a run is LIVE** (`rsched/configflow.py`, F337). A run reads
   `routine.yaml` at boot and composes its prompt once, so a mid-run config edit lands on disk with
   the run unaware — except for the ad-hoc live paths the system had grown (an access-request
@@ -1081,7 +1118,7 @@ whose TEXT must change on a live instance is converted by a one-shot migration i
   ACROSS runs a met goal does have a consequence, and it is arranged so that nothing writes
   config. `registry.RoutineInfo.retired` is DERIVED from the goal document (memoized on
   `state/stopping.json` alone); the scheduler builds no fire-table entry and makes up no missed
-  fire for a retired routine, and a group chain records the member `outcome: "skipped"` and moves
+  fire for a retired routine; a lane chain records the member `outcome: "skipped"` and moves
   on. That is the whole of "disabling itself" — clearing a goal condition in the panel puts the
   routine back on the next rescan, and `enabled` is untouched. Making it permanent is a CLICK: the
   finish that completes the goal queues ONE `goal-reached` proposal on the existing `pending.py`
@@ -1093,9 +1130,9 @@ whose TEXT must change on a live instance is converted by a one-shot migration i
   reports against a finish line, it cannot draw one), and every `met` claim passes the v2
   verifier below. A retired routine reads as `finished` on the dashboard and the routine page —
   distinct from `disabled`, because one is done and the other was switched off — and its setup
-  surface carries a NOTE saying so instead of a cron that will never fire again. Group membership
-  is deliberately untouched: a retired member is skipped cleanly, so removing it would only cost
-  its D82 inherited config and its group store.
+  surface carries a NOTE saying so instead of a cron that will never fire again. Lane membership
+  and the routine's `domain:` are deliberately untouched: a retired member is skipped cleanly, so
+  dropping either would only cost it the D82 inherited config and the shared store.
 - **v2 — verifying the claims** (`engine/verifier.py`). v1 proves a run ACCOUNTED for its
   conditions; it cannot prove the account is TRUE, so a run could write `[s3] met — PDF verified`
   having never opened the PDF and the gate, the writer and the panel would all agree it was done.
@@ -1142,7 +1179,7 @@ whose TEXT must change on a live instance is converted by a one-shot migration i
   (`engine/executor._extra_secrets`, overriding any secrets-store value for that reserved
   name), so a run holding the API secret can READ the daemon API but every config-mutating
   route (routine/conversation PATCH, permissions PUT, grant decisions, settings, triggers,
-  groups, schedule spools) answers 403 with a pointer to `ask_user config_patch` — the
+  lanes, domains, schedule spools) answers 403 with a pointer to `ask_user config_patch` — the
   HTTP flank of "config is the user's" is sealed, mutating routes are primary-only BY
   DEFAULT, and opening one to routines is an explicit allowlist edit with its reason.
   `components/searchbox.js`, focused by `/` or Ctrl-K): SQLite FTS5 over both homes' PROSE —

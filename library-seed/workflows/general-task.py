@@ -4,15 +4,15 @@ Orient, do the instruction's work in verified steps, record, commit. This file i
 PATTERN, not a program: the orchestrator never executes it —
 it *acts it out*, one engine action per turn, following the control flow below (its branches,
 loops, and error handling). The dummy imports name the parameters this routine works with; the
-clarifier pins them down for the concrete task, and `decompose` turns this pattern into the
-routine's own markdown state-machine (main.md + steps/).
+clarifier pins them down for the concrete task and `decompose` turns this pattern into the
+routine's own markdown state-machine (main.md + stages/).
 """
 
 # --- Parameter contract -------------------------------------------------------------------------
 # These imports do not resolve to anything at run time. Each names one piece of information the
-# clarifier must fix for THIS routine — the type, and what it means, live in the comment.
+# clarifier must fix for THIS routine — the type and what it means live in the comment.
 from routine.params import (
-    DELIVERABLE,    # str       — the concrete artifact this routine produces, and where it lives
+    DELIVERABLE,    # str       — the concrete artifact this routine produces and where it lives
     SOURCES,        # list[str] — the inputs/feeds each run draws from (may be empty)
     SINCE_MARKER,   # str       — how "new since the last run" is tracked (a file under state/)
 )
@@ -93,10 +93,10 @@ def orient():
 
 
 def bootstrap():
-    """First run(s): create state/, understand the instruction's domain, and file deferred
-    questions for genuinely pivotal unknowns (ask-policy). Advance state/phase.json to 'steady'
-    once the basic loop can run, then continue into this run's normal work — a first fire that
-    delivers nothing but setup costs the user a whole cadence."""
+    """First run(s): create state/, understand the subject matter the instruction turns on, and
+    file deferred questions for genuinely pivotal unknowns (ask-policy). Advance state/phase.json
+    to 'steady' once the basic loop can run, then continue into this run's normal work — a first
+    fire that delivers nothing but setup costs the user a whole cadence."""
 
 
 def pick_work():
@@ -107,7 +107,7 @@ def pick_work():
     Take everything that is genuinely due — this is a work LIST, not a token gesture. What bounds
     a run is the stopping conditions in `state/stopping.json` (the user's own words for what DONE
     means, inlined above and accounted for in your finish summary). The turn budget is a runaway
-    BACKSTOP, not a ration: do not stop early because turns are being spent, and do not stretch a
+    BACKSTOP, not a ration: do not stop early because turns are being spent and do not stretch a
     finished job to fill them."""
 
 
@@ -184,7 +184,7 @@ def wrap_up():
     source (never against your own state files), TELL the user in plain words where it lives and
     how to reach it, and FINISH accounting those conditions as met. Start no new work, draw
     nothing new from SOURCES, and open no new question."""
-    return finish("ok", "Goal reached: deliverable verified, and where it lives.")
+    return finish("ok", "Goal reached: deliverable verified, plus where it lives.")
 
 
 if __name__ == "__main__":

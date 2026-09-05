@@ -2,12 +2,12 @@
 
 A routine that works on something over weeks needs a surface the user can look at between runs:
 what happened, what is waiting, and one control per decision. That surface is a page on
-`steward.markwernsdorfer.com`, and since 0.255.0 every routine that publishes one publishes into
-the **same** shell.
+`steward.markwernsdorfer.com` and every routine that publishes one publishes into the **same**
+shell.
 
 This is not engine code. The engine neither serves these pages nor knows they exist — a routine
 uploads them with the file-transfer capability like any other artifact. What the engine owns is
-the general rule that governs how, and the doc you are reading is the map.
+the general rule that governs how; the doc you are reading is the map.
 
 ## Why one shell
 
@@ -23,7 +23,7 @@ before unification:
   vanish the moment it was sent (R129/R134, fixed on ards only).
 - **one** page rendered an approval draft in an editable box. Everywhere else a correction had to
   be described in prose — the complaint that produced this is store row 5 on `ards`.
-- **three** different storage designs were live at once, and therefore three different answers to
+- **three** different storage designs were live at once and therefore three different answers to
   the same question: per-project JSONL behind `feedback.php` for the status pages, a directory of
   whole-file JSON blobs behind each radar's own `api.php`, and a third scheme on the bina host.
 
@@ -42,11 +42,11 @@ one storage layout, so a fix lands on every page at once.
 /_store/<project>/         reached only through the API; every file refuses a direct GET
     state.json.php           the state document: phase, prose, deliverables, gate, question
     items.json.php           {generated_at, items:[{id, state, ...}]} — the collection
-    model.json.php           what the item states mean: labels, help, tabs, legal transitions
+    model.json.php           what the item states mean: labels, help, views, legal transitions
     feedback.jsonl.php       append-only, everything the reader has said
     log.jsonl.php            append-only, every item write and every refusal
     snapshots/               the collection as it was before each replace
-/_shared/steward.css       the design system, and the type: it loads its own webfonts
+/_shared/steward.css       the design system and the type: it loads its own webfonts
 /_shared/steward.js        the shell: masthead, feedback rail, run trigger, the API client
 /_shared/modules/status.js the status body — gate, question, state, deliverables, documents
 /_shared/modules/board.js  the collection body — views come from the model (+ board.css)
@@ -73,18 +73,18 @@ deploy.
 
 All three are gone. `store.php` has no project list: `known_projects()` scans `_store/` for a
 directory holding a state document, which is the same set `what=hub` already derived its cards
-from, and `require_project()` validates the SHAPE of a slug (`^[a-z0-9][a-z0-9-]{1,39}$`) rather
-than membership of a list. `put-state` — the only op that can bring a project into being, and one
+from; `require_project()` validates the SHAPE of a slug (`^[a-z0-9][a-z0-9-]{1,39}$`) rather
+than membership of a list. `put-state` — the only op that can bring a project into being and one
 no guest may call — accepts a well-formed slug it has not seen, so a routine's first publish
 creates its project. The root `.htaccess` routes `/<slug>/` to `p.php` for any path that is not a
-real file or directory, and `p.php` reads the project's own state document for everything the
-generator used to be told: `card.name` is the title, and an optional `page` key carries `lang`,
+real file or directory; `p.php` reads the project's own state document for everything the
+generator used to be told: `card.name` is the title and an optional `page` key carries `lang`,
 `title`, `standfirst`, `module` (`status` or `board`) and `wide`. A project that publishes none
 of them still gets a correct page — a narrow English status sheet titled with its card name.
 
 Nothing that already works changes: the rewrite fires only where no directory exists, so every
-project that owns its body — `module: "own"` with its own `page.js` and `page.css`, and the
-coach whose page IS its app — keeps serving exactly as it did, and those are what
+project that owns its body — `module: "own"` with its own `page.js` and `page.css`, plus the
+coach whose page IS its app — keeps serving exactly as it did and those are what
 `pages/generate.py` is still for. What the maintainer has left in this path is deploying a page
 somebody genuinely wrote by hand.
 
@@ -103,18 +103,18 @@ edge, reported by the setup surface for every holder — and every routine holdi
 carries that read root. `steward-hub-maintainer` already had it: it owns the master in both
 directions.
 
-**What makes that true is a mechanism, not a sentence.** For a while it was only the sentence, and
+**What makes that true is a mechanism, not a sentence.** For a while it was only the sentence and
 the two copies drifted: the feedback-cursor default in `api.php` and the 16 MiB `MAX_BODY` in
 `store.php` were fixed straight on the host and existed nowhere else, one re-bootstrap away from
 being silently reverted — because a routine uploads a shared asset only when the path is ABSENT,
 so nothing propagates in either direction on its own. That reconciliation — master ahead of host is deployed, host ahead of master is committed back —
 was a routine's standing job for a while. It is now an operator step, for the reason in
-"Nobody deploys for anybody" below: the kit is the hub's own code, and there is no cadence at
+"Nobody deploys for anybody" below: the kit is the hub's own code and there is no cadence at
 which it needs looking at. It changes when we change it.
 
 **Why every stored file ends in `.php` and opens with a guard line.** The store holds the
-reader's own words and the only copy of his decisions, and "the directory is denied to HTTP" was
-a claim resting on a `.htaccess` — which does nothing on nginx, and this hosting is nginx. So the
+reader's own words and the only copy of his decisions — and "the directory is denied to HTTP" was
+a claim resting on a `.htaccess` — which does nothing on nginx and this hosting is nginx. So the
 denial lives in the file: the server executes it, the guard sends 403 and stops, and a direct GET
 returns nothing whatever the server config says. Our own reads skip that first line. Basic Auth
 still covers the whole host; this is what holds if it ever comes off, which has happened on a
@@ -133,11 +133,21 @@ POST /api.php  {token, project, op, …}
 `what=all` is what a project page calls: state, items, model and unconsumed feedback in one round
 trip. A page never fetches a file.
 
-The hub groups its cards into **expandable lists**, not tabs. Tabs showed one group and hid the
-rest, so "what needs me today" cost seven clicks to answer and a second group with something
-waiting stayed invisible behind the one that opened. Every group is on the page; one with nothing
-waiting starts collapsed, the summary carries the counts so a collapsed group still tells you
+The hub groups its cards into **expandable lists**, not tabs. Tabs showed one list and hid the
+rest, so "what needs me today" cost seven clicks to answer and a second list with something
+waiting stayed invisible behind the one that opened. Every list is on the page; one with nothing
+waiting starts collapsed, the summary carries the counts so a collapsed list still tells you
 whether to open it, and the choice is remembered.
+
+**A heading is one card's `tab`, spelled by the publisher.** The `status-page` rule ties that
+string to the routine's DOMAIN — the routines it shares a store with — so the hub shows the
+reader's own grouping rather than a second one invented for the web. The domain's NAME is not in
+a run's prompt (the store root it is given carries an opaque id), so the members keep the name
+themselves: a publisher reads the single line at `<shared-store>/steward-hub-tab.txt` and
+republishes it as its `tab`, writing it first if nobody has. One copy per domain is what keeps
+four siblings under one heading instead of four near-misses — and it is what moves a card when
+its routine joins a different domain. A publisher in no domain publishes no `tab` at all and the hub
+files it under its own default heading with the other unattached projects.
 
 `what=hub` is DERIVED from every project's own state document. There is no shared registry file,
 which removes a class of bug rather than documenting it: the old `projects.json` was one file
@@ -148,7 +158,7 @@ plus an open question — so a routine cannot understate what is waiting on him.
 `gate.php` runs before anything else. The token in the client JS is a namespace marker, not a
 credential. The reader's operations are not separately authenticated because they cannot be: the
 page runs as him. What protects the data is not an ACL but the shape of the operations — nothing
-can destroy a record, and the one destructive operation floors and snapshots first.
+can destroy a record and the one destructive operation floors and snapshots first.
 
 ## The gate
 
@@ -186,12 +196,12 @@ self-guarding like the store — `cgi-bin` being unserved is a property of one h
 
 Retiring it is a two-step with no exposed window: deploy the gate *behind* the existing Plesk
 protection, verify, then turn Plesk's protection off. If the gate were wrong you would never be
-open, and turning Plesk back on is the rollback.
+open and turning Plesk back on is the rollback.
 
 ### What arming it actually cost, twice
 
-**The blanket came off everything, and the gate only covers what calls it.** Plesk's Basic Auth
-protected every byte on the domain; `gate_require()` protects one file at a time. Every legacy
+**The blanket came off everything and the gate only covers what calls it.** Plesk's Basic Auth
+protected every byte on the host; `gate_require()` protects one file at a time. Every legacy
 path that had never needed to protect itself went world-readable the moment Plesk was turned off,
 silently and with no error anywhere: `/freelance-radar/api.php` (4.6 MB — the whole opportunity
 store, with which ones Mark pursued and what he drafted), `/freelance-radar/`, `/nanogeofeld/`
@@ -207,11 +217,11 @@ those — so a file a sibling uploaded after the baseline was invisible to it, w
 this invariant actually breaks. It now walks every directory over FTP, classifies each file
 against the same allowlist the `.htaccess` enforces, and then makes a handful of unauthenticated
 requests to prove the policy is in force at all: a listing looks perfect on a host whose
-`.htaccess` was deleted, and deleting it re-opens everything while every human-facing page keeps
+`.htaccess` was deleted and deleting it re-opens everything while every human-facing page keeps
 working (R1159).
 
 Closing it turned out to be a lesson in ownership. The obvious repair — convert or delete each
-loose file — was not available to the hub: every exposed path belonged to a sibling, and a routine
+loose file — was not available to the hub: every exposed path belonged to a sibling and a routine
 editing another project's data is exactly what the ownership boundary forbids.
 `steward-hub-maintainer` swept, found all twelve, closed none, and was right. A stage that tells a
 routine to do something its rules forbid produces a correct refusal, not a fix.
@@ -220,7 +230,7 @@ So the closure is host-level and hub-owned, touches no sibling file, and — the
 constraint — requires no server configuration at all:
 
 - **`/.htaccess`** is an ALLOWLIST, inherited by every project directory: everything is denied to
-  HTTP, and exactly four things are granted back — `.php` (which protects itself by calling the
+  HTTP and exactly four things are granted back — `.php` (which protects itself by calling the
   gate), `.html` (a deliverable the reader opens; a page holding DATA is written as `.php`), the
   asset types a page renders with (css/js/map/svg/images/fonts), and the web app manifest (a
   browser fetches it BEFORE any credential exists, which is the whole reason this host has a
@@ -228,7 +238,7 @@ constraint — requires no server configuration at all:
   Plesk fronts Apache with nginx and Apache honours it; measured 2026-09-01 against a probe
   directory, after the opposite had been written down and believed for months.
 
-  It began as a deny list of data-bearing extensions, and that is why the nightly sweep existed:
+  It began as a deny list of data-bearing extensions and that is why the nightly sweep existed:
   a deny list cannot cover a type nobody thought of, so something had to go looking for what it
   had missed. Inverted, the invariant is ENFORCED instead of audited — `.env`, `.sql`, `.bak`,
   `.orig`, `.docx`, a stray `.tex` are all covered by never having been granted — and the sweep
@@ -251,12 +261,13 @@ may write — then linked by the short docroot path it has there. A routine that
 the document as pending instead, because the rule already holds that an advertised document the
 reader cannot open is worse than one that is not listed at all.
 
-**One trap, and it took every gated page down for a minute.** Adding any `Require` directive makes
-Apache process authorization, and Apache does not hand `Authorization` to a FastCGI script unless
-told to — it only looked like it did because nothing here had made Apache process authorization
-before. The instant the deny block landed, every page 401'd a *valid* credential. `CGIPassAuth On`
-plus a `SetEnvIf` fallback lives in the same `.htaccess` and must stay; `gate.php?diag` is what
-tells "the credential was wrong" apart from "the credential never arrived".
+**One trap — and it took every gated page down for a minute.** Adding any `Require` directive
+makes Apache process authorization and Apache does not hand `Authorization` to a FastCGI script
+unless told to — it only looked like it did because nothing here had made Apache process
+authorization before. The instant the deny block landed, every page 401'd a *valid* credential.
+`CGIPassAuth On` plus a `SetEnvIf` fallback lives in the same `.htaccess` and must stay;
+`gate.php?diag` is what tells "the credential was wrong" apart from "the credential never
+arrived".
 
 That is the belt. The braces are that a project's data belongs in `_store/`, where each file
 carries its own guard line and none of this is needed; the five owners hold reports asking them to
@@ -264,12 +275,12 @@ move theirs (R1146–R1150). The deny is what covers the loose file nobody has t
 
 **And a refusal could not say which refusal it was.** Arming the gate without updating
 `WEB_AUTH_SOURCES.steward` to the same passphrase locked out all ten publishing routines at once
-(R1143). The rollout note above says to set them to the same value; it was skipped, and the
+(R1143). The rollout note above says to set them to the same value; it was skipped and the
 resulting 401 is indistinguishable from a header the server ate — `PHP_AUTH_PW` is filled only
-under mod_php, and a FastCGI bridge drops `Authorization` unless the vhost forwards it. Both
+under mod_php and a FastCGI bridge drops `Authorization` unless the vhost forwards it. Both
 causes now have one answer: `gate.php?diag` reports which credential channels carried anything on
 the caller's own request and whether each was accepted. It reveals nothing — armed state is
-already visible from any 401, and the rest is a fact about the caller's own request — and it is
+already visible from any 401 — and the rest is a fact about the caller's own request — and it is
 reachable without a credential on purpose, because it is needed exactly when you cannot get one
 in.
 
@@ -278,7 +289,7 @@ refused, a shrink past half of what is stored is refused, an item without an id 
 the previous set is snapshotted (20 kept). Generalised from the floors `freelance-radar` had
 already earned the hard way.
 
-**`advance` is gated** by `model.json`'s `transitions`, and a refused move is *recorded* in
+**`advance` is gated** by `model.json`'s `transitions` and a refused move is *recorded* in
 `log.jsonl` — "why did nothing happen when I clicked" should have an answer. A model with no
 transitions permits everything: a project that has not described its states should not have its
 writes refused for it.
@@ -305,13 +316,13 @@ One row per control click, appended:
 
 **Nothing is ever rewritten or removed.** An edit is a new row whose `kind` is `edit@<seq>`, a
 delete is `del@<seq>`, and the API folds the chain when it reads — so the user's
-original wording is always still on disk for the routine, and "change it" and "take it back"
+original wording is always still on disk for the routine and "change it" and "take it back"
 cost a row rather than a record. Encoding both in `kind` is deliberate: it needs no schema change
-anywhere that writes, and every historical line stays valid.
+anywhere that writes and every historical line stays valid.
 
 `seq` is the **highest seq already in the store, plus one** — not the line count. Counting lines
 is only correct while the file has never been touched: a store that is truncated, rotated or
-hand-repaired would re-issue numbers below every routine's consumed-cursor, and everything it
+hand-repaired would re-issue numbers below every routine's consumed-cursor and everything it
 held would be filtered out as "already read" and never surface again. (Found by reproducing it
 locally against the real endpoint, 2026-08-29.)
 
@@ -322,10 +333,10 @@ re-listing months of already-answered notes.
 
 ## The state document
 
-One canonical shape for every status page, and since 2026-09-01 the write path ENFORCES it.
+One canonical shape for every status page, enforced by the write path since 2026-09-01.
 
 It had to. The renderer reads the keys it knows and ignores the rest, so a misspelled key was
-never an error — it was an invisible section, and six of nine publishers had drifted apart that
+never an error — it was an invisible section and six of nine publishers had drifted apart that
 way without one of them finding out. `nanogeofeld` published `signoff` and `mail` where the shell
 reads `gate` and `mails`, so the day it had an approval to show, the panel would not have rendered
 and the hub would have counted zero things waiting on him. `sprind` published `feedback_seen`,
@@ -333,15 +344,15 @@ hardcoded to `0`, so its rail could never hide what had been acted on. `freelanc
 `birthday-admin` published no cursor at all. Prose in a rule could not stop any of it; a refusal
 naming the key can.
 
-`put-state` now refuses an unknown top-level key, listing it and the accepted set, and refuses a
+`put-state` now refuses an unknown top-level key, listing it and the accepted set — and refuses a
 document missing `generated`, `feedback_cursor` (a whole number) or `card` — the three with no
-safe default. `store.php`'s `STATE_KEYS` is the one list, and the `status-page` rule states it in
+safe default. `store.php`'s `STATE_KEYS` is the one list and the `status-page` rule states it in
 the routine's own terms.
 
 **The extension point is the model, not the data.** A project that needs a section of its own
 declares a journal view whose `source` names the key; `board.js` already renders exactly that, so
 the new section is visible in the model rather than guessed at from the payload. `sprind` uses it
-(`review`), and `birthday-admin` (`planning`).
+(`review`) and `birthday-admin` (`planning`).
 
 Two dual conventions went with it: the shell read `question || open_question` and
 `mails || correspondence`. Two spellings for one thing is how two publishers can be differently
@@ -361,18 +372,18 @@ wrong and both look fine.
 | `hook_url` | the webhook a submission pings, so a run fires on real input |
 | `page{lang,title,standfirst,module,wide}` | how `p.php` presents this project — the facts that used to be hard-coded per project in `pages/generate.py`. All optional: a project that says nothing gets a narrow English status sheet titled with its `card.name` |
 
-## Who is reading, and what a visit means
+## Who is reading and what a visit means
 
 Until 2026-09-01 this host had exactly one identity: everyone who knew the passphrase got a cookie
-whose value was the same digest for everybody, and could read and write every project. There was
-no way to show one page to one person, and no way to tell afterwards whose "looks right" was on
+whose value was the same digest for everybody and could read and write every project. There was
+no way to show one page to one person and no way to tell afterwards whose "looks right" was on
 the record.
 
 **An invitation is a link and a label.** `invites.php` folds an append-only log into the current
 set; the link carries the invite id plus a digest of it keyed by the host secret, so the server
 looks the invitation up directly and cannot be handed a forged one. Following `/i.php?t=…` swaps
 the token for a cookie and redirects — a token in a URL survives in history, in a chat log and in
-a screenshot of the address bar, and every request after the first carries a cookie instead.
+a screenshot of the address bar — and every request after the first carries a cookie instead.
 
 | role | may |
 |---|---|
@@ -387,15 +398,15 @@ twice**, in the page and again on every read and write, because a control the pa
 not a control the caller cannot reach. Revoking is one appended row and takes effect on the next
 request; the rows stay, so what a withdrawn guest said keeps its author.
 
-Every feedback row now carries `who` and `role`, and the rule tells routines what to do with that:
-a guest's approval is not his, and reading one as the go-ahead is how a mail goes out on the wrong
+Every feedback row carries `who` and `role` — and the rule tells routines what to do with that:
+a guest's approval is not his and reading one as the go-ahead is how a mail goes out on the wrong
 person's say-so.
 
 **Two marks, two meanings.** `needs_you` is an open decision and only answering clears it; `unseen`
 is "changed since you last looked" and opening the page clears that. Collapsing them into one mark
 was tempting and would have been wrong — a hub that forgets what is waiting the moment you glance
 at it has stopped doing its one job. The revision counter behind `unseen` is the API's, bumped on
-every `put-state`, and it is deliberately NOT in the state document: that document has a closed key
+every `put-state` and it is deliberately NOT in the state document: that document has a closed key
 set, so a routine amending its own state and writing it back would hand the counter straight back
 and be refused for a key it never wrote.
 
@@ -405,17 +416,17 @@ the two radars — the pages with the most sitting on him — reported the quiet
 ## Where a run is, while it is running
 
 Between runs the page showed a date; during a run it showed nothing, so two routines could work
-for half an hour while every card claimed yesterday. `put-progress` fixes that, and the run
+for half an hour while every card claimed yesterday. `put-progress` fixes that and the run
 publishes it itself at each stage boundary — the engine sends nothing outward on a routine's
-behalf, and one turn per stage is what stage-level honesty costs.
+behalf and one turn per stage is what stage-level honesty costs.
 
 It is a **heartbeat, not a flag**: the store stamps each update and computes `live` from its age
 against a 25-minute TTL, so a run that dies mid-stage decays to "last seen" rather than leaving a
 spinner that outlives it. The page renders a chip, a step count and a rule that fills; the pip's
-pulse is the only animation on the host that is not the load reveal, and it is there because it
+pulse is the only animation on the host that is not the load reveal and it is there because it
 encodes the one thing on the page that is changing while you look at it.
 
-## Submitting, and what it is for
+## Submitting and what it is for
 
 Every control writes immediately and stays revisable until the routine consumes it. What used to
 also happen was a webhook ping per control, so one sitting could start a run per click.
@@ -434,7 +445,7 @@ submission only arrives from the tailnet until `/api/hooks/*` is published.
 "Field notebook", chosen against `interface-design`'s named default clusters rather than into
 them. Warm paper with a real grain, a red margin rule down the sheet that means one thing only —
 something here is waiting for you — and markers hanging in the margin that encode state rather
-than decorate it. Three voices, and the type tells them apart: **Fraunces** for the page's own
+than decorate it. Three voices — and the type tells them apart: **Fraunces** for the page's own
 headings, **Newsreader** for anything written by or to a person, **Spline Sans Mono** for
 anything the machine emits. If you can edit it, it is Newsreader; if the system produced it, it
 is mono.
@@ -464,7 +475,7 @@ that is complete and stale is worse than the old one, which is at least current.
 
 The funnel is the other half of why the unified board is now the better surface. A triage board
 narrowed by three defensible filters reads as broken: 748 undecided become 411 past the score
-floor and 20 past the fit floor, and the tiles say only "748" and "20". Each bar names the
+floor and 20 past the fit floor, while the tiles say only "748" and "20". Each bar names the
 control that cut it, so the narrowness is legible and undoable rather than mysterious.
 
 An intermediate approach — a *token bridge* that re-pointed the old stylesheets' twenty custom
@@ -478,28 +489,28 @@ Two things were carried over on purpose, because neither is design:
   load-bearing than it was: a stage's `help` is what the reader gets when he asks what happens
   with a card.
 - **The adaptive filter floors**, with the three measurements that produced them. "The first
-  screen is the few best matches, and it is never empty" is a tuned property of the data: the
+  screen is the few best matches and it is never empty" is a tuned property of the data: the
   precision floor reads a robust low quantile of the fits actually pursued (a `Math.min` never
-  forgets, and one fit-22 pick once pinned the floor at 20 forever), and the floors relax against
+  forgets and one fit-22 pick once pinned the floor at 20 forever) — and the floors relax against
   what ACTUALLY RENDERS rather than the fit distribution alone (910 undecided once became 609
   past recall, 3 past precision and ONE past the remote-only toggle, under a tile still reading
   "910 to triage").
 
 Their `api.php`, `lib.php`, `stage_rules.php` and `stage_log.php` are gone too: the store is the
-shared one now, and `config/pipeline.json` became `model.json`. A radar's self-audit rides on
+shared one now and `config/pipeline.json` became `model.json`. A radar's self-audit rides on
 its state document as `state.self_audit`, like everything else a routine says about itself.
 
 ## A project can own its body
 
-The shell used to offer two bodies, `status` and `board`, and nothing else. A project whose data
+The shell used to offer exactly two bodies: `status` and `board`. A project whose data
 did not fit either had no move except to report it. `module: "own"` loads a project's own
-`page.js` and `page.css` from its directory; it still gets the whole shell, and colour, type and
+`page.js` and `page.css` from its directory; it still gets the whole shell; colour, type and
 spacing still come from the shared tokens. What it owns is the shape of its own data — the part
 that genuinely differs between a grant deadline, a guest list and a scored pipeline.
 
 **What made that safe to offer** was moving the approval gate and the open question out of
 `status.js` and into the shell, above every body. They had lived in one module, so every other
-module had to remember to render them, and `board.js` never did: a radar, a review site and a
+module had to remember to render them and `board.js` never did: a radar, a review site and a
 party's admin page could each report a waiting decision on the hub and then show nothing when
 opened. Four of nine pages. No body can forget now, because no body renders them.
 
@@ -509,10 +520,10 @@ gesture on one page finds it means the same on the next. Ten bespoke bodies woul
 copies of this, drifting apart, which is exactly the failure the payload contract exists to
 prevent. It is dependency-free on purpose.
 
-**Three bugs came out of building it, and all three had the same shape: an effect that was also
+**Three bugs came out of building it and all three had the same shape: an effect that was also
 load-bearing for the content.**
 
-- `IntersectionObserver` silently ignores a node that is still inside a `DocumentFragment`, and
+- `IntersectionObserver` silently ignores a node that is still inside a `DocumentFragment` and
   bodies are built in one. Every reveal, counter and meter sat at its starting value. Nothing
   errored — figures just rendered empty. Work is queued at build time and armed once attached.
 - An observer only fires on a **rendering step**, so a document that is never composited — a
@@ -535,24 +546,24 @@ and is otherwise the app.
 
 What it still shares is the part that matters: it reads and writes `/api.php` like every other
 page, it publishes a state document with a card, and its data lives in `_store/weightloss/`. What
-it does NOT share is a shell, and two consequences follow that are easy to get wrong:
+it does NOT share is a shell and two consequences follow that are easy to get wrong:
 
 - **Its page is that project's data, not kit.** `pages/generate.py` is the list of which pages the
   template emits; a page it does not emit is nobody else's to deploy. Treating a daily-rewritten
-  page as kit fires "host ahead of master" every morning, and "master ahead of host — deploy it"
-  would put yesterday's copy over today's.
+  page as kit fires "host ahead of master" every morning — and "master ahead of host — deploy
+  it" would put yesterday's copy over today's.
 - **It must not publish `gate` or `question`.** The shell is what renders those, above every body,
   and nothing here hosts a server — so a question in its state document would count on the hub and then
   show nothing when opened, which is the exact failure that moving them into the shell fixed.
 
-It also shows what the gate bought. Basic Auth is a credential the browser holds, and an installed
+It also shows what the gate bought. Basic Auth is a credential the browser holds and an installed
 Firefox-Android PWA opens in a fresh context with no way to prompt for one — which is why this app
 had grown a passphrase gate of its own, with the secret echoed into the page as a token every
 fetch then carried. A cookie an application can hold retired all of it: no lock screen, no
 plaintext secret file, no token in a query string.
 
 The one thing the root `.htaccess` does not cover is worth stating, because it is a whole class:
-it denies data-bearing EXTENSIONS, and this project stores `.jpg` photos, `.kml` and `.gpx`
+it denies data-bearing EXTENSIONS and this project stores `.jpg` photos, `.kml` and `.gpx`
 tracks, none of which are on that list. Its `uploads/`, `GPSLogger/` and `config/` directories
 therefore carry their own `Require all denied` — 403 even to a valid credential, reachable only
 through PHP and FTP. A project that stores a file type the root rule does not name has to close
@@ -566,11 +577,11 @@ documented exception to "outside `/_shared/`, nothing is served to an unauthenti
 after the web app manifest and an installed app's own shell.
 
 The precise requirement is worth naming, because guessing at it cost an afternoon: Withings sends
-a **HEAD** request to the URL, from their servers, with nobody signed in, and stores the URL only
+a **HEAD** request to the URL, from their servers, with nobody signed in — and stores the URL only
 on a 2xx. A gated page answers 401 and is refused.
 
-The rest of that afternoon is the more useful lesson, and it is about diagnosis rather than about
-OAuth. Their validator is rate-limited, and it reports that in the same place and nearly the same
+The rest of that afternoon is the more useful lesson and it is about diagnosis rather than about
+OAuth. Their validator is rate-limited and it reports that in the same place and nearly the same
 words as an unreachable URL — so a registration that will not save looks exactly like a URL being
 rejected. Every consent then fails `redirect_uri_mismatch` against a value nobody can see. Chasing
 that produced a confident wrong theory (a 64-character column limit), which was written into a
@@ -591,8 +602,8 @@ is why it does not.
 ## The collection module takes its views from the model
 
 `board.js` started as the radar body and is now the body for anything with a collection. A
-project's `model.json` says what its tabs are and what each one shows, so no project is a special
-case in the module:
+project's `model.json` says what views its page has and what each one shows, so no project is a
+special case in the module:
 
 | `type` | shows |
 |---|---|
@@ -604,8 +615,8 @@ A model with no `views` falls back to the radar's four, which is the shape that 
 module was written.
 
 That generalisation is what let `birthday-admin` — a journal plus **two** collections, guests and
-venues — render on the same module as a radar, and `sprind` on it too. Venue states there are
-prefixed `venue_` because `transitions` is a flat map keyed by the from-state, and a guest and a
+venues — render on the same module as a radar and `sprind` on it too. Venue states there are
+prefixed `venue_` because `transitions` is a flat map keyed by the from-state and a guest and a
 venue can both be "declined".
 
 **"Waiting on you" is counted from `next_actor`, not `actor`.** They are different fields and the
@@ -618,11 +629,11 @@ waiting on Mark, when what they wait on is their own reply.
 - **`grantsforbina.markwernsdorfer.com`** stays on its own host (operator decision, 2026-08-29).
 - **The guest half of the birthday site** stays on `44.markwernsdorfer.com`, untouched — and so
   does the roster's master, which is a harder constraint than it first looks. That site keeps two
-  rosters: an off-web authoritative one the guest invite gate reads, and a git-tracked seed the
+  rosters: an off-web authoritative one the guest invite gate reads and a git-tracked seed the
   routine regenerates. The authoritative one has **two** writers — the admin roster-board save and
   **guests themselves**, who can drop a stray member from their own party through a token-gated
-  endpoint. Since a removal has to kill an invite link at once, and `birthday` has no webhook
-  trigger and an empty cron, this host cannot hold that guarantee. So membership stays on 44 and
+  endpoint. Since a removal has to kill an invite link at once — and `birthday` has no webhook
+  trigger and an empty cron — this host cannot hold that guarantee. So membership stays on 44 and
   the steward guest list is a published mirror; only *attendance* state (invited / coming / maybe
   / declined) is set here and reconciled on the routine's next run. Its `model.json` carries no
   membership action and records why.
@@ -665,8 +676,8 @@ stylesheets, documents. Everything else about it had already been removed — a 
 itself by publishing, `/<slug>/` is served generically by `p.php`, the hub's card order is derived
 from its own state — and what was left was file placement for ten siblings that each already run on
 their own schedule. So every document waited for a second routine's run, every deploy needed a
-staged copy in the group store and a report, and a page could stand broken for hours with its fix
-already written down on the first routine's disk. That is what happened.
+staged copy in the shared domain store and a report, and a page could stand broken for hours
+with its fix already written down on the first routine's disk. That is what happened.
 
 It needed to exist for one reason: the FTP credential for the host is one account rooted at the
 document root, so handing it to a publisher handed over every other project's directory, all of
@@ -677,7 +688,7 @@ That is now closed in the `ftp` util rather than by a routine. A source that dec
 CONFINED to it — paths are read relative to it, `..` may not climb out, an absolute path is refused
 — and `dir` may contain `{routine}`, which resolves to WHO is calling from the environment the
 engine sets. One credential, many callers, each in the directory named after it, and nothing
-configured per caller. A routine cannot forge its own environment, and a call with no caller name
+configured per caller. A routine cannot forge its own environment and a call with no caller name
 is refused rather than given the account root. `deny_ext: ["php"]` completes it: the directory is
 a publisher's as storage, not as a place to install code the server would run.
 
@@ -695,7 +706,7 @@ in ingested content — and it does not stop a routine that sets out to go aroun
 means the credential never reaching routine-authored code at all, which is the hub-side upload op
 this page's earlier draft describes and nobody has needed yet.
 
-Nothing sets the confinement automatically, and deliberately so: a project's name on the host need
+Nothing sets the confinement automatically and deliberately so: a project's name on the host need
 not match the routine's slug — `ards-consulting-steward` publishes to `/ards` — so a directory
 derived from the slug would be wrong for most of them, silently. It is one variable on the routine
 page, set where the FTP grant is decided anyway. What catches a publisher that has none is the rule,
@@ -706,11 +717,11 @@ is that nothing stops it, so the run goes looking for the symptom.
 Twelve publishers now carry their own confinement and place their own files. `steward-hub-maintainer`
 is disabled, its directory kept for its ledger and memory. Deploying the kit itself stays operator
 work — the unconfined source, used from the library repo when the kit changes, `links.php` before
-`store.php` — because a hub cannot safely update through itself, and a release is not a cadence.
+`store.php` — because a hub cannot safely update through itself and a release is not a cadence.
 
 ### And the host stopped taking the run's word for it
 
-A proof a run performs is a proof a run can skip, and this one was skipped honestly for hours. So
+A proof a run performs is a proof a run can skip and this one was skipped honestly for hours. So
 the question moved to the only party that can always answer it: `api.php` now refuses a `put-items`
 or a `put-state` carrying a gate link this host cannot serve, on the same terms and with the same
 wording, because holding the rule for one of the two documents a page reads is a rule a run can
@@ -720,7 +731,7 @@ What decides is `links.php` — the extension allowlist, the never-served trees 
 itself, in one file. Those tables used to live in `gate-file.php`, where only the serve path could
 read them, which is precisely why the write path stored five links nothing had ever evaluated. It
 is required from `store.php` rather than from each caller, because `store.php` is what every entry
-point reaches — `api.php` and `gate.php` include it directly, and `gate-file.php`, `p.php`,
+point reaches — `api.php` and `gate.php` include it directly; `gate-file.php`, `p.php`,
 `index.php`, `i.php` and `invites-page.php` through `gate.php`. **Deploy the two together**: a
 `store.php` without `links.php` beside it is a fatal error on every request the host serves.
 
@@ -735,7 +746,7 @@ notice, which is why five compiled PDFs read to their author as missing rather t
 ## The rule
 
 `status-page` in the library is what actually binds a routine to any of this, held by slug in
-`routine.yaml` — so publishing a web UI is opt-in per routine, and a routine that does not
+`routine.yaml` — so publishing a web UI is opt-in per routine and a routine that does not
 publish never reads a word of it. The rule states the payload invariants, the publish order, the
 append-only discipline and what a run owes the user back when he edits one of its drafts. Since
 the gate was armed it also states the two things a publisher must hold before its first run — the

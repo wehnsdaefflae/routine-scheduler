@@ -7,7 +7,7 @@ table entry for a routine whose goal-scoped stopping conditions are all met, and
 it straight back. The `enabled: false` half is a click on the Decisions page, through the ordinary
 config writer.
 
-Covered here: the derived skip (scheduler + group chains), the proposal the finish files, the two
+Covered here: the derived skip (scheduler + lane chains), the proposal the finish files, the two
 decisions that settle it, and the one-shot migration that converted the live stores.
 """
 
@@ -99,14 +99,14 @@ def test_the_registry_reports_retired_separately_from_disabled(make_routine, tmp
     assert catalog["off"].retired is False and catalog["off"].cfg.enabled is False
 
 
-# ---- group chains: deliberately off is not a broken chain ---------------------------------------
+# ---- lane chains: deliberately off is not a broken chain ----------------------------------------
 
-async def test_a_retired_group_member_is_skipped_without_counting_as_a_failure(tmp_path):
+async def test_a_retired_lane_member_is_skipped_without_counting_as_a_failure(tmp_path):
     """These used to share the MISSING-member branch and log `outcome: "failed"` — 28 such health
     events on the live instance, and under `on_failure: stop` a retirement would have become a
     daily outage of every later member."""
-    from rsched import group_runs, groups
-    from rsched.daemon.group_runs import GroupRunManager
+    from rsched import lane_runs, lanes
+    from rsched.daemon.lane_runs import LaneRunManager
 
     server = _server(tmp_path)
     for slug in ("first", "second"):
@@ -118,19 +118,19 @@ async def test_a_retired_group_member_is_skipped_without_counting_as_a_failure(t
             "schedule": {"cron": "", "tz": "Europe/Berlin"}}), encoding="utf-8")
     _goal_met(server.routines_home / "first")
 
-    g = groups.create(server.routines_home, name="lane",
-                      members=[{"slug": "first"}, {"slug": "second"}])
-    group_runs.arm(server.routines_home, g, default_on_failure="stop")
+    lane = lanes.create(server.routines_home, name="lane",
+                        members=[{"slug": "first"}, {"slug": "second"}])
+    lane_runs.arm(server.routines_home, lane, default_on_failure="stop")
     fr = FakeRunner()
-    mgr = GroupRunManager(server, fr)
+    mgr = LaneRunManager(server, fr)
     catalog = registry.scan(server)
     await mgr.tick(catalog)      # member 0 is retired → skipped, cursor advances
     await mgr.tick(catalog)      # member 1 fires
 
-    rec = group_runs.read(server.routines_home, g["id"])
+    rec = lane_runs.read(server.routines_home, lane["id"])
     row = rec["log"][0]
     assert row["slug"] == "first" and row["outcome"] == "skipped"    # NOT "failed"
-    assert fr.fired == [("second", "group")]                        # under on_failure=stop
+    assert fr.fired == [("second", "lane")]                         # under on_failure=stop
 
 
 # ---- the proposal, and the two decisions that settle it -----------------------------------------

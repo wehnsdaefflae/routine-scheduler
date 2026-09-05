@@ -1,16 +1,16 @@
 """Observation wording for the LIBRARY-writing kinds — `write_util`, `remove_util`, `write_rule`.
 
-Split out of `observations.py` (F393) by domain, so each kind's strings still live in exactly
-one place. What these share is that the run just changed something every OTHER routine will see,
-so the wording has to say what landed, what it was checked against, and — for a refusal — which
-rung of the approval ladder stopped it.
+Split out of `observations.py` (F393) by subject area, so each kind's strings still live in
+exactly one place. What these share is that the run just changed something every OTHER routine
+will see, so the wording has to say what landed, what it was checked against, and — for a
+refusal — which rung of the approval ladder stopped it.
 """
 
 from __future__ import annotations
 
 
-def format_library(obs: dict, kind: str) -> str | None:  # noqa: PLR0911 — one flat renderer per domain, by design: observation wording is PROMPT SURFACE (docs/prompt-anatomy.md) and every branch is a distinct string for a distinct kind. Collapsing them would scatter a kind's wording, which is exactly what this shape exists to prevent.
-    """Wording for this domain's kinds; None when `kind` is not one of them."""
+def format_library(obs: dict, kind: str) -> str | None:  # noqa: PLR0911 — one flat renderer per module, by design: observation wording is PROMPT SURFACE (docs/prompt-anatomy.md) and every branch is a distinct string for a distinct kind. Collapsing them would scatter a kind's wording, which is exactly what this shape exists to prevent.
+    """Wording for this module's kinds; None when `kind` is not one of them."""
     if kind == "write_util":
         if obs.get("pending_approval"):
             return (f"OBSERVATION (write_util {obs['name']!r}): approval requested from the user "

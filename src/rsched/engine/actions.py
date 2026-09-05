@@ -55,7 +55,7 @@ KIND_EXAMPLES: dict[str, dict] = {
                        "prompt": "<the clarified task, decomposed into the routine's stages>",
                        "workflow": "general-task",
                        "stopping": ["<what DONE looks like for one run, in the user's words>"]},
-    "manage_group": {"say": "<why this group change now>", "kind": "manage_group",
+    "manage_lane": {"say": "<why this lane change now>", "kind": "manage_lane",
                      "verb": "create", "name": "Morning jobs",
                      "members": ["weight-coach", "news-digest"]},
 
@@ -109,7 +109,7 @@ KIND_FIELDS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "remove_util": (("name",), ()),
     "schedule_run": (("target",), ("fire_at", "reason", "cancel", "id")),
     "create_routine": (("target", "name", "prompt"), ("workflow", "stopping")),
-    "manage_group": (("verb",), ("target", "name", "members", "on_failure", "cron",
+    "manage_lane": (("verb",), ("target", "name", "members", "on_failure", "cron",
                                  "paused")),
     "read_file": ((), ("path", "paths", "start_line", "max_lines")),
     "view_image": ((), ("path", "paths", "prompt")),
@@ -257,17 +257,17 @@ def validate_action(obj: dict, allowed_kinds: set[str] | None = None,  # noqa: C
     # A `model` override (llm/spawn/subtask) is validated at DISPATCH, not here: it may
     # name a role OR a catalog model, and only the executor sees the catalog — its
     # teaching rejection lists the real alternatives (list_models shows the same).
-    if kind == "manage_group":
+    if kind == "manage_lane":
         verb = str(obj.get("verb") or "").strip()
         verbs = ("list", "create", "update", "delete", "set-default", "run")
         if verb not in verbs:
-            problems.append(f"kind=manage_group requires 'verb' to be one of {list(verbs)}")
+            problems.append(f"kind=manage_lane requires 'verb' to be one of {list(verbs)}")
         elif verb == "create" and not str(obj.get("name") or "").strip():
-            problems.append("kind=manage_group verb=create requires 'name' (the group's name)")
+            problems.append("kind=manage_lane verb=create requires 'name' (the lane's name)")
         elif verb in ("update", "delete", "run") and not str(obj.get("target") or "").strip():
-            problems.append(f"kind=manage_group verb={verb} requires 'target' (the group id)")
+            problems.append(f"kind=manage_lane verb={verb} requires 'target' (the lane id)")
         elif verb == "set-default" and not str(obj.get("on_failure") or "").strip():
-            problems.append("kind=manage_group verb=set-default requires 'on_failure' "
+            problems.append("kind=manage_lane verb=set-default requires 'on_failure' "
                             "('stop' or 'continue')")
     if kind in ("read_file", "view_image"):
         paths = obj.get("paths")

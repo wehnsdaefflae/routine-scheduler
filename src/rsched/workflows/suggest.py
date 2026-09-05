@@ -273,11 +273,11 @@ def generate_description(server: ServerConfig, *, name: str, instruction: str,
     """A COMPREHENSIVE routine description generated from its task: what one run PRODUCES and why
     (purpose), what it REQUIRES (permissions / secrets / inputs / external services), its SIDE
     EFFECTS (what it writes, publishes or sends outside itself), and its DEPENDENCIES with other
-    routines (which it feeds, consumes from, or shares a store / group with). Replaces the old
-    `description = name`. Returns a dense multi-sentence string; falls back to `name` whenever the
-    task is empty, no endpoint answers, or the reply is blank — the creation flow never fails on
-    this. `recipe_text` (an existing routine's main.md) is used in place of `instruction` when
-    regenerating a description for a routine that already exists.
+    routines (which it feeds, consumes from, or shares a domain and its store with). Replaces
+    the old `description = name`. Returns a dense multi-sentence string; falls back to `name`
+    whenever the task is empty, no endpoint answers, or the reply is blank — the creation flow
+    never fails on this. `recipe_text` (an existing routine's main.md) is used in place of
+    `instruction` when regenerating a description for a routine that already exists.
     """
     task = (recipe_text or instruction or "").strip()
     if not task:
@@ -300,7 +300,7 @@ def generate_description(server: ServerConfig, *, name: str, instruction: str,
         "2. REQUIREMENTS — the permissions, secrets, inputs or external services it depends on.\n"
         "3. SIDE EFFECTS — what it writes, publishes, sends or changes OUTSIDE itself each run.\n"
         "4. DEPENDENCIES WITH OTHER ROUTINES — which existing routines it feeds, consumes from, "
-        "or shares a store / group with.\n\n"
+        "or shares a domain and its shared store with.\n\n"
         f"ROUTINE NAME: {name}{wf_note}\n\nTASK:\n{task[:8000]}{sib_note}\n\n"
         "Keep it factual and specific — 3 to 6 sentences, at most ~700 characters. Reply with "
         "ONLY one JSON object matching this schema (no prose):\n" + json.dumps(DESCRIBE_SCHEMA)

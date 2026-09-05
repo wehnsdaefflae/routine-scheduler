@@ -9,14 +9,14 @@ surfaced only when a run burned a turn on an empty host list.
 
 This module is the forward reading of the dependency graph. It joins, per routine:
 
-- the EFFECTIVE config (group inheritance already merged by the registry): held permissions,
+- the EFFECTIVE config (domain inheritance already merged by the registry): held permissions,
   bound rules, the capability mapping, grants, fs roots, machines, connections;
 - the library's declarations: a permission's `requires:` (necessary, enforced by the cascade)
   and `expects:` (optional, presumed — legal on rules too, where `requires:` is a lint error);
 - the UTIL HEADERS of every reserved util the routine holds, walked transitively over `calls:`
   — their `secrets:` and their `fs:` private stores are dependency edges nobody had joined to
   the routine that holds them;
-- the SCHEDULE, against the group store: a member cron a group's schedule silently suppresses,
+- the SCHEDULE, against the lane store: a member cron a lane's schedule silently suppresses,
   and a routine nothing on a clock ever starts;
 - the live stores: the secrets store, the machine catalog, the connection registry.
 
@@ -198,17 +198,21 @@ def _expects_nodes(cfg: RoutineConfig, expects: dict[str, dict],
 def _schedule_nodes(server: Any, cfg: RoutineConfig) -> list[dict]:
     """Does this routine's file say WHEN it actually runs?
 
-    Two ways it can stop saying so, both silent. A group with a cron SUPPRESSES its members'
+    Two ways it can stop saying so, both silent. A LANE with a cron SUPPRESSES its members'
     own crons (D71), so a member that kept one has a file naming a time it will never fire at —
-    `steward-hub-maintainer` recorded 23:00 while firing at 06:30 in its group's chain, and
-    nothing anywhere said the two disagreed. The other way is the mirror: a routine with no
-    cron of its own, in no scheduled group, is never started by anything on a clock, which is a
+    `steward-hub-maintainer` recorded 23:00 while firing at 06:30 in its lane's chain, with
+    nothing anywhere saying the two disagreed. The other way is the mirror: a routine with no
+    cron of its own, in no scheduled lane, is never started by anything on a clock, which is a
     perfectly good on-demand design and indistinguishable from an oversight.
+
+    Only the LANE is asked. A routine's domain shares a config block and a store but nothing on
+    a clock; its tags fire nothing at all. Nothing on either axis can make this file disagree
+    with itself (docs/lanes-domains.md).
 
     Neither breaks a run, so neither shouts. What they cost is the operator's belief about when
     the routine runs, which is exactly what a NOTE is for.
     """
-    from .. import groups as groups_mod
+    from .. import lanes as lanes_mod
 
     if not cfg.enabled:
         return []                       # a disabled routine already says it does not run
@@ -223,25 +227,31 @@ def _schedule_nodes(server: Any, cfg: RoutineConfig) -> list[dict]:
                       "reopen a goal condition in the goal panel to put it back on its "
                       "schedule, or retire it for good from the Decisions page")]
     try:
-        all_groups = groups_mod.list_groups(server.routines_home)
+        all_lanes = lanes_mod.list_lanes(server.routines_home)
     except OSError:
         return []
-    mine = [g for g in all_groups if cfg.slug in groups_mod.member_slugs(g)]
-    scheduling = next((g for g in mine if g.get("cron")), None)
+    # At most one can match — lane membership is exclusive (rsched.lanes) — but the scan is
+    # over the store rather than a per-routine key, so it reads as a list either way.
+    mine = [lane for lane in all_lanes if cfg.slug in lanes_mod.member_slugs(lane)]
+    scheduling = next((lane for lane in mine if lane.get("cron")), None)
     if scheduling and cfg.cron:
         paused = " (currently PAUSED, so nothing fires at all)" if scheduling.get("paused") else ""
+        # `source` carries the lane's id because the prose can only name it — a name is not
+        # addressable and the operator's next step is that lane's row. It is NOT rendered:
+        # surface-view.js groups rows by `doc` / `utils` alone, so this one appears under "from
+        # this routine's own config" and the id is read by nothing on screen today.
         return [_node("schedule:cron", "suppressed", NOTE,
-                      f"its group {scheduling['name']!r} carries a schedule, which suppresses "
+                      f"its lane {scheduling['name']!r} carries a schedule, which suppresses "
                       "every member's own cron",
                       f"this file records {cfg.cron!r}, and the routine actually fires with the "
-                      f"group at {scheduling['cron']!r}{paused} — clear the routine's own cron "
+                      f"lane at {scheduling['cron']!r}{paused} — clear the routine's own cron "
                       "so the file says what happens",
-                      {"kind": "clear_cron"}, {"group": scheduling["id"]})]
+                      {"kind": "clear_cron"}, {"lane": scheduling["id"]})]
     if not scheduling and not cfg.cron:
         how = ("a trigger, a hand fire, or another run's schedule_run" if cfg.triggers
                else "a hand fire from the console, or another run's schedule_run")
         return [_node("schedule:none", "unscheduled", NOTE,
-                      "it has no cron of its own and no group schedules it",
+                      "it has no cron of its own and no lane schedules it",
                       f"nothing on a clock starts this routine; it runs only on {how}")]
     return []
 
@@ -399,10 +409,10 @@ def routine_surface(server: Any, cfg: RoutineConfig) -> dict:
 
     # -- the INVERSE misconfiguration: a capability no held doc asks for. -----------------
     # Three deliberate designs meet here and none of them catches it on its own. The floor is
-    # a WRITE-time invariant on a routine's OWN mapping. A GROUP's config block is deliberately
+    # a WRITE-time invariant on a routine's OWN mapping. A DOMAIN's config block is deliberately
     # not floored at its own save, because a member may hold the covering doc itself. And
     # enforcement is deliberately capabilities-ONLY, so that prose can never widen anything —
-    # which also means an orphan capability is simply obeyed. So a group can hand its members a
+    # which also means an orphan capability is simply obeyed. So a domain can hand its members a
     # reserved util with no conduct doc behind it, and nothing said a word.
     #
     # Nothing is broken when it happens: the routine really can do the thing. What is wrong is
@@ -414,9 +424,9 @@ def routine_surface(server: Any, cfg: RoutineConfig) -> dict:
     from ..grants import _DEFAULT_KIND_SOURCE, split_util_verb
     held_docs = set(cfg.permissions or [])
     covering_names = {split_util_verb(u)[0] for u in covering}
-    # Provenance is the whole value of these rows: "you did not set this, your GROUP did".
+    # Provenance is the whole value of these rows: "you did not set this, your DOMAIN did".
     cap_prov = (getattr(cfg, "inherited", None) or {}).get("capabilities")
-    where = (f" (inherited from the group {cfg.inherited_from!r})"
+    where = (f" (inherited from the domain {cfg.inherited_from!r})"
              if cap_prov and cfg.inherited_from else "")
     for util in caps.get("utils") or []:
         if util not in covering and split_util_verb(util)[0] not in covering_names:
@@ -457,7 +467,7 @@ def routine_surface(server: Any, cfg: RoutineConfig) -> dict:
 
 #: What the BOOT note carries. The note's own closing sentence explains FAIL and WARN and
 #: nothing else, because it exists for gaps the RUN would otherwise discover the hard way. A
-#: NOTE is addressed to the operator — a cron the group suppresses, a phase file keyed wrong —
+#: NOTE is addressed to the operator — a cron the lane suppresses, a phase file keyed wrong —
 #: and the run can neither act on it nor be saved a turn by it, so putting one in front of
 #: every run buys prompt noise. `rsched validate` and the routine page still show all three.
 BOOT_SEVERITIES = (BLOCKS, INTERRUPTS)

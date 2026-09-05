@@ -1,7 +1,7 @@
 """Observation wording for CHILD RUNS — every scheduling mode of the one concept.
 
 Split out of `observations.py` (F393). One vocabulary across the modes (engine/child.py): a
-child has its own dir, its own budget and its own context, and hands work back by writing into
+child has its own dir, its own budget and its own context; it hands work back by writing into
 its own `artifacts/`. The wording says so at the point the parent starts one, which is where a
 run would otherwise assume it shares the parent's working directory.
 """
@@ -11,8 +11,8 @@ from __future__ import annotations
 from . import child
 
 
-def format_children(obs: dict, kind: str) -> str | None:  # noqa: PLR0911 — one flat renderer per domain, by design: observation wording is PROMPT SURFACE (docs/prompt-anatomy.md) and every branch is a distinct string for a distinct kind. Collapsing them would scatter a kind's wording, which is exactly what this shape exists to prevent.
-    """Wording for this domain's kinds; None when `kind` is not one of them."""
+def format_children(obs: dict, kind: str) -> str | None:  # noqa: PLR0911 — one flat renderer per module, by design: observation wording is PROMPT SURFACE (docs/prompt-anatomy.md) and every branch is a distinct string for a distinct kind. Collapsing them would scatter a kind's wording, which is exactly what this shape exists to prevent.
+    """Wording for this module's kinds; None when `kind` is not one of them."""
     if kind == "spawn":
         if obs.get("rejected"):
             return f"OBSERVATION (spawn REJECTED): {obs['reason']}"
@@ -27,7 +27,7 @@ def format_children(obs: dict, kind: str) -> str | None:  # noqa: PLR0911 — on
         return (f"OBSERVATION (subtask): sequential child {obs['n']} {obs.get('label')!r} started "
                 f"(workflow {obs.get('workflow')}){note} — it runs in the BACKGROUND. To keep "
                 f"sequential order, `wait` for it (n={obs['n']}) before starting the next subtask "
-                "and fold its result into that brief; the wait yields if the user writes, and you "
+                "and fold its result into that brief; the wait yields if the user writes; you "
                 "are notified when it finishes. Or do other work meanwhile.")
     if kind == "detach":
         if obs.get("rejected"):

@@ -113,9 +113,9 @@ def test_doc_pins_the_canonical_engine_strings(make_routine, tmp_path):
         "allowed for ONE action only",
         "ONCE-GRANT SPENT",
         "(one action only)",
-        # the group shared store (D67): a grouped run's harness contract names the
-        # injected root and its collision contract
-        "Group shared store (read+write",
+        # the DOMAIN shared store (D67): the harness contract of a run whose routine names a
+        # domain carries the injected root and its collision contract
+        "Shared store (read+write",
         # F334/D98: the stopping-conditions block renders the STRUCTURE — the joiner, each
         # group's connective, and the satisfied announcement. A run that cannot see two
         # conditions are an OR treats them as an AND. The two SCOPES render apart, and only
@@ -129,7 +129,7 @@ def test_doc_pins_the_canonical_engine_strings(make_routine, tmp_path):
         "IN EFFECT NOW, from this turn on",
         "Saved, but it takes effect at your NEXT RUN",
         # F335: the light channel between teammates, named beside the store root it lives in
-        "NOTES FROM YOUR GROUP",
+        "NOTES FROM YOUR DOMAIN",
         # Rule ASSISTS: the one shape a curated rule takes when its moment arrives, at all
         # three moments. The route back to the full rule is part of the wording — a surfaced
         # line is deliberately terse, and terseness is only honest if the rest is reachable.
@@ -148,8 +148,8 @@ def test_doc_pins_the_canonical_engine_strings(make_routine, tmp_path):
         "[REMINDERS: ",
         "The labels: could_not",
         "fired and is STILL unlabelled",
-        # NOTE: the F292 two-phase group fire ("GROUP FIRE PHASE: ingest/outbound") was pinned
-        # here until 2026-08-27. D90 retired the machinery and the engine stopped emitting those
+        # NOTE: the F292 two-phase fire ("GROUP FIRE PHASE: ingest/outbound") was once pinned
+        # here as a needle. D90 retired the machinery and the engine stopped emitting those
         # strings, but the doc kept describing them and this guard kept passing — it only checks
         # doc ⊇ engine, so prose that outlives its feature is invisible to it. Removed with the
         # doc text. A needle here must name a string the engine ACTUALLY emits today.

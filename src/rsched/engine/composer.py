@@ -50,9 +50,9 @@ def state_digest(routine_dir: Path, deferred_qa: list[dict], open_qs: list[dict]
             parts.append(prio)
         # F335: notes teammates left for this routine. DRAINS — this digest is built once per
         # run, at boot, and a note is delivered exactly once (mirroring how inbox/ drains).
-        from ..groupnotes import digest_section as notes_section
-        if group_notes := notes_section(routines_home, slug):
-            parts.append(group_notes)
+        from ..domainnotes import digest_section as notes_section
+        if domain_notes := notes_section(routines_home, slug):
+            parts.append(domain_notes)
     phase = read_json(routine_dir / "state" / "phase.json")
     parts.append(f"Current phase: {json.dumps(phase, ensure_ascii=False)}" if phase
                  else "Current phase: (none recorded — likely the first run)")

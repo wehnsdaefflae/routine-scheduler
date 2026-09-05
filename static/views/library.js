@@ -114,7 +114,7 @@ export async function render(view, sub, query = {}) {
       data.playbooks.filter((p) => matches(p.tags)).map((p) =>
         item(p.title || p.slug, p.problems, p.tags, () => openPlaybook(p.slug), p.summary,
              `#/library/playbook/${p.slug}`)));
-    section("Settings templates", "the named starting points a routine or a group adopts — permissions, rules, capabilities and budgets COPIED IN once at creation (a preselection, never a layer: every value is then edited where it lives)",
+    section("Settings templates", "the named starting points a routine adopts — permissions, rules, capabilities and budgets COPIED IN once at creation (a preselection, never a layer: every value is then edited where it lives)",
       (data.templates || []).filter((t) => matches(t.tags)).map((t) =>
         item(t.slug, t.problems || [], t.tags, () => openDoc("templates", t.slug),
              t.summary, `#/library/template/${t.slug}`)),

@@ -72,11 +72,11 @@ def test_discard_confirms_then_tells_the_proposer(ui, ui_page):
     assert "discarded" in json.loads(msg.read_text())["text"]
 
 
-def test_a_group_proposal_reads_as_a_group_change(ui, ui_page):
-    _queue(ui, kind="manage_group", summary="create group 'FAU comms'",
+def test_a_lane_proposal_reads_as_a_lane_change(ui, ui_page):
+    _queue(ui, kind="manage_lane", summary="create lane 'FAU comms'",
            fields={"verb": "create", "name": "FAU comms", "members": ["uir"]})
     ui_page.goto(f"{ui.url}/#/questions")
-    card = ui_page.locator(".card", has_text="group:")
+    card = ui_page.locator(".card", has_text="lane:")
     expect(card).to_contain_text("create")
     expect(card).to_contain_text("FAU comms")
 
@@ -88,9 +88,10 @@ def test_no_proposals_means_no_band_at_all(ui, ui_page):
 
 def test_a_library_drift_record_gets_its_own_band_and_no_create_button(ui, ui_page):
     """`daemon/library_watch.py` has filed `library-drift` records since 0.257.0, but the band
-    only ever knew the two CREATION kinds: a drift record fell through to the group branch and
-    rendered as "group: ?" beside a "create it" button whose only possible answer is a 400.
-    Nothing proposed a drift record and nothing can materialize one — the fix is on the routine.
+    only ever knew the two CREATION kinds: a drift record fell through to the branch that
+    renders a lane change and came out as "lane: ?" beside a "create it" button whose only
+    possible answer is a 400. Nothing proposed a drift record and nothing can materialize one —
+    the fix is on the routine.
     """
     d = ui.routines / ".control" / "pending-creations"
     d.mkdir(parents=True, exist_ok=True)
@@ -133,6 +134,8 @@ def _queue_goal(ui, *, routine="uir", pid="pc-20260905-090000-bbbbbb"):
                       {"id": "s1", "text": "the application is submitted",
                        "note": "submitted 2026-09-05, receipt filed",
                        "resolved_run": f"{routine}:20260905-080000", "disputed": ""}],
+                      # stopping-condition groups (all/any) — the joiners over the conditions,
+                      # not an axis a routine sits on; this field keeps the word "group"
                       "groups": []})
 
 

@@ -3,12 +3,13 @@
 // is a question: no answer text, no options, two buttons each.
 //
 // 1. QUEUED CREATIONS (F328) — what a scheduled run proposed: a routine to create, or a change
-//    to a routine group. Materializing goes through the web's one config-writing path.
+//    to a fire lane. Materializing goes through the web's one config-writing path.
 // 2. LIBRARY DRIFT — filed by `daemon/library_watch.py` when a library commit newly BLOCKS a
 //    routine that holds the changed document. Nothing proposed it and nothing can materialize
 //    it: the fix is on the routine, so the record links there and is dismissed once seen.
-//    These were filed from the day the watcher shipped and rendered as a malformed creation
-//    row ("group: ?") with a "create it" button that could only ever 400.
+//    These were filed from the day the watcher shipped and fell through summarize() to the
+//    lane-proposal label with an unknown verb ("lane: ?"), carrying a "create it" button that
+//    could only ever 400 — which is why every kind here is matched before that fallback.
 // 3. FINISHED ROUTINES — a routine reporting that its FINAL GOAL is met. This band is the odd
 //    one out, and the wording has to say so: the routine has ALREADY stopped running (the
 //    scheduler builds no fire entry for a routine whose goal is satisfied — derived, nothing
@@ -39,7 +40,7 @@ function summarize(rec) {
       n ? ` — ${n} condition${n === 1 ? "" : "s"}` : ""];
   }
   const what = f.name || f.target || "";
-  return [`group: `, el("strong", {}, f.verb || "?"), what ? ` ${what}` : ""];
+  return [`lane: `, el("strong", {}, f.verb || "?"), what ? ` ${what}` : ""];
 }
 
 // The full proposal, collapsed — the instruction a routine would be BORN with is the thing
@@ -204,7 +205,7 @@ export function pendingBand({ onChanged } = {}) {
     };
     make.onclick = () => act(make, async () => {
       const r = await api(`/api/pending-creations/${rec.id}/materialize`, { method: "POST" });
-      toast(r.slug ? `created routine “${r.slug}”` : "group change applied", 5000);
+      toast(r.slug ? `created routine “${r.slug}”` : "lane change applied", 5000);
     });
     drop.onclick = () => act(drop, async () => {
       if (!(await confirmDialog(

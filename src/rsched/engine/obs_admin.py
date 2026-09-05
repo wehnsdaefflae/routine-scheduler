@@ -7,12 +7,12 @@ a routine, a queued proposal is not a creation, a filed report starts no run, an
 question may never be answered.
 
 That honesty is the whole reason `queued` is checked FIRST, in one shared branch, before any
-kind's success wording. F328 gave `create_routine` and `manage_group` a proposal path for a
+kind's success wording. F328 gave `create_routine` and `manage_lane` a proposal path for a
 scheduled run, but taught only the HANDLERS about it: the queued observation then fell through
 to each kind's success line and read as a completed action over a payload that was not there —
 "created routine 'x' from workflow None" (the F378 false-success class, again), "armed a
-sequential fire of group None (0 member(s))" (R1200) and "group None (None) now has members []"
-(R1183), the last of which reads as a group that was just emptied. One shared branch is also
+sequential fire of lane None (0 member(s))" (R1200) and "lane None (None) now has members []"
+(R1183), the last of which reads as a lane that was just emptied. One shared branch is also
 why the two cannot drift apart again.
 """
 
@@ -21,20 +21,20 @@ from __future__ import annotations
 #: The kinds that can come back QUEUED — a scheduled run's proposal for the Decisions page
 #: (F328). Both carry the same three keys (`queued`, `id`, `next`) plus a self-describing
 #: `proposal` line written by the handler, so one branch renders both.
-QUEUEABLE_KINDS = ("create_routine", "manage_group")
+QUEUEABLE_KINDS = ("create_routine", "manage_lane")
 
 
 def _queued_line(obs: dict, kind: str) -> str:
     """The one wording for a proposal that was filed instead of applied. It must name what was
-    proposed: a run that cannot tell WHICH change is waiting cannot say so in its summary, and
+    proposed: a run that cannot tell WHICH change is waiting cannot say so in its summary;
     an ack that names nothing reads as a change that lost its payload.
     """
     return (f"OBSERVATION ({kind} QUEUED as proposal {obs.get('id')} — NOTHING CHANGED): "
             f"{obs.get('proposal') or 'the change you asked for'}. {obs.get('next', '')}").strip()
 
 
-def format_admin(obs: dict, kind: str) -> str | None:  # noqa: C901, PLR0911, PLR0912 — one flat renderer per domain, by design: observation wording is PROMPT SURFACE (docs/prompt-anatomy.md) and every branch is a distinct string for a distinct kind. Collapsing them would scatter a kind's wording, which is exactly what this shape exists to prevent.
-    """Wording for this domain's kinds; None when `kind` is not one of them."""
+def format_admin(obs: dict, kind: str) -> str | None:  # noqa: C901, PLR0911, PLR0912 — one flat renderer per module, by design: observation wording is PROMPT SURFACE (docs/prompt-anatomy.md) and every branch is a distinct string for a distinct kind. Collapsing them would scatter a kind's wording, which is exactly what this shape exists to prevent.
+    """Wording for this module's kinds; None when `kind` is not one of them."""
     if kind in QUEUEABLE_KINDS and obs.get("queued"):
         return _queued_line(obs, kind)
     if kind == "schedule_run":
@@ -77,52 +77,54 @@ def format_admin(obs: dict, kind: str) -> str | None:  # noqa: C901, PLR0911, PL
                     f"{obs.get('instruction_preview', '')[:200]!r}. {obs.get('next')}{held})")
         tpl = obs.get("template")
         adopted = (f" It adopted the {tpl!r} settings template — its conduct docs, "
-                   f"capabilities and general rules come from there, and its own routine.yaml "
+                   f"capabilities and general rules come from there and its own routine.yaml "
                    f"records only what differs." if tpl else "")
         return (f"OBSERVATION (create_routine: created routine {slug!r} from workflow "
                 f"{obs.get('workflow')!r}.{adopted} The daemon's registry rescan (every "
                 f"~{obs.get('rescan_s') or 30}s) picks it up and it appears on the dashboard. "
                 f"Tell the user it exists, GIVE THEM THE LINK {obs.get('url')} to its page, "
-                f"and say what to set next — its schedule, and anything the template does not "
+                f"and say what to set next — its schedule and anything the template does not "
                 f"cover such as filesystem roots or a bound machine.)")
-    if kind == "manage_group":
+    if kind == "manage_lane":
         if obs.get("rejected"):
-            return f"OBSERVATION (manage_group REJECTED): {obs['reason']}"
+            return f"OBSERVATION (manage_lane REJECTED): {obs['reason']}"
         verb = obs.get("verb")
         if verb == "list":
-            gs = obs.get("groups") or []
+            rows = obs.get("lanes") or []
             # F424/R1142: the listing names its MEMBERS, in fire order. A count answered
             # "how big" and nothing answered "which routines are in it" — and no other tool
-            # does, so a run reasoning about a group had to guess. Slugs are short; the fire
-            # order is the group's whole semantics.
-            def _one(g: dict) -> str:
-                slugs = [str(m.get("slug", "")) for m in (g.get("members") or [])]
+            # does, so a run reasoning about a lane had to guess. Slugs are short; the fire
+            # order is the lane's whole semantics.
+            def _one(lane: dict) -> str:
+                slugs = [str(m.get("slug", "")) for m in (lane.get("members") or [])]
                 who = " → ".join(slugs) if slugs else "no members"
-                sched = f", cron {g['cron']!r}" if g.get("cron") else ""
-                paused = ", PAUSED" if g.get("paused") else ""
-                return f"{g.get('name')!r} ({g.get('id')}{sched}{paused}): {who}"
+                sched = f", cron {lane['cron']!r}" if lane.get("cron") else ""
+                paused = ", PAUSED" if lane.get("paused") else ""
+                return f"{lane.get('name')!r} ({lane.get('id')}{sched}{paused}): {who}"
 
-            names = "; ".join(_one(g) for g in gs) or "none"
-            return (f"OBSERVATION (manage_group list: default_on_failure="
-                    f"{obs.get('default_on_failure')!r}; groups — {names}).")
+            names = "; ".join(_one(lane) for lane in rows) or "none"
+            return (f"OBSERVATION (manage_lane list: default_on_failure="
+                    f"{obs.get('default_on_failure')!r}; lanes — {names}).")
         if verb == "set-default":
-            return (f"OBSERVATION (manage_group: instance default_on_failure set to "
+            return (f"OBSERVATION (manage_lane: instance default_on_failure set to "
                     f"{obs.get('default_on_failure')!r}).")
         if verb == "delete":
-            return f"OBSERVATION (manage_group: deleted group {obs.get('deleted')!r})."
+            return f"OBSERVATION (manage_lane: deleted lane {obs.get('deleted')!r})."
         if verb == "run":
-            return (f"OBSERVATION (manage_group: armed a sequential fire of group "
-                    f"{obs.get('group_id')!r} ({len(obs.get('members') or [])} member(s)) — "
+            return (f"OBSERVATION (manage_lane: armed a sequential fire of lane "
+                    f"{obs.get('lane_id')!r} ({len(obs.get('members') or [])} member(s)) — "
                     "the daemon fires the members in order on its next tick).")
-        g = obs.get("group") or {}
-        sched = (f" and schedule cron={g['cron']!r} ({g.get('tz')})" if g.get("cron")
+        lane = obs.get("lane") or {}
+        sched = (f" and schedule cron={lane['cron']!r} ({lane.get('tz')})" if lane.get("cron")
                  else " and no schedule (members fire on their own crons)")
         # member records render as slugs — the model reads the fire order at a glance
         # without the record boilerplate
-        members = [m["slug"] for m in g.get("members") or []]
-        paused = " PAUSED (cron gated; an explicit run still works)," if g.get("paused") else ""
-        return (f"OBSERVATION (manage_group {verb}: group {g.get('name')!r} ({g.get('id')}) now "
-                f"has members {members},{paused} on_failure={g.get('on_failure')!r}{sched}).")
+        members = [m["slug"] for m in lane.get("members") or []]
+        paused = (" PAUSED (cron gated; an explicit run still works),"
+                  if lane.get("paused") else "")
+        return (f"OBSERVATION (manage_lane {verb}: lane {lane.get('name')!r} ({lane.get('id')}) "
+                f"now has members {members},{paused} on_failure={lane.get('on_failure')!r}"
+                f"{sched}).")
     if kind == "report":
         if obs.get("self_target"):
             return ("OBSERVATION (report: a routine cannot address a report to itself — drop "

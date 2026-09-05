@@ -1,5 +1,5 @@
 // Routine config sections (Name .. Origin): every user-editable panel of the routine
-// page - rename, description, tags, schedule, triggers, schedule-once, permissions,
+// page - rename, description, tags, schedule, triggers, schedule-once, domain, permissions,
 // practice modules, budgets, retention, fs roots, models + deliberation, connections,
 // machines, and origin. Split from routine.js; returns { refreshHead } (the in-place
 // header/next-fire refresher the run-lifecycle bus handler calls).
@@ -31,7 +31,7 @@ const INHERIT_LABEL = {
   fs_read_roots: "readable roots", fs_write_roots: "writable roots",
 };
 
-/** D82: a banner naming what this routine got from its group, so an inherited value is never
+/** D82: a banner naming what this routine got from its DOMAIN, so an inherited value is never
  *  mistaken for one set here. The panels below stay as they are — they show the EFFECTIVE
  *  config, which is what the run actually gets. */
 function inheritedNote(d) {
@@ -39,14 +39,112 @@ function inheritedNote(d) {
   if (!fields.length) return null;
   return el("div", { class: "panel mt", "data-inherited-note": "" },
     el("div", { class: "small" },
-      el("b", {}, "Some settings below come from the group"),
+      el("b", {}, "Some settings below come from the domain"),
       d.inherited_from ? ` “${d.inherited_from}”` : "", "."),
     el("div", { class: "muted small", style: "margin-top:4px" },
       fields.map((f) => `${INHERIT_LABEL[f] || f} (${d.inherited[f]})`).join(" · ")),
     el("div", { class: "muted small", style: "margin-top:4px" },
       "The panels show the EFFECTIVE config — what this routine actually runs with. Editing "
       + "here changes only this routine's own value, which always wins; change the shared part "
-      + "in the group's editor on the Routines page."));
+      + "in the domain's editor on the Routines page."));
+}
+
+/** The DOMAIN picker (docs/lanes-domains.md): which shared surface this routine is part of —
+ *  at most one, named in this routine's OWN routine.yaml, so joining and leaving are ordinary
+ *  config saves through the same PATCH as everything else on this page. The detail payload
+ *  carries the stored id as `domain` ("" for none) and the PATCH takes it back the same way,
+ *  which is why at-most-one needs no rule: the file has one field.
+ *
+ *  The LANE is deliberately NOT here. It decides the ORDER several routines fire in, belongs to
+ *  no single one of them, and is edited on the Routines page (the hero reports which lane this
+ *  routine is in). Keeping the two apart is what stops a TIMING decision from changing this
+ *  routine's permissions and its shared store as a side effect, unannounced on either page.
+ *
+ *  A save reloads the page: every panel below shows the EFFECTIVE config, produced by a merge
+ *  the server does when it loads the routine — so a stale page would keep showing the surface
+ *  of the domain just left. */
+function domainSection(view, slug, d) {
+  const stored = d.domain || "";
+  const sel = el("select", { "data-domain-sel": "", disabled: true },
+    el("option", { value: "" }, "loading…"));
+  const detail = el("div", { class: "muted small mt", "data-domain-detail": "" });
+  let domains = [];
+  const describe = () => {
+    const id = sel.value;
+    if (!id) {
+      detail.replaceChildren("in no domain — every setting on this page is this routine's own");
+      return;
+    }
+    const chosen = domains.find((x) => x.id === id);
+    if (!chosen) {
+      // routine.yaml names a domain the store no longer holds: nothing is merged and no store
+      // is mounted, which a picker quietly reading "none" would hide behind a plausible answer.
+      detail.replaceChildren("this file names ", el("code", {}, id),
+        ", which is not in the store — nothing is inherited and no shared store is mounted. "
+        + "Pick a domain that exists, or none.");
+      return;
+    }
+    const others = (chosen.members || []).filter((m) => m !== slug);
+    detail.replaceChildren(
+      el("div", {}, "shared store · ", el("code", {}, chosen.store || "—")),
+      el("div", { style: "margin-top:4px" }, others.length
+        ? `shared with · ${others.join(" · ")}`
+        : "no other routine is in it yet"));
+  };
+  (async () => {
+    try {
+      const data = await api("/api/domains");
+      domains = data.domains || [];
+      // el() filters a null child; replaceChildren stringifies one — so the stale-id option is
+      // pushed onto the list rather than passed as a conditional argument.
+      const opts = [el("option", { value: "" }, "none"),
+        ...domains.map((x) => el("option", { value: x.id }, x.name))];
+      if (stored && !domains.some((x) => x.id === stored))
+        opts.push(el("option", { value: stored }, `${stored} — missing`));
+      sel.replaceChildren(...opts);
+      sel.value = stored;
+      sel.disabled = false;
+      describe();
+    } catch {
+      sel.replaceChildren(el("option", {}, "unavailable"));
+      detail.replaceChildren("could not load the domains");
+    }
+  })();
+  sel.onchange = async () => {
+    const target = sel.value;
+    sel.disabled = true;
+    try {
+      // "" is the stored value for no domain; the PATCH drops nulls — so leaving one sends
+      // the empty string, never null, which would read as "field omitted" and change nothing.
+      await api(`/api/routines/${slug}`, { method: "PATCH", body: { domain: target } });
+      const joined = domains.find((x) => x.id === target);
+      const left = domains.find((x) => x.id === stored);
+      toast(target
+        ? `joined ${joined?.name || target} — its config and shared store reach this routine at `
+          + "its next run"
+        : `left ${left?.name || "the domain"} — its config and shared store are gone from the `
+          + "next run");
+      setTimeout(() => location.reload(), 600);   // the panels below re-read the merged truth
+    } catch (err) {
+      // nothing was saved — put the control back on the stored value rather than leaving it
+      // showing a domain this routine is not in
+      toast(err.message, 4000, { error: true });
+      sel.value = stored;
+      sel.disabled = false;
+      describe();
+    }
+  };
+  view.append(...settingsSection("Domain",
+    ["the shared surface this routine is part of — at most one, named in this routine's own ",
+     "file. Joining does two things: the domain's config is merged UNDER this routine's own ",
+     "keys, so ", el("strong", {}, "this routine always wins"), " wherever both set one ",
+     "(lists add together); and its shared store becomes a readable AND writable root for ",
+     "every run. Both take effect at the NEXT run — the shared config is merged when the ",
+     "routine is loaded and the store is injected into the fs roots at boot, so both happen ",
+     "once, before the first turn. Leaving takes all of it back the same way. ",
+     "A domain's own shared block is edited on the Routines page; its membership is not, ",
+     "because it lives in each member's file — this control is where it changes."],
+    el("div", { class: "row" }, sel), detail));
 }
 
 export function renderConfigSections(view, d, { slug, titleH1, chipHost, runChip }) {
@@ -101,10 +199,10 @@ export function renderConfigSections(view, d, { slug, titleH1, chipHost, runChip
       nextFireLine.replaceChildren(...(nd.next_fire ? ["next run · ", when(nd.next_fire)] : []));
     } catch { /* cosmetic refresh — the save itself already succeeded */ }
   }
-  // D71: a member of a SCHEDULED group is "group managed" — the dropdown locks on that
-  // state (linking to the group) and a save leaves the stored schedule untouched.
+  // D71: a member of a SCHEDULED lane is "lane managed" — the dropdown locks on that
+  // state (linking to the lane) and a save leaves the stored schedule untouched.
   const sched = scheduleEditor(d.schedule_friendly || { frequency: "manual" }, d.server_tz,
-    { catchup: d.catchup || "skip", groupManaged: d.group_managed || null });
+    { catchup: d.catchup || "skip", laneManaged: d.lane_managed || null });
   const enabledBox = el("input", { type: "checkbox", checked: d.enabled || null });
   const improveBox = el("input", { type: "checkbox", checked: d.improve !== false || null });
   view.append(...settingsSection("Schedule",
@@ -120,8 +218,8 @@ export function renderConfigSections(view, d, { slug, titleH1, chipHost, runChip
           try {
             await api(`/api/routines/${slug}`, { method: "PATCH",
               body: { enabled: enabledBox.checked, improve: improveBox.checked,
-                      // group-managed: the schedule stays the group's business — send none
-                      ...(d.group_managed ? {}
+                      // lane-managed: the schedule stays the lane's business — send none
+                      ...(d.lane_managed ? {}
                         : { schedule: { friendly: sched.value(), catchup: sched.catchup() } }) } });
             toast("schedule saved"); refreshHead();
           } catch (err) { toast(err.message, 4000, { error: true }); }
@@ -153,6 +251,12 @@ export function renderConfigSections(view, d, { slug, titleH1, chipHost, runChip
      "changes nothing here."],
     tplHost));
   templatePanel(tplHost, slug, d);
+
+  // -- domain: the shared surface, right after the template it reads next to ------------------
+  // The two answer the same question — where does this routine's config come from? — in
+  // opposite ways: a template COPIES once and the copy is then this routine's own, a domain
+  // LAYERS under this file at every load and can be left again.
+  domainSection(view, slug, d);
 
   // -- recommended setup: the INVERSE of the surface — what SHOULD this routine hold, and why --
   // A second reading of the recipe against the two panels below: given what this routine DOES,

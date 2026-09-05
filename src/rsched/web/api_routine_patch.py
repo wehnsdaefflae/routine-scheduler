@@ -14,8 +14,8 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, ConfigDict
 
+from .. import domains, schedule
 from .. import rules as rules_mod
-from .. import schedule
 from ..config import DELIBERATION_LEVELS, MODEL_KINDS, write_tuning
 from ..paths import atomic_write_yaml, read_yaml
 from .routines_common import (
@@ -46,6 +46,8 @@ class RoutinePatch(BaseModel):
     name: str | None = None
     description: str | None = None
     tags: list[str] | None = None           # freeform filter tags (e.g. ["meta"])
+    domain: str | None = None               # the shared surface this routine is part of — at
+    #                                          most one, `""` leaves (docs/lanes-domains.md)
     rules: list[str] | None = None          # general-rule slugs this routine practises — REPLACE
     #                                          wholesale, validated against the library, main.md's
     #                                          derived practices tail resynced (rules.apply_changes)
@@ -77,6 +79,30 @@ def _apply_rules_field(rules_home: Path, routine_dir: Path, raw: dict, updates: 
     except KeyError as exc:
         raise HTTPException(400, f"unknown rule: {exc.args[0]!r}") from exc
     raw["rules"] = rules_mod.current_rules(routine_dir)
+
+def _apply_domain_field(routines_home: Path, raw: dict, updates: dict) -> None:
+    """Join or leave the shared surface this routine names in its OWN routine.yaml (`domain:`).
+
+    Membership lives here and nowhere else, which is what makes "at most one domain" a fact of
+    the file rather than a rule someone has to enforce across a list — `GET /api/domains` reads
+    its members back out of the routines (docs/lanes-domains.md). An unknown id is a 400, not a
+    save: the picker only offers ids that exist; a routine pointing at a domain that does not
+    would inherit nothing while reading everywhere as "in a domain". Leaving is `""`, which
+    REMOVES the key, so "in no domain" keeps its single spelling — absence.
+
+    Next-run semantics (`configflow.CLASSIFICATION`): the shared block is merged when the
+    routine is loaded and the store is injected into the fs roots at boot, so a live run keeps
+    the surface it booted with and is told the field changed.
+    """
+    if "domain" not in updates:
+        return
+    want = (updates.pop("domain") or "").strip()
+    if not want:
+        raw.pop("domain", None)
+        return
+    if domains.get(routines_home, want) is None:
+        raise HTTPException(400, f"unknown domain {want!r} (create it on the Routines page)")
+    raw["domain"] = want
 
 def _apply_resource_fields(raw: dict, updates: dict) -> None:
     """Place the routine.yaml resource fields a PATCH carries that the caller's generic
@@ -189,6 +215,7 @@ def patch_routine(request: Request, slug: str, patch: RoutinePatch) -> dict:
     # dedicated /routines/{slug}/rules picker. Extracted to a helper to keep this handler
     # under the branch-complexity budget.
     _apply_rules_field(_state(request).server.rules_home, info.cfg.dir, raw, updates)
+    _apply_domain_field(_state(request).server.routines_home, raw, updates)
     _apply_resource_fields(raw, updates)
     for key, val in updates.items():
         if isinstance(val, dict) and isinstance(raw.get(key), dict):

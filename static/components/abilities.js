@@ -13,8 +13,8 @@
 // reading its prose.
 //
 // Drop-in for permissionsPanel: same (permissions, capabilities, opts) in, same {node, value} out,
-// so the routine page, the conversation rail, the composer and the group editor all keep working.
-// `opts.surface` is optional — a group's shared config and an unsaved conversation have no
+// so the routine page, the conversation rail, the composer and the domain editor all keep working.
+// `opts.surface` is optional — a domain's shared config and an unsaved conversation have no
 // routine to resolve, and the cards degrade to the two-layer view those cases can support.
 
 import { effectLine } from "/static/components/effectline.js";
@@ -269,7 +269,7 @@ export function abilitiesPanel(permissions, capabilities, opts = {}) {
     return node;
   }
 
-  /** Capabilities switched on that no held doc requires — the group-inheritance blind spot. */
+  /** Capabilities switched on that no held doc requires — the domain-inheritance blind spot. */
   function orphanCard() {
     if (!surface) return null;
     const orphans = surface.filter((n) => n.state === "uncovered");

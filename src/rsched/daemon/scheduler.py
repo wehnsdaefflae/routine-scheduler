@@ -17,8 +17,8 @@ import time
 from datetime import UTC, datetime
 from types import SimpleNamespace
 
-from .. import group_runs as group_runs_store
-from .. import groups, registry
+from .. import lane_runs as lane_runs_store
+from .. import lanes, registry
 from ..config import ServerConfig
 from ..health_events import log_health_event
 from ..ids import now_iso
@@ -26,7 +26,7 @@ from ..schedule import server_tz
 from . import pause, restart, runner_reap
 from .detached import DetachedManager
 from .events import EventBus
-from .group_runs import GroupRunManager
+from .lane_runs import LaneRunManager
 from .library_watch import LibraryWatch
 from .oauth_refresh import OAuthRefreshManager
 from .runner import Runner
@@ -66,10 +66,10 @@ class Scheduler:
         # One-shot time triggers: a request spool the web layer / the schedule_run action arm;
         # this manager fires each due request ONCE then consumes it (see daemon/schedule_once.py).
         self.oneshots = OneShotManager(server, runner)
-        # Sequential group fires (D53 Phase B): the web layer arms an ordered group's chain
+        # Sequential lane fires (D53 Phase B): the web layer arms an ordered lane's chain
         # durably; this manager advances it one member per tick — fire, wait for terminal,
-        # apply the on_failure policy, fire the next (see daemon/group_runs.py).
-        self.group_runs = GroupRunManager(server, runner)
+        # apply the on_failure policy, fire the next (see daemon/lane_runs.py).
+        self.lane_runs = LaneRunManager(server, runner)
         # OAuth token upkeep: refresh expiring connections before they lapse so a run always
         # reads a live token (a no-op for non-expiring providers). See daemon/oauth_refresh.py.
         self.oauth = OAuthRefreshManager(server)
@@ -79,13 +79,15 @@ class Scheduler:
         self.library = LibraryWatch(server)
         self.catalog: dict[str, registry.RoutineInfo] = {}
         self.next_fires: dict[str, datetime] = {}
-        # D71: groups with a cron of their own. A due group fire ARMS the sequential
-        # chain (member 0 fires, the rest chain on completion — GroupRunManager);
-        # meanwhile every member of a scheduled group is SUPPRESSED from the routine
-        # fire table above, so one fire path exists and nothing double-fires.
-        self.scheduled_groups: list[dict] = []
+        # D71: lanes with a cron of their own. A due lane fire ARMS the sequential
+        # chain (member 0 fires, the rest chain on completion — LaneRunManager);
+        # meanwhile every member of a scheduled lane is SUPPRESSED from the routine
+        # fire table above, so one fire path exists and nothing double-fires. A routine
+        # belongs to at most one lane (rsched.lanes), which is what makes "one fire path"
+        # a fact rather than a hope.
+        self.scheduled_lanes: list[dict] = []
         self.suppressed_members: set[str] = set()
-        self.group_next_fires: dict[str, datetime] = {}
+        self.lane_next_fires: dict[str, datetime] = {}
         self._last_scan = 0.0
         self._shutting_down = False
         self._deferred_logged = False
@@ -97,14 +99,14 @@ class Scheduler:
     def rescan(self) -> None:
         self.catalog = registry.scan(self.server)
         now = _now()
-        # D71: a member of a SCHEDULED group fires only through the group's chain — its
+        # D71: a member of a SCHEDULED lane fires only through the lane's chain — its
         # own cron is suppressed while the membership lasts (removing the schedule or
-        # leaving the group restores it on the next rescan). Unscheduled groups suppress
+        # leaving the lane restores it on the next rescan). Unscheduled lanes suppress
         # nothing. Read fresh each rescan, like the catalog.
-        self.scheduled_groups = [g for g in groups.list_groups(self.server.routines_home)
-                                 if g["cron"]]
-        self.suppressed_members = {m for g in self.scheduled_groups
-                                   for m in groups.member_slugs(g)}
+        self.scheduled_lanes = [lane for lane in lanes.list_lanes(self.server.routines_home)
+                                if lane["cron"]]
+        self.suppressed_members = {slug for lane in self.scheduled_lanes
+                                   for slug in lanes.member_slugs(lane)}
         fires: dict[str, datetime] = {}
         for slug, info in self.catalog.items():
             if slug in self.suppressed_members:
@@ -123,32 +125,32 @@ class Scheduler:
             # a fire that came due since the last tick is still owed — don't recompute past it
             fires[slug] = prev if (prev is not None and prev <= now) else nf
         self.next_fires = fires
-        gfires: dict[str, datetime] = {}
-        for g in self.scheduled_groups:
-            nf = registry.next_fire(self._group_schedulable(g), now)
+        lane_fires: dict[str, datetime] = {}
+        for lane in self.scheduled_lanes:
+            nf = registry.next_fire(self._lane_schedulable(lane), now)
             if nf is None:
                 continue
-            prev = self.group_next_fires.get(g["id"])
-            gfires[g["id"]] = prev if (prev is not None and prev <= now) else nf
-        self.group_next_fires = gfires
+            prev = self.lane_next_fires.get(lane["id"])
+            lane_fires[lane["id"]] = prev if (prev is not None and prev <= now) else nf
+        self.lane_next_fires = lane_fires
 
     @staticmethod
-    def _group_schedulable(g: dict) -> SimpleNamespace:
-        """A group's cron/tz as the Schedulable shape next_fire reads. tz falls back to
-        the server zone — groups are saved with the server tz by the web layer, but an
+    def _lane_schedulable(lane: dict) -> SimpleNamespace:
+        """A lane's cron/tz as the Schedulable shape next_fire reads. tz falls back to
+        the server zone — lanes are saved with the server tz by the web layer, but an
         older or hand-edited row must still fire somewhere sensible.
         """
-        # A PAUSED group reads as a disabled schedulable: next_fire yields None, so the
-        # group simply leaves the fire table — nothing to skip in the loop, and resuming
+        # A PAUSED lane reads as a disabled schedulable: next_fire yields None, so the
+        # lane simply leaves the fire table — nothing to skip in the loop. Resuming
         # recomputes a FUTURE fire on rescan (never a backlog of missed ones). An explicit
-        # "Run now" / manage_group run still arms the chain: pause gates the cron only.
-        return SimpleNamespace(cron=g["cron"], tz=g.get("tz") or server_tz(),
-                               enabled=not g.get("paused"))
+        # "Run now" / manage_lane run still arms the chain: pause gates the cron only.
+        return SimpleNamespace(cron=lane["cron"], tz=lane.get("tz") or server_tz(),
+                               enabled=not lane.get("paused"))
 
     async def boot_catchup(self) -> None:
         for slug, info in self.catalog.items():
             if slug in self.suppressed_members:
-                # D71: a group-managed member's own cron never fires, catch-up included
+                # D71: a lane-managed member's own cron never fires, catch-up included
                 continue
             if info.retired:
                 continue     # a finished routine has no missed fire worth making up
@@ -204,36 +206,36 @@ class Scheduler:
                         log.info("scheduling paused — skipped due fire of %r", slug)
                         continue
                     await self.runner.fire(info.cfg, reason="schedule")
-                # D71: due GROUP fires — arm the sequential chain; GroupRunManager
+                # D71: due LANE fires — arm the sequential chain; LaneRunManager
                 # (ticked below) fires member 0 and chains the rest on completion.
-                for gid, due in list(self.group_next_fires.items()):
+                for lane_id, due in list(self.lane_next_fires.items()):
                     if now < due:
                         continue
-                    group = next((g for g in self.scheduled_groups if g["id"] == gid), None)
-                    if group is None:
-                        self.group_next_fires.pop(gid, None)
+                    lane = next((x for x in self.scheduled_lanes if x["id"] == lane_id), None)
+                    if lane is None:
+                        self.lane_next_fires.pop(lane_id, None)
                         continue
-                    self.group_next_fires[gid] = (
-                        registry.next_fire(self._group_schedulable(group), now) or due)
+                    self.lane_next_fires[lane_id] = (
+                        registry.next_fire(self._lane_schedulable(lane), now) or due)
                     if is_paused:
-                        log.info("scheduling paused — skipped due group fire of %r", gid)
+                        log.info("scheduling paused — skipped due lane fire of %r", lane_id)
                         continue
-                    rec = group_runs_store.arm(
-                        self.server.routines_home, group,
-                        default_on_failure=groups.default_on_failure(
+                    rec = lane_runs_store.arm(
+                        self.server.routines_home, lane,
+                        default_on_failure=lanes.default_on_failure(
                             self.server.routines_home),
                         armed_by="schedule")
                     if rec is None:
-                        # the chain overrun rule: a group still mid-chain skips this
+                        # the chain overrun rule: a lane still mid-chain skips this
                         # fire (the routine analog is Runner.fire's overrun_skipped)
-                        log.info("group fire skipped — chain still in flight group=%s", gid)
+                        log.info("lane fire skipped — chain still in flight lane=%s", lane_id)
                         log_health_event(
-                            self.server.routines_home, "group_fire_refused",
-                            routine=gid, run_id="",
-                            detail="due scheduled group fire skipped - previous chain "
+                            self.server.routines_home, "lane_fire_refused",
+                            routine=lane_id, run_id="",
+                            detail="due scheduled lane fire skipped - previous chain "
                                    "still in flight (a wedged chain starves every later fire)")
                     else:
-                        log.info("group fire armed group=%s members=%d", gid,
+                        log.info("lane fire armed lane=%s members=%d", lane_id,
                                  len(rec.get("members") or []))
                 self._refresh_limits()
                 self._refresh_machine_queues()
@@ -245,8 +247,8 @@ class Scheduler:
                     # one-shot time triggers: due requests → a single fire, then consumed
                     # (paused: intake deferred, so nothing is consumed unfired)
                     await self.oneshots.tick(self.catalog)
-                    # sequential group fires: advance each armed chain one member per tick
-                    await self.group_runs.tick(self.catalog)
+                    # sequential lane fires: advance each armed chain one member per tick
+                    await self.lane_runs.tick(self.catalog)
                 # OAuth token upkeep: refresh expiring connections nearing their deadline
                 await self.oauth.tick()
                 await self.library.tick()
@@ -360,8 +362,8 @@ class Scheduler:
             "routines": len(self.catalog),
             "active_runs": {slug: run.run_id for slug, run in self.runner.active.items()},
             "next_fires": {s: t.isoformat() for s, t in sorted(self.next_fires.items())},
-            "group_next_fires": {g: t.isoformat()
-                                 for g, t in sorted(self.group_next_fires.items())},
+            "lane_next_fires": {lane_id: t.isoformat()
+                                for lane_id, t in sorted(self.lane_next_fires.items())},
             "draining": self.runner.draining,
             "started": self.started,
             "restart_requested": restart.restart_requested(self.server),

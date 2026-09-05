@@ -57,6 +57,9 @@ CLASSIFICATION: dict[str, tuple[str, str]] = {
     "name": (NEXT_RUN, "a label, not behaviour"),
     "description": (NEXT_RUN, "a label, not behaviour"),
     "tags": (NEXT_RUN, "a label, not behaviour"),
+    "domain": (NEXT_RUN, "the shared config is merged when the routine is loaded and the "
+                         "domain's store is injected into the fs roots at boot — both happen "
+                         "once, before the first turn"),
     "title": (NEXT_RUN, "a label, not behaviour"),
     "workdir": (NEXT_RUN, "it is the first write root, computed at boot with the other roots"),
 }

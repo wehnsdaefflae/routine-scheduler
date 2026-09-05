@@ -12,14 +12,14 @@ the same answer most of the time and hid the interesting differences in the nois
 A template is a PRESELECTION, not a layer (operator decision 2026-08-30, reversing 0.262.0's
 layering). Adopting one COPIES its values into the routine's own `routine.yaml`, once, and the
 routine owns them from that moment: lists union, maps fill only what the routine left unset —
-the same rules the group merge uses, applied as a WRITE instead of as an inheritance.
+the same rules the DOMAIN merge uses, applied as a WRITE instead of as an inheritance.
 
 Layering was tried first and read badly. A routine's own file recorded only its DIFFERENCES from
 its template, so opening `routine.yaml` told you almost nothing about what the routine could do;
-the page had to explain a second inheritance chain stacked on the group's; and `template_except:`
-existed purely to subtract from a layer nobody could see. The cost of copying is the leverage —
-editing a template no longer reaches its adopters — which is the correct trade for a
-STARTING POINT. A live shared config is what a GROUP is, and that layer stays.
+the page had to explain a second inheritance chain stacked on the domain's; and
+`template_except:` existed purely to subtract from a layer nobody could see. The cost of copying
+is the leverage — editing a template does not reach its adopters — which is the correct trade
+for a STARTING POINT. A live shared config is what a DOMAIN is; a template is not one.
 
 So a template has no runtime existence: nothing resolves one at config load, and no field on
 `RoutineConfig` names one. It is read by creation (`workflows.scaffold`) and by the routine
@@ -69,12 +69,12 @@ def read_template(libraries_home: Path, slug: str) -> dict | None:
 
 
 def normalize_config(raw: object) -> dict:
-    """The shared-config half of a template, restricted to the keys a GROUP may share.
+    """The shared-config half of a template, restricted to the keys a DOMAIN may share.
 
-    One vocabulary for both layers on purpose: a template that could carry a key a group
+    One vocabulary for both layers on purpose: a template that could carry a key a domain
     cannot would make "where do I set this?" a question with two answers.
     """
-    from .groups import CONFIG_KEYS
+    from .domains import CONFIG_KEYS
 
     if not isinstance(raw, dict):
         return {}
@@ -103,15 +103,15 @@ def adopt_into(raw: dict, config: dict) -> tuple[dict, list[str]]:
     the routine page shows it back, because an adoption that silently changed nine things is
     the layer's illegibility in a different costume.
 
-    The merge rules are the group merge's, which is deliberate: union for the list keys, fill
+    The merge rules are the domain merge's, which is deliberate: union for the list keys, fill
     per key for the maps, the routine's own value always winning. What differs is only that the
     result is WRITTEN. `grants` is never copied — a grant is a settled decision a person made
     about one routine, and a template pre-answering one would be a template exposing a secret.
     """
-    from .config.groupconfig import apply_group_config
+    from .config.domainconfig import apply_shared_config
 
     shareable = {k: v for k, v in (config or {}).items() if k != "grants"}
-    merged, provenance = apply_group_config(raw, shareable, source="the template")
+    merged, provenance = apply_shared_config(raw, shareable, source="the template")
     return merged, [f"{note.split(' from ')[0]} {key}"
                     for key, note in sorted(provenance.items())]
 

@@ -243,7 +243,7 @@ def search_listing(home: Path, query: str, limit: int = 12) -> str:
     (the dominant failure mode of any tool-search layer).
     """
     hits = search_utils(home, query, limit=limit)
-    floor = ('The FULL catalog is always in your CAPABILITIES section (grouped by domain), '
+    floor = ('The FULL catalog is always in your CAPABILITIES section (grouped by category), '
              'so nothing is hidden — scan it directly if nothing above fits, or write a new '
              'util with write_util. Run `util name=list args=["<name>"]` for a util\'s '
              'exact flags.')

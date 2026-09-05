@@ -15,6 +15,91 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.311.0] — 2026-09-06
+
+### Changed — a `group` was four things at once, so the strictest of them quantized the rest
+
+One `group` record decided four unrelated things: WHEN a set of routines fires and in what
+order; WHAT config its members inherit (D82); WHO may read and write a shared directory — the
+trust boundary domain notes rest on entirely; and WHAT the set is about. Only the first of those
+demands exclusivity — a routine in two scheduled groups fires twice — but because all four rode
+on one membership list, the strictest axis set the cardinality for the rest. "These five
+routines share a permission surface" could not be said without also saying "and they fire
+together".
+
+The live instance had been paying for that for months. 14 groups, 31 memberships, and **zero**
+routines in more than one group: exclusivity had eaten the whole model. The four `Instance ·`
+groups carried byte-identical 294-char config blocks and the two `Professional ·` ones did the
+same — D82 exists precisely because N copies of one policy surface drift apart, so the cadence
+split had recreated its failure mode inside it. Two groups held a config block and no members
+at all. `Instance · Weekly · Utils` fired an empty chain at `0 3 * * 2` for weeks, logging a
+chain-done event that reads exactly like a chain whose members all completed. And because the
+shared config rode on the membership, moving a routine from the nightly group to the weekly one
+silently changed what it was allowed to do: **a timing decision was a permissions decision**,
+with nothing anywhere to say so.
+
+There are now three objects, with three cardinalities and three owners:
+
+- a **LANE** (`rsched/lanes.py`, `.control/lanes.json`) — when a set of routines fires and in
+  what order, plus its mid-chain-failure policy. At most one per routine, ENFORCED; instance
+  state the web RECORDS and the daemon FIRES, like triggers and one-shot schedules.
+- a **DOMAIN** (`rsched/domains.py`, `.control/domains.json`) — the shared config block, the
+  shared store and the notes boundary. At most one; the routine names it in its OWN
+  routine.yaml (`domain:`), which makes the cardinality a fact of the file rather than a rule
+  someone has to enforce across a list — and keeps membership somewhere it cannot disagree
+  with itself.
+- **`tags:`** — what a routine is about. Any number, no behaviour, already on the routine.
+
+Config clustering and the trust boundary stayed ONE object on purpose. They answer the same
+question — which routines are close enough to share? — and they have the same cardinality.
+Separating them would dissolve the argument that makes a domain note approval-free: a note
+cannot leave the domain because the domain's store is in its members' fs roots and nobody
+else's. The boundary IS the safety model.
+
+Three things dissolve with the split:
+
+- **The cross-record config merge.** It combined several groups' blocks with "first group wins
+  the whole key" while unioning WITHIN a group — two rules that contradict each other — so what
+  a routine inherited depended on the order rows happened to sit in a JSON file — and no caller
+  could have said what that order was. `config/domainconfig.domain_config_for` looks ONE block
+  up by id and merges nothing across records.
+- **A store-root lookup whose contract was "usually 0 or 1".** It returns zero or one; the
+  cardinality is why.
+- **Deleting a lane being a config change.** A lane owns no store and no config, so deleting one
+  returns its members to their own crons and changes nothing else about them — which is the
+  clearest single sign that timing and sharing were never one job.
+
+Each axis is edited where it belongs. Lanes are rows in the Routines list, because a firing
+order over routines belongs beside them — and from a conversation, `manage_lane`, which reaches
+no config block and no store. Which domain a routine is IN is on that routine's own page beside
+every other per-routine setting, since joining one is an ordinary config save; what the domain
+SHARES is one block in the Routines page's own domains section, edited once instead of once per
+member. `docs/lanes-domains.md` carries the full argument.
+
+### Migration — `migrate_group_split.py`, three rules
+
+1. **Identical config blocks collapse to ONE domain**, clustered on the block's exact content, so
+   the four `Instance ·` copies become one with nothing guessed about intent. The domain's name
+   is the leading segment the contributing names shared — `Instance`, `Professional` — which is
+   exactly the dimension that had nowhere else to live.
+2. **A domain inherits the id of whichever contributing group HOLDS FILES**, so no store
+   directory moves and the shared files keep the `group-stores/grp-…` path they already had.
+   Routines address these paths in their own memory: one live routine carries
+   `READ /control/group-stores/grp-8bfd2aa6/…` as a standing prevention rule it wrote for itself
+   after an incident; several more name a store id in a ledger. A moved store would
+   silently falsify agent-authored notes instead of failing loudly. The id is an opaque handle;
+   nothing parses its prefix.
+3. **A group with members but no cron was never a lane** — nothing fired it — so it becomes a
+   TAG on its members rather than a lane that could never fire: the user's own categorization
+   survives on the axis meant to carry it. That branch reads the CLOCK ALONE, so a group with
+   members, a config block and no cron becomes BOTH — its block joins a domain cluster and its
+   members are stamped `domain:` as well as tagged.
+
+**Collapsing the four `Instance ·` groups into one domain WIDENS a trust boundary**: the store
+that was `library-sync` and `self-audit`'s is now readable and writable by every Instance
+member. That is what a domain is for — routines sharing a policy surface share a store — but a
+widening is never something to discover later.
+
 ## [0.310.0] — 2026-09-05
 
 ### Fixed — the reminders layer was switched on nowhere, and three separate places said nothing

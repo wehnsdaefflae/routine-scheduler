@@ -82,7 +82,7 @@ def configure(loop, ctx: RunContext, workflow_body: str, instruction: str,
     from .admin import admin_marker, clear_admin_marker
     loop.admin_leg = admin_marker(ctx.run_dir) and detach._is_root_conversation(ctx)
     clear_admin_marker(ctx.run_dir)
-    # D58: routine and group creation is INITIATED from a conversation — that is where a
+    # D58: routine and lane creation is INITIATED from a conversation — that is where a
     # user is in the loop to design with. F328 keeps the restriction and drops its
     # consequence: a run without a user may still PROPOSE, so the kinds are surfaced
     # everywhere and it is the HANDLER that decides between materializing (root
@@ -93,7 +93,7 @@ def configure(loop, ctx: RunContext, workflow_body: str, instruction: str,
     # within-reply CHILD must not create or propose routines as a side effect — its parent
     # is the one reasoning with the user, and a child's proposal traces to nothing.
     if loop.allowed_tools is not None and ctx.depth == 0:
-        loop.allowed_tools |= {"create_routine", "manage_group"}
+        loop.allowed_tools |= {"create_routine", "manage_lane"}
     # base_grants is the CONFIG-derived policy; the live loop.grants folds the run's
     # one-time grant overlay over it (requests.rebuild_policy) — always base+overlay,
     # never stacked, so a decision can also be reasoned about from the base.

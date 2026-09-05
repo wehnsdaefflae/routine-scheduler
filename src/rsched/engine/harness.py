@@ -4,7 +4,7 @@ Split out of `composer.py` (F393): assembling the prompt from parts is one job, 
 part that states the contract is another — this one is almost entirely prose the model obeys.
 
 Identity, one JSON action per turn, the `say` contract at the routine's deliberation level, the
-working directory and every extra root, group store and group notes, how code runs, the concrete
+working directory and every extra root, shared store and domain notes, how code runs, the concrete
 budgets, a gloss of each action kind THIS run can use. Every sentence is load-bearing and
 `docs/prompt-anatomy.md` pins the wording — a change here without a change there fails
 `tests/test_prompt_anatomy.py`, deliberately.
@@ -37,19 +37,19 @@ def harness_contract(ctx: RunContext, kinds: list[str] | None = None) -> str:
     if r.fs_read_roots or r.fs_write_roots:
         extra = (f"\nAdditional readable roots: {[str(p) for p in r.fs_read_roots]}; "
                  f"writable roots: {[str(p) for p in r.fs_write_roots]}.")
-    if ctx.group_store_roots:
+    if ctx.domain_store_roots:
         # D67: the injected shared store — the run must know the root EXISTS and what it
         # is for, or it never looks there. Collision semantics stated honestly: whole-file
         # atomic writes, last write wins per file.
-        extra += ("\nGroup shared store (read+write, shared with the other routines in "
-                  f"your group): {[str(p) for p in ctx.group_store_roots]} — exchange "
-                  "files with your group members there. Writes are whole-file and last "
+        extra += ("\nShared store (read+write, shared with the other routines in your "
+                  f"DOMAIN): {[str(p) for p in ctx.domain_store_roots]} — exchange "
+                  "files with them there. Writes are whole-file and last "
                   "write wins per file, so prefer per-routine filenames "
                   "(<your-slug>-<topic>.md) and treat shared files as read-mostly.")
         # F335: the light channel between teammates. Named HERE because a channel a run does
         # not know about is a channel that does not exist — and because it belongs beside the
         # store root it lives in, not in a section about reporting problems.
-        from ..groupnotes import contract_line
+        from ..domainnotes import contract_line
         extra += contract_line(ctx.server.routines_home, r.slug)
     # write_util is a user-set capability; the confirm level is its approval policy.
     # ctx.grants None (direct construction) = ungated.

@@ -25,7 +25,7 @@ from .base import (
     _known_tz,
     _validate_lenient,
 )
-from .groupconfig import apply_group_config, group_config_for
+from .domainconfig import apply_shared_config, domain_config_for
 
 
 class RoutineConfig(_Config):
@@ -91,6 +91,13 @@ class RoutineConfig(_Config):
     # lives once under <libraries_home>/rules/ and the run reads it on demand (`read_rule`),
     # so a library revision reaches every holder at once. User-only, like everything here.
     rules: list[str] = Field(default_factory=lambda: list(DEFAULT_RULES))
+    # The DOMAIN this routine shares a surface with: one id, or "" for none. Naming it HERE
+    # rather than listing members on the domain is what makes at-most-one a fact of the file —
+    # a routine cannot be in two, because there is one key. It also puts the choice where every
+    # other per-routine setting is: user-only, writable by no run. What the domain contributes
+    # is merged UNDER this file's own keys (config/domainconfig.py); its shared store is
+    # injected into the run's fs roots at boot.
+    domain: str = ""
     capabilities: dict = Field(default_factory=lambda: {
         k: list(v) if isinstance(v, list) else v for k, v in DEFAULT_CAPABILITIES.items()})
     fs_read_roots: list[HomePath] = Field(default_factory=list)
@@ -105,12 +112,12 @@ class RoutineConfig(_Config):
     # Whether the routine-improver meta routine visits this routine (default: yes; the
     # toggle on the routine page opts out with `improve: false`).
     improve: bool = True
-    # What this routine INHERITED from its GROUP's shared config (D82): {field: "<n> from the
-    # group"} plus the group's name. A settings template is NOT here — it is copied in at
+    # What this routine INHERITED from its DOMAIN's shared config (D82): {field: "<n> from the
+    # domain"} plus the domain's name. A settings template is NOT here — it is copied in at
     # adoption, so its values are the routine's own from that moment (see the loader below).
     # Runtime handles like `deliberation` — computed at load,
     # never written to routine.yaml (the file stays the routine's OWN authority, so removing
-    # it from a group cleanly returns it to what its file says). The routine page reads these
+    # it from a domain cleanly returns it to what its file says). The routine page reads these
     # to mark a value as coming from a shared layer rather than from this routine.
     inherited: dict[str, str] = Field(default_factory=dict)
     inherited_from: str = ""
@@ -249,8 +256,8 @@ def record_grants(routine_dir: Path, updates: dict[str, bool]) -> None:
 
 
 def load_routine(routine_dir: Path) -> tuple[RoutineConfig | None, list[str]]:
-    """Parse <dir>/routine.yaml, then layer the shared config of any group the routine belongs
-    to underneath it (D82 — the group is a default, the routine's own keys win). Returns
+    """Parse <dir>/routine.yaml, then layer the shared config of the DOMAIN this routine names
+    underneath it (D82 — the domain is a default, the routine's own keys win). Returns
     (config, problems); config is None only when the file is missing/unreadable — otherwise
     problems may be non-empty but best-effort applies.
     """
@@ -282,22 +289,22 @@ def load_routine(routine_dir: Path) -> tuple[RoutineConfig | None, list[str]]:
                                                            "playbook", "retention"}
     problems.extend(f"{key}: unknown routine.yaml key — check the spelling (ignored)"
                     for key in sorted(set(raw) - known))
-    # The group's shared config goes UNDER the routine's own (D82) — after the unknown-key
+    # The domain's shared config goes UNDER the routine's own (D82) — after the unknown-key
     # check, which must judge the file the user actually wrote, not the merge result.
-    group_config, group_name = group_config_for(routine_dir, slug)
+    domain_config, domain_name = domain_config_for(routine_dir, raw.get("domain") or "")
     inherited: dict[str, str] = {}
-    if group_config:
-        raw, inherited = apply_group_config(raw, group_config)
+    if domain_config:
+        raw, inherited = apply_shared_config(raw, domain_config, source="the domain")
     # A settings TEMPLATE does not appear here. It is a PRESELECTION, not a layer (operator
     # decision 2026-08-30, reversing 0.262.0): adopting one COPIES its values into this file,
     # once, and the routine owns them from then on. Under the layer, a routine's own file
     # recorded only its DIFFERENCES from a template, so reading routine.yaml told you almost
     # nothing about the routine and the page had to explain a second inheritance chain on top
-    # of the group's. The GROUP layer above stays: a group is a live shared config a member
+    # of the domain's. The DOMAIN layer above stays: a domain is a live shared config a member
     # belongs to, which is a different claim from "this is where I started".
     cfg = _validate_lenient(RoutineConfig, {**raw, "slug": slug, "dir": routine_dir}, problems) \
         or RoutineConfig(slug=slug, dir=routine_dir)
-    cfg.inherited, cfg.inherited_from = inherited, (group_name if group_config else "")
+    cfg.inherited, cfg.inherited_from = inherited, (domain_name if domain_config else "")
     cfg.name = cfg.name or slug
     if not cfg.description:
         problems.append("description is empty — every routine needs a one-line "

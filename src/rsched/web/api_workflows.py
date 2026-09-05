@@ -51,7 +51,9 @@ def library_overview(request: Request) -> dict:
                   for r in library_docs.list_docs(server.rules_home)],
         "permissions": [{**p, "problems": lint.get(f"permissions/{p['slug']}.md", [])}
                         for p in library_docs.list_docs(server.permissions_home)],
-        # Settings TEMPLATES: the named starting points a routine or a group adopts. Carried
+        # Settings TEMPLATES: the named starting points a ROUTINE adopts (a copy, never a
+        # layer — the live shared layer is a DOMAIN's config block, which is a different
+        # claim: "this is what I share" rather than "this is where I started"). Carried
         # in the same payload as the docs they bundle, because the routine page's picker and
         # the Library tab's editor read the one call.
         "templates": templates.list_templates(server.libraries_home),

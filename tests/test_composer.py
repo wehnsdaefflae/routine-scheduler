@@ -1,9 +1,9 @@
 """System prompt assembly + state digest (composer.py), the CAPABILITIES section
 (capabilities.py), observation formatting (observations.py), and compaction / on-disk
 history / transcript replay (history.py)."""
-
 import json
 
+from rsched import domains
 from rsched.config import ServerConfig, load_routine
 from rsched.engine.budgets_config import Budgets
 from rsched.engine.compaction import maybe_compact, messages_size
@@ -49,7 +49,7 @@ def test_harness_contract_mentions_the_load_bearing_facts(make_routine, tmp_path
 
 def test_harness_contract_reflects_grants(make_routine, tmp_path):
     """The contract tells the model what its grants allow: authoring denied without the
-    grant, and the confirm level (always / creations-only) spelled out with it."""
+    grant, with the confirm level (always / creations-only) spelled out beside it."""
     from rsched.grantpolicy import GrantPolicy
 
     ctx = _ctx(make_routine, tmp_path, slug="granted")
@@ -142,7 +142,7 @@ def test_state_digest_inlines_background_tasks(make_routine):
 
 def test_state_digest_lists_held_rules(make_routine):
     # The rules a routine holds come from its CONFIG, not from any directory — the digest
-    # names them so the run knows what to read, and carries no improve-* lens block.
+    # names them so the run knows what to read and carries no improve-* lens block.
     d = make_routine(slug="lens")
     digest = state_digest(d, [], [], held_rules=["ask-policy", "decision-record"])
     assert "General rules binding this routine" in digest
@@ -253,7 +253,7 @@ def test_capabilities_digest_utils_kinds_and_grants(make_routine, tmp_path):
     assert "frob — flips widgets." in text
     assert "discord — phone channel.  [reserved — not granted to this routine]" in text
     # D52 Phase 1: the catalog is grouped by a controlled category vocabulary, not a flat list.
-    assert "grouped by domain" in text
+    assert "grouped by category" in text
     assert "### Code & development (1)" in text          # frob (tags: code, dev)
     assert "### Email & messaging (1)" in text            # discord (tags: communication, chat)
     from rsched.engine.capabilities import _util_category
@@ -275,38 +275,45 @@ def test_capabilities_digest_utils_kinds_and_grants(make_routine, tmp_path):
     assert "spawn" not in kinds2 and "ask_user" in kinds2
 
 
-def test_group_notes_reach_the_prompt_and_drain_once(make_routine, tmp_path):
+def test_domain_notes_reach_the_prompt_and_drain_once(make_routine, tmp_path):
     """F335 end to end through the composer: the harness contract NAMES the light channel (a
-    channel a run does not know about is a channel that does not exist), and the state digest
+    channel a run does not know about is a channel that does not exist) and the state digest
     carries what teammates left — once, then it is gone.
+
+    Membership is set the way the system sets it — `domain:` in each member's OWN routine.yaml,
+    which is what makes "at most one domain" a fact of the file. There is no membership list to
+    join: `domains.members()` reads the routines back.
     """
-    from rsched import groups
     from rsched.engine.composer import state_digest
     from rsched.engine.harness import harness_contract
+    from rsched.paths import atomic_write_yaml, read_yaml
 
     ctx = _ctx(make_routine, tmp_path, slug="steward")
     ctx.server.routines_home = tmp_path / "routines"
-    gid = groups.create(ctx.server.routines_home, name="FAU",
-                        members=[{"slug": "steward"}, {"slug": "ingest"}])["id"]
-    ctx.group_store_roots = groups.member_store_roots(ctx.server.routines_home, "steward",
-                                                      create=True)
+    did = domains.create(ctx.server.routines_home, name="FAU")["id"]
+    make_routine(slug="ingest")                     # the teammate the note comes from
+    for slug in ("steward", "ingest"):
+        cfg_path = ctx.server.routines_home / slug / "routine.yaml"
+        atomic_write_yaml(cfg_path, {**read_yaml(cfg_path, {}), "domain": did})
+    ctx.domain_store_roots = domains.member_store_roots(
+        ctx.server.routines_home, did, create=True)
 
     contract = harness_contract(ctx)
     assert "write a note for them" in contract and "ingest" in contract
     assert "`report` when someone must ACT" in contract      # and when NOT to use it
 
-    # written the way a routine writes one: an ordinary file into the group's shared store,
-    # which is the only writer this channel has (`groupnotes` exposes none by design)
-    store = groups.store_dir(ctx.server.routines_home, gid) / "notes" / "steward"
+    # written the way a routine writes one: an ordinary file into the domain's shared store,
+    # which is the only writer this channel has (`domainnotes` exposes none by design)
+    store = domains.store_dir(ctx.server.routines_home, did) / "notes" / "steward"
     store.mkdir(parents=True, exist_ok=True)
     (store / "note-20260902-120000-aaaaaa.json").write_text(
         json.dumps({"from": "ingest", "ts": "2026-09-02T12:00:00+02:00",
                     "text": "staged the batch for you"}), encoding="utf-8")
     kw = {"routines_home": ctx.server.routines_home, "slug": "steward"}
     digest = state_digest(ctx.routine.dir, [], [], **kw)
-    assert "NOTES FROM YOUR GROUP" in digest and "staged the batch for you" in digest
+    assert "NOTES FROM YOUR DOMAIN" in digest and "staged the batch for you" in digest
     # the digest is built once per run and the note is delivered exactly once
-    assert "NOTES FROM YOUR GROUP" not in state_digest(ctx.routine.dir, [], [], **kw)
+    assert "NOTES FROM YOUR DOMAIN" not in state_digest(ctx.routine.dir, [], [], **kw)
 
 
 def test_capabilities_digest_reports_actual_share_state_not_config(make_routine, tmp_path):
@@ -462,9 +469,9 @@ def test_archive_middle_writes_navigable_files(tmp_path):
     assert names == ["INDEX.md", "t12-decisions.md", "t12-research-notes.md"]
     assert (hist / "t12-research-notes.md").read_text().strip() == "found X\nfound Y"
     # THE invariant: the index addresses files that exist, under the names they were written
-    # with. The engine renames what the model hands back, so the engine writes the index —
-    # the old design let the model write one against its own names, and a live archive ended
-    # up citing 102 filenames of which zero resolved.
+    # with. The engine renames what the model hands back, so the engine writes the index — a
+    # model-authored index names files against the model's own vocabulary, so one such live
+    # archive ended up citing 102 filenames of which zero resolved.
     index = (hist / "INDEX.md").read_text()
     assert "- `t12-research-notes.md` — what we found" in index
     assert "- `t12-decisions.md` — choices made" in index
@@ -591,8 +598,8 @@ def test_archive_middle_second_pass_accumulates_atomically(tmp_path):
 
 
 def test_every_archived_file_gets_an_index_line(tmp_path):
-    """The invariant the engine can now guarantee, and could not before: one line per file, and
-    a file with no description still gets an entry rather than vanishing from the map."""
+    """The invariant the engine guarantees: one line per archived file — a file with no
+    description still gets an entry rather than vanishing from the map."""
     from rsched.config import ModelRef
     from rsched.engine.compaction import archive_middle
 
@@ -828,7 +835,7 @@ def test_compaction_gate_cached_waits_for_80pct(monkeypatch):
 def test_a_stage_boundary_compacts_a_prompt_only_approaching_the_gate(monkeypatch):
     """Anticipatory compaction. The size gate is indifferent to WHERE in the work it trips, so it
     can rewrite the prefix three actions into a multi-action step — worst for both coherence and
-    the cache. Entering a new stage module is a boundary the engine already detects, and a pass
+    the cache. Entering a new stage module is a boundary the engine already detects, so a pass
     taken there pre-empts the forced mid-step one.
 
     Identical prompt and model to the cached-gate test above, which does NOT compact: 70k over a
@@ -847,7 +854,7 @@ def test_a_stage_boundary_compacts_a_prompt_only_approaching_the_gate(monkeypatc
 
 def test_mid_step_inside_the_same_stage_does_not_anticipate(monkeypatch):
     """It is the BOUNDARY that lowers the trigger, not the phase. A run already working inside
-    `draft` is mid-step, and compacting there is the very thing this avoids."""
+    `draft` is mid-step, where compacting is the very thing this avoids."""
     from rsched.config import ModelRef
     from rsched.engine.window import compact_if_needed
 

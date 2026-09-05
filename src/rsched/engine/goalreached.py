@@ -11,8 +11,8 @@ engine never writes config. Both hold here, because retirement is not a config w
   it was: the user's switch, written only by the web.
 - **Making it permanent is a CLICK.** This module queues one `goal-reached` proposal on the
   Decisions page through the existing bridge (`pending.py`) — the same queue `create_routine` and
-  `manage_group` use when a scheduled run has no user in the loop. Approving it writes
-  `enabled: false` and drops the routine from its group chains; declining it reopens the goal, so
+  `manage_lane` use when a scheduled run has no user in the loop. Approving it writes
+  `enabled: false`, which its lane chains then skip past; declining it reopens the goal, so
   the routine resumes on its next tick. Doing nothing leaves it paused with the proposal standing,
   which is the honest state: the routine says it is finished and nobody has confirmed.
 

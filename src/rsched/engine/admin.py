@@ -10,7 +10,7 @@ every tool the operator holds.
 
 What admin does NOT lift — the STRUCTURAL / ownership gates stay in force, by design:
 - the workflow `tools:` allowlist (a kind still has to be surfaced to the run),
-- the root-conversation-only gate on create_routine / manage_group / detach,
+- the root-conversation-only gate on create_routine / manage_lane / detach,
 - runs/ being engine-owned and read-only,
 - routine.yaml (config) being the user's — NO run writes it, admin included,
 - the own-recipe write seal (unless a user fs_write_root already covers the dir).

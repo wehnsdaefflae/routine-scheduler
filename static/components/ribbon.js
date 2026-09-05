@@ -6,9 +6,9 @@
 // to come, hollow. A hairline marks now.
 //
 // It is deliberately not the week strip. The week strip on the Routines page is a SCHEDULING tool
-// — one lane per routine, drag a bar to move a fire. This is a GLANCE: one lane, everything on it,
-// no interaction beyond following a mark to its run. Collapsing them into one control would make
-// the glance heavy and the tool cramped.
+// — one row per routine or fire lane, drag a bar to move a fire. This is a GLANCE: a single band
+// with everything on it, no interaction beyond following a mark to its run. Collapsing them into
+// one control would make the glance heavy and the tool cramped.
 //
 // Cheap by construction: two endpoints the console already polls, one refetch per bus event
 // coalesced into a window, and nothing at all while it is collapsed.
@@ -49,7 +49,7 @@ function runSpans(runs, from, to) {
 
 /** Every upcoming cron fire in view, from the same payload the week strip reads. */
 function fireTimes(week, from, to) {
-  const rows = [...(week.routines || []), ...(week.groups || [])];
+  const rows = [...(week.routines || []), ...(week.lanes || [])];
   const out = [];
   for (const row of rows) {
     for (const iso of [...(row.fires || []), ...(row.one_shots || [])]) {
@@ -140,7 +140,7 @@ export function mountRibbon(host) {
     try {
       const [runs, week] = await Promise.all([
         api("/api/runs?limit=200"),
-        api("/api/schedule/week?days=1").catch(() => ({ routines: [], groups: [] })),
+        api("/api/schedule/week?days=1").catch(() => ({ routines: [], lanes: [] })),
       ]);
       paint(Array.isArray(runs) ? runs : [], week || {});
     } catch {

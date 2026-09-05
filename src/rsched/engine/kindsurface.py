@@ -269,19 +269,23 @@ what to set next (its schedule). This is the ONLY way a routine is created. WITH
 the loop (a scheduled run) the same call QUEUES a proposal on the Decisions page instead of \
 creating anything — one call, then carry on with the work that does not depend on the routine \
 existing; your next run learns from your inbox whether the user approved it."""),
-    (("manage_group",), """- manage_group: manage routine GROUPS (ordered collections that fire \
-back-to-back) from THIS conversation via a `verb`: list (the whole store), create (`name` + \
-optional `members` + `on_failure` + `cron`), update (`target` = the group id, plus any \
+    (("manage_lane",), """- manage_lane: manage routine LANES (ordered sets that fire \
+back-to-back on one clock) from THIS conversation via a `verb`: list (the whole store), create \
+(`name` + optional `members` + `on_failure` + `cron`), update (`target` = the lane id, plus any \
 of name/members/on_failure/cron/paused), delete (`target`), set-default (`on_failure` = \
 stop|continue, the instance-wide mid-chain-failure default), run (`target` — arm a sequential \
 fire the daemon runs on its next tick). `members` is the ORDERED routine slugs and each must \
-name a real routine; the chain fires ONCE, every member in order. A flow with an inbound and an \
-outbound end BRACKETS the group: a dedicated inbound-router member placed first and a dedicated \
-outbound-sender member placed last — two single-purpose members, never one member run twice. \
-The routines page manages the same store — this is it, reachable from chat. WITHOUT a user in \
-the loop (a scheduled run) `list` still answers directly, but every CHANGING verb queues a \
-proposal on the Decisions page instead of applying — one call, and your next run learns from \
-your inbox whether the user approved it."""),
+name a real routine; the chain fires ONCE, every member in order; a routine belongs to at most \
+one lane. A flow with an inbound and an outbound end BRACKETS the lane: a dedicated \
+inbound-router member placed first and a dedicated outbound-sender member placed last — two \
+single-purpose members, never one member run twice. A lane decides only WHEN routines run: what \
+they SHARE (config block, shared store, notes boundary) is their DOMAIN, a per-routine setting \
+in the routine's own config — propose a domain change with ask_user + `config_patch`, never \
+here. The routines page manages the same store — this is it, reachable from chat. WITHOUT a \
+user in the loop (a scheduled run) `list` still answers directly, but every CHANGING verb \
+queues a proposal on the Decisions page instead of applying — one call, then carry on with the \
+work that does not depend on it; your next run learns from your inbox whether the user \
+approved it."""),
     (("list_models",), """- list_models: the model catalog + this run's resolved role \
 bindings (main / tool_call / uncensored), read-only — consult it BEFORE setting a `model` \
 override on llm/spawn/subtask so the name you pass is one the catalog actually carries."""),

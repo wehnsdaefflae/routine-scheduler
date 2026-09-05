@@ -10,7 +10,7 @@ import { api } from "/static/api.js";
 import { el, skeleton, toast } from "/static/util.js";
 
 export function connectionsCard(bound, { onSave, onChange } = {}) {
-  // Two modes. With `onSave` it is the routine/group editor: a save button PATCHes the
+  // Two modes. With `onSave` it is the routine/domain editor: a save button PATCHes the
   // binding. With `onChange` it is a PRE-START picker (F339, the conversation composer):
   // no save button — every change reports the whole {provider: account} map to the caller,
   // which submits it with the rest of the form.

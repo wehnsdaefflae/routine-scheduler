@@ -164,31 +164,75 @@ def cmd_validate(args) -> int:
 def _instance_problems(server) -> list[str]:
     """Coherence checks that belong to no single routine, so no routine's surface can see them.
 
-    A GROUP is the case, twice over. A scheduled group with no members fires nothing on every
-    tick of its cron, forever, and leaves a `group_chain_done: 0 member runs` in the health
-    stream that reads exactly like a group whose members all completed. Two of them had been
-    running empty for weeks. And a group naming a slug that is not a routine is nobody's
-    either: routines are deleted out of band, so no cascade removes them from the store, the
-    chain logs a warning and skips them, and the only other trace is an `unknown routine(s)`
-    the console used to raise over the WHOLE membership (F442). Reported, never fatal — an
-    empty group is a normal intermediate state while you are building one, and a phantom
-    member is stale bookkeeping rather than a broken instance.
+    A DANGLING REFERENCE is the shape all three share: one side of a join names the other by
+    id or slug; nothing cascades when the other side goes away.
+
+    A LANE is the case twice over. A scheduled lane with no members fires nothing on every tick
+    of its cron, forever, leaving a `lane_chain_done: 0 member runs` in the health stream that
+    reads exactly like a lane whose members all completed. Two of them had been running empty
+    for weeks. And a lane naming a slug that is not a routine is nobody's either: routines are
+    deleted out of band, so no cascade removes them from the store, the chain logs a warning
+    and skips them, and the only other trace is an `unknown routine(s)` the console used to
+    raise over the WHOLE membership (F442).
+
+    A DOMAIN is the third. Membership points the other way — the routine names the domain in
+    its own routine.yaml — so a deleted domain leaves every member pointing at nothing.
+    `config/domainconfig.domain_config_for` deliberately returns an EMPTY block instead of
+    raising: a stale reference must not be what stops a run from booting. The cost of that
+    choice is total silence. The routine keeps running, keeps whatever its own file says, and
+    inherits none of the shared permissions, rules or budgets it was put in the domain for —
+    with nothing anywhere to say so. This check is the "reported" half of that bargain.
+
+    Reported, never fatal — an empty lane is a normal intermediate state while you are building
+    one, a phantom member is stale bookkeeping, and a routine whose domain was deleted is
+    running on exactly its own config, which is a real configuration and not a broken instance.
     """
-    from . import groups as groups_mod
+    from . import lanes as lanes_mod
 
     try:
-        all_groups = groups_mod.list_groups(server.routines_home)
+        all_lanes = lanes_mod.list_lanes(server.routines_home)
     except OSError:
-        return []
-    live = {p.name for p in server.routines_home.iterdir()
-            if (p / "routine.yaml").is_file()} if server.routines_home.is_dir() else set()
-    empty = [f"group {g['name']!r} ({g['id']}) has a schedule ({g['cron']!r}) but no members — "
-             "it fires nothing on every tick"
-             for g in all_groups if g.get("cron") and not groups_mod.member_slugs(g)]
-    phantom = [f"group {g['name']!r} ({g['id']}) names {slug!r}, which is not a routine — "
-               "the chain skips it every fire; remove it from the group"
-               for g in all_groups for slug in groups_mod.member_slugs(g) if slug not in live]
-    return empty + phantom
+        all_lanes = []      # an unreadable lane store must not hide the domain check below
+    routine_dirs = (sorted(p for p in server.routines_home.iterdir()
+                           if (p / "routine.yaml").is_file())
+                    if server.routines_home.is_dir() else [])
+    live = {p.name for p in routine_dirs}
+    empty = [f"lane {ln['name']!r} ({ln['id']}) has a schedule ({ln['cron']!r}) but no members "
+             "— it fires nothing on every tick"
+             for ln in all_lanes if ln.get("cron") and not lanes_mod.member_slugs(ln)]
+    phantom = [f"lane {ln['name']!r} ({ln['id']}) names {slug!r}, which is not a routine — "
+               "the chain skips it every fire; remove it from the lane"
+               for ln in all_lanes for slug in lanes_mod.member_slugs(ln) if slug not in live]
+    return empty + phantom + _dangling_domains(server, routine_dirs)
+
+
+def _dangling_domains(server, routine_dirs: list[Path]) -> list[str]:
+    """Routines naming a `domain:` that no domain record answers to — see `_instance_problems`.
+
+    Read from the RAW routine.yaml, not the loaded config: `load_routine` merges the domain's
+    block and hands back an empty one for a missing domain, so by the time a routine is loaded
+    the dangling reference is indistinguishable from no reference at all. An unparseable file
+    is skipped rather than reported — `cmd_validate` already prints that file's own parse
+    problem; a second line about a key nobody could read would point away from the fault.
+    """
+    import yaml
+
+    from . import domains as domains_mod
+    from .paths import read_yaml
+
+    known = {str(d.get("id") or "") for d in domains_mod.list_domains(server.routines_home)}
+    out: list[str] = []
+    for p in routine_dirs:
+        try:
+            raw = read_yaml(p / "routine.yaml", {})
+        except (OSError, yaml.YAMLError):
+            continue
+        did = str(raw.get("domain") or "").strip() if isinstance(raw, dict) else ""
+        if did and did not in known:
+            out.append(f"routine {p.name!r} names domain {did!r}, which does not exist — it "
+                       "inherits no shared config, permissions or store, silently; set its "
+                       "domain to a real one or clear the key")
+    return out
 
 
 def cmd_abort(args) -> int:

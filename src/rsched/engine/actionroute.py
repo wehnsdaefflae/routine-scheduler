@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from . import authoring, create_routine, detach, executor, interact, manage_group, secretgate
+from . import authoring, create_routine, detach, executor, interact, manage_lane, secretgate
 from .loopconst import POLL_S
 
 
@@ -48,8 +48,8 @@ def dispatch_action(loop, action: dict, ctx) -> dict:  # noqa: PLR0911 — a fla
         return detach.handle_detach(ctx, action)
     if action["kind"] == "create_routine":
         return create_routine.handle_create_routine(ctx, action)
-    if action["kind"] == "manage_group":
-        return manage_group.handle_manage_group(ctx, action)
+    if action["kind"] == "manage_lane":
+        return manage_lane.handle_manage_lane(ctx, action)
     if action["kind"] == "subruns":
         return loop.subruns.status_table()
     if action["kind"] == "kill":

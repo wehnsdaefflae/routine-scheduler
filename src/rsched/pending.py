@@ -1,16 +1,16 @@
-"""Queued creation — what a SCHEDULED run does instead of creating a routine or a group (F328).
+"""Queued creation — what a SCHEDULED run does instead of creating a routine or a lane (F328).
 
-`create_routine` and `manage_group` are restricted to root conversations because a scheduled run
+`create_routine` and `manage_lane` are restricted to root conversations because a scheduled run
 has no user in the loop to design with. The restriction is right; the consequence was wrong.
-routine-improver reached a run holding a FULLY DESIGNED, user-approved routine plus a two-phase
-group — all five gate questions already answered — and could not materialize any of it, so the
-design had to be hand-carried back to the operator to paste in (R353).
+routine-improver reached a run holding a FULLY DESIGNED, user-approved routine plus the lane it
+belonged in — all five gate questions already answered — and could not materialize any of it, so
+the design had to be hand-carried back to the operator to paste in (R353).
 
 The missing piece was never permission. It is a QUEUE. D92's preview→confirm already built the
 exact shape for conversations: store a DRAFT, let the user confirm it later. A scheduled run gets
 the same flow with a longer gap between the two halves — it writes a pending record here and its
 run ends; the Decisions page shows what would be created; one click materializes it through the
-SAME `workflows.scaffold` / `rsched.groups` path everything else uses, or discards it.
+SAME `workflows.scaffold` / `rsched.lanes` path everything else uses, or discards it.
 
 Two invariants this module exists to keep:
 
@@ -42,8 +42,8 @@ log = logging.getLogger("rsched.pending")
 
 PENDING_SUBDIR = Path(".control") / "pending-creations"
 
-# manage_group verbs a scheduled run may run DIRECTLY: `list` writes nothing, and a run that
-# cannot read the group store cannot propose a correct update to it. Every mutating verb queues.
+# manage_lane verbs a scheduled run may run DIRECTLY: `list` writes nothing; a run that
+# cannot read the lane store cannot propose a correct update to it. Every mutating verb queues.
 READ_ONLY_VERBS = frozenset({"list"})
 
 

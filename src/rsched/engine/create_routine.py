@@ -154,9 +154,9 @@ def _unknown_workflow_obs(slug: str, workflow_slug: str, catalog: list[dict]) ->
 _DESIGN_CHECKS = (
     "SHAPE — if the task BOTH ingests/processes signal (reads sources, updates state, "
     "computes) AND sends outbound communication (mail, messages, publishing), offer the user "
-    "the choice of TWO routines in one group instead of one: grouped members all ingest "
-    "first and all communicate after, so one member's outbound can act on another's "
-    "freshly-processed state instead of waiting a whole cadence. Their call, not yours. "
+    "the choice of TWO routines in one LANE instead of one: a lane fires its members in "
+    "order, so an outbound-sender member placed last acts on the state the ingesting member "
+    "just refreshed instead of waiting a whole cadence. Their call, not yours. "
     "(Operator standing rule, 2026-08-05.)",
     "MECHANISM — judge which parts of the task are judgment-free and repeated identically "
     "every run (fetching/polling, parsing structured data, arithmetic, filtering/sorting/"

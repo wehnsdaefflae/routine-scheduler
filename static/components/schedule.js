@@ -1,15 +1,15 @@
 // Friendly schedule builder. `initial` is a friendly spec {frequency, time, weekdays, ...};
 // returns { node, value(), catchup() }. Pass opts.catchup (a string) to also offer a
 // missed-run policy select — routines want it, other schedule editors do not.
-// Pass opts.groupManaged ({id, name} — D71) when the routine belongs to a SCHEDULED group:
-// the dropdown locks on a selected, disabled "Group managed" state linking to the group
+// Pass opts.laneManaged ({id, name} — D71) when the routine belongs to a SCHEDULED lane:
+// the dropdown locks on a selected, disabled "Lane managed" state linking to the lane
 // (the routine's own cron is suppressed by the daemon; value() returns the stored spec
 // unchanged so a page save never clobbers it).
 //
 // Also home to the client half of the friendly vocabulary: cronToFriendly mirrors the
 // server's rsched.schedule.cron_to_friendly (same shapes, same custom fallback), and
 // specAtInstant re-times a spec to a dropped instant — what the week strip's drag-to-
-// reschedule sends back through the schedule.friendly PATCH both routines and groups take.
+// reschedule sends back through the schedule.friendly PATCH both routines and lanes take.
 
 import { el } from "/static/util.js";
 
@@ -17,12 +17,12 @@ const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Frida
 
 export function scheduleEditor(initial = { frequency: "manual" }, serverTz = "", opts = {}) {
   const spec = { time: "07:00", weekdays: [1], day: 1, minute: 0, ...initial };
-  const gm = opts.groupManaged || null;
-  const freq = el("select", { ...(gm ? { disabled: true } : {}) },
+  const lm = opts.laneManaged || null;
+  const freq = el("select", { ...(lm ? { disabled: true } : {}) },
     ...["manual", "hourly", "daily", "weekly", "monthly"].map((f) =>
-      el("option", { value: f, ...(!gm && spec.frequency === f ? { selected: true } : {}) },
+      el("option", { value: f, ...(!lm && spec.frequency === f ? { selected: true } : {}) },
         f[0].toUpperCase() + f.slice(1))),
-    ...(gm ? [el("option", { value: "group-managed", selected: true }, "Group managed")] : []));
+    ...(lm ? [el("option", { value: "lane-managed", selected: true }, "Lane managed")] : []));
   const time = el("input", { type: "time", value: spec.time });
   const minute = el("input", { type: "number", min: 0, max: 59, value: spec.minute, style: "width:70px" });
   // weekly is a SET of days (F347, user order 2026-08-15 — GCal's "repeat on: S M T W T
@@ -54,16 +54,16 @@ export function scheduleEditor(initial = { frequency: "manual" }, serverTz = "",
   function sync() {
     const f = freq.value;
     detail.replaceChildren();
-    if (gm) {
-      detail.append(el("span", { class: "muted" }, "fires with group "),
-        el("a", { href: "#/routines" }, gm.name || gm.id),
-        el("span", { class: "muted" }, " — this routine's own schedule is suppressed while the group is scheduled"));
+    if (lm) {
+      detail.append(el("span", { class: "muted" }, "fires with lane "),
+        el("a", { href: "#/routines" }, lm.name || lm.id),
+        el("span", { class: "muted" }, " — this routine's own schedule is suppressed while the lane is scheduled"));
     } else if (f === "hourly") detail.append(document.createTextNode("at minute"), minute);
     else if (f === "daily") detail.append(document.createTextNode("at"), time);
     else if (f === "weekly") detail.append(document.createTextNode("on"), weekdayRow, document.createTextNode("at"), time);
     else if (f === "monthly") detail.append(document.createTextNode("on day"), day, document.createTextNode("at"), time);
     else detail.append(el("span", { class: "muted" }, "runs only when you click Run now"));
-    if (catchupRow) catchupRow.style.display = (f === "manual" || gm) ? "none" : "";
+    if (catchupRow) catchupRow.style.display = (f === "manual" || lm) ? "none" : "";
   }
   freq.addEventListener("change", sync);
   sync();
@@ -77,9 +77,9 @@ export function scheduleEditor(initial = { frequency: "manual" }, serverTz = "",
   return {
     node,
     value() {
-      // group-managed: the stored spec rides back UNCHANGED — the suppression lives in
+      // lane-managed: the stored spec rides back UNCHANGED — the suppression lives in
       // the daemon, and a save from this page must not rewrite the routine's own cron
-      if (gm) return initial;
+      if (lm) return initial;
       const f = freq.value;
       if (f === "manual") return { frequency: "manual" };
       if (f === "hourly") return { frequency: "hourly", minute: Number(minute.value) };

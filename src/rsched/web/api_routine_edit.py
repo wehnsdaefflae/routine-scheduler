@@ -101,12 +101,12 @@ def resolve_permission_layers(server, body: PermissionsBody, current: dict,
     are on' holds regardless of what the client sent. Deactivation cascades live in the
     UI (dropping a capability there also unticks the docs requiring it).
 
-    `inherited` names permissions the routine holds through its GROUP (D82). They RAISE
-    nothing — a group permission must not silently add a capability to this routine's own
+    `inherited` names permissions the routine holds through its DOMAIN (D82). They RAISE
+    nothing — a domain permission must not silently add a capability to this routine's own
     file — but they DO count for the floor, because a capability they legitimately cover is
-    not an orphan. Without this, saving a member's permissions floors away every capability
-    its group supplies (`runs`/`workflows` back to none/catalog), and the explicit "off" it
-    writes then SHADOWS the group's value, since a member's own key always wins.
+    not an orphan. Without this, saving a routine's permissions floors away every capability
+    its domain supplies (`runs`/`workflows` back to none/catalog); the explicit "off" it
+    writes then SHADOWS the domain's value, since a routine's own key always wins.
     """
     from .. import library_docs
     from ..grants import (
@@ -144,16 +144,16 @@ def set_permissions(request: Request, slug: str, body: PermissionsBody) -> dict:
     # No busy-guard (D35): the engine reads routine.yaml exactly ONCE, at run boot
     # (runtime.run_routine); a save during a live run cleanly applies to the NEXT run.
     server = _state(request).server
-    # D82: permissions this routine holds through its GROUP count for the floor, or saving
-    # here would strip every capability the group supplies and write an explicit "off" that
-    # then shadows it (a member's own key always wins over the group's).
-    from ..config.groupconfig import group_config_for, strip_group_dials
-    group_cfg, _ = group_config_for(info.cfg.dir, slug)
+    # D82: permissions this routine holds through its DOMAIN count for the floor, or saving
+    # here would strip every capability the domain supplies and write an explicit "off" that
+    # then shadows it (a routine's own key always wins over the domain's).
+    from ..config.domainconfig import domain_config_for, strip_shared_dials
+    shared, _ = domain_config_for(info.cfg.dir, info.cfg.domain)
     active, caps = resolve_permission_layers(server, body, info.cfg.capabilities or {},
-                                             inherited=list(group_cfg.get("permissions") or []))
-    # …and record only what DIFFERS from the group, or the concrete dial the floor always emits
-    # would shadow the group's value and no later group change could reach this routine.
-    caps = strip_group_dials(caps, group_cfg.get("capabilities") or {}, body.capabilities or {})
+                                             inherited=list(shared.get("permissions") or []))
+    # …and record only what DIFFERS from the domain, or the concrete dial the floor always
+    # emits would shadow it and no later domain change could reach this routine.
+    caps = strip_shared_dials(caps, shared.get("capabilities") or {}, body.capabilities or {})
     path = info.cfg.dir / "routine.yaml"
     raw = read_yaml(path, {})
     raw["permissions"] = active

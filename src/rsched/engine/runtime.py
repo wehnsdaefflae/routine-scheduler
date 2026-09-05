@@ -115,12 +115,22 @@ def run_routine(routine_dir: Path, server: ServerConfig, *, run_ts: str | None =
     ctx = RunContext(routine=cfg, server=server, registry=registry, run_ts=ts,
                      run_dir=run_dir, transcript=transcript,
                      budgets=Budgets.from_config(cfg.budgets))
-    # D67: a grouped routine's runs share <routines_home>/.control/group-stores/<gid>/
-    # as an injected fs read+write root (created lazily here — run data, not config).
-    # Ungrouped routines and conversations get none; membership is read fresh per run.
-    from ..groups import member_store_roots
+    # D67: a DOMAIN member's runs share <home>/.control/group-stores/<domain-id>/ as an
+    # injected fs read+write root (created lazily here — run data, not config). Zero or one,
+    # because a routine names at most one domain in its own routine.yaml; a routine that names
+    # none — and every conversation — gets nothing. Read fresh per run.
+    #
+    # The home is the routine dir's PARENT — the SAME source config/domainconfig.py resolves
+    # the shared config BLOCK against, deliberately not server.routines_home. For a routine
+    # living in that home the two are one directory; they diverge for a run started from a
+    # directory outside it (`rsched run-once <dir path>`, a conversation, a background task),
+    # where the parent holds no domains.json and nothing is inherited. Asking a different home
+    # for the STORE would hand such a run the shared root while it inherited none of the shared
+    # config — the trust boundary without the config that argues for it, which is exactly the
+    # pairing a domain exists to keep as one object.
+    from ..domains import member_store_roots
 
-    ctx.group_store_roots = member_store_roots(server.routines_home, cfg.slug, create=True)
+    ctx.domain_store_roots = member_store_roots(routine_dir.parent, cfg.domain, create=True)
     # Stamp the recipe version that produces this run (recipes.current_recipe_commit —
     # snapshots any uncommitted recipe edits first, e.g. the routine-improver's). None
     # for unversioned dirs (conversations). Lands in status.json + the usage record.

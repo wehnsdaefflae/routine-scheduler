@@ -9,8 +9,8 @@ an edit, and — for `.memory/` and the rule library — that the engine owns th
 from __future__ import annotations
 
 
-def format_files(obs: dict, kind: str) -> str | None:  # noqa: C901, PLR0911, PLR0912 — one flat renderer per domain, by design: observation wording is PROMPT SURFACE (docs/prompt-anatomy.md) and every branch is a distinct string for a distinct kind. Collapsing them would scatter a kind's wording, which is exactly what this shape exists to prevent.
-    """Wording for this domain's kinds; None when `kind` is not one of them."""
+def format_files(obs: dict, kind: str) -> str | None:  # noqa: C901, PLR0911, PLR0912 — one flat renderer per module, by design: observation wording is PROMPT SURFACE (docs/prompt-anatomy.md) and every branch is a distinct string for a distinct kind. Collapsing them would scatter a kind's wording, which is exactly what this shape exists to prevent.
+    """Wording for this module's kinds; None when `kind` is not one of them."""
     if kind == "read_file":
         if obs.get("files") is not None:  # batched multi-path read
             parts = []

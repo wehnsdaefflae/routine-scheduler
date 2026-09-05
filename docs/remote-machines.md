@@ -153,7 +153,7 @@ action, still bypasses it. The remote host is not sandboxed and the queue does n
 two of three routines get every day, with nothing recording that they asked. A bare `flock` blocks
 instead of refusing, but in arbitrary order, and one routine's three jobs starve another's one.
 Before this existed, three routines sharing `predator` had each invented their own lease protocol
-in their own `scripts/` and group-store files — incompatible, invisible to the daemon, and one of
+in their own `scripts/` and shared-store files — incompatible, invisible to the daemon, and one of
 them once had to reclaim an 18-hour-stale lease by hand.
 
 ## Filesystem: mounting a share

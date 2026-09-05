@@ -86,12 +86,12 @@ class RunContext:
     # successfully-dispatched matching action lands (requests.consume_once_grants). Only
     # entities.TURN_ACTION_CLASSES ever appear here. In-memory like its parent overlay.
     granted_once: set[str] = field(default_factory=set)
-    # D67: the group shared store(s) — <routines_home>/.control/group-stores/<gid>/ for
-    # every group this routine belongs to, injected into the effective fs read+write
+    # D67: the DOMAIN's shared store — <routines_home>/.control/group-stores/<domain-id>/
+    # for the one domain this routine names, injected into the effective fs read+write
     # roots (read_roots/write_roots below). Seeded at boot (engine/runtime, dirs created
-    # lazily there) and inherited by children like every resource; empty for ungrouped
-    # routines and conversations.
-    group_store_roots: list = field(default_factory=list)
+    # lazily there) and inherited by children like every resource; empty for a routine that
+    # names no domain and for conversations.
+    domain_store_roots: list = field(default_factory=list)
     # R514: which bound machine SHARES this run actually has under mnt/<name>/, proven live
     # at provisioning (machine_mounts.mount_routine_shares), and why each missing one is missing.
     # The CAPABILITIES block reads these so the run is told the truth about its mounts — a
@@ -166,7 +166,7 @@ class RunContext:
         (R244/F294: the util sandbox always gave write roots full rw access, so an
         engine read gate refusing them was friction posing as a boundary — a run could
         write a file it was not allowed to read back). write_roots() already carries
-        the group shared store(s). Every consumer (file actions, the util sandbox, the
+        the domain's shared store. Every consumer (file actions, the util sandbox, the
         vision fallback) resolves against this, so a granted root behaves exactly like
         a configured one — for this run.
         """
@@ -176,7 +176,7 @@ class RunContext:
     def write_roots(self) -> list[Path]:
         """The effective writable roots — write_roots' counterpart of read_roots()."""
         return [*self.routine.fs_write_roots, *self._granted_paths("fs-write"),
-                *self.group_store_roots]
+                *self.domain_store_roots]
 
     @property
     def root_run_dir(self) -> Path:

@@ -67,7 +67,7 @@ class RoutineInfo:
     open_questions: list[dict]
     # RETIRED: every goal-scoped stopping condition is met, so this routine is finished for good
     # (engine/stopping.py). Derived, never written — the scheduler builds no fire table entry for
-    # it and group chains skip it, and clearing a goal condition brings it straight back. Distinct
+    # it and lane chains skip it; clearing a goal condition brings it straight back. Distinct
     # from `cfg.enabled`, which stays the user's switch: a retired routine is DONE, a disabled one
     # was switched off. See engine/goalreached.py.
     retired: bool = False
@@ -251,8 +251,8 @@ def homes_fingerprint(server: ServerConfig) -> str:
 
 
 class Schedulable(Protocol):
-    """What next_fire needs. RoutineConfig satisfies it directly, and a GROUP's cron/tz is
-    adapted to this shape, so both ride the same cron math without duck-typed type:ignores.
+    """What next_fire needs. RoutineConfig satisfies it directly; a LANE's cron/tz is adapted
+    to this shape, so both ride the same cron math without duck-typed type:ignores.
     """
 
     cron: str

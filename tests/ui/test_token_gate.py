@@ -16,7 +16,7 @@ def test_routine_token_browser_regates_instead_of_stranding(ui, page):
     # a config-mutating call — not awaited, so a gate already opened by the boot SSE ticket
     # (also a POST) cannot deadlock this evaluate on its pending promise
     page.evaluate("""() => { import('/static/api.js').then(
-        (m) => m.api('/api/groups', { method: 'POST', body: { name: 'G' } }).catch(() => {})); }""")
+        (m) => m.api('/api/lanes', { method: 'POST', body: { name: 'L' } }).catch(() => {})); }""")
 
     gate = page.locator(".token-gate")
     gate.wait_for(state="visible", timeout=15000)

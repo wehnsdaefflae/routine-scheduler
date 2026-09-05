@@ -8,7 +8,7 @@ server. This file is a PATTERN, not a program: the orchestrator never executes i
 out*, one engine action per turn, following the control flow below (its branches, loops, and error
 handling). The dummy imports name the parameters this routine works with; the clarifier pins them
 down for the concrete task, and `decompose` turns this pattern into the routine's own markdown
-state-machine (main.md + steps/).
+state-machine (main.md + stages/).
 
 Design note: nothing here hosts a long-lived web server — a run ends, and with it anything it
 started — so this pattern does NOT stand up a `POST /vote` server. It needs exactly two outside

@@ -1,7 +1,7 @@
 // Week strip for the dashboard: one row per scheduled routine, seven day columns starting
 // today, every cron fire in view as a duration BAR on a shared timeline. The strip renders at
 // TRUE PIXEL SCALE with TWO days filling the visible width and the rest of the week reachable
-// by horizontal scroll (the scroll position survives live re-renders); lane names live in a
+// by horizontal scroll (the scroll position survives live re-renders); row names live in a
 // fixed column LEFT of the scroll area, so they never overlap the timeline and stay put while
 // it scrolls. A bar starts at its fire time; its width is the routine's average runtime drawn
 // true to scale against a day's width, with a small minimum so a short run still shows and the
@@ -11,17 +11,27 @@
 // Times are in the browser's timezone; fires already behind us render dimmed; a live cursor
 // marks now. Rows follow the dashboard's own filters, ordered by next upcoming fire.
 //
-// Groups: an UNSCHEDULED group merges its members' own fires onto one shared lane (F271). A
-// SCHEDULED group (one with a cron, D71) goes further — its members' own crons are
-// daemon-suppressed (the server sends them no fires, R313), so the lane draws the GROUP's fires:
-// at each fire the visible members chain END-TO-END in execution order (the ingest pass, then
-// the split members again as the outbound pass, F292), each segment sized by that member's
-// average runtime. Segment starts after the first are estimates (a member starts when its
-// predecessor finishes) and are marked ~ in the tooltip.
+// Lanes (rsched/lanes.py) are the only one of the three axes this strip draws: a lane decides
+// WHEN its members fire and in what ORDER — nothing else; which config block and which shared
+// store they have is their DOMAIN's, invisible here. An UNSCHEDULED lane merges its members'
+// own fires onto one shared row (F271). A SCHEDULED lane (one with a cron, D71) goes further —
+// its members' own crons are daemon-suppressed (the server sends them no fires, R313), so the
+// row draws the LANE's fires: at each one the visible members chain END-TO-END in fire order,
+// once each, every segment sized by that member's average runtime. Segment starts after the
+// first are estimates (a member starts when its predecessor finishes) and are marked ~ in the
+// tooltip.
+//
+// Two senses of "lane" meet in this file. The GEOMETRY one is this component's own — a strip
+// row, `.wg-row` / `.wg-lane-label` — and it names every row, whether or not a routine lane
+// stands behind it; the other is the routine lane above. The class names carry the geometry
+// sense alone, so a row's LABEL TEXT (a routine lane's is prefixed ⛓) is what tells the two
+// apart, here and in the tests.
 //
 // Construction takes optional drag HANDLERS (see weekgrid-drag.js): with them, bars become
-// draggable — onto a sibling bar to reorder the group, onto another group's lane to join it,
-// onto the remove strip to leave the group, or along their own lane to reschedule.
+// draggable — onto a sibling bar to reorder the lane, onto another lane's row to join it,
+// onto the remove strip to leave the lane, or along their own row to reschedule. Every one of
+// those is a TIMING change and nothing else: moving a member between lanes leaves its config,
+// its store and its permissions alone — those belong to its DOMAIN.
 
 import { el, fmtDur, svgEl } from "/static/util.js";
 import { slugColor } from "/static/components/charts.js";
@@ -78,10 +88,10 @@ export function weekGrid(dragHandlers = null) {
 
   // cards: the dashboard's currently visible routines; firesBySlug: Map slug → [ms, …] of
   // recurring cron fires; oneShotsBySlug: Map slug → [ms, …] of armed one-shot fires (rendered
-  // as distinct hollow bars); groups: the ordered group records (id, name, members, splitSet,
-  // cron, schedule_desc, fires — the GROUP's cron fires, D71).
-  function update(cards, firesBySlug, oneShotsBySlug = new Map(), groups = []) {
-    lastArgs = [cards, firesBySlug, oneShotsBySlug, groups];
+  // as distinct hollow bars); lanes: the ordered lane records (id, name, members, schedule_desc,
+  // cron, paused, fires — the LANE's cron fires, D71).
+  function update(cards, firesBySlug, oneShotsBySlug = new Map(), lanes = []) {
+    lastArgs = [cards, firesBySlug, oneShotsBySlug, lanes];
     // A live refresh mid-gesture would tear the dragged bar out from under the pointer —
     // hold this render; the drop's own reload (or the next tick) redraws from fresh truth.
     if (drag?.active()) return;
@@ -96,43 +106,43 @@ export function weekGrid(dragHandlers = null) {
     const t0 = start.getTime(), span = DAYS * DAY_MS;
     const now = Date.now();
     const inWin = (t) => t >= t0 && t < t0 + span;
-    // One MEMBER record per routine in view. A scheduled-group member has no own fires (the
-    // server withholds its suppressed cron) but must still resolve here — its lane draws it.
+    // One MEMBER record per routine in view. A scheduled-lane member has no own fires (the
+    // server withholds its suppressed cron) but must still resolve here — its row draws it.
     const members = cards
       .map((c) => ({ c,
         fires: (firesBySlug.get(c.slug) || []).filter(inWin),
         oneShots: (oneShotsBySlug.get(c.slug) || []).filter(inWin) }));
     const bySlug = new Map(members.map((m) => [m.c.slug, m]));
 
-    // Lanes. A routine is placed in the FIRST group that lists it (F271); ungrouped routines
-    // each get their own single-member lane. A scheduled group's lane shows when the group
-    // fires this week (or a member has a one-shot); an unscheduled group's lane shows when a
-    // member's own cron or one-shot lands in view.
+    // Rows. A routine belongs to at most one lane — the daemon enforces that, so the first
+    // lane that lists it is also the only one (F271); a routine in no lane gets its own
+    // single-member row. A scheduled lane's row shows when the LANE fires this week (or a
+    // member has a one-shot); an unscheduled lane's row shows when a member's own cron or
+    // one-shot lands in view.
     const placed = new Set();
-    const lanes = [];
-    for (const g of groups) {
-      const scheduled = !!g.cron;
-      const laneMembers = (g.members || [])
+    const rows = [];
+    for (const l of lanes) {
+      const scheduled = !!l.cron;
+      const rowMembers = (l.members || [])
         .map((slug) => bySlug.get(slug))
         .filter((m) => m && !placed.has(m.c.slug)
                          && (scheduled || m.fires.length || m.oneShots.length));
-      const groupFires = scheduled ? (g.fires || []).filter(inWin) : [];
-      if (!laneMembers.length) continue;
-      if (!groupFires.length && !laneMembers.some((m) => m.fires.length || m.oneShots.length))
+      const laneFires = scheduled ? (l.fires || []).filter(inWin) : [];
+      if (!rowMembers.length) continue;
+      if (!laneFires.length && !rowMembers.some((m) => m.fires.length || m.oneShots.length))
         continue;
-      for (const m of laneMembers) placed.add(m.c.slug);
-      lanes.push({ group: g, members: laneMembers, groupFires });
+      for (const m of rowMembers) placed.add(m.c.slug);
+      rows.push({ lane: l, members: rowMembers, laneFires });
     }
     for (const m of members) {
       if (placed.has(m.c.slug) || (!m.fires.length && !m.oneShots.length)) continue;
       placed.add(m.c.slug);
-      lanes.push({ group: null, members: [m], groupFires: [] });
+      rows.push({ lane: null, members: [m], laneFires: [] });
     }
     const nextOf = (ts) => ts.find((t) => t >= now) ?? Infinity;
-    const laneUpcoming = (lane) => Math.min(nextOf(lane.groupFires),
-      ...lane.members.map((m) => Math.min(nextOf(m.fires), nextOf(m.oneShots))));
-    lanes.sort((a, b) => laneUpcoming(a) - laneUpcoming(b));
-    const rows = lanes;
+    const rowUpcoming = (row) => Math.min(nextOf(row.laneFires),
+      ...row.members.map((m) => Math.min(nextOf(m.fires), nextOf(m.oneShots))));
+    rows.sort((a, b) => rowUpcoming(a) - rowUpcoming(b));
     const prevScroll = node.querySelector(".wg-scroll")?.scrollLeft || 0;
     node.replaceChildren();
     if (!rows.length) {
@@ -161,27 +171,27 @@ export function weekGrid(dragHandlers = null) {
     const runNoteOf = (avg) => avg
       ? ` · runs ~${fmtDur(avg.secs)} over ${avg.n} run${avg.n > 1 ? "s" : ""}`
       : " · never run";
-    const rowsMeta = [];   // per-lane geometry for the drag controller
+    const rowsMeta = [];   // per-row geometry for the drag controller
     const hits = [];       // per-bar geometry: what a pointer can pick up
-    // The name column: one entry per lane, row-aligned with the strip (HEAD_H spacer, then
-    // ROW_H per lane) — outside the scroll area, so names never overlap bars or scroll away.
+    // The name column: one entry per row, row-aligned with the strip (HEAD_H spacer, then
+    // ROW_H per row) — outside the scroll area, so names never overlap bars or scroll away.
     const names = el("div", { class: "wg-names" }, el("div", { class: "wg-names-head" }));
-    rows.forEach((lane, i) => {
+    rows.forEach((row, i) => {
       const y = HEAD_H + i * ROW_H, cy = y + ROW_H / 2;
       const g = s("g", { class: "wg-row" });
       const rowbg = s("rect", { x: 0, y, width: W, height: ROW_H, class: "wg-rowbg" });
       g.append(rowbg);
-      rowsMeta.push({ lane, y, rowbg });
-      const grouped = lane.group != null;
-      const grpNote = grouped ? ` · group ${lane.group.name}` : "";
-      names.append(grouped
-        ? el("span", { class: "wg-lane-label group",
-            title: lane.group.schedule_desc || lane.group.name }, `⛓ ${lane.group.name}`)
-        : el("a", { class: "wg-lane-label", href: `#/routine/${lane.members[0].c.slug}` },
-            lane.members[0].c.name || lane.members[0].c.slug));
-      // Every member's OWN bars (individual cron fires — none on scheduled-group lanes — plus
+      rowsMeta.push({ row, y, rowbg });
+      const chained = row.lane != null;
+      const laneNote = chained ? ` · lane ${row.lane.name}` : "";
+      names.append(chained
+        ? el("span", { class: "wg-lane-label chained",
+            title: row.lane.schedule_desc || row.lane.name }, `⛓ ${row.lane.name}`)
+        : el("a", { class: "wg-lane-label", href: `#/routine/${row.members[0].c.slug}` },
+            row.members[0].c.name || row.members[0].c.slug));
+      // Every member's OWN bars (individual cron fires — none on scheduled-lane rows — plus
       // one-shots as hollow bars, not draggable: re-arming is the Schedule-once card's job).
-      for (const m of lane.members) {
+      for (const m of row.members) {
         const color = slugColor(m.c.slug);
         const name = m.c.name || m.c.slug;
         const avg = avgRuntime(m.c);
@@ -190,29 +200,23 @@ export function weekGrid(dragHandlers = null) {
         for (const t of m.fires) {
           const r = s("rect", { x: x(t), y: cy - BAR_H / 2, width: barWidth(avg?.secs ?? 0, x(t)), height: BAR_H,
             rx: BAR_H / 2, fill: color, class: t < now ? "wg-bar past" : "wg-bar" },
-            `${name}${grpNote} · ${fmtAt.format(new Date(t))}${runNote}`);
+            `${name}${laneNote} · ${fmtAt.format(new Date(t))}${runNote}`);
           a.append(r);
-          hits.push({ rect: r, laneIdx: i, slug: m.c.slug, name, kind: "fire", start: t });
+          hits.push({ rect: r, rowIdx: i, slug: m.c.slug, name, kind: "fire", start: t });
         }
         for (const t of m.oneShots)
           a.append(s("rect", { x: x(t), y: cy - BAR_H / 2, width: barWidth(avg?.secs ?? 0, x(t)), height: BAR_H,
             rx: BAR_H / 2, fill: "none", stroke: color, "stroke-width": 1.4,
             class: t < now ? "wg-bar one-shot past" : "wg-bar one-shot" },
-            `${name}${grpNote} · one-shot · ${fmtAt.format(new Date(t))}${runNote}`));
+            `${name}${laneNote} · one-shot · ${fmtAt.format(new Date(t))}${runNote}`));
         g.append(a);
       }
-      // The chain (D71): at each GROUP fire the visible members run back-to-back — ingest
-      // pass in member order, then the split members again as the outbound pass (F292).
-      if (lane.groupFires.length) {
-        const split = lane.group.splitSet || new Set();
-        const hasSplit = lane.members.some((m) => split.has(m.c.slug));
-        const seq = lane.members.map((m) => ({ m, phase: hasSplit ? "ingest" : "" }));
-        if (hasSplit)
-          for (const m of lane.members)
-            if (split.has(m.c.slug)) seq.push({ m, phase: "outbound" });
-        for (const t of lane.groupFires) {
+      // The chain (D71): at each LANE fire the visible members run back-to-back, once each,
+      // in the lane's fire order.
+      if (row.laneFires.length) {
+        for (const t of row.laneFires) {
           let cur = t;
-          seq.forEach(({ m, phase }, si) => {
+          row.members.forEach((m, si) => {
             const xt = x(cur);
             if (xt >= W) return;   // this chain's tail runs off the strip
             const avg = avgRuntime(m.c);
@@ -223,10 +227,10 @@ export function weekGrid(dragHandlers = null) {
             const r = s("rect", { x: xt, y: cy - BAR_H / 2, width: barWidth(avg?.secs ?? 0, xt),
               height: BAR_H, rx: BAR_H / 2, fill: slugColor(m.c.slug),
               class: cur < now ? "wg-bar past" : "wg-bar" },
-              `${name} · group ${lane.group.name}${phase ? ` · ${phase}` : ""} · ${at}${runNote}`);
+              `${name} · lane ${row.lane.name} · ${at}${runNote}`);
             a.append(r);
             g.append(a);
-            hits.push({ rect: r, laneIdx: i, slug: m.c.slug, name, kind: "seg",
+            hits.push({ rect: r, rowIdx: i, slug: m.c.slug, name, kind: "seg",
                         start: cur, fireT: t });
             cur += Math.max(avg?.secs ?? 0, MIN_STEP_S) * 1000;
           });

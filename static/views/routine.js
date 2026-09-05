@@ -23,9 +23,12 @@ const SECTION_GROUPS = [
   // "Start from a template" leads this group: it is the one control that writes the other
   // two wholesale, so an operator reading "what may it do?" meets the starting point before
   // the per-routine edits. Unclaimed, it fell into the trailing "More" fold and was unreachable.
+  // "Domain" sits second because it answers the same question the other way round: a template
+  // COPIES once and the copy becomes this routine's own, a domain LAYERS under this routine's
+  // file at every load and brings a shared store with it (docs/lanes-domains.md).
   { title: "Permissions & practices", hint: "its starting point, what it may do, and how it works",
-    headings: ["Start from a template", "Recommended setup", "Permissions & capabilities",
-               "General rules", "Effective surface"] },
+    headings: ["Start from a template", "Domain", "Recommended setup",
+               "Permissions & capabilities", "General rules", "Effective surface"] },
   // D103: the two secret scopes read together — what this routine OWNS, and which shared
   // names it may be handed. Before this group they fell into the trailing "More" fold.
   { title: "Secrets & access", hint: "its own credentials · shared-store exposure · settled denials",

@@ -56,6 +56,21 @@ def cmd_daemon(_args) -> int:
     # the three declared in 0.305.0 across, skipping any rule an operator has since edited.
     # Runs after the seed syncs, so it rewrites the library this boot will serve.
     migrate_rule_assists(server.rules_home, repo_root() / "library-seed" / "rules")
+    from .migrate_status_page_rule import run as migrate_status_page_rule
+
+    # MIGRATION(expires=2026-12-01): the status-page rule told every holder its card tab was
+    # "the name of the ROUTINE GROUP you belong to". Nothing in the prompt spells a group, a
+    # lane or a domain, so the instruction became one no run could carry out. The seed sync is
+    # add-only, so the rewritten section reaches a live library only from here.
+    migrate_status_page_rule(server.rules_home, repo_root() / "library-seed" / "rules")
+    from .migrate_group_split import run as migrate_group_split
+
+    # MIGRATION(expires=2026-12-01): one `group` record was a fire lane, a shared config layer,
+    # a trust boundary and a semantic bundle at once — and the temporal axis, which demands
+    # exclusivity, quantized the other three. Split into `.control/lanes.json` +
+    # `.control/domains.json` + a `domain:` key in each member's routine.yaml. Before the pass
+    # below, which re-raises capabilities from the permissions this one may have just changed.
+    migrate_group_split(server.routines_home)
     from .migrate_reminders_rollout import run as migrate_reminders_rollout
 
     # MIGRATION(expires=2026-12-01): the adopt cascade carried a private copy of the capability

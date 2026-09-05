@@ -1,7 +1,7 @@
 """Queued creation from a scheduled run (F328).
 
 R353 is the case these exist for: routine-improver reached a run holding a fully designed,
-user-approved routine plus the group it belonged in, and could not materialize either, so the
+user-approved routine plus the lane it belonged in — and could not materialize either, so the
 design was hand-carried back to the operator to paste in. The restriction to conversations was
 right — a scheduled run has no user to design WITH — and the missing piece was a QUEUE.
 
@@ -23,7 +23,7 @@ from fastapi.testclient import TestClient
 from conftest import make_test_server
 from rsched import pending
 from rsched.engine.create_routine import handle_create_routine
-from rsched.engine.manage_group import handle_manage_group
+from rsched.engine.manage_lane import handle_manage_lane
 from rsched.web.app import create_app
 
 REPO = Path(__file__).resolve().parents[1]
@@ -70,17 +70,17 @@ def test_scheduled_run_queues_a_routine_instead_of_being_refused(server, sched_c
     assert "Do NOT re-issue" in obs["next"]
 
 
-def test_scheduled_run_queues_a_group_change_but_still_reads_the_store(server, sched_ctx):
-    """`list` writes nothing, and a run that cannot read the group store cannot propose a
-    correct change to it — so only the MUTATING verbs queue."""
-    listed = handle_manage_group(sched_ctx, {"verb": "list"})
-    assert listed["verb"] == "list" and "groups" in listed and not listed.get("queued")
+def test_scheduled_run_queues_a_lane_change_but_still_reads_the_store(server, sched_ctx):
+    """`list` writes nothing; a run that cannot read the lane store cannot propose a correct
+    change to it. Only the MUTATING verbs queue."""
+    listed = handle_manage_lane(sched_ctx, {"verb": "list"})
+    assert listed["verb"] == "list" and "lanes" in listed and not listed.get("queued")
 
-    obs = handle_manage_group(sched_ctx, {
+    obs = handle_manage_lane(sched_ctx, {
         "verb": "create", "name": "FAU comms", "members": ["routine-improver"]})
     assert obs["queued"] is True
     rec = pending.load_all(server.routines_home)[0]
-    assert rec["kind"] == "manage_group" and rec["fields"]["verb"] == "create"
+    assert rec["kind"] == "manage_lane" and rec["fields"]["verb"] == "create"
     assert rec["fields"]["members"] == ["routine-improver"]
 
 
@@ -135,17 +135,17 @@ def test_materialize_creates_the_routine_and_tells_the_proposer(server, sched_ct
     assert "approved and materialized" in json.loads(msgs[0].read_text())["text"]
 
 
-def test_materialize_a_group_uses_the_same_store_the_page_writes(server, sched_ctx, client):
-    from rsched import groups
+def test_materialize_a_lane_uses_the_same_store_the_page_writes(server, sched_ctx, client):
+    from rsched import lanes
 
-    handle_manage_group(sched_ctx, {"verb": "create", "name": "FAU comms",
-                                    "members": ["routine-improver"]})
+    handle_manage_lane(sched_ctx, {"verb": "create", "name": "FAU comms",
+                                   "members": ["routine-improver"]})
     pid = client.get("/api/pending-creations").json()[0]["id"]
     r = client.post(f"/api/pending-creations/{pid}/materialize")
     assert r.status_code == 200
-    made = groups.list_groups(server.routines_home)
+    made = lanes.list_lanes(server.routines_home)
     assert len(made) == 1 and made[0]["name"] == "FAU comms"
-    assert groups.member_slugs(made[0]) == ["routine-improver"]
+    assert lanes.member_slugs(made[0]) == ["routine-improver"]
 
 
 def test_discard_removes_it_and_tells_the_proposer_why(server, sched_ctx, client):
@@ -185,9 +185,9 @@ def test_the_engine_never_writes_routine_yaml_for_a_queued_creation(server, sche
     before = set(server.routines_home.rglob("routine.yaml"))
     handle_create_routine(sched_ctx, {"target": "ghost", "name": "G", "prompt": "p",
                                       "workflow": "general-task"})
-    handle_manage_group(sched_ctx, {"verb": "create", "name": "G", "members": []})
+    handle_manage_lane(sched_ctx, {"verb": "create", "name": "G", "members": []})
     assert set(server.routines_home.rglob("routine.yaml")) == before
-    assert not (server.routines_home / ".control" / "groups.json").exists()
+    assert not (server.routines_home / ".control" / "lanes.json").exists()
     # ...and what IS written is only the two proposals
     assert len(pending.load_all(server.routines_home)) == 2
 
@@ -202,17 +202,17 @@ def test_queued_records_carry_the_provenance_the_page_shows(server, sched_ctx):
     assert "prov" in rec["summary"] and "general-task" in rec["summary"]
 
 
-def test_group_update_leaves_unproposed_fields_alone(server, sched_ctx, client):
+def test_lane_update_leaves_unproposed_fields_alone(server, sched_ctx, client):
     """`on_failure` is a tri-state in the store and `cron` "" clears a schedule, so a field the
     proposal never carried must not be rewritten by a default."""
-    from rsched import groups
+    from rsched import lanes
 
-    rec = groups.create(server.routines_home, name="G", members=[{"slug": "routine-improver"}],
-                        on_failure="continue", cron="0 7 * * *")
-    handle_manage_group(sched_ctx, {"verb": "update", "target": rec["id"], "name": "G2"})
+    rec = lanes.create(server.routines_home, name="G", members=[{"slug": "routine-improver"}],
+                       on_failure="continue", cron="0 7 * * *")
+    handle_manage_lane(sched_ctx, {"verb": "update", "target": rec["id"], "name": "G2"})
     pid = client.get("/api/pending-creations").json()[0]["id"]
     assert client.post(f"/api/pending-creations/{pid}/materialize").status_code == 200
-    after = groups.get(server.routines_home, rec["id"])
+    after = lanes.get(server.routines_home, rec["id"])
     assert after["name"] == "G2"
     assert after["on_failure"] == "continue"          # untouched
     assert yaml.safe_load(json.dumps(after))["cron"] == "0 7 * * *"
@@ -222,14 +222,15 @@ def test_a_queued_proposal_never_renders_as_a_completed_action(server, sched_ctx
     """The observation a queued proposal RENDERS to is the half F328 forgot. Both kinds fell
     through to their success wording over a payload that was not there, so the run was told it
     had created a routine it had not (`created routine 'x' from workflow None`), armed a fire of
-    `group None (0 member(s))` (R1200), or emptied a group (`group None (None) now has members
-    []`, R1183). Every queued shape must say QUEUED, name the proposal, and name nothing it did
-    not do.
+    `lane None (0 member(s))` (R1200), or emptied the chain it had not touched (`lane None
+    (None) now has members []`, R1183). Every queued shape must say QUEUED, name the proposal,
+    and name nothing it did not do — so the render is checked for the NULL target that made
+    those lines, not for one wording of them.
     """
     from rsched.engine.obs_admin import format_admin
-    from rsched.groups import create as create_group
+    from rsched.lanes import create as create_lane
 
-    grp = create_group(server.routines_home, name="Professional · Daily",
+    lane = create_lane(server.routines_home, name="Professional · Daily",
                        members=[{"slug": "routine-improver"}])
 
     created = handle_create_routine(sched_ctx, {
@@ -241,15 +242,15 @@ def test_a_queued_proposal_never_renders_as_a_completed_action(server, sched_ctx
     assert "created routine" not in line          # the false success it used to render
 
     for action, must_contain in (
-        ({"verb": "update", "target": grp["id"], "members": ["routine-improver"]},
+        ({"verb": "update", "target": lane["id"], "members": ["routine-improver"]},
          ("update", "Professional · Daily", "members → ['routine-improver']")),
-        ({"verb": "delete", "target": grp["id"]}, ("delete", "Professional · Daily")),
+        ({"verb": "delete", "target": lane["id"]}, ("delete", "Professional · Daily")),
     ):
-        obs = handle_manage_group(sched_ctx, action)
-        line = format_admin(obs, "manage_group")
+        obs = handle_manage_lane(sched_ctx, action)
+        line = format_admin(obs, "manage_lane")
         assert obs["queued"] is True
         assert "QUEUED" in line and "NOTHING CHANGED" in line
-        assert "group None" not in line and "0 member(s)" not in line
+        assert "None" not in line and "0 member(s)" not in line
         for fragment in must_contain:
             assert fragment in line, (fragment, line)
         # the operator's Decisions row says the same thing the run was told
@@ -258,16 +259,17 @@ def test_a_queued_proposal_never_renders_as_a_completed_action(server, sched_ctx
 
     # `run` is NOT proposable — a fire is ephemeral and the materializer cannot build it, so a
     # no-user run FAILS LOUDLY instead of queuing a dead "create it" card (2026-09-03 fix).
-    run_obs = handle_manage_group(sched_ctx, {"verb": "run", "target": grp["id"]})
+    run_obs = handle_manage_lane(sched_ctx, {"verb": "run", "target": lane["id"]})
     assert run_obs.get("rejected") and not run_obs.get("queued")
     assert "cannot be queued" in run_obs["reason"]
 
 
-def test_a_queued_proposal_naming_an_unknown_group_says_so(server, sched_ctx):
+def test_a_queued_proposal_naming_an_unknown_lane_says_so(server, sched_ctx):
     """A proposal is filed without validating the target (the review is the gate), so the ack
-    must not imply the group exists — that is how `group None` read as a real group."""
+    must say the target is UNKNOWN and that review will fail — naming an id the store does not
+    hold as if it were a real chain is how `None` read as a real one."""
     from rsched.engine.obs_admin import format_admin
 
-    obs = handle_manage_group(sched_ctx, {"verb": "delete", "target": "grp-nope"})
-    line = format_admin(obs, "manage_group")
-    assert "unknown group 'grp-nope'" in line and "will fail review" in line
+    obs = handle_manage_lane(sched_ctx, {"verb": "delete", "target": "lane-nope"})
+    line = format_admin(obs, "manage_lane")
+    assert "unknown" in line and "'lane-nope'" in line and "will fail review" in line

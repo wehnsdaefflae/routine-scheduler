@@ -20,8 +20,8 @@ reads the prose with `read_rule` and applies the principle to its own case); sch
 workdir, budgets, and model roles are routine config (`routine.yaml` / UI), started from a
 library **settings TEMPLATE** (`rsched/templates.py`) that is COPIED IN once at creation or by
 the routine page's adopt action — a PRESELECTION, not a layer: the file then says what the
-routine IS and every value is edited where it lives. Only a GROUP's shared config layers live
-(D82).
+routine IS and every value is edited where it lives. Only a DOMAIN's shared config layers live
+(D82); a routine names at most one.
 
 ## Where the detail lives
 
@@ -61,6 +61,11 @@ one you are about to touch, not all of them.
   allow-once for turn-action classes), and each curated rule's provenance
 - `docs/child-runs.md`, `docs/background-tasks.md`, `docs/triggers.md`, `docs/schedule-once.md`
   — the child-run and firing mechanisms
+- `docs/lanes-domains.md` — how routines relate to each other on THREE axes: a LANE is when
+  they fire and in what order (daemon-owned, at most one, enforced), a DOMAIN is what they
+  share (the D82 config block + the shared store + the notes boundary, named in the routine's
+  OWN routine.yaml, at most one), `tags:` is what a routine is about. Read it before touching
+  any of the three — their cardinalities and their owners differ, which IS the design
 - `docs/conversations.md`, `docs/playbooks.md` — interactive sessions and reusable briefs. A
   conversation's spine is EMERGENT: it writes its own `state/plan.md` (inlined at the top of every
   reply by `state_digest`) where a routine gets `stages/` + `phase.json` compiled at creation —
@@ -118,8 +123,9 @@ one you are about to touch, not all of them.
 
 - **Actions** (`engine/actions.py` — flat schema on purpose; weak models and Ollama grammars handle flat
   far better than `oneOf`): `util, write_util, remove_util, read_file, view_image, write_file, edit_file,
-  memory_read, memory_write, read_rule, write_rule, script, llm, spawn, subtask, detach, schedule_run,
-  create_routine, manage_group, subruns, kill, wait, ask_user, report, finish` (25). **`script` runs
+  memory_read, memory_write, read_rule, write_rule, script, shell, llm, spawn, subtask, detach,
+  schedule_run, create_routine, manage_lane, list_models, subruns, kill, wait, ask_user, report,
+  finish` (27, `actionschema.KINDS`). **`script` runs
   the routine's OWN `scripts/<name>.py`** — persistent helper TOOLING, deliberately NOT a co-equal
   interpreter of the routine (the "procedure" symmetry doctrine was reversed 2026-08-12): the recipe
   stays the single interpreter of the task and delegates only judgment-free sub-steps. A repeating
@@ -187,28 +193,31 @@ one you are about to touch, not all of them.
   `inbox/`, which its NEXT SCHEDULED RUN drains — it starts no run and wakes nobody. The target
   closes it by reporting back with `answers: "<R id>"`, adding `closes: true` when the reply ends
   the exchange — a closure is born settled; without it the reply is itself a new open report.
-  Teammates inside one GROUP have a lighter channel that is NOT the report ledger (F335,
-  `rsched/groupnotes.py`): a member writes `<group-store>/notes/<sibling>/note-*.json` with an
+  Teammates inside one DOMAIN have a lighter channel that is NOT the report ledger (F335,
+  `rsched/domainnotes.py`): a member writes `<domain-store>/notes/<sibling>/note-*.json` with an
   ordinary file write and the engine surfaces it in the sibling's state digest at boot, dropping
   it as it reads — no approval, no ledger row, no Messages item, and no new action kind. The
   boundary IS the safety model: the store is in members' fs roots and nobody else's, so a note
-  cannot leave the group. A note is coordination; a report is work an OWNER must act on.
+  cannot leave the domain — which is exactly why the shared config block and the trust boundary
+  are ONE object and not two. A note is coordination; a report is work an OWNER must act on.
   One `R<n>` namespace, one append-only
   ledger `.control/reports.jsonl` (order rows + `delivered` event rows), one Items type; the
   page shows open → in_progress once drained → settled once answered. Triage is therefore
   FORWARDING, not absorbing.
-  **`create_routine` / `manage_group` are conversation-INITIATED, not conversation-only** (F328):
+  **`create_routine` / `manage_lane` are conversation-INITIATED, not conversation-only** (F328):
   a root conversation materializes them, and a run with no user in the loop writes a PROPOSAL to
   `.control/pending-creations/` that the Decisions page materializes with one click through the
-  same `workflows.scaffold` / `rsched.groups` path. A queued proposal is rendered by ONE shared
+  same `workflows.scaffold` / `rsched.lanes` path. A queued proposal is rendered by ONE shared
   branch checked before any kind's success wording (`obs_admin.QUEUEABLE_KINDS`): teaching the
   handlers about the queue and not the renderers is how a proposal came back reading as a
   completed action over an absent payload (R1200/R1183). `create_routine` carries an optional
   `stopping:` — the user's own words for what DONE looks like for one run — which seeds the new
   routine's STOPPING CONDITIONS instead of evaporating into the instruction prose — so the engine still never writes
   `routine.yaml`, and a scheduled run holding a finished design no longer has to hand it back to
-  the operator by hand (R353). `manage_group list` still answers directly (naming each group's MEMBERS in fire order, F424); every mutating verb
-  queues. A within-reply CHILD (depth > 0) is still refused outright and never sees the kinds:
+  the operator by hand (R353). `manage_lane list` still answers directly (naming each lane's MEMBERS in fire order, F424); every mutating verb
+  queues. A lane is the TEMPORAL axis only — no verb reaches a shared config block or a shared
+  store, because those follow the routine's own `domain:` key, which no run may write.
+  A within-reply CHILD (depth > 0) is still refused outright and never sees the kinds:
   the queue is for a run that HAS a user, just not right now. Ungated like `report` — the
   approval is the gate, and it is a human.
   `ask_user` carries an optional `default` — what the run DOES when a blocking ask times out —
@@ -301,7 +310,7 @@ by a test, by the engine, or by a past incident.
   bounds ONE run and is re-asked every run — it records its verdict (`last_verdict`) and NEVER
   transitions, because a per-run bound cannot be "already met". `goal` is the state after which
   the ROUTINE is finished: sticky, and it RETIRES the routine — `registry.RoutineInfo.retired` is
-  derived from it, the scheduler builds no fire entry, group chains skip the member as
+  derived from it, the scheduler builds no fire entry, lane chains skip the member as
   `outcome: "skipped"` (not a failure), and `engine/goalreached.py` queues ONE Decisions-page
   proposal whose approval writes `enabled: false` through the ordinary PATCH and whose refusal
   REOPENS the goal. Nothing about retirement writes config: that is how a routine disables itself
@@ -341,19 +350,21 @@ by a test, by the engine, or by a past incident.
   and a tmp-homed test once spent real money and real ledger rows there.
 - **The setup surface answers "what does this routine still need?" — including WHEN it runs.**
   `readmodels/surface.py` joins the effective config against the library's `requires:`/`expects:`,
-  the util headers, the live stores AND the group store: a member cron a group's schedule
+  the util headers, the live stores AND the lane store: a member cron a lane's schedule
   suppresses (D71) is a routine.yaml naming a time it will never fire at, and a routine in no
-  scheduled group with no cron of its own is started by nothing on a clock. It also reads
+  scheduled lane with no cron of its own is started by nothing on a clock. It also reads
   `state/phase.json`: the composer looks the phase up as `.get("phase")` and that value is what
   scopes a stopping condition to a stage, so a routine recording its own key (`lifecycle`,
   `state`) or nothing at all wrote a file matching nothing. All of these are NOTE rows —
   nothing is broken, the file is misleading — and the BOOT note carries only `blocks`/
   `interrupts` (`surface.BOOT_SEVERITIES`): a NOTE is for the operator, and a run can neither
   act on it nor be saved a turn by it. `rsched validate` adds the instance-level cases no
-  routine's surface can see: a scheduled group with no members, and a group naming a slug that
+  routine's surface can see: a scheduled lane with no members, a lane naming a slug that
   is NOT a routine — routines are deleted out of band, so nothing cascades the membership away,
-  and the web refuses only the slugs a caller ADDS so one stale member cannot lock a whole group
-  against every further edit (F442). An `expects:` row must be an
+  and the web refuses only the slugs a caller ADDS so one stale member cannot lock a whole lane
+  against every further edit (F442) — and a routine naming a `domain:` no record answers to,
+  which inherits an EMPTY block and so silently loses the shared permissions it was given the
+  domain for. An `expects:` row must be an
   UNCONDITIONAL presumption: it fires on EVERY holder, and it has been wrong twice the same way
   (`git-checkpoint`, then `status-page`'s write root — false for all seven holders, because a page
   is published through an upload channel and a routine's own dir is always writable).

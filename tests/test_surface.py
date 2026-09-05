@@ -303,8 +303,8 @@ def test_boot_note_never_stops_a_run_when_the_library_is_broken(tmp_path, monkey
 @pytest.mark.usefixtures("empty_store")
 def test_a_capability_no_held_doc_requires_is_reported(tmp_path):
     """Three deliberate designs each correctly decline to catch this one: the floor binds a
-    routine's OWN mapping at save; a group's block is not floored (a member may hold the doc);
-    and enforcement is capabilities-only so prose can never widen anything. So a group can hand
+    routine's OWN mapping at save; a domain's block is not floored (a member may hold the doc);
+    and enforcement is capabilities-only so prose can never widen anything. So a domain can hand
     a member a reserved util with no conduct doc behind it and every layer stays silent."""
     server = _server(tmp_path)
     _util(server, "discord")
@@ -323,13 +323,13 @@ def test_a_capability_no_held_doc_requires_is_reported(tmp_path):
 
 
 @pytest.mark.usefixtures("empty_store")
-def test_an_orphan_capability_names_the_group_it_came_from(tmp_path):
-    """Provenance is the whole value here: 'you did not set this, your group did' is what
+def test_an_orphan_capability_names_the_domain_it_came_from(tmp_path):
+    """Provenance is the whole value here: 'you did not set this, your domain did' is what
     turns an unexplained capability into a fixable one."""
     server = _server(tmp_path)
     _util(server, "discord")
     cfg = _cfg(tmp_path, capabilities={"utils": ["discord"]})
-    cfg.inherited = {"capabilities": "1 from the group"}
+    cfg.inherited = {"capabilities": "1 from the domain"}
     cfg.inherited_from = "Morning Brief"
     node = _by_id(routine_surface(server, cfg), "util:discord")
     assert "Morning Brief" in node["why"]
@@ -360,14 +360,14 @@ def test_one_row_per_entity(tmp_path):
 # --- the schedule join: does the file say when this routine runs? ---------------------------
 
 
-def test_a_member_cron_a_group_suppresses_is_reported(tmp_path):
-    """D71: a group with a cron suppresses every member's own cron. A member that kept one has
+def test_a_member_cron_a_lane_suppresses_is_reported(tmp_path):
+    """D71: a lane with a cron suppresses every member's own cron. A member that kept one has
     a routine.yaml naming a time it will never fire at — steward-hub-maintainer recorded 23:00
-    while firing at 06:30 in its group's chain — and nothing said the two disagreed."""
-    from rsched import groups as groups_mod
+    while firing at 06:30 in its lane's chain — and nothing said the two disagreed."""
+    from rsched import lanes as lanes_mod
 
     server = _server(tmp_path)
-    groups_mod.create(server.routines_home, name="Professional · Daily",
+    lanes_mod.create(server.routines_home, name="Professional · Daily",
                       members=[{"slug": "r"}], cron="30 6 * * *", tz="Europe/Berlin")
     surface = routine_surface(server, _cfg(tmp_path, cron="0 23 * * *"))
     node = _by_id(surface, "schedule:cron")
@@ -381,7 +381,7 @@ def test_a_member_cron_a_group_suppresses_is_reported(tmp_path):
 
 
 def test_a_routine_nothing_ever_starts_is_reported(tmp_path):
-    """The mirror case: no cron of its own, no group with a schedule. A perfectly good
+    """The mirror case: no cron of its own, no lane with a schedule. A perfectly good
     on-demand design, and indistinguishable from an oversight until it is said out loud."""
     server = _server(tmp_path)
     node = _by_id(routine_surface(server, _cfg(tmp_path, cron="")), "schedule:none")
@@ -451,7 +451,7 @@ def test_recipe_without_phases_is_not_missing_one(tmp_path):
 def test_the_boot_note_carries_only_what_the_run_can_act_on():
     """The engine's boot note explains FAIL and WARN and nothing else, because it exists to
     save a run from discovering a gap at turn nine. A NOTE is addressed to the OPERATOR — a
-    cron the group suppresses, a phase file keyed wrong — and putting one in front of every
+    cron the lane suppresses, a phase file keyed wrong — and putting one in front of every
     run buys prompt noise it cannot act on. `rsched validate` still prints all three."""
     surface = {"nodes": [
         {"id": "a", "severity": BLOCKS, "why": "w", "effect": "e"},

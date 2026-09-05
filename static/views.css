@@ -69,7 +69,9 @@ td.hb-cell { min-width: 155px; }
   color: var(--ink-2); text-decoration: none; white-space: nowrap; overflow: hidden;
   text-overflow: ellipsis; padding-right: 8px; }
 .weekgrid a.wg-lane-label:hover { color: var(--ink); }
-.weekgrid .wg-lane-label.group { color: var(--iris); }
+/* a strip row that chains a whole lane is named for the lane, not a routine — iris, the
+   structure colour, with no link (a lane has no page of its own) */
+.weekgrid .wg-lane-label.chained { color: var(--iris); }
 .weekgrid .wg-scroll { flex: 1; min-width: 0; overflow-x: auto; }
 .weekgrid svg.wg { display: block; }
 .weekgrid .wg-grid { stroke: var(--rule); }
@@ -991,7 +993,6 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
 }
 .hero-strong { font-size: 15px; font-weight: 600; color: var(--ink); min-width: 0; }
 .hero-sub { font-size: 11px; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; }
-.hero-group-sel { font: inherit; font-size: 12.5px; max-width: 150px; padding: 2px 4px; }
 .hero-link { color: var(--signal); }
 .hero-tile .heartbeat { width: 100%; max-width: 156px; height: 26px; }
 

@@ -19,7 +19,7 @@ KINDS = ("util", "write_util", "remove_util", "read_file", "view_image", "write_
          "memory_read", "memory_write", "read_rule", "write_rule",
          "script", "shell",
          "llm", "spawn", "subtask", "detach",
-         "schedule_run", "create_routine", "manage_group",
+         "schedule_run", "create_routine", "manage_lane",
          "list_models", "subruns", "kill", "wait", "ask_user", "report", "finish")
 
 ACTION_SCHEMA: dict = {
@@ -179,7 +179,8 @@ ACTION_SCHEMA: dict = {
                    "description": "schedule_run: the routine slug to arm/cancel a one-shot on "
                                   "(self-target always allowed) · "
                                   "create_routine: the NEW routine's kebab-case slug · "
-                                  "manage_group: the group id (grp-XXXX) to update/delete/run · "
+                                  "manage_lane: the lane id to update/delete/run — take it "
+                                  "from a `list`; ids are opaque handles · "
                                   "report: OPTIONAL — the slug of the routine that OWNS this "
                                   "problem. With it, the report is delivered to that routine "
                                   "and read on its next scheduled run; without it, the report "
@@ -204,28 +205,29 @@ ACTION_SCHEMA: dict = {
                                   "arming (with id: cancel that one; without: cancel all)"},
         "id": {"type": "string",
                "description": "schedule_run: the one-shot id (so-XXXX) to cancel"},
-        # manage_group — CRUD/fire routine groups from a conversation (D61); root-conversation only
+        # manage_lane — CRUD/fire routine LANES from a conversation (D61). Offered to every
+        # depth-0 run; a root conversation applies a verb, any other run queues a proposal (F328)
         "verb": {"type": "string",
                  "enum": ["list", "create", "update", "delete", "set-default", "run"],
-                 "description": "manage_group: the operation — list (the whole store) · create "
+                 "description": "manage_lane: the operation — list (the whole store) · create "
                                 "(needs name) · update (needs target) · delete (needs target) · "
                                 "set-default (needs on_failure) · run (needs target; arms a "
-                                "sequential fire of the group)"},
+                                "sequential fire of the lane)"},
         "members": {"type": "array", "items": {"type": "string"},
-                    "description": "manage_group create/update: the ORDERED routine slugs in the "
-                                   "group (deduped; each must name a real routine) — the fire "
-                                   "order a group run uses"},
+                    "description": "manage_lane create/update: the ORDERED routine slugs in the "
+                                   "lane (deduped; each must name a real routine) — the fire "
+                                   "order a lane run uses"},
         "paused": {"type": "boolean",
-                   "description": "manage_group update: true pauses the GROUP's cron (nothing "
-                                  "in the group auto-fires; an explicit run still works, and "
-                                  "members stay group-managed), false resumes it"},
+                   "description": "manage_lane update: true pauses the LANE's cron (nothing "
+                                  "in the lane auto-fires; an explicit run still works and "
+                                  "members stay lane-managed), false resumes it"},
         "on_failure": {"type": "string", "enum": ["stop", "continue"],
-                       "description": "manage_group: mid-chain-failure policy — 'stop' aborts the "
+                       "description": "manage_lane: mid-chain-failure policy — 'stop' aborts the "
                                       "rest of the chain, 'continue' fires the remaining members. "
                                       "Required for set-default; optional on create/update (omit "
                                       "to inherit the instance default)"},
         "cron": {"type": "string",
-                 "description": "manage_group create/update: the GROUP's cron schedule (server "
+                 "description": "manage_lane create/update: the LANE's cron schedule (server "
                                 "tz), e.g. '0 10 * * *' — member 0 fires on it, the rest chain "
                                 "on completion, and every member's own cron is suppressed while "
                                 "it is set. Empty string clears it (members fire on their own "
@@ -375,7 +377,7 @@ BRIEF_FIELD = {"util": "name", "write_util": "name", "remove_util": "name", "rea
                "memory_write": "name", "read_rule": "name", "write_rule": "name",
                "llm": "prompt", "spawn": "label", "subtask": "label",
                "detach": "label", "schedule_run": "target", "create_routine": "target",
-               "manage_group": "verb",
+               "manage_lane": "verb",
                "kill": "n", "wait": "n",
                "ask_user": "question", "report": "title", "finish": "status"}
 

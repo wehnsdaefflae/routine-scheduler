@@ -2,10 +2,13 @@
 coming days (croniter, each routine's own tz). A day of back-fill lets the client render
 "earlier today" in its own timezone; a per-routine cap bounds every-minute crons.
 
-Scheduled GROUPS (D71) fire here too: a member of a group WITH a cron never fires on its
+Scheduled LANES (D71) fire here too: a member of a lane WITH a cron never fires on its
 own — the daemon suppresses its cron — so its vestigial `fires` are withheld (rendering
-them would draw runs that never happen, R313) and the group's own cron rides out under
-`groups` instead, for the client to draw as one chained lane.
+them would draw runs that never happen, R313) and the lane's own cron rides out under the
+response's `lanes` key instead, for the client to draw as one chained row.
+
+The lane is the ONLY one of the three axes this endpoint knows: a domain shares a config and
+a store but nothing on a clock; tags fire nothing at all (docs/lanes-domains.md).
 """
 
 from __future__ import annotations
@@ -17,7 +20,7 @@ from croniter import croniter
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
-from .. import groups, registry, schedule_once
+from .. import lanes, registry, schedule_once
 from ..schedule import server_tz
 
 router = APIRouter(tags=["schedule"])
@@ -29,18 +32,18 @@ MAX_FIRES = 400  # per routine — hourly is ~192 with back-fill; denser crons t
 def schedule_week(request: Request, days: int = 7) -> dict:
     """Fire times for every enabled routine from a day ago to `days` (1-14) ahead:
     {start, days, routines: [{slug, fires: [iso…], one_shots: [iso…], truncated}],
-    groups: [{id, name, fires: [iso…], truncated}]}.
+    lanes: [{id, name, fires: [iso…], truncated}]}.
     `fires` are recurring cron fires; `one_shots` are armed schedule-once fires in the
     window (the client renders them as distinct points). A routine with only a one-shot
-    armed and no cron still appears. A member of a scheduled group contributes no `fires`
-    of its own (its cron is daemon-suppressed, D71); the group's fires are listed under
-    `groups` — paused groups omitted, exactly as they are skipped by the fire loop.
+    armed and no cron still appears. A member of a scheduled LANE contributes no `fires`
+    of its own (its cron is daemon-suppressed, D71); the lane's fires are listed under
+    `lanes` — paused lanes omitted, exactly as they are skipped by the fire loop.
     """
     days = max(1, min(days, 14))
     now = datetime.now(UTC)
     start, end = now - timedelta(days=1), now + timedelta(days=days)
     home = request.app.state.server.routines_home
-    suppressed = groups.scheduled_member_slugs(home)
+    suppressed = lanes.scheduled_member_slugs(home)
     routines = []
     for info in registry.scan(request.app.state.server).values():
         cfg = info.cfg
@@ -51,21 +54,21 @@ def schedule_week(request: Request, days: int = 7) -> dict:
         if fires or one_shots:
             routines.append({"slug": cfg.slug, "fires": fires, "one_shots": one_shots,
                              "truncated": len(fires) >= MAX_FIRES})
-    group_rows = []
-    for g in groups.list_groups(home):
-        if not g["cron"] or g["paused"]:
-            continue  # unscheduled / paused groups never auto-fire — nothing to draw
-        fires = _cron_fires(g["cron"], g.get("tz") or server_tz(), start, end)
+    lane_rows = []
+    for lane in lanes.list_lanes(home):
+        if not lane["cron"] or lane["paused"]:
+            continue  # unscheduled / paused lanes never auto-fire — nothing to draw
+        fires = _cron_fires(lane["cron"], lane.get("tz") or server_tz(), start, end)
         if fires:
-            group_rows.append({"id": g["id"], "name": g["name"], "fires": fires,
-                               "truncated": len(fires) >= MAX_FIRES})
+            lane_rows.append({"id": lane["id"], "name": lane["name"], "fires": fires,
+                              "truncated": len(fires) >= MAX_FIRES})
     return {"start": now.isoformat(), "days": days, "routines": routines,
-            "groups": group_rows}
+            "lanes": lane_rows}
 
 
 def _cron_fires(cron: str, tz: str, start: datetime, end: datetime) -> list[str]:
     """Enumerate `cron` in `tz` over [start, end): ISO strings, capped at MAX_FIRES.
-    A broken cron/tz yields [] — it already surfaces as a routine/group problem.
+    A broken cron/tz yields [] — it already surfaces as a routine/lane problem.
     """
     if not cron:
         return []

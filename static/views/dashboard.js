@@ -2,12 +2,19 @@
 // tokens/duration, open questions, run-now. A running routine pulses; one blocked on a
 // question is visually loud. Meta routines are tucked away by default; tags, states and
 // free text filter; every stat sorts; a table view sits one toggle away.
+//
+// It is also the surface for the two structures a routine sits in (docs/lanes-domains.md):
+// LANES are rows in the table, because a lane is a firing order over routines and belongs
+// beside them; DOMAINS get their own section, because a domain is a config surface with no
+// place in a schedule. A routine has at most one of each.
 
 import { api } from "/static/api.js";
 import { activityFeed } from "/static/components/activityfeed.js";
 import { slugColor } from "/static/components/charts.js";
-import { groupControls, groupProgress, groupsToolbar, openGroupEditor } from "/static/components/groupmanage.js";
+import { confirmDialog, promptDialog } from "/static/components/dialog.js";
+import { domainConfigPanel } from "/static/components/domainconfig.js";
 import { heartbeat } from "/static/components/heartbeat.js";
+import { laneControls, laneProgress, lanesToolbar, openLaneEditor } from "/static/components/lanemanage.js";
 import { quotaLine } from "/static/views/settings-endpoints.js";
 import { cronToFriendly, specAtInstant } from "/static/components/schedule.js";
 import { weekGrid } from "/static/components/weekgrid.js";
@@ -20,7 +27,8 @@ const SORT_KEY = "rsched_dash_sort";
 const DIR_KEY = "rsched_dash_dir";
 const WEEK_KEY = "rsched_dash_week";
 const ACTIVITY_KEY = "rsched_dash_activity";
-const GROUPS_OPEN_KEY = "rsched_dash_groups_open";
+const LANES_OPEN_KEY = "rsched_dash_lanes_open";
+const DOMAINS_KEY = "rsched_dash_domains";
 
 // ---- sort keys: [label, value-fn, descending?] -------------------------------------------------
 const tokensOf = (c) => (c.last_run?.usage?.in || 0) + (c.last_run?.usage?.out || 0);
@@ -41,9 +49,9 @@ const STATE_BUCKETS = {
   waiting: (c) => c.active_state === "waiting_user" || (c.open_questions || 0) > 0,
   ok: (c) => !c.active_state && c.last_run?.state === "finished",
   failed: (c) => !c.active_state && ["failed", "aborted"].includes(c.last_run?.state),
-  // FINISHED before DISABLED, and never both: a routine that reached its final goal is a
-  // different thing from one you switched off, and lumping them lost the only state that says
-  // "this job is over". `retired` is derived from the goal document; `enabled` is your switch.
+  // FINISHED before DISABLED, never both: a routine that reached its final goal is a different
+  // thing from one you switched off — lumping them lost the only state that says "this job is
+  // over". `retired` is derived from the goal document; `enabled` is your switch.
   finished: (c) => c.retired,
   disabled: (c) => !c.enabled && !c.retired,
 };
@@ -119,46 +127,51 @@ export async function render(view) {
       el("div", { class: "row" }, quotaChip, pauseBtn)));
   loadQuota(quotaChip);
   const banner = el("div", {});
-  // Week-strip drag ops (weekgrid-drag.js): every drop PATCHes config, then reloads so the
-  // strip redraws from truth. Group-membership PATCHes always carry the FULL member records —
-  // Reschedules ride the same schedule.friendly PATCH
+  // Week-strip drag ops (weekgrid-drag.js): every drop PATCHes, then reloads so the strip
+  // redraws from truth. Lane-membership PATCHes always carry the FULL member record list —
+  // the API replaces it wholesale — and reschedules ride the same schedule.friendly PATCH
   // the editors use; a custom cron has no draggable shape and is refused with a pointer to
-  // its editor. `cards`/`serverTz` bind lazily — drops only happen after load() filled them.
+  // its editor. A drop moves only TIMING: a routine's domain — and therefore what it shares —
+  // is untouched by every one of these. `cards`/`serverTz` bind lazily — drops only happen
+  // after load() filled them.
   const fmtFireAt = new Intl.DateTimeFormat(undefined, { weekday: "short", hour: "2-digit", minute: "2-digit" });
   const nameOf = (slug) => cards.find((c) => c.slug === slug)?.name || slug;
-  const memberRecords = (_g, order) => order.map((s) => ({ slug: s }));
+  const memberRecords = (order) => order.map((s) => ({ slug: s }));
   async function dropOp(fn, okMsg) {
     try { await fn(); toast(okMsg); } catch (err) { toast(err.message, 4000, { error: true }); }
     await load();
   }
+  // The handler NAMES are weekgrid-drag.js's contract; the lane records they take are the
+  // display shape renderBody hands the strip (slug members, not the store's records).
   const dragHandlers = {
-    reorder: (g, slug, target, after) => {
-      const order = g.members.filter((s) => s !== slug);
+    reorder: (lane, slug, target, after) => {
+      const order = lane.members.filter((s) => s !== slug);
       order.splice(order.indexOf(target) + (after ? 1 : 0), 0, slug);
-      return dropOp(() => api(`/api/groups/${g.id}`, { method: "PATCH",
-        body: { members: memberRecords(g, order) } }),
-        `${nameOf(slug)} → position ${order.indexOf(slug) + 1} in ${g.name}`);
+      return dropOp(() => api(`/api/lanes/${lane.id}`, { method: "PATCH",
+        body: { members: memberRecords(order) } }),
+        `${nameOf(slug)} → position ${order.indexOf(slug) + 1} in ${lane.name}`);
     },
-    join: (g, slug, from) => dropOp(async () => {
-      if (from) await api(`/api/groups/${from.id}`, { method: "PATCH",
-        body: { members: memberRecords(from, from.members.filter((s) => s !== slug)) } });
-      await api(`/api/groups/${g.id}`, { method: "PATCH",
-        body: { members: [...memberRecords(g, g.members), { slug }] } });
-    }, `${nameOf(slug)} joined ${g.name}`),
-    leave: (g, slug) => dropOp(() => api(`/api/groups/${g.id}`, { method: "PATCH",
-      body: { members: memberRecords(g, g.members.filter((s) => s !== slug)) } }),
-      `${nameOf(slug)} left ${g.name}`),
+    join: (lane, slug, from) => dropOp(async () => {
+      // leave first: a routine is in at most one lane and the store refuses the second claim
+      if (from) await api(`/api/lanes/${from.id}`, { method: "PATCH",
+        body: { members: memberRecords(from.members.filter((s) => s !== slug)) } });
+      await api(`/api/lanes/${lane.id}`, { method: "PATCH",
+        body: { members: [...memberRecords(lane.members), { slug }] } });
+    }, `${nameOf(slug)} joined ${lane.name}`),
+    leave: (lane, slug) => dropOp(() => api(`/api/lanes/${lane.id}`, { method: "PATCH",
+      body: { members: memberRecords(lane.members.filter((s) => s !== slug)) } }),
+      `${nameOf(slug)} left ${lane.name}`),
     reschedule: (slug, when) => {
       const spec = specAtInstant(cronToFriendly(cards.find((c) => c.slug === slug)?.cron), when, serverTz);
       if (!spec) { toast("custom schedule — edit it on the routine page", 4000, { error: true }); return; }
       return dropOp(() => api(`/api/routines/${slug}`, { method: "PATCH",
         body: { schedule: { friendly: spec } } }), `${nameOf(slug)} → ${fmtFireAt.format(when)}`);
     },
-    rescheduleGroup: (g, when) => {
-      const spec = specAtInstant(cronToFriendly(g.cron), when, serverTz);
-      if (!spec) { toast("custom group schedule — edit it in the group editor", 4000, { error: true }); return; }
-      return dropOp(() => api(`/api/groups/${g.id}`, { method: "PATCH",
-        body: { schedule: { friendly: spec } } }), `group ${g.name} → ${fmtFireAt.format(when)}`);
+    rescheduleLane: (lane, when) => {
+      const spec = specAtInstant(cronToFriendly(lane.cron), when, serverTz);
+      if (!spec) { toast("custom lane schedule — edit it in the lane editor", 4000, { error: true }); return; }
+      return dropOp(() => api(`/api/lanes/${lane.id}`, { method: "PATCH",
+        body: { schedule: { friendly: spec } } }), `lane ${lane.name} → ${fmtFireAt.format(when)}`);
     },
   };
   const week = weekGrid(dragHandlers);
@@ -167,12 +180,25 @@ export async function render(view) {
     el("summary", {}, "this week"), week.node);
   weekPanel.addEventListener("toggle", () => storage.set(WEEK_KEY, weekPanel.open ? "open" : "closed"));
   const filterBar = el("div", { class: "filterbar" });
-  // D80: group management lives HERE (the /groups subpage is retired) — this bar carries
-  // "+ new group" + the instance default; per-group controls sit on the group rows below.
-  // Rebuilt only when the groups payload changes (its select must survive live refreshes,
-  // the F229 rule), and the editors are overlays for the same reason.
-  const groupsBar = el("div", { class: "panel mt", style: "padding:8px 12px" });
+  // D80: this page IS the lane-management surface — the bar carries "＋ new lane" + the
+  // instance default; per-lane controls sit on the lane rows below. Rebuilt only when the
+  // lanes payload changes (its select must survive live refreshes, the F229 rule); the
+  // editors are overlays for the same reason.
+  const lanesBar = el("div", { class: "panel mt", style: "padding:8px 12px" });
   const body = el("div", { class: "mt" });
+  // The other axis (docs/lanes-domains.md): what a set of routines SHARES — one config block,
+  // one store, one notes boundary. Its own section rather than a column on the table, because
+  // a domain has nothing to do with when anything fires. OPEN by default: config nobody ever
+  // looks at is config that drifts, where holding ONE copy of what its members would otherwise
+  // each carry is the domain's whole job. Each domain's editor is heavy (it mounts the routine
+  // page's own controls), so it builds only when someone asks for that one.
+  const domainsBody = el("div", {});
+  const domainsPanel = el("details", { class: "panel weekpanel mt", "data-domains": "",
+    ...(storage.get(DOMAINS_KEY) !== "closed" ? { open: true } : {}) },
+    el("summary", {}, "domains — the config, secrets and store a set of routines shares"),
+    domainsBody);
+  domainsPanel.addEventListener("toggle",
+    () => storage.set(DOMAINS_KEY, domainsPanel.open ? "open" : "closed"));
   // The cross-routine activity feed (the former Log page): every run, filterable, with the
   // transcript tailing inline. Collapsed by default and lazily started — a closed section
   // neither fetches nor polls.
@@ -185,20 +211,26 @@ export async function render(view) {
     if (activityPanel.open) feed.start();
   });
   if (activityPanel.open) feed.start();
-  view.append(banner, weekPanel, filterBar, groupsBar, body, activityPanel);
+  view.append(banner, weekPanel, filterBar, lanesBar, body, domainsPanel, activityPanel);
   body.append(skeleton(), skeleton(), skeleton());
 
   let cards = [], llmReady = true, firesBySlug = new Map(), oneShotsBySlug = new Map();
   let serverTz = "";   // the zone crons are stored in — drag-reschedules re-time specs in it
-  let groupData = null;   // the raw /api/groups payload — the group-management surface's input
-  let groupsBySlug = new Map();   // slug -> [group records] (R107/F269 — group badges on the list)
-  let groupsOrdered = [];   // [{id, name, members(slugs), …}] in fire order (F271)
-  let groupSchedBySlug = new Map();   // slug -> its scheduled group (cron suppressed, R313)
+  let laneData = null;   // the raw /api/lanes payload — the lane-management surface's input
+  // slug -> its lane record. ONE record, not a list: a routine belongs to at most one lane and
+  // `lanes.py` enforces it, so a badge, a row's real schedule and a chip all read the same
+  // single answer (R107/F269 put the badges here).
+  let laneBySlug = new Map();
+  let lanesById = new Map();   // id -> the raw record (the lane rows' editor input)
+  let lanesOrdered = [];   // [{id, name, members(slugs), …}] in fire order (F271)
+  let domains = [];   // the /api/domains records, each already carrying its resolved members
+  let domainBySlug = new Map();   // slug -> its domain record (at most one, by the same rule)
   let lastTagSig = null;   // F229: only rebuild the filter bar when the tag set changes
-  let lastGroupSig = null; // same rule for the groups bar: its select must survive refreshes
+  let lastLaneSig = null;  // same rule for the lanes bar: its select must survive refreshes
+  let lastDomainSig = null;   // and for the domains section: it holds open config editors
   const states = new Set();
   // D72: the table IS the default (operator, 2026-08-05) — denser, sortable, and where the
-  // group rows live. The card grid stays one toggle away and a user's choice persists.
+  // lane rows live. The card grid stays one toggle away and a user's choice persists.
   let viewMode = storage.get(VIEW_KEY) || "list";
   let sortKey = storage.get(SORT_KEY) || "activity";
   // F208: an explicit sort DIRECTION, so re-clicking the active column reverses it instead
@@ -258,9 +290,103 @@ export async function render(view) {
     }, "clear"));
   }
 
+  // ---- the domains section ---------------------------------------------------------------
+  // Membership is NOT editable here; saying so is half the section's job. A routine names
+  // its domain in its own routine.yaml, so joining and leaving are an ordinary config save on
+  // the routine's page. That is what keeps "at most one domain" a fact of the file — and it is
+  // the first thing someone looks for on this page, so the line is not buried in a tooltip.
+  const domainSig = () => JSON.stringify(domains);
+  // "library-sync · self-audit · 4 shared settings" — who is in it and how much it hands them,
+  // which is the pair that decides whether a domain is doing anything.
+  const domainSummary = (d) => {
+    const members = d.members || [];
+    const n = Object.keys(d.config || {}).length;
+    return `${members.length ? members.join(" · ") : "no members"}`
+      + ` · ${n} shared setting${n === 1 ? "" : "s"}`;
+  };
+
+  function domainRow(d) {
+    const counts = el("span", { class: "faint small" }, domainSummary(d));
+    const host = el("div", { class: "mt", hidden: true });
+    let built = false;
+    // The saved record REPLACES the one this row was built from; the signature moves with it
+    // too, or the next bus tick would find "changed" data and tear down an open editor.
+    const onSaved = (rec) => {
+      const at = domains.findIndex((x) => x.id === rec.id);
+      if (at >= 0) domains[at] = rec;
+      counts.textContent = domainSummary(rec);
+      lastDomainSig = domainSig();
+    };
+    const edit = el("button", { class: "btn small ghost", "data-domain-edit": "",
+      title: "edit what this domain shares: permissions, rules, secrets, connections, roots" },
+      "✎ edit");
+    edit.onclick = () => {
+      if (!built) { built = true; host.append(domainConfigPanel(d, { onSaved })); }
+      host.hidden = !host.hidden;
+    };
+    const ren = el("button", { class: "btn small ghost", "data-domain-rename": "" }, "rename");
+    ren.onclick = async () => {
+      const name = await promptDialog(`Rename domain “${d.name}”`, { value: d.name });
+      if (!name || name === d.name) return;
+      try { await api(`/api/domains/${d.id}`, { method: "PATCH", body: { name } });
+        toast(`domain renamed to “${name}”`); }
+      catch (ex) { toast(ex.message, 4000, { error: true }); }
+      await load();
+    };
+    // A domain with members cannot be deleted (409) — every one of them would be left naming
+    // nothing and silently narrowed. The server says exactly who is holding it; say that back.
+    const del = el("button", { class: "btn small danger", "data-domain-delete": "" }, "delete");
+    del.onclick = async () => {
+      if (!(await confirmDialog(`Delete domain “${d.name}”? The shared store on disk is kept.`,
+        { confirmLabel: "delete" }))) return;
+      try { await api(`/api/domains/${d.id}`, { method: "DELETE" }); toast("domain deleted"); }
+      catch (ex) { toast(ex.message, 6000, { error: true }); }
+      await load();
+    };
+    return el("div", { class: "mt", "data-domain-row": d.id },
+      el("div", { class: "row", style: "gap:8px;align-items:center;flex-wrap:wrap" },
+        el("span", {}, `◈ ${d.name}`), counts,
+        el("span", { class: "row", style: "gap:6px;margin-left:auto" }, edit, ren, del)),
+      host);
+  }
+
+  function renderDomains() {
+    domainsBody.replaceChildren();
+    const add = el("button", { class: "btn small", "data-domain-new": "" }, "＋ new domain");
+    add.onclick = async () => {
+      const name = await promptDialog("Name the new domain",
+        { placeholder: "what these routines have in common" });
+      if (!name) return;
+      try { await api("/api/domains", { method: "POST", body: { name } });
+        toast(`domain “${name}” added`); }
+      catch (ex) { toast(ex.message, 4000, { error: true }); }
+      await load();
+    };
+    domainsBody.append(
+      el("div", { class: "row", style: "gap:8px;align-items:center;flex-wrap:wrap" },
+        el("span", { class: "lbl" }, "◈ domains"), add,
+        el("span", { class: "muted small" },
+          "a routine JOINS a domain on its own page — the domain setting in its config. "
+          + "At most one — it is what puts the shared store in the run's roots.")),
+      ...(domains.length
+        ? domains.map(domainRow)
+        : [el("div", { class: "muted small mt" },
+            "No domains yet. Make one when two routines should share a permission surface, a "
+            + "secret and a store — routines that only need to fire in order want a lane.")]));
+  }
+
+  // Where a routine's domain chip goes: open the section (it may be collapsed) and bring that
+  // domain's row into view. The rows are built on every load regardless of the panel's state,
+  // so the target is always there to scroll to.
+  function revealDomain(id) {
+    domainsPanel.open = true;
+    domainsBody.querySelector(`[data-domain-row="${CSS.escape(id)}"]`)
+      ?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }
+
   function renderBody() {
     const shown = ordered(cards.filter(visible));
-    week.update(cards.filter(visible), firesBySlug, oneShotsBySlug, groupsOrdered);
+    week.update(cards.filter(visible), firesBySlug, oneShotsBySlug, lanesOrdered);
     weekPanel.hidden = !cards.length;
     body.replaceChildren();
     if (!cards.length) {
@@ -280,50 +406,54 @@ export async function render(view) {
   }
 
   async function load() {
-    let routines, status, sched;
+    let routines, status, sched, domainData;
     try {
-      [routines, status, sched, groupData] = await Promise.all([
+      [routines, status, sched, laneData, domainData] = await Promise.all([
         api("/api/routines"), api("/api/status").catch(() => ({})),
         api("/api/schedule/week").catch(() => null),
-        // Group membership is a nicety on this page — a groups-fetch hiccup must never blank
-        // the routines list, so it degrades to "no groups" rather than throwing (R107, F269).
-        api("/api/groups").catch(() => null),
+        // Lane and domain membership are a nicety on this page — a hiccup on either fetch must
+        // never blank the routines list, so each degrades to "none" rather than throwing
+        // (R107, F269).
+        api("/api/lanes").catch(() => null),
+        api("/api/domains").catch(() => null),
       ]);
     } catch (err) {
       body.replaceChildren(emptyState("✕", "Couldn't reach the daemon", err.message));
       return;
     }
     cards = routines;
-    serverTz = groupData?.server_tz || "";
-    // slug -> [group records]: each routine card/row shows which group(s) it belongs to —
-    // the chips open the group editor (D80: this page IS the group-management surface).
-    groupsBySlug = new Map();
-    // members are RECORDS {slug} in the store; the display list keeps plain
-    // slugs (what the week grid + rows consume).
-    // `fires` are the GROUP's cron fire times from the week payload (D71) — a scheduled
-    // group's members carry no fires of their own, the chain is drawn from these.
-    const groupFires = new Map((sched?.groups || [])
-      .map((g) => [g.id, g.fires.map((t) => +new Date(t))]));
-    groupsOrdered = (groupData?.groups || [])
-      .map((g) => ({ id: g.id, name: g.name,
-                     members: (g.members || []).map((m) => m.slug),
-                     schedule_desc: g.schedule_desc || "", cron: g.cron || "",
-                     paused: !!g.paused, fires: groupFires.get(g.id) || [] }));
-    // slug -> its SCHEDULED group (the first, matching the server's group_managed rule):
-    // that group's cron suppresses the member's own, so the member's real schedule is the
-    // group's — rendering the vestigial member cron would be a lie (R313)
-    groupSchedBySlug = new Map();
-    for (const g of groupsOrdered) {
-      for (const slug of g.members) {
-        if (g.cron && !groupSchedBySlug.has(slug)) groupSchedBySlug.set(slug, g);
-      }
+    serverTz = laneData?.server_tz || "";
+    // Members are RECORDS {slug} in the store; the display list keeps plain slugs (what the
+    // week grid + rows consume). `fires` are the LANE's cron fire times from the week payload
+    // (D71) — a scheduled lane's members carry no fires of their own, the chain is drawn from
+    // these.
+    const laneFires = new Map((sched?.lanes || [])
+      .map((l) => [l.id, l.fires.map((t) => +new Date(t))]));
+    lanesById = new Map((laneData?.lanes || []).map((l) => [l.id, l]));
+    lanesOrdered = (laneData?.lanes || [])
+      .map((l) => ({ id: l.id, name: l.name,
+                     members: (l.members || []).map((m) => m.slug),
+                     schedule_desc: l.schedule_desc || "", cron: l.cron || "",
+                     paused: !!l.paused, fires: laneFires.get(l.id) || [] }));
+    // slug -> its lane. One pass, one answer: the store refuses a second claim on a routine,
+    // so the row's chip, its real schedule (R313 — a scheduled lane suppresses the member's
+    // own cron; rendering that vestigial cron read as a lie) and the week strip all agree.
+    laneBySlug = new Map();
+    for (const l of laneData?.lanes || []) {
+      for (const m of l.members || []) laneBySlug.set(m.slug, l);
     }
-    for (const g of groupData?.groups || []) {
-      for (const m of g.members || []) {
-        if (!groupsBySlug.has(m.slug)) groupsBySlug.set(m.slug, []);
-        groupsBySlug.get(m.slug).push(g);
-      }
+    // The domain list arrives with its members already resolved from the routines that name
+    // it, so nothing here has to join two payloads to know who is in one.
+    if (domainData) {
+      domains = domainData.domains || [];
+      domainBySlug = new Map();
+      for (const d of domains) for (const slug of d.members || []) domainBySlug.set(slug, d);
+      const sig = domainSig();
+      // Same only-on-change rule as the bars, for a stronger reason: this section can hold an
+      // OPEN config editor; a rebuild on every bus tick would close it under the operator.
+      if (sig !== lastDomainSig) { lastDomainSig = sig; renderDomains(); }
     }
+    domainsPanel.hidden = lastDomainSig === null;   // nothing fetched yet — claim nothing
     firesBySlug = new Map((sched?.routines || []).map((r) => [r.slug, r.fires.map((t) => +new Date(t))]));
     oneShotsBySlug = new Map((sched?.routines || []).map((r) => [r.slug, (r.one_shots || []).map((t) => +new Date(t))]));
     llmReady = status.llm_ready !== false;
@@ -352,17 +482,20 @@ export async function render(view) {
       lastTagSig = "built";
       renderFilterBar();
     }
-    // The groups bar follows the same only-on-change rule (its select must survive live
+    // The lanes bar follows the same only-on-change rule (its select must survive live
     // refreshes); in_flight is deliberately OUT of the signature — chain progress renders
-    // on the group rows, not here.
-    const groupSig = groupData
-      ? JSON.stringify([groupData.default_on_failure, groupData.known_routines])
+    // on the lane rows, not here.
+    // Membership IS in the signature: the toolbar's create form offers only routines no lane
+    // has claimed; a stale capture there would offer one that can only come back a 400.
+    const laneSig = laneData
+      ? JSON.stringify([laneData.default_on_failure, laneData.known_routines,
+                        (laneData.lanes || []).map((l) => (l.members || []).map((m) => m.slug))])
       : null;
-    if (groupSig !== lastGroupSig) {
-      lastGroupSig = groupSig;
-      groupsBar.replaceChildren();
-      groupsBar.hidden = !groupData;
-      if (groupData) groupsBar.append(groupsToolbar(groupData, { reload: load }));
+    if (laneSig !== lastLaneSig) {
+      lastLaneSig = laneSig;
+      lanesBar.replaceChildren();
+      lanesBar.hidden = !laneData;
+      if (laneData) lanesBar.append(lanesToolbar(laneData, { reload: load }));
     }
     renderBody();
   }
@@ -415,26 +548,37 @@ export async function render(view) {
       title: "this routine's color in the week strip" });
   }
 
-  // The schedule a routine will ACTUALLY fire on. A member of a scheduled group has its
-  // own cron suppressed by the daemon — showing that vestigial cron here read as a lie
-  // (R313), so group-managed rows show the group's schedule instead.
+  // The schedule a routine will ACTUALLY fire on. A member of a SCHEDULED lane has its own
+  // cron suppressed by the daemon — showing that vestigial cron here read as a lie (R313),
+  // so a lane-driven row shows the lane's schedule instead. An unscheduled lane suppresses
+  // nothing, so its members keep showing their own.
   function schedText(c) {
-    const g = groupSchedBySlug.get(c.slug);
-    if (g) return `⛓ ${g.name} — ${g.paused ? "group paused" : (g.schedule_desc || "scheduled")}`;
-    return null;   // not group-managed → the caller renders the routine's own desc
+    const lane = laneBySlug.get(c.slug);
+    if (!lane?.cron) return null;   // the caller renders the routine's own desc
+    return `⛓ ${lane.name} — ${lane.paused ? "lane paused" : (lane.schedule_desc || "scheduled")}`;
   }
 
-  // Group membership as a chip row — each chip opens the group's editor right here (D80:
-  // this page is the group-management surface). null when in no group.
-  function groupChips(slug) {
-    const gs = groupsBySlug.get(slug) || [];
-    if (!gs.length) return null;
-    return el("div", { class: "groups-row" },
-      el("span", { class: "lbl small" }, "⛓"),
-      ...gs.map((g) => el("button", { class: "chip group-chip",
-        title: `in group “${g.name}” — edit the group`,
-        onclick: (e) => { e.stopPropagation(); openGroupEditor(g, groupData, { reload: load }); },
-      }, g.name)));
+  // The two structures a routine sits in, as one chip row: its LANE (when it fires and with
+  // whom) and its DOMAIN (what it shares). They are independent, so the row shows whichever a
+  // routine has — side by side when it has both. Each chip goes where that structure is
+  // edited: the lane chip opens the lane's editor (D80: this page is the lane-management
+  // surface), the domain chip reveals its row in the section below. Both LOOK clickable, so
+  // both must be — a chip beside a working one that does nothing teaches the wrong thing.
+  // Membership itself is not on either: joining a domain is a save on the routine's own page.
+  function structureChips(slug) {
+    const lane = laneBySlug.get(slug);
+    const dom = domainBySlug.get(slug);
+    if (!lane && !dom) return null;
+    return el("div", { class: "lanes-row" },
+      lane ? el("button", { class: "chip lane-chip",
+        title: `runs in lane “${lane.name}” — edit the lane`,
+        onclick: (e) => { e.stopPropagation(); openLaneEditor(lane, laneData, { reload: load }); },
+      }, `⛓ ${lane.name}`) : null,
+      dom ? el("button", { class: "chip domain-chip",
+        title: `shares config, secrets and a store with the “${dom.name}” domain — open it in `
+             + "the Domains section; this routine's own page is where it joined",
+        onclick: (e) => { e.stopPropagation(); revealDomain(dom.id); },
+      }, `◈ ${dom.name}`) : null);
   }
 
   function card(c) {
@@ -452,13 +596,13 @@ export async function render(view) {
         el("a", { href: `#/routine/${c.slug}` }, c.name || c.slug),
         stateChip),
       (c.tags || []).length ? el("div", { class: "tags" }, c.tags.map((t) => tagChip(t))) : null,
-      groupChips(c.slug),
+      structureChips(c.slug),
       c.description ? el("div", { class: "desc" }, c.description) : null,
       blocked ? el("div", { class: "qflag" },
         el("span", {}, "waiting on your answer"),
         el("a", { class: "btn small primary", href: "#/questions", style: "margin-left:auto" }, "decide")) : null,
       el("div", { class: "meta" },
-        el("span", schedText(c) ? { title: "group-managed — the group's schedule fires this routine; its own cron is suppressed" } : {},
+        el("span", schedText(c) ? { title: "lane-driven — the lane's schedule fires this routine; its own cron is suppressed" } : {},
           `⏱ ${schedText(c) || c.schedule_desc || "Manual"}`),
         c.next_fire ? el("span", { title: "next scheduled fire" }, "next ", when(c.next_fire, { mode: "rel" })) : null,
         c.open_questions ? el("a", { href: "#/questions", class: "chip blocking",
@@ -513,11 +657,11 @@ export async function render(view) {
       label + (key === sortKey
         ? ((sortDir || (SORTS[key]?.[2] ? "desc" : "asc")) === "desc" ? " ▾" : " ▴")
         : ""))));
-    // U-order (user, 2026-08-13): inside an expanded group the row order IS the fire
+    // U-order (user, 2026-08-13): inside an expanded lane the row order IS the fire
     // order, so the rows themselves are the reorder surface — drag one onto a sibling
     // (upper half = before it, lower half = after). The editor's ↑/↓ stays for precision.
     let dragFrom = null;
-    const rowFor = (c, extraCls = "", group = null) => {
+    const rowFor = (c, extraCls = "", lane = null) => {
       const last = c.last_run;
       const rowCls = [RUNNING.has(c.active_state) ? "live" : "",
         c.active_state === "waiting_user" ? "attention" : "",
@@ -529,12 +673,12 @@ export async function render(view) {
           c.open_questions ? el("a", { href: "#/questions", class: "chip blocking",
             title: "open questions waiting for you" }, `${c.open_questions} open ?`) : null,
           c.description ? el("div", { class: "faint small", style: "max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" }, c.description) : null,
-          groupChips(c.slug)),
+          structureChips(c.slug)),
         el("td", { class: "hb-cell" }, c.recent_runs?.length
           ? heartbeat(c.recent_runs) : el("span", { class: "faint" }, "—")),
         el("td", { class: "muted small" },
           el("div", schedText(c)
-            ? { title: "group-managed — the group's schedule fires this routine; its own cron is suppressed" }
+            ? { title: "lane-driven — the lane's schedule fires this routine; its own cron is suppressed" }
             : {},
             // an always-visible marker: the row dim alone was too subtle. FINISHED and OFF are
             // different answers to "why is nothing happening" — one is the job being over.
@@ -556,16 +700,16 @@ export async function render(view) {
             ? el("a", { class: "btn small", href: `#/run/${c.active_run}`, title: "watch the live run" }, "◉")
             : runNowBtn(c, "btn small", true),
           enableToggle(c, "btn small ghost", true)));
-      if (group) {
+      if (lane) {
         tr.draggable = true;
         tr.dataset.dragMember = c.slug;
         tr.ondragstart = (e) => {
-          dragFrom = { gid: group.id, slug: c.slug };
+          dragFrom = { lid: lane.id, slug: c.slug };
           e.dataTransfer.effectAllowed = "move";
           e.dataTransfer.setData("text/plain", c.slug);
         };
         tr.ondragover = (e) => {
-          if (!dragFrom || dragFrom.gid !== group.id || dragFrom.slug === c.slug) return;
+          if (!dragFrom || dragFrom.lid !== lane.id || dragFrom.slug === c.slug) return;
           e.preventDefault();
           e.dataTransfer.dropEffect = "move";
           tr.classList.add("drop-here");
@@ -576,8 +720,8 @@ export async function render(view) {
           e.preventDefault();
           tr.classList.remove("drop-here");
           const from = dragFrom; dragFrom = null;
-          if (!from || from.gid !== group.id || from.slug === c.slug) return;
-          const raw = (groupData?.groups || []).find((r) => r.id === group.id);
+          if (!from || from.lid !== lane.id || from.slug === c.slug) return;
+          const raw = lanesById.get(lane.id);
           const rec = raw?.members?.find((m) => m.slug === from.slug);
           if (!rec) return;
           const list = raw.members.filter((m) => m.slug !== from.slug);
@@ -587,55 +731,59 @@ export async function render(view) {
           const before = e.clientY < box.top + box.height / 2;
           list.splice(at + (before ? 0 : 1), 0, rec);
           try {
-            await api(`/api/groups/${group.id}`, { method: "PATCH", body: { members: list } });
-            toast(`“${group.name}” fire order: ${list.map((m) => m.slug).join(" → ")}`);
+            await api(`/api/lanes/${lane.id}`, { method: "PATCH", body: { members: list } });
+            toast(`“${lane.name}” fire order: ${list.map((m) => m.slug).join(" → ")}`);
           } catch (ex) { toast(ex.message, 4000, { error: true }); }
           load();
         };
       }
       return tr;
     };
-    // D73 + F281: each group is its own collapsible row — expanding lists its members
-    // right beneath it, in the group's FIRE order (not the table sort). A grouped routine
-    // lives ONLY under its group row (reviewer order 2026-08-06: the flat list used to
-    // repeat every grouped routine, so the table double-listed them); the flat sorted
-    // list below carries just the ungrouped rest. Expansion persists like the view mode.
-    const openGroups = new Set(JSON.parse(storage.get(GROUPS_OPEN_KEY) || "[]"));
+    // D73 + F281: each lane is its own collapsible row — expanding lists its members right
+    // beneath it, in the lane's FIRE order (not the table sort). A routine in a lane lives
+    // ONLY under that lane's row (reviewer order 2026-08-06: the flat list used to repeat
+    // every member, so the table double-listed them); the flat sorted list below carries just
+    // the routines no lane claims. Expansion persists like the view mode, keyed by lane ID —
+    // a rename must not silently collapse the row.
+    const openLanes = new Set(JSON.parse(storage.get(LANES_OPEN_KEY) || "[]"));
     const bySlug = new Map(shown.map((c) => [c.slug, c]));
     const rows = [];
-    for (const g of groupsOrdered) {
-      const members = g.members.map((s) => bySlug.get(s)).filter(Boolean);
-      if (!members.length) continue;                 // fully filtered out → no header either
-      const open = openGroups.has(g.name);
-      const raw = (groupData?.groups || []).find((r) => r.id === g.id);
-      // D80: the group row carries its management — run now / pause / edit (the buttons
-      // stopPropagation so the row's expand toggle keeps working), plus the in-flight
-      // chain's per-pass progress (F292).
-      const controls = raw ? groupControls(raw, groupData, { reload: load }) : [];
-      const progress = raw ? groupProgress(raw, groupData) : null;
-      rows.push(el("tr", { class: "group-row", "data-group-row": g.id },
+    for (const lane of lanesOrdered) {
+      const members = lane.members.map((s) => bySlug.get(s)).filter(Boolean);
+      // A lane whose members are all filtered out loses its header too — that is the filter
+      // working. An EMPTY lane keeps its row: this row is the only way back into its editor —
+      // a lane created ahead of its members would otherwise vanish the moment it was made.
+      if (lane.members.length && !members.length) continue;
+      const open = openLanes.has(lane.id);
+      const raw = lanesById.get(lane.id);
+      // D80: the lane row carries its management — run now / pause / edit (the buttons
+      // stopPropagation so the row's expand toggle keeps working), plus how far an in-flight
+      // chain has got: which member of how many is running.
+      const controls = raw ? laneControls(raw, laneData, { reload: load }) : [];
+      const progress = raw ? laneProgress(raw, laneData) : null;
+      rows.push(el("tr", { class: "lane-row", "data-lane-row": lane.id },
         el("td", { colSpan: COLS.length,
-          title: open ? "collapse this group's rows" : "expand this group's member rows",
+          title: open ? "collapse this lane's rows" : "expand this lane's member rows",
           onclick: () => {
-            open ? openGroups.delete(g.name) : openGroups.add(g.name);
-            storage.set(GROUPS_OPEN_KEY, JSON.stringify([...openGroups]));
+            open ? openLanes.delete(lane.id) : openLanes.add(lane.id);
+            storage.set(LANES_OPEN_KEY, JSON.stringify([...openLanes]));
             renderBody();
           } },
           el("div", { class: "row", style: "justify-content:space-between;align-items:center;gap:8px" },
             el("span", {},
               el("span", { class: "tri" }, open ? "▾ " : "▸ "),
-              `⛓ ${g.name}`,
-              g.paused ? el("span", { class: "muted small", "data-group-paused": "",
+              `⛓ ${lane.name}`,
+              lane.paused ? el("span", { class: "muted small", "data-lane-paused": "",
                 style: "margin-left:8px" }, "⏸ paused") : null,
               el("span", { class: "faint small", style: "margin-left:8px" },
                 `${members.length} routine${members.length === 1 ? "" : "s"} · fire order`
-                + (g.cron ? ` · ${g.paused ? "paused" : g.schedule_desc}` : "")),
+                + (lane.cron ? ` · ${lane.paused ? "paused" : lane.schedule_desc}` : "")),
               progress ? el("span", { style: "margin-left:8px" }, progress) : null),
             el("span", { class: "row", style: "gap:6px" }, ...controls)))));
-      if (open) for (const m of members) rows.push(rowFor(m, "group-member", g));
+      if (open) for (const m of members) rows.push(rowFor(m, "lane-member", lane));
     }
-    const grouped = new Set(groupsOrdered.flatMap((g) => g.members));
-    for (const c of shown) if (!grouped.has(c.slug)) rows.push(rowFor(c));
+    const inLane = new Set(lanesOrdered.flatMap((l) => l.members));
+    for (const c of shown) if (!inLane.has(c.slug)) rows.push(rowFor(c));
     // Five compressed columns fit the normal shell column — the D72 full-width breakout
     // existed for the old twelve-column layout and is retired with it.
     return el("div", { class: "panel", style: "padding:0" },

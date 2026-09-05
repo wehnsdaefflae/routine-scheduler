@@ -1,12 +1,12 @@
 """Week-strip schedule endpoint: fire enumeration, filtering, clamping, bad crons,
-and the scheduled-group surface (D71/R313): suppressed member crons, group fires."""
+and the scheduled-LANE surface (D71/R313): suppressed member crons, lane fires."""
 
 from datetime import UTC, datetime, timedelta
 
 import pytest
 import yaml
 
-from rsched import groups, schedule_once
+from rsched import lanes, schedule_once
 
 
 @pytest.fixture
@@ -55,53 +55,53 @@ def test_manual_disabled_and_broken_are_skipped(client, make_routine):
     assert rows == {"weekly"}
 
 
-def test_scheduled_group_suppresses_members_and_emits_group_fires(client, make_routine):
-    """D71/R313: a member of a group WITH a cron never fires on its own — its vestigial
+def test_scheduled_lane_suppresses_members_and_emits_lane_fires(client, make_routine):
+    """D71/R313: a member of a lane WITH a cron never fires on its own — its vestigial
     cron must not be enumerated (the daemon would never honor those times) — and the
-    group's own cron rides out under `groups` for the week strip's chained lane."""
+    lane's own cron rides out in its own list for the week strip's chained row."""
     c, tmp = client
     make_routine(slug="m1")
     make_routine(slug="m2")
-    groups.create(tmp / "routines", name="Nightly", cron="0 3 * * *",
-                  members=[{"slug": "m1"}, {"slug": "m2"}])
+    lanes.create(tmp / "routines", name="Nightly", cron="0 3 * * *",
+                 members=[{"slug": "m1"}, {"slug": "m2"}])
     data = c.get("/api/schedule/week").json()
     assert {r["slug"] for r in data["routines"]} == {"weekly"}
-    grows = {g["name"]: g for g in data["groups"]}
-    fires = [datetime.fromisoformat(t) for t in grows["Nightly"]["fires"]]
+    chains = {ln["name"]: ln for ln in data["lanes"]}
+    fires = [datetime.fromisoformat(t) for t in chains["Nightly"]["fires"]]
     # daily cron over a day of back-fill + 7 days ahead, all tz-aware
     assert 7 <= len(fires) <= 9 and all(t.tzinfo is not None for t in fires)
-    assert not grows["Nightly"]["truncated"] and grows["Nightly"]["id"].startswith("grp-")
+    assert not chains["Nightly"]["truncated"] and chains["Nightly"]["id"].startswith("lane-")
 
 
-def test_paused_scheduled_group_is_silent(client, make_routine):
-    """A paused scheduled group never auto-arms AND keeps suppressing its members —
+def test_paused_scheduled_lane_is_silent(client, make_routine):
+    """A paused scheduled lane never auto-arms AND keeps suppressing its members —
     neither surface may show a fire that will not happen."""
     c, tmp = client
     make_routine(slug="pm")
-    g = groups.create(tmp / "routines", name="Held", cron="0 3 * * *",
-                      members=[{"slug": "pm"}])
-    groups.update(tmp / "routines", g["id"], paused=True)
+    lane = lanes.create(tmp / "routines", name="Held", cron="0 3 * * *",
+                        members=[{"slug": "pm"}])
+    lanes.update(tmp / "routines", lane["id"], paused=True)
     data = c.get("/api/schedule/week").json()
     assert {r["slug"] for r in data["routines"]} == {"weekly"}
-    assert data["groups"] == []
+    assert data["lanes"] == []
 
 
-def test_unscheduled_group_leaves_member_fires_alone(client, make_routine):
+def test_unscheduled_lane_leaves_member_fires_alone(client, make_routine):
     c, tmp = client
     make_routine(slug="um")
-    groups.create(tmp / "routines", name="Loose", members=[{"slug": "um"}])
+    lanes.create(tmp / "routines", name="Loose", members=[{"slug": "um"}])
     data = c.get("/api/schedule/week").json()
     assert {r["slug"] for r in data["routines"]} == {"weekly", "um"}
-    assert data["groups"] == []
+    assert data["lanes"] == []
 
 
 def test_suppressed_member_with_one_shot_still_appears(client, make_routine):
     """Suppression withholds the member's cron fires only — an armed one-shot fires
-    regardless of group membership and must stay visible (fires empty, one_shots not)."""
+    regardless of lane membership and must stay visible (fires empty, one_shots not)."""
     c, tmp = client
     make_routine(slug="os")
-    groups.create(tmp / "routines", name="G", cron="0 3 * * *",
-                  members=[{"slug": "os"}])
+    lanes.create(tmp / "routines", name="Nightly", cron="0 3 * * *",
+                 members=[{"slug": "os"}])
     schedule_once.arm(tmp / "routines", "os",
                       fire_at=datetime.now(UTC) + timedelta(hours=1),
                       reason="t", requested_by="test")

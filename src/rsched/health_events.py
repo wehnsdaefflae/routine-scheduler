@@ -3,8 +3,8 @@
 Writes to <routines_home>/.control/health-events.jsonl. Each line is a JSON object:
 {"ts": <iso>, "event": "run_failed"|"budget_exhausted"|"orphaned_run"|"run_canceled"
         |"wizard_build_degraded"|"fire_refused"|"model_window_corrected"
-        |"group_chain_done"|"group_chain_stopped"|"group_chain_member_skipped"
-        |"group_fire_refused"|"scheduler_tick_error",
+        |"lane_chain_done"|"lane_chain_stopped"|"lane_chain_member_skipped"
+        |"lane_fire_refused"|"scheduler_tick_error",
  "routine": <slug>, "run_id": <id>, "detail": <str>}
 
 model_window_corrected: a completion 400'd with a context-overflow whose provider-stated
@@ -31,23 +31,26 @@ from a prior run (overrun) or the daemon was draining for a self-update restart.
 empty (no run was created). Makes a routine that goes chronically un-fired for one of those
 reasons visible to audit consumers instead of only a log.info line. Only the scheduled fire
 path logs this; resume/trigger/manual overruns are expected and stay quiet. A deliberate
-global PAUSE is NOT this event: it is skipped earlier, in the scheduler, and is the
-operator's own intentional action — never logged as a refusal.
+global PAUSE is NOT this event: the scheduler skips those fires earlier — an intentional
+operator action is never logged as a refusal.
 
-group_chain_done / group_chain_stopped: a sequential group chain ended (daemon/group_runs,
-F316). routine = the GROUP id (grp-...), run_id = the chain record id (gr-...), detail
-counts member runs and not-ok outcomes. The in-flight file is consumed at that moment, so
-this event is the chain's durable record - and a scheduled group's periodic done event is
-a HEARTBEAT: its absence across a schedule period means the group starved (F316's defect
-class: a week of missed fires with zero signal).
+lane_chain_done / lane_chain_stopped: a sequential lane chain ended (daemon/lane_runs,
+F316). routine = the lane id, run_id = the chain record id (lr-...), detail counts member
+runs and not-ok outcomes. A lane id is OPAQUE: a lane keeps the id it was created with, so
+resolve it against the lane store (rsched.lanes) rather than reading a prefix. The
+in-flight file is consumed at that moment, so this event is the chain's durable record -
+and a scheduled lane's periodic done event is a HEARTBEAT: its absence across a schedule
+period means the lane starved (F316's defect class: a week of missed fires with zero
+signal).
 
-group_chain_member_skipped: a chain reached a member that is missing or disabled -
-routine = the member slug, detail names the group and whether the chain stopped or
-continued past it.
+lane_chain_member_skipped: a chain named a member that is not a routine in any home -
+routine = the member slug, detail names the lane and whether the chain stopped or
+continued past it. A member the user switched off, or one that retired on its own final
+goal, is a deliberate skip and logs nothing.
 
-group_fire_refused: a DUE scheduled group fire armed nothing because the previous chain
-is still in flight (the group analog of fire_refused; routine = the group id, run_id
-empty). One-off overlap is benign; a run of these is a wedged chain starving the group.
+lane_fire_refused: a DUE scheduled lane fire armed nothing because the previous chain
+is still in flight (the lane analog of fire_refused; routine = the lane id, run_id
+empty). One-off overlap is benign; a run of these is a wedged chain starving the lane.
 
 wizard_build_degraded: a new-routine build's stage-generation pipeline failed hard and
 the routine was scaffolded from the verbatim pattern (run_id empty — builds happen in
@@ -100,10 +103,10 @@ def log_workflow_usage(routines_home: Path, *, routine: str, run_id: str,  # noq
                        asks_deferred: int = 0) -> None:
     """Append one line per finished (sub)run to <routines_home>/.control/workflow-usage.jsonl —
     the feedback stream the routine-improver routine mines to maintain the shared library it
-    owns (its `library-pass` stage), and the
-    DURABLE spend series (run dirs fall to retention; this stream survives — monthly spend
-    aggregation reads it). Subruns report like any other run (depth > 0), so per-purpose
-    child workflows inform pattern evolution too. Best-effort, like the health log.
+    owns (its `library-pass` stage) and the DURABLE spend series (run dirs fall to retention;
+    this stream survives — monthly spend aggregation reads it). Subruns report like any other
+    run (depth > 0), so per-purpose child workflows inform pattern evolution too. Best-effort,
+    like the health log.
 
     Payload extensions (never a new shape): `recipe_commit` — the recipe version that
     produced the run (health-by-recipe-version outlives retention thanks to this field);

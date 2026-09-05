@@ -45,7 +45,7 @@ def test_write_roots_are_readable(tmp_path):
     full rw access, so the engine's read gate refusing them was friction posing as a
     boundary — a conversation could WRITE under its granted root but not read_file its
     own output back. read_roots() now folds in every writable root (config, one-time
-    grant, and the group store write_roots already carries)."""
+    grant, and the domain store write_roots already carries)."""
     from types import MethodType
 
     from rsched.engine.run_context import RunContext
@@ -53,10 +53,10 @@ def test_write_roots_are_readable(tmp_path):
     ctx = SimpleNamespace(
         routine=SimpleNamespace(fs_read_roots=[Path("/r")], fs_write_roots=[Path("/w")]),
         granted_now={"fs-read:/g-read", "fs-write:/g-write"},
-        group_store_roots=[Path("/shared")])
+        domain_store_roots=[Path("/shared")])
     ctx._granted_paths = MethodType(RunContext._granted_paths, ctx)
     ctx.write_roots = MethodType(RunContext.write_roots, ctx)
     reads = RunContext.read_roots(ctx)
     assert Path("/r") in reads and Path("/g-read") in reads      # read grants unchanged
     assert Path("/w") in reads and Path("/g-write") in reads     # write grants imply read
-    assert Path("/shared") in reads                              # group store still present
+    assert Path("/shared") in reads                              # domain store still present

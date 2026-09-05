@@ -9,7 +9,7 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
-from .. import groups, registry, schedule
+from .. import lanes, registry, schedule
 from .. import triggers as triggers_mod
 from ..config import MODEL_KINDS
 from ..paths import resolve_rel
@@ -170,21 +170,26 @@ def routine_detail(request: Request, slug: str) -> dict:
     return {
         **_card(request, info, monthly=monthly),
         "referrals_total": referrals_total,
-        # D82: which config fields this routine got from its GROUP's shared config, and which
-        # group. The page marks them so an inherited value never reads as one set here. A
-        # settings template is NOT among them: it is copied in at adoption, so its values ARE
-        # this routine's own from that moment.
+        # D82: which config fields this routine got from its DOMAIN's shared config, plus
+        # which domain. The page marks them so an inherited value never reads as one set here.
+        # A settings template is NOT among them: it is copied in at adoption, so its values ARE
+        # this routine's own from that moment. Its LANE contributes nothing here — a lane owns
+        # timing and no config at all (docs/lanes-domains.md).
         "inherited": dict(info.cfg.inherited),
         "inherited_from": info.cfg.inherited_from,
+        # …and the domain itself, straight out of this routine's own `domain:` key — the id
+        # only: the page's picker already holds the catalog from GET /api/domains, which is
+        # also where a domain's name, members and store come from.
+        "domain": info.cfg.domain,
         "schedule_friendly": schedule.cron_to_friendly(info.cfg.cron),
         "server_tz": schedule.server_tz(),
         "catchup": info.cfg.catchup,   # skip | run_once when a scheduled fire was missed
-        # D71: set when a SCHEDULED group contains this routine — its own cron is
-        # suppressed and the Schedule dropdown renders the "group managed" state,
-        # linking to the group.
-        "group_managed": next(({"id": g["id"], "name": g["name"]}
-                               for g in groups.list_groups(server.routines_home)
-                               if g["cron"] and slug in groups.member_slugs(g)), None),
+        # D71: set when a SCHEDULED lane contains this routine — its own cron is
+        # suppressed and the Schedule dropdown renders the "lane managed" state, linking to
+        # the lane. At most one lane can match: membership is exclusive (rsched.lanes).
+        "lane_managed": next(({"id": ln["id"], "name": ln["name"]}
+                              for ln in lanes.list_lanes(server.routines_home)
+                              if ln["cron"] and slug in lanes.member_slugs(ln)), None),
         # Provenance is a CLAIM ("generated from") — in_library says whether the referenced
         # pattern actually exists in the current library, so the UI never implies a findable
         # workflow that isn't there (hand-authored recipes carry an empty slug).

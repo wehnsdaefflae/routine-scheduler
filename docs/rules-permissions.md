@@ -107,7 +107,7 @@ transitively over `calls:`. Duplicating them here would be a second copy that ca
 ### The setup surface — what reads all of this
 
 `readmodels/surface.py` is the forward reading of the whole dependency graph: it joins the
-routine's EFFECTIVE config (group inheritance merged) with the library's `requires:`/`expects:`
+routine's EFFECTIVE config (domain inheritance merged) with the library's `requires:`/`expects:`
 and with the util HEADERS of every reserved util the routine holds, then reports what is still
 unmet and what an unmet need will COST — `blocks` (the call is rejected or fails), `interrupts`
 (the run stops mid-way to ask you) or `note`.
@@ -129,9 +129,9 @@ worse than the gap it reports, so a broken library yields no note rather than a 
 
 It carries `blocks` and `interrupts` only (`surface.BOOT_SEVERITIES`), which is what its own
 closing sentence explains and nothing more. A `note` is addressed to the OPERATOR — a cron the
-group suppresses, a `state/phase.json` recorded under some other key — and the run can neither
-act on it nor be saved a turn by it, so one in front of every run buys prompt noise. The page
-and `rsched validate` still show all three.
+routine's lane suppresses, a `state/phase.json` recorded under some other key — and the run can
+neither act on it nor be saved a turn by it, so one in front of every run buys prompt noise. The
+page and `rsched validate` still show all three.
 
 #### The reverse reading: who depends on THIS?
 
@@ -168,18 +168,19 @@ Three writers, and each gets what it can carry:
 Three deliberate designs meet at one blind spot, and each correctly declines to catch it:
 
 1. the **floor** binds a routine's OWN mapping, at save;
-2. a **group's** config block is deliberately not floored at its own save — a member may hold
-   the covering doc itself, and flooring the group in isolation would delete a capability that
-   is legitimately covered;
+2. a **domain's** shared config block is deliberately not floored at its own save — a member may
+   hold the covering doc itself, so flooring the domain in isolation would delete a capability
+   that is legitimately covered;
 3. **enforcement reads capabilities only**, precisely so the doc layer can never widen what a
    run may do.
 
-So a group can hand its members a reserved util or a gated kind with no conduct doc behind it,
+So a domain can hand its members a reserved util or a gated kind with no conduct doc behind it —
 and every layer stays silent. Nothing is broken when it happens — the routine really can do the
 thing — which is why it is REPORTED rather than corrected: the surface shows it per routine
-however it got there (naming the group when the group supplied it), and the group PATCH returns
-a warning naming it at the moment somebody saves. Neither refuses, because refusing would break
-the legitimate member-holds-the-doc arrangement.
+however it got there (naming the domain when the domain supplied it), while the domain PATCH
+returns a warning naming it at the moment somebody saves (`orphan_capabilities` on the
+`/api/domains` record). Neither refuses, because refusing would break the legitimate
+member-holds-the-doc arrangement.
 
 Enforcement reads **capabilities only** (`grants.py` builds the run policy from the
 routine's own mapping); a doc-without-capability misconfiguration therefore fails
@@ -383,14 +384,14 @@ it. See [reminders](reminders.md).
 Reading the 28 live routines, the five setup layers are almost never chosen independently:
 eight rules are held by two thirds of them, `memory` + `util-authoring` + `util-revision` by
 nearly all, and the differences fall into a handful of recognisable JOBS. A **template**
-(`<libraries_home>/templates/<slug>.md`) bundles that: the same keys a group's shared config
+(`<libraries_home>/templates/<slug>.md`) bundles that: the same keys a domain's shared config
 carries.
 
 **A template is a PRESELECTION, not a layer.** Adopting one COPIES its values into the routine's
 own `routine.yaml` — once, at creation or from the routine page's *Start from a template* action
 (`POST /api/routines/{slug}/adopt-template`) — and the link is then gone. Lists union, maps fill
-only what the routine left unset, the routine's own value always winning: the group merge's rules
-applied as a WRITE. `grants` is the one shared key adoption never copies; a grant is a settled
+only what the routine left unset, the routine's own value always winning: the domain merge's
+rules applied as a WRITE. `grants` is the one shared key adoption never copies; a grant is a settled
 decision a person made about one routine, and a template pre-answering one would be a template
 exposing a secret.
 
@@ -398,10 +399,10 @@ Layering was tried first (0.262.0) and reversed on the operator's order (2026-08
 badly for a reason worth keeping written down: a routine's own file recorded only its
 DIFFERENCES from its template, so opening `routine.yaml` told you almost nothing about what the
 routine could do; the routine page had to explain a second inheritance chain stacked on the
-group's; and `template_except:` existed purely to subtract from a layer nobody could see. The
+domain's; and `template_except:` existed purely to subtract from a layer nobody could see. The
 cost of copying is the leverage — editing a template no longer reaches its adopters — which is
-the correct trade for a *starting point*. A live shared config is what a GROUP is, and that
-layer stays.
+the correct trade for a *starting point*. A live shared config is what a DOMAIN is — the only
+live layer there is.
 
 Consequently nothing resolves a template at config load, `RoutineConfig` has no field naming
 one, and adopting twice is harmless: the write is a union that never overwrites, so a second
@@ -434,18 +435,28 @@ is worse than a slightly-narrow one you widen on the page. The fitted template's
 written into the new `routine.yaml` in FULL, so the file says what the routine is from its first
 line.
 
-### A group can hold the shared half (D82)
+### A domain holds the shared half (D82)
 
-Routines that belong to a **group** inherit its `config:` block — permissions, capabilities,
-rules, machines, connections, secret grants, models, budgets and fs roots set once for all its
-members (`groups.CONFIG_KEYS`). The group is a **default, not an override**: list keys union
-with the member's own, mapping keys merge per key with the member's value winning, and a key
-the group does not set is left entirely to each member.
+A routine that names a **domain** (`domain:` in its own routine.yaml) inherits that domain's
+`config:` block — permissions, capabilities, rules, machines, connections, secret grants,
+models, budgets and fs roots set once for all its members (`domains.CONFIG_KEYS`). The domain is
+a **default, not an override**: list keys union with the member's own, mapping keys merge per
+key with the member's value winning, and a key the domain does not set is left entirely to each
+member.
 
-Nothing is copied into routine.yaml — the merge happens at load — so removing a routine from
-the group returns it to exactly what its own file says. The routine page marks each inherited
-value with the group it came from; edit the shared half in the group's editor on the Routines
-page, and a routine's own file to override it there.
+A routine has **at most one** domain, so there is exactly zero or one shared layer — which is
+what makes the merge answerable at all. Two layers would have to be merged with each other,
+which has no answerable rule: combining whatever a membership list turns up under "first
+record's value wins the whole key" while unioning within one makes what a routine inherits
+depend on the order rows sit in a JSON file. With one layer there is no order to depend on
+(docs/lanes-domains.md).
+
+Nothing is copied into routine.yaml — the merge happens at load — so clearing `domain:` returns
+the routine to exactly what its own file says. The routine page marks each inherited value with
+the domain it came from; edit the shared half once on the domain, then a routine's own file
+wherever it must override. Joining or leaving is an ordinary routine config save, user-only like
+every other key in that file: no run may write it, so membership lives in exactly one place and
+cannot disagree with itself.
 
 ### Names gate one util; TAGS gate a class
 

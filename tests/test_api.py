@@ -61,7 +61,7 @@ def test_routine_token_tier_reads_but_never_mutates_config(tmp_path, make_routin
             ("PATCH", "/api/routines/apir", {"description": "x"}),       # routine config
             ("PUT", "/api/routines/apir/permissions", {"active": []}),   # permission layers
             ("POST", "/api/routines/apir/triggers", {"type": "report"}),  # trigger config
-            ("POST", "/api/groups", {"name": "G"}),                      # groups store
+            ("POST", "/api/lanes", {"name": "G"}),                       # lane store
             ("POST", "/api/questions/q-x/answer", {"text": "hi"}),       # decisions/grants
             ("PUT", "/api/settings/secrets", {"key": "K_X", "value": "v"}),  # settings
         ]
@@ -948,7 +948,7 @@ def test_access_request_decisions_apply_at_click_time(client):
 
 def test_patch_models_forbid_unknown_keys(client):
     """A misspelled body key silently dropped reads as "saved" to a direct API caller —
-    RoutinePatch/ConversationPatch/GroupPatch forbid extras, so it is a 422 naming the
+    RoutinePatch/ConversationPatch/LanePatch forbid extras, so it is a 422 naming the
     stray; a valid patch still applies and reports its fields in `updated`."""
     c, _ = client
     r = c.patch("/api/routines/apir", json={"descriptoin": "typo"})
@@ -958,18 +958,53 @@ def test_patch_models_forbid_unknown_keys(client):
     assert r.status_code == 200 and r.json()["updated"] == ["description"]
 
 
-def test_routine_detail_reports_group_managed_state(client):
-    """D71: a member of a SCHEDULED group carries group_managed (id+name) so the routine
-    page renders the locked Schedule dropdown; an unscheduled group sets nothing."""
-    from rsched import groups as groups_mod
+def test_routine_detail_reports_lane_managed_state(client):
+    """D71: a member of a SCHEDULED lane carries the `lane_managed` field (id+name) so the
+    routine page renders the locked "lane managed" Schedule dropdown; an unscheduled lane
+    sets nothing, because it changes nothing about when its members fire."""
+    from rsched import lanes
     c, tmp = client
     home = tmp / "routines"
-    assert c.get("/api/routines/apir").json()["group_managed"] is None
-    grp = groups_mod.create(home, name="Morning", members=[{"slug": "apir"}])
-    assert c.get("/api/routines/apir").json()["group_managed"] is None    # no cron: no lock
-    groups_mod.update(home, grp["id"], cron="0 7 * * *", tz="UTC")
-    gm = c.get("/api/routines/apir").json()["group_managed"]
-    assert gm == {"id": grp["id"], "name": "Morning"}
+    assert c.get("/api/routines/apir").json()["lane_managed"] is None
+    lane = lanes.create(home, name="Morning", members=[{"slug": "apir"}])
+    assert c.get("/api/routines/apir").json()["lane_managed"] is None    # no cron: no lock
+    lanes.update(home, lane["id"], cron="0 7 * * *", tz="UTC")
+    managed = c.get("/api/routines/apir").json()["lane_managed"]
+    assert managed == {"id": lane["id"], "name": "Morning"}
+
+
+def test_domain_joins_and_leaves_through_the_ordinary_config_patch(client):
+    """The routine page's Domain picker saves through the SAME PATCH as every other setting,
+    because membership lives in the routine's own routine.yaml — that is what makes "at most
+    one domain" a fact of the file; `GET /api/domains` reads its members back from there
+    (docs/lanes-domains.md). `""` leaves by REMOVING the key, so "in no domain" keeps its one
+    spelling. An id no domain has is a 400: saving it would leave the routine inheriting
+    nothing while reading everywhere as being in a domain.
+
+    This is also the field-behind-a-classification guard from the endpoint's side.
+    `tests/test_configflow.py` checks only that every PATCH field declares a half, so a half
+    declared for a field the model never grew is invisible there — and `domain` was exactly
+    that: classified NEXT_RUN, forbidden by `extra="forbid"`, 422 on every save.
+    """
+    from rsched import domains
+    c, tmp = client
+    home = tmp / "routines"
+    dom = domains.create(home, name="FAU", config={"permissions": ["memory"]})
+    assert c.get("/api/routines/apir").json()["domain"] == ""
+
+    r = c.patch("/api/routines/apir", json={"domain": dom["id"]})
+    assert r.status_code == 200 and r.json()["updated"] == ["domain"]
+    assert c.get("/api/routines/apir").json()["domain"] == dom["id"]
+    assert domains.members(home, dom["id"]) == ["apir"]
+
+    bad = c.patch("/api/routines/apir", json={"domain": "dom-nosuch"})
+    assert bad.status_code == 400 and "dom-nosuch" in str(bad.json()["detail"])
+    assert c.get("/api/routines/apir").json()["domain"] == dom["id"]   # nothing was saved
+
+    assert c.patch("/api/routines/apir", json={"domain": ""}).status_code == 200
+    raw = yaml.safe_load((home / "apir" / "routine.yaml").read_text(encoding="utf-8"))
+    assert "domain" not in raw
+    assert domains.members(home, dom["id"]) == []
 
 
 def test_allow_once_gates_on_once_grantable_classes_at_the_endpoint(client):

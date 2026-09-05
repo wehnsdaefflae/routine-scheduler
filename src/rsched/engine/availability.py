@@ -46,7 +46,7 @@ def request_denial(loop, action: dict) -> list[str]:
     for raw in request_ids(action):
         parsed = entities.parse_entity(raw)
         if parsed is None:
-            # A real action kind that is simply not gateable (create_routine, manage_group,
+            # A real action kind that is simply not gateable (create_routine, manage_lane,
             # finish, ...) would otherwise get the generic "not a grant-entity id" copy —
             # which lists "action" as a valid class and so reads as self-contradictory
             # (routine-improver:20260814-015412 retried against it). Name the actual rule.
