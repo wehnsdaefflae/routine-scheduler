@@ -17,6 +17,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.292.0] — 2026-09-05
+
+### The LLM activity dock had no stylesheet, and the class of loss is now closed
+
+- **The dock is styled again.** `#llm-tasks` and every `.lt-*` rule went out with the 0.277.0
+  palette migration and were never replaced, so for twenty releases `components/taskmanager.js`
+  rendered a bare browser button in the document flow at the foot of every page — confirmed at
+  390px and at 1400px. Restored on the watchfloor palette rather than pasted back: the deleted
+  rules were written against `--text`/`--faint`/`--amber`/`--live`/`--line`/`--surface`, tokens
+  that no longer exist, and a blanket rename would have collapsed distinctions the old palette
+  made and lost the ones the new one makes.
+- **A running LLM call is the machine working, so the dock is SIGNAL.** The old palette dressed
+  the pill, the panel heading and a running process in one amber accent that also carried
+  warnings; here the pill goes signal only while something is in flight, the running state mark
+  takes the daemon lamp's halo instead of a glow, and terminal states leave the two-urgency
+  palette for the plain `ok`/`err` pair a `.chip` uses. Nothing in the dock is ever summons — it
+  reports on work, it never asks for a person. Type follows the same rule: mono throughout
+  (every word in it was emitted by a counter) except the panel's heading, which is the console
+  speaking and takes the display face. The dead `.lt-pill.on` rule was not ported; the component
+  has only ever set `active`.
+- **The dock now clears the phone's bottom bar.** Its pre-rail corner (`bottom: 12px`) belonged
+  to a console whose navigation was a top strip. Below 860px it lifts to the bar's own height
+  plus the padding that grows with the safe-area inset, landing on the same line `.workspace`'s
+  62px reserve gives the content.
+- **The class is closed, not just this instance.** `.side-toc` was lost the same way in the same
+  migration and found three releases later; the dock took twenty. Both are mounted outside
+  `#view` so they survive navigation, and neither sets a `position` of its own — which is why
+  deleting their stylesheet block throws nothing and shows up only in a screenshot.
+  `tests/ui/test_global_chrome.py` pins the pair to `position: fixed`, asserts the dock wears the
+  design system rather than UA button defaults, and holds it off the bottom nav at 390px. The two
+  blocks now sit together under one `base.css` section header that says what they are, and
+  CLAUDE.md carries the rule for the next component mounted out there.
+
+
 ## [0.291.0] — 2026-09-05
 
 ### What a restart writes: the seed no longer un-deletes, the templates converge, a damaged library is refused

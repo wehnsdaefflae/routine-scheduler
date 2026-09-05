@@ -1,6 +1,10 @@
 // The LLM task manager overlay: a global, always-accessible, hideable dock mirroring what LLM
-// work is in flight across the whole backend. It owns its own fixed slot (#llm-tasks, a sibling
-// of #view) so it survives view navigation, and drives itself off the bus like notify.js —
+// work is in flight across the whole backend. It mounts into #llm-tasks, a sibling of the
+// workspace rather than a child of #view, so it survives view navigation — but that slot is
+// positioned by base.css alone (the "global chrome" block at the foot of the file). Nothing
+// here sets `position`, so a stylesheet that loses that block leaves this component building
+// and updating correctly at the foot of the document, which is how it spent 0.277.0-0.291.0.
+// It drives itself off the bus like notify.js —
 // window "rsched-bus" for live llm_task / llm_process events + a periodic GET /api/llm-tasks
 // reconcile (the bus drops events for a slow subscriber). Nothing here initiates LLM work; it
 // is a pure mirror of the backend TaskCenter (the single source of truth).

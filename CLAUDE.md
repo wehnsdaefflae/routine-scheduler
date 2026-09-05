@@ -269,6 +269,14 @@ by a test, by the engine, or by a past incident.
   `supported: false` all accept) so it cannot strand a finished job, and AT MOST ONE challenge
   per condition per run so a stubborn model and a stubborn judge cannot livelock the run into a
   dead budget. A re-asserted verdict STANDS and the disagreement is recorded (`disputed`).
+- **Global chrome is positioned by `base.css` ALONE, and losing that fails silently.** The
+  components mounted outside `#view` so they survive navigation — the side table-of-contents
+  (`components/toc.js`) and the LLM activity dock (`components/taskmanager.js`) — set no
+  `position` of their own. Delete their stylesheet block and nothing throws: the component still
+  builds, still fetches, still updates, and lands in the document flow at the foot of every page.
+  The 0.277.0 palette migration deleted both; the TOC was caught three releases later, the dock
+  twenty, each time by an operator reading a screenshot. `tests/ui/test_global_chrome.py` pins the
+  pair to `position: fixed` — put any new out-of-view chrome in that list the same day.
 - **A run never writes its own config.** `routine.yaml` is never writable by any run — the
   block is by FILENAME anywhere a run can write, external repos included.
 - **The engine subprocess INHERITS NOTHING — the spawn names its config and its homes.**

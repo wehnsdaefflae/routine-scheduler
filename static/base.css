@@ -713,15 +713,22 @@ label.field > span, .field > .lbl {
   .filterbar select, .filterbar input[type="search"] { flex: 1 1 140px; }
 }
 
-/* Side table-of-contents (components/toc.js): "On this page" for the long configuration pages —
-   Settings and a routine's detail view. It parks in the RIGHT margin on viewports wide enough to
-   have one, by the same arithmetic as the run/conversation rails: the navigation rail takes
-   --rail-w off the left, the reading column takes --shell-max, and what is left over is split
-   between the two margins. Below that there is no margin to park in and the page is read
-   top-to-bottom, which is why it hides rather than reflowing into the column it indexes.
+/* ── global chrome: mounted outside #view, positioned by this file alone ────────────────── */
+/* Two components live outside the routed view so they survive navigation — the side
+   table-of-contents and the LLM activity dock. Their markup (index.html) and their mounts
+   (app.js) carry no positioning of their own, so a `position: fixed` block deleted from HERE
+   does not fail loudly: the component still builds, still fetches, still updates, and simply
+   lands in the document flow at the foot of every page. The 0.277.0 palette migration deleted
+   both — the TOC restored in 0.280.0, the dock in 0.292.0 after twenty releases as an unstyled
+   browser button under the last card. `tests/ui/test_global_chrome.py` now pins the pair to
+   `position: fixed` so a third loss is a red test rather than a screenshot. */
 
-   This block was lost in the 0.277.0 palette migration — the markup and the mount in app.js
-   survived, so the page kept building a nav nothing could see. */
+/* "On this page" for the long configuration pages — Settings and a routine's detail view. It
+   parks in the RIGHT margin on viewports wide enough to have one, by the same arithmetic as the
+   run/conversation rails: the navigation rail takes --rail-w off the left, the reading column
+   takes --shell-max, and what is left over is split between the two margins. Below that there is
+   no margin to park in and the page is read top-to-bottom, which is why it hides rather than
+   reflowing into the column it indexes. */
 .side-toc { display: none; }
 @media (min-width: 1900px) {
   .side-toc {
@@ -742,4 +749,113 @@ label.field > span, .field > .lbl {
   .side-toc .toc-link:hover { color: var(--ink); background: var(--plate-2); }
   /* the section you are IN — signal, because it tracks you as you scroll */
   .side-toc .toc-link.on { color: var(--signal); border-left-color: var(--signal); }
+}
+
+/* The LLM activity dock (components/taskmanager.js): a hideable mirror of what LLM work is in
+   flight across the whole backend, collapsed to a pill and expanded to a panel.
+
+   COLOUR. A running LLM call is the machine working, so everything live in here is SIGNAL —
+   the pill when the count is non-zero, the running state mark, the label of an open process.
+   Nothing in the dock is ever SUMMONS: it reports on work, it never asks for a person, and a
+   dock that shouted the same colour as an open decision would cost that colour its meaning.
+   Terminal states leave the two-urgency palette for the plain outcome pair, ok and err, the
+   same vocabulary a .chip uses. (Ported from the retired palette, where the pill, the panel
+   heading and a running process all wore the single amber accent that also carried warnings.)
+
+   TYPE. Mono throughout: every word the dock renders — a purpose, an endpoint, a model, a
+   token count, a n/m tally — was emitted by a counter. The one exception is the panel's own
+   heading, which is the console speaking and takes the display face.
+
+   LAYER. Above the rail (30) and its drag handle (31), below the toast (100) and the token
+   gate (200): the dock mirrors work, so it must never cover a message or a prompt. */
+#llm-tasks {
+  position: fixed; right: var(--s4); bottom: var(--s4); z-index: 60;
+  display: flex; flex-direction: column; align-items: flex-end; gap: var(--s2);
+  font-family: var(--f-mono); pointer-events: none;
+}
+#llm-tasks > * { pointer-events: auto; }
+
+.lt-pill {
+  display: inline-flex; align-items: center; gap: 7px; cursor: pointer;
+  background: var(--plate-2); color: var(--ink-2); border: 1px solid var(--rule-2);
+  border-radius: 20px; padding: 6px var(--s3); font: inherit; font-size: var(--t-s);
+  box-shadow: var(--lift-2); transition: color 0.12s, border-color 0.12s, background 0.12s;
+}
+.lt-pill:hover { color: var(--ink); border-color: var(--ink-3); }
+/* something is in flight: the machine is working, and the bolt is the part that moves */
+.lt-pill.active {
+  color: var(--signal); background: var(--signal-dim);
+  border-color: color-mix(in srgb, var(--signal) 40%, transparent);
+}
+.lt-pill.active .lt-bolt { animation: pulse 1.4s infinite; }
+.lt-pill-n { font-variant-numeric: tabular-nums; letter-spacing: 0.04em; }
+
+/* the expanded panel is the same kind of object as the search popover, and takes its plate */
+.lt-panel {
+  width: min(360px, calc(100vw - 2 * var(--s3))); max-height: min(60vh, 520px); overflow-y: auto;
+  background: var(--plate); border: 1px solid var(--rule-2); border-radius: var(--r3);
+  box-shadow: var(--lift-2); font-size: var(--t-s);
+}
+.lt-head {
+  display: flex; align-items: center; gap: var(--s2); padding: var(--s2) var(--s3);
+  position: sticky; top: 0; background: var(--plate); border-bottom: 1px solid var(--rule);
+}
+.lt-title {
+  font-family: var(--f-display); font-weight: 600; letter-spacing: 0.02em; color: var(--ink);
+}
+.lt-head-n { color: var(--ink-3); font-size: var(--t-xs); margin-left: auto; }
+.lt-close {
+  background: none; border: none; color: var(--ink-3); cursor: pointer; font: inherit;
+  font-size: var(--t-l); line-height: 1; padding: 0 var(--s1);
+}
+.lt-close:hover { color: var(--ink); }
+
+.lt-list { padding: var(--s1); display: flex; flex-direction: column; gap: 2px; }
+.lt-empty { padding: var(--s4) var(--s3); color: var(--ink-3); text-align: center; }
+
+/* the state mark, on the .chip vocabulary: running is signal and pulses because it is changing
+   while you look at it; the halo is the daemon lamp's, not the old glow */
+.lt-dot {
+  width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; margin-top: 3px;
+  background: var(--ink-3);
+}
+.lt-dot.running {
+  background: var(--signal); box-shadow: 0 0 0 3px var(--signal-dim);
+  animation: pulse 1.4s infinite;
+}
+.lt-dot.done { background: var(--ok); }
+.lt-dot.error { background: var(--err); }
+
+.lt-task {
+  display: flex; align-items: flex-start; gap: var(--s2); padding: 6px var(--s2);
+  border-radius: var(--r1);
+}
+.lt-task:hover { background: var(--hover); }
+.lt-task-body { min-width: 0; flex: 1; }
+.lt-purpose { color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lt-meta {
+  display: flex; flex-wrap: wrap; gap: 2px var(--s3); margin-top: 1px;
+  font-size: var(--t-xs); color: var(--ink-2);
+}
+.lt-model { color: var(--ink-3); }
+.lt-err { color: var(--err); }
+
+.lt-proc { border: 1px solid var(--rule); border-radius: var(--r2); margin: 2px 0; overflow: hidden; }
+.lt-proc-head {
+  display: flex; align-items: center; gap: 7px; padding: 7px var(--s2); cursor: pointer;
+  background: var(--plate-2);
+}
+.lt-proc-head:hover { background: var(--plate-3); }
+.lt-proc-head .lt-dot { margin-top: 0; }
+.lt-caret { color: var(--ink-3); width: 10px; flex: 0 0 auto; }
+.lt-proc-label { color: var(--ink); flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lt-proc-head.running .lt-proc-label { color: var(--signal); }
+.lt-proc-count { color: var(--ink-3); font-size: var(--t-xs); font-variant-numeric: tabular-nums; }
+.lt-proc-children { padding: 2px var(--s1) var(--s1) 14px; border-top: 1px solid var(--rule); }
+
+@media (max-width: 860px) {
+  /* the rail has become the bottom bar, so the corner the dock lives in is taken. It clears the
+     bar on the bar's own terms: 39px of fixed height plus the padding that grows with the
+     safe-area inset on a notched phone, plus the 19px of air .workspace's 62px reserve leaves. */
+  #llm-tasks { right: var(--s3); bottom: calc(58px + max(4px, env(safe-area-inset-bottom))); }
 }

@@ -3,7 +3,11 @@ and jumps to them; on a narrow viewport it's hidden (no margin to park in).
 
 "Wide" is 1900px, not the 1560px of the horizontal-tab era: the navigation rail takes 212px off
 the left, so the margin the TOC parks in only opens up that much later. A test asserting it at
-1600 was asserting something the layout cannot deliver — the margin there is 74px."""
+1600 was asserting something the layout cannot deliver — the margin there is 74px.
+
+This file owns what the TOC DOES. That it is `position: fixed` at all — the property base.css is
+the only source of, and whose loss in 0.277.0 made this rail invisible for three releases — is
+pinned in test_global_chrome.py, beside the LLM dock that took the same loss."""
 
 from playwright.sync_api import expect
 
