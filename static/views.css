@@ -138,22 +138,34 @@ table.list tr.disabled-row td { opacity: 0.55; }
 .logbody { padding: 12px 14px 16px; border-top: 1px solid var(--rule); background: var(--deck-2); }
 
 /* ---------- transcript / conversation ---------- */
+/* Every text surface below carries `overflow-wrap: anywhere`, and it is load-bearing rather than
+   cosmetic. A transcript is full of tokens with no break opportunity — a commit sha, a run id, a
+   base64 blob (a PATH is fine: Chrome breaks after `/`). Without it the token overflows its block
+   and widens the DOCUMENT; on a phone the layout viewport grows to match, and `.topbar` — which is
+   `position: fixed; inset: auto 0 0 0`, i.e. sized against that viewport — is laid out across the
+   wider box, pushing the tail of its nine icons off the physical screen. That is the whole of F439:
+   the bottom bar looked like it was dropping destinations, and was in fact being stretched.
+   tests/ui/test_mobile_nav.py holds the invariant (the document must never scroll sideways). */
 .transcript { display: flex; flex-direction: column; gap: 11px; }
 .turn { border: 1px solid var(--rule); border-radius: 8px; overflow: hidden; background: var(--plate); }
 .turn .say { padding: 11px 14px; display: flex; gap: 9px; align-items: flex-start; flex-wrap: wrap; }
 .turn .say .turnmeta { display: flex; flex-direction: column; gap: 1px; flex: none; }
 .turn .say .n { color: var(--signal); font-size: 10.5px; font-weight: 600; letter-spacing: 0.06em; white-space: nowrap; }
 .turn .say .ts { color: var(--ink-3); font-size: 10.5px; white-space: nowrap; }
-.turn .say .saytext { flex: 1; min-width: 200px; font-family: var(--f-prose); font-size: 14.5px; line-height: 1.6; }
+.turn .say .saytext { flex: 1; min-width: 200px; font-family: var(--f-prose); font-size: 14.5px; line-height: 1.6; overflow-wrap: anywhere; }
 /* a captured note (the turn-free `note` field, engine-filed to state/notes.md) */
 .turn .note {
   padding: 5px 14px 7px; font-size: 12px; color: var(--warn);
-  border-top: 1px dashed var(--rule);
+  border-top: 1px dashed var(--rule); overflow-wrap: anywhere;
 }
 .turn .act {
   padding: 7px 14px; background: var(--deck-2); font-size: 11.5px; color: var(--signal);
   display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; border-top: 1px solid var(--rule);
 }
+/* the action brief is a 200-char slice of model-chosen text — a path, an id, a hash. `min-width: 0`
+   goes with `anywhere` here because this is a flex row: without it the item cannot shrink at all,
+   with it alone the text still can't break. See the .goal-meta note below for the other failure. */
+.turn .act .muted { min-width: 0; overflow-wrap: anywhere; }
 .turn .obs {
   padding: 10px 14px; color: var(--ink-2); font-size: 11.5px; white-space: pre-wrap;
   max-height: 300px; overflow: auto; background: var(--deck); border-top: 1px solid var(--rule);
@@ -165,7 +177,7 @@ table.list tr.disabled-row td { opacity: 0.55; }
 .obs-collapse > summary::before { content: "▸ "; color: var(--signal); }
 .obs-collapse[open] > summary::before { content: "▾ "; }
 .obs-collapse > summary:hover { color: var(--ink); }
-.ev { padding: 9px 13px; border-radius: 7px; font-size: 12px; }
+.ev { padding: 9px 13px; border-radius: 7px; font-size: 12px; overflow-wrap: anywhere; }
 .ev.injection { background: var(--signal-dim); color: var(--signal); border: 1px solid color-mix(in srgb, var(--signal) 38%, transparent); }
 .ev.question { background: var(--summons-dim); color: var(--summons); border: 1px solid color-mix(in srgb, var(--summons) 38%, transparent); }
 .ev.answer { background: var(--ok-dim); color: var(--ok); border: 1px solid color-mix(in srgb, var(--ok) 38%, transparent); }
@@ -180,7 +192,7 @@ table.list tr.disabled-row td { opacity: 0.55; }
 /* a subrun's conversation, unfolded in place inside its parent's transcript */
 .subtranscript { margin: 10px 0 4px 12px; padding-left: 12px; border-left: 2px solid var(--rule-2); }
 .subtranscript .transcript { gap: 8px; }
-.finish-banner { padding: 14px 16px; border-radius: var(--r2); white-space: pre-wrap; font-size: 14.5px; line-height: 1.6; font-family: var(--f-prose); }
+.finish-banner { padding: 14px 16px; border-radius: var(--r2); white-space: pre-wrap; font-size: 14.5px; line-height: 1.6; font-family: var(--f-prose); overflow-wrap: anywhere; }
 .finish-banner strong { font-family: var(--f-mono); letter-spacing: 0.06em; text-transform: uppercase; font-size: 12px; }
 .finish-banner.ok { background: var(--ok-dim); border: 1px solid color-mix(in srgb, var(--ok) 38%, transparent); }
 .finish-banner.partial, .finish-banner.aborted { background: var(--warn-dim); border: 1px solid color-mix(in srgb, var(--warn) 38%, transparent); }
@@ -217,7 +229,7 @@ table.list tr.disabled-row td { opacity: 0.55; }
 .md, .turn .obs.md { white-space: normal; }
 /* Markdown is what the agent WROTE, so it reads in the prose voice; its code spans,
    fences and tables stay machine. */
-.md { font-family: var(--f-prose); font-size: 14.5px; line-height: 1.62; }
+.md { font-family: var(--f-prose); font-size: 14.5px; line-height: 1.62; overflow-wrap: anywhere; }
 .md pre, .md code, .md .mdi code, .md table.list { font-family: var(--f-mono); }
 .md p { margin: 0 0 7px; }
 .md > :last-child { margin-bottom: 0; }
@@ -258,7 +270,7 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
 .question-item { margin-top: 12px; }
 .question-item:focus-within { border-color: color-mix(in srgb, var(--summons) 45%, transparent); }
 .question-item.answered { opacity: 0.68; }
-.question-item .q-text { font-family: var(--f-prose); font-size: 15.5px; line-height: 1.55; margin: 10px 0 2px; }
+.question-item .q-text { font-family: var(--f-prose); font-size: 15.5px; line-height: 1.55; margin: 10px 0 2px; overflow-wrap: anywhere; }
 .question-item .q-meta { display: flex; gap: 8px 12px; align-items: center; flex-wrap: wrap; font-size: 11.5px; color: var(--ink-2); }
 .kbd-hint kbd {
   border: 1px solid var(--rule-2); border-bottom-width: 2px; border-radius: 4px;

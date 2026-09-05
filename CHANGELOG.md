@@ -17,6 +17,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.290.0] — 2026-09-05
+
+### The phone's bottom nav: the bar was never dropping icons, the document was scrolling sideways
+
+- **F439 reopened and actually fixed.** The bottom bar was reported as showing about five of its
+  nine destinations; 0.289.1 shipped a guard that said it carried all nine, and both were true —
+  of different pages. `.topbar` is `position: fixed; inset: auto 0 0 0`, so it is laid out against
+  the *layout* viewport, and mobile Chrome grows the layout viewport to the document's scroll width
+  whenever anything overflows horizontally. The bar then stretches across the wider box and its
+  nine equal children carry the tail off the physical screen. Visible icons are
+  `floor(9 × screen ÷ document)` — five on the operator's screenshot, nine thirty minutes earlier
+  on the same phone.
+- **The overflow source was the transcript's text surfaces.** `.md`, `.ev`, `.finish-banner`, the
+  `say` line, a captured `note`, the action brief and a decision's question text had no
+  `overflow-wrap`, unlike the chat surfaces (`.msg-body`) which were hardened long ago. One token
+  with no break opportunity — a commit sha, a run id, a base64 blob — widens the document. (A
+  *path* does not: Chrome takes a break after `/`, which is why this was never reproduced from a
+  filename.) All seven surfaces now carry `overflow-wrap: anywhere`; the action brief also takes
+  `min-width: 0`, since it sits in a flex row where the two are needed together.
+- **The guard that let it ship is gone.** `tests/ui/test_reported_ui.py` counted nav items against
+  `window.innerWidth` — on a phone that IS the expanded layout viewport, so it agreed with the bug
+  by construction and reported 9/9 in every broken state. Replaced by `tests/ui/test_mobile_nav.py`,
+  which clips against the width the test itself emulated and holds the invariant that actually
+  keeps the bar intact: **no route may make the document scroll sideways.** Asserted per route at
+  390px over a seeded transcript, so the next overflowing widget is named by the test rather than by
+  the operator. Before the fix it caught two routes — the run view and, separately, `#/summary`.
+
 ## [0.289.1] — 2026-09-05
 
 ### Copy buttons on touch, a clearer script-install-timeout error, and UI regression guards
@@ -31,10 +58,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   300 seconds`; it now says the cap is separate from the action's `timeout_s` (which bounds the
   script's runtime, not the build) and cannot be raised from a recipe, and points at the fix
   (a lighter dependency, or offloading heavy compute to a util or a remote machine).
-- **Regression guards for three operator-reported UI issues**, all confirmed already resolved at
-  HEAD (`tests/ui/test_reported_ui.py`): the mobile bottom nav carries all nine destinations
-  (F439), the watch ribbon paints a bar for a recent run (F432), and the routines view re-fetches
-  its cards on nav-back (F434).
+- **Regression guards for three operator-reported UI issues** (`tests/ui/test_reported_ui.py`):
+  the mobile bottom nav carries all nine destinations (F439), the watch ribbon paints a bar for a
+  recent run (F432), and the routines view re-fetches its cards on nav-back (F434). *Corrected in
+  0.290.0: F439 was NOT resolved. Its guard measured nav items against `window.innerWidth`, which
+  on a phone is the very layout viewport the bug expands, so it could only ever agree with the
+  bug. The other two guards stand.*
 
 ## [0.289.0] — 2026-09-04
 
