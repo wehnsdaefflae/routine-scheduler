@@ -17,7 +17,7 @@ from ..config import (
     ModelRef,
     ServerConfig,
 )
-from . import failover
+from . import failover, limits
 from .anthropic_api import AnthropicEndpoint
 from .base import ChatEndpoint, Completion, EndpointError
 from .claude_cli import ClaudeCliEndpoint
@@ -79,12 +79,30 @@ class EndpointRegistry:
         multimodal = (mc.multimodal if mc.multimodal is not None
                       else ep_cfg.kind in NATIVE_MM_KINDS)
         temperature = mc.temperature if mc.temperature is not None else ep_cfg.temperature
+        # ONE precedence chain, and the ORDER is the whole design (endpoints/limits.py):
+        #
+        #   per-MODEL config  →  what the PROVIDER reports  →  the endpoint default  →  the floor
+        #
+        # A per-model value is the operator speaking about THIS model — sizing down on purpose for
+        # a cost budget or a slow provider — and `engine/window.py` already promises to honour it,
+        # so discovery must not overrule it. An ENDPOINT value sits BELOW discovery because that
+        # is what it has always been documented as: "DEFAULTS a catalog model inherits when it
+        # leaves the field unset" (config/modelconf.py). One guess made once for a whole endpoint
+        # is exactly the thing the provider's own answer should replace — and keeping it as the
+        # fallback means nothing has to be deleted from a config.yaml that is not versioned.
+        # Read-only from the cache: `resolve` is on the per-turn path and never makes a network
+        # call, so a miss is simply the next tier down.
+        found = limits.lookup(self.server.routines_home, mc.endpoint, mc.model) or {}
         ref = ModelRef(endpoint=mc.endpoint, model=mc.model, effort=mc.effort,
                        multimodal=multimodal,
-                       context_chars=mc.context_chars or ep_cfg.context_chars,
+                       context_chars=(mc.context_chars
+                                      or limits.window_chars(found)
+                                      or ep_cfg.context_chars),
                        temperature=temperature,
-                       max_tokens=mc.max_tokens or ep_cfg.max_tokens
-                       or DEFAULT_MODEL_MAX_TOKENS,
+                       max_tokens=(mc.max_tokens
+                                   or found.get("max_output_tokens")
+                                   or ep_cfg.max_tokens
+                                   or DEFAULT_MODEL_MAX_TOKENS),
                        name=name)
         return self.get(mc.endpoint), ref
 

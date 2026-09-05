@@ -17,6 +17,7 @@ while an endpoint is unreachable or half-configured.
 from __future__ import annotations
 
 from ..config.base import DEFAULT_MODEL_MAX_TOKENS
+from ..endpoints import limits
 from ..engine.compaction import CHARS_PER_TOKEN, window_ceiling_chars
 
 # Below this input ceiling (chars) a model runs but compacts from the first replies: a
@@ -25,33 +26,59 @@ from ..engine.compaction import CHARS_PER_TOKEN, window_ceiling_chars
 TIGHT_INPUT_CHARS = 60_000
 
 
-def effective_window_pair(mc, ep) -> tuple[int, int]:
+def effective_window_pair(mc, ep, found: dict | None = None) -> tuple[int, int]:
     """(context_chars, max_output_tokens) for one catalog model + its serving endpoint
     config (ep may be None) — the same resolution EndpointRegistry.resolve performs,
     minus the transport.
+
+    `found` is that model's DISCOVERED limits row (endpoints/limits.py), which is why this
+    helper exists at all: the engine's chain has three tiers now — explicit config, then the
+    provider's own figure, then the kind floor — and a picker that walked a different one would
+    show the operator a window the engine does not use.
     """
-    context = mc.context_chars or (ep.context_chars if ep else 0) or 100_000
-    max_out = mc.max_tokens or (ep.max_tokens if ep else None) or DEFAULT_MODEL_MAX_TOKENS
+    found = found or {}
+    context = (mc.context_chars or limits.window_chars(found)
+               or (ep.context_chars if ep else 0) or 100_000)
+    max_out = (mc.max_tokens or found.get("max_output_tokens")
+               or (ep.max_tokens if ep else None) or DEFAULT_MODEL_MAX_TOKENS)
     return context, max_out
+
+
+def discovered(server, mc) -> dict:
+    """One model's discovered row, or {} — the lookup every helper here needs.
+
+    Tolerant of a server object without a routines_home (the picker fixtures build a minimal
+    stub): no home means no cache to read, which is simply "nothing discovered".
+    """
+    home = getattr(server, "routines_home", None)
+    return (limits.lookup(home, mc.endpoint, mc.model) or {}) if home else {}
 
 
 def effective_window(server, name: str) -> tuple[int, int]:
     """`effective_window_pair`, keyed by catalog model name."""
     mc = server.models[name]
-    return effective_window_pair(mc, server.endpoints.get(mc.endpoint))
+    return effective_window_pair(mc, server.endpoints.get(mc.endpoint), discovered(server, mc))
 
 
-def fit_fields(mc, ep) -> dict:
+def fit_fields(mc, ep, found: dict | None = None) -> dict:
     """The window-sizing fields every picker payload carries for one model — the ONE
     derivation behind /api/settings/models and the conversation detail's catalog_meta.
     """
-    context, max_out = effective_window_pair(mc, ep)
+    found = found or {}
+    context, max_out = effective_window_pair(mc, ep, found)
     ceiling = int(window_ceiling_chars(context, max_out))
     return {
         "context_chars": context,
         "context_tokens": int(context / CHARS_PER_TOKEN),
         "max_output_tokens": max_out,
         "input_ceiling_chars": ceiling,
+        # WHERE the window came from, so the Settings card can say "openrouter /models" rather
+        # than showing an empty box that reads as "unset, go and guess a number"
+        "window_source": ("config" if mc.context_chars
+                          else found.get("source") or ("endpoint" if ep and ep.context_chars
+                                                       else "floor")),
+        "provider_context_tokens": found.get("context_tokens"),
+        "provider_max_output_tokens": found.get("provider_max_output_tokens"),
         "fit": ("impossible" if ceiling <= 0
                 else "tight" if ceiling < TIGHT_INPUT_CHARS else "ok"),
     }
@@ -77,5 +104,5 @@ def window_meta(server) -> dict[str, dict]:
     """Per-model window metadata for the pickers: {name: fit_fields} with fit "ok" |
     "tight" | "impossible" (see `fit_fields`).
     """
-    return {name: fit_fields(mc, server.endpoints.get(mc.endpoint))
+    return {name: fit_fields(mc, server.endpoints.get(mc.endpoint), discovered(server, mc))
             for name, mc in server.models.items()}

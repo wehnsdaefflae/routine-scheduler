@@ -314,6 +314,17 @@ by a test, by the engine, or by a past incident.
   UNCONDITIONAL presumption: it fires on EVERY holder, and it has been wrong twice the same way
   (`git-checkpoint`, then `status-page`'s write root — false for all seven holders, because a page
   is published through an upload channel and a routine's own dir is always writable).
+- **A model's limits are DISCOVERED, not configured.** `endpoints/limits.py` asks each provider
+  what its models' real context window and output maximum are (OpenRouter/Nano-GPT/Ollama have
+  metadata APIs; `anthropic` and `claude-cli` have none and use a built-in table), caches it under
+  `<routines>/.control/model-limits.json` — derived state, never config — and refreshes on a 24h
+  TTL from the scheduler tick. ONE precedence chain: per-MODEL config → provider → endpoint
+  default → floor. The endpoint value sits BELOW the provider because it has always been
+  documented as a default a model inherits, and putting it there means nothing has to be deleted
+  from an unversioned config.yaml. `resolve()` is on the per-turn path and NEVER fetches — a miss
+  is the next tier down. The two knobs are OPPOSITE: the input window is adopted verbatim, the
+  output cap is `min(provider max, ENGINE_OUTPUT_CEILING)`, because providers validate
+  `input + requested_output <= window` and a 943k-token output limit would starve the prompt.
 - **A config field must declare whether it reaches a LIVE run.** `configflow.CLASSIFICATION`
   (F337) maps every `RoutinePatch`/`ConversationPatch` field to LIVE (adopted at a turn boundary
   — budgets, deliberation, grants) or NEXT_RUN, with the reason the operator is shown;

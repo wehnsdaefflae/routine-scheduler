@@ -170,6 +170,7 @@ class Scheduler:
         # crashed runs leave sshfs key dirs behind (clean exits remove their own)
         from ..machine_mounts import sweep_stale_mount_keys
         sweep_stale_mount_keys()
+        self._refresh_limits()
         if fixed:
             self.rescan()
         await self.boot_catchup()
@@ -233,6 +234,7 @@ class Scheduler:
                     else:
                         log.info("group fire armed group=%s members=%d", gid,
                                  len(rec.get("members") or []))
+                self._refresh_limits()
                 # detached background tasks: intake requests, deliver results, wake owners
                 await self.detached.tick(now)
                 if not is_paused:
@@ -256,6 +258,31 @@ class Scheduler:
                                      detail="scheduler tick raised; see daemon log")
                 except Exception:  # the guard itself must never take the loop down
                     pass
+
+    def _refresh_limits(self) -> None:
+        """Re-ask each provider what its models' real limits are, behind a 24h TTL
+        (endpoints/limits.py). Off the tick's critical path in a thread, and never fatal: this
+        is a convenience that replaces hand-entered guesses, so a provider being down means the
+        previous figures stand.
+
+        Reading provider METADATA is not an outbound message, so the 0.230.0 ban on
+        engine/daemon-implicit sends does not reach it — nothing is told anything, and the
+        result is derived state under `.control/`, never config.
+        """
+        from ..endpoints import limits
+
+        if not limits.stale(self.server):
+            return
+
+        async def go() -> None:
+            try:
+                out = await asyncio.to_thread(limits.refresh, self.server)
+                log.info("model limits refreshed: %d known, %d not listed by their provider",
+                         out["written"], len(out["misses"]))
+            except Exception as exc:
+                log.warning("model limits refresh failed: %s", exc)
+
+        asyncio.ensure_future(go())   # noqa: RUF006 — fire-and-forget by design
 
     def _tick_once(self, loop) -> None:
         """The tick preamble: restart state machine, then a due registry rescan. Raises

@@ -16,6 +16,7 @@ from ...config import (
     EndpointConfig,
     ModelConfig,
 )
+from ...endpoints import limits
 from ...endpoints.base import api_key_source
 from ...endpoints.claude_cli_wire import token_source
 from ..model_fit import fit_fields
@@ -54,14 +55,23 @@ def _endpoint_view(name: str, ep: EndpointConfig) -> dict:
             "has_inline_key": bool(ep.api_key), "key_source": _key_source(ep)}
 
 
-def _max_tokens_warning(mc: ModelConfig, ep: EndpointConfig | None) -> str | None:
-    """The audit flag behind "each model has its max_tokens set correctly": unset and
-    implausible values surface as a warning chip in the Settings models list.
+def _max_tokens_warning(mc: ModelConfig, ep: EndpointConfig | None,
+                        found: dict | None = None) -> str | None:
+    """The audit flag in the Settings models list.
+
+    Re-aimed once limits are discovered (endpoints/limits.py): UNSET is now the normal, correct
+    state — it means "use what the provider says" — so it no longer warns. What is worth flagging
+    is a model riding the FLOOR because no provider would answer for it, an implausible hand
+    value, and a hand value that contradicts the window.
     """
+    found = found or {}
     configured = mc.max_tokens or (ep.max_tokens if ep else None)
+    if not configured and not found.get("max_output_tokens"):
+        return (f"no provider limit found for this model id — the floor "
+                f"({DEFAULT_MODEL_MAX_TOKENS:,}) applies. Check the id is one this provider "
+                "actually serves, or set the real limit here")
     if not configured:
-        return (f"max_tokens unset — the engine default ({DEFAULT_MODEL_MAX_TOKENS:,}) "
-                "applies; set the model's real output limit")
+        return None                       # discovered: this is the state we WANT
     if configured < MIN_PLAUSIBLE_MAX_TOKENS:
         return (f"max_tokens {configured:,} is implausibly low "
                 f"(< {MIN_PLAUSIBLE_MAX_TOKENS:,}) — reasoning models need room to think "
@@ -73,7 +83,32 @@ def _max_tokens_warning(mc: ModelConfig, ep: EndpointConfig | None) -> str | Non
     return None
 
 
-def _model_view(mc: ModelConfig, endpoints: dict) -> dict:
+def _window_warning(mc: ModelConfig, found: dict | None) -> str | None:
+    """A hand-set context window that disagrees with the provider's own figure. Not an error —
+    sizing DOWN is a legitimate budget and the engine honours it — but a value set before
+    discovery existed is usually a stale guess, and this is the only place it would ever surface.
+    """
+    found = found or {}
+    provider = found.get("context_tokens")
+    if not mc.context_chars or not provider:
+        return None
+    from ...engine.compaction import CHARS_PER_TOKEN
+    mine = int(mc.context_chars / CHARS_PER_TOKEN)
+    if mine < provider * 0.9:
+        return (f"this model is capped at ~{mine:,} tokens by hand; its provider reports "
+                f"{provider:,}. Clear the field to use the full window.")
+    if mine > provider * 1.1:
+        return (f"this model claims ~{mine:,} tokens by hand; its provider reports only "
+                f"{provider:,}. Clear the field unless you know better than the provider.")
+    return None
+
+
+def _found(server, mc) -> dict:
+    """One model's PROVIDER-DISCOVERED limits row, or {} (endpoints/limits.py)."""
+    return limits.lookup(server.routines_home, mc.endpoint, mc.model) or {}
+
+
+def _model_view(mc: ModelConfig, endpoints: dict, found: dict | None = None) -> dict:
     """A catalog model's raw config PLUS the effective multimodal/context/max_tokens
     (endpoint-kind or endpoint default filled in) so the list can label it and the editor
     can show what's set, the max_tokens audit flag, and the window-fit sizing every model
@@ -81,24 +116,29 @@ def _model_view(mc: ModelConfig, endpoints: dict) -> dict:
     """
     ep = endpoints.get(mc.endpoint)
     kind = ep.kind if ep else ""
+    found = found or {}
     return {"name": mc.name, "endpoint": mc.endpoint, "model": mc.model,
             "multimodal": mc.multimodal, "effort": mc.effort, "temperature": mc.temperature,
             "context_chars": mc.context_chars,
             "max_tokens": mc.max_tokens, "fallbacks": list(mc.fallbacks),
             "multimodal_effective": mc.multimodal if mc.multimodal is not None
             else (kind in NATIVE_MM_KINDS),
-            "context_effective": mc.context_chars or (ep.context_chars if ep else 0),
-            "max_tokens_effective": mc.max_tokens or (ep.max_tokens if ep else None)
-            or DEFAULT_MODEL_MAX_TOKENS,
-            "max_tokens_warning": _max_tokens_warning(mc, ep),
-            "window": fit_fields(mc, ep)}
+            "context_effective": (mc.context_chars or limits.window_chars(found)
+                                  or (ep.context_chars if ep else 0)),
+            "max_tokens_effective": (mc.max_tokens or found.get("max_output_tokens")
+                                     or (ep.max_tokens if ep else None)
+                                     or DEFAULT_MODEL_MAX_TOKENS),
+            "max_tokens_warning": _max_tokens_warning(mc, ep, found),
+            "window_warning": _window_warning(mc, found),
+            "window": fit_fields(mc, ep, found)}
 
 
 @router.get("/settings/endpoints")
 def list_endpoints(request: Request) -> dict:
     server = server_of(request)
     return {"endpoints": [_endpoint_view(n, e) for n, e in server.endpoints.items()],
-            "models": [_model_view(m, server.endpoints) for m in server.models.values()],
+            "models": [_model_view(m, server.endpoints, _found(server, m))
+                       for m in server.models.values()],
             "system_model": server.system_model or None}
 
 
@@ -106,7 +146,8 @@ def list_endpoints(request: Request) -> dict:
 def list_models(request: Request) -> dict:
     """The model catalog alone — for the routine/conversation model pickers (name → attrs)."""
     server = server_of(request)
-    return {"models": [_model_view(m, server.endpoints) for m in server.models.values()],
+    return {"models": [_model_view(m, server.endpoints, _found(server, m))
+                       for m in server.models.values()],
             "system_model": server.system_model or None}
 
 

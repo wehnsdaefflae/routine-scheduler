@@ -101,13 +101,34 @@ export async function renderEndpoints(view) {
     };
   }
 
+  //: Where a model's effective window came from, in one word for the placeholder.
+  const SOURCE_HINT = {
+    openrouter: "read from OpenRouter's own /models listing — leave blank to track it",
+    nanogpt: "read from Nano-GPT's own model listing — leave blank to track it",
+    ollama: "read from this Ollama server's /api/show — leave blank to track it",
+    openai: "read from the provider's /models listing — leave blank to track it",
+    table: "no metadata API for this kind; a built-in table supplies the window",
+    endpoint: "no provider figure for this model id — the endpoint's own default applies",
+    floor: "no provider figure for this model id — the engine floor applies",
+    config: "set by hand here, which overrides what the provider reports",
+  };
+  const sourceWord = (m) => ({ openrouter: "from openrouter", nanogpt: "from nano-gpt",
+    ollama: "from ollama", openai: "from the provider", table: "from the built-in table",
+    endpoint: "endpoint default", floor: "engine floor",
+  })[m.window?.window_source] || "inherit";
+
   function modelFields(m, endpoints) {
     const epSel = el("select", {}, endpoints.map((e) => el("option", {}, e.name)));
     if (m.endpoint) epSel.value = m.endpoint;
     const modelIn = el("input", { type: "text", value: m.model || "", placeholder: "model id (e.g. openai/gpt-4o)", style: "width:220px" });
     const mmSel = mmSelect(m.multimodal);
+    // The placeholder now says where the effective figure CAME FROM. Leaving these blank is the
+    // correct, normal state since limits are discovered — an empty box that said only "inherit"
+    // read as "unset, go and guess a number", which is exactly how 16 of 17 models ended up on
+    // one endpoint-wide guess.
     const ctxIn = el("input", { type: "number", value: m.context_chars ?? "",
-      placeholder: `inherit (${(m.context_effective || 0).toLocaleString()})` });
+      title: SOURCE_HINT[m.window?.window_source] || "",
+      placeholder: `${sourceWord(m)} (${(m.context_effective || 0).toLocaleString()})` });
     const effSel = el("select", {}, EFFORTS.map((e) => el("option", { value: e }, e || "default")));
     effSel.value = m.effort || "";
     const tempIn = el("input", { type: "number", step: "0.1", value: m.temperature ?? "", placeholder: "inherit" });
@@ -160,7 +181,13 @@ export async function renderEndpoints(view) {
                 ` ⇢ ${m.fallbacks.join(" ⇢ ")}`) : "",
           m.max_tokens_warning
             ? el("span", { class: "chip partial", style: "margin-left:6px",
-                title: m.max_tokens_warning }, "⚠ max_tokens") : ""),
+                title: m.max_tokens_warning }, "⚠ max_tokens") : "",
+          m.window_warning
+            ? el("span", { class: "chip partial", style: "margin-left:6px",
+                title: m.window_warning }, "⚠ window") : "",
+          el("span", { class: "muted small", style: "margin-left:8px",
+              title: SOURCE_HINT[m.window?.window_source] || "" },
+            `${(m.window?.context_tokens || 0).toLocaleString()} tok · ${sourceWord(m)}`)),
         delBtn),
       el("details", { class: "mt" },
         el("summary", { style: "cursor:pointer;font-size:12px" }, "edit fields"),

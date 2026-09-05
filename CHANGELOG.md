@@ -17,6 +17,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.296.0] — 2026-09-05
+
+### Models use their real context window, discovered from the provider
+
+Operator, 2026-09-05: "I don't think the models that are set up use all their available tokens.
+can we make them max out their token context window without the user having to set it up?" They
+were right, and by more than it looked: of the 17 catalog models on the live instance, **one set
+`context_chars` and none set `max_tokens`**, so every model rode a guess made once on its
+endpoint. Measured against the providers' own metadata, the OpenRouter endpoint declared a
+50,000-token window against real windows of 256,000–1,310,720 — the engine was using **4.8% of
+Kimi K3's context**. The `claude` endpoint erred the other way, claiming a 500,000-token window no
+Claude model has.
+
+- **New `endpoints/limits.py`** asks each provider what its models' limits actually are —
+  OpenRouter and Nano-GPT from their model listings, Ollama from `/api/show`, other
+  OpenAI-compatible gateways opportunistically (vLLM emits `max_model_len`) — and caches the
+  answer under `<routines>/.control/model-limits.json`, the derived-state pattern
+  `daemon/library_watch.py` sets, explicitly never config. Refreshed at boot and on a 24h TTL from
+  the scheduler tick, off the critical path and never fatal.
+- **One precedence chain**: per-MODEL config → the provider's figure → the endpoint default → the
+  floor. A per-model value is the operator sizing that model down on purpose and still wins; the
+  ENDPOINT value moved below discovery because that is all it was ever documented as, "a default a
+  catalog model inherits when it leaves the field unset". Putting it there rather than deleting it
+  matters: `config.yaml` is not versioned, so a migration that removed hand-set numbers would be
+  irreversible for no gain.
+- **`resolve()` never fetches.** It is on the per-turn path; a probe there would put a provider
+  outage between the model and every single turn. Discovery happens on the daemon tick, resolution
+  reads the cache, and a miss is simply the next tier down.
+- **The output cap is clamped, not maxed — and that is the point.** Maxing it is the obvious
+  misreading and is actively harmful: providers validate `input + requested_output <= window` up
+  front (which is exactly what this instance's own unparsed 400s said), and
+  `compaction.window_ceiling_chars` subtracts `max_tokens` from the input budget for the same
+  reason. Kimi K3's real 943,718-token output limit would leave ~10% of its 1M window for the
+  prompt. The discovered cap is `min(provider maximum, 32,000)`.
+- **The Settings audit flag is re-aimed.** "max_tokens unset" was the warning; unset is now the
+  correct, normal state and says nothing. What warns instead is a model riding the FLOOR because
+  no provider lists that id — usually a stale catalog entry — and a hand-set window that disagrees
+  with the provider's own figure. Each model row shows its effective window and where it came from
+  ("from openrouter", "from the built-in table") instead of an empty box that read as "go and
+  guess a number".
+
+*Effect on the live instance, once the daemon has refreshed:* the nine OpenRouter models go from
+50,000 usable tokens to their real 256,000–1,310,720, the two Nano-GPT models to theirs, and the
+six claude-cli models get an honest 200,000 in place of a 500,000 overclaim that nothing could
+have caught.
+
 ## [0.295.0] — 2026-09-05
 
 ### The Claude subscription's real remaining quota, where you can see it

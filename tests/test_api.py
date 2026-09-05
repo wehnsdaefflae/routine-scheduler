@@ -2070,9 +2070,11 @@ def test_settings_model_max_tokens_and_fallbacks(client):
     """The catalog carries per-model max_tokens (audit-flagged when unset/implausible) and
     the ordered failover chain; the API validates chain entries and guards deletion."""
     c, tmp = client
-    # the seeded model has no max_tokens anywhere → flagged as unset (the audit flag)
+    # The seeded model has no max_tokens anywhere AND no provider figure (the fixture endpoint
+    # answers nothing), so it rides the floor — which is what the audit flag now names. UNSET on
+    # its own stopped being a warning once limits are discovered: it is the state we want.
     mv = next(m for m in c.get("/api/settings/models").json()["models"] if m["name"] == "m")
-    assert "unset" in mv["max_tokens_warning"]
+    assert "no provider limit found" in mv["max_tokens_warning"]
     # fallbacks must name existing catalog models, never the model itself
     assert c.post("/api/settings/models", json={
         "name": "a", "endpoint": "dummy", "model": "a-id",

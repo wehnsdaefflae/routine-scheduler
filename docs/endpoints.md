@@ -234,6 +234,41 @@ for a model no provider lists.
 **Anthropic API** — `kind: anthropic`, no base_url needed, `sk-ant-…` key. Metered: know
 your budget caps.
 
+## Windows and output caps are DISCOVERED — leave them blank
+
+You do not size a model's context window by hand. At boot and every 24 hours the daemon asks each
+configured provider what its models' real limits are and caches the answer under
+`<routines>/.control/model-limits.json` (derived state, never config — `endpoints/limits.py`).
+Resolution walks one chain:
+
+    per-MODEL config  →  what the PROVIDER reports  →  the endpoint default  →  the engine floor
+
+A per-model value is you sizing THIS model down on purpose — a cost budget, a slow provider — and
+it still wins. An ENDPOINT value sits below discovery because that is all it has ever been: a
+default a model inherits when it says nothing. Blank is the right state for both, and the Settings
+card says where each effective figure came from ("from openrouter", "from the built-in table")
+rather than showing an empty box.
+
+What can be discovered, per kind:
+
+| endpoint | window | output cap |
+|---|---|---|
+| `openai` @ OpenRouter | `GET /models` → `context_length` | `top_provider.max_completion_tokens` |
+| `openai` @ Nano-GPT | its own `/api/models` (the OpenAI-compatible route carries none) | same |
+| `openai` @ Ollama | `POST /api/show` → the arch's `context_length` | none — derived from the window |
+| `openai`, other | `max_model_len` / `context_length` if the gateway emits one (vLLM does) | rarely |
+| `anthropic`, `claude-cli` | a built-in table — neither kind has a metadata API | the table |
+
+**The output cap is deliberately NOT maxed out.** Providers validate
+`input + requested_output <= window` up front, and the engine subtracts `max_tokens` from the
+input budget for the same reason, so adopting a model's full output limit would starve the prompt:
+one live model reports a 943,718-token output maximum against a 1,310,720-token window. The
+discovered cap is `min(provider maximum, 32,000)` — a ceiling on what this harness needs for one
+JSON action plus reasoning, not a claim about the model.
+
+A miss is not a failure: the model drops to the next tier and the Settings card says the id is one
+its provider does not list — which is usually a stale catalog entry worth fixing.
+
 **Claude subscription** — `kind: claude-cli`, no base_url or api key. Run
 `claude setup-token` on any machine, paste the resulting token on the endpoint's card
 (it lands in Secrets as `CLAUDE_CODE_OAUTH_TOKEN`). Metered-auth environment variables

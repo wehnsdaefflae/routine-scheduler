@@ -29,9 +29,12 @@ class EndpointConfig(_Config):
     key_var: BlankableStr = ""  # unset → the endpoint kind's KEY_VAR_DEFAULTS entry
     credentials_env: str = "~/.credentials/claude-code-oauth.env"  # claude-cli kind
     schema_mode: SchemaMode = "json_schema"  # openai kind only
-    # DEFAULTS a catalog model inherits when it leaves the field unset. Per-model attributes
-    # live on ModelConfig now — one endpoint serves many models with different windows,
-    # vision support, and sampling. context_chars ≈ 4 × the token window.
+    # DEFAULTS a catalog model inherits when it leaves the field unset — and since 0.296.0 they
+    # sit BELOW the figure the provider itself reports (endpoints/limits.py), because one guess
+    # made once for a whole endpoint is exactly what the provider's own answer should replace.
+    # A per-MODEL value still wins over both: that is an operator sizing this model down.
+    # Per-model attributes live on ModelConfig — one endpoint serves many models with different
+    # windows, vision support, and sampling. context_chars ≈ 4 × the token window.
     context_chars: int = 100_000
     temperature: float | None = None
     max_tokens: int | None = None   # None → DEFAULT_MODEL_MAX_TOKENS at resolve time
