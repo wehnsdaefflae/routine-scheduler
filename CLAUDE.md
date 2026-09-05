@@ -34,6 +34,14 @@ one you are about to touch, not all of them.
 - `docs/prompt-anatomy.md` — every string the orchestrator sees, and why. Revise it with ANY
   change to composer / loop / actions / schema_guard wording; `tests/test_prompt_anatomy.py`
   fails on drift
+- Compaction's archive is ENGINE-INDEXED (`compaction._build_index`): the model supplies each
+  file's content and a one-line `about`, the engine supplies the filenames and therefore writes
+  `INDEX.md` — the `.memory/INDEX.md` split, for the reason the old design proved. A
+  model-authored index named files the engine then RENAMED, so 36% of live history reads
+  returned ENOENT. Every archived file has exactly one index line, carried forward by the
+  engine; the prior index is never re-fed to the model. `engine/recall.py` surfaces one
+  archived file when the action overlaps its topic, and `window._warn_before_eviction` gives
+  the run one turn to move what matters into a durable store first
 - `docs/reminders.md` — the consequence-reminder layer (the pre-execution hold, the two
   stores, the four-way tally that tunes a pattern); `docs/rule-assists.md` — its curated
   half: a rule's own `assists:` block surfacing its operative line at the moment it applies

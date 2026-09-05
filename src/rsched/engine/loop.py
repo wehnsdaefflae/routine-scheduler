@@ -29,6 +29,7 @@ from . import (
     loopnudge,
     loopsetup,
     notes,
+    recall,
     remind,
     requests,
 )
@@ -85,12 +86,15 @@ class EngineLoop:
     # Filled in by `loopsetup.configure` — declared here so the class still says what
     # an EngineLoop HOLDS, which is what lifting construction out would otherwise cost.
     _challenged: set[str]
+    _evict_warned: Any
     _finish_reserved: Any
     _hist_note_countdown: Any
     _hist_rel: Any
     _history_active: Any
     _history_note: Any
     _last_compact_after: Any
+    _recall_after: Any
+    _recalled: set[str]
     _last_config_ts: Any
     _last_deliberation_ts: Any
     _last_rules_ts: Any
@@ -260,6 +264,10 @@ class EngineLoop:
                 # …and the observation-moment assists ride the same tail, for the rules whose
                 # moment is "what just came back" rather than "what you are about to do".
                 text += assist.at_observation(self, action, obs)
+                # …and the run's OWN archived history is the third store this layer
+                # feeds from: when what just happened overlaps an archived topic, the
+                # tail names the file rather than leaving the run to remember it.
+                text += recall.at_observation(self, action, obs)
                 # D65: an `allow once` grant is spent by THIS successfully-dispatched
                 # matching action — revoked here, at the same boundary, and announced so
                 # the next matching attempt is not an unexplained denial. A HELD action is

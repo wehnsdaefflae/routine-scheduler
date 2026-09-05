@@ -36,6 +36,16 @@ from .assist_predicates import PREDICATES, Situation
 SOURCE = "rule"
 
 
+def configure(loop) -> None:
+    """This layer's run state. Both guards are per-run: one fire per assist, and at most
+    one finish held by one, ever.
+    """
+    loop.assists = load(loop)
+    loop.assists_fired = set()
+    loop.assist_finish_deferred = False
+    loop.assist_user_replies = 0
+
+
 def load(loop) -> list[Assist]:
     """The assists this run gets: those declared by the rules the routine HOLDS.
 

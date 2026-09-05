@@ -188,21 +188,76 @@ def clamp_to_cap(messages: list[dict], context_chars: int, max_output_tokens: in
     return {"clamped_messages": trimmed, "before_chars": before, "after_chars": after,
             "ceiling_chars": int(ceiling)}
 
+# The model supplies the CONTENT and a one-line description per file; the ENGINE supplies
+# the filenames and therefore writes INDEX.md. That split is not tidiness — it is the fix for
+# a defect measured on the live instance. The model used to hand back a free-text index it had
+# written against its OWN names, and `_swap_in_history` then renamed every file to
+# `t<turn>-<slug>.md`: the index was a map to files that did not exist. One archive cited 102
+# filenames of which ZERO resolved; 36% of all history reads across the instance returned
+# ENOENT, and runs paid a stereotyped three-turn recovery (read INDEX, read the bare names and
+# fail, read the prefixed names) over and over. `.memory/INDEX.md` has always worked this way —
+# each write supplies `about`, the engine maintains the index — and for exactly this reason.
 _HISTORY_SCHEMA = {
-    "type": "object", "additionalProperties": False, "required": ["files", "index"],
+    "type": "object", "additionalProperties": False, "required": ["files"],
     "properties": {
         "files": {"type": "array", "items": {
-            "type": "object", "additionalProperties": False, "required": ["name", "content"],
+            "type": "object", "additionalProperties": False,
+            "required": ["name", "about", "content"],
             "properties": {
                 "name": {"type": "string", "description": "kebab-case topic name (no extension)"},
+                "about": {"type": "string",
+                          "description": "ONE line: what this file holds and when to consult "
+                                         "it — this becomes its INDEX.md entry"},
                 "content": {"type": "string",
                             "description": "markdown, AT MOST ~100 lines — split into more "
                                            "files if longer"}}}},
-        "index": {"type": "string",
-                  "description": "INDEX.md markdown: one line per file — what it holds + "
-                                 "when to read it"},
     },
 }
+
+#: An INDEX.md line, and the parser for reading one back. The engine writes every line, so the
+#: shape is guaranteed rather than hoped for — which is what makes carrying entries forward
+#: across compaction passes deterministic instead of a request the model silently drops.
+_INDEX_HEAD = ("# History index — the archived middle of this run, one file per topic.\n"
+               "# Read the file whose line matches what you need; the `t<turn>-` prefix is "
+               "the turn it was archived at.\n")
+
+
+def _index_line(name: str, about: str) -> str:
+    return f"- `{name}` — {' '.join(str(about).split()) or '(no description)'}"
+
+
+def _parse_index(text: str) -> dict[str, str]:
+    """Filename -> description, from an index this engine wrote."""
+    out = {}
+    for line in text.splitlines():
+        if not line.startswith("- `"):
+            continue
+        name, _, about = line[3:].partition("` — ")
+        if name.endswith(".md"):
+            out[name] = about.strip()
+    return out
+
+
+def _build_index(hist_dir: Path, prior: str, new: dict[str, str]) -> str:
+    """INDEX.md for every file in the archive — carried entries plus this pass's.
+
+    The invariant is that EVERY file on disk has exactly one line. The old design asked the
+    model to "KEEP its entries and add the new files"; it silently dropped them (one live
+    archive lists 13 of its 23 files, an entire generation gone), and re-feeding a growing
+    index through the model each pass cost a 20 KB prompt by the 23rd. Carrying them here is
+    deterministic and costs nothing.
+    """
+    known = _parse_index(prior)
+    lines = []
+    for path in sorted(hist_dir.glob("*.md")):
+        if path.name == "INDEX.md":
+            continue
+        if path.name in new:
+            about = new[path.name] or "(no description)"
+        else:
+            about = known.get(path.name) or "(archived in an earlier pass)"
+        lines.append(_index_line(path.name, about))
+    return _INDEX_HEAD + "\n".join(lines) + "\n"
 
 _HISTORY_PROMPT = """You are archiving the middle of an agent run's conversation so the live context
 stays small while NOTHING is lost — the agent will read_file the pieces it needs later.
@@ -213,15 +268,17 @@ Reorganize the conversation below into a NAVIGABLE set of markdown files:
 - Do NOT summarize heavily. Preserve the actual substance — what was done, decided, found, the key
   observations and outputs — just organized and stripped of obvious noise. The agent navigates to
   what's relevant, so keep the content.
-- Write an INDEX.md listing each file with a one-line description of what it holds and when to
-  consult it, so a reader can jump straight to the right file.{existing_note}
+- Give each file an `about`: ONE line saying what it holds and when to consult it. The engine
+  builds the index from those lines and owns the filenames, so describe the CONTENT and
+  never refer to a file by name — not yours, not another's.
+
 CONVERSATION (the middle turns being archived):
 ---
 {convo}
 ---
-Return ONLY the JSON object {{files: [{{name, content}}], index}}."""
+Return ONLY the JSON object {{files: [{{name, about, content}}]}}."""
 
-def _swap_in_history(hist_dir: Path, files: list[dict], index: str, turn: int) -> list[str]:
+def _swap_in_history(hist_dir: Path, files: list[dict], turn: int) -> list[str]:
     """Build the COMPLETE next history (files carried over from earlier compactions + the new
     ones + INDEX.md) in a sibling temp dir, then swap it into place — a reader or a crash never
     sees a half-written history. Returns the new file names.
@@ -236,13 +293,20 @@ def _swap_in_history(hist_dir: Path, files: list[dict], index: str, turn: int) -
             for p in sorted(hist_dir.glob("*.md")):
                 if p.name != "INDEX.md":
                     shutil.copy2(p, tmp / p.name)   # earlier compactions' files carry over
+        prior = ""
+        if (existing := hist_dir / "INDEX.md").is_file():
+            prior = existing.read_text(encoding="utf-8")
+        described: dict[str, str] = {}
         for f in files:
             raw_name = str(f.get("name", "part")).lower()
             stem = re.sub(r"[^a-z0-9-]+", "-", raw_name).strip("-") or "part"
             name = f"t{turn}-{stem}.md"
             (tmp / name).write_text(str(f["content"]).rstrip() + "\n", encoding="utf-8")
+            described[name] = str(f.get("about") or "")
             written.append(name)
-        (tmp / "INDEX.md").write_text(index.rstrip() + "\n", encoding="utf-8")
+        # written LAST, from the temp dir's actual contents: the index can only describe files
+        # that are really there, under the names they were really written with
+        (tmp / "INDEX.md").write_text(_build_index(tmp, prior, described), encoding="utf-8")
         shutil.rmtree(displaced, ignore_errors=True)
         if hist_dir.is_dir():
             hist_dir.replace(displaced)
@@ -267,17 +331,13 @@ def compact_to_history(messages: list[dict], turn_records: list[dict], endpoint,
     if not middle:
         return None
     hist_dir = run_dir / "history"
-    index_md = hist_dir / "INDEX.md"
-    prior = index_md.read_text(encoding="utf-8") if index_md.exists() else ""
-    existing_note = ("\nThere is already a history index — KEEP its entries and add the new "
-                     f"files to it:\n---\n{prior}\n---\n" if prior else "\n")
     convo = "\n\n".join(f"[{m['role']}]\n{m['content']}" for m in middle)
     # Archival time scales with the middle being read: a fixed 180s died on a 1.25M-char
     # middle (F376) while the digest fallback took the pass every time. 180s base + 60s
     # per 200k chars, capped at the endpoint default (600s) so a hung CLI still dies.
     timeout = min(600, 180 + 60 * (len(convo) // 200_000))
     comp = endpoint.complete([{"role": "user", "content":
-                               _HISTORY_PROMPT.format(existing_note=existing_note, convo=convo)}],
+                               _HISTORY_PROMPT.format(convo=convo)}],
                              model=ref.model, schema=_HISTORY_SCHEMA, effort=ref.effort,
                              temperature=ref.temperature, max_tokens=ref.max_tokens,
                              timeout=timeout,
@@ -298,11 +358,10 @@ def compact_to_history(messages: list[dict], turn_records: list[dict], endpoint,
                 "deterministic compaction takes this pass") from None
     files = [f for f in (data.get("files") or [])
              if isinstance(f, dict) and str(f.get("content", "")).strip()]
-    index = str(data.get("index") or "").strip()
-    if not files or not index:
+    if not files:
         return None
     turn = max((r["turn"] for r in turn_records), default=0)   # unique prefix per compaction
-    written = _swap_in_history(hist_dir, files, index, turn)
+    written = _swap_in_history(hist_dir, files, turn)
     pointer = {"role": "user", "content":
         f"CONTEXT COMPACTED — {len(middle)} earlier messages have been archived to an on-disk, "
         f"navigable history. Read `{hist_rel}/INDEX.md` (read_file) to see what's there, then read "

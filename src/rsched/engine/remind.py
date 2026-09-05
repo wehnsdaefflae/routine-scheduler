@@ -38,6 +38,17 @@ from . import hold as hold_seam
 SOURCE = "reminder"
 
 
+def configure(loop) -> None:
+    """This layer's run state. The live set is read ONCE (see `load`) and then kept in
+    step with this run's own ops.
+    """
+    loop.reminders = load(loop)
+    loop.reminders_level = level_of(loop.ctx.grants)   # what `refresh` compares against
+    loop.reminder_replayed = set()   # payloads a re-driven finish already applied
+    loop.reminder_pending = []       # fires still owed a label
+    loop.reminder_nudge = 0
+
+
 def level_of(grants) -> str:
     """The capability level a set would be read at — "none" for an ungated direct construction."""
     return grants.reminders if grants is not None else "none"

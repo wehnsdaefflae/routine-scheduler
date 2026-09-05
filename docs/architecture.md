@@ -76,6 +76,40 @@ the limits (single-writer status.json preserved).
   routine's `tool_call` model when its window fits (machine work; main model is the fallback) and its
   spend is folded into the run's usage. Falls back to the deterministic one-line digest
   (`history.maybe_compact`) on any failure. The on-disk transcript keeps everything regardless.
+- **The archive INDEX is engine-owned** (`compaction._build_index`). The model supplies each
+  file's CONTENT and a one-line `about`; the engine supplies the filenames (`t<turn>-<slug>.md`)
+  and therefore writes `INDEX.md` — the same split that has always governed `.memory/INDEX.md`,
+  and for the same reason. It used to hand back a free-text index it had written against its OWN
+  names, which `_swap_in_history` then renamed: the index was a map to files that did not exist.
+  Measured on the live instance before the fix — one archive cited 102 filenames of which ZERO
+  resolved, 36% of all history reads returned ENOENT, and runs paid a stereotyped three-turn
+  recovery (read INDEX, read the bare names and fail, read the prefixed names) over and over.
+  Two archives had an `INDEX.md` whose entire content was the string `INDEX.md`. The invariant
+  now is that every file in the archive has exactly one index line under the name it was written
+  with; entries from earlier passes are carried forward by the ENGINE (the model used to be
+  asked to keep them and silently dropped them — one archive listed 13 of its 23 files) and the
+  prior index is no longer re-fed to the model, which had grown the archival prompt to 20 KB by
+  a run's 23rd pass.
+- **One turn to externalize before the middle goes** (`window._warn_before_eviction`). Retention
+  is POSITIONAL — head 6, tail 24 — so a load-bearing fact in the middle survives only in
+  `history/`, reachable if the run remembers to look. `note`, `memory_write` and the LEDGER
+  already exist to carry a fact out of the conversation; what was missing was the moment to use
+  them. The archive is deferred by exactly one turn and the run is told why. Safe by
+  construction: when the FRACTION binds the gate there is 20-40% of the window before the hard
+  ceiling, a whole turn of slack; when the CEILING binds there is none, so the warning is
+  skipped and the archive happens now. `clamp_to_cap` runs unconditionally afterwards either
+  way, so a deferred turn cannot 400. Once per run.
+- **History recall** (`engine/recall.py`): the archive is one more store the relevance-trigger
+  layer surfaces from. When what the run just did overlaps an archived topic, the observation
+  tail names ONE file and the turn it was archived at — a pointer, never a fetch, and free
+  (it rides a message the run was getting anyway). It is not a rule ASSIST because an assist's
+  payload is a static line and this one is computed. Measured over four real archived runs:
+  at least one useful file in the top 3 for 23% of the moments a run actually went looking,
+  37% in the top 5 — but split by archive size that average hides the result, since archives up
+  to ~23 files hit the top 3 for 7 of 8 moments while a 101-file archive managed 1 of 22.
+  Deterministic overlap works while the archive is small and degrades as it grows, so it
+  surfaces one file above a floor score rather than a list, and the semantic path (embeddings)
+  waits behind evidence that the cheap one is insufficient.
 - **Anticipatory compaction** (`compaction.ANTICIPATE_AT`, 0.85): the gate above is a SIZE check and
   is indifferent to WHERE in the work it trips, so it can rewrite the prefix three actions into a
   multi-action step — the worst moment for both coherence and the cache. At a boundary the engine

@@ -17,6 +17,75 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.307.0] — 2026-09-05
+
+### The history index was a map to files that do not exist
+
+Compaction archives the elided middle losslessly to `runs/<ts>/history/` and leaves the prompt
+a pointer at `INDEX.md`. Measured on the live instance, that index was addressing files that
+were not there. One archive cited 102 filenames of which **zero** resolved; **36% of every
+named history read across the instance returned ENOENT**; runs paid a stereotyped three-turn
+recovery — read INDEX, read the bare names and fail, read the prefixed names — again and again
+in the same run. Two archives had an `INDEX.md` whose entire content was the string `INDEX.md`.
+
+The cause was a split ownership nobody had noticed. The archival prompt asked the model to name
+its files by topic and to write the index against those names; `_swap_in_history` then renamed
+every file to `t<turn>-<slug>.md`. The index and the filesystem could never agree.
+
+**The engine writes the filenames, so the engine owns the index.** The model now supplies each
+file's content and a one-line `about`, and never names a file at all — exactly the split that
+has always governed `.memory/INDEX.md`, where each write supplies `about` and the engine
+maintains the index. The invariant is now checkable and checked: every file in the archive has
+exactly one index line, under the name it was actually written with.
+
+Two more defects went with it. Entries from earlier passes are carried forward by the ENGINE —
+the model used to be asked to "KEEP its entries" and silently dropped them, leaving one live
+archive listing 13 of its 23 files with an entire generation gone. And the prior index is no
+longer re-fed to the model, which had grown the archival prompt to 20 KB by a run's 23rd pass.
+
+### One turn to externalize, before the middle is evicted
+
+Retention is positional — head 6, tail 24 — so a load-bearing fact in the middle survives only
+in `history/`, reachable if the run remembers to go looking. `note`, `memory_write` and the
+LEDGER already exist to carry a fact out of the conversation; what was missing was the moment
+to use them, which is the one thing this layer exists to supply. The archive is now deferred by
+exactly one turn and the run is told what is about to happen and what to do about it.
+
+Deferring is safe by construction, which is what makes it cheap. The gate is
+`min(fraction × window, ceiling)`: when the FRACTION binds there is 20–40% of the window before
+the hard ceiling — a whole turn of slack — and when the CEILING binds there is none, so the
+warning is skipped and the archive happens immediately. `clamp_to_cap` runs unconditionally
+afterwards either way, so a deferred turn cannot 400. Once per run: a second warning would be
+the layer talking about itself.
+
+### The archive becomes a store the relevance layer surfaces from
+
+`engine/recall.py` — when what the run just did overlaps an archived topic, the observation
+tail names ONE file and the turn it was archived at. Free (it rides a message the run was
+getting anyway) and a pointer rather than a fetch: the run decides whether the file is worth a
+turn. Not a rule assist, because an assist's payload is a static line authored in frontmatter
+and this one is computed.
+
+Its worth is measured rather than assumed. Over four real archived runs, scoring the canonical
+action string plus the surrounding narration against the index: at least one useful file in the
+top 3 for **23%** of the moments a run actually went looking, 37% in the top 5. Split by archive
+size, that average hides the real result — archives up to ~23 files hit the top 3 for 7 of 8
+moments, while a 101-file archive managed 1 of 22. Deterministic overlap works while the archive
+is small and degrades as it grows. So it surfaces one file above a floor score rather than a
+list (a wrong pointer costs a read AND teaches the run to ignore the layer), with a cooldown
+between pointers. The semantic path stays behind evidence that the cheap one is insufficient.
+
+This is also why the index had to be fixed first: a pointer built on an index whose addresses
+were all wrong would have inherited exactly that 36%.
+
+Each layer of the trigger runtime now initialises its own run state (`configure(loop)`) —
+`loopsetup.configure` crossed the statement ceiling, which was the ratchet asking why one
+function knew the field names of four different layers.
+
+New: `engine/recall.py`. 12 tests in `tests/test_recall.py`, plus the index invariant in
+`tests/test_composer.py`.
+
+
 ## [0.306.0] — 2026-09-05
 
 ### One seam for every hold, and the rule that stops an action

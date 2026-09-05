@@ -436,9 +436,9 @@ def test_compact_to_history_writes_navigable_files(tmp_path):
     from rsched.config import ModelRef
     from rsched.engine.compaction import KEEP_HEAD_MSGS, KEEP_TAIL_MSGS, compact_to_history
 
-    ep = _history_endpoint({"files": [{"name": "Research Notes!", "content": "found X\nfound Y"},
-                                      {"name": "decisions", "content": "chose Z"}],
-                            "index": "- research-notes: what we found\n- decisions: choices made"})
+    ep = _history_endpoint({"files": [
+        {"name": "Research Notes!", "about": "what we found", "content": "found X\nfound Y"},
+        {"name": "decisions", "about": "choices made", "content": "chose Z"}]})
     run_dir = tmp_path / "runs" / "20260710-070000"
     run_dir.mkdir(parents=True)
     records = [{"turn": 12, "kind": "util", "brief": '"x"', "say": "s"}]
@@ -450,10 +450,19 @@ def test_compact_to_history_writes_navigable_files(tmp_path):
     assert len(new_msgs) == KEEP_HEAD_MSGS + 1 + KEEP_TAIL_MSGS     # head + pointer + tail
     assert "INDEX.md" in new_msgs[KEEP_HEAD_MSGS]["content"]        # the pointer replaces the middle
     hist = run_dir / "history"
-    assert (hist / "INDEX.md").read_text().startswith("- research-notes")
     names = sorted(p.name for p in hist.glob("*.md"))              # safe-slugged, turn-prefixed
     assert names == ["INDEX.md", "t12-decisions.md", "t12-research-notes.md"]
     assert (hist / "t12-research-notes.md").read_text().strip() == "found X\nfound Y"
+    # THE invariant: the index addresses files that exist, under the names they were written
+    # with. The engine renames what the model hands back, so the engine writes the index —
+    # the old design let the model write one against its own names, and a live archive ended
+    # up citing 102 filenames of which zero resolved.
+    index = (hist / "INDEX.md").read_text()
+    assert "- `t12-research-notes.md` — what we found" in index
+    assert "- `t12-decisions.md` — choices made" in index
+    for line in index.splitlines():
+        if line.startswith("- `"):
+            assert (hist / line[3:].split("`")[0]).is_file(), line
 
 
 def test_compact_to_history_non_json_reply_names_the_model(tmp_path):
@@ -489,7 +498,7 @@ def test_compact_to_history_reports_its_own_usage(tmp_path):
     from rsched.config import ModelRef
     from rsched.engine.compaction import compact_to_history
 
-    ep = _history_endpoint({"files": [{"name": "n", "content": "c"}], "index": "- n: c"})
+    ep = _history_endpoint({"files": [{"name": "n", "about": "c", "content": "c"}]})
     run_dir = tmp_path / "runs" / "20260710-070000"
     run_dir.mkdir(parents=True)
     _, info = compact_to_history(_history_messages(), [], ep, ModelRef("e", "m"),
@@ -509,7 +518,7 @@ def test_compact_to_history_timeout_scales_with_middle_size(tmp_path):
     seen = []
 
     class _Comp:
-        parsed: ClassVar = {"files": [{"name": "n", "content": "c"}], "index": "- n: c"}
+        parsed: ClassVar = {"files": [{"name": "n", "about": "c", "content": "c"}]}
         text, usage = "", {}
 
     class _Ep:
@@ -559,23 +568,67 @@ def test_compact_to_history_second_pass_accumulates_atomically(tmp_path):
 
     run_dir = tmp_path / "runs" / "20260710-080000"
     run_dir.mkdir(parents=True)
-    ep1 = _history_endpoint({"files": [{"name": "alpha", "content": "first findings"}],
-                             "index": "- alpha: first findings"})
+    ep1 = _history_endpoint({"files": [{"name": "alpha", "about": "first findings",
+                                        "content": "first findings"}]})
     assert compact_to_history(_history_messages(), [{"turn": 10, "kind": "util", "brief": '"x"',
                                                      "say": "s"}],
                               ep1, ModelRef("e", "m"), run_dir, "history") is not None
-    ep2 = _history_endpoint({"files": [{"name": "beta", "content": "later findings"}],
-                             "index": "- alpha: first findings\n- beta: later findings"})
+    ep2 = _history_endpoint({"files": [{"name": "beta", "about": "later findings",
+                                        "content": "later findings"}]})
     assert compact_to_history(_history_messages(), [{"turn": 20, "kind": "util", "brief": '"y"',
                                                      "say": "s"}],
                               ep2, ModelRef("e", "m"), run_dir, "history") is not None
-    assert "There is already a history index" in ep2.last_prompt   # prior INDEX fed to the LLM
+    # the prior index is NOT re-fed to the model: it silently dropped entries (one live
+    # archive listed 13 of its 23 files) and the prompt grew to 20 KB by the 23rd pass
+    assert "already a history index" not in ep2.last_prompt
     hist = run_dir / "history"
     names = sorted(p.name for p in hist.glob("*.md"))
     assert names == ["INDEX.md", "t10-alpha.md", "t20-beta.md"]    # earlier file carried over
-    assert "beta" in (hist / "INDEX.md").read_text()
+    index = (hist / "INDEX.md").read_text()
+    # BOTH generations are indexed — carrying the earlier entry is the engine's job now
+    assert "- `t10-alpha.md` — first findings" in index
+    assert "- `t20-beta.md` — later findings" in index
     leftovers = [p.name for p in run_dir.iterdir() if p.name != "history"]
     assert leftovers == []                                         # no tmp/displaced dirs remain
+
+
+def test_every_archived_file_gets_an_index_line(tmp_path):
+    """The invariant the engine can now guarantee, and could not before: one line per file, and
+    a file with no description still gets an entry rather than vanishing from the map."""
+    from rsched.config import ModelRef
+    from rsched.engine.compaction import compact_to_history
+
+    run_dir = tmp_path / "runs" / "20260710-100000"
+    hist = run_dir / "history"
+    hist.mkdir(parents=True)
+    # a file carried over from an earlier pass whose index line was lost (or never written)
+    (hist / "t1-orphan.md").write_text("older content\n", encoding="utf-8")
+    (hist / "INDEX.md").write_text("# stale\n", encoding="utf-8")
+    ep = _history_endpoint({"files": [{"name": "new-topic", "about": "", "content": "c"}]})
+    assert compact_to_history(_history_messages(),
+                              [{"turn": 7, "kind": "util", "brief": '"x"', "say": "s"}],
+                              ep, ModelRef("e", "m"), run_dir, "history") is not None
+    index = (hist / "INDEX.md").read_text()
+    listed = {ln[3:].split("`")[0] for ln in index.splitlines() if ln.startswith("- `")}
+    on_disk = {p.name for p in hist.glob("*.md")} - {"INDEX.md"}
+    assert listed == on_disk == {"t1-orphan.md", "t7-new-topic.md"}
+    assert "(archived in an earlier pass)" in index      # the orphan is described, not dropped
+    assert "(no description)" in index                   # …and so is the one with a blank about
+
+
+def test_the_archival_prompt_asks_for_a_description_not_an_index(tmp_path):
+    """The model describes CONTENT; it never names a file. Naming is what made the index a map
+    to files that did not exist."""
+    from rsched.config import ModelRef
+    from rsched.engine.compaction import compact_to_history
+
+    run_dir = tmp_path / "runs" / "20260710-110000"
+    run_dir.mkdir(parents=True)
+    ep = _history_endpoint({"files": [{"name": "n", "about": "a", "content": "c"}]})
+    compact_to_history(_history_messages(), [], ep, ModelRef("e", "m"), run_dir, "history")
+    prompt = ep.last_prompt
+    assert "never refer to a file by name — not yours" in prompt
+    assert "{files: [{name, about, content}]}" in prompt
 
 
 def test_compact_to_history_failure_leaves_prior_history_intact(tmp_path, monkeypatch):
@@ -589,10 +642,10 @@ def test_compact_to_history_failure_leaves_prior_history_intact(tmp_path, monkey
     run_dir = tmp_path / "runs" / "20260710-090000"
     hist = run_dir / "history"
     hist.mkdir(parents=True)
-    (hist / "INDEX.md").write_text("- t5-kept: prior notes\n", encoding="utf-8")
+    (hist / "INDEX.md").write_text("- `t5-kept.md` — prior notes\n", encoding="utf-8")
     (hist / "t5-kept.md").write_text("prior notes\n", encoding="utf-8")
-    ep = _history_endpoint({"files": [{"name": "gamma", "content": "new stuff"}],
-                            "index": "- gamma: new stuff"})
+    ep = _history_endpoint({"files": [{"name": "gamma", "about": "new stuff",
+                                       "content": "new stuff"}]})
 
     def boom(src, dst):
         raise OSError("disk went away")
@@ -744,6 +797,7 @@ def _gate_loop(monkeypatch, *, usage, phase="", last_seen_phase=None):
     loop = SimpleNamespace(ctx=ctx, turn_records=[], _hist_rel="history",
                            _last_compact_after=0, _history_active=False,
                            _hist_note_countdown=0, _last_seen_phase=last_seen_phase,
+                           _evict_warned=True,   # the pre-eviction warning is its own test
                            messages=[{"role": "user", "content": "x" * 1750}
                                      for _ in range(40)])
     return loop, calls

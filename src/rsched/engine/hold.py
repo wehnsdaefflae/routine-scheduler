@@ -34,6 +34,11 @@ from .actionschema import canon
 HOLD_KINDS = frozenset({"reminder_hold", "assist_hold"})
 
 
+def configure(loop) -> None:
+    """This seam's run state: which (source, action) pairs have already been held."""
+    loop.holds = set()
+
+
 def is_hold(obs: dict) -> bool:
     """Did this observation report a HELD action — one the engine did not execute?
 
