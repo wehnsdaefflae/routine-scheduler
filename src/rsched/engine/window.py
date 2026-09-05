@@ -18,14 +18,13 @@ from pathlib import Path
 
 from ..endpoints.base import EndpointError
 from ..health_events import log_health_event
-from . import mediaops
+from . import archival, mediaops
 from .compaction import (
     ANTICIPATE_AT,
     CHARS_PER_TOKEN,
     KEEP_HEAD_MSGS,
     KEEP_TAIL_MSGS,
     clamp_to_cap,
-    compact_to_history,
     input_cap_chars,
     maybe_compact,
     messages_size,
@@ -225,38 +224,31 @@ def _archive_if_needed(loop, endpoint, ref) -> None:
             c_endpoint, c_ref = t_endpoint, t_ref
     except Exception:
         pass
-    cinfo = None
-    degraded = None
-    try:
-        result = compact_to_history(loop.messages, loop.turn_records, c_endpoint, c_ref,
-                                    ctx.run_dir, loop._hist_rel)
-    except Exception as exc:
-        # A failed archival is a DESIGNED degrade (the deterministic digest takes the
-        # pass), not a run error — a red error card for it alarmed operators (F376).
-        # The reason stays visible: it rides on the compaction event below.
-        degraded = str(exc)[:300]
-        result = None
-    if result is not None:
-        loop.messages, cinfo = result
-        loop._history_active = True
-        loop._hist_note_countdown = 0   # the next observation carries the history pointer
-    else:
-        loop.messages, cinfo = maybe_compact(loop.messages, loop.turn_records,
-                                             ref.context_chars)
-        if cinfo is not None and degraded:
-            cinfo["archival_degraded"] = degraded
+    # The INSTANT tier takes the pass and the run carries straight on; the navigable
+    # archive is built off the hot path and announced when it lands (engine/archival.py).
+    # The archival call is the slow one — 180-600s of a run's time, spent mid-work — and
+    # nothing about it needs the run to wait: it reads a middle that has already been
+    # decided and writes files. Losslessness is untouched. The digest is a PLACEHOLDER in
+    # the prompt for the minute the archive takes, never a summary standing in for it —
+    # which is the whole difference from the mainstream summarize-and-replace this
+    # deliberately does not adopt.
+    middle = loop.messages[KEEP_HEAD_MSGS:len(loop.messages) - KEEP_TAIL_MSGS]
+    turn = max((r["turn"] for r in loop.turn_records), default=0)
+    loop.messages, cinfo = maybe_compact(loop.messages, loop.turn_records,
+                                        ref.context_chars)
+    if cinfo is not None:
+        archival.start(loop, middle, c_endpoint, c_ref, turn)
+        cinfo["archival"] = "background"
     if cinfo:
-        if cinfo.get("usage"):
-            ctx.add_usage(cinfo["usage"])   # the archival call itself now hits the books
+        # the archival call's spend is booked by archival.collect, on the turn the
+        # archive lands — this pass is the deterministic digest and calls no model
         loop._last_compact_after = messages_size(loop.messages)
         # `anticipated` says this pass was taken EARLY, at a stage boundary, rather than because
         # the prompt had actually crossed the gate — without it the two are indistinguishable in
         # the transcript and the feature could not be evaluated after the fact.
         ctx.transcript.event("compaction",
                              {**cinfo, **({"anticipated": ctx.phase} if at_boundary else {})})
-    elif degraded:
-        # digest found nothing to elide either — the failed archival must still be visible
-        ctx.transcript.event("compaction", {"archival_degraded": degraded})
+
 
 def apply_media_fallback(loop, exc: EndpointError) -> bool:
     """The main endpoint failed on a turn whose tail user message carries image `media`

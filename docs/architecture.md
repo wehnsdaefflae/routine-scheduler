@@ -76,6 +76,21 @@ the limits (single-writer status.json preserved).
   routine's `tool_call` model when its window fits (machine work; main model is the fallback) and its
   spend is folded into the run's usage. Falls back to the deterministic one-line digest
   (`history.maybe_compact`) on any failure. The on-disk transcript keeps everything regardless.
+- **The archive is built OFF the hot path** (`engine/archival.py`). The archival call takes
+  180-600s and it used to take them from the run, mid-work. The two tiers are now split in
+  TIME rather than traded off: the deterministic digest lands instantly and the run carries
+  straight on, the archival runs in a daemon thread against the middle that was just elided,
+  and when it finishes the run is told — by an APPENDED note, never a swap, because rewriting
+  the digest would be a second rewrite of the prefix and a second cache invalidation for one
+  compaction. **The guardrail this is built around**: the mainstream instant compaction is
+  instant BECAUSE it is summarize-and-replace, which is lossy. Nothing here summarizes anything
+  away — the transcript keeps every byte, the archive is still built losslessly from the real
+  middle, and the digest is a PLACEHOLDER in the prompt for the minute the archive takes. What
+  changed is when the run gets to keep working, not what it ends up with. A run that FINISHES
+  inside the archival window settles it (`archival.settle`, a few seconds — the run's work is
+  over, so nothing is waiting on the model, but a conversation's reply is rendered from the
+  finish so it stays short); one that would need longer is abandoned with the reason recorded,
+  which is exactly the degraded fallback the synchronous path already had.
 - **The archive INDEX is engine-owned** (`compaction._build_index`). The model supplies each
   file's CONTENT and a one-line `about`; the engine supplies the filenames (`t<turn>-<slug>.md`)
   and therefore writes `INDEX.md` — the same split that has always governed `.memory/INDEX.md`,

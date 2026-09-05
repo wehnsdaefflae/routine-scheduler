@@ -2285,8 +2285,9 @@ def test_compaction_antithrash(make_routine, monkeypatch):
                      budgets=Budgets.from_config(cfg.budgets))
     loop = EngineLoop(ctx, "## Run flow", "instr")
     attempts = []
-    monkeypatch.setattr(window_mod, "compact_to_history",
-                        lambda *a, **k: attempts.append(1) or None)   # None → digest fallback
+    # the archival now runs OFF the hot path, so an attempt is a start(); the digest is
+    # what the prompt gets either way, which is what the anti-thrash guards bound
+    monkeypatch.setattr(window_mod.archival, "start", lambda *a, **k: attempts.append(1))
 
     class _Tiny:   # a resolved ModelRef stand-in: context_chars drives the compaction cap
         context_chars = 1000   # so the 60% size trigger always fires for our messages
@@ -2334,7 +2335,10 @@ def test_failed_archival_degrades_without_error_card(make_routine, monkeypatch):
 
     def _boom(*a, **k):
         raise RuntimeError("claude-cli: call timed out after 599s")
-    monkeypatch.setattr(window_mod, "compact_to_history", _boom)
+    # the archival call is what fails, and it now fails inside its own thread — the run
+    # carries on with the digest and the reason is recorded, never raised at the loop
+    from rsched.engine import compaction as compaction_mod
+    monkeypatch.setattr(compaction_mod, "archive_middle", _boom)
 
     class _Tiny:
         context_chars = 1000
@@ -2344,6 +2348,8 @@ def test_failed_archival_degrades_without_error_card(make_routine, monkeypatch):
     loop.messages = [dict(msg) for _ in range(KEEP_HEAD_MSGS + KEEP_TAIL_MSGS + 10)]
     compact_if_needed(loop, None, _Tiny())
     assert len(loop.messages) == KEEP_HEAD_MSGS + KEEP_TAIL_MSGS + 1   # digest still landed
+    # the archival runs in its own thread, so the failure is recorded when the run settles it
+    window_mod.archival.settle(loop)
     events, _ = read_events(run_dir / "transcript.jsonl")
     assert not [e for e in events if e["type"] == "error"], \
         "a designed archival degrade must not raise a red error card"
@@ -2616,11 +2622,19 @@ def test_loop_compaction_archives_middle_to_history(make_routine, scripted, monk
     events, _ = read_events(run_dir / "transcript.jsonl")
     assert status == "ok"
 
+    # TWO events now: the instant digest that let the run carry on, then the archive landing.
+    # The archival call is 180-600s of a run's time and nothing about it needs the run to
+    # wait, so the prompt gets the digest immediately and the navigable history when it is
+    # ready — losslessly, from the real middle. (Here the run finishes first, so the archive
+    # is settled at finish rather than announced at a boundary.)
     comps = [e["payload"] for e in events if e["type"] == "compaction"]
-    assert len(comps) == 1
-    assert comps[0]["mode"] == "llm-history"
-    assert comps[0]["model"] == f"scripted/{archival_model}"
-    assert comps[0]["history_files"] == 1 and comps[0]["elided_messages"] == 8
+    assert len(comps) == 2
+    digest, landed = comps
+    assert digest["elided_messages"] == 8 and digest["archival"] == "background"
+    assert "digest_chars" in digest          # the instant tier is what the prompt got
+    assert landed["mode"] == "llm-history" and landed["background"] is True
+    assert landed["model"] == f"scripted/{archival_model}"
+    assert landed["history_files"] == 1 and landed["elided_messages"] == 8
 
     hist = run_dir / "history"
     assert "notes-archive" in (hist / "INDEX.md").read_text()
@@ -2634,17 +2648,20 @@ def test_loop_compaction_archives_middle_to_history(make_routine, scripted, monk
     turn_models = {c["model"] for c in ep.calls if c not in archive_calls}
     assert turn_models == {"main-model"}
 
-    # the final turn ran on the COMPACTED prompt: head + pointer + tail
+    # The final turn ran on the COMPACTED prompt: head + digest + tail. The digest is what
+    # the prompt gets INSTANTLY; the pointer at the navigable index arrives as an appended
+    # note when the archive lands, so the run never waits 180-600s mid-work for it.
     final = ep.calls[-1]["messages"]
     assert len(final) == KEEP_HEAD_MSGS + 1 + KEEP_TAIL_MSGS
     assert "CONTEXT COMPACTED" in final[KEEP_HEAD_MSGS]["content"]
-    assert "INDEX.md" in final[KEEP_HEAD_MSGS]["content"]
+    assert "One line per elided turn" in final[KEEP_HEAD_MSGS]["content"]
 
     # the archival call's spend hit the books (each scripted completion bills 10 in / 5 out;
-    # the archival call is one of ep.calls, so equality proves its usage was folded in)
+    # the archival call is one of ep.calls, so equality proves its usage was folded in). It is
+    # booked when the archive LANDS, so it rides the second event, not the digest.
     st = read_json(run_dir / "status.json")
     assert st["usage"]["in"] == 10 * len(ep.calls)
-    assert comps[0]["usage"] == {"in": 10, "out": 5}
+    assert landed["usage"] == {"in": 10, "out": 5}
 
 
 def test_revise_marker_unlocks_recipe_for_the_leg(make_routine):

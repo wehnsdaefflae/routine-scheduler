@@ -319,18 +319,15 @@ def _swap_in_history(hist_dir: Path, files: list[dict], turn: int) -> list[str]:
     shutil.rmtree(displaced, ignore_errors=True)
     return written
 
-def compact_to_history(messages: list[dict], turn_records: list[dict], endpoint, ref,
-                       run_dir: Path, hist_rel: str) -> tuple[list[dict], dict] | None:
-    """LLM-driven compaction: reorganize the elided middle into a navigable set of markdown files
-    (each ~≤100 lines) under runs/<ts>/history/ + INDEX.md, and replace the middle with a short
-    pointer telling the agent to consult the index. Returns (new_messages, info), or None on any
-    failure (the caller falls back to the deterministic digest).
+def archive_middle(middle: list[dict], endpoint, ref,
+                   run_dir: Path, turn: int) -> dict | None:
+    """Reorganize `middle` into the navigable on-disk history, and return the info dict.
+
+    The archival half of `compact_to_history`, split out so it can also run OFF the hot path
+    (engine/archival.py): it touches no message list, only the model and the filesystem, which
+    is exactly what makes it safe to run in a thread. Returns None when the model gives back
+    nothing usable; raises when it gives back non-JSON, so the caller can report the reason.
     """
-    head, tail = messages[:KEEP_HEAD_MSGS], messages[-KEEP_TAIL_MSGS:]
-    middle = messages[KEEP_HEAD_MSGS:len(messages) - KEEP_TAIL_MSGS]
-    if not middle:
-        return None
-    hist_dir = run_dir / "history"
     convo = "\n\n".join(f"[{m['role']}]\n{m['content']}" for m in middle)
     # Archival time scales with the middle being read: a fixed 180s died on a 1.25M-char
     # middle (F376) while the digest fallback took the pass every time. 180s base + 60s
@@ -360,18 +357,42 @@ def compact_to_history(messages: list[dict], turn_records: list[dict], endpoint,
              if isinstance(f, dict) and str(f.get("content", "")).strip()]
     if not files:
         return None
-    turn = max((r["turn"] for r in turn_records), default=0)   # unique prefix per compaction
-    written = _swap_in_history(hist_dir, files, turn)
-    pointer = {"role": "user", "content":
-        f"CONTEXT COMPACTED — {len(middle)} earlier messages have been archived to an on-disk, "
-        f"navigable history. Read `{hist_rel}/INDEX.md` (read_file) to see what's there, then read "
-        f"the specific {hist_rel}/*.md files relevant to your current step. Do not rely on "
-        f"memory of the archived turns — consult the index."}
-    new_messages = [*head, pointer, *tail]
-    info = {"elided_messages": len(middle), "history_files": len(written), "mode": "llm-history",
-            "model": f"{ref.endpoint}/{ref.model}",
-            "before_chars": messages_size(messages), "after_chars": messages_size(new_messages),
+    written = _swap_in_history(run_dir / "history", files, turn)
+    return {"elided_messages": len(middle), "history_files": len(written),
+            "mode": "llm-history", "model": f"{ref.endpoint}/{ref.model}",
             # the compaction call's own spend — the caller folds it into the run's usage
             # (this was invisible before: full-context calls that never hit the books)
             "usage": dict(comp.usage)}
+
+
+def history_pointer(hist_rel: str, elided: int) -> dict:
+    """The in-prompt message that replaces an archived middle."""
+    return {"role": "user", "content":
+            f"CONTEXT COMPACTED — {elided} earlier messages have been archived to an on-disk, "
+            f"navigable history. Read `{hist_rel}/INDEX.md` (read_file) to see what's there, "
+            f"then read the specific {hist_rel}/*.md files relevant to your current step. Do "
+            "not rely on memory of the archived turns — consult the index."}
+
+
+def compact_to_history(messages: list[dict], turn_records: list[dict], endpoint, ref,
+                       run_dir: Path, hist_rel: str) -> tuple[list[dict], dict] | None:
+    """LLM-driven compaction, synchronously: archive the elided middle and replace it with the
+    pointer in one step. Returns (new_messages, info), or None when the model gives back
+    nothing usable (the caller falls back to the deterministic digest).
+
+    The live path takes the instant digest and archives in the BACKGROUND
+    (engine/archival.py); this stays the one-step form, which is what the archival behaviour
+    is specified and tested against.
+    """
+    head, tail = messages[:KEEP_HEAD_MSGS], messages[-KEEP_TAIL_MSGS:]
+    middle = messages[KEEP_HEAD_MSGS:len(messages) - KEEP_TAIL_MSGS]
+    if not middle:
+        return None
+    turn = max((r["turn"] for r in turn_records), default=0)   # unique prefix per compaction
+    info = archive_middle(middle, endpoint, ref, run_dir, turn)
+    if info is None:
+        return None
+    new_messages = [*head, history_pointer(hist_rel, len(middle)), *tail]
+    info["before_chars"] = messages_size(messages)
+    info["after_chars"] = messages_size(new_messages)
     return new_messages, info

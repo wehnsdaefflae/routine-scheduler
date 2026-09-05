@@ -781,10 +781,12 @@ def _gate_loop(monkeypatch, *, usage, phase="", last_seen_phase=None):
     from rsched.engine import window
 
     calls = []
-    monkeypatch.setattr(window, "compact_to_history",
-                        lambda msgs, *_a, **_k: (calls.append("llm") or (msgs, None)))
+    # The gate now takes the INSTANT digest and starts the archival off the hot path, so a
+    # pass shows up as both: "digest" is what the prompt got, "llm" is what was queued.
+    monkeypatch.setattr(window.archival, "start",
+                        lambda *_a, **_k: calls.append("llm"))
     monkeypatch.setattr(window, "maybe_compact",
-                        lambda msgs, *_a, **_k: (calls.append("digest") or (msgs, None)))
+                        lambda msgs, *_a, **_k: (calls.append("digest") or (msgs, {"elided": 1})))
 
     class _Reg:
         def for_model(self, kind, models):

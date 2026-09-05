@@ -17,6 +17,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.308.0] — 2026-09-05
+
+### The archive is built off the hot path — without becoming summarize-and-replace
+
+Compaction's good tier hands the elided middle to a model and waits 180–600 seconds for a set
+of navigable files back. That wait came out of the run, in the middle of its work, at the
+moment it was busiest.
+
+The two tiers are now split in TIME rather than traded off against each other. The
+deterministic digest — one line per elided turn — lands instantly and the run carries straight
+on; the archival runs in a daemon thread against the middle that was just elided; when it
+finishes, the run is told where the navigable history is.
+
+**The guardrail this is built around, because it is the whole point.** The mainstream instant
+compaction is instant *because* it is summarize-and-replace, which is lossy — detail survives
+only in scrollback. That speed is not worth that mechanism, and this does not adopt it. Nothing
+here summarizes anything away: the transcript keeps every byte as it always did, the archive is
+still built losslessly from the real middle, and the digest is a **placeholder in the prompt**
+for the minute the archive takes, not the product. What changed is when the run gets to keep
+working, not what it ends up with.
+
+The note is **appended, never swapped in**. Rewriting the digest message would be a second
+rewrite of the prefix and a second cache invalidation for a single compaction; appending costs
+nothing and keeps the message list append-only, which is the contract everywhere else in the
+engine.
+
+A run that FINISHES inside the archival window would otherwise drop its archive on the floor —
+and that archive still has readers after the run ends, since the search index covers
+`history/`. So a finishing run settles it: a few seconds' wait, where the run's work is over
+and nothing is waiting on the model. Not longer, because a conversation's reply is rendered
+from the finish and the 180–600s stall must not come back through that door. An archive that
+needs more than that is abandoned with the reason recorded — the thread is a daemon and
+`_swap_in_history` is two atomic renames with a restore on failure, so an abandoned archive
+cannot leave a half-written one behind, and the digest plus the full transcript are what remain.
+That is precisely the degraded fallback the synchronous path already had, reached by a
+different route.
+
+Also: `mode` says WHAT a compaction was and a separate `background` flag says how it ran —
+overloading the one field made the background event claim to be a mode that does not exist.
+
+New: `engine/archival.py`, `compaction.archive_middle` (the archival call split out so it can
+run in a thread: it touches no message list, only the model and the filesystem). 10 tests in
+`tests/test_archival.py`.
+
+
 ## [0.307.0] — 2026-09-05
 
 ### The history index was a map to files that do not exist

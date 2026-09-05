@@ -22,6 +22,7 @@ from ..endpoints.base import EndpointError
 from ..health_events import log_health_event
 from . import (
     actionroute,
+    archival,
     assist,
     finishgate,
     hold,
@@ -85,6 +86,7 @@ class EngineLoop:
 
     # Filled in by `loopsetup.configure` — declared here so the class still says what
     # an EngineLoop HOLDS, which is what lifting construction out would otherwise cost.
+    _archival: Any
     _challenged: set[str]
     _evict_warned: Any
     _finish_reserved: Any
@@ -179,6 +181,9 @@ class EngineLoop:
                 # operative line as an appended ENGINE NOTE. Append-only and turn-free, the
                 # same carrier a mid-run rule binding already uses.
                 assist.at_boundary(self)
+                # …and a background archival that finished since the last turn
+                # announces itself here, where the message list is appended to.
+                archival.collect(self)
                 retries_before = ctx.schema_retries
                 action, usage = next_action(self)
                 # Book the spend IMMEDIATELY: tokens burned by failed schema attempts or a
@@ -324,6 +329,7 @@ class EngineLoop:
         # R82: repair a summary whose newlines were double-escaped (literal ``\n`` and no real
         # newline) so result.md / the digest render real line breaks instead of verbatim "\n".
         summary = normalize_escaped_newlines(summary)
+        archival.settle(self)   # an archive already in flight gets a moment to land
         killed = self.subruns.kill_all(reason=f"parent run finished ({status})")
         if killed:
             summary += f"\n[{killed} still-running sub-workflow(s) were terminated at run end.]"

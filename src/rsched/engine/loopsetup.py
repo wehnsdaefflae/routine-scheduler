@@ -151,8 +151,8 @@ def configure(loop, ctx: RunContext, workflow_body: str, instruction: str,
     # own archived history as a third store to surface from. Each initialises its OWN run
     # state: this function has no business knowing their field names, and the statement
     # ceiling said so before the fourth one landed.
-    from . import assist, hold, recall, remind
-    for layer in (hold, remind, assist, recall):
+    from . import archival, assist, hold, recall, remind
+    for layer in (hold, remind, assist, recall, archival):
         layer.configure(loop)
     # Once the conversation has been archived to on-disk history, the model is reminded
     # to consult its index — right after each compaction, then every 10th turn (NOT every
