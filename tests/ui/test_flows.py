@@ -1257,7 +1257,7 @@ def test_item_refs_link_and_flash(ui, ui_page):
     }
     (rdir / "audit" / "report.json").write_text(json.dumps(report), encoding="utf-8")
 
-    ui_page.goto(f"{ui.url}/#/messages")
+    ui_page.goto(f"{ui.url}/#/messages?type=all")
     link = ui_page.locator(".panel.prose a.ref-link", has_text="D1")
     expect(link).to_have_attribute("href", "#/messages?focus=D1")
     expect(ui_page.locator("#ref-F1")).to_be_visible()      # findings AND decisions get cards
@@ -1329,7 +1329,7 @@ def test_item_detail_renders_markdown(ui, ui_page):
     }
     (rdir / "audit" / "report.json").write_text(json.dumps(report), encoding="utf-8")
 
-    ui_page.goto(f"{ui.url}/#/messages")
+    ui_page.goto(f"{ui.url}/#/messages?type=all")
     fcard = ui_page.locator("#ref-F2")
     # the finding's bullet list renders as real <li>, not literal "- lists become …"
     expect(fcard.locator("li", has_text="lists become real")).to_be_visible()

@@ -15,10 +15,21 @@ place where every item is listed with its status, what it is for, where it came 
 when it was addressed. It replaced the old Log and Audit pages in 0.106.0 (as Items, renamed
 in D74).
 
-Items are a READ MODEL (`rsched/readmodels/items.py`): four files on disk are merged into
-one shape on demand. Nothing in this path writes an item — the self-audit routine owns
-`report.json`, the engine owns `reports.jsonl`, the web layer owns the answered-decision
-markers, and the changelog is written by self-audit's own runs.
+A fourth type joined them in 0.294.0 (operator order 2026-09-05): a **summary** — a routine's
+latest finish message, the one text a run writes for a person to read. It had a page of its own
+that nothing else linked to, next door to the page that already indexed everything the instance
+has to say, so the page was deleted and the summary became an item type. It is the page's
+DEFAULT filter: landing on Messages now answers "what did everything I run last tell me", and
+the maintenance backlog is one chip away. That reverses D75's "a worklist first, an archive on
+request" — deliberately, because the backlog is a producer's view and the summaries are the
+reader's.
+
+Items are a READ MODEL: five files on disk are merged into one shape on demand
+(`rsched/readmodels/items.py` for the four maintenance sources, `rsched/readmodels/summaries.py`
+for the fifth). Nothing in this path writes an item — the self-audit routine owns `report.json`,
+the engine owns `reports.jsonl`, the web layer owns the answered-decision markers, the changelog
+is written by self-audit's own runs, and a summary is `runs/<ts>/result.md`, which nothing but
+the engine's own finish ever touches.
 
 ## Sources
 
@@ -62,8 +73,11 @@ arbitrary payload keys). Nothing reads them.
 
 - **`id`** — `F<n>` finding, `D<n>` decision, `R<n>` report. The prefix is the type, and the
   three namespaces never collide. `R` was chosen over `B` because the user's own
-  reviewer-backlog items are written `B<n>` in prose and would mislink.
-- **`type`** — `finding` | `decision` | `report`.
+  reviewer-backlog items are written `B<n>` in prose and would mislink. A SUMMARY's id is the
+  RUN id it came from (`<slug>:<ts>`) — there is no `S<n>` namespace and no counter to own one,
+  and `S1` would collide visually with the stopping-condition accounting `[s1] met — …` that
+  appears verbatim inside summary prose.
+- **`type`** — `summary` | `finding` | `decision` | `report`.
 - **`status`** — see below. The key is `status`, never `state`: decisions already carried
   `status` on disk and a synonym would fork the vocabulary.
 - **`title`**, **`detail`** — the item's own prose, verbatim from its source. An archive-only
@@ -87,6 +101,18 @@ arbitrary payload keys). Nothing reads them.
   true on a terminal acknowledgment — see the status rules below).
 
 ## Status vocabulary
+
+A **summary** uses the same vocabulary rather than a synonym: `open` while unread, `settled` once
+the operator has dismissed it. It is never `in_progress`, `addressed` or `dropped` — nobody works
+on a summary, they read it. Reusing the two words is what makes the page's existing
+`status=open,in_progress` default land exactly on the unread ones, reproducing the old Summary
+page's Unread-by-default behaviour with no new machinery; the card renders them as "unread" and
+"read", because those are the right words on a card and the wrong ones in a shared vocabulary.
+
+The read marker is a WATERMARK — `<routines>/.control/summary-read.json`, `{slug: newest run
+seen}` — so a newer run resurfaces on its own and nothing has to go back and clear the old one.
+That is also why exactly one summary per routine is listed: per-run rows would need a real
+per-run store, and 542 of them would drown the maintenance items they share a page with.
 
 `open` · `in_progress` · `addressed` · `settled` · `dropped` · `unknown`
 

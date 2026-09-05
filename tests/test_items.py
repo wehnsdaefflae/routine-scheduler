@@ -259,9 +259,12 @@ def test_api_items_merges_filters_and_carries_the_header(api_client):
 
 
 def test_api_items_without_the_self_audit_routine(api_client):
+    """No maintenance record — but the page still answers, because a summary is an item too and
+    comes from `registry.scan` rather than from `report.json` (there are no runs here either,
+    so the list is empty; tests/test_summaries.py covers the case where there are)."""
     c, _ = api_client
     assert c.get("/api/items").json() == {
-        "exists": False, "routine": "self-audit", "items": [],
+        "exists": False, "routine": "self-audit", "items": [], "total": 0,
         "counts": {"type": {}, "status": {}}, "report": None,
         "last_run": None, "queued": [], "answered_decisions": []}
 

@@ -28,7 +28,6 @@ const routes = [
   [/^#\/routine\/([a-z0-9-]+)$/, () => import("/static/views/routine.js")],
   [/^#\/run\/([a-z0-9-]+:[0-9-]+)$/, () => import("/static/views/run.js")],
   [/^#\/questions$/, () => import("/static/views/questions.js")],
-  [/^#\/summary$/, () => import("/static/views/summary.js")],
   [/^#\/library(?:\/(.*))?$/, () => import("/static/views/library.js")],
   [/^#\/settings$/, () => import("/static/views/settings.js")],
   [/^#\/help(?:\/(.*))?$/, () => import("/static/views/help.js")],
@@ -85,7 +84,6 @@ function updateLocation(path) {
   // Routines moved to #/routines; #/ (and #/conversations) is the Conversations landing.
   const key = path.startsWith("#/routines") || path.startsWith("#/routine/")
       || path.startsWith("#/run/") ? "dashboard"
-    : path.startsWith("#/summary") ? "summary"
     : path.startsWith("#/questions") ? "questions"
     : path.startsWith("#/messages") ? "messages"
     : path.startsWith("#/stats") ? "stats"
@@ -105,7 +103,6 @@ function crumbsFor(path) {
   switch (top) {
     case "": return [{ label: "Conversations" }];
     case "routines": return [{ label: "Routines" }];
-    case "summary": return [{ label: "Summary" }];
     case "questions": return [{ label: "Decisions" }];
     case "messages": return [{ label: "Messages" }];
     case "stats": return [{ label: "Stats" }];

@@ -1119,7 +1119,8 @@ def test_items_report_and_feedback(client):
     routines = tmp / "routines"
     # no self-audit routine yet → friendly empty payload
     assert c.get("/api/items").json() == {"exists": False, "routine": "self-audit",
-                                          "items": [], "counts": {"type": {}, "status": {}},
+                                          "items": [], "total": 0,
+                                          "counts": {"type": {}, "status": {}},
                                           "report": None, "last_run": None,
                                           "queued": [], "answered_decisions": []}
 

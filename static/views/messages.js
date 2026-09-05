@@ -22,7 +22,8 @@ import { itemCard } from "/static/components/itemcard.js";
 import { focusRef, linkifyRefs } from "/static/components/reflinks.js";
 import { chip, el, emptyState, skeleton, tagChip, toast, when } from "/static/util.js";
 
-const TYPES = [["finding", "findings"], ["decision", "decisions"], ["report", "reports"]];
+const TYPES = [["summary", "summaries"], ["finding", "findings"], ["decision", "decisions"],
+               ["report", "reports"]];
 const STATUSES = ["open", "in_progress", "addressed", "settled", "dropped", "unknown"];
 
 export async function render(view, query = {}) {
@@ -31,22 +32,44 @@ export async function render(view, query = {}) {
   // A ?focus=<id> deep-link exists to show THAT card, which may be archived — so it
   // defaults to the whole set, not the active slice.
   const defaultStatus = query.focus ? "" : "open,in_progress";
-  const filters = { type: query.type || "",
+  // …and default to SUMMARIES, which is what replaced the Summary page (operator order
+  // 2026-09-05). Landing here now answers "what did everything I run last tell me" and the
+  // maintenance backlog is one chip away — a deliberate reversal of D75's "worklist first",
+  // because the backlog is a producer's view and the summaries are the reader's.
+  // `status` and `type` need the SAME explicit-`all` sentinel: without it, clicking the
+  // active summary chip off would silently come back on the next reload.
+  const defaultType = query.focus ? "" : "summary";
+  const filters = { type: query.type ? (query.type === "all" ? "" : query.type) : defaultType,
                     status: query.status ? (query.status === "all" ? "" : query.status)
                                          : defaultStatus,
                     routine: query.routine || "", search: query.search || "" };
-  // An emptied status filter must survive reload as a CHOICE, not fall back to the
+  // An emptied filter must survive reload as a CHOICE, not fall back to the
   // default — so "" (show everything) is written to the URL as the explicit "all".
   const syncURL = () => setQuery({ ...filters, status: filters.status || "all",
+                                   type: filters.type || "all",
                                    focus: query.focus || "" });
   let searchTimer = null;
+
+  // F303: with one row per routine and no bulk action, clearing a read backlog was one click
+  // per routine. Shown only while summaries are what you are looking at — it means nothing
+  // over findings, which are settled by the work rather than by being read.
+  const sweepBtn = el("button", { class: "btn small", hidden: true }, "✓ mark all read");
+  sweepBtn.onclick = async () => {
+    sweepBtn.disabled = true;
+    try {
+      const r = await api("/api/items/read-all", { method: "POST", body: {} });
+      toast(r.marked ? `${r.marked} marked read` : "nothing left to mark");
+      await load();
+    } catch (err) { toast(err.message, 5000, { error: true }); }
+    sweepBtn.disabled = false;
+  };
 
   view.append(el("div", { class: "page-head" },
     el("div", {},
       el("h1", {}, "Messages"),
       el("div", { class: "sub" },
-        "findings, decisions and reports — what it is, where it came from, when it was addressed")),
-    el("div", { class: "row" },
+        "what your routines told you, and the findings, decisions and reports behind it")),
+    el("div", { class: "row" }, sweepBtn,
       el("button", { class: "btn small", onclick: () => load() }, "↻ refresh"))));
 
   const header = el("div", {});
@@ -223,6 +246,7 @@ export async function render(view, query = {}) {
       filters[key] = filters[key] === value ? "" : value;
       syncURL(); load();
     };
+    sweepBtn.hidden = filters.type !== "summary";
     filterBar.replaceChildren(el("span", { class: "lbl" }, "type"));
     for (const [value, label] of TYPES)
       filterBar.append(tagChip(`${label} ${counts.type[value] || 0}`,
@@ -311,7 +335,13 @@ export async function render(view, query = {}) {
         body.append(itemCard(item, {
           queued,
           answered: answered.has(item.id),
-          onPriority: async (on) => {
+          onRead: item.type !== "summary" ? null : async (read) => {
+            try {
+              await api(`/api/items/${item.id}/read`, { method: "POST", body: { read } });
+              await load();
+            } catch (err) { toast(err.message, 4000, { error: true }); }
+          },
+          onPriority: item.type === "summary" ? null : async (on) => {
             try {
               await api(`/api/items/${item.id}/priority`, { method: "POST", body: { on } });
               toast(on ? `${item.id} flagged ⚑ — floats here, and its owner's next run reads it first`

@@ -1,4 +1,5 @@
-"""The Messages page (#/messages, the Items page renamed in D74): the system-maintenance
+"""The Messages page (#/messages, the Items page renamed in D74): what the routines told you
+(the SUMMARIES, which the page opens on since 0.294.0) and the system-maintenance
 index — findings, decisions and reports as one filterable list, each card carrying its
 status, origin and the changelog rows that addressed it, plus the whole self-audit inbox
 queue ("waiting for the next run") and the note composer, whose message is a PLAIN user
@@ -54,7 +55,7 @@ def test_messages_page_lists_every_type_with_status_and_history(ui, ui_page, mak
     the changelog. Each card shows a status; an archive-only card says so instead of
     inventing prose, and a prose-matched changelog link is labelled best-effort."""
     _seed(ui, make_routine)
-    ui_page.goto(f"{ui.url}/#/messages?status=all")
+    ui_page.goto(f"{ui.url}/#/messages?status=all&type=all")
     ui_page.wait_for_selector("h1:has-text('Messages')", timeout=10_000)
 
     # the report header rides along (window + since-commit), the arrays are items now
@@ -82,7 +83,7 @@ def test_messages_filters_narrow_the_list_and_counts_stay_whole(ui, ui_page, mak
     """Type / status / search filters run server-side; the chip counts stay over the
     UNFILTERED set so a chip never counts only what the current filter already shows."""
     _seed(ui, make_routine)
-    ui_page.goto(f"{ui.url}/#/messages?status=all")
+    ui_page.goto(f"{ui.url}/#/messages?status=all&type=all")
     ui_page.wait_for_selector("#ref-F1", timeout=10_000)
 
     ui_page.locator(".filterbar .tag", has_text="reports").click()
@@ -107,7 +108,7 @@ def test_messages_composer_queues_edits_and_withdraws_feedback(ui, ui_page, make
     endpoint (D74)."""
     _seed(ui, make_routine)
     inbox = ui.routines / "self-audit" / "inbox"
-    ui_page.goto(f"{ui.url}/#/messages?status=all")
+    ui_page.goto(f"{ui.url}/#/messages?status=all&type=all")
     ui_page.wait_for_selector("#ref-F1", timeout=10_000)
 
     ui_page.locator("#ref-F1 textarea").fill("please fix this first")
@@ -140,7 +141,7 @@ def test_messages_note_is_a_plain_inbox_message(ui, ui_page, make_routine):
     and withdrawable."""
     _seed(ui, make_routine)
     inbox = ui.routines / "self-audit" / "inbox"
-    ui_page.goto(f"{ui.url}/#/messages?status=all")
+    ui_page.goto(f"{ui.url}/#/messages?status=all&type=all")
     ui_page.wait_for_selector("h1:has-text('Messages')", timeout=10_000)
     expect(ui_page.locator("h2", has_text="Message the next run")).to_have_count(0)
     ui_page.goto(f"{ui.url}/#/routine/self-audit")
@@ -150,7 +151,7 @@ def test_messages_note_is_a_plain_inbox_message(ui, ui_page, make_routine):
     ui_page.locator("button", has_text="queue for the next run").click()
     expect(ui_page.locator(".msg-item", has_text="focus on the daemon logging")
            ).to_be_visible(timeout=10_000)
-    ui_page.goto(f"{ui.url}/#/messages?status=all")
+    ui_page.goto(f"{ui.url}/#/messages?status=all&type=all")
 
     row = ui_page.locator(".pending-item", has_text="focus on the daemon logging")
     expect(row).to_be_visible(timeout=10_000)
@@ -180,7 +181,7 @@ def test_messages_without_a_report_still_lists_the_archive(ui, ui_page, make_rou
     the bug stream are items in their own right (the page-level composer is retired —
     user order 2026-08-12)."""
     _seed(ui, make_routine, report=False)
-    ui_page.goto(f"{ui.url}/#/messages?status=all")
+    ui_page.goto(f"{ui.url}/#/messages?status=all&type=all")
     ui_page.wait_for_selector("h1:has-text('Messages')", timeout=10_000)
     expect(ui_page.locator("#ref-R1")).to_be_visible(timeout=10_000)
     expect(ui_page.locator("#ref-F7")).to_be_visible()
@@ -188,16 +189,51 @@ def test_messages_without_a_report_still_lists_the_archive(ui, ui_page, make_rou
 
 
 def test_messages_empty_state_without_the_self_audit_routine(ui, ui_page):
-    ui_page.goto(f"{ui.url}/#/messages?status=all")
+    ui_page.goto(f"{ui.url}/#/messages?status=all&type=all")
     expect(ui_page.locator(".empty .t")).to_contain_text("isn't set up yet", timeout=10_000)
 
 
-def test_messages_defaults_to_the_active_backlog(ui, ui_page, make_routine):
-    """A bare #/messages shows only open + in_progress (the worklist), with the `active`
-    chip lit — the archive (addressed/settled/unknown) needs the explicit ?status=all
-    (D75)."""
+def test_messages_defaults_to_the_summaries(ui, ui_page, make_routine):
+    """A bare #/messages opens on what the routines told you (operator order 2026-09-05, which
+    is what folded the Summary page in here). The maintenance backlog is one chip away — a
+    deliberate reversal of D75's "worklist first": the backlog is a producer's view and the
+    summaries are the reader's."""
     _seed(ui, make_routine)
+    ui.seed_run("uir", "20260905-080000", "finished", summary="the report is published")
     ui_page.goto(f"{ui.url}/#/messages")
+    ui_page.wait_for_selector("h1:has-text('Messages')", timeout=10_000)
+    expect(ui_page.locator("#ref-uir\\:20260905-080000")).to_be_visible(timeout=10_000)
+    expect(ui_page.locator("#ref-D1")).to_have_count(0)                # a finding is not shown
+    expect(ui_page.locator(".filterbar .tag.on", has_text="summaries")).to_be_visible()
+    # the bulk sweep is offered only while summaries are what you are looking at (F303)
+    expect(ui_page.get_by_role("button", name="✓ mark all read")).to_be_visible()
+
+    ui_page.locator(".filterbar .tag", has_text="decisions").click()
+    expect(ui_page.locator("#ref-D1")).to_be_visible(timeout=10_000)
+    expect(ui_page.get_by_role("button", name="✓ mark all read")).to_have_count(0)
+
+
+def test_messages_marks_a_summary_read_and_it_stays_read(ui, ui_page, make_routine):
+    """`open`/`settled` in the store, "unread"/"read" on the card — the vocabulary is shared
+    with the maintenance items, the words on the card are not."""
+    _seed(ui, make_routine)
+    ui.seed_run("uir", "20260905-080000", "finished", summary="the report is published")
+    ui_page.goto(f"{ui.url}/#/messages")
+    card = ui_page.locator("#ref-uir\\:20260905-080000")
+    expect(card).to_contain_text("unread", timeout=10_000)
+
+    card.get_by_role("button", name="✓ read").click()
+    # settled != open, so the default (open,in_progress) view drops it
+    expect(ui_page.locator("#ref-uir\\:20260905-080000")).to_have_count(0, timeout=10_000)
+    store = json.loads((ui.routines / ".control" / "summary-read.json").read_text(encoding="utf-8"))
+    assert store["uir"] == "uir:20260905-080000"
+
+
+def test_messages_defaults_to_the_active_backlog(ui, ui_page, make_routine):
+    """Within the maintenance types the worklist default still holds: open + in_progress, with
+    the `active` chip lit — the archive (addressed/settled/unknown) needs ?status=all (D75)."""
+    _seed(ui, make_routine)
+    ui_page.goto(f"{ui.url}/#/messages?type=all")
     ui_page.wait_for_selector("h1:has-text('Messages')", timeout=10_000)
     expect(ui_page.locator("#ref-D1")).to_be_visible(timeout=10_000)   # open → shown
     expect(ui_page.locator("#ref-R1")).to_have_count(0)                # addressed → hidden
@@ -214,7 +250,7 @@ def test_messages_priority_flag_round_trips(ui, ui_page, make_routine):
     .control/item-priorities.json store the owning routine's next run reads; unflagging
     clears the store again."""
     _seed(ui, make_routine)
-    ui_page.goto(f"{ui.url}/#/messages")
+    ui_page.goto(f"{ui.url}/#/messages?type=all")
     ui_page.wait_for_selector("#ref-D1", timeout=10_000)
     ui_page.locator("#ref-D1 button[title*='flag as priority']").click()
     expect(ui_page.locator("#ref-D1")).to_contain_text("⚑ priority", timeout=10_000)
@@ -238,7 +274,7 @@ def test_messages_discards_an_undelivered_orphan(ui, ui_page, make_routine):
         fh.write(json.dumps({"id": "R2", "ts": "2026-09-04T10:00:00+02:00", "routine": "operator",
                              "target": "routine-improver",
                              "title": "batch-appended, never delivered"}) + "\n")
-    ui_page.goto(f"{ui.url}/#/messages?status=all")
+    ui_page.goto(f"{ui.url}/#/messages?status=all&type=all")
     ui_page.wait_for_selector("h1:has-text('Messages')", timeout=10_000)
 
     expect(ui_page.locator(".q-group-head", has_text="addressed, never delivered")).to_be_visible(

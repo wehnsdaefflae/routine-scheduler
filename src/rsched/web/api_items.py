@@ -20,6 +20,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from .. import priorities, registry
 from ..paths import read_json
 from ..readmodels import items as items_model
+from ..readmodels import summaries
 from ..readmodels.items import SELF_AUDIT_SLUG
 from .api_audit import _routine_dir, answered_decisions, queued_messages
 
@@ -85,13 +86,22 @@ def items(request: Request,
     server = request.app.state.server
     routine_dir = _routine_dir(request)
     exists = routine_dir.is_dir()
+    # A run's finish summary is an item too, and it comes from `registry.scan` rather than from
+    # the maintenance record — so it is merged in BEFORE filtering, and it is served on the
+    # `exists: False` branch as well: an instance without self-audit has no findings, but its
+    # routines still have things to tell you.
+    summary_rows = summaries.build(server)
     if not exists:
-        return {"exists": False, "routine": SELF_AUDIT_SLUG, "items": [],
-                "counts": {"type": {}, "status": {}}, "report": None, "last_run": None,
+        only = items_model.filter_items(summary_rows, type_=type_, status=status,
+                                        routine=routine, search=search)
+        return {"exists": False, "routine": SELF_AUDIT_SLUG,
+                "items": only[:max(1, limit)], "total": len(only),
+                "counts": items_model.counts(summary_rows), "report": None, "last_run": None,
                 "queued": [], "answered_decisions": []}
 
     merged = items_model.build(routine_dir, server.routines_home)
-    shown = items_model.filter_items(merged["items"], type_=type_, status=status,
+    all_items = summary_rows + merged["items"]
+    shown = items_model.filter_items(all_items, type_=type_, status=status,
                                      routine=routine, search=search)
     report = _report_header(routine_dir)
     runs = registry.run_index(routine_dir, SELF_AUDIT_SLUG)
@@ -103,11 +113,39 @@ def items(request: Request,
     # that name no item would otherwise be unreachable once the Audit page is gone.
     changelog = items_model.read_changelog(routine_dir / "audit" / "changelog.jsonl")
     return {"exists": True, "routine": SELF_AUDIT_SLUG,
-            "items": shown[:max(1, limit)], "total": len(shown), "counts": merged["counts"],
+            "items": shown[:max(1, limit)], "total": len(shown),
+            # recomputed over the MERGED set: `counts` is documented as always being over the
+            # unfiltered whole, so it has to include the summaries the page can now filter to
+            "counts": items_model.counts(all_items),
             "changelog": list(reversed(changelog))[:60],
             "report": report, "last_run": last_run,
             "queued": queued_messages(routine_dir),
             "answered_decisions": answered_decisions(routine_dir, report)}
+
+
+@router.post("/items/{item_id}/read")
+def set_item_read(request: Request, item_id: str, body: dict) -> dict:
+    """Dismiss (or un-dismiss) a routine's latest finish message (`{"read": true|false}`).
+
+    Summaries only — the maintenance items have their own status vocabulary and are settled by
+    the work, not by being looked at. The store is a WATERMARK per routine, so a newer run
+    resurfaces on its own.
+    """
+    server = request.app.state.server
+    if ":" not in item_id:
+        raise HTTPException(400, "only a summary can be marked read — its id is a run id")
+    read = bool((body or {}).get("read", True))
+    slug = summaries.mark_read(server.routines_home, item_id, read=read)
+    return {"ok": True, "id": item_id, "routine": slug, "read": read}
+
+
+@router.post("/items/read-all")
+def mark_all_summaries_read(request: Request) -> dict:
+    """Dismiss every currently-shown summary at once (F303 — without it, clearing the backlog
+    is one click per routine).
+    """
+    server = request.app.state.server
+    return {"ok": True, "marked": summaries.mark_all_read(server.routines_home, server)}
 
 
 @router.post("/items/{item_id}/priority")

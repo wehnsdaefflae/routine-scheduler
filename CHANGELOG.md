@@ -17,6 +17,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.294.0] — 2026-09-05
+
+### Summaries are messages: the Summary page folds into Messages as a fourth item type
+
+Operator order 2026-09-05. A run's finish summary IS a message — it is the one text a routine
+writes for a person to read — and it had a page of its own that nothing else linked to, next door
+to the page that already indexed everything the instance has to say.
+
+- **A summary is now an item.** `readmodels/summaries.py` shapes what `registry.scan` already
+  carries into the same dict `readmodels/items.py` produces, and `GET /api/items` merges the two
+  before filtering, so one page, one filter vocabulary, one card. Its id is the RUN id
+  (`<slug>:<ts>`) — there is no `S<n>` namespace to own, and `S1` would collide visually with the
+  stopping-condition accounting `[s1] met — …` that appears verbatim inside summary prose. Kept
+  in its own module because `items.py` is at the house size cap and its four inputs are the
+  maintenance record; a summary is a fifth source of a different kind.
+- **The status vocabulary is reused, not forked.** `open` = unread, `settled` = dismissed (never
+  `in_progress`/`addressed`/`dropped` — nobody works on a summary, they read it). That is what
+  makes the page's existing `status=open,in_progress` default land exactly on the unread ones,
+  reproducing the old page's Unread-by-default behaviour with no new machinery. The card says
+  "unread"/"read", which are the right words on a card and the wrong ones in a shared vocabulary.
+- **`type=summary` is the page's default filter**, with the same explicit-`all` sentinel `status`
+  already had — without it, clicking the chip off would silently come back on the next reload.
+  Landing on Messages now answers "what did everything I run last tell me"; the maintenance
+  backlog is one chip away. That reverses D75's "a worklist first, an archive on request",
+  deliberately: the backlog is a producer's view and the summaries are the reader's.
+- **Both earned behaviours carried across**: the bulk "✓ mark all read" sweep (F303 — without it,
+  clearing a backlog is one click per routine) now sits in the Messages toolbar and is shown only
+  while summaries are what you are looking at, and the read marker keeps its path, shape and
+  meaning (`{slug: newest run seen}`), so **no migration** — a rename would have bought a one-shot
+  migration for nothing.
+- **Deleted**: `web/api_summary.py`, `static/views/summary.js`, their two test files, the route,
+  the nav entry, the breadcrumb and the active-nav key. The rail goes nine destinations to eight.
+- The ⚑ priority flag is deliberately not offered on a summary (`priorities.ITEM_ID_RE` rejects a
+  run id by design), and summaries are served on the `exists: False` branch too: an instance
+  without self-audit has no findings, but its routines still have things to tell you.
+
 ## [0.293.0] — 2026-09-05
 
 ### Stopping conditions gain a SCOPE, and a routine that reaches its final goal retires itself

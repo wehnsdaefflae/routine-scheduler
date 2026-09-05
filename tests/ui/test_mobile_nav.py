@@ -1,6 +1,7 @@
 """The phone's bottom navigation bar — one file for the whole contract.
 
-F439 was reported as "the bottom bar shows about five of the nine destinations" and closed as
+F439 was reported as "the bottom bar shows about five of the nine destinations" (eight since
+0.294.0, when Summary folded into Messages) and closed as
 resolved, because its guard counted items against `window.innerWidth`. On a phone that value IS
 the layout viewport, and the layout viewport is exactly what a horizontally-overflowing document
 expands — so the guard measured the symptom's own cause and always agreed with it.
@@ -32,7 +33,7 @@ PHONE = {"width": 390, "height": 780}
 LONG_TOKEN = "a9f3c1e0b7d4568291acde3f0b1729d5e8c4a6b3f9012d7e5c8a1b4f6039e2d7c5a8b1f4"
 
 #: Every destination the rail offers, plus the run view (the surface that carries a transcript).
-NAV_ROUTES = ("#/", "#/routines", "#/messages", "#/stats", "#/questions", "#/summary",
+NAV_ROUTES = ("#/", "#/routines", "#/messages", "#/stats", "#/questions",
               "#/library", "#/settings", "#/help")
 
 
@@ -71,20 +72,21 @@ def _fits(ui_page, selector: str, width: int) -> int:
         }).length""", [selector, width])
 
 
-def test_mobile_bottom_nav_shows_all_nine_destinations_over_a_wide_transcript(ui, ui_page):
+def test_mobile_bottom_nav_shows_every_destination_over_a_wide_transcript(ui, ui_page):
     """F439's own assertion, kept — but it is the WEAKER of the two here, and knowing why matters.
 
     Desktop Chromium under Playwright resolves `position: fixed` against the emulated viewport and
     does not grow a layout viewport the way mobile Chrome does, so this count stays 9 even on a
-    document that scrolls sideways. It guards the nav's shape (nine links, none hidden by a rule);
+    document that scrolls sideways. It guards the nav's shape (every link present, none hidden by
+    a rule);
     the test below is what guards the operator's actual symptom.
     """
     _seed_wide_transcript(ui, "uir", "20260904-000353")
     ui_page.set_viewport_size(PHONE)
     ui_page.goto(f"{ui.url}/#/run/uir:20260904-000353")
     expect(ui_page.locator(NAV).first).to_be_visible(timeout=10_000)
-    expect(ui_page.locator(NAV)).to_have_count(9)
-    assert _fits(ui_page, NAV, PHONE["width"]) == 9
+    expect(ui_page.locator(NAV)).to_have_count(len(NAV_ROUTES))
+    assert _fits(ui_page, NAV, PHONE["width"]) == len(NAV_ROUTES)
 
 
 def test_no_route_scrolls_sideways_on_a_phone(ui, ui_page):

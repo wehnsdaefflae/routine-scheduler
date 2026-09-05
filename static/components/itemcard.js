@@ -1,4 +1,5 @@
-// One item card on the Messages page: a finding, decision or bug report with its status,
+// One item card on the Messages page: a routine's finish SUMMARY, or a finding, decision or
+// bug report with its status,
 // prose, origin, and the changelog rows that addressed it. The card's DOM id is
 // `ref-<ID>`, which is what reflinks.js focusRef lands on — every F/D/R mention anywhere
 // in the console scrolls to (and flashes) the card built here.
@@ -14,7 +15,11 @@ const STATUS_TONE = {
   open: "waiting_user", in_progress: "partial", addressed: "ok",
   settled: "ok", dropped: "idle", unknown: "",
 };
-const TYPE_LABEL = { finding: "finding", decision: "decision", report: "report" };
+const TYPE_LABEL = { finding: "finding", decision: "decision", report: "report",
+                     summary: "summary" };
+//: A run's outcome, shown on a summary card instead of a severity. `ok` is the ordinary case
+//: and says nothing worth a chip; the other three are the reason you would read this one first.
+const OUTCOME_TONE = { partial: "partial", failed: "err", aborted: "err" };
 const SEV = ["problem", "systemic", "redundancy", "improvement", "info"];
 
 function originLine(item) {
@@ -105,13 +110,21 @@ function commentBox(item, queued, { onSave, onWithdraw }) {
       el("div", { style: "flex:1" }, note), saveBtn, dropBtn));
 }
 
-export function itemCard(item, { queued, onSave, onWithdraw, answered, onPriority } = {}) {
+export function itemCard(item, { queued, onSave, onWithdraw, answered, onPriority,
+                                 onRead } = {}) {
   const status = item.status || "unknown";
+  const isSummary = item.type === "summary";
   // An answered decision (durable marker, survives inbox consumption) reads as answered here
   // too — not re-presented as open once a run drains its feedback message.
-  const label = queued && item.type === "decision" ? "answer queued"
+  // A summary is not worked on, it is READ — so `open`/`settled` say the wrong thing on its
+  // card even though they are the right thing in the store (a synonym in the vocabulary would
+  // fork it; a synonym in the rendering costs nothing).
+  const label = isSummary ? (status === "settled" ? "read" : "unread")
+    : queued && item.type === "decision" ? "answer queued"
     : answered && status === "open" ? "answered" : status;
   const tone = label === "answer queued" ? "partial"
+    : label === "unread" ? "waiting_user"
+    : label === "read" ? "idle"
     : label === "answered" ? "ok" : (STATUS_TONE[status] ?? "");
   const sev = SEV.includes(item.severity) ? item.severity : "";
   // The ⚑ toggle: the user's "work this first" — floats the card on the page and the
@@ -126,15 +139,32 @@ export function itemCard(item, { queued, onSave, onWithdraw, answered, onPriorit
       try { await onPriority(!item.priority); } finally { e.target.disabled = false; }
     },
   }, item.priority ? "⚑ flagged" : "⚑");
+  // Dismiss / undismiss. Not offered on a maintenance item: `priorities.ITEM_ID_RE` rejects a
+  // run id by design, and a finding is settled by the work rather than by being looked at.
+  const readBtn = !(isSummary && onRead) ? null : el("button", {
+    class: `btn small ${status === "settled" ? "ghost" : ""}`,
+    title: status === "settled"
+      ? "mark unread — brings this routine's message back to the unread view"
+      : "mark read — it comes back on its own when this routine finishes a newer run",
+    onclick: async (e) => {
+      e.target.disabled = true;
+      try { await onRead(status !== "settled"); } finally { e.target.disabled = false; }
+    },
+  }, status === "settled" ? "unread" : "✓ read");
   const head = el("div", { class: "row spread" },
     el("div", { class: "row", style: "gap:9px" },
       chip(label, tone),
       item.priority ? chip("⚑ priority", "partial") : null,
       chip(TYPE_LABEL[item.type] || item.type, "idle"),
       sev ? chip(sev, `sev-${sev}`) : null,
+      // a summary's outcome is the thing that decides whether you read it now
+      isSummary && OUTCOME_TONE[item.outcome]
+        ? chip(item.outcome, OUTCOME_TONE[item.outcome]) : null,
       el("strong", { class: "prose" }, item.title || item.id)),
-    el("div", { class: "row", style: "gap:8px" }, flag,
-      el("span", { class: "faint small" }, item.id)));
+    el("div", { class: "row", style: "gap:8px" }, isSummary ? readBtn : flag,
+      isSummary
+        ? el("a", { class: "faint small", href: `#/run/${item.id}` }, "open the run")
+        : el("span", { class: "faint small" }, item.id)));
 
   const archiveNote = item.archive_only
     ? el("div", { class: "faint small mt" },

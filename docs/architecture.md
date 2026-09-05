@@ -828,8 +828,9 @@ whose TEXT must change on a live instance is converted by a one-shot migration i
   (inode+mtime+size, so atomic rewrites always miss), pruned for deleted dirs, copies returned —
   the disk stays the source of truth on every lookup. Every other derived view lives in
   **`rsched/readmodels/`** (stats, run_health, util_stats, statemap, fileactivity, tasktree,
-  items — the maintenance index of findings/decisions/bug reports, docs/items.md — and
-  messages — a routine's four message folders, docs/messages.md) on the
+  items — the maintenance index of findings/decisions/bug reports, docs/items.md — summaries —
+  each routine's latest finish message, shaped as a fourth item type and merged into the same
+  page — and messages — a routine's four message folders, docs/messages.md) on the
   same discipline: `readmodels/memo` fingerprint-caches per input file, `readmodels/usage_stream`
   is the ONE parser of workflow-usage.jsonl — a read-model is a pure derivation, deletable state,
   never a writer.

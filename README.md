@@ -98,7 +98,11 @@ endpoints, the central Secrets store, GitHub, the library repo.
   write-only Secrets store
   every util reads, GitHub device flow, the source remote (the library repo has no
   settings surface — the library-sync routine manages it), graceful server restart.
-- **Messages** — the system-maintenance index: every self-audit finding (`F7`) and decision
+- **Messages** — what your routines told you, and the maintenance record behind it. It opens on
+  the **summaries**: each routine's latest finish message, unread first, with a bulk sweep — the
+  Summary page folded in here in 0.294.0, because a finish summary is a message and this is the
+  page that indexes them. One chip away are the system-maintenance items: every self-audit
+  finding (`F7`) and decision
   (`D14`), and every report (`R3`) a run filed — addressed to the routine that owns the
   problem, or left for triage — with its status, purpose, origin and the
   commits that addressed it — filterable by type, status, routine and free text, with the

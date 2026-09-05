@@ -188,10 +188,11 @@ h3 { font-size: var(--t-l); font-weight: 600; letter-spacing: -0.01em; margin: v
 }
 
 /* ── the rail: one chrome, grouped by what a destination is FOR ─────────────────────────── */
-/* Nine destinations in a horizontal tab strip overflowed into a sideways scroll, so the tabs
-   you could not see were the ones you forgot existed. A rail has permanent room for all nine,
+/* The destinations in a horizontal tab strip overflowed into a sideways scroll, so the tabs you
+   could not see were the ones you forgot existed. A rail has permanent room for all of them,
    for the group headings that say what they are for, and for the machine's own state at its
-   foot — and it leaves the top of the page to the page. */
+   foot — and it leaves the top of the page to the page. (Eight since 0.294.0: Summary folded
+   into Messages, where a routine's finish message is one item type among the rest.) */
 
 .topbar {
   position: fixed; inset: 0 auto 0 0; width: var(--rail-w); z-index: 30;

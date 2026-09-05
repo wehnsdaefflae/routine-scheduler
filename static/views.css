@@ -865,8 +865,6 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
   text-overflow: ellipsis; white-space: nowrap; max-width: 560px; }
 
 /* Summary: a read row recedes so unread work stands out */
-.summary-item.read { opacity: 0.55; }
-.summary-item.read:hover { opacity: 0.85; }
 
 /* ── routine page: overview hero + collapsible config groups ───────────────────────────
    The hero is an instrument cluster an operator reads before touching any config; the
