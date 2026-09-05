@@ -328,6 +328,58 @@ BRIEF_FIELD = {"util": "name", "write_util": "name", "remove_util": "name", "rea
                "kill": "n", "wait": "n",
                "ask_user": "question", "report": "title", "finish": "status"}
 
+
+def brief_value(action: dict) -> str:
+    """The VALUE of the action's most identifying field — no kind, no truncation.
+
+    The three sites that record a turn (`loop._record_turn`, the admin audit line,
+    `history.read_transcript`) store the kind SEPARATELY and want only this value, and each
+    carried its own copy of the same lookup with a different truncation. The widths stay theirs;
+    the derivation is now one function.
+    """
+    kind = str(action.get("kind") or "")
+    return str(action.get(BRIEF_FIELD.get(kind, ""), "") or "")
+
+
+def canon(action: dict) -> str:
+    """THE canonical one-line rendering of an action — the stable, legible string identifying what
+    a turn actually did.
+
+    This is the documented MATCH TARGET. Anything deciding "is this the action I meant?" — a
+    reminder regex, a rule's relevance trigger, a history-recall keyword overlap — matches against
+    this string, and anything showing a person or a model WHAT matched renders the same string.
+    That is the entire reason it lives in one place: precision and recall are only tunable if the
+    thing being matched is stable and legible, and before this the same line was derived six
+    different ways (three truncations of the field value, a separate name/path/paths rule in
+    `notes.py`, and a richer JS version in the transcript component that had already drifted ten
+    kinds behind once).
+
+    The forms, and why they differ:
+
+        util:codemap --json           a util call is identified by its name AND its arguments —
+                                      `util:fs-ops` alone cannot tell `mv` from `rm`
+        shell: rm -rf build/          the command IS the action; a `command=` label adds nothing
+        read_file paths=a.md,b.md     `read_file` carries a LIST (`paths`), not the singular field
+        write_file path=state/x.json  every other kind names its field, so the string says what
+        finish                        it is; a kind with no identifying field is just itself
+
+    Untruncated on purpose: a caller needing a width applies its own. Matching a pre-truncated
+    string would silently change what a regex can see as an action's arguments grow.
+    """
+    kind = str(action.get("kind") or "?")
+    if kind == "util":
+        args = action.get("args")
+        tail = " ".join(str(a) for a in args) if isinstance(args, list) else ""
+        return f"util:{action.get('name') or '?'}{f' {tail}' if tail else ''}"
+    if kind == "shell":
+        return f"shell: {action.get('command') or ''}".rstrip()
+    if kind == "read_file" and isinstance(action.get("paths"), list) and action["paths"]:
+        return f"read_file paths={','.join(str(x) for x in action['paths'])}"
+    field = BRIEF_FIELD.get(kind, "")
+    value = str(action.get(field, "") or "") if field else ""
+    return f"{kind} {field}={value}" if value else kind
+
+
 def example_action() -> dict:
     """The few-shot example embedded in the harness contract — models on-demand step
     reading with a finding-first `say` (NOT util discovery: the catalog is already in

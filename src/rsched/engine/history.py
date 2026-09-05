@@ -13,7 +13,7 @@ import json
 from pathlib import Path
 
 from ..endpoints.base import fold_usage
-from .actionschema import BRIEF_FIELD
+from .actionschema import brief_value
 from .observations import format_observation
 
 
@@ -54,8 +54,7 @@ def replay_messages(events: list[dict]) -> tuple[list[dict], int, list[dict]]:
             turn = ev.get("turn")
             if isinstance(turn, int):
                 last_turn = turn
-                action_kind = str(p.get("kind") or "")
-                brief = str(p.get(BRIEF_FIELD.get(action_kind, ""), ""))[:80]
+                brief = brief_value(p)[:80]
                 records.append({"turn": turn, "kind": p.get("kind", "?"),
                                 "brief": json.dumps(brief, ensure_ascii=False),
                                 "say": p.get("say", "")})

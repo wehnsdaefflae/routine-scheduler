@@ -278,3 +278,72 @@ def test_finish_reply_to_field():
              "reply_to": "nope"}
     assert "reply_to" not in normalize_action(dict(other))
     assert validate_action(normalize_action(dict(other))) == []
+
+
+# ---- the canonical action rendering --------------------------------------------------------------
+# `canon` is the MATCH TARGET: the string a reminder regex, a rule's relevance trigger or a
+# history-recall keyword overlap is evaluated against, and the string shown when something says
+# WHAT matched. Precision and recall are only tunable if it is stable, so these pin the forms —
+# a silent change to any of them silently retunes every match built on it.
+
+
+def test_canon_renders_each_form_the_spec_defines():
+    from rsched.engine.actionschema import canon
+
+    # a util is its NAME and its ARGUMENTS — `util:fs-ops` alone cannot tell `mv` from `rm`,
+    # which is the whole reason the arguments are in the match target
+    assert canon({"kind": "util", "name": "fs-ops", "args": ["mv", "a", "b"]}) == "util:fs-ops mv a b"
+    assert canon({"kind": "util", "name": "codemap"}) == "util:codemap"
+    # the command IS the action, so a `command=` label would add nothing
+    assert canon({"kind": "shell", "command": "rm -rf build/"}) == "shell: rm -rf build/"
+    # read_file carries a LIST, not the singular field its BRIEF_FIELD entry names
+    assert canon({"kind": "read_file", "paths": ["a.md", "b.md"]}) == "read_file paths=a.md,b.md"
+    assert canon({"kind": "read_file", "path": "one.md"}) == "read_file path=one.md"
+    # every other kind names its field, so the string says what it is
+    assert canon({"kind": "write_file", "path": "state/x.json"}) == "write_file path=state/x.json"
+    assert canon({"kind": "edit_file", "path": "src/auth.py"}) == "edit_file path=src/auth.py"
+    # a kind with no identifying field is just itself, never a dangling "kind ="
+    assert canon({"kind": "wait"}) == "wait"
+    assert canon({"kind": "finish", "status": ""}) == "finish"
+    assert canon({}) == "?"
+
+
+def test_canon_is_untruncated_so_a_regex_sees_the_whole_action():
+    """A caller needing a width applies its own. Matching a pre-truncated string would silently
+    change what a regex can see as an action's arguments grow — the match target must not move
+    under the reminders written against it."""
+    from rsched.engine.actionschema import canon
+
+    long_args = ["--flag=" + "x" * 300]
+    assert canon({"kind": "util", "name": "u", "args": long_args}).endswith("x" * 300)
+
+
+def test_canon_covers_every_action_kind_without_raising():
+    """A kind missing from BRIEF_FIELD must degrade to its bare name, not explode — this map has
+    already drifted behind the kind list once (ten kinds, caught in the 2026-08-21 sweep)."""
+    from rsched.engine.actionschema import KINDS, canon
+
+    for kind in KINDS:
+        out = canon({"kind": kind})
+        assert out and out.startswith(kind if kind not in ("util", "shell") else kind[:4])
+
+
+def test_brief_value_is_the_field_value_alone():
+    """The three turn-recording sites store the kind SEPARATELY, so they want the value only.
+    Each used to carry its own copy of this lookup with a different truncation."""
+    from rsched.engine.actionschema import brief_value
+
+    assert brief_value({"kind": "util", "name": "codemap", "args": ["--json"]}) == "codemap"
+    assert brief_value({"kind": "write_file", "path": "a.json"}) == "a.json"
+    assert brief_value({"kind": "wait"}) == ""
+    assert brief_value({}) == ""
+
+
+def test_the_note_stamp_no_longer_loses_kinds_with_neither_name_nor_path():
+    """`notes._brief` carried its own name/path/paths rule, so every kind whose identifying field
+    is neither — llm, ask_user, report, shell — stamped a bare kind with no target at all."""
+    from rsched.engine.notes import _brief
+
+    assert _brief({"kind": "shell", "command": "make test"}) == "shell: make test"
+    assert _brief({"kind": "report", "title": "the queue never read its box"}) \
+        == "report title=the queue never read its box"

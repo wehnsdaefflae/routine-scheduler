@@ -39,9 +39,11 @@ def test_capture_appends_stamped_self_addressed_lines(make_routine):
     lines = [ln for ln in text.splitlines() if ln.startswith("- ")]
     assert len(lines) == 2
     # the stamp is an ADDRESS into the transcript: run · turn · phase · action
-    assert "[20260716-180000 · turn 3 · gather · util websearch]" in lines[0]
+    # the stamp is the CANONICAL action rendering now (actionschema.canon) — one definition
+    # shared with the match target, in place of notes.py's own name/path/paths rule
+    assert "[20260716-180000 · turn 3 · gather · util:websearch]" in lines[0]
     assert "paginate" in lines[0]
-    assert "read_file state/x.md" in lines[1]
+    assert "read_file path=state/x.md" in lines[1]
 
 
 def test_capture_skips_empty_and_truncates_runaways(make_routine):

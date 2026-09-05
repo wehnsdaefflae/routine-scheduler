@@ -29,7 +29,7 @@ from . import (
     notes,
     requests,
 )
-from .actionschema import BRIEF_FIELD
+from .actionschema import brief_value
 from .autocommit import autocommit as _autocommit
 from .boot import boot
 from .completion import MAX_SCHEMA_ATTEMPTS, next_action
@@ -216,7 +216,7 @@ class EngineLoop:
                 if self.admin_leg:
                     # D62: the capability bypass is never silent — one audit line per action.
                     from .admin import log_admin_action
-                    brief = str(action.get(BRIEF_FIELD.get(action["kind"], ""), ""))[:200]
+                    brief = brief_value(action)[:200]
                     log_admin_action(ctx.server.routines_home, run_id=ctx.run_id,
                                      kind=action["kind"], brief=brief)
                 text = format_observation(obs)
@@ -317,7 +317,7 @@ class EngineLoop:
         return "finished"
 
     def _record_turn(self, action: dict) -> None:
-        brief = str(action.get(BRIEF_FIELD.get(action["kind"], ""), ""))[:80]
+        brief = brief_value(action)[:80]
         self.turn_records.append({"turn": self.ctx.turn, "kind": action["kind"],
                                   "brief": json.dumps(brief, ensure_ascii=False),
                                   "say": action.get("say", "")})

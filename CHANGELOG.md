@@ -17,6 +17,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.300.0] — 2026-09-05
+
+### One canonical rendering of an action — the match target three queued features are built on
+
+All three feature requests in the queue (consequence reminders, rule assistance, compaction
+recall) rest on the same mechanic: a deterministic predicate over "what is this run about to do".
+The reminders doc says to pin the thing that predicate matches against FIRST, and calls it
+make-or-break, because precision and recall are only tunable if the match target is stable and
+legible. It was neither.
+
+**The same one-line rendering of an action was being derived six different ways**: three copies of
+the `BRIEF_FIELD` lookup with three different truncations (`loop._record_turn` at 80, the admin
+audit line at 200, `history.read_transcript` at 80), a *fourth* rule in `notes.py` that used
+name/path/paths and so stamped a bare kind with no target at all for every kind whose identifying
+field is neither — `llm`, `ask_user`, `report`, `shell` — and a richer JS version in the transcript
+component that had already drifted ten kinds behind once.
+
+- **`actionschema.canon(action)`** is now that rendering, and the documented match target:
+  `util:fs-ops mv a b` · `shell: rm -rf build/` · `read_file paths=a.md,b.md` ·
+  `write_file path=state/x.json` · `wait`. A util carries its ARGUMENTS, because `util:fs-ops`
+  alone cannot tell `mv` from `rm` — which is exactly the distinction a caution would be written
+  about. `read_file` renders its LIST rather than the singular field its `BRIEF_FIELD` entry names.
+  A kind with no identifying field is just itself, never a dangling `kind=`.
+- **Untruncated on purpose.** Callers apply their own widths. Matching a pre-truncated string would
+  silently change what a regex can see as an action's arguments grow — the target must not move
+  under the reminders written against it.
+- **`actionschema.brief_value(action)`** is the other half: the field VALUE alone, which is what
+  the three turn-recording sites actually wanted (they store the kind separately). Their widths are
+  unchanged; only the derivation is shared.
+- The note stamp changes shape as a result (`util websearch` → `util:websearch`,
+  `read_file state/x.md` → `read_file path=state/x.md`) and now carries a target for the kinds it
+  used to drop.
+
+No behaviour beyond that: this is the foundation, not the feature. Nothing matches against it yet.
+
 ## [0.299.0] — 2026-09-05
 
 ### Compaction happens between steps, not in the middle of one

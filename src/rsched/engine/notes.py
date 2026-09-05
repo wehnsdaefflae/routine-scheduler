@@ -34,13 +34,16 @@ _HEADER = ("# Notes — findings captured via the `note` field (engine-appended,
 
 
 def _brief(action: dict) -> str:
-    """Kind plus its most identifying field — enough to locate the moment, not describe it."""
-    kind = str(action.get("kind") or "?")
-    target = action.get("name") or action.get("path") or ""
-    if not target and isinstance(action.get("paths"), list) and action["paths"]:
-        target = action["paths"][0]
-    target = str(target)[:60]
-    return f"{kind} {target}".strip()
+    """Kind plus its most identifying field — enough to locate the moment, not describe it.
+
+    Now the canonical rendering (`actionschema.canon`), truncated. It used to carry its own
+    name/path/paths rule, which quietly disagreed with `BRIEF_FIELD` for every kind whose
+    identifying field is neither (`llm`, `ask_user`, `spawn`, `report`, `shell`, …) — those
+    stamped a bare kind with no target at all.
+    """
+    from .actionschema import canon
+
+    return canon(action)[:80]
 
 
 def capture(ctx: RunContext, action: dict) -> None:
