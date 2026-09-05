@@ -17,6 +17,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.298.0] — 2026-09-05
+
+### A GPU box's compute is QUEUED, in turns — not locked, and not first-come
+
+Operator, 2026-09-05: *"routines that use the gpu on the external predator often seem to block the
+gpu for one another… i would prefer they found a way to schedule it so everyone gets their turn."*
+
+**What was actually contended was not the run — it was the detached JOB.** All three predator
+routines launch work with `remote submit`, which returns at once and leaves a process on the box
+for hours. That is why the obvious fix was already in place and already failing: voice-model-trainer
+and funscript-trainer are both in the `Labs` group, whose chain is strictly sequential, and they
+still collided — member 0 finishes in minutes and leaves a training job on the card that member 1
+walks into. eye-stabilize-folder sits in a different group and cannot see either of them. Facing
+that vacuum the routines had invented **three incompatible lease protocols** of their own, one of
+them living inside another routine's `scripts/`, and one run had to reclaim an 18-hour-stale lease
+by hand.
+
+- **`MachineConfig.exclusive`** makes `remote submit` take a QUEUE TICKET instead of launching.
+  Nothing else changes: every other verb, and every non-exclusive machine, behaves exactly as
+  before.
+- **Fair share, not FIFO.** Round-robin across ROUTINES by each routine's oldest waiting ticket,
+  FIFO within one — so three jobs from one routine interleave with another's single job as
+  `f1, v1, f2, f3` rather than making it wait for all three. The definition lives once in
+  `rsched/machine_queue.fair_share_order` and the `remote` util ships that exact function to the
+  box, so the two halves cannot drift.
+- **Nobody blocks.** `submit` returns a job id and a queue position immediately; the run reads its
+  place in the CAPABILITIES section and can spend the run on work that does not need the machine.
+- **Every ticket carries a mandatory deadline.** A detached job has no live process to heartbeat
+  against, so a wall clock is the only thing that makes the queue self-healing; past it the job is
+  killed with its process group and the ticket pruned.
+- **The truth is ON THE BOX** — tickets under the machine's own job root, enforced by the util at
+  the one place that opens an SSH connection, so it survives a daemon restart, a container
+  recreate and an instance migration. The daemon only MIRRORS it into
+  `.control/machine-queue/<name>.json` each tick. A machine that cannot be read says **UNKNOWN**,
+  never *free*: an unreachable box reading as free is the single failure mode that would cause the
+  very collision this prevents.
+- **One defect worth recording**, found by the util's own end-to-end harness rather than by
+  reasoning: re-deriving the fair-share order over the *shrinking live set* silently collapses to
+  FIFO, because deleting the ticket that just ran also deletes the evidence that its holder used a
+  turn. The box therefore retires a spent ticket into `round/` and orders over `spent + live`, and
+  the read model no longer re-sorts at all — it reads the order the box returned. Pinned by a
+  regression test.
+
+Cooperative, like every other machine guard, and the docs say so: a human on the box, or a `shell`
+action, still bypasses it.
+
+*Not yet switched on:* `predator` needs `exclusive: true` in Settings → Machines after this
+deploys. Until then `submit` launches directly, exactly as today.
+
 ## [0.297.0] — 2026-09-05
 
 ### Routines stop pacing themselves: the arity caps go, and creation asks what ENDS a routine

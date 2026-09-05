@@ -56,6 +56,7 @@ class MachineBody(BaseModel):
     workdir: str = ""
     description: str = ""
     tags: list[str] = []
+    exclusive: bool = False   # one job at a time: `remote submit` queues instead of launching
 
 
 @router.put("/settings/machines/{name}")

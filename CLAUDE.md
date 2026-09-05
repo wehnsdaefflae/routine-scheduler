@@ -314,6 +314,19 @@ by a test, by the engine, or by a past incident.
   UNCONDITIONAL presumption: it fires on EVERY holder, and it has been wrong twice the same way
   (`git-checkpoint`, then `status-page`'s write root — false for all seven holders, because a page
   is published through an upload channel and a routine's own dir is always writable).
+- **An exclusive machine's compute is QUEUED, not locked.** `MachineConfig.exclusive` makes
+  `remote submit` take a ticket instead of launching (`rsched/machine_queue.py`). The order is
+  FAIR SHARE — round-robin across ROUTINES by each one's oldest waiting ticket, FIFO within one —
+  so a routine that submits three jobs never starves one that submits one. The submitting run is
+  NEVER blocked: it gets a job id and a position back at once, reads that position in
+  CAPABILITIES, and spends the run on work that does not need the machine. The truth is ON THE BOX
+  (tickets under the job root, enforced by the util at the one place that opens an SSH
+  connection), so it survives a restart, a recreate and a migration; the daemon only MIRRORS it
+  into `.control/machine-queue/`. Every ticket carries a mandatory DEADLINE — a detached job has
+  no live process to heartbeat, so a wall clock is the only self-healing part. A machine that
+  cannot be read says UNKNOWN, never FREE: an unreachable box reading as free is the one failure
+  mode that would cause the collision this prevents. Cooperative, like every machine guard — a
+  human on the box or a `shell` action still bypasses it.
 - **A model's limits are DISCOVERED, not configured.** `endpoints/limits.py` asks each provider
   what its models' real context window and output maximum are (OpenRouter/Nano-GPT/Ollama have
   metadata APIs; `anthropic` and `claude-cli` have none and use a built-in table), caches it under

@@ -171,6 +171,7 @@ class Scheduler:
         from ..machine_mounts import sweep_stale_mount_keys
         sweep_stale_mount_keys()
         self._refresh_limits()
+        self._refresh_machine_queues()
         if fixed:
             self.rescan()
         await self.boot_catchup()
@@ -235,6 +236,7 @@ class Scheduler:
                         log.info("group fire armed group=%s members=%d", gid,
                                  len(rec.get("members") or []))
                 self._refresh_limits()
+                self._refresh_machine_queues()
                 # detached background tasks: intake requests, deliver results, wake owners
                 await self.detached.tick(now)
                 if not is_paused:
@@ -258,6 +260,26 @@ class Scheduler:
                                      detail="scheduler tick raised; see daemon log")
                 except Exception:  # the guard itself must never take the loop down
                     pass
+
+    def _refresh_machine_queues(self) -> None:
+        """Mirror every EXCLUSIVE machine's job queue (rsched/machine_queue.py) so the prompt and
+        the console can read it without an SSH round-trip per reader. Off the tick in a thread and
+        never fatal: a GPU box being down must not stop the scheduler, and a stale mirror reads as
+        UNKNOWN rather than as a free machine — which is the one failure mode that would cause the
+        collision this mechanism exists to prevent.
+        """
+        from ..machine_queue import refresh as refresh_queues
+
+        if not any(m.exclusive for m in (self.server.machines or {}).values()):
+            return
+
+        async def go() -> None:
+            try:
+                await asyncio.to_thread(refresh_queues, self.server)
+            except Exception as exc:
+                log.warning("machine queue refresh failed: %s", exc)
+
+        asyncio.ensure_future(go())   # noqa: RUF006 — fire-and-forget by design
 
     def _refresh_limits(self) -> None:
         """Re-ask each provider what its models' real limits are, behind a 24h TTL

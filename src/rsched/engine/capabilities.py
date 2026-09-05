@@ -197,7 +197,16 @@ def _machine_notes(ctx: RunContext) -> str:
                      "filesystem")
         else:
             share = ""
-        rows.append(f"- {name} — {desc}{tags}{share}")
+        # An exclusive machine's compute is QUEUED, and what the run needs to know is its place
+        # in the rotation — not that the resource exists. Read from the daemon's mirror, so this
+        # costs no SSH round-trip per run; an unreachable box reads as unknown, never as free.
+        queue = ""
+        # getattr: a machine stub without the field is simply not exclusive — the same tolerance
+        # web/model_fit.discovered applies to a server object without a routines_home
+        if getattr(mac, "exclusive", False):
+            from ..machine_queue import capability_note
+            queue = capability_note(ctx.server.routines_home, name, ctx.routine.slug)
+        rows.append(f"- {name} — {desc}{tags}{share}{queue}")
     return ("Remote machines this routine is bound to (run commands with the `remote` util — "
             "`remote list` for readiness; a mounted share means the filesystem is already "
             "local):\n" + "\n".join(rows))

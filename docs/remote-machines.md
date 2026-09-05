@@ -107,6 +107,7 @@ remote submit gpu-box --command "python train.py"   # DETACHED job → a job id
 remote status gpu-box --job <id>                # running | exit=<code> | nojob
 remote logs   gpu-box --job <id>                # stdout + stderr so far
 remote cancel gpu-box --job <id>                # terminate the job's process group
+remote queue  gpu-box                           # who is waiting, in the order they will run
 remote push gpu-box --src ./data.tar --dest /srv/data.tar   # SFTP upload
 remote pull gpu-box --src /srv/out.ckpt --dest ./out.ckpt   # SFTP download
 ```
@@ -117,6 +118,43 @@ own session/process group, survivable, killable via `cancel`) and returns a job 
 poll `status`/`logs`, or pass `submit … --notify-webhook <the routine's own trigger URL>` so the
 remote job POSTs the routine on completion — the routine fires to collect the result, and no run
 sits polling for hours. (See [triggers](triggers.md) for the routine's webhook URL.)
+
+## Exclusive compute: one job at a time, in turns
+
+A GPU is a single resource. Two training jobs on one card do not run half as fast; they run out
+of VRAM. Set a machine's **`exclusive: true`** and `remote submit` stops launching straight away:
+it takes a QUEUE TICKET, and the box runs the jobs one at a time.
+
+The order is **fair share** — round-robin across ROUTINES by each routine's oldest waiting ticket,
+FIFO within one routine. Three jobs from `funscript-trainer` and one from `voice-model-trainer`
+run `f1, v1, f2, f3`: the routine that asked once does not wait behind the routine that asked
+three times. That ordering is defined in `rsched/machine_queue.fair_share_order` and reproduced
+on the box, so the position a run is told is the order the machine will actually use.
+
+Three properties are load-bearing:
+
+- **Nobody blocks.** `submit` returns a job id and a queue position immediately. The run reads its
+  place in CAPABILITIES and spends itself on work that does not need the machine.
+- **Every ticket carries a deadline.** A detached job has no live process to heartbeat against, so
+  a wall clock is the only thing that makes the queue self-healing. Past it the job is killed and
+  its ticket dropped.
+- **The truth is ON THE BOX.** The tickets are files under the machine's own job root, so the
+  queue survives a daemon restart, a container recreate and an instance migration, and the `remote`
+  util enforces it at the one place that opens an SSH connection. The daemon mirrors it into
+  `<routines>/.control/machine-queue/<name>.json` each tick so the prompt and the console read it
+  without an SSH round-trip; a machine that cannot be read says **UNKNOWN**, never *free* — an
+  unreachable box reading as free is the one failure mode that would cause the very collision this
+  prevents.
+
+Like every other machine guard, it is COOPERATIVE. A human working on the box, or a `shell`
+action, still bypasses it. The remote host is not sandboxed and the queue does not change that.
+
+*Why not a lock.* A mutex answers "may I go now?" with yes or no, and on a daily cron "no" is what
+two of three routines get every day, with nothing recording that they asked. A bare `flock` blocks
+instead of refusing, but in arbitrary order, and one routine's three jobs starve another's one.
+Before this existed, three routines sharing `predator` had each invented their own lease protocol
+in their own `scripts/` and group-store files — incompatible, invisible to the daemon, and one of
+them once had to reclaim an 18-hour-stale lease by hand.
 
 ## Filesystem: mounting a share
 

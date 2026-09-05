@@ -120,5 +120,13 @@ class MachineConfig(_Config):
     # (compute stays on `remote exec`; only the filesystem is shared). Empty = no mount.
     share: BlankableStr = ""
     workdir: BlankableStr = ""       # default remote working dir for exec/jobs (else the login dir)
+    # ONE JOB AT A TIME. A GPU box is a single resource: two training jobs on one card do not run
+    # half as fast, they run out of VRAM. Set this and `remote submit` stops launching immediately
+    # — it takes a QUEUE TICKET and the box runs the jobs in fair-share order (round-robin across
+    # routines, FIFO within one), each under a mandatory deadline. The submitting run is never
+    # blocked: it gets a job id and a queue position back at once. See rsched/machine_queue.py and
+    # docs/remote-machines.md. Cooperative, like every other machine guard: a human on the box, or
+    # a `shell` action, still bypasses it.
+    exclusive: bool = False
     description: BlankableStr = ""   # one-line human summary, surfaced to the model in CAPABILITIES
     tags: list[str] = Field(default_factory=list)
