@@ -191,60 +191,9 @@ def test_monthly_spend_without_stream(tmp_path):
     assert monthly_spend(s) == {"months": [], "by_routine": {}}
 
 
-def test_claude_usage_windows(tmp_path):
-    """D33: the local Claude-subscription tally folds ONLY claude-cli-served runs into
-    rolling 5h/7d windows keyed on the run START (the dir-name wall clock); a running
-    run counts (its status.json usage is live)."""
-    from datetime import datetime
-
-    from rsched.readmodels.claude_usage import claude_usage
-
-    home = tmp_path / "routines"
-    a = _mk_routine(home, "alpha", model_name="opus")
-    b = _mk_routine(home, "beta", model_name="glm")
-    # inside 5h (still running); inside 7d only; outside both; a non-cli run inside 5h
-    _mk_run(a, "20260713-100000", "running", tin=100, tout=10, model="claude/opus")
-    _mk_run(a, "20260710-100000", "finished", tin=40, tout=4, model="claude/opus")
-    _mk_run(a, "20260701-100000", "finished", tin=7, tout=7, model="claude/opus")
-    _mk_run(b, "20260713-110000", "finished", tin=999, tout=99,
-            model="openrouter/glm-5.2")
-
-    server = _server(tmp_path)
-    server.endpoints["claude"] = EndpointConfig(name="claude", kind="claude-cli")
-    out = claude_usage(server, now=datetime(2026, 7, 13, 12, 0, 0))  # noqa: DTZ001 — a naive injected now is taken as UTC, like run-ts stamps
-
-    assert out["supported"] and out["endpoints"] == ["claude"]
-    assert out["windows"]["5h"] == {"runs": 1, "tokens_in": 100, "tokens_out": 10,
-                                    "tokens_cached": 0}
-    assert out["windows"]["7d"] == {"runs": 2, "tokens_in": 140, "tokens_out": 14,
-                                    "tokens_cached": 0}
-
-
-def test_claude_usage_windows_cut_in_utc(tmp_path):
-    """F357: run-ts stamps are UTC (ids.run_ts); the windows must cut in UTC no matter
-    the caller's tz. A run 4.5h before an aware Berlin (+02:00) `now` sits INSIDE the 5h
-    window — the retired local-naive comparison shifted it out by the UTC offset."""
-    from datetime import datetime, timedelta, timezone
-
-    from rsched.readmodels.claude_usage import claude_usage
-
-    home = tmp_path / "routines"
-    a = _mk_routine(home, "alpha", model_name="opus")
-    # 12:00+02:00 == 10:00 UTC; the run started 05:30 UTC = 4.5h before now
-    _mk_run(a, "20260713-053000", "finished", tin=50, tout=5, model="claude/opus")
-    server = _server(tmp_path)
-    server.endpoints["claude"] = EndpointConfig(name="claude", kind="claude-cli")
-    berlin_now = datetime(2026, 7, 13, 12, 0, 0, tzinfo=timezone(timedelta(hours=2)))
-    out = claude_usage(server, now=berlin_now)
-    assert out["windows"]["5h"]["runs"] == 1
-    assert out["windows"]["5h"]["tokens_in"] == 50
-
-
-def test_claude_usage_unsupported_without_cli_endpoint(tmp_path):
-    """No claude-cli endpoint configured → the widget hides itself."""
-    from rsched.readmodels.claude_usage import claude_usage
-
-    assert claude_usage(_server(tmp_path)) == {"supported": False}
+# The three D33 `claude_usage` tests lived here until 0.295.0. The local token tally they covered
+# is gone: it could not express "% remaining" in principle, so the console now reads the account's
+# own usage API instead (tests/test_claude_quota.py).
 
 
 def test_recipe_sizes(tmp_path):

@@ -22,6 +22,24 @@ const KINDS = ["openai", "anthropic", "claude-cli"];
 const SCHEMA_MODES = ["json_schema", "json_object", "ollama_native", "none"];
 const EFFORTS = ["", "low", "medium", "high", "xhigh", "max"];   // "" = inherit / provider default
 
+//: "5h 61% left (resets in 2h10m) · 7d 68% left". `remaining` is what the operator asked for;
+//: the API reports `utilization` (percent USED), so the complement is computed once, here.
+export const WINDOW_LABEL = { five_hour: "5h", seven_day: "7d",
+                              seven_day_sonnet: "7d sonnet", seven_day_opus: "7d opus" };
+
+export function quotaLine(q) {
+  const rel = (s) => {
+    if (s == null) return "";
+    const h = Math.floor(s / 3600); const m = Math.round((s % 3600) / 60);
+    return h ? ` (resets in ${h}h${m ? `${m}m` : ""})` : ` (resets in ${m}m)`;
+  };
+  return Object.entries(q.windows || {})
+    .map(([k, w]) => `${WINDOW_LABEL[k] || k} ${Math.round(w.remaining)}% left`
+                     + rel(w.seconds_until_reset))
+    .join(" · ");
+}
+
+
 export async function renderEndpoints(view) {
   view.append(el("div", { class: "muted small", style: "margin-bottom:8px" },
     "Model transports only — the scheduler is the only harness. None are configured by default; ",
@@ -385,23 +403,25 @@ export async function renderEndpoints(view) {
       }).catch(() => creditsRow.replaceChildren());
     }
 
-    // Claude subscription (claude-cli): no official balance/quota API — show the LOCAL
-    // usage tally from run telemetry in the quota windows instead (D33, rolling 5h/7d).
+    // Claude subscription (claude-cli): the REAL per-window quota, read from the account's own
+    // usage API. This replaced a local token tally (D33) that could not express "% remaining" in
+    // principle — Anthropic's windows are not a token count, and the tally was blind to the
+    // operator's own interactive sessions on the same subscription.
     const usageRow = el("div", { class: "small muted", style: "margin-top:4px" });
     if (ep.kind === "claude-cli") {
-      usageRow.textContent = "subscription use: checking…";
-      api("/api/stats/claude-usage").then((u) => {
-        if (!u.supported) { usageRow.replaceChildren(); return; }
-        const fmtT = (n) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M`
-          : n >= 1e3 ? `${Math.round(n / 1e3)}k` : String(n));
-        const win = (k, label) => {
-          const w = u.windows[k];
-          return `${label}: ${fmtT(w.tokens_in)} in (+${fmtT(w.tokens_cached)} cached) / `
-            + `${fmtT(w.tokens_out)} out · ${w.runs} run${w.runs === 1 ? "" : "s"}`;
-        };
-        usageRow.replaceChildren(el("span",
-          { title: "local tally from run telemetry — Anthropic exposes no quota API for subscriptions" },
-          `subscription use — ${win("5h", "last 5h")} — ${win("7d", "7d")}`));
+      usageRow.textContent = "subscription quota: checking…";
+      api(`/api/settings/endpoints/${encodeURIComponent(ep.name)}/quota`).then((q) => {
+        if (!q.supported) { usageRow.replaceChildren(); return; }
+        if (!q.ok) {
+          // The error is the actionable half here — it always names the one-line fix, because
+          // the credential this needs expires and nothing refreshes it headlessly.
+          usageRow.replaceChildren(el("span", { class: "warn-line" },
+            `subscription quota unavailable — ${q.error || "unknown reason"}`));
+          return;
+        }
+        usageRow.replaceChildren(el("span", { title: "from the account's own usage API — the "
+          + "whole subscription, including your interactive sessions" },
+          `subscription: ${quotaLine(q)}`));
       }).catch(() => usageRow.replaceChildren());
     }
 

@@ -239,6 +239,32 @@ your budget caps.
 (it lands in Secrets as `CLAUDE_CODE_OAUTH_TOKEN`). Metered-auth environment variables
 are scrubbed from the CLI's environment, so it can never silently fall back to API billing.
 
+### Seeing what is left of the subscription
+
+The endpoint card and the Routines page both show the account's remaining quota — "5h 61% left
+(resets in 2h10m) · 7d 32% left" — read from Anthropic's own usage API, the same source
+claude.ai's usage panel and the CLI statusline use. It is UNDOCUMENTED, so every failure is soft:
+the chip shows what went wrong and nothing else depends on it. (Until 0.295.0 the card instead
+showed a LOCAL tally of tokens this instance had burned. That could not answer "% remaining" even
+in principle — the windows are not a token count, and the tally was blind to your own interactive
+sessions and to claude.ai on the same subscription — so it was deleted rather than patched.)
+
+**It needs a SECOND token.** The usage API requires the `user:profile` scope, which the headless
+`claude setup-token` does not carry (it is inference-only and 403s). An interactive login mints a
+full-scope one:
+
+```
+docker exec -it -u 1000:1000 rsched claude /login
+```
+
+That writes `~/.claude/.credentials.json` inside the container, bind-mounted from
+`~/.claude-daemon` on the host so it survives a recreate (a dedicated dir, deliberately not the
+host's own `~/.claude` — sharing that would put the daemon and your own Claude Code in one
+session store). Nothing refreshes it headlessly, so it eventually expires; the card reads the
+expiry stamp and says so, with this command, rather than waiting to fail with an
+authentication error. The inference path is untouched by all of this — it keeps using the
+setup-token from Secrets.
+
 ## Abliterated GLM 5.2 (uncensored community variants)
 
 Status as of 2026-07: the abliterations of `zai-org/GLM-5.2` exist as Hugging Face

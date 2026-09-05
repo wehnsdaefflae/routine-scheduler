@@ -8,6 +8,7 @@ import { activityFeed } from "/static/components/activityfeed.js";
 import { slugColor } from "/static/components/charts.js";
 import { groupControls, groupProgress, groupsToolbar, openGroupEditor } from "/static/components/groupmanage.js";
 import { heartbeat } from "/static/components/heartbeat.js";
+import { quotaLine } from "/static/views/settings-endpoints.js";
 import { cronToFriendly, specAtInstant } from "/static/components/schedule.js";
 import { weekGrid } from "/static/components/weekgrid.js";
 import { mdInline } from "/static/md.js";
@@ -72,6 +73,31 @@ function statsLine(run) {
   return parts.join(" · ");
 }
 
+//: The claude-cli endpoints are the ones with a subscription behind them. The quota is per
+//: ACCOUNT, so the FIRST one answers for all of them — asking each would print the same numbers
+//: twice. Silent on every failure: this is a convenience chip, not a status the page depends on.
+async function loadQuota(chip) {
+  try {
+    const eps = (await api("/api/settings/endpoints")).endpoints || [];
+    const cli = eps.find((e) => e.kind === "claude-cli");
+    if (!cli) return;
+    const q = await api(`/api/settings/endpoints/${encodeURIComponent(cli.name)}/quota`);
+    if (!q.supported) return;
+    if (!q.ok) {
+      chip.className = "chip disabled";
+      chip.title = q.error || "";
+      chip.textContent = "subscription quota unavailable";
+      chip.hidden = false;
+      return;
+    }
+    const lowest = Math.min(...Object.values(q.windows).map((w) => w.remaining));
+    chip.className = `chip ${lowest <= 10 ? "blocking" : lowest <= 25 ? "partial" : "idle"}`;
+    chip.title = "Claude subscription — the whole account, including your interactive sessions";
+    chip.textContent = quotaLine(q);
+    chip.hidden = false;
+  } catch { /* a chip that cannot load is simply not shown */ }
+}
+
 export async function render(view) {
   const pauseBtn = el("button", { class: "btn small", hidden: true,
     title: "skip scheduled/triggered/one-shot fires — “run now” stays available",
@@ -81,11 +107,17 @@ export async function render(view) {
       catch (err) { toast(err.message, 4000, { error: true }); }
       pauseBtn.disabled = false;
     } }, "⏸ pause scheduling");
+  // The subscription's remaining quota, on the page the operator opens. It lived only on a
+  // Settings endpoint card as muted 11px text, which is why the answer to "why don't I see it"
+  // was partly "you would have had to go looking". SIGNAL while there is room, SUMMONS when a
+  // window is nearly spent — an exhausted quota is a thing that waits on a person.
+  const quotaChip = el("span", { class: "chip bare", hidden: true });
   view.append(
     el("div", { class: "page-head" },
       el("div", {},
         el("h1", {}, "Routines")),
-      pauseBtn));
+      el("div", { class: "row" }, quotaChip, pauseBtn)));
+  loadQuota(quotaChip);
   const banner = el("div", {});
   // Week-strip drag ops (weekgrid-drag.js): every drop PATCHes config, then reloads so the
   // strip redraws from truth. Group-membership PATCHes always carry the FULL member records —

@@ -42,6 +42,12 @@ services:
       # SIGNAL_/WHATSAPP_/TELEGRAM_SESSION_DIR, and a routine reaches them through its
       # fs_write_roots. Bind-mount an EMPTY host dir over a populated container path and you
       # shadow a live session — copy the data out first.
+      # The interactive `claude /login` token (~/.claude/.credentials.json) — the ONLY credential
+      # carrying the user:profile scope the subscription-quota read needs. Without this bind it
+      # dies on every recreate and the console's quota chip goes dark with nobody told why. A
+      # DEDICATED host dir, not the host's own ~/.claude: sharing that would put the daemon and
+      # a human's Claude Code in one session/history/settings store.
+      - ${RSCHED_HOME:-/home/mark}/.claude-daemon:/home/mark/.claude
       - ${RSCHED_HOME:-/home/mark}/telegram-sessions:/home/mark/telegram-sessions
       - ${RSCHED_HOME:-/home/mark}/signal-sessions:/home/mark/signal-sessions
       - ${RSCHED_HOME:-/home/mark}/whatsapp-sessions:/home/mark/whatsapp-sessions

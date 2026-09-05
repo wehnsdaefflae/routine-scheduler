@@ -1,4 +1,5 @@
-"""Asking an endpoint about ITSELF — the credits read and the live connection test.
+"""Asking an endpoint about ITSELF — the credits read, the subscription quota, and the live
+connection test.
 
 Split out of `endpoints.py` (F393): storing endpoint config and going out to the network to see
 whether it works are different jobs, and only this one can be slow, fail, or cost money. Keeping
@@ -13,7 +14,7 @@ import time
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
-from ...endpoints import EndpointRegistry
+from ...endpoints import EndpointRegistry, claude_quota
 from ...endpoints.base import EndpointError
 from ...schema_guard import SchemaViolation, parse_reply
 from .common import server_of
@@ -90,6 +91,24 @@ async def endpoint_credits(request: Request, name: str) -> dict:
         return await asyncio.to_thread(call)
     except EndpointError as exc:   # no key configured yet
         return {"supported": True, "ok": False, "error": str(exc), "manage_url": manage}
+
+@router.get("/settings/endpoints/{name}/quota")
+async def endpoint_quota(request: Request, name: str) -> dict:
+    """What is LEFT of the Claude subscription's rolling windows — the operator's literal ask.
+
+    A sibling of the credits read above and deliberately shaped like it: `{"supported": false}`
+    for any endpoint that is not `claude-cli`, never raises, and the card renders the error text
+    when the provider or the credential is the problem. The quota is per-ACCOUNT rather than per
+    endpoint, so two claude-cli endpoints would honestly report the same numbers.
+    """
+    server = server_of(request)
+    ep = server.endpoints.get(name)
+    if ep is None:
+        raise HTTPException(404, f"no endpoint {name!r}")
+    if ep.kind != "claude-cli":
+        return {"supported": False}
+    return await asyncio.to_thread(claude_quota.read_quota)
+
 
 class TestBody(BaseModel):
     model: str

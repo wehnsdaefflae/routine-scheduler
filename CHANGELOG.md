@@ -17,6 +17,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.295.0] — 2026-09-05
+
+### The Claude subscription's real remaining quota, where you can see it
+
+Operator, 2026-09-05: "we should be able to see the remaining percentages of our claude code
+subscription. why don't i?" Two reasons, both fixed.
+
+- **The console was rendering something else.** D33 shipped a LOCAL PROXY — tokens this instance
+  burned through claude-cli endpoints in rolling 5h/7d windows — and it cannot answer "% remaining"
+  even in principle: Anthropic's windows are not a token count, the tally is blind to your own
+  interactive sessions and to claude.ai on the same subscription, it drops cache traffic (the most
+  quota-expensive input class), and it is bounded by run retention. A percentage derived from it
+  would be a fabricated number wearing a percent sign, so it is **deleted**, not patched —
+  `readmodels/claude_usage.py`, its route and its three tests.
+- **There is a real source.** `GET api.anthropic.com/api/oauth/usage` reports per-window
+  utilization — the same numbers claude.ai's usage panel and the CLI statusline show. New
+  `endpoints/claude_quota.py` reads it and `GET /api/settings/endpoints/{name}/quota` serves it,
+  shaped exactly like the credits probe beside it: `{"supported": false}` for any other kind, and
+  never raising. The endpoint is UNDOCUMENTED, so every failure is soft and every failure message
+  names its own fix.
+- **And it is where you look.** The endpoint card keeps its line, but the Routines page now carries
+  the chip — "5h 61% left (resets in 2h10m) · 7d 32% left" — because "why don't I see it" was
+  partly a discoverability answer: it lived as muted 11px text behind Settings → Endpoints →
+  scroll. Coloured on the watchfloor rule: SIGNAL while there is room, SUMMONS when a window is
+  nearly spent, since an exhausted quota is a thing that waits on a person.
+- **It needs a second token, and that is now said out loud.** The usage API requires the
+  `user:profile` scope; the headless `claude setup-token` behind `CLAUDE_CODE_OAUTH_TOKEN` carries
+  `user:inference` only and 403s. An interactive `claude /login` mints a full-scope one into
+  `~/.claude/.credentials.json`, which is the only credential this reads — the inference ladder is
+  untouched. Nothing refreshes it headlessly, so the probe reads the file's `expiresAt` and reports
+  the expiry with the one-line fix, rather than surfacing an authentication error that does not
+  name its cause. **The live instance's token had been expired for four days when this was built,
+  silently** — which is the whole argument for reading the stamp.
+- **And it survives a recreate.** `~/.claude` is bind-mounted from a dedicated `~/.claude-daemon`
+  on the host (not the host's own `~/.claude` — that would put the daemon and a person's Claude
+  Code in one session store) and listed in `deploy/state-paths.sh`, so the backup carries it.
+
+*After deploying:* run `docker exec -it -u 1000:1000 rsched claude /login` once. Until then the
+chip says so.
+
 ## [0.294.0] — 2026-09-05
 
 ### Summaries are messages: the Summary page folds into Messages as a fourth item type

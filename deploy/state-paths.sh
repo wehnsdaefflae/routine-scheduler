@@ -30,6 +30,9 @@ STATE_PATHS_OPTIONAL=(
   signal-sessions                      # re-enter, so losing one of these unlinks the account and
   whatsapp-sessions                    # the operator has to re-pair by phone
   .config/gh                           # `gh auth login`'s token, re-mintable only by a device flow
+  .claude-daemon                       # the interactive `claude /login` token: the only credential
+                                       # with the user:profile scope the quota read needs, and the
+                                       # only one nothing can re-mint headlessly
 )
 
 # Deliberately NOT carried, so their absence is a decision and not an oversight:
