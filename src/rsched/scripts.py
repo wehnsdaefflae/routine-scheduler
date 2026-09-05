@@ -245,7 +245,17 @@ def ensure_env(routine_dir: Path, name: str, *,
                                cwd=str(routine_dir), check=False)
         except sandbox.SandboxRefusal as exc:
             return str(exc)
-        except (OSError, subprocess.TimeoutExpired) as exc:
+        except subprocess.TimeoutExpired:
+            # The install cap is fixed and SEPARATE from the action's timeout_s, which bounds the
+            # script's runtime, not this build step — so no recipe can raise it (R1296). A dep too
+            # heavy to install inside it does not belong in a per-routine venv; say so, rather than
+            # leave the caller re-setting timeout_s to no effect.
+            return (f"venv setup failed ({step[1]}): dependency install exceeded the fixed "
+                    f"{_INSTALL_TIMEOUT_S}s cap. That cap is not the action's timeout_s (which "
+                    "bounds the script's runtime, not this build) and cannot be raised from a "
+                    "recipe — use a lighter dependency, or offload heavy compute to a util or a "
+                    "remote machine.")
+        except OSError as exc:
             return f"venv setup failed ({step[1]}): {exc}"
         if r.returncode != 0:
             return (f"venv setup failed ({step[1]}): "

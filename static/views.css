@@ -420,6 +420,13 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
 .msg-body pre:hover .copy-fence { opacity: .45; }
 .msg-body pre .copy-fence:hover,
 .msg-body pre .copy-fence:focus-visible { opacity: .9; color: var(--ink); }
+/* Touch pointers cannot hover, so the copy glyphs could never be revealed on a phone — which is
+   exactly why they read as "missing" there (F433). Where hover is unavailable, show them at
+   rest, at the same half strength a hover gives, so they stay quiet but are tappable; a mouse
+   keeps the hover-only affordance. */
+@media (hover: none) {
+  .msg .copy-msg, .msg-body pre .copy-fence { opacity: .45; }
+}
 .msg.user { align-self: flex-end; background: var(--plate-3); border-color: var(--rule-2); }
 /* F295: the optimistic echo of a just-sent message — below the streamed history, dashed
    until the woken leg's real user_injection event replaces it */

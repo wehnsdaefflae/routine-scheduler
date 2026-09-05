@@ -17,6 +17,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.289.1] — 2026-09-05
+
+### Copy buttons on touch, a clearer script-install-timeout error, and UI regression guards
+
+- **Chat copy buttons are now reachable on touch devices (F433).** The per-message and
+  per-code-fence copy glyphs were revealed on hover only, so on a phone — which has no hover —
+  they were invisible, reading as "missing". Where the pointer cannot hover
+  (`@media (hover: none)`) they now show at rest, at the same half strength a hover gives; a
+  mouse keeps the quiet hover-only affordance.
+- **A dependency-install timeout now explains itself (R1296).** When a `script` action's
+  per-routine venv exceeds the fixed install cap, the error used to be a bare `timed out after
+  300 seconds`; it now says the cap is separate from the action's `timeout_s` (which bounds the
+  script's runtime, not the build) and cannot be raised from a recipe, and points at the fix
+  (a lighter dependency, or offloading heavy compute to a util or a remote machine).
+- **Regression guards for three operator-reported UI issues**, all confirmed already resolved at
+  HEAD (`tests/ui/test_reported_ui.py`): the mobile bottom nav carries all nine destinations
+  (F439), the watch ribbon paints a bar for a recent run (F432), and the routines view re-fetches
+  its cards on nav-back (F434).
+
 ## [0.289.0] — 2026-09-04
 
 ### Resizable + hideable sidebars — the navigation rail first (operator request)
