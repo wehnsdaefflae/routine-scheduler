@@ -37,7 +37,7 @@ export async function render(view, sub, query = {}) {
   catch (err) { sections.replaceChildren(emptyState("✕", "Couldn't load the library", err.message)); return; }
   data.playbooks = data.playbooks || [];
   countLine.textContent =
-    `workflows ${data.workflows.length} · rules ${data.rules.length} · permissions ${data.permissions.length} · playbooks ${data.playbooks.length} · utils ${data.utils.length}`;
+    `workflows ${data.workflows.length} · rules ${data.rules.length} · permissions ${data.permissions.length} · templates ${(data.templates || []).length} · playbooks ${data.playbooks.length} · reminders ${(data.reminders || []).length} · utils ${data.utils.length}`;
 
   // Both the tag filter and the open editor are kept in the URL (#/library/<kind>/<slug>?tags=…)
   // so the view is shareable and restores on reload — without tearing itself down on each change.
@@ -85,9 +85,19 @@ export async function render(view, sub, query = {}) {
         item(w.name || w.slug, w.problems, w.tags, () => openWorkflow(w.slug), w.description,
              `#/library/workflow/${w.slug}`)));
     section("Rules", "general rules — shared practices a routine holds by reference and reads with read_rule; a revision here reaches every holder",
-      data.rules.filter((f) => matches(f.tags)).map((f) =>
-        item(f.slug, f.problems, f.tags, () => openDoc("rules", f.slug), f.summary,
-             `#/library/rule/${f.slug}`)),
+      data.rules.filter((f) => matches(f.tags)).map((f) => {
+        // A rule carrying an ASSIST behaves differently for every holder — it can hold an
+        // action or defer a finish — so the row has to say so. A rules list that omits it
+        // describes a rule that no longer exists.
+        const assists = f.assists || [];
+        const summary = assists.length
+          ? el("span", {}, f.summary || "", ...assists.map((a) =>
+              el("span", { class: "chip", style: "margin-left:6px", title: a.line },
+                 `${a.moment} · ${a.payload}`)))
+          : f.summary;
+        return item(f.slug, f.problems, f.tags, () => openDoc("rules", f.slug), summary,
+                    `#/library/rule/${f.slug}`);
+      }),
       el("button", { class: "btn ghost small", onclick: () => newDoc("rules") }, "+ new rule"));
     section("Permissions", "conduct docs — held per routine via its Permissions panel; the requires: frontmatter names the capabilities each doc's instructions presume (activating the doc switches them on; open a doc to edit the mapping)",
       data.permissions.filter((f) => matches(f.tags)).map((f) => {
@@ -104,6 +114,24 @@ export async function render(view, sub, query = {}) {
       data.playbooks.filter((p) => matches(p.tags)).map((p) =>
         item(p.title || p.slug, p.problems, p.tags, () => openPlaybook(p.slug), p.summary,
              `#/library/playbook/${p.slug}`)));
+    section("Settings templates", "the named starting points a routine or a group adopts — permissions, rules, capabilities and budgets COPIED IN once at creation (a preselection, never a layer: every value is then edited where it lives)",
+      (data.templates || []).filter((t) => matches(t.tags)).map((t) =>
+        item(t.slug, t.problems || [], t.tags, () => openDoc("templates", t.slug),
+             t.summary, `#/library/template/${t.slug}`)),
+      el("button", { class: "btn ghost small", onclick: () => newDoc("templates") },
+         "+ new template"));
+    // The curated half of the consequence-reminder layer. The ONE lever that has to exist
+    // here is removal: an approval decides what gets IN, and without this nothing could take
+    // an entry out again short of editing the library repo by hand.
+    section("Consequence reminders",
+      "curated (regex → consequence) cautions — a matching action is HELD before it runs, in every routine whose reminders capability is at `global`. Written by a run under approval; born local, global is earned",
+      (data.reminders || []).map((r) =>
+        el("tr", {},
+          el("td", {}, el("code", {}, r.id)),
+          el("td", {}, el("code", {}, r.regex)),
+          el("td", { class: "muted prose", style: "max-width:420px" }, r.description || ""),
+          el("td", {}, el("button", { class: "btn ghost small",
+            onclick: () => removeReminder(r) }, "remove")))));
     section("Global utils", "the tools routines run (created + revised on demand, selftest-gated)",
       data.utils.filter((u) => matches(u.tags)).map((u) =>
         item(u.name, [], u.tags, () => openUtil(u.name), u.summary,
@@ -133,6 +161,19 @@ export async function render(view, sub, query = {}) {
       el("td", { class: "muted prose", style: "max-width:460px" }, summary || ""),
       el("td", {}, (problems && problems.length)
         ? el("span", { class: "chip failed", title: problems.join("\n") }, `${problems.length} lint`) : ""));
+  }
+
+  // The same confirm-then-DELETE protocol the doc editors use. Its own warning, because what
+  // this deletion costs is particular: the reminder stops holding actions everywhere at the
+  // next run, and each routine's evidence about it is deliberately NOT removed with it.
+  async function removeReminder(r) {
+    const gone = await deleter(`/library/reminders/${r.id}`,
+      `Remove the curated reminder ${r.id}?\n\n/${r.regex}/ — ${r.description}\n\n`
+      + "Routines whose reminders capability is at `global` stop being held by it from their "
+      + "next run. Their own tallies (how often it fired, and how those fires turned out) are "
+      + "each routine's own state and are left alone. Recoverable from the library's git "
+      + "history.")();
+    if (gone) { toast(`removed ${r.id}`); remount(); }
   }
 
   async function openWorkflow(slug) {

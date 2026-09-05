@@ -51,7 +51,7 @@ DEFAULT_BUDGETS = {
 # conduct doc that presumes NO capability (`requires: {}`) — the `util` action is a base
 # kind — and exists purely to teach discovery, composition, and never-silently-route-around
 # a broken util.
-DEFAULT_PERMISSIONS = ["util-authoring", "memory", "global-utils"]
+DEFAULT_PERMISSIONS = ["util-authoring", "memory", "global-utils", "reminders"]
 DEFAULT_CAPABILITIES = {"actions": ["write_util", "memory_read", "memory_write"],
                         "utils": [], "confirm": "always", "runs": "none",
                         "workflows": "catalog"}

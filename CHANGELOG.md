@@ -17,6 +17,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.309.0] — 2026-09-05
+
+### The Library page is the whole library, and reminders are on by default
+
+Three gaps, all pointing the same way: a feature that exists but cannot be seen or reached is
+not really shipped.
+
+**The Library page was missing two of its own kinds.** Reminders had no section — I never built
+one. Settings TEMPLATES had none either, and had not for as long as they have existed: they were
+in the `/api/library` payload, read by the routine page's picker, and simply never rendered on
+the page named after the library. Both are sections now, and a test asserts the page reads every
+kind the API returns and names each one in its counts line, so a third cannot go quiet the same
+way.
+
+**A rule's assists were invisible.** Six rules now carry a machine-checked trigger — one of them
+holds an action before it runs, two defer a finish — and the rules list showed the same row it
+always had. A rules listing that omits that describes a rule which no longer exists. Each row now
+carries a chip per assist (`moment · payload`, the operative line on hover).
+
+**The curated reminder store is a real library directory, and it can be emptied.** It used to
+spring into existence on the first write; it is now seeded like `rules/` and `permissions/`, so
+it is in the repo from the first commit with a README stating the record shape and the routing
+rule. The Library tab lists what is in it and can remove one — and that removal is not a nicety:
+an approval decides what gets IN, so without it nothing could take an entry out again short of
+editing the library repo by hand. Removing one leaves each routine's own tally alone, because
+that is the routine's evidence about what fired, not the library's.
+
+**`reminders: local` is now held by default.** It sat behind an opt-in nobody had taken, which
+made the whole layer dormant: not one routine had it switched on. A caution a run leaves itself
+about its own actions is ordinary conduct rather than a privilege — it costs a turn only when it
+actually fires, on a pattern that run wrote itself — and a layer nobody switches on is a layer
+that never learns anything. `ADOPT_PERMISSIONS` gives it once, at boot, to the routines that
+already exist.
+
+`global` is emphatically NOT on by default. That store reaches every capable routine, so it
+still needs the dial raised deliberately and every write still needs the user's approval. Born
+local, global is earned.
+
+
 ## [0.308.0] — 2026-09-05
 
 ### The archive is built off the hot path — without becoming summarize-and-replace

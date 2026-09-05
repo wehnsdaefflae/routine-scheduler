@@ -38,7 +38,7 @@ def _workflow_file(home, slug: str):
 @router.get("/library")
 def library_overview(request: Request) -> dict:
     """Everything under the Library tab: workflows, rules, permissions, playbooks, global utils."""
-    from .. import library_docs, playbooks, utils_lib
+    from .. import library_docs, playbooks, reminders, utils_lib
     from ..config import DEFAULT_BUDGETS, DEFAULT_DELIBERATION, DEFAULT_PERMISSIONS, DEFAULT_RULES
 
     home = _home(request)
@@ -58,6 +58,11 @@ def library_overview(request: Request) -> dict:
         "playbooks": [{**p, "problems": lint.get(f"playbooks/{p['slug']}/MAIN.md", [])}
                       for p in playbooks.list_playbooks(home)],
         "utils": utils_lib.list_utils(server.libraries_home),
+        # The CURATED consequence reminders (rsched/reminders.py). A global reminder holds a
+        # matching action in every routine at `reminders: global`, so the one surface that
+        # must exist is the one that shows what is in there and can take one out again — the
+        # approval gate decides what gets IN, and nothing else could revoke it.
+        "reminders": [r.as_record() for r in reminders.load_global(server.reminders_home)],
         "default_rules": list(DEFAULT_RULES),
         "default_permissions": list(DEFAULT_PERMISSIONS),
         "default_budgets": dict(DEFAULT_BUDGETS),
@@ -208,14 +213,19 @@ def put_library_doc(request: Request, kind: str, slug: str, body: DocBody) -> di
 
 @router.delete("/library/{kind}/{slug}")
 def delete_library_doc(request: Request, kind: str, slug: str) -> dict:
-    """Delete a rule (committed; a deleted SEED rule returns at the next daemon boot) or
-    a util (`kind=utils` dispatches below). Permission docs are NOT deletable — they are
-    the capability layer's conduct surface; edit them instead.
+    """Delete a rule (committed; a deleted SEED rule returns at the next daemon boot), a
+    util (`kind=utils`) or a curated consequence reminder (`kind=reminders`) — both
+    dispatch below rather than taking their own route, because a second DELETE under
+    /library/… would be shadowed by this one, which is registered first.
+    Permission docs are NOT deletable — they are the capability layer's conduct
+    surface; edit them instead.
     """
     from .. import library_docs
 
     if kind == "utils":
         return delete_util(request, slug)
+    if kind == "reminders":
+        return delete_global_reminder(request, slug)
     if kind == "permissions":
         raise HTTPException(400, "permission docs cannot be deleted — they are the "
                                  "capability layer's conduct surface; edit the doc instead")
@@ -225,6 +235,31 @@ def delete_library_doc(request: Request, kind: str, slug: str) -> dict:
         raise HTTPException(404, f"no {kind[:-1]} {slug!r}")
     path.unlink()
     library_docs.git_commit(home, f"delete {kind[:-1]} {slug} via web", paths=[f"{slug}.md"])
+    return {"ok": True}
+
+
+def delete_global_reminder(request: Request, rid: str) -> dict:
+    """Remove one CURATED consequence reminder from the shared store.
+
+    The counterpart to the approval that let it in. A global reminder holds a matching action
+    in every routine at `reminders: global` — a cost paid in turns, by routines that never
+    asked for it — so the ability to take one out again is not a nicety: without it a bad
+    entry could only be undone by editing the library repo by hand.
+
+    Per-routine tallies under `state/assists.json` / `state/reminders.json` are untouched:
+    they are each routine's own evidence about what fired, and they age out with the routine's
+    state rather than with the library's copy.
+    """
+    from .. import libgit, reminders
+
+    server = request.app.state.server
+    if not reminders.is_reminder_id(rid):
+        raise HTTPException(400, f"not a reminder id: {rid!r}")
+    if not reminders.global_path(server.reminders_home, rid).is_file():
+        raise HTTPException(404, f"no curated reminder {rid!r}")
+    reminders.delete_global(server.reminders_home, rid)
+    libgit.commit(server.libraries_home, f"delete curated reminder {rid} via web",
+                  paths=[reminders.global_rel(rid)])
     return {"ok": True}
 
 

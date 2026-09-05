@@ -565,3 +565,89 @@ def test_the_new_predicates_read_the_signals_the_engine_already_keeps():
     assert clean(sit("Reviewed the module. All clear.")) is True
     assert clean(sit("Checked 40 of 46 files — all clear on those.")) is False
     assert clean(sit("Found three defects and fixed them.")) is False
+
+# --- the library surface --------------------------------------------------------------------
+
+def test_a_rules_row_carries_its_assists(tmp_path):
+    """A rule with an assist behaves differently for every holder — it can hold an action or
+    defer a finish — so a rules listing that omits it describes a rule that no longer exists."""
+    from rsched.library_docs import list_docs
+
+    rules = tmp_path / "rules"
+    rules.mkdir()
+    (rules / "git-checkpoint.md").write_text(
+        "---\ntags: [a, b, c]\nassists:\n  - id: m\n    moment: pre-action\n"
+        "    predicate: uncheckpointed-repo-write\n    payload: hold\n    line: commit first\n"
+        "---\n# rule: git-checkpoint — s\nbody\n", encoding="utf-8")
+    (rules / "plain.md").write_text("---\ntags: [a, b, c]\n---\n# rule: plain — s\nbody\n",
+                                    encoding="utf-8")
+    rows = {d["slug"]: d for d in list_docs(rules)}
+    assert rows["plain"]["assists"] == []
+    assert rows["git-checkpoint"]["assists"] == [
+        {"id": "m", "moment": "pre-action", "payload": "hold",
+         "predicate": "uncheckpointed-repo-write", "line": "commit first"}]
+
+
+def test_the_library_page_lists_the_curated_reminder_store(api_client):
+    """It is written by runs under approval and reaches every routine at `global` — so the
+    surface that shows what is in there, and can take one out again, has to exist."""
+    from rsched import reminders as store
+
+    client, tmp_path = api_client
+    home = tmp_path / "library" / "reminders"
+    store.write_global(home, Reminder(id="rem-20260905-1", regex="^util:fs-ops mv ",
+                                      description="mv overwrites silently", scope="global",
+                                      created_run="r:1", stats=store.blank_stats()))
+    body = client.get("/api/library").json()
+    assert [r["id"] for r in body["reminders"]] == ["rem-20260905-1"]
+    assert body["reminders"][0]["regex"] == "^util:fs-ops mv "
+    # …and removal is the one lever the page must have: an approval decides what gets IN
+    assert client.delete("/api/library/reminders/rem-20260905-1").status_code == 200
+    assert client.get("/api/library").json()["reminders"] == []
+    assert not store.global_path(home, "rem-20260905-1").exists()
+
+
+def test_removing_a_reminder_refuses_a_bad_id_and_a_missing_one(api_client):
+    client, _tmp = api_client
+    assert client.delete("/api/library/reminders/rem-nope").status_code == 404
+    # an id is a path segment; one that is not a reminder id never reaches the filesystem
+    assert client.delete("/api/library/reminders/notanid").status_code == 400
+
+
+def test_every_library_kind_the_api_returns_is_a_kind_the_page_shows():
+    """The Library page is the whole library or it is misleading. Templates sat in the payload
+    with no section for months; reminders would have been the second."""
+    view = (Path(__file__).resolve().parents[1] / "static/views/library.js").read_text(
+        encoding="utf-8")
+    listed = {"workflows", "rules", "permissions", "templates", "playbooks", "utils",
+              "reminders"}
+    for kind in listed:
+        assert f"data.{kind}" in view, f"the library page never reads data.{kind}"
+    # and the counts line names each one, so the page says what it holds before you scroll
+    head = view[view.index("workflows ${data.workflows.length}"):][:400]
+    for kind in listed:
+        assert kind in head, f"the counts line omits {kind}"
+
+
+# --- on by default ---------------------------------------------------------------------------
+
+def test_the_reminder_layer_is_held_by_default(tmp_path):
+    """A caution a run leaves itself is ordinary conduct, not an opt-in capability — and a
+    layer nobody switches on is a layer that never learns anything."""
+    from rsched.bootstrap import ADOPT_PERMISSIONS
+    from rsched.config.base import DEFAULT_PERMISSIONS
+    from rsched.grants import capabilities_for, floor_capabilities, read_library_requires
+
+    assert "reminders" in DEFAULT_PERMISSIONS
+    assert "reminders" in ADOPT_PERMISSIONS      # …and existing routines get it once, at boot
+
+    perms = tmp_path / "permissions"
+    perms.mkdir(parents=True)
+    seed = Path(__file__).resolve().parents[1] / "library-seed/permissions/reminders.md"
+    (perms / "reminders.md").write_text(seed.read_text(encoding="utf-8"), encoding="utf-8")
+    lib = read_library_requires(perms)
+    caps = floor_capabilities(list(DEFAULT_PERMISSIONS), lib,
+                              capabilities_for(list(DEFAULT_PERMISSIONS), lib))
+    # LOCAL, not global: born local, global is earned — the shared store still needs the dial
+    # raised deliberately, and a write there still needs the user's approval
+    assert caps["reminders"] == "local"

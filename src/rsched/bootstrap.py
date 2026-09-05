@@ -62,7 +62,7 @@ def ensure_config() -> bool:
 # DEFAULT_PERMISSIONS entries introduced AFTER routines already existed never reach them via
 # scaffold. Slugs listed here are added ONCE to every existing routine at daemon boot —
 # tracked in a marker file, so a user who later revokes one is never overridden.
-ADOPT_PERMISSIONS: list[str] = ["global-utils"]
+ADOPT_PERMISSIONS: list[str] = ["global-utils", "reminders"]
 _ADOPTED_MARKER = ".permissions-adopted.json"
 
 
@@ -153,14 +153,14 @@ def _merge_caps(caps: dict, extra: dict) -> None:
 
 def seed_libraries(home: Path) -> None:
     """Populate an empty library repo (workflows/ + rules/ + permissions/ + templates/ +
-    utils/) from the built-in seeds + git-init it (matches deploy/install.sh). The `gu`
-    dispatcher is installed by utils_lib.ensure_library on first use.
+    reminders/ + utils/) from the built-in seeds + git-init it (matches deploy/install.sh).
+    The `gu` dispatcher is installed by utils_lib.ensure_library on first use.
     """
     root = repo_root()
     home.mkdir(parents=True, exist_ok=True)
     if (root / "library-seed" / "workflows").is_dir():
         shutil.copytree(root / "library-seed" / "workflows", home / "workflows", dirs_exist_ok=True)
-    for kind in ("rules", "permissions", "templates"):
+    for kind in ("rules", "permissions", "templates", "reminders"):
         (home / kind).mkdir(exist_ok=True)
         if (root / "library-seed" / kind).is_dir():
             for f in sorted((root / "library-seed" / kind).glob("*.md")):
@@ -182,8 +182,11 @@ def seed_libraries(home: Path) -> None:
 #: `templates` is here because a settings TEMPLATE is read LIVE at creation and by the routine
 #: page's adopt action (templates.config_for) — a template that only ever lands when the repo is
 #: first created means a template added to the seed later reaches no existing instance at all.
+#: `reminders` carries only its README — the curated cautions themselves are written by
+#: runs, under approval — but the DIRECTORY has to exist and be tracked, or the store is
+#: invisible in the repo until the first write and the Library tab has nothing to list.
 SEED_DOC_KINDS = (("workflows", "*.py"), ("rules", "*.md"), ("permissions", "*.md"),
-                  ("templates", "*.md"))
+                  ("templates", "*.md"), ("reminders", "*.md"))
 
 
 def sync_seed_library_docs(libraries_home: Path) -> int:

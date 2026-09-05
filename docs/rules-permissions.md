@@ -507,7 +507,7 @@ The shipped set:
 | `scheduling` | the `schedule_run` action — arm/cancel a one-shot future run of a routine | opt-in |
 | `recipe-authoring` | the `write_recipe` capability — revise this routine's OWN `main.md` / `stages/` / `tuning.yaml`. Hold it where refining the recipe IS the job; `routine.yaml` stays sealed regardless | opt-in |
 | `scripts` | the `script` action — run the routine's OWN persistent `scripts/<name>.py` helpers (tooling, not a second interpreter; declared secrets only, no util/model access inside) | opt-in |
-| `reminders` | `reminders: local` — the `remind` / `remind_feedback` fields: leave a `(regex → consequence)` caution that HOLDS a matching action before it runs (see [reminders](reminders.md); the shared store and its approval level are `reminders: global` + `remind_confirm`) | opt-in |
+| `reminders` | `reminders: local` — the `remind` / `remind_feedback` fields: leave a `(regex → consequence)` caution that HOLDS a matching action before it runs (see [reminders](reminders.md); the shared store and its approval level are `reminders: global` + `remind_confirm`) | ✅ |
 
 ### What enforcement looks like
 

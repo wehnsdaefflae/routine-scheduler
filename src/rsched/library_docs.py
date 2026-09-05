@@ -74,6 +74,7 @@ def _effect(raw: object) -> dict[str, str]:
 
 
 def list_docs(home: Path) -> list[dict]:
+    from .assists import normalize_assists
     from .grants import normalize_capabilities
 
     if not home.is_dir():
@@ -98,7 +99,14 @@ def list_docs(home: Path) -> list[dict]:
                     "tags": meta.get("tags") or [],
                     # the capabilities this doc's instructions presume (permissions dir only)
                     "requires": normalize_capabilities(meta.get("requires"), label="requires",
-                                                       requires=True)[0]})
+                                                       requires=True)[0],
+                    # A rule's ASSISTS change what every holder DOES — one can hold an action
+                    # or defer a finish — so a page that lists rules and omits them describes
+                    # a rule that no longer exists (rules dir only; empty everywhere else).
+                    "assists": [{"id": a.id, "moment": a.moment, "payload": a.payload,
+                                 "predicate": a.predicate, "line": a.line}
+                                for a in normalize_assists(meta.get("assists"),
+                                                           rule=path.stem)[0]]})
     return out
 
 

@@ -42,6 +42,12 @@ one you are about to touch, not all of them.
   engine; the prior index is never re-fed to the model. `engine/recall.py` surfaces one
   archived file when the action overlaps its topic, and `window._warn_before_eviction` gives
   the run one turn to move what matters into a durable store first
+- The reminder layer is ON by default at `local` (the `reminders` permission is in
+  DEFAULT_PERMISSIONS and ADOPT_PERMISSIONS): a caution a run leaves itself about its own
+  actions is ordinary conduct, and a layer nobody switches on never learns anything. `global`
+  is NOT — the shared store is a SEEDED library directory (`<library>/reminders/`), a write
+  there needs the dial raised AND the user's approval, and the Library tab is where one is
+  inspected or removed
 - `docs/reminders.md` — the consequence-reminder layer (the pre-execution hold, the two
   stores, the four-way tally that tunes a pattern); `docs/rule-assists.md` — its curated
   half: a rule's own `assists:` block surfacing its operative line at the moment it applies

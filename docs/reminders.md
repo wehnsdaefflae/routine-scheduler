@@ -51,6 +51,12 @@ exact call, would the same consequence apply?*
 | written | autonomously | approval-gated (`remind_confirm`) |
 | about | this routine's files, task, state | the util or the action itself |
 
+The global store is a SEEDED library directory like `rules/` and `permissions/`, so it is in the
+repo from its first commit rather than appearing on the first write, and the Library tab lists
+what is in it — and can remove one. That removal is not a nicety: an approval decides what
+gets IN, and without it nothing could take an entry out again short of editing the repo by
+hand. Each routine's own tally survives the removal, because it is that routine's evidence.
+
 Reminders are **born local; global is earned.** A bad local reminder taxes one routine's turns; a
 bad global one taxes every capable routine at its next run, silently. Unsure is local. The match
 target usually settles it on its own: a pattern over a util invocation is probably universal, a
@@ -157,9 +163,16 @@ capabilities:
 ```
 
 `global` means BOTH stores (the union), not the library alone — a routine curating shared cautions
-still keeps its own. The layer is OFF by default and has no baseline: unlike run history (whose
-`last` depth is always on), a reminder costs a TURN, so it stays off until switched on. When it is
-off the two side fields are **projected out of the action schema entirely** (`kindsurface`), so a
+still keeps its own.
+
+**`local` is ON by default.** The `reminders` permission is one of `DEFAULT_PERMISSIONS`, and
+`ADOPT_PERMISSIONS` gives it once, at boot, to routines that already existed: a caution a run
+leaves itself about its own actions is ordinary conduct rather than a privilege, and a layer
+nobody switches on is a layer that never learns anything. `global` is NOT — the shared store
+needs the dial raised deliberately and a write there still needs the user's approval. Born
+local, global is earned.
+
+Where the layer is switched off entirely, the two side fields are **projected out of the action schema entirely** (`kindsurface`), so a
 run that cannot use them cannot generate them, and `validate_action` refuses one that arrives
 anyway — including on an always-available kind like `report`, because the gate rides the FIELD, not
 the kind.
