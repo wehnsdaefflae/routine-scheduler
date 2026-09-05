@@ -238,3 +238,51 @@ def test_migration_makes_every_live_condition_a_run_bound_again(make_routine, tm
     assert rows["s3"]["status"] == "dropped"            # a user-retired condition is left alone
     assert stopping.goal_reached(d) is False            # nothing retires as a side effect
     assert migrate_stopping_scope(server) == 0          # idempotent
+
+
+# ---- creation asks BOTH questions ----------------------------------------------------------------
+
+def test_creation_seeds_run_bounds_and_the_final_goal_apart(tmp_path, make_routine):
+    """Two different questions, one document. `stopping` is what one run must achieve; `goal` is
+    the state after which the routine is finished — and only the second can retire it."""
+    from rsched.config import ServerConfig
+    from rsched.workflows.scaffold import scaffold
+
+    server = ServerConfig()
+    server.routines_home = tmp_path / "routines"
+    server.routines_home.mkdir(parents=True, exist_ok=True)
+    server.libraries_home = tmp_path / "lib"
+    from rsched.bootstrap import seed_libraries
+    seed_libraries(server.libraries_home)
+
+    d = scaffold(server, slug="applier", name="Applier",
+                 instruction="Prepare and submit the grant application.",
+                 workflow_slug="general-task",
+                 stopping=["one section was drafted and reviewed"],
+                 goal=["the application is submitted before 27 Sep 2026"])
+    rows = {c["scope"]: c for c in stopping.load(d)["conditions"]}
+    assert rows["run"]["text"] == "one section was drafted and reviewed"
+    assert rows["goal"]["text"] == "the application is submitted before 27 Sep 2026"
+    # a fresh routine is NOT retired: its goal is open
+    assert stopping.goal_reached(d) is False
+
+
+def test_a_routine_created_without_a_goal_is_perpetual(tmp_path, make_routine):
+    """The common case, and it must stay silent: a monitor with no declared end has no verdict
+    to report and nothing that could ever switch it off."""
+    from rsched.bootstrap import seed_libraries
+    from rsched.config import ServerConfig
+    from rsched.workflows.scaffold import scaffold
+
+    server = ServerConfig()
+    server.routines_home = tmp_path / "routines"
+    server.routines_home.mkdir(parents=True, exist_ok=True)
+    server.libraries_home = tmp_path / "lib"
+    seed_libraries(server.libraries_home)
+
+    d = scaffold(server, slug="watcher", name="Watcher", instruction="Watch the feed.",
+                 workflow_slug="general-task", stopping=["the feed was checked"])
+    doc = stopping.load(d)
+    assert {c["scope"] for c in doc["conditions"]} == {"run"}
+    assert stopping.evaluate(doc)["goal_satisfied"] is None
+    assert stopping.goal_reached(d) is False

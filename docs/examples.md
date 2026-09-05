@@ -131,7 +131,7 @@ submission is one blocking sign-off. Expect ~10 quiet minutes a week.
 ## 3 · Project steward
 
 **Goal:** an autonomous weekday dev/PM routine advancing a real software project — code,
-tests, docs, obligations — one focused increment per run. (Modeled on stewarding a
+tests, docs, obligations — as far as each run can take it and verify. (Modeled on stewarding a
 grant-funded open-source project: deliverables register, worklog, public repo hygiene.)
 
 ### The draft
@@ -152,7 +152,7 @@ grant-funded open-source project: deliverables register, worklog, public repo hy
 
 | setting | pick | why |
 |---|---|---|
-| workflow | `general-task` | orient → decide one thing → execute → record |
+| workflow | `general-task` | orient → take everything that is due → execute → record |
 | rules | ask-policy, web-research, decision-record, change-restraint | engineering improvement arrives via the routine-improver's lenses |
 | permissions | **shell**, util-authoring, memory, run-history | **this is the routine the shell permission exists for**: `{"kind": "shell", "command": "cd ~/projects/llmsectest && uv run pytest -q", "timeout_s": 900}` — builds, test suites, linters. Repeatable operations still get promoted to utils (`pytest-run`, `git-sync` already exist) |
 | fs roots | read+write: `~/projects/llmsectest` | the project lives outside the routine dir |

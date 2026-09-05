@@ -17,6 +17,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.297.0] — 2026-09-05
+
+### Routines stop pacing themselves: the arity caps go, and creation asks what ENDS a routine
+
+0.293.0 fixed the engine's half of the operator's "steps way smaller than necessary". This is the
+other half — the prose that actually bounded the work, and the generation prompts that wrote it.
+
+The evidence: goal-directed runs habitually finished far under budget — voice-model-trainer's last
+six runs used 75 → 57 → 44 → 31 → 30 → 19 of 200 turns, bina 21–45 of 200 — because a per-run
+ARITY cap, not the budget, was the binding constraint.
+
+- **The generation prompts are the cause, so they changed first.** `workflows/pipeline.py` mandated
+  a `## Completion criteria` section and said NOTHING about its content, which is how 12 of 31 live
+  recipes ended up with no statement of their own end at all. It now requires two labelled halves —
+  `**Per run:**` and `**Overall:**` — where the overall names a concrete terminal artefact in one
+  sentence, names a literal DATE where the task has one, and must say `PERPETUAL` explicitly (with
+  what makes it never end) when there is genuinely no end. It must also be repeated in the recipe's
+  OPENING paragraph, because a goal in a trailing section is read last. `check_main` enforces both
+  literals — the right place for a machine check, unlike a name-match over dynamic prose.
+- **One standing rule, in both generation prompts**: never write a per-run arity ("exactly one
+  increment", "a few", "at most N", "so no run tries everything") UNLESS the work is genuinely
+  serialized by something outside the run — and then NAME that thing. An external constraint stated
+  is a boundary a run can reason about; an arity asserted is a brake that binds long after its
+  reason is gone. Plus: say what makes a run EXIT EARLY, and make the LAST phase one `main()`
+  actually branches into (`wind-down` and `wrap-up` sat in two patterns and five recipes for months
+  while appearing nowhere in the engine).
+- **Five library patterns rewritten**, seed and live library both (the boot sync only adds, so an
+  edit in one never reaches the other): `steward-project-feedback-site` (6 holders — the arity was
+  in nine places, and its "when AHEAD of plan, spend the run HARDENING… not racing future
+  milestones" is deleted outright), `cumulative-feedback-research-site` (`BATCH_RANGE` was a
+  ceiling "so no run tries everything"; now a FLOOR), `improvement-proposer` (`CAP_PER_AXIS` gone —
+  a cap on an already-ranked list discards work the run has paid for), `general-task` (re-checks
+  what is due before finishing), and `distribution-remap-research`, which existed only in the live
+  library and is now back-ported to the seed. Genuine serialization was converted, not deleted: the
+  status page's ONE open question stays, now justified as an external constraint rather than
+  asserted as a pace.
+- **Creation asks the second question.** `create_routine` gained a `goal` array beside `stopping`,
+  and the intake contract now asks both: what one run must achieve, AND whether there is a state
+  after which this routine is FINISHED. `scaffold` seeds them into one document at their two
+  scopes. Many routines honestly have no end and take no goal — but they are now ASKED, because a
+  routine nobody asked runs forever by default.
+
 ## [0.296.0] — 2026-09-05
 
 ### Models use their real context window, discovered from the provider

@@ -210,7 +210,14 @@ def _preview_obs(draft: dict, catalog: list[dict], *, updated: bool,
                     "must account for in its finish summary — without them a run is bounded "
                     "only by its budgets, which are a runaway backstop and not a definition of "
                     "done. Omit `stopping` rather than inventing conditions they did not "
-                    "state. Then finish the reply. Once the user has answered, call "
+                    "state. ASK A SECOND, DIFFERENT QUESTION: is there a state after which "
+                    "this routine is FINISHED for good — a thing submitted, a migration "
+                    "complete, an event past? Their answer goes in `goal`, verbatim, and it "
+                    "has teeth: a met goal stops the scheduler firing the routine. Many "
+                    "routines honestly have no such state (a monitor, a digest) and then "
+                    "`goal` is omitted — but ASK, because a routine nobody ever asked runs "
+                    "forever by default, and where the answer carries a DATE the recipe must "
+                    "name it literally. Then finish the reply. Once the user has answered, call "
                     "create_routine again with the SAME fields to materialize it; a call with "
                     "changed fields updates the draft and restarts the confirmation.")}
     if blocked_same_leg:
@@ -221,7 +228,8 @@ def _preview_obs(draft: dict, catalog: list[dict], *, updated: bool,
 
 
 def _materialize(ctx: RunContext, *, slug: str, name: str, instruction: str,
-                 workflow_slug: str, stopping: list[str] | None = None) -> dict:
+                 workflow_slug: str, stopping: list[str] | None = None,
+                 goal: list[str] | None = None) -> dict:
     """The confirmed half: draft the fitted pattern if that is what the user picked, then build
     the routine from `workflow_slug`. Every failure here is an OBSERVATION the model can act on
     — a conversation run must never die because a build step did.
@@ -242,7 +250,7 @@ def _materialize(ctx: RunContext, *, slug: str, name: str, instruction: str,
                                            workflow_slug=workflow_slug)
         routine_dir = scaffold(ctx.server, slug=slug, name=name, instruction=instruction,
                                workflow_slug=workflow_slug, description=description,
-                               stopping=stopping)
+                               stopping=stopping, goal=goal)
     except ValueError as exc:
         # bad slug, unknown workflow, or a dir that appeared mid-flight — a teaching rejection,
         # corrected by the model, never a crash
@@ -334,7 +342,10 @@ def handle_create_routine(ctx: RunContext, action: dict) -> dict:
       prompt   — the clarified task instruction, decomposed into the routine's stages (required)
       workflow — the library workflow pattern to materialize from (optional; DEFAULT_WORKFLOW)
       stopping — what DONE looks like for one run, in the USER's words (optional); seeded into
-                 the new routine's state/stopping.json. Part of the draft's identity, so
+                 the new routine's state/stopping.json as RUN-scoped conditions.
+      goal — the state after which the ROUTINE is finished (optional); seeded into the same
+             document as GOAL-scoped conditions, which retire the routine when met.
+                 Part of the draft's identity, so
                  changing it restarts the confirmation like any other field.
     """
     slug = str(action.get("target") or "").strip()
@@ -344,6 +355,9 @@ def handle_create_routine(ctx: RunContext, action: dict) -> dict:
     raw_stopping = action.get("stopping")
     stopping = [t.strip() for t in raw_stopping
                 if isinstance(t, str) and t.strip()] if isinstance(raw_stopping, list) else []
+    raw_goal = action.get("goal")
+    goal = [t.strip() for t in raw_goal
+            if isinstance(t, str) and t.strip()] if isinstance(raw_goal, list) else []
     server = ctx.server
 
     if (server.routines_home / slug).exists():
@@ -356,7 +370,7 @@ def handle_create_routine(ctx: RunContext, action: dict) -> dict:
         return _unknown_workflow_obs(slug, workflow_slug, catalog)
 
     fields = {"slug": slug, "name": name, "instruction": instruction,
-              "workflow": workflow_slug, "stopping": stopping}
+              "workflow": workflow_slug, "stopping": stopping, "goal": goal}
     # A run with no user in the loop QUEUES instead of creating (F328). It is the same D92
     # draft, with a longer gap before the confirmation: the operator sees it on the Decisions
     # page and one click materializes it through this very scaffold path. Nothing is created
@@ -376,4 +390,4 @@ def handle_create_routine(ctx: RunContext, action: dict) -> dict:
 
     # Confirmed: identical fields, a later leg — the user has spoken since the preview.
     return _materialize(ctx, slug=slug, name=name, instruction=instruction,
-                        workflow_slug=workflow_slug, stopping=stopping)
+                        workflow_slug=workflow_slug, stopping=stopping, goal=goal)

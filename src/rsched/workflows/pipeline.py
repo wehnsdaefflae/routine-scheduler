@@ -128,6 +128,29 @@ every item LEADS with a **bold** stage name matching the stage filename and name
 `stages/<name>.md` — reference EVERY stage of the outline, in its order. Turn the pattern's
 control flow into concrete prose for THIS task — never leave Python in the output.
 
+`## Completion criteria` has EXACTLY TWO labelled halves, and both are mandatory:
+
+- `**Per run:**` — what one run must have achieved to finish honestly.
+- `**Overall:**` — the state after which this ROUTINE is finished and has nothing left to do,
+  in ONE sentence naming a concrete terminal artefact or event. Where the task has a real DATE
+  (a submission deadline, an event, a contract end), name it literally — a deadline the recipe
+  does not state is a deadline the run cannot steer by. If the task genuinely has no end, write
+  `**Overall:** PERPETUAL — ` and then say what makes it never end (a stream that keeps
+  arriving, a state that keeps drifting). Do not write a vague overall to fill the slot: a
+  routine whose end nobody can recognise runs forever by default.
+
+State the `**Overall:**` sentence a SECOND time in the recipe's OPENING paragraph. A goal in a
+trailing section is read last, and a run decides its scope in its first turns.
+
+PACE. Say how much one run attempts, and let it be as much as it can finish well: the turn
+budget is a runaway BACKSTOP, never a ration, and a run that leaves work it could have finished
+has paced itself against a counter instead of the job. Never write a per-run ARITY — "exactly
+one increment", "one high-value thing", "a few", "at most N", "do not try to finish it all" —
+UNLESS the work is genuinely serialized by something outside the run, and then name that thing
+(one submission per round, one training job on a shared GPU, one reply per partner per week).
+An external constraint stated is a boundary; an arity asserted is a brake. Equally: say what
+makes a run EXIT EARLY — when nothing is due, the run establishes that, says so, and finishes.
+
 Return ONLY the JSON object {"main": ...}."""
 
 _STAGE_RULES = """\
@@ -228,6 +251,15 @@ def _pipeline(resolve, raw: str, instruction: str, *, pins: list[str],
         missing = [s["name"] for s in outline if f"stages/{s['name']}.md" not in main]
         if missing:
             raise ValueError(f"main.md does not route to stage(s): {missing}")
+        # The two halves of `## Completion criteria` are checked because their ABSENCE is what
+        # produced 12 goalless recipes on the live instance: the section was mandated and its
+        # content was not, so whether a routine knew its own end was luck of the source pattern.
+        # A machine check is right here (unlike a util-name check over dynamic prose) — these
+        # are two fixed literals the generator is told to emit.
+        for half in ("**Per run:**", "**Overall:**"):
+            if half not in main:
+                raise ValueError(f"main.md's Completion criteria is missing its {half} half — "
+                                 "a routine that cannot state its own end runs forever")
         return main
 
     main = complete(context + "The routine's stages are already planned — the OUTLINE (each "

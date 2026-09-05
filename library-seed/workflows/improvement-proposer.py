@@ -3,8 +3,8 @@
 Each run this routine studies how a target system (here, the routine-scheduler itself) could be
 improved, iterating a FIXED set of axes (technology, methodology, functionality, aesthetics). For
 each axis it grounds research in BOTH the current system (its own code, docs, and behaviour) AND
-external prior art, then records only genuinely-new, well-grounded proposals as deferred
-accept/reject decision items on the Decisions subpage — mirrored to a human-readable decisions.md.
+external prior art, then records every genuinely-new, well-grounded proposal as a deferred
+accept/reject decision item on the Decisions subpage — mirrored to a human-readable decisions.md.
 
 This file is a PATTERN, not a program: the orchestrator never executes it — it *acts it out*, one
 engine action per turn, following the control flow below. The routine is RECORD-ONLY: it researches
@@ -19,7 +19,6 @@ parameters the clarifier pins down for the concrete instruction.
 from routine.params import (
     SUBJECT,          # str       — the system under study and where its parts live (daemon, workflow/trait lib, dashboard/UI, utils)
     AXES,             # list[str] — the fixed axes reviewed EVERY run, in order (e.g. technology, methodology, functionality, aesthetics)
-    CAP_PER_AXIS,     # int       — max new proposals recorded per axis per run (the 1–3 digestibility cap)
     PROPOSED_LEDGER,  # str       — state file tracking already-recorded proposals (title + axis), the dedupe memory
     DECISIONS_MIRROR, # str       — the durable human-readable decisions.md in the working dir that mirrors the subpage
 )
@@ -31,13 +30,13 @@ META = {
     "name": "Improvement proposer",
     "slug": "improvement-proposer",
     "description": "Each run, research how a subject could be improved along fixed axes and file "
-                   "the strongest new ideas as deferred accept/reject decision items — record-only.",
+                   "every materially-new idea as a deferred accept/reject decision item — record-only.",
     "when_to_use": "Recurring 'keep finding ways to improve X and let me decide' instructions: the "
                    "routine researches (self + external prior art) along a fixed set of axes every "
                    "run, records decidable proposals to a Decisions subpage, and never implements "
                    "anything. Use when the deliverable is a growing, deduplicated backlog of "
                    "user-decidable proposals, not the changes themselves.",
-    "version": 2,
+    "version": 3,
     "tags": ["research", "proposals", "decision-support", "record-only", "recurring"],
     "includes": ["ask-policy", "web-research", "decision-record"],
     # Record-only: it researches, judges, writes and asks. No children, no authoring, no
@@ -53,7 +52,7 @@ class NothingNew(Exception):
 
 
 def main():
-    """One run: review every fixed axis, record only new proposals, and report per-axis outcomes."""
+    """One run: review every fixed axis, record every new proposal, and report per-axis outcomes."""
     orient()                                    # consume state digest + prior proposals before researching anything
 
     already = load_recorded()                   # {(title, axis)} + gist of what's already on the subpage
@@ -65,12 +64,18 @@ def main():
             fresh = [c for c in candidates if is_new(c, already)]   # diff against PROPOSED_LEDGER / subpage
             if not fresh:
                 raise NothingNew
-            strongest = rank_and_cap(fresh, CAP_PER_AXIS)           # keep only the 1–CAP strongest
-            outcomes[axis] = [record_proposal(c, already) for c in strongest]
+            outcomes[axis] = [record_proposal(c, already) for c in rank(fresh)]
         except NothingNew:
             outcomes[axis] = ["nothing new"]
 
     mirror_and_record(outcomes)                 # sync decisions.md, update PROPOSED_LEDGER, append LEDGER
+
+    if all(filed == ["nothing new"] for filed in outcomes.values()):
+        # Every axis was researched and none produced anything materially new. That is a real
+        # outcome, established by the review — say it plainly and finish rather than padding the
+        # subpage with restatements to have filed something.
+        return finish("ok", "Every axis reviewed; nothing materially new to file this run.")
+
     return finish("ok", summarize(outcomes))    # per-axis: what was filed, and where an axis was empty
 
 
@@ -94,7 +99,9 @@ def research_axis(axis):
       • external prior art — search for tools, techniques, and patterns worth adapting
         (web-research), verifying claims rather than trusting memory.
     Return well-grounded candidates, each with a rationale, expected impact, and rough effort.
-    Prefer depth over breadth — a few defensible ideas beat many shallow ones."""
+    The bar is DEFENSIBILITY, not count: a shallow idea is not a cheaper proposal, it is a
+    non-proposal, and dropping it costs the user nothing. Return every candidate that clears the
+    bar — the axis is done when the axis is exhausted, not when a quota is filled."""
 
 
 def is_new(candidate, already):
@@ -103,9 +110,15 @@ def is_new(candidate, already):
     new (it supersedes, with a note); a rephrase does not."""
 
 
-def rank_and_cap(fresh, cap):
-    """Rank the fresh candidates by strength (grounding × expected impact ÷ effort, judgement via
-    `llm` when it helps) and keep at most `cap` so the subpage stays digestible."""
+def rank(fresh):
+    """Order the fresh candidates strongest first (grounding × expected impact ÷ effort, judgement
+    via `llm` when it helps). ORDERING ONLY — every materially-new candidate is filed.
+
+    Do not cap this list. The research is already done and the dedupe is already done, so a
+    discarded proposal is work the run has ALREADY paid for, thrown away only to be re-derived on
+    some later run. Digestibility belongs to the reading surface — the Decisions subpage sorts,
+    filters and is read at the user's pace — and pre-empting it here loses ideas instead of
+    presenting them well."""
 
 
 def record_proposal(candidate, already):

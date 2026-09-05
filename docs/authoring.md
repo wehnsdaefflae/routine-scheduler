@@ -86,7 +86,7 @@ from routine.params import (
 META = {
     "name": "General task",
     "slug": "general-task",
-    "description": "Orient, do the work in small verified steps, record, commit.",
+    "description": "Orient, work everything that is due in verified steps, record, commit.",
     "when_to_use": "Most recurring instructions with no more specific pattern…",
     "version": 9,
     "tags": ["general", "research", "tool-use"],

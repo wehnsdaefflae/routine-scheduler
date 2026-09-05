@@ -56,7 +56,30 @@ META / PHASES must be plain literals (they are parsed statically with ast, never
 Do NOT write a COMPLETION literal: what DONE means is the user's, and it lives in the
 routine's state/stopping.json where they can edit it — a completion text frozen into the
 pattern could only ever disagree with it.
-Use the full range of Python control flow wherever it makes the process clearer.'''
+Use the full range of Python control flow wherever it makes the process clearer.
+
+STEP SIZE — how much one run attempts. `main()` must SAY this, and the answer is: as much as
+the run can finish well. The turn budget is a runaway BACKSTOP, never a ration; a run that
+leaves work it could have finished has paced itself against a counter instead of against the
+job. So do NOT write a per-run ARITY — "exactly ONE increment", "one high-value thing", "a
+few", "at most N", "so no run tries everything", "never try to finish it all in one fire" —
+UNLESS the work is genuinely serialized by something outside the run, and then NAME that thing
+in the same breath (one submission per round; one training job on a shared GPU; one reply per
+partner per week). An external constraint stated is a boundary a run can reason about; an
+arity asserted is a brake that binds long after the reason for it is gone. Prefer a loop that
+keeps taking work while work remains and the budget can still finish AND verify the next item
+cleanly, stopping at a clean boundary rather than half-building.
+
+EXIT EARLY. `main()` must also say what makes a run finish with little or nothing done: when
+nothing is due, the run establishes that, says so plainly, and finishes. A pattern that only
+describes the busy path teaches a run to manufacture work.
+
+A TERMINAL PHASE. The LAST entry of PHASES must be one `main()` actually BRANCHES into — the
+end of the job, where the run verifies the deliverable a final time, tells the user where it
+lives, and stops. A phase named in PHASES that nothing consumes is a lie the reader believes:
+`wind-down` and `wrap-up` sat in two library patterns and five live recipes for months while
+appearing NOWHERE in the engine. If the workflow is genuinely open-ended, give it a single
+phase and say so in the docstring — do not name an ending you do not implement.'''
 
 
 def generate(server: ServerConfig, instruction: str, hint: str = "",

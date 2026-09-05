@@ -48,6 +48,7 @@ def _materialize_routine(server, fields: dict) -> dict:
                                  "rename it before creating")
     name = str(fields.get("name") or "").strip()
     raw_stopping = fields.get("stopping")
+    raw_goal = fields.get("goal")
     instruction = str(fields.get("instruction") or "")
     workflow_slug = str(fields.get("workflow") or "")
     from ..workflows.suggest import generate_description
@@ -62,7 +63,9 @@ def _materialize_routine(server, fields: dict) -> dict:
                            # the queued proposal carries the DONE answer the same way a
                            # conversation's confirmed call does — one materializer, one path
                            stopping=[t for t in raw_stopping if isinstance(t, str) and t.strip()]
-                           if isinstance(raw_stopping, list) else None)
+                           if isinstance(raw_stopping, list) else None,
+                           goal=[t for t in raw_goal if isinstance(t, str) and t.strip()]
+                           if isinstance(raw_goal, list) else None)
     return {"created": "routine", "slug": slug, "dir": str(routine_dir)}
 
 

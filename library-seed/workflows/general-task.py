@@ -31,7 +31,7 @@ META = {
                    "/ maintain something on a schedule, tend a long-running goal, run a periodic "
                    "check. Use it when the instruction says WHAT to deliver and the HOW is "
                    "ordinary tool work.",
-    "version": 11,
+    "version": 12,
     "tags": ["general", "research", "tool-use"],
     "includes": ["ask-policy", "web-research", "decision-record"],
     "tools": None,          # None = every action kind is allowed
@@ -52,6 +52,9 @@ def main():
     """One run of the routine — the top-level control flow."""
     orient()                                    # consume the state digest before anything new
 
+    if phase.current() == "wrap-up":
+        return wrap_up()                        # terminal: the goal is reached — verify once, hand over, stop
+
     if phase.current() == "bootstrap":
         bootstrap()                             # first run(s): set up state/, then carry on
         # fall through — a bootstrap run still delivers a first real increment, so the routine
@@ -59,7 +62,9 @@ def main():
 
     work = pick_work()                          # what THIS run delivers (finish in-progress work first)
     if not work:
-        return finish("ok", "Nothing due this run; standing obligations guarded.")
+        # ESTABLISH it, don't assume it: the sources were checked and came back empty. Say that
+        # plainly and finish — an idle run reported honestly beats an invented increment.
+        return finish("ok", "Nothing due this run; sources checked, standing obligations guarded.")
 
     if separable(work):
         # Separable bulk work → parallel children, each with a self-contained prompt + disjoint
@@ -76,6 +81,7 @@ def main():
             except ExternalBlocker:
                 continue                        # can't proceed now; move to the next item
 
+    recheck()                                   # more is often due once this pass lands — look before finishing
     record()                                    # update state/phase.json + append the LEDGER entry
     return finish("ok", "what was delivered, decisions taken, open ends")
 
@@ -103,6 +109,22 @@ def pick_work():
     means, inlined above and accounted for in your finish summary). The turn budget is a runaway
     BACKSTOP, not a ration: do not stop early because turns are being spent, and do not stretch a
     finished job to fill them."""
+
+
+def recheck():
+    """Before finishing, ask ONCE MORE whether more is due. The pass you just completed is the
+    commonest thing that reveals it: a source paginated, a fixed item unblocked the next one, an
+    answer arrived mid-run, a delivery exposed the gap behind it.
+
+    Re-run pick_work. If it comes back with items and the remaining budget can still deliver AND
+    verify them cleanly, do them now — then ask again. Finishing with known-due work left on the
+    table because the first pass already felt like 'a run's worth' is exactly what this step
+    exists to prevent.
+
+    Stop when pick_work comes back empty, or at a clean boundary when the budget can no longer
+    finish and verify the next item — never half-built. That boundary is not a ration: the turn
+    budget is a runaway BACKSTOP, so stopping is a judgement about finishing what you start, not
+    about spending turns."""
 
 
 def separable(work):
@@ -141,7 +163,10 @@ def collect_children():
 
 def record():
     """Update state/phase.json and any state files; append exactly one LEDGER entry for the run
-    (what changed, why, decisions, and candidates rejected + why). Then sweep the run once for
+    (what changed, why, decisions, and candidates rejected + why). Advance phase.json to
+    'wrap-up' once the GOAL-scoped stopping conditions in `state/stopping.json` are met — the
+    user's own words for the state after which this ROUTINE is finished — so the next fire closes
+    the job out instead of looking for more. Then sweep the run once for
     machinery friction you merely worked around — an action or tool that failed or misled you, a
     consent flow that asked for too much or too little — and file each real hitch with the
     `report` action before finishing (leave `target` unset if you cannot name the owner; triage
@@ -152,6 +177,14 @@ def record():
     unbounded LEDGER is its own defect."""
     ledger.append("what changed, why, decisions, rejected candidates")
 
+
+def wrap_up():
+    """Terminal phase — the GOAL-scoped stopping conditions are met and this is the closing run.
+    Do three things and nothing else: VERIFY the DELIVERABLE one final time against the primary
+    source (never against your own state files), TELL the user in plain words where it lives and
+    how to reach it, and FINISH accounting those conditions as met. Start no new work, draw
+    nothing new from SOURCES, and open no new question."""
+    return finish("ok", "Goal reached: deliverable verified, and where it lives.")
 
 
 if __name__ == "__main__":

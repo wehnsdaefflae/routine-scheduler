@@ -35,9 +35,13 @@ def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,  #
              fs_write_roots: list[str] | None = None,
              stages: dict[str, str] | None = None, enabled: bool = True,
              tags: list[str] | None = None, deliberation: str = "",
-             template: str | None = None, stopping: list[str] | None = None) -> Path:
+             template: str | None = None, stopping: list[str] | None = None,
+             goal: list[str] | None = None) -> Path:
     """Create ~/routines/<slug>. The workflow is REFERENCED (edited only in the library);
-    `stopping` seeds `state/stopping.json` — what DONE means for one run, in the USER's words;
+    `stopping` and `goal` both seed `state/stopping.json`, and they answer DIFFERENT questions:
+    `stopping` is what DONE means for ONE run (re-asked every run), `goal` is the state after
+    which the ROUTINE is finished (sticky, and it retires the routine when met). In the USER's
+    words;
     the routine holds general-rule SLUGS in routine.yaml (`rules:`, indexed by main.md's
     Standing practices tail — the prose stays in the library) + stages/ modules. The clarified
     `instruction` is the compile SEED: it is decomposed into the stages and NOT persisted (the
@@ -208,13 +212,16 @@ def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,  #
     # `state/stopping.json` is the USER's list; this IS their words, collected at the one moment
     # they were in the loop. Absent or empty seeds nothing: an invented condition is worse than
     # none, since every later run has to account for it.
-    if stopping:
+    if stopping or goal:
         from ..engine import stopping as stopping_mod
+        rows = [{"text": t, "status": "open", "group": "g1", "scope": "run"}
+                for t in (stopping or []) if str(t).strip()]
+        rows += [{"text": t, "status": "open", "group": "g1", "scope": "goal"}
+                 for t in (goal or []) if str(t).strip()]
         stopping_mod.save(routine_dir,
                           {"mode": "all",
                            "groups": [{"id": "g1", "name": "", "mode": "all"}],
-                           "conditions": [{"text": t, "status": "open", "group": "g1"}
-                                          for t in stopping if str(t).strip()]},
+                           "conditions": rows},
                           now=now_iso())
     # tuning.yaml (recipe-classed, improver-editable): the deliberation level, creation-
     # suggested per task. Always written, so the file exists for later tuning edits.

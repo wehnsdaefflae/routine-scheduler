@@ -216,10 +216,22 @@ ACTION_SCHEMA: dict = {
                      "description": "create_routine: what DONE looks like for ONE run of the "
                                     "new routine, in the USER's own words — one condition per "
                                     'entry ("the digest is published and the link works"). '
-                                    "These become its stopping conditions: every run must "
-                                    "account for each one in its finish summary. Carry the "
-                                    "user's answer here verbatim; omit it rather than "
-                                    "inventing conditions they did not state"},
+                                    "These become its RUN-scoped stopping conditions: every "
+                                    "run must account for each one in its finish summary. "
+                                    "Carry the user's answer here verbatim; omit it rather "
+                                    "than inventing conditions they did not state"},
+        "goal": {"type": "array", "items": {"type": "string"}, "maxItems": 4,
+                 "description": "create_routine: the state after which this ROUTINE is "
+                                "FINISHED and should stop running altogether, in the USER's "
+                                'own words ("the application is submitted", "the folder '
+                                'reorganisation is live"). A different question from '
+                                "`stopping`, and it has teeth: when every goal condition is "
+                                "met the scheduler stops firing the routine and asks the user "
+                                "to confirm its retirement. Name a literal DATE where the task "
+                                "has one. A routine that genuinely never ends — a monitor, a "
+                                "digest — takes NO goal, and that is the common case: omit it "
+                                "rather than inventing an ending, because a wrong goal "
+                                "switches a working routine off"},
         "label": {"type": "string",
                   "description": "spawn/subtask/detach: short name shown in the run tree"},
         "turns": {"type": "integer", "minimum": 1,

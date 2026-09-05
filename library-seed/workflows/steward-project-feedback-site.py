@@ -4,12 +4,13 @@ ongoing project, run memoryless on a schedule.
 Each run, in strict order: ORIENT from durable state files; INGEST the user's site feedback FIRST
 (past a cursor) and fold it into the project's direction; GATHER SIGNAL from the connected services
 (inbox, calendar, shared docs, chat) and retrieve+index every referenced document; GUARD the
-deliverables and dated obligations so none slips; advance exactly ONE high-value thing and leave the
-work better than you found it; run two short research subtasks + a fresh-eyes audit; RECORD state
-back; then regenerate and guarded-PUBLISH a self-updating status site that surfaces project state,
-the deliverables, and the ONE most important open question — collecting the feedback the NEXT run
-opens with. Do everything up to the irreversible step yourself; pause only at a send/publish/spend/
-sign gate. Never make an affirmatively false external claim, and never report done without evidence.
+deliverables and dated obligations so none slips; WORK THE LIST of everything genuinely due and
+leave the work better than you found it; run two short research subtasks + a fresh-eyes audit;
+RECORD state back; then regenerate and guarded-PUBLISH a self-updating status site that surfaces
+project state, the deliverables, and the ONE most important open question — collecting the feedback
+the NEXT run opens with. Do everything up to the irreversible step yourself; pause only at a send/
+publish/spend/sign gate. Never make an affirmatively false external claim, and never report done
+without evidence.
 
 This file is a PATTERN, not a program: the orchestrator never executes it — it *acts it out*, one
 engine action per turn, following the control flow below (its branches, loops, error handling). The
@@ -43,7 +44,7 @@ META = {
     "slug": "steward-project-feedback-site",
     "description": "Act as the accountable owner/PM of one ongoing project: orient from state, "
                    "ingest the user's site feedback first, gather signal, keep deliverables from "
-                   "slipping, advance one high-value increment per run, and republish a "
+                   "slipping, work everything genuinely due to a clean boundary, and republish a "
                    "self-updating status site that surfaces state + the key open question and "
                    "collects feedback the next run incorporates.",
     "when_to_use": "Use for a recurring routine that STEWARDS one ongoing project with real "
@@ -51,14 +52,15 @@ META = {
                    "collaborative build) — where each memoryless run continues from durable state "
                    "files, scans connected services (inbox/calendar/shared docs/chat) for new "
                    "signal and indexes every referenced document, keeps dated obligations from "
-                   "slipping, does ONE verified high-value increment and leaves the work better, "
-                   "and surfaces project state + the decisions it needs on a self-updating web UI "
-                   "that the user reviews and steers — its feedback ingested FIRST each run and "
-                   "incorporated. The routine does everything up to the irreversible step and "
-                   "pauses only at a send/publish/spend/sign gate; it never claims done without "
-                   "evidence or makes a false external claim. NOT for one-off tasks, a pure feed "
-                   "digest with no deliverables, or work with no counterparty to be accountable to.",
-    "version": 3,
+                   "slipping, works everything genuinely due (each increment verified) and leaves "
+                   "the work better, and surfaces project state + the decisions it needs on a "
+                   "self-updating web UI that the user reviews and steers — its feedback ingested "
+                   "FIRST each run and incorporated. The routine does everything up to the "
+                   "irreversible step and pauses only at a send/publish/spend/sign gate; it never "
+                   "claims done without evidence or makes a false external claim. NOT for one-off "
+                   "tasks, a pure feed digest with no deliverables, or work with no counterparty "
+                   "to be accountable to.",
+    "version": 4,
     "tags": ["project-management", "stewardship", "feedback-loop", "status-site", "deliverables",
              "self-sufficiency", "publishing", "accountability"],
     "includes": ["ask-policy", "web-research", "decision-record", "evidence-discipline", "independent-verification", "failure-visibility", "change-restraint", "interface-design", "feedback-implementation-gate", "email-thread-continuation"],
@@ -84,13 +86,16 @@ class ExternalBlocker(Exception):
 
 
 def main():
-    """One run of the steward — strict order: orient -> feedback -> signal -> guard -> one thing
-    -> improve -> record -> publish. Memoryless: everything to continue lives in files, not memory."""
+    """One run of the steward — strict order: orient -> feedback -> signal -> guard -> work the
+    list -> improve -> record -> publish. Memoryless: everything to continue lives in files."""
     orient()                                        # state digest + LEDGER + state files, BEFORE any new work
+
+    if phase.current() == "wind-down":
+        return wind_down()                          # terminal: the goal is reached — verify once, hand over, stop
 
     if phase.current() == "bootstrap":
         bootstrap()                                 # first run(s): stand up state files + the site + endpoint
-        # fall through — a bootstrap run still lands one real increment, so the counterparty sees
+        # fall through — a bootstrap run still lands real work, so the counterparty sees
         # a project that has moved rather than one that has merely been set up.
 
     if already_ran_today():
@@ -102,30 +107,41 @@ def main():
     # 2. GATHER SIGNAL — inbox/calendar/shared docs/chat since last run; index every referenced doc.
     gather_signal(direction)
 
-    # 3. GUARD deliverables + dated obligations — a due one is handled first, off the one-thing budget.
-    for obligation in due_obligations():
+    # 3. GUARD deliverables + dated obligations — a due one is handled FIRST, before any
+    #    discretionary work, so nothing silently slips.
+    obligations = due_obligations()
+    for obligation in obligations:
         try:
             verify(handle_obligation(obligation))
         except ConfirmationGate as gate:
             prepare_and_gate(gate)                  # everything but the irreversible step; then ask for the go
 
-    # 4. Decide ONE thing and execute — highest-value increment; finish in-progress work first.
-    thing = pick_one_thing(direction)
-    if thing:
+    # 4. WORK THE LIST — everything genuinely due, highest value first, each increment verified.
+    work = pick_work(direction)
+
+    if nothing_due(direction, obligations, work):
+        # Nothing arrived, nothing is owed, nothing is open. Establish that — don't assume it —
+        # then say it plainly and finish. Republishing an unchanged site is not evidence a run
+        # happened, and inventing an increment to have done one is worse than an idle run.
+        return finish("ok", "Nothing due: no new feedback or signal, no obligation, no open work.")
+
+    for item in work:
         try:
-            verify(execute(thing))                  # one increment, read back — plus one concrete quality lift
+            verify(execute(item))                   # this increment, read back — plus one concrete quality lift
         except NeedsDecision as decision:
             ask_user(decision, mode="deferred")     # becomes the site's open question + a Decisions record
         except ConfirmationGate as gate:
             prepare_and_gate(gate)
         except ExternalBlocker:
-            pass                                    # can't proceed now; prior state left intact
+            continue                                # can't proceed now; prior state intact, on to the next item
+        if not room_to_finish_cleanly():
+            break                                   # stop at a clean boundary — never leave one half-built
 
     # 5. Two short research subtasks + a fresh-eyes audit — reserve time every run.
     improve()
 
     # 6. RECORD so the next run needs no memory of this one.
-    record(thing)
+    record(work)
 
     # 7. Regenerate + GUARDED-PUBLISH the self-updating status site (state + deliverables + question).
     publish_status_site(direction)
@@ -168,9 +184,9 @@ def already_ran_today():
 
 def light_delta_pass():
     """Same-day re-fire: ingest any feedback since the last run and scan only signal that arrived
-    since, handle anything urgent, republish if state changed — skip the heavy one-thing work.
+    since, handle anything urgent, republish if state changed — skip work today's run already did.
     Append a short LEDGER note and finish."""
-    return finish("ok", "Same-day re-fire: delta pass only; no heavy work repeated.")
+    return finish("ok", "Same-day re-fire: delta pass only; no work repeated.")
 
 
 def ingest_feedback():
@@ -207,9 +223,9 @@ def gather_signal(direction):
 
 def due_obligations():
     """From DELIVERABLES + the calendar, return the dated obligations due before the next run
-    (a report, a promised reply, an invoice, a recurring update) — handled FIRST, off the one-thing
-    budget, so nothing silently slips. Also close any infrastructure gap you hit (a missing dir/
-    venv/link/id): set it up yourself, project-scoped. Empty when nothing is due."""
+    (a report, a promised reply, an invoice, a recurring update) — handled FIRST, before any
+    discretionary work, so nothing silently slips. Also close any infrastructure gap you hit (a
+    missing dir/venv/link/id): set it up yourself, project-scoped. Empty when nothing is due."""
 
 
 def handle_obligation(obligation):
@@ -223,16 +239,36 @@ def handle_obligation(obligation):
     Return the result to verify. Raise ConfirmationGate for the send/submit/sign itself."""
 
 
-def pick_one_thing(direction):
-    """Choose the single highest-value action that advances the current milestone, steered by
-    `direction` and BACKLOG priority; prefer FINISHING in-progress work. When state is AHEAD of plan,
-    spend the run HARDENING/broadening what already exists (tests, edge/negative cases, refactors,
-    types, docs) — not racing future milestones forward, and don't gold-plate (change-restraint).
-    Return the chosen action, or None if nothing is due."""
+def pick_work(direction):
+    """Return everything that genuinely advances the project this run, ordered highest value first
+    — steered by `direction` and BACKLOG priority, FINISHING in-progress work before starting
+    anything new.
+
+    This is a work LIST, not a token gesture. A project with five things genuinely due has five
+    things of work in it, and a run that does one of them has left four undone for no reason. What
+    bounds the run is the stopping conditions in `state/stopping.json` (the user's own words for
+    what DONE means, inlined above and accounted for in your finish summary). The turn budget is a
+    runaway BACKSTOP, not a ration: do not stop early because turns are being spent, and do not
+    stretch a finished job to fill them.
+
+    HARDENING what already exists — tests, edge and negative cases, refactors, types, docs — is
+    ordinary work to pick when it is the highest-value thing available, ranked against everything
+    else on its merits. It is not a consolation prize for being ahead of plan, and being ahead of
+    plan is not a reason to do less. Don't gold-plate either (change-restraint).
+
+    Empty when nothing is due — say so and finish rather than inventing work."""
+
+
+def room_to_finish_cleanly():
+    """True while the remaining budget can still execute AND verify the next item, and then record
+    and publish. This is a BOUNDARY check, never a ration: it exists so a run never starts what it
+    cannot finish and leaves it half-built — not so a run does less than it could. When it goes
+    false, stop at the clean boundary and name what is left in the WORKLOG so the next run picks it
+    up knowing where it stands."""
 
 
 def execute(item):
-    """Do the one increment and return its result — and leave the work better than you found it: on
+    """Do this increment and return its result — and leave the work better than you found it: on
     any run that touches code/artifacts, also land at least one concrete, non-cosmetic quality lift.
     Code runs through a CAPABILITY, never ad hoc: take whichever your CAPABILITIES list offers. A
     judgment-free step you repeat identically every run belongs in this routine's own persistent
@@ -243,6 +279,13 @@ def execute(item):
     claiming success — a claim without a passing run is the worst failure this system knows. If the
     change alters what the project does or claims, update ALL public surfaces (README/site/docs) in
     the SAME run so none lags."""
+
+
+def nothing_due(direction, obligations, work):
+    """True only when this run has ESTABLISHED that there is nothing to do: no feedback past the
+    cursor, no new signal from any SIGNAL_SOURCE, no obligation due before the next run, and no
+    open item worth advancing. Establishing it means having looked — an unread source is not an
+    empty one. When it holds, the honest run says so and finishes."""
 
 
 def improve():
@@ -258,13 +301,14 @@ def improve():
     one-off specific, and never grow the files unreasonably (health budgets are tripwires)."""
 
 
-def record(thing):
+def record(work):
     """Curate STATE to current truth + where-things-live; re-prioritize BACKLOG (move done/stale to
     Archive, not delete); tick/adjust DELIVERABLES (owner/due/status/evidence); append one dated
-    WORKLOG entry (Focus · one thing · public surfaces · signal · research · close-out · artifacts ·
-    next), rotating it when large. Keep files LEAN — git history is the archive (the engine
-    auto-commits the routine dir); prune detail into it, never into bloat. Append exactly one LEDGER
-    entry (feedback consumed + cursor moved, what advanced, decisions, candidates rejected + why)."""
+    WORKLOG entry (Focus · what advanced · what was left at the boundary · public surfaces · signal
+    · research · close-out · artifacts · next), rotating it when large. Keep files LEAN — git
+    history is the archive (the engine auto-commits the routine dir); prune detail into it, never
+    into bloat. Append exactly one LEDGER entry (feedback consumed + cursor moved, what advanced,
+    decisions, candidates rejected + why)."""
     ledger.append("feedback consumed, what advanced, obligations guarded, decisions, rejected + why")
 
 
@@ -279,15 +323,18 @@ def publish_status_site(direction):
     landing page (or upload-then-rename) so there is no half-published state; use absolute local paths
     (the util's CWD is not the routine dir). The
     site surfaces, at a glance: project STATE (phase, done/in-flight, health vs. plan), the
-    DELIVERABLES with due dates, and — per weight-loss's rule — EXACTLY ONE minimal, high-yield open
-    QUESTION this run (the highest-leverage missing decision/fact), plus per-item agree/disagree/
-    comment controls, one site-wide free-text 'direction' field, and any pending confirmation gate as
-    a one-click sign-off (the site is ALSO the authorization channel — a go/no-go here unblocks the
-    next run). Every control POSTs to the SHARED SITE.FEEDBACK_ENDPOINT with a STABLE id PREFIXED by this project's slug and identical across runs for
-    the same logical item (e.g. `item-slug · section · point`; date-scope the daily question as
-    `question/<date>/<slug>`) so feedback maps back after regeneration; the run OWNS the ids and
-    reconciles by id (refine-in-place), never orphaning a feedback row. Keep it honest (never
-    advertise unshipped capability). HARD RULES: write only inside SITE.SUBDIR and your own hub card; the shared feedback store lives OUTSIDE the uploaded
+    DELIVERABLES with due dates, and EXACTLY ONE minimal, high-yield open QUESTION this run (the
+    highest-leverage missing decision/fact). That one is an EXTERNAL constraint, not a pace: the
+    user answers it by hand between runs, and a page that asks five gets none of them answered.
+    Add per-item agree/disagree/comment controls, one site-wide free-text 'direction' field, and any
+    pending confirmation gate as a one-click sign-off (the site is ALSO the authorization channel —
+    a go/no-go here unblocks the next run). Every control POSTs to the SHARED
+    SITE.FEEDBACK_ENDPOINT with a STABLE id PREFIXED by this project's slug and identical across
+    runs for the same logical item (e.g. `item-slug · section · point`; date-scope the daily
+    question as `question/<date>/<slug>`) so feedback maps back after regeneration; the run OWNS the
+    ids and reconciles by id (refine-in-place), never orphaning a feedback row. Keep it honest
+    (never advertise unshipped capability). HARD RULES: write only inside SITE.SUBDIR and your own
+    hub card; the shared feedback store lives OUTSIDE the uploaded
     set — never upload over / overwrite it or any sibling's files (verify the upload set is scoped to
     SITE.SUBDIR before pushing); the server assigns each submission a monotonic id so the cursor read
     is idempotent regardless of when the user's deploy pull lands. Tell the user this project's site
@@ -313,9 +360,22 @@ def verify(result):
 
 
 def done():
-    """True when the project's obligations are all delivered — read it off `state/stopping.json`,
-    the user's own words for what DONE means. This gates the PROJECT's end, not each run, and is
-    open-ended by default."""
+    """True when the project itself is finished — read it off the GOAL-scoped stopping conditions in
+    `state/stopping.json` (`scope: "goal"`), the user's own words for the state after which this
+    ROUTINE has nothing left to do. A goal condition is STICKY: once met, the scheduler stops firing
+    the routine, so this gates the PROJECT's end and nothing smaller. The `scope: "run"` conditions
+    are the separate question of when THIS run is done, and they never set this. Open-ended by
+    default — no goal condition declared means the stewardship simply continues."""
+
+
+def wind_down():
+    """Terminal phase — the project's goal is reached and this is the closing run. Do three things
+    and nothing else: VERIFY the deliverable one final time against the authoritative primary
+    source (never against your own state files), TELL the user in plain words where it lives and
+    how to reach it (the site URL, the artifacts, the handover), and FINISH accounting the
+    GOAL-scoped stopping conditions as met. Start no new work, open no new question, pick nothing
+    up from BACKLOG, and publish no new asks — a project that keeps asking is not wound down."""
+    return finish("ok", "Project complete: deliverable verified, and where it lives.")
 
 
 if __name__ == "__main__":

@@ -122,15 +122,23 @@ no longer looks identical to one that's been green for a month.
 - **Pipelines with a human gate** — the routine researches, drafts, and prepares
   everything up to the irreversible step (send / submit / publish), which waits for your
   one-word go on the Decisions page. See *Grants radar*'s application pipeline.
-- **Standing projects** — a long-running goal advanced one increment per run, with state,
-  worklog, and self-improvement between runs. See *Project steward* in Examples.
+- **Standing projects** — a long-running goal advanced as far as each run can take it, with
+  state, worklog, and self-improvement between runs. A project with a real END (a submission, a
+  migration, an event) declares it as a GOAL-scoped stopping condition and RETIRES itself once
+  it is met. See *Project steward* in Examples.
 - **Event planning / iterative convergence** — propose, collect your feedback, learn,
   propose better. See *Birthday planner* in Examples.
 
 The common thread: **the files are the memory.** A run reads the state its predecessors
-left, does one increment, records what changed and why (LEDGER), notes what surprised it
-(`.memory/`), and finishes with a summary the next run starts from. No chat history, no
-session to lose.
+left, does as much of the job as it can finish and verify, records what changed and why
+(LEDGER), notes what surprised it (`.memory/`), and finishes with a summary the next run starts
+from. No chat history, no session to lose.
+
+How much is "as much"? The turn budget is a runaway backstop, never a ration: a run that leaves
+work it could have finished has paced itself against a counter instead of against the job. Where
+work really is serialized — one submission per round, one training job on a shared GPU — the
+recipe says so and names the constraint. Where it is not, the run keeps going to a clean
+boundary.
 
 ## Where to go next
 
