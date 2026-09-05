@@ -76,6 +76,17 @@ the limits (single-writer status.json preserved).
   routine's `tool_call` model when its window fits (machine work; main model is the fallback) and its
   spend is folded into the run's usage. Falls back to the deterministic one-line digest
   (`history.maybe_compact`) on any failure. The on-disk transcript keeps everything regardless.
+- **Anticipatory compaction** (`compaction.ANTICIPATE_AT`, 0.85): the gate above is a SIZE check and
+  is indifferent to WHERE in the work it trips, so it can rewrite the prefix three actions into a
+  multi-action step — the worst moment for both coherence and the cache. At a boundary the engine
+  ALREADY detects — the run entering a new stage module, i.e. `ctx.phase` changing on a
+  `stages/<name>.md` read — a prompt merely APPROACHING the gate is archived early, so the clean
+  between-steps pass pre-empts the forced mid-step one. Only the TRIGGER moves: every anti-thrash
+  guard still applies (the incompressible head+tail floor, a middle under 8 messages, less than 20k
+  of growth since the last pass), so a boundary can never cause a compaction the ordinary gate would
+  not eventually have made. The pass is stamped `anticipated: <phase>` in its `compaction` transcript
+  event, because otherwise an early pass and a forced one are indistinguishable after the fact and
+  the feature could not be evaluated.
 - **Phase is derived, never bookkept**: the stage modules ARE the states — `statemap.py` builds the
   UI's state-graph diagram from the routine's own `stages/*.md`,
   in main.md first-mention order (nothing parsed from prose, so every routine has a diagram), and

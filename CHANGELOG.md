@@ -17,6 +17,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.299.0] — 2026-09-05
+
+### Compaction happens between steps, not in the middle of one
+
+First increment of the compaction-recall/timing request, and the one it names first because it
+depends on nothing else: the trigger moves, no new machinery.
+
+The compaction gate is a SIZE check. It is indifferent to *where* in the work it trips, so it can
+rewrite the prompt's prefix three actions into a multi-action step — the worst possible moment for
+both coherence and the provider cache, which the rewrite invalidates outright.
+
+- **`compaction.ANTICIPATE_AT` (0.85).** At a boundary the engine ALREADY detects — the run
+  entering a new stage module, i.e. `ctx.phase` changing on a `stages/<name>.md` read — a prompt
+  merely APPROACHING the gate is archived early. The clean between-steps pass pre-empts the forced
+  mid-step one. No boundary is added: the phase is set where it always was (`engine/fileops.py`),
+  and the check is a pure read of it.
+- **Only WHEN moves, never WHETHER.** Every anti-thrash guard still applies — the incompressible
+  head+tail floor, a middle under 8 messages, less than 20k of growth since the last pass — so a
+  boundary can never cause a compaction the ordinary gate would not eventually have made. Pinned by
+  a test that puts a boundary in front of a zero-message middle and asserts nothing happens.
+- **The pass is stamped `anticipated: <phase>`** in its `compaction` transcript event. Without it an
+  early pass and a forced one are indistinguishable after the fact, and the feature could not be
+  evaluated against the runs it is supposed to improve.
+
+*Not* adopted, deliberately: the mainstream summarize-and-replace compaction that would make this
+instant. That is lossy — detail survives only in scrollback — and losslessness is the property this
+archive exists for. Making archival feel instant is a separate increment (background archival with
+the deterministic digest standing in), and it keeps archive-not-summarize as the default.
+
 ## [0.298.1] — 2026-09-05
 
 ### The machine queue could never read its box

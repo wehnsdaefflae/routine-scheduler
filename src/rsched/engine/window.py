@@ -20,6 +20,7 @@ from ..endpoints.base import EndpointError
 from ..health_events import log_health_event
 from . import mediaops
 from .compaction import (
+    ANTICIPATE_AT,
     CHARS_PER_TOKEN,
     KEEP_HEAD_MSGS,
     KEEP_TAIL_MSGS,
@@ -146,8 +147,17 @@ def _archive_if_needed(loop, endpoint, ref) -> None:
     remaining = ctx.tokens_remaining()   # None = unlimited → only the context cap applies
     budget_cap = (float("inf") if remaining is None
                   else max(40_000.0, 0.10 * 4 * remaining))
-    if (size <= min(context_cap, budget_cap)
-            or len(loop.messages) <= KEEP_HEAD_MSGS + KEEP_TAIL_MSGS):
+    cap = min(context_cap, budget_cap)
+    # A BOUNDARY the engine already detects: this turn begins a new stage module, so the run is
+    # between steps rather than mid-edit. Compact now if the prompt is merely APPROACHING the gate
+    # — a pass taken here is cheaper and less disruptive than the same pass forced three actions
+    # into the next step. The anti-thrash guards below are untouched: this moves WHEN a compaction
+    # happens, never whether an extra one does.
+    at_boundary = bool(ctx.phase) and ctx.phase != getattr(loop, "_last_seen_phase", None)
+    if at_boundary:
+        loop._last_seen_phase = ctx.phase
+        cap *= ANTICIPATE_AT
+    if (size <= cap or len(loop.messages) <= KEEP_HEAD_MSGS + KEEP_TAIL_MSGS):
         return
     # Anti-thrash: head + tail are an incompressible floor (large observations in the last
     # 24 messages stay verbatim), so once the middle is a handful of messages — or the size
@@ -194,7 +204,11 @@ def _archive_if_needed(loop, endpoint, ref) -> None:
         if cinfo.get("usage"):
             ctx.add_usage(cinfo["usage"])   # the archival call itself now hits the books
         loop._last_compact_after = messages_size(loop.messages)
-        ctx.transcript.event("compaction", cinfo)
+        # `anticipated` says this pass was taken EARLY, at a stage boundary, rather than because
+        # the prompt had actually crossed the gate — without it the two are indistinguishable in
+        # the transcript and the feature could not be evaluated after the fact.
+        ctx.transcript.event("compaction",
+                             {**cinfo, **({"anticipated": ctx.phase} if at_boundary else {})})
     elif degraded:
         # digest found nothing to elide either — the failed archival must still be visible
         ctx.transcript.event("compaction", {"archival_degraded": degraded})

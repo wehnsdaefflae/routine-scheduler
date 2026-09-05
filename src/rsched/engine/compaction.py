@@ -24,6 +24,15 @@ COMPACT_AT_FRACTION = 0.6
 # cache. The economics flip: compact later.
 COMPACT_AT_FRACTION_CACHED = 0.8
 
+# ANTICIPATORY COMPACTION. The gate above is a SIZE check and is indifferent to WHERE in the work
+# it trips, so it can rewrite the prefix in the middle of a multi-action step — the worst moment for
+# both coherence and the cache. At a boundary the engine already detects (the run entering a new
+# stage module — `ctx.phase` changing on a `stages/<name>.md` read), a prompt merely APPROACHING the
+# gate is archived early, so the clean between-steps pass pre-empts the forced mid-step one. Only
+# the TRIGGER moves; every anti-thrash guard still applies, so this can never cause an extra pass
+# that the normal gate would not eventually have made anyway.
+ANTICIPATE_AT = 0.85
+
 KEEP_HEAD_MSGS = 6    # system + kickoff + first 2 turn pairs
 
 KEEP_TAIL_MSGS = 24   # ~ last 12 turn pairs

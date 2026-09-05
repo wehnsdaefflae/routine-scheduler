@@ -720,7 +720,7 @@ def test_replay_does_not_duplicate_blocking_answers():
     assert joined.count("UNIQUE-ANSWER") == 1
 
 
-def _gate_loop(monkeypatch, *, usage):
+def _gate_loop(monkeypatch, *, usage, phase="", last_seen_phase=None):
     """A minimal loop stub for compact_if_needed: 40 x 1750-char messages = 70k chars
     against a 100k window - between the 0.6 (60k) and 0.8 (80k) thresholds."""
     from types import SimpleNamespace
@@ -738,12 +738,12 @@ def _gate_loop(monkeypatch, *, usage):
             raise RuntimeError("no tool_call model in this stub")
 
     ctx = SimpleNamespace(usage=usage, tokens_remaining=lambda: None, registry=_Reg(),
-                          routine=SimpleNamespace(models={}), run_dir=None,
+                          routine=SimpleNamespace(models={}), run_dir=None, phase=phase,
                           transcript=SimpleNamespace(event=lambda *a, **k: None),
                           add_usage=lambda u: None)
     loop = SimpleNamespace(ctx=ctx, turn_records=[], _hist_rel="history",
                            _last_compact_after=0, _history_active=False,
-                           _hist_note_countdown=0,
+                           _hist_note_countdown=0, _last_seen_phase=last_seen_phase,
                            messages=[{"role": "user", "content": "x" * 1750}
                                      for _ in range(40)])
     return loop, calls
@@ -773,6 +773,56 @@ def test_compaction_gate_cached_waits_for_80pct(monkeypatch):
     compact_if_needed(loop, endpoint=None,
                       ref=ModelRef("e", "m", context_chars=100_000, max_tokens=0))
     assert not calls, "with cache hits, 70k over 100k sits under the 0.8 gate - no compaction"
+
+
+def test_a_stage_boundary_compacts_a_prompt_only_approaching_the_gate(monkeypatch):
+    """Anticipatory compaction. The size gate is indifferent to WHERE in the work it trips, so it
+    can rewrite the prefix three actions into a multi-action step — worst for both coherence and
+    the cache. Entering a new stage module is a boundary the engine already detects, and a pass
+    taken there pre-empts the forced mid-step one.
+
+    Identical prompt and model to the cached-gate test above, which does NOT compact: 70k over a
+    100k window sits under the 0.8 cached trigger. The ONLY difference is standing at a boundary,
+    which brings the trigger to 0.8 x 0.85 = 68k.
+    """
+    from rsched.config import ModelRef
+    from rsched.engine.window import compact_if_needed
+
+    loop, calls = _gate_loop(monkeypatch, usage={"cached_in": 5_000}, phase="draft")
+    compact_if_needed(loop, endpoint=None,
+                      ref=ModelRef("e", "m", context_chars=100_000, max_tokens=0))
+    assert calls, "at a stage boundary a prompt approaching the gate is archived early"
+    assert loop._last_seen_phase == "draft"     # and the boundary is spent, not re-triggered
+
+
+def test_mid_step_inside_the_same_stage_does_not_anticipate(monkeypatch):
+    """It is the BOUNDARY that lowers the trigger, not the phase. A run already working inside
+    `draft` is mid-step, and compacting there is the very thing this avoids."""
+    from rsched.config import ModelRef
+    from rsched.engine.window import compact_if_needed
+
+    loop, calls = _gate_loop(monkeypatch, usage={"cached_in": 5_000}, phase="draft",
+                             last_seen_phase="draft")
+    compact_if_needed(loop, endpoint=None,
+                      ref=ModelRef("e", "m", context_chars=100_000, max_tokens=0))
+    assert not calls, "already inside the stage — the ordinary 0.8 gate applies"
+
+
+def test_anticipation_cannot_force_a_pass_the_anti_thrash_guards_refuse(monkeypatch):
+    """Moving WHEN a compaction happens must never add one. A middle too small to pay for an
+    archival call is still refused at a boundary."""
+    from types import SimpleNamespace
+
+    from rsched.config import ModelRef
+    from rsched.engine.window import compact_if_needed
+
+    loop, calls = _gate_loop(monkeypatch, usage={"cached_in": 5_000}, phase="draft")
+    # 30 messages = a 0-message middle against the 6+24 head/tail floor
+    loop.messages = [{"role": "user", "content": "x" * 4_000} for _ in range(30)]
+    compact_if_needed(loop, endpoint=None,
+                      ref=ModelRef("e", "m", context_chars=100_000, max_tokens=0))
+    assert not calls, "no middle to archive — the boundary must not override the floor"
+    assert isinstance(loop.ctx, SimpleNamespace)
 
 
 def test_harness_contract_recipe_line_follows_unlock(make_routine, tmp_path):
