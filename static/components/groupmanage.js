@@ -142,7 +142,7 @@ function openGroupCreate(data, { reload }) {
   };
 }
 
-/** The per-group editor: rename, ordered members with split flags, add/remove, on-failure,
+/** The per-group editor: rename, ordered members, add/remove, on-failure,
  *  schedule, delete. Saves apply immediately (each control PATCHes) and the panel re-renders
  *  from the response, so it never goes stale against its own writes. */
 export function openGroupEditor(group, data, { reload }) {

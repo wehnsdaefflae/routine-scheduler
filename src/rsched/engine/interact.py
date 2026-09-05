@@ -153,6 +153,7 @@ def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question") -> di
                 src = str(answer.get("source", "web"))
                 ctx.transcript.event("answer", {"qid": qid, "text": str(answer["text"]),
                                                 "source": src, "held": True})
+                ctx.user_replies += 1     # held or not, the user spoke (R1310)
                 inbox.file_message(ctx.routine.dir, str(answer["text"]), source=src,
                                    via="web")   # the user's own reply to THIS run — live
                 answer = None
@@ -185,6 +186,7 @@ def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question") -> di
                                         "intermediate": bool(answer.get("intermediate")),
                                         **({"decision": answer["decision"]}
                                            if answer.get("decision") else {})})
+        ctx.user_replies += 1             # a blocking answer IS the user's next message
         if answer.get("intermediate"):
             # A dialog reply, not the answer: the user needs some back-and-forth before they
             # can decide. The decision record STAYS OPEN (deferred — the run is no longer

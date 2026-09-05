@@ -129,6 +129,11 @@ class RunContext:
     # Deferred-question churn: decisions this run threw over the wall to the user — a
     # deferred ask, a blocking ask that timed out / was parked / died with an abort.
     asks_deferred: int = 0
+    # User UTTERANCES this leg: a settled blocking answer, a held reply, a dialog turn, an
+    # injected message, a slash command. Not telemetry, and deliberately NOT carried across
+    # legs — `create_routine` reads it to tell "the user has spoken since I drafted" from
+    # "nobody has seen the draft yet" INSIDE one reply, which a pid alone cannot (R1310).
+    user_replies: int = 0
     _started_mono: float = field(default_factory=time.monotonic)
     _suspended_s: float = 0.0
 

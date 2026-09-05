@@ -164,11 +164,15 @@ def cmd_validate(args) -> int:
 def _instance_problems(server) -> list[str]:
     """Coherence checks that belong to no single routine, so no routine's surface can see them.
 
-    A GROUP is the case: a scheduled group with no members fires nothing on every tick of its
-    cron, forever, and leaves a `group_chain_done: 0 member runs` in the health stream that
-    reads exactly like a group whose members all completed. Two of them had been running empty
-    for weeks. Reported, never fatal — an empty group is a normal intermediate state while you
-    are building one.
+    A GROUP is the case, twice over. A scheduled group with no members fires nothing on every
+    tick of its cron, forever, and leaves a `group_chain_done: 0 member runs` in the health
+    stream that reads exactly like a group whose members all completed. Two of them had been
+    running empty for weeks. And a group naming a slug that is not a routine is nobody's
+    either: routines are deleted out of band, so no cascade removes them from the store, the
+    chain logs a warning and skips them, and the only other trace is an `unknown routine(s)`
+    the console used to raise over the WHOLE membership (F442). Reported, never fatal — an
+    empty group is a normal intermediate state while you are building one, and a phantom
+    member is stale bookkeeping rather than a broken instance.
     """
     from . import groups as groups_mod
 
@@ -176,9 +180,15 @@ def _instance_problems(server) -> list[str]:
         all_groups = groups_mod.list_groups(server.routines_home)
     except OSError:
         return []
-    return [f"group {g['name']!r} ({g['id']}) has a schedule ({g['cron']!r}) but no members — "
-            "it fires nothing on every tick"
-            for g in all_groups if g.get("cron") and not groups_mod.member_slugs(g)]
+    live = {p.name for p in server.routines_home.iterdir()
+            if (p / "routine.yaml").is_file()} if server.routines_home.is_dir() else set()
+    empty = [f"group {g['name']!r} ({g['id']}) has a schedule ({g['cron']!r}) but no members — "
+             "it fires nothing on every tick"
+             for g in all_groups if g.get("cron") and not groups_mod.member_slugs(g)]
+    phantom = [f"group {g['name']!r} ({g['id']}) names {slug!r}, which is not a routine — "
+               "the chain skips it every fire; remove it from the group"
+               for g in all_groups for slug in groups_mod.member_slugs(g) if slug not in live]
+    return empty + phantom
 
 
 def cmd_abort(args) -> int:

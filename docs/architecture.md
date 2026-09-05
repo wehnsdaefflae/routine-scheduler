@@ -638,7 +638,12 @@ whose TEXT must change on a live instance is converted by a one-shot migration i
   designed, user-approved routine plus the group it belonged in and could not materialize either,
   so the design was hand-carried back to the operator to paste in (R353). The missing piece was
   never permission, it was a QUEUE. Both kinds are now surfaced to every run and the HANDLER
-  decides: a root conversation materializes through D92's preview→confirm as before; anywhere else
+  decides: a root conversation materializes through D92's preview→confirm as before — whose
+  confirm gate asks whether the USER has spoken since the draft, not whether the engine PROCESS
+  changed: a later leg answers that by existing, and a blocking `ask_user` answered inside the
+  drafting leg answers it too, which the older pid-only test read as silence and charged the user a
+  second, content-free "go" after they had already said yes (R1310, `RunContext.user_replies`);
+  anywhere else
   the same call writes a proposal to `.control/pending-creations/<id>.json` and returns an
   observation saying plainly that nothing was created and not to re-issue it. The Decisions page
   carries a band of proposals — what would be created, from which routine and run, with the full
@@ -852,7 +857,8 @@ whose TEXT must change on a live instance is converted by a one-shot migration i
   is namespaced `conv--<slug>` and wakes the conversation by RESUMING its run ("remind me in 3
   days"). Cooldowns/expiry per request; corrupt requests are dropped, not rescanned.
 - **Routine groups (D53/D61/D67/D71/F292/D80)**: a group is an ORDERED list of member records —
-  `{"slug", "split"}`, where `split` opts the member into the two-phase fire below — plus a
+  `{"slug"}` (the F292 two-pass `split` flag is retired — D90, 0.205.0: a chain fires ONCE over
+  the members) — plus a
   mid-chain-failure policy, stored instance-level in `.control/groups.json` (`rsched/groups.py` —
   web-written CRUD via `web/api_groups.py` and the Routines page's group rows (D80: the former
   /groups subpage is retired — the group rows carry run-now/pause/edit, the toolbar above the list

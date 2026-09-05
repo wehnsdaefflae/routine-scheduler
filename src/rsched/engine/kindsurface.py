@@ -252,9 +252,10 @@ catalog the draft observation carries — which always ends in `generate`, "draf
 fitted to this task", because no catalog covers every task and "none of these fit" must always \
 be one of the choices; picking it makes the confirming call draft that pattern and build on it. \
 It is a TWO-STEP flow: the first call stores a DRAFT and returns a preview — put its open \
-points to the user as those decisions and finish your reply; after the user answers, call it \
-again with the SAME fields to materialize (its own dir, its held rules, git repo). A changed \
-field updates the draft instead. \
+points to the user as those decisions and finish your reply, or put the go-ahead to them as a \
+BLOCKING ask_user whose answer reaches you without ending the reply; after the user answers, \
+either way, call it again with the SAME fields to materialize (its own dir, its held rules, git \
+repo). A changed field updates the draft instead. \
 The daemon picks the new routine up on its next registry rescan; tell the user it exists and \
 what to set next (its schedule). This is the ONLY way a routine is created. WITHOUT a user in \
 the loop (a scheduled run) the same call QUEUES a proposal on the Decisions page instead of \

@@ -7,10 +7,11 @@ root-conversation gate, and the engine only surfaces the kind to a root conversa
 (loop.allowed_tools injection), so a scheduled routine never sees it.
 
 D92 (2026-08-17): the first call stores a draft in the conversation's state/ and returns a
-preview; materialization requires an identical call from a LATER leg (different engine
-process — i.e. after a user round-trip). The tests simulate the later leg by rewriting the
-draft's recorded pid: each conversation reply runs as its own process, so "pid differs"
-IS "a later reply".
+preview; materialization requires the USER to have spoken since. The tests simulate a later
+leg by rewriting the draft's recorded pid — each conversation reply runs as its own process,
+so "pid differs" IS "a later reply" — and simulate a blocking ask answered mid-reply by
+bumping `ctx.user_replies`, which R1310 is: the same leg may confirm once the user has
+answered inside it.
 """
 
 import json
@@ -52,7 +53,7 @@ def _ctx(server, *, home: str, slug="c-1", depth=0):
     routine = SimpleNamespace(slug=slug, dir=getattr(server, home) / slug)
     routine.dir.mkdir(parents=True, exist_ok=True)
     return SimpleNamespace(server=server, routine=routine, depth=depth,
-                           run_id=f"{slug}:20260827-030000",
+                           run_id=f"{slug}:20260827-030000", user_replies=0,
                            tokens_remaining=lambda: None, add_usage=lambda _usage: None)
 
 
@@ -193,13 +194,40 @@ def test_draft_carries_the_catalog_and_demands_a_decision_not_prose(tmp_path):
 
 
 def test_same_leg_confirm_is_held(tmp_path):
-    """The reply that drafted cannot also confirm — no user has seen the preview yet."""
+    """The reply that drafted cannot also confirm while the user has stayed silent — nobody
+    has seen the preview yet."""
     server = _server(tmp_path)
     ctx = _ctx(server, home="conversations_home")
     create_routine.handle_create_routine(ctx, dict(ACTION))
     obs = create_routine.handle_create_routine(ctx, dict(ACTION))
     assert obs.get("draft") and obs.get("held") and not obs.get("created")
     assert not (server.routines_home / ACTION["target"]).exists()
+
+
+def test_same_leg_confirm_materializes_once_the_user_has_answered(tmp_path):
+    """R1310: a BLOCKING ask_user is answered inside the drafting leg, so the user's own
+    "create it now" arrives without a new process. The pid alone read that as silence and
+    bounced them for a second, content-free "go"; the utterance count sees it."""
+    server = _server(tmp_path)
+    ctx = _ctx(server, home="conversations_home")
+    create_routine.handle_create_routine(ctx, dict(ACTION))
+    ctx.user_replies += 1                       # the blocking ask came back answered
+    obs = create_routine.handle_create_routine(ctx, dict(ACTION))
+    assert obs.get("created") and not obs.get("held")
+    assert (server.routines_home / ACTION["target"]).is_dir()
+
+
+def test_a_redraft_rearms_the_hold_at_the_new_count(tmp_path):
+    """The count is re-recorded on every (re)draft, so a design change after an answer still
+    costs a fresh round-trip — the answer confirmed the OLD draft, not the new one."""
+    server = _server(tmp_path)
+    ctx = _ctx(server, home="conversations_home")
+    create_routine.handle_create_routine(ctx, dict(ACTION))
+    ctx.user_replies += 1
+    changed = {**ACTION, "name": "Arxiv digest"}
+    assert create_routine.handle_create_routine(ctx, changed).get("updated")
+    obs = create_routine.handle_create_routine(ctx, changed)
+    assert obs.get("held") and not obs.get("created")
 
 
 def test_confirm_from_later_leg_materializes(tmp_path):

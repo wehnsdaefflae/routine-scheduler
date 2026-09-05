@@ -17,6 +17,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.301.0] — 2026-09-05
+
+### A confirmed creation stops asking for a second "go"; a deleted routine stops locking its group
+
+Two reported defects, both where a proxy stood in for the fact it was meant to represent.
+
+**`create_routine` charged the user a whole round-trip after they had already said yes (R1310).**
+The confirm gate exists to make sure a human has SEEN the draft before a routine is built, and it
+tested for that with the engine PID: a conversation reply runs as its own process, so a draft this
+process wrote could not be confirmed by this process. That is true of the ordinary path and false
+of the one the orchestrator actually reaches for — a BLOCKING `ask_user` is answered *inside* the
+drafting leg. The user answered "Create it now", the orchestrator emitted the materializing call,
+the gate read the pid and held it, and the reply had to end asking them to send a content-free
+"go". The gate now asks the question it always meant: **has the user spoken since the draft?**
+`RunContext.user_replies` counts this leg's user utterances — a settled blocking answer, a held
+reply, a dialog turn, an injected message, a slash command, but never a delivered report, which is
+a routine's message and not the user's — the draft records it beside its pid, and the same leg may
+confirm once the count has grown. A redraft re-records the count, so a design change after an
+answer still costs a fresh round-trip: that answer confirmed the old draft. The kind surface and
+the draft observation now teach the second option out loud — finish the reply, or put the go-ahead
+itself to them as a blocking ask and confirm on their answer.
+
+**One out-of-band routine deletion locked a whole group against every edit (F442).** Routines are
+deleted by hand — there is no delete endpoint for a cascade to hang off — so `.control/groups.json`
+can name a slug that no longer resolves. `api_groups._validate_members` checked the WHOLE submitted
+member list against the live registry, and both the routine page and the dashboard send the members
+they are KEEPING alongside the one they are changing: joining or leaving a group that held a stale
+slug returned `400 unknown routine(s): clarification` and the console showed the toast with nothing
+the user could do about it. Existence is now checked on the slugs a caller **adds**; a slug the
+group already holds rides along untouched, so repairing the group is no longer a precondition for
+editing it, and a slug that was never a routine is still refused. The stale member is surfaced
+where a human can act on it instead: `rsched validate` grew a second instance-level check —
+alongside "a scheduled group with no members" — naming every group member that is not a routine.
+The chain already tolerated one (it logs and skips), so nothing about the fire path changes.
+
+Swept with it: the F292 two-pass `split` member flag, retired in 0.205.0 (D90), was still being
+sent by the routine page's group picker and still documented as part of the member record.
+
+
 ## [0.300.0] — 2026-09-05
 
 ### One canonical rendering of an action — the match target three queued features are built on

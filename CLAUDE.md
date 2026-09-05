@@ -309,8 +309,11 @@ by a test, by the engine, or by a past incident.
   `state`) or nothing at all wrote a file matching nothing. All of these are NOTE rows —
   nothing is broken, the file is misleading — and the BOOT note carries only `blocks`/
   `interrupts` (`surface.BOOT_SEVERITIES`): a NOTE is for the operator, and a run can neither
-  act on it nor be saved a turn by it. `rsched validate` adds the instance-level case no
-  routine's surface can see (a scheduled group with no members). An `expects:` row must be an
+  act on it nor be saved a turn by it. `rsched validate` adds the instance-level cases no
+  routine's surface can see: a scheduled group with no members, and a group naming a slug that
+  is NOT a routine — routines are deleted out of band, so nothing cascades the membership away,
+  and the web refuses only the slugs a caller ADDS so one stale member cannot lock a whole group
+  against every further edit (F442). An `expects:` row must be an
   UNCONDITIONAL presumption: it fires on EVERY holder, and it has been wrong twice the same way
   (`git-checkpoint`, then `status-page`'s write root — false for all seven holders, because a page
   is published through an upload channel and a routine's own dir is always writable).

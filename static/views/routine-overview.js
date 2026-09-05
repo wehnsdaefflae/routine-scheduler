@@ -46,7 +46,7 @@ function groupTile(slug, current) {
         sub.textContent = `member of ${mine.name} — the group has no schedule, so its own cron applies`;
     } catch { sel.replaceChildren(el("option", {}, "unavailable")); sel.disabled = true; }
   })();
-  const spec = (ms) => ms.map((m) => ({ slug: m.slug, split: !!m.split }));
+  const spec = (ms) => ms.map((m) => ({ slug: m.slug }));
   sel.onchange = async () => {
     const target = sel.value;
     sel.disabled = true;
@@ -59,7 +59,7 @@ function groupTile(slug, current) {
       if (target && (!prev || prev.id !== target)) {
         const g = (groupsData.groups || []).find((x) => x.id === target);
         await api(`/api/groups/${target}`, { method: "PATCH",
-          body: { members: [...spec(g.members || []), { slug, split: false }] } });
+          body: { members: [...spec(g.members || []), { slug }] } });
       }
       const joined = (groupsData.groups || []).find((x) => x.id === target);
       toast(!target ? "left the group — its own cron applies again"

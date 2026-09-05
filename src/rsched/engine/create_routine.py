@@ -15,11 +15,15 @@ through the same `workflows.scaffold` path the retired wizard's build half calle
 (decompose the chosen workflow into main.md + stages/, adapt rules, write routine.yaml,
 init the auto-push git repo — one materializer only).
 
-The confirm gate is structural, not honor-system: a conversation reply runs as its own
-engine process, so a draft written by THIS process cannot be confirmed by this process —
-the confirming call must come from a LATER leg, which a root conversation only gets after
-the user (or a background delivery) speaks. A changed field on the confirming call is a
-DESIGN CHANGE, not a confirmation: it replaces the draft and restarts the round-trip.
+The confirm gate asks ONE question: has the user spoken since the draft was written? A
+conversation reply usually runs as its own engine process, so a LATER leg answers it by
+existing — a root conversation only gets one after the user (or a background delivery)
+speaks. But a BLOCKING `ask_user` is answered INSIDE the drafting leg, and a pid alone then
+reads the user's own "create it now" as nobody having spoken: the orchestrator had to end
+the reply and bounce them for a second, content-free "go" (R1310). So the draft records the
+leg's user-utterance count beside its pid, and the same leg may confirm once that count has
+grown. A changed field on the confirming call is a DESIGN CHANGE, not a confirmation: it
+replaces the draft and restarts the round-trip.
 
 Structural rule (mirrors `detach`): valid ONLY from a ROOT CONVERSATION (depth 0, dir directly
 under conversations_home). A scheduled routine has no user in the loop to design a new routine
@@ -217,13 +221,16 @@ def _preview_obs(draft: dict, catalog: list[dict], *, updated: bool,
                     "routines honestly have no such state (a monitor, a digest) and then "
                     "`goal` is omitted — but ASK, because a routine nobody ever asked runs "
                     "forever by default, and where the answer carries a DATE the recipe must "
-                    "name it literally. Then finish the reply. Once the user has answered, call "
-                    "create_routine again with the SAME fields to materialize it; a call with "
-                    "changed fields updates the draft and restarts the confirmation.")}
+                    "name it literally. Then finish the reply — or put the go-ahead itself to "
+                    "them as a BLOCKING ask_user, whose answer reaches you without ending the "
+                    "reply. Once the user has answered either way, call create_routine again "
+                    "with the SAME fields to materialize it; a call with changed fields updates "
+                    "the draft and restarts the confirmation.")}
     if blocked_same_leg:
-        obs["held"] = ("This reply already drafted the routine — the confirming call must "
-                       "follow the user's answer, in their next message. Show the draft and "
-                       "finish the reply.")
+        obs["held"] = ("This reply already drafted the routine and the user has not answered "
+                       "since. Show the draft and finish the reply — or put the go-ahead to "
+                       "them as a BLOCKING ask_user, whose answer arrives in this same reply, "
+                       "and confirm once they have given it.")
     return obs
 
 
@@ -381,13 +388,16 @@ def handle_create_routine(ctx: RunContext, action: dict) -> dict:
     draft = _load_draft(ctx)
     if draft is None or any(draft.get(k) != v for k, v in fields.items()):
         # First step, or a design change: (re)write the draft and ask for the round-trip.
-        record = {**fields, "pid": os.getpid(), "created_at": now_iso()}
+        record = {**fields, "pid": os.getpid(), "user_replies": ctx.user_replies,
+                  "created_at": now_iso()}
         atomic_write_json(_draft_path(ctx), record)
         return _preview_obs(record, catalog, updated=draft is not None)
-    if draft.get("pid") == os.getpid():
-        # Same reply that drafted it — no user has seen the preview yet. Hold, teach.
+    if draft.get("pid") == os.getpid() and ctx.user_replies <= draft["user_replies"]:
+        # Same reply that drafted it, and nobody has spoken since — no user has seen the
+        # preview yet. Hold, teach.
         return _preview_obs(draft, catalog, updated=False, blocked_same_leg=True)
 
-    # Confirmed: identical fields, a later leg — the user has spoken since the preview.
+    # Confirmed: identical fields, and the user has spoken since the preview — a later leg,
+    # or a blocking ask answered inside this one (R1310).
     return _materialize(ctx, slug=slug, name=name, instruction=instruction,
                         workflow_slug=workflow_slug, stopping=stopping, goal=goal)

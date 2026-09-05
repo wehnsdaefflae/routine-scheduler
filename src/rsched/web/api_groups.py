@@ -8,13 +8,17 @@ friendly spec converted to cron + the server's tz, exactly like a routine's sche
 The WEB layer only RECORDS it;
 the daemon fires (the 0.62.0 split). While a group has a schedule, its members' own crons
 are suppressed by the daemon and their Schedule dropdowns read "group managed". Every
-member slug is validated against the live registry here (the store validates shape only),
-so a group can never name a routine that does not exist.
+member slug the caller ADDS is validated against the live registry here (the store validates
+shape only), so a group can never be given a routine that does not exist. A slug it already
+holds is exempt: routines are deleted out of band, and a stale member must not lock the whole
+group against every further edit (F442). `rsched validate` names the stale ones.
 
 `router` rides the normal authed include in app.py like every other api_* module.
 """
 
 from __future__ import annotations
+
+from collections.abc import Collection
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
@@ -35,14 +39,24 @@ class MemberSpec(BaseModel):
     slug: str = Field(min_length=1)
 
 
-def _validate_members(request: Request, members: list[MemberSpec] | None) -> list[dict]:
-    """Every member must name a real routine (the store keeps shape/order/dedup; existence
-    is ours). A group of a template/disabled routine is allowed — only a NON-EXISTENT slug
-    is rejected, with the offending slug named so the UI can point at it.
+def _validate_members(request: Request, members: list[MemberSpec] | None,
+                      *, already: Collection[str] = ()) -> list[dict]:
+    """Every member the caller ADDS must name a real routine (the store keeps
+    shape/order/dedup; existence is ours). A group of a template/disabled routine is
+    allowed — only a NON-EXISTENT slug is rejected, with the offending slug named so the UI
+    can point at it.
+
+    `already` — the slugs the group holds TODAY — is exempt, and that exemption is the whole
+    of F442. Routines are deleted out of band (there is no delete endpoint for a cascade to
+    hang off), so a group can end up naming a slug that no longer resolves; validating the
+    whole submitted list then refused every edit to that group, because both the routine page
+    and the dashboard send the members they are KEEPING alongside the one they are changing.
+    Joining a group must not require repairing it first. The stale slug is surfaced instead,
+    where a human can act on it: `rsched validate` names it as an instance problem.
     """
     if not members:
         return []
-    known = set(_catalog(request).keys())
+    known = set(_catalog(request).keys()) | set(already)
     unknown = [m.slug for m in members if m.slug not in known]
     if unknown:
         raise HTTPException(400, f"unknown routine(s): {', '.join(sorted(unknown))}")
@@ -244,7 +258,10 @@ def create_group(request: Request, body: GroupCreate) -> dict:
 
 @router.patch("/groups/{gid}")
 def update_group(request: Request, gid: str, body: GroupPatch) -> dict:
-    members = _validate_members(request, body.members) if body.members is not None else None
+    current = groups.get(_routines_home(request), gid)
+    members = (_validate_members(request, body.members,
+                                 already=groups.member_slugs(current or {}))
+               if body.members is not None else None)
     on_failure = body.on_failure if body.set_on_failure else groups._UNSET
     sched = _schedule_to_cron(body.schedule)
     try:

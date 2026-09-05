@@ -80,6 +80,8 @@ def inject_user_message(loop, m: dict) -> None:
     ctx.transcript.event("user_injection", {
         "text": m["text"],
         **({"attachments": m["attachments"]} if m.get("attachments") else {})})
+    if not m.get("report"):
+        ctx.user_replies += 1   # a delivered report is a routine's message, not the user's
     # A delivered report already carries its own "REPORT <id> from routine <slug>" heading
     # (reports.message_text) — labelling it a USER MESSAGE would name the wrong sender.
     lead = ("REPORT (injected mid-run)" if m.get("report")
@@ -110,6 +112,7 @@ def run_user_command(loop, m: dict) -> None:
     ctx = loop.ctx
     text = str(m.get("text") or "")
     ctx.transcript.event("user_injection", {"text": text, "command": True})
+    ctx.user_replies += 1       # typing an action is the user speaking, like any message
     try:
         action = parse_command(text)
         problems = (validate(action, ACTION_SCHEMA)

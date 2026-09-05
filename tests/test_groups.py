@@ -4,12 +4,16 @@ member-record shape.
 
 These tests pin the store's shape guarantees (ordered/deduped member records, on_failure
 vocabulary, the update tri-state), the API's member-existence validation against the live
-registry, and the shared-store root injection end to end.
+registry — which covers only the slugs a caller ADDS, so one out-of-band routine deletion
+cannot lock a group against every further edit (F442) — and the shared-store root injection
+end to end.
 """
 
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
+from types import SimpleNamespace
 
 from rsched import groups
 
@@ -165,6 +169,55 @@ def test_api_group_lifecycle(api_client):
     assert client.delete(f"/api/groups/{gid}").status_code == 200
     assert client.delete(f"/api/groups/{gid}").status_code == 404
     assert client.get("/api/groups").json()["groups"] == []
+
+
+def test_a_stale_member_is_kept_but_never_blocks_an_edit(api_client):
+    """F442: routines are deleted out of band, so a group can name a slug that no longer
+    resolves. Validating the WHOLE submitted list then refused every edit to that group —
+    both the routine page and the dashboard send the members they are keeping alongside the
+    one they are changing — so joining a group required repairing it first."""
+    client, tmp_path = api_client
+    _mk(tmp_path, "alpha")
+    _mk(tmp_path, "ghost")
+    _mk(tmp_path, "beta")
+    gid = client.post("/api/groups", json={"name": "Labs",
+                                           "members": [{"slug": "alpha"},
+                                                       {"slug": "ghost"}]}).json()["group"]["id"]
+    shutil.rmtree(tmp_path / "routines" / "ghost")        # deleted out of band
+
+    # beta joins, carrying the members it is keeping — the stale one rides along untouched
+    r = client.patch(f"/api/groups/{gid}", json={"members": [{"slug": "alpha"},
+                                                            {"slug": "ghost"},
+                                                            {"slug": "beta"}]})
+    assert r.status_code == 200, r.text
+    assert r.json()["group"]["members"] == [m("alpha"), m("ghost"), m("beta")]
+
+    # a slug that was never a routine is still refused — the exemption is per-group, not global
+    r = client.patch(f"/api/groups/{gid}", json={"members": [{"slug": "alpha"},
+                                                            {"slug": "nobody"}]})
+    assert r.status_code == 400 and "nobody" in r.json()["detail"]
+
+    # and removing the stale member is an ordinary edit
+    r = client.patch(f"/api/groups/{gid}", json={"members": [{"slug": "alpha"},
+                                                            {"slug": "beta"}]})
+    assert r.status_code == 200 and r.json()["group"]["members"] == [m("alpha"), m("beta")]
+
+
+def test_validate_names_a_phantom_member_and_an_empty_scheduled_group(tmp_path):
+    """The two instance-level cases no routine's own setup surface can see. Nothing cascades
+    a deletion out of the store, so `rsched validate` is where a phantom member surfaces."""
+    from rsched.cli import _instance_problems
+
+    _mk(tmp_path, "alpha")
+    home = tmp_path / "routines"
+    server = SimpleNamespace(routines_home=home)
+    groups.create(home, name="Labs", members=[m("alpha"), m("ghost")])
+    groups.create(home, name="Empty", members=[], cron="0 7 * * *")
+
+    lines = _instance_problems(server)
+    assert any("'ghost'" in ln and "not a routine" in ln for ln in lines)
+    assert any("Empty" in ln and "no members" in ln for ln in lines)
+    assert not any("alpha" in ln for ln in lines)
 
 
 def test_api_run_group_arms_a_chain(api_client):

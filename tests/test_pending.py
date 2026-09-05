@@ -92,7 +92,7 @@ def test_a_conversation_still_materializes_rather_than_queuing(server, tmp_path)
 
     d = conv_mod.create_conversation(server, slug="c-x", first_message="make me a routine")
     ctx = SimpleNamespace(server=server, routine=SimpleNamespace(slug="c-x", dir=d), depth=0,
-                          run_id="c-x:1")
+                          run_id="c-x:1", user_replies=0)
     obs = handle_create_routine(ctx, {"target": "newr", "name": "New", "prompt": "do it",
                                       "workflow": "general-task"})
     assert obs.get("draft") is True and not obs.get("queued")
