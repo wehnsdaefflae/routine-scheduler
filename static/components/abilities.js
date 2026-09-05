@@ -44,6 +44,17 @@ const WF_OPTIONS = [
   ["generate", "generate — also draft a new pattern when none fits"],
 ];
 const WF_RANK = { catalog: 0, generate: 1 };
+// ONE control for the reminder layer, because the two dials behind it are one decision: which
+// stores the routine reads, and — only once it reaches the shared one — who approves a write
+// there. A `local` routine has nothing to approve: its own store is autonomous by design.
+const REMINDERS_OPTIONS = [
+  ["off", "off — nothing is stored, nothing is held"],
+  ["local", "its own store — cautions it wrote for itself"],
+  ["global:always", "+ the shared store — every shared change asks you"],
+  ["global:creations", "+ the shared store — new ones ask; edits are autonomous"],
+  ["global:never", "+ the shared store — fully autonomous"],
+];
+const REM_RANK = { none: 0, local: 1, global: 2 };
 
 // What a gated capability MEANS, with a concrete example — a bare action kind told the reader
 // nothing (F178, user order 2026-07-23). Kept verbatim from the panel this replaces.
@@ -90,6 +101,8 @@ export function abilitiesPanel(permissions, capabilities, opts = {}) {
     rule_confirm: capabilities?.active?.rule_confirm || "always",
     runs: capabilities?.active?.runs || "none",
     workflows: capabilities?.active?.workflows || "catalog",
+    reminders: capabilities?.active?.reminders || "none",
+    remind_confirm: capabilities?.active?.remind_confirm || "always",
   };
   const surface = opts.surface?.nodes || null;
   const committed = new Set(held);          // what the sections are built from
@@ -102,6 +115,9 @@ export function abilitiesPanel(permissions, capabilities, opts = {}) {
     (r.utils || []).forEach((u) => caps.utils.add(u));
     if (r.runs && RUNS_RANK[caps.runs] < RUNS_RANK[r.runs]) caps.runs = r.runs;
     if (r.workflows && WF_RANK[caps.workflows] < WF_RANK[r.workflows]) caps.workflows = r.workflows;
+    if (r.reminders && REM_RANK[caps.reminders] < REM_RANK[r.reminders]) {
+      caps.reminders = r.reminders;
+    }
   };
   // the deactivation cascade: drop what the mapping no longer covers
   const dropUnsatisfied = () => {
@@ -111,7 +127,8 @@ export function abilitiesPanel(permissions, capabilities, opts = {}) {
       const ok = (r.actions || []).every((a) => caps.actions.has(a))
         && (r.utils || []).every((u) => caps.utils.has(u))
         && (!r.runs || RUNS_RANK[caps.runs] >= RUNS_RANK[r.runs])
-        && (!r.workflows || WF_RANK[caps.workflows] >= WF_RANK[r.workflows]);
+        && (!r.workflows || WF_RANK[caps.workflows] >= WF_RANK[r.workflows])
+        && (!r.reminders || REM_RANK[caps.reminders] >= REM_RANK[r.reminders]);
       if (!ok) { held.delete(slug); dropped.push(slug); }
     }
     if (dropped.length) toast(`also switched off: ${dropped.join(", ")}`);
@@ -155,6 +172,14 @@ export function abilitiesPanel(permissions, capabilities, opts = {}) {
     }
     if (r.workflows) {
       return ["sourcing", selectDial(WF_OPTIONS, caps.workflows, (v) => { caps.workflows = v; })];
+    }
+    if (r.reminders) {
+      const now = caps.reminders === "global" ? `global:${caps.remind_confirm}` : "local";
+      return ["stores", selectDial(REMINDERS_OPTIONS, now, (v) => {
+        const [level, confirm] = v.split(":");
+        caps.reminders = level;
+        if (confirm) caps.remind_confirm = confirm;
+      })];
     }
     return null;
   }
@@ -310,7 +335,9 @@ export function abilitiesPanel(permissions, capabilities, opts = {}) {
     capabilities: { actions: [...caps.actions], utils: [...caps.utils],
                     util_tags: capabilities?.active?.util_tags || [],
                     confirm: caps.confirm, rule_confirm: caps.rule_confirm,
-                    runs: caps.runs, workflows: caps.workflows },
+                    remind_confirm: caps.remind_confirm,
+                    runs: caps.runs, workflows: caps.workflows,
+                    reminders: caps.reminders },
   });
 
   let footer = null;

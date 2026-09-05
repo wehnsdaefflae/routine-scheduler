@@ -128,14 +128,36 @@ def test_broken_frontmatter_degrades_to_no_requires(tmp_path):
 # ------------------------------------------------------------------------- cascades
 
 
+def test_a_forever_grant_on_a_reminders_request_finds_its_covering_doc(tmp_path):
+    """The four-state model needs all four states. `_covering_docs` gates allow_forever, and
+    a class it does not know 409s — so the request route the engine hands the model could
+    only ever be answered "allow now", and the routine re-asked every run."""
+    from types import SimpleNamespace
+
+    from rsched.web.grants_apply import _apply_capability, _covering_docs
+
+    perms = tmp_path / "permissions"
+    perms.mkdir(parents=True)
+    (perms / "reminders.md").write_text(
+        "---\ntags: [a, b, c]\nrequires:\n  reminders: local\n---\n"
+        "# permission: reminders — doc\nbody\n", encoding="utf-8")
+    server = SimpleNamespace(permissions_home=perms)
+    assert _covering_docs(server, "reminders", "local") == ["reminders"]
+    raw: dict = {"permissions": [], "capabilities": {}}
+    _apply_capability(server, raw, "reminders", "global")
+    assert raw["permissions"] == ["reminders"]
+    assert raw["capabilities"]["reminders"] == "global"   # the LEVEL granted, not the floor
+
+
 def test_capabilities_for_raises_the_base_to_cover_active_docs(tmp_path):
     home = _lib(tmp_path, {"util-authoring": AUTHORING, "messaging-discord": COMMUNICATION,
                            "run-history": RUN_HISTORY})
     lib = read_library_requires(home)
     caps = capabilities_for(["util-authoring", "messaging-discord", "run-history"], lib)
     assert caps == {"actions": ["write_util"], "utils": ["discord"], "util_tags": [],
-                    "confirm": "always", "rule_confirm": "always", "runs": "last",
-                    "workflows": "catalog"}
+                    "confirm": "always", "rule_confirm": "always",
+                    "remind_confirm": "always", "runs": "last",
+                    "workflows": "catalog", "reminders": "none"}
     # base values survive and only rise: runs stays at the deeper level, confirm untouched
     base = {"actions": ["memory_read"], "utils": [], "confirm": "never", "runs": "all"}
     caps2 = capabilities_for(["run-history"], lib, base)
@@ -155,11 +177,13 @@ def test_floor_capabilities_binds_gated_capabilities_to_held_permissions(tmp_pat
     # nothing held → every gated capability is floored away (confirm dial preserved)
     assert floor_capabilities([], lib, orphan) == {
         "actions": [], "utils": [], "util_tags": [], "confirm": "never",
-        "rule_confirm": "always", "runs": "none", "workflows": "catalog"}
+        "rule_confirm": "always", "remind_confirm": "always", "runs": "none",
+        "workflows": "catalog", "reminders": "none"}
     # util-authoring held → write_util survives (with its policy); discord + runs still floored
     assert floor_capabilities(["util-authoring"], lib, orphan) == {
         "actions": ["write_util"], "utils": [], "util_tags": [], "confirm": "never",
-        "rule_confirm": "always", "runs": "none", "workflows": "catalog"}
+        "rule_confirm": "always", "remind_confirm": "always", "runs": "none",
+        "workflows": "catalog", "reminders": "none"}
     # run-history held → run DEPTH (a user dial) is kept above none; actions/utils floored
     kept = floor_capabilities(["run-history"], lib, orphan)
     assert kept["runs"] == "all" and kept["actions"] == [] and kept["utils"] == []
@@ -167,7 +191,8 @@ def test_floor_capabilities_binds_gated_capabilities_to_held_permissions(tmp_pat
     active = ["util-authoring", "messaging-discord", "run-history"]
     assert floor_capabilities(active, lib, capabilities_for(active, lib)) == {
         "actions": ["write_util"], "utils": ["discord"], "util_tags": [], "confirm": "always",
-        "rule_confirm": "always", "runs": "last", "workflows": "catalog"}
+        "rule_confirm": "always", "remind_confirm": "always", "runs": "last",
+        "workflows": "catalog", "reminders": "none"}
 
 
 def test_floor_keeps_gated_kind_via_default_source_when_doc_predates_it(tmp_path):

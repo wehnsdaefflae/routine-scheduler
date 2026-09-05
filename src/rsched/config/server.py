@@ -84,6 +84,14 @@ class ServerConfig(_Config):
         """The library repo's permissions/ subdir (engine-enforced capabilities)."""
         return self.libraries_home / "permissions"
 
+    @property
+    def reminders_home(self) -> Path:
+        """The library repo's reminders/ subdir — the CURATED consequence reminders, one
+        file per reminder beside the rules they complement. A routine's own reminders live
+        in its state/, never here (rsched/reminders.py).
+        """
+        return self.libraries_home / "reminders"
+
 
 
 def load_server_config(path: Path | None = None) -> tuple[ServerConfig, list[str]]:

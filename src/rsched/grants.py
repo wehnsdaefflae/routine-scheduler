@@ -28,7 +28,9 @@ demand):
       #   call's first positional argument), which is how read-only access is expressed
       confirm: always | creations | never       # write_util approval level
       rule_confirm: always | creations | never  # write_rule approval level
+      remind_confirm: always | creations | never  # GLOBAL consequence-reminder approval
       runs: none | last | all          # previous-run read depth (requires: last | all)
+      reminders: none | local | global # consequence-reminder stores read and writable
 
 Which utils are "reserved" at all is library-defined: the union of every permission
 doc's `requires.utils`. Which action kinds are gateable is engine-defined (GATED_KINDS)
@@ -54,6 +56,7 @@ from pathlib import Path
 
 from .engine.actionschema import KINDS
 from .ids import is_slug
+from .reminders import LEVELS as REMINDER_LEVELS
 
 # `read_rule` is deliberately NOT gated: a routine must be able to read the general rules
 # it holds, and reading library prose has no side effect worth a decision. The catalog
@@ -98,14 +101,16 @@ def is_util_entry(entry: object) -> bool:
     name, verb = split_util_verb(entry)
     return is_slug(name) and (not verb or is_slug(verb))
 _DEFAULT_RUNS_SOURCE = ("run-history",)
+_DEFAULT_REMINDERS_SOURCE = ("reminders",)
 # write_util approval policy, least → most permissive: "always" (user approves create AND
 # revise), "creations" (revisions are autonomous once the selftest passes; NEW utils ask),
 # "never".
-# Shared by BOTH approval dials: `confirm` (write_util) and `rule_confirm` (write_rule). Same
-# ladder, separate dials on purpose — a rule is held by many routines, so a revision lands in
-# every one of them at their next run. That blast radius is a different decision from "may this
-# routine author utils", and collapsing the two would make a never-confirm util policy silently
-# authorize it.
+# Shared by ALL THREE approval dials: `confirm` (write_util), `rule_confirm` (write_rule)
+# and `remind_confirm` (a GLOBAL consequence reminder). Same ladder, separate dials on purpose —
+# a rule is held by many routines, so a revision lands in every one of them at their next run,
+# and a global reminder starts HOLDING actions in routines that never asked for it. Each blast
+# radius is a different decision from "may this routine author utils", and collapsing them would
+# make a never-confirm util policy silently authorize the other two.
 CONFIRM_LEVELS = ("always", "creations", "never")
 # runs: access to previous runs, none → last (only the previous run) → all
 RUN_HISTORY_LEVELS = ("none", "last", "all")
@@ -124,7 +129,8 @@ RECIPE_PREFIXES = ("main.md", "stages/", "tuning.yaml")
 CONFIG_FILE = "routine.yaml"
 # An all-off capabilities mapping — the base for cascades and the subrun/clarify default.
 EMPTY_CAPABILITIES = {"actions": [], "utils": [], "util_tags": [], "confirm": "always",
-                      "rule_confirm": "always", "runs": "none", "workflows": "catalog"}
+                      "rule_confirm": "always", "remind_confirm": "always",
+                      "runs": "none", "workflows": "catalog", "reminders": "none"}
 
 
 # The SOFT edge (`expects:`), the counterpart to `requires:`. A permission doc's `requires:`
@@ -178,20 +184,21 @@ def normalize_capabilities(raw: object, *, label: str = "capabilities",
     """Validate + normalize one capabilities mapping (routine.yaml `capabilities:` or,
     with requires=True, a permission doc's `requires:`). Returns (mapping, problems);
     invalid parts are dropped and reported, so a bad edit degrades a capability instead
-    of crashing a run. `confirm` / `rule_confirm` come back as CONFIRM_LEVELS values and are
-    rejected inside requires — an approval level is the user's policy, not a doc's demand.
+    of crashing a run. The three approval dials (`confirm` / `rule_confirm` /
+    `remind_confirm`) come back as CONFIRM_LEVELS values and are rejected inside requires — an
+    approval level is the user's policy, not a doc's demand.
     """
     if raw is None:
         return {}, []
     if not isinstance(raw, dict):
-        return {}, [f"{label} must be a mapping (actions / utils / util_tags"
+        return {}, [f"{label} must be a mapping (actions / utils / util_tags / reminders"
                     + (" / runs)" if requires else " / confirm / runs)")]
-    known = (("actions", "utils", "util_tags", "runs", "workflows") if requires
+    known = (("actions", "utils", "util_tags", "runs", "workflows", "reminders") if requires
              else ("actions", "utils", "util_tags", "confirm", "rule_confirm",
-                   "runs", "workflows"))
+                   "remind_confirm", "runs", "workflows", "reminders"))
     problems = [f"{label}.{k}: unknown key (expected {' / '.join(known)})"
                 + (" — the approval level is a capability the user sets, not a requirement"
-                   if requires and k in ("confirm", "rule_confirm") else "")
+                   if requires and k in ("confirm", "rule_confirm", "remind_confirm") else "")
                 for k in raw if k not in known]
     out: dict = {}
     for key, valid, kind_label in (("actions", lambda a: a in CAPABILITY_ACTIONS,
@@ -208,7 +215,7 @@ def normalize_capabilities(raw: object, *, label: str = "capabilities",
             continue
         problems += [f"{label}.{key}: {v!r} is not {kind_label}" for v in vals if not valid(v)]
         out[key] = [v for v in vals if valid(v)]
-    for dial in ("confirm", "rule_confirm"):
+    for dial in ("confirm", "rule_confirm", "remind_confirm"):
         if dial in raw and not requires:
             if raw[dial] in CONFIRM_LEVELS:
                 out[dial] = raw[dial]
@@ -226,6 +233,14 @@ def normalize_capabilities(raw: object, *, label: str = "capabilities",
             out["workflows"] = raw["workflows"]
         else:
             problems.append(f"{label}.workflows must be {' or '.join(wf_ok)}")
+    # `none` is the ABSENCE of the requirement, so a doc may only ask for local or global —
+    # the same shape `runs`/`workflows` use.
+    rem_ok = ("local", "global") if requires else REMINDER_LEVELS
+    if "reminders" in raw:
+        if raw["reminders"] in rem_ok:
+            out["reminders"] = raw["reminders"]
+        else:
+            problems.append(f"{label}.reminders must be {' or '.join(rem_ok)}")
     return out, problems
 
 
@@ -293,6 +308,7 @@ def read_library_requires(permissions_home: Path) -> dict[str, dict]:
 
 _RUNS_RANK = {level: n for n, level in enumerate(RUN_HISTORY_LEVELS)}
 _WORKFLOW_RANK = {level: n for n, level in enumerate(WORKFLOW_LEVELS)}
+_REMINDER_RANK = {level: n for n, level in enumerate(REMINDER_LEVELS)}
 
 
 def capabilities_for(active: list[str], lib: dict[str, dict],
@@ -307,6 +323,7 @@ def capabilities_for(active: list[str], lib: dict[str, dict],
     util_tags = list(dict.fromkeys(caps.get("util_tags") or []))
     runs = caps.get("runs") or "none"
     workflows = caps.get("workflows") or "catalog"
+    reminders = caps.get("reminders") or "none"
     for slug in active:
         req = lib.get(slug) or {}
         actions += [a for a in req.get("actions") or [] if a not in actions]
@@ -318,10 +335,14 @@ def capabilities_for(active: list[str], lib: dict[str, dict],
         need_wf = req.get("workflows") or "catalog"
         if _WORKFLOW_RANK.get(need_wf, 0) > _WORKFLOW_RANK.get(workflows, 0):
             workflows = need_wf
+        need_rem = req.get("reminders") or "none"
+        if _REMINDER_RANK.get(need_rem, 0) > _REMINDER_RANK.get(reminders, 0):
+            reminders = need_rem
     return {"actions": actions, "utils": utils, "util_tags": util_tags,
             "confirm": caps.get("confirm") or "always",
             "rule_confirm": caps.get("rule_confirm") or "always",
-            "runs": runs, "workflows": workflows}
+            "remind_confirm": caps.get("remind_confirm") or "always",
+            "runs": runs, "workflows": workflows, "reminders": reminders}
 
 
 def floor_capabilities(active: list[str], lib: dict[str, dict], caps: dict) -> dict:
@@ -344,6 +365,7 @@ def floor_capabilities(active: list[str], lib: dict[str, dict], caps: dict) -> d
     req_util_tags: set[str] = set()
     grants_runs = False
     grants_wf = False
+    grants_rem = False
     for slug in active:
         req = lib.get(slug) or {}
         req_actions.update(a for a in req.get("actions") or [] if a in GATED_KINDS)
@@ -353,6 +375,8 @@ def floor_capabilities(active: list[str], lib: dict[str, dict], caps: dict) -> d
             grants_runs = True
         if req.get("workflows"):
             grants_wf = True
+        if req.get("reminders"):
+            grants_rem = True
     active_set = set(active)
     # Fallback for the "library predates the kind" gap (see _DEFAULT_KIND_SOURCE): a gated
     # kind whose canonical SOURCE permission is HELD survives even when that permission's
@@ -372,9 +396,11 @@ def floor_capabilities(active: list[str], lib: dict[str, dict], caps: dict) -> d
     util_tags = [t for t in caps.get("util_tags") or [] if t in req_util_tags]
     runs = (caps.get("runs") or "none") if grants_runs else "none"
     workflows = (caps.get("workflows") or "catalog") if grants_wf else "catalog"
+    reminders = (caps.get("reminders") or "none") if grants_rem else "none"
     return {"actions": actions, "utils": utils, "util_tags": util_tags,
             "confirm": caps.get("confirm") or "always",
             "rule_confirm": caps.get("rule_confirm") or "always",
-            "runs": runs, "workflows": workflows}
+            "remind_confirm": caps.get("remind_confirm") or "always",
+            "runs": runs, "workflows": workflows, "reminders": reminders}
 
 

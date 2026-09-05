@@ -58,7 +58,10 @@ path: this scheduler is the only harness.
   of burying it in a status file).
 - **Across routines**: workflows and global utils live in one shared library repo, so what
   one routine learns transfers to all — and utils compose (`gu` utils may call other utils),
-  so capability compounds.
+  so capability compounds. A **consequence reminder** carries the other half of that: a run
+  leaves itself a `(regex → consequence)` caution the moment an action surprises it, and the
+  next matching action is HELD before it runs — locally by default, or in the shared library
+  store once the consequence proves to be about the call rather than the caller.
 
 ## Install
 
@@ -233,8 +236,8 @@ user-facing here.
 - `static/` — no-build vanilla-JS frontend; `docs/` — hand-written guides, rendered into
   the Help tab next to the pdoc-generated API reference (`docs_build.py`, at boot)
 - `library-seed/` + `util-seed/` — seeded to `~/.local/share/routine-scheduler-libraries`,
-  ONE git repo holding `workflows/`, `rules/`, `permissions/`, `playbooks/` and `utils/` (with the `gu` dispatcher at
-  the root). Routines are never seeded from the repo — they are authored on the instance
+  ONE git repo holding `workflows/`, `rules/`, `permissions/`, `playbooks/`, `reminders/` and
+  `utils/` (with the `gu` dispatcher at the root). Routines are never seeded from the repo — they are authored on the instance
 - Routine dirs: `routine.yaml`, `main.md` (the workflow, materialized) + `stages/` modules
   (the routine's sole source of truth — no persisted instruction, no recompile),
   `state/`, `LEDGER.md`, `inbox/`, `questions/`, `runs/<ts>/` (transcripts, gitignored,

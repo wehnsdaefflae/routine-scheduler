@@ -29,7 +29,7 @@ from .secrets import KEY_RE
 # time against the live vocabularies: library requires, provider registry, machine catalog,
 # secrets store).
 CLASSES = ("action", "util", "secret", "connection", "machine",
-           "fs-read", "fs-write", "runs", "workflows", "recreate")
+           "fs-read", "fs-write", "runs", "workflows", "reminders", "recreate")
 # Resource-class entities flow to child tasks (children inherit their parent's resources);
 # capability-class ones are top-level-only (sub-workflows run with capabilities off).
 RESOURCE_CLASSES = frozenset({"secret", "connection", "machine", "fs-read", "fs-write"})
@@ -61,7 +61,8 @@ TRUE_ROW_CLASSES = frozenset({"secret"})
 # stores (docs/sandboxing.md keeps them invisible even to fully-granted utils).
 NEVER_GRANTABLE = ("~/.config/routine-scheduler", "~/.credentials", "~/.ssh")
 
-_LEVELS = {"runs": ("last", "all"), "workflows": ("generate",)}
+_LEVELS = {"runs": ("last", "all"), "workflows": ("generate",),
+           "reminders": ("local", "global")}
 
 
 def parse_entity(eid: object) -> tuple[str, str] | None:

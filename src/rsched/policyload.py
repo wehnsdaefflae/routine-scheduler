@@ -12,6 +12,7 @@ from pathlib import Path
 
 from .grantpolicy import GrantPolicy
 from .grants import (
+    _DEFAULT_REMINDERS_SOURCE,
     _DEFAULT_RUNS_SOURCE,
     GATED_KINDS,
     _catalog_tags,
@@ -36,6 +37,7 @@ def load_policy(permissions_home: Path, active: list[str] | None,
     gated_utils: dict[str, list[str]] = {}
     kind_sources: dict[str, list[str]] = {}
     runs_sources: list[str] = []
+    reminders_sources: list[str] = []
     gated_tags: dict[str, list[str]] = {}
     for slug, req in lib.items():
         for kind in req.get("actions") or []:
@@ -50,6 +52,8 @@ def load_policy(permissions_home: Path, active: list[str] | None,
             gated_tags.setdefault(tag, []).append(slug)
         if req.get("runs"):
             runs_sources.append(slug)
+        if req.get("reminders"):
+            reminders_sources.append(slug)
     # Expand tag classes into concrete gated utils against the LIVE catalog. Read it only when
     # a doc actually declares `util_tags` — with no tag gates in the library this costs nothing
     # and the policy is byte-identical to the name-only one.
@@ -83,6 +87,10 @@ def load_policy(permissions_home: Path, active: list[str] | None,
                        kind_sources={k: tuple(v) for k, v in kind_sources.items()},
                        confirm=caps.get("confirm") or "always",
                        rule_confirm=caps.get("rule_confirm") or "always",
+                       remind_confirm=caps.get("remind_confirm") or "always",
+                       # No baseline: unlike run history (D96's always-on 'last'), a reminder
+                       # HOLDS a turn, so the layer stays off until the user switches it on.
+                       reminders=caps.get("reminders") or "none",
                        # D96 (user decision 2026-08-20): own-runs read at 'last' depth is
                        # ALWAYS ON for a routine — baseline observability, like the state
                        # digest carrying the last result. The run-history permission doc
@@ -97,4 +105,6 @@ def load_policy(permissions_home: Path, active: list[str] | None,
                        recipe_unlocked=recipe_unlocked,
                        admin=admin,
                        runs_sources=tuple(runs_sources) or _DEFAULT_RUNS_SOURCE,
+                       reminders_sources=(tuple(reminders_sources)
+                                          or _DEFAULT_REMINDERS_SOURCE),
                        current_run_ts=current_run_ts)

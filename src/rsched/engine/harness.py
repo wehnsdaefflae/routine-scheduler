@@ -122,6 +122,19 @@ def harness_contract(ctx: RunContext, kinds: list[str] | None = None) -> str:
                     "conversation-only kinds stay conversation-only). Every action you take is "
                     "logged to the admin audit trail. Wield this deliberately.") \
         if g is not None and g.admin else ""
+    # The consequence-reminder layer's STANDING INSTRUCTION, only where the capability is
+    # on. Two halves, and the second is the one that makes it work: the posture (an action
+    # can have an effect you did not intend) is useless without "record it on the turn you
+    # notice", because the realisation does not survive to a later turn.
+    reminder_line = ""
+    if g is not None and g.reminders_on:
+        reminder_line = (
+            ' An action can have an effect you did not intend, and the turn you FIND that out '
+            'is the only turn you reliably still know it: on that same turn, carry a "remind" '
+            "— the pattern matching the class of calls that can cause it, and the caution to "
+            "show then. It costs no turn, and from then on a matching action is HELD before it "
+            'runs so you decide again. Label every hold with "remind_feedback": that tally is '
+            "what tells you which patterns to tighten and which to delete.")
     level = ctx.deliberation or r.deliberation
     standing = deliberation.standing_note(level)
     # Only the kinds this run may emit get a bullet — the same projection the ACTION SCHEMA
@@ -143,7 +156,7 @@ with EXACTLY one JSON object matching the action schema below — no prose outsi
 {deliberation.say_contract(level)} Any action may also carry an optional "note" — the engine files \
 it to state/notes.md with a turn stamp at NO turn cost, and the next run's digest carries it \
 forward; before finishing, fold what still matters into your report or memory. (What belongs in a \
-note: the schema's `note` description below.)\
+note: the schema's `note` description below.){reminder_line}\
 {f"\n\n{standing}" if standing else ""}{admin_banner}
 
 The run starts NOW — nothing has been executed yet. Work happens ONLY through your actions in this \

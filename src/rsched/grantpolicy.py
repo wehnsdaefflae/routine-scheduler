@@ -22,7 +22,9 @@ from dataclasses import dataclass, field
 
 from .grants import (
     _DEFAULT_KIND_SOURCE,
+    _DEFAULT_REMINDERS_SOURCE,
     _DEFAULT_RUNS_SOURCE,
+    _REMINDER_RANK,
     _RUNS_RANK,
     CONFIG_FILE,
     GATED_KINDS,
@@ -72,8 +74,13 @@ class GrantPolicy:
     kind_sources: dict = field(default_factory=dict)  # gated kind → library docs requiring it
     confirm: str = "always"                    # write_util approval policy
     rule_confirm: str = "always"               # write_rule approval policy (own blast radius)
+    remind_confirm: str = "always"             # GLOBAL-reminder approval (its own blast radius)
     run_history: str = "none"                  # previous-runs read access: none | last | all
     workflows: str = "catalog"                 # child-pattern sourcing: catalog | generate
+    # Consequence reminders: none | local | global. `local` reads and writes the routine's own
+    # store; `global` additionally reads the library's curated one (local overriding it) and is
+    # the only level that may WRITE there. See rsched/reminders.py.
+    reminders: str = "none"
     # The four-state grant model's persistent NO: entity ids (entities.py) the user has
     # denied FOREVER (routine.yaml `grants:` false rows). deny() stops routing these to a
     # request — the answer is already given.
@@ -94,6 +101,7 @@ class GrantPolicy:
     # a subrun (see engine/admin.py). Enforced in allows_kind() and deny() below.
     admin: bool = False
     runs_sources: tuple = _DEFAULT_RUNS_SOURCE            # docs covering runs access
+    reminders_sources: tuple = _DEFAULT_REMINDERS_SOURCE  # docs covering the reminder layer
     # The live run's ts: paths under runs/<current_run_ts>/ are the run's OWN tree (status,
     # archived history) and stay readable regardless of run_history — the engine itself
     # points the model there after compaction.
@@ -125,7 +133,7 @@ class GrantPolicy:
         from dataclasses import replace
 
         actions, utils = set(self.actions), set(self.utils)
-        run_history, workflows = self.run_history, self.workflows
+        run_history, workflows, reminders = self.run_history, self.workflows, self.reminders
         for eid in granted_now:
             cls, _, name = eid.partition(":")
             if cls == "action":
@@ -136,8 +144,11 @@ class GrantPolicy:
                 run_history = name
             elif cls == "workflows":
                 workflows = name
+            elif cls == "reminders" and (_REMINDER_RANK.get(name, 0)
+                                         > _REMINDER_RANK.get(reminders, 0)):
+                reminders = name
         return replace(self, actions=frozenset(actions), utils=frozenset(utils),
-                       run_history=run_history, workflows=workflows,
+                       run_history=run_history, workflows=workflows, reminders=reminders,
                        granted_now=frozenset(granted_now), denied_now=frozenset(denied_now))
 
     def entity_state(self, eid: str) -> str:
@@ -178,6 +189,33 @@ class GrantPolicy:
                 f"question saying what you need it for{hint}. The user decides: allow/deny, "
                 f"once or forever.")
 
+    @property
+    def reminders_on(self) -> bool:
+        """Is the consequence-reminder layer active at all for this run? Off means the two
+        side fields are projected out of the schema entirely — a channel a run cannot use is
+        not described to it.
+        """
+        return self.reminders != "none"
+
+    def reminder_denial(self, scope: str) -> str | None:
+        """May this run WRITE a reminder at that scope — or the refusal saying why not.
+
+        Checked on the `remind` field rather than on a kind, because the field rides every
+        action kind, including the always-available ones the kind gate skips.
+        """
+        if self.admin or _REMINDER_RANK.get(self.reminders, 0) >= _REMINDER_RANK.get(scope, 9):
+            return None
+        srcs = ", ".join(self.reminders_sources)
+        if self.reminders == "none":
+            return (f"`remind` is switched OFF in this routine's capabilities — only the user "
+                    f"can switch it on (the {srcs} permission covers its conduct). Record what "
+                    f"you learned with `note` or memory_write instead. "
+                    f"{self.request_route('reminders:local')}")
+        return (f"a GLOBAL reminder holds matching actions in EVERY routine at global scope, "
+                f"and this routine's reminders capability is 'local' — leave it local (the "
+                f"honest default until its own tally proves the consequence is universal), or "
+                f"{self.request_route('reminders:global')}")
+
     def may_generate_workflow(self) -> bool:
         """May a subtask DRAFT a new library pattern when none fits (vs pick from the catalog)?
         Off by default — a user-set capability, covered by the workflow-generation permission.
@@ -196,6 +234,16 @@ class GrantPolicy:
         """
         return (self.rule_confirm == "always"
                 or (self.rule_confirm == "creations" and creating))
+
+    def needs_remind_confirm(self, creating: bool) -> bool:
+        """Must the user approve this GLOBAL reminder write? (creating=False → revising or
+        deleting one that is already there)
+
+        Its own dial: a new global reminder starts interrupting routines that never asked for
+        it, which is not the decision `confirm` or `rule_confirm` governs.
+        """
+        return (self.remind_confirm == "always"
+                or (self.remind_confirm == "creations" and creating))
 
     def _deny_util(self, action: dict) -> str | None:
         """The reserved-util gate. A util is granted BY NAME (`capabilities.utils`), BY TAG

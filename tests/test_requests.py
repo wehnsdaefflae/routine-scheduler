@@ -29,6 +29,7 @@ def _loop(tmp_path, *, grants=None, depth=0, machines=None, routine=None):
                                            dir=tmp_path / "r"),
         depth=depth)
     return SimpleNamespace(ctx=ctx, allowed_tools=None,
+                           reminders=[], reminders_level="none",
                            grants=grants if grants is not None else GrantPolicy())
 
 
@@ -276,6 +277,7 @@ def _once_loop(granted, home=None, rdir=None):
                               libraries_home=home or Path("/nonexistent-lib")))
     return SimpleNamespace(ctx=ctx, base_grants=GrantPolicy(), allowed_tools=None,
                            grants=GrantPolicy(), _finish_reserved=False,
+                           reminders=[], reminders_level="none",
                            action_schema=None)
 
 
@@ -546,7 +548,8 @@ def test_reserved_finish_schema_survives_a_drain_time_decision():
     sentinel = {"narrowed": "finish-only"}
     ctx = SimpleNamespace(granted_now={"util:discord"}, denied_now=set())
     loop = SimpleNamespace(ctx=ctx, base_grants=GrantPolicy(), allowed_tools=None,
-                           action_schema=sentinel, _finish_reserved=True)
+                           action_schema=sentinel, _finish_reserved=True,
+                           reminders=[], reminders_level="none")
     rebuild_policy(loop)
     assert loop.action_schema is sentinel          # the narrowed grammar survived
     assert "discord" in loop.grants.utils          # the grant itself still landed

@@ -56,17 +56,21 @@ def rebuild_policy(loop) -> None:
     re-project the transport schema — a granted kind becomes generatable on the next
     turn, a denied one stays unrepresentable. Always base+overlay, never stacked.
     """
+    from . import remind
     from .kindsurface import effective_kinds, schema_for_kinds
 
     ctx = loop.ctx
     loop.grants = ctx.grants = loop.base_grants.with_overlay(ctx.granted_now,
                                                              ctx.denied_now)
+    remind.refresh(loop)   # a reminders:* grant raises the level the store was read at
     if loop._finish_reserved:
         # The reserved finish turn's finish-only grammar must survive a decision that
         # lands at the same boundary (the drain bridge) — the policy update above still
         # matters (resource consumers read it), but the last turn stays a finish.
         return
-    loop.action_schema = schema_for_kinds(effective_kinds(loop.allowed_tools, ctx.grants))
+    loop.action_schema = schema_for_kinds(
+        effective_kinds(loop.allowed_tools, ctx.grants),
+        reminders=bool(ctx.grants and ctx.grants.reminders_on))
 
 
 def _seed(ctx, eid: str, decision: str, *, account: str = "") -> None:

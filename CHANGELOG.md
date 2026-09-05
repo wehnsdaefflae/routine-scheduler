@@ -17,6 +17,76 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.304.0] — 2026-09-05
+
+### A caution that fires at the action, not at the boot — consequence reminders
+
+Models repeat mistakes. A run takes an action, the action has an unintended effect, and a later
+run takes a materially identical action and hits the same effect again. Every surface this system
+had for "learn from a surprise" is *just-in-case*: `.memory/` puts its index in the boot digest and
+asks the model to recall the right note out of a large, always-present context; `note` files a line
+that the NEXT run's digest carries forward; the curated rules are advisory prose in the prompt. All
+three depend on the model self-detecting relevance, and the failure was never that the caution was
+missing — it was somewhere in context and did not come to bear on the turn where it mattered.
+Nothing said *you are about to do the thing that burned you last time*.
+
+**A reminder is `(regex → consequence)`, and it is checked BEFORE the action runs.** On the same
+turn a run notices an unintended effect it carries a `remind` — the pattern matching the class of
+calls that can cause it, plus the caution to show then — and from then on a matching action is
+HELD: it does not execute, the caution is put in front of the model, and it decides again. The
+pattern matches `actionschema.canon` (0.300.0), the one canonical rendering of an action, which is
+why that had to be pinned first: precision and recall are only tunable if the match target is
+stable and legible.
+
+Pre-execution is the entire feature, and the passive tier that would have made it cheaper is
+deliberately absent: a caution delivered with the observation arrives after the consequence, when
+nothing can be avoided. The turn cost is paid on the INPUT side instead — a narrow pattern,
+selective authoring, and the tally below — never by a cheaper output.
+
+**The four-way label is what makes a pattern tunable**, so it shipped in the same increment rather
+than after it. Every hold is counted as a `fires`, and `remind_feedback` labels how it turned out:
+`could_not` (the consequence was impossible for that action — a false positive, narrow the regex) ·
+`would_have` (it was on track and the hold avoided it — the value delivered) · `did` (the run went
+ahead and it happened) · `didnt` (the run went ahead and nothing bad happened). False-positive rate
+is `could_not / fires`, cost is `fires` at one turn each, and `fires - Σlabels` is the count of
+holds nobody labelled — which is itself the signal that the layer is being paid for and not read.
+Labelling is not enforced: the field rides every kind, so rejecting an action for omitting
+bookkeeping would put the layer in the way of the work, and the schema-storm guard fails a run
+whose turns keep needing retries. The hold demands the label and the engine asks once more two
+turns later — long enough for a `did`/`didnt` to know its own outcome.
+
+**Two stores, split by blast radius.** A routine's own `state/reminders.json` is autonomous — a bad
+local reminder taxes one routine's turns. The library's `reminders/` is curated and shared, and a
+bad entry there taxes every capable routine at its next run, silently, so it is written under its
+own approval dial `remind_confirm` (`always | creations | never`, the `write_rule` ladder, split
+where the blast radius splits: a NEW global reminder starts interrupting routines that never asked
+for it). Both active means the union, deduped by REGEX with local winning — same regex is the only
+"same consequence class" test a machine can make; different regexes are different classes and both
+are shown, inside ONE hold. Precedence never multiplies turns. The TALLY stays per-routine even for
+a library reminder: the definition is shared, the evidence about it is local, and keeping it out of
+the library also keeps the library from taking a git commit on every fire from every routine.
+
+Two rules keep the layer from eating a run. **One hold per action string per run** — so re-emitting
+the SAME action IS the confirmation to proceed, and cannot be held again; this is the shape the
+stopping verifier already uses (at most one challenge per condition per run) and for the same
+reason, since a model and a gate that both refuse to yield would livelock the run into a dead
+budget. And **one hold per action**, however many reminders match.
+
+The layer is a capability, off by default and with no baseline — run history floors at `last` for
+every routine because reading the previous result costs nothing, and a reminder costs a TURN.
+`reminders: none | local | global` says which stores a run reads and may write; when it is off the
+two side fields are projected out of the action schema entirely, so a run that cannot use them
+cannot generate them, and `validate_action` refuses one that arrives anyway — including on an
+always-available kind like `report`, because this gate rides the FIELD, not the kind. A denied
+scope routes to an access request like every other capability. The write gate runs inside the
+schema-retry cycle, so a pattern that does not compile, is over 200 characters, or matches the
+EMPTY STRING (`.*` would hold every action the run ever takes) is corrected before it becomes a
+turn instead of being dropped silently afterwards.
+
+New: `rsched/reminders.py` (the store), `engine/remind.py` (interception, the ops, the approval
+gate), the `reminders` permission doc, and `docs/reminders.md`.
+
+
 ## [0.303.0] — 2026-09-05
 
 ### The other three sidebars become resizable and hideable (F441 complete)

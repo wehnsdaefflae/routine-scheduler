@@ -121,7 +121,7 @@ def test_tags_on_library_elements():
                           "remote-machines", "darknet", "outbound-mail",
                           "messaging-signal", "messaging-telegram", "messaging-whatsapp",
                           "messaging-zulip", "usenet", "scripts", "notifications",
-                          "recipe-authoring"}  # variants collapsed: level = capability
+                          "recipe-authoring", "reminders"}  # variants collapsed: level = capability
     # `self-modification` was retired when own-recipe writes became a fixed engine rule; 0.261.0
     # brought the DECISION back as `recipe-authoring`, because keying it on an fs write root
     # meant granting a working directory silently granted the right to reword the task.

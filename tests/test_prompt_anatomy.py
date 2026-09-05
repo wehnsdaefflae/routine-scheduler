@@ -130,6 +130,18 @@ def test_doc_pins_the_canonical_engine_strings(make_routine, tmp_path):
         "Saved, but it takes effect at your NEXT RUN",
         # F335: the light channel between teammates, named beside the store root it lives in
         "NOTES FROM YOUR GROUP",
+        # The consequence-reminder layer: the standing instruction (harness), the ONE
+        # observation that is not a dispatch result (observations), the anti-livelock rule
+        # that makes re-emitting the held action the confirmation, the engine note the ops
+        # ride back on, and the label gloss + its nudge (reminders.LABEL_HELP, remind).
+        # A hold the model cannot act on precisely is a turn spent for nothing, so every
+        # one of these is load-bearing prose.
+        "An action can have an effect you did not intend",
+        "ACTION HELD — it did NOT run.",
+        "one hold per action string per run",
+        "[REMINDERS: ",
+        "The labels: could_not",
+        "fired and is STILL unlabelled",
         # NOTE: the F292 two-phase group fire ("GROUP FIRE PHASE: ingest/outbound") was pinned
         # here until 2026-08-27. D90 retired the machinery and the engine stopped emitting those
         # strings, but the doc kept describing them and this guard kept passing — it only checks

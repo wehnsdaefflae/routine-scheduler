@@ -27,6 +27,7 @@ from . import (
     loopnudge,
     loopsetup,
     notes,
+    remind,
     requests,
 )
 from .actionschema import brief_value
@@ -113,6 +114,12 @@ class EngineLoop:
     leg_commands: Any
     leg_prose: Any
     messages: list[dict]
+    reminder_held: set[str]
+    reminder_nudge: Any
+    reminder_pending: Any
+    reminder_replayed: set[str]
+    reminders: Any
+    reminders_level: Any
     repeat_hashes: deque[str]
     resume: Any
     subruns: Any
@@ -206,13 +213,27 @@ class EngineLoop:
                                   f"{repeat_streak} times in a row. Aborting the run.")
 
                 if action["kind"] == "finish":
+                    # The reminder side fields ride a finish exactly as `note` does (which is
+                    # captured above, before this branch). The last turn is where they matter
+                    # most: the engine asks for a `did`/`didnt` label on the turn AFTER the
+                    # held action ran, and that is very often this one.
+                    remind_note = remind.apply_ops(self, action, poll_s=POLL_S,
+                                                   replayable=True)
                     outcome = finishgate.check_finish(self, action, ctx)
                     if outcome is None:
+                        if remind_note and self.messages:
+                            self.messages[-1]["content"] += remind_note
                         continue   # a guard set it aside; the model gets another turn
                     return outcome
-                obs = actionroute.dispatch_action(self, action, ctx)
+                # The pre-execution caution layer: a matching consequence reminder HOLDS
+                # the action — it does NOT run — and the model decides again with the caution
+                # in front of it. After execution would be after the consequence.
+                obs = (remind.intercept(self, action)
+                       or actionroute.dispatch_action(self, action, ctx))
                 ctx.transcript.event("observation", obs, turn=ctx.turn)
-                self.executed_actions += 1
+                held = obs.get("kind") == "reminder_hold"
+                if not held:
+                    self.executed_actions += 1   # a HELD action executed nothing
                 if self.admin_leg:
                     # D62: the capability bypass is never silent — one audit line per action.
                     from .admin import log_admin_action
@@ -220,10 +241,18 @@ class EngineLoop:
                     log_admin_action(ctx.server.routines_home, run_id=ctx.run_id,
                                      kind=action["kind"], brief=brief)
                 text = format_observation(obs)
+                # `remind` / `remind_feedback` ride ANY action at no turn cost (like `note`),
+                # applied AFTER the interception check so a reminder authored this turn can
+                # never hold the very action it rode on.
+                text += remind.apply_ops(self, action, poll_s=POLL_S)
                 # D65: an `allow once` grant is spent by THIS successfully-dispatched
                 # matching action — revoked here, at the same boundary, and announced so
-                # the next matching attempt is not an unexplained denial.
-                if spent := requests.consume_once_grants(self, action, obs):
+                # the next matching attempt is not an unexplained denial. A HELD action is
+                # not one: it never reached the executor, so it used nothing ("spent by USE,
+                # not by attempt"). Spending it there would also break the hold's own
+                # contract — re-emitting the same action is the confirmation to proceed, and
+                # it would have been denied for a grant the first attempt consumed.
+                if not held and (spent := requests.consume_once_grants(self, action, obs)):
                     text += requests.spent_notice(spent, action)
                 if REPEAT_WARN <= repeat_streak < REPEAT_FAIL:
                     self._shed_schema_turns = 1   # re-arms on every further repeat

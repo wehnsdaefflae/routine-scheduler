@@ -16,7 +16,8 @@ from pathlib import Path
 
 # The capability DIALS — single-valued, so a member's own copy SHADOWS the group's (its key
 # wins) rather than unioning with it the way the list members do.
-CAPABILITY_DIALS = ("confirm", "rule_confirm", "runs", "workflows")
+CAPABILITY_DIALS = ("confirm", "rule_confirm", "remind_confirm", "runs", "workflows",
+                    "reminders")
 
 
 
@@ -37,7 +38,8 @@ def apply_group_config(raw: dict, group_config: dict,
     - MAPPING keys (models, connections, grants, budgets) merge PER KEY, the member's value
       winning. A member overrides one budget without losing the rest.
     - `capabilities` is both at once: its list members (actions/utils/util_tags) union, its
-      dials (confirm/rule_confirm/runs/workflows) take the member's value when it sets one.
+      dials (the three approval levels, runs, workflows, reminders) take the member's value
+      when it sets one.
 
     Merging against the RAW mapping — before validation — is what makes "the member set it"
     mean *the key is in its file*, not *the model has a default*. Every field here has a

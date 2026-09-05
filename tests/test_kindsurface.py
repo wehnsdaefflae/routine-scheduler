@@ -46,9 +46,19 @@ def test_always_kinds_survive_every_projection():
 
 def test_full_and_none_return_the_schema_unchanged():
     """A run with everything enabled must see byte-identical bytes — the prompt-caching
-    contract depends on the composed prefix being stable."""
-    assert schema_for_kinds(None) is ACTION_SCHEMA
-    assert schema_for_kinds(set(KINDS)) is ACTION_SCHEMA
+    contract depends on the composed prefix being stable. "Everything" now includes the
+    reminders capability: its two side fields are gated, so they are not universal."""
+    assert schema_for_kinds(None, reminders=True) is ACTION_SCHEMA
+    assert schema_for_kinds(set(KINDS), reminders=True) is ACTION_SCHEMA
+
+
+def test_reminder_fields_are_projected_out_unless_the_capability_is_on():
+    """The capability rides the FIELD, not a kind — so an off routine cannot generate one."""
+    off = schema_for_kinds(None)["properties"]
+    assert "remind" not in off and "remind_feedback" not in off
+    assert "note" in off and "say" in off       # the ungated side field stays
+    on = schema_for_kinds({"util"}, reminders=True)["properties"]
+    assert "remind" in on and "remind_feedback" in on
 
 
 def test_projection_drops_other_kinds_fields_and_prose():

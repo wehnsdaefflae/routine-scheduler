@@ -105,6 +105,18 @@ the limits (single-writer status.json preserved).
   `fileactivity.py` (`/api/runs/<id>/files` → `components/fileactivity.js`) derives per-file
   read/write/edit counts from the same transcript's OBSERVATION events — so subruns and user slash
   commands count — feeding the rail's files card on the run view and the conversation.
+- **Consequence reminders hold an action BEFORE it runs** (`rsched/reminders.py` +
+  `engine/remind.py`, gated by the `reminders` capability). A run leaves itself a
+  `(regex → consequence)` reminder on the same turn it notices an action had an unintended effect
+  (`remind`, a no-turn side field like `note`); thereafter an action whose canonical string
+  (`actionschema.canon`) matches is HELD — not executed — and the caution is put in front of the
+  model, which decides again. Two stores by blast radius: the routine's own `state/reminders.json`
+  (autonomous) and the library's `reminders/` (approval-gated; the union is deduped by regex with
+  local winning). Every fire is tallied and labelled four ways (`remind_feedback`:
+  could_not / would_have / did / didnt), which is what makes a pattern tunable and the layer
+  measurable. One hold per action string per run, so re-emitting the held action is the
+  confirmation to proceed — the same anti-livelock shape the stopping verifier uses. Full
+  narration in [reminders](reminders.md).
 - **A run resumes where it left off** (`run_routine(resume_from=…)`, `EngineLoop(resume=True)`): the
   transcript is replayed into the message list (`history.replay_messages`) with a fresh budget window
   (`budget_base_turn`); usage REPORTING stays cumulative across legs (`history.prior_usage` →

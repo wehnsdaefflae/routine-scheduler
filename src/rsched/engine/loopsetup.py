@@ -144,7 +144,19 @@ def configure(loop, ctx: RunContext, workflow_body: str, instruction: str,
     # is fixed at boot; a mid-run GRANT decision (requests.apply_decision) re-projects
     # this, so an allowed-now kind becomes generatable on the very next turn.
     from .kindsurface import effective_kinds, schema_for_kinds
-    loop.action_schema = schema_for_kinds(effective_kinds(loop.allowed_tools, ctx.grants))
+    loop.action_schema = schema_for_kinds(effective_kinds(loop.allowed_tools, ctx.grants),
+                                          reminders=bool(ctx.grants and ctx.grants.reminders_on))
+    # The consequence-reminder layer (engine/remind.py). The live set is read ONCE — the
+    # composed prompt is append-only, so a store that changes between runs never rewrites a
+    # within-run prefix — and kept in step with this run's own ops. `reminder_held` is what
+    # makes re-emitting a held action the confirmation to proceed rather than a second hold.
+    from . import remind
+    loop.reminder_held = set()
+    loop.reminder_replayed = set()   # side-field payloads a re-driven finish already applied
+    loop.reminder_pending = []
+    loop.reminder_nudge = 0
+    loop.reminders = remind.load(loop)
+    loop.reminders_level = remind.level_of(ctx.grants)   # what remind.refresh compares against
     # Once the conversation has been archived to on-disk history, the model is reminded
     # to consult its index — right after each compaction, then every 10th turn (NOT every
     # turn: an identical tail on every observation is pure rent on the context).

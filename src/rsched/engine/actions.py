@@ -13,6 +13,12 @@ from __future__ import annotations
 
 from ..ids import is_slug
 from .actionschema import KINDS, READ_PATHS_MAX
+from .remind import field_problems as reminder_field_problems
+
+# The fields that ride EVERY kind alongside `say`, each a no-turn side effect the engine
+# files rather than an argument to the action: the note channel and the two halves of the
+# consequence-reminder layer.
+SIDE_FIELDS = ("note", "remind", "remind_feedback")
 
 # Kinds available on EVERY turn regardless of the workflow's `tools:` allowlist: `finish`
 # so a run can always end, and `report` so any routine can always raise work that is not its
@@ -173,7 +179,7 @@ def normalize_action(obj: dict) -> dict:
                        and not (isinstance(val, str) and not val.strip())
                        for f in req)
         if complete:
-            allowed = {"say", "kind", "note", *req, *opt}   # note rides ANY kind, like say
+            allowed = {"say", "kind", *SIDE_FIELDS, *req, *opt}   # side fields ride ANY kind
             out = {k: v for k, v in out.items() if k in allowed}
     return out
 
@@ -316,7 +322,11 @@ def validate_action(obj: dict, allowed_kinds: set[str] | None = None,  # noqa: C
             if not str(obj.get("about") or "").strip():
                 problems.append("memory_write requires 'about' (the note's one-line INDEX "
                                 "entry) unless delete: true")
-    allowed = {"say", "kind", "note", *required, *optional}   # note rides ANY kind, like say
+    # The side fields are gated on their own terms (the capability rides the FIELD, not the
+    # kind), so this runs outside the ALWAYS_KINDS exemption above: a `remind` on a `report`
+    # must meet the same bar as one on a `util`.
+    problems += reminder_field_problems(obj, grants)
+    allowed = {"say", "kind", *SIDE_FIELDS, *required, *optional}   # side fields ride ANY kind
     stray = [k for k in obj if k not in allowed]
     if stray:
         problems.append(

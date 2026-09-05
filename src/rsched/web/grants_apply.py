@@ -46,7 +46,8 @@ def _covering_docs(server, cls: str, name: str) -> list[str]:
         if ((cls == "action" and name in (req.get("actions") or []))
                 or (cls == "util" and name in (req.get("utils") or []))
                 or (cls == "runs" and req.get("runs"))
-                or (cls == "workflows" and req.get("workflows"))):
+                or (cls == "workflows" and req.get("workflows"))
+                or (cls == "reminders" and req.get("reminders"))):
             docs.append(slug)
     if not docs and cls == "action":
         docs = [_DEFAULT_KIND_SOURCE.get(name, "util-authoring")]
@@ -59,6 +60,7 @@ def _apply_capability(server, raw: dict, cls: str, name: str) -> None:
     then floor it — so the saved mapping can never contradict the held permissions.
     """
     from ..grants import (
+        REMINDER_LEVELS,
         RUN_HISTORY_LEVELS,
         capabilities_for,
         floor_capabilities,
@@ -84,6 +86,10 @@ def _apply_capability(server, raw: dict, cls: str, name: str) -> None:
             base["runs"] = name
     elif cls == "workflows":
         base["workflows"] = "generate"
+    elif cls == "reminders":
+        current = base.get("reminders") or "none"
+        if REMINDER_LEVELS.index(name) > REMINDER_LEVELS.index(current):
+            base["reminders"] = name
     lib = read_library_requires(server.permissions_home)
     raw["permissions"] = active
     if cls == "util":

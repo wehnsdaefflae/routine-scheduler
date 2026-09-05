@@ -87,13 +87,32 @@ def _normalize_plain(qtype: str, question: str, default: str) -> tuple[str, str]
     return _unescape_newlines(question), _unescape_newlines(default)
 
 
+def _free_qid(ctx) -> str:
+    """A decision-record id no OPEN record already uses.
+
+    The id is `q-<run-ts>-<turn>`, which is unique per turn — and a turn could only ever file
+    one question until a side field that rides ANY kind gained its own approval (a global
+    `remind` op on an `ask_user` action files two). `file_question` is an unconditional write,
+    so the second record silently replaced the first and the user answered a question the run
+    was no longer waiting on. A settled record frees its id again, which is why this checks
+    only what is still pending.
+    """
+    base = question_id(ctx.run_ts, ctx.turn)
+    pending = ctx.routine.dir / "questions" / "pending"
+    qid, n = base, 1
+    while (pending / f"{qid}.json").exists():
+        n += 1
+        qid = f"{base}-{n}"
+    return qid
+
+
 def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question") -> dict:
     ctx = loop.ctx
     if qtype == "question" and loop.dialog_qid:
         # a re-ask after a dialog reply supersedes the still-open previous record
         inbox.resolve_question(ctx.routine.dir, loop.dialog_qid)
         loop.dialog_qid = None
-    qid = question_id(ctx.run_ts, ctx.turn)
+    qid = _free_qid(ctx)
     mode = action.get("mode") or "deferred"
     if ctx.depth > 0 or detach.is_detached_run(ctx):
         mode = "deferred"  # subruns / detached tasks cannot block the run on the user

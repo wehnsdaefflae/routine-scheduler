@@ -109,7 +109,8 @@ def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,  #
         merged = list(dict.fromkeys([*(tpl_caps.get(key) or []), *(capabilities.get(key) or [])]))
         if merged:
             own_caps[key] = merged
-    for key in ("confirm", "rule_confirm", "runs", "workflows"):
+    for key in ("confirm", "rule_confirm", "remind_confirm", "runs", "workflows",
+                "reminders"):
         # the routine's own dial wins over the template's; either is written in full
         if capabilities.get(key) or tpl_caps.get(key):
             own_caps[key] = capabilities.get(key) or tpl_caps[key]

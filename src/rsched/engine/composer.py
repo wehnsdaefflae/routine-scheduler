@@ -172,7 +172,8 @@ def build_system_prompt(ctx: RunContext, workflow_body: str, instruction: str,
     sections = [
         harness_contract(ctx, kinds),
         "# ACTION SCHEMA (your every reply matches this)\n"
-        + json.dumps(schema_for_kinds(kinds), indent=1),
+        + json.dumps(schema_for_kinds(
+            kinds, reminders=bool(ctx.grants and ctx.grants.reminders_on)), indent=1),
         "# EXAMPLE of a valid reply\n" + json.dumps(example_action(), indent=1),
         "# WORKFLOW (the control flow you follow)\n" + workflow_body.strip(),
     ]

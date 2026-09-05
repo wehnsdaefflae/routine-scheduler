@@ -26,6 +26,10 @@ from .actionschema import ACTION_SCHEMA, KINDS
 
 # Fields every kind carries (actions.validate_action allows `note` on any kind, like `say`).
 _UNIVERSAL_FIELDS = ("say", "note", "kind")
+# …and the two that ride every kind only while the reminders capability is on. They are
+# projected like a KIND rather than described-then-refused: a run whose capability is off
+# cannot generate them at all (kindsurface's whole premise).
+_REMINDER_FIELDS = ("remind", "remind_feedback")
 
 _CLAUSE_SEP = " · "
 
@@ -67,19 +71,22 @@ def _project_description(description: str, kinds: set[str]) -> str:
     return _CLAUSE_SEP.join(kept) if kept else description
 
 
-def schema_for_kinds(kinds: list[str] | set[str] | None) -> dict:
+def schema_for_kinds(kinds: list[str] | set[str] | None, *,
+                     reminders: bool = False) -> dict:
     """ACTION_SCHEMA narrowed to `kinds`: the `kind` enum, the properties those kinds use
     (per `KIND_FIELDS`), and each surviving description trimmed to its relevant clauses.
+    `reminders` keeps the two consequence-reminder side fields, which are capability-gated
+    and therefore not universal the way `say`/`note` are.
 
-    `None` (or the full set) returns the schema unchanged — a run with everything enabled
-    pays nothing for the machinery, and the prompt-caching contract sees the same bytes.
+    `None` (or the full set) WITH reminders on returns the schema unchanged — a run with
+    everything enabled pays nothing for the machinery, and the prompt-caching contract sees
+    the same bytes.
     """
-    if kinds is None:
+    keep = (set(KINDS) if kinds is None
+            else {k for k in kinds if k in KIND_FIELDS} | set(ALWAYS_KINDS))
+    if keep >= set(KINDS) and reminders:
         return ACTION_SCHEMA
-    keep = {k for k in kinds if k in KIND_FIELDS} | set(ALWAYS_KINDS)
-    if keep >= set(KINDS):
-        return ACTION_SCHEMA
-    fields = set(_UNIVERSAL_FIELDS)
+    fields = set(_UNIVERSAL_FIELDS) | (set(_REMINDER_FIELDS) if reminders else set())
     for kind in keep:
         required, optional = KIND_FIELDS[kind]
         fields.update(required)
@@ -94,7 +101,8 @@ def schema_for_kinds(kinds: list[str] | set[str] | None) -> dict:
         name: spec for name, spec in out["properties"].items() if name in fields
     }
     for name, spec in out["properties"].items():
-        if name not in _UNIVERSAL_FIELDS and isinstance(spec.get("description"), str):
+        if (name not in _UNIVERSAL_FIELDS and name not in _REMINDER_FIELDS
+                and isinstance(spec.get("description"), str)):
             spec["description"] = _project_description(spec["description"], keep)
     out["properties"]["kind"] = {**ACTION_SCHEMA["properties"]["kind"],
                                  "enum": [k for k in KINDS if k in keep]}

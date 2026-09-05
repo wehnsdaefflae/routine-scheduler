@@ -34,6 +34,8 @@ one you are about to touch, not all of them.
 - `docs/prompt-anatomy.md` — every string the orchestrator sees, and why. Revise it with ANY
   change to composer / loop / actions / schema_guard wording; `tests/test_prompt_anatomy.py`
   fails on drift
+- `docs/reminders.md` — the consequence-reminder layer (the pre-execution hold, the two
+  stores, the four-way tally that tunes a pattern)
 - `docs/rules-permissions.md`, `docs/curated-rules.md` — the general-rules layer (each doc's
   `effect:` line — what a routine holding it DOES differently — is what the page labels its
   on/off control with, and the linter requires it), the two-layer
@@ -130,7 +132,16 @@ one you are about to touch, not all of them.
   **`note`** — 1-3 SELF-CONTAINED lines worth keeping beyond the context window, engine-filed to
   `state/notes.md` at no turn cost, stamped run·turn·phase·action (`engine/notes.py`; the stamp is
   an address into the transcript archive; the digest carries the file's tail into the next run;
-  curation into `.memory/` stays memory_write's turn-priced job). `read_file` batches
+  curation into `.memory/` stays memory_write's turn-priced job).
+  Two more SIDE FIELDS ride any kind the same turn-free way, behind the `reminders` capability:
+  **`remind`** leaves/revises/deletes a CONSEQUENCE REMINDER — a `(regex → consequence)` pair over
+  the canonical action string — and **`remind_feedback`** labels how one's hold turned out
+  (could_not / would_have / did / didnt). A matching action is HELD before it executes, never
+  after: a caution that arrives with the observation arrives after the consequence. Two stores by
+  blast radius (the routine's `state/reminders.json`, autonomous; the library's `reminders/`,
+  approval-gated by `remind_confirm`), one hold per action string per run so re-emitting the held
+  action IS the confirmation, and the tally is per-routine even for a library reminder
+  (docs/reminders.md). `read_file` batches
   related reads via `paths` (one turn, one
   observation section per file); `edit_file` anchor-replaces in place so revisions cost the diff, not
   the document; `write_util` mirrors it — `anchor`/`replacement` instead of `content` patches an

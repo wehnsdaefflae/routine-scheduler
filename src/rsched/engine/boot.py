@@ -88,8 +88,13 @@ def boot(loop) -> None:
         ctx.usage_base = prior_usage(events)
         # replayed observations ground the fabrication guard — a continued conversation
         # may legitimately answer and re-finish as its very first action
-        loop.executed_actions = sum(1 for e in events if e.get("type") == "observation"
-                                    and not (e.get("payload") or {}).get("rejected"))
+        # A reminder HOLD executed nothing, so it must not ground a finish here either —
+        # the live loop excludes it from the same counter, and a resumed leg that re-added it
+        # would hand the fabrication guard exactly the evidence it exists to refuse.
+        loop.executed_actions = sum(
+            1 for e in events if e.get("type") == "observation"
+            and not (payload := e.get("payload") or {}).get("rejected")
+            and payload.get("kind") != "reminder_hold")
         # Children that were RUNNING at the interruption are dead (threads don't survive a
         # restart). Mark each aborted in the transcript (so the tree is honest and a re-resume
         # doesn't re-detect it) and tell the model below — otherwise it would `wait` forever

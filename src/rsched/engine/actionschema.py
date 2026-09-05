@@ -45,6 +45,57 @@ ACTION_SCHEMA: dict = {
                            "engine files it to state/notes.md with a turn stamp, costing no "
                            "turn; don't repeat it in say.",
         },
+        # The consequence-reminder side fields (rsched/reminders.py) — like `note`, they
+        # ride ANY kind at no turn cost, and like `note` they exist because the moment of
+        # realisation and the moment of recording have to be the same turn. Projected out of
+        # the schema entirely when the reminders capability is off (kindsurface).
+        "remind": {
+            "type": "object", "additionalProperties": False,
+            "properties": {
+                "op": {"type": "string", "enum": ["add", "revise", "delete"],
+                       "description": "add a new reminder, revise one, or delete it"},
+                "id": {"type": "string",
+                       "description": "revise/delete: the reminder's id (rem-…)"},
+                "regex": {"type": "string",
+                          "description": "the pattern, matched against the CANONICAL "
+                                         "one-line rendering of an action: "
+                                         "'util:<name> <args…>', 'shell: <command>', "
+                                         "'write_file path=<path>', 'read_file "
+                                         "paths=<a,b>', '<kind> <field>=<value>'. Anchor it "
+                                         "to the class of calls that can cause the "
+                                         'consequence, e.g. "^util:fs-ops mv "'},
+                "description": {"type": "string",
+                                "description": "the caution shown when it fires — what the "
+                                               "CONSEQUENCE is and what to check, not that "
+                                               "care is needed"},
+                "scope": {"type": "string", "enum": ["local", "global"],
+                          "description": "local (default) = yours alone; global = the shared "
+                                         "library store, for a consequence that would follow "
+                                         "for ANY routine making that call"},
+            },
+            "description": "OPTIONAL, on any action: leave yourself a CONSEQUENCE REMINDER "
+                           "the same turn you notice an action had an unintended effect. "
+                           "From then on, an action matching `regex` is HELD before it runs "
+                           "and you are shown `description` to decide again. Costs no turn "
+                           "to write. Also revises or deletes one (op + id) as your own "
+                           "tally teaches you which patterns earn their interruptions.",
+        },
+        "remind_feedback": {
+            "type": "object", "additionalProperties": False,
+            "properties": {
+                "id": {"type": "string", "description": "the reminder that fired"},
+                "label": {"type": "string",
+                          "enum": ["could_not", "would_have", "did", "didnt"],
+                          "description": "could_not = the consequence was impossible for "
+                                         "that action (the pattern is too broad) · "
+                                         "would_have = it was on track and you avoided it · "
+                                         "did = you went ahead and it happened · didnt = you "
+                                         "went ahead and nothing bad happened"},
+            },
+            "description": "OPTIONAL, on any action: label how a reminder's HOLD turned out. "
+                           "Costs no turn and is the only evidence that tunes the pattern — "
+                           "carry it as soon as you know the outcome.",
+        },
         "kind": {"type": "string", "enum": list(KINDS)},
         # util / write_util (how a run executes code)
         "name": {

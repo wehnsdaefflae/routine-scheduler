@@ -165,7 +165,8 @@ def test_routine_cards_and_detail(client):
     assert isinstance(detail["permissions"], list)   # hermetic test library → may be empty
     assert all("requires" in p and "active" in p for p in detail["permissions"])
     assert set(detail["capabilities"]["active"]) == {"actions", "utils", "util_tags", "confirm",
-                                                     "rule_confirm", "runs", "workflows"}
+                                                     "rule_confirm", "remind_confirm", "runs",
+                                                     "workflows", "reminders"}
     assert detail["runs"][0]["state"] == "finished"
     assert c.get("/api/routines/nope").status_code == 404
 

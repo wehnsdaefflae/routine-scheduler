@@ -171,6 +171,13 @@ def _availability(loop, cls: str, name: str, eid: str) -> list[str]:  # noqa: C9
         if g is not None and g.workflows == "generate":
             return [f"{eid} is already enabled — set a subtask's workflow to 'generate'"]
         return []
+    if cls == "reminders":
+        current = g.reminders if g is not None else "none"
+        order = ("none", "local", "global")
+        if order.index(current) >= order.index(name):
+            return [f"the reminder layer is already at {current!r}, which covers {eid} — "
+                    "use the `remind` field directly"]
+        return []
     # recreate: — only meaningful for a slug that existed and was deleted by the user
     home = ctx.server.libraries_home
     if utils_lib.exists(home, name):

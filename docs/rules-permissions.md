@@ -331,13 +331,24 @@ capabilities:
   util_tags: [messaging]        # reserved util CLASSES switched on, by tag
   confirm: always               # write_util approval: always | creations | never
   rule_confirm: always          # write_rule approval: always | creations | never
+  remind_confirm: always        # GLOBAL reminder approval: always | creations | never
   runs: none                    # previous-run read depth: none | last | all
   workflows: catalog            # subtask pattern sourcing: catalog | generate
+  reminders: none               # consequence-reminder stores: none | local | global
 ```
 
 A new routine's default: `write_util` (confirm `always`) + the memory pair, no reserved utils,
-no run history, no rule authoring — matching the default permission set below. `read_rule` is
-not listed because it is not gated.
+no run history, no rule authoring, no reminders — matching the default permission set below.
+`read_rule` is not listed because it is not gated.
+
+`reminders` is the one dial with no baseline at all. Run history floors at `last` for every
+routine because reading the previous result costs nothing; a consequence reminder costs a TURN
+every time it fires, so the layer stays off until you switch it on. At `local` a run reads and
+writes its own store; at `global` it also reads the library's curated one (its own overriding it
+where the patterns match) and is the only level that may WRITE there, under `remind_confirm`.
+That second dial is separate from `confirm` and `rule_confirm` for the reason those two are
+separate from each other: a new global reminder starts interrupting routines that never asked for
+it. See [reminders](reminders.md).
 
 ### Settings templates — the named starting point
 
@@ -468,6 +479,7 @@ The shipped set:
 | `scheduling` | the `schedule_run` action — arm/cancel a one-shot future run of a routine | opt-in |
 | `recipe-authoring` | the `write_recipe` capability — revise this routine's OWN `main.md` / `stages/` / `tuning.yaml`. Hold it where refining the recipe IS the job; `routine.yaml` stays sealed regardless | opt-in |
 | `scripts` | the `script` action — run the routine's OWN persistent `scripts/<name>.py` helpers (tooling, not a second interpreter; declared secrets only, no util/model access inside) | opt-in |
+| `reminders` | `reminders: local` — the `remind` / `remind_feedback` fields: leave a `(regex → consequence)` caution that HOLDS a matching action before it runs (see [reminders](reminders.md); the shared store and its approval level are `reminders: global` + `remind_confirm`) | opt-in |
 
 ### What enforcement looks like
 
