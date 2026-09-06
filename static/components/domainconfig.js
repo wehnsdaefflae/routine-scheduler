@@ -11,8 +11,9 @@
 // has to enforce across a list — and it is why this panel only READS `members` back.
 //
 // It deliberately reuses the ROUTINE page's own controls — abilitiesPanel, rulePicker,
-// rootsEditor, connectionsCard — so a domain's permissions look and behave exactly like a
-// routine's. A lookalike built here would drift from them the first time either changes.
+// rootsEditor, connectionsCard, machinesCard, tagsEditor, the shared BUDGET_FIELDS
+// vocabulary — so a domain's permissions look and behave exactly like a routine's. A
+// lookalike built here would drift from them the first time either changes.
 //
 // The domain is a DEFAULT, not an override: lists union with the member's own, mappings merge
 // per key with the member's value winning, and a key absent here is left entirely to each
@@ -22,9 +23,12 @@
 
 import { api } from "/static/api.js";
 import { connectionsCard } from "/static/components/connections.js";
+import { machinesCard } from "/static/components/machines.js";
 import { rootsEditor } from "/static/components/fsroots.js";
 import { abilitiesPanel } from "/static/components/abilities.js";
 import { rulePicker } from "/static/components/rulepicker.js";
+import { tagsEditor } from "/static/components/tags.js";
+import { BUDGET_FIELDS, UNLIMITED_BUDGETS } from "/static/components/budgetfields.js";
 import { el, toast } from "/static/util.js";
 
 /** One labelled block: a heading, a one-line why, and the control. */
@@ -130,9 +134,10 @@ export function domainConfigPanel(domain, { onSaved } = {}) {
   // site, which is why tests/test_static_dom.py scans for exactly this shape.
   host.append(...[warnBox,
     el("div", { class: "muted small" },
-      "Every member inherits this. A member's own routine.yaml still wins wherever it sets the "
-      + "same key — lists add together and a value here fills in only what the member leaves "
-      + "unset. Clearing a setting here hands it back to each member."),
+      "Every member inherits this, in one of two ways. LISTS here add to each member's own — "
+      + "a member can add to one, never drop an entry this domain sets. Everything else fills "
+      + "in only what a member leaves unset, so a member deciding a key for itself keeps its "
+      + "own answer. Clearing a setting here hands it back to each member."),
     el("div", { class: "muted small mt", "data-domain-members": "" },
       members.length
         ? ["members · ", members.join(" · "), " — each names this domain in its own config, so "
@@ -148,7 +153,9 @@ export function domainConfigPanel(domain, { onSaved } = {}) {
   renderWarnings();
   renderPerms();
   host.append(block("Permissions & capabilities",
-    "held by every member on top of its own", permHost));
+    "the docs and the list capabilities add to every member's own; the DIALS below them "
+    + "(the approval levels, run depth, workflows, reminders) apply only to a member that "
+    + "does not set that dial itself", permHost));
 
   api("/api/library").then((lib) => { library = lib.rules || []; renderRules(); })
     .catch(() => rulesHost.replaceChildren(
@@ -181,12 +188,23 @@ export function domainConfigPanel(domain, { onSaved } = {}) {
   }).catch(() => secHost.replaceChildren(
     el("div", { class: "muted small" }, "could not load the secrets store")));
   host.append(block("Secrets",
-    "granted to every member's util calls — including members that join later", secHost));
+    "granted to every member's util calls, including members that join later — except a "
+    + "member that has already decided the secret itself, whose own answer stands (a "
+    + "deny-forever on the Decisions page is exactly that)", secHost));
 
   // -- OAuth connections --------------------------------------------------------------------
-  host.append(block("Connections", "bound for every member",
+  host.append(block("Connections",
+    "bound for every member that has not bound that provider itself",
     connectionsCard(rec.config?.connections || {}, {
       onSave: (connections) => writeKey("connections", connections),
+    })));
+
+  // -- remote machines: the same catalog checkboxes the routine page shows -------------------
+  // A LIST key, so it unions with whatever the member binds itself.
+  host.append(block("Machines",
+    "added to every member's own bindings — a member may add a machine, never drop one",
+    machinesCard(rec.machine_catalog || [], rec.config?.machines || [], {
+      onSave: (machines) => writeKey("machines", machines),
     })));
 
   // -- filesystem read/write roots ----------------------------------------------------------
@@ -202,6 +220,94 @@ export function domainConfigPanel(domain, { onSaved } = {}) {
     host.append(block(`Filesystem — ${label}`,
       `added to every member's own ${label} roots`, ed.node, el("div", { class: "row mt" }, btn)));
   });
+
+  // -- models: the three ROLES, from the instance's catalog ----------------------------------
+  // A MAPPING key, merged per role with the member's own choice winning. Only the roles belong
+  // here: `deliberation` sits beside them on the routine page but is a tuning.yaml handle
+  // rather than routine.yaml config, so it is not among the keys a domain shares — a control
+  // for it here would write nothing.
+  // A model the domain names but the catalog no longer offers stays selectable, so a binding
+  // left behind by a catalog edit can be changed rather than only read.
+  const MODEL_KINDS = [["main", "the orchestrator loop (children inherit it by default)"],
+                       ["tool_call", "the llm action"],
+                       ["uncensored", "a refused llm call is referred here (opt-in)"]];
+  const sharedModels = rec.config?.models || {};
+  const catalog = [...(rec.catalog || [])];
+  for (const name of Object.values(sharedModels)) {
+    if (name && !catalog.includes(name)) catalog.push(name);
+  }
+  const sysM = rec.system_model;
+  const unsetLabel = sysM ? `— left to each member (system default ${sysM}) —`
+                          : "— left to each member —";
+  const modelSelects = {};
+  const modelRows = MODEL_KINDS.map(([kind, desc]) => {
+    const sel = el("select", { "data-domain-model": kind }, [
+      el("option", { value: "" }, unsetLabel),
+      ...catalog.map((n) => el("option", { value: n }, n))]);
+    sel.value = sharedModels[kind] || "";
+    modelSelects[kind] = sel;
+    return el("div", { class: "row", style: "margin:5px 0" },
+      el("span", { class: "ref-tag", style: "min-width:92px;text-align:center" }, kind),
+      el("span", { class: "muted small", style: "min-width:150px" }, desc),
+      sel);
+  });
+  const modelSave = el("button", { class: "btn small", "data-domain-models-save": "" }, "save");
+  modelSave.onclick = () => {
+    const models = {};
+    for (const [kind, sel] of Object.entries(modelSelects)) if (sel.value) models[kind] = sel.value;
+    put("models", models, "domain models saved");
+  };
+  host.append(block("Models",
+    "a role bound here binds only the members that have not bound it themselves",
+    ...(catalog.length
+      ? [...modelRows, el("div", { class: "row mt" }, modelSave)]
+      : [el("div", { class: "muted small" },
+          "no models in the catalog yet — add one in Settings → Models")])));
+
+  // -- budgets: the per-run ceilings, from the ONE budget vocabulary -------------------------
+  // A MAPPING key too, so each ceiling is decided on its own: a member overriding one keeps
+  // the rest of the domain's. A blank input is left OUT of the map — 0 is a ceiling, not a
+  // way to say "the members decide this one".
+  const budgetInputs = {};
+  const budgetRows = BUDGET_FIELDS.map(([key, label, help]) => {
+    const input = el("input", { type: "number", "data-domain-budget": key,
+      min: UNLIMITED_BUDGETS.includes(key) ? "-1" : "0",
+      value: String(rec.config?.budgets?.[key] ?? ""), style: "width:110px" });
+    budgetInputs[key] = input;
+    return el("div", { class: "row", style: "margin:5px 0" },
+      input,
+      el("span", { class: "small", style: "min-width:200px" }, label),
+      el("span", { class: "muted small" }, help));
+  });
+  const budgetSave = el("button", { class: "btn small", "data-domain-budgets-save": "" }, "save");
+  budgetSave.onclick = () => {
+    const budgets = {};
+    for (const [key, input] of Object.entries(budgetInputs)) {
+      if (!input.value.trim()) continue;
+      const v = parseInt(input.value, 10);
+      const unlimited = UNLIMITED_BUDGETS.includes(key);
+      if (!Number.isFinite(v) || (v < 1 && !(unlimited && v === -1))) {
+        toast(`${key}: needs a positive number${unlimited ? " (or -1 = unlimited)" : ""}`);
+        return;
+      }
+      budgets[key] = v;
+    }
+    put("budgets", budgets, "domain budgets saved");
+  };
+  host.append(block("Budgets",
+    "a ceiling here fills in only what a member does not set itself — leave one blank to leave "
+    + "it entirely to the members",
+    ...budgetRows, el("div", { class: "row mt" }, budgetSave)));
+
+  // -- tags: the THIRD axis, crossing this one ----------------------------------------------
+  // Saved on every change (tagsEditor has no button), so the handler hands back the API
+  // promise: on a rejection the editor keeps its own state untouched rather than showing a
+  // tag the server never took.
+  host.append(block("Tags",
+    "carried by every member on top of its own; no member can drop one. Tags are read back "
+    + "as one set. A few are not merely descriptive — `meta` exempts a finish from the "
+    + "unbacked-claim guard — so a tag set here changes how every member's runs behave",
+    tagsEditor(rec.config?.tags || [], (next) => writeKey("tags", next))));
 
   return host;
 }

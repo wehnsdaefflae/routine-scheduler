@@ -16,6 +16,12 @@ Validating that block lives here too (`_validate_config` and its two helpers). W
 permission and rule slugs resolve, whether its machines are in the catalog and whether its
 capability mapping is well-formed are questions about a DOMAIN's document — and the lane API
 holds no such document.
+
+A domain record carries the same catalogs the routine detail carries (`catalog`,
+`system_model`, `machine_catalog`, built as web/api_routines.py builds them). The shared block
+is edited with the ROUTINE PAGE'S OWN controls, so it has to be fed the same payload: one
+catalog shape for both surfaces is what keeps a domain's machines and model roles behaving
+exactly like a member's own.
 """
 
 from __future__ import annotations
@@ -126,11 +132,22 @@ class DomainPatch(BaseModel):
 
 def _record(request: Request, d: dict) -> dict:
     home = _routines_home(request)
+    server = _state(request).server
     config = d.get("config") or {}
     return {**d, "members": domains.members(home, d["id"]),
             "layers": _config_layers(request, config),
-            "orphan_capabilities": _orphan_capabilities(_state(request).server, config),
-            "store": str(domains.store_dir(home, d["id"]))}
+            "orphan_capabilities": _orphan_capabilities(server, config),
+            "store": str(domains.store_dir(home, d["id"])),
+            # Shared model roles (main/tool_call/uncensored) are catalog model NAMES, each
+            # filling in only a role the member has not bound itself. `catalog` populates the
+            # three pickers; `system_model` is what an unbound role falls back to.
+            "catalog": list(server.models.keys()),
+            "system_model": server.system_model or None,
+            # The machine catalog behind the shared machines card — details come from
+            # GET /api/settings/machines. Shared bindings UNION with the member's own.
+            "machine_catalog": [{"name": m.name, "description": m.description,
+                                 "host": m.host, "user": m.user, "tags": list(m.tags)}
+                                for m in server.machines.values()]}
 
 
 @router.get("/domains")

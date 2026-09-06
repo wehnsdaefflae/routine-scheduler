@@ -194,9 +194,17 @@ def scan(server: ServerConfig, home: Path | None = None) -> dict[str, RoutineInf
 
 
 def _load_routine_memo(d: Path) -> tuple[RoutineConfig | None, list[str]]:
-    # both config AND tuning feed the parsed RoutineConfig — a tuning-only edit (the
-    # slider, or the improver re-levelling deliberation) must miss the memo too
-    fp = fingerprint([d / "routine.yaml", d / "tuning.yaml"])
+    # Config, tuning AND the domain store all feed the parsed RoutineConfig, so an edit to any
+    # of the three must miss the memo. Tuning, because a slider move (or the improver
+    # re-levelling deliberation) changes the config without touching routine.yaml. The domain
+    # store, because `load_routine` merges the shared block UNDER the routine's own keys: a
+    # domain edit changes what every member effectively holds while no member's own file moves,
+    # so a memo keyed on the member alone answers with the pre-edit config — the console showing
+    # a routine's permissions, machines and provenance as they were before the save, with
+    # nothing to say the answer is stale. A RUN never saw this (engine/runtime calls
+    # load_routine directly), which is exactly why only the reader lied.
+    fp = fingerprint([d / "routine.yaml", d / "tuning.yaml",
+                      d.parent / ".control" / "domains.json"])
     hit = _cfg_memo.get(str(d))
     if hit is None or hit[0] != fp:
         hit = (fp, load_routine(d))

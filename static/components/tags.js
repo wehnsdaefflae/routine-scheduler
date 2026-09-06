@@ -1,4 +1,5 @@
-// The ONE tag editor — routines and conversations share it: chips with ✕ remove plus an
+// The ONE tag editor — routines, conversations and the domain editor share it: chips with
+// ✕ remove plus an
 // inline add field, EVERY change saved immediately through onChange(nextTags) (no
 // separate save button to forget). onChange must return the API promise; on failure the
 // local state stays untouched so the UI never lies about what was persisted.

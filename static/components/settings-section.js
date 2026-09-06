@@ -10,10 +10,12 @@
 // Passing an empty/undefined description omits the description line entirely.
 //
 // The title may be a plain string, OR an object { title, id } — passing an id stamps the
-// heading as <h2 id="sec-{id}">, the anchor the Settings page's side-nav / deep links
-// (#/settings?section=<id>) and TOC jump to. That is how the Settings sub-views adopt this
-// same primitive (D64/A'): all three surfaces — routine config, the composer, and Settings —
-// now build a section the one way, with a single description that lives inside the panel.
+// heading as <h2 id="sec-{id}">, the anchor every jump to a section aims at: the Settings
+// page's side-nav and its deep links (#/settings?section=<id>), the TOC, and on the routine
+// page the fix links that carry a reader from a diagnosed dependency to the panel that owns
+// it. The id is a stable address, so it outlives any rewording of the title above it.
+// All three surfaces — routine config, the composer, and Settings — build a section the one
+// way (D64/A'), with a single description that lives inside the panel.
 import { el } from "/static/util.js";
 
 export function settingsSection(title, description, ...body) {

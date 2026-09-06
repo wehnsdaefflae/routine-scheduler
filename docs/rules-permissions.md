@@ -120,7 +120,7 @@ lets one function answer at all four moments it matters:
 | moment | who reads it | what it catches |
 |---|---|---|
 | the routine page (`GET /api/routines/{slug}/surface`) | you | first setup, and drift that landed since |
-| `rsched validate` | CI and the deploy path | the same, with no page open; a `blocks` row fails the command |
+| `rsched validate` | CI and the deploy path | the same, with no page open — each unmet line ending in its remedy; a `blocks` row fails the command |
 | run boot (an engine note) | the RUN | `blocks`/`interrupts` it would otherwise discover at turn nine |
 | the turn boundary | the engine | live grants folding into the policy (unchanged) |
 
@@ -132,6 +132,81 @@ closing sentence explains and nothing more. A `note` is addressed to the OPERATO
 routine's lane suppresses, a `state/phase.json` recorded under some other key — and the run can
 neither act on it nor be saved a turn by it, so one in front of every run buys prompt noise. The
 page and `rsched validate` still show all three.
+
+#### The remedy — what an unmet row also carries
+
+A diagnosis that names no way out leaves every reader to find the control unaided — and each of
+these readers would find it somewhere different. So an unmet row carries a **`fix`** beside its
+`source`: the same idea pointed forwards, machine-readable for the same reason. It is a `kind`
+plus that kind's parameters — `{"kind": "add_secret", "name": "FOO_TOKEN"}` — naming WHAT has to
+happen and never where a console puts the control. A `:any` variant covers what `expects:` writes
+as `"*"` ("at least one machine"), which no sentence can name by name.
+
+The two halves stay honest apart because the callers share nothing:
+
+- **the routine page** maps one kind to the one panel that owns that dial, scrolls the reader
+  onto the control and flashes it; a fix living off the page (Settings → Secrets, the Library)
+  is a link instead. That map has ONE copy — `FIX` in `static/components/surface-view.js` —
+  which the setup-check strip imports; the strip is what an operator reads first, so a row that
+  offers a way out on one surface and not the other abandons the reader at the top of the page.
+- **`rsched validate` and the boot note** have nothing to click, so `readmodels/remedies.py`
+  spells each kind out in words: `REMEDIES` maps the kind to its sentence, `surface_lines` ends
+  every unmet line ` — fix: <words>`. The phrasing sits in its own module because it reads
+  nothing — no config is joined there and no verdict decided — so a wording change alters what
+  an operator is TOLD and never what is true. A kind absent from that table renders no remedy
+  rather than half a sentence.
+
+That clause is free on a terminal and PROMPT TEXT at boot, where every `blocks`/`interrupts` line
+is tokens the run buys — which is why the words are terse by contract (`remedies.REMEDIES`). What
+they buy back is a run that can NAME what it needs when it asks the user or files a report,
+instead of describing the symptom it hit.
+
+**Only an UNMET row carries one** — the severities do not decide it. A `note` reporting a GAP
+gets one: the cron its lane suppresses, a phase file keyed wrong, a capability switched on that
+no held doc requires (`cover_or_drop` — hold a doc that requires it, or drop it). Exactly two
+rows report a STATE and carry none. `action:write_recipe` "on" is a routine deliberately allowed
+to rewrite its own instructions; `schedule:goal` "retired" is a routine whose every goal-scoped
+condition is met. The only "fix" for a deliberate act is to undo it; offering that reads as a
+defect report on a routine set up exactly as intended — the retired row worst of all, since what
+it would undo is a finished job. An absent `fix` therefore means one thing, which is what makes
+the rows that carry one worth reading.
+
+`action:write_recipe` is the row where that rule is decided rather than observed: two checks
+reach the id — the deliberate switch (no fix) and the uncovered-capability scan (`cover_or_drop`)
+— and one row per entity survives. The deliberate-switch reading is the one that wins, because
+naming what the routine IS beats offering to undo it; the precedence is pinned by a test, not
+by the order the two appends happen to sit in.
+
+#### Adding a `fix` kind — the four registrations
+
+A kind is emitted once — in the `_node` call that names it — then consumed in four places. None
+of them infers itself from that call; three of the four are held to the emission by an EQUALITY,
+so the vocabulary cannot grow at one end alone:
+
+- **its words** — `REMEDIES` in `readmodels/remedies.py`. Without them `rsched validate` and the
+  boot note would print the gap with no way out. `test_every_remedy_can_be_said_in_words` parses
+  both modules and asserts the emitted kinds are exactly the table's base kinds — a
+  `kind:variant` entry is a second WORDING of one kind, so each is compared on the kind it
+  belongs to. Miss this registration and that test reds on the set difference.
+- **its panel** — the `FIX` map in `static/components/surface-view.js`, which the setup-check
+  strip imports. Bound the same way from the browser side:
+  `test_no_fix_kind_reaches_the_console_without_a_case_here` parses the map out of the file and
+  asserts its keys are exactly the `REMEDIES` kinds, so missing it reds that test. At RUNTIME an
+  unmapped kind renders no offer at all — a row that stays silent beats one pointing somewhere
+  wrong — but silence is not a state a release may ship in: the operator would read the remedy on
+  a terminal and find nothing on the page that owns the dial. The runtime is forgiving; the gate
+  is not.
+- **its anchor** — the section `id` the owning panel carries (`views/routine-config.js`) or the
+  `data-ability` / `data-drop` attribute an ability card stamps on the control
+  (`components/abilities.js`). This is the ONE registration nothing static can see: a fix whose
+  target is absent from the document disables itself, while a fix that travels to a panel where
+  the act cannot be performed reads as correct until somebody presses it.
+- **its journey** — a `CASES` row in `tests/ui/test_surface_fix.py` naming the ONE control that
+  performs the act. The same equality covers it — the table is asserted equal to the console map
+  — so a kind cannot reach the console without one. The row then presses the offer in a browser,
+  asserting the flash lands on the destination rather than somewhere unrelated and that the
+  control it named is there and operable. That run is what proves the anchor, which is why this
+  table is where the pattern ends.
 
 #### The reverse reading: who depends on THIS?
 
@@ -181,6 +256,24 @@ however it got there (naming the domain when the domain supplied it), while the 
 returns a warning naming it at the moment somebody saves (`orphan_capabilities` on the
 `/api/domains` record). Neither refuses, because refusing would break the legitimate
 member-holds-the-doc arrangement.
+
+The row's `cover_or_drop` therefore splits on PROVENANCE, because the two cases are dropped in
+different places. A capability the routine holds in its OWN file is dropped on the routine page,
+in the orphan card that reports it — the save's floor is what makes the drop stick. One the
+DOMAIN handed down is not the member's to drop: that same save counts inherited permissions for
+the floor, so the capability survives it — correctly — and the act belongs to the domain editor.
+The fix carries which case it is, because a remedy that lands its reader on a control unable to
+perform the act is the one failure this layer exists to prevent. It is read off the DOMAIN
+RECORD: `surface._domain_capabilities` loads the domain's own shared capability block and
+`_drop_site` asks it one question — does that block name this entry. Never `cfg.inherited` /
+`cfg.inherited_from`, which record what the merge CONTRIBUTED and so answer a different question,
+wrongly in both directions: the lists UNION, so an entry the member's file also names contributes
+nothing to the merge while still surviving every drop the member makes; an entry the member alone
+set reads as inherited whenever the domain happened to supply some other one. The fix then
+states `owner` positively for both cases (`routine` / `domain`), carrying the domain's NAME for
+the sentence both renderings put it in, while the domain's ID rides `source` as provenance.
+`test_a_capability_the_member_lists_too_still_belongs_to_the_domain` pins the direction that
+hurts.
 
 Enforcement reads **capabilities only** (`grants.py` builds the run policy from the
 routine's own mapping); a doc-without-capability misconfiguration therefore fails
@@ -438,11 +531,21 @@ line.
 ### A domain holds the shared half (D82)
 
 A routine that names a **domain** (`domain:` in its own routine.yaml) inherits that domain's
-`config:` block — permissions, capabilities, rules, machines, connections, secret grants,
-models, budgets and fs roots set once for all its members (`domains.CONFIG_KEYS`). The domain is
-a **default, not an override**: list keys union with the member's own, mapping keys merge per
-key with the member's value winning, and a key the domain does not set is left entirely to each
-member.
+`config:` block — permissions, capabilities, rules, machines, tags, models, connections, secret
+grants, budgets and the two fs roots: eleven keys set once for all its members
+(`domains.CONFIG_KEYS`). The domain is a **default, not an override** — the halves of that set
+answer differently:
+
+- the LIST keys — permissions, rules, machines, tags, the read and write roots — **union** with
+  the member's own. The domain is a floor a routine adds to; a member cannot subtract an entry.
+- the MAPPING keys — models, connections, grants, budgets — merge **per key**, the member's own
+  value winning. A shared budget fills in only what a member leaves unset; a shared model binds
+  only a role the member has not bound itself.
+- `capabilities` is both at once: its list members (actions, utils, util tags) union, while its
+  dials — the three approval levels plus `runs`, `workflows`, `reminders` — take the member's
+  value wherever it sets one.
+
+A key the domain does not set is left entirely to each member.
 
 A routine has **at most one** domain, so there is exactly zero or one shared layer — which is
 what makes the merge answerable at all. Two layers would have to be merged with each other,

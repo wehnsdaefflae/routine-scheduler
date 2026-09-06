@@ -28,6 +28,30 @@ would dissolve the argument that makes a domain note approval-free: a note canno
 domain because the domain's store is in its members' fs roots and nobody else's. The boundary IS
 the safety model.
 
+### What a domain shares
+
+ELEVEN routine.yaml keys (`domains.CONFIG_KEYS`). The domain is a DEFAULT, never an override —
+the two halves of that set are answered differently because their shapes differ:
+
+| | keys | how a member's own file combines with it |
+|---|---|---|
+| **lists** | `permissions`, `rules`, `machines`, `tags`, `fs_read_roots`, `fs_write_roots` | UNION — the domain is a floor a member adds to; a member cannot subtract an entry |
+| **mappings** | `models`, `connections`, `grants`, `budgets` | PER KEY, the member's own value winning — a shared budget fills in only what a member leaves unset, a shared model binds only a role the member has not bound itself |
+| **both at once** | `capabilities` | its list members (actions, utils, util tags) UNION; its dials — the approval levels, `runs`, `workflows`, `reminders` — take the member's value wherever it sets one |
+
+A key the domain does not set is left entirely to each member. The merge happens at LOAD
+(`config/domainconfig.apply_shared_config`) and writes nothing back, so clearing `domain:`
+returns a routine to exactly what its own file says. It runs BEFORE validation, which is what
+makes "the member set it" mean *the key is in its file* rather than *the model has a default* —
+every one of these fields has a non-empty default, budgets especially, so a merge over the
+validated model could never tell the two apart.
+
+The same list fixes what a domain may NOT share: slug, name, description, enabled, schedule,
+workflow, retention, triggers and improve say WHICH routine this is and when it runs, so sharing
+them is meaningless or destructive. Nor does it reach `tuning.yaml`: `deliberation` is a
+machine-tunable handle that lives there rather than in routine.yaml, so it is each routine's
+own however close its neighbours are.
+
 ## Where each axis is edited
 
 A lane is edited on the Routines page: its row carries run-now, pause and edit; the toolbar

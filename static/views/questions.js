@@ -10,7 +10,7 @@ import { api } from "/static/api.js";
 import { pendingBand } from "/static/components/pending.js";
 import { answerForm } from "/static/components/answerform.js";
 import { linkifyRefs } from "/static/components/reflinks.js";
-import { md, mdInline } from "/static/md.js";
+import { md } from "/static/md.js";
 import { chip, el, emptyState, skeleton, toast, when } from "/static/util.js";
 import { TERMINAL } from "/static/states.js";
 
@@ -32,12 +32,13 @@ const expiringSoon = (q) => q.mode === "blocking" && q.expires
 const kindOf = (q) => (q.meta ? "meta" : q.mode);
 // audit decisions reference findings/decisions by id (F63, D14) — make those clickable,
 // but ONLY in the audit's own voice (meta items); elsewhere a bare "D1" is a false positive
-// Render the question text as MARKDOWN. Meta (self-audit) decisions carry the report's rich
-// prose — the title plus a block `detail` (lists, GFM tables, `code`, headings) — so they get
-// the block renderer; ordinary blocking/deferred questions are short single-line prompts that
-// sit in a flex row, so they keep the inline-only subset. (Before this, open questions rendered
-// as raw textContent and answered ones as inline only — so decision markdown never rendered.)
-const qBody = (q) => (q.meta ? md(q.question) : mdInline(q.question));
+// Render the question text as MARKDOWN, with the BLOCK renderer, whoever wrote it. A run lays
+// out what it found before it asks — the ask-policy rule and the deliberation contract both
+// push it to — so an ordinary deferred question arrives carrying a GFM table of counts, a
+// numbered list of options and a fenced snippet, exactly as a meta decision does. Rendered
+// inline those become literal pipes and asterisks in the one place the user has to read
+// carefully enough to decide. md() is a superset of mdInline(), so nothing reads worse for it.
+const qBody = (q) => md(q.question);
 const qText = (q) => {
   const node = el("div", { class: "q-text" }, qBody(q));
   return q.meta ? linkifyRefs(node) : node;

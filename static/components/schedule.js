@@ -5,6 +5,10 @@
 // the dropdown locks on a selected, disabled "Lane managed" state linking to the lane
 // (the routine's own cron is suppressed by the daemon; value() returns the stored spec
 // unchanged so a page save never clobbers it).
+// In that state the caller may also pass opts.onClearCron — a save the editor awaits when the
+// reader clears a cron the lane already suppresses. It appears ONLY where the stored spec still
+// names one, because it is the single schedule edit a lane-managed routine has left: the lane
+// goes on deciding when the routine fires; the file stops recording a time of its own.
 //
 // Also home to the client half of the friendly vocabulary: cronToFriendly mirrors the
 // server's rsched.schedule.cron_to_friendly (same shapes, same custom fallback), and
@@ -51,6 +55,36 @@ export function scheduleEditor(initial = { frequency: "manual" }, serverTz = "",
         el("span", { class: "muted small" }, "if a run was missed"), catchupSel)
     : null;
 
+  // The other half of D71. The lane owns WHEN a lane-managed routine fires, so every control
+  // above is locked — but the routine's own file can still record a cron the daemon suppresses.
+  // A file naming a time nothing acts on is what the surface's `schedule:cron` row reports.
+  // Clearing that line changes no firing at all, which is why it survives the lock; it is
+  // offered only where there IS a stored cadence to clear — never to a caller with no save.
+  // `data-clear-cron` is the address the surface's fix link lands on.
+  const staleCron = lm && spec.frequency && spec.frequency !== "manual";
+  async function clearCron() {
+    clearBtn.disabled = true;
+    try {
+      await opts.onClearCron();
+      clearRow.replaceChildren(el("div", { class: "muted small" },
+        "cleared — this file records no time of its own; the lane's clock is the only one"));
+    } catch { clearBtn.disabled = false; }   // the toast already said why; let it be retried
+  }
+  const clearBtn = staleCron && opts.onClearCron
+    ? el("button", { type: "button", class: "btn small", "data-clear-cron": "",
+        onclick: clearCron }, "clear the stored cron")
+    : null;
+  const clearRow = clearBtn
+    ? el("div", { class: "mt" },
+        el("div", { class: "muted small" }, "this file records a cron of its own — ",
+          el("code", {}, spec.cron || spec.frequency),
+          " — which nothing fires on while the lane is scheduled"),
+        el("div", { class: "row mt", style: "gap:8px" }, clearBtn,
+          el("span", { class: "muted small" },
+            "clearing changes no firing: the routine still runs with the lane, on the lane's "
+            + "clock. What changes is the file — it stops claiming a time of its own.")))
+    : null;
+
   function sync() {
     const f = freq.value;
     detail.replaceChildren();
@@ -71,6 +105,7 @@ export function scheduleEditor(initial = { frequency: "manual" }, serverTz = "",
   const node = el("div", {},
     el("div", { class: "row", style: "gap:8px" }, freq, detail),
     catchupRow,
+    clearRow,
     serverTz ? el("div", { class: "muted small", style: "margin-top:4px" },
       `times are in the server's timezone (${serverTz})`) : null);
 

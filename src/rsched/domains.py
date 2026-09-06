@@ -55,6 +55,11 @@ from .paths import atomic_write_json, read_json, read_yaml
 # playbook/retention/triggers/improve — which say WHICH routine this is and when it runs, so
 # sharing them would be meaningless (or destructive). What is left is the policy surface a set of
 # related routines genuinely shares: what they may do, what they know, and where they may look.
+#
+# A key added here needs a CONTROL in `static/components/domainconfig.js`, or a domain can carry
+# it while nobody can see or change it — which is what happened to four of these for a release.
+# `tests/ui/test_lanes.py::test_every_shareable_key_has_an_editor_block` asserts the two agree,
+# so the omission is caught here rather than by someone eventually looking.
 CONFIG_KEYS = ("permissions", "capabilities", "rules", "machines", "tags",
                "models", "connections", "grants", "budgets",
                "fs_read_roots", "fs_write_roots")

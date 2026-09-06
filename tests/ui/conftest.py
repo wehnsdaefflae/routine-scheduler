@@ -49,6 +49,25 @@ def pytest_collection_modifyitems(items):
             in_ui = str(_UI_DIR) in str(getattr(item, "fspath", ""))
         if in_ui:
             item.add_marker(pytest.mark.flaky(reruns=4, reruns_delay=2))
+            # …and `ui`, which the default `-m "not ui"` deselects. Applied here rather than
+            # written on each test because a marker anyone can forget is a marker that stops
+            # meaning anything: every test under this directory needs a browser, and that is
+            # a fact of the directory rather than of the test.
+            item.add_marker(pytest.mark.ui)
+
+
+@pytest.fixture(scope="session")
+def browser_type_launch_args(browser_type_launch_args):
+    """Chromium's shared-memory backing, moved off /dev/shm.
+
+    Chromium puts renderer surfaces in /dev/shm, which Docker and small hosts size at 64 MB.
+    Three parallel workers on a 3 GB box exhaust it, and the failure does not read as running
+    out of anything: the tab dies mid-test and Playwright reports a closed target. The flag
+    spends disk instead, which is the trade every headless-in-a-container guide makes, and the
+    browser-session sidecar already runs with it (deploy/Dockerfile.chrome).
+    """
+    return {**browser_type_launch_args,
+            "args": [*browser_type_launch_args.get("args", []), "--disable-dev-shm-usage"]}
 
 
 class StubRunner:

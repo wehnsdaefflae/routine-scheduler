@@ -1006,17 +1006,21 @@ whose TEXT must change on a live instance is converted by a one-shot migration i
   left on disk either way — a config record disappearing is not consent to delete the files
   members wrote — and `rsched validate` names a routine whose `domain:` answers to nothing,
   because that routine inherits an EMPTY block rather than failing.
-  - **Shared routine config (D82)**: the `config:` block is routine.yaml keys its members
-    INHERIT. Related routines share a policy surface (the same permissions, capabilities,
-    rules, machines, connections, secret grants, models, budgets, fs roots, tags); keeping N
-    copies of it in step is how they drift apart, so the domain holds one copy. The domain is a
-    **default, never an override**: `config/domainconfig.apply_shared_config` merges it into the
-    member's RAW routine.yaml *before validation* — list keys UNION (the domain is a floor a
-    member adds to), mapping keys merge per key with the member's value winning, and
-    `capabilities` does both (its lists union, its dials take the member's when set). Merging
-    pre-validation is what makes "the member set it" mean *the key is in its file* rather than
-    *the model has a default* — every field here has a non-empty default, so a post-validation
-    merge could never tell the two apart. `domains.CONFIG_KEYS` also fixes what may NOT be
+  - **Shared routine config (D82)**: the `config:` block is the ELEVEN routine.yaml keys its
+    members INHERIT. Related routines share a policy surface (the same permissions, capabilities,
+    rules, machines, tags, models, connections, secret grants, budgets and the two fs roots);
+    keeping N copies of it in step is how they drift apart, so the domain holds one copy. The
+    domain is a **default, never an override**: `config/domainconfig.apply_shared_config` merges
+    it into the member's RAW routine.yaml *before validation*; the halves of the set combine
+    differently. The LIST keys — permissions, rules, machines, tags, the read and write roots —
+    UNION: the domain is a floor a member adds to and no member can subtract an entry. The
+    MAPPING keys — models, connections, grants, budgets — merge PER KEY with the member's own
+    value winning, so a shared budget fills in only what a member leaves unset and a shared model
+    binds only a role the member has not bound itself. `capabilities` is both at once: its lists
+    union, its dials take the member's value when it sets one. Merging pre-validation is what
+    makes "the member set it" mean *the key is in its file* rather than *the model has a
+    default* — every field here has a non-empty default, so a post-validation merge could never
+    tell the two apart. `domains.CONFIG_KEYS` also fixes what may NOT be
     shared: slug/name/description/enabled/schedule/workflow/retention/triggers/improve say which
     routine this is and when it runs. There is exactly ZERO OR ONE layer, so
     `domainconfig.domain_config_for` looks the block up BY ID out of the routine's own key and
@@ -1047,14 +1051,14 @@ whose TEXT must change on a live instance is converted by a one-shot migration i
     reaching a stranger — a ledger row, a delivery into the target's `inbox/`, and an open
     maintenance item on the Messages page until somebody closed it — which turns "here is the file
     I staged for you" into a tracked work item a human has to close. A NOTE is coordination; a
-    REPORT is work somebody must ACT on, tracked until answered, and `report` keeps that meaning
-    unchanged. A member writes `<domain-store>/notes/<to-slug>/note-*.json` with an ordinary file
-    write (the store is already writable to it — **no new action kind**); the engine renders the
-    waiting notes into the state digest at boot and DELETES them as it reads, mirroring how
-    `inbox/` drains, so a note is delivered exactly once and never becomes a backlog someone has
-    to clear by hand. The harness contract names the convention beside the store root and LISTS
-    the actual sibling slugs — a channel a run does not know about is a channel that does not
-    exist, and "write to a member" is not actionable without their names.
+    REPORT is work somebody must ACT on, tracked until answered — and `report` keeps that
+    meaning unchanged. A member writes `<domain-store>/notes/<to-slug>/note-*.json` with an
+    ordinary file write (the store is already writable to it — **no new action kind**); the
+    engine renders the waiting notes into the state digest at boot and DELETES them as it reads,
+    mirroring how `inbox/` drains, so a note is delivered exactly once and never becomes a
+    backlog someone has to clear by hand. The harness contract names the convention beside the
+    store root and LISTS the actual sibling slugs — a channel a run does not know about is a
+    channel that does not exist; "write to a member" is not actionable without their names.
     **No approval, no ledger row, no Messages-page item**: the safety argument is the BOUNDARY,
     not a gate. A note lives in the domain's own store, which is in its members' fs roots and
     nobody else's, so reaching outside the domain is not something this channel declines — it is
@@ -1130,7 +1134,11 @@ whose TEXT must change on a live instance is converted by a one-shot migration i
   reports against a finish line, it cannot draw one), and every `met` claim passes the v2
   verifier below. A retired routine reads as `finished` on the dashboard and the routine page —
   distinct from `disabled`, because one is done and the other was switched off — and its setup
-  surface carries a NOTE saying so instead of a cron that will never fire again. Lane membership
+  surface carries a NOTE saying so instead of a cron that will never fire again. Nothing about
+  that NOTE is unmet — it reports a finished job — so it names no remedy where every unmet row
+  names one (docs/rules-permissions.md): reopening a goal is a decision about the work, taken in
+  the panel that owns the conditions; a diagnosis offering to undo a finished job reads as a
+  defect report on a routine that did exactly what it was for. Lane membership
   and the routine's `domain:` are deliberately untouched: a retired member is skipped cleanly, so
   dropping either would only cost it the D82 inherited config and the shared store.
 - **v2 — verifying the claims** (`engine/verifier.py`). v1 proves a run ACCOUNTED for its

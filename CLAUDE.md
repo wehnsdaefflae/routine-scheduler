@@ -56,8 +56,9 @@ one you are about to touch, not all of them.
 - `docs/rules-permissions.md`, `docs/curated-rules.md` — the general-rules layer (each doc's
   `effect:` line — what a routine holding it DOES differently — is what the page labels its
   on/off control with, and the linter requires it), the two-layer
-  permission set, the SETUP SURFACE (`readmodels/surface.py` forwards, `library_impact.py`
-  backwards, `daemon/library_watch.py` for changes with no writer), the ACCESS-REQUEST grant model (entities.py ids; allow/deny × now/forever, plus
+  permission set, the SETUP SURFACE (`readmodels/surface.py` forwards, `readmodels/remedies.py`
+  for the same rows in WORDS, `library_impact.py` backwards, `daemon/library_watch.py` for
+  changes with no writer), the ACCESS-REQUEST grant model (entities.py ids; allow/deny × now/forever, plus
   allow-once for turn-action classes), and each curated rule's provenance
 - `docs/child-runs.md`, `docs/background-tasks.md`, `docs/triggers.md`, `docs/schedule-once.md`
   — the child-run and firing mechanisms
@@ -97,11 +98,23 @@ one you are about to touch, not all of them.
   — a to_thread task shutdown can only await) and `RSCHED_RETRY_BASE_DELAY` (endpoint retry
   LOGIC runs, the 1s/2s backoff clock doesn't); test_docs_build / test_with_retries_backoff
   clear them to pin the real paths. Single test: `uv run pytest tests/test_loop.py -q`
-  or `-k <name>`. Live endpoint smoke tests run only with `RSCHED_LIVE_TESTS=1`. The suite
-  includes the browser UI tests in `tests/ui/` (Playwright driving the REAL console over a
-  stub runner — no scheduler, no engine, no LLM; see `tests/ui/conftest.py`). One-time per
-  machine: `uv run playwright install chromium`. EVERY UI change gets exercised here — it is
-  the safety net that lets the frontend be reworked boldly.
+  or `-k <name>`. Live endpoint smoke tests run only with `RSCHED_LIVE_TESTS=1`.
+- **The BROWSER suite is opt-in.** `tests/ui/` drives the REAL console with Playwright over a
+  stub runner (no scheduler, no engine, no LLM; see `tests/ui/conftest.py`). Its conftest marks
+  the whole directory `ui`, and addopts carry `-m "not ui"`, because ~135 browser tests against
+  ~2 150 fast ones is the difference between a four-minute gate and a twenty-minute one — and it
+  is the twenty that decides whether the inner loop gets used. Three ways to run:
+  `uv run pytest -q` (fast), `uv run pytest -q -m ui` (browsers), `uv run pytest -q -m ""`
+  (everything — **what ships a release**). One-time per machine:
+  `uv run playwright install chromium`. Serialize any browser run under
+  `flock /tmp/rsched-gates.lock`: several workers plus a second concurrent gate is the OOM this
+  box has already hit once.
+  EVERY UI change still gets exercised there — it is the safety net that lets the frontend be
+  reworked boldly, and deselecting it by default only trades the safety for speed if the absence
+  is LOUD. So every fast run ends by naming the suite it skipped, and says so pointedly when
+  `static/` carries uncommitted changes (`tests/conftest.py::pytest_terminal_summary`). A suite
+  that silently does not run reads exactly like a suite that passes, which is how the console
+  shipped a stray `null`, a dock left in the page flow and a TOC nobody could see.
   `tests/production_guard.py` is the suite's SANDBOX FLOOR (session-scoped autouse): no test
   may write inside the live instance's data homes, and none may spawn this package's CLI —
   that child is a fresh interpreter that would load the production config. Never weaken it to
@@ -114,8 +127,9 @@ one you are about to touch, not all of them.
 - `uv run rsched daemon` — scheduler + web UI in one process (what systemd runs).
 - `uv run rsched validate | lint | suggest --instruction … | scaffold <slug> --workflow … | abort <slug>[:<ts>]`
   — see `rsched --help`. `validate` checks every routine's `routine.yaml`, lints its recipe
-  prose (`main.md`, `stages/`) AND reports its SETUP SURFACE (`readmodels/surface.py`: what the
-  held docs, bound rules and reserved utils still need — a `blocks` row fails the command, a
+  prose (`main.md`, `stages/`) AND reports its SETUP SURFACE (`readmodels/surface.py` joined with
+  `readmodels/remedies.py`: what the held docs, bound rules and reserved utils still need, each
+  unmet line ending in the remedy that settles it — a `blocks` row fails the command, a
   `warn`/`note` row is reported only); `lint` covers the library. `engine-run` is internal
   (daemon-spawned).
 
@@ -358,13 +372,31 @@ by a test, by the engine, or by a past incident.
   `state`) or nothing at all wrote a file matching nothing. All of these are NOTE rows —
   nothing is broken, the file is misleading — and the BOOT note carries only `blocks`/
   `interrupts` (`surface.BOOT_SEVERITIES`): a NOTE is for the operator, and a run can neither
-  act on it nor be saved a turn by it. `rsched validate` adds the instance-level cases no
-  routine's surface can see: a scheduled lane with no members, a lane naming a slug that
-  is NOT a routine — routines are deleted out of band, so nothing cascades the membership away,
-  and the web refuses only the slugs a caller ADDS so one stale member cannot lock a whole lane
-  against every further edit (F442) — and a routine naming a `domain:` no record answers to,
-  which inherits an EMPTY block and so silently loses the shared permissions it was given the
-  domain for. An `expects:` row must be an
+  act on it nor be saved a turn by it. Every UNMET row also carries a `fix` — a machine-readable
+  remedy (`kind` + params) naming WHAT must happen and never where a control lives. The console
+  maps one kind to the panel owning that dial and lands the reader on it (ONE map, `FIX` in
+  `static/components/surface-view.js`, imported by the setup-check strip so the surface an
+  operator reads FIRST offers the same way out); `REMEDIES` in `readmodels/remedies.py` turns the
+  same kind into words, so a `validate` row and a boot-note row end ` — fix: <words>`. On the
+  boot note that clause is PROMPT TEXT the run buys, which is why the wording is terse by
+  contract — what it buys back is a run that can NAME what it needs when it asks instead of
+  reporting the symptom. UNMET is the whole test, not the severity: a NOTE reporting a GAP
+  carries a fix (the suppressed cron, the phase key, a capability no held doc covers), a NOTE
+  reporting a STATE carries none — and there are exactly two, `action:write_recipe` "on" plus
+  `schedule:goal` "retired", because the only undo for a deliberate act reads as a defect report
+  on a routine that is fine. A NEW kind is FOUR registrations — its words, the client `FIX` map,
+  the section anchor it lands on, its `CASES` row — listed in `docs/rules-permissions.md`. Three
+  of them are bound by equalities, so the vocabulary cannot grow at one end alone: emitted kinds ↔
+  `REMEDIES` over both ASTs (`tests/test_surface.py`), then `REMEDIES` ↔ the parsed `FIX` map ↔
+  the `CASES` table (`tests/ui/test_surface_fix.py`). The ANCHOR is the one nothing static can
+  see: a kind whose link travels somewhere the act cannot be performed is caught by that file's
+  per-kind journey, in a browser, or by nobody.
+  `rsched validate` adds the instance-level cases no routine's surface can see: a scheduled lane
+  with no members, a lane naming a slug that is NOT a routine — routines are deleted out of band,
+  so nothing cascades the membership away; the web refuses only the slugs a caller ADDS so one
+  stale member cannot lock a whole lane against every further edit (F442) — and a routine naming
+  a `domain:` no record answers to, which inherits an EMPTY block and so silently loses the
+  shared permissions it was given the domain for. An `expects:` row must be an
   UNCONDITIONAL presumption: it fires on EVERY holder, and it has been wrong twice the same way
   (`git-checkpoint`, then `status-page`'s write root — false for all seven holders, because a page
   is published through an upload channel and a routine's own dir is always writable).

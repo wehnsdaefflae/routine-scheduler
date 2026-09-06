@@ -69,7 +69,15 @@ asyncio_mode = "auto"
 # queued UI tests; work stealing rebalances exactly that shape.
 # `auto` is redefined by tests/conftest.py's pytest_xdist_auto_num_workers hook — cores minus
 # one, because a browser-test worker is several processes, not one (the measurements are there).
-addopts = ["-n", "auto", "--dist", "worksteal", "-rR"]  # -rR: name any flaky rerun in the summary (RERUN <nodeid>) so an intermittent UI flake is diagnosable, not just counted
+# `-m "not ui"` keeps the BROWSER suite out of the default run. It is ~135 Playwright tests
+# against ~2 150 fast ones: two minutes becomes twenty, and it is the twenty that decides
+# whether the inner loop gets used. It is deselected, never deleted — running it is one flag,
+# the deselected count is printed after every run, and a release runs everything:
+#   uv run pytest -q            the fast gate
+#   uv run pytest -q -m ui      the browser suite (serialize it: flock /tmp/rsched-gates.lock)
+#   uv run pytest -q -m ""      everything — what ships a release
+# A CLI `-m` wins over this one, because addopts are prepended and pytest keeps the last.
+addopts = ["-n", "auto", "--dist", "worksteal", "-rR", "-m", "not ui"]  # -rR: name any flaky rerun in the summary (RERUN <nodeid>) so an intermittent UI flake is diagnosable, not just counted
 # `flaky` is applied to tests/ui by tests/ui/conftest.py. Registered here so it is a known
 # marker even before pytest-rerunfailures is installed in the venv — otherwise the unknown-mark
 # warning would become an error under filterwarnings=error. The marker is inert (no reruns)
@@ -83,6 +91,7 @@ addopts = ["-n", "auto", "--dist", "worksteal", "-rR"]  # -rR: name any flaky re
 tmp_path_retention_policy = "failed"
 markers = [
     "flaky: retry a flaky test on failure (pytest-rerunfailures; inert until the plugin is installed)",
+    "ui: drives a real browser (tests/ui) — applied to the whole directory by its conftest, deselected by the default -m so the fast gate stays fast; `-m ui` runs them",
 ]
 filterwarnings = [
     "error",  # any warning is a failure — drift surfaces immediately

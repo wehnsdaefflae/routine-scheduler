@@ -15,6 +15,90 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.312.0] — 2026-09-06
+
+### Added — an unmet row on the effective surface names the act and lands you on the control
+
+The panel listed every dependency a routine's setup resolves to, diagnosed each one precisely,
+and then abandoned the reader. `FAILS permission:run-history — fails closed: runs=last` told an
+operator exactly what was wrong and left them to know, unaided, that `runs=last` is a dial inside
+a panel further down the same page.
+
+Each unmet row now carries a `fix` — `{kind, …params}` on the read model, words on the terminal
+(`readmodels/remedies.py`, so `rsched validate` and the engine's boot note say the same remedy),
+a link in the console. It scrolls to the owning panel, flashes it, and where the row names one
+thing to change — a dial, a secret's exposure select — lands on that control rather than the top
+of the section. The panel still edits nothing: what changed is that "fixed in the panel that owns
+it" stopped being an instruction the reader had to follow alone.
+
+The affordance rides the setup STRIP above the hero too, which is the copy of the row an operator
+reads first.
+
+### Added — two controls the surface pointed at and did not have
+
+Three fix kinds offered "switch it off", and nothing anywhere switched a capability off. Dropping
+an uncovered capability happened only as an invisible side effect of saving the permissions panel
+(the server's raise-then-floor). It is a control now, in the card that reports the row.
+
+`lane_schedule` reports that a routine's own file records a cron its lane will never let it fire
+at — and the Schedule panel is disabled in exactly that state, correctly, because the lane decides
+when it fires. Clearing the stale cron is a different act from editing a suppressed schedule, and
+it has its own control now.
+
+### Fixed — the diagnosis outlived the fix
+
+Nothing re-read the surface after a change, so performing a fix left the row on screen with a live
+button aiming at a control the repaint had removed: press drop, press save, read the toast, and be
+told you had not done it. Every surface-altering save on the routine page now re-reads once and
+paints all three readers.
+
+### Fixed — a capability a DOMAIN hands down is not the routine's to drop
+
+The routine's own save counts inherited permissions for the floor, so a domain-supplied capability
+survives it — correctly. The fix now carries provenance and sends the reader to the domain's
+editor instead of to a control that would have reported success and changed nothing.
+
+### Fixed — the boot note could end the run it annotates
+
+`_remedy` filled its templates from a hardcoded vocabulary, so a kind naming any other placeholder
+raised `KeyError` — which neither the CLI nor the boot path caught, making the note the thing that
+killed the run. The placeholders are bound to the vocabulary by a test now, and the function fails
+the way its docstring always promised.
+
+### Added — the domain editor covers every key a domain shares
+
+It rendered seven of eleven: `machines`, `models`, `budgets` and `tags` had no control, so a
+migrated domain carrying one was invisible and uneditable. All four are there, mounting the
+routine page's own controls.
+
+The hints were also wrong in a way that mattered, because the eleven keys default in two
+directions: lists UNION with a member's own and cannot be subtracted, mappings merge per key with
+the MEMBER winning. Secrets and Connections asserted the union rule over mapping keys — naming
+precisely the case that is false, a member carrying its own deny-forever tombstone.
+
+`tests/ui/test_lanes.py::test_every_shareable_key_has_an_editor_block` binds the panel to
+`domains.CONFIG_KEYS`, so a twelfth key fails the moment it is declared rather than shipping
+invisible for a release.
+
+### Fixed — the registry served a routine's pre-edit config after a domain save
+
+`load_routine` merges the domain block under a routine's own keys, but the memo fingerprinted only
+`routine.yaml` and `tuning.yaml` — so a domain edit changed what every member effectively holds
+while no member's own file moved, and the console kept answering from before the save. Runs were
+never affected: the engine calls `load_routine` directly, which is why only the reader lied.
+
+### Fixed — a question rendered with the inline-only markdown subset
+
+A run lays out what it found before it asks, so a deferred question arrives carrying a GFM table
+of counts and a numbered list. Rendered inline those reached the page as literal pipes and
+asterisks, in the one place a person has to read carefully enough to decide — while the **bold**
+and the `code` around them rendered, which is what made it look like markdown was simply off.
+
+Five surfaces render a question body; four used the inline subset. `md()` is a superset of
+`mdInline()`, so the block renderer costs nothing anywhere it replaced it. The routine page's
+strip stays a preview — it is a row with an `answer` button beside it, and the whole question is
+one click away where it is answered.
+
 ## [0.311.0] — 2026-09-06
 
 ### Changed — a `group` was four things at once, so the strictest of them quantized the rest

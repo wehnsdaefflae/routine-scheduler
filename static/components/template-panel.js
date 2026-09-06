@@ -39,7 +39,7 @@ function effective(d, key) {
   return d[key] || [];
 }
 
-export function templatePanel(host, slug, d) {
+export function templatePanel(host, slug, d, { onApplied } = {}) {
   let templates = [];
   let detail = d;
 
@@ -96,6 +96,10 @@ export function templatePanel(host, slug, d) {
         { method: "POST", body: { template: sel.value } });
       detail = await api(`/api/routines/${slug}`);
       paint();
+      // Adopting copies permissions, capabilities and rules in, so every reader of the setup
+      // surface below is now answering from a stale join — including the one this panel's own
+      // toast points the reader at.
+      await onApplied?.();
       toast(r.added?.length
         ? `applied ${sel.value}: ${r.added.join(", ")} — the panels below now show them as `
           + "this routine's own"

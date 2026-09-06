@@ -83,6 +83,13 @@ export async function render(view, slug, query = {}) {
   // else. Rendered async and silent when there is nothing outstanding.
   // ONE fetch feeds both readers of the surface: the strip here, and the ability cards
   // below, which hang each resolved need under the ability that owns it.
+  // Each strip row also offers the act that closes it, addressing a `sec-*` anchor that
+  // renderConfigSections puts on the page further down — so the strip is mounted first and
+  // aims at sections that appear after it. The offers are pressed by a reader, long after
+  // this render finishes; a strip mounted into a page whose config never renders would find
+  // nothing to land on and say so on the button instead. Pressed, then, is when it goes stale:
+  // the act happens in a panel below, so the strip is repainted from there — `repaintSetup`
+  // hands that repaint to the one module that knows a change landed.
   const setupHost = el("div", {});
   view.append(setupHost);
   d.surface = await setupCheck(setupHost, slug);
@@ -105,7 +112,12 @@ export async function render(view, slug, query = {}) {
     view.append(el("h2", {}, `Decisions · ${openCount}`),
       el("div", { class: "panel warn" }, d.questions.map((q) =>
         el("div", { class: "row spread", style: "padding:5px 0" },
-          el("span", { class: "prose" }, q.answered ? "✓ " : "❓ ", mdInline(q.question)),
+          // A row with an "answer" button beside it, so this is a PREVIEW: the first line
+          // only, the way a run summary previews on the dashboard. A question long enough to
+          // carry a table is read where it is answered; a block body cannot sit in a row.
+          el("span", { class: "prose", title: q.question },
+            q.answered ? "✓ " : "❓ ",
+            mdInline((q.question || "").split("\n").find((l) => l.trim()) || "(no question)")),
           q.answered
             ? chip("answered — queued for next run", "waiting_user")
             : el("a", { class: "btn small primary",
@@ -134,7 +146,12 @@ export async function render(view, slug, query = {}) {
   // into labeled, collapsible groups. Every section body is untouched; the async panels
   // (permissions/rules/connections/machines) fill node refs that grouping only relocates. --
   const cfgHost = el("div", {});
-  const { refreshHead } = renderConfigSections(cfgHost, d, { slug, titleH1, chipHost, runChip });
+  const { refreshHead, refreshSurface } = renderConfigSections(cfgHost, d, {
+    slug, titleH1, chipHost, runChip,
+    // The strip is a READER of the surface; every writer of it is in these panels. So the
+    // config side re-reads once per change and hands the answer here, where the strip lives.
+    repaintSetup: (surface) => setupCheck(setupHost, slug, surface),
+  });
 
   // recipe health: runs bucketed by the recipe version that produced them (engine-stamped
   // commit; the durable usage stream survives retention). Flags a regressing recipe change —
@@ -180,6 +197,9 @@ export async function render(view, slug, query = {}) {
     messagesPane?.reload();   // a run drains the inbox at boot and files reports as it works
     if (ev.event === "run_finished") {
       health.reload();
+      // a run moves the surface too: it can meet the last goal condition, write the phase file
+      // the `state:phase` row asks for, or author the util a held capability names
+      refreshSurface();
       try { renderRuns(await api(`/api/routines/${slug}`)); } catch { /* keep the old table */ }
     }
   };

@@ -35,6 +35,52 @@ from rsched.endpoints import EndpointRegistry
 from rsched.endpoints.base import Completion
 
 
+def _static_is_dirty() -> bool:
+    """Does the working tree carry an uncommitted change under `static/`?
+
+    Cheap, and it is the one signal that turns "run the browser tests when necessary" from a
+    thing to remember into a thing the run says out loud. Any failure — no git, not a
+    checkout, git too slow — answers False: this is a reminder, and a reminder that breaks a
+    test run is worse than the drift it watches for.
+    """
+    import subprocess
+
+    try:
+        out = subprocess.run(["git", "status", "--porcelain", "--", "static"],
+                             cwd=Path(__file__).resolve().parents[1],
+                             capture_output=True, text=True, timeout=5, check=False)
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return bool(out.stdout.strip())
+
+
+def pytest_terminal_summary(terminalreporter) -> None:
+    """Name the safety net that did not run.
+
+    The browser suite is what lets the frontend be reworked boldly, so deselecting it by
+    default trades that away for a two-minute inner loop. The trade is sound only while the
+    absence is LOUD — a suite silently not running reads exactly like a suite passing, which
+    is how the console shipped a stray `null`, a dock left in the page flow and a
+    table-of-contents nobody could see.
+
+    Keyed on the MARKER EXPRESSION rather than on a deselected count, because the count is
+    not knowable here: `pytest_deselected` fires inside each xdist worker while this runs in
+    the controller, so a count collected that way is right under `-n0` and silently empty on
+    every parallel run — the default.
+    """
+    expr = getattr(terminalreporter.config.option, "markexpr", "") or ""
+    if "not ui" not in expr.replace("  ", " "):
+        return
+    w = terminalreporter
+    w.write_sep("-", "the browser suite did not run")
+    w.write_line("  uv run pytest -m ui        the browser suite")
+    w.write_line('  uv run pytest -m ""       everything, which is what ships a release')
+    if _static_is_dirty():
+        w.write_line("")
+        w.write_line("  static/ HAS UNCOMMITTED CHANGES and none of them were exercised.",
+                     yellow=True, bold=True)
+
+
 def pytest_xdist_auto_num_workers(config) -> int:
     """What `-n auto` means for THIS suite: one worker fewer than the machine has cores.
 

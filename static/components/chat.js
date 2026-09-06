@@ -211,7 +211,8 @@ export function createChat(container, opts = {}) {
 
   function questionInline(ev) {
     const p = ev.payload;
-    const head = el("div", { class: "msg-body" }, "❓ ", mdInline(p.question || ""),
+    const head = el("div", { class: "msg-body" },
+      el("div", { class: "evlabel" }, "❓"), md(p.question || ""),
       p.default ? el("div", { class: "faint small" }, `↪ without an answer: ${p.default}`) : null);
     if (!opts.answer || !p.qid) return head;
     if (p.mode !== "deferred") {

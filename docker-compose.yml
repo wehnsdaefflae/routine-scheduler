@@ -15,6 +15,13 @@ services:
         UID: "${RSCHED_UID:-1000}"
         GID: "${RSCHED_GID:-1000}"
     image: rsched:latest
+    # PID 1 must REAP. The daemon is PID 1 here and it waits only on the runs it spawned, so a
+    # grandchild orphaned by an exiting util — a browser util's headless Chrome is the usual one
+    # — is re-parented to it and stays <defunct> forever. 158 had accumulated in 7 hours of
+    # uptime. `init: true` puts tini in front, which reaps orphans and forwards signals, so the
+    # drain-and-exit restart still exits the container and `restart: unless-stopped` still
+    # relaunches it. The daemon keeps reaping its OWN children; tini only takes the orphans.
+    init: true
     container_name: rsched
     restart: unless-stopped          # self-audit's drain-and-exit restart relaunches here, like Restart=always
     stop_grace_period: 20s           # matches the old systemd TimeoutStopSec (uvicorn bounds its own to 10s)
@@ -118,6 +125,9 @@ services:
         UID: "${RSCHED_UID:-1000}"
         GID: "${RSCHED_GID:-1000}"
     image: rsched-chrome:latest
+    # Chrome is PID 1 here and reaps nothing either; every renderer it outlives becomes a
+    # zombie. Same reason as the engine container above.
+    init: true
     container_name: rsched-chrome
     restart: unless-stopped
     networks:

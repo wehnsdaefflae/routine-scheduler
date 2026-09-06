@@ -1087,6 +1087,35 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
   .setup-row { grid-template-columns: 1fr; gap: 3px; }
 }
 
+/* --- effective surface: the fix affordance (components/surface-view.js, setupcheck.js) -----
+   The table edits nothing, so an unmet row holds one thing to press — the line that names the
+   act and lands you on the control that performs it. SIGNAL, because that is the colour of
+   something to click; a satisfied row carries none, so the affordance is also the reading
+   "this one is on you". A row with two honest remedies leads with the one whose blast radius
+   is this routine and offers the wider one after .fix-or, which is a word and not a control:
+   the reader chooses between the two by reading them, so the second must not read as the
+   first's continuation. Leaving the routine page is a different act from a jump within it;
+   .fix-away is marked as one. The cell around it is `.prose` — a reading serif, because the
+   diagnosis above is written ABOUT this routine. An instruction to the operator is the
+   console's own voice, so the line speaks in the interface face. */
+.fix-line {
+  display: flex; gap: 7px; align-items: baseline; flex-wrap: wrap; margin-top: 5px;
+  font-family: var(--f-display); line-height: 1.45;
+}
+.fix-link {
+  padding: 0; border: 0; background: none; font: inherit; font-size: 11.5px;
+  color: var(--signal); cursor: pointer; text-align: left;
+}
+.fix-link:hover {
+  color: var(--signal-2); text-decoration: underline; text-underline-offset: 2px;
+}
+.fix-link:disabled { color: var(--ink-3); cursor: default; text-decoration: none; }
+.fix-away, .fix-away:hover { text-decoration: underline dotted; text-underline-offset: 2px; }
+.fix-away::after { content: " ↗"; }
+.fix-act { font-size: 11.5px; color: var(--ink-2); }
+.fix-where { font-size: 11px; color: var(--ink-3); }
+.fix-or { font-size: 11px; color: var(--ink-3); font-style: italic; }
+
 /* --- ability cards + catalogue (components/abilities.js) ---------------------------------
    Held abilities are CARDS with their whole requirement stack; everything else is a compact
    catalogue row. An ability that is off has nothing outstanding, so it gets no stack and no

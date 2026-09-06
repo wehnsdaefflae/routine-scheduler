@@ -100,9 +100,16 @@ export function createTranscript(container, opts = {}) {
   function questionNode(ev) {
     const p = ev.payload;
     const label = p.type === "util-approval" ? `${p.mode} · util approval` : p.mode;
-    const head = el("span", {}, `❓ [${label}] `, mdInline(p.question),
-      p.options?.length ? ` — options: ${p.options.join(" | ")}` : null,
-      p.default ? el("span", { class: "faint" }, ` · without an answer: ${p.default}`) : null);
+    // Same shape as a user message below: label as its own line, body as a block. The
+    // question is the one event in the stream a person has to act on, so a table or a list it
+    // lays out has to render — and the options and the default read as their own lines rather
+    // than as a tail on a paragraph.
+    const head = el("div", {}, el("div", { class: "evlabel" }, `❓ [${label}]`),
+      md(p.question || "", "md prose"),
+      p.options?.length
+        ? el("div", { class: "faint small" }, `options: ${p.options.join(" | ")}`) : null,
+      p.default
+        ? el("div", { class: "faint small" }, `without an answer: ${p.default}`) : null);
     if (!opts.answer || !p.qid) return el("div", { class: "ev question" }, head);
     if (p.mode !== "deferred") {
       // BLOCKING: the run view's pinned panel owns the ONE full form (free text, ask-back,

@@ -26,8 +26,43 @@ import yaml
 from playwright.sync_api import expect
 
 from rsched import domains, lane_runs, lanes
+from rsched.config import MachineConfig
 
 from .conftest import TOKEN
+
+# One block per control in the domain editor — TEN of them for the ELEVEN keys a domain may
+# share (`domains.CONFIG_KEYS`), because permissions and capabilities are one two-layer panel
+# and the fs roots take a block each.
+#: Every key a domain may share → the editor block that writes it. Keyed on the KEY, not on the
+#: block, so the assertion below binds the panel to `domains.CONFIG_KEYS` itself: a twelfth
+#: shareable key fails here, in Python, the moment it is declared — no browser, no waiting for
+#: someone to notice. That binding is the point. The panel shipped a whole release rendering
+#: seven of eleven keys with nothing red, because the only thing that knew the full set was
+#: a tuple in another module. Two keys share one block (the two permission layers are one
+#: control, so the map is many-to-one).
+DOMAIN_BLOCK_FOR = {
+    "permissions": "Permissions & capabilities",
+    "capabilities": "Permissions & capabilities",
+    "rules": "General rules",
+    "grants": "Secrets",
+    "connections": "Connections",
+    "machines": "Machines",
+    "fs_read_roots": "Filesystem — readable",
+    "fs_write_roots": "Filesystem — writable",
+    "models": "Models",
+    "budgets": "Budgets",
+    "tags": "Tags",
+}
+DOMAIN_BLOCKS = tuple(dict.fromkeys(DOMAIN_BLOCK_FOR.values()))
+
+
+def test_every_shareable_key_has_an_editor_block():
+    """The binding, without a browser: a key a domain may share that no block writes is a key
+    an operator can neither see nor change; the only way to find out was to look.
+    """
+    from rsched.domains import CONFIG_KEYS
+
+    assert set(DOMAIN_BLOCK_FOR) == set(CONFIG_KEYS)
 
 
 def _join_domain(ui, slug: str, domain_id: str) -> None:
@@ -38,6 +73,31 @@ def _join_domain(ui, slug: str, domain_id: str) -> None:
     cfg = yaml.safe_load(path.read_text(encoding="utf-8"))
     cfg["domain"] = domain_id
     path.write_text(yaml.safe_dump(cfg), encoding="utf-8")
+
+
+def _open_domain_editor(ui, ui_page, domain_id: str):
+    """The shared-config editor for one domain, reached the way an operator reaches it: from
+    that domain's row in the Routines page's domains section, which is the only surface either
+    object has (D80)."""
+    ui_page.goto(f"{ui.url}/#/routines")
+    row = ui_page.locator(f'[data-domain-row="{domain_id}"]')
+    row.wait_for(timeout=10_000)
+    row.locator("[data-domain-edit]").click()
+    panel = ui_page.locator(f'[data-domain-config="{domain_id}"]')
+    expect(panel).to_be_visible(timeout=10_000)
+    return panel
+
+
+def _shared(ui, ui_page, domain_id: str, key: str):
+    """One key of the domain's STORED config, polled until the save lands. Every control in the
+    panel writes through the API, so the store is where a save is confirmed — a toast reports
+    only what the page believes."""
+    for _ in range(50):
+        value = (domains.get(ui.routines, domain_id) or {}).get("config", {}).get(key)
+        if value:
+            return value
+        ui_page.wait_for_timeout(100)
+    return None
 
 
 def _detail(ui, ui_page, slug: str) -> dict:
@@ -225,10 +285,6 @@ def test_domains_section_edits_the_shared_config(ui, ui_page):
     panel = ui_page.locator(f'[data-domain-config="{dom["id"]}"]')
     expect(panel).to_be_visible(timeout=10_000)
     expect(panel).to_contain_text("inherits")
-    # the blocks that make the shared half editable are all mounted
-    for title in ("Permissions & capabilities", "General rules", "Secrets", "Connections",
-                  "Filesystem — readable", "Filesystem — writable"):
-        expect(panel.locator(f'[data-dcfg-block="{title}"]')).to_be_visible()
 
     # a save writes the domain's config (a secret grant is the simplest control to drive
     # headlessly AND the one whose result is visible in the store)
@@ -238,6 +294,83 @@ def test_domains_section_edits_the_shared_config(ui, ui_page):
     ui_page.wait_for_timeout(300)
     assert domains.get(ui.routines, dom["id"])["config"]["grants"] == {
         "secret:FAU_TOKEN": True}
+
+
+def test_domain_editor_covers_every_shareable_key(ui, ui_page):
+    """A domain may share ELEVEN routine.yaml keys (`domains.CONFIG_KEYS`) and each one is
+    editable here. A key with no control is a key a migrated domain carries invisibly: the save
+    path spreads the whole block, so nothing is destroyed — nothing can be changed either, which
+    leaves the config a member inherits answering to a surface that does not exist.
+
+    `deliberation` is the one control the routine page's neighbouring sections would bring
+    along that must NOT be here. It is a tuning.yaml handle rather than routine.yaml config, so
+    it is not among the shareable keys — a slider here would look exactly like the ones beside
+    it and write nothing at all."""
+    dom = domains.create(ui.routines, name="FAU")
+    panel = _open_domain_editor(ui, ui_page, dom["id"])
+    for title in DOMAIN_BLOCKS:
+        expect(panel.locator(f'[data-dcfg-block="{title}"]')).to_be_visible()
+    # exactly these: a count pins the absent control too, whatever a later copy-paste names it
+    expect(panel.locator("[data-dcfg-block]")).to_have_count(len(DOMAIN_BLOCKS))
+    expect(panel.locator(".delib")).to_have_count(0)
+    expect(panel).not_to_contain_text("deliberation")
+
+
+def test_domain_shares_machines_models_budgets_and_tags(ui, ui_page):
+    """The four controls round-trip to the store. What the member reads back then shows the two
+    merge halves at once: machines and tags are LIST keys that union onto the member's own,
+    while models and budgets are MAPPINGS merged per key with the member's value winning — the
+    shared `main` model reaches a routine that binds no model, the shared ceiling loses to the
+    `max_turns` that routine sets itself.
+
+    Each ceiling is shared on its OWN: one filled budget row saves while the rest stay blank,
+    because a layer that had to fill all eight would impose seven values nobody chose."""
+    mac = MachineConfig(host="10.0.0.9", user="rsched", description="RTX 4090", tags=["gpu"])
+    mac.name = "gpu-box"
+    ui.server_cfg.machines = {"gpu-box": mac}   # the live catalog the API reads
+    dom = domains.create(ui.routines, name="FAU")
+    _join_domain(ui, "uir", dom["id"])
+    panel = _open_domain_editor(ui, ui_page, dom["id"])
+
+    # Each save is awaited to its acknowledgement before the next one starts: every control
+    # PATCHes the WHOLE block built from the record the last answer returned, so a click that
+    # overtakes the answer before it would write a block missing the key just stored.
+    toast = ui_page.locator("#toast:not([hidden])")
+
+    machines = panel.locator('[data-dcfg-block="Machines"]')
+    machines.locator("label", has_text="gpu-box").locator("input[type=checkbox]").check()
+    machines.get_by_role("button", name="save machines").click()
+    expect(toast).to_contain_text("machines saved", timeout=10_000)
+    assert _shared(ui, ui_page, dom["id"], "machines") == ["gpu-box"]
+
+    models = panel.locator('[data-dcfg-block="Models"]')
+    models.locator('[data-domain-model="main"]').select_option("m")
+    models.locator("[data-domain-models-save]").click()
+    expect(toast).to_contain_text("domain models saved", timeout=10_000)
+    assert _shared(ui, ui_page, dom["id"], "models") == {"main": "m"}
+
+    budgets = panel.locator('[data-dcfg-block="Budgets"]')
+    budgets.locator('[data-domain-budget="max_turns"]').fill("42")
+    budgets.locator("[data-domain-budgets-save]").click()
+    expect(toast).to_contain_text("domain budgets saved", timeout=10_000)
+    assert _shared(ui, ui_page, dom["id"], "budgets") == {"max_turns": 42}
+
+    # the tag editor has no button: every change saves, the chip appears once it landed
+    tags = panel.locator('[data-dcfg-block="Tags"]')
+    tags.locator(".tags input").fill("fau")
+    tags.locator(".tags input").press("Enter")
+    expect(tags.locator(".tag", has_text="fau")).to_be_visible(timeout=10_000)
+    assert _shared(ui, ui_page, dom["id"], "tags") == ["fau"]
+
+    detail = _detail(ui, ui_page, "uir")
+    assert detail["machines"] == ["gpu-box"]
+    assert detail["models"]["main"] == "m"
+    assert detail["tags"] == ["fau"]
+    assert detail["budgets"]["max_turns"] == 10        # the member's own ceiling stands
+    assert set(detail["inherited"]) >= {"machines", "models", "tags"}
+    # budgets is absent from the provenance: the one ceiling the domain sets is one the member
+    # sets too, so the domain contributed nothing to report
+    assert "budgets" not in detail["inherited"]
 
 
 def test_routine_page_domain_picker_joins_a_domain(ui, ui_page):

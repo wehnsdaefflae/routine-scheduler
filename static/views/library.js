@@ -132,7 +132,15 @@ export async function render(view, sub, query = {}) {
           el("td", { class: "muted prose", style: "max-width:420px" }, r.description || ""),
           el("td", {}, el("button", { class: "btn ghost small",
             onclick: () => removeReminder(r) }, "remove")))));
-    section("Global utils", "the tools routines run (created + revised on demand, selftest-gated)",
+    // The one section with no "+ new": a util is AUTHORED by a run (`write_util`, selftest-gated,
+    // at that routine's approval level), never typed in here. The description says so, because a
+    // catalogue that offers every other kind a way to add one leaves the silence to be read as a
+    // missing button — and a routine whose setup surface reports a util the library lacks is
+    // waiting on a RUN, not on this page. Revise and delete are the levers that do live here.
+    section("Global utils",
+      "the tools routines run — each one written by a RUN through write_util (selftest-gated, "
+      + "at that routine's approval level), which is why there is no + new here; open one to "
+      + "revise or delete it",
       data.utils.filter((u) => matches(u.tags)).map((u) =>
         item(u.name, [], u.tags, () => openUtil(u.name), u.summary,
              `#/library/util/${u.name}`)));

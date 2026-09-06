@@ -185,7 +185,8 @@ def _setup_gap_note(loop) -> None:
     no note rather than a dead run: a diagnostic that can stop a run is worse than the gap it
     reports.
     """
-    from ..readmodels.surface import BOOT_SEVERITIES, routine_surface, surface_lines
+    from ..readmodels.remedies import surface_lines
+    from ..readmodels.surface import BOOT_SEVERITIES, routine_surface
 
     ctx = loop.ctx
     if ctx.depth > 0:                # a child inherits its parent's resources, not its config

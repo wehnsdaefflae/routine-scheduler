@@ -133,7 +133,8 @@ def cmd_validate(args) -> int:
                sorted(p for p in server.routines_home.iterdir()
                       if p.is_dir() and not p.name.startswith("."))
                if server.routines_home.is_dir() else [])
-    from .readmodels.surface import routine_surface, surface_lines
+    from .readmodels.remedies import surface_lines
+    from .readmodels.surface import routine_surface
 
     for d in targets:
         cfg, problems = load_routine(d)

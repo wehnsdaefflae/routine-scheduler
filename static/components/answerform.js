@@ -8,7 +8,7 @@
 
 import { api } from "/static/api.js";
 import { forgetField } from "/static/formpersist.js";
-import { mdInline } from "/static/md.js";
+import { md } from "/static/md.js";
 import { el, toast, when } from "/static/util.js";
 
 export function answerForm(q, {
@@ -172,11 +172,14 @@ export function questionPanel(box, q, { onAnswered } = {}) {
     toastText: (i) => (i ? "sent — the model will reply and re-ask" : "answer sent"),
     onSuccess: () => { box.replaceChildren(); onAnswered?.(); },
   });
+  // Label on its own line, body as a BLOCK: a question is prose the user has to read before
+  // deciding; a run that lays out a table of counts or a numbered list before asking gets it
+  // rendered rather than shown as literal pipes. The label cannot share a line with a block.
   box.append(el("div", { class: "panel warn mt" },
-    el("div", { class: "prose" },
-      "❓ ", q.type === "util-approval" ? el("strong", {}, "[util approval] ")
-        : q.type === "request" ? el("strong", {}, "[access request] ") : null,
-      mdInline(q.question || "")),
+    el("div", { class: "evlabel" },
+      "❓ ", q.type === "util-approval" ? el("strong", {}, "[util approval]")
+        : q.type === "request" ? el("strong", {}, "[access request]") : null),
+    md(q.question || "", "md prose"),
     q.expires ? el("div", { class: "faint small" },
       "the run continues without you ", when(q.expires, { mode: "rel" }),
       " — also answerable on the Decisions page") : null,

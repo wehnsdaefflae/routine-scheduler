@@ -15,9 +15,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 import yaml
+from fastapi.testclient import TestClient
 
+from conftest import TEST_TOKEN, make_test_server
 from rsched import domains
+from rsched.config import MachineConfig
+from rsched.web.app import create_app
 
 TS = "20260805-070000"
 
@@ -278,3 +283,63 @@ def test_a_dial_matching_the_domain_is_not_recorded_on_the_routine(tmp_path):
     assert "runs" not in strip_shared_dials({"runs": "last"}, shared, {"runs": "last"})
     assert strip_shared_dials({"runs": "all"}, shared, {"runs": "all"}) == {"runs": "all"}
     assert strip_shared_dials(caps, {}, submitted) == caps
+
+
+# -- the API surface (web/api_domains.py) -----------------------------------------------------
+
+@pytest.fixture
+def client(tmp_path, make_routine):
+    """(TestClient, routines_home) over the domain API: one machine in the catalog and one
+    routine, so a domain's payload can be held against the routine detail's."""
+    make_routine(slug="apir")
+    server = make_test_server(tmp_path)
+    mac = MachineConfig(host="10.0.0.9", user="rs", description="RTX 4090", tags=["gpu"])
+    mac.name = "gpu-box"
+    server.machines["gpu-box"] = mac
+    app = create_app(server, with_scheduler=False)
+    with TestClient(app) as c:
+        c.headers["Authorization"] = f"Bearer {TEST_TOKEN}"
+        yield c, server.routines_home
+
+
+def test_a_domain_carries_the_catalogs_its_shared_controls_need(client):
+    """The shared block is edited with the ROUTINE PAGE's own controls, so a domain record is
+    handed the same catalogs the routine detail is: the model names plus the system model
+    behind the three role pickers, the machine catalog behind the machines card.
+
+    Held against the routine detail rather than against a literal alone, because ONE card
+    consumes either payload — a key present on one surface and absent on the other is a
+    machine row that renders half its columns depending on which page mounted it.
+    """
+    c, home = client
+    did = domains.create(home, name="FAU", config={})["id"]
+    rec = next(d for d in c.get("/api/domains").json()["domains"] if d["id"] == did)
+    detail = c.get("/api/routines/apir").json()
+    assert rec["catalog"] == detail["catalog"] == ["m"]
+    assert rec["system_model"] == detail["system_model"] == "m"
+    assert rec["machine_catalog"] == detail["machine_catalog"]
+    assert rec["machine_catalog"] == [{"name": "gpu-box", "description": "RTX 4090",
+                                       "host": "10.0.0.9", "user": "rs", "tags": ["gpu"]}]
+
+
+def test_the_shared_block_round_trips_every_key_a_domain_may_set(client):
+    """machines / models / budgets / tags are in CONFIG_KEYS, so a save keeps them and the
+    record hands them back to the controls that wrote them — on disk and on the next read.
+    A key outside that set is dropped: identity and lifecycle say WHICH routine this is and
+    when it runs, so sharing them is meaningless or destructive.
+    """
+    c, home = client
+    did = domains.create(home, name="FAU", config={})["id"]
+    shared = {"machines": ["gpu-box"], "models": {"main": "m"},
+              "budgets": {"max_turns": 99}, "tags": ["fau", "research"]}
+    r = c.patch(f"/api/domains/{did}", json={"config": {**shared, "enabled": False,
+                                                       "schedule": {"cron": "0 7 * * *"}}})
+    assert r.status_code == 200, r.text
+    assert r.json()["config"] == shared
+    assert domains.get(home, did)["config"] == shared
+    assert c.get("/api/domains").json()["domains"][0]["config"] == shared
+    # …and a machine off the catalog is refused BY NAME. The picker offers catalog names only;
+    # a binding to anything else resolves to nothing at run time.
+    bad = c.patch(f"/api/domains/{did}", json={"config": {**shared, "machines": ["ghost"]}})
+    assert bad.status_code == 400 and "ghost" in str(bad.json()["detail"])
+    assert domains.get(home, did)["config"] == shared          # nothing was saved

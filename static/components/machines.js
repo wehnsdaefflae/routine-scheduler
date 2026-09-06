@@ -1,5 +1,6 @@
 // The remote-machine binding card (D102): the instance's SSH-host catalog as checkboxes, so
-// a routine OR a conversation binds the machines it may act on. Shared exactly like
+// a routine, a conversation OR a whole domain binds the machines it may act on. Shared
+// exactly like
 // connections.js — a conversation is routine-shaped, and the engine's env injection
 // (RSCHED_MACHINES / RSCHED_MACHINE_KEYS) reads routine.yaml `machines:` either way.
 // `catalog` is the detail payload's `machine_catalog` (name/description/host/user/tags),

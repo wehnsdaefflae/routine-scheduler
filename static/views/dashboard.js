@@ -318,7 +318,7 @@ export async function render(view) {
       lastDomainSig = domainSig();
     };
     const edit = el("button", { class: "btn small ghost", "data-domain-edit": "",
-      title: "edit what this domain shares: permissions, rules, secrets, connections, roots" },
+      title: "edit the config block this domain's members inherit" },
       "✎ edit");
     edit.onclick = () => {
       if (!built) { built = true; host.append(domainConfigPanel(d, { onSaved })); }
