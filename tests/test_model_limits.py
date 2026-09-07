@@ -12,6 +12,7 @@ have ~10% of its 1M window left for the prompt.
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 
 import httpx
 import pytest
@@ -35,7 +36,7 @@ def _server(tmp_path, *, endpoints=None, models=None) -> ServerConfig:
 def _cache(server, **rows):
     limits.cache_path(server.routines_home).parent.mkdir(parents=True, exist_ok=True)
     limits.cache_path(server.routines_home).write_text(
-        json.dumps({"fetched": "2026-09-05T09:00:00+00:00", **rows}), encoding="utf-8")
+        json.dumps({"fetched": datetime.now(UTC).isoformat(), **rows}), encoding="utf-8")
 
 
 # ---- precedence ---------------------------------------------------------------------------------
