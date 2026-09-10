@@ -258,6 +258,40 @@ def test_api_items_merges_filters_and_carries_the_header(api_client):
             c.get("/api/items?routine=routine-improver").json()["items"]} == {"R1"}
 
 
+def test_api_items_does_not_reparse_the_changelog_on_a_warm_request(api_client, monkeypatch):
+    """F450: `/api/items` re-parsed the whole changelog file on EVERY request — even a warm
+    one whose `build()` was already a memo hit — so under concurrent heavy-run load the
+    177 KB parse ran per request on a bounded threadpool. The tail is now memoized on the
+    changelog's own stat-fingerprint, so a second request over unchanged sources parses it
+    zero times. The counter catches BOTH callers (build's internal parse and the handler
+    tail): a cold request is >=1, and only the warm request's zero proves the fix."""
+    c, tmp = api_client
+    routines = tmp / "routines"
+    audit = routines / "self-audit" / "audit"
+    audit.mkdir(parents=True)
+    (audit / "report.json").write_text(json.dumps(REPORT), encoding="utf-8")
+    (audit / "changelog.jsonl").write_text(CHANGELOG, encoding="utf-8")
+    (routines / ".control").mkdir(parents=True, exist_ok=True)
+    (routines / ".control" / "reports.jsonl").write_text(
+        "".join(json.dumps(b) + "\n" for b in BUGS), encoding="utf-8")
+    memo.reset()
+
+    calls = {"n": 0}
+    real = items_model.read_changelog
+
+    def counting(path):
+        calls["n"] += 1
+        return real(path)
+
+    monkeypatch.setattr(items_model, "read_changelog", counting)
+
+    assert c.get("/api/items").status_code == 200      # cold: warms build() and the tail memo
+    assert calls["n"] >= 1                              # the cold request does parse it
+    calls["n"] = 0
+    assert c.get("/api/items").status_code == 200      # warm: every source file is unchanged
+    assert calls["n"] == 0                             # F450 — the changelog is NOT re-parsed
+
+
 def test_api_items_without_the_self_audit_routine(api_client):
     """No maintenance record — but the page still answers, because a summary is an item too and
     comes from `registry.scan` rather than from `report.json` (there are no runs here either,

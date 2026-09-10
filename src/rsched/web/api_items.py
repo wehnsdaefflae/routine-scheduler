@@ -20,7 +20,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from .. import priorities, registry
 from ..paths import read_json
 from ..readmodels import items as items_model
-from ..readmodels import summaries
+from ..readmodels import memo, summaries
 from ..readmodels.items import SELF_AUDIT_SLUG
 from .api_audit import _routine_dir, answered_decisions, queued_messages
 
@@ -111,7 +111,10 @@ def items(request: Request,
         last_run = {"run_id": r.run_id, "ts": r.ts, "state": r.state, "summary": r.summary[:400]}
     # The changelog as a whole rides along: an item's own history is on its card, but rows
     # that name no item would otherwise be unreachable once the Audit page is gone.
-    changelog = items_model.read_changelog(routine_dir / "audit" / "changelog.jsonl")
+    changelog_path = routine_dir / "audit" / "changelog.jsonl"
+    changelog = memo.memoized_shared(
+        f"changelog:{changelog_path}", [changelog_path],
+        lambda: items_model.read_changelog(changelog_path))
     return {"exists": True, "routine": SELF_AUDIT_SLUG,
             "items": shown[:max(1, limit)], "total": len(shown),
             # recomputed over the MERGED set: `counts` is documented as always being over the

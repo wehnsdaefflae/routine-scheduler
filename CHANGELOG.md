@@ -15,6 +15,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.312.1] — 2026-09-10
+
+### Fixed — the item index re-parsed the whole changelog on every request
+
+`GET /api/items` memoized its five-file merge but then re-parsed the 177 KB `changelog.jsonl`
+a second time, unmemoized, at the handler tail — on every request, warm or cold, on the bounded
+read-model threadpool. Under concurrent heavy-run load (a run filing reports while the console
+polls the Messages page) that parse ran once per request and the endpoint starved, surfacing as
+the "super sluggish" console and the `NetworkError` toasts (F450). The tail read now rides the
+same stat-fingerprint memo (`memo.memoized_shared` on the changelog's own inode/mtime/size), so
+a request over unchanged sources parses it zero times. The architectural remainder — the sync
+read-model handlers on a bounded threadpool — is tracked as D129.
+
 ## [0.312.0] — 2026-09-06
 
 ### Added — an unmet row on the effective surface names the act and lands you on the control
