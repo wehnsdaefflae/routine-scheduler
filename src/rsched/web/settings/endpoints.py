@@ -5,6 +5,7 @@ and a live test call.
 from __future__ import annotations
 
 from collections.abc import Callable
+from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
@@ -18,7 +19,6 @@ from ...config import (
 )
 from ...endpoints import limits
 from ...endpoints.base import api_key_source
-from ...endpoints.claude_cli_wire import token_source
 from ..model_fit import fit_fields
 from .common import reload_into, rewrite_block, server_of, update_config
 
@@ -33,11 +33,9 @@ MIN_PLAUSIBLE_MAX_TOKENS = 4096
 
 def _key_source(ep: EndpointConfig) -> dict:
     """Which rung of the credential ladder serves this endpoint RIGHT NOW — labels only,
-    never values. Computed by the transport layer itself (endpoints.base / claude_cli),
+    never values. Computed by the transport layer itself (endpoints.base),
     beside the resolvers it mirrors, so the indicator can't drift from what a run does.
     """
-    if ep.kind == "claude-cli":
-        return token_source(ep.credentials_env, ep.api_key)
     src = api_key_source(api_key=ep.api_key, key_var=ep.key_var,
                          key_env_file=ep.key_env_file)
     if src["source"] == "none" and ep.kind == "openai":
@@ -48,7 +46,9 @@ def _key_source(ep: EndpointConfig) -> dict:
 def _endpoint_view(name: str, ep: EndpointConfig) -> dict:
     return {"name": name, "kind": ep.kind, "base_url": ep.base_url,
             "key_env_file": ep.key_env_file, "key_var": ep.key_var,
-            "credentials_env": ep.credentials_env,
+            "quota_source": ep.quota_source, "quota_key_var": ep.quota_key_var,
+            "quota_auth_index": ep.quota_auth_index,
+            "has_subscription_quota": bool(ep.quota_source),
             "schema_mode": ep.schema_mode, "context_chars": ep.context_chars,
             "temperature": ep.temperature, "max_tokens": ep.max_tokens,
             "extra_body": ep.extra_body,
@@ -163,7 +163,9 @@ class EndpointBody(BaseModel):
     api_key: str = ""
     key_env_file: str = ""
     key_var: str = ""
-    credentials_env: str = ""         # claude-cli only: subscription-token env file path
+    quota_source: Literal["", "cliproxy"] | None = None
+    quota_key_var: str | None = None
+    quota_auth_index: str | None = None
     schema_mode: str = "json_schema"
     context_chars: int = 100_000     # a DEFAULT catalog models inherit (per-model window wins)
     temperature: float | None = None  # a DEFAULT catalog models inherit
@@ -189,11 +191,18 @@ def upsert_endpoint(request: Request, body: EndpointBody, name: str | None = Non
             spec["api_key"] = prev["api_key"]
         # A PUT is a full replace, but the credential-save form sends only a subset — preserve
         # every config-only / omitted field so saving a key (or editing base_url) never silently
-        # drops one. credentials_env + key_env_file were missing here, so editing a claude-cli
-        # endpoint wiped a custom token path back to the default; both are covered now.
-        for field in ("temperature", "extra_body", "max_tokens", "credentials_env",
+        # drops one, including a custom key_env_file.
+        for field in ("temperature", "extra_body", "max_tokens",
                       "key_env_file"):
             if field not in spec and field in prev:
+                spec[field] = prev[field]
+        for field in ("base_url", "key_var"):
+            if field not in body.model_fields_set and field in prev:
+                spec[field] = prev[field]
+        for field in ("quota_source", "quota_key_var", "quota_auth_index"):
+            if field in body.model_fields_set and getattr(body, field) is not None:
+                spec[field] = getattr(body, field)
+            elif field in prev:
                 spec[field] = prev[field]
         endpoints[key] = spec
 

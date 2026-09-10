@@ -187,29 +187,22 @@ the limits (single-writer status.json preserved).
 ## Endpoints (endpoints/) — transports, not agents
 
 Chat-completion adapters implementing one `ChatEndpoint.complete(...)` (`base.py` — tenacity retries on
-retryable `EndpointError`s; a 200 with an unparseable body is one of them). All three honor
+retryable `EndpointError`s; a 200 with an unparseable body is one of them). Both honor
 `ModelRef.effort` and report prompt-cache traffic as usage `cached_in`/`cache_write` (kept out of `in`).
 `complete()` takes an optional `session` caching hint (a stable key per run) adapters may ignore.
-The credential ladder (`resolve_api_key`: inline api_key → key_var in Secrets → key_env_file; claude-cli:
-env → inline → Secrets → credentials_env) has label-only mirrors BESIDE the resolvers
-(`api_key_source` / `token_source`) feeding the Settings card's "credential in use" line — which rung is
+The credential ladder (`resolve_api_key`: inline api_key → key_var in Secrets → key_env_file) has label-only mirrors BESIDE the resolvers
+(`api_key_source`) feeding the Settings card's "credential in use" line — which rung is
 live, plus a shadow warning when an inline key hides a set secret; key values never leave the server.
-Three kinds:
+Two kinds:
 - **openai** — any OpenAI-compatible API (OpenRouter, vLLM, Ollama). Schema via json_schema / json_object
   / ollama-native; degrades gracefully (retries without `response_format`/`reasoning` on a 400, and without
   `response_format` on a 503 that hides a schema-incapable backend). Caching
   is the provider's implicit prefix caching; `cached_tokens` is surfaced from usage details.
-- **anthropic** — Messages API, METERED per-token billing. Schema via a single forced tool-use; effort via
+- **anthropic** — Messages API, direct or through CLIProxyAPI for subscription authentication. Schema via a single forced tool-use; effort via
   `output_config`, degraded on a 400 that names it. Always sets `cache_control` breakpoints (tools +
   system static, a moving one on the last message) — ~0.1x reads on the whole prefix every turn; a 400
   naming cache_control gets a degraded retry without the markers.
-- **claude-cli** — `claude -p` fully stripped (`--tools ""`, no MCP/settings, our `--system-prompt`
-  replacing its own, `--json-schema`), SUBSCRIPTION-billed via `CLAUDE_CODE_OAUTH_TOKEN`. Metered-auth env
-  vars are scrubbed so it can't silently fall back to API billing. With a `session` key it keeps ONE CLI
-  session per run (`--session-id` / `--resume`, stable cwd under `~/.cache/rsched/claude-cli/`) and sends
-  per-turn deltas so Anthropic's cache serves the prior turns; any prefix change (compaction, resume in a
-  new process) or resume failure reseeds a fresh session from the full conversation. Without a session
-  key: one-shot, temp cwd, `--no-session-persistence` (unchanged).
+
 
 The **model catalog** (`config.ModelConfig`, `ServerConfig.models`) binds a provider model id to
 an endpoint and owns the PER-MODEL attributes — `multimodal`, `context_chars`, `effort`,

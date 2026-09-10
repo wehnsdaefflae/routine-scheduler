@@ -81,13 +81,14 @@ function statsLine(run) {
   return parts.join(" · ");
 }
 
-//: The claude-cli endpoints are the ones with a subscription behind them. The quota is per
+//: A subscription quota source is independent of the inference transport. The quota is per
 //: ACCOUNT, so the FIRST one answers for all of them — asking each would print the same numbers
 //: twice. Silent on every failure: this is a convenience chip, not a status the page depends on.
 async function loadQuota(chip) {
   try {
     const eps = (await api("/api/settings/endpoints")).endpoints || [];
-    const cli = eps.find((e) => e.kind === "claude-cli");
+    const cli = eps.find((e) => e.quota_source === "cliproxy")
+      || eps.find((e) => e.has_subscription_quota);
     if (!cli) return;
     const q = await api(`/api/settings/endpoints/${encodeURIComponent(cli.name)}/quota`);
     if (!q.supported) return;

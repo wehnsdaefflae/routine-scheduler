@@ -131,7 +131,7 @@ def _strip_cache_control(body: dict) -> dict:
 
 
 class AnthropicEndpoint:
-    """Anthropic Messages API adapter — METERED per-token billing. Schema enforcement via
+    """Anthropic-compatible Messages adapter; billing belongs to the upstream. Schema via
     a single forced tool-use; effort via `output_config`, degraded on a 400 naming it.
     """
 
@@ -151,7 +151,7 @@ class AnthropicEndpoint:
         return supports_media_type(media_type, multimodal=multimodal, pdf=True)
 
     def _api_key(self) -> str:
-        # required=True: metered API — there is no keyless mode, a miss raises auth-flagged.
+        # A direct provider key or proxy client key is required; a miss raises auth-flagged.
         return resolve_api_key(name=self.name, api_key=self.api_key, key_var=self.key_var,
                                key_env_file=self.key_env_file, required=True)
 

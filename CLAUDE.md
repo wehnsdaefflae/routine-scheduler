@@ -415,7 +415,7 @@ by a test, by the engine, or by a past incident.
   human on the box or a `shell` action still bypasses it.
 - **A model's limits are DISCOVERED, not configured.** `endpoints/limits.py` asks each provider
   what its models' real context window and output maximum are (OpenRouter/Nano-GPT/Ollama have
-  metadata APIs; `anthropic` and `claude-cli` have none and use a built-in table), caches it under
+  metadata APIs; `anthropic` listings lack context-window metadata and use a built-in table), caches it under
   `<routines>/.control/model-limits.json` — derived state, never config — and refreshes on a 24h
   TTL from the scheduler tick. ONE precedence chain: per-MODEL config → provider → endpoint
   default → floor. The endpoint value sits BELOW the provider because it has always been

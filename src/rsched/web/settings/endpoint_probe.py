@@ -14,7 +14,7 @@ import time
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
-from ...endpoints import EndpointRegistry, claude_quota
+from ...endpoints import EndpointRegistry, cliproxy_quota
 from ...endpoints.base import EndpointError
 from ...schema_guard import SchemaViolation, parse_reply
 from .common import server_of
@@ -97,17 +97,17 @@ async def endpoint_quota(request: Request, name: str) -> dict:
     """What is LEFT of the Claude subscription's rolling windows — the operator's literal ask.
 
     A sibling of the credits read above and deliberately shaped like it: `{"supported": false}`
-    for any endpoint that is not `claude-cli`, never raises, and the card renders the error text
+    for endpoints without a quota source, never raises, and the card renders the error text
     when the provider or the credential is the problem. The quota is per-ACCOUNT rather than per
-    endpoint, so two claude-cli endpoints would honestly report the same numbers.
+    endpoint, so two subscription proxy endpoints would honestly report the same numbers.
     """
     server = server_of(request)
     ep = server.endpoints.get(name)
     if ep is None:
         raise HTTPException(404, f"no endpoint {name!r}")
-    if ep.kind != "claude-cli":
-        return {"supported": False}
-    return await asyncio.to_thread(claude_quota.read_quota)
+    if ep.quota_source == "cliproxy":
+        return await asyncio.to_thread(cliproxy_quota.read_quota, ep)
+    return {"supported": False}
 
 
 class TestBody(BaseModel):

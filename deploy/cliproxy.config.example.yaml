@@ -1,0 +1,30 @@
+# CLIProxyAPI v7.2.156. Real keys live outside the checkout.
+host: ""
+port: 8317
+auth-dir: /root/.cli-proxy-api
+api-keys:
+  - REPLACE_CLIENT_KEY
+remote-management:
+  # Scheduler reaches management over the private Docker network, with a separate key.
+  allow-remote: true
+  secret-key: REPLACE_MANAGEMENT_KEY
+  disable-control-panel: true
+debug: false
+request-log: false
+logging-to-file: false
+error-logs-max-files: 0
+# The scheduler owns retries and model failover.
+request-retry: 0
+max-retry-credentials: 1
+max-retry-interval: 0
+passthrough-headers: true
+disable-claude-cloak-mode: true
+claude-code:
+  disable-cloaking-model-list: true
+quota-exceeded:
+  switch-project: false
+  switch-preview-model: false
+  antigravity-credits: false
+routing:
+  strategy: fill-first
+  session-affinity: true

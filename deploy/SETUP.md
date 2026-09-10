@@ -18,14 +18,14 @@ Browse to `http://<host>:8321` and paste the token.
 
 ## 2. Secrets — the one place for every credential  (Settings → Secrets)
 
-A single `KEY → VALUE` store, **injected into every util, LLM endpoint, and the Claude subscription
+A single `KEY → VALUE` store, **injected into utils and LLM endpoints
 at run time**. Values are **write-only** — the UI lists key names, never the values. Example rows:
 
 | KEY | value |
 |---|---|
 | `OPENROUTER_KEY` | `sk-or-v1-…` |
 | `ANTHROPIC_KEY` | `sk-ant-…` |
-| `CLAUDE_CODE_OAUTH_TOKEN` | *(subscription — see §3)* |
+| `CLIPROXY_API_KEY` | *(proxy client key — see §3)* |
 | `DISCORD_BOT_TOKEN` | *(for the `discord` util)* |
 
 **"Needed by installed utils"** — this section lists exactly which env vars your utils declare they
@@ -36,33 +36,18 @@ the engine surfaces it. This is also required of every `write_util`-generated ut
 
 ## 3. Model providers  (Settings → LLM endpoints)
 
-The fresh config lists `openrouter`, `anthropic`, and `claude-cli`. Each OpenAI/Anthropic endpoint
+Add an `openai` or `anthropic` endpoint. Each OpenAI/Anthropic endpoint
 reads its key from **Secrets** via its `key_var` (e.g. `openrouter` → `OPENROUTER_KEY`) — so just set
 that key in §2 and the endpoint works. (You can also paste a per-endpoint inline key if you prefer.)
 Then set the **system model** — the one fallback the new-routine wizard and workflow generation
 use. Each routine you create afterwards picks its own three models (main / subroutine / tool-call)
 on its page or in the creation wizard.
 
-### Using your Claude subscription (`claude-cli`) — where the token comes from
+### Using your Claude subscription
 
-The `claude-cli` transport bills your **Claude subscription**, not an API key. It authenticates with
-a long-lived OAuth token (`CLAUDE_CODE_OAUTH_TOKEN`) — **not** by logging Claude Code into your
-account inside the container. You mint the token **once, elsewhere**:
-
-1. On any machine with a browser and Claude Code installed (e.g. your laptop):
-   ```bash
-   claude setup-token
-   ```
-   Log into your Anthropic account; it prints a long-lived token.
-2. Paste that token into **Secrets** as `CLAUDE_CODE_OAUTH_TOKEN`.
-
-Done. The container's `claude` CLI uses the token from the environment — it **never logs in**. (The
-CLI *is* installed in the image, but only to run `claude -p` with your token; minting the token is a
-one-time browser step on your own machine.) When it eventually expires, re-run `claude setup-token`
-and update the Secrets value — no restart.
-
-> Don't want the subscription path? Use an Anthropic **API key** instead: set `ANTHROPIC_KEY` in
-> Secrets and use the `anthropic` endpoint (metered billing). Simpler, no `claude setup-token`.
+Run the pinned CLIProxyAPI sidecar and sign in through its OAuth flow. Configure an
+Anthropic-compatible endpoint with the proxy client key. See the
+[subscription proxy guide](../docs/claude-proxy-cutover.md).
 
 ## 4. Connect GitHub  (Settings → GitHub)
 

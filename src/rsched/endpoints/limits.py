@@ -128,8 +128,6 @@ def _provider(ep) -> str:
     """Which metadata API this endpoint speaks. Sniffed from base_url the way
     `endpoint_probe.credits_provider` already does, so the two read the same signals.
     """
-    if ep.kind == "claude-cli":
-        return "table"
     if ep.kind == "anthropic":
         return "table"          # /v1/models carries no window; a table is the honest answer
     base = (ep.base_url or "").lower()

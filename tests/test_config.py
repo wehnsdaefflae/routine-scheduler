@@ -40,7 +40,7 @@ def test_deployed_config_keys_load_exactly(tmp_path):
             "openrouter": {"kind": "openai", "base_url": "https://openrouter.ai/api/v1",
                            "api_key": "sk-or-xyz", "key_var": "OPENROUTER_KEY",
                            "schema_mode": "json_object", "context_chars": 180_000},
-            "cc": {"kind": "claude-cli"},
+            "cc": {"kind": "anthropic"},
         },
         "models": {"ds": {"endpoint": "openrouter", "model": "deepseek/deepseek-chat",
                           "multimodal": False, "context_chars": 200_000, "effort": "high"}},
@@ -57,7 +57,7 @@ def test_deployed_config_keys_load_exactly(tmp_path):
     assert ep.base_url == "https://openrouter.ai/api/v1" and ep.api_key == "sk-or-xyz"
     assert ep.key_var == "OPENROUTER_KEY" and ep.schema_mode == "json_object"
     assert ep.context_chars == 180_000
-    assert server.endpoints["cc"].kind == "claude-cli"
+    assert server.endpoints["cc"].kind == "anthropic"
     mc = server.models["ds"]
     assert mc.name == "ds" and mc.endpoint == "openrouter" and mc.model == "deepseek/deepseek-chat"
     assert mc.multimodal is False and mc.context_chars == 200_000 and mc.effort == "high"
@@ -118,10 +118,9 @@ def test_server_unknown_endpoint_and_model_keys_flagged(tmp_path):
 
 def test_endpoint_key_var_defaults_per_kind():
     """key_var left unset falls to the KIND's own key variable — an openai endpoint must
-    never default to the Anthropic key; claude-cli auths via the subscription token."""
+    never default to the Anthropic key."""
     assert EndpointConfig(name="a", kind="anthropic").key_var == "ANTHROPIC_API_KEY"
     assert EndpointConfig(name="o", kind="openai", base_url="http://x").key_var == "OPENAI_API_KEY"
-    assert EndpointConfig(name="c", kind="claude-cli").key_var == ""
     # an explicit key_var always wins over the kind default
     ep = EndpointConfig(name="o2", kind="openai", base_url="http://x", key_var="OPENROUTER_KEY")
     assert ep.key_var == "OPENROUTER_KEY"

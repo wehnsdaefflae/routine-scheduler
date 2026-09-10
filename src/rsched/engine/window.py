@@ -254,7 +254,7 @@ def _archive_if_needed(loop, endpoint, ref) -> None:
 
 def apply_media_fallback(loop, exc: EndpointError) -> bool:
     """The main endpoint failed on a turn whose tail user message carries image `media`
-    (it rejected the file, or claude-cli's stream-json path is unavailable). Convert that
+    (for example, it rejected the file). Convert that
     media to vision-util text IN PLACE and drop it, so the retried completion is text-only
     and the model still gets the content. False when the tail has no media — then the
     failure is a genuine endpoint error that must propagate.

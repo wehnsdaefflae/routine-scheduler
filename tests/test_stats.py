@@ -193,7 +193,7 @@ def test_monthly_spend_without_stream(tmp_path):
 
 # The three D33 `claude_usage` tests lived here until 0.295.0. The local token tally they covered
 # is gone: it could not express "% remaining" in principle, so the console now reads the account's
-# own usage API instead (tests/test_claude_quota.py).
+# own usage API instead (tests/test_cliproxy_quota.py).
 
 
 def test_recipe_sizes(tmp_path):

@@ -7,7 +7,7 @@ FROM python:3.12-slim-bookworm
 # Runtime tools the routines + setup need:
 #   git       — the library + routines are git repos; git-sync / git-restore / pytest-run utils
 #   gh        — GitHub CLI: users run `gh auth login` at setup to clone/pull/push their (private) repos
-#   node + @anthropic-ai/claude-code — the `claude-cli` transport (self-audit) and the `gu claude` util
+#   node + @anthropic-ai/claude-code — independent library utilities (scheduler models use CLIProxyAPI)
 #   curl/ca-certificates/gnupg — uv download, apt keys, HTTPS to OpenRouter/Anthropic
 #   sshfs     — mount a bound remote machine's `share` into a routine (docs/remote-machines.md);
 #     needs the fuse device + CAP_SYS_ADMIN at RUN time (see docker-compose.yml)

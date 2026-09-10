@@ -1316,11 +1316,11 @@ def test_settings_endpoints_crud(client):
     assert raw["endpoints"]["vllm"]["base_url"] == "http://10.0.0.5:8000/v1"
     names = {e["name"] for e in c.get("/api/settings/endpoints").json()["endpoints"]}
     assert names == {"dummy", "vllm"}
-    # unknown/harness kinds are rejected; claude-cli (stripped transport) is allowed
+    # unknown/harness and removed CLI kinds are rejected
     r = c.post("/api/settings/endpoints", json={"name": "cc", "kind": "agent-sdk"})
     assert r.status_code == 400
     r = c.post("/api/settings/endpoints", json={"name": "cc", "kind": "claude-cli"})
-    assert r.status_code == 200
+    assert r.status_code == 400
     assert c.delete("/api/settings/endpoints/vllm").status_code == 200
     assert c.delete("/api/settings/endpoints/vllm").status_code == 404
 
@@ -1365,24 +1365,6 @@ def test_endpoint_inline_key_saved_and_preserved(client):
     assert yaml.safe_load((tmp / "config.yaml").read_text())["endpoints"]["dummy"]["api_key"] == "sk-secret"
 
 
-def test_endpoint_credentials_env_preserved_on_edit(client):
-    """Regression: editing a claude-cli endpoint must not wipe a custom credentials_env /
-    key_env_file. A full-replace PUT that omits them used to reset the token path to the
-    default; both are now in the preserve list and survive an unrelated edit."""
-    c, tmp = client
-
-    def stored():
-        return yaml.safe_load((tmp / "config.yaml").read_text())["endpoints"]["cc"]
-
-    assert c.post("/api/settings/endpoints", json={
-        "name": "cc", "kind": "claude-cli", "credentials_env": "~/.creds/custom.env"}).status_code == 200
-    assert stored()["credentials_env"] == "~/.creds/custom.env"
-    # an edit that omits credentials_env preserves it (the bug was it fell through)
-    assert c.put("/api/settings/endpoints/cc", json={
-        "name": "cc", "kind": "claude-cli", "base_url": "http://x/v1"}).status_code == 200
-    assert stored()["credentials_env"] == "~/.creds/custom.env"
-    view = next(e for e in c.get("/api/settings/endpoints").json()["endpoints"] if e["name"] == "cc")
-    assert view["credentials_env"] == "~/.creds/custom.env"   # surfaced for the UI
 
 
 def test_endpoint_extra_body_set_view_and_preserved(client):
@@ -1427,17 +1409,13 @@ def test_settings_server_config(client):
 
 
 def test_endpoints_prefer_inline_key(monkeypatch):
-    """Inline key (UI-set) wins over a missing key_env_file, for openai + claude-cli."""
+    """Inline key (UI-set) wins over a missing key_env_file, for OpenAI-compatible endpoints."""
     from rsched.config import EndpointConfig
     from rsched.endpoints import make_endpoint
-    from rsched.endpoints.claude_cli_wire import resolve_token
 
     ep = make_endpoint(EndpointConfig(name="x", kind="openai", api_key="inline-123",
                                       key_env_file="/nonexistent.env", key_var="K"))
     assert ep._resolve_key() == "inline-123"
-    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
-    assert resolve_token("/nonexistent.env", "tok-abc") == "tok-abc"
-    assert resolve_token("/nonexistent.env", "") is None
 
 
 def test_secrets_store(client, tmp_path, monkeypatch):
@@ -2176,13 +2154,6 @@ def test_endpoint_credential_source_labels(client, monkeypatch):
     assert ep["key_source"]["source"] == "inline"
     assert ep["key_source"]["shadowed_secret"] is True
     assert "sk-inline" not in str(listing) and "sk-stored" not in str(listing)
-    # claude-cli: the subscription token ladder — the secrets store outranks the env file
-    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
-    c.post("/api/settings/endpoints", json={"name": "cc", "kind": "claude-cli"})
-    c.put("/api/settings/secrets", json={"key": "CLAUDE_CODE_OAUTH_TOKEN", "value": "tok"})
-    ep = next(e for e in c.get("/api/settings/endpoints").json()["endpoints"]
-              if e["name"] == "cc")
-    assert ep["key_source"] == {"source": "secret", "var": "CLAUDE_CODE_OAUTH_TOKEN"}
 
 
 def test_pause_toggle_endpoints(client):

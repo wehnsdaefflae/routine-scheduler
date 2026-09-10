@@ -13,12 +13,10 @@ import { el, toast } from "/static/util.js";
 const KIND = {
   openai: { title: "OpenAI-compatible API (OpenRouter, Featherless, vLLM, Ollama, …)", keyLabel: "API key",
     subscription: false, hint: "Needs an API key — paste it below, or set its key_var in Secrets. Setup guide: Help → endpoints." },
-  anthropic: { title: "Anthropic Messages API — ⚠ METERED, per-token billing", keyLabel: "Anthropic API key (sk-ant-…)",
-    subscription: false, hint: "Needs an sk-ant-… API key. This is NOT your Claude subscription." },
-  "claude-cli": { title: "Claude subscription — no per-token billing", keyLabel: "subscription token",
-    subscription: true, hint: "Uses your Claude Max/Pro subscription. Paste the token from `claude setup-token`." },
+  anthropic: { title: "Anthropic-compatible Messages API", keyLabel: "API or proxy client key",
+    subscription: false, hint: "Direct Anthropic uses a metered API key. A subscription proxy uses its own client key; sign in through the proxy." },
 };
-const KINDS = ["openai", "anthropic", "claude-cli"];
+const KINDS = ["openai", "anthropic"];
 const SCHEMA_MODES = ["json_schema", "json_object", "ollama_native", "none"];
 const EFFORTS = ["", "low", "medium", "high", "xhigh", "max"];   // "" = inherit / provider default
 
@@ -48,14 +46,11 @@ export async function renderEndpoints(view) {
   view.append(listBox);
 
   async function load() {
-    const [data, secrets] = await Promise.all([
-      api("/api/settings/endpoints"),
-      api("/api/settings/secrets").catch(() => ({ keys: [] })),
-    ]);
+    const data = await api("/api/settings/endpoints");
     listBox.replaceChildren();
     if (!data.endpoints.length)
       listBox.append(el("div", { class: "muted small" }, "no endpoints yet — add one below."));
-    for (const ep of data.endpoints) listBox.append(item(ep, secrets.keys || []));
+    for (const ep of data.endpoints) listBox.append(item(ep));
     listBox.append(addForm());
     listBox.append(modelsSection(data.endpoints, data.models || []));
     listBox.append(systemModelEditor(data.models || [], data.system_model));
@@ -214,7 +209,7 @@ export async function renderEndpoints(view) {
         el("label", { class: "field" }, el("span", {}, "name"), nameIn)),
       modelFieldRows(f),
       el("div", { class: "muted small", style: "margin-top:4px" },
-        "multimodal = default lets the endpoint kind decide (on for anthropic/claude-cli, off for openai). ",
+        "multimodal = default lets the endpoint kind decide (on for anthropic, off for openai). ",
         "Blank context/temperature/max_tokens inherit the endpoint's. max_tokens is the model's ",
         "real OUTPUT limit — unset models ride a generic 16,384 and get flagged. ",
         "fallbacks = catalog model names tried in order when this model's provider fails hard."),
@@ -300,7 +295,7 @@ export async function renderEndpoints(view) {
     return line;
   }
 
-  function item(ep, secretKeys) {
+  function item(ep) {
     const info = KIND[ep.kind] || { title: ep.kind, keyLabel: "key", subscription: false, hint: "" };
     const modelInput = el("input", { type: "text", placeholder: "model id (e.g. opus)", style: "width:220px" });
     const resultBox = el("div", {});
@@ -324,22 +319,9 @@ export async function renderEndpoints(view) {
       catch (err) { toast(err.message, 4000, { error: true }); }
     };
 
-    // credential row: subscription token → Secrets (CLAUDE_CODE_OAUTH_TOKEN); else API key → endpoint
+    // Proxy client keys and provider API keys use the same secret store.
     let keyRow;
-    if (info.subscription) {
-      const hasTok = secretKeys.includes("CLAUDE_CODE_OAUTH_TOKEN");
-      const tokIn = el("input", { type: "password", style: "flex:1",
-        placeholder: hasTok ? "token set ✓ — paste to replace" : "paste token from `claude setup-token`" });
-      const saveTok = el("button", { class: "btn small primary" }, "save subscription token");
-      saveTok.onclick = async () => {
-        if (!tokIn.value.trim()) { toast("paste the token first"); return; }
-        try { await api("/api/settings/secrets", { method: "PUT", body: { key: "CLAUDE_CODE_OAUTH_TOKEN", value: tokIn.value.trim() } });
-          toast("subscription token saved (Secrets → CLAUDE_CODE_OAUTH_TOKEN)"); tokIn.value = ""; await load(); }
-        catch (err) { toast(err.message, 5000, { error: true }); }
-      };
-      keyRow = el("div", {}, el("div", { class: "row mt" }, tokIn, saveTok),
-        el("div", { class: "faint small" }, "stored in Secrets — feeds this endpoint and `gu claude`"));
-    } else {
+    {
       const keyInput = el("input", { type: "password", style: "flex:1",
         placeholder: ep.has_inline_key ? `${info.keyLabel} set ✓ — paste to replace` : `paste ${info.keyLabel} (or set ${ep.key_var || "its key_var"} in Secrets)` });
       const saveKey = el("button", { class: "btn small primary" }, "save key");
@@ -362,14 +344,14 @@ export async function renderEndpoints(view) {
     const baseIn = el("input", { type: "text", value: ep.base_url || "", placeholder: "https://host/v1" });
     const keyVarIn = el("input", { type: "text", value: ep.key_var || "", placeholder: "KEY_VAR in Secrets (optional)" });
     const keyEnvIn = el("input", { type: "text", value: ep.key_env_file || "", placeholder: "path to an env file (optional)" });
+    const quotaSel = el("select", {}, el("option", { value: "" }, "None"),
+      el("option", { value: "cliproxy" }, "CLIProxyAPI")); quotaSel.value = ep.quota_source || "";
+    const quotaKeyIn = el("input", { type: "text", value: ep.quota_key_var || "CLIPROXY_MANAGEMENT_KEY" });
+    const quotaAccountIn = el("input", { type: "text", value: ep.quota_auth_index || "",
+      placeholder: "Automatic for one Claude account" });
     const ctxIn = el("input", { type: "number", value: ep.context_chars });
     const tempIn = el("input", { type: "number", step: "0.1", value: ep.temperature ?? "", placeholder: "provider default" });
     const mtIn = el("input", { type: "number", value: ep.max_tokens ?? "", placeholder: "inherit (16,384)" });
-    // claude-cli only: the subscription-token env file (defaults to ~/.credentials/claude-code-oauth.env).
-    const credEnvIn = ep.kind === "claude-cli"
-      ? el("input", { type: "text", value: ep.credentials_env || "",
-          placeholder: "~/.credentials/claude-code-oauth.env" }) : null;
-    // openai only: extra_body merged verbatim into every request (e.g. OpenRouter provider routing), as JSON.
     const extraBodyIn = ep.kind === "openai"
       ? el("textarea", { class: "code", rows: "3", style: "width:100%",
           placeholder: '{"provider": {"ignore": ["…"]}}' },
@@ -378,11 +360,12 @@ export async function renderEndpoints(view) {
     saveEdit.onclick = async () => {
       const body = {
         name: ep.name, kind: kindSel.value, base_url: baseIn.value.trim(),
+        quota_source: quotaSel.value, quota_key_var: quotaKeyIn.value.trim(),
+        quota_auth_index: quotaAccountIn.value.trim(),
         key_env_file: keyEnvIn.value.trim(), key_var: keyVarIn.value.trim(),
         schema_mode: schemaSel.value, context_chars: Number(ctxIn.value) || 100000,
         temperature: tempIn.value.trim() ? Number(tempIn.value) : null,
         max_tokens: mtIn.value.trim() ? Number(mtIn.value) : null };
-      if (credEnvIn) body.credentials_env = credEnvIn.value.trim();
       if (extraBodyIn) {
         const raw = extraBodyIn.value.trim();
         try { body.extra_body = raw ? JSON.parse(raw) : {}; }
@@ -406,8 +389,10 @@ export async function renderEndpoints(view) {
         el("label", { class: "field" }, el("span", {}, "context_chars (default)"), ctxIn),
         el("label", { class: "field" }, el("span", {}, "temperature (default)"), tempIn),
         el("label", { class: "field" }, el("span", {}, "max_tokens (default)"), mtIn)),
-      credEnvIn ? el("div", { class: "field-row" },
-        el("label", { class: "field" }, el("span", {}, "credentials_env (subscription token file)"), credEnvIn)) : null,
+      el("div", { class: "field-row" },
+        el("label", { class: "field" }, el("span", {}, "Subscription quota source"), quotaSel),
+        el("label", { class: "field" }, el("span", {}, "Management key secret name"), quotaKeyIn),
+        el("label", { class: "field" }, el("span", {}, "Quota account index"), quotaAccountIn)),
       extraBodyIn ? el("div", { style: "margin-top:6px" },
         el("div", { class: "field" },
           el("span", {}, "extra_body (JSON — merged into every request)"), extraBodyIn)) : null,
@@ -430,12 +415,12 @@ export async function renderEndpoints(view) {
       }).catch(() => creditsRow.replaceChildren());
     }
 
-    // Claude subscription (claude-cli): the REAL per-window quota, read from the account's own
+    // Proxy subscription: the REAL per-window quota, read from the account's own
     // usage API. This replaced a local token tally (D33) that could not express "% remaining" in
     // principle — Anthropic's windows are not a token count, and the tally was blind to the
     // operator's own interactive sessions on the same subscription.
     const usageRow = el("div", { class: "small muted", style: "margin-top:4px" });
-    if (ep.kind === "claude-cli") {
+    if (ep.has_subscription_quota) {
       usageRow.textContent = "subscription quota: checking…";
       api(`/api/settings/endpoints/${encodeURIComponent(ep.name)}/quota`).then((q) => {
         if (!q.supported) { usageRow.replaceChildren(); return; }

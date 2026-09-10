@@ -49,7 +49,7 @@ call, live run included:
 - **read+write** — the routine's own dir, its `fs_write_roots`, `/tmp` + `/var/tmp` +
   `/dev`, and tool state: `~/.cache` (uv script envs, playwright browsers),
   `~/.local/share/uv` (managed pythons), `~/.local/state`, `~/.claude` + `~/.claude.json`
-  (the claude CLI's session state — the same state the claude-cli endpoint uses).
+  (the claude CLI's session state — used by independent CLI utilities).
 - **read+execute** — the routine's `fs_read_roots`, the util library itself, the system
   trees (`/usr /bin /sbin /lib* /etc /opt /run /sys /proc /var/log`), the daemon's venv,
   `~/.local/bin` (uv on host installs), and the git/gh identity files (`~/.gitconfig`,

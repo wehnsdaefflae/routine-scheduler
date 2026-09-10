@@ -132,9 +132,8 @@ class ChatEndpoint(Protocol):
     """What every adapter implements: one stateless completion in, a Completion out.
     No streaming, no state, no tools — endpoints are transports, never a second harness.
     `session` is a CACHING hint only (a stable opaque key per conversation): an adapter
-    may use it to keep the provider's prompt cache warm across turns (claude-cli keeps a
-    CLI session per key); semantics never depend on it — every call still carries the
-    full message list and adapters are free to ignore it.
+    may use it to keep the provider's prompt cache warm across turns; semantics never depend
+    on it — every call still carries the full message list and adapters are free to ignore it.
     """
 
     name: str
@@ -158,8 +157,7 @@ class ChatEndpoint(Protocol):
         message's `media` list NATIVELY — given the resolved model's `multimodal` flag (the
         caller passes it; one endpoint serves many models). False → the engine routes that
         file through the `vision` util instead. The adapter contributes only kind/runtime
-        facts on top: PDFs are anthropic-only, and claude-cli drops to False once a
-        stream-json image send has proven the CLI can't take them.
+        facts on top: PDFs are currently supported by the Anthropic adapter.
         """
         ...
 

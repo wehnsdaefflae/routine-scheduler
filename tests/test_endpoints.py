@@ -1,8 +1,6 @@
 """Adapter request construction, response parsing, error mapping — all mocked, no network."""
 
 import json
-import subprocess
-from pathlib import Path
 
 import pytest
 
@@ -12,15 +10,6 @@ from rsched.config import EndpointConfig
 from rsched.endpoints import EndpointRegistry, make_endpoint
 from rsched.endpoints.anthropic_api import AnthropicEndpoint, merge_consecutive
 from rsched.endpoints.base import EndpointError, split_system, with_retries
-from rsched.endpoints.claude_cli import STRIP_VARS, ClaudeCliEndpoint
-from rsched.endpoints.claude_cli_wire import (
-    TOKEN_VAR,
-    build_cmd,
-    parse_result,
-    render_prompt,
-    resolve_token,
-    scrub_env,
-)
 from rsched.endpoints.openai_compat import OpenAICompatEndpoint
 
 MESSAGES = [
@@ -147,7 +136,7 @@ def test_openai_cached_tokens_kept_out_of_in(monkeypatch):
     """Implicit prompt caching (OpenAI/OpenRouter style): cached_tokens arrives as a subset
     of prompt_tokens — the adapter subtracts it so "in" is fresh input only. This pins the
     CROSS-ADAPTER invariant (cached_in kept OUT of "in", token budgets keep their meaning);
-    the anthropic/claude-cli cache tests pin the same shape for the other two adapters."""
+    the Anthropic cache tests pin the same shape for the other adapter."""
     monkeypatch.setattr(oai_mod.httpx, "post", lambda *a, **k: FakeResponse(payload={
         "choices": [{"message": {"content": "x"}}],
         "usage": {"prompt_tokens": 1000, "completion_tokens": 5,
@@ -615,261 +604,6 @@ def test_anthropic_effort_degradation_on_400(monkeypatch):
     assert not exc.value.retryable and "max_tokens too large" in str(exc.value)
 
 
-# --- claude-cli ------------------------------------------------------------------
-
-def test_scrub_env_and_token(tmp_path, monkeypatch):
-    env = scrub_env({"ANTHROPIC_API_KEY": "x", "ANTHROPIC_BASE_URL": "y", "PATH": "/bin"},
-                    token="tok", max_tokens=99)
-    assert all(k not in env for k in STRIP_VARS)
-    assert env["PATH"] == "/bin" and env[TOKEN_VAR] == "tok"
-    assert env["CLAUDE_CODE_MAX_OUTPUT_TOKENS"] == "99"
-    credfile = tmp_path / "cred.env"
-    credfile.write_text(f"# comment\n{TOKEN_VAR}='sk-file'\n")
-    monkeypatch.delenv(TOKEN_VAR, raising=False)
-    assert resolve_token(str(credfile)) == "sk-file"
-    monkeypatch.setenv(TOKEN_VAR, "sk-env")
-    assert resolve_token(str(credfile)) == "sk-env"
-
-
-def test_build_cmd_isolation_flags():
-    cmd = build_cmd("/bin/claude", "opus", system="sys", schema_str="{}", effort="low")
-    for flag in ("-p", "--tools", "--disable-slash-commands", "--no-session-persistence",
-                 "--strict-mcp-config", "--setting-sources", "--output-format",
-                 "--system-prompt", "--effort", "--json-schema"):
-        assert flag in cmd
-    assert cmd[cmd.index("--tools") + 1] == ""
-    assert cmd[cmd.index("--setting-sources") + 1] == ""
-
-
-def test_render_prompt():
-    single = render_prompt([{"role": "user", "content": "just this"}])
-    assert single == "just this"
-    multi = render_prompt([m for m in MESSAGES if m["role"] != "system"])
-    assert "<<USER>>" in multi and "<<ASSISTANT>>" in multi
-    assert multi.strip().endswith("no role tags.")
-
-
-def test_parse_result_envelopes():
-    text, parsed, usage, _stop, details = parse_result(json.dumps(
-        {"is_error": False, "result": "hi", "usage": {"input_tokens": 1, "output_tokens": 2}}), False)
-    assert text == "hi" and parsed is None and usage == {"in": 1, "out": 2}
-    assert details == {}
-    _, parsed, _, _, _ = parse_result(json.dumps(
-        {"is_error": False, "result": "x", "structured_output": {"b": 2}}), True)
-    assert parsed == {"b": 2}
-    _, parsed, _, _, _ = parse_result(json.dumps({"is_error": False, "result": '{"a": 1}'}), True)
-    assert parsed == {"a": 1}
-    # a classifier refusal's diagnostic dict rides along verbatim (F164)
-    _, _, _, stop, details = parse_result(json.dumps(
-        {"is_error": False, "result": "", "stop_reason": "refusal",
-         "stop_details": {"category": "harmful_content"}}), False)
-    assert stop == "refusal" and details == {"category": "harmful_content"}
-    with pytest.raises(EndpointError) as exc:
-        parse_result(json.dumps({"is_error": True, "result": "401 unauthorized"}), False)
-    assert exc.value.auth
-
-
-def test_parse_result_refusal_wins_over_is_error():
-    """R5: the CLI marks an unhandled refusal as an API-error frame internally, so its
-    final envelope can carry is_error either way — a refusal is ALWAYS returned as a
-    completion (never raised), keeping the category for the engine's refusal branch."""
-    text, parsed, _, stop, details = parse_result(json.dumps(
-        {"is_error": True, "result": "API Error: the request was declined",
-         "stop_reason": "refusal", "stop_details": {"category": "cyber"}}), False)
-    assert stop == "refusal" and details == {"category": "cyber"}
-    assert text == "API Error: the request was declined" and parsed is None
-    # a non-refusal is_error still raises exactly as before
-    with pytest.raises(EndpointError):
-        parse_result(json.dumps({"is_error": True, "result": "boom",
-                                 "stop_reason": "end_turn"}), False)
-
-
-def _cli_endpoint(monkeypatch, tmp_path):
-    """A ClaudeCliEndpoint wired to a token file, a fake CLI path, and no real secrets."""
-    credfile = tmp_path / "cred.env"
-    credfile.write_text(f"{TOKEN_VAR}=tok\n")
-    monkeypatch.delenv(TOKEN_VAR, raising=False)
-    monkeypatch.setattr("rsched.endpoints.claude_cli.find_cli", lambda: "/bin/claude")
-    monkeypatch.setattr("rsched.secrets.load_secrets", dict)
-    return ClaudeCliEndpoint(EndpointConfig(
-        name="claude-cli", kind="claude-cli", credentials_env=str(credfile), context_chars=400000))
-
-
-def test_claude_cli_complete(monkeypatch, tmp_path):
-    credfile = tmp_path / "cred.env"
-    credfile.write_text(f"{TOKEN_VAR}=tok\n")
-    monkeypatch.delenv(TOKEN_VAR, raising=False)
-    ep = ClaudeCliEndpoint(EndpointConfig(
-        name="claude-cli", kind="claude-cli", credentials_env=str(credfile), context_chars=400000))
-    monkeypatch.setattr("rsched.endpoints.claude_cli.find_cli", lambda: "/bin/claude")
-    seen = {}
-
-    def fake_run(cmd, input=None, capture_output=None, text=None, timeout=None,
-                 env=None, cwd=None, check=False):
-        seen.update(cmd=cmd, input=input, env=env)
-        return subprocess.CompletedProcess(cmd, 0, stdout=json.dumps(
-            {"is_error": False, "result": "ok", "usage": {"input_tokens": 3, "output_tokens": 4}}), stderr="")
-
-    monkeypatch.setattr("rsched.endpoints.claude_cli.subprocess.run", fake_run)
-    monkeypatch.setattr("rsched.secrets.load_secrets", dict)   # hermetic: ignore the machine's real secrets store
-    c = ep.complete(MESSAGES, model="opus", effort="medium")
-    assert c.text == "ok" and c.usage == {"in": 3, "out": 4}
-    assert seen["env"][TOKEN_VAR] == "tok" and "<<USER>>" in seen["input"]
-    assert "--system-prompt" in seen["cmd"]
-
-
-def test_claude_cli_nonzero_exit_empty_stdout_is_retryable(monkeypatch, tmp_path):
-    ep = _cli_endpoint(monkeypatch, tmp_path)
-    monkeypatch.setattr(
-        "rsched.endpoints.claude_cli.subprocess.run",
-        lambda cmd, **kw: subprocess.CompletedProcess(cmd, 1, stdout="", stderr="ECONNRESET talking home"))
-    with pytest.raises(EndpointError) as exc:
-        ep.complete(MESSAGES, model="opus")
-    assert exc.value.retryable
-    assert "exited 1" in str(exc.value) and "ECONNRESET" in str(exc.value)
-
-
-def test_claude_cli_unparseable_stdout_retried_then_raised(monkeypatch, tmp_path):
-    """Garbled CLI stdout is a transport fault (a truncated envelope), mirroring
-    json_or_raise for HTTP bodies: with_retries re-invokes the CLI, then the last
-    error propagates retryable."""
-    ep = _cli_endpoint(monkeypatch, tmp_path)
-    calls = []
-    monkeypatch.setattr(
-        "rsched.endpoints.claude_cli.subprocess.run",
-        lambda cmd, **kw: (calls.append(1), subprocess.CompletedProcess(
-            cmd, 0, stdout="plain text, no envelope", stderr=""))[1])
-    with pytest.raises(EndpointError) as exc:
-        ep.complete(MESSAGES, model="opus")
-    assert exc.value.retryable
-    assert len(calls) == 3   # the with_retries contract: 3 tries total
-    assert "unparseable CLI output" in str(exc.value) and "plain text" in str(exc.value)
-
-
-def test_claude_cli_transient_failure_recovered_by_retry(monkeypatch, tmp_path):
-    """One bad invocation (nonzero exit, empty stdout) must not fail the turn — the
-    retry wrapper runs the CLI again and the second attempt's reply is returned."""
-    ep = _cli_endpoint(monkeypatch, tmp_path)
-    calls = []
-
-    def fake_run(cmd, **kw):
-        calls.append(1)
-        if len(calls) == 1:
-            return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="blip")
-        return subprocess.CompletedProcess(cmd, 0, stdout=json.dumps(
-            {"is_error": False, "result": "recovered",
-             "usage": {"input_tokens": 1, "output_tokens": 1}}), stderr="")
-
-    monkeypatch.setattr("rsched.endpoints.claude_cli.subprocess.run", fake_run)
-    c = ep.complete(MESSAGES, model="opus")
-    assert c.text == "recovered" and len(calls) == 2
-
-
-def test_claude_cli_timeout_is_retryable(monkeypatch, tmp_path):
-    ep = _cli_endpoint(monkeypatch, tmp_path)
-
-    def fake_run(cmd, **kw):
-        raise subprocess.TimeoutExpired(cmd, kw.get("timeout", 0))
-
-    monkeypatch.setattr("rsched.endpoints.claude_cli.subprocess.run", fake_run)
-    with pytest.raises(EndpointError) as exc:
-        ep.complete(MESSAGES, model="opus", timeout=7)
-    assert exc.value.retryable and "timed out after 7s" in str(exc.value)
-
-
-def test_claude_cli_cache_usage_captured():
-    """Same cross-adapter invariant as the API adapters: cache traffic rides
-    cached_in/cache_write, kept out of "in"."""
-    _, _, usage, _, _ = parse_result(json.dumps(
-        {"is_error": False, "result": "hi",
-         "usage": {"input_tokens": 4, "output_tokens": 2,
-                   "cache_read_input_tokens": 30000, "cache_creation_input_tokens": 1200}}), False)
-    assert usage == {"in": 4, "out": 2, "cached_in": 30000, "cache_write": 1200}
-
-
-def _ok_cli_result(cmd):
-    return subprocess.CompletedProcess(cmd, 0, stdout=json.dumps(
-        {"is_error": False, "result": "ok",
-         "usage": {"input_tokens": 3, "output_tokens": 4}}), stderr="")
-
-
-def test_claude_cli_session_opens_then_resumes_with_delta(monkeypatch, tmp_path):
-    """With a session key: first call opens a CLI session (--session-id, full conversation
-    rendered), the next call resumes it (--resume) sending ONLY the new user content —
-    the caching-shaped path that stops re-processing the whole transcript every turn."""
-    ep = _cli_endpoint(monkeypatch, tmp_path)
-    monkeypatch.setattr("rsched.endpoints.claude_cli.expand",
-                        lambda p: tmp_path / "cache" if str(p).startswith("~") else Path(p))
-    calls = []
-
-    def fake_run(cmd, input=None, capture_output=None, text=None, timeout=None,
-                 env=None, cwd=None, check=False):
-        calls.append({"cmd": list(cmd), "input": input, "cwd": cwd})
-        return _ok_cli_result(cmd)
-
-    monkeypatch.setattr("rsched.endpoints.claude_cli.subprocess.run", fake_run)
-    ep.complete(MESSAGES, model="opus", session="run-A")
-    first = calls[0]
-    assert "--session-id" in first["cmd"] and "--no-session-persistence" not in first["cmd"]
-    assert "<<USER>>" in first["input"]                    # full conversation seeds the session
-    sid = first["cmd"][first["cmd"].index("--session-id") + 1]
-
-    grown = [*MESSAGES, {"role": "assistant", "content": '{"kind":"util"}'},
-             {"role": "user", "content": "OBSERVATION (util x, exit 0): fine"}]
-    ep.complete(grown, model="opus", session="run-A")
-    second = calls[1]
-    assert second["cmd"][second["cmd"].index("--resume") + 1] == sid
-    assert second["input"] == "OBSERVATION (util x, exit 0): fine"   # the delta, nothing else
-    assert second["cwd"] == first["cwd"]                   # same cwd — the CLI's session key
-
-    # a rewritten prefix (compaction) cannot resume — a FRESH session is seeded instead
-    compacted = [MESSAGES[0], {"role": "user", "content": "CONTEXT COMPACTED — pointer"},
-                 {"role": "user", "content": "next observation"}]
-    ep.complete(compacted, model="opus", session="run-A")
-    third = calls[2]
-    assert "--resume" not in third["cmd"] and "--session-id" in third["cmd"]
-    assert third["cmd"][third["cmd"].index("--session-id") + 1] != sid
-
-
-def test_claude_cli_resume_failure_reseeds_fresh_session(monkeypatch, tmp_path):
-    """A broken/expired CLI session must never break the run: the resume attempt's failure
-    drops the state and the call is retried as a fresh session with the full conversation."""
-    ep = _cli_endpoint(monkeypatch, tmp_path)
-    monkeypatch.setattr("rsched.endpoints.claude_cli.expand",
-                        lambda p: tmp_path / "cache" if str(p).startswith("~") else Path(p))
-    calls = []
-
-    def fake_run(cmd, input=None, capture_output=None, text=None, timeout=None,
-                 env=None, cwd=None, check=False):
-        calls.append(list(cmd))
-        if "--resume" in cmd:
-            return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="No conversation found")
-        return _ok_cli_result(cmd)
-
-    monkeypatch.setattr("rsched.endpoints.claude_cli.subprocess.run", fake_run)
-    ep.complete(MESSAGES, model="opus", session="run-B")
-    grown = [*MESSAGES, {"role": "assistant", "content": "a"}, {"role": "user", "content": "o"}]
-    c = ep.complete(grown, model="opus", session="run-B")
-    assert c.text == "ok"
-    assert ["--resume" in c_ for c_ in calls].count(True) == 1     # one failed resume …
-    assert ["--session-id" in c_ for c_ in calls].count(True) == 2  # … then a fresh seed
-
-
-def test_claude_cli_no_session_stays_stateless(monkeypatch, tmp_path):
-    ep = _cli_endpoint(monkeypatch, tmp_path)
-    seen = {}
-
-    def fake_run(cmd, input=None, capture_output=None, text=None, timeout=None,
-                 env=None, cwd=None, check=False):
-        seen.update(cmd=list(cmd))
-        return _ok_cli_result(cmd)
-
-    monkeypatch.setattr("rsched.endpoints.claude_cli.subprocess.run", fake_run)
-    ep.complete(MESSAGES, model="opus")
-    assert "--no-session-persistence" in seen["cmd"]
-    assert "--session-id" not in seen["cmd"] and "--resume" not in seen["cmd"]
-
-
 # --- registry ----------------------------------------------------------------------
 
 def test_merge_consecutive_same_role():
@@ -935,8 +669,6 @@ def test_make_endpoint_kinds():
     assert isinstance(make_endpoint(EndpointConfig(name="a", kind="openai", base_url="x")),
                       OpenAICompatEndpoint)
     assert isinstance(make_endpoint(EndpointConfig(name="b", kind="anthropic")), AnthropicEndpoint)
-    assert isinstance(make_endpoint(EndpointConfig(name="c", kind="claude-cli")),
-                      ClaudeCliEndpoint)
 
 
 def test_extra_body_merged_and_provider_captured(monkeypatch):
@@ -989,24 +721,3 @@ def test_api_key_source_ladder(tmp_path, monkeypatch):
         "env_file_miss": True}
     assert api_key_source(api_key="sk-i", key_var="", key_env_file="") == {
         "source": "inline", "var": None, "shadowed_secret": False}
-
-
-def test_token_source_ladder(tmp_path, monkeypatch):
-    """claude-cli's analog: process env → inline (shadow-flagged) → secret → env file."""
-    from rsched.endpoints.claude_cli_wire import token_source
-
-    monkeypatch.delenv(TOKEN_VAR, raising=False)
-    monkeypatch.setattr("rsched.secrets.load_secrets", dict)
-    assert token_source(str(tmp_path / "missing.env"), "") == {
-        "source": "none", "var": TOKEN_VAR}
-    envf = tmp_path / "oauth.env"
-    envf.write_text(f"{TOKEN_VAR}=tok-file\n", encoding="utf-8")
-    assert token_source(str(envf), "") == {
-        "source": "env_file", "var": TOKEN_VAR, "env_file": str(envf)}
-    monkeypatch.setattr("rsched.secrets.load_secrets", lambda: {TOKEN_VAR: "tok-stored"})
-    assert token_source(str(envf), "") == {"source": "secret", "var": TOKEN_VAR}
-    assert token_source(str(envf), "tok-inline") == {
-        "source": "inline", "var": TOKEN_VAR, "shadowed_secret": True}
-    monkeypatch.setenv(TOKEN_VAR, "tok-env")
-    assert token_source(str(envf), "tok-inline") == {
-        "source": "process_env", "var": TOKEN_VAR}

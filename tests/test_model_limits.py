@@ -127,10 +127,9 @@ def test_nanogpt_is_read_from_its_own_route(tmp_path, monkeypatch):
 
 
 def test_a_kind_with_no_metadata_api_uses_the_static_table(tmp_path, monkeypatch):
-    """claude-cli has no models API, no metadata command, and its overflow prose carries no
-    figure — so the table is the honest answer, and it is labelled as one."""
+    """The Anthropic models listing carries no context-window figure — so the table is the honest answer, and it is labelled as one."""
     server = _server(tmp_path, endpoints={
-        "claude": EndpointConfig(name="claude", kind="claude-cli", context_chars=2_000_000)},
+        "claude": EndpointConfig(name="claude", kind="anthropic", context_chars=2_000_000)},
         models={"opus": ModelConfig(name="opus", endpoint="claude", model="opus")})
     monkeypatch.setattr(limits, "_get", lambda *a, **k: None)
     limits.refresh(server, force=True)
@@ -179,7 +178,6 @@ def test_the_ttl_stops_a_refresh_per_tick(tmp_path, monkeypatch):
     ("http://localhost:11434/v1", "openai", "ollama"),
     ("https://api.featherless.ai/v1", "openai", "openai"),
     ("", "anthropic", "table"),
-    ("", "claude-cli", "table"),
 ])
 def test_the_provider_is_sniffed_from_the_endpoint(base, kind, want):
     assert limits._provider(EndpointConfig(name="x", kind=kind, base_url=base)) == want

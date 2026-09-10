@@ -1,5 +1,5 @@
 """Secrets stores — KEY=VALUE files next to config.yaml that the engine injects into every
-util subprocess, the claude-cli transport, and endpoint key lookup at RUN time (utils read
+util subprocess and endpoint key lookup at RUN time (utils read
 env-first by convention). One place in the UI to set ANY credential — including ones a
 generated util needs — with no per-secret wiring and no restart. Values are written from the
 UI, never echoed back.

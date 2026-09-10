@@ -15,6 +15,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.315.0] — 2026-09-10
+
+### Changed — complete subscription proxy cutover
+
+- Removed the custom Claude CLI transport, session/wire code, credential configuration,
+  legacy quota reader, and endpoint UI. Subscription completions use the existing
+  Anthropic Messages adapter through CLIProxyAPI.
+- Verified production model bindings, a scheduled run, OAuth refresh, and refreshed
+  credential persistence across proxy restart. Independent CLI utilities retain their runtime.
+
+## [0.314.0] — 2026-09-10
+
+### Added — staged Claude subscription proxy migration
+
+- Optional, pinned CLIProxyAPI Compose service with persistent authentication under the
+  existing backup inventory. The scheduler uses its existing Anthropic Messages adapter.
+- Endpoint quota source configuration reads real Claude subscription windows through the
+  proxy management API; upstream tokens stay in the proxy. Settings and the dashboard
+  support proxy quota independently of the legacy CLI transport.
+- Anthropic endpoint labels now describe the protocol and accept proxy client keys.
+- Cutover guide and compatibility checks retain the legacy endpoint until a trial succeeds.
+
 ## [0.313.0] — 2026-09-10
 
 ### Added — native delete / move / mkdir actions (D120=A)

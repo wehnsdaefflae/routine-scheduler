@@ -8,6 +8,23 @@
 #   RSCHED_HOME=/srv/rsched-data    docker compose up -d      # …or anywhere else
 
 services:
+  cliproxy:
+    image: eceasy/cli-proxy-api:v7.2.156@sha256:7f434559781aa011bbfa1061757fb5fbb4d44190e453f5bb1cb20076d9c6581e
+    profiles: ["claude-proxy"]
+    restart: unless-stopped
+    # Host access is loopback only; rsched uses http://cliproxy:8317 internally.
+    ports:
+      - "127.0.0.1:8317:8317"
+      - "127.0.0.1:54545:54545"  # Claude OAuth callback, tunnel for remote login
+      - "127.0.0.1:1455:1455"    # Codex OAuth callback, tunnel for remote login
+    volumes:
+      - type: bind
+        source: ${RSCHED_HOME:-/home/mark}/.config/routine-scheduler/cliproxy/config.yaml
+        target: /CLIProxyAPI/config.yaml
+        bind: { create_host_path: false }
+      - ${RSCHED_HOME:-/home/mark}/.config/routine-scheduler/cliproxy/auth:/root/.cli-proxy-api
+    # This entire state directory is already in the required backup inventory.
+
   rsched:
     build:
       context: .
@@ -30,9 +47,7 @@ services:
     environment:
       HOME: /home/mark
       RSCHED_BIND: "0.0.0.0"         # bind the LAN inside the container without editing the mounted config
-      # The claude-cli transport reads its token from the mounted ~/.credentials/claude-code-oauth.env.
-      # If you'd rather inject it (e.g. it lives elsewhere on the server), uncomment:
-      # CLAUDE_CODE_OAUTH_TOKEN: "${CLAUDE_CODE_OAUTH_TOKEN}"
+      # Subscription model authentication lives in the cliproxy sidecar.
     volumes:
       - ${RSCHED_HOME:-/home/mark}/git-repos/routine-scheduler:/home/mark/git-repos/routine-scheduler
       - ${RSCHED_HOME:-/home/mark}/.config/routine-scheduler:/home/mark/.config/routine-scheduler

@@ -90,23 +90,20 @@ MODEL_KINDS = ("main", "tool_call", "uncensored")
 DELIBERATION_LEVELS = ("terse", "standard", "deliberate", "think-on-paper")
 DEFAULT_DELIBERATION = "standard"
 CONVERSATION_DELIBERATION = "deliberate"  # chat is judgment-heavy — context on paper by default
-# Endpoints are model TRANSPORTS, never a second harness. "claude-cli" is the Claude Code
-# CLI in fully stripped print mode (tools off, our system prompt replaces its own) — a
-# subscription-billed completion function; the engine remains the only agent loop.
-EndpointKind = Literal["openai", "anthropic", "claude-cli"]
+# Endpoints are stateless HTTP transports; subscription authentication lives in the proxy.
+EndpointKind = Literal["openai", "anthropic"]
 SchemaMode = Literal["json_schema", "json_object", "ollama_native", "none"]
 ENDPOINT_KINDS = get_args(EndpointKind)
 SCHEMA_MODES = get_args(SchemaMode)
 # Kinds whose models are multimodal by construction, so a catalog model on an endpoint of this
 # kind defaults to native image/PDF input unless the model says otherwise (the `anthropic`
-# Messages API and the subscription CLI only ever serve Claude, which takes image blocks).
+# Messages API supports image blocks, including through compatible proxies).
 # `openai` varies per model (GLM is text-only, GPT-4o/Gemini aren't) so it defaults OFF — the
 # user flips `multimodal` on for the specific catalog model (see ModelConfig).
-NATIVE_MM_KINDS = {"anthropic", "claude-cli"}
+NATIVE_MM_KINDS = {"anthropic"}
 # The secrets-store / env-file variable an endpoint's key is looked up under when the
 # config doesn't set `key_var`. Per KIND: an openai endpoint must never default to the
-# Anthropic key. claude-cli has no entry — it authenticates via the subscription token
-# (`credentials_env` / CLAUDE_CODE_OAUTH_TOKEN), never key_var.
+# Anthropic key. Subscription proxies use their own client keys.
 KEY_VAR_DEFAULTS = {"anthropic": "ANTHROPIC_API_KEY", "openai": "OPENAI_API_KEY"}
 # The output cap a resolved model falls back to when neither the catalog model nor its
 # endpoint sets max_tokens. Generous on purpose: reasoning models need room to think AND

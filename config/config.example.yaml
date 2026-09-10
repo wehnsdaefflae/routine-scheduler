@@ -32,12 +32,11 @@ sandbox: permissive
 # harness. NONE are configured by default: add the ones you use in the web UI (Settings → LLM
 # endpoints), which explains what credential each kind needs. Full guide with provider recipes
 # (OpenRouter, Featherless, Ollama, vLLM, …): docs/endpoints.md (also in the console's Help tab).
-# kind: openai | anthropic | claude-cli
+# kind: openai | anthropic
 #   openai     — any OpenAI-compatible API (OpenRouter, Featherless, vLLM, Ollama, …).
 #                Needs an API key (Ollama: none).
-#   anthropic  — Anthropic's Messages API, METERED per-token billing. Needs an sk-ant-… API key.
-#   claude-cli — your Claude Max/Pro SUBSCRIPTION (no per-token billing). Uses the
-#                CLAUDE_CODE_OAUTH_TOKEN from Secrets (mint it with `claude setup-token`).
+#   anthropic  — Messages API: direct API key or subscription proxy client key.
+#                For CLIProxyAPI setup, see docs/claude-proxy-cutover.md.
 # Each ROUTINE picks its own three models (main / subroutine / tool_call) in the UI or its
 # routine.yaml. The only server-level model is the system_model below: the ONE fallback used for
 # machine work that isn't a routine yet — the new-routine clarify wizard and workflow generation.

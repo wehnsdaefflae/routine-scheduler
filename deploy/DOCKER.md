@@ -180,11 +180,9 @@ systemctl --user disable --now routine-scheduler.service
 
 - **Credentials are set in the UI**, not on the host — see [SETUP.md](SETUP.md). All keys, tokens,
   and util secrets go in **Settings → Secrets** (one store, injected at run time). The Claude
-  subscription token is minted once elsewhere with `claude setup-token` and pasted in as
-  `CLAUDE_CODE_OAUTH_TOKEN`; the container's `claude` CLI uses it via the environment and never logs
-  in. It's long-lived — when it expires, re-run `claude setup-token` and update the Secrets value
-  (no restart). Only `self-audit` (orchestrator) and `workflow-curator` (subcall) use `claude-cli` by
-  default; most setups can use API keys instead.
+  subscription uses the pinned CLIProxyAPI sidecar; see
+  [proxy setup](../docs/claude-proxy-cutover.md). The CLI installation is retained for
+  independent library utilities, not scheduler model transport.
 - **Headless browsing works out of the box.** The image carries Chromium's system libraries;
   the `page-fetch` util downloads Playwright's Chromium itself on first use (once — the
   browser cache `~/.cache/ms-playwright` is bind-mounted). That covers every util that drives a

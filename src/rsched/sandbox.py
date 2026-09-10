@@ -53,7 +53,7 @@ _SYSTEM_RW = ("/tmp", "/var/tmp", "/dev")  # noqa: S108 — jail roots, not temp
 _HOME_RO = (".local/bin", ".local/share/claude", ".gitconfig", ".config/git", ".config/gh")
 # HOME-scoped tool state, read-write: uv's script envs + managed pythons, XDG cache/state
 # (playwright browsers, tool caches), and the claude CLI's session state — sanctioned tools
-# of the system (the claude-cli endpoint uses the same state daemon-side).
+# of the system (used by independent Claude CLI utilities).
 _HOME_RW = (".cache", ".local/share/uv", ".local/state", ".claude", ".claude.json")
 
 

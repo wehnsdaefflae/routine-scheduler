@@ -19,7 +19,7 @@ the load-bearing strings and fails until the page matches.
 The append-only shape is also the **prompt-caching contract**: because the system prompt
 never changes within a run and messages only ever get appended, providers can serve every
 turn's prefix from cache (~0.1x price). The adapters exploit it (anthropic sets
-`cache_control` breakpoints; claude-cli keeps a per-run CLI session; OpenAI-style
+`cache_control` breakpoints, including subscription proxies; OpenAI-style
 providers cache implicitly) and report cache traffic as usage `cached_in` / `cache_write`
 — visible in status.json. Only compaction rewrites the prefix, which is why its threshold
 rises once cache hits are observed (§3f).

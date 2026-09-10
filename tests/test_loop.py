@@ -2334,7 +2334,7 @@ def test_failed_archival_degrades_without_error_card(make_routine, monkeypatch):
     loop = EngineLoop(ctx, "## Run flow", "instr")
 
     def _boom(*a, **k):
-        raise RuntimeError("claude-cli: call timed out after 599s")
+        raise RuntimeError("proxy: call timed out after 599s")
     # the archival call is what fails, and it now fails inside its own thread — the run
     # carries on with the digest and the reason is recorded, never raised at the loop
     from rsched.engine import compaction as compaction_mod
@@ -2354,7 +2354,7 @@ def test_failed_archival_degrades_without_error_card(make_routine, monkeypatch):
     assert not [e for e in events if e["type"] == "error"], \
         "a designed archival degrade must not raise a red error card"
     comps = [e for e in events if e["type"] == "compaction"]
-    assert comps and comps[-1]["payload"]["archival_degraded"].startswith("claude-cli")
+    assert comps and comps[-1]["payload"]["archival_degraded"].startswith("proxy")
 
 
 def test_edit_file_replaces_anchor_in_place(make_routine, scripted):
@@ -2495,7 +2495,7 @@ def test_stage_read_tracked_live_in_status(make_routine, scripted):
 
 def test_session_key_rides_every_completion(make_routine, scripted):
     """The loop hands each completion a stable per-run session key — the caching hint
-    endpoints may use (claude-cli keeps a CLI session per key) and may ignore."""
+    endpoints may use (for provider caching) and may ignore."""
     _d, ep, status, run_dir, _ = _run(make_routine, scripted, [probe(), finish()])
     assert status == "ok"
     sessions = {c["session"] for c in ep.calls}

@@ -9,13 +9,17 @@ endpoint. You configure endpoints and models once (Settings → Endpoints, or
 `~/.config/routine-scheduler/config.yaml`), then every routine and the system model **picks a
 model by name**.
 
-## The three kinds
+For a Claude subscription through an existing proxy, see the
+[subscription proxy guide](claude-proxy-cutover.md). The `anthropic` kind also
+accepts an Anthropic-compatible proxy URL and its client key; billing belongs to
+the upstream account, not the wire protocol.
+
+## The two kinds
 
 | kind | what it talks to | credential | billing |
 |---|---|---|---|
 | `openai` | any OpenAI-compatible chat API: OpenRouter, Featherless, vLLM, Ollama, Together, … | API key (or none for local Ollama) | per provider (metered or subscription) |
-| `anthropic` | Anthropic's Messages API | `sk-ant-…` API key | **metered**, per token |
-| `claude-cli` | the Claude Code CLI in fully stripped print mode | `CLAUDE_CODE_OAUTH_TOKEN` from `claude setup-token` | your Claude **subscription** — no per-token billing |
+| `anthropic` | Anthropic-compatible Messages API | provider API key or proxy client key | upstream plan (direct Anthropic is metered) |
 
 Nine times out of ten you want `openai`: one kind covers every provider that speaks the
 OpenAI chat-completions dialect, cloud or local.
@@ -27,8 +31,7 @@ OpenAI chat-completions dialect, cloud or local.
 2. **Give it a credential.** Either paste an API key on the endpoint's card (stored inline
    in the server config), or set `key_var` to a name like `OPENROUTER_API_KEY` and put the
    value in **Settings → Secrets** — the central store. Secrets win for anything you might
-   rotate; inline wins for quick starts. `claude-cli` reads `CLAUDE_CODE_OAUTH_TOKEN` from
-   Secrets — paste the token the card asks for. The card's **credential in use** line shows
+   rotate; inline wins for quick starts. Subscription proxies use a proxy client key. The card's **credential in use** line shows
    which rung of the ladder is actually live (inline / secret / env file / none — labels
    only, values are never returned) and warns when an inline key **shadows** a set secret:
    the inline key wins, so editing the secret changes nothing until the inline key is
@@ -86,7 +89,7 @@ system_model: glm                 # the fallback model for setup-time work — a
   first, then `key_var` in the Secrets store, then `key_var` inside `key_env_file`
   (a `~/.credentials/*.env` style file). `key_var` defaults per kind — `OPENAI_API_KEY`
   for `openai`, `ANTHROPIC_API_KEY` for `anthropic` — set it explicitly for an aggregator
-  (e.g. `OPENROUTER_API_KEY`). `claude-cli` ignores it (subscription token instead).
+  (e.g. `OPENROUTER_API_KEY`).
 - `schema_mode` — how the endpoint enforces the one-JSON-action-per-turn contract:
   - `json_schema` (default): strict `response_format` — OpenRouter, OpenAI, Ollama ≥ 0.5.
     Providers that reject it — with a 400, or a generic 503 that hides a schema-incapable
@@ -99,8 +102,8 @@ system_model: glm                 # the fallback model for setup-time work — a
   models on this endpoint inherit when they don't set their own. **Default `100_000`** (≈25k
   tokens — deliberately small). Prefer setting the real window per model (below).
 - `temperature` — optional **default** temperature catalog models inherit when unset.
-- `credentials_env` — `claude-cli` only: the file the OAuth token is read from when it isn't
-  in Secrets (default `~/.credentials/claude-code-oauth.env`).
+- `quota_source` — `cliproxy` enables subscription quota through the proxy management API.
+- `quota_key_var` / `quota_auth_index` — management key secret name and optional account selector.
 - `extra_body` — merged into every request body (`openai` kind only). This is where
   aggregator routing lives, e.g. OpenRouter provider pinning:
 
@@ -113,7 +116,7 @@ system_model: glm                 # the fallback model for setup-time work — a
   ```
 
 All of the above are editable on the endpoint's card in **Settings → Endpoints** (under *edit
-fields*: `temperature`, `key_env_file`, and — per kind — the `claude-cli` `credentials_env` or the
+fields*: `temperature`, `key_env_file`, and — per kind — the
 `openai` `extra_body` as JSON). A save that omits a field the form doesn't show preserves the
 stored value rather than clearing it.
 
@@ -126,7 +129,7 @@ default. Routines and the system model reference a model by its catalog **name**
 - `endpoint` — the configured endpoint that transports this model (required).
 - `model` — the provider's model id (required), e.g. `openai/gpt-4o`, `z-ai/glm-5.2`.
 - `multimodal` — whether this model takes image/PDF input natively. **Default by the endpoint
-  kind**: on for `anthropic` (images + PDFs) and `claude-cli` (images), off for `openai`. Set
+  kind**: on for `anthropic` (images + PDFs), off for `openai`. Set
   it explicitly to turn native vision *on* for an `openai` vision model (GPT-4o, Gemini) or
   *off* for a text-only one. When off, images/PDFs a routine views route to the `vision` util
   instead — vision still works, just indirectly.
@@ -136,10 +139,9 @@ default. Routines and the system model reference a model by its catalog **name**
 - `effort` — a reasoning-effort hint: `low | medium | high | xhigh | max`. Each kind maps it to
   its own reasoning knob (`openai` collapses `xhigh` / `max` → `high`); lower it if a reasoning
   model spends its whole output budget thinking instead of answering.
-- `temperature` — sampling temperature; inherits the endpoint's when unset (`openai` and
-  `anthropic` apply it, `claude-cli` ignores it).
+- `temperature` — sampling temperature; inherits the endpoint's when unset.
 - `max_tokens` — the model's real **output** limit per completion, sent on every engine call
-  (turns, `llm` actions; `claude-cli` maps it to `CLAUDE_CODE_MAX_OUTPUT_TOKENS`). Inherits the
+  (turns and `llm` actions). Inherits the
   endpoint's `max_tokens` when unset; with neither set, a generous engine default (16,384)
   applies and Settings flags the model with a **⚠ max_tokens** chip — implausible values
   (below 4,096, or larger than the context window) are flagged too, so "every model set
@@ -202,10 +204,9 @@ models:
 
 Every adapter uses prompt caching, and it needs no setup. Cache traffic is reported separately in
 usage — `cached_in` (the ~0.1× re-reads) and `cache_write` — and kept out of the `in` count, so
-token budgets keep their meaning. It matters most for the two kinds that cost real money:
-**anthropic** sets cache breakpoints every turn, so the growing prefix re-reads at ~0.1×; and
-**claude-cli** keeps one CLI session per run and sends only the new turn each time, so prior turns
-serve from cache instead of re-charging the whole transcript against your subscription quota.
+token budgets keep their meaning. The Anthropic adapter sets cache breakpoints every turn,
+including calls through subscription proxies. OpenAI-compatible providers report implicit
+prefix cache reads where supported.
 
 ## Provider recipes
 
@@ -257,7 +258,7 @@ What can be discovered, per kind:
 | `openai` @ Nano-GPT | its own `/api/models` (the OpenAI-compatible route carries none) | same |
 | `openai` @ Ollama | `POST /api/show` → the arch's `context_length` | none — derived from the window |
 | `openai`, other | `max_model_len` / `context_length` if the gateway emits one (vLLM does) | rarely |
-| `anthropic`, `claude-cli` | a built-in table — neither kind has a metadata API | the table |
+| `anthropic` | a built-in table — its model listing has no context-window metadata | the table |
 
 **The output cap is deliberately NOT maxed out.** Providers validate
 `input + requested_output <= window` up front, and the engine subtracts `max_tokens` from the
@@ -269,36 +270,16 @@ JSON action plus reasoning, not a claim about the model.
 A miss is not a failure: the model drops to the next tier and the Settings card says the id is one
 its provider does not list — which is usually a stale catalog entry worth fixing.
 
-**Claude subscription** — `kind: claude-cli`, no base_url or api key. Run
-`claude setup-token` on any machine, paste the resulting token on the endpoint's card
-(it lands in Secrets as `CLAUDE_CODE_OAUTH_TOKEN`). Metered-auth environment variables
-are scrubbed from the CLI's environment, so it can never silently fall back to API billing.
+**Claude subscription** — use `kind: anthropic`, the proxy root base URL, and a proxy
+client key. CLIProxyAPI owns OAuth login, token refresh, and account routing. See the
+[subscription proxy guide](claude-proxy-cutover.md).
 
 ### Seeing what is left of the subscription
 
-The endpoint card and the Routines page both show the account's remaining quota — "5h 61% left
-(resets in 2h10m) · 7d 32% left" — read from Anthropic's own usage API, the same source
-claude.ai's usage panel and the CLI statusline use. It is UNDOCUMENTED, so every failure is soft:
-the chip shows what went wrong and nothing else depends on it. (Until 0.295.0 the card instead
-showed a LOCAL tally of tokens this instance had burned. That could not answer "% remaining" even
-in principle — the windows are not a token count, and the tally was blind to your own interactive
-sessions and to claude.ai on the same subscription — so it was deleted rather than patched.)
-
-**It needs a SECOND token.** The usage API requires the `user:profile` scope, which the headless
-`claude setup-token` does not carry (it is inference-only and 403s). An interactive login mints a
-full-scope one:
-
-```
-docker exec -it -u 1000:1000 rsched claude /login
-```
-
-That writes `~/.claude/.credentials.json` inside the container, bind-mounted from
-`~/.claude-daemon` on the host so it survives a recreate (a dedicated dir, deliberately not the
-host's own `~/.claude` — sharing that would put the daemon and your own Claude Code in one
-session store). Nothing refreshes it headlessly, so it eventually expires; the card reads the
-expiry stamp and says so, with this command, rather than waiting to fail with an
-authentication error. The inference path is untouched by all of this — it keeps using the
-setup-token from Secrets.
+Set `quota_source: cliproxy` and the management key's secret name in `quota_key_var`.
+The endpoint card and dashboard show the real account windows from Anthropic's usage
+API through the proxy, including usage outside this scheduler. A failed quota read
+shows a soft error; it does not block inference. OAuth tokens remain in the proxy.
 
 ## Abliterated GLM 5.2 (uncensored community variants)
 

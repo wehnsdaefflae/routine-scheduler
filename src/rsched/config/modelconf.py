@@ -5,6 +5,7 @@ remote-machine catalog entries.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Literal
 
 from pydantic import Field, model_validator
 
@@ -27,7 +28,9 @@ class EndpointConfig(_Config):
     api_key: BlankableStr = ""
     key_env_file: BlankableStr = ""
     key_var: BlankableStr = ""  # unset → the endpoint kind's KEY_VAR_DEFAULTS entry
-    credentials_env: str = "~/.credentials/claude-code-oauth.env"  # claude-cli kind
+    quota_source: Literal["", "cliproxy"] = ""
+    quota_key_var: str = "CLIPROXY_MANAGEMENT_KEY"
+    quota_auth_index: str = ""  # blank selects the sole enabled Claude account
     schema_mode: SchemaMode = "json_schema"  # openai kind only
     # DEFAULTS a catalog model inherits when it leaves the field unset — and since 0.296.0 they
     # sit BELOW the figure the provider itself reports (endpoints/limits.py), because one guess
@@ -63,7 +66,7 @@ class ModelConfig(_Config):
     name: str = ""  # filled from the `models:` mapping key
     endpoint: str   # which configured endpoint transports this model
     model: str      # the provider's model id (e.g. "openai/gpt-4o")
-    # None = inherit the endpoint kind default (anthropic/claude-cli on, openai off).
+    # None = inherit the endpoint kind default (anthropic on, openai off).
     multimodal: bool | None = None
     # None = inherit the endpoint's context_chars. ≈ 4 × the token window.
     context_chars: int | None = None

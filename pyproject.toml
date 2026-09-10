@@ -127,7 +127,7 @@ ignore = [
     "TRY300", "TRY301", "TRY400",  # try/except shapes are chosen per-site, not by rule
     "FBT001", "FBT002", "FBT003",  # boolean args on internal seams are fine
     "PLR2004", # magic-value comparisons: HTTP codes and thresholds read better inline
-    "S603", "S607",  # spawning subprocesses (utils, claude-cli, git) IS the product
+    "S603", "S607",  # spawning subprocesses (utils, git) IS the product
     "BLE001",  # broad excepts are used deliberately on best-effort seams (each carries prose why)
     "SIM105",  # try/except-pass reads clearer than contextlib.suppress at these sites
     "S110",    # best-effort try/except/pass seams (same reason as BLE001)
