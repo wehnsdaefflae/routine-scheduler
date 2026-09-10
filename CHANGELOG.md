@@ -15,6 +15,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.316.1] — 2026-09-10
+
+### Fixed
+
+- A `script` action refused by one of its declaration gates (a `gu` exec the docstring's
+  `calls:` line does not name, or engine header keys written inside the PEP 723 block)
+  returns an observation with no exit code, because nothing ran. The renderer assumed one
+  for every util/script observation and raised `KeyError: 'exit'`, killing the engine
+  mid-turn with an unauthored summary — and again on every resume, since replay re-renders
+  the same observation out of the append-only transcript. Such a run could not be resumed
+  at all. The refusal now renders as `OBSERVATION (<kind> <name> NOT run): <what to fix>`,
+  alongside the secret-gate refusal it mirrors, and both gates are covered through the
+  replay path as well as the direct one.
+
 ## [0.316.0] — 2026-09-10
 
 - Replace character-based context settings with `context_tokens` across configuration,

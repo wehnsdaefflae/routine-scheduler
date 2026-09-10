@@ -144,6 +144,15 @@ def format_observation(obs: dict) -> str:  # noqa: PLR0911
             if obs.get("answer"):
                 text += f"\nThe user's verbatim reply: {obs['answer']}"
             return text
+        if err := obs.get("error"):
+            # The DECLARATION gates (executor.do_script): the call was refused before
+            # anything ran, so there is no exit code to report — the message IS the repair
+            # route. Rendered like the secret gate above rather than as a run with a
+            # failure, because that is what happened. Without this branch the `exit`
+            # lookup below raised, killing the engine mid-turn AND every later resume,
+            # since replay re-renders the same stored observation — an unresumable run
+            # with an unauthored summary (voice-model-trainer:20260910-030348).
+            return f"OBSERVATION ({kind} {obs['name']} NOT run): {err}"
         head = f"OBSERVATION ({kind} {obs['name']}, exit {obs['exit']})"
         body = _run_body(obs)
         if obs.get("usage"):

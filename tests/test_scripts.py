@@ -104,6 +104,25 @@ def _lib(tmp_path, utils=()):
     return home
 
 
+def _rendered(obs: dict) -> str:
+    """One refusal observation as the model sees it — through BOTH paths that render one.
+
+    A declaration gate returns `{kind, name, error}`: the call never ran, so it carries no
+    `exit`. The renderer used to assume one for every util/script observation and raised
+    `KeyError` — mid-turn in the loop, and again in `replay_messages` on every attempt to
+    resume, because the crashing observation is already in the append-only transcript. So
+    the assertion here is worth nothing unless it covers the replay path too.
+    """
+    from rsched.engine.history import replay_messages
+    from rsched.engine.observations import format_observation
+
+    direct = format_observation(obs)
+    messages, _last_turn, _records = replay_messages(
+        [{"type": "observation", "payload": obs, "turn": 1}])
+    assert [m["content"] for m in messages] == [direct]
+    return direct
+
+
 def test_list_and_needs_from_own_header(tmp_path):
     d = _routine(tmp_path)
     have = scripts.list_scripts(d)
@@ -168,6 +187,7 @@ def test_call_problems_refuse_undeclared_and_unknown_utils(tmp_path):
             libraries_home = home
     obs = do_script({"kind": "script", "name": "sneaky"}, _Ctx)
     assert "mailer" in obs["error"] and "calls:" in obs["error"]  # the fix is taught
+    assert _rendered(obs) == f"OBSERVATION (script sneaky NOT run): {obs['error']}"
 
 
 def test_misdeclared_engine_keys_in_pep723_block(tmp_path):
@@ -193,6 +213,7 @@ def test_misdeclared_engine_keys_in_pep723_block(tmp_path):
     obs = do_script({"kind": "script", "name": "publish"}, _Ctx)
     assert "error" in obs and "PEP 723" in obs["error"]
     assert "secrets: FTP_SOURCES" in obs["error"]         # the fix is taught, not implied
+    assert _rendered(obs) == f"OBSERVATION (script publish NOT run): {obs['error']}"
 
 
 def test_run_script_declared_env_and_venv(tmp_path, monkeypatch):
