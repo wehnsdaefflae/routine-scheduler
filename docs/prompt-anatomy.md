@@ -787,3 +787,5 @@ OBSERVATION (write_file): wrote 1832 bytes to state/shortlist.md
 ```
 
 …and the model's own finish (see §4) closes the conversation.
+
+Model capability context windows are stated in tokens (the full input + output capacity).

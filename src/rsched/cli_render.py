@@ -78,6 +78,9 @@ def _render_event(obj: dict) -> str | None:  # noqa: PLR0911 — one return per 
     if t == "error":
         return f"    ✗ error ({p.get('where')}): {p.get('message', '')[:120]}"
     if t == "compaction":
+        if p.get("before_estimated_tokens") is not None:
+            return (f"    ⇣ compacted context ({p['before_estimated_tokens']} → "
+                    f"{p['after_estimated_tokens']} estimated tokens)")
         return f"    ⇣ compacted context ({p.get('before_chars')} → {p.get('after_chars')} chars)"
     if t in ("subrun_start", "subrun_end"):
         label = child.mode_short(str(p.get("mode") or ""))

@@ -3,12 +3,10 @@ and the runner-side queued-status write that must not clobber them (F140)."""
 
 from rsched.daemon.runner_state import _queued_status
 from rsched.engine.compaction import (
-    CHARS_PER_TOKEN,
-    INPUT_CHARS_PER_TOKEN,
     clamp_to_cap,
-    input_cap_chars,
-    messages_size,
-    window_ceiling_chars,
+    estimate_input_tokens,
+    input_cap_tokens,
+    window_ceiling_tokens,
 )
 from rsched.engine.history import prior_counters
 
@@ -82,130 +80,71 @@ def test_queued_status_roundtrip_does_not_defeat_reseed():
     assert prior_counters(queued) == prior_counters(leg1)
 
 
-# --- F265: the compaction input-cap must RESERVE room for the model's output ---
-# The provider counts prompt + requested max_tokens output against ONE window; a small-window
-# model (nano-gpt gemma, 65536-token window) reached ~49k input tokens and still requested
-# 16384 output → the completion 400'd with context_length_exceeded. input_cap_chars must
-# leave max_tokens of output room so compaction fires before that overflow.
-
-
+# Output reservations and compaction use tokens throughout.
 def test_input_cap_reserves_output_room_on_small_window():
-    # gemma: 65536-token window ≈ 262144 chars, output reservation 16384 tokens.
-    window = 65536 * CHARS_PER_TOKEN
-    max_out = 16384
     for cached in (False, True):
-        cap = input_cap_chars(window, max_out, cached=cached)
-        # After compaction to the cap, prompt + output must fit the window with no overflow.
-        assert cap + max_out * CHARS_PER_TOKEN <= window, (cap, cached)
-    # The reservation (not the fraction trigger) binds on the cached path, and it now sizes the
-    # input budget in the TOKEN domain at the conservative INPUT_CHARS_PER_TOKEN density (F265
-    # 4th-recurrence fix): the cap is the input-token budget (window_tokens − output) converted
-    # to chars at the denser packing, so it sits BELOW the naive window − max_out*CHARS_PER_TOKEN.
-    cached_cap = input_cap_chars(window, max_out, cached=True)
-    window_tokens = window / CHARS_PER_TOKEN
-    assert cached_cap == (window_tokens - max_out) * INPUT_CHARS_PER_TOKEN
-    assert cached_cap < window - max_out * CHARS_PER_TOKEN
+        assert input_cap_tokens(65536, 16384, cached=cached) + 16384 <= 65536
+    assert input_cap_tokens(65536, 16384, cached=True) == 49152
 
 
-def test_input_cap_reproduces_c110156_no_overflow():
-    # The exact failing request: est input ~49264 tokens, output 16384, window 65536.
-    window = 65536 * CHARS_PER_TOKEN
-    cap = input_cap_chars(window, 16384, cached=True)
-    failing_input_chars = 49264 * CHARS_PER_TOKEN
-    # The observed input EXCEEDED the corrected cap, so compaction WOULD have fired.
-    assert failing_input_chars > cap
+def test_input_cap_large_window():
+    assert input_cap_tokens(200000, 16384, cached=False) == 120000
+    assert input_cap_tokens(200000, 16384, cached=True) == 160000
 
 
-def test_input_cap_survives_real_tokenizer_undershoot():
-    # F265 RECURRED after the zero-margin 0.148.1 fix: CHARS_PER_TOKEN=4 is OPTIMISTIC, so a
-    # prompt whose CHAR count sat at/under the old cap (window - max_out*4) still counted more
-    # real tokens than budgeted and overflowed (c-20260802-110156: 49326 real input tokens +
-    # 16384 output = 65710 > 65536). Model the real pack density observed in that failure and
-    # assert that a prompt filling the CURRENT cap leaves the output room even so.
-    window = 65536 * CHARS_PER_TOKEN
-    max_out = 16384
-    cap = input_cap_chars(window, max_out, cached=True)
-    # Densest pack seen in the F265 failure: 49326 real tokens for ~49264*4 estimated chars →
-    # ~3.996 chars/token. Use a conservatively denser 3.9 chars/token.
-    real_chars_per_token = 3.9
-    real_input_tokens = cap / real_chars_per_token
-    assert real_input_tokens + max_out <= 65536, (real_input_tokens, cap)
+def test_input_cap_never_negative():
+    assert input_cap_tokens(10000, 100000, cached=False) == 0
 
 
-def test_input_cap_zero_margin_would_have_overflowed():
-    # Guard the FIX's necessity: the OLD reservation sized at the optimistic 4 chars/token
-    # (window - max_out*4) packed at the observed real density DID overflow — this asserts the
-    # conservative INPUT_CHARS_PER_TOKEN sizing is what prevents it, so reverting the ceiling to
-    # the 4-chars/token basis re-breaks the test.
-    window = 65536 * CHARS_PER_TOKEN
-    max_out = 16384
-    old_zero_margin_cap = window - max_out * CHARS_PER_TOKEN
-    real_chars_per_token = 3.9
-    assert old_zero_margin_cap / real_chars_per_token + max_out > 65536
+def test_window_ceiling_reserves_output():
+    assert window_ceiling_tokens(65536, 16384) == 49152
 
 
-def test_input_cap_large_window_unchanged_by_reservation():
-    # A large window (Claude 200k tokens ≈ 800000 chars): the fraction trigger stays binding,
-    # so this fix does not change behaviour for big-window models.
-    window = 200_000 * CHARS_PER_TOKEN
-    max_out = 16384
-    assert input_cap_chars(window, max_out, cached=False) == 0.6 * window
-    assert input_cap_chars(window, max_out, cached=True) == 0.8 * window
-
-
-def test_input_cap_never_negative_on_absurd_reservation():
-    # A pathological max_tokens larger than the whole window floors the cap at 0, never negative.
-    assert input_cap_chars(10_000, 100_000, cached=False) == 0.0
-
-
-# --- F265 structural fix: enforce the hard window ceiling by TRIMMING, not just triggering ---
-# The three prior F265 fixes tuned the compaction TRIGGER (input_cap_chars). But compaction
-# elides only the MIDDLE; the head+tail floor is incompressible and a short conversation has no
-# middle at all, so a run with a few very large observation bodies overflowed the window with
-# NO compaction path able to help (c-20260802-110156, 3 recurrences). clamp_to_cap enforces the
-# ceiling as a last resort by truncating oversized bodies in place.
-
-
-def test_window_ceiling_reserves_output_and_margin():
-    window = 65536 * CHARS_PER_TOKEN
-    max_out = 16384
-    ceiling = window_ceiling_chars(window, max_out)
-    window_tokens = window / CHARS_PER_TOKEN
-    assert ceiling == (window_tokens - max_out) * INPUT_CHARS_PER_TOKEN
-    # A prompt filling the ceiling plus the requested output clears the real window even at the
-    # design worst-case INPUT_CHARS_PER_TOKEN pack (3.5) — exactly the window, by construction —
-    # and with headroom at the denser-still 3.9 chars/token pack that broke F265.
-    assert ceiling / INPUT_CHARS_PER_TOKEN + max_out <= 65536
-    assert ceiling / 3.9 + max_out <= 65536
+def test_estimator_accounts_for_unicode_framing_and_media():
+    english = [{"role": "user", "content": "a" * 100}]
+    unicode = [{"role": "user", "content": "界" * 100}]
+    assert estimate_input_tokens(unicode) > estimate_input_tokens(english)
+    assert estimate_input_tokens([{"role": "user", "content": ""}]) > 0
+    assert estimate_input_tokens([{**english[0], "media": [{}]}]) > estimate_input_tokens(english)
 
 
 def test_clamp_forces_short_conversation_floor_under_ceiling():
-    # THE F265 CASE: a 30-message conversation (head+tail floor, no middle to compact) whose
-    # observation bodies overflow a 65536-token window. Compaction cannot touch it; the clamp
-    # must bring it under the ceiling anyway.
-    window = 65536 * CHARS_PER_TOKEN
-    max_out = 16384
-    ceiling = window_ceiling_chars(window, max_out)
-    # 30 messages × ~9000 chars = 270k chars > the ~172k ceiling, so it WOULD overflow.
-    messages = [{"role": "user", "content": "x" * 9000} for _ in range(30)]
-    assert messages_size(messages) > ceiling
-    info = clamp_to_cap(messages, window, max_out)
-    assert info is not None and info["clamped_messages"] > 0
-    # After clamping, prompt + output fits the window (the whole point).
-    assert messages_size(messages) <= ceiling
-    assert len(messages) == 30          # message COUNT preserved — only bodies trimmed
-    assert any("window clamp" in m["content"] for m in messages)   # fails LOUD, not silently
+    for text in ("x" * 9000, "界" * 9000, '{"key":123},' * 900):
+        messages = [{"role": "user", "content": text} for _ in range(30)]
+        assert estimate_input_tokens(messages) > 49152
+        info = clamp_to_cap(messages, 65536, 16384)
+        assert info and info["clamped_messages"] > 0
+        assert estimate_input_tokens(messages) <= 49152
+        assert info["after_estimated_tokens"] <= info["ceiling_tokens"]
+        assert len(messages) == 30
+        assert any("window clamp" in m["content"] for m in messages)
 
 
 def test_clamp_noop_when_already_under_ceiling():
-    window = 65536 * CHARS_PER_TOKEN
     messages = [{"role": "user", "content": "x" * 500} for _ in range(30)]
-    assert clamp_to_cap(messages, window, 16384) is None
-    assert all(len(m["content"]) == 500 for m in messages)   # untouched
+    assert clamp_to_cap(messages, 65536, 16384) is None
+    assert all(len(m["content"]) == 500 for m in messages)
 
 
 def test_clamp_leaves_small_bodies_alone_when_it_cannot_help():
-    # A pathologically tiny window vs many small bodies: nothing exceeds the per-message floor,
-    # so the clamp declines rather than mangling small structural messages to no gain.
     messages = [{"role": "user", "content": "x" * 100} for _ in range(50)]
     assert clamp_to_cap(messages, 1000, 0) is None
+
+
+def test_schema_tokens_are_reserved_separately():
+    import json
+    from types import SimpleNamespace
+
+    from rsched.engine.window import _reserved_tokens
+
+    schema = {"description": "structured action " * 1000}
+    loop = SimpleNamespace(action_schema=schema, _schema_off=False)
+    ref = SimpleNamespace(max_tokens=16384)
+    reserve = _reserved_tokens(loop, ref)
+    assert reserve > ref.max_tokens
+    messages = [{"role": "user", "content": "observation " * 30000}]
+    clamp_to_cap(messages, 65536, reserve)
+    schema_estimate = estimate_input_tokens([{"content": json.dumps(schema, ensure_ascii=False)}])
+    assert estimate_input_tokens(messages) + schema_estimate + ref.max_tokens <= 65536
+    loop._schema_off = True
+    assert _reserved_tokens(loop, ref) == ref.max_tokens

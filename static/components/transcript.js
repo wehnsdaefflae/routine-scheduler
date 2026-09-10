@@ -396,11 +396,13 @@ export function createTranscript(container, opts = {}) {
       // ({clamp}), and the provider-window correction ({window_guard}, optional clamp).
       const p = ev.payload || {};
       const c = p.clamp || p.window_guard?.clamp || null;
-      const span = (o) => `${o.before_chars} → ${o.after_chars} chars`;
+      const span = (o) => o.before_estimated_tokens != null
+        ? `${o.before_estimated_tokens} → ${o.after_estimated_tokens} estimated tokens`
+        : `${o.before_chars} → ${o.after_chars} chars`;
       let text;
       if (p.window_guard) {
         const g = p.window_guard;
-        text = `— window corrected: ${g.model} really holds ${g.corrected_chars} chars` +
+        text = `— window corrected: ${g.model} really holds ${g.corrected_tokens != null ? `${g.corrected_tokens} tokens` : `${g.corrected_chars} chars`}` +
                `${c ? `; clamped ${c.clamped_messages} oversized, ${span(c)}` : ""} —`;
       } else if (c) {
         text = `— window clamp: ${c.clamped_messages} oversized ` +
@@ -421,7 +423,7 @@ export function createTranscript(container, opts = {}) {
       } else if (p.mode === "llm-history") {
         text = `— context archived: ${p.elided_messages} messages → history/ ` +
                `(${p.history_files} files, browsable in the rail's files card), ${span(p)} —`;
-      } else if (p.before_chars != null) {
+      } else if (p.before_estimated_tokens != null || p.before_chars != null) {
         text = `— context compacted: ` +
                `${p.elided_messages ? `${p.elided_messages} messages digested, ` : ""}${span(p)} —`;
       } else {

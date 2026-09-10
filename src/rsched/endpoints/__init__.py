@@ -93,9 +93,9 @@ class EndpointRegistry:
         found = limits.lookup(self.server.routines_home, mc.endpoint, mc.model) or {}
         ref = ModelRef(endpoint=mc.endpoint, model=mc.model, effort=mc.effort,
                        multimodal=multimodal,
-                       context_chars=(mc.context_chars
-                                      or limits.window_chars(found)
-                                      or ep_cfg.context_chars),
+                       context_tokens=(mc.context_tokens
+                                      or limits.window_tokens(found)
+                                      or ep_cfg.context_tokens),
                        temperature=temperature,
                        max_tokens=(mc.max_tokens
                                    or found.get("max_output_tokens")

@@ -118,7 +118,7 @@ def do_list_models(ctx: RunContext) -> dict:
         try:
             _, ref = ctx.registry.resolve(name)
             models.append({"name": name, "endpoint": ref.endpoint, "model": ref.model,
-                           "multimodal": ref.multimodal, "context_chars": ref.context_chars,
+                           "multimodal": ref.multimodal, "context_tokens": ref.context_tokens,
                            "effort": ref.effort,
                            "fallbacks": list(ctx.server.models[name].fallbacks)})
         except EndpointError as exc:

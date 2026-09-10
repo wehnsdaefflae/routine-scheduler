@@ -13,6 +13,7 @@ other seam in the engine appends.
 from __future__ import annotations
 
 import dataclasses
+import json
 import re
 from pathlib import Path
 
@@ -21,14 +22,13 @@ from ..health_events import log_health_event
 from . import archival, mediaops
 from .compaction import (
     ANTICIPATE_AT,
-    CHARS_PER_TOKEN,
     KEEP_HEAD_MSGS,
     KEEP_TAIL_MSGS,
     clamp_to_cap,
-    input_cap_chars,
+    estimate_input_tokens,
+    input_cap_tokens,
     maybe_compact,
-    messages_size,
-    window_ceiling_chars,
+    window_ceiling_tokens,
 )
 
 #: How close to the HARD ceiling still leaves a turn of slack. Below this the fraction is
@@ -71,8 +71,8 @@ def _override_window(loop, ref):
     """
     overrides = getattr(loop, "_window_overrides", None)
     shrunk = overrides.get((ref.endpoint, ref.model)) if overrides else None
-    if shrunk and shrunk < ref.context_chars:
-        return dataclasses.replace(ref, context_chars=shrunk)
+    if shrunk and shrunk < ref.context_tokens:
+        return dataclasses.replace(ref, context_tokens=shrunk)
     return ref
 
 def _shrink_window_to_provider(loop, endpoint, ref, exc: EndpointError) -> tuple | None:
@@ -87,28 +87,36 @@ def _shrink_window_to_provider(loop, endpoint, ref, exc: EndpointError) -> tuple
     stated = parse_overflow_limit(str(exc))
     if stated is None:
         return None
-    corrected = int(stated * CHARS_PER_TOKEN)
+    corrected = stated
     key = (ref.endpoint, ref.model)
     overrides = getattr(loop, "_window_overrides", None)
     if overrides is None:
         overrides = loop._window_overrides = {}
-    if overrides.get(key, float("inf")) <= corrected or corrected >= ref.context_chars:
+    if overrides.get(key, float("inf")) <= corrected or corrected >= ref.context_tokens:
         return None
     overrides[key] = corrected
-    new_ref = dataclasses.replace(ref, context_chars=corrected)
-    cl = clamp_to_cap(loop.messages, new_ref.context_chars, new_ref.max_tokens)
+    new_ref = dataclasses.replace(ref, context_tokens=corrected)
+    cl = clamp_to_cap(loop.messages, new_ref.context_tokens, _reserved_tokens(loop, new_ref))
     ctx = loop.ctx
     ctx.transcript.event("compaction", {"window_guard": {
-        "model": ref.name or ref.model, "configured_chars": ref.context_chars,
-        "provider_max_tokens": stated, "corrected_chars": corrected,
+        "model": ref.name or ref.model, "configured_tokens": ref.context_tokens,
+        "provider_max_tokens": stated, "corrected_tokens": corrected,
         **({"clamp": cl} if cl else {})}})
     log_health_event(ctx.server.routines_home, "model_window_corrected",
                      routine=ctx.routine.slug, run_id=ctx.run_id,
                      detail=(f"{ref.name or ref.model}: catalog claims "
-                             f"{ref.context_chars:,} context chars but the provider "
+                             f"{ref.context_tokens:,} context tokens but the provider "
                              f"enforces {stated:,} tokens — run continues on "
-                             f"{corrected:,} chars; correct the catalog entry"))
+                             f"{corrected:,} tokens; correct the catalog entry"))
     return endpoint, new_ref
+
+def _reserved_tokens(loop, ref) -> int:
+    """Reserve output plus the separately transmitted action schema."""
+    schema = getattr(loop, "action_schema", None)
+    schema_cost = (estimate_input_tokens([{"content": json.dumps(schema, ensure_ascii=False)}])
+                   if schema and not getattr(loop, "_schema_off", False) else 0)
+    return ref.max_tokens + schema_cost
+
 
 def compact_if_needed(loop, endpoint, ref) -> None:
     """Keep the next prompt inside the model's window. First ARCHIVE the middle if it has grown
@@ -121,10 +129,10 @@ def compact_if_needed(loop, endpoint, ref) -> None:
     """
     _archive_if_needed(loop, endpoint, ref)
     ctx = loop.ctx
-    cl = clamp_to_cap(loop.messages, ref.context_chars, ref.max_tokens)
+    cl = clamp_to_cap(loop.messages, ref.context_tokens, _reserved_tokens(loop, ref))
     if cl:
         ctx.transcript.event("compaction", {"clamp": cl})
-        loop._last_compact_after = messages_size(loop.messages)
+        loop._last_compact_after = estimate_input_tokens(loop.messages)
 
 def _warn_before_eviction(loop, size: float, ref) -> bool:
     """Give the run ONE turn to move what matters into a durable store before the middle goes.
@@ -135,18 +143,18 @@ def _warn_before_eviction(loop, size: float, ref) -> bool:
     the moment to use them, which is precisely the one this layer exists to supply. Returns
     True when the archive should wait a turn.
 
-    **Deferring is safe by construction, and that is what makes this cheap.** The gate is
+    The decision uses estimated input occupancy, with headroom for the next turn. The gate is
     `min(fraction × window, ceiling)`, and when the FRACTION binds there is 20–40% of the
     window between here and the hard ceiling — a whole turn of slack. When the CEILING binds
     there is none, so the warning is skipped and the archive happens now: a warning that
     overflowed the window would cost the run the very turns it was trying to protect. Either
-    way `clamp_to_cap` still runs unconditionally afterwards, so a deferred turn cannot 400.
+    way `clamp_to_cap` still runs afterwards. Provider tokenization can differ from the estimate.
 
     Once per run. A second warning would be the layer talking about itself.
     """
     if loop._evict_warned:
         return False
-    ceiling = window_ceiling_chars(ref.context_chars, ref.max_tokens)
+    ceiling = window_ceiling_tokens(ref.context_tokens, _reserved_tokens(loop, ref))
     if size > ceiling * _EVICT_WARN_HEADROOM:
         return False            # no slack: the ceiling is binding, archive now
     loop._evict_warned = True
@@ -173,7 +181,7 @@ def _archive_if_needed(loop, endpoint, ref) -> None:
     the caller's `clamp_to_cap` step (the head+tail floor is incompressible).
     """
     ctx = loop.ctx
-    size = messages_size(loop.messages)
+    size = estimate_input_tokens(loop.messages)
     # Observed cache hits flip the economics: re-reading carried context costs ~0.1x,
     # while compacting rewrites the prefix and invalidates the whole cache — so compact
     # later (0.8) once the provider demonstrably serves from cache, earlier (0.6) when
@@ -181,7 +189,7 @@ def _archive_if_needed(loop, endpoint, ref) -> None:
     # OUTPUT (ref.max_tokens): the provider counts prompt + requested output against ONE
     # window, so a small-window model must compact before input + max_tokens overflows it
     # (F265). Both use the MODEL's window, not the endpoint default.
-    context_cap = input_cap_chars(ref.context_chars, ref.max_tokens,
+    context_cap = input_cap_tokens(ref.context_tokens, _reserved_tokens(loop, ref),
                                   cached=bool(ctx.usage.get("cached_in")))
     # Long prompts also burn the token BUDGET — every turn re-sends everything, so a
     # bloated prompt taxes each remaining turn. Once the prompt would eat >10% of the
@@ -190,7 +198,7 @@ def _archive_if_needed(loop, endpoint, ref) -> None:
     # budget exhaustion doesn't thrash (compaction itself spends tokens).
     remaining = ctx.tokens_remaining()   # None = unlimited → only the context cap applies
     budget_cap = (float("inf") if remaining is None
-                  else max(40_000.0, 0.10 * 4 * remaining))
+                  else max(10_000.0, 0.10 * remaining))
     cap = min(context_cap, budget_cap)
     # A BOUNDARY the engine already detects: this turn begins a new stage module, so the run is
     # between steps rather than mid-edit. Compact now if the prompt is merely APPROACHING the gate
@@ -210,7 +218,7 @@ def _archive_if_needed(loop, endpoint, ref) -> None:
     # for one. (Seen live: 4 compactions in one run, the last archiving 3 messages for a
     # 5k-char gain.)
     middle_n = len(loop.messages) - KEEP_HEAD_MSGS - KEEP_TAIL_MSGS
-    if middle_n < 8 or size < loop._last_compact_after + 20_000:
+    if middle_n < 8 or size < loop._last_compact_after + 5_000:
         return
     if _warn_before_eviction(loop, size, ref):
         return          # one turn to externalize what matters; the archive happens next turn
@@ -220,9 +228,9 @@ def _archive_if_needed(loop, endpoint, ref) -> None:
     c_endpoint, c_ref = endpoint, ref
     try:
         t_endpoint, t_ref = ctx.registry.for_model("tool_call", ctx.routine.models)
-        middle_size = messages_size(
+        middle_size = estimate_input_tokens(
             loop.messages[KEEP_HEAD_MSGS:len(loop.messages) - KEEP_TAIL_MSGS])
-        if t_ref.context_chars * 0.7 >= middle_size:
+        if t_ref.context_tokens * 0.7 >= middle_size:
             c_endpoint, c_ref = t_endpoint, t_ref
     except Exception:
         pass
@@ -237,14 +245,14 @@ def _archive_if_needed(loop, endpoint, ref) -> None:
     middle = loop.messages[KEEP_HEAD_MSGS:len(loop.messages) - KEEP_TAIL_MSGS]
     turn = max((r["turn"] for r in loop.turn_records), default=0)
     loop.messages, cinfo = maybe_compact(loop.messages, loop.turn_records,
-                                        ref.context_chars)
+                                        ref.context_tokens)
     if cinfo is not None:
         archival.start(loop, middle, c_endpoint, c_ref, turn)
         cinfo["archival"] = "background"
     if cinfo:
         # the archival call's spend is booked by archival.collect, on the turn the
         # archive lands — this pass is the deterministic digest and calls no model
-        loop._last_compact_after = messages_size(loop.messages)
+        loop._last_compact_after = estimate_input_tokens(loop.messages)
         # `anticipated` says this pass was taken EARLY, at a stage boundary, rather than because
         # the prompt had actually crossed the gate — without it the two are indistinguishable in
         # the transcript and the feature could not be evaluated after the fact.

@@ -417,7 +417,9 @@ by a test, by the engine, or by a past incident.
   what its models' real context window and output maximum are (OpenRouter/Nano-GPT/Ollama have
   metadata APIs; `anthropic` listings lack context-window metadata and use a built-in table), caches it under
   `<routines>/.control/model-limits.json` — derived state, never config — and refreshes on a 24h
-  TTL from the scheduler tick. ONE precedence chain: per-MODEL config → provider → endpoint
+  TTL from the scheduler tick (new model keys refresh immediately). Context windows use
+  `context_tokens` throughout; compaction occupancy is explicitly estimated in tokens, with
+  output and action-schema space reserved separately. ONE precedence chain: per-MODEL config → provider → endpoint
   default → floor. The endpoint value sits BELOW the provider because it has always been
   documented as a default a model inherits, and putting it there means nothing has to be deleted
   from an unversioned config.yaml. `resolve()` is on the per-turn path and NEVER fetches — a miss

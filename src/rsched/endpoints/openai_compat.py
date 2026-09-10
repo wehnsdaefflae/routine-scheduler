@@ -105,7 +105,7 @@ class OpenAICompatEndpoint:
         self.key_env_file = cfg.key_env_file
         self.key_var = cfg.key_var
         self.schema_mode = cfg.schema_mode
-        self.context_chars = cfg.context_chars
+        self.context_tokens = cfg.context_tokens
         self.temperature = cfg.temperature
         self.extra_body = dict(cfg.extra_body)
         # ollama_native: use Ollama's native /api/chat `format` field for REAL constrained
@@ -210,9 +210,9 @@ class OpenAICompatEndpoint:
         """Ollama native /api/chat with `format` = the JSON schema → constrained decoding."""
         # num_ctx MUST be set: Ollama's default context is tiny, so a large prompt gets
         # silently truncated and schema enforcement degrades (the model emits stray keys).
-        # It uses the endpoint's context_chars default — the per-model window drives the
+        # It uses the endpoint's context_tokens default — the per-model window drives the
         # engine's compaction budget, not this local decode ceiling.
-        options = {"num_ctx": max(8192, self.context_chars // 4)}
+        options = {"num_ctx": max(8192, self.context_tokens)}
         if temperature is not None:
             options["temperature"] = temperature
         if max_tokens:

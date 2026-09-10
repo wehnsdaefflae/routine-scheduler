@@ -141,7 +141,7 @@ class AnthropicEndpoint:
         self.api_key = cfg.api_key
         self.key_env_file = cfg.key_env_file
         self.key_var = cfg.key_var
-        self.context_chars = cfg.context_chars
+        self.context_tokens = cfg.context_tokens
         self.temperature = cfg.temperature
 
     def supports_media(self, media_type: str, *, multimodal: bool) -> bool:

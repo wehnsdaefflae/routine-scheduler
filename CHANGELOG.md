@@ -15,6 +15,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.316.0] — 2026-09-10
+
+- Replace character-based context settings with `context_tokens` across configuration,
+  endpoint resolution, Settings, model pickers and compaction. Output reservations remain
+  separate token counts. Input occupancy and compaction events explicitly label estimates.
+- Correct Claude revision windows and refresh newly added models without waiting for the
+  global metadata cache TTL. Migrate deployed endpoint/model limits to tokens.
+
 ## [0.315.0] — 2026-09-10
 
 ### Changed — complete subscription proxy cutover

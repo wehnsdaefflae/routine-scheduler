@@ -39,11 +39,11 @@ def test_deployed_config_keys_load_exactly(tmp_path):
         "endpoints": {
             "openrouter": {"kind": "openai", "base_url": "https://openrouter.ai/api/v1",
                            "api_key": "sk-or-xyz", "key_var": "OPENROUTER_KEY",
-                           "schema_mode": "json_object", "context_chars": 180_000},
+                           "schema_mode": "json_object", "context_tokens": 180_000},
             "cc": {"kind": "anthropic"},
         },
         "models": {"ds": {"endpoint": "openrouter", "model": "deepseek/deepseek-chat",
-                          "multimodal": False, "context_chars": 200_000, "effort": "high"}},
+                          "multimodal": False, "context_tokens": 200_000, "effort": "high"}},
         "system_model": "ds",
     })
     assert problems == []
@@ -56,11 +56,11 @@ def test_deployed_config_keys_load_exactly(tmp_path):
     assert ep.name == "openrouter" and ep.kind == "openai"
     assert ep.base_url == "https://openrouter.ai/api/v1" and ep.api_key == "sk-or-xyz"
     assert ep.key_var == "OPENROUTER_KEY" and ep.schema_mode == "json_object"
-    assert ep.context_chars == 180_000
+    assert ep.context_tokens == 180_000
     assert server.endpoints["cc"].kind == "anthropic"
     mc = server.models["ds"]
     assert mc.name == "ds" and mc.endpoint == "openrouter" and mc.model == "deepseek/deepseek-chat"
-    assert mc.multimodal is False and mc.context_chars == 200_000 and mc.effort == "high"
+    assert mc.multimodal is False and mc.context_tokens == 200_000 and mc.effort == "high"
     assert server.system_model == "ds"
     # derived properties hang off libraries_home
     assert server.libraries_home == server.libraries_home == server.libraries_home

@@ -137,7 +137,7 @@ class ChatEndpoint(Protocol):
     """
 
     name: str
-    context_chars: int
+    context_tokens: int
 
     def complete(
         self,

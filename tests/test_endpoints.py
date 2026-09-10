@@ -110,7 +110,7 @@ def test_retry_after_hint_honored_and_capped(monkeypatch):
 def _oai(schema_mode="json_schema"):
     return OpenAICompatEndpoint(EndpointConfig(
         name="ollama-local", kind="openai", base_url="http://x/v1",
-        api_key="k", schema_mode=schema_mode, context_chars=36000, temperature=0.2))
+        api_key="k", schema_mode=schema_mode, context_tokens=9000, temperature=0.2))
 
 
 def test_openai_request_and_usage(monkeypatch):
@@ -369,7 +369,7 @@ def test_openai_think_preamble_stripped(monkeypatch):
 def test_ollama_native_structured_output(monkeypatch):
     ep = OpenAICompatEndpoint(EndpointConfig(
         name="ollama", kind="openai", base_url="http://x/v1", api_key="ollama",
-        schema_mode="ollama_native", context_chars=36000, temperature=0.2))
+        schema_mode="ollama_native", context_tokens=9000, temperature=0.2))
     seen = {}
 
     def fake_post(url, json=None, headers=None, timeout=None):
@@ -381,7 +381,7 @@ def test_ollama_native_structured_output(monkeypatch):
     c = ep.complete(MESSAGES, model="gemma4:latest", schema={"type": "object"}, max_tokens=999)
     assert seen["url"] == "http://x/api/chat"          # native endpoint, not /v1/chat/completions
     assert seen["body"]["format"] == {"type": "object"}  # the schema drives constrained decoding
-    assert seen["body"]["options"]["num_ctx"] == 9000    # context_chars // 4, prevents truncation
+    assert seen["body"]["options"]["num_ctx"] == 9000    # actual token window, prevents truncation
     assert seen["body"]["options"]["num_predict"] == 999
     assert c.text == '{"say":"s","kind":"finish"}' and c.usage == {"in": 12, "out": 5}
     # without a schema the native path is skipped (plain /v1 generation)
@@ -423,7 +423,7 @@ def test_ollama_native_malformed_json_on_200_is_retryable(monkeypatch):
     monkeypatch.setattr("time.sleep", lambda s: None)
     ep = OpenAICompatEndpoint(EndpointConfig(
         name="ollama", kind="openai", base_url="http://x/v1", api_key="ollama",
-        schema_mode="ollama_native", context_chars=36000))
+        schema_mode="ollama_native", context_tokens=9000))
     monkeypatch.setattr(oai_mod.httpx, "post", lambda *a, **k: BrokenJSONResponse(text="not json"))
     with pytest.raises(EndpointError) as exc:
         ep.complete(MESSAGES, model="m", schema={"type": "object"})
@@ -436,7 +436,7 @@ def test_anthropic_forced_tool_and_parse(monkeypatch, tmp_path):
     keyfile = tmp_path / "anthropic.env"
     keyfile.write_text('ANTHROPIC_API_KEY="sk-test"\n')
     ep = AnthropicEndpoint(EndpointConfig(
-        name="anthropic", kind="anthropic", key_env_file=str(keyfile), context_chars=100))
+        name="anthropic", kind="anthropic", key_env_file=str(keyfile), context_tokens=100))
     seen = {}
 
     def fake_post(url, json=None, headers=None, timeout=None):
@@ -470,7 +470,7 @@ def test_anthropic_missing_key(tmp_path):
 
 def _anth():
     return AnthropicEndpoint(EndpointConfig(
-        name="anthropic", kind="anthropic", api_key="sk-test", context_chars=800000))
+        name="anthropic", kind="anthropic", api_key="sk-test", context_tokens=800000))
 
 
 _ANTH_OK = {"content": [{"type": "tool_use", "name": "action", "input": {"say": "s", "kind": "finish"}}],
@@ -619,11 +619,11 @@ def test_registry_model_resolution():
     from rsched.config import ModelConfig, ServerConfig
     server = ServerConfig()
     server.endpoints = {"e1": EndpointConfig(name="e1", kind="openai", base_url="http://x",
-                                             context_chars=250_000)}
+                                             context_tokens=250_000)}
     server.models = {
         "sys": ModelConfig(name="sys", endpoint="e1", model="sys-id"),
         "override": ModelConfig(name="override", endpoint="e1", model="override-id",
-                                multimodal=True, context_chars=500_000),
+                                multimodal=True, context_tokens=500_000),
     }
     server.system_model = "sys"
     reg = EndpointRegistry(server)
@@ -631,10 +631,10 @@ def test_registry_model_resolution():
     _, ref = reg.for_model("main", {})
     assert ref.model == "sys-id" and ref.name == "sys"
     # resolved attrs inherit the endpoint defaults (openai → text-only; endpoint's window)
-    assert ref.multimodal is False and ref.context_chars == 250_000
+    assert ref.multimodal is False and ref.context_tokens == 250_000
     # a routine's own model (by catalog name) wins, carrying its per-model attrs
     _, ref = reg.for_model("main", {"main": "override"})
-    assert ref.model == "override-id" and ref.multimodal is True and ref.context_chars == 500_000
+    assert ref.model == "override-id" and ref.multimodal is True and ref.context_tokens == 500_000
     # for_system returns the system_model
     _, sref = reg.for_system()
     assert sref.model == "sys-id"

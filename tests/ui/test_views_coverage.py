@@ -57,7 +57,7 @@ def _seed_message_events(run_dir):
                      "provider": "stub-inc",
                      "raw": '{"kind": "edit_file", "path": "stages/model.md"}'}},
         {"ts": "t", "type": "compaction", "turn": 3,
-         "payload": {"before_chars": 9000, "after_chars": 1000}},
+         "payload": {"before_estimated_tokens": 9000, "after_estimated_tokens": 1000}},
         # the hard window clamp nests its numbers — must render its own line, never
         # "undefined → undefined" (F309, user report 2026-08-12 on c-20260810-213335)
         {"ts": "t", "type": "compaction", "turn": 4,

@@ -119,8 +119,8 @@ class InstrumentedEndpoint:
         return self._inner.name
 
     @property
-    def context_chars(self) -> int:
-        return self._inner.context_chars
+    def context_tokens(self) -> int:
+        return self._inner.context_tokens
 
     def __getattr__(self, item):
         # adapter-specific attributes fall through to the wrapped endpoint. Guard `_inner`

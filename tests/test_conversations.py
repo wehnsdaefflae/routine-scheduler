@@ -565,7 +565,7 @@ def _tiny_window_model(server, name="tiny"):
     from rsched.config import ModelConfig
 
     server.models[name] = ModelConfig(name=name, endpoint="dummy", model="t",
-                                      context_chars=65_536, max_tokens=16_384)
+                                      context_tokens=16_384, max_tokens=16_384)
 
 
 def test_create_refuses_model_the_harness_cannot_run(client):
@@ -605,7 +605,7 @@ def test_create_conversation_accepts_per_role_models_including_honeypot(client):
     c, server = client
     from rsched.config import ModelConfig
     server.models["hp"] = ModelConfig(name="hp", endpoint="dummy", model="h",
-                                      context_chars=200_000, max_tokens=4_096)
+                                      context_tokens=200_000, max_tokens=4_096)
     r = c.post("/api/conversations", data={
         "text": "t",
         "models": json.dumps({"main": "m", "tool_call": "m", "uncensored": "hp"}),
@@ -642,7 +642,7 @@ def test_detail_and_settings_pickers_carry_window_meta(client):
     _tiny_window_model(server)
     slug = c.post("/api/conversations", data={"text": "t"}).json()["slug"]
     meta = c.get(f"/api/conversations/{slug}").json()["catalog_meta"]
-    assert meta["m"]["fit"] in ("ok", "tight") and meta["m"]["input_ceiling_chars"] > 0
+    assert meta["m"]["fit"] in ("ok", "tight") and meta["m"]["input_ceiling_tokens"] > 0
     assert meta["tiny"]["fit"] == "impossible"
     assert meta["tiny"]["context_tokens"] == 16_384
     by_name = {m["name"]: m for m in c.get("/api/settings/models").json()["models"]}

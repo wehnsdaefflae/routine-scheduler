@@ -23,7 +23,7 @@ class StubEndpoint:
 
     def __init__(self, *, reply: Completion | None = None, boom: Exception | None = None):
         self.name = "stub"
-        self.context_chars = 123_000
+        self.context_tokens = 123_000
         self.flavor = "vanilla"  # an adapter-specific attribute (tests __getattr__)
         self.calls: list[dict] = []
         self._reply = reply or Completion(text="ok", usage={"in": 7, "out": 3}, provider="acme")
@@ -69,7 +69,7 @@ def test_passthrough_when_no_sink():
 def test_proxies_name_context_and_adapter_attrs():
     ep = InstrumentedEndpoint(StubEndpoint())
     assert ep.name == "stub"
-    assert ep.context_chars == 123_000
+    assert ep.context_tokens == 123_000
     assert ep.flavor == "vanilla"  # __getattr__ fallthrough
 
 

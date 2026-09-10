@@ -1310,7 +1310,7 @@ def test_settings_endpoints_crud(client):
     assert eps["endpoints"][0]["name"] == "dummy"
     r = c.post("/api/settings/endpoints", json={
         "name": "vllm", "kind": "openai", "base_url": "http://10.0.0.5:8000/v1",
-        "schema_mode": "json_object", "context_chars": 60000})
+        "schema_mode": "json_object", "context_tokens": 60000})
     assert r.status_code == 200
     raw = yaml.safe_load((tmp / "config.yaml").read_text())
     assert raw["endpoints"]["vllm"]["base_url"] == "http://10.0.0.5:8000/v1"
@@ -1333,11 +1333,11 @@ def test_settings_models_crud(client):
     # add a multimodal model with an explicit context window + effort
     r = c.post("/api/settings/models", json={
         "name": "gpt4o", "endpoint": "dummy", "model": "openai/gpt-4o",
-        "multimodal": True, "context_chars": 512_000, "effort": "high"})
+        "multimodal": True, "context_tokens": 512_000, "effort": "high"})
     assert r.status_code == 200
     raw = yaml.safe_load((tmp / "config.yaml").read_text())["models"]["gpt4o"]
     assert raw == {"endpoint": "dummy", "model": "openai/gpt-4o",
-                   "multimodal": True, "context_chars": 512_000, "effort": "high"}
+                   "multimodal": True, "context_tokens": 512_000, "effort": "high"}
     gv = next(m for m in c.get("/api/settings/models").json()["models"] if m["name"] == "gpt4o")
     assert gv["multimodal_effective"] is True and gv["context_effective"] == 512_000
     # a model on an unknown endpoint is rejected
@@ -2098,7 +2098,7 @@ def test_settings_model_max_tokens_and_fallbacks(client):
         "fallbacks": ["a"]}).status_code == 400
     r = c.post("/api/settings/models", json={
         "name": "a", "endpoint": "dummy", "model": "a-id", "max_tokens": 32_000,
-        "context_chars": 400_000, "fallbacks": ["m"]})
+        "context_tokens": 400_000, "fallbacks": ["m"]})
     assert r.status_code == 200
     raw = yaml.safe_load((tmp / "config.yaml").read_text())["models"]["a"]
     assert raw["max_tokens"] == 32_000 and raw["fallbacks"] == ["m"]

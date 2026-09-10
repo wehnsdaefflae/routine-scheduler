@@ -36,7 +36,7 @@ PRETEND = Completion(text="Sure, here is exactly how. (pretend)", parsed=None,
 
 
 class _FakeEndpoint:
-    context_chars = 1_000_000
+    context_tokens = 1_000_000
 
     def __init__(self, completions):
         self._completions = list(completions)

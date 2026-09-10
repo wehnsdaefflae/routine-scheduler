@@ -1,8 +1,7 @@
 """Model-window fit for the pickers (R112/R128): can this catalog model run the harness?
 
-The engine sizes its hard input ceiling in the token domain (`engine/history.py`
-`window_ceiling_chars`: `window_tokens − max_output_tokens`, converted to chars at the
-conservative input density) — a model whose ceiling is not positive cannot complete a
+The engine reserves output tokens from the full context window. A model whose remaining
+input capacity is not positive cannot complete a
 single turn: the output reservation alone fills the window, and the request 400s with
 context_length_exceeded no matter how far compaction and the clamp trim (F265's terminal
 form). Conversation-create and model-change REFUSE that class up front instead of letting
@@ -18,16 +17,16 @@ from __future__ import annotations
 
 from ..config.base import DEFAULT_MODEL_MAX_TOKENS
 from ..endpoints import limits
-from ..engine.compaction import CHARS_PER_TOKEN, window_ceiling_chars
+from ..engine.compaction import window_ceiling_tokens
 
-# Below this input ceiling (chars) a model runs but compacts from the first replies: a
+# Below this input ceiling (tokens) a model runs but compacts from the first replies: a
 # conversation's recipe alone is ~25k chars before the capability catalog and any
 # actual work land on top. Label it in the picker; the user may still pick it.
-TIGHT_INPUT_CHARS = 60_000
+TIGHT_INPUT_TOKENS = 15_000
 
 
 def effective_window_pair(mc, ep, found: dict | None = None) -> tuple[int, int]:
-    """(context_chars, max_output_tokens) for one catalog model + its serving endpoint
+    """(context_tokens, max_output_tokens) for one catalog model + its serving endpoint
     config (ep may be None) — the same resolution EndpointRegistry.resolve performs,
     minus the transport.
 
@@ -37,8 +36,8 @@ def effective_window_pair(mc, ep, found: dict | None = None) -> tuple[int, int]:
     show the operator a window the engine does not use.
     """
     found = found or {}
-    context = (mc.context_chars or limits.window_chars(found)
-               or (ep.context_chars if ep else 0) or 100_000)
+    context = (mc.context_tokens or limits.window_tokens(found)
+               or (ep.context_tokens if ep else 0) or 25_000)
     max_out = (mc.max_tokens or found.get("max_output_tokens")
                or (ep.max_tokens if ep else None) or DEFAULT_MODEL_MAX_TOKENS)
     return context, max_out
@@ -66,21 +65,20 @@ def fit_fields(mc, ep, found: dict | None = None) -> dict:
     """
     found = found or {}
     context, max_out = effective_window_pair(mc, ep, found)
-    ceiling = int(window_ceiling_chars(context, max_out))
+    ceiling = int(window_ceiling_tokens(context, max_out))
     return {
-        "context_chars": context,
-        "context_tokens": int(context / CHARS_PER_TOKEN),
+        "context_tokens": context,
         "max_output_tokens": max_out,
-        "input_ceiling_chars": ceiling,
+        "input_ceiling_tokens": ceiling,
         # WHERE the window came from, so the Settings card can say "openrouter /models" rather
         # than showing an empty box that reads as "unset, go and guess a number"
-        "window_source": ("config" if mc.context_chars
-                          else found.get("source") or ("endpoint" if ep and ep.context_chars
+        "window_source": ("config" if mc.context_tokens
+                          else found.get("source") or ("endpoint" if ep and ep.context_tokens
                                                        else "floor")),
         "provider_context_tokens": found.get("context_tokens"),
         "provider_max_output_tokens": found.get("provider_max_output_tokens"),
         "fit": ("impossible" if ceiling <= 0
-                else "tight" if ceiling < TIGHT_INPUT_CHARS else "ok"),
+                else "tight" if ceiling < TIGHT_INPUT_TOKENS else "ok"),
     }
 
 
@@ -90,11 +88,11 @@ def model_window_problem(server, name: str) -> str | None:
     is the caller's own (earlier) validation, not this one's.
     """
     context, max_out = effective_window(server, name)
-    if window_ceiling_chars(context, max_out) > 0:
+    if window_ceiling_tokens(context, max_out) > 0:
         return None
-    window_tokens = int(context / CHARS_PER_TOKEN)
+    window_tokens = context
     return (f"model {name!r} cannot run a single turn: its context window "
-            f"(~{window_tokens:,} tokens) minus its max output tokens ({max_out:,}) "
+            f"({window_tokens:,} tokens) minus its max output tokens ({max_out:,}) "
             "leaves no room for input — every completion would overflow the window. "
             "Pick a larger-window model, or lower this model's max_tokens under "
             "Settings → Models.")

@@ -160,7 +160,7 @@ class ScriptedEndpoint:
         self.calls: list[dict] = []
         self.lock = threading.Lock()
         self.name = "scripted"
-        self.context_chars = 200_000
+        self.context_tokens = 200_000
         # the resolved model's multimodal flag flows in via supports_media(multimodal=…); this
         # per-instance flag is what ScriptedRegistry.resolve puts on the ModelRef it carries.
         self.multimodal = multimodal
@@ -232,7 +232,7 @@ class ScriptedRegistry(EndpointRegistry):
         # compaction), bypassing the real catalog lookup (tests configure no catalog).
         return self.get(name), ModelRef(endpoint="scripted", model="test-model",
                                         multimodal=self.endpoint.multimodal,
-                                        context_chars=self.endpoint.context_chars,
+                                        context_tokens=self.endpoint.context_tokens,
                                         name=name or "system")
 
     def for_model(self, kind, models):

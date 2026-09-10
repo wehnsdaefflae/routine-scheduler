@@ -58,7 +58,7 @@ def client(server):
 # ---- a scripted system model for the distill/revise inferences ---------------------------------
 
 class _ScriptedEndpoint:
-    context_chars = 200_000
+    context_tokens = 200_000
     name = "scripted"
     multimodal = False
 

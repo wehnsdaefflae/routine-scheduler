@@ -37,8 +37,8 @@ class EndpointConfig(_Config):
     # made once for a whole endpoint is exactly what the provider's own answer should replace.
     # A per-MODEL value still wins over both: that is an operator sizing this model down.
     # Per-model attributes live on ModelConfig — one endpoint serves many models with different
-    # windows, vision support, and sampling. context_chars ≈ 4 × the token window.
-    context_chars: int = 100_000
+    # windows, vision support, and sampling. context_tokens is the full input + output token window.
+    context_tokens: int = 25_000
     temperature: float | None = None
     max_tokens: int | None = None   # None → DEFAULT_MODEL_MAX_TOKENS at resolve time
     # openai kind only: merged verbatim into every request body. This is where aggregator
@@ -59,7 +59,7 @@ class ModelConfig(_Config):
     per-model attributes that used to (wrongly) sit on the endpoint. One endpoint serves
     many models, so multimodality, context window, effort, and temperature belong here.
     A None attribute inherits the serving endpoint's default (multimodal → the endpoint
-    kind's NATIVE_MM_KINDS default; context_chars/temperature → the endpoint's own).
+    kind's NATIVE_MM_KINDS default; context_tokens/temperature → the endpoint's own).
     Routines/conversations reference a model by its catalog NAME (see RoutineConfig.models).
     """
 
@@ -68,13 +68,12 @@ class ModelConfig(_Config):
     model: str      # the provider's model id (e.g. "openai/gpt-4o")
     # None = inherit the endpoint kind default (anthropic on, openai off).
     multimodal: bool | None = None
-    # None = inherit the endpoint's context_chars. ≈ 4 × the token window.
-    context_chars: int | None = None
+    # None = discover the provider window, then inherit the endpoint default.
+    context_tokens: int | None = None
     effort: str | None = None          # reasoning-effort hint (low|medium|high|xhigh|max)
     temperature: float | None = None   # None = inherit the endpoint's temperature default
-    # Max OUTPUT tokens per completion — the model's real output limit. None = inherit the
-    # endpoint's max_tokens, else DEFAULT_MODEL_MAX_TOKENS. Settings flags unset/implausible
-    # values so "set correctly" is auditable.
+    # Requested OUTPUT token cap per completion, reserved separately from input. None uses
+    # discovered output limits capped for this harness, then the endpoint/default fallback.
     max_tokens: int | None = None
     # Ordered failover chain: catalog model NAMES tried in order when this model fails hard
     # (transport retries exhausted / non-retryable error). NOT transitive — only this list is
@@ -94,7 +93,7 @@ class ModelRef:
     model: str
     effort: str | None = None
     multimodal: bool = False
-    context_chars: int = 100_000
+    context_tokens: int = 25_000
     temperature: float | None = None
     max_tokens: int = DEFAULT_MODEL_MAX_TOKENS
     name: str = ""

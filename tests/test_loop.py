@@ -2289,8 +2289,8 @@ def test_compaction_antithrash(make_routine, monkeypatch):
     # what the prompt gets either way, which is what the anti-thrash guards bound
     monkeypatch.setattr(window_mod.archival, "start", lambda *a, **k: attempts.append(1))
 
-    class _Tiny:   # a resolved ModelRef stand-in: context_chars drives the compaction cap
-        context_chars = 1000   # so the 60% size trigger always fires for our messages
+    class _Tiny:   # a resolved ModelRef stand-in: context_tokens drives the compaction cap
+        context_tokens = 1000   # so the 60% size trigger always fires for our messages
         max_tokens = 0         # F265: no output reservation here → fraction trigger stays binding
 
     msg = {"role": "user", "content": "x" * 500}
@@ -2341,7 +2341,7 @@ def test_failed_archival_degrades_without_error_card(make_routine, monkeypatch):
     monkeypatch.setattr(compaction_mod, "archive_middle", _boom)
 
     class _Tiny:
-        context_chars = 1000
+        context_tokens = 1000
         max_tokens = 0
 
     msg = {"role": "user", "content": "x" * 500}
@@ -2573,7 +2573,7 @@ def _role_registry(ep, windows):
         def resolve(self, name):
             name = name or "system"
             return self.get(name), ModelRef(endpoint="scripted", model=name,
-                                            context_chars=windows.get(name, 2_000), name=name)
+                                            context_tokens=windows.get(name, 2_000), name=name)
 
     return _RoleRegistry(ep)
 

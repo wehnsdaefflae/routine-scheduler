@@ -6,7 +6,7 @@ import json
 from rsched import domains
 from rsched.config import ServerConfig, load_routine
 from rsched.engine.budgets_config import Budgets
-from rsched.engine.compaction import maybe_compact, messages_size
+from rsched.engine.compaction import estimate_input_tokens, maybe_compact
 from rsched.engine.composer import build_system_prompt, state_digest
 from rsched.engine.harness import harness_contract
 from rsched.engine.observations import format_observation, truncate
@@ -688,16 +688,16 @@ def test_compaction_deterministic_and_bounded():
         messages.append({"role": "assistant", "content": json.dumps({"kind": "util", "say": f"t{turn}"})})
         messages.append({"role": "user", "content": f"OBSERVATION {turn}: " + "o" * 400})
         records.append({"turn": turn, "kind": "util", "brief": f'"cmd{turn}"', "say": f"say {turn}"})
-    small_budget = messages_size(messages)  # force compaction: budget*0.6 < current size
-    compacted, info = maybe_compact(list(messages), records, context_chars=small_budget)
-    assert info and info["after_chars"] < info["before_chars"]
+    small_budget = estimate_input_tokens(messages)  # force compaction: budget*0.6 < current size
+    compacted, info = maybe_compact(list(messages), records, context_tokens=small_budget)
+    assert info and info["after_estimated_tokens"] < info["before_estimated_tokens"]
     assert compacted[0]["content"].startswith("S")            # system kept
     assert compacted[-1] == messages[-1]                       # tail kept verbatim
     digest = next(m for m in compacted if "CONTEXT COMPACTED" in m["content"])
     assert "say 10" in digest["content"]                       # elided middle is digested
-    again, _ = maybe_compact(list(messages), records, context_chars=small_budget)
+    again, _ = maybe_compact(list(messages), records, context_tokens=small_budget)
     assert again == compacted                                  # deterministic
-    untouched, info2 = maybe_compact(list(messages), records, context_chars=10**9)
+    untouched, info2 = maybe_compact(list(messages), records, context_tokens=10**9)
     assert info2 is None and untouched == messages
 
 
@@ -775,7 +775,7 @@ def test_replay_does_not_duplicate_blocking_answers():
 
 
 def _gate_loop(monkeypatch, *, usage, phase="", last_seen_phase=None):
-    """A minimal loop stub for compact_if_needed: 40 x 1750-char messages = 70k chars
+    """A minimal loop stub for compact_if_needed: 40 messages estimated at 70k tokens
     against a 100k window - between the 0.6 (60k) and 0.8 (80k) thresholds."""
     from types import SimpleNamespace
 
@@ -801,7 +801,7 @@ def _gate_loop(monkeypatch, *, usage, phase="", last_seen_phase=None):
                            _last_compact_after=0, _history_active=False,
                            _hist_note_countdown=0, _last_seen_phase=last_seen_phase,
                            _evict_warned=True,   # the pre-eviction warning is its own test
-                           messages=[{"role": "user", "content": "x" * 1750}
+                           messages=[{"role": "user", "content": "x" * 6070}
                                      for _ in range(40)])
     return loop, calls
 
@@ -814,8 +814,8 @@ def test_compaction_gate_uncached_compacts_at_60pct(monkeypatch):
     # max_tokens=0 isolates the FRACTION gate: the output reservation (F265, tested in
     # test_history.test_input_cap_*) contributes nothing, so only the 0.6/0.8 trigger is under test.
     compact_if_needed(loop, endpoint=None,
-                      ref=ModelRef("e", "m", context_chars=100_000, max_tokens=0))
-    assert calls, "70k chars over a 100k window must compact at the uncached 0.6 gate"
+                      ref=ModelRef("e", "m", context_tokens=100_000, max_tokens=0))
+    assert calls, "70k estimated tokens over a 100k window must compact at the uncached 0.6 gate"
 
 
 def test_compaction_gate_cached_waits_for_80pct(monkeypatch):
@@ -828,7 +828,7 @@ def test_compaction_gate_cached_waits_for_80pct(monkeypatch):
     # max_tokens=0 isolates the FRACTION gate (the F265 output reservation is tested separately
     # in test_history): 70k over 100k sits under the 0.8 cached trigger with no reservation.
     compact_if_needed(loop, endpoint=None,
-                      ref=ModelRef("e", "m", context_chars=100_000, max_tokens=0))
+                      ref=ModelRef("e", "m", context_tokens=100_000, max_tokens=0))
     assert not calls, "with cache hits, 70k over 100k sits under the 0.8 gate - no compaction"
 
 
@@ -847,7 +847,7 @@ def test_a_stage_boundary_compacts_a_prompt_only_approaching_the_gate(monkeypatc
 
     loop, calls = _gate_loop(monkeypatch, usage={"cached_in": 5_000}, phase="draft")
     compact_if_needed(loop, endpoint=None,
-                      ref=ModelRef("e", "m", context_chars=100_000, max_tokens=0))
+                      ref=ModelRef("e", "m", context_tokens=100_000, max_tokens=0))
     assert calls, "at a stage boundary a prompt approaching the gate is archived early"
     assert loop._last_seen_phase == "draft"     # and the boundary is spent, not re-triggered
 
@@ -861,7 +861,7 @@ def test_mid_step_inside_the_same_stage_does_not_anticipate(monkeypatch):
     loop, calls = _gate_loop(monkeypatch, usage={"cached_in": 5_000}, phase="draft",
                              last_seen_phase="draft")
     compact_if_needed(loop, endpoint=None,
-                      ref=ModelRef("e", "m", context_chars=100_000, max_tokens=0))
+                      ref=ModelRef("e", "m", context_tokens=100_000, max_tokens=0))
     assert not calls, "already inside the stage — the ordinary 0.8 gate applies"
 
 
@@ -877,7 +877,7 @@ def test_anticipation_cannot_force_a_pass_the_anti_thrash_guards_refuse(monkeypa
     # 30 messages = a 0-message middle against the 6+24 head/tail floor
     loop.messages = [{"role": "user", "content": "x" * 4_000} for _ in range(30)]
     compact_if_needed(loop, endpoint=None,
-                      ref=ModelRef("e", "m", context_chars=100_000, max_tokens=0))
+                      ref=ModelRef("e", "m", context_tokens=100_000, max_tokens=0))
     assert not calls, "no middle to archive — the boundary must not override the floor"
     assert isinstance(loop.ctx, SimpleNamespace)
 

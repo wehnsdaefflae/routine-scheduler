@@ -1,19 +1,7 @@
 """What the PROVIDER says this model's limits are — discovered, not hand-entered.
 
-Operator, 2026-09-05: "I don't think the models that are set up use all their available tokens.
-can we make them max out their token context window without the user having to set it up?" They
-were right, and by more than it looked. Limits were pure hand-entry — of the 17 catalog models on
-the live instance, ONE set `context_chars` and NONE set `max_tokens` — so every model rode a
-guess made on its endpoint. Measured against the providers' own metadata: the OpenRouter endpoint
-declared a 50,000-token window against real windows of 256,000–1,310,720, i.e. the engine was
-using **4.8%** of Kimi K3's context. The `claude` endpoint erred the other way, claiming a
-500,000-token window no Claude model has.
-
-The self-correcting mechanism that was supposed to catch this (F278, `engine/window.py`) is
-reactive by construction — it only ever learns from a request that already failed — and on this
-instance it had never fired: `.control/health-events.jsonl` held 0 `model_window_corrected` rows
-across 412, while carrying 7 `run_failed` rows whose text literally reads `Max context tokens:
-65536`.
+Context capacity and output reservation are token counts end to end. Missing metadata
+falls back to configured defaults; input occupancy is explicitly estimated by compaction.
 
 ## The two knobs need OPPOSITE treatment
 
@@ -22,7 +10,7 @@ This is the trap in "max out the tokens", and it is worth stating plainly:
 - **The input window is adopted verbatim.** Pure win — a bigger window is more context.
 - **The output cap is NOT maxed out.** Providers validate `input + requested_output <= window`
   up front (that is exactly what the live nano-gpt 400 above says), and
-  `compaction.window_ceiling_chars` subtracts `max_tokens` from the input budget for the same
+  `compaction.window_ceiling_tokens` subtracts `max_tokens` from the input budget for the same
   reason. Kimi K3's real 943,718-token output limit would collapse the usable prompt to ~10% of
   its 1M window. So the output cap resolves to `min(discovered, ENGINE_OUTPUT_CEILING)` — a
   ceiling on what THIS HARNESS needs for one JSON action plus reasoning, not a stand-in for what
@@ -72,11 +60,17 @@ _TIMEOUT = 20
 #: the discovery code (one table, two kinds read it) and its staleness is visible in Settings as
 #: `source: table` rather than passing for a measurement.
 STATIC_WINDOWS: dict[str, int] = {
-    # Claude, by the alias the CLI accepts and by api id prefix
-    "opus": 200_000, "sonnet": 200_000, "haiku": 200_000, "fable": 200_000,
-    "claude-opus": 200_000, "claude-sonnet": 200_000, "claude-haiku": 200_000,
-    "claude-3": 200_000, "claude-4": 200_000, "claude-5": 200_000,
+    # https://platform.claude.com/docs/en/build-with-claude/context-windows (2026-09-10).
+    # Specific revisions precede older families; unknown future revisions are not guessed.
+    "claude-opus-4-6": 1_000_000, "claude-opus-4-7": 1_000_000,
+    "claude-opus-4-8": 1_000_000, "claude-opus-5": 1_000_000,
+    "claude-sonnet-4-6": 1_000_000, "claude-sonnet-5": 1_000_000,
+    "claude-fable-5": 1_000_000, "claude-mythos-5": 1_000_000,
+    "claude-opus-4-1": 200_000, "claude-opus-4-5": 200_000,
+    "claude-sonnet-4-5": 200_000, "claude-haiku-4-5": 200_000,
+    "claude-3": 200_000,
 }
+
 STATIC_OUTPUT = 32_000
 
 
@@ -101,17 +95,10 @@ def lookup(routines_home: Path, endpoint: str, model: str) -> dict | None:
     return row if isinstance(row, dict) and row.get("context_tokens") else None
 
 
-def window_chars(row: dict) -> int:
-    """A discovered TOKEN window as the CHAR figure the engine budgets in, or 0 for a miss.
-
-    Providers report tokens; the engine's compaction math is in chars at ~4/token
-    (`engine/compaction.CHARS_PER_TOKEN`). The conversion happens once, here, so no call site
-    has to remember which unit it is holding.
-    """
-    from ..engine.compaction import CHARS_PER_TOKEN
-
+def window_tokens(row: dict) -> int:
+    """Provider context capacity in tokens, or zero for a metadata miss."""
     ctx = row.get("context_tokens")
-    return int(ctx * CHARS_PER_TOKEN) if isinstance(ctx, int | float) and ctx > 0 else 0
+    return int(ctx) if isinstance(ctx, int | float) and ctx > 0 else 0
 
 
 def _static_window(model_id: str) -> int | None:
@@ -259,10 +246,11 @@ def refresh(server, *, force: bool = False) -> dict:
     home = server.routines_home
     cache = load(home)
     now = datetime.now(UTC)
-    if not force and cache.get("fetched"):
+    if not force and not _missing_models(server, cache) and cache.get("fetched"):
         try:
             if datetime.fromisoformat(str(cache["fetched"])) + TTL > now:
-                return {"written": 0, "skipped": len(cache) - 1, "misses": []}
+                return {"written": 0, "skipped": sum(isinstance(v, dict) for v in cache.values()),
+                        "misses": []}
         except ValueError:
             pass
 
@@ -270,7 +258,8 @@ def refresh(server, *, force: bool = False) -> dict:
     for mc in server.models.values():
         by_endpoint.setdefault(mc.endpoint, []).append(mc.model)
 
-    out: dict = {"fetched": now.isoformat()}
+    out: dict = {"fetched": now.isoformat(),
+                 "checked_models": [_key(mc.endpoint, mc.model) for mc in server.models.values()]}
     misses: list[str] = []
     for ep_name, model_ids in sorted(by_endpoint.items()):
         ep = server.endpoints.get(ep_name)
@@ -312,7 +301,7 @@ def refresh(server, *, force: bool = False) -> dict:
                 "source": provider_used, "fetched": now.isoformat()}
     cache_path(home).parent.mkdir(parents=True, exist_ok=True)
     atomic_write_json(cache_path(home), out)
-    written = len(out) - 1
+    written = sum(isinstance(v, dict) for v in out.values())
     if misses:
         log.info("limits: %d model(s) not listed by their provider: %s",
                  len(misses), ", ".join(misses))
@@ -321,10 +310,19 @@ def refresh(server, *, force: bool = False) -> dict:
 
 def stale(server) -> bool:
     """Is the cache older than the TTL (or absent)? The daemon's tick check."""
-    fetched = load(server.routines_home).get("fetched")
+    cache = load(server.routines_home)
+    if _missing_models(server, cache):
+        return True
+    fetched = cache.get("fetched")
     if not fetched:
         return True
     try:
         return datetime.fromisoformat(str(fetched)) + TTL <= datetime.now(UTC)
     except ValueError:
         return True
+
+
+def _missing_models(server, cache: dict) -> bool:
+    """A fresh global timestamp must not hide newly added endpoint/model pairs."""
+    checked = cache.get("checked_models", cache)
+    return any(_key(mc.endpoint, mc.model) not in checked for mc in server.models.values())

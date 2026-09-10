@@ -69,7 +69,7 @@ the limits (single-writer status.json preserved).
   compaction (below), schema-retry debris cleanup, and the media fallback (a failed image turn's
   tail message is rewritten text-only) — each invalidates the provider cache once, by design.
 - **Compaction archives context to a navigable on-disk history** (`history.archive_middle`): when
-  the prompt exceeds ~60% of the resolved model's `context_chars` — ~80% once cache hits are observed
+  the prompt exceeds ~60% of the resolved model's `context_tokens` — ~80% once cache hits are observed
   (compaction rewrites the prefix and invalidates the cache, so carried context is cheaper than
   re-archiving) — the middle turns are elided by the deterministic one-line digest
   (`history.maybe_compact`) and that same middle is reorganized into markdown files (~≤100 lines
@@ -205,7 +205,7 @@ Two kinds:
 
 
 The **model catalog** (`config.ModelConfig`, `ServerConfig.models`) binds a provider model id to
-an endpoint and owns the PER-MODEL attributes — `multimodal`, `context_chars`, `effort`,
+an endpoint and owns the PER-MODEL attributes — `multimodal`, `context_tokens`, `effort`,
 `temperature`, `max_tokens` (each None inherits the endpoint kind default / the endpoint's own
 value; `max_tokens` — the model's real OUTPUT limit, sent on every engine call — falls back to
 `DEFAULT_MODEL_MAX_TOKENS` 16_384, and Settings flags unset/implausible values so "set correctly"
@@ -221,9 +221,9 @@ generation/suggestion). A single `llm`/`spawn`/`subtask` call may override its m
 the 2026-08-22 order retiring the subroutine role. The `list_models` action shows the
 catalog; an unconfigured `uncensored` or an unknown name is rejected with a teaching note). `EndpointRegistry.resolve(name)` /
 `.for_model(kind, routine.models)` / `.for_system()` produce a RESOLVED `ModelRef` (endpoint,
-model id, effort + the filled-in multimodal/context_chars/temperature/max_tokens) — the runtime
+model id, effort + the filled-in multimodal/context_tokens/temperature/max_tokens) — the runtime
 handle, no longer parsed from yaml. `supports_media(mime, *, multimodal)` and compaction
-(`ref.context_chars`) take the resolved model's values; `complete()` gains a `temperature` kwarg.
+(`ref.context_tokens`) take the resolved model's values; `complete()` gains a `temperature` kwarg.
 Editing a catalog model updates every routine that names it. **Failover** (`endpoints/failover.py`)
 is two-level: a hard EndpointError anywhere (marked centrally in `InstrumentedEndpoint`) puts that
 (endpoint, model id) in a 5-min process-local COOLDOWN, and every role resolution

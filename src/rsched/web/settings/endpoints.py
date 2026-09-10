@@ -19,7 +19,7 @@ from ...config import (
 )
 from ...endpoints import limits
 from ...endpoints.base import api_key_source
-from ..model_fit import fit_fields
+from ..model_fit import effective_window_pair, fit_fields
 from .common import reload_into, rewrite_block, server_of, update_config
 
 router = APIRouter()
@@ -49,7 +49,7 @@ def _endpoint_view(name: str, ep: EndpointConfig) -> dict:
             "quota_source": ep.quota_source, "quota_key_var": ep.quota_key_var,
             "quota_auth_index": ep.quota_auth_index,
             "has_subscription_quota": bool(ep.quota_source),
-            "schema_mode": ep.schema_mode, "context_chars": ep.context_chars,
+            "schema_mode": ep.schema_mode, "context_tokens": ep.context_tokens,
             "temperature": ep.temperature, "max_tokens": ep.max_tokens,
             "extra_body": ep.extra_body,
             "has_inline_key": bool(ep.api_key), "key_source": _key_source(ep)}
@@ -76,10 +76,10 @@ def _max_tokens_warning(mc: ModelConfig, ep: EndpointConfig | None,
         return (f"max_tokens {configured:,} is implausibly low "
                 f"(< {MIN_PLAUSIBLE_MAX_TOKENS:,}) — reasoning models need room to think "
                 "AND answer")
-    ctx = mc.context_chars or (ep.context_chars if ep else 0)
-    if ctx and configured * 4 > ctx:
-        return (f"max_tokens {configured:,} (≈{configured * 4:,} chars) exceeds the "
-                f"model's context window ({ctx:,} chars)")
+    ctx, _ = effective_window_pair(mc, ep, found)
+    if ctx and configured > ctx:
+        return (f"max_tokens {configured:,} tokens exceeds the "
+                f"model's context window ({ctx:,} tokens)")
     return None
 
 
@@ -90,10 +90,9 @@ def _window_warning(mc: ModelConfig, found: dict | None) -> str | None:
     """
     found = found or {}
     provider = found.get("context_tokens")
-    if not mc.context_chars or not provider:
+    if not mc.context_tokens or not provider:
         return None
-    from ...engine.compaction import CHARS_PER_TOKEN
-    mine = int(mc.context_chars / CHARS_PER_TOKEN)
+    mine = mc.context_tokens
     if mine < provider * 0.9:
         return (f"this model is capped at ~{mine:,} tokens by hand; its provider reports "
                 f"{provider:,}. Clear the field to use the full window.")
@@ -119,12 +118,12 @@ def _model_view(mc: ModelConfig, endpoints: dict, found: dict | None = None) -> 
     found = found or {}
     return {"name": mc.name, "endpoint": mc.endpoint, "model": mc.model,
             "multimodal": mc.multimodal, "effort": mc.effort, "temperature": mc.temperature,
-            "context_chars": mc.context_chars,
+            "context_tokens": mc.context_tokens,
             "max_tokens": mc.max_tokens, "fallbacks": list(mc.fallbacks),
             "multimodal_effective": mc.multimodal if mc.multimodal is not None
             else (kind in NATIVE_MM_KINDS),
-            "context_effective": (mc.context_chars or limits.window_chars(found)
-                                  or (ep.context_chars if ep else 0)),
+            "context_effective": (mc.context_tokens or limits.window_tokens(found)
+                                  or (ep.context_tokens if ep else 0)),
             "max_tokens_effective": (mc.max_tokens or found.get("max_output_tokens")
                                      or (ep.max_tokens if ep else None)
                                      or DEFAULT_MODEL_MAX_TOKENS),
@@ -167,7 +166,7 @@ class EndpointBody(BaseModel):
     quota_key_var: str | None = None
     quota_auth_index: str | None = None
     schema_mode: str = "json_schema"
-    context_chars: int = 100_000     # a DEFAULT catalog models inherit (per-model window wins)
+    context_tokens: int = 25_000     # a DEFAULT catalog models inherit (per-model window wins)
     temperature: float | None = None  # a DEFAULT catalog models inherit
     max_tokens: int | None = None     # a DEFAULT catalog models inherit
     # openai only: merged verbatim into every request body (aggregator/provider routing, e.g.
@@ -236,7 +235,7 @@ class ModelBody(BaseModel):
     endpoint: str
     model: str
     multimodal: bool | None = None    # None = default by the endpoint kind
-    context_chars: int | None = None  # None = inherit the endpoint's context_chars
+    context_tokens: int | None = None  # None = inherit the endpoint's context_tokens
     effort: str | None = None
     temperature: float | None = None  # None = inherit the endpoint's temperature
     max_tokens: int | None = None     # None = inherit the endpoint's max_tokens

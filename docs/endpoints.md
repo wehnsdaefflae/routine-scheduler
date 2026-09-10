@@ -66,7 +66,7 @@ endpoints:
     base_url: https://openrouter.ai/api/v1
     key_var: OPENROUTER_API_KEY   # name in the Secrets store (or use api_key: inline)
     schema_mode: json_schema
-    context_chars: 400000         # a DEFAULT models on this endpoint inherit
+    context_tokens: 100000         # a DEFAULT models on this endpoint inherit
 
 models:                           # the catalog: each entry binds a model id to an endpoint
   glm:
@@ -76,7 +76,7 @@ models:                           # the catalog: each entry binds a model id to 
     endpoint: OpenRouter
     model: openai/gpt-4o
     multimodal: true              # this model sees images/PDFs; glm above doesn't
-    context_chars: 512000         # overrides the endpoint default for this model
+    context_tokens: 128000         # overrides the endpoint default for this model
 
 system_model: glm                 # the fallback model for setup-time work — a catalog NAME
 ```
@@ -98,9 +98,9 @@ system_model: glm                 # the fallback model for setup-time work — a
   - `ollama_native`: Ollama's own `format` field — REAL constrained decoding; best for
     small local models that otherwise drift off-schema.
   - `none`: nothing requested; the code-level validate-and-retry loop does all the work.
-- `context_chars` — a **default** prompt-size window (in characters, ≈ 4 × tokens) that catalog
-  models on this endpoint inherit when they don't set their own. **Default `100_000`** (≈25k
-  tokens — deliberately small). Prefer setting the real window per model (below).
+- `context_tokens` — the full input + output token window used as a fallback when model
+  metadata is unavailable. Default `25_000`. Provider discovery takes precedence over this
+  endpoint fallback; an explicit per-model override takes precedence over discovery.
 - `temperature` — optional **default** temperature catalog models inherit when unset.
 - `quota_source` — `cliproxy` enables subscription quota through the proxy management API.
 - `quota_key_var` / `quota_auth_index` — management key secret name and optional account selector.
@@ -133,14 +133,17 @@ default. Routines and the system model reference a model by its catalog **name**
   it explicitly to turn native vision *on* for an `openai` vision model (GPT-4o, Gemini) or
   *off* for a text-only one. When off, images/PDFs a routine views route to the `vision` util
   instead — vision still works, just indirectly.
-- `context_chars` — the prompt size (≈ 4 × tokens) at which the engine compacts run history to
-  disk, for THIS model. Inherits the endpoint's `context_chars` when unset. Different models on
-  one endpoint have very different windows — set the real one here.
+- `context_tokens` — an optional override for this model's full input + output token window.
+  Leave blank to use provider discovery, then the endpoint fallback. Compaction compares an
+  explicitly estimated input token count against this window and reserves `max_tokens` for
+  output. The estimate includes UTF-8 text, message framing, action schema and media; it is not
+  an exact provider tokenizer count. Provider usage is authoritative. Character counts are only used
+  internally when estimating text or trimming a string.
 - `effort` — a reasoning-effort hint: `low | medium | high | xhigh | max`. Each kind maps it to
   its own reasoning knob (`openai` collapses `xhigh` / `max` → `high`); lower it if a reasoning
   model spends its whole output budget thinking instead of answering.
 - `temperature` — sampling temperature; inherits the endpoint's when unset.
-- `max_tokens` — the model's real **output** limit per completion, sent on every engine call
+- `max_tokens` — the requested **output** cap per completion, sent on every engine call
   (turns and `llm` actions). Inherits the
   endpoint's `max_tokens` when unset; with neither set, a generous engine default (16,384)
   applies and Settings flags the model with a **⚠ max_tokens** chip — implausible values
@@ -224,7 +227,7 @@ models need the bigger plan (72B-class on the base tier, 700B-class like GLM 5.2
 top tier).
 
 **Ollama** (local, free) — `kind: openai`, `base_url: http://127.0.0.1:11434/v1`, no key,
-`schema_mode: ollama_native`. Mind `context_chars`: small local models often run with
+`schema_mode: ollama_native`. Mind `context_tokens`: small local models often run with
 small windows.
 
 **Self-hosted vLLM** (any HF model on your own GPUs, incl. rented ones — Runpod
@@ -332,7 +335,7 @@ endpoints:
     base_url: https://nano-gpt.com/api/v1
     key_var: NANO_GPT_API_KEY     # value goes in Settings → Secrets
     schema_mode: json_object
-    context_chars: 400000
+    context_tokens: 100000
 ```
 
 ## Refusal clarification (the `uncensored` harness role)

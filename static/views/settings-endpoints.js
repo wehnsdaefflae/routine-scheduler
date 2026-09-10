@@ -88,7 +88,7 @@ export async function renderEndpoints(view) {
     return {
       name, endpoint: f.epSel.value, model: f.modelIn.value.trim(),
       multimodal: mmValue(f.mmSel),
-      context_chars: f.ctxIn.value.trim() ? Number(f.ctxIn.value) : null,
+      context_tokens: f.ctxIn.value.trim() ? Number(f.ctxIn.value) : null,
       effort: f.effSel.value || null,
       temperature: f.tempIn.value.trim() ? Number(f.tempIn.value) : null,
       max_tokens: f.mtIn.value.trim() ? Number(f.mtIn.value) : null,
@@ -109,7 +109,7 @@ export async function renderEndpoints(view) {
   };
   const sourceWord = (m) => ({ openrouter: "from openrouter", nanogpt: "from nano-gpt",
     ollama: "from ollama", openai: "from the provider", table: "from the built-in table",
-    endpoint: "endpoint default", floor: "engine floor",
+    endpoint: "endpoint fallback", floor: "engine fallback", config: "model override",
   })[m.window?.window_source] || "inherit";
 
   function modelFields(m, endpoints) {
@@ -121,7 +121,7 @@ export async function renderEndpoints(view) {
     // correct, normal state since limits are discovered — an empty box that said only "inherit"
     // read as "unset, go and guess a number", which is exactly how 16 of 17 models ended up on
     // one endpoint-wide guess.
-    const ctxIn = el("input", { type: "number", value: m.context_chars ?? "",
+    const ctxIn = el("input", { type: "number", value: m.context_tokens ?? "",
       title: SOURCE_HINT[m.window?.window_source] || "",
       placeholder: `${sourceWord(m)} (${(m.context_effective || 0).toLocaleString()})` });
     const effSel = el("select", {}, EFFORTS.map((e) => el("option", { value: e }, e || "default")));
@@ -141,7 +141,7 @@ export async function renderEndpoints(view) {
         el("label", { class: "field" }, el("span", {}, "model id"), f.modelIn)),
       el("div", { class: "field-row" },
         el("label", { class: "field" }, el("span", {}, "multimodal"), f.mmSel),
-        el("label", { class: "field" }, el("span", {}, "context_chars"), f.ctxIn),
+        el("label", { class: "field" }, el("span", {}, "Context window (tokens)"), f.ctxIn),
         el("label", { class: "field" }, el("span", {}, "effort"), f.effSel),
         el("label", { class: "field" }, el("span", {}, "temperature"), f.tempIn)),
       el("div", { class: "field-row" },
@@ -210,8 +210,8 @@ export async function renderEndpoints(view) {
       modelFieldRows(f),
       el("div", { class: "muted small", style: "margin-top:4px" },
         "multimodal = default lets the endpoint kind decide (on for anthropic, off for openai). ",
-        "Blank context/temperature/max_tokens inherit the endpoint's. max_tokens is the model's ",
-        "real OUTPUT limit — unset models ride a generic 16,384 and get flagged. ",
+        "Blank context and output limits use provider metadata, then endpoint defaults. ",
+        "The context window includes input and output; max_tokens reserves output tokens. ",
         "fallbacks = catalog model names tried in order when this model's provider fails hard."),
       el("div", { class: "row mt" }, save));
   }
@@ -330,14 +330,14 @@ export async function renderEndpoints(view) {
         try {
           await api(`/api/settings/endpoints/${ep.name}`, { method: "PUT", body: {
             name: ep.name, kind: ep.kind, base_url: ep.base_url || "", key_env_file: ep.key_env_file || "",
-            key_var: ep.key_var || "", schema_mode: ep.schema_mode, context_chars: ep.context_chars, api_key: keyInput.value.trim() } });
+            key_var: ep.key_var || "", schema_mode: ep.schema_mode, context_tokens: ep.context_tokens, api_key: keyInput.value.trim() } });
           toast(`${ep.name}: key saved`); keyInput.value = ""; await load();
         } catch (err) { toast(err.message, 5000, { error: true }); }
       };
       keyRow = el("div", { class: "row mt" }, keyInput, saveKey);
     }
 
-    // editable fields (name is the identity, immutable). context_chars/temperature are DEFAULTS
+    // editable fields (name is the identity, immutable). context_tokens/temperature are DEFAULTS
     // catalog models inherit when they leave the field unset.
     const kindSel = el("select", {}, KINDS.map((k) => el("option", {}, k))); kindSel.value = ep.kind;
     const schemaSel = el("select", {}, SCHEMA_MODES.map((m) => el("option", {}, m))); schemaSel.value = ep.schema_mode || "json_schema";
@@ -349,7 +349,7 @@ export async function renderEndpoints(view) {
     const quotaKeyIn = el("input", { type: "text", value: ep.quota_key_var || "CLIPROXY_MANAGEMENT_KEY" });
     const quotaAccountIn = el("input", { type: "text", value: ep.quota_auth_index || "",
       placeholder: "Automatic for one Claude account" });
-    const ctxIn = el("input", { type: "number", value: ep.context_chars });
+    const ctxIn = el("input", { type: "number", value: ep.context_tokens });
     const tempIn = el("input", { type: "number", step: "0.1", value: ep.temperature ?? "", placeholder: "provider default" });
     const mtIn = el("input", { type: "number", value: ep.max_tokens ?? "", placeholder: "inherit (16,384)" });
     const extraBodyIn = ep.kind === "openai"
@@ -363,7 +363,7 @@ export async function renderEndpoints(view) {
         quota_source: quotaSel.value, quota_key_var: quotaKeyIn.value.trim(),
         quota_auth_index: quotaAccountIn.value.trim(),
         key_env_file: keyEnvIn.value.trim(), key_var: keyVarIn.value.trim(),
-        schema_mode: schemaSel.value, context_chars: Number(ctxIn.value) || 100000,
+        schema_mode: schemaSel.value, context_tokens: Number(ctxIn.value) || 25000,
         temperature: tempIn.value.trim() ? Number(tempIn.value) : null,
         max_tokens: mtIn.value.trim() ? Number(mtIn.value) : null };
       if (extraBodyIn) {
@@ -386,7 +386,7 @@ export async function renderEndpoints(view) {
         el("label", { class: "field" }, el("span", {}, "key_env_file"), keyEnvIn),
         el("label", { class: "field" }, el("span", {}, "schema_mode"), schemaSel)),
       el("div", { class: "field-row" },
-        el("label", { class: "field" }, el("span", {}, "context_chars (default)"), ctxIn),
+        el("label", { class: "field" }, el("span", {}, "Context window (tokens, fallback)"), ctxIn),
         el("label", { class: "field" }, el("span", {}, "temperature (default)"), tempIn),
         el("label", { class: "field" }, el("span", {}, "max_tokens (default)"), mtIn)),
       el("div", { class: "field-row" },
@@ -459,7 +459,7 @@ export async function renderEndpoints(view) {
     const baseIn = el("input", { type: "text", placeholder: "https://host/v1" });
     const keyVarIn = el("input", { type: "text", placeholder: "KEY_VAR in Secrets (optional)" });
     const schemaSel = el("select", {}, SCHEMA_MODES.map((m) => el("option", {}, m)));
-    const ctxIn = el("input", { type: "number", value: "200000" });
+    const ctxIn = el("input", { type: "number", value: "25000" });
     const hint = el("div", { class: "muted small" });
     const onKind = () => {
       const k = KIND[kindSel.value]; hint.textContent = k ? `${k.title} — ${k.hint}` : "";
@@ -472,7 +472,7 @@ export async function renderEndpoints(view) {
         await api("/api/settings/endpoints", { method: "POST", body: {
           name: nameIn.value.trim(), kind: kindSel.value, base_url: baseIn.value.trim(),
           key_var: keyVarIn.value.trim(), schema_mode: schemaSel.value,
-          context_chars: Number(ctxIn.value) || 200000 } });
+          context_tokens: Number(ctxIn.value) || 25000 } });
         toast(`endpoint ${nameIn.value.trim()} added — set its ${KIND[kindSel.value]?.keyLabel || "key"} on its card, then add a model`); await load();
       } catch (err) { toast(err.message, 4000, { error: true }); }
     };
@@ -486,7 +486,7 @@ export async function renderEndpoints(view) {
         el("label", { class: "field" }, el("span", {}, "base_url"), baseIn),
         el("label", { class: "field" }, el("span", {}, "key_var (Secrets)"), keyVarIn),
         el("label", { class: "field" }, el("span", {}, "schema_mode"), schemaSel),
-        el("label", { class: "field" }, el("span", {}, "context_chars (default)"), ctxIn)),
+        el("label", { class: "field" }, el("span", {}, "Context window (tokens, fallback)"), ctxIn)),
       el("div", { class: "row" }, save));
   }
 

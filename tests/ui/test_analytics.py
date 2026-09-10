@@ -145,7 +145,7 @@ def test_cautions_table_shows_the_tallies_and_deletes_a_local_reminder(ui, ui_pa
 
     ui_page.goto(f"{ui.url}/#/routine/uir")
     expect(ui_page.get_by_text("it overwrites the destination")).to_be_visible(timeout=10_000)
-    expect(ui_page.get_by_text("git-checkpoint")).to_be_visible()
+    expect(ui_page.locator('td[title="git-checkpoint:pre-action"]')).to_be_visible()
 
     ui_page.get_by_role("button", name="delete").first.click()
     ui_page.get_by_role("button", name="delete", exact=True).last.click()

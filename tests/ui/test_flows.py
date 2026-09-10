@@ -1103,10 +1103,12 @@ def test_settings_endpoints_crud(ui, ui_page):
     add.locator("summary").click()
     add.locator('input[placeholder="name (e.g. openrouter)"]').fill("vllm")
     add.locator('input[placeholder="https://host/v1"]').fill("http://10.0.0.5:8000/v1")
+    add.get_by_label("Context window (tokens, fallback)").fill("65536")
     add.get_by_role("button", name="add endpoint", exact=True).click()
     card = ui_page.locator(".panel", has=ui_page.locator("strong", has_text="vllm")).first
     expect(card).to_contain_text("http://10.0.0.5:8000/v1")
     assert _server_yaml(ui)["endpoints"]["vllm"]["base_url"] == "http://10.0.0.5:8000/v1"
+    assert _server_yaml(ui)["endpoints"]["vllm"]["context_tokens"] == 65536
     # the credential-source indicator: no key anywhere (hermetic secrets) → keyless label
     expect(card).to_contain_text("credential in use:")
     expect(card).to_contain_text("keyless local backends")
@@ -1129,9 +1131,11 @@ def test_settings_endpoints_crud(ui, ui_page):
     addm.locator('input[placeholder="name (e.g. gpt-4o)"]').fill("llama")
     addm.locator("select").first.select_option("vllm")
     addm.locator('input[placeholder="model id (e.g. openai/gpt-4o)"]').fill("meta/llama-3")
+    addm.get_by_label("Context window (tokens)", exact=True).fill("131072")
     addm.get_by_role("button", name="add model", exact=True).click()
     expect(ui_page.locator("strong", has_text="llama").first).to_be_visible()
     models = _server_yaml(ui)["models"]
+    assert models["llama"]["context_tokens"] == 131072
     assert models["llama"] == {"endpoint": "vllm", "model": "meta/llama-3"} \
         or models["llama"]["endpoint"] == "vllm"
 

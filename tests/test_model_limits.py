@@ -27,7 +27,7 @@ def _server(tmp_path, *, endpoints=None, models=None) -> ServerConfig:
     s.routines_home.mkdir(parents=True, exist_ok=True)
     s.endpoints = endpoints or {
         "or": EndpointConfig(name="or", kind="openai",
-                             base_url="https://openrouter.ai/api/v1", context_chars=200_000)}
+                             base_url="https://openrouter.ai/api/v1", context_tokens=200_000)}
     s.models = models or {
         "kimi": ModelConfig(name="kimi", endpoint="or", model="moonshot/kimi-k3")}
     return s
@@ -42,13 +42,13 @@ def _cache(server, **rows):
 # ---- precedence ---------------------------------------------------------------------------------
 
 def test_a_discovered_window_replaces_the_endpoint_guess(tmp_path):
-    """The live case: an endpoint declaring 200,000 chars (50k tokens) in front of a model whose
+    """The live case: an endpoint declaring 200,000 tokens in front of a model whose
     provider reports a 256k-token window — 4.8% of it in use."""
     server = _server(tmp_path)
     _cache(server, **{"or|moonshot/kimi-k3": {"context_tokens": 262_144,
                                               "max_output_tokens": 32_000, "source": "openrouter"}})
     _ep, ref = EndpointRegistry(server).resolve("kimi")
-    assert ref.context_chars == 262_144 * 4          # the provider's figure, in the engine's unit
+    assert ref.context_tokens == 262_144          # the provider and engine use the same token unit
     assert ref.max_tokens == 32_000
 
 
@@ -57,18 +57,18 @@ def test_an_explicit_config_value_still_wins(tmp_path):
     discovery replaces the ABSENCE of a value, not the presence of one."""
     server = _server(tmp_path, models={
         "kimi": ModelConfig(name="kimi", endpoint="or", model="moonshot/kimi-k3",
-                            context_chars=40_000, max_tokens=4_096)})
+                            context_tokens=40_000, max_tokens=4_096)})
     _cache(server, **{"or|moonshot/kimi-k3": {"context_tokens": 262_144,
                                               "max_output_tokens": 32_000, "source": "openrouter"}})
     _ep, ref = EndpointRegistry(server).resolve("kimi")
-    assert ref.context_chars == 40_000 and ref.max_tokens == 4_096
+    assert ref.context_tokens == 40_000 and ref.max_tokens == 4_096
 
 
 def test_a_model_the_provider_does_not_list_falls_back_to_the_floor(tmp_path):
     server = _server(tmp_path)
     _cache(server)                                    # nothing discovered
     _ep, ref = EndpointRegistry(server).resolve("kimi")
-    assert ref.context_chars == 200_000               # the endpoint default, as before
+    assert ref.context_tokens == 200_000               # the endpoint default, as before
     assert ref.max_tokens == 16_384                   # DEFAULT_MODEL_MAX_TOKENS
 
 
@@ -129,15 +129,15 @@ def test_nanogpt_is_read_from_its_own_route(tmp_path, monkeypatch):
 def test_a_kind_with_no_metadata_api_uses_the_static_table(tmp_path, monkeypatch):
     """The Anthropic models listing carries no context-window figure — so the table is the honest answer, and it is labelled as one."""
     server = _server(tmp_path, endpoints={
-        "claude": EndpointConfig(name="claude", kind="anthropic", context_chars=2_000_000)},
-        models={"opus": ModelConfig(name="opus", endpoint="claude", model="opus")})
+        "claude": EndpointConfig(name="claude", kind="anthropic", context_tokens=2_000_000)},
+        models={"opus": ModelConfig(name="opus", endpoint="claude", model="claude-opus-4-8")})
     monkeypatch.setattr(limits, "_get", lambda *a, **k: None)
     limits.refresh(server, force=True)
-    row = limits.lookup(server.routines_home, "claude", "opus")
-    assert row["context_tokens"] == 200_000 and row["source"] == "table"
-    # …and it CORRECTS the endpoint's 2,000,000-char claim (a 500k-token window no Claude has)
+    row = limits.lookup(server.routines_home, "claude", "claude-opus-4-8")
+    assert row["context_tokens"] == 1_000_000 and row["source"] == "table"
+    # The discovered model window takes precedence over the larger endpoint fallback.
     _ep, ref = EndpointRegistry(server).resolve("opus")
-    assert ref.context_chars == 800_000
+    assert ref.context_tokens == 1_000_000
 
 
 def test_a_failed_probe_keeps_what_was_already_known(tmp_path, monkeypatch):
@@ -181,3 +181,22 @@ def test_the_ttl_stops_a_refresh_per_tick(tmp_path, monkeypatch):
 ])
 def test_the_provider_is_sniffed_from_the_endpoint(base, kind, want):
     assert limits._provider(EndpointConfig(name="x", kind=kind, base_url=base)) == want
+
+
+def test_new_model_refreshes_inside_global_ttl(tmp_path, monkeypatch):
+    server = _server(tmp_path)
+    _cache(server, **{"old|id": {"context_tokens": 200000}})
+    assert limits.stale(server)
+    monkeypatch.setattr(limits, "_get", lambda *a, **k: None)
+    limits.refresh(server)
+    # Missing metadata is retried after the TTL, not on every scheduler tick.
+    assert not limits.stale(server)
+
+
+@pytest.mark.parametrize(("model", "expected"), [
+    ("claude-haiku-4-5-20251001", 200000),
+    ("claude-sonnet-5", 1000000), ("claude-sonnet-4-6", 1000000),
+    ("claude-opus-4-8", 1000000), ("claude-opus-99", None),
+])
+def test_claude_revision_windows(model, expected):
+    assert limits._static_window(model) == expected

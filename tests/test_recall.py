@@ -140,11 +140,11 @@ def test_the_warning_fires_only_when_there_is_a_turn_of_slack(size_factor, expec
     the window before the hard ceiling — a whole turn of slack, so deferring the archive is
     free. When the CEILING binds there is none, and a warning that overflowed the window would
     cost the run the very turns it was protecting."""
-    from rsched.engine.compaction import window_ceiling_chars
+    from rsched.engine.compaction import window_ceiling_tokens
     from rsched.engine.window import _warn_before_eviction
 
-    ref = SimpleNamespace(context_chars=400_000, max_tokens=8_000)
-    ceiling = window_ceiling_chars(ref.context_chars, ref.max_tokens)
+    ref = SimpleNamespace(context_tokens=400_000, max_tokens=8_000)
+    ceiling = window_ceiling_tokens(ref.context_tokens, ref.max_tokens)
     loop = _warn_loop([{"role": "user", "content": "x"}])
     assert _warn_before_eviction(loop, ceiling * size_factor, ref) is expect_warning
     assert (len(loop.messages) == 2) is expect_warning
@@ -157,11 +157,11 @@ def test_the_warning_fires_only_when_there_is_a_turn_of_slack(size_factor, expec
 
 def test_the_warning_is_given_once_per_run():
     """A second warning would be the layer talking about itself."""
-    from rsched.engine.compaction import window_ceiling_chars
+    from rsched.engine.compaction import window_ceiling_tokens
     from rsched.engine.window import _warn_before_eviction
 
-    ref = SimpleNamespace(context_chars=400_000, max_tokens=8_000)
-    small = window_ceiling_chars(ref.context_chars, ref.max_tokens) * 0.5
+    ref = SimpleNamespace(context_tokens=400_000, max_tokens=8_000)
+    small = window_ceiling_tokens(ref.context_tokens, ref.max_tokens) * 0.5
     loop = _warn_loop([])
     assert _warn_before_eviction(loop, small, ref) is True
     assert _warn_before_eviction(loop, small, ref) is False

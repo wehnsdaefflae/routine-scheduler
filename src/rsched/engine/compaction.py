@@ -37,32 +37,12 @@ KEEP_HEAD_MSGS = 6    # system + kickoff + first 2 turn pairs
 
 KEEP_TAIL_MSGS = 24   # ~ last 12 turn pairs
 
-# Rough context cost of one attached image/PDF (base64 is large and the model tokenizes it),
-# so compaction thresholds account for a media-carrying turn rather than counting only its
-# short text. The file bytes live on disk, never in `content`.
-_MEDIA_SIZE_EST = 4_000
+# Media and text costs are estimates, not provider token counts. UTF-8 bytes avoid
+# treating non-ASCII text as cheaply as English. Actual provider usage remains authoritative.
+_MEDIA_TOKENS_EST = 1_200
 
-# The codebase's standing approximation: context_chars ≈ 4 × the token window (see
-# ModelConfig.context_chars). Used to DERIVE the token window back from the char figure.
-CHARS_PER_TOKEN = 4
-
-# Conservative INPUT packing density (chars per token) used to size the HARD window ceiling.
-# CHARS_PER_TOKEN=4 is fine for deriving the window, but OPTIMISTIC as an input density: real
-# tokenizers pack denser, so a ceiling sized at 4 chars/token maps to MORE input tokens than
-# `window − output` allows and the completion 400s. F265 recurred FOUR times this way
-# (c-20260802-110156, last on 2026-08-03T04:46 UNDER the deployed 0.149.1 clamp): the clamp
-# trimmed the prompt to its char ceiling, but that ceiling's ~183.5k chars packed at the
-# payload's real ~3.72 chars/token = 49384 input tokens; + 16384 output = 65768 > the 65536
-# window (over by 232 tokens). Three prior fixes tuned a flat margin — the wrong lever, since a
-# fixed fraction cannot cover a density error that scales with the payload. Sizing the input
-# ceiling at this DENSER figure makes `input_tokens + max_output_tokens ≤ window` hold BY
-# CONSTRUCTION for any real content at or above this density, not by a hoped-for margin. It
-# only bites small-window models; for large windows the 0.6/0.8 fraction trigger stays binding.
-INPUT_CHARS_PER_TOKEN = 3.5
-
-# The smallest body clamp_to_cap will ever truncate. A message under this is already tiny; the
-# overflow it is fighting is always a handful of LARGE observation bodies, so trimming below
-# this would mangle small structural messages for no space gain.
+# Minimum UTF-8 body size worth truncating. Smaller bodies are structural messages;
+# cutting them would mangle the conversation for little space gain.
 _CLAMP_MIN_BODY = 2_000
 
 _CLAMP_MARKER = ("\n\n[… {n} chars elided by window clamp — the full text is in this run's "
@@ -70,54 +50,26 @@ _CLAMP_MARKER = ("\n\n[… {n} chars elided by window clamp — the full text is
 
 
 
-def messages_size(messages: list[dict]) -> int:
-    return sum(len(m["content"]) + _MEDIA_SIZE_EST * len(m.get("media") or [])
-               for m in messages)
+def estimate_input_tokens(messages: list[dict]) -> int:
+    """Estimate at 3.5 UTF-8 bytes/token plus framing and media; not a tokenizer count."""
+    return sum((len(m["content"].encode("utf-8")) * 2 + 6) // 7 + 16
+               + _MEDIA_TOKENS_EST * len(m.get("media") or []) for m in messages)
 
-def input_cap_chars(context_chars: int, max_output_tokens: int, *, cached: bool) -> float:
-    """The largest in-prompt size (chars) allowed before compaction MUST fire — the lower
-    of two ceilings:
 
-    - the fraction-of-window trigger (0.6 uncached / 0.8 cached: compact earlier when every
-      turn re-reads at full price, later once the provider serves from cache), and
-    - the window MINUS the output reservation. The provider counts the prompt AND the
-      requested `max_tokens` output against ONE window, so the input must leave
-      `max_output_tokens` of room. Without this second ceiling a small-window model lets
-      input grow to `fraction × window` and still requests the full output on top, so
-      `input + max_tokens > window` and the completion 400s with context_length_exceeded
-      (F265: a 65536-token model reached ~49k input tokens and still requested 16384 output
-      → overflow). The reservation only bites models whose window is small enough that
-      `fraction × window + max_tokens×4 > window`; for large windows the fraction trigger
-      stays the binding one, so behaviour there is unchanged.
-    """
+def input_cap_tokens(context_tokens: int, max_output_tokens: int, *, cached: bool) -> float:
+    """Compaction trigger in estimated input tokens, with output reserved separately."""
     fraction = COMPACT_AT_FRACTION_CACHED if cached else COMPACT_AT_FRACTION
-    trigger = fraction * context_chars
-    return min(trigger, window_ceiling_chars(context_chars, max_output_tokens))
+    return min(fraction * context_tokens, window_ceiling_tokens(context_tokens, max_output_tokens))
 
-def window_ceiling_chars(context_chars: int, max_output_tokens: int) -> float:
-    """The HARD input ceiling (chars): the largest in-prompt size that still leaves the
-    provider room to emit `max_output_tokens` inside the SAME window. Computed in the TOKEN
-    domain and converted back to chars at the conservative `INPUT_CHARS_PER_TOKEN` density, so
-    the ceiling maps to fewer input tokens than `window − output` for any real content at or
-    above that density — `input_tokens + max_output_tokens ≤ window` holds BY CONSTRUCTION, not
-    by a hoped-for fractional margin. This is the ceiling compaction MUST get the prompt under;
-    `input_cap_chars` compacts earlier still (at the 0.6/0.8 fraction), but when compaction
-    CANNOT shrink the prompt — the incompressible head+tail floor, or a conversation too short
-    to have a middle to elide — `clamp_to_cap` enforces THIS ceiling as the last resort. F265
-    recurred FOUR times (c-20260802-110156, last 2026-08-03T04:46 under the 0.149.1 clamp): the
-    clamp trimmed to a char ceiling sized at the optimistic 4 chars/token, but the payload
-    packed denser (~3.72) so 49384 input + 16384 output = 65768 > the 65536 window. Sizing the
-    input budget at the denser figure removes the density error the flat margin could not cover.
-    """
-    window_tokens = context_chars / CHARS_PER_TOKEN
-    input_token_budget = window_tokens - max_output_tokens
-    reserved = input_token_budget * INPUT_CHARS_PER_TOKEN
-    return max(0.0, reserved)
 
-def maybe_compact(messages: list[dict], turn_records: list[dict], context_chars: int
+def window_ceiling_tokens(context_tokens: int, max_output_tokens: int) -> int:
+    """Available input tokens. Input estimates carry their own conservative packing margin."""
+    return max(0, context_tokens - max_output_tokens)
+
+def maybe_compact(messages: list[dict], turn_records: list[dict], context_tokens: int
                   ) -> tuple[list[dict], dict | None]:
     """Deterministic compaction. Returns (messages, compaction_info|None)."""
-    if messages_size(messages) <= COMPACT_AT_FRACTION * context_chars:
+    if estimate_input_tokens(messages) <= COMPACT_AT_FRACTION * context_tokens:
         return messages, None
     if len(messages) <= KEEP_HEAD_MSGS + KEEP_TAIL_MSGS:
         return messages, None
@@ -133,13 +85,14 @@ def maybe_compact(messages: list[dict], turn_records: list[dict], context_chars:
               f"({elided} messages). One line per elided turn:\n" + "\n".join(lines))
     new_messages = [*head, {"role": "user", "content": digest}, *tail]
     info = {"elided_messages": elided, "digest_chars": len(digest),
-            "before_chars": messages_size(messages), "after_chars": messages_size(new_messages)}
+            "before_estimated_tokens": estimate_input_tokens(messages),
+            "after_estimated_tokens": estimate_input_tokens(new_messages)}
     return new_messages, info
 
-def clamp_to_cap(messages: list[dict], context_chars: int, max_output_tokens: int
+def clamp_to_cap(messages: list[dict], context_tokens: int, max_output_tokens: int
                  ) -> dict | None:
-    """LAST RESORT: force the in-prompt size under the hard window ceiling by truncating the
-    LARGEST message bodies in place, biggest-first, until the total clears the ceiling.
+    """LAST RESORT: bring estimated input below the available token ceiling by truncating
+    the largest message bodies in place until the estimate clears the ceiling.
      Compaction (`maybe_compact`, plus the background `archive_middle`) shrinks the prompt by
     ELIDING the middle, but the retained head + tail are an incompressible floor — and a short
     conversation (≤ KEEP_HEAD_MSGS + KEEP_TAIL_MSGS messages) has no middle at all. When that
@@ -153,40 +106,53 @@ def clamp_to_cap(messages: list[dict], context_chars: int, max_output_tokens: in
     marker makes the truncation fail LOUD in the prompt rather than silently. Returns a
     clamp-info dict (for a transcript event) when it trimmed anything, else None.
     """
-    ceiling = window_ceiling_chars(context_chars, max_output_tokens)
+    ceiling = window_ceiling_tokens(context_tokens, max_output_tokens)
     if ceiling <= 0:
         # Degenerate: the output reservation alone fills the window, so there is no positive
         # input budget to clamp TO — trimming to 0 would just destroy all context. Decline and
         # let the (misconfigured) request fail loudly at the endpoint. Real models never hit
         # this; it only arises in artificial tiny-window unit fixtures.
         return None
-    before = messages_size(messages)
+    before = estimate_input_tokens(messages)
     if before <= ceiling:
         return None
     # Largest bodies first — each cut buys the most room, so we touch the fewest messages.
     order = sorted(range(len(messages)),
-                   key=lambda i: len(messages[i]["content"]), reverse=True)
+                   key=lambda i: len(messages[i]["content"].encode("utf-8")), reverse=True)
     trimmed = 0
     for i in order:
-        if messages_size(messages) <= ceiling:
+        if estimate_input_tokens(messages) <= ceiling:
             break
         body = messages[i]["content"]
-        if len(body) <= _CLAMP_MIN_BODY:
+        if len(body.encode("utf-8")) <= _CLAMP_MIN_BODY:
             break   # every remaining body is tiny — nothing worth cutting is left
-        overflow = messages_size(messages) - int(ceiling)
+        overflow = estimate_input_tokens(messages) - int(ceiling)
         # Cut enough from THIS body to clear the overflow (plus the marker's own cost), but
         # never below the floor; the loop revisits if one body wasn't enough.
-        keep = max(_CLAMP_MIN_BODY, len(body) - overflow - 200)
+        # Binary search the longest prefix that meets this message's token budget.
+        target = max(0, estimate_input_tokens([messages[i]]) - overflow)
+        low = len(body.encode("utf-8")[:_CLAMP_MIN_BODY].decode("utf-8", errors="ignore"))
+        high = len(body)
+        while low < high:
+            mid = (low + high + 1) // 2
+            candidate = {**messages[i],
+                         "content": body[:mid] + _CLAMP_MARKER.format(n=len(body) - mid)}
+            if estimate_input_tokens([candidate]) <= target:
+                low = mid
+            else:
+                high = mid - 1
+        keep = low
         if keep >= len(body):
             continue
         elided = len(body) - keep
         messages[i]["content"] = body[:keep] + _CLAMP_MARKER.format(n=elided)
         trimmed += 1
-    after = messages_size(messages)
+    after = estimate_input_tokens(messages)
     if not trimmed:
         return None
-    return {"clamped_messages": trimmed, "before_chars": before, "after_chars": after,
-            "ceiling_chars": int(ceiling)}
+    return {"clamped_messages": trimmed, "before_estimated_tokens": before,
+            "after_estimated_tokens": after,
+            "ceiling_tokens": int(ceiling)}
 
 # The model supplies the CONTENT and a one-line description per file; the ENGINE supplies
 # the filenames and therefore writes INDEX.md. That split is not tidiness — it is the fix for

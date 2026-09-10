@@ -48,7 +48,7 @@ def _ctx(tmp_path, endpoint):
     routine = SimpleNamespace(dir=tmp_path, fs_read_roots=[], fs_write_roots=[], models={})
     # for_model returns (endpoint, resolved ModelRef): the model's multimodal flag is what the
     # executor passes into supports_media (one endpoint serves many models).
-    ref = SimpleNamespace(multimodal=endpoint.multimodal, context_chars=200_000) if endpoint else None
+    ref = SimpleNamespace(multimodal=endpoint.multimodal, context_tokens=200_000) if endpoint else None
     registry = SimpleNamespace(for_model=lambda k, m: (endpoint, ref)) if endpoint else None
     return SimpleNamespace(routine=routine, grants=None, root_run_dir=tmp_path / "runs" / "x",
                            read_roots=lambda: list(routine.fs_read_roots),
