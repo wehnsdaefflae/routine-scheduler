@@ -3,8 +3,8 @@ projection of ACTION_SCHEMA onto them.
 
 `actions.py` stays the single source of truth for what a turn may do — this module only
 NARROWS what the model is shown to what the engine would accept anyway. A run whose
-workflow `tools:` allowlist and capabilities permit 8 of the 27 kinds was previously sent
-all 27 in the schema (8k chars, ~36% of the fixed prompt) plus a prose bullet each: the
+workflow `tools:` allowlist and capabilities permit 8 of the 30 kinds was previously sent
+all 30 in the schema (8k chars, ~36% of the fixed prompt) plus a prose bullet each: the
 model read, every turn, the full description of channels the validator would reject. The
 projection is derived from `actions.KIND_FIELDS` — the same map `validate_action` builds
 its allowed-field set from — so the shown schema and the enforced contract cannot drift.
@@ -165,13 +165,18 @@ that capability is fully autonomous, the same approval step). The engine REFUSES
 util still declares it on a `calls:` line — remove or update those callers first; the deletion \
 is committed to the library and stays recoverable from git history. Check the catalog before \
 removing something another routine relies on."""),
-    (("read_file", "write_file", "edit_file"), """- read_file / write_file / edit_file: read \
-or write a file (within the working dir or an \
+    (("read_file", "write_file", "delete", "move", "mkdir", "edit_file"), """- read_file / \
+write_file / delete / move / mkdir / edit_file: read or write a file (within the working dir or an \
 allowed root). read_file takes `path` or `paths` (several files in ONE action — batch related \
 reads instead of spending a turn per file). edit_file replaces an exact `anchor` string with \
 `replacement` IN PLACE — for touching a few lines of a large file, use it instead of \
 re-emitting the whole document through write_file. write_file REPLACES wholesale: overwriting \
-an existing file outside your working dir is rejected until this run has read it."""),
+an existing file outside your working dir is rejected until this run has read it. delete \
+removes a file, or a whole directory with recursive: true — deleting a path outside your \
+working dir that this run has not read is rejected, like write_file's overwrite gate. move \
+relocates src to dst (both inside the same write-root jail): it refuses to overwrite an \
+existing dst. mkdir creates a directory — parents: true makes intermediates and treats an \
+existing path as success."""),
     (("view_image",), """- view_image: SEE an image or PDF (png/jpeg/webp/gif/pdf) at `path` \
 (or `paths`) — for \
 attachments and files a util produced. When this run's model is multimodal the file is shown \

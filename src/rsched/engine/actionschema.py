@@ -15,7 +15,7 @@ READ_PATHS_MAX = 8
 
 
 KINDS = ("util", "write_util", "remove_util", "read_file", "view_image", "write_file",
-         "edit_file",
+         "delete", "move", "mkdir", "edit_file",
          "memory_read", "memory_write", "read_rule", "write_rule",
          "script", "shell",
          "llm", "spawn", "subtask", "detach",
@@ -127,14 +127,37 @@ ACTION_SCHEMA: dict = {
                            "non-interactively inside your sandbox: nothing that waits for a "
                            "keystroke will ever return",
         },
-        # read_file / view_image / write_file / edit_file
+        # read_file / view_image / write_file / delete / move / mkdir / edit_file
         "path": {
             "type": "string",
-            "description": "read_file/view_image/write_file/edit_file: path relative to the "
-                           "routine dir (or an allowed root) · write_util: install the util "
-                           "script from this file's EXACT bytes (byte-faithful; instead of "
-                           "inline content) · shell: OPTIONAL working directory for the "
-                           "command (default: your working directory)",
+            "description": "read_file/view_image/write_file/delete/mkdir/edit_file: path "
+                           "relative to the routine dir (or an allowed root) · write_util: "
+                           "install the util script from this file's EXACT bytes "
+                           "(byte-faithful; instead of inline content) · shell: OPTIONAL "
+                           "working directory for the command (default: your working "
+                           "directory)",
+        },
+        "src": {
+            "type": "string",
+            "description": "move: the path being moved/renamed (relative to the routine dir "
+                           "or an allowed root) — the same write-root jail as write_file",
+        },
+        "dst": {
+            "type": "string",
+            "description": "move: the destination path (same jail as src) — refuses to "
+                           "overwrite an existing destination; creates missing parent "
+                           "directories",
+        },
+        "recursive": {
+            "type": "boolean",
+            "description": "delete: true removes a whole directory tree — a directory "
+                           "without it is refused (a stray call cannot wipe a tree it did "
+                           "not mean)",
+        },
+        "parents": {
+            "type": "boolean",
+            "description": "mkdir: true makes intermediate directories too (like mkdir -p) "
+                           "and treats an existing path as success",
         },
         "paths": {
             "type": "array", "items": {"type": "string"}, "maxItems": READ_PATHS_MAX,
@@ -373,7 +396,8 @@ ACTION_SCHEMA: dict = {
 # turn records, compaction digests, and transcript replay.
 BRIEF_FIELD = {"util": "name", "write_util": "name", "remove_util": "name", "read_file": "path",
                "view_image": "path", "script": "name", "shell": "command",
-               "write_file": "path", "edit_file": "path", "memory_read": "name",
+               "write_file": "path", "delete": "path", "move": "src",
+               "mkdir": "path", "edit_file": "path", "memory_read": "name",
                "memory_write": "name", "read_rule": "name", "write_rule": "name",
                "llm": "prompt", "spawn": "label", "subtask": "label",
                "detach": "label", "schedule_run": "target", "create_routine": "target",

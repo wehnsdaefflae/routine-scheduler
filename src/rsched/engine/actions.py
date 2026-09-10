@@ -69,6 +69,12 @@ KIND_EXAMPLES: dict[str, dict] = {
     "edit_file": {"say": "<why this edit>", "kind": "edit_file", "path": "state/notes.md",
                   "anchor": "<exact text to find (verbatim)>",
                   "replacement": "<what replaces it>"},
+    "delete": {"say": "<why delete this>", "kind": "delete", "path": "state/stale-cache/",
+                "recursive": True},
+    "move": {"say": "<why move it>", "kind": "move", "src": "artifacts/draft.md",
+              "dst": "state/final/draft.md"},
+    "mkdir": {"say": "<why this dir>", "kind": "mkdir", "path": "state/weekly-digests",
+               "parents": True},
     "memory_read": {"say": "<why this note now>", "kind": "memory_read", "name": "topic-slug"},
     "memory_write": {"say": "<what surprised you>", "kind": "memory_write", "name": "topic-slug",
                      "content": "<the note's full markdown, at most 100 lines>",
@@ -114,6 +120,9 @@ KIND_FIELDS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "read_file": ((), ("path", "paths", "start_line", "max_lines")),
     "view_image": ((), ("path", "paths", "prompt")),
     "write_file": (("path", "content"), ("append",)),
+    "delete": (("path",), ("recursive",)),
+    "move": (("src", "dst"), ()),
+    "mkdir": (("path",), ("parents",)),
     "edit_file": (("path", "anchor"), ("replacement", "all")),
     "memory_read": (("name",), ()),
     "memory_write": (("name",), ("content", "about", "delete")),
@@ -293,9 +302,13 @@ def validate_action(obj: dict, allowed_kinds: set[str] | None = None,  # noqa: C
                         '<name>" (e.g. "util:discord") — file one request per ask')
     # .memory/ is reachable ONLY through the memory actions — the engine owns INDEX.md and
     # enforces the note cap there; generic file access would silently bypass both.
-    if kind in ("read_file", "view_image", "write_file", "edit_file"):
+    if kind in ("read_file", "view_image", "write_file", "edit_file",
+                "delete", "move", "mkdir"):
         multi = obj.get("paths") or [] if kind in ("read_file", "view_image") else []
-        for raw in [obj.get("path"), *multi]:
+        raws = [obj.get("path"), *multi]
+        if kind == "move":
+            raws += [obj.get("src"), obj.get("dst")]
+        for raw in raws:
             rel = str(raw or "")
             while rel.startswith("./"):
                 rel = rel[2:]

@@ -19,7 +19,15 @@ from ..paths import expand
 from ..utils_lib import USAGE_ERROR_EXIT
 from . import outputs
 from .exec_env import _extra_secrets, _unbound_connection_request
-from .fileops import UTIL_DEFAULT_TIMEOUT_S, do_edit_file, do_read_file, do_write_file
+from .fileops import (
+    UTIL_DEFAULT_TIMEOUT_S,
+    do_delete,
+    do_edit_file,
+    do_mkdir,
+    do_move,
+    do_read_file,
+    do_write_file,
+)
 from .llmaction import do_list_models, do_llm
 from .mediaops import do_view_image
 from .memops import do_memory_read, do_memory_write, do_read_rule
@@ -277,6 +285,9 @@ DISPATCH = {
     "read_file": do_read_file,
     "view_image": do_view_image,
     "write_file": do_write_file,
+    "delete": do_delete,
+    "move": do_move,
+    "mkdir": do_mkdir,
     "edit_file": do_edit_file,
     "memory_read": do_memory_read,
     "memory_write": do_memory_write,

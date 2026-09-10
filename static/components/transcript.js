@@ -26,7 +26,8 @@ import { el, fmtTime, fmtTokens, fullOutput } from "/static/util.js";
 // behind before the 2026-08-21 sweep caught it. Keep the two in lockstep.
 const BRIEF_FIELD = { util: "name", write_util: "name", remove_util: "name",
                       read_file: "path", view_image: "path", write_file: "path",
-                      edit_file: "path", memory_read: "name", memory_write: "name",
+                      edit_file: "path", delete: "path", move: "src", mkdir: "path",
+                      memory_read: "name", memory_write: "name",
                       read_rule: "name", write_rule: "name", script: "name",
                       shell: "command",
                       llm: "prompt", spawn: "label", subtask: "label", detach: "label",

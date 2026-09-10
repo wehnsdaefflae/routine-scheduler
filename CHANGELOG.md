@@ -15,6 +15,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.313.0] — 2026-09-10
+
+### Added — native delete / move / mkdir actions (D120=A)
+
+Filesystem mutations were a util (`fs-ops`) or the shell escape hatch, so every delete/move/
+mkdir paid a util round-trip and routines without either capability could not tidy their own
+trees at all. Three native action kinds now parallel read_file/write_file/edit_file (F449,
+the operator's settled D120=A):
+
+- **delete** — removes a file, or a whole directory with `recursive: true`; a directory
+  without it is refused, and deleting a path outside the routine's own dir that this run has
+  not read is rejected — the same grounding reasoning as write_file's overwrite gate,
+  extended to destruction.
+- **move** — relocates `src` to `dst` inside the same write-root jail; refuses to overwrite
+  an existing destination and creates missing parent directories.
+- **mkdir** — creates a directory; `parents: true` makes intermediates and treats an
+  existing path as success.
+
+All three share write_file's seals (`runs/` engine-owned, `.util_outputs/` read-only,
+  `routine.yaml` never writable, recipe paths need the recipe-authoring permission) and its
+  write-root jail; `.memory/` stays reachable only through the memory actions.
+
 ## [0.312.1] — 2026-09-10
 
 ### Fixed — the item index re-parsed the whole changelog on every request
