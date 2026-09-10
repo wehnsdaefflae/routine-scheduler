@@ -261,7 +261,8 @@ What can be discovered, per kind:
 | `openai` @ Nano-GPT | its own `/api/models` (the OpenAI-compatible route carries none) | same |
 | `openai` @ Ollama | `POST /api/show` → the arch's `context_length` | none — derived from the window |
 | `openai`, other | `max_model_len` / `context_length` if the gateway emits one (vLLM does) | rarely |
-| `anthropic` | a built-in table — its model listing has no context-window metadata | the table |
+| `anthropic` @ Anthropic | a built-in table — its model listing has no context-window metadata | the table |
+| `anthropic` @ a proxy | whatever its `/v1/models` carries, then the table for Claude ids | the same |
 
 **The output cap is deliberately NOT maxed out.** Providers validate
 `input + requested_output <= window` up front, and the engine subtracts `max_tokens` from the
@@ -270,8 +271,24 @@ one live model reports a 943,718-token output maximum against a 1,310,720-token 
 discovered cap is `min(provider maximum, 32,000)` — a ceiling on what this harness needs for one
 JSON action plus reasoning, not a claim about the model.
 
-A miss is not a failure: the model drops to the next tier and the Settings card says the id is one
-its provider does not list — which is usually a stale catalog entry worth fixing.
+**The kind is not the provider.** An `anthropic` endpoint is Anthropic's own API only when it
+points at Anthropic's host. A subscription proxy speaks the same wire and serves whatever its
+upstreams do — OpenAI ids included — so its catalog is read like any other gateway's. Its route
+sits one segment deeper (`{base}/v1/models`), because an `anthropic` base_url omits the `/v1` an
+`openai` one carries. Claude ids are unaffected: the built-in table is a fallback on a miss, not a
+property of the provider.
+
+A miss is not a failure: the model drops to the next tier, and the Settings card says WHICH miss
+it is. Those are two different states and only one is fixable by discovery:
+
+- **the provider does not list that id** — usually a stale catalog entry or a typo, worth fixing.
+- **the provider lists the id but publishes no figures for it** — the normal state behind a
+  gateway whose catalog is ids only (CLIProxyAPI answers `{id, object, created, owned_by}` and
+  nothing else). Permanent and correct; only a hand-set value settles it, and the card says so
+  instead of sending you after a typo that is not there.
+
+When the endpoint publishes no catalog at all, the question is unanswered and the card keeps the
+undecided wording — an unreachable provider is never reported as "does not serve this model".
 
 **Claude subscription** — use `kind: anthropic`, the proxy root base URL, and a proxy
 client key. CLIProxyAPI owns OAuth login, token refresh, and account routing. See the

@@ -73,6 +73,17 @@ STATIC_WINDOWS: dict[str, int] = {
 
 STATIC_OUTPUT = 32_000
 
+#: What one provider's catalog route answered: the limits it published, keyed by model id, and
+#: the ids it LISTS. The two are not the same set — a gateway may list a model and publish no
+#: figures for it (CLIProxyAPI's `/v1/models` carries id/object/created/owned_by and nothing
+#: else) — and conflating them is what made "no limit found" and "no such model" one message.
+#: `None` for the id set means the question went UNANSWERED (no listing route, or it failed),
+#: which is never the same as "the provider does not serve this".
+Listing = tuple[dict[str, tuple[int, int | None]], set[str] | None]
+
+#: Cache key holding `{endpoint: [served ids]}`. Not a model row — see `_rows`.
+SERVED_KEY = "served"
+
 
 def cache_path(routines_home: Path) -> Path:
     return routines_home / LIMITS_FILE
@@ -95,6 +106,24 @@ def lookup(routines_home: Path, endpoint: str, model: str) -> dict | None:
     return row if isinstance(row, dict) and row.get("context_tokens") else None
 
 
+def _rows(cache: dict) -> dict:
+    """The (endpoint, model) rows alone — the cache also carries `fetched`, `checked_models`
+    and `served`, and every count of "how many models do we know" means the rows.
+    """
+    return {k: v for k, v in cache.items()
+            if "|" in k and isinstance(v, dict)}
+
+
+def serves(routines_home: Path, endpoint: str, model: str) -> bool | None:
+    """Does this endpoint's provider actually LIST this model id? `None` when the provider
+    publishes no catalog route (or it was unreachable at the last refresh) — unanswered, which
+    must not be reported as a no. Read-only, like `lookup`.
+    """
+    served = load(routines_home).get(SERVED_KEY)
+    ids = served.get(endpoint) if isinstance(served, dict) else None
+    return model in ids if isinstance(ids, list) else None
+
+
 def window_tokens(row: dict) -> int:
     """Provider context capacity in tokens, or zero for a metadata miss."""
     ctx = row.get("context_tokens")
@@ -114,10 +143,16 @@ def _static_window(model_id: str) -> int | None:
 def _provider(ep) -> str:
     """Which metadata API this endpoint speaks. Sniffed from base_url the way
     `endpoint_probe.credits_provider` already does, so the two read the same signals.
+
+    The KIND is not that signal. An `anthropic` endpoint is Anthropic's own API only when it
+    points at Anthropic's host; a subscription proxy speaks the same wire and serves whatever
+    its upstreams do — OpenAI ids included — so it is sniffed like any other gateway and its
+    `/models` route is read for whatever it carries. Claude ids are unaffected either way:
+    `_static_window` is a fallback on a miss, not a property of the provider.
     """
-    if ep.kind == "anthropic":
-        return "table"          # /v1/models carries no window; a table is the honest answer
     base = (ep.base_url or "").lower()
+    if ep.kind == "anthropic" and ("api.anthropic.com" in base or not base):
+        return "table"          # /v1/models carries no window; a table is the honest answer
     if "openrouter" in base:
         return "openrouter"
     if "nano-gpt.com" in base:
@@ -127,9 +162,30 @@ def _provider(ep) -> str:
     return "openai"
 
 
+def _models_url(ep) -> str:
+    """The OpenAI-shaped catalog route for this endpoint. An `openai` base_url already carries
+    the `/v1` (`…/api/v1`); an `anthropic` one deliberately does NOT, because the Messages
+    adapter appends `/v1/messages` itself — so the listing lives one segment deeper there.
+    Getting this wrong costs nothing visible: a 404 reads exactly like a gateway that publishes
+    no catalog, and the miss would look like the model's own.
+    """
+    base = (ep.base_url or "").rstrip("/")
+    return f"{base}/v1/models" if ep.kind == "anthropic" else f"{base}/models"
+
+
 def _origin(base_url: str) -> str:
     parts = urlsplit(base_url)
     return f"{parts.scheme}://{parts.netloc}"
+
+
+def _listed_ids(body: dict) -> set[str] | None:
+    """Every id in an OpenAI-shaped `{"data": [{"id": …}]}` listing, whether or not the row
+    carried any limits. None for a shape that is not that listing at all.
+    """
+    data = body.get("data")
+    if not isinstance(data, list):
+        return None
+    return {str(r["id"]) for r in data if isinstance(r, dict) and r.get("id")}
 
 
 def _get(url: str, headers: dict | None = None) -> dict | None:
@@ -148,12 +204,14 @@ def _get(url: str, headers: dict | None = None) -> dict | None:
     return body if isinstance(body, dict) else None
 
 
-def _openrouter(ep) -> dict[str, tuple[int, int | None]]:
+def _openrouter(ep) -> Listing:
     """`GET {base_url}/models` → `context_length` + `top_provider.max_completion_tokens`.
     Public, needs no key. Ids are exact: `:free`, `:thinking` and `~`-prefixed variants are
     distinct entries, so a catalog id that is absent is a STALE CATALOG ENTRY, not a miss.
     """
-    body = _get(f"{(ep.base_url or '').rstrip('/')}/models") or {}
+    body = _get(_models_url(ep))
+    if body is None:
+        return {}, None
     out: dict[str, tuple[int, int | None]] = {}
     for row in body.get("data") or []:
         if not isinstance(row, dict) or not row.get("id"):
@@ -165,14 +223,16 @@ def _openrouter(ep) -> dict[str, tuple[int, int | None]]:
         mx = top.get("max_completion_tokens") if isinstance(top, dict) else None
         out[str(row["id"])] = (int(ctx),
                                int(mx) if isinstance(mx, int | float) and mx else None)
-    return out
+    return out, _listed_ids(body)
 
 
-def _nanogpt(ep) -> dict[str, tuple[int, int | None]]:
+def _nanogpt(ep) -> Listing:
     """Nano-GPT publishes limits only on its OWN route — the OpenAI-compatible `/api/v1/models`
     carries none. Not a documented stable contract, so a shape change degrades to the floor.
     """
-    body = _get(f"{_origin(ep.base_url or 'https://nano-gpt.com')}/api/models") or {}
+    body = _get(f"{_origin(ep.base_url or 'https://nano-gpt.com')}/api/models")
+    if body is None:
+        return {}, None
     models = body.get("models")
     text = models.get("text") if isinstance(models, dict) else None
     out: dict[str, tuple[int, int | None]] = {}
@@ -183,10 +243,11 @@ def _nanogpt(ep) -> dict[str, tuple[int, int | None]]:
         if isinstance(ctx, int | float) and ctx > 0:
             mx = row.get("maxOutputTokens")
             out[str(mid)] = (int(ctx), int(mx) if isinstance(mx, int | float) and mx else None)
-    return out
+    served = {str(mid) for mid in text} if isinstance(text, dict) else None
+    return out, served
 
 
-def _openai_generic(ep) -> dict[str, tuple[int, int | None]]:
+def _openai_generic(ep) -> Listing:
     """The OpenAI spec's `/models` carries only id/object/created/owned_by — but vLLM adds
     `max_model_len` and several gateways add `context_length`. Opportunistic: a bare list is a
     miss, never a failure.
@@ -197,8 +258,9 @@ def _openai_generic(ep) -> dict[str, tuple[int, int | None]]:
         key = OpenAICompatEndpoint(ep)._resolve_key()
     except Exception:
         key = ""
-    body = _get(f"{(ep.base_url or '').rstrip('/')}/models",
-                {"Authorization": f"Bearer {key}"} if key else None) or {}
+    body = _get(_models_url(ep), {"Authorization": f"Bearer {key}"} if key else None)
+    if body is None:
+        return {}, None
     out: dict[str, tuple[int, int | None]] = {}
     for row in body.get("data") or []:
         if not isinstance(row, dict) or not row.get("id"):
@@ -206,10 +268,10 @@ def _openai_generic(ep) -> dict[str, tuple[int, int | None]]:
         ctx = row.get("max_model_len") or row.get("context_length")
         if isinstance(ctx, int | float) and ctx > 0:
             out[str(row["id"])] = (int(ctx), None)
-    return out
+    return out, _listed_ids(body)
 
 
-def _ollama(ep, model_ids: list[str]) -> dict[str, tuple[int, int | None]]:
+def _ollama(ep, model_ids: list[str]) -> Listing:
     """`POST {origin}/api/show` per model → `model_info["<arch>.context_length"]`. Ollama has no
     output limit of its own, so the output cap is derived from the window rather than the floor —
     this is also what fixes `openai_compat`'s `num_ctx`, which had been sized from the ENDPOINT
@@ -232,7 +294,9 @@ def _ollama(ep, model_ids: list[str]) -> dict[str, tuple[int, int | None]]:
                     if k.endswith(".context_length") and isinstance(v, int | float)), None)
         if ctx:
             out[mid] = (int(ctx), None)
-    return out
+    # No served set: /api/show is probed per id, so an id that did not answer is
+    # indistinguishable from a daemon that was not running. Unanswered, never "absent".
+    return out, None
 
 
 # ------------------------------------------------------------------------------- the refresh ----
@@ -249,8 +313,7 @@ def refresh(server, *, force: bool = False) -> dict:
     if not force and not _missing_models(server, cache) and cache.get("fetched"):
         try:
             if datetime.fromisoformat(str(cache["fetched"])) + TTL > now:
-                return {"written": 0, "skipped": sum(isinstance(v, dict) for v in cache.values()),
-                        "misses": []}
+                return {"written": 0, "skipped": len(_rows(cache)), "misses": []}
         except ValueError:
             pass
 
@@ -261,6 +324,9 @@ def refresh(server, *, force: bool = False) -> dict:
     out: dict = {"fetched": now.isoformat(),
                  "checked_models": [_key(mc.endpoint, mc.model) for mc in server.models.values()]}
     misses: list[str] = []
+    cached_served = cache.get(SERVED_KEY)
+    prev_served: dict = cached_served if isinstance(cached_served, dict) else {}
+    served_out: dict[str, list[str]] = {}
     for ep_name, model_ids in sorted(by_endpoint.items()):
         ep = server.endpoints.get(ep_name)
         if ep is None:
@@ -268,18 +334,24 @@ def refresh(server, *, force: bool = False) -> dict:
         provider = _provider(ep)
         try:
             if provider == "openrouter":
-                table = _openrouter(ep)
+                table, served = _openrouter(ep)
             elif provider == "nanogpt":
-                table = _nanogpt(ep)
+                table, served = _nanogpt(ep)
             elif provider == "ollama":
-                table = _ollama(ep, model_ids)
+                table, served = _ollama(ep, model_ids)
             elif provider == "table":
-                table = {}
+                table, served = {}, None
             else:
-                table = _openai_generic(ep)
+                table, served = _openai_generic(ep)
         except Exception as exc:
             log.warning("limits: %s discovery failed: %s", ep_name, exc)
-            table = {}
+            table, served = {}, None
+        # An UNANSWERED listing keeps the previous set: a provider that was down for one
+        # refresh must never turn into "this endpoint does not serve your models".
+        if served:
+            served_out[ep_name] = sorted(served)
+        elif kept := prev_served.get(ep_name):
+            served_out[ep_name] = kept
         for mid in model_ids:
             hit = table.get(mid)
             if hit is None and (static := _static_window(mid)) is not None:
@@ -299,9 +371,11 @@ def refresh(server, *, force: bool = False) -> dict:
                                      else ENGINE_OUTPUT_CEILING,
                 "provider_max_output_tokens": max_out,
                 "source": provider_used, "fetched": now.isoformat()}
+    if served_out:
+        out[SERVED_KEY] = served_out
     cache_path(home).parent.mkdir(parents=True, exist_ok=True)
     atomic_write_json(cache_path(home), out)
-    written = sum(isinstance(v, dict) for v in out.values())
+    written = len(_rows(out))
     if misses:
         log.info("limits: %d model(s) not listed by their provider: %s",
                  len(misses), ", ".join(misses))

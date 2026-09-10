@@ -56,20 +56,33 @@ def _endpoint_view(name: str, ep: EndpointConfig) -> dict:
 
 
 def _max_tokens_warning(mc: ModelConfig, ep: EndpointConfig | None,
-                        found: dict | None = None) -> str | None:
+                        found: dict | None = None, served: bool | None = None) -> str | None:
     """The audit flag in the Settings models list.
 
     Re-aimed once limits are discovered (endpoints/limits.py): UNSET is now the normal, correct
     state — it means "use what the provider says" — so it no longer warns. What is worth flagging
     is a model riding the FLOOR because no provider would answer for it, an implausible hand
     value, and a hand value that contradicts the window.
+
+    `served` (limits.serves) splits the floor case in two, because the old single sentence asked
+    the operator to check something the software already knows. A gateway that LISTS the id but
+    publishes no figures for it (CLIProxyAPI's catalog is ids only) is a permanent, correct state
+    that only a hand value settles — saying "check the id" there sends them hunting a typo that
+    is not present. `None` means the provider publishes no catalog at all, so the question stays
+    open and the wording stays the old, undecided one.
     """
     found = found or {}
     configured = mc.max_tokens or (ep.max_tokens if ep else None)
     if not configured and not found.get("max_output_tokens"):
-        return (f"no provider limit found for this model id — the floor "
-                f"({DEFAULT_MODEL_MAX_TOKENS:,}) applies. Check the id is one this provider "
-                "actually serves, or set the real limit here")
+        floor = f"the floor ({DEFAULT_MODEL_MAX_TOKENS:,}) applies"
+        if served is False:
+            return (f"this provider does not list a model id {mc.model!r} — {floor}. Fix the "
+                    "id to one the endpoint serves (its catalog is what was checked)")
+        if served:
+            return (f"the provider serves this id but publishes no output limit for it — "
+                    f"{floor}. Set the real limit here; discovery cannot fill it in")
+        return (f"no provider limit found for this model id — {floor}. Check the id is one "
+                "this provider actually serves, or set the real limit here")
     if not configured:
         return None                       # discovered: this is the state we WANT
     if configured < MIN_PLAUSIBLE_MAX_TOKENS:
@@ -107,7 +120,13 @@ def _found(server, mc) -> dict:
     return limits.lookup(server.routines_home, mc.endpoint, mc.model) or {}
 
 
-def _model_view(mc: ModelConfig, endpoints: dict, found: dict | None = None) -> dict:
+def _served(server, mc) -> bool | None:
+    """Does the endpoint's own catalog list this model id? None = it publishes none."""
+    return limits.serves(server.routines_home, mc.endpoint, mc.model)
+
+
+def _model_view(mc: ModelConfig, endpoints: dict, found: dict | None = None,
+                served: bool | None = None) -> dict:
     """A catalog model's raw config PLUS the effective multimodal/context/max_tokens
     (endpoint-kind or endpoint default filled in) so the list can label it and the editor
     can show what's set, the max_tokens audit flag, and the window-fit sizing every model
@@ -127,7 +146,8 @@ def _model_view(mc: ModelConfig, endpoints: dict, found: dict | None = None) -> 
             "max_tokens_effective": (mc.max_tokens or found.get("max_output_tokens")
                                      or (ep.max_tokens if ep else None)
                                      or DEFAULT_MODEL_MAX_TOKENS),
-            "max_tokens_warning": _max_tokens_warning(mc, ep, found),
+            "served": served,
+            "max_tokens_warning": _max_tokens_warning(mc, ep, found, served),
             "window_warning": _window_warning(mc, found),
             "window": fit_fields(mc, ep, found)}
 
@@ -136,7 +156,7 @@ def _model_view(mc: ModelConfig, endpoints: dict, found: dict | None = None) -> 
 def list_endpoints(request: Request) -> dict:
     server = server_of(request)
     return {"endpoints": [_endpoint_view(n, e) for n, e in server.endpoints.items()],
-            "models": [_model_view(m, server.endpoints, _found(server, m))
+            "models": [_model_view(m, server.endpoints, _found(server, m), _served(server, m))
                        for m in server.models.values()],
             "system_model": server.system_model or None}
 
@@ -145,7 +165,7 @@ def list_endpoints(request: Request) -> dict:
 def list_models(request: Request) -> dict:
     """The model catalog alone — for the routine/conversation model pickers (name → attrs)."""
     server = server_of(request)
-    return {"models": [_model_view(m, server.endpoints, _found(server, m))
+    return {"models": [_model_view(m, server.endpoints, _found(server, m), _served(server, m))
                        for m in server.models.values()],
             "system_model": server.system_model or None}
 

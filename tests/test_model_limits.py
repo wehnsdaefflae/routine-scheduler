@@ -178,6 +178,11 @@ def test_the_ttl_stops_a_refresh_per_tick(tmp_path, monkeypatch):
     ("http://localhost:11434/v1", "openai", "ollama"),
     ("https://api.featherless.ai/v1", "openai", "openai"),
     ("", "anthropic", "table"),
+    ("https://api.anthropic.com", "anthropic", "table"),
+    # An anthropic-WIRE proxy is not Anthropic: it serves whatever its upstreams do, so its
+    # catalog is read like any other gateway's rather than assumed absent.
+    ("http://cliproxy:8317", "anthropic", "openai"),
+    ("http://127.0.0.1:8317", "anthropic", "openai"),
 ])
 def test_the_provider_is_sniffed_from_the_endpoint(base, kind, want):
     assert limits._provider(EndpointConfig(name="x", kind=kind, base_url=base)) == want
@@ -200,3 +205,93 @@ def test_new_model_refreshes_inside_global_ttl(tmp_path, monkeypatch):
 ])
 def test_claude_revision_windows(model, expected):
     assert limits._static_window(model) == expected
+
+
+# ---- a proxy behind the anthropic wire ----------------------------------------------------------
+
+def _proxy_server(tmp_path, models):
+    return _server(tmp_path, endpoints={
+        "codex-proxy": EndpointConfig(name="codex-proxy", kind="anthropic",
+                                      base_url="http://cliproxy:8317", context_tokens=25_000)},
+        models=models)
+
+
+def test_an_anthropic_base_url_gets_the_catalog_one_segment_deeper():
+    """The `openai` base_url already carries the /v1 (`…/api/v1`); the `anthropic` one does not,
+    because the Messages adapter appends `/v1/messages` itself. Live proof: the proxy answers
+    404 on /models and 200 on /v1/models, and a 404 reads exactly like "publishes no catalog".
+    """
+    anth = EndpointConfig(name="p", kind="anthropic", base_url="http://cliproxy:8317")
+    oai = EndpointConfig(name="o", kind="openai", base_url="https://openrouter.ai/api/v1")
+    assert limits._models_url(anth) == "http://cliproxy:8317/v1/models"
+    assert limits._models_url(oai) == "https://openrouter.ai/api/v1/models"
+
+
+def test_a_listed_id_with_no_published_limits_is_served_but_undiscovered(tmp_path, monkeypatch):
+    """CLIProxyAPI's catalog is ids only — {id, object, created, owned_by}. So the model IS
+    served and its limits are NOT discoverable, which are two different answers: the id set is
+    recorded even though not one row carried a figure.
+    """
+    server = _proxy_server(tmp_path, {
+        "astra": ModelConfig(name="astra", endpoint="codex-proxy", model="gpt-6-astra")})
+    seen = {}
+
+    def fake(url, headers=None):
+        seen["url"] = url
+        return {"data": [{"id": "gpt-6-astra", "object": "model", "owned_by": "openai"},
+                         {"id": "gpt-5.6-terra", "object": "model", "owned_by": "openai"}]}
+    monkeypatch.setattr(limits, "_get", fake)
+    out = limits.refresh(server, force=True)
+
+    assert seen["url"] == "http://cliproxy:8317/v1/models"
+    assert out["misses"] == ["codex-proxy/gpt-6-astra"]      # no figures: still a limits miss
+    assert limits.lookup(server.routines_home, "codex-proxy", "gpt-6-astra") is None
+    assert limits.serves(server.routines_home, "codex-proxy", "gpt-6-astra") is True
+    assert limits.serves(server.routines_home, "codex-proxy", "gpt-6-nope") is False
+
+
+def test_a_claude_id_on_a_proxy_still_gets_the_static_table(tmp_path, monkeypatch):
+    """Sniffing the proxy must not cost the Claude ids their window: the static table is a
+    fallback on a miss, not a property of the provider.
+    """
+    server = _proxy_server(tmp_path, {
+        "sonnet": ModelConfig(name="sonnet", endpoint="codex-proxy", model="claude-sonnet-5")})
+    monkeypatch.setattr(limits, "_get",
+                        lambda *a, **k: {"data": [{"id": "claude-sonnet-5"}]})
+    limits.refresh(server, force=True)
+    row = limits.lookup(server.routines_home, "codex-proxy", "claude-sonnet-5")
+    assert row["context_tokens"] == 1_000_000 and row["source"] == "table"
+
+
+def test_an_unanswered_catalog_keeps_the_previous_served_set(tmp_path, monkeypatch):
+    """A provider down for one refresh must never turn into "this endpoint does not serve your
+    models" — that would put a false "fix the id" in front of an operator whose id is fine.
+    """
+    server = _proxy_server(tmp_path, {
+        "astra": ModelConfig(name="astra", endpoint="codex-proxy", model="gpt-6-astra")})
+    monkeypatch.setattr(limits, "_get", lambda *a, **k: {"data": [{"id": "gpt-6-astra"}]})
+    limits.refresh(server, force=True)
+    monkeypatch.setattr(limits, "_get", lambda *a, **k: None)
+    limits.refresh(server, force=True)
+    assert limits.serves(server.routines_home, "codex-proxy", "gpt-6-astra") is True
+
+
+def test_no_catalog_at_all_leaves_the_question_unanswered(tmp_path, monkeypatch):
+    """Anthropic's own endpoint publishes no usable catalog, so `serves` says None — not False.
+    Nothing may render an unasked question as a negative answer.
+    """
+    server = _server(tmp_path, endpoints={
+        "claude": EndpointConfig(name="claude", kind="anthropic",
+                                 base_url="https://api.anthropic.com")},
+        models={"opus": ModelConfig(name="opus", endpoint="claude", model="claude-opus-4-8")})
+    monkeypatch.setattr(limits, "_get", lambda *a, **k: None)
+    limits.refresh(server, force=True)
+    assert limits.serves(server.routines_home, "claude", "claude-opus-4-8") is None
+
+
+def test_the_served_key_is_not_counted_as_a_model_row(tmp_path, monkeypatch):
+    """`written`/`skipped` mean model rows; the cache also carries fetched/checked_models/served."""
+    server = _proxy_server(tmp_path, {
+        "astra": ModelConfig(name="astra", endpoint="codex-proxy", model="gpt-6-astra")})
+    monkeypatch.setattr(limits, "_get", lambda *a, **k: {"data": [{"id": "gpt-6-astra"}]})
+    assert limits.refresh(server, force=True)["written"] == 0     # served, but no figures

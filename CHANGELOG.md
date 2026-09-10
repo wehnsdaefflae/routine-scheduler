@@ -15,6 +15,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.317.0] — 2026-09-10
+
+### Changed — a model behind an Anthropic-wire proxy is discovered like any other
+
+- Limit discovery decided which metadata API an endpoint speaks from its KIND, so every
+  `anthropic` endpoint was assumed to publish nothing and fell straight to the built-in
+  Claude table. A subscription proxy speaks that wire while serving whatever its upstreams
+  do, so an OpenAI id behind one could never be discovered and rode the 16,384 floor
+  forever. The kind now decides only for Anthropic's own host; anything else is sniffed
+  from `base_url` like any other gateway, and its catalog route is read one segment deeper
+  (`{base}/v1/models`) because an `anthropic` base_url omits the `/v1` an `openai` one
+  carries. Claude ids are unaffected — the table was always a fallback on a miss.
+- The Settings `max_tokens` flag told one story for two different problems and asked the
+  operator to verify something the software could check. It now separates them: an id the
+  provider's catalog does not list ("fix the id"), and an id it lists while publishing no
+  figures for it — the normal state behind a gateway whose catalog is ids only, where a
+  hand-set value is the only answer and the flag says so. An endpoint that publishes no
+  catalog keeps the undecided wording: an unreachable provider is never rendered as "does
+  not serve this model", and a listing that fails one refresh keeps the previous id set.
+
 ## [0.316.1] — 2026-09-10
 
 ### Fixed

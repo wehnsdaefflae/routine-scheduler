@@ -2131,6 +2131,41 @@ def test_settings_model_max_tokens_and_fallbacks(client):
     assert mv["max_tokens_warning"] is None and mv["max_tokens_effective"] == 8192
 
 
+def test_max_tokens_warning_separates_an_unlisted_id_from_an_unpublished_limit(client):
+    """The floor case had ONE sentence for two different problems, and it asked the operator to
+    check something the software already knows. A gateway whose catalog is ids only (CLIProxyAPI:
+    id/object/created/owned_by) serves the model and publishes no figures — permanent and correct,
+    settled only by a hand value. Sending someone to hunt a typo there wastes the afternoon this
+    came from. An endpoint that publishes NO catalog keeps the old, undecided wording.
+    """
+    c, tmp = client
+    (tmp / "routines" / ".control").mkdir(parents=True, exist_ok=True)
+    (tmp / "routines" / ".control" / "model-limits.json").write_text(json.dumps({
+        "fetched": "2026-09-10T00:00:00+00:00",
+        "served": {"dummy": ["gpt-6-astra", "gpt-5.6-terra"]}}), encoding="utf-8")
+
+    c.post("/api/settings/models", json={
+        "name": "astra", "endpoint": "dummy", "model": "gpt-6-astra"})
+    view = next(m for m in c.get("/api/settings/models").json()["models"]
+                if m["name"] == "astra")
+    assert view["served"] is True
+    assert "publishes no output limit" in view["max_tokens_warning"]
+    assert "Set the real limit here" in view["max_tokens_warning"]
+
+    c.put("/api/settings/models/astra", json={
+        "name": "astra", "endpoint": "dummy", "model": "gpt-6-astraa"})
+    view = next(m for m in c.get("/api/settings/models").json()["models"]
+                if m["name"] == "astra")
+    assert view["served"] is False
+    assert "does not list a model id" in view["max_tokens_warning"]
+
+    c.put("/api/settings/models/astra", json={
+        "name": "astra", "endpoint": "dummy", "model": "gpt-6-astra", "max_tokens": 8192})
+    view = next(m for m in c.get("/api/settings/models").json()["models"]
+                if m["name"] == "astra")
+    assert view["max_tokens_warning"] is None      # a hand value settles it, served or not
+
+
 def test_endpoint_credential_source_labels(client, monkeypatch):
     """Settings shows WHICH credential rung is live per endpoint — labels only, never
     values — and warns when an inline key shadows a set secret (Mark's 'why isn't it
