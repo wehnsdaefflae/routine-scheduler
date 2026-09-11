@@ -15,6 +15,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.325.0] — 2026-09-11
+
+### Changed
+- **A one-shot LLM call places no cache breakpoints.** `cacheable` is derived from the task
+  kind at the one seam every completion passes through (`instrument.CACHEABLE_KINDS` =
+  `{"turn"}`) and threaded to the adapters, so an `llm` action, the archival digest, the
+  refusal classifier, a workflow draft or a playbook distillation now sends a plain request.
+  Their prefix is never sent again, so the 1.25x cache WRITE was buying a read that never
+  came — measured 0.3% read share on `llm_action` against 96% on turns. Derived at the seam
+  rather than passed per call site because ten call sites can forget a flag; the adapters
+  still default to `cacheable=True`, so a path that bypasses instrumentation keeps caching.
+
+### Documented
+- `docs/architecture.md` carries the measured prefix decomposition (27.7k mean, section by
+  section) and the evidence that the always-on util catalog earns its 4.0k: **61.7% of util
+  calls** are made cold, straight from the catalog, reaching 63 of 134 utils, while `search`
+  was used 10 times against 370 `list` calls. The catalog is the discovery mechanism, not a
+  convenience over one — so it stays, and that is now a measured decision rather than a guess.
+- `docs/designs.md` gains the **structured-outputs swap**, decided and BLOCKED: forced tool
+  use is a hard 400 on the Fable tier, structured outputs is verified working on
+  `claude-proxy`, and `codex-proxy` — the system model for 28 of 33 routines — could not be
+  probed because its quota was exhausted. No tolerant dual path is allowed here, so the swap
+  waits for that one measurement rather than risking the fleet.
+
 ## [0.324.0] — 2026-09-11
 
 ### Added

@@ -150,6 +150,7 @@ class ChatEndpoint(Protocol):
         timeout: int = DEFAULT_TIMEOUT,
         session: str | None = None,
         temperature: float | None = None,
+        cacheable: bool = True,
     ) -> Completion: ...
 
     def supports_media(self, media_type: str, *, multimodal: bool) -> bool:

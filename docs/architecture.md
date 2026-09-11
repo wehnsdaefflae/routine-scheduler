@@ -55,10 +55,21 @@ the limits (single-writer status.json preserved).
   context window, the action kinds usable this run, enabled capabilities + held permissions' short
   conduct notes,
   spawnable workflow patterns, the util catalog at name+summary altitude — ONE util's usage on demand via
-  `util name=list args=["<name>"]`) → **state digest** (phase, `state/`, stage modules, held rules, last result,
+  `util name=list args=["<name>"]`) → **state digest** (phase, `state/` and `artifacts/` — each capped at
+  `composer.DIR_LIST_MAX` entries, newest first — stage modules, held rules, last result,
   LEDGER tail, open/answered questions, inbox messages). Effect actions (`util`/`read_file`/`write_file`/
-  `edit_file`/`llm`) run through `engine/executor.py`. A default routine's composed prompt is ~25k chars;
-  everything else is reachable on demand (read_file stages/history, read_rule, util name=list, memory_read).
+  `edit_file`/`llm`) run through `engine/executor.py`. Everything else is reachable on demand (read_file
+  stages/history, read_rule, util name=list, memory_read).
+
+  **What that costs, measured 2026-09-11 across all 33 live routines:** the composed prefix averages
+  **27.7k tokens**, re-read on every turn — CAPABILITIES 32% (util catalog 4.0k, permission notes 3.1k),
+  state digest 21%, harness 21%, action schema 16%, recipe 10% — which is roughly a quarter of the
+  instance's weighted spend. It is nearly all load-bearing: **61.7% of util calls** since 2026-09-01 were
+  made COLD, straight from the catalog with no `list`/`search` first, reaching 63 of the library's 134
+  utils, while `search` was used 10 times against 370 `list` calls. So the catalog is not a convenience
+  over a discovery mechanism — it IS the discovery mechanism, and `list` serves the exact-usage half it
+  was designed for. Re-run the decomposition with `~/.config/routine-scheduler/prefix-probe.py` rather
+  than re-deriving it.
 - **The message list is a prompt-caching contract**: composed once, appended-to only, never mutated —
   so providers serve each turn's prefix from cache (~0.1x). Per-turn boilerplate is banned: the util
   reminder is ONE-SHOT on the kickoff/resume note, the history pointer re-appears only every 10th turn,
@@ -199,9 +210,12 @@ Two kinds:
   `response_format` on a 503 that hides a schema-incapable backend). Caching
   is the provider's implicit prefix caching; `cached_tokens` is surfaced from usage details.
 - **anthropic** — Messages API, direct or through CLIProxyAPI for subscription authentication. Schema via a single forced tool-use; effort via
-  `output_config`, degraded on a 400 that names it. Always sets `cache_control` breakpoints (tools +
-  system static, a moving one on the last message) — ~0.1x reads on the whole prefix every turn; a 400
-  naming cache_control gets a degraded retry without the markers.
+  `output_config`, degraded on a 400 that names it. Sets `cache_control` breakpoints (tools +
+  system static, a moving one on the last message) on CONVERSATION turns — ~0.1x reads on the whole
+  prefix every turn; a 400 naming cache_control gets a degraded retry without the markers. A ONE-SHOT
+  call places none: `cacheable` is derived from the task kind at the one seam every completion passes
+  through (`instrument.CACHEABLE_KINDS` = {"turn"}), because a prefix that is never sent again would
+  pay a 1.25x write for a read that never comes (measured: 0.3% read share on `llm_action`).
 
 Whether that caching is actually WORKING is a measured reading, not an assumption:
 `endpoints.base.cache_read_share` divides reads by all cache traffic, the Stats tab carries it on

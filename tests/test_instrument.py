@@ -30,10 +30,11 @@ class StubEndpoint:
         self._boom = boom
 
     def complete(self, messages, *, model, schema=None, effort=None, max_tokens=None,
-                 timeout=600, session=None, temperature=None):
+                 timeout=600, session=None, temperature=None, cacheable=True):
         self.calls.append({"messages": messages, "model": model, "schema": schema,
                            "effort": effort, "max_tokens": max_tokens, "timeout": timeout,
-                           "session": session, "temperature": temperature})
+                           "session": session, "temperature": temperature,
+                           "cacheable": cacheable})
         if self._boom is not None:
             raise self._boom
         return self._reply
@@ -61,9 +62,11 @@ def test_passthrough_when_no_sink():
                       effort="high", max_tokens=42, timeout=90, session="sess")
     assert out is stub._reply  # exact same object, unchanged
     # every standard kwarg forwarded verbatim; instrumentation kwargs never reach the adapter
+    # — except `cacheable`, which is DERIVED from the kind here (see test_only_a_turn_is_cacheable)
     assert stub.calls == [{"messages": [{"role": "user", "content": "hi"}], "model": "m",
                            "schema": {"x": 1}, "effort": "high", "max_tokens": 42,
-                           "timeout": 90, "session": "sess", "temperature": None}]
+                           "timeout": 90, "session": "sess", "temperature": None,
+                           "cacheable": False}]
 
 
 def test_proxies_name_context_and_adapter_attrs():
@@ -94,7 +97,25 @@ def test_purpose_and_kind_not_forwarded_to_adapter():
     InstrumentedEndpoint(stub).complete([], model="m", purpose="p", kind="k")
     assert "purpose" not in stub.calls[0] and "process" not in stub.calls[0]
     assert set(stub.calls[0]) == {"messages", "model", "schema", "effort", "max_tokens",
-                                  "timeout", "session", "temperature"}
+                                  "timeout", "session", "temperature", "cacheable"}
+
+
+def test_only_a_turn_is_cacheable():
+    """A cache breakpoint pays only where the prefix is sent AGAIN. This wrapper is the one
+    seam every completion passes through and it already knows the kind, so the decision is
+    derived here rather than at ten call sites that could forget it. Measured 2026-09-11:
+    0.3% read share on `llm_action` against 96% on turns — the write was pure surcharge.
+    """
+    for kind, want in (("turn", True), ("llm_action", False), ("compaction", False),
+                       ("autolabel", False), (None, False)):
+        stub = StubEndpoint()
+        set_sink(None)                     # the fast path forwards the same kwargs
+        InstrumentedEndpoint(stub).complete([], model="m", kind=kind)
+        assert stub.calls[0]["cacheable"] is want, kind
+        set_sink(CapturingSink())          # …and so does the observed path
+        stub2 = StubEndpoint()
+        InstrumentedEndpoint(stub2).complete([], model="m", kind=kind)
+        assert stub2.calls[0]["cacheable"] is want, kind
 
 
 def test_exception_emits_failed_and_reraises():

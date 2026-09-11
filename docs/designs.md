@@ -12,6 +12,51 @@ decided in conversation before any finding exists says so and carries none.
 
 ---
 
+## Structured outputs instead of forced tool use (decided 2026-09-11, BLOCKED on verification)
+
+**Problem.** `endpoints/anthropic_api.py` enforces the action schema with a single forced
+tool call — `tools=[{name: "action", input_schema: <schema>}]` plus
+`tool_choice: {type: "tool", name: "action"}`. That shape is being retired upstream: forced
+tool use (`tool_choice` `any`/`tool`) returns a **400** on Claude Fable 5.1 / Mythos 5.1, so
+this transport simply cannot reach that model tier. The modern equivalent is structured
+outputs — `output_config: {format: {type: "json_schema", schema: <schema>}}` — where the
+reply comes back as a TEXT block containing schema-valid JSON rather than a `tool_use` block.
+
+Second prize, and arguably the bigger one: the adapter sends no `thinking` field at all, so
+on `claude-opus-4-8` (today's main model behind claude-proxy) runs execute with extended
+thinking OFF while three catalog entries pay for an `effort` knob. Whether to turn thinking
+ON is a separate decision — it touches the deliberation doctrine ("deliberation is ink,
+effort is scratch paper") and raises a replay question, since the engine's message list is
+text-only and would drop thinking blocks between turns.
+
+**Verified 2026-09-11 against the live transports** (probe:
+`~/.config/routine-scheduler/so-probe.py`, run inside the container — `cliproxy` resolves
+only on the compose network):
+
+| | forced tool use | structured outputs | strict tool + auto | adaptive thinking |
+|---|---|---|---|---|
+| claude-proxy / claude-opus-4-8 | ok | **ok** (`blocks=['text']`, valid JSON) | ok | ok |
+| codex-proxy / gpt-6-astra | *429 — quota* | *429 — quota* | *429 — quota* | *429 — quota* |
+
+**Why it is blocked.** `codex-proxy` serves `gpt-6-astra`, the system model for 28 of the 33
+live routines, and it was rate-limited (`usage_limit_reached`) at every probe attempt that
+day. It fronts an OpenAI model over the anthropic wire, so there is no reason to assume it
+maps `output_config.format` the way the Claude-backed proxy does — it has to be measured.
+The house rule forbids shipping a tolerant dual path, so this is a HARD swap or nothing, and
+a hard swap that 400s on the system model breaks the fleet at the next scheduled run.
+
+**First increment.** Re-run the probe when `gpt-6-astra` quota has reset. If structured
+outputs works there too: swap `tools`/`tool_choice` for `output_config.format` in
+`AnthropicEndpoint.complete`, change `_parse` to read the JSON out of the text block instead
+of the `tool_use` block, and make sure `actionschema` emits `additionalProperties: false`
+(structured outputs wants it). The existing 400-degradation path needs rethinking too: it
+currently strips the whole of `output_config` on an effort-related 400, which would take the
+FORMAT with it and leave a turn with no schema enforcement at all. If structured outputs
+does NOT work on codex-proxy, the swap stays unbuilt until that transport changes — and the
+Fable tier stays unreachable, which is the cost of keeping the fleet up.
+
+---
+
 ## F363 — failover support: a per-stage distillate
 
 **Problem.** A catalog model may declare `fallbacks:` (endpoints/failover.py). When the

@@ -27,6 +27,18 @@ from ..ids import now_iso
 from . import failover
 from .base import DEFAULT_TIMEOUT, ChatEndpoint, Completion, EndpointError, Message
 
+#: Task kinds whose prompt is a CONVERSATION — the only ones a cache breakpoint can pay for.
+#: Everything else here is one-shot (an `llm` action, the archival digest, the refusal
+#: classifier, a workflow draft, a playbook distillation): a fresh prefix that is never sent
+#: again, so the write costs 1.25x for a read that never comes. Measured 2026-09-11: 0.3%
+#: read share on `llm_action` against 96% on turns.
+#:
+#: Derived HERE and nowhere else, because this wrapper is the one seam every completion
+#: passes through and it already knows the kind. A per-call-site flag would be a flag ten
+#: call sites can forget; the adapters still default `cacheable=True`, so a path that somehow
+#: bypasses instrumentation keeps caching rather than silently losing it.
+CACHEABLE_KINDS = frozenset({"turn"})
+
 
 # --- records -----------------------------------------------------------------
 def make_record(phase: str, *, id: str, endpoint: str, model: str, purpose: str,
@@ -138,7 +150,7 @@ class InstrumentedEndpoint:
                  kind: str | None = None) -> Completion:
         inner_kwargs = {"model": model, "schema": schema, "effort": effort,
                         "max_tokens": max_tokens, "timeout": timeout, "session": session,
-                        "temperature": temperature}
+                        "temperature": temperature, "cacheable": kind in CACHEABLE_KINDS}
         sink = _sink
         if sink is None:                       # fast path: nothing observing
             try:

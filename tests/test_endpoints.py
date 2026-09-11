@@ -527,6 +527,35 @@ def test_anthropic_effort_wiring(monkeypatch):
     assert "output_config" not in seen["body"]
 
 
+def test_anthropic_one_shot_places_no_breakpoints(monkeypatch, tmp_path):
+    """A one-shot call (`cacheable=False` — an `llm` action, the archival digest, a refusal
+    classification) sends a prefix that will never be sent again, so a cache WRITE costs
+    1.25x for a read that never comes. No markers at all, and the system prompt goes back to
+    its plain string form (block form exists only to carry a marker).
+    """
+    keyfile = tmp_path / "anthropic.env"
+    keyfile.write_text('ANTHROPIC_API_KEY="sk-test"\n')
+    ep = AnthropicEndpoint(EndpointConfig(
+        name="anthropic", kind="anthropic", key_env_file=str(keyfile), context_tokens=100))
+    seen = {}
+
+    def fake_post(url, json=None, headers=None, timeout=None):
+        seen.update(body=json)
+        return FakeResponse(payload={
+            "content": [{"type": "tool_use", "name": "action", "input": {"say": "s"}}],
+            "usage": {"input_tokens": 7, "output_tokens": 3}})
+
+    monkeypatch.setattr(anth_mod.httpx, "post", fake_post)
+    ep.complete(MESSAGES, model="m", schema={"type": "object"}, cacheable=False)
+
+    assert "cache_control" not in __import__("json").dumps(seen["body"])
+    assert seen["body"]["system"] == "be brief"                  # plain string, not blocks
+    assert isinstance(seen["body"]["messages"][-1]["content"], str)
+    # everything else about the call is unchanged — this is a caching decision, not a
+    # different request shape
+    assert seen["body"]["tool_choice"] == {"type": "tool", "name": "action"}
+
+
 def test_anthropic_cache_usage_captured(monkeypatch):
     """input_tokens excludes cache traffic on this API — the adapter surfaces it as
     cached_in/cache_write, never folded into "in" (the cross-adapter invariant)."""

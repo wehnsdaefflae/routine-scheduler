@@ -170,7 +170,7 @@ class ScriptedEndpoint:
         return supports_media_type(media_type, multimodal=multimodal, pdf=True)
 
     def complete(self, messages, *, model, schema=None, effort=None, max_tokens=None,
-                 timeout=600, session=None, temperature=None):
+                 timeout=600, session=None, temperature=None, cacheable=True):
         from rsched.engine import refusal as _refusal
         if schema is _refusal.CLASSIFY_SCHEMA or schema is _refusal.ISOLATION_SCHEMA:
             # The refusal-clarification subcalls (engine/refusal.py) ride the same
@@ -188,7 +188,8 @@ class ScriptedEndpoint:
         with self.lock:
             self.calls.append({"messages": [dict(m) for m in messages], "model": model,
                                "schema": schema, "session": session,
-                               "max_tokens": max_tokens, "effort": effort})
+                               "max_tokens": max_tokens, "effort": effort,
+                               "cacheable": cacheable})
             item = None
             for i, entry in enumerate(self.replies):
                 if isinstance(entry, tuple):

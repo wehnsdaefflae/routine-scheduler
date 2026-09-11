@@ -138,6 +138,8 @@ class OpenAICompatEndpoint:
                  effort: str | None = None, max_tokens: int | None = None,
                  timeout: int = DEFAULT_TIMEOUT,
                  session: str | None = None,  # noqa: ARG002 — protocol caching hint (below)
+                 cacheable: bool = True,  # noqa: ARG002 — no explicit breakpoints to place:
+                 # these providers cache implicitly, so there is nothing here to switch off
                  temperature: float | None = None) -> Completion:
         # `session` is unused here: OpenAI-style providers cache implicitly on byte-stable
         # prefixes, which the engine's append-only message list already gives them; the

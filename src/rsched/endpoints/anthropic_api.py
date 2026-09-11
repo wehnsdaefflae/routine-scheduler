@@ -4,12 +4,14 @@ Schema enforcement via forced tool-use: one tool named "action" whose input_sche
 requested schema, with tool_choice forcing it — long-supported and reliable. Without a
 schema it is a plain messages call.
 
-Prompt caching is always on: cache_control breakpoints on the tools block and the system
-prompt (static per run) plus a moving breakpoint on the last message — each turn re-reads
-the whole prefix at ~0.1x price instead of full price. The engine's message list is
-append-only, which is exactly what prefix caching needs. Cache traffic is reported as
-usage "cached_in" / "cache_write" (kept out of "in"). A 400 naming cache_control gets one
-degraded retry without the markers.
+Prompt caching is on for CONVERSATIONS: cache_control breakpoints on the tools block and
+the system prompt (static per run) plus a moving breakpoint on the last message — each turn
+re-reads the whole prefix at ~0.1x price instead of full price. The engine's message list is
+append-only, which is exactly what prefix caching needs. A ONE-SHOT call (`cacheable=False`,
+derived from the task kind in instrument.CACHEABLE_KINDS) places no markers at all: its
+prefix is never sent again, so a write would cost 1.25x for a read that never comes. Cache
+traffic is reported as usage "cached_in" / "cache_write" (kept out of "in"). A 400 naming
+cache_control gets one degraded retry without the markers.
 
 Multimodal: a message may carry a `media` list ([{path, media_type}]); this API takes
 images and PDFs natively, so those files become base64 image/document content blocks. Image
@@ -159,35 +161,37 @@ class AnthropicEndpoint:
                  effort: str | None = None, max_tokens: int | None = None,
                  timeout: int = DEFAULT_TIMEOUT,
                  session: str | None = None,  # noqa: ARG002 — protocol caching hint; the
-                 # always-on cache_control breakpoints make a per-run key unnecessary here
-                 temperature: float | None = None) -> Completion:
+                 # cache_control breakpoints make a per-run key unnecessary here
+                 temperature: float | None = None, cacheable: bool = True) -> Completion:
         system, rest = split_system(messages)
+        rendered = _render_media(merge_consecutive(rest))
         body: dict = {
             "model": model,
             # the catalog's shared fallback — a call that passes no cap (a Settings
             # probe) gets the same 16_384 an unset catalog model resolves to
             "max_tokens": max_tokens or DEFAULT_MODEL_MAX_TOKENS,
-            "messages": _mark_tail(_render_media(merge_consecutive(rest))),
+            "messages": (_mark_tail(rendered) if cacheable else rendered),
         }
         temp = temperature if temperature is not None else self.temperature  # model wins
         if temp is not None:
             body["temperature"] = temp
         if system:
             # static per run → a cache breakpoint; block form is what cache_control needs
-            body["system"] = [{"type": "text", "text": system,
-                               "cache_control": {"type": "ephemeral"}}]
+            body["system"] = ([{"type": "text", "text": system,
+                                "cache_control": {"type": "ephemeral"}}] if cacheable
+                              else system)
         if effort:
             # The role's effort maps to the Messages API `output_config.effort` knob
             # (low/medium/high/xhigh/max — controls thinking depth and token spend).
             # A model that rejects it gets a degraded retry below.
             body["output_config"] = {"effort": effort}
         if schema is not None:
-            body["tools"] = [{
-                "name": "action",
-                "description": "Return the next action as structured data.",
-                "input_schema": schema,
-                "cache_control": {"type": "ephemeral"},   # static per run → a breakpoint
-            }]
+            tool: dict = {"name": "action",
+                          "description": "Return the next action as structured data.",
+                          "input_schema": schema}
+            if cacheable:
+                tool["cache_control"] = {"type": "ephemeral"}   # static per run → a breakpoint
+            body["tools"] = [tool]
             body["tool_choice"] = {"type": "tool", "name": "action"}
         headers = {"x-api-key": self._api_key(), "anthropic-version": API_VERSION}
 
