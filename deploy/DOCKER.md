@@ -60,12 +60,26 @@ the migration instead of on the recreate, which is the same loss one host later.
 | `background` | detached background runs a conversation launched, possibly mid-flight |
 | `.local/share/routine-scheduler-libraries` | the library repo: `workflows/`, `rules/`, `utils/` |
 
-Plus four homes that exist only once a feature has been used, taken when present and reported as
-skipped when not (`OPTIONAL_PATHS`): `chrome-profile` (the logged-in browser —
+Plus the homes that exist only once a feature has been used, taken when present and reported as
+skipped when not (`STATE_PATHS_OPTIONAL`): `chrome-profile` (the logged-in browser —
 [docs/browser-sessions.md](../docs/browser-sessions.md)), `telegram-sessions`, `signal-sessions`
 and `whatsapp-sessions` (a **linked session on disk IS the credential** — there is no API key to
-re-enter, so losing one unlinks the account and someone has to re-pair by phone), and
-`.config/gh` (`gh auth login`'s token, re-mintable only by another device flow).
+re-enter, so losing one unlinks the account and someone has to re-pair by phone), `.config/gh`
+(`gh auth login`'s token, re-mintable only by another device flow), `.claude-daemon` (the
+interactive `claude /login` token — the only credential carrying the `user:profile` scope the
+subscription-quota read needs), and each **project workspace** a routine works inside.
+
+A project workspace is mounted at its HOST path, so the paths a project's own documents name
+stay true here — `git-repos/LLMSecTest_agentic` and its read-only grant folder under
+`Obsidian/` are the first pair. Two things about carrying one. It is listed even though nearly
+all of it is pushed to GitHub every run, because what the list carries is the REST: the
+gitignored credentials directory, un-pushed work, and gitignored OUTPUT that no clone brings
+and no cheap command regenerates — 38 MB of rendered scan reports the published page is built
+from, in that repo's case. And its regenerable bulk is cut by an ANCHORED exclude naming the
+workspace (`git-repos/LLMSecTest_agentic/apps`, `.../venv`), never by a bare directory name
+that would silently match somewhere else. Both mounts set `create_host_path: false`: docker's
+default is to invent an empty root-owned directory for a missing source, and a routine would
+then read an empty grant folder as an empty grant folder rather than as a broken mount.
 
 Two mounts are deliberately left out, so their absence is a decision rather than an oversight:
 `.cache/ms-playwright` is a ~170 MB browser download `page-fetch` re-fetches on first use (bound

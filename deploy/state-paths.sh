@@ -33,6 +33,18 @@ STATE_PATHS_OPTIONAL=(
   .claude-daemon                       # the interactive `claude /login` token: the only credential
                                        # with the user:profile scope the quota read needs, and the
                                        # only one nothing can re-mint headlessly
+  git-repos/LLMSecTest_agentic         # a PROJECT WORKSPACE a routine works inside. Nearly all of
+                                       # it is pushed to GitHub every run, so what this carries is
+                                       # the rest: the gitignored `secrets/` and whatever a run had
+                                       # not pushed yet. Its regenerable bulk is excluded below.
+  # …and its canonical grant documents, which live OUTSIDE the project repo by design (its
+  # private/public firewall) and are in no repo at all — the one genuinely irreplaceable part
+  # of that routine's inputs. The full path, not the parent: only this subtree is mounted, so
+  # only this subtree is here, and the list says what it carries rather than where it might.
+  'Obsidian/03. Grants/Prototype Fund/jahrgang 02 winter/LLMSecTest'
+  # …and the prior-art PoC that workspace's engineering playbook sends a run to read. Its own
+  # repo, mounted read-only; carried because the playbook names it by absolute path.
+  git-repos/pytest-sarif-demo
 )
 
 # Deliberately NOT carried, so their absence is a decision and not an oversight:
@@ -46,6 +58,14 @@ STATE_PATHS_OPTIONAL=(
 # target that does not exist (exit 23), and a restored SingletonLock tells a fresh Chrome that
 # another instance already owns the profile.
 STATE_EXCLUDES=(
+  # The LLMSecTest workspace's regenerable bulk — anchored, so these names are excluded THERE
+  # and nowhere else. `apps/` is the cohort's per-member materialisation (compose stacks, data
+  # volumes, source checkouts); the project's own position is that every member is rebuildable
+  # from nothing by `qa/apps/standup_*.py`, and the cohort runner proves it by never having had
+  # the directory. `venv/` is a pip install away and is not named `.venv`, so the entry below
+  # does not cover it.
+  'git-repos/LLMSecTest_agentic/apps'
+  'git-repos/LLMSecTest_agentic/venv'
   .venv
   __pycache__
   '*.pyc'

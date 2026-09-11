@@ -494,7 +494,9 @@ A bump MUST land with a matching `## [x.y.z]` CHANGELOG.md header in the same co
 or Docker (`docker compose up -d` — a disposable engine-only image; source, config, `~/.credentials`,
 `~/routines`, `~/conversations`, `~/background`, the messenger session stores
 (`~/{telegram,signal,whatsapp}-sessions` — a linked session IS the credential, so losing one
-unlinks the account), and the library repo are all bind-mounted, so the
+unlinks the account), the library repo, and any PROJECT WORKSPACE a routine works inside
+(`~/git-repos/LLMSecTest_agentic` and its read-only grant folder are the first) are all
+bind-mounted, so the
 whole system migrates as a tarball of those dirs — EVERY data home must be a bind, or it dies with
 the container layer on recreate. That inventory has ONE copy, `deploy/state-paths.sh`, read by both
 consumers: `bundle.sh` writes the one-shot migration tarball (DOCKER.md's flow ends by

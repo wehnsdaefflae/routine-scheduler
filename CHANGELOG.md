@@ -15,6 +15,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.324.0] — 2026-09-11
+
+### Added
+- **A routine can work inside a PROJECT WORKSPACE, bind-mounted at its host path.** The
+  compose file gains two mounts — a project's repo read-write, and the canonical documents
+  that live outside it read-only — and `deploy/state-paths.sh` gains both, so a workspace
+  cannot be mounted-but-unlisted. Mounting at the identical absolute path is the point: a
+  project whose own documents name `/home/mark/...` keeps every one of those references true,
+  so nothing in the migrated project has to be rewritten to move hosts.
+
+### Why
+The first such workspace is LLMSecTest, moving off a Claude Desktop local routine. Two
+details are load-bearing and are written down where the next one will look. `create_host_path:
+false` on both mounts, because docker's default invents an empty root-owned directory for a
+missing source and a run would read an empty grant folder as an empty grant folder rather than
+as a broken mount. And the workspace's regenerable bulk is cut with an ANCHORED exclude naming
+the workspace rather than a bare `apps` / `venv`, which would match elsewhere in `$HOME`.
+
+A workspace is listed in the inventory even though nearly all of it is pushed to git every
+run, because what the list carries is the rest: the gitignored credentials directory, work not
+yet pushed, and gitignored OUTPUT that no clone brings and no cheap command regenerates. In
+this project that last one is 38 MB of rendered scan reports the published page is built from
+— derived in principle, unrecoverable before Monday in practice.
+
 ## [0.323.0] — 2026-09-11
 
 ### Changed

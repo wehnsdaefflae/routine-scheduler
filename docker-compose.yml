@@ -54,6 +54,34 @@ services:
       - ${RSCHED_HOME:-/home/mark}/.config/gh:/home/mark/.config/gh          # `gh auth login` persists here
       - ${RSCHED_HOME:-/home/mark}/.credentials:/home/mark/.credentials:ro    # optional file-based secrets (read-only)
       - ${RSCHED_HOME:-/home/mark}/routines:/home/mark/routines
+      # PROJECT WORKSPACES a routine works inside, mounted at their HOST path so the paths a
+      # project's own documents name stay true on this host. `create_host_path: false` on both:
+      # a missing source must FAIL the recreate, because docker's default is to invent an empty
+      # root-owned directory and a routine would then read an empty grant folder as an empty
+      # grant folder rather than as a broken mount.
+      #
+      # llmsectest — the LLMSecTest management repo (docs/… the routine reads `CONTRACT.md`
+      # from here). Read-write: every run writes ledgers, the journal and three git repos.
+      - type: bind
+        source: ${RSCHED_HOME:-/home/mark}/git-repos/LLMSecTest_agentic
+        target: /home/mark/git-repos/LLMSecTest_agentic
+        bind: { create_host_path: false }
+      # …and its canonical grant documents, which live OUTSIDE that repo by design (the
+      # private/public firewall). READ-ONLY: `application.md` is the source of truth for scope
+      # and milestones, and a run reads it — nothing in the project writes it.
+      - type: bind
+        source: ${RSCHED_HOME:-/home/mark}/Obsidian/03. Grants/Prototype Fund/jahrgang 02 winter/LLMSecTest
+        target: /home/mark/Obsidian/03. Grants/Prototype Fund/jahrgang 02 winter/LLMSecTest
+        read_only: true
+        bind: { create_host_path: false }
+      # …and the prior-art PoC its engineering playbook sends a run to read before reinventing
+      # (pytest-plugin architecture, SARIF v2.1.0, the Actions upload). READ-ONLY: it is
+      # reference, never a thing this routine maintains.
+      - type: bind
+        source: ${RSCHED_HOME:-/home/mark}/git-repos/pytest-sarif-demo
+        target: /home/mark/git-repos/pytest-sarif-demo
+        read_only: true
+        bind: { create_host_path: false }
       # Conversations + detached background runs are data, exactly like routines — without
       # these binds they land in the container's writable layer and DIE on every recreate.
       - ${RSCHED_HOME:-/home/mark}/conversations:/home/mark/conversations
