@@ -149,6 +149,12 @@ def format_admin(obs: dict, kind: str) -> str | None:  # noqa: C901, PLR0911, PL
             return f"OBSERVATION (llm subcall FAILED): {err}"
         return f"OBSERVATION (llm reply):\n{obs['reply']}"
     if kind == "ask_user":
+        if err := obs.get("error"):
+            # The ask was REFUSED before any record was filed (e.g. a config_patch naming a
+            # routine that does not exist — D123/F458). Nothing is pending and nobody was
+            # asked, so say that plainly instead of falling through to the "filed as
+            # deferred" line, which assumed every ask_user observation carries a qid.
+            return (f"OBSERVATION (ask_user REFUSED — no question was filed): {err}")
         if obs.get("decision"):
             # an access request settled by one of the typed decisions — the result
             # line already teaches scope (this run vs forever) and the way forward

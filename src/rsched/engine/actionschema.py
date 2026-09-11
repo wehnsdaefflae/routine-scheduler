@@ -346,7 +346,10 @@ ACTION_SCHEMA: dict = {
                            '{"budgets": {"max_turns": 100}} or {"schedule": {"friendly": '
                            '{"frequency": "hourly", "minute": 0}}}. Use it when a revise-recipe '
                            "run is asked for a schedule / budget / model / permission / fs-roots "
-                           "change it cannot make itself.",
+                           "change it cannot make itself. To propose the change for ANOTHER "
+                           'routine, name it: {"routine": "suedlink-wlf", "budgets": '
+                           '{"max_turns": 120}} — the apply then patches that routine, not you. '
+                           "A slug naming no installed routine is refused on this turn.",
         },
         "request": {
             "type": "string",

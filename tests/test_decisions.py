@@ -90,6 +90,53 @@ def test_deferred_ask_carries_config_patch_for_the_bridge(make_routine, scripted
     assert status == "ok"
     recs = [read_json(p) for p in (d / "questions" / "pending").glob("*.json")]
     assert len(recs) == 1 and recs[0]["config_patch"] == patch
+    # a patch for the asker itself carries no target — absence IS "apply to me" (D123/F458)
+    assert "config_target" not in recs[0]
+
+
+def test_config_patch_names_another_routine_as_its_target(make_routine, scripted):
+    """D123/F458: a config_patch may be FOR another routine — config-optimizer's whole job.
+
+    The slug rides inside the patch as `routine`, is validated against the installed routines
+    at ask time, and is popped off so what remains is a clean PATCH body. Before 0.326.0 the
+    Decisions-page apply was hardwired to the ASKING routine, so a proposal for suedlink-wlf
+    rewrote config-optimizer's own budgets and reported success (R1343, R1407).
+    """
+    d = make_routine(slug="optimizer")
+    make_routine(slug="suedlink-wlf")          # the target must actually exist
+    scripted([
+        {"say": "propose it for suedlink-wlf", "kind": "ask_user", "mode": "deferred",
+         "question": "Raise suedlink-wlf to 120 turns?",
+         "config_patch": {"routine": "suedlink-wlf", "budgets": {"max_turns": 120}}},
+        finish(),
+    ])
+    status, _ = run_routine(d, _server(d), run_ts=TS)
+    assert status == "ok"
+    recs = [read_json(p) for p in (d / "questions" / "pending").glob("*.json")]
+    assert len(recs) == 1
+    assert recs[0]["config_target"] == "suedlink-wlf"
+    # `routine` was consumed as the target — the body left for PATCH is the config alone,
+    # which the endpoint's extra="forbid" would otherwise 422 on.
+    assert recs[0]["config_patch"] == {"budgets": {"max_turns": 120}}
+
+
+def test_config_patch_target_that_names_no_routine_is_refused(make_routine, scripted):
+    """An unresolvable target is refused ON THE TURN THAT ASKED, never silently redirected to
+    the asker — a silent fallback to `q.routine` is exactly the defect F458 records. No
+    decision record is filed, so no apply button can promise a patch that would land wrong."""
+    d = make_routine(slug="optimizer2")
+    scripted([
+        {"say": "propose it for a routine that does not exist", "kind": "ask_user",
+         "mode": "deferred", "question": "Raise it?",
+         "config_patch": {"routine": "no-such-routine", "budgets": {"max_turns": 120}}},
+        finish(),
+    ])
+    status, run_dir = run_routine(d, _server(d), run_ts=TS)
+    assert status == "ok"
+    assert not list((d / "questions" / "pending").glob("*.json"))
+    obs = next(e for e in _events(run_dir)
+               if e["type"] == "observation" and e["payload"].get("error"))
+    assert "no-such-routine" in obs["payload"]["error"]
 
 
 def test_blocking_answer_resolves_the_record(make_routine, scripted):

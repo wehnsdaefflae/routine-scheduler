@@ -15,6 +15,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.326.0] — 2026-09-11
+
+### Fixed
+
+- **A `config_patch` can name the routine it is FOR, and the apply goes there.** The
+  Decisions-page `approve & apply` was hardwired to the routine that ASKED, so a proposal
+  made on another routine's behalf silently patched the asker instead — config-optimizer's
+  suedlink-wlf budget change landed on config-optimizer and reported success (R1343). That
+  made the one sanctioned per-routine config path unusable for the routine whose whole job
+  it is (R1407, R1387). A patch may now carry `"routine": "<slug>"`; the engine resolves and
+  validates it where the durable decision record is written, pops it so the remaining keys
+  stay a clean PATCH body, and the page patches that slug. The panel and the toast NAME the
+  target, so the redirect is visible before the click rather than discovered afterwards.
+  A slug naming no installed routine is refused on the turn that asked — there is no fallback
+  to the asker, because that fallback was the defect. (D123/F458)
+- **A refused `ask_user` no longer crashes the turn that made it.** The observation renderer
+  had no error branch for `ask_user` and assumed every such observation carries a `qid`, so
+  any refusal raised `KeyError: 'qid'` instead of telling the run what was wrong. It now
+  renders the refusal plainly and says that no question was filed.
+
 ## [0.325.0] — 2026-09-11
 
 ### Changed

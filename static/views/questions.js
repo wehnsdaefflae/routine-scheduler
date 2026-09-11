@@ -288,11 +288,17 @@ export async function render(view, query = {}) {
     const configBar = (q.config_patch && !q.meta) ? (() => {
       const home = q.conversation ? "conversations" : (q.background || q.wizard) ? "" : "routines";
       const noun = q.conversation ? "conversation" : "routine";
+      // D123/F458: a config_patch may be FOR another routine (config-optimizer's whole job).
+      // The engine resolved and validated that slug at ask time (engine/interact.py), so the
+      // patch goes to the TARGET, not to whoever asked — the old hardwiring to q.routine
+      // silently rewrote the asker's own config and reported success (R1343).
+      const target = (!q.conversation && q.config_target) ? q.config_target : q.routine;
+      const elsewhere = target !== q.routine;
       const btn = home ? el("button", { class: "btn small primary" }, "approve & apply") : null;
       if (btn) btn.onclick = async () => {
         btn.disabled = true;
         try {
-          const res = await api(`/api/${home}/${q.routine}`,
+          const res = await api(`/api/${home}/${target}`,
             { method: "PATCH", body: q.config_patch });
           // Honesty gate (R102): a field the endpoint doesn't support is silently dropped
           // server-side — verify every patch key was actually applied before telling the
@@ -305,17 +311,24 @@ export async function render(view, query = {}) {
           }
           await api(`/api/questions/${q.qid}/answer`,
             { method: "POST", body: { text: "approved & applied the proposed config change" } });
-          toast(`config change applied to the ${noun}`);
+          toast(elsewhere ? `config change applied to ${target}`
+                          : `config change applied to the ${noun}`);
           panel.classList.remove("warn");
           controls.replaceChildren(el("div", { class: "flow-note" },
-            chip("applied", "ok"), el("span", {}, `the config change was applied to the ${noun}`)));
+            chip("applied", "ok"),
+            el("span", {}, elsewhere ? `the config change was applied to ${target}`
+                                     : `the config change was applied to the ${noun}`)));
           state.items = state.items.filter((x) => x.qid !== q.qid);
           syncToolbar();
         } catch (err) { toast(err.message, 5000, { error: true }); btn.disabled = false; }
       };
       return el("div", { class: "flow-note mt" },
         el("div", { class: "small", style: "margin-bottom:4px" },
-          home ? "proposed config change — a run can't edit routine.yaml, so approve it here:"
+          home ? (elsewhere
+                 ? `proposed config change for ${target} — ${q.routine} asked for it on that `
+                   + "routine's behalf; approving it patches "
+                   + `${target}, not ${q.routine}:`
+                 : "proposed config change — a run can't edit routine.yaml, so approve it here:")
                : "proposed config change — this decision's home has no config to patch "
                  + "(a detached task / setup workspace is one-shot); answer in text, and make "
                  + "any lasting change on the owning conversation or routine:"),
