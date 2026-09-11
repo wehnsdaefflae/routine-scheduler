@@ -2,6 +2,7 @@
 (capabilities.py), observation formatting (observations.py), and compaction / on-disk
 history / transcript replay (history.py)."""
 import json
+import os
 
 from rsched import domains
 from rsched.config import ServerConfig, load_routine
@@ -125,6 +126,31 @@ def test_state_digest_lists_delivered_artifacts(make_routine):
     digest = state_digest(d, [], [])
     assert "artifacts/ delivered so far" in digest and "report.md" in digest
     assert "UPDATES that artifact in place" in digest
+
+
+def test_state_digest_caps_directory_listings(make_routine):
+    """Every growing part of this digest is capped, because the digest is re-read on EVERY
+    turn — an uncapped one taxes the whole run. These two listings were the exception: one
+    live routine reached 285 state files and spent ~2 400 tokens per turn naming them. The
+    cut keeps the NEWEST, which is what a run reading its own workspace actually wants.
+    """
+    from rsched.engine.composer import DIR_LIST_MAX
+
+    d = make_routine(slug="bigstate")
+    state = d / "state"
+    state.mkdir(exist_ok=True)
+    for i in range(DIR_LIST_MAX + 25):
+        f = state / f"row-{i:03d}.json"
+        f.write_text("{}", encoding="utf-8")
+        os.utime(f, (1_700_000_000 + i, 1_700_000_000 + i))   # ascending mtime
+
+    digest = state_digest(d, [], [])
+
+    assert "and 25 more file(s) not listed" in digest
+    assert f"row-{DIR_LIST_MAX + 24:03d}.json" in digest       # newest kept
+    assert "row-000.json" not in digest                        # oldest cut
+    # the cap is on the LISTING, never on the state itself — the files are all still there
+    assert len(list(state.iterdir())) == DIR_LIST_MAX + 25
 
 
 def test_state_digest_inlines_background_tasks(make_routine):

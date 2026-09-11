@@ -15,6 +15,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.323.0] — 2026-09-11
+
+### Changed
+- **The digest's two directory listings are capped** (`composer.DIR_LIST_MAX` = 40, newest
+  first, with a `… and N more file(s) not listed` tail): `state/` and `artifacts/`. Every
+  other growing part of the state digest already had a cap — the working plan at 60 lines,
+  the notes tail, the LEDGER tail, the `.memory/` index — because the digest is re-read on
+  EVERY turn, so an uncapped part taxes the whole run. These two were the exception.
+  Truncation keeps the NEWEST entries rather than the alphabetically first: recency is what
+  a run reading its own workspace wants, and it is the cut that survives truncation.
+
+### Why
+A decomposition of all 33 live routines' composed prefixes (2026-09-11) put the mean static
+prefix at 27.7k tokens — CAPABILITIES 32%, state digest 21%, harness 21%, action schema 16%,
+recipe 10% — re-read on every turn, which is roughly a quarter of the instance's whole bill.
+Almost all of it is load-bearing and stays. The exception was this: `weightloss` had reached
+285 files in `state/` and was spending ~2 400 tokens per turn naming them, about 9% of that
+routine's prefix, for a directory listing nothing reads past the first screen.
+
 ## [0.321.0] — 2026-09-11
 
 ### Added

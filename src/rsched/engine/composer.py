@@ -18,6 +18,36 @@ from .run_context import RunContext
 
 PLAN_MAX_LINES = 60
 
+#: How many files a directory listing in the digest may name. Every OTHER growing part of
+#: this digest is capped — the plan at PLAN_MAX_LINES, the notes tail, the LEDGER tail, the
+#: `.memory/` note cap — because the digest is re-read on EVERY turn of the run, so an
+#: unbounded part is a tax on every turn. These two listings were the exception: weightloss
+#: reached 285 state files and spent ~2 400 tokens per turn naming them (measured
+#: 2026-09-11, ~9% of that routine's whole prefix). 40 is chosen to orient, not to inventory
+#: — a run that needs the rest lists the directory itself.
+DIR_LIST_MAX = 40
+
+
+def _dir_listing(directory: Path) -> str:
+    """`name (123B)` for the files in `directory`, MOST RECENTLY WRITTEN FIRST and capped.
+
+    Recency is the useful axis for a run reading its own workspace ("what did I write last
+    run"), and it is the one that survives truncation: an alphabetical cut of 285 files hides
+    everything after "d", while a recency cut hides only what nothing has touched in a long
+    time. Empty string when the directory holds no files.
+    """
+    files = [p for p in directory.iterdir() if p.is_file()]
+    try:
+        files.sort(key=lambda p: (-p.stat().st_mtime, p.name))
+    except OSError:                      # a file vanishing mid-scan is not worth a failure
+        files.sort(key=lambda p: p.name)
+    shown = [f"{p.name} ({p.stat().st_size}B)" for p in files[:DIR_LIST_MAX]
+             if p.exists()]
+    if not shown:
+        return ""
+    more = len(files) - len(shown)
+    return ", ".join(shown) + (f" … and {more} more file(s) not listed" if more > 0 else "")
+
 
 def _plan_text(routine_dir: Path) -> str:
     """state/plan.md, trimmed to PLAN_MAX_LINES. The plan is a working skeleton, not a
@@ -79,9 +109,7 @@ def state_digest(routine_dir: Path, deferred_qa: list[dict], open_qs: list[dict]
         parts.append(stop_sec)
     state_dir = routine_dir / "state"
     if state_dir.is_dir():
-        entries = [f"{p.name} ({p.stat().st_size}B)"
-                   for p in sorted(state_dir.iterdir()) if p.is_file()]
-        parts.append("state/: " + (", ".join(entries) if entries else "(empty)"))
+        parts.append("state/ (newest first): " + (_dir_listing(state_dir) or "(empty)"))
     # captured notes reach the next run without a read; the full file stays on-demand
     if noted := notes.tail(routine_dir):
         parts.append("Recent notes (state/notes.md tail — findings captured via the note "
@@ -105,13 +133,10 @@ def state_digest(routine_dir: Path, deferred_qa: list[dict], open_qs: list[dict]
     # UI renders the folder in its side panel — but the digest never named them, so a reply
     # re-derived "what have I already made for you" from scrollback, or silently rebuilt it.
     art_dir = routine_dir / "artifacts"
-    if art_dir.is_dir():
-        arts = [f"{p.name} ({p.stat().st_size}B)"
-                for p in sorted(art_dir.iterdir()) if p.is_file()]
-        if arts:
-            parts.append("artifacts/ delivered so far (the user sees these rendered in the side "
-                         "panel; re-writing a filename UPDATES that artifact in place — extend "
-                         "what is there instead of making report-2.md): " + ", ".join(arts))
+    if art_dir.is_dir() and (arts := _dir_listing(art_dir)):
+        parts.append("artifacts/ delivered so far, newest first (the user sees these rendered in "
+                     "the side panel; re-writing a filename UPDATES that artifact in place — "
+                     "extend what is there instead of making report-2.md): " + arts)
     if held_rules:
         parts.append("General rules binding this routine (read one with read_rule before the "
                      "situation it governs; the workflow's Standing practices section says "
