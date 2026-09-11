@@ -15,6 +15,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.320.0] — 2026-09-11
+
+### Added
+- Settings can select a dedicated catalog model for background context archival. Automatic
+  preserves tool-call/main routing; an unavailable or too-small dedicated model falls back
+  with a recorded reason. Foreground model choice and context thresholds are unchanged.
+
+### Fixed
+- JSON output compression independently verifies complete preservation before measurement
+  or application. Omitted elements, changed values, duplicate keys, nonstandard numbers
+  and changed numeric spellings conservatively retain original output handling.
+
+## [0.319.0] — 2026-09-10
+
+### Changed — Headroom enabled by default
+
+- New and existing routines and conversations without an explicit output-compression setting
+  now use Headroom. Explicit Off and Measure only choices remain respected. Existing runs
+  adopt the setting at their next boot; recorded observations remain unchanged on replay.
+
+## [0.318.0] — 2026-09-10
+
+### Added — optional output compression and minimal-implementation guidance
+
+- Routines and conversations can select Off, Measure only, or Headroom output compression.
+  Successful commands' large JSON and recognisable logs are processed before observation
+  truncation; originals remain readable, failures use existing output handling, and replay
+  uses the recorded representation. Off remains the default. Headroom is included in the Docker runtime and remains an optional
+  extra for other installations.
+- Compression measurements are attached to observations, including comparison with the
+  existing capped preview, elapsed time and fallback reasons. They are estimates, not billing.
+- An unbound Ponytail library rule adds a minimal-implementation decision order while
+  preserving the scheduler's reporting, validation and testing contracts.
+
 ## [0.317.0] — 2026-09-10
 
 ### Changed — a model behind an Anthropic-wire proxy is discovered like any other

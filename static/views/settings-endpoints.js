@@ -54,6 +54,7 @@ export async function renderEndpoints(view) {
     listBox.append(addForm());
     listBox.append(modelsSection(data.endpoints, data.models || []));
     listBox.append(systemModelEditor(data.models || [], data.system_model));
+    listBox.append(compactionModelEditor(data.models || [], data.compaction_model));
   }
 
   // ---- the model catalog: named models bound to an endpoint -----------------------------------
@@ -246,6 +247,30 @@ export async function renderEndpoints(view) {
     box.append(el("div", { class: "row", style: "margin:5px 0" },
       el("span", { class: "ref-tag", style: "min-width:100px;text-align:center" }, "system"), sel, save));
     return box;
+  }
+
+  function compactionModelEditor(models, current) {
+    const sel = el("select", { "aria-label": "Context compaction model" },
+      el("option", { value: "" }, "Automatic"),
+      ...models.map((m) => el("option", { value: m.name }, m.name)));
+    if (current && !models.some((m) => m.name === current))
+      sel.append(el("option", { value: current }, `${current} (unavailable)`));
+    sel.value = current || "";
+    const save = el("button", { class: "btn small primary" }, "save compaction model");
+    save.onclick = async () => {
+      try {
+        await api("/api/settings/compaction-model", { method: "PUT", body: { name: sel.value } });
+        toast(`compaction model → ${sel.value || "Automatic"}`); await load();
+      } catch (err) { toast(err.message, 5000, { error: true }); }
+    };
+    return el("div", { class: "panel mt" },
+      el("div", { class: "small", style: "font-weight:600" }, "Context compaction model"),
+      el("p", { class: "muted small" },
+        "Builds navigable history in the background; does not change the foreground context window, main model, or observation compression. ",
+        "Automatic uses tool-call when its window fits, otherwise the current main model. ",
+        "An unavailable or too-small dedicated model falls back with a recorded reason. ",
+        "If archival fails, the deterministic digest and full transcript remain."),
+      el("div", { class: "row" }, sel, save));
   }
 
   // The live test call: show EVERYTHING the API reports, not a bare ok/violated —

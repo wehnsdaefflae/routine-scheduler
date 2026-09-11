@@ -208,7 +208,8 @@ def _ctx(home, grants=None):
     from types import SimpleNamespace
     return SimpleNamespace(server=SimpleNamespace(libraries_home=home, sandbox="off",
                                                  routine_token=""),
-                           routine=SimpleNamespace(slug="demo", dir=home, fs_read_roots=[],
+                           routine=SimpleNamespace(slug="demo", dir=home, output_compression="off",
+                                                   fs_read_roots=[],
                                                    fs_write_roots=[], connections={},
                                                    machines=[]),
                            grants=grants,
@@ -312,7 +313,8 @@ def test_a_bound_connection_produces_no_request_route(tmp_path):
     utils_lib.ensure_library(tmp_path)
     utils_lib.write_util_file(tmp_path, "gapi", ALWAYS_FAILS_NEEDING_GOOGLE)
     ctx = _ctx(tmp_path)
-    ctx.routine = SimpleNamespace(slug="demo", dir=tmp_path, fs_read_roots=[],
+    ctx.routine = SimpleNamespace(slug="demo", dir=tmp_path, output_compression="off",
+                                  fs_read_roots=[],
                                   fs_write_roots=[], connections={"google": "personal"},
                                   machines=[])
     assert _unbound_connection_request(ctx, "gapi") == ""

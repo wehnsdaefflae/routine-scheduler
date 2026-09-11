@@ -24,6 +24,7 @@ from .compaction import (
     ANTICIPATE_AT,
     KEEP_HEAD_MSGS,
     KEEP_TAIL_MSGS,
+    archival_fits,
     clamp_to_cap,
     estimate_input_tokens,
     input_cap_tokens,
@@ -247,6 +248,24 @@ def _archive_if_needed(loop, endpoint, ref) -> None:
     loop.messages, cinfo = maybe_compact(loop.messages, loop.turn_records,
                                         ref.context_tokens)
     if cinfo is not None:
+        dedicated = ctx.server.compaction_model
+        if dedicated:
+            try:
+                d_endpoint, d_ref = ctx.registry.for_name(dedicated)
+                if archival_fits(middle, d_ref):
+                    c_endpoint, c_ref = d_endpoint, d_ref
+                    if d_ref.name != dedicated:
+                        cinfo["archival_selection_fallback"] = (
+                            f"{dedicated}: unavailable; catalog fallback {d_ref.name}")
+                else:
+                    cinfo["archival_selection_fallback"] = (
+                        f"{dedicated}: archival request exceeds safe context budget; "
+                        "using Automatic")
+            except Exception as exc:
+                cinfo["archival_selection_fallback"] = (
+                    f"{dedicated}: unavailable ({exc}); using Automatic")
+        if dedicated:
+            cinfo["archival_model"] = c_ref.name or c_ref.model
         archival.start(loop, middle, c_endpoint, c_ref, turn)
         cinfo["archival"] = "background"
     if cinfo:

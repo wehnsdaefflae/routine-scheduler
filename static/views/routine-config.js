@@ -1,3 +1,4 @@
+import { outputCompression } from "/static/components/output-compression.js";
 // Routine config sections (Name .. Origin): every user-editable panel of the routine
 // page - rename, description, tags, schedule, triggers, schedule-once, domain, permissions,
 // practice modules, budgets, retention, fs roots, models + deliberation, connections,
@@ -531,6 +532,7 @@ export function renderConfigSections(view, d, {
       ? "which catalog model this routine uses for each role — leave on system default to fall back to the system model"
       : "add a model in Settings first",
       ...modelRows,
+      outputCompression(d.output_compression, `/api/routines/${slug}`),
       el("div", { class: "row mt", style: "align-items:flex-start" },
         el("span", { class: "ref-tag", style: "min-width:92px;text-align:center" }, "deliberation"),
         el("span", { class: "muted small", style: "min-width:150px" },

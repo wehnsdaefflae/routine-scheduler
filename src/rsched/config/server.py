@@ -72,6 +72,8 @@ class ServerConfig(_Config):
     # generation/suggestion and the new-routine clarify flow. A catalog model NAME;
     # routines set their own (also by name), falling back to this when a role is unset.
     system_model: str = ""
+    # Background navigable-history archival only; blank preserves automatic tool-call/main routing.
+    compaction_model: str = ""
     source: Path | None = None
 
     @property
@@ -146,6 +148,8 @@ def load_server_config(path: Path | None = None) -> tuple[ServerConfig, list[str
                 problems.append(f"models.{name}: fallback {fb!r} is not a catalog model")
     if cfg.system_model and cfg.system_model not in cfg.models:
         problems.append(f"system_model: {cfg.system_model!r} is not a catalog model")
+    if cfg.compaction_model and cfg.compaction_model not in cfg.models:
+        problems.append(f"compaction_model: {cfg.compaction_model!r} is not a catalog model")
     for name, mac in cfg.machines.items():
         mac.name = name
     return cfg, problems

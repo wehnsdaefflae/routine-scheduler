@@ -17,7 +17,6 @@ from .. import sandbox, shellrun, utils_lib, utils_run
 from ..ids import is_slug
 from ..paths import expand
 from ..utils_lib import USAGE_ERROR_EXIT
-from . import outputs
 from .exec_env import _extra_secrets, _unbound_connection_request
 from .fileops import (
     UTIL_DEFAULT_TIMEOUT_S,
@@ -32,6 +31,7 @@ from .llmaction import do_list_models, do_llm
 from .mediaops import do_view_image
 from .memops import do_memory_read, do_memory_write, do_read_rule
 from .observations import truncate
+from .output_compression import command_output
 from .run_context import RunContext
 
 log = logging.getLogger("rsched.engine")
@@ -136,27 +136,14 @@ def do_util(action: dict, ctx: RunContext) -> dict:  # noqa: PLR0911 — list/sh
     # Per-util reliability telemetry (util_stats → the Stats tab).
     ctx.count_util(name, "ok" if code == 0
                    else ("usage_error" if code == USAGE_ERROR_EXIT else "error"))
-    # STDOUT is ordered and spilled in full to .util_outputs/, so tail-truncate (keep the
-    # head, drop the tail): the reader continues IN SEQUENCE from the spill file at the char
-    # the preview stopped, instead of losing the middle (operator AUDIT note R45).
-    stdout, trunc_out = truncate(out, keep="head")
-    # On failure, stderr is the repair material — keep the whole trace where possible
-    # (head+tail preserves the exception at the traceback's END, the part that teaches).
-    stderr, trunc_err = truncate(err, cap=8000 if code != 0 else 2000)
     obs = {"kind": "util", "name": name, "args": args, "exit": code,
-           "stdout": stdout, "stderr": stderr, "truncated": trunc_out or trunc_err}
+           **command_output(ctx, name, out, err, code)}
     if withheld:
         # undecided names are requestable and may be enumerated; denied ones are a count
         # only (R17 — a denial enumerates nothing)
         undecided = [s for s in withheld if secret_state(ctx, s) == "undecided"]
         n_denied = len(withheld) - len(undecided)
         obs["withheld_optional"] = {"undecided": undecided, "denied": n_denied}
-    # What the observation could not carry is spilled to .util_outputs/ rather than lost:
-    # the transcript records THIS (truncated) payload, so the band between the capture cap
-    # and the observation cap has no other survivor. Only truncated output is kept.
-    if spilled := outputs.spill(ctx, name, out, err,
-                                out_truncated=trunc_out, err_truncated=trunc_err):
-        obs["full_output"] = spilled
     if code != 0:
         # A failed call teaches the correct one — and the repair path. Without this nudge
         # the model's rational move is a silent workaround, and the next routine hits the
@@ -231,14 +218,8 @@ def do_script(action: dict, ctx: RunContext) -> dict:
         timeout=int(action.get("timeout_s") or scripts.SCRIPT_TIMEOUT_S),
         policy=sandbox.policy_for_ctx(ctx), libraries_home=ctx.server.libraries_home,
         env_secrets=env_secrets)
-    stdout, trunc_out = truncate(out, keep="head")
-    stderr, trunc_err = truncate(err, cap=8000 if code != 0 else 2000)
-    obs = {"kind": "script", "name": name, "args": args, "exit": code,
-           "stdout": stdout, "stderr": stderr, "truncated": trunc_out or trunc_err}
-    if spilled := outputs.spill(ctx, f"script-{name}", out, err,
-                                out_truncated=trunc_out, err_truncated=trunc_err):
-        obs["full_output"] = spilled
-    return obs
+    return {"kind": "script", "name": name, "args": args, "exit": code,
+            **command_output(ctx, f"script-{name}", out, err, code)}
 
 
 def do_shell(action: dict, ctx: RunContext) -> dict:
@@ -264,18 +245,13 @@ def do_shell(action: dict, ctx: RunContext) -> dict:
         command, policy=sandbox.policy_for_ctx(ctx),
         libraries_home=ctx.server.libraries_home, cwd=cwd,
         timeout=int(action.get("timeout_s") or shellrun.SHELL_DEFAULT_TIMEOUT_S))
-    stdout, trunc_out = truncate(result["stdout"], keep="head")
-    stderr, trunc_err = truncate(result["stderr"], cap=8000 if result["exit"] != 0 else 2000)
     obs = {"kind": "shell", "command": command, "exit": result["exit"],
-           "stdout": stdout, "stderr": stderr,
-           "truncated": trunc_out or trunc_err or result["truncated"]}
+           **command_output(ctx, "shell", result["stdout"], result["stderr"], result["exit"])}
+    obs["truncated"] = obs["truncated"] or result["truncated"]
     if str(cwd) != str(ctx.routine.dir):
         obs["cwd"] = str(cwd)
     if result["timed_out"]:
         obs["timed_out"] = True
-    if spilled := outputs.spill(ctx, "shell", result["stdout"], result["stderr"],
-                                out_truncated=trunc_out, err_truncated=trunc_err):
-        obs["full_output"] = spilled
     return obs
 
 

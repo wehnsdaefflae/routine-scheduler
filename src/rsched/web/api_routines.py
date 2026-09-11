@@ -216,6 +216,7 @@ def routine_detail(request: Request, slug: str) -> dict:
                              "host": m.host, "user": m.user, "tags": list(m.tags)}
                             for m in server.machines.values()],
         "deliberation": info.cfg.deliberation,
+        "output_compression": info.cfg.output_compression,
         # The general rules binding this routine — routine.yaml's `rules:` IS the state
         # (see rules.py); the picker's options come from GET /api/library (`rules`).
         "rules": list(info.cfg.rules),

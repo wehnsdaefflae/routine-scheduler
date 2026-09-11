@@ -18,7 +18,7 @@
 import { attachmentRow, createTranscript, referButton, splitRef } from "/static/components/transcript.js";
 import { answerForm } from "/static/components/answerform.js";
 import { md, mdInline } from "/static/md.js";
-import { el, fmtTime, fmtTokens, fullOutput } from "/static/util.js";
+import { el, fmtTime, fmtTokens, fullOutput, compressionInfo } from "/static/util.js";
 
 const NEW_TOPIC = /^\s*\[new-topic\]\s*(.*)$/;
 const ATTACH_BLOCK = /\n?\n?\[attached files[^\]]*\]\n((?:- .*\n?)+)/;
@@ -181,7 +181,7 @@ export function createChat(container, opts = {}) {
     if (p.error) body = `✕ ${p.error}`;
     else if (p.kind === "util") {
       body = (p.stdout || "(no stdout)") + (p.stderr ? `\n[stderr]\n${p.stderr}` : "")
-        + fullOutput(p.full_output);
+        + fullOutput(p.full_output) + compressionInfo(p.compression);
       if (p.listing != null) body = p.listing;
       if (p.source != null) body = p.source;
     } else if (p.kind === "read_file") {

@@ -793,7 +793,8 @@ def _gate_loop(monkeypatch, *, usage, phase="", last_seen_phase=None):
         def for_model(self, kind, models):
             raise RuntimeError("no tool_call model in this stub")
 
-    ctx = SimpleNamespace(usage=usage, tokens_remaining=lambda: None, registry=_Reg(),
+    ctx = SimpleNamespace(server=SimpleNamespace(compaction_model=""),
+                          usage=usage, tokens_remaining=lambda: None, registry=_Reg(),
                           routine=SimpleNamespace(models={}), run_dir=None, phase=phase,
                           transcript=SimpleNamespace(event=lambda *a, **k: None),
                           add_usage=lambda u: None)

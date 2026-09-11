@@ -32,6 +32,9 @@ subscription-billed completion function. Setup guide with per-provider recipes:
 [docs/endpoints.md](docs/endpoints.md). What is banned is a second *agent loop* in the
 path: this scheduler is the only harness.
 
+Optional efficiency controls: [Headroom output compression and the Ponytail coding rule](docs/output-compression.md).
+Headroom is enabled by default; measurement mode and Off remain available. Ponytail is opt-in.
+
 ## How the system improves itself
 
 - **Across routines**: the bundled `routine-improver` meta routine sweeps every routine

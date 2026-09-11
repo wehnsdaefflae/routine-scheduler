@@ -2218,3 +2218,13 @@ def test_run_detail_model_falls_back_to_config(client):
     _mk_run(tmp / "routines", "apir", "20260709-090000", "queued")
     d = c.get("/api/runs/apir:20260709-090000").json()
     assert d["model"] == "Fable"
+
+
+@pytest.mark.parametrize("mode", ["off", "measure", "headroom"])
+def test_output_compression_setting_roundtrip(client, mode):
+    c, _ = client
+    r = c.patch("/api/routines/apir", json={"output_compression": mode})
+    assert r.status_code == 200
+    assert "output_compression" in r.json()["updated"]
+    assert c.get("/api/routines/apir").json()["output_compression"] == mode
+    assert c.patch("/api/routines/apir", json={"output_compression": "bad"}).status_code == 422

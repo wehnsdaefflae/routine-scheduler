@@ -25,6 +25,9 @@ dependencies = [
     "py-vapid>=1.9",
 ]
 
+[project.optional-dependencies]
+headroom = ["headroom-ai==0.37.0"]
+
 [project.scripts]
 rsched = "rsched.cli:main"
 

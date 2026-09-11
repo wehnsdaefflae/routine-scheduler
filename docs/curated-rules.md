@@ -113,3 +113,10 @@ so `run_health.py` buckets the runs before and after it and the Stats tab's spen
 what it cost. Judge a rule on outcome *and* spend together — the literature's clearest warning
 about agent evaluation ([*AI Agents That Matter*](https://arxiv.org/abs/2407.01502)) is that
 accuracy-only comparison produces agents that are needlessly complex and expensive.
+
+## Optional Ponytail adaptation
+
+`ponytail` is an unbound coding rule adapted from DietrichGebert/ponytail revision
+`356918eba965ee1eac64bd3a7f0dd02108350de5` (MIT). It adds an explicit implementation decision
+order to the existing scope/restraint rules, without upstream hooks, output-style overrides or
+one-line pressure. See [output compression and the evaluation proposal](output-compression.md).

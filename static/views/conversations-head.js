@@ -1,3 +1,4 @@
+import { outputCompression } from "/static/components/output-compression.js";
 // The conversation header: editable title, tags, delete, and the capabilities panel
 // (budgets, deliberation, permissions, practice modules) + the model switcher - split
 // from conversations.js. onListChanged refreshes the sidebar after title/tag edits.
@@ -131,6 +132,7 @@ export function renderHead(head, detail, stateChip, { slug, isLive, onListChange
   // Deliberation: saved to config on release (next reply composes with it) AND, when a
   // reply is live, the current run is re-leveled too — a conversation IS one run, so the
   // durable/live distinction collapses here.
+  capBody.append(outputCompression(detail.output_compression, `/api/conversations/${slug}`));
   const delib = deliberationControl(detail.deliberation || "deliberate", {
     onCommit: async (level) => {
       try {

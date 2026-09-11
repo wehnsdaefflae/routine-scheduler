@@ -19,6 +19,9 @@ Writes are engine-only (`fileops._write_gate`), like `runs/`: a run must not be 
 rewrite its own evidence. The dir is gitignored on first use — the run-end autocommit is
 `git add -A` and util output can carry tokens — mirroring `machine_mounts._ensure_mnt_gitignored`.
 
+Optional Headroom previews save their original stdout under the run's own `runs/` tree
+(output_compression.py), so this five-run cache cannot prune their recovery evidence.
+
 Retention is KEEP_RUNS run directories, pruned on write: a backstop against unbounded
 growth, never a promise about how long an output survives.
 """

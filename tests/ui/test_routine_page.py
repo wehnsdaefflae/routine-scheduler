@@ -291,3 +291,35 @@ def test_every_config_section_is_claimed_by_a_named_group(ui, ui_page):
                     "Effective surface", "Goal", "Budgets", "Own secrets", "Models",
                     "Machines", "Recipe", "State & memory", "Origin"):
         expect(ui_page.locator(".rgroup-body h2", has_text=heading).first).to_have_count(1)
+
+
+def test_output_compression_control_persists(ui, ui_page):
+    ui_page.goto(f"{ui.url}#/routine/uir")
+    control = ui_page.get_by_label("Output compression", exact=True)
+    # The Models section may be in a collapsed configuration group.
+    ui_page.locator("#sec-models").evaluate("e => { let p=e.parentElement; while(p) { if(p.tagName==='DETAILS') p.open=true; p=p.parentElement; } }")
+    expect(control).to_have_value("headroom")
+    control.select_option("measure")
+    expect(_toast(ui_page)).to_contain_text("Output compression saved")
+    raw = yaml.safe_load((ui.routine_dir("uir") / "routine.yaml").read_text())
+    assert raw["output_compression"] == "measure"
+    ui_page.reload()
+    expect(ui_page.get_by_label("Output compression", exact=True)).to_have_value("measure")
+
+
+def test_compression_measurement_in_transcript(ui, ui_page):
+    run = ui.seed_run("uir", "20260910-120000", "finished")
+    events = [
+        {"type": "assistant_action", "turn": 1,
+         "payload": {"kind": "script", "name": "sample", "say": "Read the logs"}},
+        {"type": "observation", "turn": 1,
+         "payload": {"kind": "script", "name": "sample", "exit": 0, "stdout": "sample output",
+                     "compression": {"mode": "measure", "status": "measured",
+                                     "baseline_chars": 8000, "candidate_chars": 2000,
+                                     "estimated_tokens_saved": 1500, "elapsed_ms": 1.5}}},
+    ]
+    with (run / "transcript.jsonl").open("a") as f:
+        f.writelines(json.dumps(e) + "\n" for e in events)
+    ui_page.goto(f"{ui.url}#/run/uir:20260910-120000")
+    expect(ui_page.locator(".transcript")).to_contain_text("Headroom measure: measured")
+    expect(ui_page.locator(".transcript")).to_contain_text("1500 tokens potentially saved (estimate)")

@@ -158,7 +158,8 @@ def list_endpoints(request: Request) -> dict:
     return {"endpoints": [_endpoint_view(n, e) for n, e in server.endpoints.items()],
             "models": [_model_view(m, server.endpoints, _found(server, m), _served(server, m))
                        for m in server.models.values()],
-            "system_model": server.system_model or None}
+            "system_model": server.system_model or None,
+            "compaction_model": server.compaction_model or None}
 
 
 @router.get("/settings/models")
@@ -167,7 +168,8 @@ def list_models(request: Request) -> dict:
     server = server_of(request)
     return {"models": [_model_view(m, server.endpoints, _found(server, m), _served(server, m))
                        for m in server.models.values()],
-            "system_model": server.system_model or None}
+            "system_model": server.system_model or None,
+            "compaction_model": server.compaction_model or None}
 
 
 def _rewrite_endpoints(request: Request, mutate: Callable[[dict], None]) -> dict:
@@ -290,6 +292,8 @@ def delete_model(request: Request, name: str) -> dict:
         raise HTTPException(404, f"no model {name!r}")
     if server.system_model == name:
         raise HTTPException(400, f"{name!r} is the system model — reassign the system model first")
+    if server.compaction_model == name:
+        raise HTTPException(400, f"{name!r} is the compaction model — reassign or clear it first")
     users = [m.name for m in server.models.values() if name in m.fallbacks]
     if users:
         raise HTTPException(400, f"{name!r} is a fallback of {users} — remove it there first")
@@ -316,6 +320,17 @@ def set_system_model(request: Request, body: SystemModelBody) -> dict:
     path = update_config(request, lambda raw: raw.update(system_model=body.name))
     reload_into(request, path, "system_model")
     return {"ok": True, "system_model": s.system_model or None}
+
+
+@router.put("/settings/compaction-model")
+def set_compaction_model(request: Request, body: SystemModelBody) -> dict:
+    """Choose background archival only; an empty name restores Automatic routing."""
+    s = server_of(request)
+    if body.name and body.name not in s.models:
+        raise HTTPException(400, f"unknown model {body.name!r} — add it to the catalog first")
+    path = update_config(request, lambda raw: raw.update(compaction_model=body.name))
+    reload_into(request, path, "compaction_model")
+    return {"ok": True, "compaction_model": s.compaction_model or None}
 
 
 # Providers whose account balance the endpoint card can show, sniffed from base_url.

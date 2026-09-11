@@ -10,6 +10,7 @@ LIVE run what changed and which half of it reaches it now.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, ConfigDict
@@ -52,6 +53,7 @@ class RoutinePatch(BaseModel):
     #                                          wholesale, validated against the library, main.md's
     #                                          derived practices tail resynced (rules.apply_changes)
     improve: bool | None = None             # include in the routine-improver's passes (default on)
+    output_compression: Literal["off", "measure", "headroom"] | None = None
     deliberation: str | None = None         # DELIBERATION_LEVELS — how much thinking lands on paper
     keep_runs: int | None = None            # retention.keep_runs — how many run dirs to keep
     fs_read_roots: list[str] | None = None  # dirs the run may READ beyond its own

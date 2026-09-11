@@ -19,7 +19,7 @@
 import { apiBlobUrl } from "/static/api.js";
 import { md, mdInline } from "/static/md.js";
 import { answerForm } from "/static/components/answerform.js";
-import { el, fmtTime, fmtTokens, fullOutput } from "/static/util.js";
+import { el, fmtTime, fmtTokens, fullOutput, compressionInfo } from "/static/util.js";
 
 // Mirror of engine/actions.py BRIEF_FIELD (the source of truth) — a kind missing here
 // renders its turn line with an EMPTY brief, which is how this map drifted 10 kinds
@@ -250,16 +250,16 @@ export function createTranscript(container, opts = {}) {
   function addObservation(ev) {
     const o = ev.payload;
     let text;
-    if (o.kind === "util") {
+    if (o.kind === "util" || (o.kind === "script" && o.exit != null)) {
       text = o.missing ? `util "${o.target || o.name}" does not exist (available: ${(o.available || []).join(", ")})`
         : o.listing != null ? `util catalog\n${o.listing}`
         : o.source != null ? `source of "${o.target}"\n${o.source}`
         : `${o.name} → exit ${o.exit}\n${o.stdout || ""}${o.stderr ? `\n[stderr] ${o.stderr}` : ""}`
-          + fullOutput(o.full_output)
+          + fullOutput(o.full_output) + compressionInfo(o.compression)
           + (o.usage ? `\n[usage] ${o.usage}` : "") + (o.hint ? `\n[hint] ${o.hint}` : "");
     } else if (o.kind === "shell") {
       text = `exit ${o.exit}${o.cwd ? ` (in ${o.cwd})` : ""}\n${o.stdout || ""}`
-        + (o.stderr ? `\n[stderr] ${o.stderr}` : "") + fullOutput(o.full_output);
+        + (o.stderr ? `\n[stderr] ${o.stderr}` : "") + fullOutput(o.full_output) + compressionInfo(o.compression);
     } else if (o.kind === "write_util") {
       text = o.pending_approval ? `write_util "${o.name}": awaiting user approval`
         : o.declined ? `write_util "${o.name}": declined`

@@ -87,3 +87,14 @@ def test_rail_sections_collapse_and_persist(ui, ui_page):
     ui_page.locator(".conv-view .rail-cap", has_text="state").first.click()
     expect(ui_page.locator(".stategraph")).to_be_visible()
     assert ui_page.evaluate("localStorage.getItem('rail:state')") == "open"
+
+
+def test_conversation_output_compression_control(ui, ui_page):
+    _start_conversation(ui, ui_page)
+    control = ui_page.get_by_label("Output compression", exact=True)
+    control.evaluate("e => { let p=e.parentElement; while(p) { if(p.tagName==='DETAILS') p.open=true; p=p.parentElement; } }")
+    expect(control).to_have_value("headroom")
+    control.select_option("measure")
+    expect(ui_page.locator("#toast:not([hidden])")).to_contain_text("Output compression saved")
+    ui_page.reload()
+    expect(ui_page.get_by_label("Output compression", exact=True)).to_have_value("measure")

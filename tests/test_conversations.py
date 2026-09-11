@@ -1104,3 +1104,16 @@ def test_conversation_machines_bind_and_validate(client):
     assert c.get(f"/api/conversations/{slug}").json()["machines"] == ["gpu-box"]
     r = c.patch(f"/api/conversations/{slug}", json={"machines": ["ghost"]})
     assert r.status_code == 400 and "Settings" in r.json()["detail"]
+
+
+def test_conversation_output_compression_roundtrip(client):
+    c, _ = client
+    slug = c.post("/api/conversations", data={"text": "Inspect the project"}).json()["slug"]
+    url = f"/api/conversations/{slug}"
+    assert c.get(url).json()["output_compression"] == "headroom"
+    for mode in ("measure", "headroom", "off"):
+        response = c.patch(url, json={"output_compression": mode})
+        assert response.status_code == 200
+        assert "output_compression" in response.json()["updated"]
+        assert c.get(url).json()["output_compression"] == mode
+    assert c.patch(url, json={"output_compression": "bad"}).status_code == 422

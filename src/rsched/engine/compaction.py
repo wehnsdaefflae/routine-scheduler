@@ -285,6 +285,20 @@ def _swap_in_history(hist_dir: Path, files: list[dict], turn: int) -> list[str]:
     shutil.rmtree(displaced, ignore_errors=True)
     return written
 
+def archival_messages(middle: list[dict]) -> list[dict]:
+    """The exact archival input, shared by selection fit checks and the completion."""
+    convo = "\n\n".join(f"[{m['role']}]\n{m['content']}" for m in middle)
+    return [{"role": "user", "content": _HISTORY_PROMPT.format(convo=convo)}]
+
+
+def archival_fits(middle: list[dict], ref) -> bool:
+    """Conservative dedicated-model fit, including prompt, schema and output reserve."""
+    messages = archival_messages(middle)
+    schema = [{"content": json.dumps(_HISTORY_SCHEMA, ensure_ascii=False)}]
+    required = estimate_input_tokens(messages) + estimate_input_tokens(schema) + ref.max_tokens
+    return required <= ref.context_tokens * 0.7
+
+
 def archive_middle(middle: list[dict], endpoint, ref,
                    run_dir: Path, turn: int) -> dict | None:
     """Reorganize `middle` into the navigable on-disk history, and return the info dict.
@@ -302,8 +316,7 @@ def archive_middle(middle: list[dict], endpoint, ref,
     # middle (F376) while the digest fallback took the pass every time. 180s base + 60s
     # per 200k chars, capped at the endpoint default (600s) so a hung CLI still dies.
     timeout = min(600, 180 + 60 * (len(convo) // 200_000))
-    comp = endpoint.complete([{"role": "user", "content":
-                               _HISTORY_PROMPT.format(convo=convo)}],
+    comp = endpoint.complete(archival_messages(middle),
                              model=ref.model, schema=_HISTORY_SCHEMA, effort=ref.effort,
                              temperature=ref.temperature, max_tokens=ref.max_tokens,
                              timeout=timeout,

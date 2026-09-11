@@ -79,7 +79,7 @@ WORKDIR /home/mark/git-repos/routine-scheduler
 # lockfile alone (as root; chowned to mark after). The package itself installs editable from the
 # bind-mounted source at run time, so `uv run` still re-syncs on a self-audit dependency change.
 COPY pyproject.toml uv.lock ./
-RUN uv sync --frozen --no-install-project \
+RUN uv sync --frozen --extra headroom --no-install-project \
     && chown -R mark:mark /opt/rsched-venv /home/mark
 
 # Entrypoint runs as ROOT to make bind mounts writable (Docker creates missing ones root-owned),
@@ -87,4 +87,4 @@ RUN uv sync --frozen --no-install-project \
 COPY deploy/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
-CMD ["uv", "run", "rsched", "daemon"]
+CMD ["uv", "run", "--extra", "headroom", "rsched", "daemon"]

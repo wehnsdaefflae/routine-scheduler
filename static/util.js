@@ -262,3 +262,12 @@ export function queuedToast(res, savedMsg) {
     toast(savedMsg);
   }
 }
+
+
+/** Operator-only measurements: never injected into the model's conversation. */
+export function compressionInfo(c) {
+  if (!c) return "";
+  const size = c.baseline_chars == null ? "" :
+    ` · preview ${c.baseline_chars} → ${c.candidate_chars} chars · ~${c.estimated_tokens_saved} tokens potentially saved (estimate)`;
+  return `\n[Headroom ${c.mode}: ${c.status}]${size}${c.elapsed_ms == null ? "" : ` · ${c.elapsed_ms} ms`}${c.reason ? ` · ${c.reason}` : ""}`;
+}

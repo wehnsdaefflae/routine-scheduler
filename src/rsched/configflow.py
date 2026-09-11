@@ -52,6 +52,7 @@ CLASSIFICATION: dict[str, tuple[str, str]] = {
                                  "handed to every util subprocess; widening it mid-run would "
                                  "not reach the jails already created"),
     "keep_runs": (NEXT_RUN, "retention is applied after a run, never during one"),
+    "output_compression": (NEXT_RUN, "output handling is selected when the run starts"),
     "improve": (NEXT_RUN, "it is read by the improver, not by the run"),
     "workflow": (NEXT_RUN, "the recipe was decomposed into the prompt at boot"),
     "name": (NEXT_RUN, "a label, not behaviour"),

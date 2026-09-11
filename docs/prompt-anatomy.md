@@ -789,3 +789,13 @@ OBSERVATION (write_file): wrote 1832 bytes to state/shortlist.md
 …and the model's own finish (see §4) closes the conversation.
 
 Model capability context windows are stated in tokens (the full input + output capacity).
+
+## Optional Headroom command-output previews
+
+`output_compression` defaults to `headroom`. `measure` records operator-only metadata while leaving
+observations unchanged. `headroom` may replace successful command stdout with a labelled lossless
+JSON representation or log excerpt before it is recorded. The `[full output]` pointer names the
+original captured output under the run's `outputs/` directory. `read_file` recovery bypasses
+compression. Replay renders the recorded observation without recompression; existing message
+prefixes, instructions, permission notices and stderr are never passed to Headroom.
+See [output compression](output-compression.md) for eligibility, installation and measurements.
