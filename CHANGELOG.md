@@ -15,6 +15,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.327.0] — 2026-09-11
+
+### Added
+
+- **`GET /api/items?target=<slug>` — the other end of a report.** `routine` matches who FILED
+  an item; there was no filter for who it was addressed TO, which is the question a routine
+  reconciling its own inbox actually asks. So `?target=steward-hub-maintainer` was accepted,
+  silently ignored, and answered with the WHOLE store — a body large enough to truncate into
+  invalid JSON on the way back, which is how the caller discovered it (R1404). Origin and
+  addressee are now separate filters and an item addressed to nobody matches no `target`
+  query. `counts` stays over the unfiltered set, as documented.
+
 ## [0.326.0] — 2026-09-11
 
 ### Fixed

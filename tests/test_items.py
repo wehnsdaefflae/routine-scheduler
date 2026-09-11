@@ -258,6 +258,41 @@ def test_api_items_merges_filters_and_carries_the_header(api_client):
             c.get("/api/items?routine=routine-improver").json()["items"]} == {"R1"}
 
 
+def test_api_items_filters_by_the_routine_a_report_is_addressed_to(api_client):
+    """`routine` and `target` are the two ENDS of a report and only the first existed.
+
+    A routine reconciling its own inbox asks "what is addressed to me" — and until 0.326.0 no
+    filter expressed that, so `?target=steward-hub-maintainer` was silently ignored and the
+    WHOLE store came back: a 1 MB body that truncated into invalid JSON for the caller, which
+    is how R1404 was filed. Origin and target must not be conflated: R3 below is addressed to
+    a routine that did not file it, and R1/R2 are addressed to nobody.
+    """
+    c, tmp = api_client
+    routines = tmp / "routines"
+    audit = routines / "self-audit" / "audit"
+    audit.mkdir(parents=True)
+    (audit / "report.json").write_text(json.dumps(REPORT), encoding="utf-8")
+    (audit / "changelog.jsonl").write_text(CHANGELOG, encoding="utf-8")
+    (routines / ".control").mkdir(parents=True, exist_ok=True)
+    bugs = [*BUGS,
+            {"id": "R3", "ts": "2026-07-21T08:00:00+02:00", "routine": "config-optimizer",
+             "run_id": "config-optimizer:20260721-080000", "title": "addressed to the hub",
+             "detail": "", "target": "steward-hub-maintainer"}]
+    (routines / ".control" / "reports.jsonl").write_text(
+        "".join(json.dumps(b) + "\n" for b in bugs), encoding="utf-8")
+    memo.reset()
+
+    only = c.get("/api/items?target=steward-hub-maintainer").json()
+    assert {i["id"] for i in only["items"]} == {"R3"}
+    # the filter is the ADDRESSEE, not the filer — asking by origin gives a different row
+    assert {i["id"] for i in
+            c.get("/api/items?routine=config-optimizer").json()["items"]} == {"R3"}
+    # an item addressed to nobody matches no target query
+    assert c.get("/api/items?target=routine-improver").json()["total"] == 0
+    # counts stay over the UNFILTERED set, as documented
+    assert only["counts"]["type"]["report"] == 3
+
+
 def test_api_items_does_not_reparse_the_changelog_on_a_warm_request(api_client, monkeypatch):
     """F450: `/api/items` re-parsed the whole changelog file on EVERY request — even a warm
     one whose `build()` was already a memo hit — so under concurrent heavy-run load the

@@ -323,10 +323,17 @@ def counts(items: list[dict]) -> dict:
 
 
 def filter_items(items: list[dict], *, type_: str = "", status: str = "",
-                 routine: str = "", search: str = "") -> list[dict]:
+                 routine: str = "", target: str = "", search: str = "") -> list[dict]:
     """Apply the API's filters. `search` is a case-insensitive substring over the id, the
     prose, and the addressed summaries — an archive-only item has no prose of its own, so
     its changelog summaries are the only way to find it by text.
+
+    `routine` and `target` are the two ENDS of a report and they are not interchangeable:
+    `routine` matches who FILED an item (its origin), `target` who it was addressed TO. Only
+    the origin end existed until 0.326.0, so a routine asking for the work addressed to it had
+    no filter that expressed the question and got the whole store back instead — a 1 MB body
+    that truncates into invalid JSON for the caller (R1404). An item with no target (a finding,
+    a decision, an untriaged report) matches no `target` query.
     """
     needle = search.strip().lower()
     # `status` accepts a comma list ("open,in_progress") — the Items page's default
@@ -339,6 +346,8 @@ def filter_items(items: list[dict], *, type_: str = "", status: str = "",
         if wanted_status and item["status"] not in wanted_status:
             continue
         if routine and item["origin"]["routine"] != routine:
+            continue
+        if target and str(item.get("to") or "") != target:
             continue
         if needle:
             hay: list[Any] = [item["id"], item["title"], item["detail"]]
