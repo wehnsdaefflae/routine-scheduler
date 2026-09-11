@@ -29,6 +29,23 @@ function tokensOf(d) {
   return (d.tokens_in || 0) + (d.tokens_out || 0);
 }
 
+// Prompt-cache read share: reads ÷ all cache traffic. The reads alone read as healthy on a
+// broken transport (the static prefix keeps hitting while the conversation is re-written
+// every turn at 12.5x the price), so this ratio — not the cached column — is the reading.
+// null = the endpoint reports no cache traffic at all, which is absence, not a bad share.
+function cacheShare(d) {
+  const total = (d.tokens_cached || 0) + (d.tokens_cache_write || 0);
+  return total ? (d.tokens_cached || 0) / total : null;
+}
+
+function cacheCell(d) {
+  const share = cacheShare(d);
+  if (share == null) return el("td", { class: "num muted" }, NBSP);
+  const pct = Math.round(share * 100) + "%";
+  const title = `${fmtNum(d.tokens_cached || 0)} read · ${fmtNum(d.tokens_cache_write || 0)} written`;
+  return el("td", { class: share < 0.5 ? "num cache-low" : "num", title }, pct);
+}
+
 function card(label, value, sub) {
   // the ONE stat-tile system (.stats/.stat — shared with the log view's strip)
   return el("div", { class: "stat" },
@@ -159,6 +176,7 @@ function sliceTable(title, slice, keyLabel, extraCols, link) {
     el("th", { class: "num" }, "runs"),
     el("th", { class: "num" }, "tokens in"),
     el("th", { class: "num" }, "tokens out"),
+    el("th", { class: "num", title: "prompt-cache read share: reads ÷ (reads + writes). Blank = this endpoint reports no cache traffic" }, "cache"),
     el("th", { class: "num" }, "cost"),
     el("th", { class: "num" }, "time"));
   const body = rows.map(([k, d]) => el("tr", {},
@@ -167,6 +185,7 @@ function sliceTable(title, slice, keyLabel, extraCols, link) {
     el("td", { class: "num" }, fmtInt(d.runs)),
     el("td", { class: "num" }, fmtInt(d.tokens_in)),
     el("td", { class: "num" }, fmtInt(d.tokens_out)),
+    cacheCell(d),
     el("td", { class: "num" }, fmtUsd(d.cost)),
     el("td", { class: "num" }, fmtDur(d.elapsed_s))));
   return statSection(title, null, head, body);
@@ -282,6 +301,8 @@ export async function render(view) {
     parts.push(el("div", { class: "stats" },
       card("total runs", fmtInt(t.runs), `${fmtInt(t.routines)} routines · ${fmtInt(t.conversations)} conversations`),
       card("tokens", fmtNum(tokensOf(t)), `${fmtNum(t.tokens_in)} in · ${fmtNum(t.tokens_out)} out`),
+      card("prompt cache", cacheShare(t) == null ? "—" : Math.round(cacheShare(t) * 100) + "%",
+        `${fmtNum(t.tokens_cached)} read · ${fmtNum(t.tokens_cache_write)} written`),
       card("cost", fmtUsd(t.cost), "provider-reported"),
       card("compute time", fmtDur(t.elapsed_s), "summed wall-clock"),
       card("success rate", successPct, "finished ÷ graded")));

@@ -24,7 +24,8 @@ export const METRICS = {
   tokens: { label: "tokens", of: (r) => r.tokens_in + r.tokens_out, fmt: fmtNum },
   tokens_in: { label: "tokens in", of: (r) => r.tokens_in, fmt: fmtNum },
   tokens_out: { label: "tokens out", of: (r) => r.tokens_out, fmt: fmtNum },
-  tokens_cached: { label: "tokens cached", of: (r) => r.tokens_cached || 0, fmt: fmtNum },
+  tokens_cached: { label: "cache reads", of: (r) => r.tokens_cached || 0, fmt: fmtNum },
+  tokens_cache_write: { label: "cache writes", of: (r) => r.tokens_cache_write || 0, fmt: fmtNum },
   cost: { label: "cost", of: (r) => r.cost, fmt: fmtUsd },
   minutes: { label: "compute minutes", of: (r) => r.elapsed_s / 60, fmt: (v) => v.toFixed(v < 10 ? 1 : 0) + "m" },
 };

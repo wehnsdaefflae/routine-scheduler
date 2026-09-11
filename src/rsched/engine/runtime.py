@@ -59,6 +59,37 @@ def _ensure_decomposed(routine_dir: Path, cfg, server) -> None:
     atomic_write(routine_dir / "main.md", dump_markdown(main_meta, result["main"]))
 
 
+# A run has to have carried enough cache traffic for the ratio to mean anything — a short
+# run whose prefix was written once and read twice is not a regression — and the floor is
+# set where the two states are unambiguous: a working append-only loop reads 8-70 tokens per
+# token written (measured across this instance), a broken one reads under 1.
+CACHE_SHARE_FLOOR = 0.5
+CACHE_SHARE_MIN_TOKENS = 200_000
+
+
+def _log_cache_health(ctx: RunContext, slug: str) -> None:
+    """Emit `cache_read_degraded` when a finished run re-wrote its prompt instead of
+    re-reading it. Volume hides this: the run's token count FALLS while its bill rises, so
+    nothing else in the record reads as wrong. Best-effort like every telemetry write here.
+    """
+    from ..endpoints import cache_read_share
+    from ..health_events import log_health_event
+
+    usage = ctx.usage_total()      # the reported figure: this leg plus any earlier ones
+    share = cache_read_share(usage)
+    reads = int(usage.get("cached_in") or 0)
+    writes = int(usage.get("cache_write") or 0)
+    if share is None or reads + writes < CACHE_SHARE_MIN_TOKENS or share >= CACHE_SHARE_FLOOR:
+        return
+    log_health_event(
+        ctx.server.routines_home, "cache_read_degraded", routine=slug, run_id=ctx.run_id,
+        detail=(f"prompt-cache read share {share:.0%} over {ctx.turn} turns "
+                f"({reads:,} read / {writes:,} written) — the prefix is being re-written "
+                f"rather than re-read; check the transport for {ctx.main_model}"),
+        cache_read_share=round(share, 4), cache_read_tokens=reads,
+        cache_write_tokens=writes)
+
+
 def load_workflow(routine_dir, cfg) -> tuple[str, dict, list[str] | None]:
     """Load the routine's OWN main.md body (the recipe was materialized into it at generation).
     Returns (main_body, provenance, allowed_tools).
@@ -170,6 +201,7 @@ def run_routine(routine_dir: Path, server: ServerConfig, *, run_ts: str | None =
                            cost=float(ctx.usage.get("cost") or 0.0), referrals=ctx.referrals,
                            recipe_commit=ctx.recipe_commit, utils=ctx.util_stats,
                            asks_deferred=ctx.asks_deferred)
+        _log_cache_health(ctx, cfg.slug)
         # Refresh the persisted util-stats snapshot (the single source of truth the Stats tab
         # and the util-review routine both read) now that this run's usage record has landed.
         # Best-effort: a telemetry write must never break a finished run.

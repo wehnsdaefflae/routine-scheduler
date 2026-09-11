@@ -1,7 +1,12 @@
-"""Usage statistics aggregation — time, tokens, and cost rolled up across every run in
-the routines AND conversations homes, sliced by routine, model, endpoint, day, kind, and
-run-state. The filesystem (each run's status.json) is the source of truth: no database, no
-cache — a routine dropped in appears on the next call, one deleted disappears.
+"""Usage statistics aggregation — time, tokens, cost and prompt-cache traffic rolled up
+across every run in the routines AND conversations homes, sliced by routine, model,
+endpoint, day, kind, and run-state. Cache reads and WRITES are both carried on every
+slice: the ratio between them is the only reading that distinguishes a healthy
+append-only run from one re-writing its whole conversation every turn (see
+`endpoints.base.cache_read_share`), and a slice is where a single bad endpoint shows.
+
+The filesystem (each run's status.json) is the source of truth: no database, no cache — a
+routine dropped in appears on the next call, one deleted disappears.
 
 Powers the Stats tab (/api/stats). Kept a pure function of a ServerConfig so it is fully
 unit-testable without a running server.
@@ -28,7 +33,7 @@ _BAD_STATES = {"failed", "aborted"}
 
 def _empty() -> dict:
     return {"runs": 0, "tokens_in": 0, "tokens_out": 0, "tokens_cached": 0,
-            "cost": 0.0, "elapsed_s": 0}
+            "tokens_cache_write": 0, "cost": 0.0, "elapsed_s": 0}
 
 
 def _add(acc: dict, usage: dict, elapsed_s) -> None:
@@ -37,6 +42,12 @@ def _add(acc: dict, usage: dict, elapsed_s) -> None:
     acc["tokens_out"] += int((usage or {}).get("out") or 0)
     # prompt-cache reads (~0.1x price) — separate so cache hit rates are visible
     acc["tokens_cached"] += int((usage or {}).get("cached_in") or 0)
+    # …and WRITES (~1.25x), which is the half that makes the reads readable. A collapsed
+    # cache still reports reads (the static prefix keeps hitting) while re-writing the whole
+    # conversation every turn, so a reads-only column shows a healthy-looking number for a
+    # 12.5x bill. Carried on every slice: the September 2026 regression was one ENDPOINT
+    # going bad, which is invisible in a total and obvious in a per-endpoint ratio.
+    acc["tokens_cache_write"] += int((usage or {}).get("cache_write") or 0)
     if (usage or {}).get("cost"):
         acc["cost"] = round(acc["cost"] + float(usage["cost"]), 6)
     acc["elapsed_s"] += int(elapsed_s or 0)
@@ -149,6 +160,7 @@ def aggregate(server: ServerConfig, *, now: datetime | None = None) -> dict:
                              "tokens_in": int((r.usage or {}).get("in") or 0),
                              "tokens_out": int((r.usage or {}).get("out") or 0),
                              "tokens_cached": int((r.usage or {}).get("cached_in") or 0),
+                             "tokens_cache_write": int((r.usage or {}).get("cache_write") or 0),
                              "cost": float((r.usage or {}).get("cost") or 0.0),
                              "elapsed_s": int(r.elapsed_s or 0)})
             if info.runs:

@@ -203,6 +203,13 @@ Two kinds:
   system static, a moving one on the last message) — ~0.1x reads on the whole prefix every turn; a 400
   naming cache_control gets a degraded retry without the markers.
 
+Whether that caching is actually WORKING is a measured reading, not an assumption:
+`endpoints.base.cache_read_share` divides reads by all cache traffic, the Stats tab carries it on
+every slice, and a run finishing below half raises a `cache_read_degraded` health event. Reads on
+their own cannot answer it — a transport that stopped resuming its session still serves the static
+prefix from cache while re-writing the conversation every turn, which reads as healthy and bills
+12.5x. See docs/run-analytics.md.
+
 
 The **model catalog** (`config.ModelConfig`, `ServerConfig.models`) binds a provider model id to
 an endpoint and owns the PER-MODEL attributes — `multimodal`, `context_tokens`, `effort`,

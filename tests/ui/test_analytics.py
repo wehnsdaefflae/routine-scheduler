@@ -104,6 +104,28 @@ def test_stats_utils_table(ui, ui_page):
     expect(never.first.locator("td").nth(3)).to_have_text("never")
 
 
+def test_stats_shows_the_prompt_cache_read_share(ui, ui_page):
+    """A collapsed prompt-cache read share is invisible in every other column: the reads stay
+    (the static prefix keeps hitting) and the token count FALLS. The headline card names both
+    halves, and a per-slice column marks a share under half — reads alone would have shown
+    this routine as healthy.
+    """
+    ui.seed_run("uir", "20260715-100000", "finished", summary="ok",
+                usage={"in": 10, "out": 4, "cached_in": 900_000, "cache_write": 20_000})
+    ui.seed_run("uir", "20260715-110000", "finished", summary="ok",
+                usage={"in": 10, "out": 4, "cached_in": 10_000, "cache_write": 2_000_000})
+    ui_page.goto(f"{ui.url}/#/stats")
+    # headline card: the ratio, with both halves named so it is read rather than inferred
+    card = ui_page.locator(".stat", has_text="prompt cache")
+    expect(card).to_be_visible()
+    expect(card).to_contain_text("31%")            # 910k read of 2.93M cache traffic
+    expect(card).to_contain_text("written")
+    # the per-slice column marks the degraded row
+    section = ui_page.locator(".stat-section", has=ui_page.get_by_role(
+        "heading", name="By routine / conversation"))
+    expect(section.locator("tr", has_text="uir").locator("td.cache-low")).to_have_text("31%")
+
+
 def test_stats_recipe_length_section(ui, ui_page):
     """F371: the Stats tab charts each routine's recipe length (instruction mass) as its
     own differently-colored bar, with a trend chip against the recipe as committed ~30

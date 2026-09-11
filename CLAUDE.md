@@ -413,6 +413,14 @@ by a test, by the engine, or by a past incident.
   cannot be read says UNKNOWN, never FREE: an unreachable box reading as free is the one failure
   mode that would cause the collision this prevents. Cooperative, like every machine guard — a
   human on the box or a `shell` action still bypasses it.
+- **Cache READS alone cannot tell a working prompt cache from a broken one.** A transport
+  that stops resuming its session still serves the static system+tools prefix from cache,
+  so `cached_in` stays large and the token count actually FALLS — while the whole
+  conversation is re-WRITTEN every turn at 1.25x instead of re-read at 0.1x. Only reads ÷
+  (reads + writes) shows it (`endpoints.base.cache_read_share`), which is why every Stats
+  slice carries both halves and a run finishing under 0.5 raises `cache_read_degraded`.
+  September 2026 ran four days that way and burned a weekly subscription limit; the slice
+  matters as much as the ratio, because it was ONE endpoint going bad beside healthy ones.
 - **A model's limits are DISCOVERED, not configured.** `endpoints/limits.py` asks each provider
   what its models' real context window and output maximum are (OpenRouter/Nano-GPT/Ollama have
   metadata APIs; `anthropic` listings lack context-window metadata and use a built-in table), caches it under

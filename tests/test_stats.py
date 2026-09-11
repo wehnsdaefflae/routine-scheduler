@@ -40,8 +40,11 @@ def _mk_routine(home, slug, *, model_name="opus"):
     return d
 
 
-def _mk_run(d, ts, state, *, tin=0, tout=0, cost=None, elapsed_s=0, model=None):
-    usage = {"in": tin, "out": tout, **({"cost": cost} if cost is not None else {})}
+def _mk_run(d, ts, state, *, tin=0, tout=0, cost=None, elapsed_s=0, model=None,
+            cached=0, cache_write=0):
+    usage = {"in": tin, "out": tout, **({"cost": cost} if cost is not None else {}),
+             **({"cached_in": cached} if cached else {}),
+             **({"cache_write": cache_write} if cache_write else {})}
     return mk_run(d, ts, state, usage=usage, elapsed_s=elapsed_s, model=model or None)
 
 
@@ -89,6 +92,33 @@ def test_aggregate_rolls_up_every_slice(tmp_path):
     # by_routine carries endpoint/model attribution, sorted by tokens desc
     assert agg["by_routine"]["beta"]["endpoint"] == "openrouter"
     assert next(iter(agg["by_routine"])) == "beta"  # most tokens
+
+
+def test_aggregate_carries_both_halves_of_the_cache_ratio(tmp_path):
+    """Reads alone cannot tell a healthy run from a broken one — a collapsed cache still
+    reports reads (the static prefix keeps hitting) while re-writing the conversation every
+    turn. Both counters ride every slice so the ratio is computable per endpoint, which is
+    the granularity the September 2026 regression actually had.
+    """
+    home = tmp_path / "routines"
+    good = _mk_routine(home, "good", model_name="opus")
+    bad = _mk_routine(home, "bad", model_name="glm")
+    _mk_run(good, "20260712-070000", "finished", tin=100, tout=40,
+            cached=900_000, cache_write=20_000, model="claude/opus")
+    _mk_run(bad, "20260712-080000", "finished", tin=100, tout=40,
+            cached=300_000, cache_write=900_000, model="openrouter/glm-5.2")
+
+    agg = aggregate(_server(tmp_path))
+
+    assert agg["totals"]["tokens_cached"] == 1_200_000
+    assert agg["totals"]["tokens_cache_write"] == 920_000
+    # the per-endpoint split is what makes ONE bad transport visible in a healthy total
+    claude = agg["by_endpoint"]["claude"]
+    router = agg["by_endpoint"]["openrouter"]
+    assert claude["tokens_cached"] / (claude["tokens_cached"] + claude["tokens_cache_write"]) > 0.9
+    assert router["tokens_cached"] / (router["tokens_cached"] + router["tokens_cache_write"]) < 0.5
+    # …and the per-run records the charts slice carry it too
+    assert {r["tokens_cache_write"] for r in agg["runs"]} == {20_000, 900_000}
 
 
 def test_aggregate_no_models_block_falls_back_to_system_model(tmp_path):

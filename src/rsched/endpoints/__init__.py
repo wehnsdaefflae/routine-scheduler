@@ -19,12 +19,12 @@ from ..config import (
 )
 from . import failover, limits
 from .anthropic_api import AnthropicEndpoint
-from .base import ChatEndpoint, Completion, EndpointError
+from .base import ChatEndpoint, Completion, EndpointError, cache_read_share
 from .instrument import InstrumentedEndpoint
 from .openai_compat import OpenAICompatEndpoint
 
 __all__ = ["ChatEndpoint", "Completion", "EndpointError", "EndpointRegistry",
-           "InstrumentedEndpoint", "make_endpoint"]
+           "InstrumentedEndpoint", "cache_read_share", "make_endpoint"]
 
 _KINDS: dict[str, Callable[[EndpointConfig], ChatEndpoint]] = {
     "openai": OpenAICompatEndpoint,

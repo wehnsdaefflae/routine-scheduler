@@ -3,9 +3,20 @@
 Writes to <routines_home>/.control/health-events.jsonl. Each line is a JSON object:
 {"ts": <iso>, "event": "run_failed"|"budget_exhausted"|"orphaned_run"|"run_canceled"
         |"wizard_build_degraded"|"fire_refused"|"model_window_corrected"
+        |"cache_read_degraded"
         |"lane_chain_done"|"lane_chain_stopped"|"lane_chain_member_skipped"
         |"lane_fire_refused"|"scheduler_tick_error",
  "routine": <slug>, "run_id": <id>, "detail": <str>}
+
+cache_read_degraded: a finished run's prompt-cache READ SHARE fell below half — it
+re-wrote its prefix every turn (1.25x) instead of re-reading it (0.1x), a 12.5x
+multiplier on the same work. Carries `cache_read_share`, `cache_read_tokens` and
+`cache_write_tokens` as structured fields, because the question it answers ("is any
+transport doing this, and since when") has to be filterable. It is emitted at all only
+because NOTHING ELSE shows it: the reads stay (the static prefix still hits), the token
+count FALLS, and the cost is carried by a subscription's weighting rather than a visible
+bill — which is how September 2026 ran four days that way and burned a weekly limit.
+An endpoint reporting no cache traffic at all is silent, not degraded.
 
 model_window_corrected: a completion 400'd with a context-overflow whose provider-stated
 maximum is SMALLER than the catalog entry's configured window — the config lies, the

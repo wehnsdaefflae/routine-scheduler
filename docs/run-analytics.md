@@ -1,10 +1,13 @@
-# Run analytics: recipe-version health & per-util stats
+# Run analytics: recipe-version health, per-util stats & prompt-cache health
 
 The scheduler improves its routines through use — the routine-improver edits recipes
 directly. Two measurement layers close that loop: every run is attributed to the **recipe
 version** that produced it, and every util call is counted by **outcome**. Both survive
 run-dir retention because they ride the durable workflow-usage stream
 (`~/routines/.control/workflow-usage.jsonl`).
+
+A third layer measures what a run COSTS rather than what it did: prompt-cache health, the
+one reading that separates carrying context cheaply from paying for it twice.
 
 ## Recipe versions
 
@@ -94,6 +97,37 @@ own counts; parents never fold them in (the read-model sums records at every dep
    memoized per file behind a stat fingerprint. Backfill sees executions only —
    rejected/denied calls never became observations back then, so those counts honestly
    start at the stream's adoption.
+
+## Prompt-cache health (Stats tab → the `prompt cache` card and the `cache` column)
+
+Every slice carries BOTH halves of the cache traffic — reads (`tokens_cached`, ~0.1x
+price) and writes (`tokens_cache_write`, ~1.25x) — because the ratio between them is the
+only reading that tells a healthy run from a broken one, and the reads alone actively
+mislead.
+
+The failure it exists for: when a transport stops resuming its session, the static
+system+tools prefix keeps hitting, so `cached_in` stays large and the volume columns look
+normal — while the whole conversation is re-WRITTEN every turn instead of re-read. That is
+a 12.5x multiplier on identical work, and in September 2026 it ran for four days
+(read share 95% → ~49%) and exhausted a weekly subscription limit before anyone saw it;
+the run's prompt tokens actually FELL 4x over the window.
+
+- `endpoints.base.cache_read_share(usage)` computes reads ÷ (reads + writes) for one usage
+  record, and returns `None` when the transport reports no cache traffic at all — an
+  endpoint that does not cache is absent from this reading, never degraded by it.
+- The Stats tab shows the instance-wide share as a headline card and per-row shares in
+  every slice table, marked red under 50%. The SLICE is the point: the September regression
+  was one endpoint going bad next to healthy ones, which a total hides and a per-endpoint
+  row makes obvious.
+- At run finish the engine emits a `cache_read_degraded` health event when a run's share
+  falls under `CACHE_SHARE_FLOOR` (0.5) with at least `CACHE_SHARE_MIN_TOKENS` (200k) of
+  cache traffic behind it (`engine/runtime.py`). The event carries `cache_read_share`,
+  `cache_read_tokens` and `cache_write_tokens` as structured fields so a health sweep can
+  filter on them, and self-audit reads the same log.
+
+Per-turn detail lives in each run's `llm-tasks.jsonl` sidecar: a healthy run's `cached_in`
+GROWS turn over turn; a broken one has it PINNED at the static prefix while `cache_write`
+tracks the conversation.
 
 ## Follow-ups
 

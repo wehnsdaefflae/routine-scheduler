@@ -15,6 +15,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.321.0] — 2026-09-11
+
+### Added
+- **Prompt-cache health is measured, not assumed.** Cache WRITES now ride every Stats slice
+  beside the reads (`tokens_cache_write`), the tab carries the read share as a headline card
+  and a per-row `cache` column marked red under 50%, and `cache reads` / `cache writes` are
+  selectable chart metrics. `endpoints.base.cache_read_share` is the one definition of the
+  ratio, shared by the read model and the engine.
+- **`cache_read_degraded` health event.** A run finishing under a 50% read share with at
+  least 200k tokens of cache traffic behind it logs the share and both counters as structured
+  fields (`engine/runtime.py`), so a health sweep can filter for it and self-audit reads it
+  off the same log.
+
+### Why
+Reads alone actively mislead. When a transport stops resuming its session the static
+system+tools prefix keeps hitting — `cached_in` stays large, prompt tokens FALL — while the
+whole conversation is re-written every turn at 1.25x instead of re-read at 0.1x: a 12.5x
+multiplier on identical work, carried by a subscription's token weighting rather than a
+visible bill. That ran unseen from 2026-09-06 to 09-10 (read share 95% → ~49%) until the
+weekly limit was exhausted and work failed over to metered billing. Nothing in the console
+could have shown it: the cached column looked healthy and the volume column looked better
+than usual. The per-slice ratio is the fix, because the regression was ONE endpoint going bad
+next to healthy ones.
+
 ## [0.320.0] — 2026-09-11
 
 ### Added

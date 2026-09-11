@@ -292,6 +292,25 @@ def anthropic_usage(raw: dict) -> dict:
     return usage
 
 
+def cache_read_share(usage: dict | None) -> float | None:
+    """Prompt-cache reads ÷ all cache traffic for one usage record — the ONE number that
+    separates a healthy append-only run from a broken one, and the only one that does.
+
+    Reads alone cannot: when a transport stops resuming its session, the static
+    system+tools prefix keeps hitting (so `cached_in` stays non-zero and volume looks
+    normal) while the whole conversation is re-WRITTEN every turn at 1.25x instead of
+    re-read at 0.1x. That is a 12.5x multiplier on the same work, and it ran unseen for
+    four days in September 2026 until a weekly subscription limit was exhausted.
+
+    None when the transport reports no cache traffic at all — an endpoint that does not
+    cache, or a run too short to have any. Absence is not a low share.
+    """
+    reads = int((usage or {}).get("cached_in") or 0)
+    writes = int((usage or {}).get("cache_write") or 0)
+    total = reads + writes
+    return reads / total if total else None
+
+
 def json_or_raise(resp, name: str) -> dict:
     """Parse an HTTP body that should be JSON. A 2xx with a garbled body (truncated stream,
     proxy interference) is a transport fault — raised retryable so `with_retries` catches it
