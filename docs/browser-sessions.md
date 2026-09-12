@@ -11,7 +11,20 @@ engine-only and the daemon supervises no second process.
 ## What talks to it
 
 Any util that takes `--cdp URL` — today `job-scrape` (freelance-de, freelancermap, gulp),
-`job-inbox` (all five boards), `job-apply` (the send path) and `browser-session`.
+`job-inbox` (all five boards), `job-apply` (the send path) and `browser-session attach`, the
+general-purpose one: it opens a tab OF ITS OWN in this browser, identified by its CDP target id,
+acts only there, and its `stop` closes only that tab (0.331.0 — before that the util could only
+launch its own headless Chromium, and the routine that needed a signed-in Slack asked the
+operator for root and a VNC server inside the engine container instead).
+
+**How a routine learns this address: the `browser-sessions` permission doc.** Nothing else a run
+reads names it — not a rule, not a util's catalog line — and for a month the only routines using
+this browser were the ones whose memory notes had been written by hand. The doc's body reaches a
+holder's prompt (the CAPABILITIES section) with the address in its first lines, its `requires:`
+makes `browser-session` a RESERVED util (so a browser holding a person's sessions is reachable
+only by routines deliberately given it), and its conduct is the three rules below: never launch
+your own browser for a login, never touch a tab you did not open, never handle credentials or
+login codes — a sign-in is the operator's, once, on the screen below.
 
 **The endpoint is `http://172.30.7.10:9222`**, and it has to be passed explicitly: their default
 is `127.0.0.1:9222`, which is not where this browser lives. The address is pinned in

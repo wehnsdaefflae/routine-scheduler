@@ -15,6 +15,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.331.0] — 2026-09-12
+
+### Added
+
+- **`browser-sessions` permission doc** (`library-seed/permissions/`): the shared signed-in
+  browser (the `chrome` sidecar at `http://172.30.7.10:9222`) was discoverable by no run — no
+  rule, no permission doc and no util catalog line named it, so a routine that needed a
+  signed-in Slack probed its own engine container, found no VNC server, and asked the operator
+  for root. The doc puts the address in the first lines a holder's prompt sees, makes
+  `browser-session` a reserved util through its `requires:` (a browser holding a person's
+  sessions is reachable only by routines deliberately given it), and states the conduct: never
+  launch a browser of your own for a login, never touch a tab you did not open, never handle
+  credentials or login codes. Bound to llmsectest-weekday and sprind, the two routines that use
+  the util. In the library, the `browser-session` util gains an `attach --cdp URL` mode that
+  opens a tab of its own in that browser (identified by CDP target id, so `do` never acts in
+  somebody else's tab and `stop` closes only its own); proven live beside the operator's open
+  Slack tab.
+
 ## [0.330.0] — 2026-09-12
 
 ### Changed
