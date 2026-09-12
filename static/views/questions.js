@@ -251,6 +251,17 @@ export async function render(view, query = {}) {
         };
       }
     }
+    // "answer & run now": the operator's deliberate fire beside the answer — a manual run,
+    // the same as the routine page's Run now. Only for a deferred routine question whose
+    // run has ended: a blocking one resumes its own run, a meta one is self-audit's, and a
+    // live run drains the answer at its next turn boundary. Nothing fires on its own —
+    // an answer WAITS for the next scheduled run unless this button is the one clicked.
+    let wantRun = false;
+    const canRunNow = !q.meta && q.mode !== "blocking" && !q.conversation && !q.background
+      && !q.wizard && (!q.run_state || TERMINAL.has(q.run_state));
+    const runNow = canRunNow ? el("button", { class: "btn small", "data-answer-run-now": "",
+      title: "file this answer AND start one run of the routine now (a manual run) — "
+        + "otherwise the answer waits for its next scheduled run" }, "answer & run now") : null;
     const form = answerForm(q, {
       control: "input",
       placeholder: "your answer…  (↵ to send)",
@@ -258,9 +269,11 @@ export async function render(view, query = {}) {
       defaultLine: false,          // the panel body renders the default line below
       onArrow: (d) => focusAt(index + d),
       submitText: (text, _intermediate, decision) => api(`/api/questions/${q.qid}/answer`,
-        { method: "POST", body: decision ? { decision } : { text } }),
+        { method: "POST", body: { ...(decision ? { decision } : { text }),
+                                  ...(wantRun ? { run_now: true } : {}) } }),
       toastText: () => (q.mode === "blocking" ? "answered — the run resumes"
         : q.meta ? "recorded — the next self-audit run acts on it"
+        : wantRun ? "answered — a run is starting now"
         : "answered — the next run picks it up"),
       // Mark answered in place: a deferred question's pending file is only consumed when
       // its routine next runs, so a reload would still list it — that would read as
@@ -268,15 +281,17 @@ export async function render(view, query = {}) {
       onSuccess: (text) => {
         panel.classList.remove("warn");
         controls.replaceChildren(el("div", { class: "flow-note" },
-          chip("answered · queued", "ok"),
-          el("span", {}, `“${text}” → inbox → consumed by the ${q.mode === "blocking" ? "waiting run" : "next run"}`)));
+          chip(wantRun ? "answered · run started" : "answered · queued", "ok"),
+          el("span", {}, `“${text}” → inbox → consumed by the ${q.mode === "blocking" ? "waiting run"
+            : wantRun ? "run starting now" : "next run"}`)));
         state.items = state.items.filter((x) => x.qid !== q.qid);
         syncToolbar();
         inputs.splice(inputs.indexOf(form.input), 1);
         focusAt(index);          // move on to the next open question
       },
-      extraControls: lifecycle,
+      extraControls: runNow && lifecycle ? [runNow, lifecycle] : (runNow || lifecycle),
     });
+    if (runNow) runNow.onclick = () => { wantRun = true; form.submit(false); };
     inputs.push(form.input);
     const controls = el("div", {}, form.node);
     // Config bridge: a revise run can't edit routine.yaml, so it proposes the change as a

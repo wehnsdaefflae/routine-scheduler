@@ -17,6 +17,7 @@ from datetime import UTC, datetime, timedelta
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
+from .. import registry
 from ..ids import now_iso
 from ..paths import atomic_write_json, read_json
 from .decisions_read import _all_questions, _audit_decisions, _record_dir, open_decisions
@@ -37,6 +38,12 @@ class Answer(BaseModel):
     # A forever-decision is APPLIED to routine.yaml right here, at click time — the
     # engine only bridges it into a live run's overlay and never writes config.
     decision: str | None = None
+    # The operator's "answer & run now": file the answer AND fire one manual run of the
+    # routine, exactly as the routine page's Run now would — a deliberate click, never a
+    # side effect of answering. Ignored for a conversation (it resumes on its own), for a
+    # meta decision (self-audit reads it on its schedule) and for a routine whose run is
+    # active (the live run drains the answer at its next turn boundary).
+    run_now: bool = False
 
 
 @router.post("/questions/{qid}/answer")
@@ -78,8 +85,26 @@ async def answer(request: Request, qid: str, body: Answer) -> dict:
     # answer at run start. A LIVE conversation reply needs no resume (it drains the answer at
     # its next turn boundary); a scheduled routine has its own next run.
     resumed = await _resume_terminal_conversation(request, match, routine_dir)
+    fired = await _run_now(request, match) if body.run_now else None
     return {"ok": True, "routine": match["routine"], "mode": match["mode"],
-            **({"resumed": True} if resumed else {})}
+            **({"resumed": True} if resumed else {}),
+            **({"run_id": fired} if fired else {})}
+
+
+async def _run_now(request: Request, match: dict) -> str | None:
+    """Fire one manual run of the routine that asked, for the Decisions page's "answer &
+    run now" — the same path as the routine page's Run now, so the run reads as `manual`
+    everywhere. None when there is nothing to fire: a conversation or detached task (their
+    own lifecycle), or a routine with an active run (its next turn boundary drains the
+    answer, and a second run would be refused anyway).
+    """
+    if match.get("conversation") or match.get("background") or match.get("wizard"):
+        return None
+    state = request.app.state
+    info = registry.scan(state.server).get(str(match["routine"]))
+    if info is None or state.runner.is_active(info.cfg.slug):
+        return None
+    return await state.runner.fire(info.cfg, reason="manual")
 
 
 def _announce_answer(request: Request, qid: str, routine: str) -> None:

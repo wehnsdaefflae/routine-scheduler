@@ -407,17 +407,17 @@ by a test, by the engine, or by a past incident.
   stamps `.control/lane-fires.json` (`rsched/lane_fires.py`) and `daemon/lane_catchup.py`
   makes up ONE missed fire per lane at boot (`catchup: run_once`, the lane default). Never
   write that file from the web layer and never let boot arm more than one chain per lane.
-- **A routine reads its inbox when it next RUNS. A person's answer wakes it; a routine's
-  report does not.** A message is cheap and a run is a whole recipe, so "one run per message"
-  is the wrong granularity, and routines answer each other — waking on reports chains, one
-  full run per hop. 0.329.0 gave every routine a report trigger and fired six routines within
-  a tick; 0.330.0 reversed it the same morning. The report trigger stays an explicit opt-in
-  for a routine whose job IS its inbox. What the engine does by itself is the ANSWER WAKE
-  (`daemon/triggers.py::_service_answer`): a human's answer to a question the routine itself
-  deferred fires it once per coalescing window, which cannot chain because only a person can
-  answer, and "defer to next run" on the Decisions page is the per-answer opt-out. The health
-  stream files a `partial` as `budget_exhausted` ONLY when a budget violation forced it; a
-  partial the model chose is `run_partial`.
+- **Nothing starts a run but the schedule, a trigger the operator configured, or the
+  operator's own click.** A routine reads its inbox when it next RUNS: a report from another
+  routine waits (0.329.0 gave every routine a report trigger and fired six at once — a message
+  is cheap, a run is a whole recipe, and routines answer each other, so it chains), and so does
+  a person's answer to a deferred question (0.330.0 fired a run per answer; three started in one
+  second when the operator cleared his inbox — reversed in 0.333.0). Urgency has explicit forms:
+  a BLOCKING question parks and resumes its run, and the Decisions page's "answer & run now"
+  (`run_now: true` on the answer route) is ONE manual fire, the same as the routine page's Run
+  now. The report trigger stays an explicit opt-in for a routine whose job IS its inbox. The
+  health stream files a `partial` as `budget_exhausted` ONLY when a budget violation forced it;
+  a partial the model chose is `run_partial`.
 - **An exclusive machine's compute is QUEUED, not locked.** `MachineConfig.exclusive` makes
   `remote submit` take a ticket instead of launching (`rsched/machine_queue.py`). The order is
   FAIR SHARE — round-robin across ROUTINES by each one's oldest waiting ticket, FIFO within one —

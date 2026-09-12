@@ -894,6 +894,37 @@ def test_answered_question_shows_settled_not_open(client):
     assert q["answered"] is True and q["answer"] == "blue"
 
 
+def test_answer_run_now_fires_one_manual_run_and_a_plain_answer_fires_nothing(client):
+    """Nothing starts a run but the schedule, a trigger the operator configured, or the
+    operator's own click. Answering a deferred question files the answer for the NEXT
+    scheduled run; `run_now: true` is that click — one manual fire, the same reason the
+    routine page's Run now uses — and it is refused nothing but skipped when a run is
+    already active (the live run drains the answer at its next turn boundary)."""
+    c, tmp = client
+    pending = tmp / "routines" / "apir" / "questions" / "pending"
+    for n in ("q-r1", "q-r2", "q-r3"):
+        atomic_write_json(pending / f"{n}.json", {"qid": n, "question": "Go?", "options": [],
+                                                  "asked": "20260912", "mode": "deferred"})
+    fired: list[tuple[str, str]] = []
+    runner = c.app.state.runner
+
+    async def fake_fire(cfg, *, reason="schedule"):
+        fired.append((cfg.slug, reason))
+        return f"{cfg.slug}:20260912-120000"
+
+    runner.fire = fake_fire
+    r = c.post("/api/questions/q-r1/answer", json={"text": "later"})
+    assert r.status_code == 200 and "run_id" not in r.json() and fired == []
+    r = c.post("/api/questions/q-r2/answer", json={"text": "Do it", "run_now": True})
+    assert r.status_code == 200, r.text
+    assert r.json()["run_id"] == "apir:20260912-120000" and fired == [("apir", "manual")]
+    assert read_json(tmp / "routines" / "apir" / "inbox" / "answer-q-r2.json")["text"] == "Do it"
+    # a run already active: the answer is filed, nothing more is fired
+    runner.is_active = lambda slug: slug == "apir"
+    r = c.post("/api/questions/q-r3/answer", json={"text": "now", "run_now": True})
+    assert r.status_code == 200 and "run_id" not in r.json() and len(fired) == 1
+
+
 def test_access_request_decisions_apply_at_click_time(client):
     """The four-state decision endpoint: a forever-decision is persisted to routine.yaml
     the moment the user clicks (the web is the ONE config writer — the engine only

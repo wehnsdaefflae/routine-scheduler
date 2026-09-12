@@ -15,6 +15,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.333.0] — 2026-09-12
+
+### Changed
+
+- **An answer no longer starts a run; "answer & run now" does, when you click it.** 0.330.0
+  fired a run the moment a deferred question was answered. The operator's verdict was exact:
+  three routines started in the same second when he cleared his inbox, and answering had become
+  a way of starting runs out of schedule. A deferred question is one the run did not need
+  answered to finish, so its answer waits for the next scheduled run — the schedule is the only
+  clock — and urgency keeps its explicit forms: a blocking question resumes its own run, and the
+  Decisions page gains **answer & run now**, which files the answer and fires ONE manual run
+  (`run_now: true` on `POST /api/questions/<qid>/answer`, the routine page's Run now reason).
+  Offered only for a deferred routine question whose run has ended; skipped when a run is active,
+  since the live run drains the answer at its next turn boundary. The engine-level answer wake
+  and its daily backstop are removed. Nothing starts a run but the schedule, a trigger the
+  operator configured, or the operator's own click.
+
 ## [0.332.0] — 2026-09-12
 
 ### Added

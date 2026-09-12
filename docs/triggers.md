@@ -103,31 +103,26 @@ fire after the cooldown). The usual guards apply unchanged: never while the rout
 active/queued run, never while the daemon drains for a restart, never for a disabled
 routine, and at most one fire per cooldown window. One report trigger per routine (one
 inbox, one watcher); create it on the Triggers card — no URL, nothing external can reach
-it. Answer files (`answer-*.json`) never fire it — a human's answer has its own wake, below.
+it. Answer files (`answer-*.json`) never fire it — an answer waits, see below.
 
-## The answer wake (engine behaviour, nothing to configure)
+## An answer waits for the next run — or for your click
 
-A run that asks a **deferred** question finishes, and the answer arrives later, from a
-person, on the Decisions page. Until 0.330.0 that answer waited in the inbox for the
-routine's next scheduled run — a week, for a weekly routine, after "Do it" was clicked;
-four such answers were waiting on one routine when this was found. Now the daemon fires
-the routine (reason `answer`) when its inbox holds an answer WITH text whose question is
-still in `questions/pending/` (`daemon/triggers.py::_service_answer`). What bounds it:
+A run that asks a **deferred** question finishes without the answer: by definition it did not
+need it to continue, so "tell me when you get to it" means the routine's next scheduled run.
+That is the contract, and the schedule is the only clock. A routine that cannot continue
+without the answer asks a **blocking** question instead — the run parks and resumes the moment
+the answer lands, which is the explicit mechanism for urgency.
 
-- **It cannot chain.** Only a person can answer a question; a routine cannot answer
-  another routine's question, so an answer wake never wakes a second routine.
-- **Once per window.** The report trigger's 900 s coalescing applies: several answers
-  filed together are drained by one run.
-- **A backstop of 12 fires a day**, which only a defect could reach (an answer the boot
-  drain refuses to consume); reaching it emits `trigger_capped` and the answer waits for the
-  next scheduled run.
-- **An orphan answer never wakes** — one with no pending question — because the boot drain
-  deliberately leaves such a file alone, and waking for it would fire every window forever.
-- **"Defer to next run" is the opt-out**, chosen per answer on the Decisions page: it writes
-  a marker (`{"defer": true}`) this watch ignores.
-- The usual guards: never while the routine has an active/queued run (a live run drains
-  its own answers at the turn boundary), never while the daemon drains, never for a
-  disabled routine.
+0.330.0 made every answer fire a run at once ("the answer wake"), and the operator's verdict
+was exact: three routines started in the same second when he cleared his inbox, and answering
+a question had become a way of starting runs out of schedule. Reversed in 0.333.0. What
+replaced it is a deliberate control: the Decisions page's **answer & run now** files the answer
+AND fires ONE manual run of the routine (`POST /api/questions/<qid>/answer` with
+`run_now: true` — the same `manual` fire as the routine page's Run now). It is offered only for
+a deferred routine question whose run has ended; a blocking question resumes its own run, a
+meta decision is self-audit's to read on its schedule, and a routine with an active run drains
+the answer at its next turn boundary, so the button fires nothing there. Nothing starts a run
+but the schedule, a trigger the operator configured, or the operator's own click.
 
 ## Firing semantics: coalescing and cooldown
 
