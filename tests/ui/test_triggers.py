@@ -47,7 +47,7 @@ def test_trigger_delete_flow(ui, ui_page):
     ui_page.locator(".modal-overlay").get_by_role("button", name="delete").click()
     # the row vanishing + the yaml entry going are the durable assertions (a toast expires)
     expect(ui_page.locator(".trigger-row")).to_have_count(0)
-    expect(ui_page.locator(".triggers-body")).to_contain_text("no triggers yet")
+    expect(ui_page.locator(".triggers-body")).to_contain_text("no triggers")
     raw = yaml.safe_load((ui.routine_dir("uir") / "routine.yaml").read_text(encoding="utf-8"))
     assert raw["triggers"] == []
 

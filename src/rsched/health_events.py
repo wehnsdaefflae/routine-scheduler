@@ -1,12 +1,32 @@
 """Health-events file: append-only JSONL log of key daemon/engine events for audit consumption.
 
 Writes to <routines_home>/.control/health-events.jsonl. Each line is a JSON object:
-{"ts": <iso>, "event": "run_failed"|"budget_exhausted"|"orphaned_run"|"run_canceled"
+{"ts": <iso>, "event": "run_failed"|"budget_exhausted"|"run_partial"|"orphaned_run"
+        |"run_canceled"|"oversize_state_file"
         |"wizard_build_degraded"|"fire_refused"|"model_window_corrected"
         |"cache_read_degraded"
         |"lane_chain_done"|"lane_chain_stopped"|"lane_chain_member_skipped"
-        |"lane_fire_refused"|"scheduler_tick_error",
+        |"lane_fire_refused"|"lane_fire_catchup"|"scheduler_tick_error",
  "routine": <slug>, "run_id": <id>, "detail": <str>}
+
+budget_exhausted vs run_partial: BOTH are a `partial` finish, and they used to be one
+event. budget_exhausted is the finish a BUDGET VIOLATION forced (the reserved finish turn
+was spent, or the engine ended the run itself); run_partial is a partial the model chose
+with budget to spare — the job needs another run, a source was down, an ask timed out.
+The distinction is the whole point of reading the stream: an instance where every routine
+"exhausts its budget" nightly reads as starved, when most of those were authored finishes.
+
+oversize_state_file: the run-end autocommit left a file OUT of the routine's own repo
+because it exceeds `engine/autocommit.OVERSIZE_BYTES` (detail names path and size). The
+file stays on disk and the run's work is untouched; what it never becomes is a git blob
+in a repo the instance mirrors and pushes — one 223 MB inventory once blocked every
+library push for days, and the mirror repo's history had to be rewritten to drop it.
+
+lane_fire_catchup: at daemon boot a SCHEDULED lane's most recent due fire had not been
+armed (the daemon was down, restarting or draining at that moment — a lane's fire table
+is process memory) and the lane's catchup policy is run_once, so ONE make-up chain was
+armed (routine = the lane id, run_id empty). Never a backlog: one fire, however many were
+missed, exactly like a routine's own `catchup: run_once`.
 
 cache_read_degraded: a finished run's prompt-cache READ SHARE fell below half — it
 re-wrote its prefix every turn (1.25x) instead of re-reading it (0.1x), a 12.5x

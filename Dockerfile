@@ -21,6 +21,13 @@ FROM python:3.12-slim-bookworm
 #     DOWN and every ASCII digraph reads as a transliteration, which is 159 false positives a
 #     run and a check its reader learns to ignore (R1009). ~10 MB, and the check states which
 #     lists it had in its own summary line, so the evidence it ran on is never implicit.
+#   php-cli   — the steward hub kit (library web/steward/: p.php, api.php, store.php, gate.php)
+#     is PHP, and its maintainer routine's local gate is `php -l` plus the built-in server
+#     (`php -S`) for a behaviour probe. Without an interpreter every one of its fixes stayed
+#     "locally unverifiable" and eight cluster items sat blocked for a week (R1404; operator
+#     decision 2026-09-11: provision a local PHP test environment, no production access).
+#     The CLI only — no Apache: the kit's .htaccess rewrites are the ONE thing this cannot
+#     probe, and the routine says so in its verification record.
 #   build-essential — a C toolchain for util dependency installs (F341, operator choice
 #     2026-08-26). A util declares its deps as PEP 723 inline metadata and uv builds them at
 #     call time; a package published only as an sdist (or one whose wheel misses this
@@ -28,7 +35,7 @@ FROM python:3.12-slim-bookworm
 #     with a build error no routine can act on. The full chain, not just gcc: a compiled dep
 #     that needs g++ or a Makefile is exactly the case a partial toolchain still fails.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        git curl ca-certificates gnupg sshfs build-essential \
+        git curl ca-certificates gnupg sshfs build-essential php-cli \
     # GitHub CLI apt repo
     && mkdir -p -m 755 /etc/apt/keyrings \
     && curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \

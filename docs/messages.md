@@ -16,7 +16,8 @@ no new store, no new writer):
 | **received** | ledger rows with a `delivered` stamp | hand-offs the recipient consumed | none |
 
 `answer-*` files (question answers) stay off this surface on purpose: they belong to the
-Decisions page's record, and rendering them as messages would fork that vocabulary.
+Decisions page's record, and rendering them as messages would fork that vocabulary. (They do
+wake a routine's report trigger like any inbox work — docs/triggers.md.)
 
 ## The write surface (the D74 decision record)
 

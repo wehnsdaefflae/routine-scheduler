@@ -333,7 +333,7 @@ async def test_report_deliveries_coalesce_within_cooldown(tmp_path):
     assert runner.fired == [("target", "trigger"), ("target", "trigger")]
 
 
-async def test_report_trigger_respects_disabled_active_and_answer_files(tmp_path):
+async def test_report_trigger_respects_disabled_active_and_closures(tmp_path):
     from rsched.paths import atomic_write_json
     from rsched.reports import file_report
 
@@ -350,12 +350,33 @@ async def test_report_trigger_respects_disabled_active_and_answer_files(tmp_path
     d_plain = _routine(server, slug="plain")
     file_report(server.routines_home, routine="s", run_id="s:3", title="t",
                 target="plain", target_dir=d_plain)
-    # an answer file alone never fires the trigger — it belongs to a question lifecycle
-    d_ans = _routine(server, slug="answered", trig=[dict(REPORT_TRIG)])
-    atomic_write_json(d_ans / "inbox" / "answer-q-1.json", {"qid": "q-1", "text": "yes"})
+    # a defer-to-next-run marker says exactly that; a closure asks nothing — neither wakes
+    d_defer = _routine(server, slug="deferred", trig=[dict(REPORT_TRIG)])
+    atomic_write_json(d_defer / "inbox" / "answer-q-1.json", {"qid": "q-1", "defer": True})
+    d_closed = _routine(server, slug="closed", trig=[dict(REPORT_TRIG)])
+    file_report(server.routines_home, routine="s", run_id="s:4", title="done",
+                target="closed", target_dir=d_closed, answers="R1", closes=True)
 
     runner = FakeRunner()
     runner.active["busy"] = "20260805-090000"
     mgr = TriggerManager(server, runner)
     await mgr.tick(registry.scan(server))
     assert runner.fired == []
+
+
+async def test_report_trigger_wakes_for_an_operator_answer(tmp_path):
+    """An answer file in the inbox of a FINISHED run is the operator's order to a deferred
+    question — "Do it", clicked hours after the run ended. It used to wait for the next
+    scheduled slot (a week, for a weekly routine); with a report trigger it fires within the
+    cooldown, like any other inbox work. A live run never reaches this path (the trigger fires
+    nothing for an active routine — the run drains its own answers at the turn boundary)."""
+    from rsched.paths import atomic_write_json
+
+    server = _server(tmp_path)
+    d = _routine(server, slug="asked", trig=[dict(REPORT_TRIG)])
+    atomic_write_json(d / "inbox" / "answer-q-20260805-090000-3.json",
+                      {"qid": "q-20260805-090000-3", "text": "Do it", "source": "web"})
+    runner = FakeRunner()
+    mgr = TriggerManager(server, runner)
+    await mgr.tick(registry.scan(server))
+    assert runner.fired == [("asked", "trigger")]

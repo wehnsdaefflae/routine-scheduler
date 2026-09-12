@@ -74,3 +74,24 @@ def test_append_outside_own_dir_preserves_existing_content(make_routine, tmp_pat
     assert obs["append"] is True
     assert obs["size"] == len((original + entry).encode("utf-8"))
     assert obs["size"] == len(original.encode("utf-8")) + obs["bytes"]
+
+
+def test_structured_append_is_one_compact_jsonl_line(make_routine, tmp_path):
+    """An APPENDED structured value is a record: one compact line, so a JSONL ledger stays
+    one-object-per-line. The pretty form landed a 13-line row in a changelog.jsonl once, and
+    every reader then counted it as 13 malformed rows. Overwrite keeps the readable form."""
+    import json
+
+    ctx = _ctx(make_routine, tmp_path)
+    row = {"ts": "2026-09-12T00:00:00+00:00", "items": ["F1", "D2"], "summary": "one"}
+    do_write_file({"kind": "write_file", "path": "audit/changelog.jsonl", "content": row,
+                   "append": True}, ctx)
+    do_write_file({"kind": "write_file", "path": "audit/changelog.jsonl", "content": row,
+                   "append": True}, ctx)
+    lines = (ctx.routine.dir / "audit" / "changelog.jsonl").read_text(
+        encoding="utf-8").splitlines()
+    assert len(lines) == 2 and all(json.loads(x) == row for x in lines)
+    do_write_file({"kind": "write_file", "path": "audit/report.json", "content": row}, ctx)
+    assert (ctx.routine.dir / "audit" / "report.json").read_text(
+        encoding="utf-8").count("\n") > 1          # a whole document stays pretty-printed
+

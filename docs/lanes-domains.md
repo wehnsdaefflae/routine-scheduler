@@ -16,6 +16,12 @@ A lane's chain fires each member ONCE, in order. A flow with an inbound and an o
 BRACKETS the lane — a dedicated inbound-router member placed first and a dedicated
 outbound-sender member placed last — rather than running one member twice.
 
+A scheduled lane also carries a **catch-up policy** (`catchup: run_once`, the default, or
+`skip`): a fire that came due while the daemon was not running to arm it is made up ONCE at the
+next boot — never a backlog — because a lane's fire table is process memory and its members'
+own crons are suppressed, so a lost lane fire has no other path (docs/architecture.md, "Lane
+catch-up").
+
 **The third axis crosses the second.** `tags` is one of a domain's `CONFIG_KEYS` and one of its
 list keys, so a domain UNIONS its tags onto every member: a routine's effective tags are its own
 plus its domain's. That is deliberate — a domain is a set of routines that belong together, so

@@ -41,21 +41,31 @@ log = logging.getLogger("rsched.triggers")
 def _inbox_wants_a_run(inbox: Path) -> bool:
     """True if the inbox holds a message worth WAKING for.
 
-    Answers (`answer-*`) never were: they resolve a question the routine already asked. A
-    CLOSURE (`closes` — the terminal acknowledgment of an exchange this routine started)
-    joins them: it asks nothing, and buying a full run of a recipe to read "no reply needed"
-    is exactly the amplification the cooldown cannot see. Both still ride in the inbox and
-    are read by the next run that happens anyway. Anything unreadable or unrecognised WAKES
-    (fail open — a message the daemon cannot classify must never be silently swallowed).
+    An ANSWER (`answer-*`) counts. It used to be exempt as "part of a question's own
+    lifecycle", which is true only while the asking run is alive — and a live run never
+    reaches this check (the trigger fires nothing for an active routine). An answer file
+    that sits in the inbox is one the operator wrote AFTER the run finished, to a deferred
+    question: it is the operator's order, and it was waiting for the routine's next
+    scheduled slot — a week, for a weekly routine, after "Do it" was clicked. A CLOSURE
+    (`closes` — the terminal acknowledgment of an exchange this routine started) stays
+    exempt: it asks nothing, and buying a full run of a recipe to read "no reply needed" is
+    exactly the amplification the cooldown cannot see. Anything unreadable or unrecognised
+    WAKES (fail open — a message the daemon cannot classify must never be silently
+    swallowed).
     """
     if not inbox.is_dir():
         return False
     for path in inbox.iterdir():
-        if not path.is_file() or path.name.startswith("answer-"):
+        if not path.is_file():
             continue
         msg = read_json(path)
-        if not isinstance(msg, dict) or not msg.get("closes"):
+        if not isinstance(msg, dict):
             return True
+        if msg.get("closes"):
+            continue
+        if path.name.startswith("answer-") and msg.get("defer") and "text" not in msg:
+            continue      # a defer-to-next-run marker says exactly that: do not wake
+        return True
     return False
 
 

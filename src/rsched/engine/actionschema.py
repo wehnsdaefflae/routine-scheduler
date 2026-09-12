@@ -256,7 +256,9 @@ ACTION_SCHEMA: dict = {
                                 "it is set. Empty string clears it (members fire on their own "
                                 "crons again); omit to leave unchanged"},
         "append": {"type": "boolean",
-                   "description": "write_file: append instead of overwrite (default false)"},
+                   "description": "write_file: append instead of overwrite (default false); a "
+                                  "structured `content` appends as ONE compact JSON line "
+                                  "(a JSONL record), never pretty-printed"},
         # memory_write (memory_read needs only `name`)
         "about": {"type": "string",
                   "description": "memory_write: one-line INDEX entry — what this note holds + "

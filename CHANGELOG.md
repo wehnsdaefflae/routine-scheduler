@@ -15,6 +15,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.329.0] — 2026-09-12
+
+The fleet audit of 2026-09-12: six ways a routine stayed blocked with nobody to unblock it,
+each closed at the mechanism that should have done so.
+
+### Fixed
+
+- **An operator's answer now wakes the routine that asked.** A report trigger exempted
+  `answer-*` files as "part of a question's own lifecycle", which is true only while the asking
+  run is alive — and a live run never reaches the trigger. An answer that sits in the inbox is
+  one the operator wrote AFTER the run finished, to a deferred question; it waited for the next
+  scheduled slot, which for a weekly routine was a week after "Do it" was clicked (four such
+  answers were waiting on one routine when this was found). Closures and defer markers still
+  never wake.
+- **Every routine is created WITH a report trigger** (`workflows.scaffold`). The trigger had
+  been opt-in for a month and not one of 33 live routines had it, so every addressed report and
+  every answer waited for a schedule while the triage stream read as clean. The Triggers card
+  removes it for a routine that should only ever run on its clock.
+- **Scheduled lanes catch up.** The lane fire table is process memory, recomputed as the next
+  FUTURE fire at boot, so a fire due while the daemon was down, restarting or draining was lost
+  — and D71 suppresses every member's own cron, so nothing else fired those routines: a Tue/Thu
+  lane lost both of one week's fires, the only trace two operator messages unread in a member's
+  inbox. Every `lane_runs.arm` now stamps `.control/lane-fires.json` (`rsched/lane_fires.py`),
+  and boot arms ONE make-up chain per lane whose last due fire is newer than its watermark
+  (`daemon/lane_catchup.py`, health event `lane_fire_catchup`, `armed_by=catchup`). New lane
+  field `catchup` (`run_once` default, `skip`), on the lane editor and `PATCH /api/lanes/<id>`.
+- **A switched-off lane member is no longer counted "not-ok"** in the chain's heartbeat event.
+  A disabled member is a deliberate skip; the daily `1 not-ok (aisafety-grant-steward)` on the
+  Professional lane was a routine that was simply off.
+- **`budget_exhausted` means budget-forced.** Every `partial` finish was filed under that
+  name, authored or not, so the health stream read as a starved fleet while most of those were
+  finishes the model chose with budget to spare. A partial the model chose is `run_partial`;
+  only a finish after a budget violation (the reserved turn, or the engine's own end) is
+  `budget_exhausted`.
+- **The run-end autocommit skips any file at or over 20 MB** and files an `oversize_state_file`
+  health event naming it (`engine/autocommit.OVERSIZE_BYTES`; `libgit.commit` grows an
+  `exclude` pathspec). A run wrote a 223 MB NAS inventory to `state/`, the autocommit made it a
+  blob, the library mirror carried the blob, and GitHub refused every push for days — with the
+  mirror's next twenty commits (util revisions) stranded behind it. The file itself is untouched.
+- **A structured value APPENDED with `write_file` is one compact JSON line.** The pretty form
+  landed a 13-line row in a JSONL changelog, which every reader then counted as 13 malformed
+  rows. Overwrites keep the readable form.
+- **A script's jail admits the private stores of the utils it declares** (F465/R1354,
+  `scripts.callee_fs_paths`): `sandbox.wrap` subtracts every util's private store from the
+  wholesale roots mount, a util called directly re-admits its own through `fs_paths`, and a
+  script execing the same util through `gu` passed none — so a messenger session directory was
+  exactly the path missing from its jail.
+- **php-cli in the engine image** (Dockerfile): the steward hub kit is PHP and its maintainer
+  routine's local gate is `php -l`; without an interpreter eight of its cluster items sat
+  blocked for a week (R1404; operator decision 2026-09-11). Apache is deliberately not included
+  — the kit's `.htaccess` rewrites stay the one thing a local check cannot prove.
+
 ## [0.328.0] — 2026-09-12
 
 ### Changed

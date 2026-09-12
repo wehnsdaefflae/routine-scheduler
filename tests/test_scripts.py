@@ -8,6 +8,8 @@ also what puts `gu` on PATH: declare none and no library handle reaches the chil
 from __future__ import annotations
 
 import json
+import sys
+from pathlib import Path
 
 import yaml
 
@@ -349,3 +351,47 @@ def test_script_action_end_to_end(make_routine, scripted, monkeypatch):
     assert env_secrets.get("PROC_TOKEN") == "g-1"           # declared + granted → in
     assert "OPT_TOKEN" not in env_secrets                   # declared + denied → absent
     assert "GRANTED_UNDECLARED" not in env_secrets          # granted but UNDECLARED → absent
+
+
+STORE_UTIL = '''"""mailer — a util with a PRIVATE STORE, for the scripts tests.
+
+usage: gu mailer
+tags: test
+calls: (none)
+secrets: (none)
+net: none
+fs: roots, rw $MAIL_STORE
+"""
+print("mailer")
+'''
+
+
+def test_script_inherits_its_callees_private_stores(tmp_path, monkeypatch):
+    """F465/R1354: a script's jail is the run's roots wholesale, and `sandbox.wrap` subtracts
+    EVERY util's private store from that mount. A util called directly gets its own store
+    re-admitted through its `fs_paths` term; a script calling the same util through `gu`
+    passed none — so the messenger session directory its `gu whatsapp` needed was exactly
+    the path missing from the jail. The callees' stores now ride the script's wrap call."""
+    home = _lib(tmp_path)
+    d = home / "utils" / "mailer"
+    d.mkdir(parents=True)
+    (d / "main.py").write_text(STORE_UTIL, encoding="utf-8")
+    rd = _routine(tmp_path)
+    (rd / "scripts" / "caller.py").write_text(CALLER, encoding="utf-8")
+    assert scripts.callee_fs_paths(rd, "caller", home) == (("rw", "$MAIL_STORE"),)
+    assert scripts.callee_fs_paths(rd, "probe", home) == ()      # declares no calls
+
+    seen: list[dict] = []
+    real_wrap = sandbox.wrap
+
+    def capture(cmd, **kw):
+        seen.append(kw)
+        return real_wrap(cmd, **kw)
+
+    monkeypatch.setattr(sandbox, "wrap", capture)
+    monkeypatch.setattr(scripts, "venv_python", lambda _d: Path(sys.executable))
+    policy = sandbox.SandboxPolicy(mode="off", read_roots=(), write_roots=(), own_dir=rd)
+    scripts.run_script(rd, "caller", [], policy=policy, libraries_home=home, timeout=30)
+    assert seen and seen[-1]["fs_paths"] == (("rw", "$MAIL_STORE"),)
+    assert seen[-1]["fs_roots"] is True                          # the wholesale mount stays
+

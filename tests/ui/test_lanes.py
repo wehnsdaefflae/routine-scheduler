@@ -523,3 +523,22 @@ def test_expanded_lane_rows_drag_to_reorder(ui, ui_page, make_routine):
         time.sleep(0.15)
     assert members() == ["gm2", "gm1"], \
         f"drag did not reorder the lane: {members()}"
+
+
+def test_routines_page_lane_editor_catchup_policy(ui, ui_page):
+    """The lane editor carries the boot catch-up policy: born run_once (a missed fire is made
+    up once at the next boot), switchable to skip; the choice persists to the store."""
+    rec = lanes.create(ui.routines, name="Sched", members=[{"slug": "uir"}],
+                       cron="0 7 * * *", tz="UTC")
+    ui_page.goto(f"{ui.url}/#/routines")
+    row = ui_page.locator(f'tr[data-lane-row="{rec["id"]}"]')
+    row.wait_for(timeout=10_000)
+    row.locator("[data-lane-edit]").click()
+    ui_page.locator(f'[data-lane="{rec["id"]}"]').wait_for(timeout=10_000)
+    sel = ui_page.locator("[data-lane-catchup]")
+    expect(sel).to_have_value("run_once")
+    sel.select_option("skip")
+    ui_page.wait_for_timeout(300)   # give the PATCH a beat, as the pause test does
+    assert lanes.get(ui.routines, rec["id"])["catchup"] == "skip"
+    expect(ui_page.locator("[data-lane-catchup]")).to_have_value("skip")   # re-rendered
+

@@ -102,7 +102,12 @@ class LaneRunManager:
         rec["status"] = status
         rec["ended"] = now_iso()
         entries = rec.get("log") or []
-        not_ok = [str(e.get("slug")) for e in entries if e.get("outcome") != "ok"]
+        # A member the user switched off (or that retired on its final goal) is logged
+        # `outcome: "skipped"` — a deliberate non-fire, not a failure. Counting it as not-ok
+        # put "1 not-ok (aisafety-grant-steward)" on a lane's heartbeat every single day for
+        # a routine that was simply disabled, which is the one reading an audit must not get.
+        not_ok = [str(e.get("slug")) for e in entries
+                  if e.get("outcome") not in ("ok", "skipped")]
         log_health_event(
             self.home, f"lane_chain_{status}", routine=lane_id,
             run_id=str(rec.get("id") or ""),

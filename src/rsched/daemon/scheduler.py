@@ -158,6 +158,11 @@ class Scheduler:
             if missed is not None:
                 log.info("catchup routine=%s missed_fire=%s → one make-up run", slug, missed)
                 await self.runner.fire(info.cfg, reason="catchup")
+        # Scheduled LANES: the fire table above is process memory, so a fire that came due
+        # while the daemon was down is made up here, once (daemon/lane_catchup.py). The
+        # LaneRunManager tick fires member 0 of any chain this arms.
+        from .lane_catchup import boot_catchup as lane_boot_catchup
+        lane_boot_catchup(self.server, _now())
 
     async def run_forever(self) -> None:
         self.rescan()

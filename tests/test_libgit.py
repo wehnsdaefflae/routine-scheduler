@@ -57,6 +57,17 @@ def test_commit_unscoped_stages_everything(tmp_path):
     assert set(_head_files(tmp_path)) == {"one.txt", "two.txt"}
 
 
+def test_commit_exclude_leaves_a_path_unstaged(tmp_path):
+    """`exclude` keeps a path out of the stage — untracked stays untracked, a tracked one
+    keeps its committed version — through git's own :(exclude) pathspec, scoped or not."""
+    _init_repo(tmp_path)
+    (tmp_path / "keep.txt").write_text("k", encoding="utf-8")
+    (tmp_path / "big.bin").write_text("b" * 10, encoding="utf-8")
+    assert libgit.commit(tmp_path, "first", exclude=["big.bin"]) is True
+    assert _head_files(tmp_path) == ["keep.txt"]
+    assert "big.bin" in _git(tmp_path, "status", "--porcelain")   # still untracked
+
+
 def test_commit_nothing_to_commit_returns_false(tmp_path):
     utils_lib.ensure_library(tmp_path)
     assert libgit.commit(tmp_path, "empty", paths=["utils/nope"]) is False

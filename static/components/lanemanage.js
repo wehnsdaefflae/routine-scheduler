@@ -240,6 +240,18 @@ export function openLaneEditor(lane, data, { reload }) {
       el("span", { class: "muted small" },
         `inherit = the instance default (${data.default_on_failure})`)));
 
+    // Boot catch-up: a due fire the daemon was down for (a restart at the wrong second, a
+    // recreate, a host reboot) is made up ONCE at the next boot — or let go.
+    const cuSel = el("select", { "data-lane-catchup": "" },
+      ...["run_once", "skip"].map((v) =>
+        el("option", { value: v, ...(l.catchup === v ? { selected: "" } : {}) },
+          v === "run_once" ? "make up a missed fire once" : "let a missed fire go")));
+    cuSel.onchange = () => patch({ catchup: cuSel.value });
+    body.append(el("div", { class: "row mt", style: "gap:8px;align-items:center" },
+      el("span", { class: "small" }, "if the daemon was down at fire time:"), cuSel,
+      el("span", { class: "muted small" },
+        "one make-up chain at boot, never a backlog — only while the lane has a schedule")));
+
     // D71: the lane schedule — fires the chain on this cadence; member crons suppressed.
     const sched = scheduleEditor(l.schedule_friendly || { frequency: "manual" }, data.server_tz);
     const schedBtn = el("button", { class: "btn small", "data-lane-schedule-save": "" },

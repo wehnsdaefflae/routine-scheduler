@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from .. import libgit
+from .. import libgit, triggers
 from ..config import (
     DEFAULT_BUDGETS,
     DEFAULT_DELIBERATION,
@@ -187,6 +187,10 @@ def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,  #
         "enabled": enabled,
         **({"tags": list(tags)} if tags else {}),
         "schedule": {"cron": cron, "tz": tz, "catchup": "skip"},
+        # Born woken by its inbox: a report addressed to this routine, or the operator's
+        # answer to a question it deferred, fires it within the cooldown instead of waiting
+        # for its next scheduled slot (docs/triggers.md). The Triggers card removes it.
+        "triggers": [triggers.new_report_trigger()],
         "workflow": {"library_slug": workflow_slug, "library_commit": commit},
         **({"models": models} if models else {}),
         **({"connections": connections} if connections else {}),

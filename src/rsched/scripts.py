@@ -137,6 +137,30 @@ def needs(routine_dir: Path, name: str,
     return declared, net, declared - required
 
 
+def callee_fs_paths(routine_dir: Path, name: str,
+                    libraries_home: Path) -> tuple[tuple[str, str], ...]:
+    """The PRIVATE STORES the utils on this script's `calls:` line declare (`fs: … rw $X`),
+    resolved over each callee's own call tree — the third thing a script inherits from its
+    callees, beside their secrets and their network (`needs`). A script's jail is the run's
+    granted roots wholesale (`fs_roots=True`, by design: recipe and script read and write the
+    SAME files), and `sandbox.wrap` subtracts EVERY library util's private store from that
+    wholesale mount so a store granted for one util is not handed to all of them. A util
+    invoked directly gets its own store back through its `fs_paths` term; a script that
+    execs the same util through `gu` passed none, so the store was subtracted and never
+    re-admitted — the messenger session directory a script's `gu whatsapp` needed was
+    exactly the path missing from its jail (R1354/F465). Returned in the shape `wrap` takes.
+    """
+    header = _header(routine_dir, name)
+    if header is None:
+        return ()
+    out: list[tuple[str, str]] = []
+    for callee in header["calls"]:
+        for pair in utils_run.util_needs(libraries_home, callee).fs_paths:
+            if pair not in out:
+                out.append(pair)
+    return tuple(out)
+
+
 def call_problems(routine_dir: Path, name: str, libraries_home: Path) -> list[str]:
     """The two ways a script's util access is declared wrong, both leaving it to run
     WITHOUT the access it needs: it execs `gu <util>` the `calls:` line never names (so
@@ -238,7 +262,8 @@ def ensure_env(routine_dir: Path, name: str, *,
     for step in steps:
         try:
             cmd = sandbox.wrap(step, policy=policy, libraries_home=libraries_home,
-                               fs_roots=True, fs_paths=(),
+                               fs_roots=True,
+                               fs_paths=callee_fs_paths(routine_dir, name, libraries_home),
                                net=True)
             r = subprocess.run(cmd, capture_output=True, text=True,
                                timeout=_INSTALL_TIMEOUT_S, stdin=subprocess.DEVNULL,
@@ -296,7 +321,8 @@ def run_script(routine_dir: Path, name: str, args: list[str], *,
         cmd = sandbox.wrap(
             [str(venv_python(routine_dir)), str(script_path(routine_dir, name)),
              *[str(a) for a in args]], policy=policy, libraries_home=libraries_home,
-            net=net, fs_roots=True, fs_paths=())
+            net=net, fs_roots=True,
+            fs_paths=callee_fs_paths(routine_dir, name, libraries_home))
     except sandbox.SandboxRefusal as exc:
         return 2, "", str(exc)
     try:

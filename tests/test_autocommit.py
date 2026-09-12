@@ -44,3 +44,38 @@ def test_autocommit_noops_without_a_git_dir(tmp_path):
     (d / "note.txt").write_text("x", encoding="utf-8")
     autocommit(d, "should not create a repo")
     assert not (d / ".git").exists()
+
+
+def test_oversize_file_is_left_out_of_the_commit_and_reported(make_routine, tmp_path,
+                                                              monkeypatch):
+    """A file over the ceiling never becomes a blob in the routine's repo — the repo is
+    mirrored into the library and pushed, and one 223 MB inventory once blocked every
+    push for days. The file stays on disk; a health event names it; the rest commits."""
+    import json
+
+    from rsched.engine import autocommit as ac
+    d = make_routine(slug="bigstate")
+    assert _git(d, "init", "-q").returncode == 0
+    monkeypatch.setattr(ac, "OVERSIZE_BYTES", 64)
+    (d / "state").mkdir(exist_ok=True)
+    (d / "state" / "small.json").write_text("{}", encoding="utf-8")
+    (d / "state" / "inventory.jsonl").write_text("x" * 200, encoding="utf-8")
+    home = d.parent
+    autocommit(d, "run end", routines_home=home, run_id="bigstate:20260912-000000")
+    committed = _git(d, "show", "--name-only", "--format=", "HEAD").stdout
+    assert "state/small.json" in committed
+    assert "inventory.jsonl" not in committed
+    assert (d / "state" / "inventory.jsonl").read_text(encoding="utf-8") == "x" * 200
+    rows = [json.loads(x) for x in
+            (home / ".control" / "health-events.jsonl").read_text(encoding="utf-8").splitlines()]
+    assert {r["event"] for r in rows} == {"oversize_state_file"}   # the fixture's own files too
+    assert all(r["routine"] == "bigstate" for r in rows)
+    assert any("state/inventory.jsonl" in r["detail"] for r in rows)
+    assert not any("small.json" in r["detail"] for r in rows)
+    # ignored trees are never scanned: git's own view of the stage decides what counts
+    (d / ".gitignore").write_text("mnt/\n", encoding="utf-8")
+    (d / "mnt").mkdir()
+    (d / "mnt" / "huge.bin").write_text("y" * 500, encoding="utf-8")
+    big_now = [rel for rel, _ in ac.oversize_files(d)]
+    assert "state/inventory.jsonl" in big_now and "mnt/huge.bin" not in big_now
+

@@ -349,7 +349,15 @@ class EngineLoop:
         ctx.transcript.event("finish", finish_payload,
                              usage_total=ctx.usage_total(), turns=ctx.turn)
         if status in ("partial", "failed", "aborted") and ctx.depth == 0:
-            event_type = "budget_exhausted" if status == "partial" else "run_failed"
+            # A `partial` is budget_exhausted ONLY when a budget violation forced it (the
+            # reserved finish turn was spent, or the engine ended it). A partial the model
+            # chose on its own — the job needs another run, an ask timed out, a source was
+            # down — is run_partial: every routine in the fleet was reading as "out of
+            # budget" while 2 of 3 such finishes were authored with budget to spare.
+            if status != "partial":
+                event_type = "run_failed"
+            else:
+                event_type = "budget_exhausted" if self._finish_reserved else "run_partial"
             log_health_event(ctx.server.routines_home, event_type,
                              routine=ctx.routine.slug, run_id=ctx.run_id,
                              detail=summary[:500])
@@ -357,7 +365,8 @@ class EngineLoop:
         if ctx.depth == 0:
             from ..paths import atomic_write
             atomic_write(ctx.run_dir / "result.md", summary + "\n")
-            _autocommit(ctx.routine.dir, f"{ctx.run_id}: {status}")  # routines never run git
+            _autocommit(ctx.routine.dir, f"{ctx.run_id}: {status}",   # routines never run git
+                        routines_home=ctx.server.routines_home, run_id=ctx.run_id)
             state = {"ok": "finished", "partial": "finished", "failed": "failed",
                      "aborted": "aborted"}.get(status, "finished")
             ctx.outcome = status   # `state` folds partial into finished — this keeps it visible

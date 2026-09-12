@@ -2236,6 +2236,23 @@ def test_health_event_on_budget_exhaustion(make_routine, scripted, tmp_path):
     assert "budget" in entry["detail"].lower()
 
 
+def test_authored_partial_is_run_partial_not_budget_exhausted(make_routine, scripted, tmp_path):
+    """A `partial` the model CHOSE with budget to spare is run_partial: the job needs another
+    run, a source was down. Only a budget-forced finish is budget_exhausted — the stream used
+    to file both under that name, and a fleet where every routine "exhausts its budget"
+    nightly reads as starved when most of those were authored finishes."""
+    d = make_routine(slug="healthpart")
+    s = _server(d)
+    s.routines_home = tmp_path / "routines"
+    scripted([write_file("state/p.txt", say="One step."),
+              finish(status="partial", summary="source down; next run retries")])
+    status, _run_dir = run_routine(d, s, run_ts=TS)
+    assert status == "partial"
+    health_path = tmp_path / "routines" / ".control" / "health-events.jsonl"
+    lines = health_path.read_text(encoding="utf-8").strip().split("\n")
+    assert [json.loads(x)["event"] for x in lines] == ["run_partial"]
+
+
 def test_health_event_on_run_failure(make_routine, scripted, tmp_path):
     """A failed run (schema force-fail) writes a run_failed event to health-events.jsonl."""
     d = make_routine(slug="healthfail")

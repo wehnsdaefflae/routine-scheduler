@@ -439,3 +439,36 @@ def test_api_lane_pause_toggle(api_client):
     r = client.patch(f"/api/lanes/{lane_id}", json={"paused": False})
     assert r.status_code == 200
     assert r.json()["lane"]["paused"] is False
+
+
+def test_store_catchup_roundtrip(tmp_path):
+    """The boot catch-up policy: born run_once (a lane IS the fleet's schedule, and a lost
+    fire has no other path), patchable to skip, validated, normalized on load."""
+    import pytest
+    home = tmp_path
+    rec = lanes.create(home, name="G", cron="0 7 * * *", tz="UTC")
+    assert rec["catchup"] == "run_once"
+    lanes.update(home, rec["id"], catchup="skip")
+    assert lanes.get(home, rec["id"])["catchup"] == "skip"
+    lanes.update(home, rec["id"], name="G2")            # untouched fields stay put
+    assert lanes.get(home, rec["id"])["catchup"] == "skip"
+    with pytest.raises(ValueError, match="catchup"):
+        lanes.update(home, rec["id"], catchup="always")
+    from rsched.paths import atomic_write_json
+    atomic_write_json(lanes.lanes_file(home),
+                      {"lanes": [{"id": "lane-x", "name": "G", "catchup": "bogus"}]})
+    assert lanes.load(home)["lanes"][0]["catchup"] == "run_once"   # a corrupt value → default
+
+
+def test_api_lane_catchup_patch(api_client):
+    client, tmp_path = api_client
+    _mk(tmp_path, "alpha")
+    lane_id = client.post("/api/lanes",
+                          json={"name": "C",
+                                "members": [{"slug": "alpha"}]}).json()["lane"]["id"]
+    r = client.patch(f"/api/lanes/{lane_id}", json={"catchup": "skip"})
+    assert r.status_code == 200, r.text
+    assert r.json()["lane"]["catchup"] == "skip"
+    assert client.get("/api/lanes").json()["lanes"][0]["catchup"] == "skip"
+    assert client.patch(f"/api/lanes/{lane_id}", json={"catchup": "twice"}).status_code == 400
+

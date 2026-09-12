@@ -409,7 +409,10 @@ and the capabilities digest's catalog listing):
   the routine's workdir — `<routine>/.venv`, created on first use, the script's PEP 723
   deps installed into it (net-open build step, R40's prewarm rationale), gitignored against
   the `git add -A` autocommit. The jail is the run's fs roots (recipe and script read and
-  write the SAME files); the env carries ONLY the granted secrets the script's header
+  write the SAME files) PLUS the private stores its declared utils claim on their `fs:`
+  lines (`scripts.callee_fs_paths`, 0.329.0 — `sandbox.wrap` subtracts every util's private
+  store from the wholesale mount, and a script execing `gu whatsapp` got the session
+  directory subtracted and never re-admitted, F465); the env carries ONLY the granted secrets the script's header
   `secrets:` line declares, plus whatever its declared utils declare (`NAME?` = optional,
   withheld when not granted; a declared, present, still-undecided secret files the util
   call's blocking exposure ask, over the transitive set). Authored by
@@ -428,6 +431,11 @@ and the capabilities digest's catalog listing):
   output cheaper on disk than it ever was in context. Engine-owned and read-only for the run (like
   `runs/`), gitignored on first use (the run-end autocommit is `git add -A` and util output can carry
   tokens), never search-indexed, pruned to the last `KEEP_RUNS` runs.
+  The run-end autocommit (`engine/autocommit.py`) also leaves out any file at or over
+  `OVERSIZE_BYTES` (20 MB) and files an `oversize_state_file` health event per file: the routine
+  repo is mirrored into the library and PUSHED, and one 223 MB inventory a run wrote to `state/`
+  blocked every library push for days (the mirror's history had to be rewritten to drop it). The
+  file itself is untouched — only the commit skips it.
 - `state/`, `LEDGER.md`, `inbox/` (daemon/web drop messages + answers here), `questions/pending/`
   (the ONE decision-record shape: {mode, type, default, expires, request?} — asks, util approvals
   and access requests alike; `routine.yaml` additionally carries the `grants:` decision rows:
@@ -991,8 +999,18 @@ whose TEXT must change on a live instance is converted by a one-shot migration i
     (R313 — `/api/lanes` ships each lane's `schedule_desc` for it). Clearing the lane's
     schedule (or leaving the lane) restores the member's own cron at the next rescan.
     A lane fire due while its chain is still in flight is REFUSED (`lane_fire_refused`, the chain
-    analog of `overrun_skipped`); there is no lane catch-up. Manual "Run now" on a member is
-    unaffected.
+    analog of `overrun_skipped`). Manual "Run now" on a member is unaffected.
+    **Lane catch-up (0.329.0).** The fire table is process memory, so a fire that came due while
+    the daemon was down, restarting or draining was lost outright — and with every member cron
+    suppressed, nothing else fired those routines (a Tue/Thu lane lost both of one week's fires
+    that way, unnoticed). Every `lane_runs.arm` now stamps a per-lane watermark
+    (`rsched/lane_fires.py`, `.control/lane-fires.json`, daemon-owned derived state), and boot
+    (`daemon/lane_catchup.py`, beside the routine `boot_catchup`) arms ONE make-up chain
+    (`armed_by=catchup`, health event `lane_fire_catchup`) for each scheduled lane whose last due
+    fire is newer than its watermark — one, never a backlog, the same bound as a routine's
+    `catchup: run_once`. The policy is the lane's `catchup` field (`run_once` by default, `skip`
+    to let a missed fire go; the lane editor and `PATCH /api/lanes/<id>` set it). A lane with no
+    watermark yet is stamped and left alone, so the first boot after the upgrade fires nothing.
     The dashboard's week strip renders the same rule: `/api/schedule/week` withholds a
     suppressed member's cron fires (drawing them would show runs the daemon never fires) and
     ships the lane's own fire times instead; the strip draws a scheduled lane as ONE labelled

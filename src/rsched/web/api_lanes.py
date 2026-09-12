@@ -93,6 +93,9 @@ class LanePatch(BaseModel):
     # stay lane-managed, so NOTHING in the lane fires on a schedule); an explicit
     # "Run now" still works. None = leave unchanged.
     paused: bool | None = None
+    # Boot catch-up policy (lanes.CATCHUP): run_once makes up the most recent due fire the
+    # daemon was not running to arm, ONCE, at its next boot; skip lets it go. None = unchanged.
+    catchup: str | None = None
 
 
 def _schedule_to_cron(spec: dict | None) -> tuple[str, str] | None:
@@ -189,7 +192,7 @@ def update_lane(request: Request, lane_id: str, body: LanePatch) -> dict:
                            members=members, on_failure=on_failure,
                            cron=sched[0] if sched else None,
                            tz=sched[1] if sched else None,
-                           paused=body.paused)
+                           paused=body.paused, catchup=body.catchup)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     if rec is None:

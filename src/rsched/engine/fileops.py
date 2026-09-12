@@ -170,8 +170,12 @@ def do_write_file(action: dict, ctx: RunContext) -> dict:
         data = action["content"]
         if not isinstance(data, str):
             # Structured content arrives as a live JSON value — models need not escape
-            # file bodies into strings; we serialize.
-            data = json.dumps(data, indent=2, ensure_ascii=False) + "\n"
+            # file bodies into strings; we serialize. An APPENDED value is a RECORD, not a
+            # document: one compact line, so a JSONL ledger stays one-object-per-line. The
+            # pretty form landed a 13-line row in self-audit's changelog.jsonl, which every
+            # reader of that file then counted as 13 malformed rows.
+            data = (json.dumps(data, ensure_ascii=False) if action.get("append")
+                    else json.dumps(data, indent=2, ensure_ascii=False)) + "\n"
         if action.get("append"):
             with path.open("a", encoding="utf-8") as fh:
                 fh.write(data)

@@ -57,6 +57,8 @@ Shape (single document, atomic-written):
                 "tz": "Europe/Berlin",       # written beside cron by the web layer
                 "paused": false,             # true = the cron never auto-arms (whole-lane
                                              # pause; an explicit Run now still fires)
+                "catchup": "run_once",       # a due fire the daemon was not up to arm is
+                                             # made up ONCE at boot ("skip" = it is lost)
                 "created": "2026-07-31T…"}]}
 
 This module owns the shared vocabulary and the file IO. It validates SHAPE only (types, dedup,
@@ -113,10 +115,22 @@ def load(routines_home: Path) -> dict:
     return {"default_on_failure": default, "lanes": lanes}
 
 
+#: Boot catch-up policy for a SCHEDULED lane (daemon/lane_catchup.py) — the lane analog of a
+#: routine's `schedule.catchup`, with the opposite default. A routine defaults to skip because
+#: its cron is one of many; a lane IS the fleet's schedule now (D71 suppresses every member
+#: cron), its fire table lives in daemon memory, and a restart at the wrong second silently
+#: lost a week of fires for a Tue/Thu lane before anything noticed. One make-up, never a backlog.
+CATCHUP = ("run_once", "skip")
+DEFAULT_CATCHUP = "run_once"
+
+
 def _normalize(rec: dict) -> dict:
     on_failure = rec.get("on_failure")
     if on_failure not in ON_FAILURE:
         on_failure = None
+    catchup = rec.get("catchup")
+    if catchup not in CATCHUP:
+        catchup = DEFAULT_CATCHUP
     cron = str(rec.get("cron") or "").strip()
     if cron and not croniter.is_valid(cron):
         cron = ""                       # a corrupt row degrades to unscheduled, never raises
@@ -128,6 +142,7 @@ def _normalize(rec: dict) -> dict:
         "cron": cron,
         "tz": str(rec.get("tz") or ""),
         "paused": bool(rec.get("paused")),
+        "catchup": catchup,
         "created": str(rec.get("created") or ""),
     }
 
@@ -248,6 +263,7 @@ def create(routines_home: Path, *, name: str, members: list[dict] | None = None,
         "cron": _check_cron(cron),
         "tz": str(tz or ""),
         "paused": False,
+        "catchup": DEFAULT_CATCHUP,
         "created": now_iso(),
     }
     data = load(routines_home)
@@ -261,7 +277,7 @@ def create(routines_home: Path, *, name: str, members: list[dict] | None = None,
 def update(routines_home: Path, lane_id: str, *, name: str | None = None,
            members: list[dict] | None = None, on_failure: object = _UNSET,
            cron: str | None = None, tz: str | None = None,
-           paused: bool | None = None) -> dict | None:
+           paused: bool | None = None, catchup: str | None = None) -> dict | None:
     """Patch a lane in place (only the fields passed are touched). `members` replaces the
     whole record list ({"slug"} each). `on_failure` is a tri-state: omit it to
     leave unchanged, pass None to inherit the default, pass a value in ON_FAILURE to
@@ -298,6 +314,10 @@ def update(routines_home: Path, lane_id: str, *, name: str | None = None,
             lane["tz"] = str(tz)
         if paused is not None:
             lane["paused"] = bool(paused)
+        if catchup is not None:
+            if catchup not in CATCHUP:
+                raise ValueError(f"catchup must be one of {CATCHUP}, got {catchup!r}")
+            lane["catchup"] = catchup
         _save(routines_home, data)
         return lane
     return None

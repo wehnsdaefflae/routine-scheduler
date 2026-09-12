@@ -78,15 +78,22 @@ the payload.
 
 ## The report trigger
 
-An addressed report (`report` with `target`) is delivered into the target's `inbox/` and —
-by default — read on the target's NEXT SCHEDULED RUN: delivery never starts a run
-(docs/items.md). A **report trigger** is the target's own opt-in to be woken instead: when
-an unconsumed report/message file sits in the routine's inbox, the daemon fires ONE run
-(reason `trigger`), and everything that lands within `cooldown_s` (default **900 s** —
-generous on purpose, delivery bursts coalesce) is drained by that same run. The
+An addressed report (`report` with `target`) is delivered into the target's `inbox/`;
+delivery itself never starts a run (docs/items.md). A **report trigger** is what wakes the
+target: when an unconsumed report/message file sits in the routine's inbox, the daemon
+fires ONE run (reason `trigger`), and everything that lands within `cooldown_s` (default
+**900 s** — generous on purpose, delivery bursts coalesce) is drained by that same run. The
 DELIVERING side still starts nothing and needs no capability — waking is entirely the
 receiving routine's configuration, so the "nothing seizes another routine's schedule"
 rule stands.
+
+**Every routine is born with one** (0.329.0): `workflows.scaffold` writes a report trigger
+into a new routine's `triggers:`, and the Triggers card is where it is removed — a routine
+without one reads its inbox only on its next scheduled run. That default was the other way
+round for a month, and the result was measurable: not one of 33 live routines had switched
+the trigger on, so a report to a Mon/Wed/Fri routine waited up to three days and an
+operator's "Do it" to a weekly routine's question waited a week, while the triage stream
+read as clean.
 
 Mechanics differ from the webhook only in where the event lives: there is no spool entry —
 the durable inbox message file IS the event, the daemon's watch is a cheap per-tick check
@@ -95,9 +102,13 @@ fired run's own boot drain empties the inbox; a crash before the drain just mean
 fire after the cooldown). The usual guards apply unchanged: never while the routine has an
 active/queued run, never while the daemon drains for a restart, never for a disabled
 routine, and at most one fire per cooldown window. One report trigger per routine (one
-inbox, one watcher); create it on the Triggers card — no URL, nothing external can reach
-it. Answer files (`answer-*.json`) never fire it — they belong to a question's own
-lifecycle.
+inbox, one watcher); no URL, nothing external can reach it. An **answer file**
+(`answer-*.json`) fires it like any report: an answer that sits in the inbox is one the
+operator wrote AFTER the asking run finished, to a question it deferred — the operator's
+order, and until 0.329.0 it waited for the routine's next scheduled slot. (A live run never
+reaches this path: the trigger fires nothing for an active routine, and a running run drains
+its own answers at the turn boundary.) A defer-to-next-run marker does not wake — it says
+exactly that.
 
 ## Firing semantics: coalescing and cooldown
 
@@ -135,8 +146,7 @@ These are the trigger analog of the schedule's catchup/overrun rules:
   beside the cooldown.
 - **Closures never wake.** A report filed with `closes: true` is the terminal
   acknowledgment of an exchange: it asks nothing, so it is delivered to the target's inbox
-  but does NOT fire its report trigger (the same exemption `answer-*` files have). It is
-  read by the next run that happens anyway. Without this, every "done, no reply needed"
+  but does NOT fire its report trigger. It is read by the next run that happens anyway. Without this, every "done, no reply needed"
   would buy the recipient a full run of its recipe — the amplification a cooldown cannot
   see, since each closure is a genuinely new message.
 - **Durability.** An accepted event survives restarts: it is either in the spool (fired at

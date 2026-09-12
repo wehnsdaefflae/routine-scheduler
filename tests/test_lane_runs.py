@@ -293,6 +293,31 @@ async def test_chain_end_emits_a_done_health_event(tmp_path):
     assert "armed_by=ui" in ev["detail"]
 
 
+async def test_a_switched_off_member_is_not_counted_not_ok(tmp_path):
+    """A member the user disabled is a deliberate skip (`outcome: "skipped"`), never a
+    failure: the lane's heartbeat must not read "1 not-ok (x)" every day for a routine that
+    is simply off — that is the line an audit reads first, and it was wrong daily."""
+    from rsched.daemon.lane_runs import LaneRunManager
+    server = _server(tmp_path)
+    da = _routine(server, "a")
+    _routine(server, "off", enabled=False)
+    lane = lanes.create(server.routines_home, name="Daily", members=[m("a"), m("off")],
+                        on_failure="continue")
+    lane_runs.arm(server.routines_home, lane, default_on_failure="continue")
+    runner = FakeRunner()
+    mgr = LaneRunManager(server, runner)
+    catalog = registry.scan(server)
+    await mgr.tick(catalog)                                     # fires a
+    mk_run(da, "20260717-120000", "finished", outcome="ok")
+    runner.active.clear()
+    await mgr.tick(catalog)                                     # collects a
+    await mgr.tick(catalog)                                     # skips off (cursor past the end)
+    await mgr.tick(catalog)                                     # → chain done
+    evs = [e for e in _health_events(server) if e["event"] == "lane_chain_done"]
+    assert len(evs) == 1
+    assert "Daily: 2 member runs, 0 not-ok," in evs[0]["detail"]
+
+
 async def test_stop_emits_a_stopped_health_event(tmp_path):
     """A policy stop is lane_chain_stopped, never lane_chain_done."""
     from rsched.daemon.lane_runs import LaneRunManager

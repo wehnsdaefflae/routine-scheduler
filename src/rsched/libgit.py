@@ -119,17 +119,23 @@ def path_was_deleted(home: Path, rel_path: str) -> bool:
     return r.returncode == 0 and bool(r.stdout.strip())
 
 
-def commit(home: Path, message: str, *, paths: Sequence[str] | None = None) -> bool:
+def commit(home: Path, message: str, *, paths: Sequence[str] | None = None,
+           exclude: Sequence[str] = ()) -> bool:
     """Stage (scoped to `paths` when given) and commit under the repo lock. Returns True on
     a successful commit, False on nothing-to-commit or any git/OS error.
+
+    `exclude` names repo-relative paths the stage must LEAVE ALONE (git's `:(exclude)`
+    pathspec magic): an untracked one stays untracked, a tracked one keeps its committed
+    version. The engine autocommit uses it for files over its size ceiling.
     """
     home = Path(home)
+    excluded = [f":(exclude){p}" for p in exclude]
     try:
         with file_lock(repo_lock_path(home)):
             if paths:
-                git(home, "add", "-A", "--", *paths)
+                git(home, "add", "-A", "--", *paths, *excluded)
             else:
-                git(home, "add", "-A")
+                git(home, "add", "-A", "--", ".", *excluded)
             return git(home, *IDENTITY_FLAGS, "commit", "-qm", message).returncode == 0
     except (OSError, subprocess.TimeoutExpired):
         return False

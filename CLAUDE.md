@@ -400,6 +400,18 @@ by a test, by the engine, or by a past incident.
   UNCONDITIONAL presumption: it fires on EVERY holder, and it has been wrong twice the same way
   (`git-checkpoint`, then `status-page`'s write root — false for all seven holders, because a page
   is published through an upload channel and a routine's own dir is always writable).
+- **A lane's fire table is process memory; the WATERMARK is what survives.** `lane_next_fires`
+  is recomputed as the NEXT future fire at every boot, so a lane fire due during a restart,
+  a recreate or a drain used to vanish — and D71 has suppressed every member's own cron, so
+  nothing else fired them (a Tue/Thu lane lost a whole week, unnoticed). Every `lane_runs.arm`
+  stamps `.control/lane-fires.json` (`rsched/lane_fires.py`) and `daemon/lane_catchup.py`
+  makes up ONE missed fire per lane at boot (`catchup: run_once`, the lane default). Never
+  write that file from the web layer and never let boot arm more than one chain per lane.
+- **A routine reads its inbox when it next RUNS, and nothing but a report trigger makes that
+  sooner.** Every routine is created with one (0.329.0), answers to deferred questions wake it
+  like reports do, and a routine without one waits for its schedule — a week, for a weekly one,
+  after the operator clicked "Do it". The health stream files a `partial` as `budget_exhausted`
+  ONLY when a budget violation forced it; a partial the model chose is `run_partial`.
 - **An exclusive machine's compute is QUEUED, not locked.** `MachineConfig.exclusive` makes
   `remote submit` take a ticket instead of launching (`rsched/machine_queue.py`). The order is
   FAIR SHARE — round-robin across ROUTINES by each one's oldest waiting ticket, FIFO within one —
