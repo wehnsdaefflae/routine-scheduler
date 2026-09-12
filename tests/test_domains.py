@@ -148,6 +148,14 @@ def test_membership_is_read_from_the_routines_not_stored_on_the_domain(tmp_path)
     (home / "broken").mkdir()
     (home / "broken" / "routine.yaml").write_text("{{ not yaml", encoding="utf-8")
     assert domains.members(home, rec["id"]) == ["a", "b"]
+    # the per-file read is memoized on the file's fingerprint (the dashboard asks for every
+    # domain's members on every refresh): a rewritten file moves the membership at once
+    (home / "b" / "routine.yaml").write_text(yaml.safe_dump({"slug": "b", "domain": "dom-other"}),
+                                             encoding="utf-8")
+    (home / "c" / "routine.yaml").write_text(yaml.safe_dump({"slug": "c", "domain": rec["id"]}),
+                                             encoding="utf-8")
+    assert domains.members(home, rec["id"]) == ["a", "c"]
+    assert domains.members(home, "dom-other") == ["b", "d"]
 
 
 def test_deleting_a_domain_leaves_its_store_on_disk(tmp_path):

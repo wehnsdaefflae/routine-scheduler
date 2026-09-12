@@ -406,18 +406,33 @@ export async function render(view) {
     body.append(grid);
   }
 
-  async function load() {
+  // A run event changes routine cards and the daemon status — nothing else on this page.
+  // Lanes, domains and the week strip are CONFIG-shaped: they move only through this page's
+  // own actions (each of which reloads in full) or a page load. Refetching them per bus tick
+  // was the storm: /api/domains alone cost the daemon 4 s of parsing per request and was
+  // requested every 600 ms while runs were active (2026-09-12, 249 calls averaging 67 s).
+  let lastSched, lastDomainData;
+  async function load({ light = false } = {}) {
     let routines, status, sched, domainData;
     try {
-      [routines, status, sched, laneData, domainData] = await Promise.all([
-        api("/api/routines"), api("/api/status").catch(() => ({})),
-        api("/api/schedule/week").catch(() => null),
-        // Lane and domain membership are a nicety on this page — a hiccup on either fetch must
-        // never blank the routines list, so each degrades to "none" rather than throwing
-        // (R107, F269).
-        api("/api/lanes").catch(() => null),
-        api("/api/domains").catch(() => null),
-      ]);
+      if (light && lastSched !== undefined && lastDomainData !== undefined && laneData) {
+        [routines, status] = await Promise.all([
+          api("/api/routines"), api("/api/status").catch(() => ({}))]);
+        sched = lastSched;
+        domainData = lastDomainData;
+      } else {
+        [routines, status, sched, laneData, domainData] = await Promise.all([
+          api("/api/routines"), api("/api/status").catch(() => ({})),
+          api("/api/schedule/week").catch(() => null),
+          // Lane and domain membership are a nicety on this page — a hiccup on either fetch
+          // must never blank the routines list, so each degrades to "none" rather than
+          // throwing (R107, F269).
+          api("/api/lanes").catch(() => null),
+          api("/api/domains").catch(() => null),
+        ]);
+        lastSched = sched;
+        lastDomainData = domainData;
+      }
     } catch (err) {
       body.replaceChildren(emptyState("✕", "Couldn't reach the daemon", err.message));
       return;
@@ -794,9 +809,15 @@ export async function render(view) {
 
   await load();
   let pending = null;
-  const onBus = () => {
+  const LIGHT = new Set(["run_started", "run_finished", "run_state"]);
+  const onBus = (e) => {
+    const kind = e?.detail?.event;
+    // llm_task / llm_process change nothing here (the LLM dock renders them); an answered
+    // question is the badge's business; a reconnect reloads in full because anything may
+    // have moved while the stream was down
+    if (kind === "llm_task" || kind === "llm_process" || kind === "question_answered") return;
     clearTimeout(pending);
-    pending = setTimeout(() => load().catch(() => {}), 600);   // debounce bursts of bus events
+    pending = setTimeout(() => load({ light: LIGHT.has(kind) }).catch(() => {}), 2000);
   };
   window.addEventListener("rsched-bus", onBus);
   return () => {

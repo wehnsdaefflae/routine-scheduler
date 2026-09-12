@@ -250,10 +250,26 @@ def members(routines_home: Path, domain_id: str) -> list[str]:
         cfg = rdir / "routine.yaml"
         if rdir.name.startswith(".") or not cfg.is_file():
             continue
+        if domain_of(cfg) == domain_id:
+            out.append(rdir.name)
+    return out
+
+
+def domain_of(cfg: Path) -> str:
+    """The `domain:` a routine.yaml names, "" when it names none or cannot be read. Memoized
+    on the file's stat fingerprint: the dashboard asks for every domain's members on every
+    refresh, and parsing 33 routine files six times over was 4 seconds of a request that
+    the console fired several times a minute while runs were active (2026-09-12). A saved
+    file changes inode+mtime+size, so an edit is never served stale; an unreadable or
+    non-mapping file is a NON-member, as before, and stays memoized as one until it changes.
+    """
+    from .readmodels import memo
+
+    def read() -> str:
         try:
             raw = read_yaml(cfg, {})
         except (OSError, yaml.YAMLError):   # a broken file is not a member
-            continue
-        if isinstance(raw, dict) and str(raw.get("domain") or "") == domain_id:
-            out.append(rdir.name)
-    return out
+            return ""
+        return str(raw.get("domain") or "") if isinstance(raw, dict) else ""
+
+    return memo.memoized(f"domain-of:{cfg}", [cfg], read)

@@ -221,10 +221,16 @@ export function activityFeed() {
   }
 
   // ---- live wiring ---------------------------------------------------------
-  const onBus = () => {
+  const onBus = (e) => {
     if (!filters.live) return;
+    // llm_task / llm_process events fire several times a second during a busy run and change
+    // nothing this feed shows (the LLM dock renders them); a reload per event was four
+    // fetches — routines, 300 runs, status, questions — every 600 ms per open tab, which is
+    // how the daemon spent an afternoon answering nothing else (2026-09-12)
+    const kind = e?.detail?.event;
+    if (kind === "llm_task" || kind === "llm_process") return;
     clearTimeout(pending);
-    pending = setTimeout(() => load(), 600);               // debounce bursts of bus events
+    pending = setTimeout(() => load(), 2000);              // debounce bursts of bus events
   };
 
   function start() {

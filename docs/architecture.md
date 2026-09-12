@@ -1252,5 +1252,9 @@ in-flight count) to the operator's primary token only. SSE streams are exempt fr
 they are slow by design. The container also carries `SYS_PTRACE` so `py-spy dump` works inside it
 (deploy/DOCKER.md). All of it exists because on 2026-09-12 every sync handler took 20-50 s for
 an hour with one worker thread at 70% CPU, and the daemon could name neither the thread nor the
-requests it had starved.
+requests it had starved. It named them the same afternoon (0.334.0): the dashboard reloading five
+endpoints on every bus event, `/api/domains` parsing every routine.yaml per domain (now memoized
+per file, `domains.domain_of`), and a trivial sync handler queueing for a threadpool token. The
+standing rule for the console follows from it: **a live refresh on a bus event fetches only what
+that event can change** — routine cards and status — never config-shaped or expensive data.
 

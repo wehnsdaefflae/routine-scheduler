@@ -418,6 +418,13 @@ by a test, by the engine, or by a past incident.
   now. The report trigger stays an explicit opt-in for a routine whose job IS its inbox. The
   health stream files a `partial` as `budget_exhausted` ONLY when a budget violation forced it;
   a partial the model chose is `run_partial`.
+- **A live refresh on a bus event fetches only what that event can change.** The dashboard and
+  the activity feed reload on `run_*` events, debounced; `llm_task`/`llm_process` fire several
+  times a second during a run and are ignored. Never put a config-shaped or expensive endpoint
+  (`/api/domains`, `/api/schedule/week`, `/api/stats`, 300 runs) on that path: on 2026-09-12 the
+  dashboard refetched `/api/domains` every 600 ms while five runs were active and every request
+  in the daemon queued for 20-50 s behind it. When the console is slow, `/api/debug/slow` and
+  `docker logs rsched | grep "slow request"` say which path, before anyone guesses.
 - **An exclusive machine's compute is QUEUED, not locked.** `MachineConfig.exclusive` makes
   `remote submit` take a ticket instead of launching (`rsched/machine_queue.py`). The order is
   FAIR SHARE — round-robin across ROUTINES by each one's oldest waiting ticket, FIFO within one —

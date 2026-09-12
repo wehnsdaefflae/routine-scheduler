@@ -15,6 +15,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.334.0] — 2026-09-12
+
+### Fixed
+
+- **The console's slowness, attributed and fixed at the cause.** The slow-request ring
+  shipped in 0.332.0 named it within the hour: 3351 requests over two seconds in three hours,
+  `/api/questions` 646 times averaging 40 s, `/api/domains` 249 times averaging 67 s and
+  peaking at 144 s — while `/api/lanes`, one small file, averaged 24 s because it queued
+  behind them. Three causes, each fixed where it lives:
+  - **The dashboard reloaded on every bus event**, debounced by 600 ms, and each reload fetched
+    five endpoints including `/api/domains` and the week strip. During a busy run the bus fires
+    several LLM task events a second, so the page refetched config-shaped data continuously.
+    It now ignores LLM events, debounces by two seconds, and a run event reloads only routine
+    cards and status; lanes, domains and the week strip are fetched on page load, on a
+    reconnect, and by the page's own actions. The activity feed follows the same rule.
+  - **`/api/domains` cost 4 s** because `domains.members` parsed every routine.yaml once per
+    domain — 198 YAML parses per request. The per-file `domain:` read is memoized on the
+    file's stat fingerprint (`domains.domain_of`), so a saved file is never served stale and an
+    unchanged one is never parsed twice.
+  - **`/api/llm-tasks`** reads an in-memory snapshot and was a sync handler queueing for a
+    threadpool token; it is async now.
+  Not part of the storm but measured: `/api/stats` costs 1.8 s per call and is fetched once
+  per Stats-tab load; D129's premise ("the read models saturate the threadpool") stays
+  contradicted — every read model is fast alone, the storm was the client asking for the
+  four-second one every 600 ms.
+
 ## [0.333.0] — 2026-09-12
 
 ### Changed

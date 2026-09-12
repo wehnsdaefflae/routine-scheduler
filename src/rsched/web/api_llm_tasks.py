@@ -13,7 +13,10 @@ router = APIRouter(tags=["llm-tasks"])
 
 
 @router.get("/llm-tasks")
-def llm_tasks(request: Request) -> dict:
+async def llm_tasks(request: Request) -> dict:
+    # async on purpose: this reads an in-memory snapshot and nothing else, and as a sync
+    # handler it queued behind every slow request for a threadpool token — 572 times over
+    # 30 s on 2026-09-12 for a payload of 27 bytes.
     center = getattr(request.app.state, "llm_tasks", None)
     if center is None:
         return {"processes": [], "tasks": []}
