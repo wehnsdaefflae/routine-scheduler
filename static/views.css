@@ -748,9 +748,9 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
 .tt-s-aborted > .tt-icon { color: var(--warn); }
 .tt-children { margin-left: 11px; border-left: 1px solid var(--rule-2); padding-left: 6px; }
 
-/* the run + conversations views' side rails: normal collapsible blocks; parked in the
-   viewport margins on screens wide enough that the 1180px main column leaves room
-   (.run-rail = right margin, .run-rail.left = left margin) */
+/* the run + conversations views' side rails: grid columns beside the content wherever the
+   viewport can hold one (the block below), ordinary collapsible blocks in the flow on a phone
+   (.run-rail = the right column, .run-rail.left = the conversation index on the left) */
 .run-rail { border: 1px solid var(--rule); border-radius: 10px; padding: 10px 12px; margin-top: 12px; }
 .run-rail > summary { cursor: pointer; color: var(--ink-2); }
 /* the WORKING PLAN strip (D54): the run's living decomposition (state/plan.md), at the top of
@@ -764,66 +764,24 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
 .plan-strip .plan-body .md :first-child { margin-top: 0; }
 .plan-strip .plan-body .md :last-child { margin-bottom: 0; }
 .run-rail .rail-cap:first-of-type { margin-top: 6px; }
-/* A rail parks in the free viewport margin only where there IS one, and the navigation rail
-   now takes 212px of it: the margin is (100vw − rail − reading column) / 2, so the width this
-   needs is the one below and not the old 1560px, which would have drawn a 14px sliver. Under
-   it the rails are ordinary collapsible sections in the flow, which is a fine reading of them. */
-/* The two side rails' default widths in the GRID mode below; the ≥1900 margin mode overrides
-   them, and a user drag beats both — resizable.js writes these properties INLINE on <html>.
-   Declared here rather than later in the file because equal-specificity `:root` declarations
-   are won by the LAST one, and the ≥1900 override sits just below. */
+/* ONE layout for the rails at every width that can hold one (0.335.0, D125). It used to be
+   three: fixed cards parked in the viewport margins beside a centred 1240px reading column
+   at ≥1900px (where dragging a rail moved nothing but the rail — the column was fixed), a real
+   grid at 1100–1899px for the conversation view only, and plain stacked blocks below that,
+   with the run view a stacked block at every width under 1900. The operator's verdict: solved
+   for one page at one tier. Now every view with a rail escapes the reading column and becomes
+   a grid whose column widths ARE the rail width properties resizable.js writes — so the content
+   column takes exactly what the rails leave, a hidden rail gives its column back, and the same
+   pair of properties drives every width. Tiers by what fits: the right rail is a column from
+   760px, the conversation index joins it as a left column from 1100px; below 760 everything
+   stacks and the grips are gone (a rail hidden while wide must come back where there is no
+   grip to recover it, so no hidden rule reaches that range). */
 :root { --runrail-l-set: 218px; --runrail-r-set: 280px; }
-@media (min-width: 1900px) {
-  /* the DEFAULT rail width in this mode is the free margin, so it is written as the
-     `*-set` property's value here rather than as a fallback: resizable.js sets that property
-     INLINE on <html>, which outranks any stylesheet rule, so a dragged width wins in this
-     layout and in the grid one below without either needing to know about the other. */
-  :root {
-    --runrail-l-set: calc((100vw - var(--rail-w) - var(--shell-max)) / 2 - 30px);
-    --runrail-r-set: calc((100vw - var(--rail-w) - var(--shell-max)) / 2 - 30px);
-  }
-  .run-rail {
-    position: fixed; top: 118px; right: 18px; bottom: 90px;
-    width: var(--runrail-r-w); max-width: 330px;
-    overflow-y: auto; background: var(--plate); z-index: 5;
-  }
-  .run-rail.left { right: auto; left: calc(var(--rail-w) + 18px); width: var(--runrail-l-w); }
-  .run-rail > summary { display: none; }
-}
-/* conversations below that: no margin to park in, and the rails must still PERSIST (user order
-   2026-07-16: list stays left, state/artifacts stay right). The view escapes the reading column
-   and becomes a three-column grid, the rails sticky columns beside the chat. Below 1100px they
-   stack (list above the chat, artifacts below).
-   `main:has(.conv-view)`, not `main.conv-view`: the class goes on the per-navigation container
-   INSIDE main (app.js renders every view into its own box), so the element selector matched
-   nothing and the escape never fired. */
-@media (min-width: 1100px) and (max-width: 1899.9px) {
-  main:has(.conv-view) { max-width: none; }
-  .conv-view { display: grid;
-               grid-template-columns: var(--runrail-l-w) minmax(0, 1fr) var(--runrail-r-w);
-               gap: var(--s4); align-items: start; }
-  .conv-view > .run-rail { position: sticky; top: 116px; margin-top: var(--s3);
-                           max-height: calc(100vh - 190px); overflow-y: auto; }
-  .conv-view > .run-rail > summary { display: none; }
-  /* list subpage: the artifact rail is [hidden] — give its column back to the chat */
-  .conv-view:has(> .run-rail[hidden]) {
-    grid-template-columns: var(--runrail-l-w) minmax(0, 1fr); }
-}
 
-/* Drag-to-resize + hide for the two side rails (F441, surfaces 3 and 4 of the operator's
-   2026-09-04 request — static/resizable.js is the shared behaviour). Both WIDE modes above
-   read the same pair of width properties, so one dragged width follows a rail across the
-   1900px breakpoint.
-
-   A grip is a SIBLING of its rail, never a child: a rail is its own scroll container
-   (`overflow-y: auto`), which clips anything sitting on its border, so a grip inside one is
-   invisible and unclickable. Being outside also means a hidden rail can simply be removed —
-   the grip holds its place on the width property, which is what makes it the re-show target.
-
-   Everything is scoped to a layout that HAS a grip: the conversation grid (1100–1899) and the
-   fixed margin cards (≥1900). Below 1100 — and in the run view's own mid range, where the rail
-   is an ordinary collapsible block — the grips are gone and the hidden state must not apply,
-   because with nothing to click there would be no way to recover the rail. */
+/* the grips: a SIBLING of its rail, never a child — a rail is its own scroll container
+   (`overflow-y: auto`), which clips anything on its border, so a grip inside one is invisible
+   and unclickable. Outside it, the grip is positioned by the rail's own width property, so it
+   holds its place when the rail is hidden and is what brings it back. */
 .sb-grip.runrail-l, .sb-grip.runrail-r {
   display: none; width: 8px; z-index: 6; cursor: col-resize; touch-action: none;
 }
@@ -838,24 +796,51 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
 :root.sb-hidden-runrail-l .sb-grip.runrail-l::before,
 :root.sb-hidden-runrail-r .sb-grip.runrail-r::before { opacity: 0.6; background: var(--signal); }
 
-@media (min-width: 1100px) {
-  :root { --runrail-l-w: var(--runrail-l-set); --runrail-r-w: var(--runrail-r-set); }
-  :root.sb-hidden-runrail-l { --runrail-l-w: 0px; }
+/* ── from 760px: the RIGHT rail is a column beside the content, in both views ─────────── */
+@media (min-width: 760px) {
+  :root { --runrail-r-w: var(--runrail-r-set); }
   :root.sb-hidden-runrail-r { --runrail-r-w: 0px; }
-}
-/* the conversation grid: the grips are positioned against the GRID, on the columns' inner
-   edges — half a gap in from each rail's own width */
-@media (min-width: 1100px) and (max-width: 1899.9px) {
-  .conv-view { position: relative; }
-  .conv-view > .sb-grip.runrail-l, .conv-view > .sb-grip.runrail-r {
-    display: block; position: absolute; top: 0; bottom: 0;
+  /* the view escapes the centred reading column: the grid, not `main`, decides the width.
+     `main:has(...)`, not `main.…`: the class goes on the per-navigation box INSIDE main. */
+  main:has(.conv-view), main:has(.run-view) { max-width: none; }
+  .conv-view, .run-view {
+    display: grid; position: relative; gap: var(--s4); align-items: start;
+    grid-template-columns: minmax(0, 1fr) var(--runrail-r-w);
   }
-  .conv-view > .sb-grip.runrail-l { left: var(--runrail-l-w); margin-left: calc(var(--s4) / 2 - 4px); }
-  .conv-view > .sb-grip.runrail-r { right: var(--runrail-r-w); margin-right: calc(var(--s4) / 2 - 4px); }
+  .run-view > .run-main, .conv-view > .conv-main { min-width: 0; }
+  .conv-view > .run-rail, .run-view > .run-rail {
+    position: sticky; top: 116px; margin-top: var(--s3);
+    max-height: calc(100vh - 190px); overflow-y: auto;
+  }
+  .conv-view > .run-rail > summary, .run-view > .run-rail > summary { display: none; }
+  /* the conversation index has no column of its own yet: it spans the row above the chat */
+  .conv-view > .run-rail.left { grid-column: 1 / -1; position: static; max-height: none; }
+  /* the right grip sits on the grid's inner column edge, half a gap in from the rail */
+  .conv-view > .sb-grip.runrail-r, .run-view > .sb-grip.runrail-r {
+    display: block; position: absolute; top: 0; bottom: 0;
+    right: var(--runrail-r-w); margin-right: calc(var(--s4) / 2 - 4px);
+  }
   /* a hidden rail leaves the grid rather than holding a zero-width cell, so the template
-     drops the column with it — otherwise the chat would be auto-placed into the empty one */
-  :root.sb-hidden-runrail-l .conv-view > .run-rail.left,
-  :root.sb-hidden-runrail-r .conv-view > .run-rail:not(.left) { display: none; }
+     drops the column with it — otherwise the content would be auto-placed into the empty one */
+  :root.sb-hidden-runrail-r .conv-view > .run-rail:not(.left),
+  :root.sb-hidden-runrail-r .run-view > .run-rail { display: none; }
+  :root.sb-hidden-runrail-r .conv-view, :root.sb-hidden-runrail-r .run-view,
+  .conv-view:has(> .run-rail[hidden]) { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* ── from 1100px: the conversation index becomes the LEFT column, with its own grip ─────── */
+@media (min-width: 1100px) {
+  :root { --runrail-l-w: var(--runrail-l-set); }
+  :root.sb-hidden-runrail-l { --runrail-l-w: 0px; }
+  .conv-view { grid-template-columns: var(--runrail-l-w) minmax(0, 1fr) var(--runrail-r-w); }
+  .conv-view > .run-rail.left {
+    grid-column: auto; position: sticky; max-height: calc(100vh - 190px);
+  }
+  .conv-view > .sb-grip.runrail-l {
+    display: block; position: absolute; top: 0; bottom: 0;
+    left: var(--runrail-l-w); margin-left: calc(var(--s4) / 2 - 4px);
+  }
+  :root.sb-hidden-runrail-l .conv-view > .run-rail.left { display: none; }
   :root.sb-hidden-runrail-l .conv-view {
     grid-template-columns: minmax(0, 1fr) var(--runrail-r-w); }
   :root.sb-hidden-runrail-r .conv-view,
@@ -864,15 +849,6 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
   :root.sb-hidden-runrail-l.sb-hidden-runrail-r .conv-view,
   :root.sb-hidden-runrail-l .conv-view:has(> .run-rail[hidden]) {
     grid-template-columns: minmax(0, 1fr); }
-}
-/* the fixed margin cards: the grips are fixed too, exactly like the main nav rail's */
-@media (min-width: 1900px) {
-  .sb-grip.runrail-l, .sb-grip.runrail-r { display: block; position: fixed; top: 118px;
-                                           bottom: 90px; }
-  .sb-grip.runrail-l { left: calc(var(--rail-w) + 18px + var(--runrail-l-w)); margin-left: -4px; }
-  .sb-grip.runrail-r { right: calc(18px + var(--runrail-r-w)); margin-right: -4px; }
-  :root.sb-hidden-runrail-l .run-rail.left,
-  :root.sb-hidden-runrail-r .run-rail:not(.left) { display: none; }
 }
 
 /* the routine page's recipe file-tree: main.md + stage modules (run-flow order), each

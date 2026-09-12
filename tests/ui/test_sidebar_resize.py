@@ -1,7 +1,8 @@
 """Resizable + hideable sidebars (operator request 2026-09-04) in the REAL console.
 
 Four sidebars share static/resizable.js: the main navigation rail, the routine page's recipe
-file-tree column, and the run/conversation views' LEFT and RIGHT rails. A grip on each one's
+file-tree column, and the run/conversation views' LEFT and RIGHT rails — the last two grid
+columns whose widths ARE the dragged properties, at every width from 760px up (0.335.0). A grip on each one's
 inner border resizes it on drag (writing that surface's `*-set` custom property, persisted) and
 hides/shows it on a click (toggling that surface's hidden class, persisted).
 
@@ -153,17 +154,24 @@ def test_both_conversation_rails_resize_and_hide_independently(ui, ui_page):
     expect(left).to_be_visible()                                # collapses AROUND its grip
     expect(ui_page.locator(".run-rail.left > summary")).to_be_hidden()
 
-    # stacked layout: no grips, and a rail hidden while wide must come back
+    # the middle tier (760-1099): the RIGHT rail keeps its column and its grip, the
+    # conversation index spans the row above the chat with no grip — and the left rail
+    # hidden while wide must come back there, since there is nothing to click to recover it
     ui_page.set_viewport_size({"width": 900, "height": 900})
     expect(left).to_be_hidden()
+    expect(right).to_be_visible()
+    expect(ui_page.locator(".run-rail.left")).to_be_visible()
+    # the phone tier: everything stacks, no grips at all
+    ui_page.set_viewport_size({"width": 700, "height": 900})
     expect(right).to_be_hidden()
     expect(ui_page.locator(".run-rail.left")).to_be_visible()
 
 
-def test_a_dragged_rail_width_survives_the_1900px_breakpoint(ui, ui_page):
-    """The two wide layouts read the SAME pair of properties, so one dragged width follows the
-    rail from the grid mode into the fixed-margin mode. resizable.js writes them inline on
-    <html>, which outranks the margin mode's own calc() default."""
+def test_a_dragged_rail_width_drives_the_content_column_at_every_wide_width(ui, ui_page):
+    """ONE layout above 760px (0.335.0, D125): the view is a grid whose column widths ARE the
+    rail width properties, so a dragged width follows the rail to any width and the CONTENT
+    column takes exactly what the rails leave — the point the old fixed-margin mode at ≥1900
+    missed, where dragging a rail moved nothing but the rail beside a fixed 1240px column."""
     ui_page.set_viewport_size({"width": 1500, "height": 900})
     _open_conversation(ui, ui_page)
     grip = ui_page.locator(".sb-grip.runrail-r")
@@ -173,9 +181,61 @@ def test_a_dragged_rail_width_survives_the_1900px_breakpoint(ui, ui_page):
     expect(ui_page.locator(".sb-grip.runrail-r")).to_be_visible(timeout=10_000)
     assert _root_var(ui_page, "--runrail-r-w") == "300px"
 
-    ui_page.set_viewport_size({"width": 1960, "height": 900})   # into the margin mode
-    assert _root_var(ui_page, "--runrail-r-w") == "300px"
-    width = ui_page.evaluate(
-        "() => Math.round(document.querySelector('.conv-view > .run-rail:not(.left)')"
-        ".getBoundingClientRect().width)")
-    assert width == 300, width
+    def widths():
+        return ui_page.evaluate(
+            "() => [document.querySelector('.conv-view > .run-rail:not(.left)'),"
+            " document.querySelector('.conv-main')].map((e) => Math.round(e.getBoundingClientRect().width))")
+
+    for vw in (1960, 2400):                                    # the widest tier is the same grid
+        ui_page.set_viewport_size({"width": vw, "height": 900})
+        assert _root_var(ui_page, "--runrail-r-w") == "300px"
+        rail_w, main_w = widths()
+        assert rail_w == 300, (vw, rail_w)
+        # the content uses the space: the viewport minus the nav rail, both side rails, the
+        # gaps and the page padding — no centred 1240px column in the way any more
+        assert main_w > vw - 900, (vw, main_w)
+    # hiding the rail hands its column to the content
+    ui_page.locator(".sb-grip.runrail-r").click()
+    assert _root_var(ui_page, "--runrail-r-w") == "0px"
+    _, main_after = widths()
+    assert main_after >= main_w + 290, (main_w, main_after)
+
+
+def test_the_run_view_rail_is_a_resizable_column_at_every_wide_width(ui, ui_page):
+    """The run page carries the same rail contract as the conversation page (it used to be a
+    stacked block at every width under 1900): a column beside the transcript from 760px with
+    its grip on the shared border — drag resizes it, click hides it and the transcript widens."""
+    ui.seed_run("uir", "20260715-140000", "finished", summary="done")
+    ui_page.set_viewport_size({"width": 1280, "height": 900})
+    ui_page.goto(f"{ui.url}/#/run/uir:20260715-140000")
+    grip = ui_page.locator(".run-view > .sb-grip.runrail-r")
+    expect(grip).to_be_visible(timeout=10_000)
+    assert _root_var(ui_page, "--runrail-r-w") == "280px"
+
+    def main_width():
+        return ui_page.evaluate(
+            "() => Math.round(document.querySelector('.run-main').getBoundingClientRect().width)")
+
+    before = main_width()
+    box = grip.bounding_box()
+    cx, cy = box["x"] + box["width"] / 2, box["y"] + 200
+    ui_page.mouse.move(cx, cy)
+    ui_page.mouse.down()
+    ui_page.mouse.move(cx - 40, cy, steps=8)                   # a left rail edge: drag left = wider
+    ui_page.mouse.up()
+    w = int(_root_var(ui_page, "--runrail-r-w").replace("px", ""))
+    assert 305 <= w <= 330, w
+    assert main_width() < before                               # the transcript gave the width up
+
+    ui_page.locator(".run-view > .sb-grip.runrail-r").click()  # hide → the transcript widens
+    assert _root_var(ui_page, "--runrail-r-w") == "0px"
+    expect(ui_page.locator(".run-view > .run-rail")).to_be_hidden()
+    assert main_width() > before
+    ui_page.locator(".run-view > .sb-grip.runrail-r").click()  # and comes back
+    expect(ui_page.locator(".run-view > .run-rail")).to_be_visible()
+
+    ui_page.set_viewport_size({"width": 900, "height": 900})   # still a column mid-width
+    expect(ui_page.locator(".run-view > .sb-grip.runrail-r")).to_be_visible()
+    ui_page.set_viewport_size({"width": 700, "height": 900})   # stacked on a phone, no grip
+    expect(ui_page.locator(".run-view > .sb-grip.runrail-r")).to_be_hidden()
+    expect(ui_page.locator(".run-view > .run-rail")).to_be_visible()

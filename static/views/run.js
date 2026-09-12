@@ -42,18 +42,25 @@ export async function render(view, runId, query = {}) {
   // routine page that 404s — retargeted once the run detail names its home (boot below).
   const kickerEl = el("div", { class: "kicker" }, `routine / ${slug}`);
   const titleLink = el("a", { href: `#/routine/${slug}` }, slug);
-  view.append(el("div", { class: "page-head" },
+  // The run view is a two-column layout wherever the viewport can hold a rail (views.css
+  // `.run-view`): everything that reads top-to-bottom lives in the main column, the rail is
+  // the second column with its grip on the shared border, and the main column takes whatever
+  // width the rail leaves — a dragged or hidden rail resizes the content, at every width.
+  view.classList.add("run-view");
+  const col = el("section", { class: "run-main" });
+  view.append(col);
+  col.append(el("div", { class: "page-head" },
     el("div", {},
       kickerEl,
       el("h1", {}, titleLink, ` · run ${fmtTs(ts)}`)),
     controls));
-  view.append(el("div", { class: "runbar" }, stateChip, stream.node, usageSpan, durSpan, modelSpan));
+  col.append(el("div", { class: "runbar" }, stateChip, stream.node, usageSpan, durSpan, modelSpan));
 
   // The WORKING PLAN strip (D54): the run's own living decomposition (state/plan.md), shown
   // at the top so "where is this run in its own plan" is answerable at a glance. Home-agnostic
   // (keyed by run id); hides itself when the run keeps no plan. Refreshed on phase transitions.
   const planBox = el("div", {});
-  view.append(planBox);
+  col.append(planBox);
   const planStrip = createPlanStrip(planBox, { url: `/api/runs/${runId}/plan` });
 
   // Elapsed wall clock: start ts → last status update while live (ticking), frozen at the
@@ -68,11 +75,12 @@ export async function render(view, runId, query = {}) {
   const durTimer = setInterval(tickDur, 5000);
 
   const questionBox = el("div", {});
-  view.append(questionBox);
+  col.append(questionBox);
 
   // Side rail: the routine's state graph (current phase lit, updates on SSE phase
-  // transitions) + its artifacts. Fixed in the right margin on wide screens (CSS), an
-  // ordinary collapsible block above the transcript otherwise.
+  // transitions) + its artifacts. The second grid column beside the main column from 760px
+  // up (resizable, hideable — its grip is the sibling wireRunRail inserts), an ordinary
+  // collapsible block below the main column on a phone.
   // R341: the SHARED rail component, the same one the conversation view renders — so each
   // section is individually collapsible here too (R340), remembered per browser, instead of
   // the divergent plain-caption copy this view used to carry.
@@ -96,17 +104,17 @@ export async function render(view, runId, query = {}) {
 
   // sub-run selector (main + each spawned child); hidden until there is at least one sub-run
   const subBar = el("div", { class: "subbar", hidden: true });
-  view.append(subBar);
+  col.append(subBar);
 
   // main transcript stays mounted (its tail keeps running); a sub-run renders into its own box
   const mainBox = el("div", { class: "mt" });
   const subBox = el("div", { class: "mt", hidden: true });
-  view.append(mainBox, subBox);
+  col.append(mainBox, subBox);
   mainBox.append(skeleton(["100%", "80%", "100%"]));
 
   // "waiting for the model" — lives at the BOTTOM of the conversation while the run works.
   const waitingBox = el("div", { class: "mt" });
-  view.append(waitingBox);
+  col.append(waitingBox);
 
   // ONE input, ONE send — where the message goes is an EXPLICIT, visible mode, never
   // guessed from button placement: a live run injects (picked up at the next turn
@@ -168,13 +176,13 @@ export async function render(view, runId, query = {}) {
   const setRef = ref.setRef;
   // Own class (composer) so the mobile stylesheet can break the text input onto its own
   // full-width line (F238) instead of squishing it inline with the buttons.
-  view.append(ref.node, el("div", { class: "row mt composer" }, msgInput, sendBtn, picker, recipeLbl));
+  col.append(ref.node, el("div", { class: "row mt composer" }, msgInput, sendBtn, picker, recipeLbl));
 
   // Auto-scroll ("follow"): on by default; the user can toggle it, and scrolling up pauses it.
   let autoscroll = true;
   const followChk = el("input", { type: "checkbox", checked: true });
   followChk.onchange = () => { autoscroll = followChk.checked; if (autoscroll) scrollDown(); };
-  view.append(el("label", { class: "row mt small", style: "gap:6px;color:var(--ink-2)" },
+  col.append(el("label", { class: "row mt small", style: "gap:6px;color:var(--ink-2)" },
     followChk, el("span", {}, "auto-scroll to the newest message")));
 
   let paused = false;

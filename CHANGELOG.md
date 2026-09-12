@@ -15,6 +15,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.335.0] — 2026-09-12
+
+### Fixed
+
+- **The run and conversation rails are ONE layout at every width that can hold a rail (D125,
+  F456).** The resizable rails shipped in 0.303.0 worked on one page at one tier: the
+  conversation view was a real grid between 1100 and 1899 px, but above 1900 both views parked
+  the rails as fixed cards in the margins beside a centred 1240 px column — so dragging a rail
+  moved the rail and nothing else — and the run view was a stacked block at every width under
+  1900, its grip mounted and invisible. Now `.conv-view` and the new `.run-view` escape the
+  reading column and become grids whose column widths ARE the properties `resizable.js` writes:
+  the content column takes exactly what the rails leave, a hidden rail hands its column back,
+  and one dragged width drives every viewport. Tiers by what fits: the right rail is a column
+  from 760 px, the conversation index joins it as the left column from 1100 px, and below 760
+  everything stacks with the grips gone. The run view wraps its transcript, composer and strips
+  in a `.run-main` column so the rail can sit beside them. The empty margin the run page used
+  to show on wide screens is gone with the margin mode.
+
 ## [0.334.0] — 2026-09-12
 
 ### Fixed
