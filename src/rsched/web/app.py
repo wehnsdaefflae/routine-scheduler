@@ -4,6 +4,7 @@ scheduler running as a startup task — one process serves everything.
 
 from __future__ import annotations
 
+import collections
 import logging
 import secrets
 import time
@@ -17,10 +18,17 @@ from ..config import ServerConfig, load_server_config
 from ..daemon.events import EventBus
 from ..daemon.runner import Runner
 from ..daemon.scheduler import Scheduler
+from ..ids import now_iso
 from ..llm_tasks import TaskCenter
 from .appwiring import _include_api_routers, _make_lifespan
 
 log = logging.getLogger("rsched.web")
+
+#: A request slower than this is recorded (`app.state.slow_requests`, `/api/debug/slow`) and
+#: logged. Two seconds: every console read model measures under 0.3 s on this instance, so a
+#: request over two is queueing or contention — the thing worth a stack sample.
+SLOW_REQUEST_S = 2.0
+SLOW_KEEP = 50
 
 STATIC_DIR = Path(__file__).resolve().parents[3] / "static"
 
@@ -222,6 +230,33 @@ def create_app(server: ServerConfig | None = None, *, with_scheduler: bool = Tru
         if request.url.path == "/" or request.url.path.startswith(("/static", "/docs")):
             response.headers["Cache-Control"] = "no-cache"
         return response
+
+    # Slow-request evidence (2026-09-12): every sync handler took 20-50 s for an hour while five
+    # runs were active, and nothing recorded it — no access log, no stack. The in-flight count
+    # and a ring of the slow ones are what /api/debug reads; the WARNING is what `docker logs`
+    # shows the morning after. SSE streams are excluded: they are slow by design.
+    app.state.in_flight = 0
+    app.state.slow_request_s = SLOW_REQUEST_S
+    app.state.slow_requests = collections.deque(maxlen=SLOW_KEEP)
+
+    @app.middleware("http")
+    async def slow_requests(request, call_next):
+        if _is_sse_path(request.url.path):
+            return await call_next(request)
+        app.state.in_flight += 1
+        started = time.monotonic()
+        try:
+            return await call_next(request)
+        finally:
+            app.state.in_flight -= 1
+            took = time.monotonic() - started
+            if took >= app.state.slow_request_s:
+                entry = {"method": request.method, "path": str(request.url.path),
+                         "seconds": round(took, 2), "in_flight": app.state.in_flight,
+                         "ts": now_iso()}
+                app.state.slow_requests.appendleft(entry)
+                log.warning("slow request: %s %s took %.1fs (in_flight=%d)",
+                            request.method, request.url.path, took, app.state.in_flight)
 
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
     # Generated Help content (see docs_build.py) — static like /static and served with the

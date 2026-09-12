@@ -1242,3 +1242,15 @@ whose TEXT must change on a live instance is converted by a one-shot migration i
   draining, active runs are waited out. Orphaned runs claiming to be alive are
   closed out at boot.
 
+## Observing the daemon
+
+The web process records its own slowness (0.332.0): a timing middleware in `web/app.py` counts
+requests in flight and keeps the last 50 that exceeded `SLOW_REQUEST_S` (2 s), each logged as a
+`slow request` WARNING, and `web/api_debug.py` serves `GET /api/debug/slow` (that ring) and
+`GET /api/debug/threads` (every Python thread's stack, the threadpool's borrowed tokens, the
+in-flight count) to the operator's primary token only. SSE streams are exempt from the timing —
+they are slow by design. The container also carries `SYS_PTRACE` so `py-spy dump` works inside it
+(deploy/DOCKER.md). All of it exists because on 2026-09-12 every sync handler took 20-50 s for
+an hour with one worker thread at 70% CPU, and the daemon could name neither the thread nor the
+requests it had starved.
+

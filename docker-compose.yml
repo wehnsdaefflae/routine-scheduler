@@ -136,6 +136,10 @@ services:
       - /dev/fuse
     cap_add:
       - SYS_ADMIN
+      # SYS_PTRACE lets `uvx py-spy dump --pid <daemon pid>` inside the container sample the
+      # daemon's stacks when the console goes slow — the one measurement that was impossible
+      # on 2026-09-12 (every handler 20-50 s, one thread at 70% CPU, no way to name it).
+      - SYS_PTRACE
     security_opt:
       - apparmor:unconfined
     networks:

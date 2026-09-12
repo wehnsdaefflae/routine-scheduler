@@ -15,6 +15,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.332.0] — 2026-09-12
+
+### Added
+
+- **The daemon records its own slowness, and can be asked what it is doing.** A timing
+  middleware (`web/app.py`) counts requests in flight and keeps the last 50 that exceeded two
+  seconds, each logged as a `slow request` WARNING; `GET /api/debug/slow` serves that ring and
+  `GET /api/debug/threads` every thread's stack with the threadpool's borrowed tokens — both
+  operator-token only, SSE streams exempt. The engine container gains `SYS_PTRACE` so `py-spy
+  dump` works inside it. Built after an hour on 2026-09-12 in which every sync API handler took
+  20-50 s while five runs were active (`/api/lanes`, one small file, took 27 s), one worker
+  thread sat at 70% CPU, and nothing could name it: no access log, no stack, and every read
+  model measured in a fresh process (registry scan 0.14 s, items index 0.10 s, questions 0.27 s)
+  was innocent. That measurement also contradicts D129's premise — the read models are not
+  what needs an async architecture — so that item is redirected at the evidence this shipping
+  produces.
+
 ## [0.331.0] — 2026-09-12
 
 ### Added

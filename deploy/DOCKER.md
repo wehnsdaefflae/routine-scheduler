@@ -242,3 +242,24 @@ provisions and renews itself — reachable from every tailnet device (phone incl
 invisible to everyone else. SSE and Web Push work through it unchanged; subscribe each
 device under **Settings → Notifications**. Undo with
 `docker exec tailscale tailscale serve reset`.
+
+## When the console goes slow
+
+Measure before guessing. Every read model on this instance answers in well under a second in
+isolation, so a request over two seconds is queueing or contention, and the daemon now records
+both halves of that:
+
+```bash
+TOKEN=$(python3 -c 'import yaml;print(yaml.safe_load(open("/home/mark/.config/routine-scheduler/config.yaml"))["token"])')
+curl -s -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8321/api/debug/slow      # the last 50 slow requests
+curl -s -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8321/api/debug/threads   # every thread's stack, in-flight count, threadpool tokens
+docker logs rsched --since 1h 2>&1 | grep "slow request"
+```
+
+Both debug routes take the operator's primary token only. For a native sample of the whole
+process (C frames included), the container carries `SYS_PTRACE` for exactly this:
+
+```bash
+docker exec rsched sh -c 'uvx py-spy dump --pid $(pgrep -f "rsched daemon" | tail -1)'
+```
+
