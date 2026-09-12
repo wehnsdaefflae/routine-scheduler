@@ -15,6 +15,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.328.0] — 2026-09-12
+
+### Changed
+
+- **A model's fallbacks are now PICKED from the catalog, not typed.** The fallback chain names
+  other rows of the very catalog being rendered, but the field was bare free text — so a name
+  that cannot exist was typeable, looked accepted, and was refused only by the server after a
+  round trip. The operator hit that wall three times in two minutes (`fallback 'Opus 5' is not
+  a catalog model — add it first`, three refused saves on 2026-09-10), then came back the next
+  morning and added the model first. Every sibling field on that card was already
+  catalog-aware — endpoint, multimodal and effort are all selects; fallbacks was the one field
+  whose values are a closed set and the one field that accepted prose. It is now an ordered
+  add/remove list built from the live catalog: a model is never offered as its own fallback,
+  the shown order IS the failover order, and a name already configured but no longer in the
+  catalog is kept and marked rather than silently dropped (the same courtesy the
+  compaction-model picker already extends). Server-side validation is unchanged and still the
+  last line of defence. (F474)
+
 ## [0.327.0] — 2026-09-11
 
 ### Added

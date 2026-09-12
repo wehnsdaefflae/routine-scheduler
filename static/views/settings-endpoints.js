@@ -72,8 +72,8 @@ export async function renderEndpoints(view) {
     }
     if (!models.length)
       box.append(el("div", { class: "muted small" }, "no models yet — add one below."));
-    for (const m of models) box.append(modelItem(m, endpoints));
-    box.append(addModelForm(endpoints));
+    for (const m of models) box.append(modelItem(m, endpoints, models));
+    box.append(addModelForm(endpoints, models));
     return box;
   }
 
@@ -93,7 +93,7 @@ export async function renderEndpoints(view) {
       effort: f.effSel.value || null,
       temperature: f.tempIn.value.trim() ? Number(f.tempIn.value) : null,
       max_tokens: f.mtIn.value.trim() ? Number(f.mtIn.value) : null,
-      fallbacks: f.fbIn.value.split(",").map((s) => s.trim()).filter(Boolean),
+      fallbacks: f.fbIn.value(),
     };
   }
 
@@ -113,7 +113,44 @@ export async function renderEndpoints(view) {
     endpoint: "endpoint fallback", floor: "engine fallback", config: "model override",
   })[m.window?.window_source] || "inherit";
 
-  function modelFields(m, endpoints) {
+  // Fallbacks name OTHER rows of this very catalog, so the field offers the catalog instead of
+  // accepting prose. A free-text box let "Opus 5" be typed, look accepted, and be refused only by
+  // the server after a round trip (3 refused saves on 2026-09-10) — the client had the names all
+  // along. Order matters (it is the failover sequence), so this is an ordered add/remove list, not
+  // a set of checkboxes. A name already configured but no longer in the catalog is KEPT and marked,
+  // exactly as the compaction-model picker does, so opening this card never silently drops config.
+  function fallbackPicker(current, models, selfName) {
+    const chosen = [...current];
+    const row = el("div", { class: "row", style: "flex-wrap:wrap;gap:4px;align-items:center" });
+    const candidates = () => models
+      .map((x) => x.name)
+      .filter((n) => n !== selfName && !chosen.includes(n));
+    const render = () => {
+      row.replaceChildren();
+      chosen.forEach((name, i) => {
+        const known = models.some((x) => x.name === name);
+        const drop = el("button", { class: "btn small", title: `remove ${name}` }, "×");
+        drop.onclick = () => { chosen.splice(i, 1); render(); };
+        row.append(el("span", { class: known ? "ref-tag" : "chip partial",
+          title: known ? "failover step" : `${name} is not in the catalog — it will be refused on save` },
+          `${i + 1}. ${name}`, drop));
+      });
+      const left = candidates();
+      if (left.length) {
+        const add = el("select", { "aria-label": "add a fallback model" },
+          el("option", { value: "" }, chosen.length ? "+ then try…" : "+ add a fallback"),
+          ...left.map((n) => el("option", { value: n }, n)));
+        add.onchange = () => { if (add.value) { chosen.push(add.value); render(); } };
+        row.append(add);
+      } else if (!chosen.length) {
+        row.append(el("span", { class: "muted small" }, "no other catalog model to fall back to"));
+      }
+    };
+    render();
+    return { node: row, value: () => [...chosen] };
+  }
+
+  function modelFields(m, endpoints, models = []) {
     const epSel = el("select", {}, endpoints.map((e) => el("option", {}, e.name)));
     if (m.endpoint) epSel.value = m.endpoint;
     const modelIn = el("input", { type: "text", value: m.model || "", placeholder: "model id (e.g. openai/gpt-4o)", style: "width:220px" });
@@ -130,8 +167,7 @@ export async function renderEndpoints(view) {
     const tempIn = el("input", { type: "number", step: "0.1", value: m.temperature ?? "", placeholder: "inherit" });
     const mtIn = el("input", { type: "number", value: m.max_tokens ?? "",
       placeholder: `inherit (${(m.max_tokens_effective || 0).toLocaleString()})` });
-    const fbIn = el("input", { type: "text", value: (m.fallbacks || []).join(", "),
-      placeholder: "fallback model names, comma-separated", style: "width:220px" });
+    const fbIn = fallbackPicker(m.fallbacks || [], models, m.name);
     return { epSel, modelIn, mmSel, ctxIn, effSel, tempIn, mtIn, fbIn };
   }
 
@@ -147,11 +183,11 @@ export async function renderEndpoints(view) {
         el("label", { class: "field" }, el("span", {}, "temperature"), f.tempIn)),
       el("div", { class: "field-row" },
         el("label", { class: "field" }, el("span", {}, "max_tokens (output)"), f.mtIn),
-        el("label", { class: "field" }, el("span", {}, "fallbacks (failover order)"), f.fbIn)));
+        el("label", { class: "field" }, el("span", {}, "fallbacks (failover order)"), f.fbIn.node)));
   }
 
-  function modelItem(m, endpoints) {
-    const f = modelFields(m, endpoints);
+  function modelItem(m, endpoints, models) {
+    const f = modelFields(m, endpoints, models);
     const saveBtn = el("button", { class: "btn small primary" }, "save changes");
     saveBtn.onclick = async () => {
       if (!f.modelIn.value.trim()) { toast("enter a model id"); return; }
@@ -191,9 +227,9 @@ export async function renderEndpoints(view) {
         el("div", { class: "row mt" }, saveBtn)));
   }
 
-  function addModelForm(endpoints) {
+  function addModelForm(endpoints, models) {
     const nameIn = el("input", { type: "text", placeholder: "name (e.g. gpt-4o)" });
-    const f = modelFields({ context_effective: 0 }, endpoints);
+    const f = modelFields({ context_effective: 0 }, endpoints, models);
     const save = el("button", { class: "btn primary" }, "add model");
     save.onclick = async () => {
       if (!nameIn.value.trim()) { toast("name it"); return; }
@@ -213,7 +249,7 @@ export async function renderEndpoints(view) {
         "multimodal = default lets the endpoint kind decide (on for anthropic, off for openai). ",
         "Blank context and output limits use provider metadata, then endpoint defaults. ",
         "The context window includes input and output; max_tokens reserves output tokens. ",
-        "fallbacks = catalog model names tried in order when this model's provider fails hard."),
+        "fallbacks = other catalog models, tried in the order shown when this model's provider fails hard."),
       el("div", { class: "row mt" }, save));
   }
 

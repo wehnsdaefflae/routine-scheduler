@@ -1143,17 +1143,21 @@ def test_settings_endpoints_crud(ui, ui_page):
     expect(ui_page.locator(".panel", has_text="System model"))\
         .to_contain_text("any role a routine leaves unset falls back to this system model")
 
-    # max_tokens audit flag: unset → the ⚠ chip; a self-referencing fallback is rejected
-    # server-side; setting a real value clears the flag
+    # max_tokens audit flag: unset → the ⚠ chip; setting a real value clears the flag.
+    # Fallbacks are PICKED from the catalog, so a self-referencing chain is now unreachable
+    # through the UI rather than merely refused after a round trip: llama's own picker lists the
+    # other catalog model but never llama itself (ordering/removal flows live in
+    # tests/ui/test_model_fallbacks.py; the server-side refusal stays pinned in
+    # tests/test_config.py).
     model_card = ui_page.locator(".panel",
                                  has=ui_page.locator("strong", has_text="llama")).last
     expect(model_card).to_contain_text("⚠ max_tokens")
     model_card.locator("summary", has_text="edit fields").click()
     model_card.locator("label.field", has_text="max_tokens (output)").locator("input").fill("8192")
-    model_card.locator("label.field", has_text="fallbacks").locator("input").fill("llama")
-    model_card.get_by_role("button", name="save changes").click()
-    expect(_toast(ui_page)).to_contain_text("fallback")
-    model_card.locator("label.field", has_text="fallbacks").locator("input").fill("")
+    picker = model_card.locator("label.field", has_text="fallbacks") \
+        .get_by_label("add a fallback model")
+    assert "llama" not in picker.locator("option").all_inner_texts(), \
+        "a model must never offer itself as its own fallback"
     model_card.get_by_role("button", name="save changes").click()
     model_card = ui_page.locator(".panel",
                                  has=ui_page.locator("strong", has_text="llama")).last
