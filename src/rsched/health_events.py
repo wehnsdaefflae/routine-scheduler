@@ -22,6 +22,10 @@ file stays on disk and the run's work is untouched; what it never becomes is a g
 in a repo the instance mirrors and pushes — one 223 MB inventory once blocked every
 library push for days, and the mirror repo's history had to be rewritten to drop it.
 
+trigger_capped: a report trigger — or the engine-level ANSWER WAKE (`daemon/triggers.py`,
+pseudo-id `answer`) — hit its daily cap; one event per day at the transition, because a
+capped trigger is a dark routine and dark must be visible (F276).
+
 lane_fire_catchup: at daemon boot a SCHEDULED lane's most recent due fire had not been
 armed (the daemon was down, restarting or draining at that moment — a lane's fire table
 is process memory) and the lane's catchup policy is run_once, so ONE make-up chain was

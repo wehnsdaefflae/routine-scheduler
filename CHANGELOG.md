@@ -15,6 +15,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.330.0] — 2026-09-12
+
+### Changed
+
+- **The fleet-wide report trigger of 0.329.0 is reversed; a person's answer wakes a routine,
+  a routine's report does not.** The operator's objection was exact: a message is cheap and a
+  run is a whole recipe, so "one run per message" is the wrong granularity — and routines
+  answer each other, so waking on reports chains, one full run per hop, bounded only by the
+  daily cap. Switching it on fleet-wide had also fired every routine whose inbox held a
+  message, six at once. The report trigger is an explicit opt-in again for a routine whose
+  job IS its inbox, `workflows.scaffold` seeds none, and the 29 triggers added to the live
+  instance are removed. What stays, now as ENGINE behaviour with nothing to configure, is
+  the **answer wake** (`daemon/triggers.py::_service_answer`): a human's answer to a question
+  the routine itself deferred fires it (reason `answer`) once per coalescing window, only
+  while the question is still pending, never for a defer-to-next-run marker, with a 12/day
+  backstop. It cannot chain because only a person can answer a question.
+
 ## [0.329.0] — 2026-09-12
 
 The fleet audit of 2026-09-12: six ways a routine stayed blocked with nobody to unblock it,

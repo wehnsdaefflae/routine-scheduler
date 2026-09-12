@@ -407,11 +407,17 @@ by a test, by the engine, or by a past incident.
   stamps `.control/lane-fires.json` (`rsched/lane_fires.py`) and `daemon/lane_catchup.py`
   makes up ONE missed fire per lane at boot (`catchup: run_once`, the lane default). Never
   write that file from the web layer and never let boot arm more than one chain per lane.
-- **A routine reads its inbox when it next RUNS, and nothing but a report trigger makes that
-  sooner.** Every routine is created with one (0.329.0), answers to deferred questions wake it
-  like reports do, and a routine without one waits for its schedule — a week, for a weekly one,
-  after the operator clicked "Do it". The health stream files a `partial` as `budget_exhausted`
-  ONLY when a budget violation forced it; a partial the model chose is `run_partial`.
+- **A routine reads its inbox when it next RUNS. A person's answer wakes it; a routine's
+  report does not.** A message is cheap and a run is a whole recipe, so "one run per message"
+  is the wrong granularity, and routines answer each other — waking on reports chains, one
+  full run per hop. 0.329.0 gave every routine a report trigger and fired six routines within
+  a tick; 0.330.0 reversed it the same morning. The report trigger stays an explicit opt-in
+  for a routine whose job IS its inbox. What the engine does by itself is the ANSWER WAKE
+  (`daemon/triggers.py::_service_answer`): a human's answer to a question the routine itself
+  deferred fires it once per coalescing window, which cannot chain because only a person can
+  answer, and "defer to next run" on the Decisions page is the per-answer opt-out. The health
+  stream files a `partial` as `budget_exhausted` ONLY when a budget violation forced it; a
+  partial the model chose is `run_partial`.
 - **An exclusive machine's compute is QUEUED, not locked.** `MachineConfig.exclusive` makes
   `remote submit` take a ticket instead of launching (`rsched/machine_queue.py`). The order is
   FAIR SHARE — round-robin across ROUTINES by each one's oldest waiting ticket, FIFO within one —

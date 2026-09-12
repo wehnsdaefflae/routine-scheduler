@@ -333,7 +333,7 @@ async def test_report_deliveries_coalesce_within_cooldown(tmp_path):
     assert runner.fired == [("target", "trigger"), ("target", "trigger")]
 
 
-async def test_report_trigger_respects_disabled_active_and_closures(tmp_path):
+async def test_report_trigger_respects_disabled_active_closures_and_answers(tmp_path):
     from rsched.paths import atomic_write_json
     from rsched.reports import file_report
 
@@ -346,16 +346,23 @@ async def test_report_trigger_respects_disabled_active_and_closures(tmp_path):
     d_busy = _routine(server, slug="busy", trig=[dict(REPORT_TRIG)])
     file_report(server.routines_home, routine="s", run_id="s:2", title="t",
                 target="busy", target_dir=d_busy)
-    # a routine WITHOUT the trigger keeps the default read-on-next-scheduled-run behavior
+    # a routine WITHOUT the trigger keeps the default: a report waits for its next
+    # scheduled run — a routine must never wake another routine by default (that chains)
     d_plain = _routine(server, slug="plain")
     file_report(server.routines_home, routine="s", run_id="s:3", title="t",
                 target="plain", target_dir=d_plain)
-    # a defer-to-next-run marker says exactly that; a closure asks nothing — neither wakes
-    d_defer = _routine(server, slug="deferred", trig=[dict(REPORT_TRIG)])
-    atomic_write_json(d_defer / "inbox" / "answer-q-1.json", {"qid": "q-1", "defer": True})
+    # a closure asks nothing; an ORPHAN answer (no pending question) is left alone by the
+    # boot drain, so waking for it would fire every cooldown window forever
     d_closed = _routine(server, slug="closed", trig=[dict(REPORT_TRIG)])
     file_report(server.routines_home, routine="s", run_id="s:4", title="done",
                 target="closed", target_dir=d_closed, answers="R1", closes=True)
+    d_orphan = _routine(server, slug="orphan", trig=[dict(REPORT_TRIG)])
+    atomic_write_json(d_orphan / "inbox" / "answer-q-1.json", {"qid": "q-1", "text": "yes"})
+    # a defer-to-next-run marker says exactly that
+    d_defer = _routine(server, slug="deferred")
+    atomic_write_json(d_defer / "questions" / "pending" / "q-2.json",
+                      {"qid": "q-2", "question": "?", "options": [], "mode": "deferred"})
+    atomic_write_json(d_defer / "inbox" / "answer-q-2.json", {"qid": "q-2", "defer": True})
 
     runner = FakeRunner()
     runner.active["busy"] = "20260805-090000"
@@ -364,19 +371,28 @@ async def test_report_trigger_respects_disabled_active_and_closures(tmp_path):
     assert runner.fired == []
 
 
-async def test_report_trigger_wakes_for_an_operator_answer(tmp_path):
-    """An answer file in the inbox of a FINISHED run is the operator's order to a deferred
-    question — "Do it", clicked hours after the run ended. It used to wait for the next
-    scheduled slot (a week, for a weekly routine); with a report trigger it fires within the
-    cooldown, like any other inbox work. A live run never reaches this path (the trigger fires
-    nothing for an active routine — the run drains its own answers at the turn boundary)."""
+async def test_a_human_answer_wakes_the_routine_that_asked(tmp_path):
+    """The engine-level answer wake: no trigger declared. An answer in the inbox of a
+    FINISHED run is the operator's order to a deferred question — "Do it", clicked hours
+    after the run ended — and it used to wait for the next scheduled slot (a week, for a
+    weekly routine). One fire per coalescing window; a routine cannot answer another
+    routine's question, so this cannot chain the way waking on reports would."""
     from rsched.paths import atomic_write_json
 
     server = _server(tmp_path)
-    d = _routine(server, slug="asked", trig=[dict(REPORT_TRIG)])
-    atomic_write_json(d / "inbox" / "answer-q-20260805-090000-3.json",
-                      {"qid": "q-20260805-090000-3", "text": "Do it", "source": "web"})
+    d = _routine(server, slug="asked")
+    qid = "q-20260805-090000-3"
+    atomic_write_json(d / "questions" / "pending" / f"{qid}.json",
+                      {"qid": qid, "question": "build it?", "options": [], "mode": "deferred"})
+    atomic_write_json(d / "inbox" / f"answer-{qid}.json",
+                      {"qid": qid, "text": "Do it", "source": "web"})
     runner = FakeRunner()
     mgr = TriggerManager(server, runner)
-    await mgr.tick(registry.scan(server))
-    assert runner.fired == [("asked", "trigger")]
+    catalog = registry.scan(server)
+    await mgr.tick(catalog)
+    assert runner.fired == [("asked", "answer")]
+    runner.active.clear()                        # the run ended without consuming (a crash)
+    await mgr.tick(catalog)
+    assert runner.fired == [("asked", "answer")]       # inside the coalescing window: once
+    state = triggers.read_state(server.routines_home, "asked")
+    assert state["triggers"]["answer"]["fires_today"] == 1

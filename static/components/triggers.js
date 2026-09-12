@@ -42,7 +42,7 @@ export function triggersCard(slug, initial) {
       style: "width:80px", title: COOLDOWN_HINT, ...(hasReport ? { disabled: "" } : {}) });
     body.replaceChildren(
       rows.length ? el("div", {}, ...rows.map(row))
-        : el("div", { class: "muted small" }, "no triggers — this routine fires on schedule or manually only, and reads its inbox (reports, answers) only when it next runs"),
+        : el("div", { class: "muted small" }, "no triggers — this routine fires on schedule or manually, and when you answer a question it asked; a report from another routine waits for its next run"),
       el("div", { class: "row mt", style: "gap:8px;flex-wrap:wrap" },
         el("span", { class: "muted small" }, "cooldown (s)"), webhookCooldown,
         el("button", { class: "btn primary", onclick: () => create(webhookCooldown) },
@@ -52,7 +52,7 @@ export function triggersCard(slug, initial) {
         el("button", { class: "btn", ...(hasReport ? { disabled: "" } : {}),
           title: hasReport
             ? "one inbox, one watcher — this routine already has a report trigger (edit its cooldown above)"
-            : "fire this routine when a report, message or answer lands in its inbox — bursts within the cooldown become one run (every new routine is created with one)",
+            : "fire this routine when a report or message from ANOTHER ROUTINE lands in its inbox — for a routine whose job is its inbox; bursts within the cooldown become one run, and a reply to it can wake the sender back (a person's answer to this routine's own question wakes it with or without this)",
           onclick: () => createReport(reportCooldown) }, "+ add report trigger")));
   }
 

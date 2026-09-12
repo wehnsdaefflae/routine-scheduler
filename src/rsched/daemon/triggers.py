@@ -39,36 +39,55 @@ log = logging.getLogger("rsched.triggers")
 
 
 def _inbox_wants_a_run(inbox: Path) -> bool:
-    """True if the inbox holds a message worth WAKING for.
+    """True if the inbox holds a message worth WAKING for — for a routine that DECLARES a
+    report trigger.
 
-    An ANSWER (`answer-*`) counts. It used to be exempt as "part of a question's own
-    lifecycle", which is true only while the asking run is alive — and a live run never
-    reaches this check (the trigger fires nothing for an active routine). An answer file
-    that sits in the inbox is one the operator wrote AFTER the run finished, to a deferred
-    question: it is the operator's order, and it was waiting for the routine's next
-    scheduled slot — a week, for a weekly routine, after "Do it" was clicked. A CLOSURE
-    (`closes` — the terminal acknowledgment of an exchange this routine started) stays
-    exempt: it asks nothing, and buying a full run of a recipe to read "no reply needed" is
-    exactly the amplification the cooldown cannot see. Anything unreadable or unrecognised
-    WAKES (fail open — a message the daemon cannot classify must never be silently
-    swallowed).
+    Answers (`answer-*`) never count here: a human's answer is handled by the engine-level
+    answer wake below, and a declared report trigger is about routine-to-routine traffic.
+    A CLOSURE (`closes` — the terminal acknowledgment of an exchange this routine started)
+    is exempt too: it asks nothing, and buying a full run of a recipe to read "no reply
+    needed" is exactly the amplification the cooldown cannot see. Anything unreadable or
+    unrecognised WAKES (fail open — a message the daemon cannot classify must never be
+    silently swallowed).
     """
     if not inbox.is_dir():
         return False
     for path in inbox.iterdir():
-        if not path.is_file():
+        if not path.is_file() or path.name.startswith("answer-"):
             continue
         msg = read_json(path)
-        if not isinstance(msg, dict):
+        if not isinstance(msg, dict) or not msg.get("closes"):
             return True
-        if msg.get("closes"):
-            continue
-        if path.name.startswith("answer-") and msg.get("defer") and "text" not in msg:
-            continue      # a defer-to-next-run marker says exactly that: do not wake
-        return True
     return False
 
 
+def _answered_question_waiting(routine_dir: Path) -> bool:
+    """True if a human's answer to one of THIS routine's deferred questions sits in its
+    inbox: an `answer-<qid>.json` carrying `text`, whose `questions/pending/<qid>.json`
+    still exists. Both halves matter. A defer-to-next-run marker (`defer`, no text) says
+    exactly that and never wakes; an answer with no pending question is an orphan the boot
+    drain deliberately leaves alone (engine/inbox.collect_deferred_answers), and waking for
+    it would fire the routine every cooldown window forever.
+    """
+    inbox = routine_dir / "inbox"
+    if not inbox.is_dir():
+        return False
+    for path in inbox.glob("answer-*.json"):
+        obj = read_json(path)
+        if not isinstance(obj, dict) or "text" not in obj:
+            continue
+        qid = str(obj.get("qid") or path.stem.removeprefix("answer-"))
+        if (routine_dir / "questions" / "pending" / f"{qid}.json").is_file():
+            return True
+    return False
+
+
+#: The engine-level ANSWER WAKE is bounded like a report trigger — the same coalescing
+#: window, and a daily backstop that only a defect could reach (a human answers a handful of
+#: questions a day; a run that keeps re-asking and a hand that keeps answering is a
+#: conversation, and still under it).
+ANSWER_WAKE_ID = "answer"
+ANSWER_WAKE_MAX_PER_DAY = 12
 class TriggerManager:
     """Owns the spool→fire side of event triggers; constructed with the shared server +
     runner and ticked by the Scheduler with its live catalog.
@@ -90,8 +109,56 @@ class TriggerManager:
             # the watch is a cheap glob on exactly the routines that DECLARE one
             for slug, info in catalog.items():
                 await self._service_report(slug, info)
+            # the answer wake needs no declaration: a human answered a question this
+            # routine asked, and the human is waiting on what the routine does with it
+            for slug, info in catalog.items():
+                await self._service_answer(slug, info)
         except Exception:
             log.exception("trigger tick failed")
+
+    async def _service_answer(self, slug: str, info: registry.RoutineInfo) -> None:
+        """Fire a routine whose inbox holds a human's answer to a question IT asked and
+        deferred — every enabled routine, no trigger declared. Until 0.330.0 that answer
+        waited for the routine's next scheduled run: a week, for a weekly routine, after
+        "Do it" was clicked. This cannot chain the way waking on reports would (a routine
+        cannot answer another routine's question — only a person can), it fires at most
+        once per coalescing window, and a daily backstop catches a defect. The same guards
+        as a report trigger: never while a run is active/queued or the daemon drains, never
+        for a disabled routine. Nothing is consumed here — the fired run's boot drain pairs
+        the answer with its question. A person who wants the answer to WAIT chooses "defer
+        to next run" on the Decisions page, which writes a marker this watch ignores.
+        """
+        if not info.cfg.enabled or not _answered_question_waiting(info.cfg.dir):
+            return
+        if self.runner.draining or self.runner.is_active(slug):
+            return
+        state = triggers.read_state(self.home, slug)
+        raw_per = state.get("triggers")
+        per: dict = raw_per if isinstance(raw_per, dict) else {}
+        got = per.get(ANSWER_WAKE_ID)
+        mine: dict = got if isinstance(got, dict) else {}
+        if self._cooling(mine, triggers.DEFAULT_REPORT_COOLDOWN_S):
+            return
+        now = now_iso()
+        today = now[:10]
+        fires_today = int(mine.get("fires_today") or 0) if mine.get("day") == today else 0
+        if fires_today >= ANSWER_WAKE_MAX_PER_DAY:
+            if mine.get("capped_logged") != today:
+                log_health_event(self.home, "trigger_capped", routine=slug, run_id="",
+                                 detail=f"answer wake hit its {ANSWER_WAKE_MAX_PER_DAY}/day "
+                                        "backstop — an answer keeps waking this routine "
+                                        "without being consumed; the answer waits for the "
+                                        "next scheduled run")
+                per[ANSWER_WAKE_ID] = {**mine, "capped_logged": today}
+                state.update(triggers=per)
+                triggers.write_state(self.home, slug, state)
+            return
+        rid = await self.runner.fire(info.cfg, reason="answer")
+        per[ANSWER_WAKE_ID] = {"last_fired": now, "events": int(mine.get("events") or 0) + 1,
+                               "day": today, "fires_today": fires_today + 1}
+        state.update(triggers=per)
+        triggers.write_state(self.home, slug, state)
+        log.info("answer wake fired routine=%s run=%s", slug, rid)
 
     async def _service_report(self, slug: str, info: registry.RoutineInfo) -> None:
         """Fire a routine whose inbox holds an unconsumed report/message, if it declares

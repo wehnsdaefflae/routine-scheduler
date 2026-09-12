@@ -242,9 +242,10 @@ def test_confirm_from_later_leg_materializes(tmp_path):
     assert (new_dir / "main.md").is_file()                # the decomposed workflow
     cfg = yaml.safe_load((new_dir / "routine.yaml").read_text(encoding="utf-8"))
     assert cfg["slug"] == "arxiv-reading-list" and cfg["name"] == "Arxiv reading list"
-    # born woken by its inbox: a report addressed to it, or an answer to a question it
-    # deferred, fires it — instead of waiting for its next scheduled slot
-    assert [t["type"] for t in cfg["triggers"]] == ["report"]
+    # no trigger is seeded: a report addressed to it waits for its schedule (a routine
+    # must never be able to wake another routine by default — that chains), and a human's
+    # answer to its own question wakes it through the engine, with nothing to configure
+    assert not cfg.get("triggers")
     assert not (ctx.routine.dir / DRAFT_RELPATH).exists()  # draft consumed
 
 
