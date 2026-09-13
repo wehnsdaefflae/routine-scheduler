@@ -148,6 +148,8 @@ class Scheduler:
                                enabled=not lane.get("paused"))
 
     async def boot_catchup(self) -> None:
+        if pause.paused(self.server):
+            return  # a restart must not bypass the operator's durable pause
         for slug, info in self.catalog.items():
             if slug in self.suppressed_members:
                 # D71: a lane-managed member's own cron never fires, catch-up included

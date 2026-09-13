@@ -15,6 +15,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.336.0] — 2026-09-13
+
+### Changed
+
+- **Pause scheduling also holds active routines after their current turn (F475).**
+  The global control marks active routine roots, including registry-visible engines
+  surviving a daemon restart; child runs share the root's hold. The existing engine
+  pause gate waits between turns and credits suspended time. Resume releases only
+  this global pause, preserving individual pauses. Each pause cycle has a durable
+  identifier so an old hold cannot affect a later manually resumed run. Explicit
+  Run now remains available; standalone conversations are not scheduling-controlled.
+- Control-file merges are serialized so concurrent individual and global pause
+  requests cannot discard each other's intent. Startup catch-up respects the durable
+  global scheduling pause. The dashboard explains the turn-boundary behavior.
+
+### Fixed
+
+- The static-layout regression assertion now checks the unified routine/conversation
+  sticky grid shipped in 0.335.0 instead of requiring its retired min/max-width regime
+  (F477); the reading-column escape and sticky-grid assertions remain.
+
 ## [0.335.0] — 2026-09-12
 
 ### Fixed

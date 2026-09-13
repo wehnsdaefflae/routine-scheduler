@@ -20,7 +20,7 @@ from pathlib import Path
 STATIC = Path(__file__).resolve().parents[1] / "static"
 
 #: the mid-width regime's own query, found by its shape so a breakpoint move is not a failure
-MID_QUERY_RE = re.compile(r"@media \(min-width: \d+px\) and \(max-width: [\d.]+px\)")
+MID_QUERY_RE = re.compile(r"@media \(min-width: \d+px\)")
 
 
 def test_conversations_mounts_run_rails():
@@ -57,11 +57,11 @@ def test_rails_persist_at_mid_widths():
     selector matched nothing at all — the escape had never once fired.
     """
     css = (STATIC / "views.css").read_text(encoding="utf-8")
-    m = MID_QUERY_RE.search(css)
-    assert m, "mid-width grid regime missing"
-    block = css.split(m.group(0), 1)[1].split("@media", 1)[0]
-    assert "main:has(.conv-view) { max-width: none; }" in block, \
-        "the view must escape the reading column, through a selector that can match"
+    blocks = [css[m.end():].split("@media", 1)[0] for m in MID_QUERY_RE.finditer(css)]
+    block = next((b for b in blocks if "main:has(.conv-view)" in b), "")
+    assert block, "shared rail grid regime missing"
+    assert "main:has(.conv-view), main:has(.run-view) { max-width: none; }" in block, \
+        "both views must escape the reading column through selectors that can match"
     # the comment above the rule NAMES the dead selector to explain it; strip comments first
     rules = re.sub(r"/\*.*?\*/", "", css, flags=re.DOTALL)
     assert "main.conv-view" not in rules, "the dead element selector must not come back"

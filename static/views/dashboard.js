@@ -109,7 +109,7 @@ async function loadQuota(chip) {
 
 export async function render(view) {
   const pauseBtn = el("button", { class: "btn small", hidden: true,
-    title: "skip scheduled/triggered/one-shot fires — “run now” stays available",
+    title: "pause active routines after their current turn and stop automatic starts — “run now” stays available",
     onclick: async () => {
       pauseBtn.disabled = true;
       try { await api("/api/settings/pause", { method: "POST" }); toast("scheduling paused"); await load(); }
@@ -483,7 +483,7 @@ export async function render(view) {
     if (status.paused) banner.append(el("div", { class: "panel warn", style: "margin:12px 0" },
       el("strong", {}, "⏸ Scheduling is paused — "),
       el("span", { class: "muted" },
-        "no scheduled, triggered or one-shot runs fire; “▶ run now” still works. "),
+        "active routines pause after their current turn; no scheduled, triggered or one-shot runs fire. Resume releases this global hold, not individual pauses. “▶ run now” still works. "),
       el("button", { class: "btn small primary", onclick: async (e) => {
         e.target.disabled = true;
         try { await api("/api/settings/pause", { method: "DELETE" }); toast("scheduling resumed"); await load(); }

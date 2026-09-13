@@ -106,6 +106,12 @@ async def test_scheduler_boot_catchup_arms_missed_lanes(make_routine, tmp_path):
     lane_fires.stamp(home, lane["id"], (datetime.now(UTC) - timedelta(days=3)).isoformat())
     sched = Scheduler(server, FakeRunner(), EventBus())
     sched.rescan()
+    from rsched.daemon import pause
+
+    pause.set_paused(server, True)
+    await sched.boot_catchup()
+    assert lane_runs.read(home, lane["id"]) is None
+    pause.set_paused(server, False)
     await sched.boot_catchup()
     rec = lane_runs.read(home, lane["id"])
     assert rec is not None and rec["armed_by"] == "catchup"

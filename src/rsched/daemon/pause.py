@@ -29,12 +29,26 @@ def paused(server: ServerConfig) -> bool:
     return sentinel_path(server).exists()
 
 
+def generation(server: ServerConfig) -> str:
+    """Identify this durable pause cycle; an absent sentinel holds no run."""
+    try:
+        return sentinel_path(server).read_text(encoding="utf-8").strip()
+    except FileNotFoundError:
+        return ""
+
+
 def set_paused(server: ServerConfig, value: bool) -> None:
-    """Idempotent both ways: re-pausing refreshes the file, re-resuming is a no-op."""
+    """Preserve the current pause cycle on repeated pause requests."""
     p = sentinel_path(server)
     if value:
         p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text("scheduling paused via web\n", encoding="utf-8")
+        from uuid import uuid4
+
+        try:
+            with p.open("x", encoding="utf-8") as handle:
+                handle.write(uuid4().hex + "\n")
+        except FileExistsError:
+            pass
     else:
         try:
             p.unlink()

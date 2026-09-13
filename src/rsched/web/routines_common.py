@@ -29,10 +29,15 @@ def merge_control(run_dir: Path, updates: dict) -> None:
     ONE writer path for every mid-run signal — pause, switch_model, set_deliberation,
     add_rules / drop_rules — so no endpoint can drop a sibling's pending signal.
     """
-    ctrl = read_json(run_dir / "control.json")
-    ctrl = dict(ctrl) if isinstance(ctrl, dict) else {}
-    ctrl.update(updates)
-    atomic_write_json(run_dir / "control.json", ctrl)
+    from ..paths import file_lock
+
+    with file_lock(run_dir / ".control.lock") as acquired:
+        if not acquired:
+            raise HTTPException(409, "run controls are busy — retry this change")
+        ctrl = read_json(run_dir / "control.json")
+        ctrl = dict(ctrl) if isinstance(ctrl, dict) else {}
+        ctrl.update(updates)
+        atomic_write_json(run_dir / "control.json", ctrl)
 
 
 def queued_message(inbox: Path, msg_id: str, *, via: str = "",

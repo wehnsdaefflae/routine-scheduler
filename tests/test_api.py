@@ -2237,6 +2237,34 @@ def test_pause_toggle_endpoints(client):
     assert c.delete("/api/settings/pause").status_code == 200     # idempotent re-resume
 
 
+def test_global_pause_marks_active_routines_without_overwriting_manual_pause(client):
+    """The global button holds existing routine trees, not standalone conversations."""
+    from types import SimpleNamespace
+
+    c, tmp = client
+    root = tmp / "routines" / "apir" / "runs" / "20260913-000000"
+    conversation = tmp / "conversations" / "chat" / "runs" / "20260913-000000"
+    root.mkdir(parents=True)
+    conversation.mkdir(parents=True)
+    atomic_write_json(root / "control.json", {"pause": True, "switch_model": "kept"})
+    runner = c.app.state.runner
+    survivor = _mk_run(tmp / "routines", "apir", "20260912-000000", "running")
+    runner.active.update({"apir": SimpleNamespace(run_dir=root),
+                          "chat": SimpleNamespace(run_dir=conversation)})
+    try:
+        assert c.post("/api/settings/pause").status_code == 200
+        assert read_json(root / "control.json") == {
+            "pause": True, "switch_model": "kept",
+            "scheduling_pause": (tmp / "routines" / ".control" / "pause.request").read_text().strip()}
+        assert not (conversation / "control.json").exists()
+        assert read_json(survivor / "control.json")["scheduling_pause"] == (
+            tmp / "routines" / ".control" / "pause.request").read_text().strip()
+        assert c.delete("/api/settings/pause").status_code == 200
+        assert read_json(root / "control.json")["pause"] is True
+    finally:
+        runner.active.clear()
+
+
 def test_run_detail_model_falls_back_to_config(client):
     """F166: a pre-engine boot stub carries no model in status.json — the detail endpoint
     then reports the routine's CONFIGURED main model instead of nothing (the run page's

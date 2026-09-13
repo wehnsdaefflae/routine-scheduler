@@ -43,8 +43,15 @@ def pause_gate(loop, poll_s: float) -> None:
     """
     ctx = loop.ctx
     control = ctx.root_run_dir / "control.json"
-    obj = read_json(control)
-    if not (isinstance(obj, dict) and obj.get("pause")):
+    from ..daemon.pause import generation
+
+    def held() -> bool:
+        obj = read_json(control)
+        return isinstance(obj, dict) and bool(
+            obj.get("pause") or (obj.get("scheduling_pause")
+                                 and obj["scheduling_pause"] == generation(ctx.server)))
+
+    if not held():
         return
     ctx.write_status("paused")
     started = time.monotonic()
@@ -53,8 +60,7 @@ def pause_gate(loop, poll_s: float) -> None:
             if loop._aborted():
                 raise RunAborted
             time.sleep(poll_s)
-            obj = read_json(control)
-            if not (isinstance(obj, dict) and obj.get("pause")):
+            if not held():
                 break
     finally:
         # an abort mid-pause credits the waited time too — paused waiting must never be

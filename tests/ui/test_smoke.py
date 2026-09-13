@@ -66,6 +66,8 @@ def test_pause_scheduling_toggle(ui, ui_page):
     ui_page.wait_for_selector("h1:has-text('Routines')", timeout=10_000)
     ui_page.click("button:has-text('pause scheduling')")
     expect(ui_page.locator(".panel.warn")).to_contain_text("Scheduling is paused", timeout=10_000)
+    expect(ui_page.locator(".panel.warn")).to_contain_text("active routines pause after their current turn")
+    expect(ui_page.locator(".panel.warn")).to_contain_text("not individual pauses")
     ui_page.click("button:has-text('resume scheduling')")
     expect(ui_page.locator("body")).not_to_contain_text("Scheduling is paused", timeout=10_000)
     expect(ui_page.locator("button:has-text('pause scheduling')")).to_be_visible(timeout=10_000)
