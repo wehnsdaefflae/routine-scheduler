@@ -73,7 +73,13 @@ def _openai_content(content: str, media: list[dict]) -> list[dict]:
     parts: list[dict] = [{"type": "text", "text": content}] if content else []
     for item in media:
         mime = item["media_type"]
-        b64 = read_media_b64(item["path"])
+        try:
+            b64 = read_media_b64(item["path"])
+        except OSError as exc:
+            parts.append({"type": "text", "text":
+                          f"[Attachment unavailable: {item['path']}: {exc}. "
+                          "The earlier observation remains in the conversation.]"})
+            continue
         if mime == PDF_MIME:  # defensive — supports_media routes PDFs to the vision util
             parts.append({"type": "file", "file": {"filename": Path(item["path"]).name,
                                                     "file_data": f"data:{mime};base64,{b64}"}})
@@ -221,10 +227,20 @@ class OpenAICompatEndpoint:
             options["num_predict"] = max_tokens
         # Ollama's native chat takes images as a per-message base64 `images` list; the
         # engine-side `media` key must never ride the request (it holds local paths).
-        native_msgs = [{"role": m["role"], "content": m.get("content", ""),
-                        **({"images": [read_media_b64(i["path"]) for i in m["media"]]}
-                           if m.get("media") else {})}
-                       for m in messages]
+        native_msgs = []
+        for message in messages:
+            rendered = {"role": message["role"], "content": message.get("content", "")}
+            images = []
+            for item in message.get("media") or []:
+                try:
+                    images.append(read_media_b64(item["path"]))
+                except OSError as exc:
+                    rendered["content"] += (
+                        f"\n[Attachment unavailable: {item['path']}: {exc}. "
+                        "The earlier observation remains in the conversation.]")
+            if images:
+                rendered["images"] = images
+            native_msgs.append(rendered)
         body = {"model": model, "messages": native_msgs, "format": schema, "stream": False,
                 "options": options}
 

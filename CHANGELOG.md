@@ -15,6 +15,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.336.1] — 2026-09-13
+
+### Fixed
+
+- **Deleting a previously viewed attachment no longer crashes the next model request
+  (F478, R1454).** Anthropic, OpenAI-compatible and native Ollama conversions handle
+  send-time filesystem errors as explicit unavailable-attachment text, retaining
+  the earlier observation and every other readable attachment. Initial view-image
+  validation was already present; the defect was rereading historical media after
+  a scratch file was deleted. Regression coverage exercises deletion between sends
+  and the native provider's outgoing request without network access.
+
 ## [0.336.0] — 2026-09-13
 
 ### Changed

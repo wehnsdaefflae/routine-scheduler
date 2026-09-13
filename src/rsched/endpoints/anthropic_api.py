@@ -72,7 +72,14 @@ def _content_blocks(content: str, media: list[dict]) -> list[dict]:
     blocks: list[dict] = [{"type": "text", "text": content}] if content else []
     for item in media:
         mime = item["media_type"]
-        source = {"type": "base64", "media_type": mime, "data": read_media_b64(item["path"])}
+        try:
+            data = read_media_b64(item["path"])
+        except OSError as exc:
+            blocks.append({"type": "text", "text":
+                           f"[Attachment unavailable: {item['path']}: {exc}. "
+                           "The earlier observation remains in the conversation.]"})
+            continue
+        source = {"type": "base64", "media_type": mime, "data": data}
         blocks.append({"type": "document" if mime == PDF_MIME else "image", "source": source})
     return blocks
 
