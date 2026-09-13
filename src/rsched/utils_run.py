@@ -201,20 +201,17 @@ def run_util(home: Path, name: str, args: list[str], *, timeout: int = 300,
                 proc.kill()
             proc.wait()
 
-        def _read_capped(fh) -> str:
-            fh.seek(0)
-            text = fh.read(OUTPUT_CAP + 1)
-            if len(text) > OUTPUT_CAP:
-                text = text[:OUTPUT_CAP] + "\n[output truncated at 1 MB]"
-            return text
+        from .captured_output import read_capped
+
+        def _read_capped(fh, diagnostic: str = "") -> str:
+            return read_capped(fh, OUTPUT_CAP, diagnostic=diagnostic)
 
         if timed_out:
             # F226: keep the stdout/stderr captured BEFORE the kill — a util that hung
             # AFTER printing diagnostics (the common case) would otherwise lose exactly
             # the material that explains why it hung. The timeout note rides on stderr.
             note = f"util {name!r} timed out after {timeout}s (process group killed)"
-            partial_err = _read_capped(err_f)
-            return -1, _read_capped(out_f), f"{partial_err}\n[{note}]" if partial_err else note
+            return -1, _read_capped(out_f), _read_capped(err_f, diagnostic=note)
         return proc.returncode, _read_capped(out_f), _read_capped(err_f)
 
 

@@ -15,6 +15,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.338.1] — 2026-09-13
+
+### Fixed
+
+- **Oversized utility capture is explicitly incomplete and parseable (F472).**
+  Capture overflow produces a bounded JSON envelope with an escaped preview and
+  capture-loss metadata instead of cutting the original JSON mid-token. Timeout
+  diagnostics remain inside the envelope. Observations distinguish capture loss
+  from preview truncation, and spill pointers identify incomplete capture envelopes
+  rather than claiming that discarded process output can be recovered. Under-limit
+  output is unchanged; incomplete envelopes bypass optional compression.
+
 ## [0.338.0] — 2026-09-13
 
 ### Changed

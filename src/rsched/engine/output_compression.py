@@ -74,12 +74,16 @@ def command_output(ctx: RunContext, name: str, out: str, err: str, code: int) ->
     """
     stdout, trunc_out = truncate(out, keep="head")
     stderr, trunc_err = truncate(err, cap=8000 if code != 0 else 2000)
+    capture = {key: True for key, text in (("stdout", out), ("stderr", err))
+               if getattr(text, "capture_truncated", False)}
     obs: dict = {"stdout": stdout, "stderr": stderr, "truncated": trunc_out or trunc_err}
+    if capture:
+        obs["capture_truncated"] = capture
     if pointer := outputs.spill(ctx, name, out, err,
                                 out_truncated=trunc_out, err_truncated=trunc_err):
         obs["full_output"] = pointer
     mode = ctx.routine.output_compression
-    if mode == "off":
+    if mode == "off" or capture:
         return obs
     metrics: dict = {"mode": mode, "status": "skipped", "input_chars": len(out)}
     obs["compression"] = metrics

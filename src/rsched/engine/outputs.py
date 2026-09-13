@@ -103,6 +103,8 @@ def spill(ctx: RunContext, name: str, out: str, err: str, *,
             key = "stdout" if stream == "out" else "stderr"
             pointer[key] = rel
             pointer[f"{key}_chars"] = len(text)
+            if getattr(text, "capture_truncated", False):
+                pointer[f"{key}_capture_truncated"] = True
         _prune(base)
     except (OSError, ValueError, AttributeError):
         # best-effort, like the note channel: a degenerate path raises before the OS is
@@ -115,8 +117,12 @@ def pointer_line(pointer: dict) -> str:
     """The observation's `[full output]` line — the pointer at the moment of need, which
     is why the store needs no index: a run never has to guess a filename.
     """
-    saved = [f"the complete {pointer[k + '_chars']}-char {k} at `{pointer[k]}`"
-             for k in ("stdout", "stderr") if pointer.get(k)]
+    saved = [
+        (f"the incomplete capture envelope ({pointer[k + '_chars']} chars) "
+         f"for {k} at `{pointer[k]}`"
+         if pointer.get(k + "_capture_truncated")
+         else f"the complete {pointer[k + '_chars']}-char {k} at `{pointer[k]}`")
+        for k in ("stdout", "stderr") if pointer.get(k)]
     return (" and ".join(saved).capitalize()
             + " — read_file it (start_line/max_lines page it) for the elided middle "
               "instead of re-running the util.")
