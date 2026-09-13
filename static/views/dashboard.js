@@ -406,9 +406,9 @@ export async function render(view) {
     body.append(grid);
   }
 
-  // A run event changes routine cards and the daemon status — nothing else on this page.
-  // Lanes, domains and the week strip are CONFIG-shaped: they move only through this page's
-  // own actions (each of which reloads in full) or a page load. Refetching them per bus tick
+  // Run events change routine cards, daemon status and live lane progress.
+  // Domains and the week strip remain cached on light refreshes; /api/lanes also
+  // carries the chain cursor and must refresh on run transitions. Refetching domains per bus tick
   // was the storm: /api/domains alone cost the daemon 4 s of parsing per request and was
   // requested every 600 ms while runs were active (2026-09-12, 249 calls averaging 67 s).
   let lastSched, lastDomainData;
@@ -416,8 +416,9 @@ export async function render(view) {
     let routines, status, sched, domainData;
     try {
       if (light && lastSched !== undefined && lastDomainData !== undefined && laneData) {
-        [routines, status] = await Promise.all([
-          api("/api/routines"), api("/api/status").catch(() => ({}))]);
+        [routines, status, laneData] = await Promise.all([
+          api("/api/routines"), api("/api/status").catch(() => ({})),
+          api("/api/lanes").catch(() => null)]);
         sched = lastSched;
         domainData = lastDomainData;
       } else {

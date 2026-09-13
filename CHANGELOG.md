@@ -15,6 +15,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.337.1] — 2026-09-13
+
+### Fixed
+
+- **Lane progress stays current during run transitions (F479).** Dashboard light
+  refreshes now fetch the lane payload, whose in-flight cursor and run availability
+  change while a chain executes. Domain and weekly schedule data remain cached;
+  LLM events remain ignored. A browser regression reproduces the old missing-progress
+  failure and verifies start, advancement, completion and no domain refetch.
+
 ## [0.337.0] — 2026-09-13
 
 ### Added
