@@ -15,6 +15,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.338.0] — 2026-09-13
+
+### Changed
+
+- **Abilities-panel responsibilities separated (F453).** Static option/help tables
+  live in abilities-data.js; uncovered-capability rendering lives in
+  abilities-orphans.js. The extraction preserves the original function bodies,
+  live capability/permission Sets, full render callback and public node/value API.
+
 ## [0.337.1] — 2026-09-13
 
 ### Fixed
