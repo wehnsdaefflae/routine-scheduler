@@ -1,6 +1,17 @@
 /* rsched — view-specific styling (dashboard bays, log feed, transcript, decisions, setup…).
    Design tokens + primitives live in base.css. */
 
+/* Action timing stays quiet beside the transcript; motion follows elapsed time. */
+.action-time { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 6px 12px; }
+.action-time-bar { width: 100px; height: 5px; accent-color: var(--signal); }
+.action-time-bar::-webkit-progress-bar { background: var(--rule); border-radius: 3px; }
+.action-time-bar::-webkit-progress-value { background: var(--signal); border-radius: 3px; }
+.action-time.running .action-time-bar::-webkit-progress-value { transition: width 250ms linear; }
+.action-time-label { font-variant-numeric: tabular-nums; }
+@media (prefers-reduced-motion: reduce) {
+  .action-time.running .action-time-bar::-webkit-progress-value { transition: none; }
+}
+
 /* ---------- dashboard: routine bays ---------- */
 .card {
   background: var(--plate);

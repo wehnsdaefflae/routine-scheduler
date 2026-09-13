@@ -17,6 +17,7 @@
 //                        user messages; omitted = the text block's plain list stands alone.
 
 import { apiBlobUrl } from "/static/api.js";
+import { actionTime } from "/static/components/actiontime.js";
 import { md, mdInline } from "/static/md.js";
 import { answerForm } from "/static/components/answerform.js";
 import { el, fmtTime, fmtTokens, fullOutput, compressionInfo } from "/static/util.js";
@@ -86,6 +87,7 @@ export function createTranscript(container, opts = {}) {
   const root = el("div", { class: "transcript" });
   container.append(root);
   let openTurn = null; // the turn box awaiting its observation
+  let openClock = null; // timing feedback for the action awaiting completion
   let lastPhase = null; // the acting stage of the previous turn — a change inserts a divider
   const qforms = new Map();   // qid -> { controls, created } for open inline answer forms
   const referBtn = (label, snippet) => referButton(opts.onRefer, label, snippet);
@@ -183,6 +185,8 @@ export function createTranscript(container, opts = {}) {
   }
 
   function addTurn(ev) {
+    openClock?.stop(ev.ts, false);
+    openClock = null;
     const a = ev.payload;
     // Group the flat stream by acting stage: assistant_action events carry the live phase
     // (stamped from stage-module reads) — a change draws a labeled divider, so the say
@@ -231,7 +235,10 @@ export function createTranscript(container, opts = {}) {
         el("pre", {}, JSON.stringify(a, null, 1))),
       referBtn(`turn ${ev.turn ?? "?"} (${a.kind}${a.kind === "util" && a.name ? ` ${a.name}` : ""})`,
         a.say || brief));
+    const clock = actionTime(ev, opts.isLive);
+    turn.append(clock.node);
     root.append(turn);
+    openClock = clock;
     openTurn = a.kind === "finish" ? null : turn;
     return turn;
   }
@@ -333,6 +340,8 @@ export function createTranscript(container, opts = {}) {
     }
     const obs = obsBody(text, (o.kind === "llm" && !o.error)
       || (o.kind === "memory_read" && !o.missing));
+    openClock?.stop(ev.ts);
+    openClock = null;
     if (openTurn) { openTurn.append(obs); openTurn = null; }
     else root.append(el("div", { class: "turn" }, obs));
   }
@@ -478,6 +487,8 @@ export function createTranscript(container, opts = {}) {
       if (ev.type === "assistant_action") return void addTurn(ev);
       if (ev.type === "observation") return void addObservation(ev);
       if (ev.type === "finish") {
+        openClock?.stop(ev.ts);
+        openClock = null;
         const p = ev.payload;
         root.append(el("div", { class: `finish-banner ${p.status}` },
           el("strong", {}, `finish: ${p.status}`),

@@ -15,6 +15,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.337.0] — 2026-09-13
+
+### Added
+
+- **Action-message timing in routine transcripts and conversation work folds (F476).**
+  Each action shows elapsed time; utility, script, shell and wait operations also show
+  their configured operation limit with an advancing progress indicator. The label
+  distinguishes operation limits from a kill countdown: approval and setup can precede
+  timed execution, and actions without a fixed deadline are identified explicitly.
+  Observation and finish events freeze the display; completed history uses recorded
+  event timestamps. Detached cards stop updating, and reduced motion disables the
+  progress transition. Browser regressions cover live progress, completion, conversation
+  rendering and historical replay.
+
 ## [0.336.1] — 2026-09-13
 
 ### Fixed
