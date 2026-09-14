@@ -20,3 +20,6 @@ audit/
 
 # Claude Code CLI writes local settings into the tree it works on — never commit it
 .claude/
+
+# host-specific resource ceilings (see file header)
+docker-compose.override.yml
