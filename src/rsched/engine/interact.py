@@ -118,10 +118,12 @@ def _free_qid(ctx) -> str:
     return qid
 
 
-def _config_target(ctx, cpatch: dict | None) -> tuple[str, str]:
-    """The routine a `config_patch` is FOR — its own asker unless the patch names another.
+def _config_target(ctx, cpatch: dict | None) -> tuple[str, str, str]:
+    """What a `config_patch` is FOR — its own asker unless the patch names another target.
 
-    Returns `(target_slug, error)`; the slug is `""` when the patch is for the asker itself.
+    Returns `(target, home, error)`. `target` is `""` when the patch is for the asker itself;
+    `home` is the API surface the apply must PATCH — `""` for the asker, `"routines"` for
+    another routine, `"domains"` for a domain (R1488).
 
     D123/F458. A run proposes a config change it cannot make itself; the Decisions page applies
     it. Before 0.326.0 that apply was hardwired to the ASKING routine, so config-optimizer —
@@ -131,22 +133,43 @@ def _config_target(ctx, cpatch: dict | None) -> tuple[str, str]:
     one object in the action schema, and is popped here so the remaining keys stay a clean
     PATCH body the endpoint's `extra="forbid"` accepts.
 
+    R1488 adds the other target a config proposal can legitimately have: a DOMAIN, named as
+    `domain`. A domain's shared block is config exactly as a routine's file is, and the daemon
+    has always exposed `PATCH /api/domains/{id}` — but with the target able to name only a
+    routine, every domain-level finding ended as prose telling the operator to go and click it
+    themselves, which is the delegation of mechanical work the ask-policy rule forbids.
+    Naming both in one patch is refused rather than guessed at: they are two different surfaces,
+    and a patch body valid for one is not valid for the other.
+
     Resolution happens at this seam, not at apply time, because an unresolvable target must
-    never reach the user wearing a working button. A slug naming no installed routine is
-    refused on the turn that asked. Falling back to the asker is the defect itself and is
-    never done.
+    never reach the user wearing a working button. A name matching no installed routine or no
+    domain is refused on the turn that asked. Falling back to the asker is the defect itself and
+    is never done.
     """
     if not cpatch:
-        return "", ""
+        return "", "", ""
     want = str(cpatch.pop("routine", "") or "").strip()
-    if not want or want == ctx.routine.slug:
-        return "", ""
+    want_domain = str(cpatch.pop("domain", "") or "").strip()
+    if want and want_domain:
+        return "", "", (f"config_patch names both routine {want!r} and domain {want_domain!r}: "
+                        "a patch applies to ONE config surface — a routine's routine.yaml or a "
+                        "domain's shared block. Send the two changes as two proposals.")
     home = ctx.routine.dir.parent
+    if want_domain:
+        from .. import domains
+
+        if domains.get(home, want_domain) is None:
+            return "", "", (f"config_patch domain {want_domain!r}: no such domain under {home} "
+                            "— the target must name a domain by the id the Domains page lists, "
+                            "not by its display name.")
+        return want_domain, "domains", ""
+    if not want or want == ctx.routine.slug:
+        return "", "", ""
     if not (home / want / "routine.yaml").exists():
-        return "", (f"config_patch routine {want!r}: no such routine under {home} — the target "
-                    "must name an installed routine by its slug, as the Routines page lists "
-                    "it. Omit `routine` to propose the change for yourself.")
-    return want, ""
+        return "", "", (f"config_patch routine {want!r}: no such routine under {home} — the "
+                        "target must name an installed routine by its slug, as the Routines "
+                        "page lists it. Omit `routine` to propose the change for yourself.")
+    return want, "routines", ""
 
 
 def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question") -> dict:
@@ -171,7 +194,7 @@ def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question") -> di
     # routine can never reach the Decisions page wearing an apply button. An unresolvable
     # target is refused loudly rather than falling back to the asker — a silent fallback is
     # precisely the defect.
-    ctarget, cterr = _config_target(ctx, cpatch)
+    ctarget, chome, cterr = _config_target(ctx, cpatch)
     if cterr:
         return {"kind": qtype if qtype != "question" else "ask_user", "error": cterr}
     # A typed access request (entities.py) rides the same record; the Decisions page
@@ -190,7 +213,7 @@ def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question") -> di
     if mode == "deferred":
         inbox.file_question(ctx.routine.dir, qid, question, options, ctx.run_ts,
                             qtype=qtype, default=default, config_patch=cpatch,
-                            config_target=ctarget, request=req_ids)
+                            config_target=ctarget, config_home=chome, request=req_ids)
         ctx.asks_deferred += 1   # churn telemetry: a decision thrown over the wall
         return {"kind": "ask_user", "qid": qid, "mode": mode,
                 **({"request": req_ids} if req_ids else {})}
@@ -202,7 +225,8 @@ def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question") -> di
     # live status.json to show one, and an aborted run leaves it behind as deferred
     inbox.file_question(ctx.routine.dir, qid, question, options, ctx.run_ts,
                         mode="blocking", qtype=qtype, default=default, expires=expires,
-                        config_patch=cpatch, config_target=ctarget, request=req_ids)
+                        config_patch=cpatch, config_target=ctarget, config_home=chome,
+                        request=req_ids)
     ctx.write_status("waiting_user",
                      question={"qid": qid, "question": question, "options": options,
                                "asked": ctx.run_ts, "expires": expires, **extra,
@@ -237,7 +261,7 @@ def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question") -> di
         # the run dies but the decision survives — as a deferred question for the next run
         inbox.file_question(ctx.routine.dir, qid, question, options, ctx.run_ts,
                             qtype=qtype, default=default, config_patch=cpatch,
-                            config_target=ctarget, request=req_ids)
+                            config_target=ctarget, config_home=chome, request=req_ids)
         ctx.asks_deferred += 1
         raise
     finally:
@@ -248,7 +272,7 @@ def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question") -> di
         # timeout: on the stated default, the record staying open as deferred.
         inbox.file_question(ctx.routine.dir, qid, question, options, ctx.run_ts,
                             qtype=qtype, default=default, config_patch=cpatch,
-                            config_target=ctarget, request=req_ids)
+                            config_target=ctarget, config_home=chome, request=req_ids)
         ctx.asks_deferred += 1
         return {"kind": "ask_user", "qid": qid, "mode": mode, "deferred_by_user": True,
                 **({"default": default} if default else {})}
@@ -266,7 +290,7 @@ def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question") -> di
             # leaves it live for the next run instead of silently dropping it.
             inbox.file_question(ctx.routine.dir, qid, question, options, ctx.run_ts,
                                 qtype=qtype, default=default, config_patch=cpatch,
-                                config_target=ctarget, request=req_ids)
+                                config_target=ctarget, config_home=chome, request=req_ids)
             loop.dialog_qid = qid
             return {"kind": "ask_user", "qid": qid, "mode": mode, "dialog": True,
                     "user_message": answer["text"],
@@ -291,7 +315,7 @@ def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question") -> di
     # The record stays open (now deferred) so a late answer still reaches a future run.
     inbox.file_question(ctx.routine.dir, qid, question, options, ctx.run_ts,
                         qtype=qtype, default=default, config_patch=cpatch,
-                        config_target=ctarget, request=req_ids)
+                        config_target=ctarget, config_home=chome, request=req_ids)
     ctx.asks_deferred += 1
     return {"kind": "ask_user", "qid": qid, "mode": mode, "timed_out": True,
             "timeout_min": timeout_min, **({"default": default} if default else {})}

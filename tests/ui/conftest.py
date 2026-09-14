@@ -113,8 +113,13 @@ class UiHarness:
     def seed_question(self, slug: str, qid: str, question: str, *, mode: str = "deferred",
                       options: list[str] | None = None, default: str = "",
                       expires: str = "", asked: str = "20260714-070000",
-                      request: list[str] | None = None) -> Path:
-        """Drop a durable decision record the way the engine files one."""
+                      request: list[str] | None = None,
+                      extra: dict | None = None) -> Path:
+        """Drop a durable decision record the way the engine files one.
+
+        `extra` carries the optional keys the engine writes alongside the question —
+        config_patch / config_target / config_home for the Decisions page's apply bridge.
+        """
         pending = self.routines / slug / "questions" / "pending"
         pending.mkdir(parents=True, exist_ok=True)
         record = {"qid": qid, "question": question, "mode": mode,
@@ -124,6 +129,7 @@ class UiHarness:
             record["request"] = list(request)
         if expires:
             record["expires"] = expires
+        record.update(extra or {})
         path = pending / f"{qid}.json"
         atomic_write_json(path, record)
         return path

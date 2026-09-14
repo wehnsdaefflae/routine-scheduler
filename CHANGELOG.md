@@ -15,6 +15,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.342.0] — 2026-09-14
+
+### Added — a decision's config change can target a DOMAIN, not only a routine
+
+A run proposes a config change it cannot make itself; the Decisions page applies it with one
+click. That bridge could only ever address an installed ROUTINE: the target was validated
+against `<home>/<slug>/routine.yaml`, and the page derived the PATCH url from the ASKER's kind.
+A domain's shared block is config in exactly the same sense, and `PATCH /api/domains/{id}` has
+always existed — but there was nowhere for a proposal to say it meant a domain, so every
+domain-level finding ended as prose telling the operator to go and click it on the Domains page
+(R1488/R1489).
+
+- `config_patch` accepts `domain: "<id>"` beside `routine: "<slug>"`. It is resolved and
+  validated against the domain store at ASK time, so an id naming no domain is refused on the
+  turn that asked rather than reaching the user wearing a button that cannot work.
+- Naming both a routine and a domain in one patch is refused: they are two config surfaces and
+  a body valid for one is not valid for the other.
+- The decision record carries `config_home` ("routines" or "domains") alongside `config_target`,
+  and the Decisions page posts where the record says — including the copy, which now reads
+  "asked for it on that domain's behalf".
+
+The existing routine path is unchanged, and a patch for the asker itself still carries neither
+key. Covered by three engine tests and two browser tests of the apply button itself — the config
+bridge had no UI coverage at all before this.
+
 ## [0.341.2] — 2026-09-14
 
 ### Fixed — a domain PATCH says which fields it applied

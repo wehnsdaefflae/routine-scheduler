@@ -301,14 +301,20 @@ export async function render(view, query = {}) {
     // patch silently never landed); a detached task / clarify workspace has none — its
     // proposal renders read-only rather than pretending a button would work.
     const configBar = (q.config_patch && !q.meta) ? (() => {
-      const home = q.conversation ? "conversations" : (q.background || q.wizard) ? "" : "routines";
-      const noun = q.conversation ? "conversation" : "routine";
+      // R1488: a domain's shared block is config too, and `PATCH /api/domains/{id}` has always
+      // existed — but with the home derived from the ASKER's kind alone, a domain could never
+      // be the target, so every domain-level proposal came out as prose asking the operator to
+      // go and click it. The engine now resolves target AND home together at ask time, so an
+      // explicit `config_home` is authoritative here and the button posts where it says.
+      const home = q.config_home ? q.config_home
+        : q.conversation ? "conversations" : (q.background || q.wizard) ? "" : "routines";
+      const noun = home === "domains" ? "domain" : q.conversation ? "conversation" : "routine";
       // D123/F458: a config_patch may be FOR another routine (config-optimizer's whole job).
       // The engine resolved and validated that slug at ask time (engine/interact.py), so the
       // patch goes to the TARGET, not to whoever asked — the old hardwiring to q.routine
       // silently rewrote the asker's own config and reported success (R1343).
       const target = (!q.conversation && q.config_target) ? q.config_target : q.routine;
-      const elsewhere = target !== q.routine;
+      const elsewhere = home === "domains" || target !== q.routine;
       const btn = home ? el("button", { class: "btn small primary" }, "approve & apply") : null;
       if (btn) btn.onclick = async () => {
         btn.disabled = true;
@@ -341,7 +347,7 @@ export async function render(view, query = {}) {
         el("div", { class: "small", style: "margin-bottom:4px" },
           home ? (elsewhere
                  ? `proposed config change for ${target} — ${q.routine} asked for it on that `
-                   + "routine's behalf; approving it patches "
+                   + `${noun}'s behalf; approving it patches `
                    + `${target}, not ${q.routine}:`
                  : "proposed config change — a run can't edit routine.yaml, so approve it here:")
                : "proposed config change — this decision's home has no config to patch "
