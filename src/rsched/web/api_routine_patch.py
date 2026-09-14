@@ -129,9 +129,16 @@ def _apply_resource_fields(raw: dict, updates: dict) -> None:
     if "schedule" in updates:
         sched_patch = updates.pop("schedule") or {}
         raw.setdefault("schedule", {})
+        if "disabled" in sched_patch:
+            if not isinstance(sched_patch["disabled"], bool):
+                raise HTTPException(400, "schedule.disabled must be a boolean")
+            raw.pop("enabled", None)
         if "friendly" in sched_patch:
             try:
-                cron = schedule.friendly_to_cron(sched_patch.pop("friendly"))
+                friendly = sched_patch.pop("friendly")
+                cron = schedule.friendly_to_cron(friendly)
+                raw["schedule"]["disabled"] = friendly.get("frequency") == "disabled"
+                raw.pop("enabled", None)
             except ValueError as exc:
                 raise HTTPException(400, f"invalid schedule: {exc}") from exc
             raw["schedule"].update(cron=cron, tz=schedule.server_tz())

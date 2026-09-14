@@ -83,6 +83,10 @@ def cmd_daemon(_args) -> int:
                               server.libraries_home)
     for pr in problems:
         logging.getLogger("rsched").warning("config: %s", pr)
+    from .migrate_disabled_schedule import run as migrate_disabled_schedule
+
+    # MIGRATION(expires=2026-12-01): one routine scheduling control replaces enabled.
+    migrate_disabled_schedule(server.routines_home)
     app = create_app(server)
     # env overrides so a container can bind the LAN (RSCHED_BIND=0.0.0.0) and remap the port
     # without editing the mounted config; unset → the config's bind/port as before.
