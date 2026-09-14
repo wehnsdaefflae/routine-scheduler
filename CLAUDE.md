@@ -136,10 +136,10 @@ one you are about to touch, not all of them.
 ## Core contracts — extend, never repurpose
 
 - **Actions** (`engine/actions.py` — flat schema on purpose; weak models and Ollama grammars handle flat
-  far better than `oneOf`): `util, write_util, remove_util, read_file, view_image, write_file, edit_file,
-  memory_read, memory_write, read_rule, write_rule, script, shell, llm, spawn, subtask, detach,
-  schedule_run, create_routine, manage_lane, list_models, subruns, kill, wait, ask_user, report,
-  finish` (27, `actionschema.KINDS`). **`script` runs
+  far better than `oneOf`): `util, write_util, remove_util, read_file, view_image, write_file, delete,
+  move, mkdir, edit_file, memory_read, memory_write, read_rule, write_rule, script, shell, llm, spawn,
+  subtask, detach, schedule_run, create_routine, manage_lane, list_models, subruns, kill, wait,
+  ask_user, report, finish` (30, `actionschema.KINDS`). **`script` runs
   the routine's OWN `scripts/<name>.py`** — persistent helper TOOLING, deliberately NOT a co-equal
   interpreter of the routine (the "procedure" symmetry doctrine was reversed 2026-08-12): the recipe
   stays the single interpreter of the task and delegates only judgment-free sub-steps. A repeating
@@ -187,6 +187,16 @@ one you are about to touch, not all of them.
   is rejected unless this run has seen it (`ctx.seen_paths` — read/viewed/written this run, rebuilt
   from the transcript on resume); the own dir is exempt (state/report rewrites are the normal mode),
   append and new files pass, and `edit_file` needs no gate — its verbatim anchor is self-grounding.
+  `delete` and `move` hold the same gate for a path outside the own dir. **`read_file` never
+  materialises a file**: it streams the requested window line by line, a directory path returns its
+  LISTING (one entry per line, paged like a file), and a binary file or one over
+  `fileops.READ_MAX_BYTES` (8 MiB) is refused from a stat plus an 8 KiB NUL sniff BEFORE any
+  decode — the refusal names the size. The listing and the refusal both GROUND the path (a stat
+  is a look; `history.seen_paths` reads the refusal's `size` key back on resume), so the delete
+  gate never sends a run to read a media file: on 2026-09-14 a run `read_file`'d a 1.5 GB .mkv to
+  satisfy it, the whole file was decoded into a str twice, and the 3.4 GB host swap-thrashed for
+  five hours until a physical reset. A shell `ls` does not ground — the engine sees only what
+  read_file returned.
   There is ONE **CHILD RUN** concept (`engine/child.py`) — an isolated run with its own dir, its
   own budget, its own recipe, and a declared relationship to its parent. `spawn` (parallel),
   `subtask` (sequential) and a conversation `branch` are three scheduling MODES of it, never three

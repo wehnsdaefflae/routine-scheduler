@@ -11,6 +11,7 @@ import json
 import os
 import shutil
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from ..paths import atomic_write, resolve_rel
 from ..readmodels.statemap import STAGES_DIR
@@ -18,7 +19,19 @@ from .observations import OBS_CAP_CHARS
 from .outputs import OUTPUTS_DIR
 from .run_context import RunContext
 
+if TYPE_CHECKING:
+    from collections.abc import Iterable, Iterator
+
 READ_DEFAULT_MAX_LINES = 200
+READ_WINDOW_MAX_LINES = 500          # the schema's `max_lines` maximum, mirrored
+# The largest file read_file will OPEN. The read used to materialise the whole file before
+# windowing it — `read_text(errors="replace")` on a 1.5 GB .mkv became a multi-GB str plus a
+# second copy from splitlines() — and on 2026-09-14 that swap-thrashed the 3.4 GB host for
+# five hours until a physical reset (tv-show-tracker-seedbox-manager, reading a media file to
+# satisfy the read-before-delete gate). 8 MiB is ~1 000 windows of the observation cap; a
+# larger text file is paged with shell (head / sed -n) or a util, which stream.
+READ_MAX_BYTES = 8 * 1024 * 1024
+BINARY_SNIFF_BYTES = 8 * 1024        # a NUL byte in the first 8 KiB marks a file binary
 UTIL_DEFAULT_TIMEOUT_S = 300
 VISION_UTIL = "vision"
 VIEW_DEFAULT_PROMPT = ("Describe this file in full detail — transcribe any text verbatim and "
@@ -58,27 +71,65 @@ def _runs_read_gate(ctx: RunContext, resolved) -> str | None:
     return None
 
 
-def _read_one(rel_path: str, action: dict, ctx: RunContext) -> dict:
-    try:
-        path = resolve_rel(ctx.routine.dir, rel_path, ctx.read_roots())
-        if err := _runs_read_gate(ctx, path):
-            return {"path": rel_path, "error": err}
-        text = path.read_text(encoding="utf-8", errors="replace")
-    except (OSError, PermissionError) as exc:
-        return {"path": rel_path, "error": str(exc)}
-    ctx.seen_paths.add(str(path))
-    # Reading a stage module IS the run's state transition — every recipe routes by
-    # "read the module for where you are" — so the engine tracks the live phase right
-    # here (→ status.json → the SSE state event) with zero recipe cooperation; the
-    # stage modules are the state graph's nodes (statemap), so the names always match.
-    if (path.suffix == ".md" and path.parent.name == STAGES_DIR
-            and path.parent.parent == ctx.routine.dir):
-        ctx.phase = path.stem
-    lines = text.splitlines()
-    start = max(1, int(action.get("start_line") or 1))
-    max_lines = min(int(action.get("max_lines") or READ_DEFAULT_MAX_LINES), 500)
-    window = lines[start - 1 : start - 1 + max_lines]
-    end_line = min(start - 1 + max_lines, len(lines))
+def _window(lines: Iterable[str], start: int, max_lines: int) -> tuple[list[str], int]:
+    """The [start, start + max_lines) slice of a line STREAM plus the stream's length. The
+    stream is consumed to its end for the count but never held whole — one line in memory
+    at a time, and the file is already under READ_MAX_BYTES, so the count is cheap.
+    """
+    window: list[str] = []
+    stop = start + max_lines
+    total = 0
+    for total, line in enumerate(lines, 1):
+        if start <= total < stop:
+            window.append(line)
+    return window, total
+
+
+def _listing_lines(path: Path) -> Iterator[str]:
+    """A directory's content IS its entries: one line each — `dir` / `file` / `link`, a
+    file's size in bytes, the name — sorted by name, so a listing pages like a file. This is
+    how a season pack of 1.5 GB media files is LOOKED AT before it is deleted: by name and
+    size, never decoded.
+    """
+    with os.scandir(path) as it:
+        entries = sorted(it, key=lambda e: e.name)
+    for e in entries:
+        if e.is_symlink():
+            yield f"link {'-':>12}  {e.name} -> {Path(e.path).readlink()}"
+        elif e.is_dir(follow_symlinks=False):
+            yield f"dir  {'-':>12}  {e.name}/"
+        else:
+            try:
+                size: int | str = e.stat(follow_symlinks=False).st_size
+            except OSError:
+                size = "?"
+            yield f"file {size:>12}  {e.name}"
+
+
+def _refusal(rel_path: str, path: Path) -> dict | None:
+    """The two reads that must never happen, decided from a stat and an 8 KiB sniff BEFORE
+    anything is decoded: a binary file (a NUL byte in its head) and a file over
+    READ_MAX_BYTES. Both carry `size` — the whole of what read_file can tell about such a
+    file, and the reason the refusal still counts as having LOOKED at it for the
+    destruction gate (history.seen_paths reads the key back on resume).
+    """
+    size = path.stat().st_size
+    with path.open("rb") as fh:
+        head = fh.read(BINARY_SNIFF_BYTES)
+    if b"\0" in head:
+        return {"path": rel_path, "size": size,
+                "error": f"binary file ({size:,} bytes) — read_file shows text only; "
+                         "view_image sees an image or PDF, a util or shell handles the rest"}
+    if size > READ_MAX_BYTES:
+        return {"path": rel_path, "size": size,
+                "error": f"{size:,} bytes exceeds the read_file cap of {READ_MAX_BYTES:,} "
+                         "bytes — page it with shell (head / sed -n) or a util instead"}
+    return None
+
+
+def _windowed(rel_path: str, window: list[str], total: int, start: int,
+              max_lines: int) -> dict:
+    end_line = min(start - 1 + max_lines, total)
     content = "\n".join(window)
     truncated = False
     if len(content) > OBS_CAP_CHARS:
@@ -99,13 +150,47 @@ def _read_one(rel_path: str, action: dict, ctx: RunContext) -> dict:
         if len(core) > OBS_CAP_CHARS:          # a single line longer than the cap
             core = core[:OBS_CAP_CHARS]
         content = (core + f"\n[... {len(kept)} of {len(window)} window lines shown (through line "
-                   f"{end_line} of {len(lines)}); truncated at {OBS_CAP_CHARS} chars — re-read "
+                   f"{end_line} of {total}); truncated at {OBS_CAP_CHARS} chars — re-read "
                    f"with start_line={end_line + 1} to continue in sequence ...]")
         truncated = True
     return {"path": rel_path, "start_line": start,
-            "end_line": end_line, "total_lines": len(lines),
+            "end_line": end_line, "total_lines": total,
             "content": content, "truncated": truncated}
 
+
+def _read_one(rel_path: str, action: dict, ctx: RunContext) -> dict:
+    start = max(1, int(action.get("start_line") or 1))
+    max_lines = min(int(action.get("max_lines") or READ_DEFAULT_MAX_LINES),
+                    READ_WINDOW_MAX_LINES)
+    directory = False
+    try:
+        path = resolve_rel(ctx.routine.dir, rel_path, ctx.read_roots())
+        if err := _runs_read_gate(ctx, path):
+            return {"path": rel_path, "error": err}
+        if path.is_dir():
+            directory = True
+            window, total = _window(_listing_lines(path), start, max_lines)
+        else:
+            if refusal := _refusal(rel_path, path):
+                ctx.seen_paths.add(str(path))   # a stat IS a look: grounds delete/move/overwrite
+                return refusal
+            # streamed, never materialised: only the window is ever held in memory
+            with path.open(encoding="utf-8", errors="replace") as fh:
+                window, total = _window((line.rstrip("\n") for line in fh), start, max_lines)
+    except (OSError, PermissionError) as exc:
+        return {"path": rel_path, "error": str(exc)}
+    ctx.seen_paths.add(str(path))
+    # Reading a stage module IS the run's state transition — every recipe routes by
+    # "read the module for where you are" — so the engine tracks the live phase right
+    # here (→ status.json → the SSE state event) with zero recipe cooperation; the
+    # stage modules are the state graph's nodes (statemap), so the names always match.
+    if (path.suffix == ".md" and path.parent.name == STAGES_DIR
+            and path.parent.parent == ctx.routine.dir):
+        ctx.phase = path.stem
+    obs = _windowed(rel_path, window, total, start, max_lines)
+    if directory:
+        obs["directory"] = True
+    return obs
 
 def do_read_file(action: dict, ctx: RunContext) -> dict:
     paths = action.get("paths")
@@ -276,13 +361,19 @@ def _tree_size(path) -> int:
 def _unseen_destruction(ctx: RunContext, resolved, what: str) -> str | None:
     """The grounding gate for delete and move-src: destroying a path outside the routine's
     own dir that this run has never read. The own dir is exempt (state cleanup is a
-    routine's normal mode); elsewhere the model must have looked at what it destroys.
+    routine's normal mode); elsewhere the model must have LOOKED at what it destroys — a
+    read_file of the path, which for a directory is its listing and for a binary or
+    oversized file its size (the refusal grounds too). A shell `ls` does not count: the
+    engine cannot see what a shell command showed, only what read_file returned. The gate
+    text names the two forms because a run that reads "read_file it first" about a season
+    pack once read_file'd a 1.5 GB .mkv to comply (2026-09-14).
     """
     if resolved.is_relative_to(ctx.routine.dir) or str(resolved) in ctx.seen_paths:
         return None
     return (f"this {what} a path outside the routine's own dir that this run has never "
-            "read — read_file it first (then remove it knowingly), so a stray call cannot "
-            "destroy something sight-unseen")
+            "read — read_file it first (a directory reads as its listing, a binary or "
+            "oversized file as its size: both count), then remove it knowingly, so a stray "
+            "call cannot destroy something sight-unseen")
 
 
 def do_delete(action: dict, ctx: RunContext) -> dict:

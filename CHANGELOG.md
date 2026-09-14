@@ -15,6 +15,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.339.0] — 2026-09-14
+
+### Fixed — read_file materialised the whole file before windowing it
+
+`read_file` decoded a file in full (`read_text(errors="replace")`, then a second copy from
+`splitlines()`) BEFORE applying the `start_line`/`max_lines` window and the observation cap.
+On 2026-09-14 00:29 tv-show-tracker-seedbox-manager read a 1.5 GB `.mkv` to satisfy the
+read-before-delete gate and the 3.4 GB host swap-thrashed for five hours until a physical
+reset. The read now decides from a stat and an 8 KiB sniff before anything is decoded, and
+streams what it does read:
+
+- **A file over `fileops.READ_MAX_BYTES` (8 MiB) is refused** with its actual size and the
+  cap in the message (`12,345,678 bytes exceeds the read_file cap of 8,388,608 bytes — page
+  it with shell (head / sed -n) or a util instead`). Nothing is opened for the check.
+- **A binary file (a NUL byte in its first 8 KiB) is refused** as `binary file (N bytes) —
+  read_file shows text only; …` instead of being decoded at ~2 bytes per char.
+- **A text file under the cap is streamed line by line**: only the requested window is ever
+  held, the total is counted by iterating the rest. The observation shape (`path`,
+  `start_line`, `end_line`, `total_lines`, `content`, `truncated`) and the head-truncation at
+  the observation cap are unchanged for a normal file.
+- **A directory path reads as its LISTING** — one entry per line (`dir` / `file` / `link`, a
+  file's size in bytes, the name), sorted by name and paged with `start_line`/`max_lines`
+  like a file; the observation says `directory listing, entries 1-8 of 8`. Before, a
+  directory read failed with `Is a directory`.
+- **The destruction gate accepts a look, not only a decode.** The transcript's chain was:
+  `delete` of a season-pack directory refused (`never read — read_file it first`) →
+  `read_file` on the directory errored → a shell `ls` did not count (the engine cannot see
+  what a shell command showed) → `read_file` on the 1.5 GB `.mkv`. A directory listing now
+  grounds the tree, and a binary/oversized refusal — a stat the run has seen, carrying
+  `size` — grounds the file; `history.seen_paths` reads that key back on resume. The gate
+  itself is unchanged and its text names the two forms. `view_image` was already capped
+  (native media size + a MIME allowlist) and `edit_file` still reads whole files — it needs
+  the full text to replace an anchor, and it is a write-root action a run points at text.
+
 ## [0.338.1] — 2026-09-13
 
 ### Fixed

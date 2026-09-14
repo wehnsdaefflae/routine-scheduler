@@ -275,7 +275,7 @@ export function createTranscript(container, opts = {}) {
     } else if (o.kind === "read_file") {
       text = o.files  // batched multi-path read: one section per file
         ? o.files.map((f) => f.error ? `--- ${f.path} FAILED: ${f.error}`
-                                     : `--- ${f.path} (lines ${f.start_line}-${f.end_line} of ${f.total_lines}) ---\n${f.content}`)
+                                     : `--- ${f.path} (${f.directory ? "directory listing, entries" : "lines"} ${f.start_line}-${f.end_line} of ${f.total_lines}) ---\n${f.content}`)
             .join("\n\n")
         : o.error || o.content || "";
     } else if (o.kind === "llm") {

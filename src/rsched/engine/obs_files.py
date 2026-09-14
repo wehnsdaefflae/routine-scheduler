@@ -9,6 +9,14 @@ an edit, and — for `.memory/` and the rule library — that the engine owns th
 from __future__ import annotations
 
 
+def _span(f: dict) -> str:
+    """`lines 1-200 of 412` — or, for a directory read, `directory listing, entries 1-8 of 8`:
+    the model must know it got a LISTING (which grounds a delete of the tree), not a file.
+    """
+    unit = "directory listing, entries" if f.get("directory") else "lines"
+    return f"{unit} {f['start_line']}-{f['end_line']} of {f['total_lines']}"
+
+
 def format_files(obs: dict, kind: str) -> str | None:  # noqa: C901, PLR0911, PLR0912 — one flat renderer per module, by design: observation wording is PROMPT SURFACE (docs/prompt-anatomy.md) and every branch is a distinct string for a distinct kind. Collapsing them would scatter a kind's wording, which is exactly what this shape exists to prevent.
     """Wording for this module's kinds; None when `kind` is not one of them."""
     if kind == "read_file":
@@ -18,14 +26,11 @@ def format_files(obs: dict, kind: str) -> str | None:  # noqa: C901, PLR0911, PL
                 if f.get("error"):
                     parts.append(f"--- {f['path']} FAILED: {f['error']}")
                 else:
-                    parts.append(f"--- {f['path']} (lines {f['start_line']}-{f['end_line']} "
-                                 f"of {f['total_lines']}) ---\n{f['content']}")
+                    parts.append(f"--- {f['path']} ({_span(f)}) ---\n{f['content']}")
             return f"OBSERVATION (read_file, {len(obs['files'])} files):\n" + "\n\n".join(parts)
         if err := obs.get("error"):
             return f"OBSERVATION (read_file {obs.get('path')} FAILED): {err}"
-        return (f"OBSERVATION (read_file {obs['path']}, lines "
-                f"{obs['start_line']}-{obs['end_line']} of {obs['total_lines']}):\n"
-                f"{obs['content']}")
+        return f"OBSERVATION (read_file {obs['path']}, {_span(obs)}):\n{obs['content']}"
     if kind == "view_image":
         parts = []
         for f in obs.get("files", []):

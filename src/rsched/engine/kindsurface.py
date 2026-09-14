@@ -168,12 +168,15 @@ removing something another routine relies on."""),
     (("read_file", "write_file", "delete", "move", "mkdir", "edit_file"), """- read_file / \
 write_file / delete / move / mkdir / edit_file: read or write a file (within the working dir or an \
 allowed root). read_file takes `path` or `paths` (several files in ONE action — batch related \
-reads instead of spending a turn per file). edit_file replaces an exact `anchor` string with \
+reads instead of spending a turn per file); a directory path returns its listing (one entry \
+per line, paged like a file), a binary or oversized file only its size — page those with \
+shell or a util. edit_file replaces an exact `anchor` string with \
 `replacement` IN PLACE — for touching a few lines of a large file, use it instead of \
 re-emitting the whole document through write_file. write_file REPLACES wholesale: overwriting \
 an existing file outside your working dir is rejected until this run has read it. delete \
 removes a file, or a whole directory with recursive: true — deleting a path outside your \
-working dir that this run has not read is rejected, like write_file's overwrite gate. move \
+working dir that this run has not read is rejected, like write_file's overwrite gate (a \
+listing or a size read counts). move \
 relocates src to dst (both inside the same write-root jail): it refuses to overwrite an \
 existing dst. mkdir creates a directory — parents: true makes intermediates and treats an \
 existing path as success."""),

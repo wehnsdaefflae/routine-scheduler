@@ -184,9 +184,11 @@ def prior_usage(events: list[dict]) -> dict:
 
 def seen_paths(events: list[dict]) -> list[str]:
     """Path strings (as the actions gave them) that earlier legs read, viewed, or wrote —
-    successful read_file / view_image / write_file / edit_file observations. Rebuilds
-    write_file's grounding set on resume, so a file read before an interruption stays
-    overwritable after it.
+    successful read_file / view_image / write_file / edit_file observations, plus a
+    read_file refusal that carries `size` (a binary file, or one over the read cap): that
+    is a STAT the run has seen, and fileops._refusal grounds it live. Rebuilds the
+    grounding set on resume, so a file read before an interruption stays overwritable —
+    and deletable — after it.
     """
     out: list[str] = []
     for ev in events:
@@ -196,7 +198,8 @@ def seen_paths(events: list[dict]) -> list[str]:
         kind = p.get("kind")
         if kind in ("read_file", "view_image"):
             entries = p.get("files") or ([p] if p.get("path") else [])
-            out.extend(str(f["path"]) for f in entries if f.get("path") and not f.get("error"))
+            out.extend(str(f["path"]) for f in entries
+                       if f.get("path") and (not f.get("error") or "size" in f))
         elif kind in ("write_file", "edit_file") and p.get("path") and not p.get("error"):
             out.append(str(p["path"]))
     return out

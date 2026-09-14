@@ -12,7 +12,7 @@ from __future__ import annotations
 from rsched.config import ServerConfig, load_routine
 from rsched.engine.actions import validate_action
 from rsched.engine.budgets_config import Budgets
-from rsched.engine.fileops import do_delete, do_mkdir, do_move
+from rsched.engine.fileops import do_delete, do_mkdir, do_move, do_read_file
 from rsched.engine.run_context import RunContext
 from rsched.engine.transcript import Transcript
 from rsched.grantpolicy import GrantPolicy
@@ -137,3 +137,32 @@ def test_unseen_outside_dir_delete_and_move_are_refused(make_routine, tmp_path):
     moved = ext / "moved.md"
     ctx.seen_paths.add(str(moved))                 # the run also read what it now deletes
     assert do_delete({"path": str(moved)}, ctx)["removed"] is True
+
+
+def test_a_listing_or_a_size_read_grounds_destruction(make_routine, tmp_path):
+    """The 2026-09-14 chain, closed: `delete` of a season-pack directory was refused (never
+    read), `read_file` on the directory errored (Is a directory), a shell `ls` did not count,
+    so the run `read_file`'d a 1.5 GB .mkv and the host swap-thrashed. A directory now reads
+    as its LISTING and a binary/oversized file as its SIZE — both are a look, both satisfy
+    the gate, and neither decodes a byte of media. The gate itself is unchanged: a path this
+    run has not pointed read_file at is still refused."""
+    ctx = _ctx(make_routine, tmp_path)
+    videos = tmp_path / "videos"
+    pack = videos / "Show S01"
+    pack.mkdir(parents=True)
+    (pack / "e01.mkv").write_bytes(b"\x1aE\xdf\xa3" + b"\x00" * 64)
+    loose = videos / "loose.mkv"
+    loose.write_bytes(b"\x00" * 64)
+    ctx.routine.fs_write_roots = [videos]
+
+    err = do_delete({"path": str(pack), "recursive": True}, ctx)["error"]
+    assert "never read" in err and "a directory reads as its listing" in err
+    obs = do_read_file({"path": str(pack)}, ctx)
+    assert obs["directory"] is True and "e01.mkv" in obs["content"]
+    assert do_delete({"path": str(pack), "recursive": True}, ctx)["removed"] is True
+    assert not pack.exists()
+
+    assert "never read" in do_delete({"path": str(loose)}, ctx)["error"]
+    refusal = do_read_file({"path": str(loose)}, ctx)
+    assert refusal["error"].startswith("binary file (64 bytes)") and refusal["size"] == 64
+    assert do_delete({"path": str(loose)}, ctx)["removed"] is True
