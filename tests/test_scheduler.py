@@ -259,7 +259,28 @@ def test_recover_orphans(make_routine, tmp_path):
     fixed = runner_reap.recover_orphans(runner, scan(_server(tmp_path)))
     assert fixed == 1
     info = read_run(run_dir, "orphan")
-    assert info.state == "failed" and "orphaned" in info.summary
+    # R1512/R1514: a run the DAEMON killed by restarting is `aborted`, not `failed` — it is
+    # not a failure of the routine, and writing it as one made five routines show a failure
+    # they never had (2026-09-14), indistinguishable from a broken recipe without opening
+    # each result.md.
+    assert info.state == "aborted" and "orphaned" in info.summary
+
+
+def test_a_crashed_engine_is_still_closed_out_as_failed(make_routine, tmp_path):
+    """The orphan case is the only one that softens: a run whose ENGINE died (rc known, no
+    restart involved) is a real failure and must keep reading as one, or the honest orphan
+    state would have been bought by hiding genuine crashes."""
+    d = make_routine(slug="crasher")
+    run_dir = d / "runs" / "20260701-070000"
+    run_dir.mkdir(parents=True)
+    atomic_write_json(run_dir / "status.json",
+                      {"run_id": "crasher:20260701-070000", "state": "running", "pid": 999999})
+    (run_dir / "transcript.jsonl").write_text(json.dumps({"type": "header"}) + "\n")
+    runner = Runner(_server(tmp_path), EventBus())
+    runner_reap.close_out(runner, run_dir, "crasher:20260701-070000",
+                          "engine exited rc=-9 without a finish", rc=-9)
+    info = read_run(run_dir, "crasher")
+    assert info.state == "failed" and "rc=-9" in info.summary
 
 
 def test_notable_stderr_extracts_only_warnings_and_errors():

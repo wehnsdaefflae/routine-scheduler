@@ -15,6 +15,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.342.1] — 2026-09-14
+
+### Fixed — a run the daemon orphaned by restarting is `aborted`, not `failed`
+
+`recover_orphans` closed every boot-recovered run as `failed`, so a run the daemon itself killed
+by restarting was recorded as a failure the routine never had. On 2026-09-14 that mislabelled
+five routines (birthday-admin, freelance-radar, voice-model-trainer, miz-grant-steward,
+nanogeofeld), each showing `outcome: failed` at turn 0 with an empty transcript — four of which
+had been green on both prior runs. A reader, human or routine, could not tell a broken recipe
+from one infrastructure event without opening each `result.md`, and an improver sweep had to
+spend turns establishing exactly that (R1512, R1514).
+
+`close_out` now takes the terminal `status` to record, defaulting to `failed`; the boot-orphan
+path passes `aborted`. That state already means "ended because something outside the run said
+stop" everywhere else — `registry.TERMINAL_STATES`, the run-health read model, the CLI exit map
+— so nothing new had to be invented and every existing reader understands it.
+
+A genuinely crashed engine (a known `rc`, no restart involved) is untouched and still closes as
+`failed`, pinned by its own test: the honest orphan state is not bought by hiding real crashes.
+
+This is the labelling half only. Draining in-flight runs before the daemon exits — so a run gets
+its reserved finish turn instead of being killed mid-action — remains open as R1501/R1515.
+
 ## [0.342.0] — 2026-09-14
 
 ### Added — a decision's config change can target a DOMAIN, not only a routine

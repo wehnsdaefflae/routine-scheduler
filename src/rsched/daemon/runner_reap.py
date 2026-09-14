@@ -177,7 +177,7 @@ def apply_pending_edits(runner, cfg: RoutineConfig, slug: str) -> None:
 
 def close_out(runner, run_dir: Path, run_id: str, message: str, *,
                event: str = "orphaned_run", rc: int | None = None,
-               vm_hwm_kb: int | None = None) -> None:
+               vm_hwm_kb: int | None = None, status: str = "failed") -> None:
     """Append a synthetic finish to a dead run (single writer: the engine is gone).
     `event` names the health-stream entry: orphaned_run for a crash/dead pid,
     run_canceled when the death was a user-requested abort (F188) — same payload shape.
@@ -186,17 +186,26 @@ def close_out(runner, run_dir: Path, run_id: str, message: str, *,
     (F422): the two events differ by who asked for the death, not by how the process died,
     so "was this a signal kill?" is only answerable from the exit status. An orphan
     recovered at boot has no process left to report on and passes neither.
+
+    `status` is the TERMINAL STATE to record, and it is not always `failed` (R1512/R1514).
+    A run the daemon itself killed by restarting did not fail — nothing about the routine or
+    its recipe went wrong — but it was written as `failed` at turn 0, so on 2026-09-14 five
+    routines showed a failure they did not cause and a sweep had to open each result.md to
+    tell an infrastructure event from a broken recipe. `aborted` already means "ended because
+    something outside the run said stop" everywhere else (registry.TERMINAL_STATES, the health
+    read model, the CLI exit map), so the honest close-out reuses it rather than inventing a
+    sixth state.
     """
     try:
         with (run_dir / "transcript.jsonl").open("a", encoding="utf-8") as fh:
             fh.write(json.dumps({"ts": now_iso(), "type": "finish",
-                                 "payload": {"status": "failed", "summary": message,
+                                 "payload": {"status": status, "summary": message,
                                              "authored": False}}) + "\n")
     except OSError:
         pass
     raw = read_json(run_dir / "status.json")
     st: dict = raw if isinstance(raw, dict) else {"run_id": run_id}
-    st.update(state="failed", updated=now_iso(), question=None)
+    st.update(state=status, updated=now_iso(), question=None)
     atomic_write_json(run_dir / "status.json", st)
     atomic_write(run_dir / "result.md", message + "\n")
     log_health_event(runner.server.routines_home, event,
@@ -211,7 +220,10 @@ def recover_orphans(runner, catalog: dict[str, registry.RoutineInfo]) -> int:
         for r in info.runs:
             if r.state in registry.ACTIVE_STATES \
                     and not _pid_alive(r.pid):
-                close_out(runner, r.dir, r.run_id, "orphaned by daemon restart")
+                # ABORTED, not failed (R1512/R1514): the daemon stopped this run by
+                # restarting, so a `failed` here is a failure the routine never had.
+                close_out(runner, r.dir, r.run_id, "orphaned by daemon restart",
+                          status="aborted")
                 fixed += 1
                 log.warning("orphan closed: %s", r.run_id)
     return fixed
