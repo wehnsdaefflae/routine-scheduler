@@ -169,9 +169,6 @@ def set_permissions(request: Request, slug: str, body: PermissionsBody) -> dict:
 @router.post("/routines/{slug}/run")
 async def run_now(request: Request, slug: str) -> dict:
     info = _info(request, slug)
-    if not info.cfg.enabled:
-        raise HTTPException(409, f"routine {slug!r} is disabled — "
-                            "choose a schedule before starting it")
     run_id = await _state(request).runner.fire(info.cfg, reason="manual")
     if run_id is None:
         raise HTTPException(409, f"routine {slug!r} already has an active run")

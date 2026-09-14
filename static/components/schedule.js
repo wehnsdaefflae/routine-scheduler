@@ -22,14 +22,11 @@ const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Frida
 export function scheduleEditor(initial = { frequency: "manual" }, serverTz = "", opts = {}) {
   const spec = { time: "07:00", weekdays: [1], day: 1, minute: 0, ...initial };
   const lm = opts.laneManaged || null;
-  const frequencies = lm ? [] : ["manual", "hourly", "daily", "weekly", "monthly"];
-  if (opts.allowDisabled) frequencies.unshift("disabled");
-  const freq = el("select", { ...(lm && !opts.allowDisabled ? { disabled: true } : {}) },
-    ...frequencies.map((f) =>
-      el("option", { value: f, ...(spec.frequency === f ? { selected: true } : {}) },
+  const freq = el("select", { ...(lm ? { disabled: true } : {}) },
+    ...["manual", "hourly", "daily", "weekly", "monthly"].map((f) =>
+      el("option", { value: f, ...(!lm && spec.frequency === f ? { selected: true } : {}) },
         f[0].toUpperCase() + f.slice(1))),
-    ...(lm ? [el("option", { value: "lane-managed",
-      selected: spec.frequency !== "disabled" }, "Lane managed")] : []));
+    ...(lm ? [el("option", { value: "lane-managed", selected: true }, "Lane managed")] : []));
   const time = el("input", { type: "time", value: spec.time });
   const minute = el("input", { type: "number", min: 0, max: 59, value: spec.minute, style: "width:70px" });
   // weekly is a SET of days (F347, user order 2026-08-15 — GCal's "repeat on: S M T W T
@@ -91,9 +88,7 @@ export function scheduleEditor(initial = { frequency: "manual" }, serverTz = "",
   function sync() {
     const f = freq.value;
     detail.replaceChildren();
-    if (f === "disabled") {
-      detail.append(el("span", { class: "muted" }, "no new runs — including manual and triggered starts; existing runs are unchanged"));
-    } else if (lm) {
+    if (lm) {
       detail.append(el("span", { class: "muted" }, "fires with lane "),
         el("a", { href: "#/routines" }, lm.name || lm.id),
         el("span", { class: "muted" }, " — this routine's own schedule is suppressed while the lane is scheduled"));
@@ -102,7 +97,7 @@ export function scheduleEditor(initial = { frequency: "manual" }, serverTz = "",
     else if (f === "weekly") detail.append(document.createTextNode("on"), weekdayRow, document.createTextNode("at"), time);
     else if (f === "monthly") detail.append(document.createTextNode("on day"), day, document.createTextNode("at"), time);
     else detail.append(el("span", { class: "muted" }, "runs only when you click Run now"));
-    if (catchupRow) catchupRow.style.display = (f === "manual" || f === "disabled" || lm) ? "none" : "";
+    if (catchupRow) catchupRow.style.display = (f === "manual" || lm) ? "none" : "";
   }
   freq.addEventListener("change", sync);
   sync();
@@ -119,9 +114,8 @@ export function scheduleEditor(initial = { frequency: "manual" }, serverTz = "",
     value() {
       // lane-managed: the stored spec rides back UNCHANGED — the suppression lives in
       // the daemon, and a save from this page must not rewrite the routine's own cron
+      if (lm) return initial;
       const f = freq.value;
-      if (f === "disabled") return { frequency: "disabled" };
-      if (lm) return initial.frequency === "disabled" ? { frequency: "manual" } : initial;
       if (f === "manual") return { frequency: "manual" };
       if (f === "hourly") return { frequency: "hourly", minute: Number(minute.value) };
       if (f === "daily") return { frequency: "daily", time: time.value };

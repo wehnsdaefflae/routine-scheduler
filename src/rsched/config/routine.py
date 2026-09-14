@@ -305,9 +305,6 @@ def load_routine(routine_dir: Path) -> tuple[RoutineConfig | None, list[str]]:
     # belongs to, which is a different claim from "this is where I started".
     cfg = _validate_lenient(RoutineConfig, {**raw, "slug": slug, "dir": routine_dir}, problems) \
         or RoutineConfig(slug=slug, dir=routine_dir)
-    schedule_state = raw.get("schedule") or {}
-    if isinstance(schedule_state, dict) and schedule_state.get("disabled") is True:
-        cfg.enabled = False
     cfg.inherited, cfg.inherited_from = inherited, (domain_name if domain_config else "")
     cfg.name = cfg.name or slug
     if not cfg.description:

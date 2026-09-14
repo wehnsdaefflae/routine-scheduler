@@ -54,7 +54,7 @@ def server_tz() -> str:
 def friendly_to_cron(spec: dict) -> str:
     """Friendly spec → cron string ('' for manual). Raises ValueError on bad input."""
     freq = (spec or {}).get("frequency", "manual")
-    if freq in ("manual", "disabled"):
+    if freq == "manual":
         return ""
     if freq == "hourly":
         minute = int(spec.get("minute", 0))

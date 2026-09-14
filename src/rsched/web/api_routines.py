@@ -181,8 +181,7 @@ def routine_detail(request: Request, slug: str) -> dict:
         # only: the page's picker already holds the catalog from GET /api/domains, which is
         # also where a domain's name, members and store come from.
         "domain": info.cfg.domain,
-        "schedule_friendly": (schedule.cron_to_friendly(info.cfg.cron) if info.cfg.enabled
-                              else {"frequency": "disabled"}),
+        "schedule_friendly": schedule.cron_to_friendly(info.cfg.cron),
         "server_tz": schedule.server_tz(),
         "catchup": info.cfg.catchup,   # skip | run_once when a scheduled fire was missed
         # D71: set when a SCHEDULED lane contains this routine — its own cron is

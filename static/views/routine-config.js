@@ -225,7 +225,7 @@ export function renderConfigSections(view, d, {
   // it is not the lane's call to make; the surface's `schedule:cron` row sends the reader here
   // to make it. A manual spec is what "no cron of its own" is stored as.
   const sched = scheduleEditor(d.schedule_friendly || { frequency: "manual" }, d.server_tz,
-    { catchup: d.catchup || "skip", laneManaged: d.lane_managed || null, allowDisabled: true,
+    { catchup: d.catchup || "skip", laneManaged: d.lane_managed || null,
       onClearCron: async () => {
         try {
           await api(`/api/routines/${slug}`, { method: "PATCH",
@@ -239,13 +239,15 @@ export function renderConfigSections(view, d, {
           throw err;
         }
       } });
+  const enabledBox = el("input", { type: "checkbox", checked: d.enabled || null });
   const improveBox = el("input", { type: "checkbox", checked: d.improve !== false || null });
   view.append(...settingsSection({ title: "Schedule", id: "schedule" },
     "when this routine runs on its own — a cron-like cadence in the server's timezone, plus the "
-    + "Disabled choice that prevents all new starts. Existing runs are unchanged. A routine in a "
-    + "scheduled lane follows the lane's clock; it can still be disabled here without changing "
-    + "that clock. Manual allows explicit and triggered starts without a recurring cadence.",
+    + "master enable switch and whether the improver visits it. A routine in a SCHEDULED lane "
+    + "fires on the lane's clock instead; the cadence below is then the lane's to set, leaving "
+    + "one change here — clearing a cron of its own that the lane suppresses.",
       sched.node,
+      el("label", { class: "row mt", style: "gap:8px" }, enabledBox, "enabled"),
       el("label", { class: "row mt", style: "gap:8px" }, improveBox,
         el("span", {}, "include in improvement — the routine-improver meta routine visits this routine (on by default)")),
       el("div", { class: "row mt" }, el("button", {
@@ -253,10 +255,12 @@ export function renderConfigSections(view, d, {
         onclick: async () => {
           try {
             await api(`/api/routines/${slug}`, { method: "PATCH",
-              body: { improve: improveBox.checked,
-                      schedule: d.lane_managed
-                        ? { disabled: sched.value().frequency === "disabled" }
-                        : { friendly: sched.value(), catchup: sched.catchup() } } });
+              body: { enabled: enabledBox.checked, improve: improveBox.checked,
+                      // lane-managed: EDITING the cadence stays the lane's business, so this
+                      // save sends no schedule at all. Clearing a suppressed cron is the other
+                      // act — it saves from its own control above, on its own PATCH.
+                      ...(d.lane_managed ? {}
+                        : { schedule: { friendly: sched.value(), catchup: sched.catchup() } }) } });
             // a cadence moves `schedule:none`; the enable switch takes every schedule row
             // with it, because a routine switched off already says it does not run
             toast("schedule saved"); refreshHead(); refreshSurface();
