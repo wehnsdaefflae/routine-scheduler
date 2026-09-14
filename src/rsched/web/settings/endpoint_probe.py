@@ -14,7 +14,7 @@ import time
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
-from ...endpoints import EndpointRegistry, cliproxy_quota
+from ...endpoints import EndpointRegistry, cliproxy_login, cliproxy_quota
 from ...endpoints.base import EndpointError
 from ...schema_guard import SchemaViolation, parse_reply
 from .common import server_of
@@ -92,6 +92,13 @@ async def endpoint_credits(request: Request, name: str) -> dict:
     except EndpointError as exc:   # no key configured yet
         return {"supported": True, "ok": False, "error": str(exc), "manage_url": manage}
 
+def _endpoint(request: Request, name: str):
+    ep = server_of(request).endpoints.get(name)
+    if ep is None:
+        raise HTTPException(404, f"no endpoint {name!r}")
+    return ep
+
+
 @router.get("/settings/endpoints/{name}/quota")
 async def endpoint_quota(request: Request, name: str) -> dict:
     """What is LEFT of the Claude subscription's rolling windows — the operator's literal ask.
@@ -101,13 +108,63 @@ async def endpoint_quota(request: Request, name: str) -> dict:
     when the provider or the credential is the problem. The quota is per-ACCOUNT rather than per
     endpoint, so two subscription proxy endpoints would honestly report the same numbers.
     """
-    server = server_of(request)
-    ep = server.endpoints.get(name)
-    if ep is None:
-        raise HTTPException(404, f"no endpoint {name!r}")
+    ep = _endpoint(request, name)
     if ep.quota_source == "cliproxy":
         return await asyncio.to_thread(cliproxy_quota.read_quota, ep)
     return {"supported": False}
+
+
+# ---- signing the proxy's accounts back in, from the card -----------------------------------
+# The same management binding the quota read uses (`quota_source: cliproxy` + the management
+# key in `quota_key_var`). The proxy owns the OAuth flow; these three routes ferry the consent
+# URL out to the operator's browser and the code back (endpoints/cliproxy_login.py explains
+# why the code comes back by hand: the consent page redirects to localhost on the OPERATOR'S
+# device). Mutating routes, so the read-only routine token is refused like every other POST.
+
+def _proxy_endpoint(request: Request, name: str):
+    ep = _endpoint(request, name)
+    if ep.quota_source != "cliproxy":
+        raise HTTPException(400, f"endpoint {name!r} has no proxy management binding — set "
+                                 "its subscription quota source to CLIProxyAPI first")
+    return ep
+
+
+@router.get("/settings/endpoints/{name}/proxy-accounts")
+async def proxy_accounts(request: Request, name: str) -> dict:
+    """Who the proxy is signed in as — provider, label, the proxy's status word and its
+    one-line reason when an account is unavailable (a dead refresh token, a usage limit).
+    `{"supported": false}` for an endpoint without the binding, like the quota read.
+    """
+    ep = _endpoint(request, name)
+    if ep.quota_source != "cliproxy":
+        return {"supported": False}
+    return await asyncio.to_thread(cliproxy_login.accounts, ep)
+
+
+class ProxyLoginStart(BaseModel):
+    provider: str
+
+
+@router.post("/settings/endpoints/{name}/proxy-login")
+async def proxy_login_start(request: Request, name: str, body: ProxyLoginStart) -> dict:
+    """A consent URL + the state naming this sign-in; the card shows the link."""
+    ep = _proxy_endpoint(request, name)
+    return await asyncio.to_thread(cliproxy_login.start, ep, body.provider)
+
+
+class ProxyLoginComplete(BaseModel):
+    provider: str
+    state: str
+    response: str   # the callback address the operator landed on, `code#state`, or the code
+
+
+@router.post("/settings/endpoints/{name}/proxy-login/complete")
+async def proxy_login_complete(request: Request, name: str,
+                               body: ProxyLoginComplete) -> dict:
+    """Hand the pasted code to the proxy and wait for its token exchange to settle."""
+    ep = _proxy_endpoint(request, name)
+    return await asyncio.to_thread(cliproxy_login.complete, ep, body.provider, body.state,
+                                   body.response)
 
 
 class TestBody(BaseModel):

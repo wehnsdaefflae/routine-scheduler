@@ -37,6 +37,98 @@ export function quotaLine(q) {
     .join(" · ");
 }
 
+//: Who the proxy is signed in as, and the way back in when a session dies. The proxy owns the
+//: OAuth flow; the console only ferries the consent link out and the code back. The consent
+//: page redirects to localhost on the OPERATOR'S device, where nothing listens, so that page
+//: fails to load — its address still carries the code, and pasting it here finishes the
+//: sign-in (docs/claude-proxy-cutover.md). Both providers are offered because the fallback
+//: chain through the proxy dies when either session does.
+const PROVIDER_LABEL = { claude: "Claude", anthropic: "Claude", codex: "Codex" };
+const LOGIN_PROVIDERS = [["anthropic", "Claude"], ["codex", "Codex"]];
+
+export function proxyAccounts(ep, onSignedIn) {
+  const base = `/api/settings/endpoints/${encodeURIComponent(ep.name)}`;
+  const list = el("div", { class: "proxy-accounts" });
+  const loginBox = el("div", {});
+  const box = el("div", { class: "small", style: "margin-top:4px" });
+
+  function accountLine(acc) {
+    const bad = acc.disabled || acc.unavailable || !["", "ok", "active"].includes(acc.status);
+    const word = acc.disabled ? "disabled"
+      : acc.unavailable ? (acc.status_message || acc.status || "unavailable")
+      : (acc.status || "ok");
+    const retry = bad && acc.next_retry_after
+      ? ` (retry after ${acc.next_retry_after.slice(0, 16).replace("T", " ")})` : "";
+    return el("div", {},
+      el("span", { style: `color:var(--${bad ? "err" : "ok"})` }, bad ? "✗ " : "✓ "),
+      `${PROVIDER_LABEL[acc.provider] || acc.provider} ${acc.label || acc.name}: ${word}${retry}`);
+  }
+
+  async function load() {
+    list.replaceChildren(el("span", { class: "muted" }, "proxy accounts: checking…"));
+    let a;
+    try { a = await api(`${base}/proxy-accounts`); } catch { list.replaceChildren(); return; }
+    if (!a.supported) { list.replaceChildren(); return; }
+    if (!a.ok) {
+      list.replaceChildren(el("span", { class: "warn-line" }, `proxy accounts unavailable — ${a.error}`));
+      return;
+    }
+    list.replaceChildren(...a.accounts.map(accountLine));
+    if (!a.accounts.length) list.append(el("span", { class: "muted" }, "no proxy account signed in yet"));
+  }
+
+  async function startLogin(provider, label) {
+    loginBox.replaceChildren(el("div", { class: "muted" }, `asking the proxy for a ${label} sign-in link…`));
+    let s;
+    try { s = await api(`${base}/proxy-login`, { method: "POST", body: { provider } }); }
+    catch (err) { loginBox.replaceChildren(el("div", { class: "warn-line" }, `✗ ${err.message}`)); return; }
+    if (!s.ok) { loginBox.replaceChildren(el("div", { class: "warn-line" }, `✗ ${s.error}`)); return; }
+    const paste = el("textarea", { rows: "2", style: "width:100%", "aria-label": `${label} sign-in response`,
+      placeholder: `http://localhost:${s.callback_port}/callback?code=…&state=…   (or the code the page shows)` });
+    const finish = el("button", { class: "btn small primary" }, "finish sign-in");
+    const cancel = el("button", { class: "btn small" }, "cancel");
+    const status = el("div", {});
+    finish.onclick = async () => {
+      if (!paste.value.trim()) { toast("paste the address or the code first"); return; }
+      finish.disabled = true;
+      status.replaceChildren(el("span", { class: "muted" }, "handing the code to the proxy…"));
+      try {
+        const r = await api(`${base}/proxy-login/complete`,
+          { method: "POST", body: { provider, state: s.state, response: paste.value } });
+        if (r.ok) {
+          toast(`${label}: signed in through the proxy`);
+          loginBox.replaceChildren();
+          await load();
+          if (onSignedIn) onSignedIn();
+          return;
+        }
+        status.replaceChildren(el("span", { class: "warn-line" }, `✗ ${r.error}`));
+      } catch (err) { status.replaceChildren(el("span", { class: "warn-line" }, `✗ ${err.message}`)); }
+      finish.disabled = false;
+    };
+    cancel.onclick = () => loginBox.replaceChildren();
+    loginBox.replaceChildren(el("div", { class: "panel mt" },
+      el("div", {}, el("strong", {}, `${label} sign-in`), " — ",
+        el("a", { href: s.url, target: "_blank", rel: "noopener" }, "1. open the sign-in page ↗"),
+        " and finish consent there."),
+      el("div", { class: "muted", style: "margin:4px 0" },
+        `2. The sign-in page then sends this browser to localhost:${s.callback_port}, which exists `
+        + "only on the server, so on this device that page fails to load. Copy its WHOLE address "
+        + "from the address bar (it carries the code) and paste it below; if the page shows a code "
+        + "instead, paste that."),
+      paste, el("div", { class: "row" }, finish, cancel), status));
+  }
+
+  const buttons = el("div", { class: "row" }, ...LOGIN_PROVIDERS.map(([provider, label]) => {
+    const b = el("button", { class: "btn small" }, `re-authenticate ${label}`);
+    b.onclick = () => startLogin(provider, label);
+    return b;
+  }));
+  box.append(list, buttons, loginBox);
+  load();
+  return { box, reload: load };
+}
+
 
 export async function renderEndpoints(view) {
   view.append(el("div", { class: "muted small", style: "margin-bottom:8px" },
@@ -481,13 +573,13 @@ export async function renderEndpoints(view) {
     // principle — Anthropic's windows are not a token count, and the tally was blind to the
     // operator's own interactive sessions on the same subscription.
     const usageRow = el("div", { class: "small muted", style: "margin-top:4px" });
-    if (ep.has_subscription_quota) {
+    function loadQuota() {
       usageRow.textContent = "subscription quota: checking…";
       api(`/api/settings/endpoints/${encodeURIComponent(ep.name)}/quota`).then((q) => {
         if (!q.supported) { usageRow.replaceChildren(); return; }
         if (!q.ok) {
           // The error is the actionable half here — it always names the one-line fix, because
-          // the credential this needs expires and nothing refreshes it headlessly.
+          // the credential this needs expires; the proxy-account rows below carry the way back in.
           usageRow.replaceChildren(el("span", { class: "warn-line" },
             `subscription quota unavailable — ${q.error || "unknown reason"}`));
           return;
@@ -497,6 +589,10 @@ export async function renderEndpoints(view) {
           `subscription: ${quotaLine(q)}`));
       }).catch(() => usageRow.replaceChildren());
     }
+    if (ep.has_subscription_quota) loadQuota();
+    // The signed-in accounts and the way back in — a finished sign-in also changes what the
+    // quota read returns, so it reloads that row.
+    const proxy = ep.has_subscription_quota ? proxyAccounts(ep, loadQuota) : null;
 
     return el("div", { class: "panel mt" },
       el("div", { class: "row spread" },
@@ -508,6 +604,7 @@ export async function renderEndpoints(view) {
       credSourceLine(ep),
       creditsRow,
       usageRow,
+      proxy ? proxy.box : null,
       keyRow,
       el("div", { class: "row mt" }, modelInput, testBtn),
       resultBox,

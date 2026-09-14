@@ -15,6 +15,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.341.0] — 2026-09-14
+
+### Added — sign a proxy session back in from the endpoint card
+
+When the subscription proxy's OAuth session died, the only way back was a terminal: an SSH
+tunnel for the callback port plus `docker compose exec … --claude-login`. On 2026-09-14 the
+Claude refresh token was rejected (`invalid_grant`) while the Codex credential sat in weekly
+cooldown, and every run whose fallback chain ran through the proxy died at turn 0 — 13 runs
+in one lane catch-up — with nothing on the console saying why or offering a way in.
+
+- **The proxy endpoint's card lists the proxy's accounts** (`GET …/proxy-accounts`): provider,
+  label and the proxy's own status word — `token expired`, a usage-limit message with its
+  `retry after` time — from the same management binding the quota read uses
+  (`quota_source: cliproxy` + the management key). An allowlist projection: no token, key or
+  upstream body can reach the console (`endpoints/cliproxy_login.py`).
+- **Re-authenticate Claude / Codex** on the card: `POST …/proxy-login` asks the proxy for its
+  web-UI consent link; the operator finishes consent and lands on `localhost:54545/callback`
+  (`1455` for Codex) — the proxy's callback, which exists only on the server, so on their own
+  device the page fails to load while its address still carries the code. They paste that
+  address (or `code#state`, or the bare code) and `POST …/proxy-login/complete` hands it to the
+  proxy's management callback and polls `get-auth-status` until the token exchange settles,
+  so a wrong code fails with the proxy's reason instead of reading as a success. The account
+  rows and the quota line reload on success. Both POSTs are refused for the read-only routine
+  token.
+- The terminal route stays documented as the fallback for when the console itself is what is
+  broken (`docs/claude-proxy-cutover.md`, "Signing in, and signing back in").
+
 ## [0.340.0] — 2026-09-14
 
 ### Fixed — `/api/questions` walked three catalogs from disk on every call, once per tab

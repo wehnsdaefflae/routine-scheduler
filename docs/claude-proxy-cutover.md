@@ -21,8 +21,32 @@ initializer refuses to overwrite an existing configuration. The proxy has prompt
 cloaking, extra retries and automatic model substitutions disabled.
 
 Host ports are loopback only: 8317 for the API, 54545 for Claude OAuth and 1455 for
-Codex OAuth. For remote login, forward the appropriate callback port over SSH.
-Use the proxy login flow, not a Claude setup-token:
+Codex OAuth. Use the proxy login flow, not a Claude setup-token.
+
+## Signing in, and signing back in
+
+A session dies two ways, and the endpoint card in Settings → Endpoints shows which: the
+proxy's account rows carry its own status words — `token expired` when a refresh token was
+rejected (`invalid_grant`), a usage-limit message with a `retry after` time when the
+subscription window is spent. The first needs a fresh sign-in; the second only waits. On
+2026-09-14 both hit at once (Codex in weekly cooldown, the Claude refresh token invalid) and
+every run whose fallback chain ran through the proxy died at turn 0.
+
+**From the console** (the normal way): on the proxy endpoint's card press
+*re-authenticate Claude* (or *Codex*). The card shows a link — open it and finish consent.
+The consent page then sends the browser to `http://localhost:54545/callback?code=…&state=…`
+(`localhost:1455` for Codex). That address is the PROXY'S callback and exists only on the
+server, so on your own device the page fails to load — its address bar still carries the
+code. Copy the whole address, paste it into the card's box and press *finish sign-in*; if
+the consent page shows a code instead of redirecting, paste that. The console hands the
+code to the proxy's management callback and polls until the token exchange settles, then
+the account row and the quota line reload. The console never sees a token: the three
+routes (`GET …/proxy-accounts`, `POST …/proxy-login`, `POST …/proxy-login/complete`) carry
+the consent link, the state and the proxy's status words, and the two POSTs are refused for
+the read-only routine token like every config-mutating route.
+
+**From a terminal** (the fallback when the console is what is broken): forward the callback
+port over SSH so the redirect lands on the server, then run the proxy's own login:
 
 ```bash
 ssh -N -L 54545:127.0.0.1:54545 mark@192.168.0.128
@@ -34,9 +58,9 @@ On the server:
 docker compose --profile claude-proxy exec cliproxy /CLIProxyAPI/CLIProxyAPI --claude-login --no-browser
 ```
 
-Open the printed URL and finish consent. Codex can use a separate login through
-`GET /v0/management/codex-auth-url?is_webui=true` with port 1455 forwarded. Management
-requests require the separate management key. Never expose that key to routines.
+Open the printed URL and finish consent; with the tunnel up the redirect completes by
+itself. Codex has the same two routes (`--codex-login`, or the card) with port 1455.
+Management requests require the separate management key. Never expose that key to routines.
 
 ## Scheduler configuration
 
