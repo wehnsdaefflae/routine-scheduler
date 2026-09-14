@@ -5,16 +5,29 @@ page is another, and the second is where the subtlety lives. An open decision ca
 blocking question, a deferred ask, or a self-audit decision awaiting an answer, and each has its
 own notion of "already answered" — a snooze, a durable answer record, a message the routine has
 since consumed. Getting that wrong shows the operator a question they have already settled.
+
+MEMOIZED per home behind a stat fingerprint of every source that can change the answer
+(`_sources`), with the audit report's decisions memoized on their own three inputs. This is
+the most-fetched read model in the console — the badge, the tab-open notifier, the activity
+feed, the run view and the Decisions page each refetch it on every bus event, once per open
+tab — and each call walked all three homes' catalogs from disk (`registry.scan`: every
+routine, every run's status.json, a deep copy of every config — 265 ms of Python with warm
+registry memos). On 2026-09-14 three runs booting at once put 10-20 copies in flight at
+7-25 s each and starved every other request until the settings page would not open. A call
+over unchanged sources now costs one stat pass over Path objects built once (milliseconds),
+and a burst of identical misses computes once (`memo`'s single-flight).
 """
 
-# what counts as already decided — the read model's own vocabulary.
 from __future__ import annotations
 
 import re
 from datetime import UTC, datetime
+from functools import partial
+from pathlib import Path
 
 from .. import registry
 from ..paths import read_json
+from ..readmodels import memo
 
 _DECISION_RE = re.compile(r"\[AUDIT decision · ([^\]]+)\]")
 
@@ -28,6 +41,19 @@ _DECIDED_STATUSES = frozenset({"settled", "closed", "done", "in_progress", "in p
 
 
 def _audit_decisions(server) -> list[dict]:
+    """The self-audit report's open decisions (`_audit_decisions_fresh`), reused while the
+    report, the durable answered-markers and the inbox (the queued answers) are unchanged.
+    """
+    from ..readmodels.items import SELF_AUDIT_SLUG
+
+    rdir = server.routines_home / SELF_AUDIT_SLUG
+    return memo.memoized(f"decisions:audit:{rdir}",
+                         [rdir / "audit" / "report.json",
+                          rdir / "audit" / "decisions-answered.json", rdir / "inbox"],
+                         lambda: _audit_decisions_fresh(rdir))
+
+
+def _audit_decisions_fresh(rdir: Path) -> list[dict]:
     """The self-audit report's OPEN decisions as meta-badged question items. A decision
     leaves the inbox when an answer is queued for it, when the report marks it decided
     (`_DECIDED_STATUSES` — or the routine's prose convention, a detail starting with
@@ -43,7 +69,6 @@ def _audit_decisions(server) -> list[dict]:
     from ..readmodels.items import SELF_AUDIT_SLUG
     from .api_audit import queued_messages
 
-    rdir = server.routines_home / SELF_AUDIT_SLUG
     report = read_json(rdir / "audit" / "report.json")
     if not isinstance(report, dict):
         return []
@@ -100,7 +125,64 @@ def _record_dir(server, match: dict):
     home = server.conversations_home if match.get("conversation") else server.routines_home
     return home / match["routine"]
 
+
+_HOME_ATTR = {"routine": "routines_home", "conversation": "conversations_home",
+              "background": "background_home"}
+
+
 def _all_questions(server, home_kind: str = "routine") -> list[dict]:
+    """Open questions of one home's catalog (`_all_questions_fresh`), reused while none of
+    the home's `_sources` changed. Callers get a copy — `open_decisions` marks snoozes on it
+    and the answer routes look records up in it — so the cached list is never touched.
+    """
+    home: Path = getattr(server, _HOME_ATTR[home_kind])
+    return memo.memoized(f"decisions:{home_kind}:{home}", _sources(home),
+                         lambda: _all_questions_fresh(server, home_kind, home))
+
+
+def _sources(home: Path) -> list[Path]:
+    """Every path whose change can alter one home's open-question list — the memo's inputs,
+    stat'd BEFORE the walk so a change during it misses next time:
+
+    - the home dir itself (a routine dir created or deleted stamps it) and EVERY subdir's
+      `routine.yaml`, present or missing — whether the dir is a routine at all, its slug, a
+      background task's `owner`; listed for dirs without one too, so a yaml landing after
+      its mkdir is a missing→present transition and not an unseen file;
+    - `questions/pending` and `inbox` — a new, rewritten or snoozed record, an answer file:
+      every write there is an atomic rename INTO the dir, which stamps the dir's mtime (the
+      registry's own `_open_questions_memo` rests on the same fact);
+    - `runs/` (a run armed, a run pruned) and every run's `status.json` — the live run's
+      state and blocking question, the `run_state` a deferred record links back to. The
+      FILE, not its dir: an atomic rewrite changes the inode, so no two writes can share a
+      fingerprint the way two renames inside one clock tick could share a dir mtime.
+
+    The listings are themselves memoized on the dir they list (home → its subdirs, each
+    `runs/` → its status files), so a warm check is one stat per path over Path objects
+    built once — ~1 400 stats for 134 dirs and 726 runs — and never a `pathlib` walk.
+    """
+    subdirs = memo.memoized_shared(f"decisions:dirs:{home}", [home], lambda: _subdirs(home))
+    out = [home]
+    for d, static in subdirs:
+        runs = d / "runs"
+        out += static
+        out += memo.memoized_shared(f"decisions:runs:{runs}", [runs], partial(_status_files, runs))
+    return out
+
+
+def _subdirs(home: Path) -> list[tuple[Path, list[Path]]]:
+    if not home.is_dir():
+        return []
+    return [(d, [d / "routine.yaml", d / "questions" / "pending", d / "inbox", d / "runs"])
+            for d in sorted(home.iterdir()) if d.is_dir() and not d.name.startswith(".")]
+
+
+def _status_files(runs: Path) -> list[Path]:
+    if not runs.is_dir():
+        return []
+    return [r / "status.json" for r in sorted(runs.iterdir()) if r.is_dir()]
+
+
+def _all_questions_fresh(server, home_kind: str, home: Path) -> list[dict]:
     """Open questions of one home's catalog. Conversation questions carry
     `conversation: True`, detached-task questions `background: True` (+ the owning
     conversation's slug as `owner`), so the answer endpoint and the UI can tell the
@@ -108,8 +190,6 @@ def _all_questions(server, home_kind: str = "routine") -> list[dict]:
     what lets the user see and answer them at all (the answer lands durably in the
     task's inbox).
     """
-    home = {"routine": None, "conversation": server.conversations_home,
-            "background": server.background_home}[home_kind]
     marker = {} if home_kind == "routine" else {home_kind: True}
     out: list[dict] = []
     for info in registry.scan(server, home).values():
@@ -146,7 +226,8 @@ def open_decisions(server) -> list[dict]:
     """Every decision across the instance, one shape — the Decisions page, the badge, the
     tab-open notifier, and the Web Push sender all read this. A record snoozed into the
     future carries `snoozed: True` (still open, still visible to runs — hidden by default
-    on the user surfaces only).
+    on the user surfaces only). The four parts are memoized (module docstring); the snooze
+    mark is the one clock-dependent step, so it is applied to the copies on every call.
     """
     items = (_all_questions(server) + _all_questions(server, "conversation")
              + _all_questions(server, "background") + _audit_decisions(server))

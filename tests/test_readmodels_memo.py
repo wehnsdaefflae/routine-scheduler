@@ -1,8 +1,10 @@
 """The read-model caching discipline: stat-fingerprint memo + the shared usage-stream
 parser. A cache hit must be invisible (equal values, isolated copies); any input change
-— append, atomic rewrite, deletion — must miss."""
+— append, atomic rewrite, deletion — must miss; a burst of identical misses computes ONCE
+(single-flight), and a waiter never accepts a result its sources have outrun."""
 
 import json
+import threading
 
 from rsched.readmodels import memo
 from rsched.readmodels.usage_stream import usage_records
@@ -43,3 +45,60 @@ def test_usage_records_parse_once_and_refresh_on_append(tmp_path):
         fh.write(json.dumps({"routine": "b", "tokens": 7}) + "\n")
     assert [r["routine"] for r in usage_records(tmp_path)] == ["a", "b"]
     assert usage_records(tmp_path / "ghost-home") == []    # missing stream → empty
+
+
+def test_a_burst_of_identical_misses_computes_once(tmp_path):
+    memo.reset()
+    f = tmp_path / "src.txt"
+    f.write_text("v1", encoding="utf-8")
+    entered, release = threading.Event(), threading.Event()
+    calls: list[int] = []
+
+    def compute():
+        calls.append(1)
+        entered.set()
+        release.wait(5)
+        return {"n": len(calls)}
+
+    results: list[dict] = []
+    threads = [threading.Thread(target=lambda: results.append(memo.memoized("burst", [f], compute)))
+               for _ in range(6)]
+    for t in threads:
+        t.start()
+    assert entered.wait(5)     # the leader is inside compute; the rest queue on its key…
+    release.set()              # …and read its entry instead of walking again
+    for t in threads:
+        t.join(5)
+    assert calls == [1] and results == [{"n": 1}] * 6
+
+
+def test_a_waiter_rejects_a_result_its_sources_outran(tmp_path):
+    """The fingerprint that vouches for a value describes the sources BEFORE that value's
+    compute. A waiter re-stats after its wait: if the source moved while the leader was
+    computing, the leader's entry is not the waiter's answer."""
+    memo.reset()
+    f = tmp_path / "src.txt"
+    f.write_text("v1", encoding="utf-8")
+    entered, release = threading.Event(), threading.Event()
+    calls: list[int] = []
+
+    def compute():
+        calls.append(1)
+        text = f.read_text(encoding="utf-8")
+        if len(calls) == 1:
+            entered.set()
+            release.wait(5)
+        return text
+
+    results: list[str] = []
+    leader = threading.Thread(target=lambda: results.append(memo.memoized("k", [f], compute)))
+    leader.start()
+    assert entered.wait(5)
+    waiter = threading.Thread(target=lambda: results.append(memo.memoized("k", [f], compute)))
+    waiter.start()
+    f.write_text("v2", encoding="utf-8")   # the source moves while the leader still computes
+    release.set()
+    leader.join(5)
+    waiter.join(5)
+    assert sorted(results) == ["v1", "v2"] and len(calls) == 2
+    assert memo.memoized("k", [f], compute) == "v2" and len(calls) == 2   # the fresh entry holds

@@ -13,6 +13,8 @@ panel), `fileactivity` (per-file read/write counts), `tasktree` (the recursive c
 tree), `items` (the system-maintenance index: findings, decisions, bug reports),
 `summaries` (each routine's latest finish message, shaped as a fourth item type so the
 Messages page can serve both), plus
-the shared primitives `memo` (stat-fingerprint cache) and `usage_stream` (the ONE
-parser of workflow-usage.jsonl).
+the shared primitives `memo` (stat-fingerprint cache with single-flight misses: a
+burst of identical requests computes once) and `usage_stream` (the ONE parser of
+workflow-usage.jsonl). `web/decisions_read` (the open-decisions list behind
+`/api/questions`) follows the same discipline from the web package.
 """

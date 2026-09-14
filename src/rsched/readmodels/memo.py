@@ -5,6 +5,14 @@ same fingerprint the registry uses (inode + mtime_ns + size — atomic tmp+renam
 always change the inode, appends change size/mtime). Values are returned as DEEP COPIES
 so a cached result can never be mutated by one consumer under another's feet; the cache
 is process-local and bounded (oldest-inserted evicted) — a pure cache, deletable state.
+
+Misses are SINGLE-FLIGHT per key: the first caller computes while every concurrent caller
+for the same key waits on it, then re-reads the fresh entry. A burst of identical requests
+(every open console tab refetching `/api/questions` on one bus event — 10-20 in flight on
+2026-09-14, each a 265 ms catalog walk under the GIL, each starving the others) therefore
+costs ONE compute. A waiter re-stats after the wait: the fingerprint that vouches for a
+value must describe the sources as they were before THAT value's compute, never before
+the queue.
 """
 
 from __future__ import annotations
@@ -23,6 +31,9 @@ _MAX_ENTRIES = 512
 
 _lock = threading.Lock()
 _cache: dict[str, tuple[tuple, object]] = {}
+# one in-progress compute per key (see the module docstring); keys come and go with run dirs,
+# so the table is swept of unheld locks once it reaches the cache's own bound
+_flights: dict[str, threading.Lock] = {}
 
 
 def fingerprint(paths: Sequence[Path]) -> tuple:
@@ -61,11 +72,29 @@ def _memoized(key: str, paths: Sequence[Path], compute: Callable[[], T],  # noqa
         hit = _cache.get(key)
         if hit is not None and hit[0] == fp:
             return hit[1] if share else copy.deepcopy(hit[1])  # type: ignore[return-value]
-    value = compute()
-    with _lock:
-        while len(_cache) >= _MAX_ENTRIES:
-            _cache.pop(next(iter(_cache)))
-        _cache[key] = (fp, value if share else copy.deepcopy(value))
+        flight = _flights.get(key)
+        if flight is None:
+            if len(_flights) >= _MAX_ENTRIES:
+                for stale in [k for k, f in _flights.items() if not f.locked()]:
+                    del _flights[stale]
+            flight = _flights[key] = threading.Lock()
+    waited = not flight.acquire(blocking=False)
+    if waited:
+        flight.acquire()   # a leader is computing this key: take its result, not a second walk
+    try:
+        if waited:
+            fp = fingerprint(paths)   # time passed in the queue — re-describe the sources now
+            with _lock:
+                hit = _cache.get(key)
+                if hit is not None and hit[0] == fp:
+                    return hit[1] if share else copy.deepcopy(hit[1])  # type: ignore[return-value]
+        value = compute()
+        with _lock:
+            while len(_cache) >= _MAX_ENTRIES:
+                _cache.pop(next(iter(_cache)))
+            _cache[key] = (fp, value if share else copy.deepcopy(value))
+    finally:
+        flight.release()
     return value
 
 
@@ -82,3 +111,4 @@ def reset() -> None:
     """Drop everything (tests)."""
     with _lock:
         _cache.clear()
+        _flights.clear()

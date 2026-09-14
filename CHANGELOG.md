@@ -15,6 +15,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.340.0] — 2026-09-14
+
+### Fixed — `/api/questions` walked three catalogs from disk on every call, once per tab
+
+`GET /api/questions` is the most-fetched read model in the console: the badge, the tab-open
+notifier, the activity feed, the run view and the Decisions page each refetch it on every bus
+event, once per open tab. Each call rebuilt the answer from scratch — `registry.scan` over the
+routine, conversation and background homes (every routine dir, every run's status.json, a deep
+copy of every config) plus the audit report: 265 ms of Python with warm registry memos, 4 s
+cold, for a list that is usually empty. On 2026-09-14 08:52 three runs booting at once put
+10-20 copies in flight at 7-25 s each on the bounded threadpool, and every other request
+(`/api/status`, `/api/runs`, `/api/schedule/week`) queued 4-7 s behind them until the routine
+settings page would not open.
+
+- **The Decisions read model is memoized per home** (`web/decisions_read.py`) behind a stat
+  fingerprint of every source that can change it: the home dir and EVERY subdir's
+  `routine.yaml` (present or missing — a yaml landing after its mkdir is a transition, not an
+  unseen file), each routine's `questions/pending` and `inbox` dirs (every write there is an
+  atomic rename into the dir), its `runs/` dir and every run's `status.json` (the file, whose
+  inode an atomic rewrite always changes). A new, rewritten or snoozed record, an answer
+  landing, a run armed, pruned or changing state, a routine appearing or vanishing all miss;
+  the audit report's decisions ride their own memo over the report, the answered-markers and
+  the inbox. The listings are memoized on the dirs they list, so a warm call is one stat pass
+  over Path objects built once (~1 400 stats for 134 dirs and 726 runs — milliseconds) and no
+  catalog walk. Callers still get copies: the snooze mark is the one clock-dependent step and
+  is applied per call.
+- **Memo misses are single-flight per key** (`readmodels/memo.py`): the first caller computes
+  while every concurrent caller for the same key waits on it, then re-stats and reads the fresh
+  entry — a burst of identical requests costs ONE compute instead of N walks contending for the
+  GIL. A waiter re-fingerprints after the wait, because the fingerprint that vouches for a value
+  must describe the sources as they were before THAT compute, never before the queue. Every
+  memoized read model (`/api/items`, the changelog tail, the run-page trees) gets the same.
+- D129 (the sync read-model handlers on a bounded threadpool) stays open; this is the narrower
+  fix, as 0.312.1 was for `/api/items`. Tests: `tests/test_decisions_read.py` (one walk per
+  home while sources are unchanged, one miss per kind of change, copies handed out) and the
+  single-flight cases in `tests/test_readmodels_memo.py`.
+
 ## [0.339.0] — 2026-09-14
 
 ### Fixed — read_file materialised the whole file before windowing it

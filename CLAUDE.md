@@ -434,7 +434,12 @@ by a test, by the engine, or by a past incident.
   (`/api/domains`, `/api/schedule/week`, `/api/stats`, 300 runs) on that path: on 2026-09-12 the
   dashboard refetched `/api/domains` every 600 ms while five runs were active and every request
   in the daemon queued for 20-50 s behind it. When the console is slow, `/api/debug/slow` and
-  `docker logs rsched | grep "slow request"` say which path, before anyone guesses.
+  `docker logs rsched | grep "slow request"` say which path, before anyone guesses. The
+  server-side half of the rule: a read model on a bus-event path is MEMOIZED on a stat
+  fingerprint of its sources with SINGLE-FLIGHT misses (`readmodels/memo`) — `/api/items`
+  (0.312.1) and `/api/questions` (0.340.0, three catalog walks per call at 10-20 in flight)
+  both starved the daemon before they were; a new read model joins them before it is fetched
+  on an event.
 - **An exclusive machine's compute is QUEUED, not locked.** `MachineConfig.exclusive` makes
   `remote submit` take a ticket instead of launching (`rsched/machine_queue.py`). The order is
   FAIR SHARE — round-robin across ROUTINES by each one's oldest waiting ticket, FIFO within one —

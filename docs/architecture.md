@@ -942,9 +942,15 @@ whose TEXT must change on a live instance is converted by a one-shot migration i
   items — the maintenance index of findings/decisions/bug reports, docs/items.md — summaries —
   each routine's latest finish message, shaped as a fourth item type and merged into the same
   page — and messages — a routine's four message folders, docs/messages.md) on the
-  same discipline: `readmodels/memo` fingerprint-caches per input file, `readmodels/usage_stream`
+  same discipline: `readmodels/memo` fingerprint-caches per input file and makes every miss
+  SINGLE-FLIGHT per key (0.340.0: a burst of identical requests — every open tab refetching one
+  endpoint on a bus event — computes once while the rest wait and re-read), `readmodels/usage_stream`
   is the ONE parser of workflow-usage.jsonl — a read-model is a pure derivation, deletable state,
-  never a writer.
+  never a writer. The Decisions read model (`web/decisions_read.py` — what `/api/questions`, the
+  badge, the tab-open notifier and Web Push all read) is memoized per home on the same fingerprint
+  over the catalog's own sources (the home listing, every `routine.yaml`, every `questions/pending`
+  and `inbox` dir, every `runs/` dir and run `status.json`), so a warm call is a stat pass and never
+  a `registry.scan`.
 - **One-shot time triggers (schedule-once, docs/schedule-once.md)**: a spool
   (`.control/schedule-once/<slug>/req-*.json`) armed from the routine page or by a run holding
   `scheduling` (the `schedule_run` action); the daemon's `OneShotManager` fires each due request
@@ -1256,5 +1262,10 @@ requests it had starved. It named them the same afternoon (0.334.0): the dashboa
 endpoints on every bus event, `/api/domains` parsing every routine.yaml per domain (now memoized
 per file, `domains.domain_of`), and a trivial sync handler queueing for a threadpool token. The
 standing rule for the console follows from it: **a live refresh on a bus event fetches only what
-that event can change** — routine cards and status — never config-shaped or expensive data.
+that event can change** — routine cards and status — never config-shaped or expensive data. The
+ring named the next one two days later (2026-09-14): `/api/questions`, fetched by five surfaces
+per tab on every bus event and walking three catalogs from disk per call, at 10-20 in flight for
+7-25 s each while three runs booted — now memoized per home with single-flight misses (0.340.0),
+so the server-side half of the rule is: **a read model on a bus-event path is memoized on a stat
+fingerprint of its sources**, and a burst of identical requests costs one compute.
 
