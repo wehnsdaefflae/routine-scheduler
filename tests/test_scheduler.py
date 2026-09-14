@@ -545,3 +545,60 @@ async def test_due_lane_fire_while_in_flight_emits_refused_event(make_routine, t
     # the health event is keyed by the LANE id — a lane fires no routine of its own
     assert ev["routine"] == lane["id"] and ev["run_id"] == ""
     assert "still in flight" in ev["detail"]
+
+
+async def test_abort_while_queued_releases_the_slug(make_routine, tmp_path, monkeypatch):
+    """Aborting a run that is still QUEUED must leave nothing behind in `runner.active`.
+
+    The regression (2026-09-14): `_supervise` early-returned on `run.cancelled`, skipping
+    `runner_reap.reap` — the only caller of `runner.active.pop`. The slug stayed registered
+    forever, which silently disabled the routine (`resume` refuses on `slug in active`) AND
+    wedged the restart drain (`active_states` reads the same dict, so the daemon believed
+    runs were live and never restarted) — and the restart was the only thing that could have
+    cleared it.
+    """
+    d1 = make_routine(slug="holder")
+    d2 = make_routine(slug="queued")
+    cfg1, _ = load_routine(d1)
+    cfg2, _ = load_routine(d2)
+    _stub_engine(monkeypatch, "sleep 0.3")
+    runner = Runner(_server(tmp_path, max_concurrent=1), EventBus())
+    await runner.fire(cfg1)
+    await runner.fire(cfg2)
+    assert await _wait_for(lambda: runner.active["holder"].proc is not None)
+    assert runner.active["queued"].proc is None      # no slot yet → never spawned
+    queued_ts = runner.active["queued"].run_ts
+
+    assert await runner.abort("queued") is True
+    assert read_run(d2 / "runs" / queued_ts, "queued").state == "aborted"
+
+    # the whole point: both slugs drain out of `active` once the slot frees
+    assert await _wait_for(lambda: not runner.active, wait_s=8)
+    assert runner.active_states() == []               # the drain can now see an idle daemon
+    assert runner.resume_blocker(cfg2, queued_ts) is None   # no longer held by the dead run
+
+    # and the routine still works: it can be resumed again
+    assert await runner.resume(cfg2, queued_ts) is not None
+    assert await _wait_for(lambda: not runner.active, wait_s=8)
+
+
+async def test_resume_blocker_names_the_real_cause(make_routine, tmp_path, monkeypatch):
+    """A refusal names the ONE condition that actually blocked it (the old message listed
+    three at once and was shown for a run that matched none of them)."""
+    d = make_routine(slug="blocked")
+    cfg, _ = load_routine(d)
+    _stub_engine(monkeypatch, "sleep 0.3")
+    runner = Runner(_server(tmp_path), EventBus())
+
+    assert "gone" in (runner.resume_blocker(cfg, "20260101-000000") or "")
+
+    await runner.fire(cfg)
+    ts = runner.active["blocked"].run_ts
+    assert "already active" in (runner.resume_blocker(cfg, ts) or "")
+    assert await runner.resume(cfg, ts) is None       # and resume agrees with the blocker
+
+    assert await _wait_for(lambda: not runner.active, wait_s=8)
+    assert runner.resume_blocker(cfg, ts) is None     # terminal + idle → resumable
+
+    runner.draining = True
+    assert "draining" in (runner.resume_blocker(cfg, ts) or "")

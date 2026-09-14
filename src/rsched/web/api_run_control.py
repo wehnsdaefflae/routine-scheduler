@@ -207,9 +207,13 @@ async def resume_run(request: Request, run_id: str) -> dict:
     cfg, _ = load_routine(run_dir.parent.parent)
     if cfg is None:
         raise HTTPException(404, f"routine {slug!r} not found")
-    rid = await request.app.state.runner.resume(cfg, run_dir.name, reason="user")
+    runner = request.app.state.runner
+    rid = await runner.resume(cfg, run_dir.name, reason="user")
     if not rid:
-        raise HTTPException(409, "could not resume (already running, draining, or run dir gone)")
+        # Name the ACTUAL blocker (runner.resume_blocker is what resume itself consults), not
+        # the old catch-all list of three — which was shown for a run that was none of them.
+        why = runner.resume_blocker(cfg, run_dir.name) or "the run could not be started"
+        raise HTTPException(409, f"could not resume: {why}")
     return {"ok": True, "run_id": rid}
 
 class Rewind(BaseModel):

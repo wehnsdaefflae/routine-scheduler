@@ -15,6 +15,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.342.2] — 2026-09-14
+
+### Fixed — aborting a QUEUED run leaked its slug and silently disabled the routine
+
+`Runner._supervise` early-returned on `run.cancelled` — the flag `abort` sets for a run that has
+not been given a concurrency slot yet — and that `return` sat above the call to
+`runner_reap.reap`, the ONLY caller of `runner.active.pop(run.slug)`. So aborting a run that was
+still queued released its semaphore slot but never removed it from `runner.active`. The dict
+entry outlived the run, and two separate checks read that dict:
+
+- `resume()` refuses on `cfg.slug in self.active`, so the routine could never be resumed or
+  fired again — every attempt returned 409 while the registry, `/api/runs` and the routine's
+  own `active_run` all correctly reported nothing running;
+- `active_states()` feeds the restart drain, so the daemon counted the dead entries as live
+  runs and `restart_action` returned `wait` forever.
+
+Together those deadlock: the leak can only be cleared by a daemon restart, and the leak is what
+prevents the restart. Observed on 2026-09-14 — three routines (llmsectest-weekday,
+voice-model-trainer, miz-grant-steward) were unresumable for over an hour with an armed restart
+sentinel that could never fire, and the console reported "3 runs active" with an empty run table.
+
+The cancelled path now falls through to the reap instead of returning. `reap` has always handled
+this case correctly — it pops the slug first, then returns early on `cancelled and proc is None`
+("status already closed out, nothing ran") — it was simply never reached. The slug is released
+when the parked supervisor acquires its slot, NOT eagerly in `abort`: popping there would let a
+new run of the same routine register while the old supervisor is still parked, and its reap would
+then evict the new run's entry.
+
+### Fixed — a resume refusal names the one condition that actually blocked it
+
+`POST /api/runs/{run_id}/resume-run` answered every refusal with "could not resume (already
+running, draining, or run dir gone)" — a list of all three causes, regardless of which applied.
+During the incident above it was shown for a routine that was none of the three, and the false
+leads cost more time than the failure did. `Runner.resume_blocker` is now the single source of
+truth for both the decision and the wording: `resume` consults it rather than re-testing the
+conditions, so a refusal can never name a cause that is not the real one.
+
 ## [0.342.1] — 2026-09-14
 
 ### Fixed — a run the daemon orphaned by restarting is `aborted`, not `failed`

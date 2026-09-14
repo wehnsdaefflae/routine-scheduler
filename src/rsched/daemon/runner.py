@@ -136,16 +136,30 @@ class Runner:
         self._spawn_supervisor(run, cfg, reason)
         return run.run_id
 
+    def resume_blocker(self, cfg: RoutineConfig, ts: str) -> str | None:
+        """Why `resume` would refuse, in the operator's words — or None when it would proceed.
+
+        ONE source of truth for the decision AND the wording: `resume` consults this rather
+        than re-testing the conditions, so a refusal can never name a cause that is not the
+        real one. The old message listed all three at once ("already running, draining, or
+        run dir gone"); on 2026-09-14 it was shown for a routine that was none of them, and
+        the false leads cost more time than the failure did.
+        """
+        if self.draining:
+            return "the daemon is draining for a restart"
+        if cfg.slug in self.active:
+            return f"another run of {cfg.slug} is already active ({self.active[cfg.slug].run_id})"
+        if not (cfg.dir / "runs" / ts).is_dir():
+            return f"run directory for {ts} is gone"
+        return None
+
     async def resume(self, cfg: RoutineConfig, ts: str, *, reason: str = "resume") -> str | None:
         """Re-run an interrupted (terminal) run in place, rehydrating its transcript so it continues
-        where it left off. Refuses if draining, the routine already has an active run, or the run
-        dir is gone.
+        where it left off. Returns None when `resume_blocker` names a reason it cannot.
         """
-        if self.draining or cfg.slug in self.active:
+        if self.resume_blocker(cfg, ts) is not None:
             return None
         run_dir = cfg.dir / "runs" / ts
-        if not run_dir.is_dir():
-            return None
         run = ActiveRun(slug=cfg.slug, run_id=f"{cfg.slug}:{ts}", run_ts=ts, run_dir=run_dir,
                         sem=self._sem_for(cfg), background=self.is_background(cfg))
         # RESUME reuses the run dir: status.json still holds the prior leg's cumulative
@@ -186,33 +200,45 @@ class Runner:
         run.holds_slot = True
         stderr = b""
         try:
-            if run.cancelled:   # aborted while queued — never spawn
-                return
-            run.proc = await asyncio.create_subprocess_exec(
-                *runner_state.engine_cmd(self.server, str(cfg.dir), run.run_ts, resume=resume),
-                stdout=asyncio.subprocess.DEVNULL,
-                stderr=asyncio.subprocess.PIPE,
-                start_new_session=True,
-                cwd=str(cfg.dir),
-            )
-            self.bus.publish({"event": "run_started", "routine": cfg.slug,
-                              "run_id": run.run_id, "reason": reason})
-            if self.center is not None:
-                self.center.open_process(run.run_id, kind="run", label=run.slug, run_id=run.run_id)
-            log.info("run_started routine=%s run=%s pid=%s reason=%s",
-                     cfg.slug, run.run_id, run.proc.pid, reason)
-            waiter = asyncio.create_task(self._watch_waiting(run))
-            tailer = (asyncio.create_task(tail_llm_sidecar(run.run_dir, self._llm_recorder(run)))
-                      if self.center is not None else None)
-            try:
-                _, err = await run.proc.communicate()
-                stderr = err or b""
-            finally:
-                waiter.cancel()
-                if tailer is not None:
-                    tailer.cancel()   # its finally drains any last-moment records before reap
-                    with contextlib.suppress(asyncio.CancelledError):
-                        await tailer
+            # `run.cancelled` = aborted while still queued: never spawn, but FALL THROUGH to
+            # the reap. An early `return` here skipped it, and reap() is the only caller of
+            # `runner.active.pop(run.slug)` — so the slug stayed registered forever. That
+            # leak is worse than a stale dict entry, because two other checks read the same
+            # dict: `resume()` refuses on `cfg.slug in self.active` (so the routine could
+            # never be resumed or fired again), and `active_states()` feeds the restart
+            # drain (so the daemon believed runs were live and never restarted). The only
+            # way out was the restart the leak itself prevented. reap() has always handled
+            # this case — it pops the slug, then returns early on `cancelled and proc is
+            # None` — it was simply never reached.
+            if not run.cancelled:
+                run.proc = await asyncio.create_subprocess_exec(
+                    *runner_state.engine_cmd(self.server, str(cfg.dir), run.run_ts,
+                                             resume=resume),
+                    stdout=asyncio.subprocess.DEVNULL,
+                    stderr=asyncio.subprocess.PIPE,
+                    start_new_session=True,
+                    cwd=str(cfg.dir),
+                )
+                self.bus.publish({"event": "run_started", "routine": cfg.slug,
+                                  "run_id": run.run_id, "reason": reason})
+                if self.center is not None:
+                    self.center.open_process(run.run_id, kind="run", label=run.slug,
+                                             run_id=run.run_id)
+                log.info("run_started routine=%s run=%s pid=%s reason=%s",
+                         cfg.slug, run.run_id, run.proc.pid, reason)
+                waiter = asyncio.create_task(self._watch_waiting(run))
+                tailer = (asyncio.create_task(
+                    tail_llm_sidecar(run.run_dir, self._llm_recorder(run)))
+                    if self.center is not None else None)
+                try:
+                    _, err = await run.proc.communicate()
+                    stderr = err or b""
+                finally:
+                    waiter.cancel()
+                    if tailer is not None:
+                        tailer.cancel()   # its finally drains last-moment records before reap
+                        with contextlib.suppress(asyncio.CancelledError):
+                            await tailer
         finally:
             if run.holds_slot:
                 sem.release()
