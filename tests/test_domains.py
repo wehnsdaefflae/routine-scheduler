@@ -351,3 +351,22 @@ def test_the_shared_block_round_trips_every_key_a_domain_may_set(client):
     bad = c.patch(f"/api/domains/{did}", json={"config": {**shared, "machines": ["ghost"]}})
     assert bad.status_code == 400 and "ghost" in str(bad.json()["detail"])
     assert domains.get(home, did)["config"] == shared          # nothing was saved
+
+
+def test_a_domain_patch_reports_which_fields_it_applied(client):
+    """R102/R1488: a PATCH says WHICH keys landed, so a caller can tell an applied change from
+    a silently ignored one. The Decisions page's one-click apply verifies every key of its
+    proposed patch against this list before reporting success — without it, a domain-targeted
+    proposal could only ever render a button that refuses itself.
+    """
+    c, home = client
+    did = domains.create(home, name="FAU", config={})["id"]
+    r = c.patch(f"/api/domains/{did}", json={"config": {"budgets": {"max_turns": 99}}})
+    assert r.status_code == 200, r.text
+    assert r.json()["updated"] == ["config"]
+    r2 = c.patch(f"/api/domains/{did}", json={"name": "FAU Grants"})
+    assert r2.json()["updated"] == ["name"]
+    # the name-only patch left the shared block alone — `updated` is not a wish list
+    assert domains.get(home, did)["config"] == {"budgets": {"max_turns": 99}}
+    r3 = c.patch(f"/api/domains/{did}", json={"name": "FAU", "config": {}})
+    assert r3.json()["updated"] == ["name", "config"]

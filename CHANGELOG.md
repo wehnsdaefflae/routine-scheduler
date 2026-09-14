@@ -15,6 +15,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.341.2] — 2026-09-14
+
+### Fixed — a domain PATCH says which fields it applied
+
+`PATCH /api/domains/{id}` returned the domain record and nothing about what the patch did, so a
+caller could not distinguish an applied key from a silently ignored one. It now carries the same
+`updated` applied-field list the routine PATCH has always carried (R102).
+
+This is the precondition for letting a decision's `config_patch` target a DOMAIN (R1488/R1489):
+the Decisions page's one-click apply verifies every key of its patch against `updated` before
+reporting success, so without it a domain-targeted proposal could only ever render a button that
+refuses itself.
+
 ## [0.341.1] — 2026-09-14
 
 ### Fixed — the proxy's accounts and sign-in follow each endpoint's models, not the quota field

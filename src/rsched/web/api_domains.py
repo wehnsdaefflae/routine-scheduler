@@ -173,6 +173,14 @@ def create_domain(request: Request, body: DomainCreate) -> dict:
 
 @router.patch("/domains/{domain_id}")
 def update_domain(request: Request, domain_id: str, body: DomainPatch) -> dict:
+    """Patch a domain's name and/or its shared block, and SAY WHICH of the two landed.
+
+    `updated` is the applied-field list, the same contract the routine PATCH carries (R102): a
+    caller that cannot tell an applied key from a silently ignored one will report success for a
+    change that never happened. It is the domain half of the config bridge — a decision proposing
+    a domain change is approved with one click, and the page verifies every key of its patch
+    against this list before telling the user (and the asking routine) that it was applied.
+    """
     config = _validate_config(request, body.config)
     try:
         rec = domains.update(_routines_home(request), domain_id, name=body.name, config=config)
@@ -180,7 +188,8 @@ def update_domain(request: Request, domain_id: str, body: DomainPatch) -> dict:
         raise HTTPException(400, str(exc)) from exc
     if rec is None:
         raise HTTPException(404, f"no domain {domain_id!r}")
-    return _record(request, rec)
+    applied = [k for k in ("name", "config") if getattr(body, k) is not None]
+    return {**_record(request, rec), "updated": applied}
 
 
 @router.delete("/domains/{domain_id}")
