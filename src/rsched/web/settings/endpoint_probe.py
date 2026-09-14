@@ -14,7 +14,7 @@ import time
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
-from ...endpoints import EndpointRegistry, cliproxy_login, cliproxy_quota
+from ...endpoints import EndpointRegistry, cliproxy_login, cliproxy_mgmt, cliproxy_quota
 from ...endpoints.base import EndpointError
 from ...schema_guard import SchemaViolation, parse_reply
 from .common import server_of
@@ -108,37 +108,51 @@ async def endpoint_quota(request: Request, name: str) -> dict:
     when the provider or the credential is the problem. The quota is per-ACCOUNT rather than per
     endpoint, so two subscription proxy endpoints would honestly report the same numbers.
     """
-    ep = _endpoint(request, name)
-    if ep.quota_source == "cliproxy":
-        return await asyncio.to_thread(cliproxy_quota.read_quota, ep)
-    return {"supported": False}
+    server = server_of(request)
+    _endpoint(request, name)
+    bound = cliproxy_mgmt.binding(server, name)
+    providers = cliproxy_mgmt.endpoint_providers(server, name)
+    # the Claude subscription's windows, read through whichever endpoint carries the
+    # binding — but only ON a card whose models are Claude's (unknown families count as
+    # Claude's, since the read was configured somewhere); the Codex card gets none
+    if bound is None or (providers and "claude" not in providers):
+        return {"supported": False}
+    return await asyncio.to_thread(cliproxy_quota.read_quota, bound)
 
 
 # ---- signing the proxy's accounts back in, from the card -----------------------------------
-# The same management binding the quota read uses (`quota_source: cliproxy` + the management
-# key in `quota_key_var`). The proxy owns the OAuth flow; these three routes ferry the consent
-# URL out to the operator's browser and the code back (endpoints/cliproxy_login.py explains
-# why the code comes back by hand: the consent page redirects to localhost on the OPERATOR'S
-# device). Mutating routes, so the read-only routine token is refused like every other POST.
+# The management binding is the proxy's (`quota_source: cliproxy` + the management key in
+# `quota_key_var` on ANY endpoint of that proxy — cliproxy_mgmt.binding resolves a sibling's),
+# and which accounts a card shows follows the provider of the models bound to that endpoint.
+# The proxy owns the OAuth flow; these three routes ferry the consent URL out to the
+# operator's browser and the code back (endpoints/cliproxy_login.py explains why the code
+# comes back by hand: the consent page redirects to localhost on the OPERATOR'S device).
+# Mutating routes, so the read-only routine token is refused like every other POST.
 
-def _proxy_endpoint(request: Request, name: str):
-    ep = _endpoint(request, name)
-    if ep.quota_source != "cliproxy":
+def _proxy_binding(request: Request, name: str):
+    _endpoint(request, name)
+    bound = cliproxy_mgmt.binding(server_of(request), name)
+    if bound is None:
         raise HTTPException(400, f"endpoint {name!r} has no proxy management binding — set "
-                                 "its subscription quota source to CLIProxyAPI first")
-    return ep
+                                 "Proxy management to CLIProxyAPI on it (or on any endpoint "
+                                 "of the same proxy) first")
+    return bound
 
 
 @router.get("/settings/endpoints/{name}/proxy-accounts")
 async def proxy_accounts(request: Request, name: str) -> dict:
-    """Who the proxy is signed in as — provider, label, the proxy's status word and its
-    one-line reason when an account is unavailable (a dead refresh token, a usage limit).
-    `{"supported": false}` for an endpoint without the binding, like the quota read.
+    """Who the proxy is signed in as, for THIS endpoint's models — provider, label, the
+    proxy's status word and its one-line reason when an account is unavailable (a dead
+    refresh token, a usage limit) — plus the sign-in controls the card offers.
+    `{"supported": false}` for an endpoint that resolves no binding, like the quota read.
     """
-    ep = _endpoint(request, name)
-    if ep.quota_source != "cliproxy":
+    server = server_of(request)
+    _endpoint(request, name)
+    bound = cliproxy_mgmt.binding(server, name)
+    if bound is None:
         return {"supported": False}
-    return await asyncio.to_thread(cliproxy_login.accounts, ep)
+    return await asyncio.to_thread(cliproxy_login.accounts, bound,
+                                   cliproxy_mgmt.endpoint_providers(server, name))
 
 
 class ProxyLoginStart(BaseModel):
@@ -148,8 +162,8 @@ class ProxyLoginStart(BaseModel):
 @router.post("/settings/endpoints/{name}/proxy-login")
 async def proxy_login_start(request: Request, name: str, body: ProxyLoginStart) -> dict:
     """A consent URL + the state naming this sign-in; the card shows the link."""
-    ep = _proxy_endpoint(request, name)
-    return await asyncio.to_thread(cliproxy_login.start, ep, body.provider)
+    bound = _proxy_binding(request, name)
+    return await asyncio.to_thread(cliproxy_login.start, bound, body.provider)
 
 
 class ProxyLoginComplete(BaseModel):
@@ -162,8 +176,8 @@ class ProxyLoginComplete(BaseModel):
 async def proxy_login_complete(request: Request, name: str,
                                body: ProxyLoginComplete) -> dict:
     """Hand the pasted code to the proxy and wait for its token exchange to settle."""
-    ep = _proxy_endpoint(request, name)
-    return await asyncio.to_thread(cliproxy_login.complete, ep, body.provider, body.state,
+    bound = _proxy_binding(request, name)
+    return await asyncio.to_thread(cliproxy_login.complete, bound, body.provider, body.state,
                                    body.response)
 
 

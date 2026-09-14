@@ -37,14 +37,14 @@ export function quotaLine(q) {
     .join(" · ");
 }
 
-//: Who the proxy is signed in as, and the way back in when a session dies. The proxy owns the
-//: OAuth flow; the console only ferries the consent link out and the code back. The consent
-//: page redirects to localhost on the OPERATOR'S device, where nothing listens, so that page
-//: fails to load — its address still carries the code, and pasting it here finishes the
-//: sign-in (docs/claude-proxy-cutover.md). Both providers are offered because the fallback
-//: chain through the proxy dies when either session does.
+//: Who the proxy is signed in as FOR THIS ENDPOINT'S MODELS, and the way back in when a session
+//: dies. The proxy owns the OAuth flow; the console only ferries the consent link out and the
+//: code back. The consent page redirects to localhost on the OPERATOR'S device, where nothing
+//: listens, so that page fails to load — its address still carries the code, and pasting it
+//: here finishes the sign-in (docs/claude-proxy-cutover.md). The rows and the sign-in
+//: controls come filtered from the server by the provider of the models bound to this
+//: endpoint: the Claude card shows the Claude account, the Codex card the Codex one.
 const PROVIDER_LABEL = { claude: "Claude", anthropic: "Claude", codex: "Codex" };
-const LOGIN_PROVIDERS = [["anthropic", "Claude"], ["codex", "Codex"]];
 
 export function proxyAccounts(ep, onSignedIn) {
   const base = `/api/settings/endpoints/${encodeURIComponent(ep.name)}`;
@@ -75,6 +75,11 @@ export function proxyAccounts(ep, onSignedIn) {
     }
     list.replaceChildren(...a.accounts.map(accountLine));
     if (!a.accounts.length) list.append(el("span", { class: "muted" }, "no proxy account signed in yet"));
+    buttons.replaceChildren(...(a.providers || []).map(({ id, label }) => {
+      const b = el("button", { class: "btn small" }, `re-authenticate ${label}`);
+      b.onclick = () => startLogin(id, label);
+      return b;
+    }));
   }
 
   async function startLogin(provider, label) {
@@ -119,11 +124,7 @@ export function proxyAccounts(ep, onSignedIn) {
       paste, el("div", { class: "row" }, finish, cancel), status));
   }
 
-  const buttons = el("div", { class: "row" }, ...LOGIN_PROVIDERS.map(([provider, label]) => {
-    const b = el("button", { class: "btn small" }, `re-authenticate ${label}`);
-    b.onclick = () => startLogin(provider, label);
-    return b;
-  }));
+  const buttons = el("div", { class: "row" });   // filled from the reply: this card's providers
   box.append(list, buttons, loginBox);
   load();
   return { box, reload: load };
@@ -543,7 +544,7 @@ export async function renderEndpoints(view) {
         el("label", { class: "field" }, el("span", {}, "temperature (default)"), tempIn),
         el("label", { class: "field" }, el("span", {}, "max_tokens (default)"), mtIn)),
       el("div", { class: "field-row" },
-        el("label", { class: "field" }, el("span", {}, "Subscription quota source"), quotaSel),
+        el("label", { class: "field" }, el("span", {}, "Proxy management (CLIProxyAPI)"), quotaSel),
         el("label", { class: "field" }, el("span", {}, "Management key secret name"), quotaKeyIn),
         el("label", { class: "field" }, el("span", {}, "Quota account index"), quotaAccountIn)),
       extraBodyIn ? el("div", { style: "margin-top:6px" },
@@ -590,9 +591,10 @@ export async function renderEndpoints(view) {
       }).catch(() => usageRow.replaceChildren());
     }
     if (ep.has_subscription_quota) loadQuota();
-    // The signed-in accounts and the way back in — a finished sign-in also changes what the
+    // The signed-in accounts and the way back in, on every endpoint of a bound proxy (the
+    // binding is the proxy's, resolved server-side) — a finished sign-in also changes what the
     // quota read returns, so it reloads that row.
-    const proxy = ep.has_subscription_quota ? proxyAccounts(ep, loadQuota) : null;
+    const proxy = ep.proxy_management ? proxyAccounts(ep, loadQuota) : null;
 
     return el("div", { class: "panel mt" },
       el("div", { class: "row spread" },

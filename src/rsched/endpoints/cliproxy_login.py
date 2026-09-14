@@ -12,6 +12,8 @@ Everything the management key sees stays on the server, like `cliproxy_quota`: t
 returned here carry a consent URL, a state, a status word and the proxy's own one-line
 account messages — never a token, a key or an upstream body. Every public function returns
 a soft `{"ok": False, "error": …}` instead of raising, so the card can show the reason.
+Which endpoint a call is made for is `cliproxy_mgmt`'s business: it resolves the binding
+(one key per proxy) and names the providers that endpoint's models belong to.
 """
 
 from __future__ import annotations
@@ -23,30 +25,18 @@ from urllib.parse import parse_qs, urlsplit
 import httpx
 
 from ..config import EndpointConfig
-from .base import EndpointError, resolve_api_key
+from .base import EndpointError
+from .cliproxy_mgmt import LABEL, LOGIN_PROVIDER
+from .cliproxy_mgmt import client as _client
 
-PROVIDERS = {"anthropic": "Claude", "codex": "Codex"}
+# login-route provider name → card label (the auth-file names are cliproxy_mgmt's)
+PROVIDERS = {login: LABEL[auth] for auth, login in LOGIN_PROVIDER.items()}
 CALLBACK_PORT = {"anthropic": 54545, "codex": 1455}
 STATUS_POLL_S = 20        # how long `complete` waits for the proxy's token exchange
 # a token-shaped word: 40+ characters of the base64/JWT/API-key alphabet and nothing else —
 # a JSON fragment or a sentence never matches, a leaked credential always does
 TOKEN_WORD = re.compile(r"[A-Za-z0-9._~+/=-]{40,}")
 UNREACHABLE = "Could not reach the proxy's management API; check connectivity and proxy health."
-
-
-def _client(cfg: EndpointConfig, timeout: int) -> tuple[httpx.Client, str]:
-    """A management-API client for this endpoint — the same derivation as the quota read:
-    the proxy root without `/v1`, the management key from `quota_key_var` (the binding the
-    endpoint already carries for its account listing).
-    """
-    origin = urlsplit(cfg.base_url)
-    if origin.scheme not in {"http", "https"} or not origin.netloc or origin.username:
-        raise EndpointError("Set the proxy's HTTP base URL in Settings.")
-    key = resolve_api_key(name="CLIProxyAPI management", api_key="",
-                          key_var=cfg.quota_key_var, key_env_file="", required=True)
-    url = cfg.base_url.rstrip("/").removesuffix("/v1") + "/v0/management"
-    return httpx.Client(timeout=timeout, follow_redirects=False,
-                        headers={"Authorization": f"Bearer {key}"}), url
 
 
 def _management_error(status_code: int) -> EndpointError:
@@ -78,10 +68,15 @@ def _account_view(f: dict) -> dict:
             "next_retry_after": str(f.get("next_retry_after") or "")[:25]}
 
 
-def accounts(cfg: EndpointConfig, *, timeout: int = 15) -> dict:
-    """The proxy's signed-in accounts as the console may show them: provider, label, the
-    proxy's status word and its one-line reason when an account is unavailable.
+def accounts(cfg: EndpointConfig, providers=frozenset(), *, timeout: int = 15) -> dict:
+    """The proxy's signed-in accounts as ONE endpoint's card may show them: provider,
+    label, the proxy's status word and its one-line reason when an account is unavailable —
+    filtered to `providers`, the auth-file provider names the asking endpoint's models belong
+    to (cliproxy_mgmt.endpoint_providers), with `providers` in the reply naming the sign-in
+    controls that card offers. An EMPTY set means unknown, and unknown shows everything: the
+    Codex card showing nothing was the defect, not the Claude card showing too much.
     """
+    wanted = {p for p in providers if p in LOGIN_PROVIDER}
     try:
         client, url = _client(cfg, timeout)
         with client:
@@ -92,8 +87,12 @@ def accounts(cfg: EndpointConfig, *, timeout: int = 15) -> dict:
             files = listing.get("files") if isinstance(listing, dict) else None
             if not isinstance(files, list):
                 raise EndpointError("Proxy account listing has an unrecognised format.")
-        return {"supported": True, "ok": True,
-                "accounts": [_account_view(f) for f in files if isinstance(f, dict)]}
+        rows = [_account_view(f) for f in files if isinstance(f, dict)]
+        if wanted:
+            rows = [r for r in rows if r["provider"] in wanted]
+        offered = sorted(wanted or LOGIN_PROVIDER)
+        return {"supported": True, "ok": True, "accounts": rows,
+                "providers": [{"id": LOGIN_PROVIDER[p], "label": LABEL[p]} for p in offered]}
     except EndpointError as exc:
         return {"supported": True, "ok": False, "error": str(exc)}
     except (httpx.HTTPError, ValueError, TypeError):

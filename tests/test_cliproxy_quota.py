@@ -6,19 +6,20 @@ import httpx
 import pytest
 
 from rsched.config import EndpointConfig
-from rsched.endpoints import cliproxy_quota
+from rsched.endpoints import cliproxy_mgmt, cliproxy_quota
 
 
 @pytest.fixture
 def proxy(monkeypatch):
-    monkeypatch.setattr(cliproxy_quota, "resolve_api_key", lambda **kw: "management-secret")
+    # the management client (key + URL) is cliproxy_mgmt's, shared with the sign-in module
+    monkeypatch.setattr(cliproxy_mgmt, "resolve_api_key", lambda **kw: "management-secret")
     return EndpointConfig(kind="anthropic", base_url="http://proxy:8317",
                           quota_source="cliproxy")
 
 
 def mock_proxy(monkeypatch, handler):
     factory = httpx.Client
-    monkeypatch.setattr(cliproxy_quota.httpx, "Client", lambda **kw: factory(
+    monkeypatch.setattr(cliproxy_mgmt.httpx, "Client", lambda **kw: factory(
         transport=httpx.MockTransport(handler), **kw))
 
 

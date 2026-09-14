@@ -102,10 +102,14 @@ system_model: glm                 # the fallback model for setup-time work — a
   metadata is unavailable. Default `25_000`. Provider discovery takes precedence over this
   endpoint fallback; an explicit per-model override takes precedence over discovery.
 - `temperature` — optional **default** temperature catalog models inherit when unset.
-- `quota_source` — `cliproxy` binds the endpoint to the proxy's management API: the
-  subscription quota read, the signed-in account rows on the card, and the card's
-  *re-authenticate* control that signs a dead session back in without a terminal
-  (`docs/claude-proxy-cutover.md`, "Signing in, and signing back in").
+- `quota_source` — `cliproxy` binds the PROXY to its management API (the edit form calls
+  the field *Proxy management (CLIProxyAPI)*): the signed-in account rows on the card, the
+  card's *re-authenticate* control that signs a dead session back in without a terminal, and
+  the Claude subscription quota read (`docs/claude-proxy-cutover.md`, "Signing in, and
+  signing back in"). One binding per proxy is enough — an endpoint without its own resolves a
+  sibling's on the same origin — and each card shows the accounts for ITS models, by model
+  family (`claude-*` → Claude, `gpt-*`/`o*`/`codex-*` → Codex); the quota line appears only
+  on a card whose models are Claude's.
 - `quota_key_var` / `quota_auth_index` — management key secret name and optional account selector.
 - `extra_body` — merged into every request body (`openai` kind only). This is where
   aggregator routing lives, e.g. OpenRouter provider pinning:

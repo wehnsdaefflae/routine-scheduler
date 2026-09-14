@@ -17,7 +17,7 @@ from ...config import (
     EndpointConfig,
     ModelConfig,
 )
-from ...endpoints import limits
+from ...endpoints import cliproxy_mgmt, limits
 from ...endpoints.base import api_key_source
 from ..model_fit import effective_window_pair, fit_fields
 from .common import reload_into, rewrite_block, server_of, update_config
@@ -43,12 +43,21 @@ def _key_source(ep: EndpointConfig) -> dict:
     return src
 
 
-def _endpoint_view(name: str, ep: EndpointConfig) -> dict:
+def _endpoint_view(name: str, ep: EndpointConfig, server) -> dict:
+    # `proxy_management`: a CLIProxyAPI binding resolves for this endpoint — its own, or a
+    # sibling's on the same proxy (cliproxy_mgmt.binding) — so the card lists the proxy's
+    # accounts for ITS models and offers their sign-in. `has_subscription_quota`: the Claude
+    # subscription's windows apply, i.e. a binding resolves AND the endpoint's models are
+    # Claude's (or of no known family). The Codex card resolves the first and not the second.
+    bound = cliproxy_mgmt.binding(server, name)
+    providers = cliproxy_mgmt.endpoint_providers(server, name)
     return {"name": name, "kind": ep.kind, "base_url": ep.base_url,
             "key_env_file": ep.key_env_file, "key_var": ep.key_var,
             "quota_source": ep.quota_source, "quota_key_var": ep.quota_key_var,
             "quota_auth_index": ep.quota_auth_index,
-            "has_subscription_quota": bool(ep.quota_source),
+            "proxy_management": bound is not None,
+            "has_subscription_quota": bound is not None and (not providers
+                                                               or "claude" in providers),
             "schema_mode": ep.schema_mode, "context_tokens": ep.context_tokens,
             "temperature": ep.temperature, "max_tokens": ep.max_tokens,
             "extra_body": ep.extra_body,
@@ -155,7 +164,7 @@ def _model_view(mc: ModelConfig, endpoints: dict, found: dict | None = None,
 @router.get("/settings/endpoints")
 def list_endpoints(request: Request) -> dict:
     server = server_of(request)
-    return {"endpoints": [_endpoint_view(n, e) for n, e in server.endpoints.items()],
+    return {"endpoints": [_endpoint_view(n, e, server) for n, e in server.endpoints.items()],
             "models": [_model_view(m, server.endpoints, _found(server, m), _served(server, m))
                        for m in server.models.values()],
             "system_model": server.system_model or None,

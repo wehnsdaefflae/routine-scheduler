@@ -7,12 +7,12 @@ adapter never exposes the management API's general-purpose outbound-call facilit
 from __future__ import annotations
 
 import json
-from urllib.parse import urlsplit
 
 import httpx
 
 from ..config import EndpointConfig
-from .base import EndpointError, resolve_api_key
+from .base import EndpointError
+from .cliproxy_mgmt import client as _client
 from .subscription_quota import normalize
 
 ENDPOINT = "https://api.anthropic.com/api/oauth/usage"
@@ -35,14 +35,8 @@ def read_quota(cfg: EndpointConfig, *, timeout: int = 15) -> dict:
     """Return real account windows or a soft, credential-free error for the console."""
     base = {"supported": True, "manage_url": MANAGE_URL}
     try:
-        origin = urlsplit(cfg.base_url)
-        if origin.scheme not in {"http", "https"} or not origin.netloc or origin.username:
-            raise EndpointError("Set the proxy's HTTP base URL in Settings.")
-        key = resolve_api_key(name="CLIProxyAPI management", api_key="",
-                              key_var=cfg.quota_key_var, key_env_file="", required=True)
-        url = cfg.base_url.rstrip("/").removesuffix("/v1") + "/v0/management"
-        with httpx.Client(timeout=timeout, follow_redirects=False,
-                          headers={"Authorization": f"Bearer {key}"}) as client:
+        client, url = _client(cfg, timeout)
+        with client:
             response = client.get(f"{url}/auth-files")
             if response.status_code != 200:
                 raise EndpointError(f"Proxy management HTTP {response.status_code}; check the "

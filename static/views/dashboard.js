@@ -87,8 +87,9 @@ function statsLine(run) {
 async function loadQuota(chip) {
   try {
     const eps = (await api("/api/settings/endpoints")).endpoints || [];
-    const cli = eps.find((e) => e.quota_source === "cliproxy")
-      || eps.find((e) => e.has_subscription_quota);
+    // the endpoint whose card carries the quota line — a binding resolves AND its models are
+    // Claude's; the Codex endpoint of the same proxy carries the binding but not the quota
+    const cli = eps.find((e) => e.has_subscription_quota);
     if (!cli) return;
     const q = await api(`/api/settings/endpoints/${encodeURIComponent(cli.name)}/quota`);
     if (!q.supported) return;

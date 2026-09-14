@@ -8,20 +8,21 @@ import httpx
 import pytest
 
 from rsched.config import EndpointConfig
-from rsched.endpoints import cliproxy_login
+from rsched.endpoints import cliproxy_login, cliproxy_mgmt
 from rsched.endpoints.base import EndpointError
 
 
 @pytest.fixture
 def proxy(monkeypatch):
-    monkeypatch.setattr(cliproxy_login, "resolve_api_key", lambda **kw: "management-secret")
+    # the management client (key + URL) is cliproxy_mgmt's, shared with the quota read
+    monkeypatch.setattr(cliproxy_mgmt, "resolve_api_key", lambda **kw: "management-secret")
     return EndpointConfig(kind="anthropic", base_url="http://proxy:8317/v1",
                           quota_source="cliproxy")
 
 
 def mock_proxy(monkeypatch, handler):
     factory = httpx.Client
-    monkeypatch.setattr(cliproxy_login.httpx, "Client", lambda **kw: factory(
+    monkeypatch.setattr(cliproxy_mgmt.httpx, "Client", lambda **kw: factory(
         transport=httpx.MockTransport(handler), **kw))
 
 
@@ -43,8 +44,10 @@ def test_accounts_is_an_allowlist_projection_that_never_carries_a_token(proxy, m
              "next_retry_after": "2026-09-20T06:00:16.003746254+08:00"},
             "not-a-dict"]})
     mock_proxy(monkeypatch, handler)
-    out = cliproxy_login.accounts(proxy)
+    out = cliproxy_login.accounts(proxy)          # no providers known: everything, both controls
     assert out["ok"] and out["supported"]
+    assert out["providers"] == [{"id": "anthropic", "label": "Claude"},
+                                {"id": "codex", "label": "Codex"}]
     claude, codex = out["accounts"]
     assert claude == {"name": "claude-me.json", "provider": "claude", "label": "me@example.org",
                       "status": "error", "status_message": "token expired",
@@ -55,6 +58,11 @@ def test_accounts_is_an_allowlist_projection_that_never_carries_a_token(proxy, m
     assert codex["next_retry_after"] == "2026-09-20T06:00:16.00374"
     dumped = json.dumps(out)
     assert "secret" not in dumped and "sk-ant" not in dumped
+    # an endpoint whose models are Codex's sees the Codex account and the Codex control only —
+    # and a provider with no sign-in route contributes nothing
+    only = cliproxy_login.accounts(proxy, {"codex", "gemini"})
+    assert [a["provider"] for a in only["accounts"]] == ["codex"]
+    assert only["providers"] == [{"id": "codex", "label": "Codex"}]
 
 
 @pytest.mark.parametrize("reply", [httpx.Response(403, text="management-secret"),
@@ -67,7 +75,7 @@ def test_accounts_errors_are_soft_and_redacted(proxy, monkeypatch, reply):
 
 
 def test_a_bad_base_url_is_a_soft_error_before_any_request(monkeypatch):
-    monkeypatch.setattr(cliproxy_login, "resolve_api_key", lambda **kw: "k")
+    monkeypatch.setattr(cliproxy_mgmt, "resolve_api_key", lambda **kw: "k")
     ep = EndpointConfig(kind="anthropic", base_url="ftp://proxy", quota_source="cliproxy")
     assert "base URL" in cliproxy_login.accounts(ep)["error"]
 

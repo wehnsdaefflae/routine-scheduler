@@ -32,8 +32,13 @@ subscription window is spent. The first needs a fresh sign-in; the second only w
 2026-09-14 both hit at once (Codex in weekly cooldown, the Claude refresh token invalid) and
 every run whose fallback chain ran through the proxy died at turn 0.
 
-**From the console** (the normal way): on the proxy endpoint's card press
-*re-authenticate Claude* (or *Codex*). The card shows a link — open it and finish consent.
+**From the console** (the normal way): each proxy endpoint's card lists the proxy's
+accounts for ITS models — the Claude endpoint's card the Claude account, the Codex
+endpoint's the Codex one, decided by the family of the model ids bound to that endpoint —
+and offers that provider's sign-in; one endpoint per proxy carrying *Proxy management:
+CLIProxyAPI* (the management key) serves every sibling on the same origin. On the card
+press *re-authenticate Claude* (or, on the Codex card, *re-authenticate Codex*). The card
+shows a link — open it and finish consent.
 The consent page then sends the browser to `http://localhost:54545/callback?code=…&state=…`
 (`localhost:1455` for Codex). That address is the PROXY'S callback and exists only on the
 server, so on your own device the page fails to load — its address bar still carries the

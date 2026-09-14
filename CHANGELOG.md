@@ -15,6 +15,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.341.1] — 2026-09-14
+
+### Fixed — the proxy's accounts and sign-in follow each endpoint's models, not the quota field
+
+The account rows and both re-authenticate buttons hung off `quota_source: cliproxy`, which
+only the Claude endpoint carries: the Claude card offered to re-authenticate Codex and the
+Codex card, on the same proxy, offered nothing. Two things were conflated and are now apart
+(`endpoints/cliproxy_mgmt.py`):
+
+- **The binding is the proxy's.** An endpoint without its own `quota_source: cliproxy`
+  resolves the binding of a sibling on the same origin, so the Codex endpoint reaches the
+  account list and the sign-in without a second copy of the management key in its config.
+  The endpoint view carries `proxy_management` (a binding resolves) beside
+  `has_subscription_quota` (a binding resolves AND the models are Claude's — the Codex card
+  no longer shows the Claude subscription's windows, and the dashboard chip reads the same
+  flag). The edit-form label says what the field now is: *Proxy management (CLIProxyAPI)*.
+- **Which accounts a card shows follows the family of the models bound to that endpoint**
+  (`claude-*` → the Claude account, `gpt-*`/`o*`/`codex-*` → the Codex one), and the card
+  offers the sign-in for those providers only; an endpoint whose models belong to no known
+  family sees everything rather than nothing. A table rather than a management lookup,
+  because the proxy lists no served models for a credential it cannot use — the very state
+  a sign-in control exists for (the cooling Codex credential served an empty list).
+- The management client (key + URL) lives once in `cliproxy_mgmt`; the quota read and the
+  sign-in module share it.
+
 ## [0.341.0] — 2026-09-14
 
 ### Added — sign a proxy session back in from the endpoint card
