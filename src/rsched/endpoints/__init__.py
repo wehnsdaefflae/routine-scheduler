@@ -105,22 +105,43 @@ class EndpointRegistry:
         return self.get(mc.endpoint), ref
 
     def resolve_chain(self, name: str) -> list[tuple[InstrumentedEndpoint, ModelRef]]:
-        """The model plus its declared `fallbacks:`, each resolved in order — the failover
-        chain. Self-references, duplicates, and unresolvable fallback names are skipped (the
-        config loader flags them as problems) — a bad chain entry must never break the
-        primary's resolution.
+        """The model plus its fallbacks TRANSITIVELY — breadth-first, in declaration order.
+        Self-references, duplicates, and unresolvable fallback names are skipped (the config
+        loader flags them as problems) — a bad chain entry must never break the primary's
+        resolution.
+
+        Transitive because a flat chain silently contradicts the config that declares it
+        (R1504/R1492). `Astra high`'s fallbacks are `[Opus high]` and `Opus high` declares
+        none, so the chain was two models long and its second member sat on the same
+        cliproxy endpoint as the first — one failure domain, no way out. On 2026-09-14 that
+        killed eight routines at turn 0 on a single credential expiry, and it is also what
+        ends a run on a classifier refusal: `engine/degrade` walks this chain for both, and
+        an empty walk is a dead run. Following each entry's OWN fallbacks makes the reachable
+        set what a reader of config.yaml would already expect it to be — `Astra max` reaches
+        `GLM 5.3` through `Opus 5 max` — with no config edit and nothing to keep in sync.
+
+        Breadth-first, not depth-first, so the ORDER still expresses intent: every fallback
+        the primary itself declared is tried before anything only a fallback declared. A
+        model's chain is therefore "my own alternatives first, then theirs", which is the
+        reading its author had in mind when they wrote the list.
         """
         chain = [self.resolve(name)]
-        mc = self.server.models.get(name)
         seen = {name}
-        for fb in (mc.fallbacks if mc else []):
+        mc = self.server.models.get(name)
+        queue = list(mc.fallbacks if mc else [])
+        while queue:
+            fb = queue.pop(0)
             if fb in seen:
                 continue
             seen.add(fb)
             try:
                 chain.append(self.resolve(fb))
             except EndpointError:
-                continue
+                # Unresolvable (missing endpoint, bad model) — skip it, but still follow what
+                # it declared: a broken rung must not truncate the ladder below it.
+                pass
+            fb_mc = self.server.models.get(fb)
+            queue.extend(f for f in (fb_mc.fallbacks if fb_mc else []) if f not in seen)
         return chain
 
     def for_model_chain(self, kind: str,

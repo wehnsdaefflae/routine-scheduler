@@ -93,6 +93,74 @@ def test_resolve_chain_skips_bad_entries(tmp_path):
     assert [ref.name for _, ref in reg.resolve_chain("backup")] == ["backup"]
 
 
+def _nested_server(routines_home) -> ServerConfig:
+    """The fleet's real shape (R1504): a tier whose only fallback is a sibling on the SAME
+    endpoint, which itself declares the models that actually reach a different provider.
+    """
+    s = ServerConfig(
+        endpoints={"proxy": EndpointConfig(kind="openai", base_url="http://127.0.0.1:1/v1"),
+                   "other": EndpointConfig(kind="openai", base_url="http://127.0.0.1:2/v1")},
+        models={"astra": ModelConfig(endpoint="proxy", model="m-astra", fallbacks=["opus"]),
+                "opus": ModelConfig(endpoint="proxy", model="m-opus",
+                                    fallbacks=["glm-a", "glm-b"]),
+                "glm-a": ModelConfig(endpoint="other", model="m-glm-a"),
+                "glm-b": ModelConfig(endpoint="other", model="m-glm-b", fallbacks=["astra"]),
+                # a rung that cannot resolve: its endpoint does not exist
+                "broken": ModelConfig(endpoint="nope", model="m-x", fallbacks=["glm-a"]),
+                "head": ModelConfig(endpoint="proxy", model="m-h",
+                                    fallbacks=["broken", "opus"])},
+        system_model="astra")
+    for name, ep in s.endpoints.items():
+        ep.name = name
+    for name, mc in s.models.items():
+        mc.name = name
+    s.routines_home = routines_home
+    s.libraries_home = routines_home.parent / "test-library"
+    return s
+
+
+def test_resolve_chain_follows_fallbacks_transitively(tmp_path):
+    """R1504/R1492: a FLAT chain silently contradicted the config that declared it. `Astra high`
+    declared `[Opus high]`, `Opus high` declared nothing, and both sat on the same cliproxy
+    endpoint — so the chain was two models in one failure domain. One credential expiry on
+    2026-09-14 killed eight routines at turn 0, and the same empty walk ends a run on a
+    classifier refusal (engine/degrade walks this chain for both).
+
+    The reachable set is now what a reader of config.yaml would expect, with no config edit."""
+    reg = EndpointRegistry(_nested_server(tmp_path / "routines"))
+    names = [ref.name for _, ref in reg.resolve_chain("astra")]
+    assert names == ["astra", "opus", "glm-a", "glm-b"]
+    # every member resolves, and the chain escapes the primary's endpoint — the point of it
+    assert {ep.name for ep, _ in reg.resolve_chain("astra")} == {"proxy", "other"}
+    # a cycle back to the primary terminates instead of looping
+    assert [ref.name for _, ref in reg.resolve_chain("glm-b")] == ["glm-b", "astra", "opus",
+                                                                   "glm-a"]
+
+
+def test_resolve_chain_breadth_first_keeps_the_authors_order(tmp_path):
+    """Breadth-first, so order still expresses intent: everything the primary itself named is
+    tried before anything only a fallback named."""
+    reg = EndpointRegistry(_nested_server(tmp_path / "routines"))
+    # head declares [broken, opus]; broken declares [glm-a]. glm-a must come AFTER opus,
+    # because head chose opus itself and only `broken` chose glm-a. The tail (glm-b, then
+    # astra through glm-b) is what transitivity adds.
+    assert [ref.name for _, ref in reg.resolve_chain("head")] == ["head", "opus", "glm-a",
+                                                                  "glm-b", "astra"]
+
+
+def test_resolve_chain_unresolvable_rung_does_not_truncate_the_ladder(tmp_path):
+    """`broken` names a missing endpoint, so as a FALLBACK it is skipped — but what it
+    declared is still followed. A bad rung costs one model, not every model below it.
+
+    As a PRIMARY it still raises: a run must not quietly start with no model at all, and
+    that refusal is `resolve`'s, not this walk's."""
+    reg = EndpointRegistry(_nested_server(tmp_path / "routines"))
+    names = [ref.name for _, ref in reg.resolve_chain("head")]
+    assert "broken" not in names and "glm-a" in names   # skipped, but its declaration survived
+    with pytest.raises(EndpointError):
+        reg.resolve_chain("broken")
+
+
 def test_for_model_avoids_cooling_provider(tmp_path):
     reg = EndpointRegistry(_catalog_server(tmp_path / "routines"))
     assert reg.for_model("main", {})[1].name == "prime"      # system_model fallback

@@ -15,6 +15,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.344.0] — 2026-09-15
+
+### Changed — a model's failover chain now follows its fallbacks TRANSITIVELY (R1504, R1492)
+
+`resolve_chain` built `[primary] + the primary's OWN declared fallbacks`, each resolved
+individually, and followed no further. The catalog is written as though it nests, so the config
+looked like it had depth it did not have:
+
+- `Astra high`'s fallbacks are exactly `[Opus high]`, and `Opus high` declares none. Two members —
+  and both sit on `cliproxy`, which `claude-proxy` and `codex-proxy` share (same `base_url`, same
+  `key_var`). One failure domain, no way out of it.
+- Every Astra tier has that shape. By contrast `Sonnet`, `Opus`, `Opus 5 max` and `Fable` each
+  chain out to OpenRouter and nano-gpt — and would have survived.
+
+What that cost, measured: on **2026-09-14 06:18** the claude-proxy subscription token expired and
+**eight routines failed at turn 0** inside two minutes (freelance-radar, llmsectest-weekday,
+routine-improver, voice-model-trainer, folder-reorg, miz-grant-steward, rules-review,
+moltbook-heartbeat), each with `503 auth_unavailable`. `_switch_to_fallback` returned None,
+`engine/degrade` re-raised, and the runs died before executing an action. The same empty walk ends
+a run on a **classifier refusal**: `engine/degrade._handle_refusal` deliberately advances the chain
+rather than re-asking a model that just refused, so a model with nowhere to go turns one refusal
+into a dead run (that is R1492 — a subtask killed while reviewing a code diff).
+
+The walk is now breadth-first over each entry's own fallbacks, so `Astra max` reaches
+`GLM 5.3` through `Opus 5 max` exactly as the config reads. **Breadth-first** is the part worth
+keeping: everything the primary itself named is tried before anything only a fallback named, so the
+order still expresses its author's intent — "my own alternatives first, then theirs". Cycles
+terminate on the existing `seen` set, and an unresolvable rung is skipped while what it DECLARED is
+still followed: a bad entry costs one model, not every model below it. An unresolvable **primary**
+still raises, because a run must not quietly start with no model at all.
+
+No config edit is needed and nothing has to be kept in sync — the fix is that the reachable set
+finally matches what a reader of `config.yaml` would already assume. config-optimizer's proposal to
+append `GLM 5.3, GLM 5.2` to eight models' fallback lists (`q-20260914-062116-39`) is therefore no
+longer required for depth; it remains the operator's call whether to add them for breadth.
+
 ## [0.343.1] — 2026-09-15
 
 ### Fixed — a native attachment could decay between being promised and being sent (R1493)
