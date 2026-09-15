@@ -79,7 +79,7 @@ def discard_orphan(request: Request, report_id: str) -> dict:
 def items(request: Request,
           type_: Annotated[str, Query(alias="type")] = "",
           status: str = "", routine: str = "", target: str = "", search: str = "",
-          limit: int = 500) -> dict:
+          folded: bool = False, limit: int = 500) -> dict:
     """The merged item index, newest origin first. `counts` is always over the UNFILTERED
     set so the filter chips show what is there, not what is left after filtering.
 
@@ -87,6 +87,12 @@ def items(request: Request,
     TO. A routine reconciling its own inbox wants the second, which had no filter before
     0.326.0 — so it asked with `?target=` , got the silently-unfiltered store, and the 1 MB
     body truncated into invalid JSON on the way back (R1404).
+
+    A row another report has TAKEN OVER is left out of every list unless `folded=1` or a
+    `search` names it: it is not a peer item (it cannot be answered and it settles with its
+    carrier, whose card lists it), and counting it would put this page 14 apart from
+    self-audit's own vitals line over the same ledger. Hidden from BROWSING, never from
+    LOOKING SOMETHING UP.
     """
     server = request.app.state.server
     routine_dir = _routine_dir(request)
@@ -98,7 +104,8 @@ def items(request: Request,
     summary_rows = summaries.build(server)
     if not exists:
         only = items_model.filter_items(summary_rows, type_=type_, status=status,
-                                        routine=routine, target=target, search=search)
+                                        routine=routine, target=target, search=search,
+                                        folded=folded)
         return {"exists": False, "routine": SELF_AUDIT_SLUG,
                 "items": only[:max(1, limit)], "total": len(only),
                 "counts": items_model.counts(summary_rows), "report": None, "last_run": None,
@@ -107,7 +114,8 @@ def items(request: Request,
     merged = items_model.build(routine_dir, server.routines_home)
     all_items = summary_rows + merged["items"]
     shown = items_model.filter_items(all_items, type_=type_, status=status,
-                                     routine=routine, target=target, search=search)
+                                     routine=routine, target=target, search=search,
+                                     folded=folded)
     report = _report_header(routine_dir)
     runs = registry.run_index(routine_dir, SELF_AUDIT_SLUG)
     last_run = None

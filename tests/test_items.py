@@ -206,9 +206,29 @@ def test_the_active_cross_tab_splits_the_worklist_from_the_unread_feed(audit_hom
     assert counted["active"]["unread"] == 1
     assert counted["active"]["worklist"] == sum(
         1 for i in merged if i["type"] != "summary" and i["status"] in ("open", "in_progress"))
-    # the halves are disjoint, and neither is the naive sum a reader would otherwise take
+    # the parts are disjoint and together they are the naive sum a reader would otherwise take
     naive = counted["status"].get("open", 0) + counted["status"].get("in_progress", 0)
-    assert counted["active"]["worklist"] + counted["active"]["unread"] == naive
+    active = counted["active"]
+    assert active["worklist"] + active["unread"] + active["folded"] == naive
+
+
+def test_a_folded_row_is_counted_and_listed_apart_from_the_worklist(audit_home):
+    """A row another report took over cannot be answered and settles with its carrier, so it
+    is not a peer item. Counting it would make ten defects carried in one hand-off read as ten
+    open threads, and it put the console 14 apart from self-audit's vitals over one ledger.
+    """
+    rows = [{"id": "R1", "type": "report", "status": "open", "title": "carrier", "detail": "",
+             "addressed": [], "superseded": {}},
+            {"id": "R2", "type": "report", "status": "open", "title": "folded in", "detail": "",
+             "addressed": [], "superseded": {"by": "R1", "to": "owner", "ts": "x"}}]
+    counted = items_model.counts(rows)
+    assert counted["active"] == {"worklist": 1, "unread": 0, "folded": 1}
+
+    # off the list by default…
+    assert [i["id"] for i in items_model.filter_items(rows)] == ["R1"]
+    # …reachable when asked for by name, or by the chip
+    assert [i["id"] for i in items_model.filter_items(rows, folded=True)] == ["R1", "R2"]
+    assert [i["id"] for i in items_model.filter_items(rows, search="folded in")] == ["R2"]
 
 
 def test_items_are_ordered_newest_origin_first(audit_home):
@@ -354,7 +374,7 @@ def test_api_items_without_the_self_audit_routine(api_client):
     assert c.get("/api/items").json() == {
         "exists": False, "routine": "self-audit", "items": [], "total": 0,
         "counts": {"type": {}, "status": {},
-                   "active": {"worklist": 0, "unread": 0}}, "report": None,
+                   "active": {"worklist": 0, "unread": 0, "folded": 0}}, "report": None,
         "last_run": None, "queued": [], "answered_decisions": []}
 
 

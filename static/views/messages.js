@@ -39,14 +39,19 @@ export async function render(view, query = {}) {
   // `status` and `type` need the SAME explicit-`all` sentinel: without it, clicking the
   // active summary chip off would silently come back on the next reload.
   const defaultType = query.focus ? "" : "summary";
+  // A row another report TOOK OVER is off every list by default — it is not a peer item, it
+  // settles with its carrier, and the carrier's card names it. A ?focus deep-link must still
+  // land on one, so a reflink to a folded row turns the filter on rather than 404ing visually.
   const filters = { type: query.type ? (query.type === "all" ? "" : query.type) : defaultType,
                     status: query.status ? (query.status === "all" ? "" : query.status)
                                          : defaultStatus,
-                    routine: query.routine || "", search: query.search || "" };
+                    routine: query.routine || "", search: query.search || "",
+                    folded: query.focus ? "1" : (query.folded === "1" ? "1" : "") };
   // An emptied filter must survive reload as a CHOICE, not fall back to the
   // default — so "" (show everything) is written to the URL as the explicit "all".
   const syncURL = () => setQuery({ ...filters, status: filters.status || "all",
                                    type: filters.type || "all",
+                                   folded: filters.folded || "",
                                    focus: query.focus || "" });
   let searchTimer = null;
 
@@ -262,6 +267,11 @@ export async function render(view, query = {}) {
       : `active ${act.worklist || 0}`;
     filterBar.append(tagChip(label,
       { active: filters.status === ACTIVE, onClick: () => pick("status", ACTIVE) }));
+    // Folded rows are off the list, so the ONLY way to know they exist is to say so. The
+    // count is their own — never added to `active`, or the chip would be lying again.
+    if (act.folded)
+      filterBar.append(tagChip(`folded ${act.folded}`,
+        { active: filters.folded === "1", onClick: () => pick("folded", "1") }));
     for (const s of STATUSES)
       if (counts.status[s])
         filterBar.append(tagChip(`${s} ${counts.status[s]}`,

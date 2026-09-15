@@ -263,10 +263,16 @@ parser silently drops every multi-line row.
 `GET /api/items` returns the merged index plus the header the page needs:
 
 ```
-items[]              the matching items, newest origin first (`total` = matches before `limit`)
+items[]              the matching items, newest origin first (`total` = matches before `limit`).
+                     A FOLDED row is left out unless `folded=1` or a `search` names it: it is
+                     not a peer item (it cannot be answered and settles with its carrier,
+                     whose card lists it), and counting it would put this page 14 apart from
+                     self-audit's own vitals line over the same ledger. Hidden from BROWSING,
+                     never from LOOKING SOMETHING UP — a `?focus=` reflink turns it on.
 counts{type,status,  totals across the UNFILTERED set, for the filter chips. `active` cross-
-       active}       tabulates the other two into `worklist` (non-summary items open or
-                     in_progress) + `unread` (summaries still open), because the page's
+       active}       tabulates the other two into `worklist` (non-summary, non-folded items
+                     open or in_progress) + `unread` (summaries still open) + `folded` (rows
+                     another report took over), because the page's
                      headline number is the one place summing them LIES: a worklist and a
                      feed in one figure can never fall to zero by working the backlog, so a
                      steady backlog reads as a growing one (2026-09-15: "53 open" was 37

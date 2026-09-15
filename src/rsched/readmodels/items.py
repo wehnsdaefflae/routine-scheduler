@@ -282,20 +282,28 @@ def counts(items: list[dict]) -> dict:
     """
     by_type: dict[str, int] = defaultdict(int)
     by_status: dict[str, int] = defaultdict(int)
-    worklist = unread = 0
+    worklist = unread = folded = 0
     for item in items:
         by_type[item["type"]] += 1
         by_status[item["status"]] += 1
         if item["type"] == "summary":
             unread += item["status"] == "open"
+        elif item.get("superseded"):
+            # A FOLDED row is counted apart, never into the worklist: it cannot be answered,
+            # and it settles when the report that took it over does. Folding it in would make
+            # ten defects carried in one hand-off read as ten open threads — the inflation the
+            # fold exists to remove, and it would put this page 14 apart from self-audit's own
+            # vitals line over the same ledger.
+            folded += item["status"] in ("open", "in_progress")
         else:
             worklist += item["status"] in ("open", "in_progress")
     return {"type": dict(by_type), "status": dict(by_status),
-            "active": {"worklist": worklist, "unread": unread}}
+            "active": {"worklist": worklist, "unread": unread, "folded": folded}}
 
 
 def filter_items(items: list[dict], *, type_: str = "", status: str = "",
-                 routine: str = "", target: str = "", search: str = "") -> list[dict]:
+                 routine: str = "", target: str = "", search: str = "",
+                 folded: bool = False) -> list[dict]:
     """Apply the API's filters. `search` is a case-insensitive substring over the id, the
     prose, and the addressed summaries — an archive-only item has no prose of its own, so
     its changelog summaries are the only way to find it by text.
@@ -308,11 +316,17 @@ def filter_items(items: list[dict], *, type_: str = "", status: str = "",
     a decision, an untriaged report) matches no `target` query.
     """
     needle = search.strip().lower()
+    # A FOLDED row is hidden from BROWSING and never from LOOKING SOMETHING UP: it belongs to
+    # the thread that took it over (whose card names it), so it is not a peer in a list — but
+    # a search, a reflink or the explicit `folded` chip must still reach it.
+    show_folded = folded or bool(needle)
     # `status` accepts a comma list ("open,in_progress") — the Items page's default
     # "active" view is exactly that pair, and one param beats a second filter channel.
     wanted_status = {s.strip() for s in status.split(",") if s.strip()}
     out = []
     for item in items:
+        if item.get("superseded") and not show_folded:
+            continue
         if type_ and item["type"] != type_:
             continue
         if wanted_status and item["status"] not in wanted_status:

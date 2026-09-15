@@ -15,6 +15,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.345.2] — 2026-09-15
+
+### Fixed
+
+- **A folded row is no longer a peer item on the Messages page.** 0.345.0 gave a report the
+  ability to take rows over; they kept appearing as their own cards, so the console counted 60
+  active where self-audit's vitals line counted 46 threads over the same ledger — two numbers
+  for one question, 14 apart, which is the confusion the fold was built to end. A row another
+  report took over is now left out of every list (`folded=1`, or a `search`/`?focus=` naming
+  it, still reaches it — hidden from BROWSING, never from LOOKING SOMETHING UP), counted in its
+  own `counts.active.folded` tally, and surfaced by its own chip so its existence is never
+  silent. The carrier's card already lists what it carries.
+
 ## [0.345.1] — 2026-09-15
 
 ### Fixed
