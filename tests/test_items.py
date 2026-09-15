@@ -192,6 +192,25 @@ def test_counts_cover_every_type_and_status(audit_home):
     assert sum(result["counts"]["status"].values()) == len(result["items"])
 
 
+def test_the_active_cross_tab_splits_the_worklist_from_the_unread_feed(audit_home):
+    """`open`+`in_progress` summed across types is the page's headline number and the one
+    place summing lies: it mixes items someone must ACT on with unread run summaries, which
+    reappear whenever any routine finishes. As one figure it can never reach zero by working
+    the backlog. Neither `type` nor `status` can answer it — neither is conditioned on the
+    other, and the type totals are lifetime rather than active.
+    """
+    merged = [*items_model.build(audit_home / "self-audit", audit_home)["items"],
+              {"type": "summary", "status": "open"},      # unread
+              {"type": "summary", "status": "settled"}]   # read
+    counted = items_model.counts(merged)
+    assert counted["active"]["unread"] == 1
+    assert counted["active"]["worklist"] == sum(
+        1 for i in merged if i["type"] != "summary" and i["status"] in ("open", "in_progress"))
+    # the halves are disjoint, and neither is the naive sum a reader would otherwise take
+    naive = counted["status"].get("open", 0) + counted["status"].get("in_progress", 0)
+    assert counted["active"]["worklist"] + counted["active"]["unread"] == naive
+
+
 def test_items_are_ordered_newest_origin_first(audit_home):
     result = items_model.build(audit_home / "self-audit", audit_home)
     stamps = [i["origin"]["ts"] for i in result["items"]]
@@ -334,7 +353,8 @@ def test_api_items_without_the_self_audit_routine(api_client):
     c, _ = api_client
     assert c.get("/api/items").json() == {
         "exists": False, "routine": "self-audit", "items": [], "total": 0,
-        "counts": {"type": {}, "status": {}}, "report": None,
+        "counts": {"type": {}, "status": {},
+                   "active": {"worklist": 0, "unread": 0}}, "report": None,
         "last_run": None, "queued": [], "answered_decisions": []}
 
 

@@ -264,7 +264,14 @@ parser silently drops every multi-line row.
 
 ```
 items[]              the matching items, newest origin first (`total` = matches before `limit`)
-counts{type,status}  totals across the UNFILTERED set, for the filter chips
+counts{type,status,  totals across the UNFILTERED set, for the filter chips. `active` cross-
+       active}       tabulates the other two into `worklist` (non-summary items open or
+                     in_progress) + `unread` (summaries still open), because the page's
+                     headline number is the one place summing them LIES: a worklist and a
+                     feed in one figure can never fall to zero by working the backlog, so a
+                     steady backlog reads as a growing one (2026-09-15: "53 open" was 37
+                     items and 16 unread). Neither `type` nor `status` can answer it alone —
+                     neither is conditioned on the other, and the type totals are lifetime.
 report{…}            the current report's meta: run_id, generated, since{commit,window}, summary
 changelog[]          the 60 newest changelog rows, including ones that name no item
 last_run{…}          the self-audit routine's most recent run

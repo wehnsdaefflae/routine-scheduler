@@ -101,6 +101,24 @@ def test_messages_filters_narrow_the_list_and_counts_stay_whole(ui, ui_page, mak
     expect(ui_page.locator("#ref-F1")).to_have_count(0)
 
 
+def test_the_active_chip_separates_the_worklist_from_the_unread_feed(ui, ui_page, make_routine):
+    """`open`+`in_progress` spans two different things: maintenance items someone must act on,
+    and unread run summaries that come back every time any routine finishes. Summed into one
+    number it can never fall to zero by working the backlog, so a steady worklist reads as a
+    growing one — which is how "53 open, why does it only ever grow" started (2026-09-15: 37
+    items and 16 unread). The chip names both halves.
+    """
+    _seed(ui, make_routine)
+    ui.seed_run("self-audit", "20260915-120000", "finished", summary="what this run did")
+    ui_page.goto(f"{ui.url}/#/messages?status=all&type=all")
+    ui_page.wait_for_selector("#ref-F1", timeout=10_000)
+
+    chip = ui_page.locator(".filterbar .tag", has_text="active")
+    # one unread summary beside the seeded worklist — named apart, not summed
+    expect(chip).to_contain_text("unread 1", timeout=10_000)
+    expect(chip).not_to_contain_text("active 0")
+
+
 def test_messages_composer_queues_edits_and_withdraws_feedback(ui, ui_page, make_routine):
     """The reviewer-feedback loop: a comment on a finding lands in the self-audit inbox as
     a tagged message, shows up in "waiting for the next run", stays editable in place (same

@@ -253,8 +253,14 @@ export async function render(view, query = {}) {
         { active: filters.type === value, onClick: () => pick("type", value) }));
     filterBar.append(el("span", { class: "lbl", style: "margin-left:10px" }, "status"));
     const ACTIVE = "open,in_progress";
-    const nActive = (counts.status.open || 0) + (counts.status.in_progress || 0);
-    filterBar.append(tagChip(`active ${nActive}`,
+    // The headline number, decomposed. open+in_progress spans a WORKLIST (items someone must
+    // act on) and a FEED (unread summaries, which come back every time any routine finishes),
+    // and as ONE figure it can never reach zero by working the backlog — so a steady worklist
+    // reads as a growing one. Still one chip and one filter: only the label says what it holds.
+    const act = counts.active || {};
+    const label = act.unread ? `active ${act.worklist || 0} · unread ${act.unread}`
+      : `active ${act.worklist || 0}`;
+    filterBar.append(tagChip(label,
       { active: filters.status === ACTIVE, onClick: () => pick("status", ACTIVE) }));
     for (const s of STATUSES)
       if (counts.status[s])

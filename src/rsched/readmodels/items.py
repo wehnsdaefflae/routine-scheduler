@@ -270,13 +270,28 @@ def _build(report_path: Path, changelog_path: Path,
 def counts(items: list[dict]) -> dict:
     """Totals by type and by status — the filter chips' numbers, always over the
     UNFILTERED set so a chip never counts only what the current filter already shows.
+
+    `active` cross-tabulates the two, because the page's headline number is the one place
+    where summing them lies. `open`+`in_progress` mixes a WORKLIST (maintenance items someone
+    has to act on) with a FEED (unread run summaries, which are `open` until read and reappear
+    every time any routine finishes). Reported as one figure it can never fall to zero by
+    working the backlog, so a steady worklist reads as a growing one — which is exactly how
+    2026-09-15's "53 open, why does it only ever grow" started: 37 items and 16 unread.
+    `type`/`status` cannot answer it on their own — neither is conditioned on the other, and
+    the type totals are lifetime rather than active.
     """
     by_type: dict[str, int] = defaultdict(int)
     by_status: dict[str, int] = defaultdict(int)
+    worklist = unread = 0
     for item in items:
         by_type[item["type"]] += 1
         by_status[item["status"]] += 1
-    return {"type": dict(by_type), "status": dict(by_status)}
+        if item["type"] == "summary":
+            unread += item["status"] == "open"
+        else:
+            worklist += item["status"] in ("open", "in_progress")
+    return {"type": dict(by_type), "status": dict(by_status),
+            "active": {"worklist": worklist, "unread": unread}}
 
 
 def filter_items(items: list[dict], *, type_: str = "", status: str = "",

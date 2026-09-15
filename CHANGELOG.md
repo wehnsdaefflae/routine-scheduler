@@ -15,6 +15,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.345.1] — 2026-09-15
+
+### Fixed
+
+- **The Messages page's headline count stops summing a worklist with a feed.** `active 75`
+  was 59 maintenance items plus 16 unread run summaries — and summaries come back every time
+  any routine finishes, so that figure can never reach zero by working the backlog: a steady
+  backlog reads as a growing one, which is how "why does it only ever grow" started. The chip
+  now reads `active 59 · unread 16`. `readmodels/items.counts` gains an `active` cross-tab
+  (`worklist` + `unread`); neither `type` nor `status` could answer it alone — neither is
+  conditioned on the other, and the type totals are lifetime rather than active. One chip, one
+  filter, one extra label: no new machinery.
+
 ## [0.345.0] — 2026-09-15
 
 ### Added
