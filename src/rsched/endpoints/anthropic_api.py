@@ -73,7 +73,12 @@ def _content_blocks(content: str, media: list[dict]) -> list[dict]:
     for item in media:
         mime = item["media_type"]
         try:
-            data = read_media_b64(item["path"])
+            # R1493: prefer bytes the engine captured when it verified the file. A message's
+            # media rides the whole conversation, so re-reading the path here would re-read it
+            # on every later send — and a run that overwrites or cleans up that file invalidates
+            # an attachment the model was already told it would see. Only entries with no
+            # captured bytes (conversation auto-attach) are read from disk.
+            data = item.get("b64") or read_media_b64(item["path"])
         except OSError as exc:
             blocks.append({"type": "text", "text":
                            f"[Attachment unavailable: {item['path']}: {exc}. "

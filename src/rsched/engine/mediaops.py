@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 
 from .. import sandbox, utils_lib, utils_run
-from ..endpoints.base import NATIVE_MEDIA_MAX_BYTES, guess_media_type
+from ..endpoints.base import NATIVE_MEDIA_MAX_BYTES, guess_media_type, read_media_b64
 from ..paths import resolve_rel
 from .fileops import UTIL_DEFAULT_TIMEOUT_S, VIEW_DEFAULT_PROMPT, VISION_UTIL, _runs_read_gate
 from .observations import truncate
@@ -65,7 +65,20 @@ def _view_one(rel_path: str, prompt: str, endpoint, ctx: RunContext, multimodal:
     native = (endpoint is not None and path.stat().st_size <= NATIVE_MEDIA_MAX_BYTES
               and endpoint.supports_media(mime, multimodal=multimodal))
     if native:
-        return {"path": rel_path, "media_type": mime, "native": True, "abspath": str(path)}
+        # R1493: capture the BYTES here, not just the path. The media entry rides the
+        # observation's message and stays in the conversation, so the endpoint re-renders it on
+        # every later send — reading the path each time. A run that re-renders a check artifact
+        # into a fixed filename (or cleans it up) then invalidates its own earlier attachment,
+        # and the failure surfaces inside the endpoint, AFTER the observation already said
+        # "shown to you below; look at it now". Reading once, at the one moment existence was
+        # verified, makes the attachment immutable: what the model was told it would see is what
+        # the provider receives, this turn and every later one.
+        try:
+            data = read_media_b64(path)
+        except OSError as exc:      # vanished between the stat and the read — say so now
+            return {"path": rel_path, "error": f"could not be read: {exc}"}
+        return {"path": rel_path, "media_type": mime, "native": True, "abspath": str(path),
+                "b64": data}
     return _view_via_vision(rel_path, str(path), prompt, ctx)
 
 def media_from_paths(ctx: RunContext, rels: list[str]) -> list[dict]:
@@ -103,7 +116,8 @@ def do_view_image(action: dict, ctx: RunContext) -> dict:
     multimodal = bool(ref.multimodal) if ref else False
     raw = action.get("paths") or ([action["path"]] if action.get("path") else [])
     files = [_view_one(str(p), prompt, endpoint, ctx, multimodal) for p in raw]
-    media = [{"path": f.pop("abspath"), "media_type": f["media_type"]}
+    media = [{"path": f.pop("abspath"), "media_type": f["media_type"],
+              "b64": f.pop("b64")}
              for f in files if f.get("native")]
     obs = {"kind": "view_image", "files": files}
     if media:

@@ -15,6 +15,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.343.1] — 2026-09-15
+
+### Fixed — a native attachment could decay between being promised and being sent (R1493)
+
+A run rendered a PDF, `view_image`'d it, and was answered with a line that both said *"shown to
+you below; look at it now"* and — at its far end — `[Attachment unavailable: …: No such file or
+directory]`. It happened twice, and the run described the page's layout and numbers twice on the
+strength of it before catching itself and retracting. The report reasonably read this as a
+path-resolution bug: a file just written, at a path the writer had returned, not resolvable moments
+later.
+
+It was not path resolution, and fixing that would have fixed nothing. `mediaops._view_one`
+resolves the path against the run's read roots and **verifies `path.is_file()`** before calling the
+view native — the "does not exist" branch is right there and was not taken. What it stored was a
+*reference*: `{"path": …, "media_type": …}`. That entry rides the observation's message, the
+message stays in `loop.messages` for the rest of the run, and both endpoint renderers
+(`anthropic_api._content_blocks`, `openai_compat._openai_content`) called `read_media_b64(path)` at
+**every subsequent send** — as `read_media_b64`'s own docstring says, "built at send time, never
+stored". So a verified-once file was re-read an unbounded number of times, and any run that
+re-renders a check artifact into a fixed filename, or cleans it up afterwards, invalidates its own
+earlier attachment as a matter of course. The evidence: the reported `state/run-report-check.pdf`
+is on disk today at 146285 bytes against the 142918 the render reported, and the `artifacts/`
+copy is gone.
+
+The bytes are now read **once, at the moment existence was verified**, and carried on the media
+entry; the renderers prefer them and read the path only for entries that carry none (conversation
+auto-attach, which passes bare paths and still degrades to the honest note if that file is gone).
+An attachment can no longer decay: what the model was told it would see is what the provider
+receives, on that turn and every later one.
+
+### Fixed — a view that failed no longer invites the model to describe it
+
+The same observation line opened with "shown to you below; look at it now" and appended the failure
+at the end, which is the wording that produced the false description above. A file that could not
+be shown now reads `--- <path> NOT SHOWN — <reason>. You have not seen this file: describe nothing
+from it.`
+
 ## [0.343.0] — 2026-09-15
 
 ### Added — a decision's `config_patch` may carry `permissions` / `capabilities` (D132, F482, R1489)

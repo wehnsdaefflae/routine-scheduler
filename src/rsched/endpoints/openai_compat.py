@@ -74,7 +74,10 @@ def _openai_content(content: str, media: list[dict]) -> list[dict]:
     for item in media:
         mime = item["media_type"]
         try:
-            b64 = read_media_b64(item["path"])
+            # R1493: prefer bytes the engine captured when it verified the file — see the same
+            # comment in anthropic_api._content_blocks. Re-reading the path on every send lets a
+            # later overwrite or cleanup invalidate an attachment already promised to the model.
+            b64 = item.get("b64") or read_media_b64(item["path"])
         except OSError as exc:
             parts.append({"type": "text", "text":
                           f"[Attachment unavailable: {item['path']}: {exc}. "
@@ -233,7 +236,7 @@ class OpenAICompatEndpoint:
             images = []
             for item in message.get("media") or []:
                 try:
-                    images.append(read_media_b64(item["path"]))
+                    images.append(item.get("b64") or read_media_b64(item["path"]))
                 except OSError as exc:
                     rendered["content"] += (
                         f"\n[Attachment unavailable: {item['path']}: {exc}. "

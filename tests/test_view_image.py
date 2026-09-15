@@ -3,12 +3,14 @@ helper + inbox drain, and the loop's runtime fallback net. No network."""
 
 from __future__ import annotations
 
+import base64
 import json
 from types import SimpleNamespace
 
 from rsched import utils_run
+from rsched.endpoints import anthropic_api, openai_compat
 from rsched.endpoints.base import EndpointError, supports_media_type
-from rsched.engine import executor, fileops, mediaops
+from rsched.engine import executor, fileops, mediaops, obs_files
 from rsched.engine.actions import KIND_EXAMPLES, validate_action
 from rsched.engine.actionschema import KINDS
 
@@ -81,8 +83,52 @@ def test_do_view_image_native(tmp_path):
     (tmp_path / "shot.png").write_bytes(b"IMG")
     obs = executor.do_view_image({"kind": "view_image", "path": "shot.png"},
                                  _ctx(tmp_path, _Endpoint(True)))
-    assert obs["media"] == [{"path": str(tmp_path / "shot.png"), "media_type": "image/png"}]
+    assert obs["media"] == [{"path": str(tmp_path / "shot.png"), "media_type": "image/png",
+                             "b64": base64.b64encode(b"IMG").decode("ascii")}]
     assert obs["files"][0]["native"] is True and "abspath" not in obs["files"][0]
+    assert "b64" not in obs["files"][0]        # the bytes ride the media entry, not the file row
+
+
+def test_native_media_carries_bytes_so_a_later_overwrite_cannot_unshow_it(tmp_path):
+    """R1493: the media entry rides the observation's message, which stays in the conversation,
+    so the endpoint re-renders it on EVERY later send. While it carried only a path, a run that
+    re-rendered a check artifact into the same filename (or cleaned it up) invalidated an
+    attachment the model had already been told to look at — and the failure surfaced inside the
+    endpoint, appended to the end of the very line that said "shown to you below; look at it now".
+
+    Pins the fix at both layers: the engine captures the bytes at the one moment it verified the
+    file, and the endpoint renderers prefer those bytes over re-reading the path."""
+    shot = tmp_path / "shot.png"
+    shot.write_bytes(b"ORIGINAL")
+    obs = executor.do_view_image({"kind": "view_image", "path": "shot.png"},
+                                 _ctx(tmp_path, _Endpoint(True)))
+    media = obs["media"]
+    assert media[0]["b64"] == base64.b64encode(b"ORIGINAL").decode("ascii")
+    # the run moves on and the path stops holding those bytes — the two real cases
+    shot.write_bytes(b"A DIFFERENT RENDER ENTIRELY")
+    blocks = anthropic_api._content_blocks("look", media)
+    assert blocks[1]["source"]["data"] == base64.b64encode(b"ORIGINAL").decode("ascii")
+    parts = openai_compat._openai_content("look", media)
+    assert base64.b64encode(b"ORIGINAL").decode("ascii") in parts[1]["image_url"]["url"]
+    shot.unlink()
+    assert anthropic_api._content_blocks("look", media)[1]["type"] == "image"
+    assert "Attachment unavailable" not in json.dumps(
+        openai_compat._openai_content("look", media))
+    # an entry with NO captured bytes (conversation auto-attach) still reads from disk, and a
+    # missing file there still degrades to the honest note rather than crashing the send
+    bare = [{"path": str(shot), "media_type": "image/png"}]
+    assert "Attachment unavailable" in json.dumps(openai_compat._openai_content("look", bare))
+
+
+def test_failed_view_reads_as_a_failure_and_invites_nothing(tmp_path):
+    """R1493's second half: the observation line for a file that could NOT be shown must not
+    carry the invitation to describe it. The report's author narrated a page twice from a line
+    whose head said "look at it now" and whose tail carried the failure."""
+    obs = executor.do_view_image({"kind": "view_image", "path": "nope.png"},
+                                 _ctx(tmp_path, _Endpoint(True)))
+    text = obs_files.format_files(obs, "view_image")
+    assert "NOT SHOWN" in text and "describe nothing from it" in text
+    assert "look at it now" not in text
 
 
 def test_do_view_image_vision_fallback(tmp_path, monkeypatch):
@@ -128,7 +174,8 @@ def test_do_view_image_batched_mixed(tmp_path):
     (tmp_path / "b.txt").write_text("hi")
     obs = executor.do_view_image({"kind": "view_image", "paths": ["a.png", "b.txt"]},
                                  _ctx(tmp_path, _Endpoint(True)))
-    assert obs["media"] == [{"path": str(tmp_path / "a.png"), "media_type": "image/png"}]
+    assert obs["media"] == [{"path": str(tmp_path / "a.png"), "media_type": "image/png",
+                             "b64": base64.b64encode(b"IMG").decode("ascii")}]
     assert obs["files"][0]["native"] is True
     assert "not a viewable" in obs["files"][1]["error"]
 

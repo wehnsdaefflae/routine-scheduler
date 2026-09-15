@@ -35,7 +35,11 @@ def format_files(obs: dict, kind: str) -> str | None:  # noqa: C901, PLR0911, PL
         parts = []
         for f in obs.get("files", []):
             if f.get("error"):
-                parts.append(f"--- {f['path']} FAILED: {f['error']}")
+                # R1493: a failed view must read as a failure and invite nothing. The report's
+                # author described a rendered page twice on the strength of a line that opened
+                # with "look at it now" and appended the failure at its end.
+                parts.append(f"--- {f['path']} NOT SHOWN — {f['error']}. You have not seen this "
+                             "file: describe nothing from it.")
             elif f.get("native"):
                 parts.append(f"--- {f['path']} ({f['media_type']}) — shown to you below; "
                              "look at it now.")
