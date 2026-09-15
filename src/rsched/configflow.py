@@ -43,6 +43,12 @@ CLASSIFICATION: dict[str, tuple[str, str]] = {
                          "run page's model-switch control, not a config edit"),
     "connections": (NEXT_RUN, "OAuth tokens are injected into the util environment at boot"),
     "machines": (NEXT_RUN, "the machine bindings and share mounts are resolved at boot"),
+    "permissions": (NEXT_RUN, "the held conduct docs are read at boot: their prose is composed "
+                              "into the prompt and their capabilities projected into the action "
+                              "schema, so widening or narrowing authority reaches the NEXT run"),
+    "capabilities": (NEXT_RUN, "the policy and the action schema are projected from this mapping "
+                               "at boot; a live run's schema is already fixed, and its permission "
+                               "prose would no longer match what it may do"),
     "rules": (NEXT_RUN, "prose already in the context cannot be unsaid; the /rules picker "
                         "pushes an ADDED rule to a live run, a config patch does not"),
     "fs_read_roots": (NEXT_RUN, "the sandbox roots are computed at boot and passed to every "

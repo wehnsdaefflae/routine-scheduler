@@ -15,6 +15,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.343.0] — 2026-09-15
+
+### Added — a decision's `config_patch` may carry `permissions` / `capabilities` (D132, F482, R1489)
+
+A decision could propose every part of a routine's config except the one part that decides what a
+routine is allowed to do. `RoutinePatch` declared no `permissions` and no `capabilities`, so a
+`config_patch` carrying either hit its `extra="forbid"` guard and came back 422 — which, from the
+Decisions page, looked like a proposal that simply could not be approved. The advice in the record
+was then "go and click the permissions editor yourself", and the proposal's whole point (a run
+that cannot edit `routine.yaml` asking the operator for one reviewable click) was lost.
+
+`PATCH /api/routines/{slug}` now accepts both keys and ROUTES them, rather than merging them.
+`_apply_permissions_fields` hands them to `resolve_permission_layers` — the same two-layer resolve
+the dedicated `PUT /routines/{slug}/permissions` editor uses — and then to `strip_shared_dials`,
+so what a patch writes is byte-for-byte what the editor would have written:
+
+- unknown permission-doc slugs are dropped, a junk capabilities mapping is a 422;
+- the mapping is RAISED to cover every held doc's `requires` and FLOORED back to them (D8), so a
+  gated action or reserved util survives only as the means of a permission actually held;
+- a domain-supplied dial is stripped rather than shadowed by a concrete copy in the routine's own
+  file (D82).
+
+Routing is the substance of the change, not an implementation detail. Had the two keys been left
+to the handler's generic top-level merge, a patch would have written an unvalidated `permissions:`
+list beside a capabilities mapping that could contradict it — authority granted by a key nobody
+cascaded, which is precisely the failure the two-layer resolve exists to prevent. Both keys
+REPLACE wholesale, as they do in the editor: a patch naming only `capabilities` keeps the current
+docs and re-floors against them, one naming only `permissions` re-floors the existing mapping.
+
+Both fields are declared `NEXT_RUN` in `configflow.CLASSIFICATION`: the held docs' prose is
+composed into the prompt and their capabilities projected into the action schema at boot, so a
+live run's schema is already fixed and its permission prose must keep matching what it may do.
+The anti-drift guard `test_every_patch_field_declares_its_half` caught the omission on the first
+full gate — a new config field cannot exist here without saying which half of a live run it
+reaches.
+
+No frontend change was needed: the apply button already PATCHes `/api/${home}/${target}` and
+verifies every key it sent against the response's `updated` list, so the honesty gate (R102)
+covers these two keys the moment the endpoint reports them.
+
 ## [0.342.2] — 2026-09-14
 
 ### Fixed — aborting a QUEUED run leaked its slug and silently disabled the routine

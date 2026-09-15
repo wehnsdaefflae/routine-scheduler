@@ -49,6 +49,10 @@ class RoutinePatch(BaseModel):
     tags: list[str] | None = None           # freeform filter tags (e.g. ["meta"])
     domain: str | None = None               # the shared surface this routine is part of — at
     #                                          most one, `""` leaves (docs/lanes-domains.md)
+    permissions: list[str] | None = None    # held conduct-doc slugs — REPLACE wholesale, routed
+    #                                          to the canonical two-layer resolve (D132/F482)
+    capabilities: dict | None = None        # the capabilities mapping under those permissions —
+    #                                          raised to cover held docs' requires, floored back
     rules: list[str] | None = None          # general-rule slugs this routine practises — REPLACE
     #                                          wholesale, validated against the library, main.md's
     #                                          derived practices tail resynced (rules.apply_changes)
@@ -105,6 +109,55 @@ def _apply_domain_field(routines_home: Path, raw: dict, updates: dict) -> None:
     if domains.get(routines_home, want) is None:
         raise HTTPException(400, f"unknown domain {want!r} (create it on the Routines page)")
     raw["domain"] = want
+
+def _apply_permissions_fields(request: Request, info, raw: dict, updates: dict) -> None:
+    """Apply a PATCH's `permissions` / `capabilities` through the ONE canonical path — the
+    same two-layer resolve the dedicated `PUT /routines/{slug}/permissions` editor uses
+    (D132/F482).
+
+    A decision could propose every other part of a routine's config and not this one: the
+    two authority keys were absent from `RoutinePatch`, so a config_patch carrying them hit
+    `extra="forbid"` and 422'd — the operator was told to go and click the editor himself.
+    The operator settled that on 2026-09-15: a config_patch MAY carry them, routed to the
+    permissions surface, with the honesty gate kept.
+
+    Routing, not merging, is the whole point. These two keys are the authority surface, and
+    `resolve_permission_layers` is what makes them safe: unknown doc slugs are dropped, a junk
+    capabilities mapping is a 422, the mapping is RAISED to cover every held doc's requires and
+    FLOORED back to them (D8), and `strip_shared_dials` keeps a domain-supplied dial out of the
+    routine's own file (D82). Letting these fall through to the generic top-level merge instead
+    would write an unvalidated `permissions:` list and a capabilities mapping that could
+    contradict it — authority granted by a key nobody cascaded.
+
+    REPLACE wholesale, exactly like the editor: `permissions` is the held-doc set, not an
+    addition to it, because that is what the one canonical resolver means by `active`. A patch
+    naming only `capabilities` keeps the routine's current docs; one naming only `permissions`
+    re-floors the existing mapping against the new set. Pops both keys, so the caller's
+    catch-all merge never sees them.
+    """
+    if "permissions" not in updates and "capabilities" not in updates:
+        return
+    from ..config.domainconfig import domain_config_for, strip_shared_dials
+    from .api_routine_edit import PermissionsBody, resolve_permission_layers
+
+    want_docs = updates.pop("permissions", None)
+    want_caps = updates.pop("capabilities", None)
+    if want_docs is None:
+        want_docs = list(info.cfg.permissions or [])
+    if not isinstance(want_docs, list) or any(not isinstance(p, str) for p in want_docs):
+        raise HTTPException(400, "permissions: must be a list of permission-doc slugs")
+    if want_caps is not None and not isinstance(want_caps, dict):
+        raise HTTPException(400, "capabilities: must be a mapping")
+    server = _state(request).server
+    shared, _ = domain_config_for(info.cfg.dir, info.cfg.domain)
+    body = PermissionsBody(active=want_docs, capabilities=want_caps)
+    active, caps = resolve_permission_layers(
+        server, body, info.cfg.capabilities or {},
+        inherited=list(shared.get("permissions") or []))
+    caps = strip_shared_dials(caps, shared.get("capabilities") or {}, want_caps or {})
+    raw["permissions"] = active
+    raw["capabilities"] = caps
+
 
 def _apply_resource_fields(raw: dict, updates: dict) -> None:
     """Place the routine.yaml resource fields a PATCH carries that the caller's generic
@@ -217,6 +270,10 @@ def patch_routine(request: Request, slug: str, patch: RoutinePatch) -> dict:
     # dedicated /routines/{slug}/rules picker. Extracted to a helper to keep this handler
     # under the branch-complexity budget.
     _apply_rules_field(_state(request).server.rules_home, info.cfg.dir, raw, updates)
+    # D132/F482: the two authority keys route to the permissions surface's own resolver rather
+    # than the generic merge below — a decision may now propose them, and what lands is what the
+    # editor would have written.
+    _apply_permissions_fields(request, info, raw, updates)
     _apply_domain_field(_state(request).server.routines_home, raw, updates)
     _apply_resource_fields(raw, updates)
     for key, val in updates.items():

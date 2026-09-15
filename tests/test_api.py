@@ -2060,6 +2060,47 @@ def test_put_permissions_cascades_capabilities(client):
     assert bad.status_code == 422
 
 
+def test_patch_routine_applies_permissions_through_the_canonical_resolve(client):
+    """D132/F482: a decision's config_patch may carry `permissions`/`capabilities`, and the
+    PATCH routes them to the permissions surface's own two-layer resolve instead of the generic
+    top-level merge. Before this, both keys hit RoutinePatch's extra="forbid" and 422'd, so a
+    decision could propose every part of a routine's config except its authority.
+
+    Pins the three things that make it safe: the same cascade the editor applies (raise to the
+    held docs' requires, floor back to them), both keys named in `updated` so the Decisions
+    page's honesty gate (R102) sees them as applied, and NO bare unvalidated key left behind."""
+    c, tmp = client
+    perms_home = tmp / "library" / "permissions"
+    perms_home.mkdir(parents=True, exist_ok=True)
+    (perms_home / "messaging-discord.md").write_text(
+        "---\ntags: [a, b, c]\nrequires:\n  utils: [discord]\n---\n"
+        "# permission: discord messaging\nbody\n", encoding="utf-8")
+    (perms_home / "memory.md").write_text(
+        "---\ntags: [a, b, c]\nrequires:\n  actions: [memory_read, memory_write]\n---\n"
+        "# permission: memory — notebook\nbody\n", encoding="utf-8")
+    # the key used to be refused outright — that is what made the decision unappliable
+    r = c.patch("/api/routines/apir",
+                json={"permissions": ["memory", "ghost"],
+                      "capabilities": {"confirm": "creations"}})
+    assert r.status_code == 200, r.text
+    # honesty gate: the apply button verifies every key it sent against `updated`
+    assert set(r.json()["updated"]) >= {"permissions", "capabilities"}
+    raw = yaml.safe_load((tmp / "routines" / "apir" / "routine.yaml").read_text())
+    assert raw["permissions"] == ["memory"]                      # unknown doc slug dropped
+    assert set(raw["capabilities"]["actions"]) == {"memory_read", "memory_write"}  # raised
+    assert raw["capabilities"]["utils"] == []                    # no discord perm → floored (D8)
+    assert raw["capabilities"]["confirm"] == "creations"         # user policy dial preserved
+    # capabilities alone keeps the held docs and re-floors against them
+    r2 = c.patch("/api/routines/apir", json={"capabilities": {"utils": ["discord"]}})
+    assert r2.status_code == 200, r2.text
+    raw2 = yaml.safe_load((tmp / "routines" / "apir" / "routine.yaml").read_text())
+    assert raw2["permissions"] == ["memory"]
+    assert raw2["capabilities"]["utils"] == []                   # orphan util floored away
+    # junk is a legible refusal, not a silent unvalidated write
+    bad = c.patch("/api/routines/apir", json={"capabilities": {"actions": "write_util"}})
+    assert bad.status_code == 422
+
+
 def test_library_permission_doc_requires_roundtrip(client):
     """The Library editor's structured requires: panel — GET returns the parsed mapping
     for prefill; PUT with a `requires` object merges it into the frontmatter server-side
