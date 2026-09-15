@@ -140,6 +140,7 @@ def find_undelivered(reports: list[dict], routines_home: Path) -> list[dict]:
         # (R1152-R1156, 2026-09-04) lack an inbox file like any batch-appended row, but being
         # settled is exactly their point: there is nothing for the target to act on.
         if (not target or row.get("delivered") or row.get("retracted")
+                or row.get("superseded")
                 or row.get("closes")):
             continue
         item_id = str(row.get("id") or "")

@@ -186,7 +186,8 @@ def drain_injections(loop) -> None:
                                    vias=inbox.LIVE_MESSAGE_VIAS)
     for m in drained:
         inject_user_message(loop, m)
-    reports.stamp_delivered(ctx.server.routines_home, drained, run_id=ctx.run_id)
+    ctx.reports_open += reports.stamp_delivered(
+        ctx.server.routines_home, drained, run_id=ctx.run_id)
 
 
 def child_finished_message(*, mode: str, n: int, label: str, workflow: str, status: str,

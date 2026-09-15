@@ -379,7 +379,7 @@ def test_routine_messages_four_folders(client):
     reports.file_report(tmp / "routines", routine="apir", run_id="apir:1",
                         title="pending hand-off", detail="d1", target="other",
                         target_dir=other)
-    _, rid2 = reports.file_report(tmp / "routines", routine="apir", run_id="apir:1",
+    _, rid2, _ = reports.file_report(tmp / "routines", routine="apir", run_id="apir:1",
                                   title="picked-up hand-off", detail="d2", target="other",
                                   target_dir=other)
     reports.stamp_delivered(tmp / "routines", [{"report": rid2}], run_id="other:2")

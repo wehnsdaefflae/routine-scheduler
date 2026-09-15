@@ -36,6 +36,21 @@ settled itself, asking nothing back. A closure is still delivered when addressed
 learns the outcome — but the message says no reply is needed. Only a NEW report that names
 the closure reopens the thread.
 
+A report may also SUPERSEDE existing rows (`supersedes`): "these are now this thread." That is
+the one operation routing and consolidation both needed and neither had (F492/D110). Handing a
+triage row to its owner used to leave the original untargeted, so the next triage pass found it
+again and routed it a second time — R1491/R1496/R1516/R1517/R1519/R1520 were each routed twice
+in two days, once in R1525 and again in R1558. And the `problem-routing` rule's "add your
+evidence to the OLDEST open one rather than opening another" named an operation that did not
+exist. A `superseded` event row closes both: the original folds into the carrier and takes the
+carrier's status from then on (docs/items.md), so it leaves triage once and settles when the
+thread it joined settles.
+
+That is also what makes the OPEN-THREAD CAP fair. A run may not open more than
+`OPEN_THREAD_CAP` parallel threads to one owner (D110, operator 2026-08-31); the refusal names
+the open ids, and `supersedes` is the way through — fold them into the one report that carries
+them all. A cap without an append operation would just lose the finding.
+
 The user's ONE write on this stream is RETRACTION (`retract_report`, D74): an addressed
 report whose delivery still waits in the target's inbox can be withdrawn — the delivery file
 is unlinked (the recipient never sees it) and a `retracted` event row records it. The report
@@ -51,6 +66,7 @@ from pathlib import Path
 
 from .ids import now_iso
 from .paths import atomic_write_json, file_lock
+from .report_threads import OPEN_THREAD_CAP, ThreadCapError, open_threads, supersedable
 
 REPORTS_FILE = "reports.jsonl"
 REPORT_ID_RE = re.compile(r"^R(\d+)$")
@@ -107,11 +123,14 @@ def message_text(item_id: str, sender: str, title: str, detail: str, answers: st
 
 
 def file_report(routines_home: Path, *, routine: str, run_id: str, title: str, detail: str = "",
-                target: str = "", target_dir: Path | None = None,
-                answers: str = "", closes: bool = False) -> tuple[Path, str] | None:
+                target: str = "", target_dir: Path | None = None, answers: str = "",
+                closes: bool = False,
+                supersedes: tuple[str, ...] = ()) -> tuple[Path, str, list[str]] | None:
     """Append one report, and deliver it when it is addressed.
 
-    Returns `(path, id)` on success, or None if the write failed. An UNADDRESSED report is
+    Returns `(path, id, folded)` on success, or None if the write failed. `folded` is what was
+    actually taken over — decided under the ledger lock, so the observation the run reads can
+    never claim a row that a concurrent filing had already folded. An UNADDRESSED report is
     best-effort like the health log — a failed write must never abort the reporting run, whose
     real job is elsewhere. An ADDRESSED one is the caller's whole purpose, so the handler
     surfaces the failure instead of letting the run believe it routed work it did not.
@@ -119,18 +138,36 @@ def file_report(routines_home: Path, *, routine: str, run_id: str, title: str, d
     `closes` is recorded only beside `answers` (validate_action enforces the pairing for the
     action; this guard keeps out-of-band callers equally honest): a closure row is the
     exchange's terminal acknowledgment, born settled.
+
+    `supersedes` folds existing rows into this one: each gets a `superseded` event naming this
+    report, and from then on it reads whatever this thread reads. Ids the ledger cannot fold
+    (unknown, retracted, already in another thread) are dropped here rather than stamped —
+    `supersedable` is what a caller uses to tell the run WHICH ones before it gets this far.
+
+    Raises `ThreadCapError` when this would open an `OPEN_THREAD_CAP`-plus-first parallel
+    thread to one owner. A reply and a consolidation are exempt: both close threads.
     """
     closes = bool(closes and answers)
     path = reports_path(routines_home)
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         with file_lock(path.with_suffix(".lock")):
+            rows = read_reports(path)
+            if target and not answers and not supersedes:
+                open_ids = open_threads(rows, routine=routine, target=target)
+                if len(open_ids) >= OPEN_THREAD_CAP:
+                    raise ThreadCapError(routine, target, open_ids)
+            folded, _ = supersedable(rows, list(supersedes))
             item_id = next_id(path)
             _append(path, {"id": item_id, "ts": now_iso(), "routine": routine, "run_id": run_id,
                            "title": title[:TITLE_MAX], "detail": detail[:DETAIL_MAX],
                            **({"target": target} if target else {}),
                            **({"answers": answers} if answers else {}),
-                           **({"closes": True} if closes else {})})
+                           **({"closes": True} if closes else {}),
+                           **({"supersedes": folded} if folded else {})})
+            for old in folded:
+                _append(path, {"id": old, "event": "superseded", "ts": now_iso(),
+                               "by": item_id, **({"to": target} if target else {})})
         if target and target_dir is not None:
             atomic_write_json(target_dir / "inbox" / f"msg-rep-{item_id}.json", {
                 "text": message_text(item_id, routine, title[:TITLE_MAX], detail[:DETAIL_MAX],
@@ -142,17 +179,23 @@ def file_report(routines_home: Path, *, routine: str, run_id: str, title: str, d
                 **({"closes": True} if closes else {})})
     except OSError:
         return None
-    return path, item_id
+    return path, item_id, folded
 
 
-def stamp_delivered(routines_home: Path, msgs: list[dict], *, run_id: str) -> None:
-    """Record that the target's run drained these messages. Called at every drain (boot and
-    turn boundary) with the messages just consumed; anything that is not a delivered report is
-    ignored. Best-effort — a missing stamp costs visibility, never the delivery itself.
+def stamp_delivered(routines_home: Path, msgs: list[dict], *, run_id: str) -> list[str]:
+    """Record that the target's run drained these messages, and return the ids it now OWES a
+    reply. Called at every drain (boot and turn boundary) with the messages just consumed;
+    anything that is not a delivered report is ignored. Best-effort — a missing stamp costs
+    visibility, never the delivery itself.
+
+    A CLOSURE is delivered but owed nothing back: it says so in its own text, and asking the
+    run to answer "thanks, done" is the ratchet `closes` exists to stop. So it is stamped like
+    any other delivery and left out of what comes back.
     """
     ids = [str(m["report"]) for m in msgs if m.get("report")]
+    owed = [str(m["report"]) for m in msgs if m.get("report") and not m.get("closes")]
     if not ids:
-        return
+        return []
     ts = now_iso()
     path = reports_path(routines_home)
     try:
@@ -160,7 +203,8 @@ def stamp_delivered(routines_home: Path, msgs: list[dict], *, run_id: str) -> No
             for item_id in ids:
                 _append(path, {"id": item_id, "event": "delivered", "ts": ts, "run_id": run_id})
     except OSError:
-        return
+        return owed
+    return owed
 
 
 def retract_report(routines_home: Path, report_id: str) -> dict:
@@ -233,10 +277,10 @@ def discard_undelivered_report(routines_home: Path, report_id: str) -> dict:
 
 
 def read_reports(path: Path) -> list[dict]:
-    """The stream folded into one row per report, in filing order. A `delivered` or
-    `retracted` event row is merged into its report as a `delivered: {ts, run_id}` /
-    `retracted: {ts}` key; an event with no matching report (a truncated or hand-trimmed
-    file) is dropped rather than becoming a phantom item.
+    """The stream folded into one row per report, in filing order. A `delivered`, `retracted`
+    or `superseded` event row is merged into its report as a `delivered: {ts, run_id}` /
+    `retracted: {ts}` / `superseded: {ts, by, to}` key; an event with no matching report (a
+    truncated or hand-trimmed file) is dropped rather than becoming a phantom item.
     """
     try:
         lines = path.read_text(encoding="utf-8").splitlines()
@@ -259,6 +303,13 @@ def read_reports(path: Path) -> list[dict]:
         elif row.get("event") == "retracted":
             if item_id in reports:
                 reports[item_id]["retracted"] = {"ts": row.get("ts", "")}
+        elif row.get("event") == "superseded":
+            # FIRST fold wins: a row belongs to exactly one thread, and re-stamping it would
+            # let a later carrier steal a row an earlier one is already answering for.
+            if item_id in reports and not reports[item_id].get("superseded"):
+                reports[item_id]["superseded"] = {"ts": row.get("ts", ""),
+                                                  "by": str(row.get("by") or ""),
+                                                  "to": str(row.get("to") or "")}
         else:
             reports.setdefault(item_id, dict(row))
     return list(reports.values())

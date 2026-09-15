@@ -23,7 +23,7 @@ from rsched.engine.interact import handle_report
 from rsched.engine.observations import format_observation
 from rsched.grantpolicy import GrantPolicy
 from rsched.grants import GATED_KINDS
-from rsched.readmodels import items
+from rsched.readmodels import item_reports, items
 from rsched.reports import (
     next_id,
     read_reports,
@@ -45,7 +45,8 @@ def _loop(tmp_path, *, slug="some-routine", run_id="some-routine:20260726-020000
     home.mkdir(parents=True, exist_ok=True)
     _routine(home, slug)
     ctx = SimpleNamespace(server=SimpleNamespace(routines_home=home),
-                          routine=SimpleNamespace(slug=slug), run_id=run_id)
+                          routine=SimpleNamespace(slug=slug), run_id=run_id,
+                          reports_open=[])
     return SimpleNamespace(ctx=ctx), home
 
 
@@ -261,7 +262,7 @@ def test_a_retracted_answer_settles_nothing(tmp_path):
     back = SimpleNamespace(ctx=SimpleNamespace(
         server=SimpleNamespace(routines_home=home),
         routine=SimpleNamespace(slug="routine-improver"),
-        run_id="routine-improver:20260726-010000"))
+        run_id="routine-improver:20260726-010000", reports_open=["R1"]))
     handle_report(back, {"target": "self-audit", "title": "fixed it", "answers": "R1"})
     assert _items(home, home / "self-audit")["R1"]["status"] == "settled"
 
@@ -298,7 +299,7 @@ def test_items_shows_a_report_and_its_lifecycle(tmp_path):
     back = SimpleNamespace(ctx=SimpleNamespace(
         server=SimpleNamespace(routines_home=home),
         routine=SimpleNamespace(slug="routine-improver"),
-        run_id="routine-improver:20260726-010000"))
+        run_id="routine-improver:20260726-010000", reports_open=["R1"]))
     handle_report(back, {"target": "self-audit", "title": "fixed it", "answers": "R1"})
 
     closed = _items(home, audit)
@@ -321,7 +322,7 @@ def test_a_closure_is_born_settled_and_ends_the_exchange(tmp_path):
     back = SimpleNamespace(ctx=SimpleNamespace(
         server=SimpleNamespace(routines_home=home),
         routine=SimpleNamespace(slug="routine-improver"),
-        run_id="routine-improver:20260726-010000"))
+        run_id="routine-improver:20260726-010000", reports_open=["R1"]))
     handle_report(back, {"target": "self-audit", "title": "fixed it — nothing more needed",
                          "answers": "R1", "closes": True})
 
@@ -361,7 +362,7 @@ def test_report_ids_stay_out_of_historical_changelog_prose():
     """
     assert items.TYPE_BY_PREFIX["R"] == "report"
     assert items.ID_RE.findall("R7 and F3") == ["F3"]
-    assert set(items.REF_RE.findall("R7 and F3")) == {"R7", "F3"}
+    assert set(item_reports.REF_RE.findall("R7 and F3")) == {"R7", "F3"}
 
 
 def test_observation_renders_the_filed_id(tmp_path):

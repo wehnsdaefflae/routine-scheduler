@@ -15,6 +15,12 @@ no new store, no new writer):
 | **read** | `runs/<ts>/consumed/msg-*.json`, newest first (capped) | consumed by this routine | none |
 | **received** | ledger rows with a `delivered` stamp | hand-offs the recipient consumed | none |
 
+A row a later report has TAKEN OVER (`supersedes` — docs/items.md) carries its `superseded`
+stamp into whichever folder it is in, so a hand-off whose thread moved elsewhere says where to
+read it instead of sitting there looking unanswered. It does not LEAVE the outbox: the fold
+changes which thread answers for the problem, not whether the message this row already put in
+the recipient's inbox is still waiting to be drained.
+
 `answer-*` files (question answers) stay off this surface on purpose: they belong to the
 Decisions page's record, and rendering them as messages would fork that vocabulary. (They do
 wake a routine's report trigger like any inbox work — docs/triggers.md.)

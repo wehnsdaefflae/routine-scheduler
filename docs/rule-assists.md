@@ -164,8 +164,8 @@ only WHEN its line is read, never what the routine may do. Nothing here can reac
 that does not hold the rule.
 
 `DEFAULT_RULES` is not empty, so this layer is live in most routines from the day it ships —
-which is why precision, not coverage, is the budget, and why only one of the six assists costs
-a turn.
+which is why precision, not coverage, is the budget, and why only three of the seven assists
+cost a turn.
 
 ## The payload axis, and what exists
 
@@ -181,11 +181,13 @@ The seed sync is ADD-ONLY: it installs a rule the live library is missing and ne
 one, so a local edit always wins. All 26 rules already exist live, which means **a frontmatter
 block added to `library-seed/rules/*.md` reaches zero instances on its own.** Each batch of
 assists needs a one-shot `MIGRATION(expires=…)` that carries the block across — the first is
-`migrate_rule_assists.py`. It is idempotent, it skips a rule an operator has edited (a local
+`migrate_rule_assists.py`, and `problem-routing`'s came with a prose revision, so it rides
+`migrate_problem_routing_rule.py` (which replaces the whole file, and only while the live copy
+is still byte-identical to the seed it supersedes). It is idempotent, it skips a rule an operator has edited (a local
 edit outranks the seed there too), and it names everything it skips rather than passing over
 it quietly.
 
-## The six
+## The seven
 
 | rule | moment | predicate | why this moment |
 |---|---|---|---|
@@ -195,6 +197,7 @@ it quietly.
 | `ask-policy` | boundary | `asks-piling-up` | several decisions are waiting on the user, which is the shape the rule is about |
 | `decision-record` | pre-finish | `ledger-untouched` | the reasoning behind the artefacts is lost at exactly this moment, and only here can the run still write it down |
 | `unexamined-is-not-clean` | pre-finish | `clean-claim-without-a-denominator` | an all-clear is only meaningful beside what was examined, and the summary is where it is claimed |
+| `problem-routing` | pre-finish | `unclosed-delivered-report` | the run was handed work by another routine and is ending without answering it — after the finish nothing is left that can close the row but a person reading the ledger |
 
 `git-checkpoint` is the rung the design note reserves for HOLD: a crisp pre-action predicate
 AND an irreversible cost to skipping. It fires on the FIRST such write only, which is what
@@ -202,11 +205,16 @@ makes "no checkpoint yet" true without having to DETECT a checkpoint commit — 
 inside a util or a shell command, where the engine sees a command string and an exit code and
 nothing more. It is overridable like every payload: re-emit the action and it runs.
 
-Two predicates read signals the engine already keeps, which is why they are cheap:
+Three predicates read signals the engine already keeps, which is why they are cheap:
 `asks-piling-up` reads `ctx.asks_deferred` (the churn telemetry for a decision thrown over the
-wall), and `ledger-untouched` reads `turn_records`, the run history that SURVIVES compaction —
+wall), `ledger-untouched` reads `turn_records`, the run history that SURVIVES compaction —
 a predicate that greps the message list silently stops working on exactly the long runs that
-need it most.
+need it most — and `unclosed-delivered-report` reads `ctx.reports_open`, which the inbox drain
+fills and the `report` handler empties as each `answers` lands. That last one is bookkeeping
+the engine was already doing either side of the question, so the predicate is a truth test
+rather than a search: it cannot fire on a run that has already replied, and it cannot miss one
+that has not. It is carried across a resume like the counters, because a run held at its own
+finish and handed one more turn must still know what it owes.
 
 `clean-claim-without-a-denominator` is deliberately crude: it asks whether the summary claims
 cleanliness and carries no number at all, so a summary that quantifies ANYTHING passes. One

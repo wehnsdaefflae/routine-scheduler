@@ -49,7 +49,8 @@ def boot(loop) -> None:
         msgs = inbox.drain_messages(
             ctx.routine.dir, loop.consumed_dir,
             vias=inbox.LIVE_MESSAGE_VIAS if resuming else None)
-        reports.stamp_delivered(ctx.server.routines_home, msgs, run_id=ctx.run_id)
+        ctx.reports_open += reports.stamp_delivered(
+            ctx.server.routines_home, msgs, run_id=ctx.run_id)
         digest = state_digest(ctx.routine.dir, deferred_qa, open_qs,
                               routines_home=ctx.server.routines_home,
                               slug=ctx.routine.slug, held_rules=list(ctx.routine.rules))

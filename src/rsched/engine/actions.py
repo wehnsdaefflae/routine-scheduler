@@ -12,6 +12,7 @@ prose-outside-JSON failures.
 from __future__ import annotations
 
 from ..ids import is_slug
+from ..reports import REPORT_ID_RE
 from .actionschema import KINDS, READ_PATHS_MAX
 from .remind import field_problems as reminder_field_problems
 
@@ -137,7 +138,7 @@ KIND_FIELDS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "kill": (("n",), ()),
     "wait": ((), ("n", "all", "timeout_s")),
     "ask_user": (("question",), ("mode", "options", "default", "config_patch", "request")),
-    "report": (("title",), ("detail", "target", "answers", "closes")),
+    "report": (("title",), ("detail", "target", "answers", "closes", "supersedes")),
     "finish": (("status", "summary"), ("reply_to",)),
 }
 
@@ -297,6 +298,26 @@ def validate_action(obj: dict, allowed_kinds: set[str] | None = None,  # noqa: C
     if kind == "report" and obj.get("closes") and not str(obj.get("answers") or "").strip():
         problems.append("kind=report: 'closes' is valid only together with 'answers' — it "
                         "marks the ANSWER as completing that exchange")
+    # Taking a row over means becoming its OWNER's thread. Without a target there is no owner
+    # to become, and the folded rows would leave triage for nowhere.
+    if kind == "report" and obj.get("supersedes"):
+        if not isinstance(obj["supersedes"], list):
+            problems.append("kind=report: 'supersedes' must be a list of report ids (R<n>)")
+        elif not str(obj.get("target") or "").strip():
+            problems.append("kind=report: 'supersedes' needs 'target' — folding rows into this "
+                            "report hands them to that owner, so name who is taking them")
+        elif bad := [str(i) for i in obj["supersedes"]
+                     if not REPORT_ID_RE.match(str(i).strip().upper())]:
+            problems.append(f"kind=report: 'supersedes' takes report ids like R123 — not "
+                            f"{', '.join(bad[:3])}")
+        elif (answered := str(obj.get("answers") or "").strip().upper()) and answered in [
+                str(i).strip().upper() for i in obj["supersedes"]]:
+            # Answering a thread ends it; absorbing one continues it here. Both at once on the
+            # same id is a contradiction, and the fold would win silently — leaving the row
+            # reading THIS report's status while the run believed it had closed it.
+            problems.append(f"kind=report: {answered} cannot be both 'answers' and "
+                            "'supersedes' — answering ENDS that thread, taking it over "
+                            "CONTINUES it here. Pick one")
     if kind == "ask_user" and "request" in obj and not isinstance(obj["request"], str):
         problems.append('kind=ask_user: \'request\' must be ONE entity id string, "<class>:'
                         '<name>" (e.g. "util:discord") — file one request per ask')

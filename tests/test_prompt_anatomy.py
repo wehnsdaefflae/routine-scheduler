@@ -81,6 +81,11 @@ def test_doc_pins_the_canonical_engine_strings(make_routine, tmp_path):
         # a reply that completes an exchange ends the thread settled instead of ratcheting
         "sets `closes: true` so the thread ends settled",
         "it settles its target AND is itself born settled",
+        # the FOLD (F492) + the open-thread cap (D110): routing that leaves the original
+        # behind is a copy, and a cap is only fair beside an operation that can consolidate
+        "leaving triage at once and settling when it settles",
+        "a new report is REFUSED and the open ids are named",
+        "it leaves triage now and settles when this one settles",
         # the say contract (composer harness line + ACTION_SCHEMA description)
         "lead with what the last observation taught you",
         # the note channel (ACTION_SCHEMA description + composer contract sentence)

@@ -48,6 +48,9 @@ def _report_row(row: dict, *, folder: str) -> dict:
             "to": str(row.get("target") or ""), "title": str(row.get("title") or ""),
             "text": str(row.get("detail") or ""),
             **({"delivered": row["delivered"]} if row.get("delivered") else {}),
+            # The thread moved: a later report took this row over, so the folder shows where
+            # to read it rather than leaving it looking like an unanswered hand-off.
+            **({"superseded": row["superseded"]} if row.get("superseded") else {}),
             "editable": False}
 
 

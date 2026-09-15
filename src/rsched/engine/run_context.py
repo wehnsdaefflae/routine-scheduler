@@ -129,6 +129,12 @@ class RunContext:
     # Deferred-question churn: decisions this run threw over the wall to the user — a
     # deferred ask, a blocking ask that timed out / was parked / died with an abort.
     asks_deferred: int = 0
+    # Reports this run RECEIVED and has not answered — the ids drained from its inbox, minus
+    # the ones a `report … answers: <id>` has since closed. D131 (operator 2026-09-14): closing
+    # the thread is part of shipping the fix, not the next audit's bookkeeping. Carried across
+    # a resume like the counters, because a run that is held at its finish and comes back must
+    # still know what it owes. The `unclosed-delivered-report` assist is the only reader.
+    reports_open: list[str] = field(default_factory=list)
     # User UTTERANCES this leg: a settled blocking answer, a held reply, a dialog turn, an
     # injected message, a slash command. Not telemetry, and deliberately NOT carried across
     # legs — `create_routine` reads it to tell "the user has spoken since I drafted" from
@@ -313,6 +319,7 @@ class RunContext:
             "recipe_commit": self.recipe_commit,
             "utils": self.util_stats,
             "asks_deferred": self.asks_deferred,
+            "reports_open": self.reports_open,
             # peak resident memory of the engine process (kB) — the rc=-9 post-mortem's
             # key datum (F348); the daemon reads the last write's value at close-out
             "vm_hwm_kb": _vm_hwm_kb(),

@@ -58,10 +58,10 @@ def test_messages_folders_and_outbox_retract(ui, ui_page, make_routine):
     consumed.mkdir(parents=True, exist_ok=True)
     (consumed / "msg-0.json").write_text(
         json.dumps({"text": "old note", "ts": "2025-12-31T00:00:00"}), encoding="utf-8")
-    _, rid = reports.file_report(ui.routines, routine="uir", run_id="uir:1",
+    _, rid, _ = reports.file_report(ui.routines, routine="uir", run_id="uir:1",
                                  title="pending hand-off", detail="please fix it",
                                  target="peer", target_dir=peer)
-    _, rid2 = reports.file_report(ui.routines, routine="uir", run_id="uir:1",
+    _, rid2, _ = reports.file_report(ui.routines, routine="uir", run_id="uir:1",
                                   title="landed hand-off", target="peer", target_dir=peer)
     reports.stamp_delivered(ui.routines, [{"report": rid2}], run_id="peer:20260102-000000")
 

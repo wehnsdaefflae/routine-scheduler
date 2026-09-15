@@ -59,8 +59,22 @@ function addressedSection(item) {
 // hand-off that silently never arrives is worse than none. An unaddressed report (triage) has
 // no routing to show.
 function routingLine(item) {
-  if (item.type !== "report" || !item.to) return null;
+  if (item.type !== "report") return null;
+  // FOLDED (F492): this row was taken over by another report, which is its thread now — it
+  // reads that thread's status and settles when it settles. It has no `to` of its own, so this
+  // has to come before the addressed check or the fold would be invisible on the card.
+  const s = item.superseded || {};
+  if (s.by) {
+    const row = el("div", { class: "faint small mt", style: "display:flex;gap:8px;flex-wrap:wrap" },
+      el("span", {}, "folded into"),
+      el("a", { href: `#/messages?search=${encodeURIComponent(s.by)}&status=`, title: "the report that took this over" }, s.by),
+      s.to ? el("span", {}, `→ ${s.to}`) : null,
+      s.ts ? when(s.ts) : null);
+    return row;
+  }
+  if (!item.to) return null;
   const bits = [el("span", {}, `${item.origin?.routine || "?"} → ${item.to}`)];
+  if (item.supersedes?.length) bits.push(el("span", {}, `takes over ${item.supersedes.join(", ")}`));
   const d = item.delivered || {};
   if (d.run_id) {
     bits.push(el("a", { href: `#/run/${d.run_id}`, title: "the run that picked it up" }, "picked up ↗"));

@@ -63,6 +63,21 @@ def cmd_daemon(_args) -> int:
     # lane or a domain, so the instruction became one no run could carry out. The seed sync is
     # add-only, so the rewritten section reaches a live library only from here.
     migrate_status_page_rule(server.rules_home, repo_root() / "library-seed" / "rules")
+    from .migrate_problem_routing_rule import run as migrate_problem_routing_rule
+
+    # MIGRATION(expires=2026-12-15): `problem-routing` told every holder to "add your evidence
+    # to the OLDEST open one rather than opening another" — an operation the append-only ledger
+    # could not perform, so the rule could not be obeyed and thread concentration kept growing.
+    # 0.345.0 gives it one (`supersedes`); this carries the prose that names it, and the
+    # pre-finish assist that catches a run finishing while it owes a sender a reply (D131).
+    migrate_problem_routing_rule(server.rules_home, repo_root() / "library-seed" / "rules")
+    from .migrate_routed_reports import run as migrate_routed_reports
+
+    # MIGRATION(expires=2026-12-15): F492 — routing a report left the original untargeted, so
+    # every triage pass re-routed work already handed off (six rows twice in two days). Routing
+    # records a fold now; this carries the four hand-offs already made across, so the first
+    # triage pass after the upgrade does not make a third copy of them.
+    migrate_routed_reports(server.routines_home)
     from .migrate_group_split import run as migrate_group_split
 
     # MIGRATION(expires=2026-12-01): one `group` record was a fire lane, a shared config layer,

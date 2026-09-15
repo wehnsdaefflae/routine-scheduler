@@ -3,6 +3,15 @@ effect:
   with: sends a problem it finds to whoever owns that class of problem
   without: escalates everything it notices straight to you
   when: other routines or people own parts of what this one touches
+assists:
+  - id: work-handed-to-you-this-run
+    moment: pre-finish
+    predicate: unclosed-delivered-report
+    payload: remind
+    line: >-
+      Another routine handed you work this run and you are ending without answering it.
+      Reply to it before you finish — what you did, or why you will not. A hand-off nobody
+      replied to is not settled, it is lost, and nothing after this run can close it for you.
 tags: [maintenance, escalation, routing]
 ---
 # rule: problem routing — send a problem to whoever owns it, not upward
@@ -22,9 +31,13 @@ who then has to route it by hand. Items have sat for days that way.
   taught nobody anything.
 - **Hand off diagnoses, not hunches.** The reader has none of your context. If they have to
   re-do the work that convinced you, they will not do it at all.
-- **Receiving is half of it.** A problem handed to you was diagnosed by someone else, inside
-  your own remit — that is a gift, not noise. Act on it or say plainly why you will not, and
-  answer either way: a hand-off nobody replied to is not settled, it is lost.
+- **Receiving is half of it, and the reply ships with the fix.** A problem handed to you was
+  diagnosed by someone else, inside your own remit — that is a gift, not noise. Act on it or
+  say plainly why you will not, and answer either way, in the SAME run that does the work: a
+  hand-off nobody replied to is not settled, it is lost, and once your run ends there is
+  nothing left that can close it but a person reading the ledger. Mark the reply as ending the
+  exchange whenever it needs no answer back, or every "thanks, done" earns a "thanks" of its
+  own forever.
 - **Work the operator owns is FILED, not narrated.** When a problem does reach the person —
   a grant only they can give, a credential only they can set, a choice only they can make —
   raise it as a decision they can answer. Writing it into a ledger, a report body or a run
@@ -34,11 +47,17 @@ who then has to route it by hand. Items have sat for days that way.
   unblocks, and what happens if it goes unanswered.
 - **Reply to the open thread; do not refile the same problem.** Before filing a new report,
   look at what you already have open to that owner. If a report of the same class is already
-  sitting there unanswered, add your evidence to the OLDEST open one rather than opening
-  another — most sharply once several are already stacked on that one owner. A second and third
-  report of one defect does not raise its priority; it makes the owner re-triage the same thing
-  and buries the single thread that matters. Keep one live thread per problem-class per owner:
-  reply, don't refile.
+  sitting there unanswered, reply to it, or take it over in the one report that carries both —
+  a report can absorb the rows it supersedes, and the rows it absorbs settle when it does. A
+  second and third report of one defect does not raise its priority; it makes the owner
+  re-triage the same thing and buries the single thread that matters. Keep one live thread per
+  problem-class per owner: reply or absorb, don't refile. Past a few open threads to one owner
+  the engine stops you and names them — that is not an obstacle, it is the list to fold.
+- **Routing a problem means taking it over, not copying it.** When you hand someone else's row
+  to its owner, say that the new report SUPERSEDES it. A row you merely mention stays exactly
+  where it was: still unrouted, still in the queue, waiting for the next pass to route it
+  again. Routing that leaves the original behind is not routing, it is duplication with extra
+  steps.
 - **Record both directions.** A problem bouncing between two owners stays invisible until
   someone writes the hand-offs down. And if the same class keeps arriving at you, that is not a
   queue to work through — it is evidence the ownership map is wrong, and saying so is the more

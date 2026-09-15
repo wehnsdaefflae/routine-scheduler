@@ -89,9 +89,9 @@ def test_outbox_retract(client):
     home = tmp / "routines"
     (home / "self-audit").mkdir()      # /api/items keys "exists" off this dir
     peer = home / "peer"
-    _, rid = reports.file_report(home, routine="apir", run_id="apir:1", title="hand-off",
+    _, rid, _ = reports.file_report(home, routine="apir", run_id="apir:1", title="hand-off",
                                  detail="d", target="peer", target_dir=peer)
-    _, rid2 = reports.file_report(home, routine="apir", run_id="apir:1", title="landed",
+    _, rid2, _ = reports.file_report(home, routine="apir", run_id="apir:1", title="landed",
                                   detail="d", target="peer", target_dir=peer)
     reports.stamp_delivered(home, [{"report": rid2}], run_id="peer:2")
 

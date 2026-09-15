@@ -20,7 +20,7 @@ import difflib
 import time
 from datetime import datetime, timedelta
 
-from .. import reports, schedule_once
+from .. import report_threads, reports, schedule_once
 from ..ids import question_id
 from . import availability, detach, inbox, requests
 from .control import RunAborted
@@ -378,6 +378,11 @@ def handle_report(loop, action: dict) -> dict:
     Self-targeting is refused: a note to yourself is `note` or `memory_write`, and queueing
     prose into your own next prompt is a loop with no reader in between. Works at any depth —
     subruns report too, and the row carries the run that saw the problem.
+
+    Three things can REFUSE a report here, each returning an observation instead of filing:
+    an unknown or self target; `supersedes` naming a row that cannot be taken over; and the
+    OPEN-THREAD CAP, which names the ids already open to this owner so the run has something
+    to fold into rather than just a count (docs/items.md § Reports).
     """
     ctx = loop.ctx
     title = str(action.get("title") or "").strip()
@@ -397,13 +402,36 @@ def handle_report(loop, action: dict) -> dict:
             return {"kind": "report", "target": target, "unknown_target": True,
                     "suggestions": difflib.get_close_matches(target, slugs, n=3, cutoff=0.5),
                     "valid_targets": slugs}
-    filed = reports.file_report(home, routine=ctx.routine.slug, run_id=ctx.run_id, title=title,
-                                detail=detail, target=target, target_dir=target_dir,
-                                answers=str(action.get("answers") or "").strip(),
-                                closes=bool(action.get("closes")))
+    answers = str(action.get("answers") or "").strip()
+    wanted = [str(i).strip().upper() for i in (action.get("supersedes") or [])]
+    folded: list[str] = []
+    if wanted:
+        rows = reports.read_reports(reports.reports_path(home))
+        folded, unusable = report_threads.supersedable(rows, wanted)
+        if unusable:
+            # Naming them beats folding what it can: a run told "3 of 5 taken over" has to
+            # work out which two it still owns, and that is the bookkeeping this field exists
+            # to remove.
+            return {"kind": "report", "target": target, "supersedes": wanted,
+                    "unusable": unusable, "reason": "unknown to the ledger, retracted, or "
+                    "already folded into another thread — a row belongs to exactly one"}
+    try:
+        filed = reports.file_report(home, routine=ctx.routine.slug, run_id=ctx.run_id,
+                                    title=title, detail=detail, target=target,
+                                    target_dir=target_dir, answers=answers,
+                                    closes=bool(action.get("closes")),
+                                    supersedes=tuple(folded))
+    except report_threads.ThreadCapError as cap:
+        return {"kind": "report", "target": target, "thread_cap": report_threads.OPEN_THREAD_CAP,
+                "open_to_target": cap.open_ids, "oldest": cap.open_ids[0]}
     out = {"kind": "report", "title": title, "filed": filed is not None,
            "id": filed[1] if filed else ""}
     if target:
         out["target"] = target
         out["delivery"] = "the target reads it on its next scheduled run"
+    if filed and filed[2]:
+        out["supersedes"] = filed[2]        # what the LEDGER folded, under its own lock
+    if answers and filed:
+        # This run has now answered that thread — the pre-finish assist reads what is LEFT.
+        ctx.reports_open = [r for r in ctx.reports_open if r != answers.upper()]
     return out

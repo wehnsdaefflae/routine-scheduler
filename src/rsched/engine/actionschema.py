@@ -13,6 +13,11 @@ from __future__ import annotations
 
 READ_PATHS_MAX = 8
 
+#: How many report ids one report may take over at once. Generous — a triage pass folding a
+#: whole queue into one hand-off is exactly the intended use, and the alternative is the batch
+#: of separate reports this field exists to prevent.
+SUPERSEDES_MAX = 20
+
 
 KINDS = ("util", "write_util", "remove_util", "read_file", "view_image", "write_file",
          "delete", "move", "mkdir", "edit_file",
@@ -217,6 +222,13 @@ ACTION_SCHEMA: dict = {
                                   "it settles its target AND is itself born settled, asking "
                                   "nothing back. Set it whenever your answer needs no reply; a "
                                   "closure is reopened only by a NEW report that names it"},
+        "supersedes": {
+            "type": "array", "items": {"type": "string"}, "maxItems": SUPERSEDES_MAX,
+            "description": "report: OPTIONAL — existing report ids (R<n>) this one TAKES OVER. "
+                           "Needs `target`. Use it to hand rows to their owner in one report, "
+                           "and to add to a thread you already have open instead of opening "
+                           "another. Each id folds into this report: it leaves triage now and "
+                           "settles when this one settles"},
         "fire_at": {"type": "string",
                     "description": "schedule_run: when to fire ONCE — an absolute ISO-8601 UTC "
                                    "instant, or a relative offset like '+3d' / '+2h' / '+30m'"},

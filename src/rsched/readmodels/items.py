@@ -36,6 +36,7 @@ from ..paths import read_json
 from ..priorities import priorities_path
 from ..reports import REPORTS_FILE, read_reports
 from . import memo
+from .item_reports import refs, report_row_item, resolved_carriers
 
 SELF_AUDIT_SLUG = "self-audit"
 
@@ -47,8 +48,6 @@ TYPE_BY_PREFIX = {"F": "finding", "D": "decision", "R": "report"}
 
 #: Item ids in HISTORICAL prose — findings and decisions only (see `_row_ids`).
 ID_RE = re.compile(r"\b([FD]\d{1,4})\b")
-#: Item ids in CURRENT prose — report ids included.
-REF_RE = re.compile(r"\b([FDR]\d{1,4})\b")
 
 
 def _audit_dir(routine_dir: Path) -> Path:
@@ -133,15 +132,6 @@ def _addressed_by_id(rows: list[dict]) -> dict[str, list[dict]]:
 # ---- item assembly ----------------------------------------------------------------------
 
 
-def _refs(item_id: str, *parts: str) -> list[str]:
-    """Other item ids named in this item's own prose (`F<n>`/`D<n>`/`R<n>`), so the graph is
-    navigable. Unlike the changelog fallback this scan includes `R` — the prose is current,
-    not historical.
-    """
-    found = set(REF_RE.findall(" ".join(parts)))
-    return sorted(found - {item_id})
-
-
 def _status_from_report(entry: dict) -> str:
     """The report's own status when it names one from the vocabulary. A value outside it is
     a data error and reads `unknown` — no synonym translation lives here.
@@ -163,7 +153,7 @@ def _report_item(kind: str, entry: dict, report: dict,
         "origin": {"routine": SELF_AUDIT_SLUG, "run_id": str(report.get("run_id") or ""),
                    "ts": str(report.get("generated") or ""),
                    "commit": str((since or {}).get("commit") or "")},
-        "addressed": addressed, "evidence": [], "refs": _refs(item_id, title, detail),
+        "addressed": addressed, "evidence": [], "refs": refs(item_id, title, detail),
         "archive_only": False,
     }
     if kind == "finding":
@@ -173,52 +163,6 @@ def _report_item(kind: str, entry: dict, report: dict,
         item["options"] = [str(o) for o in (entry.get("options") or [])]
         item["resolution"] = str(entry.get("resolution") or "")
     return item
-
-
-def _report_row_item(row: dict, addressed: list[dict], closed_by: dict[str, str]) -> dict:
-    """One `R<n>`: what was raised, by whom, and how far it has got.
-
-    An UNADDRESSED report waits in the stream for triage, so its status comes from the
-    changelog alone. An ADDRESSED one has a delivery lifecycle the ledger records, and that
-    progression is the reason the ledger exists — it separates a hand-off that carried from
-    one that silently never arrived. Precedence: `dropped` when the user RETRACTED it before
-    the target consumed it (the recipient never saw it, so no other state can apply);
-    `settled` when the row itself carries `closes: true` (a terminal acknowledgment, born
-    settled — it asks nothing back) or when a later report carries `answers: "<this id>"`
-    (the target replied, having acted or said why not; answering a closure works and changes
-    nothing — it is already settled); `addressed` when a changelog row names the id;
-    `in_progress` once the target's run drained it; otherwise `open`.
-    """
-    item_id = str(row.get("id") or "").strip().upper()
-    title, detail = str(row.get("title") or ""), str(row.get("detail") or "")
-    delivered = row.get("delivered") if isinstance(row.get("delivered"), dict) else {}
-    retracted = row.get("retracted") if isinstance(row.get("retracted"), dict) else {}
-    if retracted:
-        status = "dropped"
-    elif row.get("closes") or item_id in closed_by:
-        status = "settled"
-    elif addressed:
-        status = "addressed"
-    elif delivered:
-        status = "in_progress"
-    else:
-        status = "open"
-    return {
-        "id": item_id, "type": "report", "status": status,
-        "title": title, "detail": detail,
-        "origin": {"routine": str(row.get("routine") or ""),
-                   "run_id": str(row.get("run_id") or ""),
-                   "ts": str(row.get("ts") or ""), "commit": ""},
-        "addressed": addressed, "evidence": [],
-        "refs": _refs(item_id, title, detail, str(row.get("answers") or "")),
-        "archive_only": False,
-        "to": str(row.get("target") or ""),
-        "delivered": delivered,
-        "retracted": retracted,
-        "answers": str(row.get("answers") or ""),
-        "closes": bool(row.get("closes")),
-        "answered_by": closed_by.get(item_id, ""),
-    }
 
 
 def _archive_item(item_id: str, addressed: list[dict], answered: dict) -> dict:
@@ -246,6 +190,7 @@ def _archive_item(item_id: str, addressed: list[dict], answered: dict) -> dict:
         item["options"], item["resolution"] = [], ""
     elif kind == "report":
         item["to"], item["delivered"], item["retracted"] = "", {}, {}
+        item["superseded"], item["supersedes"] = {}, []
         item["answers"], item["answered_by"] = "", ""
         item["closes"] = False
     return item
@@ -288,10 +233,22 @@ def _build(report_path: Path, changelog_path: Path,
     closed_by = {str(r.get("answers")).strip().upper(): str(r.get("id") or "")
                  for r in rows
                  if str(r.get("answers") or "").strip() and not r.get("retracted")}
+    # A SUPERSEDED row reads its carrier's status, so the carriers have to be shaped first.
+    # Two passes over the same rows rather than a recursive read: the fold is a chain (a
+    # carrier can itself be folded into a later one), and resolving it in place would make an
+    # item's status depend on ledger ORDER instead of on the thread it ended up in.
+    carrier_status: dict[str, str] = {}
     for row in rows:
         item_id = str(row.get("id") or "").strip().upper()
-        if item_id:
-            items[item_id] = _report_row_item(row, addressed.get(item_id, []), closed_by)
+        if item_id and not row.get("superseded"):
+            items[item_id] = report_row_item(row, addressed.get(item_id, []), closed_by, {})
+            carrier_status[item_id] = items[item_id]["status"]
+    resolved = resolved_carriers(rows, carrier_status)
+    for row in rows:
+        item_id = str(row.get("id") or "").strip().upper()
+        if item_id and row.get("superseded"):
+            items[item_id] = report_row_item(row, addressed.get(item_id, []), closed_by,
+                                              resolved)
     for item_id in [*addressed, *answered]:
         item_id = str(item_id).strip().upper()
         if item_id and item_id not in items and item_id[:1] in TYPE_BY_PREFIX:

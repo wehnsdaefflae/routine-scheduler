@@ -25,8 +25,10 @@ request" — deliberately, because the backlog is a producer's view and the summ
 reader's.
 
 Items are a READ MODEL: five files on disk are merged into one shape on demand
-(`rsched/readmodels/items.py` for the four maintenance sources, `rsched/readmodels/summaries.py`
-for the fifth). Nothing in this path writes an item — the self-audit routine owns `report.json`,
+(`rsched/readmodels/items.py` for the four maintenance sources, `rsched/readmodels/item_reports.py`
+for an `R<n>`'s own shape and derived status, `rsched/readmodels/summaries.py` for the fifth).
+The report half sits apart because it answers a different question: a finding's status is READ
+from where self-audit wrote it, a report's is DERIVED from the event rows the engine stamped. Nothing in this path writes an item — the self-audit routine owns `report.json`,
 the engine owns `reports.jsonl`, the web layer owns the answered-decision markers, the changelog
 is written by self-audit's own runs, and a summary is `runs/<ts>/result.md`, which nothing but
 the engine's own finish ever touches.
@@ -96,9 +98,12 @@ arbitrary payload keys). Nothing reads them.
 - **`archive_only`** — true when no source holds the item's own record any more and it
   survives solely through the changelog / answered markers.
 - Type extras: **`severity`** (findings), **`options[]`** + **`resolution`** (decisions),
-  **`to`** + **`delivered{ts,run_id}`** + **`answers`** + **`closes`** + **`answered_by`**
-  (reports; `to` is empty on an unaddressed one, which has no routing to show; `closes` is
-  true on a terminal acknowledgment — see the status rules below).
+  **`to`** + **`delivered{ts,run_id}`** + **`answers`** + **`closes`** + **`answered_by`** +
+  **`superseded{ts,by,to}`** + **`supersedes[]`**
+  (reports; `to` is empty on an unaddressed one, which has no routing to show, and on a FOLDED
+  one it is the carrier's target — the row does have an owner now; `closes` is true on a
+  terminal acknowledgment; `superseded` names the report that took this row over and
+  `supersedes` the rows this one took — see the status rules below).
 
 ## Status vocabulary
 
@@ -147,7 +152,8 @@ An `R<n>` derives its status from its OWN ledger, which is the authority for it 
 `report.json` is for an `F<n>`. In precedence order: **`dropped`** when the user RETRACTED
 it before the target consumed it (`reports.retract_report`, docs/messages.md — the
 recipient never saw it, so no other state can apply, and a retracted reply settles
-nothing); **`settled`** when the row itself carries
+nothing); **the CARRIER's status** when the row was SUPERSEDED (see below); **`settled`** when
+the row itself carries
 `closes: true` (see below) or when a later report carries `answers: "<this id>"` — the target
 replied, having acted or having said why not; **`addressed`** when a changelog row names the
 id; **`in_progress`** once an ADDRESSED report's target drained the message from its inbox and
@@ -167,6 +173,35 @@ answer otherwise being a new open report waiting for one more reply). A closure 
 delivered when addressed, with the message marked "no reply needed"; answering a closure
 anyway is harmless — it is already settled — and only a NEW report that names the closure
 reopens the discussion, as its own open item.
+
+**The fold: one thread, one owner.** A report may declare `supersedes: ["R<n>", …]` beside its
+`target` — "these rows are now this thread". Each named row gets a `superseded` event
+(`{ts, by, to}`), and from then on reads whatever the carrier reads: `settled` when the carrier
+settles, `dropped` when it is retracted. Its `to` becomes the CARRIER's target — a folded row
+that still read "no target" would be re-routed by the very triage query the fold exists to
+satisfy, which is F492 again one level down. How it got there is not lost: `superseded` names
+the carrier, and the card renders `folded into R<n> → <owner>` in place of the sender→target
+line. The fold is a CHAIN — a carrier can
+itself be taken over later — and `readmodels/item_reports.resolved_carriers` follows it to the
+live thread, so a row never reads the status of an intermediate nobody is working. First fold
+wins: a row belongs to exactly one thread, and a second carrier cannot steal one another is
+already answering for.
+
+It exists because two documented operations had no mechanism (F492/D110, 0.345.0):
+
+- **Routing.** Handing a triage row to its owner produced a new report that merely NAMED the
+  original. The original kept its empty `target`, so the next triage pass found it untriaged
+  and routed it again — R1491/R1496/R1516/R1517/R1519/R1520 were each routed twice inside two
+  days (R1525, then R1558). Routing that leaves the original behind is duplication.
+- **Consolidating.** The `problem-routing` rule has said "add your evidence to the OLDEST open
+  one rather than opening another" since 2026-08-31 and named an append the append-only ledger
+  could not perform. Live reports went from 28 to 50 in the eleven days after that shipped.
+
+**The open-thread cap.** `file_report` refuses a report that would open more than
+`report_threads.OPEN_THREAD_CAP` (3) parallel threads from one sender to one owner, and the
+observation names the open ids oldest-first. A reply (`answers`) and a fold (`supersedes`) are
+exempt — both REDUCE the thread count, and capping the way out is how a cap loses a finding.
+That pairing is the whole design: the cap is only fair because the fold exists.
 
 **Deferrals whose carrier closed without delivering them.** An item routinely defers part of its
 scope into another ("the sidebar panel ships with F324's shared component"). The carrier then
@@ -197,8 +232,8 @@ Messages page banners them above the list in two groups, because they are invisi
 filter below it. It SURFACES rather than gates — a human judges the promise, and the fix for a
 false-positive deferral is to write the closure note so it names what it delivered.
 
-The stream is append-only. The report row is written by the `report` action; the `delivered`
-and `retracted` events are further rows, folded onto it by `reports.read_reports`.
+The stream is append-only. The report row is written by the `report` action; the `delivered`,
+`retracted` and `superseded` events are further rows, folded onto it by `reports.read_reports`.
 
 A closure (`closes: true`) is delivered like any other addressed report but never WAKES its
 target: the receiving routine's `report` trigger skips a closure-only inbox, so an

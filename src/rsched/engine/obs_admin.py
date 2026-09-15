@@ -134,13 +134,29 @@ def format_admin(obs: dict, kind: str) -> str | None:  # noqa: C901, PLR0911, PL
                     f"{obs.get('suggestions') or 'none'}; all routines: "
                     f"{obs.get('valid_targets')}. Retry with one of those, or drop `target` "
                     "to send it to triage.)")
+        if cap := obs.get("thread_cap"):
+            return (f"OBSERVATION (report REFUSED — you already have {len(obs['open_to_target'])} "
+                    f"reports open to {obs.get('target')!r}, and {cap} parallel threads to one "
+                    f"owner is the limit): {', '.join(obs['open_to_target'])}, oldest first. A "
+                    f"fourth thread does not raise the priority of the first three — it makes "
+                    f"the owner re-triage the same ground. Re-emit this report with "
+                    f"`supersedes` naming the ones it takes over (start with "
+                    f"{obs.get('oldest')!r}), or with `answers` if it replies to one. Nothing "
+                    "was filed.)")
+        if obs.get("unusable"):
+            return (f"OBSERVATION (report REFUSED — `supersedes` names rows that cannot be "
+                    f"taken over: {', '.join(obs['unusable'])}. Each is {obs.get('reason')}. "
+                    "Nothing was filed; re-emit without them.)")
         if obs.get("filed"):
             where = (f"delivered to {obs['target']!r} — it reads this on its next scheduled "
                      "run (no run was started)" if obs.get("target")
                      else "unaddressed, so it goes to triage")
+            took = (f" It TAKES OVER {', '.join(obs['supersedes'])}: they leave triage now and "
+                    f"settle when this one does, so do not route them again."
+                    if obs.get("supersedes") else "")
             return (f"OBSERVATION (report filed as {obs.get('id')}: {obs.get('title')!r} — "
-                    f"{where}. Refer to it by that id if you mention it again. Continue your "
-                    "own task.)")
+                    f"{where}.{took} Refer to it by that id if you mention it again. Continue "
+                    "your own task.)")
         return ("OBSERVATION (report: could NOT write the reports log (I/O error) — the "
                 "report was not filed. Continue your own task; put it in your finish summary "
                 "instead.)")

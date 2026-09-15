@@ -107,7 +107,7 @@ def test_the_rule_linter_rejects_a_bad_block(tmp_path):
 
 
 def test_the_seed_rules_that_declare_assists_are_valid():
-    """The three shipped declarations, checked against the live predicate registry."""
+    """Every shipped declaration, checked against the live predicate registry."""
     declared = {}
     for path in sorted(SEED.glob("*.md")):
         meta = yaml.safe_load(path.read_text(encoding="utf-8").split("---")[1])
@@ -116,14 +116,18 @@ def test_the_seed_rules_that_declare_assists_are_valid():
         if got:
             declared[path.stem] = got
     assert set(declared) == {"error-recovery", "intent-inference", "decision-record",
-                             "git-checkpoint", "ask-policy", "unexamined-is-not-clean"}
+                             "git-checkpoint", "ask-policy", "unexamined-is-not-clean",
+                             "problem-routing"}
     # every moment is exercised by a real rule, and both built payloads with it
     assert {a.moment for rule in declared.values() for a in rule} == set(lib.MOMENTS)
     assert {a.payload for rule in declared.values() for a in rule} == set(lib.PAYLOADS)
-    # …and the migration carries exactly the rules that declare one, or a live library
-    # silently keeps the old text
+    # …and SOME one-shot carries every declaring rule to a live library, or that library
+    # silently keeps the old text (the seed sync is add-only). Two carry them today: the
+    # frontmatter-only batch, and problem-routing's, whose assist shipped beside a prose
+    # revision and so replaces the whole file.
+    from rsched.migrate_problem_routing_rule import SLUG as PROBLEM_ROUTING
     from rsched.migrate_rule_assists import RULES
-    assert set(RULES) == set(declared)
+    assert set(RULES) | {PROBLEM_ROUTING} == set(declared)
 
 
 def test_only_the_rules_a_routine_holds_contribute(tmp_path):
@@ -565,6 +569,15 @@ def test_the_new_predicates_read_the_signals_the_engine_already_keeps():
     assert clean(sit("Reviewed the module. All clear.")) is True
     assert clean(sit("Checked 40 of 46 files — all clear on those.")) is False
     assert clean(sit("Found three defects and fixed them.")) is False
+
+    # D131: the receiving half of problem-routing. `ctx.reports_open` is engine bookkeeping —
+    # the drain fills it, the report handler empties it as each `answers` lands — so this is a
+    # truth test rather than a search: it cannot fire on a run that has already replied.
+    owes = PREDICATES["unclosed-delivered-report"].check
+    loop.ctx.reports_open = []
+    assert owes(Situation(loop=loop)) is False
+    loop.ctx.reports_open = ["R42"]
+    assert owes(Situation(loop=loop)) is True
 
 # --- the library surface --------------------------------------------------------------------
 

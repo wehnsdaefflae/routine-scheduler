@@ -15,6 +15,60 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.345.0] — 2026-09-15
+
+### Added
+
+- **A report can TAKE OVER other reports (`supersedes`), and a sender may not open more than
+  three parallel threads to one owner.** Two long-standing defects with one cause: the ledger
+  had no operation for "these rows are now this thread."
+  - **F492 — routing left the original behind.** Handing a triage row to its owner produced a
+    report that merely NAMED it. The original kept its empty `target`, so the next triage pass
+    called it untriaged and routed it again: R1491/R1496/R1516/R1517/R1519/R1520 were each
+    routed twice inside two days (R1525, then R1558), and the instance's own vitals line read
+    `triage=17` when 13 of those 17 had already been handed off. A `supersedes` list beside
+    `target` now stamps a `superseded` event on each named row: it leaves triage at once and
+    reads its carrier's status from then on — `settled` when the carrier settles, through a
+    chain if the carrier is itself taken over later. First fold wins; a row belongs to exactly
+    one thread.
+  - **D110 — the producer cap now has teeth, and a way through.** Settled 2026-08-31 as a
+    bullet in the `problem-routing` rule ("add your evidence to the OLDEST open one rather than
+    opening another") that named an append the append-only ledger could not perform. Live
+    reports went 28 → 50 in the eleven days after. `file_report` refuses a fourth parallel
+    thread from one sender to one owner and names the open ids oldest-first; a reply
+    (`answers`) and a fold (`supersedes`) are exempt, because both reduce the thread count and
+    capping the way out is how a cap loses a finding.
+- **`problem-routing` gains a pre-finish assist (D131).** A run that was handed work by another
+  routine and is ending without answering it gets one more turn and the rule's operative line.
+  Settled 2026-09-14 as "make filing the closing reply part of the shipping stage of every
+  routine's recipe" — implemented in the rule layer instead of in ~30 recipes, because
+  cross-cutting conduct has ONE library copy and the assist mechanism makes noticing the moment
+  the engine's job. F486 is what it is worth: four COMPLETED fixes sat as the ledger's oldest
+  open rows for eleven days, because a finish summary is not a closure. The predicate reads
+  `ctx.reports_open`, which the inbox drain fills and the report handler empties as each
+  `answers` lands — so it cannot fire on a run that has already replied. Carried across a
+  resume like the telemetry counters.
+
+### Changed
+
+- `readmodels/items.py` sheds its report half to `readmodels/item_reports.py`, and
+  `reports.py` its thread-concentration reads to `report_threads.py` — both were at the
+  ~350-line cap, and both halves answer a different question from what is left.
+- The Messages card renders a fold: a taken-over row links to the thread that carries it, a
+  carrier names the rows it took.
+
+### Migrations
+
+- `migrate_routed_reports` (expires 2026-12-15) folds the four hand-offs already made
+  (R1525/R1558/R1559/R1561) so the first triage pass after the upgrade does not make a third
+  copy of them. The mapping is hard-coded from each carrier's own title, never scanned from its
+  prose: R1559's body names two ids besides the two it routes, and folding those would have
+  silently retired two live items.
+- `migrate_problem_routing_rule` (expires 2026-12-15) carries the rewritten rule to the live
+  library — the seed sync is add-only, so a revision to an existing rule reaches nobody
+  otherwise. It replaces the file only while the live copy is byte-identical to the seed this
+  revision supersedes.
+
 ## [0.344.1] — 2026-09-15
 
 ### Fixed

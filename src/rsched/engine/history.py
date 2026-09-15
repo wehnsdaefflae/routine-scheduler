@@ -228,6 +228,11 @@ def prior_counters(status: dict) -> dict:
         cells = {k: dict(v) for k, v in utils.items() if isinstance(v, dict)}
         if cells:
             out["util_stats"] = cells
+    # Not a counter but the same problem: a run held at its finish owes its senders a reply,
+    # and a resumed leg that forgot which reports it received would finish owing them silently.
+    owed = status.get("reports_open")
+    if isinstance(owed, list):
+        out["reports_open"] = [str(r) for r in owed]
     for fld in _RESUME_COUNTER_FIELDS:
         val = status.get(fld)
         if isinstance(val, int) and not isinstance(val, bool):

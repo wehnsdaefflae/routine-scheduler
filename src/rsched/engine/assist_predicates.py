@@ -160,6 +160,26 @@ def _clean_claim_without_a_denominator(s: Situation) -> bool:
     return not any(ch.isdigit() for ch in summary)
 
 
+def _unclosed_delivered_report(s: Situation) -> bool:
+    """This run was handed work by another routine and is ending without answering it.
+
+    problem-routing's receiving half, and D131's moment (operator 2026-09-14: closing the
+    thread is part of SHIPPING the fix, not of the next audit's bookkeeping). The rule already
+    says it — "a hand-off nobody replied to is not settled, it is lost" — and the ledger
+    measured what saying it was worth: F486 found four COMPLETED fixes sitting as the oldest
+    open rows for eleven days, because a finish summary is not a closure.
+
+    `ctx.reports_open` is the engine's own bookkeeping, not a scan: the drain records what it
+    delivered and the report handler removes each id an `answers` closes. So this fires exactly
+    when the run still owes a reply, and never when it has already sent one. A closure
+    (`closes: true`) is never owed a reply and never enters the list.
+
+    The finish is the only moment this can be said at — after it, the run that did the work is
+    gone and the only thing left that could close the row is a person reading the ledger.
+    """
+    return bool(getattr(s.ctx, "reports_open", None))
+
+
 #: How many unanswered deferred asks make a run's ask policy worth surfacing. Low, because the
 #: rule is about the FIRST reflex to defer rather than about a specific count.
 _ASK_PILEUP = 3
@@ -193,4 +213,7 @@ PREDICATES: dict[str, Predicate] = {
     "clean-claim-without-a-denominator": Predicate(
         moment="pre-finish", check=_clean_claim_without_a_denominator,
         describes="the summary reports all-clear and names no number"),
+    "unclosed-delivered-report": Predicate(
+        moment="pre-finish", check=_unclosed_delivered_report,
+        describes="another routine handed you work this run and you have not answered it"),
 }

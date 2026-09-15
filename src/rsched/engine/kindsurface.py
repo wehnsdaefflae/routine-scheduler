@@ -319,11 +319,17 @@ which it reads on its NEXT SCHEDULED RUN — nothing is started and nobody is in
 `target` out when you cannot name the owner: the report goes to triage and is routed for you. \
 Omitting it is always allowed; guessing wrong sends the work to someone who will bounce it.
 A report addressed to YOU arrives in its own prompt section — act on it, or close it by \
-reporting back to the sender with `answers` set to its id. A reply that completes the \
+reporting back to the sender with `answers` set to its id, IN THIS RUN: once you finish, \
+nothing is left that can close it but a person reading the ledger. A reply that completes the \
 exchange sets `closes: true` so the thread ends settled — without it your answer is itself a \
-new open report waiting for one more reply; a message marked "no reply needed" gets none. Use \
-this for problems you notice in passing, not for your own task's outcome (that belongs in \
-your finish summary)."""),
+new open report waiting for one more reply; a message marked "no reply needed" gets none.
+`supersedes` takes rows OVER: list the report ids this one now carries and they fold into it, \
+leaving triage at once and settling when it settles. That is how you hand someone else's row \
+to its owner (naming it without folding it leaves it exactly where it was, to be routed again \
+next pass) and how you add to a thread you already have open instead of opening a second one. \
+Past a few open threads to one owner a new report is REFUSED and the open ids are named — fold \
+them. Use this for problems you notice in passing, not for your own task's outcome (that \
+belongs in your finish summary)."""),
     (("finish",), """- finish: end the run with status ok|partial|failed and a DETAILED 8-20 \
 line summary: concrete \
 outcomes (numbers, names, links), decisions taken and why, what changed on disk, open ends and \

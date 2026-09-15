@@ -217,6 +217,20 @@ one you are about to touch, not all of them.
   `inbox/`, which its NEXT SCHEDULED RUN drains — it starts no run and wakes nobody. The target
   closes it by reporting back with `answers: "<R id>"`, adding `closes: true` when the reply ends
   the exchange — a closure is born settled; without it the reply is itself a new open report.
+  A report may also TAKE ROWS OVER (`supersedes`, beside `target`): each named row gets a
+  `superseded` event, leaves triage at once and reads the CARRIER's status from then on,
+  through a chain if the carrier is itself folded later (first fold wins — a row is in exactly
+  one thread). That one operation is what routing and consolidating both lacked. Routing used
+  to leave the original untargeted, so every triage pass re-routed work already handed off (six
+  rows twice in two days, F492); and the `problem-routing` rule has told every holder since
+  2026-08-31 to "add your evidence to the OLDEST open one" — an append the append-only ledger
+  could not perform, which is why live reports went 28 → 50 in the eleven days after it shipped.
+  Paired with it, `file_report` REFUSES a fourth parallel thread from one sender to one owner
+  (`report_threads.OPEN_THREAD_CAP`, D110) and names the open ids oldest-first; a reply and a
+  fold are exempt, because both reduce the count and capping the way out is how a cap loses a
+  finding. Closing what you received is the SAME RUN's job, not the next audit's (D131): the
+  `problem-routing` rule carries a `pre-finish` assist that spends one turn on a run ending
+  while `ctx.reports_open` is non-empty.
   Teammates inside one DOMAIN have a lighter channel that is NOT the report ledger (F335,
   `rsched/domainnotes.py`): a member writes `<domain-store>/notes/<sibling>/note-*.json` with an
   ordinary file write and the engine surfaces it in the sibling's state digest at boot, dropping
