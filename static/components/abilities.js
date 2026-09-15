@@ -247,8 +247,14 @@ export function abilitiesPanel(permissions, capabilities, opts = {}) {
       rows.push({ state: dial.state, kind: dial.kind, entity: "policy", control: dial.control });
     }
 
+    // A doc the DOMAIN supplies is held, but not here: this panel saves this routine's own
+    // file, and the domain is unioned back in on the next read — so an ordinary checkbox would
+    // untick, save, and come straight back (F489/F490, the operator's 2026-09-15 report). It
+    // wears the same shape `routine_only` already uses for "held, but not yours to change",
+    // and the head says where it IS changed.
+    const fromDomain = !doc.routine_only && !!doc.inherited;
     const box = el("input", { type: "checkbox", checked: "",
-                              disabled: doc.routine_only ? "" : null });
+                              disabled: (doc.routine_only || fromDomain) ? "" : null });
     box.onchange = () => {
       if (box.checked) { held.add(doc.slug); raiseFor(r); }
       else { held.delete(doc.slug); dropUnsatisfied(); }
@@ -265,11 +271,14 @@ export function abilitiesPanel(permissions, capabilities, opts = {}) {
     const node = el("div", { class: `ability${bad ? ` ${bad}` : ""}`,
                              "data-ability": doc.slug },
       el("label", { class: "ability-head",
-                    title: doc.routine_only ? "only meaningful for scheduled routines" : "" },
+                    title: doc.routine_only ? "only meaningful for scheduled routines"
+                      : fromDomain ? `held through the domain “${doc.inherited}” — `
+                        + "change it in that domain's editor on the Routines page" : "" },
         box,
         el("div", {},
           el("div", { class: "ability-name" }, doc.slug,
-             doc.routine_only ? " (routines only)" : ""),
+             doc.routine_only ? " (routines only)" : "",
+             fromDomain ? el("span", { class: "muted" }, ` from domain “${doc.inherited}”`) : ""),
           effectLine(doc, true)),
         badge),
       rows.length ? el("ul", { class: "ability-stack" }, ...rows.map(stackRow)) : null,

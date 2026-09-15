@@ -275,8 +275,8 @@ def test_saving_permissions_keeps_what_the_domain_covers(tmp_path):
 def test_a_dial_matching_the_domain_is_not_recorded_on_the_routine(tmp_path):
     """The raise/floor pair always emits a concrete dial, so without stripping, a save records
     e.g. `runs: none` nobody chose — and that copy shadows the domain forever, since the
-    routine's own key wins. List members are NOT stripped: they union, so a redundant entry is
-    harmless and keeping it preserves what the user ticked.
+    routine's own key wins. The capability list members are handled by `strip_shared_list`
+    (tested below), which this function leaves alone.
     """
     from rsched.config.domainconfig import strip_shared_dials
 
@@ -291,6 +291,26 @@ def test_a_dial_matching_the_domain_is_not_recorded_on_the_routine(tmp_path):
     assert "runs" not in strip_shared_dials({"runs": "last"}, shared, {"runs": "last"})
     assert strip_shared_dials({"runs": "all"}, shared, {"runs": "all"}) == {"runs": "all"}
     assert strip_shared_dials(caps, {}, submitted) == caps
+
+
+def test_a_list_entry_the_domain_supplies_is_not_recorded_on_the_routine():
+    """The member's panel is built from the EFFECTIVE config, so saving it back verbatim would
+    write every inherited doc into the member's own file — where its own key wins, so the
+    domain could never reach it again (F489). An entry the member ALREADY had of its own
+    survives, or its own choice would vanish merely because the domain agrees with it.
+    """
+    from rsched.config.domainconfig import strip_shared_list
+
+    shared = ["workflow-generation", "shell"]
+    # the panel sends back everything held: the member's own two plus the domain's two
+    sent = ["memory", "shell", "workflow-generation", "global-utils"]
+    # `shell` was already the member's own → kept; `workflow-generation` is the domain's → left
+    assert strip_shared_list(sent, shared, ["memory", "shell", "global-utils"]) == [
+        "memory", "shell", "global-utils"]
+    # with nothing of its own, the member's file records only what the domain does not supply
+    assert strip_shared_list(sent, shared, []) == ["memory", "global-utils"]
+    # no domain: the save is recorded exactly as sent
+    assert strip_shared_list(sent, [], []) == sent
 
 
 # -- the API surface (web/api_domains.py) -----------------------------------------------------

@@ -59,9 +59,10 @@ function inheritedNote(d) {
     el("div", { class: "muted small", style: "margin-top:4px" },
       fields.map((f) => `${INHERIT_LABEL[f] || f} (${d.inherited[f]})`).join(" · ")),
     el("div", { class: "muted small", style: "margin-top:4px" },
-      "The panels show the EFFECTIVE config — what this routine actually runs with. Editing "
-      + "here changes only this routine's own value, which always wins; change the shared part "
-      + "in the domain's editor on the Routines page."));
+      "The panels show the EFFECTIVE config — what this routine actually runs with. Saving "
+      + "here writes only this routine's OWN values, and its own value wins wherever it sets "
+      + "one. What the domain supplies stays the domain's: a permission marked “from domain” "
+      + "cannot be removed here, only in that domain's editor on the Routines page."));
 }
 
 /** The DOMAIN picker (docs/lanes-domains.md): which shared surface this routine is part of —

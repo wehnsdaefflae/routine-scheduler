@@ -15,6 +15,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.344.1] — 2026-09-15
+
+### Fixed
+- **Saving a routine's permissions no longer flattens its domain into the routine's own file.**
+  The permissions panel is built from the EFFECTIVE config, so it posted back the conduct docs
+  and capability list entries the routine's DOMAIN supplies; the save wrote that list verbatim
+  into the member's own `routine.yaml`, where a member's own key always wins — so the domain
+  stopped reaching that routine and no later change to the shared config could arrive. Measured
+  on a real routine: one save copied five inherited docs and three inherited actions down, and
+  effective `runs` widened `none` → `last` from a save whose visible intent was a narrowing.
+  The save now records only what the MEMBER decided (`domainconfig.strip_shared_list`, the
+  list-key counterpart of `strip_shared_dials`), and the response reports `own` and `inherited`
+  separately so it cannot claim to have written what it left to the domain.
+- **A permission held through a domain now says so, instead of offering a control that cannot
+  act.** Such a row was indistinguishable from one the routine holds itself, so unticking it
+  and saving appeared to do nothing — the next read unioned the domain straight back in. The
+  row is now marked *from domain “<name>”*, its checkbox is inactive (the shape already used
+  for "held, but not yours to change"), and it points at the domain's own editor. The D82
+  banner no longer claims that editing here "changes only this routine's own value, which
+  always wins" — false for a permission the routine does not own.
+
 ## [0.344.0] — 2026-09-15
 
 ### Changed — a model's failover chain now follows its fallbacks TRANSITIVELY (R1504, R1492)

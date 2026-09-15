@@ -122,14 +122,30 @@ def permission_layers_detail(server, cfg, *,
     """The two permission layers of a detail payload (shared with conversations): every
     library conduct doc as a toggle row (held ones active; `routine_only` marks the docs a
     conversation greys out), plus the machine-enforced capabilities mapping + its vocabulary.
+
+    A row also says WHERE its state comes from. `cfg.permissions` is the EFFECTIVE list — the
+    domain's shared docs are unioned into it at load (config.routine) — so an inherited doc
+    would otherwise be indistinguishable from one this routine holds itself, and unticking it
+    here could never work: the save writes this routine's own file, and the next read unions
+    the domain straight back in (F489/F490). `inherited` marks exactly those rows, so the panel
+    can send the user to the domain's editor instead of offering a control that cannot act.
     """
     from .. import library_docs
+    from ..config.domainconfig import domain_config_for
 
     all_perms = library_docs.list_docs(server.permissions_home)
     held = set(cfg.permissions)
+    # A DOMAIN's own editor renders this same shape through a stand-in carrying only the two
+    # layers (api_domains._config_layers), and a domain inherits from nothing — so the lookup
+    # is conditional on the caller actually being a routine with a domain.
+    cfg_dir, cfg_domain = getattr(cfg, "dir", None), getattr(cfg, "domain", "")
+    shared, domain_name = (domain_config_for(cfg_dir, cfg_domain)
+                           if cfg_dir is not None and cfg_domain else ({}, ""))
+    from_domain = set(shared.get("permissions") or [])
     permissions = [{"slug": p["slug"], "summary": p["summary"], "effect": p["effect"],
                     "title": p["title"],
                     "requires": p["requires"], "active": p["slug"] in held,
+                    **({"inherited": domain_name} if p["slug"] in from_domain else {}),
                     **({"routine_only": p["slug"] in routine_only}
                        if routine_only is not None else {})}
                    for p in all_perms]

@@ -2060,6 +2060,63 @@ def test_put_permissions_cascades_capabilities(client):
     assert bad.status_code == 422
 
 
+def test_saving_permissions_does_not_flatten_the_domain_into_the_member(client):
+    """F489, reported by the operator 2026-09-15: he unticked `workflow-generation` on a
+    domained routine, pressed save, and the checkbox came back.
+
+    The panel is built from the EFFECTIVE config, so it posts back the docs the DOMAIN
+    supplies too. Writing that verbatim made the member's own file own every inherited doc —
+    and a member's own key always wins, so the domain could never reach it again. Worse, the
+    same save copied the domain's capability lists down and the member's explicit dials went
+    with them (measured: effective `runs` none → last, a WIDENING from a save meant to narrow).
+
+    So the save records only what the MEMBER decided, and the response says which half is
+    which — the untick of an inherited doc is a no-op here, and the payload marks that row
+    inherited so the UI can send the user to the domain's editor instead.
+    """
+    from rsched import domains
+
+    c, tmp = client
+    perms_home = tmp / "library" / "permissions"
+    perms_home.mkdir(parents=True, exist_ok=True)
+    for slug in ("workflow-generation", "memory"):
+        (perms_home / f"{slug}.md").write_text(
+            f"---\ntags: [a, b, c]\n---\n# permission: {slug} — doc\nbody\n", encoding="utf-8")
+    # a domain that supplies one doc and one capability list entry …
+    home = tmp / "routines"
+    did = domains.create(home, name="FAU",
+                         config={"permissions": ["workflow-generation"],
+                                 "capabilities": {"actions": ["detach"]}})["id"]
+    cfg_path = home / "apir" / "routine.yaml"
+    raw = yaml.safe_load(cfg_path.read_text())
+    raw["domain"] = did
+    cfg_path.write_text(yaml.safe_dump(raw), encoding="utf-8")
+
+    # … and a member whose panel therefore shows the inherited doc as held
+    detail = c.get("/api/routines/apir").json()
+    rows = {p["slug"]: p for p in detail["permissions"]}
+    assert rows["workflow-generation"]["active"] is True
+    assert rows["workflow-generation"]["inherited"] == "FAU"      # the row says WHERE from
+    assert "inherited" not in rows["memory"]
+
+    # the client posts back everything it saw held, inherited doc included
+    r = c.put("/api/routines/apir/permissions",
+              json={"active": ["memory", "workflow-generation"], "capabilities": {}})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["own"] == ["memory"]                     # only what the member decided
+    assert body["inherited"] == ["workflow-generation"]  # …and what it did not (R102 honesty)
+    assert body["active"] == ["memory", "workflow-generation"]   # the EFFECTIVE state, unchanged
+    saved = yaml.safe_load(cfg_path.read_text())
+    assert saved["permissions"] == ["memory"]            # the domain stayed the domain's
+    assert "detach" not in (saved["capabilities"].get("actions") or [])
+
+    # and the untick of an inherited doc changes nothing here — it is the domain's to remove
+    r2 = c.put("/api/routines/apir/permissions", json={"active": ["memory"], "capabilities": {}})
+    assert r2.status_code == 200
+    assert yaml.safe_load(cfg_path.read_text())["permissions"] == ["memory"]
+
+
 def test_patch_routine_applies_permissions_through_the_canonical_resolve(client):
     """D132/F482: a decision's config_patch may carry `permissions`/`capabilities`, and the
     PATCH routes them to the permissions surface's own two-layer resolve instead of the generic

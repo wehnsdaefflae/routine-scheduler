@@ -99,6 +99,32 @@ def strip_shared_dials(caps: dict, shared_caps: dict, submitted: dict) -> dict:
                     and (k not in submitted or submitted[k] == shared_caps[k]))}
 
 
+def strip_shared_list(values: list, shared_values: list, own_before: list) -> list:
+    """Drop entries a member's DOMAIN already supplies — the list-key counterpart of
+    `strip_shared_dials`, applied on the same save path.
+
+    A member's panel is built from the EFFECTIVE config, in which the domain's contributions
+    are indistinguishable from the member's own (both are simply "held"). Saving that panel
+    back verbatim therefore writes every inherited entry into the member's own file, where a
+    member's own key always wins — so the domain stops reaching this routine and a later
+    change to the shared config can never arrive. That is a silent flattening of the layer,
+    from a save whose visible intent was unrelated.
+
+    An entry is kept when the member ALREADY had it in its own file, so a genuine overlap
+    between a member's choice and its domain's floor survives the round trip: the member
+    chose it, and dropping it here would be the mirror defect (its own value disappearing
+    because the domain happens to agree).
+
+    Removing an inherited entry is NOT expressible here, and deliberately so: the domain is a
+    floor (`apply_shared_config`), so that removal belongs in the domain's own editor. The
+    caller is responsible for telling the user which entries are inherited, or the control
+    silently does nothing instead of silently doing too much.
+    """
+    keep = set(own_before)
+    shared_set = set(shared_values)
+    return [v for v in values if v not in shared_set or v in keep]
+
+
 def _merge_capabilities(own: dict, shared: dict) -> tuple[dict, int]:
     """capabilities: union the list members, member wins on the dials. Returns (merged, n)
     where n counts what the domain actually contributed — a dial the member already set is

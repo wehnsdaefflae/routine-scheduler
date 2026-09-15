@@ -147,20 +147,42 @@ def set_permissions(request: Request, slug: str, body: PermissionsBody) -> dict:
     # D82: permissions this routine holds through its DOMAIN count for the floor, or saving
     # here would strip every capability the domain supplies and write an explicit "off" that
     # then shadows it (a routine's own key always wins over the domain's).
-    from ..config.domainconfig import domain_config_for, strip_shared_dials
+    from ..config.domainconfig import domain_config_for, strip_shared_dials, strip_shared_list
     shared, _ = domain_config_for(info.cfg.dir, info.cfg.domain)
+    inherited_docs = list(shared.get("permissions") or [])
     active, caps = resolve_permission_layers(server, body, info.cfg.capabilities or {},
-                                             inherited=list(shared.get("permissions") or []))
+                                             inherited=inherited_docs)
     # …and record only what DIFFERS from the domain, or the concrete dial the floor always
     # emits would shadow it and no later domain change could reach this routine.
     caps = strip_shared_dials(caps, shared.get("capabilities") or {}, body.capabilities or {})
     path = info.cfg.dir / "routine.yaml"
     raw = read_yaml(path, {})
-    raw["permissions"] = active
+    # The panel is built from the EFFECTIVE config, so what it sends back includes everything
+    # the DOMAIN supplies. Writing that verbatim would make this routine's own file own every
+    # inherited doc and list entry — and a member's own key always wins, so the domain would
+    # never reach it again (F489: one save on a domained routine flattened five inherited docs
+    # and three inherited actions into its file, and widened `runs` none → last on the way).
+    # So the file records only what the MEMBER decided: the domain's contributions are left to
+    # the domain, while an entry the member already had of its own survives the round trip.
+    own_before = raw.get("permissions") if isinstance(raw.get("permissions"), list) else []
+    own_active = strip_shared_list(active, inherited_docs, own_before)
+    caps_before = raw.get("capabilities") if isinstance(raw.get("capabilities"), dict) else {}
+    shared_caps = shared.get("capabilities") or {}
+    for key, val in list(caps.items()):
+        if isinstance(val, list) and isinstance(shared_caps.get(key), list):
+            before = caps_before.get(key)
+            caps[key] = strip_shared_list(val, shared_caps[key],
+                                          before if isinstance(before, list) else [])
+    raw["permissions"] = own_active
     raw["capabilities"] = caps
     atomic_write_yaml(path, raw)
-    _git_commit(info.cfg.dir, f"permissions: {', '.join(active) or '(none)'}")
-    return {"ok": True, "active": active, "capabilities": caps}
+    _git_commit(info.cfg.dir, f"permissions: {', '.join(own_active) or '(none)'}")
+    # Report both halves rather than the merged list (R102): a client that sent a doc which is
+    # the DOMAIN's cannot be told it was saved here, because it was not — the effective state
+    # is `active`, but only `own` is what this file now holds.
+    return {"ok": True, "active": active, "own": own_active,
+            "inherited": [p for p in inherited_docs if p not in own_active],
+            "capabilities": caps}
 
 
     #                                          dir unlocks recipe self-edit — the improver's lever)
