@@ -100,15 +100,34 @@ ways in:
 ssh -N -L 6080:127.0.0.1:6080 mark@192.168.0.128
 ```
 
-then open `http://127.0.0.1:6080/vnc.html` and click Connect. Or, to reach it from a phone the
-way the console is already reached, publish it on the tailnet:
+then open `http://127.0.0.1:6080/vnc.html` and click Connect. That works from the machine with
+the tunnel and nowhere else, which is fine for a one-off login and useless for a run that needs
+to TELL someone where to look.
+
+### One address that works from everywhere (D133)
+
+The console is already fronted by the tailnet proxy (`deploy/DOCKER.md`, "HTTPS via
+Tailscale"). Put the browser's screen behind **that same proxy**, on a path, instead of giving
+it a second port and a second address to remember:
 
 ```bash
-docker exec tailscale tailscale serve --bg --https=8443 http://127.0.0.1:6080
+docker exec tailscale tailscale serve --bg --set-path /browser http://127.0.0.1:6080
+docker exec tailscale tailscale serve status        # confirms both mounts
 ```
 
-which serves it at `https://ubuntuserver.taild5768c.ts.net:8443/vnc.html`, tailnet-only. That
-is persistent configuration on the tailnet — set it deliberately, not as a side effect.
+The screen is then at `https://<node>.<tailnet>.ts.net/browser/vnc.html` — the same origin,
+certificate and tailnet-only reach as the console itself, from a phone as readily as from the
+desk. One address, no tunnel, nothing published to the LAN.
+
+This is deliberate, persistent tailnet configuration and it is the OPERATOR's to run: the
+`tailscale` container is host infrastructure, not something an engine run reconfigures. Undo
+the browser mount alone with
+`docker exec tailscale tailscale serve --set-path /browser off`.
+
+**What a run may claim about it.** Only what is configured. There is no API that reports the
+public address, so a run that needs to hand a person a link must be TOLD the base URL rather
+than construct one — see the note in `docs/browser-sessions.md` above about `--https=8443`,
+which was the older, second-address form and is superseded by the path mount here.
 
 Sign in to each site normally. Choose "stay signed in" where offered. Nothing else is needed:
 the profile is written as you go.
