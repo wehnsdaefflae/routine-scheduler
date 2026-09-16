@@ -13,6 +13,7 @@ import json
 
 from ..endpoints import failover
 from ..endpoints.base import EndpointError
+from ..health_events import log_health_event
 from . import refusal
 from .window import _shrink_window_to_provider, apply_media_fallback
 
@@ -149,6 +150,39 @@ def _handle_empty(loop, completion, chain, ref,
         # behavior — remaining attempts run schema-free
     return None
 
+def _log_chain_exhausted(loop, chain, failed_ref, exc: EndpointError) -> None:
+    """A role's WHOLE chain is gone — every member failed hard or is cooling (F491).
+
+    The run itself already records this: the turn raises and the finish names the endpoint
+    failure. What nothing records is the FLEET fact. A cooling primary is survivable per
+    run — the chain absorbs it and the run finishes `ok` — so the tax is paid in wall-clock
+    and tokens and shows up in no health signal at all. On 2026-09-16, 11 of 13 fleet runs
+    opened with "All credentials for model gpt-6-astra are cooling down"; every one finished
+    `ok` and the health stream was empty. That is the same reason `cache_read_degraded` and
+    `model_window_corrected` exist: an engine-side fact emitted precisely because nothing
+    else shows it.
+
+    The chain HEAD is the interesting key, not the member that happened to fail last: it is
+    what a sweep groups by to answer "which model is burning the fleet's time, and since
+    when". Both ride as structured fields rather than prose, per the F422 lesson — a
+    question that has to be answerable by a filter must not live in `detail`.
+
+    Best-effort by construction: health logging never blocks a run, and this seam is already
+    handling a failure.
+    """
+    head = chain[0][1] if chain else failed_ref
+    ctx = loop.ctx
+    log_health_event(
+        ctx.server.routines_home, "model_chain_exhausted",
+        routine=getattr(ctx.routine, "slug", "") or "",
+        run_id=getattr(ctx, "run_id", "") or "",
+        detail=(f"every model in {head.name or head.model}'s fallback chain failed or is "
+                f"cooling; last was {failed_ref.name or failed_ref.model}: {str(exc)[:200]}"),
+        model=head.name or head.model,
+        last_model=failed_ref.name or failed_ref.model,
+        cooldown_s=failover.COOLDOWN_S)
+
+
 def _switch_to_fallback(loop, chain, failed_ref, exc: EndpointError):
     """The picked model failed hard mid-turn (its adapter's transport retries are already
     exhausted, or it kept returning empty completions). Advance to the next chain member
@@ -163,6 +197,7 @@ def _switch_to_fallback(loop, chain, failed_ref, exc: EndpointError):
     failover.mark_failed(failed_ref.endpoint, failed_ref.model)
     nxt = failover.next_after(chain, failed_ref)
     if nxt is None:
+        _log_chain_exhausted(loop, chain, failed_ref, exc)
         return None
     _, n_ref = nxt
     loop.ctx.transcript.event("error", {

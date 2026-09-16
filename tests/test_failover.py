@@ -399,3 +399,38 @@ def test_classifier_refusal_with_harness_never_hands_it_the_turn(make_routine, m
     assert turns[0]["usage"]["model"] == "epB/m-b"
     status_json = _json.loads((run_dir / "status.json").read_text(encoding="utf-8"))
     assert status_json["referrals"] == 0
+
+
+def test_chain_exhaustion_reaches_the_health_stream(make_routine, monkeypatch):
+    """F491: a run whose whole chain is cooling still finishes — the retry tax is paid in
+    wall-clock and tokens and recorded NOWHERE a health sweep can see. On 2026-09-16, 11 of
+    13 fleet runs opened with "All credentials for model gpt-6-astra are cooling down" and
+    every one finished `ok`, so every health signal read clean. The transcript names the
+    switch per run; nothing aggregates it. This is the same class as `cache_read_degraded`
+    and `model_window_corrected` — an engine-side fact emitted precisely because nothing
+    else shows it.
+    """
+    import json as _json
+
+    d = make_routine("exhausted-health")
+    server = _catalog_server(d.parent)
+    _wire(monkeypatch, server, {
+        "epA": [EndpointError("epA is down")],
+        "epB": [EndpointError("epB is down too")]})
+    status, _run_dir = run_routine(d, server, run_ts=TS)
+    assert status == "failed"
+
+    stream = d.parent / ".control" / "health-events.jsonl"
+    lines = stream.read_text(encoding="utf-8").splitlines() if stream.exists() else []
+    events = [e for e in (_json.loads(ln) for ln in lines if ln.strip())
+              if e.get("event") == "model_chain_exhausted"]
+    assert events, (
+        "a chain exhaustion emitted no health event — the one signal that would make the "
+        "fleet's cooldown tax visible to an audit sweep")
+    ev = events[-1]
+    assert ev["routine"] == "exhausted-health"
+    # the two models are STRUCTURED fields, not prose: "which model is burning the fleet's
+    # time, and since when" has to be answerable by a filter (the F422 lesson).
+    assert ev["model"] == "prime"
+    assert ev["last_model"] == "backup"
+    assert "epB is down too" in ev["detail"]

@@ -4,7 +4,7 @@ Writes to <routines_home>/.control/health-events.jsonl. Each line is a JSON obje
 {"ts": <iso>, "event": "run_failed"|"budget_exhausted"|"run_partial"|"orphaned_run"
         |"run_canceled"|"oversize_state_file"
         |"wizard_build_degraded"|"fire_refused"|"model_window_corrected"
-        |"cache_read_degraded"
+        |"cache_read_degraded"|"model_chain_exhausted"
         |"lane_chain_done"|"lane_chain_stopped"|"lane_chain_member_skipped"
         |"lane_fire_refused"|"lane_fire_catchup"|"scheduler_tick_error",
  "routine": <slug>, "run_id": <id>, "detail": <str>}
@@ -40,6 +40,16 @@ because NOTHING ELSE shows it: the reads stay (the static prefix still hits), th
 count FALLS, and the cost is carried by a subscription's weighting rather than a visible
 bill — which is how September 2026 ran four days that way and burned a weekly limit.
 An endpoint reporting no cache traffic at all is silent, not degraded.
+
+model_chain_exhausted: a role's WHOLE fallback chain was unusable mid-turn — every member
+failed hard or was cooling (engine/degrade.py, F491). Carries `model` (the chain HEAD, the
+key a sweep groups by), `last_model` (the member that failed last) and `cooldown_s` as
+structured fields. It exists for the same reason cache_read_degraded does: the per-run cost
+of a cooling primary is INVISIBLE. The chain absorbs it, the run finishes `ok`, and the tax
+is paid in wall-clock and tokens that no signal reports — on 2026-09-16, 11 of 13 fleet runs
+opened with "All credentials for model gpt-6-astra are cooling down", all 13 finished ok,
+and the health stream held one unrelated event. A single event is one provider hiccup; a run
+of them on one `model` is a primary that is not serving the fleet.
 
 model_window_corrected: a completion 400'd with a context-overflow whose provider-stated
 maximum is SMALLER than the catalog entry's configured window — the config lies, the

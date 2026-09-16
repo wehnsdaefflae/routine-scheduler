@@ -129,6 +129,26 @@ Per-turn detail lives in each run's `llm-tasks.jsonl` sidecar: a healthy run's `
 GROWS turn over turn; a broken one has it PINNED at the static prefix while `cache_write`
 tracks the conversation.
 
+## A cooling primary model (`model_chain_exhausted`)
+
+The same shape of invisible cost, in the model layer. A catalog model's `fallbacks:` chain
+makes a cooling primary SURVIVABLE per run — the turn fails over, the run finishes `ok`, and
+the extra wall-clock and tokens are charged to nobody's report. So the fleet can spend its
+busiest hours on its second-choice model and every health signal reads clean.
+
+Measured on 2026-09-16: 11 of 13 fleet runs opened with `All credentials for model
+gpt-6-astra are cooling down` (81 errors across the fleet); all 13 finished `ok`, and the
+health stream for that window held exactly one event, about an unrelated oversize file.
+
+- `engine/degrade.py` emits `model_chain_exhausted` when a role's WHOLE chain is unusable
+  mid-turn — every member failed hard or is cooling. It carries `model` (the chain HEAD),
+  `last_model` (the member that failed last) and `cooldown_s` as structured fields, so a
+  sweep can group by the primary rather than parse prose.
+- Read it by the HEAD, not by the count: one event is a provider hiccup, while a run of them
+  sharing one `model` is a primary that is not serving the fleet. The per-run transcript
+  `error` event with its `failover` payload stays the record of which model served a given
+  turn; this is the fleet-level aggregate that no per-run artifact can give you.
+
 ## Follow-ups
 
 - Auto-revert by the routine-improver (act on the flag instead of just raising it) is
