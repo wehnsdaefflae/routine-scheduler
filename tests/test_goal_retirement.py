@@ -186,7 +186,13 @@ def test_approving_writes_enabled_false_through_the_one_config_writer(api_client
     r = c.post(f"/api/pending-creations/{rec['id']}/materialize")
     assert r.status_code == 200, r.text
     assert r.json()["retired"] == "retire-me"
-    assert yaml.safe_load((d / "routine.yaml").read_text(encoding="utf-8"))["enabled"] is False
+    # F448: retirement still goes through the one config writer; what changed is WHERE the
+    # off switch lands. The writer translates `enabled` at the edge into the schedule gate
+    # the firing path actually reads, instead of a top-level key nothing consults — so a
+    # retired routine is now switched off in fact, not only on paper.
+    raw = yaml.safe_load((d / "routine.yaml").read_text(encoding="utf-8"))
+    assert raw["schedule"]["disabled"] is True
+    assert "enabled" not in raw
     assert pending.load_all(d.parent) == []
 
 
