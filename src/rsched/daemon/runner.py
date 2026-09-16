@@ -118,6 +118,9 @@ class Runner:
         """Queue a run unless one is already active for this routine. The subprocess is
         spawned only once a concurrency slot is held. Returns the run_id.
         """
+        if not cfg.enabled:
+            log.info("fire_refused_disabled routine=%s reason=%s", cfg.slug, reason)
+            return None
         if self.draining:
             log.info("fire_refused_draining routine=%s reason=%s", cfg.slug, reason)
             self._log_refused_scheduled_fire(cfg, reason, "draining")

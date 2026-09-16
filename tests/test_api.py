@@ -199,7 +199,10 @@ def test_patch_routine_and_409_guard(client):
     r = c.patch("/api/routines/apir", json={"enabled": False, "schedule": {"cron": "0 9 * * 2"}})
     assert r.status_code == 200
     raw = yaml.safe_load((tmp / "routines" / "apir" / "routine.yaml").read_text())
-    assert raw["enabled"] is False and raw["schedule"]["cron"] == "0 9 * * 2"
+    # F448: `enabled` is translated to its inverse at the edge — the firing gate reads
+    # `schedule.disabled` alone, so the old bare `enabled:` key is no longer written.
+    assert raw["schedule"]["disabled"] is True and raw["schedule"]["cron"] == "0 9 * * 2"
+    assert "enabled" not in raw
     assert raw["schedule"]["tz"] == "Europe/Berlin"  # merged, not replaced
     _mk_run(tmp / "routines", "apir", "20260708-090000", "running")
     # config saves are allowed DURING a run (D35): the engine reads routine.yaml at run
@@ -207,7 +210,7 @@ def test_patch_routine_and_409_guard(client):
     # their 409 — stages/ ARE read mid-run.
     assert c.patch("/api/routines/apir", json={"enabled": True}).status_code == 200
     assert yaml.safe_load(
-        (tmp / "routines" / "apir" / "routine.yaml").read_text())["enabled"] is True
+        (tmp / "routines" / "apir" / "routine.yaml").read_text())["schedule"]["disabled"] is False
     # D40 pin (2026-07-24): connection bindings and grant-decision rows are exactly the
     # saves a user makes WHILE a bootstrap run waits on them — they must never 409.
     assert c.patch("/api/routines/apir",
