@@ -179,12 +179,31 @@ def _apply_resource_fields(raw: dict, updates: dict) -> None:
                                                  for p in vals):
                 raise HTTPException(400, f"{roots_key}: must be a list of non-empty path strings")
             updates[roots_key] = [p.strip() for p in vals]
+    # F448: `enabled` is the OLD spelling of "does this routine fire", kept because the
+    # dashboard's D72 start/pause toggle PATCHes it. The firing gate reads `schedule.disabled`
+    # alone, so without this the key fell through the generic merge below and wrote a bare
+    # `enabled:` nothing reads — while `updated` still reported it applied (R102: a key an
+    # endpoint silently ignores must never read as success). Translate it at the edge; the
+    # rest of the codebase knows only `schedule.disabled`.
+    if "enabled" in updates:
+        on = updates.pop("enabled")
+        if not isinstance(on, bool):
+            raise HTTPException(400, "enabled must be a boolean")
+        raw.setdefault("schedule", {})["disabled"] = not on
+        raw.pop("enabled", None)
     if "schedule" in updates:
         sched_patch = updates.pop("schedule") or {}
         raw.setdefault("schedule", {})
+        if "disabled" in sched_patch:
+            if not isinstance(sched_patch["disabled"], bool):
+                raise HTTPException(400, "schedule.disabled must be a boolean")
+            raw.pop("enabled", None)
         if "friendly" in sched_patch:
             try:
-                cron = schedule.friendly_to_cron(sched_patch.pop("friendly"))
+                friendly = sched_patch.pop("friendly")
+                cron = schedule.friendly_to_cron(friendly)
+                raw["schedule"]["disabled"] = friendly.get("frequency") == "disabled"
+                raw.pop("enabled", None)
             except ValueError as exc:
                 raise HTTPException(400, f"invalid schedule: {exc}") from exc
             raw["schedule"].update(cron=cron, tz=schedule.server_tz())
