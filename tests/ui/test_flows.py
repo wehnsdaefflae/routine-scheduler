@@ -914,10 +914,11 @@ def test_routine_page_saves(ui, ui_page):
 
     # schedule: saves in place — the page must NOT reload (marker survives)
     ui_page.evaluate("window.__no_reload = true")
-    # by LABEL, not position — the weekly day-set toggles (F347) put seven checkboxes
-    # ahead of "enabled" whenever the schedule is weekly (the fixture cron is)
+    # F448: switching a routine off is a SCHEDULE state, not a separate checkbox beside the
+    # cadence — the select's leading "Disabled" choice is the off switch, and it is what the
+    # save must write to schedule.disabled.
     ui_page.locator(".panel", has=ui_page.get_by_role("button", name="save schedule")) \
-        .get_by_label("enabled", exact=True).uncheck()   # enabled off
+        .locator("div.row > select").first.select_option("disabled")   # off
     ui_page.get_by_role("button", name="save schedule").click()
     expect(_toast(ui_page)).to_contain_text("schedule saved")
     ui_page.wait_for_timeout(600)   # the old reload fired at 400ms — outlive it
@@ -928,7 +929,10 @@ def test_routine_page_saves(ui, ui_page):
     assert raw["description"] == "A sharper description.\nnow spanning two lines."
     assert raw["budgets"]["max_turns"] == 42
     assert raw["tags"] == ["nightly"]
-    assert raw["enabled"] is False
+    # F448: the off switch lands in the schedule the firing gate actually reads, and the dead
+    # top-level `enabled` key is gone rather than written beside it.
+    assert raw["schedule"]["disabled"] is True
+    assert "enabled" not in raw
     assert "deliberation" not in raw   # tuning, not config — it lands in tuning.yaml
     tuning = yaml.safe_load(
         (ui.routine_dir("uir") / "tuning.yaml").read_text(encoding="utf-8"))
@@ -1580,7 +1584,11 @@ def test_dashboard_list_default_lane_rows_and_inline_pause(ui, ui_page):
     expect(row).to_be_visible(timeout=10_000)          # the dimmed row…
     expect(row.locator(".chip.disabled", has_text="off")).to_be_visible()   # …and the off tag
     cfg = yaml.safe_load((ui.routines / "uir" / "routine.yaml").read_text(encoding="utf-8"))
-    assert cfg["enabled"] is False
+    # The inline control still PATCHes `enabled` — that is the row's vocabulary and it is
+    # unchanged. F448 is about where it LANDS: the server translates it into the schedule gate
+    # the firing path reads, instead of a top-level key nothing consults.
+    assert cfg["schedule"]["disabled"] is True
+    assert "enabled" not in cfg
     # …and resumes from the same control
     ui_page.locator("table.list tbody tr", has_text="Test uir").last \
         .get_by_role("button", name="▷").click()

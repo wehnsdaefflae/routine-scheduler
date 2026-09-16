@@ -569,7 +569,15 @@ def test_a_lane_suppressed_cron_can_actually_be_cleared(ui, ui_page):
 
     row = _row(ui_page, ui, "schedule:cron")
     _lands_on(ui_page, row.locator(CONTROL).first, SCHED_CLEAR)
-    expect(ui_page.locator(SCHED_FREQ)).to_be_disabled()   # the state the row is complaining of
+    # The state the row is complaining of: the lane owns the cadence, so the select offers no
+    # cadence to pick — only "Lane managed" plus the Disabled escape (F448), which switches the
+    # routine off WITHOUT rewriting the cron the lane suppresses. It is therefore no longer
+    # `disabled` as an element; what makes the cron unclearable from here is the absent cadence.
+    freq = ui_page.locator(SCHED_FREQ)
+    expect(freq).to_have_value("lane-managed")
+    assert sorted(freq.locator("option").all_text_contents()) == ["Disabled", "Lane managed"], (
+        "a lane member's cadence select must offer only the lane-managed state and the "
+        f"Disabled escape: {freq.locator('option').all_text_contents()}")
 
     clear = ui_page.locator(SCHED_CLEAR)
     _operable(clear, "clear a cron the lane suppresses")
