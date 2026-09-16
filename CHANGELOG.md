@@ -15,6 +15,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.347.0] — 2026-09-16
+
+### Changed
+
+- **A reaped run now records WHY its process is gone** (F480). The boot reap knew one fact —
+  the pid is gone — and reported a second one it had never established: every orphan was
+  written `orphaned by daemon restart`. A container stop, a crash, an OOM during a long gate
+  and a deploy replacing code under a running process all wore that sentence, and three
+  separate investigations (F480, R1501, R1515) went looking for a broken drain that was never
+  broken. Close-out health events now carry a structured `cause` field — `user_abort`,
+  `oom_kill` (rc=-9), `signal_kill`, `engine_crash`, `no_finish`, `daemon_restart`, `unknown` —
+  so "what killed these runs?" is answerable by a filter rather than by reading prose, the way
+  `rc` and `vm_hwm_kb` made the signal question answerable (F422).
+- **A deliberate shutdown leaves a breadcrumb** (`.control/shutdown.mark`, written by
+  `restart.trigger_shutdown`) that the next boot's reap reads *and consumes*, so
+  `daemon_restart` is evidence rather than an assumption and a later crash cannot inherit it.
+  Absent a mark the reap records `unknown` — the honest reading, and a deliberately visible
+  one: filtering for it asks what killed those runs instead of reporting a defect.
+
 ## [0.346.0] — 2026-09-16
 
 ### Changed
