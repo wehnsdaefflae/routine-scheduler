@@ -23,3 +23,4 @@ audit/
 
 # host-specific resource ceilings (see file header)
 docker-compose.override.yml
+.audit-wt/
