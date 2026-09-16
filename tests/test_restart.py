@@ -78,7 +78,11 @@ def test_scheduler_keeps_scheduling_then_restarts_when_idle(tmp_path, monkeypatc
     runner = Runner(server, EventBus())
     sched = Scheduler(server, runner, EventBus())
     triggered = []
-    monkeypatch.setattr(restart, "trigger_shutdown", lambda: triggered.append(True))
+    # F480: the shutdown is handed the server so it can leave the breadcrumb the next boot's
+    # orphan reap reads. Recording the argument is what proves the wiring — a stub that merely
+    # tolerated it would pass just as happily if the daemon stopped marking its exits.
+    monkeypatch.setattr(restart, "trigger_shutdown",
+                        lambda srv=None, reason="": triggered.append(srv))
     monkeypatch.setattr(restart, "RESTART_IDLE_S", 0)       # fire the instant it is idle
 
     # no request → normal scheduling, not draining
@@ -95,7 +99,7 @@ def test_scheduler_keeps_scheduling_then_restarts_when_idle(tmp_path, monkeypatc
     # the run finishes → nothing active, idle window elapsed → restart: shutdown signalled, sentinel cleared
     monkeypatch.setattr(runner, "active_states", list)
     assert sched._maybe_restart() is True
-    assert triggered == [True]
+    assert triggered == [server]        # the exit was handed the server → it can mark itself
     assert sched._shutting_down is True
     assert restart.restart_requested(server) is False
 
@@ -106,7 +110,7 @@ def test_scheduler_waits_out_the_idle_window_before_restarting(tmp_path, monkeyp
     runner = Runner(server, EventBus())
     sched = Scheduler(server, runner, EventBus())
     monkeypatch.setattr(restart, "trigger_shutdown",
-                        lambda: (_ for _ in ()).throw(AssertionError("restarted before the idle window")))
+                        lambda *a, **k: (_ for _ in ()).throw(AssertionError("restarted before the idle window")))
     p = restart.sentinel_path(server)
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text("{}")
@@ -122,7 +126,7 @@ def test_scheduler_defers_restart_while_parked(tmp_path, monkeypatch):
     runner = Runner(server, EventBus())
     sched = Scheduler(server, runner, EventBus())
     monkeypatch.setattr(restart, "trigger_shutdown",
-                        lambda: (_ for _ in ()).throw(AssertionError("must not restart while parked")))
+                        lambda *a, **k: (_ for _ in ()).throw(AssertionError("must not restart while parked")))
     p = restart.sentinel_path(server)
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text("{}")

@@ -9,8 +9,10 @@ auto-resumed ONCE from a marker, because a kernel kill is not the run's fault an
 retry loop would be worse than either (D99/F348). A run that finished while a user message was
 still queued gets resumed rather than leaving the message stranded. Config edits refused while
 the run was active are applied here, at the only moment the two-writer race is impossible. And
-`recover_orphans` handles the daemon restart: a run whose pid is gone but whose status still
-claims it is alive.
+`recover_orphans` handles the boot case: a run whose pid is gone but whose status still claims
+it is alive. It used to call that "the daemon restart" and write the same sentence into every
+such run — an assumption the code was in no position to make, since a container stop, a crash
+and an OOM arrive identically. It now reads the cause instead (F480).
 """
 
 from __future__ import annotations
@@ -54,7 +56,8 @@ def reap(runner, run: ActiveRun, cfg: RoutineConfig, stderr: bytes) -> None:
                         f"({stderr.decode('utf-8', 'replace')[-400:].strip() or 'no stderr'}"
                         f"{hwm_note})",
                         event="run_canceled" if run.user_cancel else "orphaned_run",
-                        rc=rc, vm_hwm_kb=hwm)
+                        rc=rc, vm_hwm_kb=hwm,
+                        cause=classify_cause(rc, user_cancel=run.user_cancel))
         info = registry.read_run(run.run_dir, run.slug)
         if rc == -9 and not run.user_cancel:
             retry_sigkilled(runner, run, cfg, hwm)
@@ -175,9 +178,36 @@ def apply_pending_edits(runner, cfg: RoutineConfig, slug: str) -> None:
                         r.get("kind"), slug, r.get("error"))
 
 
+def classify_cause(rc: int | None, *, user_cancel: bool = False) -> str:
+    """Name WHY a run's process is gone, from the exit status the reap already has (F480).
+
+    The live reap reads `rc` and then threw the distinction away: every death became
+    `orphaned_run` with the number buried in prose, so "did anything die by signal in this
+    window?" was not a question the stream could answer. The vocabulary is deliberately small
+    and each member is a different investigation:
+
+      user_abort     — a person asked for it; nothing to diagnose.
+      oom_kill       — SIGKILL (rc=-9), the kernel-OOM signature (D99/F348).
+      signal_kill    — died on some other signal: a supervisor stop, a deploy, a manual kill.
+      engine_crash   — exited non-zero on its own; the traceback is the lead.
+      no_finish      — exited CLEANLY yet wrote no finish, which is an engine defect.
+      unknown        — rc was never observed (the boot path); honest, and filterable.
+    """
+    if user_cancel:
+        return "user_abort"
+    if rc is None:
+        return "unknown"
+    if rc == -9:
+        return "oom_kill"
+    if rc < 0:
+        return "signal_kill"
+    return "engine_crash" if rc else "no_finish"
+
+
 def close_out(runner, run_dir: Path, run_id: str, message: str, *,
                event: str = "orphaned_run", rc: int | None = None,
-               vm_hwm_kb: int | None = None, status: str = "failed") -> None:
+               vm_hwm_kb: int | None = None, status: str = "failed",
+               cause: str | None = None) -> None:
     """Append a synthetic finish to a dead run (single writer: the engine is gone).
     `event` names the health-stream entry: orphaned_run for a crash/dead pid,
     run_canceled when the death was a user-requested abort (F188) — same payload shape.
@@ -186,6 +216,11 @@ def close_out(runner, run_dir: Path, run_id: str, message: str, *,
     (F422): the two events differ by who asked for the death, not by how the process died,
     so "was this a signal kill?" is only answerable from the exit status. An orphan
     recovered at boot has no process left to report on and passes neither.
+
+    `cause` names WHY the process is gone and is the field F480 exists for. Left unset it is
+    derived from `rc` by `classify_cause`, which is right for every live-reap caller; the boot
+    reap passes it explicitly because it has no rc and must not let a derived default speak
+    for evidence it does not have.
 
     `status` is the TERMINAL STATE to record, and it is not always `failed` (R1512/R1514).
     A run the daemon itself killed by restarting did not fail — nothing about the routine or
@@ -210,20 +245,57 @@ def close_out(runner, run_dir: Path, run_id: str, message: str, *,
     atomic_write(run_dir / "result.md", message + "\n")
     log_health_event(runner.server.routines_home, event,
                      routine=run_id.split(":", maxsplit=1)[0] if ":" in run_id else run_id,
-                     run_id=run_id, detail=message[:500], rc=rc, vm_hwm_kb=vm_hwm_kb)
+                     run_id=run_id, detail=message[:500], rc=rc, vm_hwm_kb=vm_hwm_kb,
+                     cause=cause if cause is not None else classify_cause(rc))
 
 
 def recover_orphans(runner, catalog: dict[str, registry.RoutineInfo]) -> int:
-    """At boot: any run dir claiming to be alive whose pid is dead gets closed out."""
+    """At boot: any run dir claiming to be alive whose pid is dead gets closed out.
+
+    The boot reap knows ONE fact — the pid is gone — and until F480 it reported a second one
+    it had never established: every orphan was written as "orphaned by daemon restart". A
+    container stop, a crash, an OOM during a long gate and a deploy replacing code under a
+    running process all wear that sentence, and three separate investigations (F480, R1501,
+    R1515) went looking for a broken drain because of it. The drain was never broken.
+
+    So the cause is now READ rather than assumed, from the breadcrumb a deliberate shutdown
+    leaves (`restart.read_shutdown_mark`), and it rides out as a structured `cause` field:
+    `daemon_restart` when the mark says this exit was asked for, `unknown` when nothing
+    established why the process is gone. `unknown` is the honest majority case and it is
+    meant to be visible — an audit filtering for it is asking "what killed these runs?",
+    which is a question the stream could not previously be asked at all.
+    """
+    from . import restart
+    # Read the mark LAZILY, at the first orphan. The boot path runs on every daemon start,
+    # almost always with nothing to reap, and reading it eagerly would both consume a
+    # breadcrumb no orphan needed and demand `runner.server` from every caller — including
+    # the scheduler's runner double, which has no such attribute and whose boot loop died
+    # on it (4 scheduler tests, this run).
+    cause: str | None = None
+    why = ""
+
+    def _resolve() -> None:
+        nonlocal cause, why
+        if cause is not None:
+            return
+        mark = restart.read_shutdown_mark(runner.server.routines_home)
+        if mark is None:
+            cause, why = "unknown", "cause unrecorded (no deliberate-shutdown mark)"
+        else:
+            cause = "daemon_restart"
+            why = f"daemon restart ({mark.get('reason') or 'requested'} at {mark.get('ts')})"
+
     fixed = 0
     for info in catalog.values():
         for r in info.runs:
             if r.state in registry.ACTIVE_STATES \
                     and not _pid_alive(r.pid):
+                _resolve()
                 # ABORTED, not failed (R1512/R1514): the daemon stopped this run by
                 # restarting, so a `failed` here is a failure the routine never had.
-                close_out(runner, r.dir, r.run_id, "orphaned by daemon restart",
-                          status="aborted")
+                close_out(runner, r.dir, r.run_id,
+                          f"orphaned: process gone at daemon boot — {why}",
+                          status="aborted", cause=cause)
                 fixed += 1
-                log.warning("orphan closed: %s", r.run_id)
+                log.warning("orphan closed: %s (cause=%s)", r.run_id, cause)
     return fixed

@@ -70,6 +70,18 @@ so a health sweep looking for failures read the window as clean (F422, whose pre
 "rc=-9 emits no health-event" — was wrong; what it could not do was FIND them). Absent on
 every other event: only a close-out has a process to report on.
 
+They also carry `cause` (F480), the one word that says WHY the process is gone:
+`user_abort` · `oom_kill` (rc=-9) · `signal_kill` (any other signal — a supervisor stop,
+a deploy, a manual kill) · `engine_crash` (non-zero exit) · `no_finish` (exited cleanly
+and wrote no finish, an engine defect) · `daemon_restart` (the boot reap found the
+breadcrumb a deliberate shutdown left) · `unknown` (nothing established a cause). The
+live reap derives it from `rc`; the BOOT reap sets it explicitly, because it has no rc
+and the previous code filled that vacuum by asserting one — every dead-pid run at boot
+was written "orphaned by daemon restart" whether or not a restart had happened, and that
+sentence sent three investigations (F480, R1501, R1515) at a drain that works. `unknown`
+is therefore the expected majority reading at boot, and a deliberate one: an audit
+filtering for it is asking "what killed these runs?", not reading a defect.
+
 fire_refused: a DUE scheduled (cron) fire produced no run — the routine was still active
 from a prior run (overrun) or the daemon was draining for a self-update restart. run_id
 empty (no run was created). Makes a routine that goes chronically un-fired for one of those

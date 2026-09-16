@@ -20,10 +20,13 @@ touching processes or signals. The sentinel lives under a dot-dir the registry s
 from __future__ import annotations
 
 import logging
+import os
 import signal
 from pathlib import Path
 
 from ..config import ServerConfig
+from ..ids import now_iso
+from ..paths import atomic_write_json, read_json
 
 log = logging.getLogger("rsched.restart")
 
@@ -78,10 +81,64 @@ def restart_action(requested: bool, active_states: list[str], idle_long_enough: 
     return "restart" if idle_long_enough else "wait"
 
 
-def trigger_shutdown() -> None:
+def shutdown_mark_path(server: ServerConfig) -> Path:
+    """Where a DELIBERATE shutdown leaves its breadcrumb for the next boot to read (F480)."""
+    return server.routines_home / ".control" / "shutdown.mark"
+
+
+def mark_deliberate_shutdown(server: ServerConfig, reason: str) -> None:
+    """Record that THIS exit was asked for, so the next boot can tell a restart from a crash.
+
+    Without it the boot reap has no way to establish why a pid is gone: a self-update restart,
+    a container stop, a kernel OOM and a segfault all arrive as the same dead pid, and
+    `recover_orphans` used to assert "orphaned by daemon restart" for every one of them — a
+    symptom stated as an established cause, which sent three separate investigations (F480,
+    R1501, R1515) at a drain that works correctly. The mark is the only evidence that
+    distinguishes them, so it is written on the way out rather than inferred on the way in.
+
+    Best-effort: a failure to write it must never block the shutdown it is describing. The
+    cost of a missing mark is an orphan recorded as `unknown` — which is the honest reading
+    when nothing established the cause.
+    """
+    path = shutdown_mark_path(server)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        atomic_write_json(path, {"ts": now_iso(), "reason": reason, "pid": os.getpid()})
+    except OSError as exc:
+        # Never block the shutdown this is describing — see the docstring.
+        log.warning("could not write shutdown mark (%s): %s", path, exc)
+
+
+def read_shutdown_mark(routines_home: Path) -> dict | None:
+    """Read and CONSUME the breadcrumb a deliberate shutdown left (None if there is none).
+
+    Consumed, not merely read: the mark describes exactly one exit, so leaving it in place
+    would make every later crash read as that same restart — the failure mode this whole
+    change exists to end. A mark that cannot be removed is still returned (the boot's reading
+    is correct now); the stale-mark risk is logged rather than hidden.
+    """
+    path = routines_home / ".control" / "shutdown.mark"
+    mark = read_json(path)
+    if not isinstance(mark, dict):
+        return None
+    try:
+        path.unlink()
+    except OSError as exc:
+        log.warning("shutdown mark %s could not be consumed: %s", path, exc)
+    return mark
+
+
+def trigger_shutdown(server: ServerConfig | None = None,
+                     reason: str = "self-update restart") -> None:
     """Signal uvicorn to shut down gracefully (it handles SIGTERM); the process then exits and
     the supervisor relaunches with the new code. Isolated so tests patch it rather than
     signalling the test runner.
+
+    `server` is what lets the exit leave its breadcrumb (F480). It is optional only because
+    the signal must be raised even when no server config is at hand; an unmarked exit is
+    reaped as `unknown`, never as a restart.
     """
+    if server is not None:
+        mark_deliberate_shutdown(server, reason)
     log.warning("self-update: drained — signalling graceful shutdown to restart on new code")
     signal.raise_signal(signal.SIGTERM)

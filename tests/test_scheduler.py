@@ -9,7 +9,7 @@ from datetime import UTC, datetime, timedelta
 import rsched.daemon.scheduler as sched_mod
 from conftest import FakeRunner
 from rsched.config import ServerConfig, load_routine
-from rsched.daemon import runner_reap, runner_state
+from rsched.daemon import restart, runner_reap, runner_state
 from rsched.daemon.events import EventBus
 from rsched.daemon.runner import Runner
 from rsched.daemon.runner_state import _notable_stderr
@@ -602,3 +602,78 @@ async def test_resume_blocker_names_the_real_cause(make_routine, tmp_path, monke
 
     runner.draining = True
     assert "draining" in (runner.resume_blocker(cfg, ts) or "")
+
+
+def test_classify_cause_separates_the_deaths_that_need_different_investigations():
+    """F480: rc was read and then thrown away, so every death read alike. Each of these is a
+    different next step — an OOM is a memory problem, a clean exit without a finish is an
+    engine defect, and a user abort is nothing at all."""
+    assert runner_reap.classify_cause(-9) == "oom_kill"
+    assert runner_reap.classify_cause(-15) == "signal_kill"
+    assert runner_reap.classify_cause(1) == "engine_crash"
+    assert runner_reap.classify_cause(0) == "no_finish"
+    assert runner_reap.classify_cause(None) == "unknown"
+    # a user abort is a user abort whatever signal carried it out
+    assert runner_reap.classify_cause(-9, user_cancel=True) == "user_abort"
+
+
+def _health_causes(tmp_path):
+    lines = (tmp_path / "routines" / ".control" / "health-events.jsonl").read_text().splitlines()
+    return [json.loads(ln)["cause"] for ln in lines if ln.strip()]
+
+
+def test_close_out_records_the_cause_as_a_filterable_health_field(make_routine, tmp_path):
+    """The question 'what killed these runs?' has to be answerable by a filter, not by
+    reading prose in `detail` (the F422 lesson, applied to cause instead of signal)."""
+    d = make_routine(slug="oomer")
+    run_dir = d / "runs" / "20260701-070000"
+    run_dir.mkdir(parents=True)
+    atomic_write_json(run_dir / "status.json",
+                      {"run_id": "oomer:20260701-070000", "state": "running", "pid": 999999})
+    runner = Runner(_server(tmp_path), EventBus())
+    runner_reap.close_out(runner, run_dir, "oomer:20260701-070000",
+                          "engine exited rc=-9 without a finish", rc=-9)
+    assert _health_causes(tmp_path) == ["oom_kill"]
+
+
+def test_boot_reap_records_unknown_when_nothing_established_a_cause(make_routine, tmp_path):
+    """The defect F480 names: with no evidence at all, the reap asserted 'orphaned by daemon
+    restart' — a symptom stated as an established cause, which sent three investigations
+    (F480, R1501, R1515) at a drain that works. With no breadcrumb the honest answer is
+    `unknown`, and the summary must not name a restart."""
+    d = make_routine(slug="orphan-nomark")
+    run_dir = d / "runs" / "20260701-070000"
+    run_dir.mkdir(parents=True)
+    atomic_write_json(run_dir / "status.json",
+                      {"run_id": "orphan-nomark:20260701-070000",
+                       "state": "running", "pid": 999999})
+    (run_dir / "transcript.jsonl").write_text(json.dumps({"type": "header"}) + "\n")
+    runner = Runner(_server(tmp_path), EventBus())
+    assert runner_reap.recover_orphans(runner, scan(_server(tmp_path))) == 1
+    info = read_run(run_dir, "orphan-nomark")
+    assert info.state == "aborted"
+    assert "daemon restart" not in info.summary
+    assert _health_causes(tmp_path) == ["unknown"]
+
+
+def test_a_deliberate_shutdown_leaves_a_breadcrumb_the_boot_reap_reads(make_routine, tmp_path):
+    """The other half: when a restart DID happen, the boot can say so — because the exit said
+    so on its way out, not because the boot guessed."""
+    server = _server(tmp_path)
+    d = make_routine(slug="orphan-marked")
+    run_dir = d / "runs" / "20260701-070000"
+    run_dir.mkdir(parents=True)
+    atomic_write_json(run_dir / "status.json",
+                      {"run_id": "orphan-marked:20260701-070000",
+                       "state": "running", "pid": 999999})
+    (run_dir / "transcript.jsonl").write_text(json.dumps({"type": "header"}) + "\n")
+    restart.mark_deliberate_shutdown(server, "self-update restart")
+    assert restart.shutdown_mark_path(server).exists()
+    runner = Runner(server, EventBus())
+    assert runner_reap.recover_orphans(runner, scan(server)) == 1
+    info = read_run(run_dir, "orphan-marked")
+    assert "daemon restart" in info.summary
+    assert _health_causes(tmp_path) == ["daemon_restart"]
+    # CONSUMED: a mark describes exactly one exit, so a later crash must not inherit it —
+    # that would rebuild the very failure mode this change removes.
+    assert not restart.shutdown_mark_path(server).exists()

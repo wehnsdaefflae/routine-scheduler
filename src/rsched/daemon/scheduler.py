@@ -360,7 +360,10 @@ class Scheduler:
         self.runner.draining = True   # refuse a fire racing the SIGTERM window
         self._shutting_down = True
         restart.clear_request(self.server)
-        restart.trigger_shutdown()
+        # F480: leave the breadcrumb BEFORE the signal — the next boot's orphan reap reads it
+        # to tell this deliberate restart from a crash, and after SIGTERM there is no later
+        # moment in which to write it.
+        restart.trigger_shutdown(self.server)
         return True
 
     def snapshot(self) -> dict:
