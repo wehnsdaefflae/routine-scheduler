@@ -15,6 +15,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.346.0] — 2026-09-16
+
+### Changed
+
+- **Switching a routine off is a SCHEDULE state, not a checkbox beside the schedule.** The
+  Schedule panel's cadence dropdown leads with **Disabled** ("no new runs — including manual and
+  triggered starts; existing runs are unchanged"), and the separate `enabled` checkbox is gone.
+  One control now answers one question — *when does this routine run* — where two controls used
+  to disagree: a routine could read `enabled` with a live cron and still never fire, because the
+  firing gate gave `schedule.disabled` the final word. A **lane member** keeps its Disabled
+  escape: the cadence is the lane's to set, but switching the routine off was never the lane's
+  call, so that select stays operable for exactly that one act.
+
+### Fixed
+
+- **`PATCH /api/routines/<slug> {"enabled": …}` reaches the gate that decides firing.** The key
+  fell through to a bare `enabled:` in `routine.yaml` that nothing reads, while the response
+  still reported the update applied — R102's rule ("a key an endpoint silently ignores must never
+  read as success") broken by the endpoint that most looks like it works. It is now translated at
+  the edge into `schedule.disabled`, so the dashboard's inline ⏸/▷ toggle and **goal retirement**
+  both switch a routine off in fact rather than on paper. The old spelling stays accepted (it is
+  what the dashboard sends) and installed configs migrate once on daemon start
+  (`migrate_disabled_schedule`, expires 2026-12-01).
+
 ## [0.345.2] — 2026-09-15
 
 ### Fixed
