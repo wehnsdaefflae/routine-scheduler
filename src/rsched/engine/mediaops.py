@@ -54,7 +54,9 @@ def _view_one(rel_path: str, prompt: str, endpoint, ctx: RunContext, multimodal:
         if err := _runs_read_gate(ctx, path):
             return {"path": rel_path, "error": err}
         if not path.is_file():
-            return {"path": rel_path, "error": "file does not exist"}
+            return {"path": rel_path,
+                    "error": "file does not exist — read_file its parent directory (a "
+                             "directory reads as its listing) to see what is actually there"}
     except (OSError, PermissionError) as exc:
         return {"path": rel_path, "error": str(exc)}
     mime = guess_media_type(path)

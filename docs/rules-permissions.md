@@ -323,6 +323,7 @@ carrying one is a lint error). One copy each; routines hold slugs. The shipped s
 | `interface-design` | build UI that looks chosen rather than generated: pin the subject first, know the current default looks well enough to avoid them, plan a token system and critique it before coding, spend boldness in one place |
 | `interface-copy` | words as design material — name things by what the reader controls, active voice with a stable vocabulary, errors that explain and direct, one job per element |
 | `test-design` | a test earns its place by failing: name the regression first, assert behaviour not internals, watch it fail once before accepting it |
+| `risk-first` | order work by what is least certain, prove it thin and end to end, and skip the quality bar only until it holds — then harden in the same run |
 | `failure-visibility` | error handling *written into code* — never catch without a reaction, enumerate what a broad catch would swallow, fallbacks are features not safety nets, stubs never ship |
 
 `ask-policy`, `web-research`, `decision-record` and `intent-inference` are the routine

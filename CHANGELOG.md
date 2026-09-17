@@ -15,6 +15,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.350.0] — 2026-09-17
+
+### Added — an `unmet` stopping verdict must carry what REMAINS
+
+- The accounting contract gains its second half. v1 (`stopping.unaccounted`) proves a finish
+  ADDRESSED each active condition; **v1b (`stopping.without_residual`) proves an `unmet` verdict
+  carries its RESIDUAL** — what is still to do, and what it is waiting on. A bare `[s1] unmet`
+  cleared v1, stored an empty note, and handed the next run a verdict with no content; it is now
+  set aside for one turn like every other rung of the finish gate.
+- A run bound never transitions, so that note is the whole of what the next run inherits about
+  it. The digest therefore renders it as work carried over rather than as a reason the last run
+  gave: `last run left: three of five feeds parsed; Reuters returns 403`.
+- Deterministic like the rung above it — emptiness is checkable, adequacy is not. A one-word
+  residual passes the gate and is the model's business, exactly as the semantics of `met` are.
+  The prompt asks for `[s<n>] unmet — <what remains>`, and the goal-scoped "state the distance"
+  sentence is now the shared rule rather than a special case.
+
+### Added — `risk-first`, a curated rule
+
+- Order work by what is least certain, prove it thin and end to end, and skip the quality bar
+  only until the approach holds — then harden in the same run. Adapted from
+  [shipsmooth](https://github.com/bitkentech/shipsmooth)'s risk-quality strategy (Apache 2.0).
+  Unbound like every curated rule, so holding it stays a decision somebody makes.
+  `docs/curated-rules.md` records its provenance, its evidence position, and the collision check
+  against `decision-commitment`, `change-restraint` and `test-design`.
+
+### Changed — a not-found refusal names the read that shows what IS there
+
+- The setup surface's `fix` discipline, applied to the one family of engine refusals that
+  lacked it. `delete` / `move` on a missing path and `view_image` on a missing file now name
+  `read_file` on the parent directory (which returns its listing); `kill` and `wait` on a child
+  that does not exist name the `subruns` action. Every other engine refusal already carried its
+  own way out — this was the residue, found by auditing all 24 of them rather than assumed.
+
+### Docs
+
+- `docs/designs.md` gains the third stopping SCOPE (`work`) — sticky like a goal but retiring
+  the ITEM, not the routine, with a lease so a parent and its children can share one queue.
+  Adapted from [spekk-cli](https://github.com/spekk-ai/spekk-cli)'s assertion model (Apache 2.0)
+  and deliberately NOT built: it hangs on evidence that live routines lose or re-derive work
+  between runs, and the entry names the self-audit pass that would settle it.
+- `docs/prompt-anatomy.md` documents the accounting rung and the new residual rung; neither
+  half of the pair had a bullet in the finish-gate ladder before.
+
 ## [0.349.0] — 2026-09-17
 
 ### Changed — JSON output compression is stdlib minification, not Headroom

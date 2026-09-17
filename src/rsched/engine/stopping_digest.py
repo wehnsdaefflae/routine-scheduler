@@ -11,6 +11,12 @@ The block renders the two SCOPES apart, because they ask the model two different
   every run, never carried: a per-run bound cannot be "already met", and treating it as met is
   what left 22 of 31 live routines reading "the job is DONE. Finish NOW" at the top of every run
   before this split existed.
+Both scopes share one accounting contract, and its `unmet` half is a HAND-OFF: the verdict must
+carry the RESIDUAL (what is still to do, what it is waiting on), because a run bound never
+transitions and that note is the only thing the next run inherits about it — rendered back to it
+as `last run left: …`. `stopping.without_residual` is the deterministic half the finish gate
+enforces; whether the residual is any GOOD stays the model's business.
+
 - **FINAL GOAL** (`scope: "goal"`) — the state after which the ROUTINE itself is finished. Sticky:
   once met it stays met, and the daemon stops firing the routine (see `engine/goalreached.py`).
   A run that cannot reach it says how far away it is, which is the pressure the goal exists to
@@ -31,9 +37,14 @@ def _line(cond: dict, by_id: dict, phase: str) -> str:
     bits = [why] if why else []
     # A run bound never carries a status, so the ONLY thing that can orient the next run is what
     # the last one concluded. Rendered as history ("last run: …"), never as a current verdict.
+    # An `unmet` verdict's note is the RESIDUAL the finish gate demanded — what was left to do —
+    # so it is labelled as work carried over rather than as a reason the last run gave.
     if cond["scope"] == "run" and cond.get("last_verdict"):
-        note = f" — {cond['note']}" if cond.get("note") else ""
-        bits.append(f"last run: {cond['last_verdict']}{note}")
+        if cond["last_verdict"] == "unmet" and cond.get("note"):
+            bits.append(f"last run left: {cond['note']}")
+        else:
+            note = f" — {cond['note']}" if cond.get("note") else ""
+            bits.append(f"last run: {cond['last_verdict']}{note}")
     tail = f"  ({'; '.join(bits)})" if bits else ""
     return f"  {mark} [{cond['id']}] {cond['text']}{tail}"
 
@@ -86,11 +97,13 @@ def digest_section(routine_dir: Path, *, phase: str = "") -> str:
         out.append(
             "Your finish summary MUST account for each ACTIVE condition ("
             + ", ".join(c["id"] for c in act)
-            + "): a line `[s<n>] met — <evidence>` or `[s<n>] unmet — <why>` per condition. "
-              "A finish that skips one is rejected and costs a turn. For a FINAL GOAL condition "
-              "the `unmet` note is where you state the distance — what remains, and what it is "
-              "waiting on. Conditions marked waiting are NOT yours to account for yet — they "
-              "become active when what they wait on is met.")
+            + "): a line `[s<n>] met — <evidence>` or `[s<n>] unmet — <what remains>` per "
+              "condition. A finish that skips one, or that reports `unmet` with nothing after "
+              "the verdict, is rejected and costs a turn. The RESIDUAL is the point of an "
+              "`unmet`: name what is still to do and what it is waiting on, because that line "
+              "is what the next run opens with — and for a FINAL GOAL condition it is the "
+              "distance remaining. Conditions marked waiting are NOT yours to account for yet "
+              "— they become active when what they wait on is met.")
     verdict = stopping.evaluate(doc)
     if verdict["goal_satisfied"]:
         out.append("EVERY final-goal condition is met — this ROUTINE is finished. Say so in your "

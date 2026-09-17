@@ -760,6 +760,43 @@ def test_finish_reply_to_reaches_the_finish_event(make_routine, scripted):
     assert "reply_to" not in next(e for e in ev2 if e["type"] == "finish")["payload"]
 
 
+def test_finish_gate_rejects_an_unmet_verdict_with_no_residual(make_routine, scripted,
+                                                               monkeypatch):
+    """F334/D98 v1b: a summary that ACCOUNTS for its conditions but reports one `unmet` with
+    nothing after the verdict is set aside for one turn — the same deferral shape as the rung
+    above it. A run bound never transitions, so that note is the whole of what the next run
+    inherits about it; a bare `[s1] unmet` clears v1 and hands the next run nothing.
+
+    v2's verifier is stubbed for the reason the accounting test stubs it: this is the RESIDUAL
+    rung's test, and a live judge would consume a scripted reply for a verdict it says nothing
+    about.
+    """
+    from rsched.engine import stopping as stopping_mod
+    from rsched.engine import verifier
+
+    monkeypatch.setattr(verifier, "refuted", lambda loop, summary: [])
+
+    d = make_routine(slug="residual")
+    stopping_mod.save(d, {"conditions": [{"text": "the digest is published"}]}, now="t")
+    scripted([
+        probe(),
+        finish(summary="[s1] unmet"),                       # accounted, but empty → deferred
+        {"say": "With the residual.", "kind": "finish", "status": "ok",
+         "summary": "[s1] unmet — three of five feeds parsed; Reuters returns 403"},
+    ])
+    status, run_dir = run_routine(d, _server(d), run_ts=TS)
+    events, _ = read_events(run_dir / "transcript.jsonl")
+    assert status == "ok"
+    rejected = [e for e in events if e["type"] == "observation"
+                and e["payload"].get("stopping_without_residual")]
+    assert len(rejected) == 1
+    assert rejected[0]["payload"]["stopping_without_residual"] == ["s1"]
+    # the residual was stamped back, so the NEXT run opens with the work rather than a verdict
+    assert stopping_mod.load(d)["conditions"][0]["note"].startswith("three of five feeds")
+    from rsched.engine.stopping_digest import digest_section
+    assert "last run left: three of five feeds parsed" in digest_section(d)
+
+
 def test_finish_gate_rejects_unaccounted_stopping_conditions(make_routine, scripted,
                                                              monkeypatch):
     """F334/D98 v1: a depth-0 finish whose summary ignores an OPEN stopping condition is
@@ -2832,6 +2869,28 @@ def test_subruns_action_reports_children(make_routine, scripted):
     assert len(rows) == 1 and rows[0]["label"] == "s"
     assert rows[0]["state"] == "ok"
     assert "child summary" in rows[0]["summary_head"]
+
+
+def test_a_missing_child_refusal_names_the_action_that_lists_them():
+    """The not-found remedy, on the child side: `kill 3` and `wait n=3` for a child that does
+    not exist tell the run which action would have shown it. The parallel to a missing path
+    naming `read_file` on its parent directory — a refusal states the fact AND the way out.
+    """
+    import threading
+    from types import SimpleNamespace
+
+    from rsched.engine.subruns import SubrunManager
+
+    sub = SimpleNamespace(n=1, label="t", status="", mode="parallel", summary="",
+                          done=threading.Event(), announced=False, collected_paths=(),
+                          ctx=SimpleNamespace(turn=1))
+    stub = SimpleNamespace(subruns={1: sub}, exit_event=threading.Event(),
+                           parent=SimpleNamespace(ctx=SimpleNamespace(depth=1)))
+    err = SubrunManager.kill(stub, 3)["error"]
+    assert "no sub-workflow 3" in err and "`subruns` action lists" in err
+    err = SubrunManager.wait(stub, {"n": 3, "timeout_s": 0}, poll_s=0.01,
+                             aborted=threading.Event())["error"]
+    assert "no such sub-workflow" in err and "`subruns` action lists" in err
 
 
 def test_wait_timeout_reports_timed_out():

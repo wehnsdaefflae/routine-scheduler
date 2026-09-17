@@ -219,3 +219,56 @@ ever reaches into that mount or only ever execs over SSH.
 knowing what a util is for; a rule that fires on 113 correct declarations would be turned off in a
 week. This is a review somebody does once, then re-does when the count of `fs: roots` utils has
 grown enough to be worth it.
+
+---
+
+## A third stopping SCOPE: work that outlives one run but does not retire the routine
+
+**Decided in conversation 2026-09-17; no finding.** The survey that produced it compared this
+engine against four spec-driven-development toolkits — [spec-kit](https://github.com/github/spec-kit)
+(MIT), [OpenSpec](https://github.com/Fission-AI/OpenSpec) (MIT),
+[spekk-cli](https://github.com/spekk-ai/spekk-cli) (Apache 2.0) and
+[shipsmooth](https://github.com/bitkentech/shipsmooth) (Apache 2.0). Almost everything in them
+already exists here under different names (a constitution is the rules library, phases are
+`stages/` + `phase.json`, a change folder is `docs/designs.md` plus the Items ledger, an observer
+is self-audit, a planning store is a domain's shared store), which is why none of the four is
+being integrated: they deliver their value as slash commands inside an interactive assistant, and
+a second agent loop in the path is banned. Two ideas survived the comparison. One shipped in
+0.350.0 as the `unmet` residual. This is the other.
+
+**Problem.** `state/stopping.json` has exactly two scopes and there is nothing between them.
+`scope: "run"` bounds ONE run and never transitions — correctly, since a per-run bound cannot be
+"already met", and making it sticky is the defect the split undid. `scope: "goal"` is the state
+after which the ROUTINE is finished, and it is sticky *because* it retires the routine. A unit of
+work that legitimately spans several runs — a migration with eleven steps, a backlog of twelve
+sites to convert, a document with five sections each needing its own research pass — fits neither.
+Today it is carried in recipe prose, in `state/notes.md`, or in the `unmet` residual, none of which
+can say "this piece is finished and the next run should not re-derive it", and none of which two
+runs can hold without colliding.
+
+**Shape (spekk's assertion model, mapped onto what exists).** A `scope: "work"` condition: sticky
+like a goal, so it transitions to `met` and stays there — but it retires the ITEM, never the
+routine, so `evaluate()` keeps answering about goals alone and nothing about retirement changes.
+Ordering is the existing `requires` connective, which already expresses a dependency chain and
+already renders as `waiting on s1`; spekk's one-dependency limit is the same restraint this
+document's two-level nesting applies for the same reason. What is genuinely new is the LEASE:
+a condition claimed by a run (or by a `spawn`ed child) while it is worked, released on exit, and
+ignored once stale — so a parent and its children can share one queue instead of the parent
+re-deriving what a child already took. spekk keys its lease `builder-<host>-<pid>-<ts>` and
+treats an old lock as absent, which is the right shape here too: the engine already reaps runs
+whose process is gone, and a lease that outlived its holder must never block the queue.
+
+**Why it is not built yet, and what would settle it.** The honest case against is that this is
+precisely the feature that grows a second planning system inside a scheduler — and three
+mechanisms already cover much of the ground (the `unmet` residual carries what a run left, the
+digest tail carries notes forward, `.memory/` carries curated findings across runs). The question
+it hangs on is empirical and answerable: **do live routines actually lose or re-derive work
+between runs today?** A self-audit pass over the run transcripts of the multi-run routines can
+answer it — a run re-doing a step a previous run completed, or a child and its parent doing the
+same piece, is the evidence. Build it if that evidence exists; delete this entry if it does not.
+
+**First increment, if it goes ahead.** The scope alone, with no lease: add `"work"` to
+`stopping.SCOPES`, make `record_accounting` transition it on `met` the way it transitions a goal
+(and nothing else — `evaluate` must keep ignoring it), render it in `stopping_digest` as its own
+block beside the other two, and let `api_stopping` write it. That is testable on its own and
+leaves the lease — the part with real concurrency in it — as a second decision.

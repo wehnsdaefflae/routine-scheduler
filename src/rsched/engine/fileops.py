@@ -383,7 +383,8 @@ def do_delete(action: dict, ctx: RunContext) -> dict:
             return {"kind": "delete", "path": action["path"], "error": err}
         if not path.exists() and not path.is_symlink():
             return {"kind": "delete", "path": action["path"],
-                    "error": "no such path"}
+                    "error": "no such path — read_file its parent directory (a directory "
+                             "reads as its listing) to see what is actually there"}
         if len(path.parts) == 1:                     # the filesystem root is its only part
             return {"kind": "delete", "path": action["path"],
                     "error": "refusing to delete a filesystem-root path"}
@@ -417,7 +418,8 @@ def do_move(action: dict, ctx: RunContext) -> dict:
                         "error": f"{field}: {err}"}
         if not src.exists() and not src.is_symlink():
             return {"kind": "move", "src": action["src"], "dst": action["dst"],
-                    "error": "no such source path"}
+                    "error": "no such source path — read_file its parent directory (a "
+                             "directory reads as its listing) to see what is actually there"}
         if dst.exists():
             return {"kind": "move", "src": action["src"], "dst": action["dst"],
                     "error": "destination already exists — move refuses to overwrite; "

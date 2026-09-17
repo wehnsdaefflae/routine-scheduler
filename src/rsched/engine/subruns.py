@@ -258,7 +258,9 @@ class SubrunManager:
     def kill(self, n: int) -> dict:
         sub = self.subruns.get(int(n))
         if sub is None:
-            return {"kind": "kill", "n": n, "error": f"no sub-workflow {n}"}
+            return {"kind": "kill", "n": n,
+                    "error": f"no sub-workflow {n} — the `subruns` action lists every child "
+                             "this run has spawned, with its number and state"}
         if sub.done.is_set():
             return {"kind": "kill", "n": n, "already_finished": True, "status": sub.status}
         sub.abort_event.set()
@@ -277,7 +279,9 @@ class SubrunManager:
         timeout = float(action.get("timeout_s") or 600)
         deadline = time.monotonic() + timeout
         if not self.subruns or (n is not None and int(n) not in self.subruns):
-            return {"kind": "wait", "error": "no such sub-workflow to wait for"
+            return {"kind": "wait", "error":
+                    "no such sub-workflow to wait for — the `subruns` action lists every "
+                    "child this run has spawned, with its number and state"
                     if n is not None else "no sub-workflows have been spawned"}
 
         def satisfied() -> bool:

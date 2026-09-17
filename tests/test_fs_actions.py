@@ -101,6 +101,19 @@ def test_delete_file_and_directory_tree(make_routine, tmp_path):
     assert gone["type"] == "dir" and gone["bytes_freed"] == 10 and not tree.exists()
 
 
+def test_a_not_found_refusal_names_the_read_that_would_show_what_is_there(make_routine, tmp_path):
+    """Every refusal carries its own way out — the setup surface's `fix` discipline, applied to
+    the one family that lacked it. "no such path" states a fact the run already suspected and
+    leaves it guessing at the name; the parent directory's LISTING is the answer, and read_file
+    returns one for a directory path.
+    """
+    ctx = _ctx(make_routine, tmp_path)
+    err = do_delete({"path": "state/nope.json"}, ctx)["error"]
+    assert "no such path" in err and "read_file its parent directory" in err
+    err = do_move({"src": "state/nope.json", "dst": "state/x.json"}, ctx)["error"]
+    assert "no such source path" in err and "read_file its parent directory" in err
+
+
 # ---- the seals ------------------------------------------------------------------------------
 
 

@@ -329,6 +329,28 @@ def read_accounting(summary: str) -> dict[str, tuple[str, str]]:
     return out
 
 
+def without_residual(summary: str, routine_dir: Path, *, phase: str = "") -> list[str]:
+    """The ACTIVE ids this summary reports `unmet` with NOTHING after the verdict.
+
+    The second half of the accounting contract, and the only part of "what remains" a machine
+    can check. `unaccounted` proves a condition was ADDRESSED; this proves an `unmet` verdict
+    carries its RESIDUAL — what is still to do, and what it is waiting on.
+
+    Why that is worth a gate of its own: a run bound never transitions, so the note beside its
+    `unmet` verdict is the ONLY thing the next run inherits about it (`stopping_digest._line`
+    renders it as `last run left: …`). A bare `[s1] unmet` satisfies v1, records an empty note,
+    and hands the next run a verdict with no content — which is the same as handing it nothing,
+    at the cost of having looked like an account. Demanding the residual is what turns the
+    accounting into a hand-off.
+
+    Deterministic like every other rung: emptiness is checkable, adequacy is not. A one-word
+    residual passes here and is the model's business, exactly as the semantics of `met` are.
+    """
+    verdicts = read_accounting(summary or "")
+    return [c["id"] for c in active(load(routine_dir), phase=phase)
+            if (got := verdicts.get(c["id"])) is not None and got[0] == "unmet" and not got[1]]
+
+
 def record_accounting(routine_dir: Path, summary: str, *, run_id: str, now: str,
                       disputes: dict[str, str] | None = None) -> list[str]:
     """Stamp the model's verdict back into the store; returns the ids newly marked met.

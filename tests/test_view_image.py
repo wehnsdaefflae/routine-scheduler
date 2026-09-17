@@ -157,7 +157,9 @@ def test_do_view_image_rejects_non_media(tmp_path):
 def test_do_view_image_missing_file(tmp_path):
     obs = executor.do_view_image({"kind": "view_image", "path": "nope.png"},
                                  _ctx(tmp_path, _Endpoint(True)))
-    assert "does not exist" in obs["files"][0]["error"]
+    err = obs["files"][0]["error"]
+    # a not-found refusal names the read that shows what IS there, never the bare fact
+    assert "does not exist" in err and "read_file its parent directory" in err
 
 
 def test_do_view_image_oversize_uses_vision(tmp_path, monkeypatch):

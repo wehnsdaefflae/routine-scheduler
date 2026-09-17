@@ -15,12 +15,12 @@ def check_finish(loop, action: dict, ctx) -> str | None:
     """May this run END? Returns the run status when the finish stands, None when it is
     set aside for one turn (the R108 deferral shape) and the loop should go round again.
 
-    Split out of `EngineLoop.run` (F393). Five guards, one question: an undrained user
-    message, unaccounted stopping conditions, a fabricated first-action finish, an
-    unbacked action claim, and (F334 v2) a claim the run's own transcript does not
-    support. Each costs one turn and says exactly why — the engine never ends a run the
-    model could have ended itself, so every rung hands the turn back rather than
-    force-finishing.
+    Split out of `EngineLoop.run` (F393). Six guards, one question: an undrained user
+    message, unaccounted stopping conditions, an `unmet` verdict with no residual, a
+    fabricated first-action finish, an unbacked action claim, and (F334 v2) a claim the
+    run's own transcript does not support. Each costs one turn and says exactly why — the
+    engine never ends a run the model could have ended itself, so every rung hands the
+    turn back rather than force-finishing.
     """
     # R108/F268: a user message that landed in the window between this
     # turn's inbox drain and the finish is DELIVERED, never silently
@@ -62,6 +62,28 @@ def check_finish(loop, action: dict, ctx) -> str | None:
                 f"{', '.join(missing)} (see the STOPPING CONDITIONS "
                 "section). Add a line `[s<n>] met — <evidence>` or "
                 "`[s<n>] unmet — <why>` for each, then finish again."})
+            ctx.write_status()
+            return None   # deferred — the loop goes round again
+    # F334/D98 v1b: v1 proves the condition was ADDRESSED. This proves an `unmet` verdict
+    # carries its RESIDUAL. A run bound never transitions, so that note is the ONLY thing the
+    # next run inherits about it — a bare `[s1] unmet` clears v1, stores an empty note and
+    # hands the next run a verdict with no content. Deterministic like the rung above:
+    # emptiness is checkable, adequacy is the model's business.
+    if ctx.depth == 0 and not loop._finish_reserved:
+        from . import stopping
+        if bare := stopping.without_residual(
+                str(action.get("summary") or ""), ctx.routine.dir,
+                phase=ctx.phase):
+            obs = {"kind": "finish", "rejected": True,
+                   "stopping_without_residual": bare}
+            ctx.transcript.event("observation", obs, turn=ctx.turn)
+            loop.messages.append({"role": "user", "content":
+                "OBSERVATION (finish deferred): you reported "
+                f"{', '.join(bare)} unmet without saying what REMAINS. "
+                "The residual is the point of an `unmet` verdict — it is "
+                "what the next run opens with. Write `[s<n>] unmet — "
+                "<what is still to do, and what it is waiting on>` for "
+                "each, then finish again."})
             ctx.write_status()
             return None   # deferred — the loop goes round again
     # A general rule the routine PRACTISES whose moment is the ending itself (a ledger

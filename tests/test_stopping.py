@@ -221,9 +221,9 @@ def test_digest_renders_the_two_scopes_apart(tmp_path):
     assert sec.index("STOPPING CONDITIONS") < sec.index("FINAL GOAL")
     assert "[s1] this run's increment is verified" in sec
     assert "[s2] the application is submitted" in sec
-    # both are accounted for: a goal's `unmet` note is where the run states the distance left
+    # both are accounted for: a goal's `unmet` residual is where the run states the distance left
     assert "account for each ACTIVE condition (s1, s2)" in sec
-    assert "the `unmet` note is where you state the distance" in sec
+    assert "for a FINAL GOAL condition it is the distance remaining" in sec
     assert "The final goal is NOT yet met" in sec
 
 
@@ -239,6 +239,39 @@ def test_unaccounted_demands_active_conditions_only(tmp_path):
     assert stopping.unaccounted("[s1] met — done; [s2] unmet — blocked", tmp_path) == []
     assert stopping.unaccounted("[s1] met only", tmp_path) == ["s2"]
     assert stopping.unaccounted("", tmp_path) == ["s1", "s2"]
+
+
+def test_without_residual_demands_what_an_unmet_verdict_leaves(tmp_path):
+    """The second half of the contract: `unaccounted` proves a condition was ADDRESSED, this
+    proves an `unmet` verdict carries the RESIDUAL. A run bound never transitions, so that note
+    is the only thing the next run inherits about it — a bare `[s1] unmet` clears v1 and hands
+    the next run a verdict with no content.
+    """
+    stopping.save(tmp_path, _doc([
+        {"id": "s1", "text": "a"},
+        {"id": "s2", "text": "b"},
+        {"id": "s3", "text": "c", "requires": ["s1"]}]), now=NOW)
+    # a residual satisfies it; a bare verdict does not; `met` is never asked for one
+    assert stopping.without_residual("[s1] unmet — the API key is still missing; "
+                                     "[s2] met — verified", tmp_path) == []
+    assert stopping.without_residual("[s1] unmet; [s2] met", tmp_path) == ["s1"]
+    assert stopping.without_residual("[s1] unmet\n[s2] unmet", tmp_path) == ["s1", "s2"]
+    # a DORMANT condition is never demanded, here as in `unaccounted`
+    assert stopping.without_residual("[s3] unmet", tmp_path) == []
+    # and a summary with no accounting at all is v1's problem, not this rung's
+    assert stopping.without_residual("nothing at all", tmp_path) == []
+
+
+def test_an_unmet_run_bound_carries_its_residual_into_the_next_run(tmp_path):
+    """The hand-off the residual exists for: what the last run LEFT is what the next one opens
+    with, labelled as carried-over work rather than as a reason the last run gave."""
+    stopping.save(tmp_path, _doc([{"id": "s1", "text": "the digest is published"}]), now=NOW)
+    stopping.record_accounting(tmp_path, "[s1] unmet — three of five feeds parsed; Reuters "
+                                         "returns 403", run_id="r:1", now=NOW)
+    sec = stopping_digest.digest_section(tmp_path)
+    assert "last run left: three of five feeds parsed; Reuters returns 403" in sec
+    assert "last run: unmet" not in sec          # not a verdict the next run inherits, work is
+    assert stopping.unaccounted("", tmp_path) == ["s1"]     # still re-asked, as a run bound is
 
 
 def test_read_accounting_parses_the_contract_line():

@@ -806,7 +806,8 @@ whose TEXT must change on a live instance is converted by a one-shot migration i
   scaffold-preselected for repo-editing routines, NOT a routine default). Beside them the **curated
   set** — `evidence-discipline / decision-commitment / error-recovery / change-restraint /
   root-cause-fix / problem-routing / independent-verification / review-recall /
-  teaching-insights / interface-design / interface-copy / test-design / failure-visibility` —
+  teaching-insights / interface-design / interface-copy / test-design / failure-visibility /
+  risk-first` —
   distilled from external
   prompt-engineering guidance and the self-correction literature; NONE is a default, each is opt-in
   per routine (holding it IS the on/off switch — an unheld rule contributes nothing), and
