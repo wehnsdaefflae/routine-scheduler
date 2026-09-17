@@ -7,7 +7,9 @@ run-dir retention because they ride the durable workflow-usage stream
 (`~/routines/.control/workflow-usage.jsonl`).
 
 A third layer measures what a run COSTS rather than what it did: prompt-cache health, the
-one reading that separates carrying context cheaply from paying for it twice.
+one reading that separates carrying context cheaply from paying for it twice. A fourth measures
+what an optional efficiency feature RETURNS — output compression, per routine, on that same
+durable stream.
 
 ## Recipe versions
 
@@ -97,6 +99,21 @@ own counts; parents never fold them in (the read-model sums records at every dep
    memoized per file behind a stat fingerprint. Backfill sees executions only —
    rejected/denied calls never became observations back then, so those counts honestly
    start at the stream's adoption.
+
+## Output compression (Stats tab → Output compression by routine)
+
+An optional feature that spends run time to save tokens has to be able to show which of the two
+it is actually doing, per routine — otherwise it is enabled by default on a guess. Each run tallies
+its own compression outcomes (`RunContext.compression_stats`) into its workflow-usage record;
+`rsched/readmodels/compression_stats.py` rolls the records up per routine, joining each routine's
+CURRENT mode so an empty row reads as "switched off" rather than "nothing qualified".
+
+The reading is three columns wide: `applied ÷ attempts` is the hit rate, `~tokens saved` is the
+recorded estimate (preview characters ÷ 4 — never a billing figure), and `rejected` is the half
+with no upside, where the compressor produced a result the engine's own verification refused and
+the original was kept. Rejections cost the same wall clock as applications, so a row where they
+dominate is a routine paying for the feature and getting nothing back. Mechanism, eligibility and
+the verification itself: [docs/output-compression.md](output-compression.md).
 
 ## Prompt-cache health (Stats tab → the `prompt cache` card and the `cache` column)
 

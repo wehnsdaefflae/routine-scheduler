@@ -93,7 +93,7 @@ def test_conversation_output_compression_control(ui, ui_page):
     _start_conversation(ui, ui_page)
     control = ui_page.get_by_label("Output compression", exact=True)
     control.evaluate("e => { let p=e.parentElement; while(p) { if(p.tagName==='DETAILS') p.open=true; p=p.parentElement; } }")
-    expect(control).to_have_value("headroom")
+    expect(control).to_have_value("compress")
     control.select_option("measure")
     expect(ui_page.locator("#toast:not([hidden])")).to_contain_text("Output compression saved")
     ui_page.reload()

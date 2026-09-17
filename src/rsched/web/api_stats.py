@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Request
 
+from ..readmodels.compression_stats import compression_stats
 from ..readmodels.recipe_size import recipe_sizes
 from ..readmodels.stats import aggregate, monthly_spend
 from ..readmodels.util_stats import util_stats
@@ -21,8 +22,11 @@ def stats(request: Request) -> dict:
     per-routine spend series (workflow-usage stream — survives run retention), and
     `utils` — per-util execution stats (library git dates + the stream's per-run
     outcome breakdowns + a memoized transcript backfill for pre-stream history),
-    and `recipes` — per-routine recipe length with its ~30-day git baseline (F371).
+    `recipes` — per-routine recipe length with its ~30-day git baseline (F371), and
+    `compression` — the per-routine output-compression roll-up (same durable stream:
+    what the optional compressor applied, saved, and had refused).
     """
     server = request.app.state.server
     return {**aggregate(server), "monthly": monthly_spend(server),
-            "utils": util_stats(server), "recipes": recipe_sizes(server)}
+            "utils": util_stats(server), "recipes": recipe_sizes(server),
+            "compression": compression_stats(server)}

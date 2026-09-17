@@ -1110,8 +1110,8 @@ def test_conversation_output_compression_roundtrip(client):
     c, _ = client
     slug = c.post("/api/conversations", data={"text": "Inspect the project"}).json()["slug"]
     url = f"/api/conversations/{slug}"
-    assert c.get(url).json()["output_compression"] == "headroom"
-    for mode in ("measure", "headroom", "off"):
+    assert c.get(url).json()["output_compression"] == "compress"
+    for mode in ("measure", "compress", "off"):
         response = c.patch(url, json={"output_compression": mode})
         assert response.status_code == 200
         assert "output_compression" in response.json()["updated"]

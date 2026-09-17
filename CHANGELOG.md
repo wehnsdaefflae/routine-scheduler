@@ -15,6 +15,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.349.0] — 2026-09-17
+
+### Changed — JSON output compression is stdlib minification, not Headroom
+
+- `SmartCrusher` no longer touches JSON. It truncates arrays to `max_items_after_crush`
+  (15) with no CCR marker, and its `lossless_only` flag is inert — output is byte-identical
+  with the flag on and off (headroomlabs-ai/headroom#3625, filed). Over the first week of
+  compression, 260 of its results were refused by the engine's own equivalence check, and
+  every one of the 121 whose original was still recoverable was real data loss.
+- JSON is now minified with `json.dumps(..., separators=(",", ":"))`. Whitespace is the
+  only thing the grammar allows a compressor to drop, which is what the crusher's accepted
+  results had been doing all along — so on the same payloads minification is faithful 335
+  times out of 335 and saves roughly five times the tokens, at ~0.5 ms against ~250 ms.
+  The equivalence check stays as an assertion; the `rejected` column becomes a canary.
+- The JSON path needs no optional package at all. The Headroom extra is now only for log
+  excerpts — the path the same measurement showed earning its keep (ten applications, no
+  rejections) — and its absence no longer stops JSON from compressing.
+- The model-visible label now names which of the two produced a preview: `minified JSON;
+  nothing removed` or `Headroom log excerpt; lines omitted`; the operator's per-observation
+  line reads `[compression <mode>: <status> <kind>]`, since most previews are no longer
+  Headroom's work.
+- **The `output_compression` mode `headroom` is renamed `compress`** — the setting names what
+  it does, not a package that now handles only half of it. No data migration: no routine or
+  conversation in the instance names the value, so every one of them inherits the renamed
+  default. A config that still says `headroom` fails validation and falls back to the
+  default, which is the same behaviour it asked for. The mode is deliberately not `on`:
+  YAML 1.1 reads a bare `on` as a boolean. The settings control reads
+  `Compress (experimental)` and states what each mode does with and without the extra.
+
+## [0.348.0] — 2026-09-17
+
+### Added — per-routine output-compression roll-up
+
+- The Stats tab gains **Output compression by routine**: candidates, attempts, applied
+  previews with their hit rate, estimated tokens saved, rejections, no-gain results, and
+  the compressor time all of them cost. Until now the only surface was one line per
+  observation inside a transcript, so the fleet question — what does this feature actually
+  buy, per routine — could only be answered by walking every transcript by hand.
+- Every run tallies its own compression outcomes (`RunContext.compression_stats`, ticked at
+  the single compression seam) into its durable workflow-usage record, so the roll-up
+  survives run retention like per-util stats and monthly spend. Records written before the
+  tally are outside the window rather than counted as zeros; the table names the date
+  its window starts.
+- `rejected` is given equal billing with the saving on purpose: a compressor result the
+  engine's verification refuses costs the run exactly what an accepted one costs and
+  delivers nothing — a routine whose rejections outrun its applications is paying for
+  the feature without being paid back. That row is marked.
+
 ## [0.347.0] — 2026-09-16
 
 ### Changed

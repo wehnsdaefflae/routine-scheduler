@@ -71,6 +71,26 @@ def test_stats_route_carries_util_stats(api_client, make_routine):
         assert col in row, col
 
 
+def test_stats_route_carries_the_compression_rollup(api_client, make_routine):
+    """The per-routine compression section rides the same payload (aggregation math in
+    test_compression_stats.py; this pins the wire shape stats.js consumes)."""
+    c, tmp = api_client
+    make_routine(slug="alpha")
+    control = tmp / "routines" / ".control"
+    control.mkdir(parents=True, exist_ok=True)
+    (control / "workflow-usage.jsonl").write_text(
+        '{"routine": "alpha", "run_id": "alpha:x", "ts": "2026-07-15T10:00:00+00:00", '
+        '"compression": {"applied": 2, "fallback": 1, "skipped": 9, '
+        '"tokens_saved": 640, "ms": 250.0}}\n', encoding="utf-8")
+    comp = c.get("/api/stats").json()["compression"]
+    row = next(r_ for r_ in comp["rows"] if r_["routine"] == "alpha")
+    assert row["applied"] == 2 and row["fallback"] == 1 and row["tokens_saved"] == 640
+    assert row["candidates"] == 12 and row["attempts"] == 3 and row["seconds"] == 0.2
+    assert row["mode"] == "compress"                  # the default a routine is created with
+    assert comp["records"] == 1 and comp["since"] == "2026-07-15T10:00:00+00:00"
+    assert comp["totals"]["tokens_saved"] == 640
+
+
 def test_stats_route_requires_auth(api_client):
     c, _tmp = api_client
     assert c.get("/api/stats", headers={"Authorization": ""}).status_code == 401

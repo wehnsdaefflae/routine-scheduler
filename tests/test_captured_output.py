@@ -34,7 +34,7 @@ def test_overflow_envelope_is_parseable_and_serialized_size_bounded(text, diagno
 
 def test_spill_does_not_claim_lost_original_is_complete(make_routine):
     ctx = _ctx(make_routine)
-    ctx.routine.output_compression = "headroom"
+    ctx.routine.output_compression = "compress"
     result = read_capped(io.StringIO("x" * 30001), 30000)
     obs = command_output(ctx, "fixture", result, result, 0)
     assert obs["capture_truncated"] == {"stdout": True, "stderr": True}

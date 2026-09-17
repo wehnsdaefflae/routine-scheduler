@@ -112,7 +112,7 @@ class RoutineConfig(_Config):
     # Whether the routine-improver meta routine visits this routine (default: yes; the
     # toggle on the routine page opts out with `improve: false`).
     improve: bool = True
-    output_compression: Literal["off", "measure", "headroom"] = "headroom"
+    output_compression: Literal["off", "measure", "compress"] = "compress"
     # What this routine INHERITED from its DOMAIN's shared config (D82): {field: "<n> from the
     # domain"} plus the domain's name. A settings template is NOT here — it is copied in at
     # adoption, so its values are the routine's own from that moment (see the loader below).

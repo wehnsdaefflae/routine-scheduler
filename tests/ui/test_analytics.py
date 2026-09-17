@@ -104,6 +104,42 @@ def test_stats_utils_table(ui, ui_page):
     expect(never.first.locator("td").nth(3)).to_have_text("never")
 
 
+def test_stats_compression_table(ui, ui_page):
+    """The Stats tab answers what the optional output compressor actually bought this
+    routine — applied previews against attempts, the estimated saving, and the REJECTIONS,
+    marked when they outnumber the applications: a refused result costs the run the same
+    compressor time as a kept one and buys nothing."""
+    ui.seed_run("uir", "20260715-100000", "finished", summary="ok")
+    _stream(ui, [
+        {"routine": "uir", "run_id": "uir:20260715-100000", "depth": 0, "status": "ok",
+         "turns": 3, "tokens": 900, "ts": "2026-07-15T10:05:00+00:00",
+         "compression": {"applied": 1, "fallback": 3, "unchanged": 2, "skipped": 20,
+                         "tokens_saved": 410, "ms": 4200.0}},
+    ])
+    ui_page.goto(f"{ui.url}/#/stats")
+    section = ui_page.locator(".stat-section", has=ui_page.get_by_role(
+        "heading", name="Output compression by routine"))
+    expect(section).to_be_visible()
+    cells = section.locator("tr", has_text="uir").locator("td")
+    expect(cells.nth(1)).to_have_text("compress")     # the setting that produced the row
+    expect(cells.nth(3)).to_have_text("26")           # candidates: every outcome
+    expect(cells.nth(4)).to_have_text("6")            # attempts: the compressor ran
+    expect(cells.nth(5)).to_contain_text("1 (17%)")   # applied, with the hit rate
+    expect(cells.nth(6)).to_have_text("410")          # the estimated saving
+    expect(cells.nth(7)).to_have_class("num warn")    # 3 rejected vs 1 applied
+    expect(section).to_contain_text("not a billing reading")
+
+
+def test_stats_compression_table_is_honest_when_nothing_is_counted(ui, ui_page):
+    """A section that vanishes reads exactly like a section that says zero. With no
+    counted run the heading stays and says what is missing."""
+    ui.seed_run("uir", "20260715-100000", "finished", summary="ok")
+    ui_page.goto(f"{ui.url}/#/stats")
+    section = ui_page.locator(".stat-section", has=ui_page.get_by_role(
+        "heading", name="Output compression by routine"))
+    expect(section).to_contain_text("no counted run yet")
+
+
 def test_stats_shows_the_prompt_cache_read_share(ui, ui_page):
     """A collapsed prompt-cache read share is invisible in every other column: the reads stay
     (the static prefix keeps hitting) and the token count FALLS. The headline card names both

@@ -241,7 +241,8 @@ class SubrunManager:
                                # read-model sums records at every depth, so folding would
                                # double count)
                                recipe_commit=pctx.recipe_commit, utils=sub.ctx.util_stats,
-                               asks_deferred=sub.ctx.asks_deferred)
+                               asks_deferred=sub.ctx.asks_deferred,
+                               compression=sub.ctx.compression_stats)
 
     def status_table(self) -> dict:
         rows = [{"n": sub.n, "label": sub.label, "workflow": sub.workflow,

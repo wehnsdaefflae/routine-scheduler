@@ -1922,6 +1922,9 @@ def test_workflow_usage_log_records_runs_and_subruns(make_routine, scripted):
     assert tops and tops[0]["workflow"] == "test-flow" and tops[0]["turns"] >= 3
     assert "cost" in tops[0] and "cost" in subs[0]   # the durable spend series needs it
     assert tops[0]["referrals"] == 0 and subs[0]["referrals"] == 0   # the referral audit rides too
+    # the compression tally rides too, ALWAYS present: its presence is what marks a record
+    # as counted for the Stats tab's per-routine roll-up (an empty tally is a counted zero)
+    assert "compression" in tops[0] and "compression" in subs[0]
 
 
 def test_previous_runs_ride_the_run_history_permission(make_routine, scripted):

@@ -23,7 +23,7 @@ DATA = json.dumps([{"id": i, "status": "ok", "service": "scheduler"} for i in ra
 @pytest.fixture
 def ctx(make_routine):
     ctx = _ctx(make_routine)
-    ctx.routine.output_compression = "headroom"
+    ctx.routine.output_compression = "compress"
     return ctx
 
 
@@ -45,7 +45,7 @@ def ctx(make_routine):
 ], ids=["middle-omission", "non-json", "invalid-json", "int-to-float", "int-to-bool",
         "large-int", "precise-decimal", "signed-zero", "duplicate-original",
         "duplicate-candidate", "nan", "infinity", "negative-infinity", "overflow"])
-@pytest.mark.parametrize("mode", ["headroom", "measure"])
+@pytest.mark.parametrize("mode", ["compress", "measure"])
 def test_rejects_unverified_json_without_changing_baseline(ctx, monkeypatch, original, candidate, mode):
     # Padding makes each synthetic JSON eligible without obscuring the changed value.
     original = original + " " * 2500
@@ -123,8 +123,38 @@ def test_original_save_failure_never_replaces_output(ctx, monkeypatch):
     assert obs["stdout"] == compression.truncate(DATA, keep="head")[0]
 
 
+# The shape the native crusher silently truncated to `max_items_after_crush`
+# (headroomlabs-ai/headroom#3625) — the reason JSON is stdlib-minified here. Sized to
+# minify UNDER the observation cap: a payload whose minified form still exceeds it keeps
+# the capped head and its pointer, which is the honest outcome, not this test's subject.
+HETEROGENEOUS = json.dumps(["first", {"critical": "middle", "n": 1.0}, None, True,
+                            *[f"unique dependency {i} >= {i}.0" for i in range(150)],
+                            "last"], indent=2)
+
+
+@pytest.mark.parametrize("text", [DATA, HETEROGENEOUS], ids=["uniform", "heterogeneous"])
+def test_json_is_minified_whole_without_the_optional_extra(ctx, monkeypatch, text):
+    """JSON compression is stdlib only: it must not import the optional package at all,
+    and the preview must parse back to the ORIGINAL — the middle included.
+    """
+    monkeypatch.setitem(sys.modules, "headroom._core", None)   # any import here → ImportError
+    obs = compression.command_output(ctx, "sample", text, "", 0)
+    assert obs["compression"]["status"] == "applied"
+    assert "minified JSON; nothing removed" in obs["stdout"]
+    assert json.loads(obs["stdout"].split("\n", 1)[1]) == json.loads(text)
+
+
+def test_minified_json_keeps_the_verification_gate(ctx, monkeypatch):
+    """Minification is faithful by construction, so the verifier is now an assertion
+    rather than a safety net — it must still refuse a candidate that is not.
+    """
+    monkeypatch.setattr(compression, "_compress", lambda *_: '{"value": 1.0}')
+    obs = compression.command_output(ctx, "sample", '{"value": 1}' + " " * 2500, "", 0)
+    assert obs["compression"]["status"] == "fallback"
+
+
 @pytest.mark.parametrize(("mode", "text", "code"), [
-    ("off", DATA, 0), ("headroom", DATA, 1), ("headroom", "short", 0),
+    ("off", DATA, 0), ("compress", DATA, 1), ("compress", "short", 0),
     ("measure", "ordinary prose " * 300, 0),
 ])
 def test_ineligible_never_loads_headroom(ctx, monkeypatch, mode, text, code):
@@ -133,14 +163,41 @@ def test_ineligible_never_loads_headroom(ctx, monkeypatch, mode, text, code):
     compression.command_output(ctx, "sample", text, "exact", code)
 
 
-def test_config_rejects_invalid_mode_and_defaults_headroom(make_routine):
+def test_every_outcome_is_tallied_on_the_run(ctx, monkeypatch):
+    """The run carries ONE tally — what the durable usage record hands the Stats tab's
+    per-routine roll-up. A saving counts for an APPLIED preview only; the time counts for
+    every outcome, because a rejected compression cost the run exactly what a kept one did.
+    """
+    monkeypatch.setattr(compression, "_compress",
+                        lambda *_: json.dumps(json.loads(DATA), separators=(",", ":")))
+    applied = compression.command_output(ctx, "sample", DATA, "", 0)
+    assert applied["compression"]["status"] == "applied"
+    monkeypatch.setattr(compression, "_compress", lambda *_: '["cut"]')
+    assert compression.command_output(ctx, "sample", DATA, "", 0)["compression"]["status"] == "fallback"
+    compression.command_output(ctx, "sample", "short", "", 0)              # ineligible
+    tally = ctx.compression_stats
+    assert tally["applied"] == 1
+    assert tally["fallback"] == 1
+    assert tally["skipped"] == 1
+    assert tally["tokens_saved"] == applied["compression"]["estimated_tokens_saved"] > 0
+    assert tally["ms"] > 0
+
+
+def test_off_tallies_nothing(ctx):
+    """Off is not an outcome: nothing was considered, so nothing is counted."""
+    ctx.routine.output_compression = "off"
+    compression.command_output(ctx, "sample", DATA, "", 0)
+    assert ctx.compression_stats == {}
+
+
+def test_config_rejects_invalid_mode_and_defaults_compress(make_routine):
     path = make_routine()
     cfg, _ = load_routine(path)
-    assert cfg.output_compression == "headroom"
+    assert cfg.output_compression == "compress"
     with (path / "routine.yaml").open("a") as f:
         f.write("\noutput_compression: invalid\n")
     cfg, problems = load_routine(path)
-    assert cfg.output_compression == "headroom"
+    assert cfg.output_compression == "compress"
     assert any("output_compression" in p for p in problems)
 
 
@@ -154,13 +211,6 @@ def test_real_headroom_native_api(ctx):
         assert json.loads(obs["stdout"].split("\n", 1)[1]) == json.loads(DATA)
     else:
         assert obs["stdout"] == compression.truncate(DATA, keep="head")[0]
-    heterogeneous = json.dumps(["first", {"critical": "middle", "n": 1.0}, None, True,
-                                *[f"unique dependency {i} >= {i}.0" for i in range(300)],
-                                "last"], indent=2)
-    obs = compression.command_output(ctx, "heterogeneous", heterogeneous, "", 0)
-    # The pinned native package omits middle entries despite lossless_only=True.
-    assert obs["compression"]["status"] == "fallback"
-    assert obs["stdout"] == compression.truncate(heterogeneous, keep="head")[0]
     logs = "\n".join(f"INFO heartbeat healthy worker {i % 3}" for i in range(500))
     obs = compression.command_output(ctx, "logs", logs, "", 0)
     assert obs["compression"]["status"] == "applied"

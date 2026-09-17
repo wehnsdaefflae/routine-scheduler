@@ -298,7 +298,7 @@ def test_output_compression_control_persists(ui, ui_page):
     control = ui_page.get_by_label("Output compression", exact=True)
     # The Models section may be in a collapsed configuration group.
     ui_page.locator("#sec-models").evaluate("e => { let p=e.parentElement; while(p) { if(p.tagName==='DETAILS') p.open=true; p=p.parentElement; } }")
-    expect(control).to_have_value("headroom")
+    expect(control).to_have_value("compress")
     control.select_option("measure")
     expect(_toast(ui_page)).to_contain_text("Output compression saved")
     raw = yaml.safe_load((ui.routine_dir("uir") / "routine.yaml").read_text())
@@ -321,5 +321,5 @@ def test_compression_measurement_in_transcript(ui, ui_page):
     with (run / "transcript.jsonl").open("a") as f:
         f.writelines(json.dumps(e) + "\n" for e in events)
     ui_page.goto(f"{ui.url}#/run/uir:20260910-120000")
-    expect(ui_page.locator(".transcript")).to_contain_text("Headroom measure: measured")
+    expect(ui_page.locator(".transcript")).to_contain_text("compression measure: measured")
     expect(ui_page.locator(".transcript")).to_contain_text("1500 tokens potentially saved (estimate)")

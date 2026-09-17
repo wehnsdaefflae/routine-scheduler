@@ -3,11 +3,11 @@ import { api } from "/static/api.js";
 import { el, toast } from "/static/util.js";
 
 export function outputCompression(value, endpoint) {
-  let saved = value || "headroom";
+  let saved = value || "compress";
   const select = el("select", { "aria-label": "Output compression", "data-output-compression": "" },
     el("option", { value: "off" }, "Off"),
     el("option", { value: "measure" }, "Measure only"),
-    el("option", { value: "headroom" }, "Headroom (experimental)"));
+    el("option", { value: "compress" }, "Compress (experimental)"));
   select.value = saved;
   select.onchange = async () => {
     select.disabled = true;
@@ -22,7 +22,9 @@ export function outputCompression(value, endpoint) {
   };
   return el("div", { class: "mt" }, el("label", {}, "Output compression ", select),
     el("div", { class: "muted small mt" },
-      "Optional Headroom installation required for measurement or compression. Measure only leaves "
-      + "the model's input unchanged. Headroom compacts large JSON and logs; originals stay readable. "
-      + "Measurements and fallback reasons appear with each command's output."));
+      "Off leaves every command's output exactly as captured. Measure only records the comparison "
+      + "for you while leaving the model's input unchanged. On minifies large JSON (whitespace only — "
+      + "nothing is removed, and it needs no optional package) and, with the optional Headroom extra "
+      + "installed, replaces recognisable logs with a labelled excerpt. Originals stay readable either "
+      + "way, and measurements and fallback reasons appear with each command's output."));
 }

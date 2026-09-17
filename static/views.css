@@ -119,6 +119,8 @@ table.list tr.disabled-row td { opacity: 0.55; }
 .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px; margin: 14px 0 6px; }
 /* a prompt-cache read share under half: the prefix is being re-written, not re-read */
 .num.cache-low { color: var(--err); }
+/* a count worth reading twice — e.g. compression rejections outnumbering applications */
+.num.warn { color: var(--warn); }
 .stat {
   background: var(--plate);
   border: 1px solid var(--rule); border-radius: 8px; padding: 11px 14px;

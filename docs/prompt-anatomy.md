@@ -797,12 +797,13 @@ OBSERVATION (write_file): wrote 1832 bytes to state/shortlist.md
 
 Model capability context windows are stated in tokens (the full input + output capacity).
 
-## Optional Headroom command-output previews
+## Optional command-output previews
 
-`output_compression` defaults to `headroom`. `measure` records operator-only metadata while leaving
-observations unchanged. `headroom` may replace successful command stdout with a labelled lossless
-JSON representation or log excerpt before it is recorded. The `[full output]` pointer names the
-original captured output under the run's `outputs/` directory. `read_file` recovery bypasses
-compression. Replay renders the recorded observation without recompression; existing message
-prefixes, instructions, permission notices and stderr are never passed to Headroom.
+`output_compression` defaults to `compress`. `measure` records operator-only metadata while leaving
+observations unchanged. `compress` may replace successful command stdout before it is recorded with
+either a minified JSON copy (whitespace only — labelled `minified JSON; nothing removed`) or a
+Headroom log excerpt (labelled `Headroom log excerpt; lines omitted`). The `[full output]` pointer
+names the original captured output under the run's `outputs/` directory. `read_file` recovery
+bypasses compression. Replay renders the recorded observation without recompression; existing
+message prefixes, instructions, permission notices and stderr are never compressed.
 See [output compression](output-compression.md) for eligibility, installation and measurements.

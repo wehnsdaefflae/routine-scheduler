@@ -126,6 +126,14 @@ class RunContext:
     # action). Counted at the executor and validation seams (count_util), folded into
     # the run's workflow-usage record — the Stats tab's per-util reliability source.
     util_stats: dict = field(default_factory=dict)
+    # Output-compression telemetry: what the optional compressor did to this run's command
+    # stdout — a count per outcome (applied / measured / unchanged / fallback / skipped /
+    # unavailable), plus `tokens_saved` (the estimate only an APPLIED preview earns — a
+    # measured or rejected one changed nothing the model read) and `ms` (compressor wall
+    # clock, paid whatever the outcome). Ticked at the one compression seam
+    # (note_compression), folded into the run's workflow-usage record — the Stats tab's
+    # per-routine savings roll-up.
+    compression_stats: dict = field(default_factory=dict)
     # Deferred-question churn: decisions this run threw over the wall to the user — a
     # deferred ask, a blocking ask that timed out / was parked / died with an abort.
     asks_deferred: int = 0
@@ -226,6 +234,22 @@ class RunContext:
         """
         cell = self.util_stats.setdefault(name, {})
         cell[outcome] = cell.get(outcome, 0) + 1
+
+    def note_compression(self, metrics: dict) -> None:
+        """One output-compression tick (see compression_stats), from the metadata the
+        compression seam attached to the observation.
+
+        Savings accrue for an APPLIED preview only; time accrues for every outcome,
+        because a rejected compression costs the run exactly what a successful one does.
+        """
+        tally = self.compression_stats
+        status = str(metrics.get("status") or "unknown")
+        tally[status] = int(tally.get(status, 0)) + 1
+        if status == "applied":
+            tally["tokens_saved"] = (int(tally.get("tokens_saved", 0))
+                                     + int(metrics.get("estimated_tokens_saved") or 0))
+        tally["ms"] = round(float(tally.get("ms", 0.0))
+                            + float(metrics.get("elapsed_ms") or 0.0), 2)
 
     def note_schema_retry(self) -> None:
         """Telemetry: one schema-violation retry occurred this turn."""

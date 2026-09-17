@@ -118,7 +118,7 @@ class ConversationPatch(BaseModel):
     models: dict | None = None
     machines: list[str] | None = None   # catalog machine names (D102) — REPLACE wholesale
     connections: dict | None = None   # {provider: account} — bound OAuth connections (D55)
-    output_compression: Literal["off", "measure", "headroom"] | None = None
+    output_compression: Literal["off", "measure", "compress"] | None = None
     deliberation: str | None = None   # DELIBERATION_LEVELS — applies at the next reply
     fs_read_roots: list[str] | None = None    # D82: full folder-access lists — REPLACE
     fs_write_roots: list[str] | None = None   # wholesale (workdir stays write_roots[0])

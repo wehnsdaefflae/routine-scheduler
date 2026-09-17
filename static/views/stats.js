@@ -269,6 +269,55 @@ function utilsSection(u) {
     head, body);
 }
 
+// Output compression by routine (docs/output-compression.md): what the optional compressor
+// actually bought. `candidates` is every successful command output the mode let through,
+// `attempts` the ones the compressor ran on, `applied` the previews that actually replaced
+// an observation — and `rejected` is the half that has no upside at all: a result the
+// engine's own verification refused, paid for in compressor time and thrown away. Savings
+// are the recorded ESTIMATE (preview chars ÷ 4), never a billing reading.
+function compressionSection(c) {
+  const rows = c?.rows || [];
+  const t = c?.totals || {};
+  if (!rows.length) {
+    return el("div", { class: "stat-section" },
+      el("h2", {}, "Output compression by routine"),
+      el("div", { class: "sub" }, "no counted run yet — the tally is written to the durable "
+        + "usage stream when a run finishes, so the first finished run fills this in."));
+  }
+  const hit = t.attempts ? ` · ${Math.round((t.applied / t.attempts) * 100)}% of attempts landed` : "";
+  const num = (n) => (n ? fmtInt(n) : "—");
+  const head = el("tr", {},
+    el("th", {}, "routine"),
+    el("th", { title: "the routine's setting now — an empty row on 'off' is switched off, not ineligible" }, "mode"),
+    el("th", { class: "num" }, "runs"),
+    el("th", { class: "num", title: "successful command outputs the mode let through; most are too small or are neither JSON nor logs" }, "candidates"),
+    el("th", { class: "num", title: "candidates the compressor actually ran on" }, "attempts"),
+    el("th", { class: "num", title: "previews that replaced the observation the model read" }, "applied"),
+    el("th", { class: "num", title: "estimated tokens saved by applied previews (preview chars ÷ 4) — an estimate, not billing" }, "~tokens saved"),
+    el("th", { class: "num", title: "the compressor's result failed the engine's own verification (JSON that did not survive it, or an unusable result): the original was kept and the time is gone" }, "rejected"),
+    el("th", { class: "num", title: "compressed fine, but no smaller complete preview than the existing capped one" }, "no gain"),
+    el("th", { class: "num", title: "wall clock spent inside the compressor, whatever the outcome" }, "time"));
+  const body = rows.map((r) => el("tr", {},
+    el("td", {}, el("a", { href: `#/routine/${r.routine}` }, r.routine)),
+    el("td", { class: "muted" }, r.mode || "—"),
+    el("td", { class: "num" }, fmtInt(r.runs)),
+    el("td", { class: "num" }, num(r.candidates)),
+    el("td", { class: "num" }, num(r.attempts)),
+    el("td", { class: "num" }, r.attempts
+      ? `${fmtInt(r.applied)} (${Math.round((r.applied / r.attempts) * 100)}%)` : "—"),
+    el("td", { class: "num" }, num(r.tokens_saved)),
+    // more rejected than applied: this routine's outputs cost the compressor more than they bought
+    el("td", { class: r.fallback > r.applied ? "num warn" : "num" }, num(r.fallback)),
+    el("td", { class: "num" }, num(r.unchanged)),
+    el("td", { class: "num" }, r.seconds ? fmtDur(Math.round(r.seconds)) : "—")));
+  return statSection("Output compression by routine",
+    [`${fmtInt(t.applied || 0)} previews applied of ${fmtInt(t.attempts || 0)} attempts${hit}, `,
+     `~${fmtNum(t.tokens_saved || 0)} tokens saved for ${fmtDur(Math.round(t.seconds || 0))} of compressor time, `,
+     `over ${fmtInt(c.records || 0)} counted runs since ${String(c.since || "").slice(0, 10)}. `,
+     "From the durable usage stream; savings are the recorded estimate, not a billing reading."],
+    head, body);
+}
+
 export async function render(view) {
   view.append(el("div", { class: "page-head" },
     el("div", {},
@@ -319,6 +368,9 @@ export async function render(view) {
 
     // ---- per-util execution stats -------------------------------------------
     parts.push(utilsSection(agg.utils));
+
+    // ---- what the optional output compressor bought --------------------------
+    parts.push(compressionSection(agg.compression));
 
     // ---- slice tables -----------------------------------------------------
     parts.push(sliceTable("By routine / conversation", agg.by_routine, "name", [

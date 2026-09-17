@@ -2382,7 +2382,7 @@ def test_run_detail_model_falls_back_to_config(client):
     assert d["model"] == "Fable"
 
 
-@pytest.mark.parametrize("mode", ["off", "measure", "headroom"])
+@pytest.mark.parametrize("mode", ["off", "measure", "compress"])
 def test_output_compression_setting_roundtrip(client, mode):
     c, _ = client
     r = c.patch("/api/routines/apir", json={"output_compression": mode})
