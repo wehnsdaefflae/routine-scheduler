@@ -64,6 +64,47 @@ exempt from the open-thread cap for the reason a reply and a fold are — it red
 Decision **D134**, operator-selected option C on 2026-09-18. Closes **F497**; **F486**'s
 mechanism half.
 
+### Fixed — the subscription quota chip no longer breaks a phone's viewport
+
+Operator, 2026-09-18: *"there's only a chip for claude 'Claude subscription — the whole account,
+including your interactive sessions' and it breaks the horizontal viewport on mobile. if we have
+this info at the respective endpoint on the settings page, that would be enough actually."*
+
+Two halves, both needed:
+
+- `static/views/dashboard.js` printed `quotaLine(q)`, which joins EVERY quota window with `" · "`.
+  With four windows (`5h`, `7d`, `7d sonnet`, `7d opus`) that is ~120 characters.
+- `.chip` is `white-space: nowrap` with no width bound, so that text became a box nothing can
+  wrap — and a wrapping `.page-head` cannot help a child that is itself wider than the screen.
+
+The chip now carries **one** window, the TIGHTEST — the only one that can summon anybody — with
+the full breakdown in its `title` and, as the operator said, on the endpoint's own Settings card,
+which already renders all of it as wrapping prose. Plus the general guard: `.chip` gets
+`max-width: 100%` + ellipsis inside the phone media block, so the NEXT chip whose text grows
+cannot do this again.
+
+The new `tests/ui` test lives in `test_mobile_nav.py`, the file that already owns the invariant
+*the document must never scroll sideways*, and it stubs both quota APIs — because no seeded
+harness makes that chip render at all, which is precisely why the widest widget on the dashboard
+was invisible to the suite that exists to catch this. `test_dashboard_shows_proxy_quota` now
+asserts the one-window chip and the full-text tooltip.
+
+### Fixed — an empty `llm` completion fails loudly instead of reading as a blank answer
+
+**R1611** (llmsectest-weekday): the `llm` action returned three consecutive EMPTY replies —
+across two different models, one via `model: main` — on a prompt quoting a security-disclosure
+draft, minutes after a near-identical call had answered fully.
+
+`do_llm()` returned `{"reply": ""}` as a SUCCESS. An empty reply and a silent refusal are
+indistinguishable, and the refusal classifier reads the reply TEXT, which an empty string cannot
+carry — so nothing downstream could separate them either. The reporting run nearly read the
+silence as *"the reviewer found no problems with the revised draft"*: a false verification of a
+message going to a stranger under the user's name.
+
+A zero-length or whitespace-only completion now returns an `error` naming the model, with no
+`reply` key at all, so a caller cannot mistake it for an answer. The tokens were spent, so usage
+is still accounted for; the refusal-clarification path is untouched.
+
 ## [0.350.0] — 2026-09-17
 
 ### Added — an `unmet` stopping verdict must carry what REMAINS
