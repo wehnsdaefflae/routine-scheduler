@@ -163,3 +163,62 @@ def test_list_models_reports_roles_and_catalog():
     assert [m["name"] for m in obs["models"]] == ["glm-5", "opus-4"]
     assert obs["models"][0]["model"] == "glm-5-model"
     assert obs["models"][0]["fallbacks"] == []
+
+
+class _EmptyEp(_Ep):
+    """An endpoint that returns a zero-length completion with no error — R1611's shape."""
+
+    def complete(self, messages, **kw):
+        self.calls.append(kw)
+        return Completion(text="", parsed=None, usage={"in": 7, "out": 0})
+
+
+class _EmptyRegistry(_Registry):
+    def for_model(self, kind, models):
+        self.roles.append(kind)
+        ep = self.eps.setdefault(kind, _EmptyEp())
+        return ep, ModelRef(f"{kind}-ep", f"{kind}-model")
+
+
+def test_an_empty_llm_completion_is_an_error_not_a_silent_empty_answer():
+    """R1611: three consecutive empty replies across two models, on a prompt quoting a
+    security-disclosure draft, after a near-identical call had answered fully minutes earlier.
+
+    An empty reply and a silent refusal are indistinguishable, and the refusal classifier reads
+    the reply TEXT — which an empty string cannot carry — so nothing downstream could tell them
+    apart either. The run that hit this nearly read the silence as "the reviewer found no
+    problems with the revised draft", i.e. a false verification of an outbound message going to
+    a stranger under the user's name. So the observation must FAIL loudly (failure-visibility).
+    """
+    reg = _EmptyRegistry()
+    usage: list[dict] = []
+    ctx = SimpleNamespace(registry=reg, routine=SimpleNamespace(models={}),
+                          server=_server(), add_usage=usage.append)
+    obs = do_llm({"prompt": "p", "say": "s"}, ctx)
+
+    assert "reply" not in obs, "an empty completion must not be handed over as a reply"
+    assert "EMPTY completion" in obs["error"]
+    # the error names the model, so a caller can tell WHICH one went silent
+    assert "tool_call-model" in obs["error"]
+    # tokens were still spent and are still accounted for
+    assert usage == [{"in": 7, "out": 0}]
+    # and it never reaches the refusal classifier: exactly one call was made
+    assert reg.roles == ["tool_call"]
+
+
+def test_a_whitespace_only_completion_counts_as_empty():
+    """The same defect wearing a newline. A reply of "\\n  " is not an answer either, and a
+    caller cannot tell it from one.
+    """
+    reg = _EmptyRegistry()
+    reg.eps["tool_call"] = _EmptyEp()
+    reg.eps["tool_call"]._text = "\n  \t "
+
+    class _WsEp(_EmptyEp):
+        def complete(self, messages, **kw):
+            self.calls.append(kw)
+            return Completion(text="\n  \t ", parsed=None, usage={"in": 3, "out": 1})
+
+    reg.eps["tool_call"] = _WsEp()
+    obs = do_llm({"prompt": "p", "say": "s"}, _ctx(reg))
+    assert "reply" not in obs and "EMPTY completion" in obs["error"]

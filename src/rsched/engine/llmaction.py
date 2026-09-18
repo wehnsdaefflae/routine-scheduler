@@ -58,6 +58,22 @@ def do_llm(action: dict, ctx: RunContext) -> dict:
     reply = completion.text
     if completion.parsed is not None:
         reply = json.dumps(completion.parsed, ensure_ascii=False, indent=1)
+    # An EMPTY completion is not an answer, and it must never reach the caller as one. A
+    # zero-length reply is indistinguishable from a model that considered the question and
+    # had nothing to add — and the refusal classifier below cannot help, because it reads
+    # the reply TEXT, which an empty string does not carry. R1611: three consecutive empty
+    # replies across two models, on a prompt quoting a security-disclosure draft, after a
+    # near-identical call had answered fully minutes earlier. The run nearly read the silence
+    # as "the reviewer found no problems with the revised draft" — a false verification of a
+    # message going to a stranger under the user's name. So it fails LOUDLY instead.
+    if not str(reply).strip():
+        return {"kind": "llm", "endpoint": ref.endpoint, "model": ref.model,
+                "usage": completion.usage,
+                "error": f"{ref.name or ref.model} returned an EMPTY completion (no text, no "
+                         "error). That is not an answer: a blank reply and a silent refusal "
+                         "look identical, so this is surfaced rather than passed on. Retry "
+                         "with the prompt reworded, or with a different `model` — and do not "
+                         "read the silence as agreement."}
     reply, truncated = truncate(reply)
     out = {"kind": "llm", "endpoint": ref.endpoint, "model": ref.model,
            "reply": reply, "usage": completion.usage, "truncated": truncated}
