@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from ..ids import is_slug
 from ..reports import REPORT_ID_RE
-from .actionschema import KINDS, READ_PATHS_MAX
+from .actionschema import KINDS, READ_PATHS_MAX, SETTLES_MAX
 from .remind import field_problems as reminder_field_problems
 
 # The fields that ride EVERY kind alongside `say`, each a no-turn side effect the engine
@@ -138,7 +138,7 @@ KIND_FIELDS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "kill": (("n",), ()),
     "wait": ((), ("n", "all", "timeout_s")),
     "ask_user": (("question",), ("mode", "options", "default", "config_patch", "request")),
-    "report": (("title",), ("detail", "target", "answers", "closes", "supersedes")),
+    "report": (("title",), ("detail", "target", "answers", "closes", "supersedes", "settles")),
     "finish": (("status", "summary"), ("reply_to",)),
 }
 
@@ -293,11 +293,42 @@ def validate_action(obj: dict, allowed_kinds: set[str] | None = None,  # noqa: C
             problems.append(f"kind={kind}: at most {READ_PATHS_MAX} paths per action")
     if kind == "edit_file" and "replacement" in obj and not isinstance(obj["replacement"], str):
         problems.append("kind=edit_file: 'replacement' must be a string (\"\" deletes the anchor)")
-    # `closes` is a property OF an answer — a terminal acknowledgment. Without `answers`
-    # there is no exchange to complete, so a bare closes is a contradiction, not a no-op.
-    if kind == "report" and obj.get("closes") and not str(obj.get("answers") or "").strip():
-        problems.append("kind=report: 'closes' is valid only together with 'answers' — it "
-                        "marks the ANSWER as completing that exchange")
+    # `closes` is a property OF a disposal — a terminal acknowledgment. `answers` disposes of
+    # ONE exchange, `settles` of several; with neither there is nothing to complete, so a bare
+    # closes is a contradiction, not a no-op. Before D134 only `answers` counted, which is why
+    # a report that asked nothing back could not be born settled at all: it answers no single
+    # row, so `closes` was refused and the carrier stayed open forever (F497).
+    if (kind == "report" and obj.get("closes")
+            and not str(obj.get("answers") or "").strip()
+            and not obj.get("settles")):
+        problems.append("kind=report: 'closes' is valid only together with 'answers' or "
+                        "'settles' — it marks the disposal as completing those exchanges")
+    # Settling rows CLAIMS they are finished. It needs no `target` (each settled row already has
+    # its own raiser) but it does need well-formed ids, and a row cannot be both answered and
+    # settled by one reply, nor both settled and folded — those say opposite things about who
+    # holds the work next.
+    if kind == "report" and obj.get("settles"):
+        if not isinstance(obj["settles"], list):
+            problems.append("kind=report: 'settles' must be a list of report ids (R<n>)")
+        elif len(obj["settles"]) > SETTLES_MAX:
+            problems.append(f"kind=report: 'settles' takes at most {SETTLES_MAX} report ids")
+        elif bad := [str(i) for i in obj["settles"]
+                     if not REPORT_ID_RE.match(str(i).strip().upper())]:
+            problems.append(f"kind=report: 'settles' takes report ids like R123 — not "
+                            f"{', '.join(bad[:3])}")
+        elif (answered := str(obj.get("answers") or "").strip().upper()) and answered in [
+                str(i).strip().upper() for i in obj["settles"]]:
+            problems.append(f"kind=report: {answered} is already settled by 'answers' — naming "
+                            "it in 'settles' too says the same thing twice. List only the "
+                            "OTHER rows this reply disposes of")
+        elif overlap := sorted({str(i).strip().upper() for i in obj["settles"]}
+                               & {str(i).strip().upper() for i in (obj.get("supersedes") or [])}):
+            # Folding a row makes this report its thread, so it stays live until this one
+            # settles; settling it declares it finished now. Both at once on the same id is a
+            # contradiction the read model would have to break one way or the other.
+            problems.append(f"kind=report: {', '.join(overlap[:3])} cannot be both 'settles' "
+                            "and 'supersedes' — settling DECLARES a row finished, taking it "
+                            "over CONTINUES it here. Pick one")
     # Taking a row over means becoming its OWNER's thread. Without a target there is no owner
     # to become, and the folded rows would leave triage for nowhere.
     if kind == "report" and obj.get("supersedes"):

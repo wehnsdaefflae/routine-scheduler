@@ -227,12 +227,25 @@ def _build(report_path: Path, changelog_path: Path,
                 items[item_id] = _report_item(kind, entry, report,
                                               addressed.get(item_id, []), answered)
     rows = read_reports(reports_path)
-    # A report that names another in `answers` CLOSES it — the reply is the closure record,
-    # so the map is built over the whole stream before any item is shaped. A RETRACTED reply
-    # settles nothing: the target's question never got its answer delivered.
-    closed_by = {str(r.get("answers")).strip().upper(): str(r.get("id") or "")
-                 for r in rows
-                 if str(r.get("answers") or "").strip() and not r.get("retracted")}
+    # A report CLOSES the rows it disposes of — the reply is the closure record, so the map is
+    # built over the whole stream before any item is shaped. A RETRACTED reply settles nothing:
+    # the target's question never got its answer delivered.
+    #
+    # TWO faces, one map (D134). `answers` names the ONE exchange a reply belongs to; `settles`
+    # names every row it terminally disposes of. The map used to be built from `answers` alone,
+    # which is why a reply answering several rows in its own prose settled exactly one of them
+    # and the rest aged on with an empty `answered_by` (F497: R1585 answered R1308 and R1328,
+    # closed R1527, and left both at 11 and 12 days). An EARLIER settlement wins over a later
+    # one — the row was finished when it was first declared finished.
+    closed_by: dict[str, str] = {}
+    for r in rows:
+        if r.get("retracted"):
+            continue
+        reply_id = str(r.get("id") or "")
+        for raw in (str(r.get("answers") or ""), *(r.get("settles") or [])):
+            settled_id = str(raw).strip().upper()
+            if settled_id:
+                closed_by.setdefault(settled_id, reply_id)
     # A SUPERSEDED row reads its carrier's status, so the carriers have to be shaped first.
     # Two passes over the same rows rather than a recursive read: the fold is a chain (a
     # carrier can itself be folded into a later one), and resolving it in place would make an

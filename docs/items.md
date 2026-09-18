@@ -98,12 +98,13 @@ arbitrary payload keys). Nothing reads them.
 - **`archive_only`** — true when no source holds the item's own record any more and it
   survives solely through the changelog / answered markers.
 - Type extras: **`severity`** (findings), **`options[]`** + **`resolution`** (decisions),
-  **`to`** + **`delivered{ts,run_id}`** + **`answers`** + **`closes`** + **`answered_by`** +
-  **`superseded{ts,by,to}`** + **`supersedes[]`**
+  **`to`** + **`delivered{ts,run_id}`** + **`answers`** + **`settles[]`** + **`closes`** +
+  **`answered_by`** + **`superseded{ts,by,to}`** + **`supersedes[]`**
   (reports; `to` is empty on an unaddressed one, which has no routing to show, and on a FOLDED
   one it is the carrier's target — the row does have an owner now; `closes` is true on a
-  terminal acknowledgment; `superseded` names the report that took this row over and
-  `supersedes` the rows this one took — see the status rules below).
+  terminal acknowledgment; `answers` is the ONE exchange this reply belongs to while `settles`
+  lists every row it terminally disposed of; `superseded` names the report that took this row
+  over and `supersedes` the rows this one took — see the status rules below).
 
 ## Status vocabulary
 
@@ -154,7 +155,8 @@ it before the target consumed it (`reports.retract_report`, docs/messages.md —
 recipient never saw it, so no other state can apply, and a retracted reply settles
 nothing); **the CARRIER's status** when the row was SUPERSEDED (see below); **`settled`** when
 the row itself carries
-`closes: true` (see below) or when a later report carries `answers: "<this id>"` — the target
+`closes: true` (see below) or when a later report DISPOSED of it — `answers: "<this id>"`, the
+one-to-one reply, or `settles: [… "<this id>" …]`, the many-rows terminal claim — the target
 replied, having acted or having said why not; **`addressed`** when a changelog row names the
 id; **`in_progress`** once an ADDRESSED report's target drained the message from its inbox and
 the engine stamped a `delivered` event onto the row; otherwise **`open`**.
@@ -173,6 +175,30 @@ answer otherwise being a new open report waiting for one more reply). A closure 
 delivered when addressed, with the message marked "no reply needed"; answering a closure
 anyway is harmless — it is already settled — and only a NEW report that names the closure
 reopens the discussion, as its own open item.
+
+**The many-rows settlement.** `answers` is a SCALAR — the one exchange a reply belongs to — and
+for a while that was the only way a row could be settled. Two shapes could not be expressed, and
+both were measured on this ledger as F497 (D134, operator-selected 2026-09-18):
+
+- **A reply that genuinely finishes several rows could settle only one.** R1585 answered R1308
+  *and* R1328 in its own title, carried `answers: "R1527"`, and left both at 11 and 12 days with
+  an empty `answered_by` — a day after they had been genuinely answered.
+- **A report that asks nothing back could not be settled at all.** A fold-carrier, or a plain
+  FYI, answers no single row, so `closes` was refused and the row was born `open` forever. Seven
+  such carriers sat open on 2026-09-16, four of them saying "no reply needed" in their own prose.
+  Because folding empties triage while minting one open carrier per fold, `live` could not fall
+  below the number of folds — which is why a flat `live` beside `triage: 0` puzzled three runs.
+
+So a reply may declare **`settles: ["R<n>", …]`**: every row named reads `settled`, with this
+report as its `answered_by`. `answers` keeps its one job (which exchange this reply belongs to)
+and `settles` carries the terminal claim, so `closes` is now valid beside EITHER — a report that
+settles rows needs no `answers` to be born settled. An earlier settlement wins over a later one:
+a row was finished when it was first declared finished. Settling is exempt from the open-thread
+cap for the same reason a reply and a fold are — it reduces the count.
+
+`settles` and `supersedes` are opposites and the validator refuses both on one id: **folding
+moves the work here** (the row joins this thread and stays live until this one settles), while
+**settling declares it finished** (the row ends now, and this report holds nothing).
 
 **The fold: one thread, one owner.** A report may declare `supersedes: ["R<n>", …]` beside its
 `target` — "these rows are now this thread". Each named row gets a `superseded` event

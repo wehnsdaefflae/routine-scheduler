@@ -46,12 +46,17 @@ def open_threads(rows: list[dict], *, routine: str, target: str) -> list[str]:
     order), so the caller can name the one to fold into.
 
     Open means the owner still has it: not retracted, not superseded into another thread, not
-    itself a closure, and not answered by any later report. That is the same reading
+    itself a closure, and not DISPOSED OF by any later report. That is the same reading
     `readmodels/items.py` derives a status from — computed here from the rows directly,
     because a WRITE precondition must never depend on a read model.
+
+    Disposal has two faces and both count (D134): `answers` ends one exchange, `settles` ends
+    every row it names. Counting only `answers` would keep a settled row in the cap's tally, so
+    the cap would go on refusing new reports about work the ledger already knows is finished.
     """
-    answered = {str(r.get("answers") or "").strip().upper()
-                for r in rows if not r.get("retracted")}
+    answered = {str(i).strip().upper()
+                for r in rows if not r.get("retracted")
+                for i in (str(r.get("answers") or ""), *(r.get("settles") or []))}
     return [str(r.get("id"))
             for r in rows
             if r.get("routine") == routine and r.get("target") == target

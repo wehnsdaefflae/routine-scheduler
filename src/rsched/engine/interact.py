@@ -415,11 +415,15 @@ def handle_report(loop, action: dict) -> dict:
             return {"kind": "report", "target": target, "supersedes": wanted,
                     "unusable": unusable, "reason": "unknown to the ledger, retracted, or "
                     "already folded into another thread — a row belongs to exactly one"}
+    settles = [str(i).strip().upper() for i in (action.get("settles") or []) if str(i).strip()]
     try:
         filed = reports.file_report(home, routine=ctx.routine.slug, run_id=ctx.run_id,
                                     title=title, detail=detail, target=target,
-                                    target_dir=target_dir, answers=answers,
-                                    closes=bool(action.get("closes")),
+                                    target_dir=target_dir,
+                                    disposal=reports.Disposal(
+                                        answers=answers,
+                                        closes=bool(action.get("closes")),
+                                        settles=tuple(settles)),
                                     supersedes=tuple(folded))
     except report_threads.ThreadCapError as cap:
         return {"kind": "report", "target": target, "thread_cap": report_threads.OPEN_THREAD_CAP,
@@ -431,7 +435,12 @@ def handle_report(loop, action: dict) -> dict:
         out["delivery"] = "the target reads it on its next scheduled run"
     if filed and filed[2]:
         out["supersedes"] = filed[2]        # what the LEDGER folded, under its own lock
-    if answers and filed:
-        # This run has now answered that thread — the pre-finish assist reads what is LEFT.
-        ctx.reports_open = [r for r in ctx.reports_open if r != answers.upper()]
+    if settles and filed:
+        out["settles"] = settles
+    if filed and (answers or settles):
+        # This run has now disposed of those threads — the pre-finish assist reads what is
+        # LEFT. `answers` ends one exchange, `settles` ends every row it names, and both have
+        # to leave the open set or the assist keeps asking for work that is already done.
+        done = {answers.upper(), *settles} - {""}
+        ctx.reports_open = [r for r in ctx.reports_open if r not in done]
     return out

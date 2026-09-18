@@ -18,6 +18,13 @@ READ_PATHS_MAX = 8
 #: of separate reports this field exists to prevent.
 SUPERSEDES_MAX = 20
 
+#: How many rows one reply may terminally SETTLE (D134). Same generous cap as `supersedes` and
+#: for the same reason: a reply that disposes of a whole drained queue is the intended use, and
+#: the alternative — one reply per row — is the shape that left rows settled-in-prose and
+#: open-in-the-ledger (F497). `settles` differs from `supersedes` in WHO ends up holding the
+#: work: folding moves rows into this thread, settling declares them finished.
+SETTLES_MAX = 20
+
 
 KINDS = ("util", "write_util", "remove_util", "read_file", "view_image", "write_file",
          "delete", "move", "mkdir", "edit_file",
@@ -217,11 +224,21 @@ ACTION_SCHEMA: dict = {
                     "description": "report: OPTIONAL — the id (R<n>) of a report you RECEIVED "
                                    "that this one answers: what you did about it, or why you "
                                    "will not. That is how a report gets closed"},
+        "settles": {
+            "type": "array", "items": {"type": "string"}, "maxItems": SETTLES_MAX,
+            "description": "report: OPTIONAL — every report id (R<n>) this one TERMINALLY "
+                           "SETTLES. `answers` records the ONE exchange this reply belongs to; "
+                           "`settles` is the many-rows claim: list every OTHER row this reply "
+                           "disposes of and each becomes settled, naming this report as what "
+                           "settled it. Use it when one reply genuinely answers several rows, "
+                           "and on a report that asks nothing back — with `settles` a reply "
+                           "needs no `answers` to carry `closes`"},
         "closes": {"type": "boolean",
-                   "description": "report: with `answers` — this reply COMPLETES the exchange: "
-                                  "it settles its target AND is itself born settled, asking "
-                                  "nothing back. Set it whenever your answer needs no reply; a "
-                                  "closure is reopened only by a NEW report that names it"},
+                   "description": "report: with `answers` or `settles` — this reply COMPLETES "
+                                  "the exchange: it settles its target(s) AND is itself born "
+                                  "settled, asking nothing back. Set it whenever your answer "
+                                  "needs no reply; a closure is reopened only by a NEW report "
+                                  "that names it"},
         "supersedes": {
             "type": "array", "items": {"type": "string"}, "maxItems": SUPERSEDES_MAX,
             "description": "report: OPTIONAL — existing report ids (R<n>) this one TAKES OVER. "

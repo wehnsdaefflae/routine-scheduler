@@ -15,6 +15,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.351.0] — 2026-09-18
+
+### Added — one reply can settle several rows, and a report that asks nothing back can end
+
+`answers` is a SCALAR — the one exchange a reply belongs to — and for a while it was also the
+only way a row could be settled. Two shapes could not be expressed, and both were measured on
+the live ledger as **F497**:
+
+- **A reply that genuinely finished several rows could settle only one.** R1585 answered R1308
+  *and* R1328 in its own title, carried `answers: "R1527"`, and left both rows `in_progress` at
+  **11 and 12 days** — a day after they had been genuinely answered, with an empty `answered_by`.
+- **A report that asks nothing back could not be settled at all.** A fold-carrier, or a plain
+  FYI, answers no single row, so `closes` was refused and the row was born `open` forever. Seven
+  such carriers sat open on 2026-09-16, four of them saying *"no reply needed"* in their own
+  prose. Because folding empties triage while minting one open carrier per fold, `live` could
+  not fall below the number of folds — which is why a flat `live` beside `triage: 0` puzzled
+  three consecutive audit runs.
+
+So a report may now declare **`settles: ["R<n>", …]`**: every row named reads `settled`, with
+this report as its `answered_by`. `answers` keeps its one job and `settles` carries the terminal
+claim, so **`closes` is valid beside EITHER** — a reply that settles rows needs no `answers` to
+be born settled. An earlier settlement wins over a later one: a row was finished when it was
+first declared finished.
+
+`settles` and `supersedes` are opposites and the validator refuses both on one id: **folding
+moves the work here** (the row joins this thread and stays live until this one settles), while
+**settling declares it finished** (the row ends now, and this report holds nothing). Settling is
+exempt from the open-thread cap for the reason a reply and a fold are — it reduces the count.
+
+- `engine/actionschema.py` — the `settles` array field (`SETTLES_MAX` 20) and a `closes`
+  description that names both disposals.
+- `engine/actions.py` — `closes` accepts `answers` OR `settles`; `settles` gets `supersedes`-grade
+  validation (list shape, id form, cap) plus two contradiction guards: an id cannot be both
+  answered and settled by one reply, nor both settled and folded.
+- `reports.py` — the three disposal fields become one `Disposal` value object, so `closes`
+  cannot drift away from what it is a property OF, and the delivered message NAMES the settled
+  rows (`settles R2, R3 — no reply needed`) rather than leaving the recipient to look them up.
+- `readmodels/items.py` — `closed_by` is many-per-reply instead of one-target-per-reply.
+- `report_threads.py` — `open_threads` counts a settled row as disposed of, so the cap stops
+  refusing reports about work the ledger already knows is finished.
+- `static/components/itemcard.js` — the card names the rows a reply settled.
+- Tests: three in `tests/test_reports.py` (many-row settlement end to end, a report born settled
+  with no `answers`, cap exemption) and one `tests/ui` flow test. Each was proven by FAILURE —
+  reverting only the read-model half turns all three red on exactly the F497 symptom
+  (`['settled', 'open', 'open']`).
+
+Decision **D134**, operator-selected option C on 2026-09-18. Closes **F497**; **F486**'s
+mechanism half.
+
 ## [0.350.0] — 2026-09-17
 
 ### Added — an `unmet` stopping verdict must carry what REMAINS

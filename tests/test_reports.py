@@ -24,6 +24,7 @@ from rsched.engine.observations import format_observation
 from rsched.grantpolicy import GrantPolicy
 from rsched.grants import GATED_KINDS
 from rsched.readmodels import item_reports, items
+from rsched.report_threads import OPEN_THREAD_CAP
 from rsched.reports import (
     next_id,
     read_reports,
@@ -339,13 +340,86 @@ def test_a_closure_is_born_settled_and_ends_the_exchange(tmp_path):
     assert _items(home, audit)["R2"]["status"] == "settled"
 
 
-def test_file_report_refuses_closes_without_answers(tmp_path):
+def test_file_report_refuses_closes_without_any_disposal(tmp_path):
     """Out-of-band callers (batch scripts) get the same pairing rule the action layer
-    enforces: a bare closes is dropped, never recorded."""
-    from rsched.reports import file_report
+    enforces: a bare closes — no `answers`, no `settles` — is dropped, never recorded."""
+    from rsched.reports import Disposal, file_report
     _, home = _loop(tmp_path)
-    file_report(home, routine="x", run_id="x:1", title="t", closes=True)
+    file_report(home, routine="x", run_id="x:1", title="t", disposal=Disposal(closes=True))
     assert "closes" not in _rows(home)[0]
+
+
+def test_a_reply_settles_every_row_it_names_not_just_one(tmp_path):
+    """D134/F497 face 1: `answers` is ONE id, so a reply that genuinely disposes of several rows
+    could settle only one and the rest aged with an empty `answered_by`. Measured on the real
+    ledger: R1585 answered R1308 AND R1328 in its own title, closed R1527, and left both at 11
+    and 12 days. `settles` is the many-rows claim.
+    """
+    loop, home = _loop(tmp_path, slug="self-audit")
+    audit = home / "self-audit"
+    _routine(home, "routine-improver")
+    for n in ("first", "second", "third"):
+        handle_report(loop, {"target": "routine-improver", "title": n})
+
+    back = SimpleNamespace(ctx=SimpleNamespace(
+        server=SimpleNamespace(routines_home=home),
+        routine=SimpleNamespace(slug="routine-improver"),
+        run_id="routine-improver:20260918-010000", reports_open=["R1", "R2", "R3"]))
+    obs = handle_report(back, {"target": "self-audit", "title": "all three done",
+                               "answers": "R1", "settles": ["R2", "R3"], "closes": True})
+
+    by_id = _items(home, audit)
+    assert [by_id[i]["status"] for i in ("R1", "R2", "R3")] == ["settled"] * 3
+    # and each settled row NAMES what settled it — an empty answered_by is the F497 symptom
+    assert by_id["R2"]["answered_by"] == "R4" and by_id["R3"]["answered_by"] == "R4"
+    assert obs["settles"] == ["R2", "R3"]
+    # the pre-finish assist must see NOTHING left open: one reply disposed of all three
+    assert back.ctx.reports_open == []
+    # the recipient is TOLD which of their rows went, in the prose they actually read
+    msg = json.loads((home / "self-audit" / "inbox" / "msg-rep-R4.json").read_text())
+    assert "settles R2, R3" in msg["text"]
+
+
+def test_a_report_that_asks_nothing_back_can_be_born_settled(tmp_path):
+    """D134/F497 face 2: `closes` used to require `answers`, so a report that answers no single
+    row — a fold-carrier, an FYI — could not be settled at all and was born open forever. Seven
+    such carriers sat open on 2026-09-16, four of them literally saying "no reply needed".
+    """
+    loop, home = _loop(tmp_path, slug="self-audit")
+    audit = home / "self-audit"
+    _routine(home, "routine-improver")
+    handle_report(loop, {"target": "routine-improver", "title": "the original"})
+
+    back = SimpleNamespace(ctx=SimpleNamespace(
+        server=SimpleNamespace(routines_home=home),
+        routine=SimpleNamespace(slug="routine-improver"),
+        run_id="routine-improver:20260918-010000", reports_open=["R1"]))
+    handle_report(back, {"target": "self-audit", "title": "FYI, no reply needed",
+                         "settles": ["R1"], "closes": True})
+
+    by_id = _items(home, audit)
+    assert by_id["R1"]["status"] == "settled"
+    assert by_id["R2"]["status"] == "settled"      # born settled WITHOUT any `answers`
+    assert by_id["R2"]["closes"] is True
+    msg = json.loads((home / "self-audit" / "inbox" / "msg-rep-R2.json").read_text())
+    assert "no reply needed" in msg["text"]
+
+
+def test_a_settling_reply_is_exempt_from_the_open_thread_cap(tmp_path):
+    """The cap refuses a new parallel thread, never the way OUT of one. A settlement reduces the
+    open count exactly as a reply and a fold do, so capping it would punish the fix.
+    """
+    loop, home = _loop(tmp_path, slug="self-audit")
+    _routine(home, "routine-improver")
+    for n in range(OPEN_THREAD_CAP):
+        handle_report(loop, {"target": "routine-improver", "title": f"thread {n}"})
+    ids = [f"R{n + 1}" for n in range(OPEN_THREAD_CAP)]
+
+    obs = handle_report(loop, {"target": "routine-improver", "title": "all of them are done",
+                               "settles": ids, "closes": True})
+    assert obs["filed"] is True and "thread_cap" not in obs
+    by_id = _items(home, home / "self-audit")
+    assert all(by_id[i]["status"] == "settled" for i in ids)
 
 
 def test_an_unaddressed_report_has_no_routing(tmp_path):

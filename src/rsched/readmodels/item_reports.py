@@ -49,9 +49,12 @@ def report_row_item(row: dict, addressed: list[dict], closed_by: dict[str, str],
     makes that report its thread, so it reads whatever the thread reads and stops being its own
     open item (F492: a routed row that kept its own `open` was re-triaged and re-routed every
     run); `settled` when the row itself carries `closes: true` (a terminal acknowledgment, born
-    settled — it asks nothing back) or when a later report carries `answers: "<this id>"`
-    (the target replied, having acted or said why not; answering a closure works and changes
-    nothing — it is already settled); `addressed` when a changelog row names the id;
+    settled — it asks nothing back) or when a later report DISPOSED of it — `answers: "<this
+    id>"`, the one-to-one reply, or `settles: [… "<this id>" …]`, the many-rows terminal claim
+    (D134: a reply that finishes several rows settles ALL of them, and a report that asks
+    nothing back can be born settled without answering anyone). Either way `answered_by` names
+    the reply that did it, and answering a closure works and changes nothing — it is already
+    settled. Then `addressed` when a changelog row names the id;
     `in_progress` once the target's run drained it; otherwise `open`.
     """
     item_id = str(row.get("id") or "").strip().upper()
@@ -79,7 +82,8 @@ def report_row_item(row: dict, addressed: list[dict], closed_by: dict[str, str],
                    "run_id": str(row.get("run_id") or ""),
                    "ts": str(row.get("ts") or ""), "commit": ""},
         "addressed": addressed, "evidence": [],
-        "refs": refs(item_id, title, detail, str(row.get("answers") or "")),
+        "refs": refs(item_id, title, detail, str(row.get("answers") or ""),
+                     " ".join(str(i) for i in (row.get("settles") or []))),
         "archive_only": False,
         # A folded row's OWNER is the carrier's target. Leaving it empty would keep saying
         # "nobody owns this" about a row that was handed over — which is the exact false
@@ -91,6 +95,7 @@ def report_row_item(row: dict, addressed: list[dict], closed_by: dict[str, str],
         "retracted": retracted,
         "superseded": superseded,
         "supersedes": [str(i) for i in (row.get("supersedes") or [])],
+        "settles": [str(i) for i in (row.get("settles") or [])],
         "answers": str(row.get("answers") or ""),
         "closes": bool(row.get("closes")),
         "answered_by": closed_by.get(item_id, ""),

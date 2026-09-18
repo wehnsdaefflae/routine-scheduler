@@ -62,6 +62,7 @@ from __future__ import annotations
 
 import json
 import re
+from dataclasses import dataclass
 from pathlib import Path
 
 from .ids import now_iso
@@ -106,16 +107,62 @@ def next_id(path: Path) -> str:
     return f"R{highest + 1}"
 
 
-def message_text(item_id: str, sender: str, title: str, detail: str, answers: str = "",
-                 closes: bool = False) -> str:
+@dataclass(frozen=True)
+class Disposal:
+    """What a report DISPOSES OF: the one exchange it answers, the rows it settles, and whether
+    it is itself terminal.
+
+    The three travel together because they are one decision with three faces, and keeping them
+    apart is what let them drift: `closes` was a property of `answers` alone, so a reply that
+    settled several rows could only close one, and a report that asked nothing back could close
+    nothing at all (F497 — measured on this ledger as rows aging at 11 and 12 days a day after
+    being genuinely answered, and seven fold-carriers born open, four of them literally saying
+    "no reply needed").
+
+    - `answers` — the ONE report id this reply belongs to, the exchange record. Unchanged.
+    - `settles` — every id this reply terminally disposes of (D134, operator-selected option C).
+    - `closes` — this reply is itself born settled. Valid beside EITHER disposal.
+    """
+
+    answers: str = ""
+    closes: bool = False
+    settles: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        # Normalize once, here, so every reader downstream compares like with like: the ledger
+        # stores ids upper-cased and a caller passing "r123" must not mint a row nothing matches.
+        object.__setattr__(self, "answers", str(self.answers or "").strip())
+        object.__setattr__(self, "settles",
+                           tuple(str(i).strip().upper() for i in self.settles if str(i).strip()))
+        # `closes` is a property OF a disposal: with neither face there is nothing to complete.
+        object.__setattr__(self, "closes",
+                           bool(self.closes and (self.answers or self.settles)))
+
+    @property
+    def settled_ids(self) -> list[str]:
+        """Every row id this reply disposes of, `answers` included — what the read model reads."""
+        return [i for i in (self.answers.upper(), *self.settles) if i]
+
+
+def message_text(item_id: str, sender: str, title: str, detail: str,
+                 disposal: Disposal | None = None) -> str:
     """The prose a delivered report becomes in the target's prompt — one wording, used by the
     boot drain and the mid-run injection alike so a resumed prompt reads like a live one.
+
+    Settled rows are NAMED in the head rather than left to the ledger: the recipient's own rows
+    are what got disposed of, and a reader who cannot see which ones has to go and look them up.
     """
+    disposal = disposal or Disposal()
+    answers, closes = disposal.answers, disposal.closes
     head = f"REPORT {item_id} from routine `{sender}`"
     if answers and closes:
         head += f" (answering {answers} — closes the exchange, no reply needed)"
     elif answers:
         head += f" (answering {answers})"
+    if disposal.settles:
+        rows = ", ".join(disposal.settles)
+        head += (f" (settles {rows} — no reply needed)" if closes and not answers
+                 else f" (settles {rows})")
     body = [head, "", title]
     if detail:
         body += ["", detail]
@@ -123,8 +170,8 @@ def message_text(item_id: str, sender: str, title: str, detail: str, answers: st
 
 
 def file_report(routines_home: Path, *, routine: str, run_id: str, title: str, detail: str = "",
-                target: str = "", target_dir: Path | None = None, answers: str = "",
-                closes: bool = False,
+                target: str = "", target_dir: Path | None = None,
+                disposal: Disposal | None = None,
                 supersedes: tuple[str, ...] = ()) -> tuple[Path, str, list[str]] | None:
     """Append one report, and deliver it when it is addressed.
 
@@ -135,9 +182,18 @@ def file_report(routines_home: Path, *, routine: str, run_id: str, title: str, d
     real job is elsewhere. An ADDRESSED one is the caller's whole purpose, so the handler
     surfaces the failure instead of letting the run believe it routed work it did not.
 
-    `closes` is recorded only beside `answers` (validate_action enforces the pairing for the
-    action; this guard keeps out-of-band callers equally honest): a closure row is the
-    exchange's terminal acknowledgment, born settled.
+    `disposal` carries what this report disposes of (see `Disposal`): the one exchange it
+    answers, the rows it settles, and whether it is itself terminal. `closes` is recorded only
+    beside one of those two disposals — `Disposal.__post_init__` enforces that for every caller,
+    in-band or out, so the action validator and a direct call cannot disagree.
+
+    `settles` is the many-rows terminal claim (D134): every id listed reads `settled` with this
+    report as what settled it. It answers two shapes `answers` could not express, both measured
+    on this ledger as F497 — a reply that genuinely disposes of SEVERAL rows could settle only
+    one, leaving the rest to age with an empty `answered_by`; and a report that asks nothing back
+    answers no single row, so it could not carry `closes` and was born open forever. Unlike
+    `supersedes`, settling moves no work: folding makes this report the row's thread, settling
+    declares the row finished.
 
     `supersedes` folds existing rows into this one: each gets a `superseded` event naming this
     report, and from then on it reads whatever this thread reads. Ids the ledger cannot fold
@@ -145,15 +201,17 @@ def file_report(routines_home: Path, *, routine: str, run_id: str, title: str, d
     `supersedable` is what a caller uses to tell the run WHICH ones before it gets this far.
 
     Raises `ThreadCapError` when this would open an `OPEN_THREAD_CAP`-plus-first parallel
-    thread to one owner. A reply and a consolidation are exempt: both close threads.
+    thread to one owner. A reply, a settlement and a consolidation are all exempt: each one
+    REDUCES the open-thread count, and capping the way out would punish it.
     """
-    closes = bool(closes and answers)
+    disposal = disposal or Disposal()
+    answers, closes = disposal.answers, disposal.closes
     path = reports_path(routines_home)
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         with file_lock(path.with_suffix(".lock")):
             rows = read_reports(path)
-            if target and not answers and not supersedes:
+            if target and not answers and not disposal.settles and not supersedes:
                 open_ids = open_threads(rows, routine=routine, target=target)
                 if len(open_ids) >= OPEN_THREAD_CAP:
                     raise ThreadCapError(routine, target, open_ids)
@@ -164,14 +222,15 @@ def file_report(routines_home: Path, *, routine: str, run_id: str, title: str, d
                            **({"target": target} if target else {}),
                            **({"answers": answers} if answers else {}),
                            **({"closes": True} if closes else {}),
-                           **({"supersedes": folded} if folded else {})})
+                           **({"supersedes": folded} if folded else {}),
+                           **({"settles": list(disposal.settles)} if disposal.settles else {})})
             for old in folded:
                 _append(path, {"id": old, "event": "superseded", "ts": now_iso(),
                                "by": item_id, **({"to": target} if target else {})})
         if target and target_dir is not None:
             atomic_write_json(target_dir / "inbox" / f"msg-rep-{item_id}.json", {
                 "text": message_text(item_id, routine, title[:TITLE_MAX], detail[:DETAIL_MAX],
-                                     answers, closes),
+                                     disposal),
                 "ts": now_iso(), "via": "report", "report": item_id, "from": routine,
                 # A closure asks nothing, so it must not BUY the target a run: the report
                 # trigger skips it (daemon/triggers) and it is read by the next run that

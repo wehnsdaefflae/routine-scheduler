@@ -308,3 +308,38 @@ def test_messages_discards_an_undelivered_orphan(ui, ui_page, make_routine):
     rows = [json.loads(x) for x in (control / "reports.jsonl").read_text(
         encoding="utf-8").splitlines() if x.strip()]
     assert any(r.get("id") == "R2" and r.get("event") == "retracted" for r in rows)
+
+
+def test_a_settling_reply_names_the_rows_it_finished_on_its_card(ui, ui_page, make_routine):
+    """D134 on the surface: a reply that disposes of SEVERAL rows says which ones, and the rows
+    it settled read `settled` with it as their `answered_by`.
+
+    Before D134 the card could only ever say "answers R<n>", so a reply that finished three rows
+    showed one of them and the other two went on reading `open` (F497). A closure that answers
+    nobody — the fold-carrier shape — had no way to render at all, because it could not exist.
+    """
+    make_routine(slug="self-audit")
+    control = ui.routines / ".control"
+    control.mkdir(parents=True, exist_ok=True)
+    rows = [
+        {"id": "R1", "ts": "2026-09-10T08:00:00+00:00", "routine": "self-audit",
+         "run_id": "self-audit:1", "target": "steward-hub-maintainer", "title": "first thing"},
+        {"id": "R2", "ts": "2026-09-10T08:01:00+00:00", "routine": "self-audit",
+         "run_id": "self-audit:1", "target": "steward-hub-maintainer", "title": "second thing"},
+        {"id": "R3", "ts": "2026-09-11T08:00:00+00:00", "routine": "steward-hub-maintainer",
+         "run_id": "shm:1", "target": "self-audit", "title": "both of those are done",
+         "answers": "R1", "settles": ["R2"], "closes": True},
+    ]
+    (control / "reports.jsonl").write_text(
+        "\n".join(json.dumps(r) for r in rows) + "\n", encoding="utf-8")
+
+    ui_page.goto(f"{ui.url}/#/messages?status=all&type=all")
+    ui_page.wait_for_selector("h1:has-text('Messages')", timeout=10_000)
+
+    # the reply NAMES the row it settled beyond the one it answers
+    expect(ui_page.locator("#ref-R3")).to_contain_text("answers R1 — closes it")
+    expect(ui_page.locator("#ref-R3")).to_contain_text("settles R2")
+    # and BOTH disposed rows read settled, each pointing back at the reply that did it
+    expect(ui_page.locator("#ref-R1")).to_contain_text("settled")
+    expect(ui_page.locator("#ref-R2")).to_contain_text("settled")
+    expect(ui_page.locator("#ref-R2")).to_contain_text("answered by R3")

@@ -87,6 +87,14 @@ function routingLine(item) {
   }
   // a closure (closes: true) is the exchange's terminal acknowledgment — born settled
   if (item.answers) bits.push(el("span", {}, item.closes ? `answers ${item.answers} — closes it` : `answers ${item.answers}`));
+  // `settles` is the many-rows claim (D134): one reply can finish several rows, and a reply
+  // that answers nobody can still be terminal. Named here because the rows it disposed of are
+  // the whole content of that act — "closes it" without them says nothing about what closed.
+  if (item.settles?.length) {
+    bits.push(el("span", {}, item.closes && !item.answers
+      ? `settles ${item.settles.join(", ")} — asks nothing back`
+      : `settles ${item.settles.join(", ")}`));
+  }
   if (item.answered_by) bits.push(el("span", {}, `answered by ${item.answered_by}`));
   const row = el("div", { class: "faint small mt", style: "display:flex;gap:8px;flex-wrap:wrap" },
     el("span", {}, "routing"));
