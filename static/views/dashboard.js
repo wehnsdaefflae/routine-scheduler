@@ -15,7 +15,7 @@ import { confirmDialog, promptDialog } from "/static/components/dialog.js";
 import { domainConfigPanel } from "/static/components/domainconfig.js";
 import { heartbeat } from "/static/components/heartbeat.js";
 import { laneControls, laneProgress, lanesToolbar, openLaneEditor } from "/static/components/lanemanage.js";
-import { quotaLine } from "/static/views/settings-endpoints.js";
+import { WINDOW_LABEL, quotaLine } from "/static/views/settings-endpoints.js";
 import { cronToFriendly, specAtInstant } from "/static/components/schedule.js";
 import { weekGrid } from "/static/components/weekgrid.js";
 import { mdInline } from "/static/md.js";
@@ -100,10 +100,21 @@ async function loadQuota(chip) {
       chip.hidden = false;
       return;
     }
-    const lowest = Math.min(...Object.values(q.windows).map((w) => w.remaining));
+    // ONE number on the chip: the window with least left, which is the only one that can
+    // summon anybody. The full per-window breakdown belongs on the endpoint's own Settings
+    // card, where it renders as wrapping prose — printing all of it HERE made a single
+    // unbreakable ~120-character chip (`.chip` is white-space: nowrap) that broke the
+    // horizontal viewport on a phone, which is where the operator reads this page.
+    const entries = Object.entries(q.windows || {});
+    if (!entries.length) return;
+    const [tightest] = entries.slice().sort((a, b) => a[1].remaining - b[1].remaining);
+    const lowest = tightest[1].remaining;
     chip.className = `chip ${lowest <= 10 ? "blocking" : lowest <= 25 ? "partial" : "idle"}`;
-    chip.title = "Claude subscription — the whole account, including your interactive sessions";
-    chip.textContent = quotaLine(q);
+    // the tooltip keeps every window, so the detail is one hover away rather than gone
+    chip.title = "Claude subscription — the whole account, including your interactive "
+      + `sessions\n${quotaLine(q)}`;
+    chip.textContent = `${WINDOW_LABEL[tightest[0]] || tightest[0]} `
+      + `${Math.round(lowest)}% left`;
     chip.hidden = false;
   } catch { /* a chip that cannot load is simply not shown */ }
 }

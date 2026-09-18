@@ -1,5 +1,7 @@
 """Proxy settings remain editable without presenting them as direct metered billing."""
 
+import re
+
 from playwright.sync_api import expect
 
 from rsched.config import EndpointConfig
@@ -37,7 +39,14 @@ def test_dashboard_shows_proxy_quota(ui, ui_page, monkeypatch):
         "windows": {"five_hour": {"remaining": 75}, "seven_day": {"remaining": 40}},
     })
     ui_page.goto(f"{ui.url}/#/routines")
-    expect(ui_page.get_by_text("5h 75% left · 7d 40% left", exact=True)).to_be_visible()
+    # The chip carries ONE window - the TIGHTEST, the only one that can summon anybody -
+    # since 0.351.0. Printing every window made a ~120-character `white-space: nowrap` box
+    # that broke the horizontal viewport on a phone (operator, 2026-09-18); the full
+    # breakdown moved to the tooltip and to the endpoint's own Settings card, which is
+    # where he asked for it.
+    expect(ui_page.get_by_text("7d 40% left", exact=True)).to_be_visible()
+    expect(ui_page.locator(".page-head .chip").first).to_have_attribute(
+        "title", re.compile(r"5h 75% left"))
 
 
 def test_proxy_reauth_from_each_endpoints_own_card(ui, ui_page, monkeypatch):

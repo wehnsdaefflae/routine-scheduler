@@ -138,11 +138,6 @@ class Disposal:
         object.__setattr__(self, "closes",
                            bool(self.closes and (self.answers or self.settles)))
 
-    @property
-    def settled_ids(self) -> list[str]:
-        """Every row id this reply disposes of, `answers` included — what the read model reads."""
-        return [i for i in (self.answers.upper(), *self.settles) if i]
-
 
 def message_text(item_id: str, sender: str, title: str, detail: str,
                  disposal: Disposal | None = None) -> str:

@@ -703,6 +703,12 @@ label.field > span, .field > .lbl {
   .gsearch { flex: 1 1 auto; max-width: none; }
   .grid { grid-template-columns: 1fr; }
   .page-head { flex-wrap: wrap; gap: var(--s3); }
+  /* A chip is `white-space: nowrap` by design — a status word must not break across lines.
+     With no width bound that makes any chip whose TEXT grows past the viewport a box nothing
+     can wrap, and a wrapping .page-head cannot help a child that is itself too wide: the
+     page then scrolls sideways on a phone. Capping it here keeps the nowrap where it earns
+     its keep and truncates the one case where it does not; the full text stays in `title`. */
+  .chip { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
   .kbd-hint { display: none; }
   h1 { font-size: 21px; }
   .btn { min-height: 38px; padding: 7px var(--s3); }

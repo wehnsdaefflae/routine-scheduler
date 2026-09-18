@@ -335,7 +335,7 @@ async def test_report_deliveries_coalesce_within_cooldown(tmp_path):
 
 async def test_report_trigger_respects_disabled_active_closures_and_answers(tmp_path):
     from rsched.paths import atomic_write_json
-    from rsched.reports import file_report
+    from rsched.reports import Disposal, file_report
 
     server = _server(tmp_path)
     # disabled routine: delivery never fires it
@@ -356,7 +356,8 @@ async def test_report_trigger_respects_disabled_active_closures_and_answers(tmp_
     # manual fire, api_questions.py), never for a trigger — with or without a pending record
     d_closed = _routine(server, slug="closed", trig=[dict(REPORT_TRIG)])
     file_report(server.routines_home, routine="s", run_id="s:4", title="done",
-                target="closed", target_dir=d_closed, answers="R1", closes=True)
+                target="closed", target_dir=d_closed,
+                disposal=Disposal(answers="R1", closes=True))
     d_answered = _routine(server, slug="answered", trig=[dict(REPORT_TRIG)])
     atomic_write_json(d_answered / "questions" / "pending" / "q-1.json",
                       {"qid": "q-1", "question": "?", "options": [], "mode": "deferred"})

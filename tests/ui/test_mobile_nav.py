@@ -105,3 +105,52 @@ def test_no_route_scrolls_sideways_on_a_phone(ui, ui_page):
         if width > PHONE["width"] + 1:
             too_wide[route] = width
     assert not too_wide, f"document scrolls sideways at {PHONE['width']}px: {too_wide}"
+
+
+#: A subscription with every window a Claude account can report. The chip used to print ALL of
+#: them joined with " · ", which is ~120 characters of `white-space: nowrap` — the operator's
+#: report on 2026-09-18: "there's only a chip for claude ... and it breaks the horizontal
+#: viewport on mobile. if we have this info at the respective endpoint on the settings page,
+#: that would be enough actually."
+FOUR_WINDOW_QUOTA = {
+    "supported": True, "ok": True,
+    "windows": {
+        "five_hour": {"remaining": 61.0, "seconds_until_reset": 7800},
+        "seven_day": {"remaining": 68.0, "seconds_until_reset": 305000},
+        "seven_day_sonnet": {"remaining": 54.0, "seconds_until_reset": 305000},
+        "seven_day_opus": {"remaining": 88.0, "seconds_until_reset": 305000},
+    },
+}
+
+
+def test_the_subscription_quota_chip_cannot_widen_the_dashboard_on_a_phone(ui, ui_page):
+    """The chip carries ONE window, and the document still does not scroll sideways.
+
+    The route test above cannot reach this: the chip renders only when an endpoint reports
+    `has_subscription_quota` AND its quota read succeeds, which no seeded harness produces — so
+    the widest widget on the dashboard was invisible to the suite that exists to catch exactly
+    this. Both API calls are stubbed here for that reason.
+    """
+    ui_page.route("**/api/settings/endpoints", lambda route: route.fulfill(
+        status=200, content_type="application/json",
+        body=json.dumps({"endpoints": [{"name": "claude-proxy", "kind": "anthropic",
+                                        "has_subscription_quota": True}]})))
+    ui_page.route("**/api/settings/endpoints/claude-proxy/quota", lambda route: route.fulfill(
+        status=200, content_type="application/json", body=json.dumps(FOUR_WINDOW_QUOTA)))
+
+    ui_page.set_viewport_size(PHONE)
+    # the dashboard mounts at #/routines (see test_dashboard_shows_proxy_quota)
+    ui_page.goto(f"{ui.url}/#/routines")
+    chip = ui_page.locator(".page-head .chip").first
+    expect(chip).to_be_visible(timeout=10_000)
+
+    # ONE window on the chip — the tightest, which is the only one that can summon anybody
+    expect(chip).to_have_text("7d sonnet 54% left")
+    # the full breakdown is not lost, it moved to the tooltip
+    assert "5h 61% left" in (chip.get_attribute("title") or "")
+
+    # and the operator's symptom itself: the DOCUMENT must not scroll sideways
+    width = ui_page.evaluate("() => document.documentElement.scrollWidth")
+    assert width <= PHONE["width"] + 1, f"dashboard scrolls sideways at {PHONE['width']}px: {width}"
+    # the chip itself stays inside the screen even if its text ever grows again
+    assert _fits(ui_page, ".page-head .chip", PHONE["width"]) >= 1
