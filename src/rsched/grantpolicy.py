@@ -147,8 +147,14 @@ class GrantPolicy:
             elif cls == "reminders" and (_REMINDER_RANK.get(name, 0)
                                          > _REMINDER_RANK.get(reminders, 0)):
                 reminders = name
+        # `write_recipe` is a capability TOKEN carried in `actions` (grants.py CAPABILITY_ACTIONS),
+        # but the recipe seal reads the separate `recipe_unlocked` flag, which loopsetup derives
+        # ONCE from static config. Re-derive it from the folded set so a grant that landed mid-leg
+        # actually unlocks the recipe — the observation already tells the run it is usable now
+        # (D135/F498, from R1617). Never lowers it: a routine that holds the capability keeps it.
         return replace(self, actions=frozenset(actions), utils=frozenset(utils),
                        run_history=run_history, workflows=workflows, reminders=reminders,
+                       recipe_unlocked=self.recipe_unlocked or "write_recipe" in actions,
                        granted_now=frozenset(granted_now), denied_now=frozenset(denied_now))
 
     def entity_state(self, eid: str) -> str:

@@ -651,3 +651,51 @@ def test_capabilities_digest_teaches_once_grants_and_tombstones(make_routine, tm
     digest = capabilities_digest(ctx)
     assert "Granted for THIS RUN only" in digest
     assert "fs-write:/tmp/granted" in digest
+
+
+def test_a_mid_leg_write_recipe_grant_actually_unlocks_the_recipe():
+    """D135/F498: the engine OFFERS `action:write_recipe` as a run-scoped grant and tells the
+    run it is usable now, but `recipe_unlocked` was derived once at leg setup from static
+    config — so the grant landed in `actions` and the recipe stayed sealed. The promise the
+    observation already makes has to be true.
+    """
+    base = GrantPolicy()
+    assert not base.recipe_unlocked, "a routine without the capability starts sealed"
+
+    granted = base.with_overlay({"action:write_recipe"}, set())
+    assert granted.recipe_unlocked, (
+        "a mid-leg action:write_recipe grant must unlock the recipe — the run was told it is "
+        "usable now")
+
+    # base+overlay, never stacked: the grant does not persist into a fresh overlay.
+    assert not base.with_overlay(set(), set()).recipe_unlocked
+
+    # A routine that HOLDS the capability keeps it when an unrelated grant lands.
+    held = GrantPolicy(recipe_unlocked=True).with_overlay({"util:discord"}, set())
+    assert held.recipe_unlocked
+
+
+def test_a_mid_leg_write_recipe_grant_reaches_the_file_write_gate(make_routine, tmp_path):
+    """The unlock is only real if the gate that refuses recipe writes sees it."""
+    from rsched.config import ServerConfig, load_routine
+    from rsched.engine.budgets_config import Budgets
+    from rsched.engine.fileops import _write_gate
+    from rsched.engine.run_context import RunContext
+    from rsched.engine.transcript import Transcript
+
+    d = make_routine(slug="recipewriter")
+    cfg, _ = load_routine(d)
+    server = ServerConfig()
+    server.libraries_home = tmp_path / "lib"
+    ctx = RunContext(routine=cfg, server=server, registry=None, run_ts=TS,
+                     run_dir=d / "runs" / TS,
+                     transcript=Transcript(tmp_path / "t-recipe.jsonl"),
+                     budgets=Budgets.from_config(cfg.budgets))
+
+    ctx.grants = GrantPolicy()
+    sealed = _write_gate(ctx, d / "main.md")
+    assert sealed and "recipe-authoring" in sealed, sealed
+
+    ctx.grants = GrantPolicy().with_overlay({"action:write_recipe"}, set())
+    assert _write_gate(ctx, d / "main.md") is None, (
+        "after the grant the recipe write must be allowed, not refused again")
