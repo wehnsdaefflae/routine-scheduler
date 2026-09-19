@@ -15,6 +15,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.352.0] — 2026-09-19
+
+### Fixed — a mid-leg `write_recipe` grant now actually unlocks the recipe
+
+The engine offers `action:write_recipe` as a run-scoped grant and tells the asking run it is
+allowed for this run and usable now. It was not. `engine/loopsetup.py` derives `recipe_unlocked`
+once at leg setup from the routine's **static** config, and `GrantPolicy.with_overlay` folded a
+granted `action:*` entity into the policy's `actions` set without revisiting that flag — so the
+grant landed, the capability token sat in `actions`, and the next recipe write hit the same seal
+in `fileops._write_gate`, refused with the wording that says the routine does not hold the
+permission.
+
+Reported by `voice-model-trainer` (R1617), raised as F498 and offered as D135; the operator chose
+to honour the grant rather than withdraw the offer, so the promise the observation already makes
+becomes true. `with_overlay` now re-derives `recipe_unlocked` from the folded `actions` set. It
+never lowers the flag — a routine that holds the capability outright keeps it when an unrelated
+grant lands — and base+overlay stays unstacked, so a fresh overlay drops the run-scoped unlock.
+No other consumer needed teaching: `fileops._write_gate` and the harness's recipe-ownership line
+both read the live policy `requests.rebuild_policy` writes, so the prompt stops calling the recipe
+read-only on the turn after the grant.
+
 ## [0.351.0] — 2026-09-18
 
 ### Added — one reply can settle several rows, and a report that asks nothing back can end
