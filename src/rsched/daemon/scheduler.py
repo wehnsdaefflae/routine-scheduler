@@ -175,6 +175,12 @@ class Scheduler:
         # detached background tasks too — then the manager re-attempts any undelivered results
         runner_reap.recover_orphans(
             self.runner, registry.scan(self.server, self.server.background_home))
+        # The three passes above share ONE deliberate-shutdown breadcrumb, so it must survive
+        # the first two: a boot where only a conversation was orphaned still deserves the cause
+        # the routines pass had no use for. It expires HERE, at the end of the boot, because a
+        # mark describes exactly one exit and a boot that orphaned nothing used to leave it on
+        # disk for the next crash to inherit (see restart.clear_shutdown_mark).
+        restart.clear_shutdown_mark(self.server.routines_home)
         await self.detached.reconcile()
         # crashed runs leave sshfs key dirs behind (clean exits remove their own)
         from ..machine_mounts import sweep_stale_mount_keys

@@ -128,6 +128,35 @@ def read_shutdown_mark(routines_home: Path) -> dict | None:
     return mark
 
 
+def clear_shutdown_mark(routines_home: Path) -> None:
+    """Expire the deliberate-shutdown breadcrumb at the END of a boot, orphans or no orphans.
+
+    `read_shutdown_mark` consumes the mark when an orphan needs a cause, and for a while that
+    was the ONLY thing that removed it — which quietly tied the mark's LIFETIME to whether the
+    exit happened to orphan anything. A clean drain orphans nothing, by construction: it waits
+    for every in-flight run before exiting. So the commonest exit of all left its breadcrumb on
+    disk indefinitely, and the next UNGRACEFUL crash read a mark hours or days old and wrote
+    `daemon_restart` over runs nobody restarted. That is the misattribution F480 exists to end,
+    rebuilt from the other side.
+
+    Measured 2026-09-20: the 03:20 self-update drain finished every run cleanly and left its
+    mark; the relaunch then died on a missing bind mount, and the mark was still sitting there
+    when the daemon finally booted two hours later, ready to mislabel the first crash after it.
+
+    A mark describes exactly ONE exit, so the boot that follows that exit is where it stops
+    being true. This runs after the whole boot reap rather than inside it, because the three
+    reap passes (routines, conversations, background tasks) share the one breadcrumb and the
+    first pass must not consume what the third still needs to read.
+    """
+    path = routines_home / ".control" / "shutdown.mark"
+    try:
+        path.unlink()
+    except FileNotFoundError:
+        pass                          # an orphan already consumed it: the normal crash path
+    except OSError as exc:
+        log.warning("shutdown mark %s could not be expired: %s", path, exc)
+
+
 def trigger_shutdown(server: ServerConfig | None = None,
                      reason: str = "self-update restart") -> None:
     """Signal uvicorn to shut down gracefully (it handles SIGTERM); the process then exits and

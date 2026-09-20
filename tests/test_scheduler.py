@@ -677,3 +677,71 @@ def test_a_deliberate_shutdown_leaves_a_breadcrumb_the_boot_reap_reads(make_rout
     # CONSUMED: a mark describes exactly one exit, so a later crash must not inherit it —
     # that would rebuild the very failure mode this change removes.
     assert not restart.shutdown_mark_path(server).exists()
+
+
+def test_a_clean_drain_does_not_leave_its_mark_for_the_next_crash(make_routine, tmp_path):
+    """The gap the two tests above left between them: they both orphan something, so both
+    consume the mark on the way through. A CLEAN DRAIN orphans nothing by construction — it
+    waits for every in-flight run before exiting — so the commonest exit of all never reached
+    the consuming path, and its breadcrumb stayed on disk for the next ungraceful crash to
+    inherit and report as `daemon_restart`. Measured on the live instance 2026-09-20: the
+    03:20 drain left a mark that was still there two hours later."""
+    server = _server(tmp_path)
+    make_routine(slug="drained-clean")                 # no run dir: nothing to orphan
+    restart.mark_deliberate_shutdown(server, "self-update restart")
+    assert restart.shutdown_mark_path(server).exists()
+    runner = Runner(server, EventBus())
+    assert runner_reap.recover_orphans(runner, scan(server)) == 0
+    restart.clear_shutdown_mark(server.routines_home)
+    assert not restart.shutdown_mark_path(server).exists()
+
+
+def test_the_mark_survives_a_reap_pass_that_found_nothing(make_routine, tmp_path):
+    """Expiry belongs to the BOOT, not to a reap pass, and that distinction is load-bearing:
+    the boot reaps routines, then conversations, then background tasks against the one
+    breadcrumb. Consuming it in the first pass would leave a conversation orphaned by the very
+    same restart reading `unknown`."""
+    server = _server(tmp_path)
+    d = make_routine(slug="orphan-later")
+    run_dir = d / "runs" / "20260701-070000"
+    run_dir.mkdir(parents=True)
+    atomic_write_json(run_dir / "status.json",
+                      {"run_id": "orphan-later:20260701-070000",
+                       "state": "running", "pid": 999999})
+    (run_dir / "transcript.jsonl").write_text(json.dumps({"type": "header"}) + "\n")
+    restart.mark_deliberate_shutdown(server, "self-update restart")
+    runner = Runner(server, EventBus())
+    # A pass over a catalog with nothing dead in it: the mark must still be there afterwards.
+    assert runner_reap.recover_orphans(runner, {}) == 0
+    assert restart.shutdown_mark_path(server).exists()
+    # …so the pass that DOES find the orphan can still name the cause.
+    assert runner_reap.recover_orphans(runner, scan(server)) == 1
+    assert _health_causes(tmp_path) == ["daemon_restart"]
+
+
+def test_expiring_an_already_consumed_mark_is_quiet(tmp_path):
+    """The ordinary crash path: an orphan consumed the mark, and the boot's expiry then finds
+    nothing. That is the expected order, not an error, so it must not log or raise."""
+    server = _server(tmp_path)
+    restart.mark_deliberate_shutdown(server, "self-update restart")
+    assert restart.read_shutdown_mark(server.routines_home) is not None
+    assert not restart.shutdown_mark_path(server).exists()
+    restart.clear_shutdown_mark(server.routines_home)      # no FileNotFoundError
+    assert not restart.shutdown_mark_path(server).exists()
+
+
+async def test_the_boot_expires_the_mark_even_with_nothing_to_reap(make_routine, tmp_path,
+                                                                   monkeypatch):
+    """The wiring, which is the actual fix: `clear_shutdown_mark` existing changes nothing
+    unless the boot calls it. A daemon that drained cleanly starts with a mark and no orphans
+    anywhere, and must not still have that mark once it is up."""
+    monkeypatch.setattr(sched_mod, "TICK_S", 0.02)
+    server = _server(tmp_path)
+    make_routine(slug="quiet")
+    restart.mark_deliberate_shutdown(server, "self-update restart")
+    assert restart.shutdown_mark_path(server).exists()
+    sched = Scheduler(server, FakeRunner(), EventBus())
+    task = asyncio.create_task(sched.run_forever())
+    await asyncio.sleep(0.1)
+    task.cancel()
+    assert not restart.shutdown_mark_path(server).exists()

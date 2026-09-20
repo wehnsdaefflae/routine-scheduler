@@ -15,6 +15,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.353.2] — 2026-09-20
+
+### Fixed — a deliberate-shutdown mark expires with the boot, not with an orphan
+
+`restart.mark_deliberate_shutdown` leaves a breadcrumb on the way out so the next boot can
+report orphaned runs as `daemon_restart` rather than guessing — the whole point of F480. The
+mark was consumed by `read_shutdown_mark`, which the boot reap calls LAZILY, at the first
+orphan. That quietly tied the mark's lifetime to whether the exit orphaned anything.
+
+A clean drain orphans nothing, by construction: it waits for every in-flight run before
+exiting. So the commonest exit of all never reached the consuming path and left its breadcrumb
+on disk indefinitely, where the next UNGRACEFUL crash would read a mark hours or days old and
+write `daemon_restart` over runs nobody restarted. F480's misattribution, rebuilt from the
+other side, and it was live: the 03:20 self-update drain on 2026-09-20 finished every run
+cleanly, the relaunch then failed on a missing bind mount, and the mark was still sitting there
+when the daemon finally booted two hours later.
+
+Lazy READING is not lazy EXPIRY. `restart.clear_shutdown_mark` now expires the mark at the end
+of `Scheduler.run_forever`'s boot reap, orphans or no orphans. It runs after the whole reap
+rather than inside it because the three passes — routines, conversations, background tasks —
+share the one breadcrumb, and consuming it in the first would leave a conversation orphaned by
+that same restart reading `unknown`. An already-consumed mark expires quietly; that is the
+ordinary crash path, not an error.
+
+### Fixed — the LLMSecTest workspace's git hooks run outside the container
+
+`qa/githooks/commit-msg` and `pre-push` hard-coded `venv/bin/python`. That venv is built inside
+the container, so its `pyvenv.cfg` names the image's `/usr/local/bin/python3.12` and one venv
+directory cannot be valid in both namespaces. On the host both hooks died with exit 127, and
+because a failing hook refuses the commit, the refusal blamed a message nothing had read — the
+only way past it was `--no-verify`, which skips the check entirely. A gate that can only be
+satisfied by being switched off is worse than no gate.
+
+They now resolve an interpreter (`qa/githooks/_interpreter.sh`): the venv's first, falling back
+to `python3` on PATH. That fallback is legitimate for these checks and no others, because
+`hard_tells_in` and `check_unpushed_commit_messages` are stdlib-only text matching over commit
+messages. The pinned `ruff` in `pre-push` deliberately does NOT get it — a different ruff
+answers a different question — and now refuses out loud when it cannot run instead of dying on
+exit 127. (That repo is separate; the change is recorded here because this instance is what
+runs it.)
+
 ## [0.353.1] — 2026-09-20
 
 ### Fixed — the grant-folder bind names a path that exists, so a restart can come back

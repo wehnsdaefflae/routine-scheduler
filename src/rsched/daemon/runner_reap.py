@@ -267,10 +267,14 @@ def recover_orphans(runner, catalog: dict[str, registry.RoutineInfo]) -> int:
     """
     from . import restart
     # Read the mark LAZILY, at the first orphan. The boot path runs on every daemon start,
-    # almost always with nothing to reap, and reading it eagerly would both consume a
-    # breadcrumb no orphan needed and demand `runner.server` from every caller — including
-    # the scheduler's runner double, which has no such attribute and whose boot loop died
-    # on it (4 scheduler tests, this run).
+    # almost always with nothing to reap, and reading it eagerly would demand `runner.server`
+    # from every caller — including the scheduler's runner double, which has no such attribute
+    # and whose boot loop died on it (4 scheduler tests, this run).
+    #
+    # Lazy READING is not lazy EXPIRY, and conflating the two was a defect: a boot that
+    # orphaned nothing never consumed the mark, so it sat there for the next crash to inherit.
+    # `Scheduler.run_forever` expires it once, after all three reap passes have had their
+    # chance to read it (restart.clear_shutdown_mark).
     cause: str | None = None
     why = ""
 
