@@ -94,8 +94,40 @@ def test_a_waiter_rejects_a_result_its_sources_outran(tmp_path):
     leader = threading.Thread(target=lambda: results.append(memo.memoized("k", [f], compute)))
     leader.start()
     assert entered.wait(5)
+
+    # The waiter has to be COMMITTED to the waiting path before the source moves, or this test
+    # measures something else and says nothing about it. Starting the thread does not commit it:
+    # a waiter descheduled between its entry `fingerprint` and `flight.acquire(blocking=False)`
+    # can arrive after the leader released, take the non-blocking acquire, and match the
+    # leader's entry with the fingerprint it read BEFORE the write — an ordinary cache hit
+    # returning "v1". That is correct behaviour for what actually happened; it just is not the
+    # waiter path, so the run silently asserts the wrong thing. It failed that way once in the
+    # full suite on 2026-09-20 and passed on every rerun, which is the worst shape a test has.
+    #
+    # `waited` is decided by exactly one event — that non-blocking acquire returning False — so
+    # wrap the flight lock and wait for it. The leader still holds the lock (nothing releases it
+    # until `release` is set below), so a committed waiter is guaranteed to block and to re-stat
+    # AFTER the write.
+    real_flight = memo._flights["k"]
+    committed = threading.Event()
+
+    class WatchedFlight:
+        def acquire(self, blocking: bool = True) -> bool:
+            got = real_flight.acquire(blocking)
+            if not blocking and not got:
+                committed.set()
+            return got
+
+        def release(self) -> None:
+            real_flight.release()
+
+        def locked(self) -> bool:
+            return real_flight.locked()
+
+    memo._flights["k"] = WatchedFlight()   # type: ignore[assignment]
     waiter = threading.Thread(target=lambda: results.append(memo.memoized("k", [f], compute)))
     waiter.start()
+    assert committed.wait(5)               # queued behind the leader, not racing it
     f.write_text("v2", encoding="utf-8")   # the source moves while the leader still computes
     release.set()
     leader.join(5)
