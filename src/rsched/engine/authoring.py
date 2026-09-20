@@ -113,7 +113,8 @@ def handle_write_util(loop, action: dict, poll_s: float) -> dict:  # noqa: PLR09
     creating = not utils_lib.exists(home, name)
     # Approval policy is the routine's write_util capability level (always: every change;
     # creations: new utils only; never). No grants on the ctx = confirm everything.
-    if ctx.grants is None or ctx.grants.needs_confirm(creating):
+    approved_for_run = "approval:write_util" in getattr(ctx, "granted_now", set())
+    if not approved_for_run and (ctx.grants is None or ctx.grants.needs_confirm(creating)):
         verb = "create" if creating else "revise"
         excerpt = (f"anchor:\n{str(action.get('anchor'))[:180]}\nreplacement:\n"
                    f"{str(action.get('replacement') or '')[:180]}" if edit_mode
@@ -122,7 +123,8 @@ def handle_write_util(loop, action: dict, poll_s: float) -> dict:  # noqa: PLR09
             "question": f"Approve {verb} of global util '{name}'?"
                         f"{_impact_note(ctx, 'util', name, content)} "
                         f"{'In-place patch — ' if edit_mode else ''}{excerpt}",
-            "mode": "blocking", "options": ["approve", "decline"],
+            "mode": "blocking", "options": ["approve", "decline",
+                "approve this kind for the rest of this run"],
             "default": "the util is NOT applied until approved"}, poll_s,
             qtype="util-approval")
         if not ask.get("answered"):
@@ -133,6 +135,8 @@ def handle_write_util(loop, action: dict, poll_s: float) -> dict:  # noqa: PLR09
             # contradiction when the user meant to approve in other words (F161)
             return {"kind": "write_util", "name": name, "declined": True,
                     "answer": str(ask["answer"])[:200]}
+        if str(ask["answer"]).strip().lower() == "approve this kind for the rest of this run":
+            ctx.granted_now.add("approval:write_util")
     # Selftest gates the LIBRARY, not just the observation: on failure the write is rolled
     # back — a new util's dir removed, a revision restored to the previous working text —
     # so a broken script is never left live for concurrent `gu` callers.

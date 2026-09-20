@@ -15,6 +15,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.353.0] — 2026-09-20
+
+### Added — approve util authoring for the current run
+
+D137: util-authoring approvals now offer “approve this kind for the rest of this run”.
+Selecting that exact option suppresses subsequent confirmation prompts for otherwise-authorized
+util creations and revisions in the current execution leg. Ordinary approval still covers only
+one action. The approval grants no capability, is not inherited by children, and is not written
+to routine configuration. Fresh runs and resumed legs ask again. Header validation, deleted-util
+protection, capability checks, selftests and rollback remain in force on every write.
+
 ## [0.352.0] — 2026-09-19
 
 ### Fixed — a mid-leg `write_recipe` grant now actually unlocks the recipe
