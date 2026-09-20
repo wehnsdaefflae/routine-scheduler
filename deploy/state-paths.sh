@@ -37,11 +37,6 @@ STATE_PATHS_OPTIONAL=(
                                        # it is pushed to GitHub every run, so what this carries is
                                        # the rest: the gitignored `secrets/` and whatever a run had
                                        # not pushed yet. Its regenerable bulk is excluded below.
-  # …and its canonical grant documents, which live OUTSIDE the project repo by design (its
-  # private/public firewall) and are in no repo at all — the one genuinely irreplaceable part
-  # of that routine's inputs. The full path, not the parent: only this subtree is mounted, so
-  # only this subtree is here, and the list says what it carries rather than where it might.
-  'Obsidian/03. Grants/Prototype Fund/jahrgang 02 winter/LLMSecTest'
   # …and the prior-art PoC that workspace's engineering playbook sends a run to read. Its own
   # repo, mounted read-only; carried because the playbook names it by absolute path.
   git-repos/pytest-sarif-demo
@@ -51,6 +46,12 @@ STATE_PATHS_OPTIONAL=(
 #   .cache/ms-playwright  — a ~170 MB browser download the `page-fetch` util re-fetches on
 #                           first use. Bind-mounted to survive a RECREATE, worthless in a copy.
 #   tor-data (volume)     — Tor's guard/consensus state: regenerable, meaningless elsewhere.
+#   /srv/ObsidianVault    — the llmsectest grant documents, mounted read-only from the host's
+#                           own Obsidian store. It is not this instance's state and it is not
+#                           under RSCHED_HOME, so the HOME-relative invariant above cannot
+#                           express it; it already has two custodians of its own (syncthing
+#                           replicates it, restic snapshots it). A migration must mount it on
+#                           the new host rather than expect the tarball to bring it.
 
 # Build artefacts and per-boot runtime files: reconstructed on demand, and in the Singleton
 # case actively harmful to restore. Chrome writes those three as DANGLING symlinks naming the

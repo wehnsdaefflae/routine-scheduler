@@ -69,9 +69,15 @@ services:
       # …and its canonical grant documents, which live OUTSIDE that repo by design (the
       # private/public firewall). READ-ONLY: `application.md` is the source of truth for scope
       # and milestones, and a run reads it — nothing in the project writes it.
+      #
+      # An ABSOLUTE source, not an ${RSCHED_HOME}-relative one, because the vault is not part of
+      # this instance's state: it is the host's own Obsidian store under /srv, synced by
+      # syncthing and snapshotted by restic. It is therefore NOT in deploy/state-paths.sh — see
+      # the declared exclusions there. `/srv` is already bound rw above; this deeper mount is
+      # what makes THIS subtree read-only and what fails the start loudly when it goes missing.
       - type: bind
-        source: ${RSCHED_HOME:-/home/mark}/Obsidian/03. Grants/Prototype Fund/jahrgang 02 winter/LLMSecTest
-        target: /home/mark/Obsidian/03. Grants/Prototype Fund/jahrgang 02 winter/LLMSecTest
+        source: /srv/ObsidianVault/03. Grants/Prototype Fund/jahrgang 02 winter/LLMSecTest
+        target: /srv/ObsidianVault/03. Grants/Prototype Fund/jahrgang 02 winter/LLMSecTest
         read_only: true
         bind: { create_host_path: false }
       # …and the prior-art PoC its engineering playbook sends a run to read before reinventing

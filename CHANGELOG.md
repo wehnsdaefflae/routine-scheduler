@@ -15,6 +15,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.353.1] — 2026-09-20
+
+### Fixed — the grant-folder bind names a path that exists, so a restart can come back
+
+The routine drain-and-exit restart worked exactly as designed on 2026-09-20 and the instance
+still stayed down for two hours. `self-audit` dropped the restart sentinel at 03:16, the daemon
+drained — finished the in-flight run, completed the `grp-d06ce35e` lane chain — and exited 143
+at 03:20. Docker honoured `restart: unless-stopped`, and the relaunch died in `runc`:
+
+    failed to fulfil mount request:
+    open /home/mark/Obsidian/03. Grants/…/LLMSecTest: no such file or directory
+
+The llmsectest grant folder's bind source had vanished from the host. `create_host_path: false`
+did its job — the start failed loudly and named the missing path instead of handing the routine
+an empty directory to read as an empty grant folder — but Docker's restart manager gives up
+after one such failure, so nothing retried and nothing said so. The console was simply gone,
+while `rsched-tor` and `rsched-chrome` stayed up and made the box look half-alive.
+
+The documents were never lost: they live in the host's Obsidian vault at `/srv/ObsidianVault`,
+which is where `folder-reorg`'s config has always named them. Only the mount pointed somewhere
+else. Both ends of the bind now name the vault, so the container path is a path that exists on
+the host — what the "mounted at its HOST path" rule was always for — and the routine's
+`fs_read_roots` and every document naming the folder were swept to match, in this repo, in
+`llmsectest-weekday`'s recipe and in the project workspace's contract documents.
+
+The source is ABSOLUTE rather than `${RSCHED_HOME}`-relative, which changes what the state
+inventory can say about it. `/srv/ObsidianVault` is the host's own vault, not this instance's
+state: it sits outside `RSCHED_HOME`, so `deploy/state-paths.sh`'s HOME-relative invariant
+cannot express it, and it already has two custodians — syncthing replicates it, restic
+snapshots it. It therefore moves out of `STATE_PATHS_OPTIONAL` and into the declared "not
+carried" block, so its absence from a migration tarball is a decision on the record rather than
+the silent gap the invariant exists to prevent. A migration mounts it on the new host.
+
+What removed the directory between 14:01 and 03:20 is still unexplained. syncthing is ruled out
+(its `Obsidian` folder is `/srv/ObsidianVault`; the `path="~"` folder has an empty id and never
+loads), as is `folder-reorg` (it treats the vault as a read-only source and no run transcript
+since 09-18 names the old path) and OOM (`OOMKilled: false`; 143 is the daemon's own SIGTERM).
+
 ## [0.353.0] — 2026-09-20
 
 ### Added — approve util authoring for the current run

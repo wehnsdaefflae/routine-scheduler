@@ -71,20 +71,27 @@ subscription-quota read needs), and each **project workspace** a routine works i
 
 A project workspace is mounted at its HOST path, so the paths a project's own documents name
 stay true here — `git-repos/LLMSecTest_agentic` and its read-only grant folder under
-`Obsidian/` are the first pair. Two things about carrying one. It is listed even though nearly
-all of it is pushed to GitHub every run, because what the list carries is the REST: the
-gitignored credentials directory, un-pushed work, and gitignored OUTPUT that no clone brings
-and no cheap command regenerates — 38 MB of rendered scan reports the published page is built
-from, in that repo's case. And its regenerable bulk is cut by an ANCHORED exclude naming the
-workspace (`git-repos/LLMSecTest_agentic/apps`, `.../venv`), never by a bare directory name
+`/srv/ObsidianVault/` are the first pair. Two things about carrying one. It is listed even
+though nearly all of it is pushed to GitHub every run, because what the list carries is the
+REST: the gitignored credentials directory, un-pushed work, and gitignored OUTPUT that no clone
+brings and no cheap command regenerates — 38 MB of rendered scan reports the published page is
+built from, in that repo's case. And its regenerable bulk is cut by an ANCHORED exclude naming
+the workspace (`git-repos/LLMSecTest_agentic/apps`, `.../venv`), never by a bare directory name
 that would silently match somewhere else. Both mounts set `create_host_path: false`: docker's
 default is to invent an empty root-owned directory for a missing source, and a routine would
-then read an empty grant folder as an empty grant folder rather than as a broken mount.
+then read an empty grant folder as an empty grant folder rather than as a broken mount. That
+guard has already earned itself: on 2026-09-20 the grant folder's source vanished, the daemon's
+routine drain-and-exit restart could not come back, and the mount error named the exact missing
+path instead of handing a routine an empty directory to reason from.
 
-Two mounts are deliberately left out, so their absence is a decision rather than an oversight:
+Three mounts are deliberately left out, so their absence is a decision rather than an oversight:
 `.cache/ms-playwright` is a ~170 MB browser download `page-fetch` re-fetches on first use (bound
-to survive a *recreate*, worthless in a tarball), and `tor-data` is a named volume holding
-regenerable guard state that means nothing on a new host.
+to survive a *recreate*, worthless in a tarball), `tor-data` is a named volume holding
+regenerable guard state that means nothing on a new host, and `/srv/ObsidianVault` — the grant
+folder's store — is the host's own Obsidian vault rather than this instance's state: it sits
+outside `RSCHED_HOME` so the HOME-relative inventory cannot express it, and it already has
+syncthing replicating it and restic snapshotting it. Mount it on the new host; the tarball does
+not bring it.
 
 On a **live instance the tarball is not a consistent snapshot.** `tar` exits 1 with warnings when
 a file changes under it, which the chrome sidecar guarantees by rewriting its profile
