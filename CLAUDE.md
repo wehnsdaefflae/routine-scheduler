@@ -564,10 +564,25 @@ bind-mounted, so compose compares the CONFIG, finds no drift and no-ops while th
 keeps the modules it imported at boot — a green `compose config` and a `Container rsched Running`
 both look like success and mean nothing about what is live (probe a changed behaviour through the
 API to know). Shipping code needs the process itself replaced: drop the RESTART SENTINEL
-`~/routines/.control/restart.request` (`{"reason": …, "requested": <iso>}`) and the daemon DRAINS
-— starts no new runs, waits for every in-flight one, never kills a run, defers while a run is
-parked on the user — then exits into `restart: unless-stopped`, which relaunches it on the new
-code. This is the path self-audit uses after a `__version__` bump, and it is the right one for a
+`~/routines/.control/restart.request` — its EXISTENCE is the whole signal, nothing parses the
+`{"reason": …, "requested": <iso>}` the web writes into it — and the daemon waits for a QUIET
+GAP. **It is not a drain, and calling it one misleads:** a pending restart NEVER blocks a start
+(operator, 2026-09-03), so the scheduler keeps firing runs and conversations normally and the
+exit comes only once `runner.active_states()` has been empty for `RESTART_IDLE_S` (10s), at
+which point it sets the `draining` gate against a fire racing the SIGTERM window, marks the exit
+(F480) and signals itself into `restart: unless-stopped`. It never kills a run, and it DEFERS
+with no deadline while any run is parked on the user (`waiting_user`/`paused`) — never restart
+out from under a dialogue. The price of that rule is that a busy instance can starve the gap:
+on 2026-09-20 a 06:11 request was still pending at 06:44 because two lane chains fired into the
+window back to back. Read `/api/status` (`restart_requested`, `active_runs`) to see what it is
+waiting on; `restart_action` in `daemon/restart.py` is the whole state machine.
+**A relaunch is not guaranteed either.** Docker's restart manager gives up after ONE failed
+start, so anything that makes the container fail to start leaves it down with nothing retrying
+and nothing said — a bind source that vanished from the host is the one that has happened, and
+it cost two hours on 2026-09-20 while the tor and chrome sidecars stayed up and made the box
+look half-alive. Verify every bind source exists (`.HostConfig.Binds` AND `.HostConfig.Mounts`
+— they are separate lists) before dropping the sentinel.
+This is the path self-audit uses after a `__version__` bump, and it is the right one for a
 hand-made change too; `docker compose restart rsched` is the blunt equivalent that bounces the
 process immediately and takes any running routine with it. The host's `/etc/localtime` + `/etc/timezone` ride along read-only
 so the container keeps the host's zone; `schedule.server_tz()` honors TZ env / the zoneinfo key /
