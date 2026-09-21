@@ -241,20 +241,50 @@ export function renderConfigSections(view, d, {
         }
       } });
   const improveBox = el("input", { type: "checkbox", checked: d.improve !== false || null });
+  // D141 (operator, 2026-09-21: "On the config page beside the schedule"). A run gate is a
+  // script the daemon runs BEFORE the engine starts: if it reports no work, the run is skipped
+  // having spent no tokens at all. That makes it part of WHEN this routine runs, not a separate
+  // feature — so it lives in this section and rides its one save button rather than growing a
+  // second one. Until now it could only be enabled by hand-editing routine.yaml, which meant a
+  // routine could be silently gated off with nothing in the console saying so.
+  const gate = d.run_gate || { enabled: false, timeout_s: 30 };
+  const gateBox = el("input", { type: "checkbox", "data-run-gate": "",
+    checked: gate.enabled || null });
+  const gateTimeout = el("input", { type: "number", min: "1", max: "300",
+    "data-run-gate-timeout": "", value: String(gate.timeout_s ?? 30), style: "width:76px" });
+  const gateTimeoutRow = el("label", { class: "row", style: "gap:6px;align-items:center" },
+    el("span", { class: "faint small" }, "give it up to"), gateTimeout,
+    el("span", { class: "faint small" }, "seconds to answer"));
+  const paintGate = () => { gateTimeoutRow.hidden = !gateBox.checked; };
+  gateBox.onchange = paintGate;
+  paintGate();
+  const gateRow = el("div", { class: "mt" },
+    el("label", { class: "row", style: "gap:8px" }, gateBox,
+      el("span", {}, "run gate — only start a run when ", el("code", {}, "scripts/run_gate.py"),
+        " says there is work")),
+    el("div", { class: "faint small", style: "margin:2px 0 0 26px" },
+      "the daemon runs that script before the engine starts, so a skipped run costs nothing. ",
+      "If the gate errors or misses its deadline the run does not start either — it is recorded ",
+      "as failed, so a broken gate stops the routine until you fix it."),
+    el("div", { style: "margin:6px 0 0 26px" }, gateTimeoutRow));
   view.append(...settingsSection({ title: "Schedule", id: "schedule" },
     "when this routine runs on its own — a cron-like cadence in the server's timezone, plus the "
     + "Disabled choice that prevents all new starts. Existing runs are unchanged. A routine in a "
     + "scheduled lane follows the lane's clock; it can still be disabled here without changing "
-    + "that clock. Manual allows explicit and triggered starts without a recurring cadence.",
+    + "that clock. Manual allows explicit and triggered starts without a recurring cadence. "
+    + "The run gate below decides whether a scheduled fire becomes a run at all.",
       sched.node,
       el("label", { class: "row mt", style: "gap:8px" }, improveBox,
         el("span", {}, "include in improvement — the routine-improver meta routine visits this routine (on by default)")),
+      gateRow,
       el("div", { class: "row mt" }, el("button", {
         class: "btn primary",
         onclick: async () => {
           try {
             await api(`/api/routines/${slug}`, { method: "PATCH",
               body: { improve: improveBox.checked,
+                      run_gate: { enabled: gateBox.checked,
+                                  timeout_s: Number(gateTimeout.value) || 30 },
                       schedule: d.lane_managed
                         ? { disabled: sched.value().frequency === "disabled" }
                         : { friendly: sched.value(), catchup: sched.catchup() } } });

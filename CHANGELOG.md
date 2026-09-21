@@ -15,6 +15,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.361.0] — 2026-09-21
+
+### Added — the run gate has a switch, beside the schedule (D141)
+
+The pre-engine admission gate has been wired into `Runner._supervise` for some time, and
+`PATCH /api/routines/{slug}` always accepted `run_gate` — but nothing in the console showed
+it, so enabling one meant hand-editing `routine.yaml`. A feature built to save budget was
+reachable only by someone who already knew it existed, and a routine silently gated off
+looked exactly like a routine that was broken.
+
+The operator chose the placement: *"On the config page beside the schedule"* — a gate decides
+**whether** a scheduled fire becomes a run, so it belongs with **when** it fires.
+
+- **In the Schedule section**, carried by that section's existing *save schedule* button
+  rather than a second one: one save for "when this routine runs".
+- The **timeout field appears only once the gate is on**, since it means nothing otherwise.
+- `GET /api/routines/{slug}` now returns `run_gate` (`enabled`, `timeout_s`), without which
+  the control would render every routine as ungated whatever its config said.
+- The copy states what the code actually does: a gate that **errors or misses its deadline
+  does not start the run either** — it is recorded as failed, so a broken gate stops the
+  routine until it is fixed. (`run_gate.admit`'s `except Exception` calls
+  `terminal(run, "failed", …)` and returns `False`.) An earlier draft of this text claimed
+  the opposite and was corrected against the source before shipping.
+
 ## [0.360.0] — 2026-09-21
 
 ### Fixed — the browser screen is served from the console's own origin (F527)

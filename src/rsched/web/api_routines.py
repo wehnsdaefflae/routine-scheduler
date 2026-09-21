@@ -185,6 +185,12 @@ def routine_detail(request: Request, slug: str) -> dict:
                               else {"frequency": "disabled"}),
         "server_tz": schedule.server_tz(),
         "catchup": info.cfg.catchup,   # skip | run_once when a scheduled fire was missed
+        # D141 (operator, 2026-09-21: "on the config page beside the schedule"): the
+        # pre-engine admission gate. It belongs to the schedule payload because it decides
+        # WHETHER a scheduled fire becomes a run at all — the config page renders it inside
+        # the Schedule section, saved by that section's one save button.
+        "run_gate": {"enabled": info.cfg.run_gate.enabled,
+                     "timeout_s": info.cfg.run_gate.timeout_s},
         # D71: set when a SCHEDULED lane contains this routine — its own cron is
         # suppressed and the Schedule dropdown renders the "lane managed" state, linking to
         # the lane. At most one lane can match: membership is exclusive (rsched.lanes).
