@@ -356,3 +356,24 @@ async def test_skipped_member_emits_a_health_event(tmp_path):
     assert len(evs) == 1
     assert evs[0]["routine"] == "ghost" and evs[0]["run_id"] == ""
     assert "chain continues" in evs[0]["detail"]
+
+
+async def test_gate_skipped_member_advances_under_stop_policy(tmp_path):
+    from rsched.daemon.lane_runs import LaneRunManager
+    server = _server(tmp_path)
+    da = _routine(server, "a")
+    _routine(server, "b")
+    lane = lanes.create(server.routines_home, name="Gate", members=[m("a"), m("b")])
+    lane_runs.arm(server.routines_home, lane, default_on_failure="stop")
+    runner = FakeRunner()
+    mgr = LaneRunManager(server, runner)
+    catalog = registry.scan(server)
+    await mgr.tick(catalog)
+    mk_run(da, "20260717-120000", "finished", outcome="skipped")
+    runner.active.clear()
+    await mgr.tick(catalog)
+    rec = lane_runs.read(server.routines_home, lane["id"])
+    assert rec["cursor"] == 1
+    assert rec["log"][0]["outcome"] == "skipped"
+    await mgr.tick(catalog)
+    assert runner.fired == [("a", "lane"), ("b", "lane")]

@@ -39,6 +39,7 @@ CLASSIFICATION: dict[str, tuple[str, str]] = {
     # ---- takes effect at the next run ------------------------------------------------------
     "enabled": (NEXT_RUN, "it governs whether the daemon FIRES, not a run already going"),
     "schedule": (NEXT_RUN, "it governs when the next run starts"),
+    "run_gate": (NEXT_RUN, "admission is evaluated before the next automatic engine starts"),
     "models": (NEXT_RUN, "the transport is bound per turn, but swapping a model mid-run is the "
                          "run page's model-switch control, not a config edit"),
     "connections": (NEXT_RUN, "OAuth tokens are injected into the util environment at boot"),

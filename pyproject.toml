@@ -203,5 +203,8 @@ ignore_decorators = ["@*.get", "@*.post", "@*.put", "@*.delete", "@*.patch", "@*
 # so declaring it is what lets a client send it at all, and the round-trip is asserted through
 # the JSON (`rows["s3"]["stage"]`) rather than through the attribute — which vulture cannot see.
 # It went unreported for months only because an unrelated test held a local of the same name.
+# `child_main` is the admission gate's preparation entry point. It is invoked from the `-c`
+# bootstrap string `_bootstrap_cmd` builds (daemon/run_gate.py), so no static caller exists by
+# construction — deleting it would remove a live entry point the daemon executes every gated fire.
 ignore_names = ["model_config", "pytestmark", "should_exit", "pytest_*", "capture_output",
-                "stage"]
+                "stage", "child_main"]

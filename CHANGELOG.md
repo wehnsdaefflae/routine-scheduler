@@ -15,6 +15,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.354.0] — 2026-09-21
+
+### Added — optional pre-engine admission gates (F457)
+
+A routine can explicitly enable `run_gate` to evaluate its own `scripts/gate.py` before a
+fresh schedule, catch-up or lane attempt starts an engine — so a periodic run that has
+nothing to do costs no model tokens at all. The predicate is evaluated after the
+concurrency slot is acquired and before `create_subprocess_exec`, the only point where no
+endpoint registry, workflow decomposition or engine loop has booted yet.
+
+- **Explicit opt-in, fail closed.** `run_gate: {enabled: true, timeout_s: 30}`; omission
+  defaults off, timeout is a strict integer 1–300, and malformed settings reject the config
+  rather than degrading to disabled. An enabled gate also refuses the whole-config recovery
+  fallback, so an unrelated invalid field can never silently turn admission off.
+- **A versioned protocol, never an implicit answer.** Exit 0 plus one bounded JSON object
+  (`{"version":1,"decision":"run"|"skip","reason":"…"}`). Malformed output, a nonzero exit,
+  authorization failure, sandbox refusal, overflow or timeout is a FAILED attempt — never an
+  implicit skip and never an implicit run.
+- **Bypasses that keep work from starving.** Manual runs, CLI run-once, triggers, one-shots,
+  conversations, background tasks and resumes never gate; a pending inbox bypasses admission,
+  and an inbox arrival during evaluation overrides a skip without consuming the message. A
+  skipped lane member advances the chain instead of stalling it.
+- **Bounded and killable.** Preparation runs in a dedicated same-source interpreter with
+  private-stdin config (no secret in argv), inside a tracked process group; one deadline
+  covers interpreter startup, preparation, the predicate and the final inbox check, and
+  timeout or abort kills the group. Each stream is capped at 16 KiB, with diagnostics kept in
+  `gate-stderr.txt` separately from protocol stdout.
+- **Declared access only.** `net:`/`secrets:`/`fs:` reuse the shared header contract:
+  declarations intersect the routine's persistent grants and can narrow but never widen them;
+  `calls:` is rejected in this first scope. Admission requires the strict sandbox even where
+  ordinary utilities may degrade, and says so rather than falling back.
+- A skip writes `state: finished`, `outcome: skipped`, zero turn/usage, a `result.md` and a
+  `gate.json`; errors write a failed status with the same metadata. No live routine is opted
+  in by this release (`docs/run-gates.md`).
+
+### Fixed — cancellation during engine launch could lose its process
+
+`_supervise` awaited `create_subprocess_exec` with `run.proc` still `None`, so an abort landing
+in that window took the queued branch, wrote `aborted`, and had no handle to kill — the engine
+then started anyway and overwrote the abort. The supervisor now retains ownership across the
+handshake, rechecks cancellation once it holds the handle, and kills/reaps the process group
+without publishing `run_started`. Supervisor-task cancellation keeps the same ownership, even
+if cancelled again while reaping. This does not promise that no child instruction ran before
+the parent obtained the handle. Regressions cover descendants, repeated cancellation,
+exactly-once slot release and reap, and preserved cumulative telemetry.
+
 ## [0.353.3] — 2026-09-21
 
 ### Fixed

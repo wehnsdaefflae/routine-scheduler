@@ -136,7 +136,7 @@ class LaneRunManager:
                            "state": state, "outcome": outcome})
         rec["current_run"] = None
         rec["cursor"] = int(rec.get("cursor") or 0) + 1
-        if outcome != "ok" and rec.get("on_failure") == "stop":
+        if outcome not in ("ok", "skipped") and rec.get("on_failure") == "stop":
             self._finalize(rec, "stopped")
         elif int(rec.get("cursor") or 0) >= len(_fire_slugs(rec)):
             self._end_of_chain(rec)

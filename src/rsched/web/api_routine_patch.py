@@ -18,6 +18,7 @@ from pydantic import BaseModel, ConfigDict
 from .. import domains, schedule
 from .. import rules as rules_mod
 from ..config import DELIBERATION_LEVELS, MODEL_KINDS, write_tuning
+from ..config.routine import RunGateConfig
 from ..paths import atomic_write_yaml, read_yaml
 from .routines_common import (
     _git_commit,
@@ -37,6 +38,7 @@ class RoutinePatch(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     enabled: bool | None = None
+    run_gate: RunGateConfig | None = None
     schedule: dict | None = None            # {"friendly":…, "catchup":…} (cron built server-side)
     budgets: dict | None = None
     models: dict | None = None              # {main|tool_call|uncensored: catalog name}
@@ -221,6 +223,9 @@ def patch_routine(request: Request, slug: str, patch: RoutinePatch) -> dict:
     path = info.cfg.dir / "routine.yaml"
     raw = read_yaml(path, {})
     updates = patch.model_dump(exclude_none=True)
+    if patch.run_gate is not None:
+        updates["run_gate"] = patch.run_gate.model_dump(exclude_unset=True)
+    signal_values = dict(updates)
     # `updated` reports every field this PATCH applied. Captured BEFORE the appliers pop
     # what they consume (models/connections/machines/grants/keep_runs/schedule) — the
     # response and commit message must not under-report, because the Decisions page's
@@ -306,7 +311,7 @@ def patch_routine(request: Request, slug: str, patch: RoutinePatch) -> dict:
     # F337: a run already in flight booted its policy, schema and prompt from the OLD config.
     # Tell it what changed and which half of it reaches it now — the drift this closes is that
     # some fields silently did and most silently did not.
-    live = signal_config_change(info, requested, patch.model_dump(exclude_none=True))
+    live = signal_config_change(info, requested, signal_values)
     return {"ok": True, "updated": requested, **({"told_live_run": True} if live else {})}
 
 

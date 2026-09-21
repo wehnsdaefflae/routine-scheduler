@@ -7,7 +7,15 @@ from pathlib import Path
 from typing import Literal, cast
 
 import yaml
-from pydantic import AliasPath, Field, ValidationInfo, field_validator
+from pydantic import (
+    AliasPath,
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationError,
+    ValidationInfo,
+    field_validator,
+)
 
 from ..ids import is_slug
 from ..paths import atomic_write_yaml, read_yaml
@@ -28,6 +36,14 @@ from .base import (
 from .domainconfig import apply_shared_config, domain_config_for
 
 
+class RunGateConfig(BaseModel):
+    """Explicit, strict opt-in to pre-engine automatic admission."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+    enabled: bool = False
+    timeout_s: int = Field(default=30, ge=1, le=300)
+
+
 class RoutineConfig(_Config):
     """One routine's `routine.yaml`: schedule, models (main/tool_call/uncensored),
     budgets, held permissions, held general rules, filesystem roots, and retention. The
@@ -40,6 +56,7 @@ class RoutineConfig(_Config):
     dir: Path
     name: BlankableStr = ""
     enabled: bool = True
+    run_gate: RunGateConfig = Field(default_factory=RunGateConfig)
     tags: list[str] = Field(default_factory=list)  # freeform, for filtering (e.g. "meta")
     cron: BlankableStr = Field("", validation_alias=AliasPath("schedule", "cron"))
     tz: str = Field("Europe/Berlin", validation_alias=AliasPath("schedule", "tz"))
@@ -259,8 +276,8 @@ def record_grants(routine_dir: Path, updates: dict[str, bool]) -> None:
 def load_routine(routine_dir: Path) -> tuple[RoutineConfig | None, list[str]]:
     """Parse <dir>/routine.yaml, then layer the shared config of the DOMAIN this routine names
     underneath it (D82 — the domain is a default, the routine's own keys win). Returns
-    (config, problems); config is None only when the file is missing/unreadable — otherwise
-    problems may be non-empty but best-effort applies.
+    (config, problems); invalid admission policy or exhausted recovery with an enabled
+    gate also returns None. Other problems use best-effort recovery.
     """
     path = routine_dir / "routine.yaml"
     problems: list[str] = []
@@ -303,8 +320,16 @@ def load_routine(routine_dir: Path) -> tuple[RoutineConfig | None, list[str]]:
     # nothing about the routine and the page had to explain a second inheritance chain on top
     # of the domain's. The DOMAIN layer above stays: a domain is a live shared config a member
     # belongs to, which is a different claim from "this is where I started".
-    cfg = _validate_lenient(RoutineConfig, {**raw, "slug": slug, "dir": routine_dir}, problems) \
-        or RoutineConfig(slug=slug, dir=routine_dir)
+    try:
+        gate = RunGateConfig.model_validate(raw.get("run_gate", {}))
+    except ValidationError as exc:
+        return None, [*problems, f"run_gate: {exc}"]
+    cfg = _validate_lenient(RoutineConfig, {**raw, "slug": slug, "dir": routine_dir}, problems)
+    if cfg is None:
+        if gate.enabled:
+            return None, [*problems, "run_gate: enabled gate forbids whole-config fallback"]
+        cfg = RoutineConfig(slug=slug, dir=routine_dir)
+    cfg.run_gate = gate
     schedule_state = raw.get("schedule") or {}
     if isinstance(schedule_state, dict) and schedule_state.get("disabled") is True:
         cfg.enabled = False

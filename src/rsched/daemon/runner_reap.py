@@ -88,7 +88,8 @@ def reap(runner, run: ActiveRun, cfg: RoutineConfig, stderr: bytes) -> None:
     # abort was the user stopping it). Report/trigger/one-shot/audit deliveries never
     # wake: each has its own contract (reports wait for the schedule or the routine's
     # own report trigger).
-    if info.state == "finished" and _stranded_user_messages(cfg.dir):
+    if (info.state == "finished" and info.outcome != "skipped"
+            and _stranded_user_messages(cfg.dir)):
         log.info("post-finish inbox sweep: user message stranded — resuming %s", run.slug)
         resume_for_stranded(runner, cfg)
     # D78-A: a web routine edit made WHILE this run was active was held in the durable

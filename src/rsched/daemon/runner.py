@@ -21,7 +21,7 @@ from ..health_events import log_health_event
 from ..ids import now_iso
 from ..ids import run_ts as make_run_ts
 from ..paths import atomic_write_json, read_json
-from . import runner_reap, runner_state
+from . import run_gate, runner_reap, runner_state
 from .events import EventBus
 from .llm_tailer import tail_llm_sidecar
 from .runner_state import (
@@ -199,10 +199,11 @@ class Runner:
     async def _supervise(self, run: ActiveRun, cfg: RoutineConfig, reason: str,
                          resume: bool = False) -> None:
         sem = run.sem or self.semaphore
-        await sem.acquire()
-        run.holds_slot = True
         stderr = b""
+        spawn: asyncio.Task | None = None
         try:
+            await sem.acquire()
+            run.holds_slot = True
             # `run.cancelled` = aborted while still queued: never spawn, but FALL THROUGH to
             # the reap. An early `return` here skipped it, and reap() is the only caller of
             # `runner.active.pop(run.slug)` — so the slug stayed registered forever. That
@@ -213,28 +214,37 @@ class Runner:
             # way out was the restart the leak itself prevented. reap() has always handled
             # this case — it pops the slug, then returns early on `cancelled and proc is
             # None` — it was simply never reached.
-            if not run.cancelled:
-                run.proc = await asyncio.create_subprocess_exec(
+            if (not run.cancelled
+                    and await run_gate.admit(run, cfg, self.server, reason, resume)
+                    and not run.cancelled and not run.user_cancel):
+                spawn = asyncio.create_task(asyncio.create_subprocess_exec(
                     *runner_state.engine_cmd(self.server, str(cfg.dir), run.run_ts,
                                              resume=resume),
                     stdout=asyncio.subprocess.DEVNULL,
                     stderr=asyncio.subprocess.PIPE,
                     start_new_session=True,
                     cwd=str(cfg.dir),
-                )
+                ))
+                # Cancellation must not discard a process created before its handle arrives.
+                proc = await asyncio.shield(spawn)
+                run.proc = proc
+                if self._launch_cancelled(run):
+                    await self._kill_and_reap(run)
+                    run_gate.terminal(run, "aborted", "failed", "Run aborted during launch")
+                    return
                 self.bus.publish({"event": "run_started", "routine": cfg.slug,
                                   "run_id": run.run_id, "reason": reason})
                 if self.center is not None:
                     self.center.open_process(run.run_id, kind="run", label=run.slug,
                                              run_id=run.run_id)
                 log.info("run_started routine=%s run=%s pid=%s reason=%s",
-                         cfg.slug, run.run_id, run.proc.pid, reason)
+                         cfg.slug, run.run_id, proc.pid, reason)
                 waiter = asyncio.create_task(self._watch_waiting(run))
                 tailer = (asyncio.create_task(
                     tail_llm_sidecar(run.run_dir, self._llm_recorder(run)))
                     if self.center is not None else None)
                 try:
-                    _, err = await run.proc.communicate()
+                    _, err = await proc.communicate()
                     stderr = err or b""
                 finally:
                     waiter.cancel()
@@ -242,11 +252,43 @@ class Runner:
                         tailer.cancel()   # its finally drains last-moment records before reap
                         with contextlib.suppress(asyncio.CancelledError):
                             await tailer
+        except asyncio.CancelledError:
+            run.user_cancel = True
+            # Keep ownership even if cancellation arrives again while acquiring/reaping.
+            async def cleanup() -> None:
+                if spawn is not None and run.proc is None:
+                    with contextlib.suppress(Exception):
+                        run.proc = await spawn
+                await self._kill_and_reap(run)
+                run_gate.terminal(run, "aborted", "failed", "Run supervisor cancelled")
+            cleanup_task = asyncio.create_task(cleanup())
+            while not cleanup_task.done():
+                with contextlib.suppress(asyncio.CancelledError):
+                    await asyncio.shield(cleanup_task)
+            cleanup_task.result()
+            raise
+        except Exception as exc:
+            run_gate.terminal(run, "failed", "failed", f"Run launch failed: {exc}")
         finally:
             if run.holds_slot:
                 sem.release()
                 run.holds_slot = False
-        runner_reap.reap(self, run, cfg, stderr)
+            runner_reap.reap(self, run, cfg, stderr)
+
+    @staticmethod
+    def _launch_cancelled(run: ActiveRun) -> bool:
+        """Re-read flags that may change while the process handshake is awaited."""
+        return run.cancelled or run.user_cancel
+
+    @staticmethod
+    async def _kill_and_reap(run: ActiveRun) -> None:
+        """Kill the owned session even if its leader already exited; reap the leader."""
+        if run.proc is not None:
+            import os
+            import signal
+            with contextlib.suppress(ProcessLookupError):
+                os.killpg(run.proc.pid, signal.SIGKILL)
+            await run.proc.communicate()
 
     async def _watch_waiting(self, run: ActiveRun) -> None:
         """A run parked on a blocking question releases its concurrency slot (an idle
