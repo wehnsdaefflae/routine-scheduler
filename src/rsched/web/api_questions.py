@@ -86,6 +86,9 @@ async def answer(request: Request, qid: str, body: Answer) -> dict:
     # its next turn boundary); a scheduled routine has its own next run.
     resumed = await _resume_terminal_conversation(request, match, routine_dir)
     fired = await _run_now(request, match) if body.run_now else None
+    if fired:
+        payload["ran_now"] = fired
+        atomic_write_json(routine_dir / "inbox" / f"answer-{qid}.json", payload)
     return {"ok": True, "routine": match["routine"], "mode": match["mode"],
             **({"resumed": True} if resumed else {}),
             **({"run_id": fired} if fired else {})}

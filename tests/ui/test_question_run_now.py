@@ -43,3 +43,29 @@ def test_answer_and_run_now_fires_one_manual_run(ui, ui_page):
     answer = read_json(ui.routines / "uir" / "inbox" / "answer-q-20260912-120000-2.json")
     assert answer["text"] == "Do it"
     assert ui.runner.fired == [("uir", "manual")]
+    assert answer["ran_now"]
+    ui_page.reload()
+    expect(ui_page.locator(".question-item").first).to_contain_text(
+        "answered · run started", timeout=10_000)
+
+
+def test_answer_run_now_does_not_claim_a_refused_start(ui, ui_page, monkeypatch):
+    _seed(ui, "q-refused-start")
+
+    async def refuse_fire(*_args, **_kwargs):
+        return None
+
+    monkeypatch.setattr(ui.runner, "fire", refuse_fire)
+    ui_page.goto(f"{ui.url}/#/questions")
+    card = ui_page.locator(".question-item").first
+    card.locator("textarea.answer-input").fill("Save this answer")
+    card.locator("[data-answer-run-now]").click()
+    expect(card).to_contain_text("answered · queued", timeout=10_000)
+    expect(card).not_to_contain_text("run started")
+    answer = read_json(ui.routines / "uir" / "inbox" / "answer-q-refused-start.json")
+    assert answer["text"] == "Save this answer"
+    assert "ran_now" not in answer
+    assert ui.runner.fired == []
+    ui_page.reload()
+    expect(ui_page.locator(".question-item").first).to_contain_text("answered · queued")
+

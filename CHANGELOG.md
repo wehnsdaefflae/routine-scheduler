@@ -15,6 +15,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.353.3] — 2026-09-21
+
+### Fixed
+
+- Preserve deliberate-shutdown attribution across populated run homes, including colliding slugs.
+- Render scheduled-fire SVG titles without aborting the watch ribbon.
+- Preserve the actual answer-and-run-now result across refreshes, and never report request intent as a successful start.
+
+### Changed
+
+- UI tests use disposable contexts on the existing browser sidecar exclusively. No local browser is launched. Set RSCHED_TEST_CDP and RSCHED_TEST_BIND; the fixture uses ephemeral HTTPS for secure-context APIs.
+
 ## [0.353.2] — 2026-09-20
 
 ### Fixed — a deliberate-shutdown mark expires with the boot, not with an orphan

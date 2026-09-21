@@ -186,12 +186,14 @@ export async function render(view, query = {}) {
           q.wizard ? chip("clarify", "meta") : q.meta ? chip("meta", "meta") : null,
           q.type === "util-approval" ? chip("util approval", "partial") : null,
           q.type === "request" ? chip("access request", "partial") : null,
-          chip(`answered${q.answer_source && q.answer_source !== "web" ? ` via ${q.answer_source}` : ""} · queued`, "ok"),
+          chip(`answered${q.answer_source && q.answer_source !== "web" ? ` via ${q.answer_source}` : ""}`
+            + ` · ${q.ran_now ? "run started" : "queued"}`, "ok"),
           sourceLink(q),
           q.asked ? el("span", {}, "asked ", when(q.asked)) : null),
         qText(q),
         el("div", { class: "flow-note mt" },
-          el("span", {}, `“${q.answer}” → inbox → consumed by the ${q.mode === "blocking" ? "waiting run" : "next run"}`)));
+          el("span", {}, `“${q.answer}” → inbox → consumed by the ${q.mode === "blocking" ? "waiting run"
+            : q.ran_now ? "run starting now" : "next run"}`)));
     }
     const runBits = q.run_id ? [
       el("a", { class: "btn small", href: `#/run/${q.run_id}` }, "view run"),
@@ -257,6 +259,7 @@ export async function render(view, query = {}) {
     // live run drains the answer at its next turn boundary. Nothing fires on its own —
     // an answer WAITS for the next scheduled run unless this button is the one clicked.
     let wantRun = false;
+    let firedRunId = null;
     const canRunNow = !q.meta && q.mode !== "blocking" && !q.conversation && !q.background
       && !q.wizard && (!q.run_state || TERMINAL.has(q.run_state));
     const runNow = canRunNow ? el("button", { class: "btn small", "data-answer-run-now": "",
@@ -268,12 +271,17 @@ export async function render(view, query = {}) {
       numbered: true,
       defaultLine: false,          // the panel body renders the default line below
       onArrow: (d) => focusAt(index + d),
-      submitText: (text, _intermediate, decision) => api(`/api/questions/${q.qid}/answer`,
-        { method: "POST", body: { ...(decision ? { decision } : { text }),
-                                  ...(wantRun ? { run_now: true } : {}) } }),
+      submitText: async (text, _intermediate, decision) => {
+        firedRunId = null;
+        const result = await api(`/api/questions/${q.qid}/answer`,
+          { method: "POST", body: { ...(decision ? { decision } : { text }),
+                                    ...(wantRun ? { run_now: true } : {}) } });
+        firedRunId = result.run_id || null;
+        return result;
+      },
       toastText: () => (q.mode === "blocking" ? "answered — the run resumes"
         : q.meta ? "recorded — the next self-audit run acts on it"
-        : wantRun ? "answered — a run is starting now"
+        : firedRunId ? "answered — a run is starting now"
         : "answered — the next run picks it up"),
       // Mark answered in place: a deferred question's pending file is only consumed when
       // its routine next runs, so a reload would still list it — that would read as
@@ -281,9 +289,9 @@ export async function render(view, query = {}) {
       onSuccess: (text) => {
         panel.classList.remove("warn");
         controls.replaceChildren(el("div", { class: "flow-note" },
-          chip(wantRun ? "answered · run started" : "answered · queued", "ok"),
+          chip(firedRunId ? "answered · run started" : "answered · queued", "ok"),
           el("span", {}, `“${text}” → inbox → consumed by the ${q.mode === "blocking" ? "waiting run"
-            : wantRun ? "run starting now" : "next run"}`)));
+            : firedRunId ? "run starting now" : "next run"}`)));
         state.items = state.items.filter((x) => x.qid !== q.qid);
         syncToolbar();
         inputs.splice(inputs.indexOf(form.input), 1);

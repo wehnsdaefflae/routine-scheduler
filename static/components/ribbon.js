@@ -103,7 +103,7 @@ export function mountRibbon(host) {
 
     for (const f of fireTimes(week, now, to)) {
       const m = svgEl("rect", { class: "rb-fire", x: x(f.t) - 1.5, y: LANE_Y, width: 3, height: LANE_H });
-      m.append(svgEl("title", {})).lastChild.textContent = `${f.label} · scheduled ${fmtTs(new Date(f.t).toISOString())}`;
+      m.append(svgEl("title", {}, `${f.label} · scheduled ${fmtTs(new Date(f.t).toISOString())}`));
       svg.append(m);
     }
 

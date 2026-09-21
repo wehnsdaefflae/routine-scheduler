@@ -57,17 +57,29 @@ def pytest_collection_modifyitems(items):
 
 
 @pytest.fixture(scope="session")
-def browser_type_launch_args(browser_type_launch_args):
-    """Chromium's shared-memory backing, moved off /dev/shm.
+def browser(playwright):
+    """Connect only to the sidecar; never launch or close the shared browser."""
+    import os
 
-    Chromium puts renderer surfaces in /dev/shm, which Docker and small hosts size at 64 MB.
-    Three parallel workers on a 3 GB box exhaust it, and the failure does not read as running
-    out of anything: the tab dies mid-test and Playwright reports a closed target. The flag
-    spends disk instead, which is the trade every headless-in-a-container guide makes, and the
-    browser-session sidecar already runs with it (deploy/Dockerfile.chrome).
-    """
-    return {**browser_type_launch_args,
-            "args": [*browser_type_launch_args.get("args", []), "--disable-dev-shm-usage"]}
+    endpoint = os.environ.get("RSCHED_TEST_CDP")
+    if not endpoint:
+        pytest.fail("RSCHED_TEST_CDP is required; local browser launch is forbidden")
+    return playwright.chromium.connect_over_cdp(endpoint, timeout=15_000)
+
+
+@pytest.fixture(scope="session")
+def browser_context_args(browser_context_args):
+    # Trust the ephemeral certificate only in disposable test contexts.
+    return {**browser_context_args, "ignore_https_errors": True}
+
+
+def _test_bind_host() -> str:
+    import os
+
+    host = os.environ.get("RSCHED_TEST_BIND")
+    if not host:
+        pytest.fail("RSCHED_TEST_BIND must name the sidecar-reachable test interface")
+    return host
 
 
 class StubRunner:
@@ -155,7 +167,7 @@ def _listening_socket() -> socket.socket:
     no close-then-rebind race like the old free-port probe had under xdist."""
     s = socket.socket()
     s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    s.bind(("127.0.0.1", 0))
+    s.bind((_test_bind_host(), 0))
     return s
 
 
@@ -171,8 +183,37 @@ def library_template(tmp_path_factory) -> Path:
     return template
 
 
+@pytest.fixture(scope="session")
+def test_tls(tmp_path_factory):
+    """Ephemeral TLS for secure-context APIs on the remote fixture origin."""
+    from datetime import UTC, datetime, timedelta
+    from ipaddress import ip_address
+
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from cryptography.x509.oid import NameOID
+
+    directory = tmp_path_factory.mktemp("ui-tls")
+    key = ec.generate_private_key(ec.SECP256R1())
+    subject = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "test fixture")])
+    now = datetime.now(UTC)
+    certificate = (x509.CertificateBuilder().subject_name(subject).issuer_name(subject)
+                   .public_key(key.public_key()).serial_number(x509.random_serial_number())
+                   .not_valid_before(now - timedelta(minutes=1))
+                   .not_valid_after(now + timedelta(days=1))
+                   .add_extension(x509.SubjectAlternativeName([
+                       x509.IPAddress(ip_address(_test_bind_host()))]), critical=False)
+                   .sign(key, hashes.SHA256()))
+    cert_path, key_path = directory / "cert.pem", directory / "key.pem"
+    cert_path.write_bytes(certificate.public_bytes(serialization.Encoding.PEM))
+    key_path.write_bytes(key.private_bytes(serialization.Encoding.PEM,
+                         serialization.PrivateFormat.PKCS8, serialization.NoEncryption()))
+    return cert_path, key_path
+
+
 @pytest.fixture
-def ui(tmp_path, make_routine, library_template) -> UiHarness:
+def ui(tmp_path, make_routine, library_template, test_tls) -> UiHarness:
     """A live console over fixture state: one routine ('uir'), the seed library
     (so conversations can materialize `converse`), a stub runner, uvicorn on an
     ephemeral port. Tears the server down after the test.
@@ -201,8 +242,10 @@ def ui(tmp_path, make_routine, library_template) -> UiHarness:
 
     sock = _listening_socket()
     port = sock.getsockname()[1]
-    uv_server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port,
-                                              log_level="warning"))
+    cert_path, key_path = test_tls
+    uv_server = uvicorn.Server(uvicorn.Config(app, host=_test_bind_host(), port=port,
+                                              ssl_certfile=str(cert_path),
+                                              ssl_keyfile=str(key_path), log_level="warning"))
     thread = threading.Thread(target=lambda: uv_server.run(sockets=[sock]), daemon=True)
     thread.start()
     deadline = time.monotonic() + 15
@@ -211,7 +254,7 @@ def ui(tmp_path, make_routine, library_template) -> UiHarness:
             pytest.fail("uvicorn did not start within 15s")
         time.sleep(0.05)
 
-    yield UiHarness(url=f"http://127.0.0.1:{port}", tmp=tmp_path,
+    yield UiHarness(url=f"https://{_test_bind_host()}:{port}", tmp=tmp_path,
                     routines=tmp_path / "routines",
                     conversations=tmp_path / "conversations",
                     runner=runner, server_cfg=server_cfg)

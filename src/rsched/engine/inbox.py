@@ -282,7 +282,9 @@ def open_questions(routine_dir: Path) -> list[dict]:
         obj = read_json(path)
         if isinstance(obj, dict) and obj.get("question"):
             qid = str(obj.get("qid") or path.stem)
-            if (inbox / f"answer-{qid}.json").exists():
-                obj = {**obj, "answered": True}
+            answer = read_json(inbox / f"answer-{qid}.json")
+            if isinstance(answer, dict):
+                obj = {**obj, "answered": True,
+                       **({"ran_now": answer["ran_now"]} if answer.get("ran_now") else {})}
             out.append(obj)
     return out

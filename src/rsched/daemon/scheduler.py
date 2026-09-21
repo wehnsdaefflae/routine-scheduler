@@ -168,18 +168,16 @@ class Scheduler:
 
     async def run_forever(self) -> None:
         self.rescan()
-        fixed = runner_reap.recover_orphans(self.runner, self.catalog)
-        # conversations live outside the schedule but their runs can be orphaned all the same
-        runner_reap.recover_orphans(
-            self.runner, registry.scan(self.server, self.server.conversations_home))
-        # detached background tasks too — then the manager re-attempts any undelivered results
-        runner_reap.recover_orphans(
-            self.runner, registry.scan(self.server, self.server.background_home))
-        # The three passes above share ONE deliberate-shutdown breadcrumb, so it must survive
-        # the first two: a boot where only a conversation was orphaned still deserves the cause
-        # the routines pass had no use for. It expires HERE, at the end of the boot, because a
-        # mark describes exactly one exit and a boot that orphaned nothing used to leave it on
-        # disk for the next crash to inherit (see restart.clear_shutdown_mark).
+        # One pass retains shutdown evidence; home-qualified keys preserve colliding slugs.
+        recovery_catalog = {
+            **{f"routines:{slug}": info for slug, info in self.catalog.items()},
+            **{f"conversations:{slug}": info for slug, info in
+               registry.scan(self.server, self.server.conversations_home).items()},
+            **{f"background:{slug}": info for slug, info in
+               registry.scan(self.server, self.server.background_home).items()},
+        }
+        fixed = runner_reap.recover_orphans(self.runner, recovery_catalog)
+        # Expire unused evidence too: a mark describes exactly one exit.
         restart.clear_shutdown_mark(self.server.routines_home)
         await self.detached.reconcile()
         # crashed runs leave sshfs key dirs behind (clean exits remove their own)
