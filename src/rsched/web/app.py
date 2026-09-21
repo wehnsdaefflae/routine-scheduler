@@ -62,6 +62,16 @@ def _is_sse_path(path: str) -> bool:
     return path == "/api/events" or (path.startswith("/api/runs/") and path.endswith("/events"))
 
 
+def _is_browser_view_path(path: str) -> bool:
+    """The relayed noVNC screen (F527). Same reasoning as an SSE ticket, same TTL: the
+    browser's WebSocket API cannot send an Authorization header, and noVNC's own asset
+    requests from inside the frame carry none either. A leaked ticket reaches this screen
+    for 60 s and nothing else — and the screen is already behind whatever network boundary
+    reaches the console at all.
+    """
+    return path == "/browser-view" or path.startswith("/browser-view/")
+
+
 # R94 (operator decision 2026-08-05: ENFORCE — this supersedes decision D68's 2026-08-03
 # "leave as-is"): two bearer tiers. The PRIMARY token (config.yaml `token:`) is the
 # human/web credential and authorizes everything. The ROUTINE token (`routine_token:`,
@@ -112,7 +122,8 @@ def require_auth(request: Request) -> None:
     # EventSource cannot send headers, and the bearer token in a query string would leak
     # into access logs — a SHORT-LIVED ticket (POST /api/sse-ticket) rides there instead,
     # valid ONLY for the SSE GET endpoints themselves (never a general API credential).
-    if request.method == "GET" and _is_sse_path(request.url.path):
+    if request.method == "GET" and (_is_sse_path(request.url.path)
+                                    or _is_browser_view_path(request.url.path)):
         ticket = request.query_params.get("ticket") or ""
         expiry = request.app.state.sse_tickets.get(ticket)
         if ticket and expiry is not None and expiry >= time.monotonic():

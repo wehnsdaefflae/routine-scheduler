@@ -163,3 +163,21 @@ def _include_api_routers(app: FastAPI, deps: list) -> None:
     # bearer), guarded instead by the unguessable per-flow `state`. Mounted at /oauth/callback
     # (NOT under /api), like the index/static routes.
     app.include_router(settings.oauth.callback_router)
+    # The shared browser's screen, relayed SAME-ORIGIN (F527). Mounted at /browser-view, not
+    # under /api, because the browser loads it as a document + assets rather than as an API:
+    # noVNC builds its own relative asset paths, and any prefix it does not know about would
+    # send them somewhere else. The GET half keeps the console's bearer dependency; the
+    # websocket half cannot (the WebSocket API sends no headers) and authenticates with the
+    # same short-lived ticket the SSE streams use.
+    from . import api_browser_view
+
+    # The asset half keeps the console's bearer dependency — a relayed noVNC asset is exactly
+    # as protected as any other route (noVNC's own fetches from inside the frame carry no
+    # header, so require_auth's `_is_browser_view_path` ticket branch is what admits them).
+    app.include_router(api_browser_view.router, dependencies=deps)
+    # The websocket half must NOT carry it: a FastAPI HTTP dependency applied to a websocket
+    # route fails at connect time with "require_auth() missing 1 required positional argument:
+    # 'request'" (a websocket scope has no Request). It validates the same short-lived ticket
+    # itself. The two are separate routers precisely so this exemption cannot spread to the
+    # GETs and quietly unauthenticate a signed-in browser session.
+    app.include_router(api_browser_view.ws_router)

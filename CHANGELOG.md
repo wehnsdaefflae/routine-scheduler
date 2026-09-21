@@ -15,6 +15,74 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.360.0] — 2026-09-21
+
+### Fixed — the browser screen is served from the console's own origin (F527)
+
+0.359.0 put `browser_view_url` straight into an iframe. That works over http on the LAN and
+fails exactly where the console is actually used: over `https://<host>`, both the screen and
+the right-rail preview were **blank, with nothing saying why**.
+
+Measured rather than guessed (`gu mixed-content-probe`, written for this): the http frame
+itself *loads* — mixed content is only a warning for a bare-IP host, because Chromium never
+upgrades an IP — and then noVNC opens `ws://<host>:6080/websockify`, which a page served over
+https may not do. No framebuffer ever arrives.
+
+No URL can fix that: the socket's permitted scheme follows the **embedding page's** origin. So
+the console becomes the origin.
+
+- **`/browser-view/<path>`** relays the noVNC page and its assets (`httpx`, hop-by-hop headers
+  dropped), and **`/browser-view/websockify`** relays the VNC stream itself. The browser then
+  upgrades to `wss://` on its own, under the TLS the console already terminates — no
+  certificate on the noVNC port, no second hostname to publish.
+- **Auth is split deliberately.** The asset half carries the console's bearer dependency; the
+  websocket half cannot (a FastAPI HTTP dependency on a websocket route fails at connect time
+  — a websocket scope has no `Request`) and validates the same short-lived ticket the SSE
+  streams use, for the same reason: neither `EventSource` nor `WebSocket` can send a header.
+  They are **two routers** so that exemption can never spread to the GETs and quietly
+  unauthenticate a signed-in browser session.
+- **Traversal is refused at the relay**, not delegated to websockify's own hygiene.
+- **A dead upstream reports 502 naming it**, and an unconfigured one 503 — because a silent
+  blank frame is the entire defect being fixed here.
+
+Verified against the live upstream: page 200 (15 212 B), `app/ui.js` 200 (58 293 B),
+`app/styles/base.css` 200 (19 625 B), and the relayed socket returning `RFB 003.008` — the
+real VNC greeting — while an unticketed socket gets 403 and a naked asset 401.
+
+## [0.359.0] — 2026-09-21
+
+### Fixed — an answer you gave stays on the page, and can be revised (F525)
+
+Answering a question **destroyed the record of it**. The Decisions page derives "answered" by
+reading `inbox/answer-<qid>.json`; the next run's boot consumed that file *and* unlinked the
+pending record, writing nothing in their place. The settled card vanished with the user's own
+words in it, and nothing could offer a revision of an answer the system no longer had.
+
+Verified before anything was touched: the reported qid returned **0 matches** from
+`/api/questions` while two other routines' answers still rendered with their text — solely
+because no run had consumed them yet. "Answered" was never a state this system kept; it was
+the accident of not-yet-consumed. The audit-decision half of this exact defect had already
+been patched narrowly (`audit/decisions-answered.json`) and never generalized, so routine,
+conversation and background asks all still lost their record.
+
+- **Consumption archives what it removes**: `questions/answered/<qid>.json` holds the ask, the
+  answer, its source and when a run took it.
+- **The Decisions page keeps the settled card** (`questions/answered` added to the read
+  model's memo sources, so a revision cannot serve stale).
+- **`POST /api/questions/{qid}/revise`** amends an answer: still queued rewrites in place, one
+  a run already read is **re-queued** for the next run — adding three answers to a four-part
+  question is an ordinary thing to do, not an error to be locked out of.
+
+### Added — the shared browser has a screen (F526)
+
+`#/browser` in the nav (full page, takes the keyboard — signing a session in is why it exists)
+and a **permanent read-only preview** docked in the right rail, mounted as a sibling of the
+workspace so navigation never re-creates the iframe. Read-only is enforced in the stylesheet
+(`pointer-events: none`) as well as by noVNC's `view_only=1`, so a passing click cannot steer
+a session a run is mid-way through using. Both surfaces stay hidden until the new
+`browser_view_url` server setting is configured, and the page then explains how to publish one
+instead of rendering a dead frame.
+
 ## [0.358.0] — 2026-09-21
 
 ### Changed — a domain PATCH merges, and removal is said out loud (D140)

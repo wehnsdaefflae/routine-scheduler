@@ -60,6 +60,36 @@ def test_publishing_a_screen_reveals_the_nav_link_and_the_read_only_preview(ui, 
     expect(ui_page.locator("iframe.browser-screen")).to_have_count(1)
 
 
+def test_both_surfaces_load_through_the_console_not_the_raw_upstream(ui, ui_page):
+    """F527, the operator's blank screen over https.
+
+    Neither frame may point at `browser_view_url` directly: an https console cannot open the
+    `ws://` socket noVNC needs, so a direct embed is permanently blank with nothing saying
+    why. Both must load from this origin, and both must hand noVNC a same-origin websocket
+    `path` — that parameter is what decides the socket's scheme.
+    """
+    ui.server_cfg.browser_view_url = "http://198.51.100.9:6080/vnc.html"
+
+    ui_page.goto(f"{ui.url}/#/routines")
+    dock_frame = ui_page.locator("#browser-dock iframe.browser-dock-frame")
+    expect(dock_frame).to_have_count(1, timeout=10_000)
+    dock_src = dock_frame.get_attribute("src")
+    assert dock_src.startswith("/browser-view/"), dock_src
+    assert "198.51.100.9" not in dock_src            # never the raw upstream
+    assert "path=browser-view%2Fwebsockify" in dock_src.replace("%2f", "%2F")
+    assert "view_only=1" in dock_src                  # the rail stays read-only
+
+    ui_page.goto(f"{ui.url}/#/browser")
+    screen = ui_page.locator("iframe.browser-screen")
+    expect(screen).to_have_count(1, timeout=10_000)
+    screen_src = screen.get_attribute("src")
+    assert screen_src.startswith("/browser-view/"), screen_src
+    assert "198.51.100.9" not in screen_src
+    assert "view_only=1" not in screen_src            # the full screen takes the keyboard
+    # the upstream is still NAMED on the page, as the thing being relayed
+    expect(ui_page.locator("#view")).to_contain_text("198.51.100.9")
+
+
 def test_the_preview_can_be_collapsed_and_stays_collapsed(ui, ui_page):
     """It is permanent, not compulsory: the choice survives a reload."""
     ui.server_cfg.browser_view_url = "http://127.0.0.1:6080/vnc.html"
