@@ -64,7 +64,44 @@ export async function render(view, slug, _query = {}) {
   // event until the woken leg boots, and the view remounts ~700ms after every send — so the
   // echo lives here (render scope), is re-appended by each mount, and is dropped only when
   // the matching user_injection event arrives.
-  let pendingEcho = null;   // { text, node }
+  let pendingEcho = null;   // { text, node, id }
+
+  // D139: the echo bubble's controls. A queued message is the user's until the model reads
+  // it, so the bubble that says "sent" is also where it is revised or withdrawn. Rebuilding
+  // the bubble after each act keeps ONE construction path for both the send and the remount.
+  function echoNode() {
+    if (!pendingEcho) return null;
+    const ctl = !pendingEcho.id ? undefined : {
+      onRevise: async (text) => {
+        if (!text.trim()) return;
+        try {
+          await api(`/api/conversations/${slug}/messages/${pendingEcho.id}`,
+                    { method: "PUT", body: { text } });   // api() stringifies for us
+          pendingEcho.text = text;
+          repaintEcho();
+          toast("revised — the model reads this version");
+        } catch (err) { toast(err.message, 5000, { error: true }); repaintEcho(); }
+      },
+      onWithdraw: async () => {
+        try {
+          await api(`/api/conversations/${slug}/messages/${pendingEcho.id}`,
+                    { method: "DELETE" });
+          pendingEcho.node?.remove();
+          pendingEcho = null;
+          toast("withdrawn — the model never sees it");
+        } catch (err) { toast(err.message, 5000, { error: true }); repaintEcho(); }
+      },
+      onCancel: () => repaintEcho(),
+    };
+    return userEcho(pendingEcho.text, ctl);
+  }
+
+  function repaintEcho() {
+    if (!pendingEcho) return;
+    const fresh = echoNode();
+    pendingEcho.node?.replaceWith(fresh);
+    pendingEcho.node = fresh;
+  }
 
   // ---- sidebar --------------------------------------------------------------------------------
   async function loadList() {
@@ -180,7 +217,7 @@ export async function render(view, slug, _query = {}) {
     const questionBox = el("div", {});
     const composer = buildComposer();
     main.replaceChildren(head, chatBox, echoBox, waiting, questionBox, composer.node);
-    if (pendingEcho) { pendingEcho.node = userEcho(pendingEcho.text); echoBox.append(pendingEcho.node); }
+    if (pendingEcho) { pendingEcho.node = echoNode(); echoBox.append(pendingEcho.node); }
 
     artBody.replaceChildren();
     // R341: the SHARED rail component (components/rail.js) — the run view renders the same
@@ -516,7 +553,8 @@ export async function render(view, slug, _query = {}) {
           if (!r.command) {
             const sentText = String(fd.get("text") || "");
             pendingEcho?.node?.remove();
-            pendingEcho = { text: sentText, node: userEcho(sentText) };
+            pendingEcho = { text: sentText, node: null, id: r.id || "" };
+            pendingEcho.node = echoNode();
             echoBox.append(pendingEcho.node);
           }
           // reattach to show the result (command) or the live reply; mid-run streams already

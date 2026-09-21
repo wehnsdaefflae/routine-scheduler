@@ -84,10 +84,40 @@ function userNode(text, refBtn, attachments, fileUrl) {
 // the POST lands (with a "✓ sent" hint), because no transcript event carries a post-finish
 // message until the woken leg boots and injects it. The caller owns its lifetime: it
 // re-appends the echo across remounts and removes it when the real user_injection arrives.
-export function userEcho(text) {
+// D139: a queued message is the USER's until the model reads it. A routine's inbox has always
+// allowed revise and withdraw; the chat echo carried no id and therefore no controls, so the
+// only remedy for a typo was a second message correcting the first — which costs the model a
+// turn reading both. The window is routinely minutes: an idle conversation waits for the wake,
+// a live one for the next turn boundary.
+//
+// `ctl` is optional on purpose. Without it this is exactly the bubble F295 introduced; with it
+// the same bubble carries the two acts, and the moment the message is consumed the bubble is
+// replaced by the real transcript event, controls and all.
+export function userEcho(text, ctl) {
   const node = userNode(text);
   node.classList.add("pending");
-  node.append(el("div", { class: "pending-hint" }, "✓ sent"));
+  const hint = el("div", { class: "pending-hint" }, "✓ sent");
+  if (ctl?.onRevise && ctl?.onWithdraw) {
+    hint.append(
+      el("span", { class: "pending-sep" }, " · "),
+      el("button", { class: "pending-act",
+        title: "rewrite this message — it keeps its place in the queue",
+        onclick: () => {
+          const box = el("textarea", { class: "pending-edit" });
+          box.value = text;
+          const save = el("button", { class: "pending-act",
+            onclick: () => ctl.onRevise(box.value) }, "save");
+          const cancel = el("button", { class: "pending-act",
+            onclick: () => ctl.onCancel?.() }, "cancel");
+          node.replaceChildren(box, el("div", { class: "pending-hint" }, save, cancel));
+          box.focus();
+        } }, "revise"),
+      el("span", { class: "pending-sep" }, " · "),
+      el("button", { class: "pending-act",
+        title: "withdraw it — the model never sees it",
+        onclick: () => ctl.onWithdraw() }, "withdraw"));
+  }
+  node.append(hint);
   return node;
 }
 

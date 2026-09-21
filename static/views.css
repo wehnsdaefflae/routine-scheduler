@@ -463,6 +463,18 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
 .chat-echo:not(:empty) { margin-top: 10px; }
 .msg.user.pending { border-style: dashed; opacity: .8; }
 .msg.user.pending .pending-hint { margin-top: 6px; font-size: 11px; color: var(--ink-2); text-align: right; }
+/* D139: revise / withdraw live in the bubble's own footer line, at its scale — the acts
+   belong to the message, not to a toolbar somewhere else. */
+.msg.user.pending .pending-sep { color: var(--ink-3); }
+.msg.user.pending .pending-act {
+  background: none; border: 0; padding: 0; font: inherit; color: var(--ink-2);
+  text-decoration: underline; text-underline-offset: 2px; cursor: pointer;
+}
+.msg.user.pending .pending-act:hover { color: var(--ink); }
+.msg.user.pending .pending-edit {
+  width: 100%; min-height: 60px; font: inherit; color: inherit;
+  background: var(--plate); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px;
+}
 .msg.assistant { align-self: flex-start; background: var(--plate); }
 .msg.question-msg { align-self: flex-start; background: var(--warn-dim); border-color: color-mix(in srgb, var(--warn) 38%, transparent); }
 .msg-body { font-size: 13px; line-height: 1.55; overflow-wrap: anywhere; }

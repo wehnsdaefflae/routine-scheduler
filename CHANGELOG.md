@@ -15,6 +15,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.357.0] — 2026-09-21
+
+### Added — a queued message in a CONVERSATION can be seen, revised and withdrawn (D139)
+
+> "when i inject a message into a conversation or routine run, i wanna see that message and be
+> able to delete / revise it until it is consumed by the model."
+
+Half of this already worked. A ROUTINE's inbox has had the full surface all along — list, edit
+in place (the same file, so queue position holds), withdraw — each valid right up until a run
+drains the file. A CONVERSATION had only POST, and that is the surface messages are most often
+injected on. Worse, the chat's optimistic echo bubble carried no id, so there was nothing to
+address even if the verbs had existed; the only remedy for a typo was a second message
+correcting the first, which costs the model a turn reading both.
+
+The window is not small: a message to an idle conversation waits for the wake, and mid-run it
+waits for the next turn boundary — routinely minutes.
+
+- `GET /conversations/{slug}/messages` lists what is queued and not yet consumed.
+- `PUT /conversations/{slug}/messages/{id}` rewrites one in place — same file, original `ts`
+  kept, `edited` stamped.
+- `DELETE /conversations/{slug}/messages/{id}` withdraws the delivery.
+- `POST /conversations/{slug}/message` now returns the queued message's `id`.
+- The chat echo bubble carries **revise** and **withdraw** in its own footer line: the bubble
+  that says "sent" is where the message is taken back.
+
+Resolution is narrowed to `via="conversation"`, so these endpoints can never reach a question
+answer or an engine-filed delivery sharing the same inbox. Consumed stays immutable: a drained
+file is gone from the inbox, and from then on the transcript owns what was said.
+
 ## [0.356.0] — 2026-09-21
 
 ### Added — archiving a routine names the published state it cannot reach (R1658)

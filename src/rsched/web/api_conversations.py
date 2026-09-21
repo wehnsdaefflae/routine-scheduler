@@ -16,14 +16,18 @@ import shutil
 from typing import Annotated
 
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
+from pydantic import BaseModel
 
 from .. import conversations as conv_mod
 from .. import registry
 from ..engine import inbox
+from ..ids import now_iso
+from ..paths import atomic_write_json, read_json
 from . import artifacts
 from .api_background import teardown_background
 from .routines_common import (
     guard_not_active,
+    queued_message,
 )
 
 router = APIRouter(tags=["conversations"])
@@ -91,9 +95,12 @@ async def message(request: Request, slug: str, text: Annotated[str, Form()],
                  "moment, after the server is back (repeated resends only pile up duplicates).")
     rels = await _save_attachments(conv_dir, files or [])
     full = text.rstrip() + conv_mod.attachment_note(rels)
-    inbox.file_message(conv_dir, full, via="conversation",
-                       extra={**({"command": True} if command.strip() else {}),
-                              **({"attachments": rels} if rels else {})})
+    # D139: the caller is told WHICH message it now holds. The chat's echo bubble had no id
+    # and therefore no controls — the capability to revise or withdraw existed on the routine
+    # surface all along, and was simply unaddressable here.
+    queued_id = inbox.file_message(conv_dir, full, via="conversation",
+                                   extra={**({"command": True} if command.strip() else {}),
+                                          **({"attachments": rels} if rels else {})}).stem
     if is_mid_run:
         # R108 residual (F268): the liveness snapshot above predates the file write — a
         # run that finished inside that window would leave this message queued with
@@ -105,7 +112,7 @@ async def message(request: Request, slug: str, text: Annotated[str, Form()],
         fresh = conversation_info(request, slug).last_run
         if fresh and fresh.state not in registry.TERMINAL_STATES:
             return {"ok": True, "delivery": "mid-run", "run_id": fresh.run_id,
-                    "command": is_command}
+                    "command": is_command, "id": queued_id}
         last = fresh or last
     runner = request.app.state.runner
     # D62/D63: an ADMIN resume from the Conversations composer — the SAME web-layer-only token
@@ -134,7 +141,74 @@ async def message(request: Request, slug: str, text: Annotated[str, Form()],
         raise HTTPException(
             409, "could not wake the conversation (draining, or a reply just started)")
     return {"ok": True, "delivery": "command" if is_command else "resumed",
-            "run_id": rid, "command": is_command}
+            "run_id": rid, "command": is_command, "id": queued_id}
+
+
+class ConvMessageBody(BaseModel):
+    text: str = ""
+
+
+def _conv_text(body: ConvMessageBody) -> str:
+    text = body.text.replace("\r\n", "\n").strip()
+    if not text:
+        raise HTTPException(400, "empty message")
+    return text
+
+
+@router.get("/conversations/{slug}/messages")
+def list_conversation_messages(request: Request, slug: str) -> dict:
+    """The messages this conversation has QUEUED and not yet consumed (D139).
+
+    A routine's inbox has had list/revise/withdraw all along; a conversation had only POST,
+    which is the surface messages are most often injected on. The principle is the routine
+    surface's own and is surface-independent: the inbox file is the delivery vehicle, and
+    what the model gets told is the user's call right up until a run drains it.
+
+    Consumed messages are absent by construction — a drained file is gone from the inbox,
+    and from then on the transcript owns what was said.
+    """
+    info = conversation_info(request, slug)
+    out = []
+    for path in sorted((info.cfg.dir / "inbox").glob("msg-*.json")):
+        rec = read_json(path)
+        if not isinstance(rec, dict) or rec.get("via") != "conversation":
+            continue          # question answers and engine deliveries are not the user's queue
+        out.append({"id": path.stem, "text": str(rec.get("text") or ""),
+                    "ts": str(rec.get("ts") or ""), "edited": str(rec.get("edited") or ""),
+                    "command": bool(rec.get("command")),
+                    "attachments": rec.get("attachments") or []})
+    return {"queued": out}
+
+
+@router.put("/conversations/{slug}/messages/{msg_id}")
+def edit_conversation_message(request: Request, slug: str, msg_id: str,
+                              body: ConvMessageBody) -> dict:
+    """Rewrite a queued message in place — the SAME file, so its position in the queue
+    holds and the original `ts` stands; `edited` is stamped so a run can tell.
+
+    `via="conversation"` narrows resolution to messages this surface wrote: a conversation
+    endpoint can never rewrite a question answer or an engine-filed delivery sharing the
+    same inbox.
+    """
+    info = conversation_info(request, slug)
+    path, prev = queued_message(info.cfg.dir / "inbox", msg_id, via="conversation")
+    rec = dict(prev)
+    rec.update(text=_conv_text(body), edited=now_iso())
+    atomic_write_json(path, rec)
+    return {"ok": True, "id": msg_id}
+
+
+@router.delete("/conversations/{slug}/messages/{msg_id}")
+def withdraw_conversation_message(request: Request, slug: str, msg_id: str) -> dict:
+    """Withdraw a queued message: the delivery is removed and the model never sees it."""
+    info = conversation_info(request, slug)
+    path, _ = queued_message(info.cfg.dir / "inbox", msg_id, via="conversation")
+    try:
+        path.unlink()
+    except FileNotFoundError:  # drained between the check and now — same outcome
+        raise HTTPException(
+            404, "this message is no longer queued — the model already read it") from None
+    return {"ok": True, "id": msg_id}
 
 
 @router.delete("/conversations/{slug}")
