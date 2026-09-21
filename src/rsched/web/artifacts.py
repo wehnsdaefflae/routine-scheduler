@@ -96,7 +96,18 @@ def serve_file(base_dir: Path, path: str,
     """Serve one file raw (blob-rendered client-side) from the allowed subdirs ONLY. The
     conversation panel widens them to include `attachments/` — the one reason serving
     takes the dirs as an argument at all.
+
+    NEVER CACHED (R1682). An artifact is a MUTABLE file under a STABLE name: the action
+    documentation tells every run that re-writing a filename updates that artifact in place,
+    so the same URL is expected to return different bytes over a run's life. Served without
+    cache directives, a rewritten artifact could still be read from the client's cache — the
+    reported failure was a decision surface (`asks-2026-09-19.html`, 7,886 → 13,371 bytes)
+    whose two new decision cards the user never saw, while the run recorded them delivered
+    and a grep of the file on disk confirmed them present. Nothing a routine can check
+    distinguishes "written" from "visible", so the guarantee has to be made here.
     """
     p = _resolve_deliverable(base_dir, path, subdirs, "are served")
     media = mimetypes.guess_type(p.name)[0] or "application/octet-stream"
-    return FileResponse(p, media_type=media, filename=p.name)
+    return FileResponse(p, media_type=media, filename=p.name,
+                        headers={"Cache-Control": "no-store, must-revalidate",
+                                 "Pragma": "no-cache", "Expires": "0"})

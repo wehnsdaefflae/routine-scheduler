@@ -15,6 +15,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.354.3] — 2026-09-21
+
+### Fixed — a rewritten artifact is never served from cache (R1682)
+
+The action documentation tells every run that re-writing an artifact's filename updates it in
+place — "extend what is there instead of making report-2.md". The serving endpoint did not
+honour that: `serve_file` returned a bare `FileResponse` with no cache directives, so a client
+holding the previous bytes under the same URL could keep showing them. Reported by a user
+watching it happen: a run rewrote `asks-2026-09-19.html` from 7,886 to 13,371 bytes, adding two
+decision cards, and he saw neither; copying identical bytes to a NEW filename was the
+workaround that worked, because a filename the panel has never seen has nothing to fall back on.
+
+The failure mode is worse than a stale view. That artifact was a DECISION SURFACE — the asks he
+answers from — so a decision silently never reached him while the run recorded it delivered and
+finished. And no routine can detect it: the run verified its write by byte count and then by
+grepping the file's content, and both said the update was live. There is no check available on
+the routine's side that distinguishes "written" from "visible", so the guarantee belongs here.
+
+Artifact responses now carry `Cache-Control: no-store, must-revalidate`. Regressions cover the
+rewrite-under-the-same-name case and every deliverable dir (`artifacts/`, `reports/`,
+`output/`), which all serve through the one seam.
+
 ## [0.354.2] — 2026-09-21
 
 ### Fixed — a too-long prompt is a fault of the REQUEST, and is no longer failed over
