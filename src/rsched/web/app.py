@@ -63,11 +63,15 @@ def _is_sse_path(path: str) -> bool:
 
 
 def _is_browser_view_path(path: str) -> bool:
-    """The relayed noVNC screen (F527). Same reasoning as an SSE ticket, same TTL: the
-    browser's WebSocket API cannot send an Authorization header, and noVNC's own asset
-    requests from inside the frame carry none either. A leaked ticket reaches this screen
-    for 60 s and nothing else — and the screen is already behind whatever network boundary
-    reaches the console at all.
+    """The relayed noVNC screen (F527), authenticated by its own PASS cookie (F530).
+
+    It shipped on the SSE ticket and that could never have worked: an `<iframe src>` is a
+    naked GET, and noVNC then requests its own siblings (`app/ui.js`, `app/styles/base.css`,
+    the images) with URLs the page builds itself — so no query parameter the console chooses
+    reaches them. Every one of those requests 401'd, and the frame rendered this app's own
+    error body at the user. A cookie is the only credential a browser attaches to a frame's
+    sub-resources unasked; it is path-scoped to this prefix, HttpOnly, and minted only for a
+    caller holding the console token.
     """
     return path == "/browser-view" or path.startswith("/browser-view/")
 
@@ -122,11 +126,20 @@ def require_auth(request: Request) -> None:
     # EventSource cannot send headers, and the bearer token in a query string would leak
     # into access logs — a SHORT-LIVED ticket (POST /api/sse-ticket) rides there instead,
     # valid ONLY for the SSE GET endpoints themselves (never a general API credential).
-    if request.method == "GET" and (_is_sse_path(request.url.path)
-                                    or _is_browser_view_path(request.url.path)):
+    if request.method == "GET" and _is_sse_path(request.url.path):
         ticket = request.query_params.get("ticket") or ""
         expiry = request.app.state.sse_tickets.get(ticket)
         if ticket and expiry is not None and expiry >= time.monotonic():
+            return
+    # The relayed browser screen carries its own PASS, in a cookie (F530). A query ticket
+    # cannot work here and shipping one was the bug: an <iframe src> is a naked GET, and
+    # noVNC then builds its own asset URLs (app/ui.js, app/styles/base.css, the images), so
+    # no parameter the embedding page chooses ever reaches those requests. A cookie is the
+    # one credential the browser attaches to every sub-resource of the frame by itself.
+    if request.method == "GET" and _is_browser_view_path(request.url.path):
+        from .api_browser_view import SCREEN_COOKIE, pass_is_valid
+
+        if pass_is_valid(request.app, request.cookies.get(SCREEN_COOKIE) or ""):
             return
     raise HTTPException(status_code=401, detail="missing or invalid token")
 
@@ -146,6 +159,10 @@ def create_app(server: ServerConfig | None = None, *, with_scheduler: bool = Tru
     scheduler = Scheduler(server, runner, bus)
     app.state.server = server
     app.state.sse_tickets = {}   # ticket → monotonic expiry (see require_auth / sse-ticket)
+    # pass → monotonic expiry for the relayed browser screen (F530). Separate from the SSE
+    # tickets on purpose: a different lifetime, a different scope, and a different failure if
+    # one is ever mistaken for the other.
+    app.state.browser_view_passes = {}
     app.state.bus = bus
     app.state.runner = runner
     app.state.scheduler = scheduler

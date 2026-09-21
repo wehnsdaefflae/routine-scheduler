@@ -90,6 +90,37 @@ def test_both_surfaces_load_through_the_console_not_the_raw_upstream(ui, ui_page
     expect(ui_page.locator("#view")).to_contain_text("198.51.100.9")
 
 
+def test_the_relay_actually_serves_the_frame_instead_of_a_401_body(ui, ui_page):
+    """F530 — the test that was missing, and the reason the bug shipped.
+
+    Every other test here asserts on the iframe's `src` ATTRIBUTE, which proves the wiring
+    and nothing else. The operator saw `{"detail":"missing or invalid token"}` rendered
+    INSIDE both frames: the URLs were perfectly correct and every request they made was
+    refused, because an <iframe src> sends no header and noVNC builds its own asset URLs.
+
+    So this one LOADS the relay path in the real browser, from the page that mints the pass,
+    and looks at what comes back. It fails on the pre-0.362.0 code and passes after.
+    """
+    ui.server_cfg.browser_view_url = "http://127.0.0.1:1/vnc.html"   # dead upstream on purpose
+
+    ui_page.goto(f"{ui.url}/#/browser")
+    expect(ui_page.locator("iframe.browser-screen")).to_have_count(1, timeout=10_000)
+
+    # the page has now minted the pass; ask for the relay exactly as the frame's sub-resources
+    # do — same origin, cookies attached by the browser, no header and no query of our own
+    probe = ui_page.evaluate(
+        """async () => {
+             const r = await fetch('/browser-view/app/ui.js', { credentials: 'same-origin' });
+             return { status: r.status, body: (await r.text()).slice(0, 120) };
+           }""")
+    assert probe["status"] != 401, (
+        f"the frame's own requests are refused — this is what the user sees: {probe['body']}")
+    assert "missing or invalid token" not in probe["body"], probe
+    # 502 is the right answer here: auth passed and the relay reached a deliberately dead
+    # upstream. What matters is that the gate let it through.
+    assert probe["status"] == 502, probe
+
+
 def test_the_preview_can_be_collapsed_and_stays_collapsed(ui, ui_page):
     """It is permanent, not compulsory: the choice survives a reload."""
     ui.server_cfg.browser_view_url = "http://127.0.0.1:6080/vnc.html"

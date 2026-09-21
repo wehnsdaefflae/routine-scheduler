@@ -15,6 +15,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.362.0] — 2026-09-21
+
+### Fixed — the browser screen authenticates the way an iframe actually asks (F530)
+
+Both screen surfaces rendered this app's own 401 body at the user:
+`{"detail":"missing or invalid token"}`. The relay shipped on an **SSE ticket**, and a ticket
+can only ride in a URL — which is the one thing that does not work here:
+
+- an `<iframe src>` is a **naked GET**: no Authorization header, and the ticket was put in
+  noVNC's `path` parameter (meant for the websocket), so the document request carried nothing;
+- worse, noVNC then fetches its **own** siblings — `app/ui.js`, `app/styles/base.css`, the
+  images — with URLs it builds itself, so no parameter the embedding page chooses can ever
+  reach them. Every one of those requests was refused;
+- and a 60 s ticket would have expired mid-session anyway, failing *later* and reading as
+  flakiness rather than as a bug.
+
+The screen now has its own **pass**: a cookie minted by `POST /api/browser-view/pass` (an
+authenticated route — handing out the credential stays an operator act), scoped to
+`/browser-view`, `HttpOnly`, `SameSite=Strict`, 12 hours. A cookie is the only credential a
+browser attaches to a frame's sub-resources unasked, and it covers the document, the assets
+and the websocket handshake alike. Without it the relay still refuses, so the screen never
+becomes public.
+
+**The test that was missing is the real fix.** Every browser test here asserted on the
+iframe's `src` *attribute* — proving the wiring and nothing else, which is how a screen whose
+URLs were perfectly correct shipped with every request refused. The new one **loads** the
+relay path in the real browser and reads the response; disabling both pass-minting call sites
+reproduces the operator's exact symptom and fails it.
+
 ## [0.361.0] — 2026-09-21
 
 ### Added — the run gate has a switch, beside the schedule (D141)

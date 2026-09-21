@@ -23,11 +23,24 @@ import logging
 
 import httpx
 from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import Response
+from fastapi.responses import JSONResponse, Response
 
 from . import browser_proxy
 
 log = logging.getLogger("rsched.web.browser_view")
+
+#: The screen's own credential (F530). An iframe cannot send an Authorization header, and —
+#: the part that actually broke — noVNC builds its OWN asset URLs (`app/ui.js`,
+#: `app/styles/base.css`, the images), so no query parameter the embedding page chooses
+#: reaches them either. A cookie is the one credential a browser attaches to every
+#: sub-resource of a frame without the page being involved at all.
+SCREEN_COOKIE = "rsched_browser_view"
+
+#: How long the pass lives. An SSE ticket is 60s, which is right for a stream the console
+#: reopens on its own and catastrophic here: a watched browser session lasts minutes to
+#: hours, and a credential that expires mid-session makes the screen fail LATER — which
+#: reads as flakiness rather than as a bug, and is harder to diagnose than an instant refusal.
+PASS_TTL_S = 12 * 3600
 
 #: The GET half. Included WITH the console's auth dependency, so a relayed asset is exactly
 #: as protected as any other console route (noVNC's own asset fetches carry no header, so
@@ -41,9 +54,61 @@ router = APIRouter(tags=["browser-view"])
 #: Keeping the two apart is what stops that fix from silently unauthenticating the GETs.
 ws_router = APIRouter(tags=["browser-view"])
 
+#: The pass-minting route. It lives on the /api surface WITH the console's bearer dependency —
+#: handing out the screen's credential must be an authenticated act, even though the credential
+#: it hands out is deliberately weaker than a token (one path, fixed lifetime, HttpOnly).
+pass_router = APIRouter(tags=["browser-view"])
+
 #: Upstream read timeout for an asset. noVNC's files are small and local; a slow upstream
 #: here means websockify is wedged, and failing fast beats holding a console worker.
 ASSET_TIMEOUT_S = 15.0
+
+
+def _issue_pass(request: Request) -> str:
+    """Mint a screen pass and remember it on the app, like the SSE tickets beside it."""
+    import secrets
+    import time
+
+    passes = request.app.state.browser_view_passes
+    now = time.monotonic()
+    for token, expiry in list(passes.items()):   # purge on issue; the set is tiny
+        if expiry < now:
+            passes.pop(token, None)
+    token = secrets.token_urlsafe(32)
+    passes[token] = now + PASS_TTL_S
+    return token
+
+
+def pass_is_valid(app, token: str) -> bool:
+    """True while `token` is an unexpired screen pass. Read by `require_auth`, which is the
+    only gate the frame's requests pass through.
+    """
+    import time
+
+    if not token:
+        return False
+    expiry = getattr(app.state, "browser_view_passes", {}).get(token)
+    return expiry is not None and expiry >= time.monotonic()
+
+
+@pass_router.post("/browser-view/pass")
+def grant_pass(request: Request) -> JSONResponse:
+    """Mint the screen's pass, for a caller who already holds the console's token.
+
+    This route sits on the authenticated API router, so minting is an operator act; the
+    COOKIE it returns is what the frame's own requests carry afterwards. Scoped to the
+    relay's path (`/browser-view`) so the browser never attaches it to anything else, and
+    marked HttpOnly + SameSite=Strict: it authenticates one embedded screen, not the console.
+    """
+    if not request.app.state.server.browser_view_url:
+        raise HTTPException(503, "no browser screen is configured — set browser_view_url "
+                                 "in Settings → server process")
+    token = _issue_pass(request)
+    reply = JSONResponse({"ok": True, "ttl": PASS_TTL_S})
+    reply.set_cookie(SCREEN_COOKIE, token, max_age=PASS_TTL_S, path=browser_proxy.PREFIX,
+                     httponly=True, samesite="strict",
+                     secure=request.url.scheme == "https")
+    return reply
 
 
 @router.get(browser_proxy.PREFIX + "/{path:path}")
@@ -87,18 +152,12 @@ async def relay_socket(ws: WebSocket) -> None:
     if upstream is None:
         await ws.close(code=1011, reason="no browser screen configured")
         return
-    token = server.token
-    if token:
-        ticket = ws.query_params.get("ticket") or ""
-        expiry = ws.app.state.sse_tickets.get(ticket)
-        if not ticket or expiry is None:
-            await ws.close(code=1008, reason="missing or invalid ticket")
-            return
-        import time as _time
-
-        if expiry < _time.monotonic():
-            await ws.close(code=1008, reason="ticket expired")
-            return
+    if server.token and not pass_is_valid(ws.app, ws.cookies.get(SCREEN_COOKIE) or ""):
+        # The handshake carries the frame's cookies, so the same pass that admits the page
+        # admits its socket — one credential for the whole screen, and no ticket to expire
+        # 60 seconds into a session someone is watching.
+        await ws.close(code=1008, reason="missing or invalid browser-view pass")
+        return
 
     try:
         import websockets

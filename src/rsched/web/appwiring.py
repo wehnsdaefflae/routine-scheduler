@@ -181,3 +181,7 @@ def _include_api_routers(app: FastAPI, deps: list) -> None:
     # itself. The two are separate routers precisely so this exemption cannot spread to the
     # GETs and quietly unauthenticate a signed-in browser session.
     app.include_router(api_browser_view.ws_router)
+    # Minting the screen's pass is an OPERATOR act, so that one route sits on the /api
+    # surface with the console's bearer dependency — unlike the two above, which are reached
+    # by the frame itself and carry the pass instead (F530).
+    app.include_router(api_browser_view.pass_router, prefix="/api", dependencies=deps)

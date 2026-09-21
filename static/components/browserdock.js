@@ -17,7 +17,7 @@ import { api } from "/static/api.js";
 import { el, storage } from "/static/util.js";
 // ONE builder for the relayed noVNC URL, shared with the full screen: two copies of that
 // query shape would drift, and the `path` parameter is the load-bearing part.
-import { frameSrc } from "/static/views/browser.js";
+import { frameSrc, grantPass } from "/static/views/browser.js";
 
 const KEY_OPEN = "browser-dock-open";
 
@@ -40,12 +40,14 @@ export async function initBrowserDock() {
   // Relayed through the console's own origin, exactly like the full screen (F527): the raw
   // upstream is http, and an https console may not open the ws:// socket noVNC needs, so a
   // direct embed showed a permanently blank preview. The ticket is for that socket.
-  let ticket = "";
-  try { ticket = (await api("/api/sse-ticket", { method: "POST", body: {} })).ticket || ""; }
-  catch { /* auth disabled, or the ticket route refused — the relay then needs none */ }
+  // The pass covers the document, noVNC's own asset fetches and the socket handshake alike
+  // (F530). Without it every one of those is refused and the frame shows the API's 401 body —
+  // which is exactly what the preview did on its first release.
+  try { await grantPass(); }
+  catch { return; }               // no pass, no preview: better absent than showing an error
   const frame = el("iframe", { class: "browser-dock-frame", title: "shared browser (read-only)",
     // view_only is noVNC's own switch; the CSS makes it inert regardless of what the page does
-    src: frameSrc(ticket, { viewOnly: true }),
+    src: frameSrc({ viewOnly: true }),
     tabindex: "-1", "aria-hidden": "true" });
   const title = el("a", { class: "bd-title", href: "#/browser",
     title: "open the full screen — that one takes the keyboard" }, "Browser");

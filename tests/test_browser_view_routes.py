@@ -57,18 +57,24 @@ def test_an_unreachable_upstream_is_reported_loudly_not_blankly(app_client):
     assert "did not answer" in r.text
 
 
-def test_the_relay_is_reachable_with_a_ticket_and_refused_without_one(app_client):
+def test_the_relay_is_reachable_with_a_pass_and_refused_without_one(app_client):
     """noVNC's assets are fetched by the browser from inside the frame and carry NO bearer
-    header. They must still be served — otherwise the page half-loads and the screen is
-    blank for a second, unrelated reason."""
+    header — and no query string either, because noVNC builds those URLs itself. They must
+    still be served, or the page half-loads and the screen is blank for a second reason.
+
+    This asserted an SSE TICKET until 0.362.0. That was the shipped bug (F530): a ticket can
+    only ride in a URL, and the URLs that mattered were never the console's to write. The
+    pass is a cookie precisely so the browser attaches it to requests the page never sees.
+    """
     client, cfg = app_client
     cfg.browser_view_url = "http://127.0.0.1:1/vnc.html"
 
     naked = client.get("/browser-view/app/ui.js")
     assert naked.status_code == 401          # no credential at all is still refused
 
-    ticket = client.post("/api/sse-ticket",
-                         headers={"Authorization": "Bearer tok"}).json()["ticket"]
-    withticket = client.get(f"/browser-view/app/ui.js?ticket={ticket}")
+    granted = client.post("/api/browser-view/pass", headers={"Authorization": "Bearer tok"})
+    assert granted.status_code == 200, granted.text
+    # the client now holds the cookie, exactly as the browser would
+    withpass = client.get("/browser-view/app/ui.js")
     # 502 (not 401): auth passed and the relay tried the dead upstream
-    assert withticket.status_code == 502
+    assert withpass.status_code == 502

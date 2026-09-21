@@ -18,12 +18,23 @@
 import { api } from "/static/api.js";
 import { el, emptyState, skeleton } from "/static/util.js";
 
+// Mint the screen's PASS before any frame is created (F530). The first shipped version put an
+// SSE ticket in the URL, which could never have worked: an <iframe src> is a naked GET, and
+// noVNC then fetches its OWN siblings (app/ui.js, app/styles/base.css, the images) with URLs it
+// builds itself — so no parameter chosen here reaches them, and every one 401'd. The frame then
+// displayed this app's error body: `{"detail":"missing or invalid token"}`. A cookie is the one
+// credential a browser attaches to a frame's sub-resources unasked.
+export async function grantPass() {
+  await api("/api/browser-view/pass", { method: "POST", body: {} });
+}
+
 // noVNC takes its websocket location from `path` — relative to the page it was loaded from,
-// which is now this console. The ticket rides there because the WebSocket API cannot send the
-// bearer header (the same reason the event streams use one).
-export function frameSrc(ticket, { viewOnly = false } = {}) {
-  const path = `browser-view/websockify${ticket ? `?ticket=${encodeURIComponent(ticket)}` : ""}`;
-  const q = new URLSearchParams({ autoconnect: "1", resize: "scale", path });
+// which is now this console, so the socket is same-origin and inherits the console's TLS. No
+// credential rides in the URL: the pass cookie covers the document, its assets and the socket
+// handshake alike.
+export function frameSrc({ viewOnly = false } = {}) {
+  const q = new URLSearchParams({ autoconnect: "1", resize: "scale",
+    path: "browser-view/websockify" });
   if (viewOnly) q.set("view_only", "1");
   return `/browser-view/vnc.html?${q}`;
 }
@@ -55,10 +66,15 @@ export async function render(view) {
         el("a", { class: "btn small primary", href: "#/settings" }, "open Settings")));
     return;
   }
-  let ticket = "";
-  try { ticket = (await api("/api/sse-ticket", { method: "POST", body: {} })).ticket || ""; }
-  catch { /* auth disabled, or the ticket route refused — the relay then needs none */ }
-  const frame = el("iframe", { src: frameSrc(ticket), class: "browser-screen",
+  try { await grantPass(); }
+  catch (err) {
+    // Without the pass every request the frame makes is refused, and the frame would render
+    // the API's own 401 body at the user. Say so here instead.
+    box.replaceChildren(emptyState("✕", "Couldn't get access to the screen",
+      `${err.message} — the browser screen needs a pass from this console, and minting it failed.`));
+    return;
+  }
+  const frame = el("iframe", { src: frameSrc(), class: "browser-screen",
     // the point of this page is to TYPE into the session (signing in), so it is not sandboxed
     // down to a picture — the read-only mirror in the rail is the one that is
     allow: "clipboard-read; clipboard-write" });
