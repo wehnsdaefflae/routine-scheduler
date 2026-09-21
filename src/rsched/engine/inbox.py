@@ -90,7 +90,8 @@ def drain_messages(routine_dir: Path, consumed_dir: Path,
                         "attachments": [str(a) for a in (obj.get("attachments") or [])],
                         **({"command": True} if obj.get("command") else {}),
                         **({"report": str(obj["report"]),
-                            "from": str(obj.get("from") or "")}
+                            "from": str(obj.get("from") or ""),
+                            **({"closes": True} if obj.get("closes") is True else {})}
                            if obj.get("report") else {})})
         else:
             # every writer produces {"text": …} JSON (web layer, daemon managers) — a

@@ -15,6 +15,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.354.1] — 2026-09-21
+
+### Fixed — a terminal report notice no longer reads as an owed reply
+
+`drain_messages` reconstructs each inbox message with only the keys it knows, and `closes` was
+not among them — so a report sent with `closes: true` ("no reply needed") reached its recipient,
+was stamped delivered, and then entered `stamp_delivered`'s owed-reply list anyway, because that
+check reads `not m.get("closes")` from the drained message. The run was then told it owed a
+reply to a notice whose own text said "nothing owed back" — the exact shape of the false
+unanswered-handoff warnings seen with R1669/R1686/R1643, whose ledger rows were in fact settled
+all along (the deliveries were first-time queue flushes of messages answered out-of-band, not
+re-deliveries). The projection now preserves the closure flag; terminal notices are still
+delivered and stamped, but never counted as owed. Regressions cover both the `answers`- and
+`settles`-shaped closure, with an ordinary report as the owed-reply control.
+
 ## [0.354.0] — 2026-09-21
 
 ### Added — optional pre-engine admission gates (F457)
