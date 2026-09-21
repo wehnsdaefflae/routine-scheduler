@@ -15,6 +15,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.355.0] — 2026-09-21
+
+### Added — a run can ask for ONE verb of a util instead of the whole util (F447)
+
+An access request named a util and nothing finer: `util:signal`. A run that needed to *read* a
+channel had to ask for the capability to *send* on it as well, and the operator's only choices
+were to grant more than was asked for or to refuse work that was reasonable. Requests may now be
+scoped to a single subcommand — `util:signal:read` — and the grant is held at that width.
+
+- **Grammar.** `util:<name>:<verb>`, with the verb matched against the first positional argument
+  only. `util:signal:` , `util::read`, `util:signal:read:extra` and a non-identifier verb are all
+  refused at parse time rather than silently widened, and a bare `util:<name>` keeps its existing
+  meaning exactly.
+- **Once-grants consume correctly.** A `util:signal:read` allowed once is spent by a `read`
+  dispatch and by nothing else: a different verb, a no-argument call and a flag-valued first
+  argument all fail to match, and the grant stays unconsumed rather than being burned by a call it
+  never covered.
+- **A forever-grant no longer widens what it did not name.** An unrelated allow-forever used to
+  re-raise every held conduct doc's util requirements, quietly restoring scope a previous decision
+  had narrowed. The non-util branch now resets those requirements to base before flooring, so a
+  later grant cannot broaden an earlier scoped one. Covered in both grant orders, multi-id and
+  sequential.
+
+**Deliberately unchanged:** an existing broad denial still *declines an expansion* rather than
+revoking scope already granted — new scoped asks after a broad tombstone are suppressed, while
+grants already held keep dispatching. That is the documented contract (`docs/rules-permissions.md`),
+and changing it is a decision for the operator, not a side effect of adding a grammar.
+
 ## [0.354.3] — 2026-09-21
 
 ### Fixed — a rewritten artifact is never served from cache (R1682)

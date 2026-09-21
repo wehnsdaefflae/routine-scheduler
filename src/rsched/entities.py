@@ -76,7 +76,11 @@ def parse_entity(eid: object) -> tuple[str, str] | None:
     name = name.strip()
     if cls not in CLASSES or not name:
         return None
-    if cls in ("util", "recreate", "connection") and not is_slug(name):
+    if cls == "util":
+        from .grants import is_util_entry
+        if not is_util_entry(name) or name.endswith(":"):
+            return None
+    if cls in ("recreate", "connection") and not is_slug(name):
         return None
     if cls == "action":
         from .grants import GATED_KINDS

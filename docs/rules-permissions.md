@@ -681,6 +681,25 @@ of four states (a once-grant passes through *allowed now* and back out):
   engine's own blocking request; an OPTIONAL one (`NAME?` in the util header, D51/F290)
   is withheld from the call instead of prompting — the run requests it explicitly when a
   call really needs it.
+A reserved util may be requested as `util:signal:read`: the scope is exactly the
+first argument, not any later argument. A bare `util:signal` grant still covers all
+verbs. A broad conduct doc can cover a scoped grant; a scoped-only doc cannot cover
+a broad grant or another verb. The forever request path enables only the named util
+scope, not sibling utils or tag classes. Subsequent unrelated capability decisions
+preserve that actual util/tag authority instead of re-raising old conduct docs.
+
+Util denials retain the existing **declined request**, not capability-revocation,
+contract. Declining `util:signal` suppresses further requests for that util, including
+scoped requests, but does not revoke a separately approved `signal:read` capability or
+run overlay. Exact scoped tombstones likewise suppress that request; they are not
+subtractive exceptions to a previously granted broad capability. Explicit later
+answers to already-pending requests still apply their named grant: answers are not
+invalidated by a different entity's denial. To revoke existing authority, change the
+capability itself on the routine page. This distinction also holds after YAML reload
+and for once overlays (which are still spent by the matching dispatched use).
+Selective reservation of only some subcommands of an otherwise public util is a
+separate feature; this request grammar does not implement it.
+
 - **denied forever** — a `grants: {<entity-id>: false}` tombstone. The run stops asking:
   denials switch to "the user has PERMANENTLY declined … do not request it again", the
   request itself is corrected in-cycle, and the catalog badges a tombstoned reserved

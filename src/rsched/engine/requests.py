@@ -131,7 +131,12 @@ def _once_match(eid: str, action: dict, ctx) -> bool:  # noqa: PLR0911 — one e
     if cls == "action":
         return kind == name
     if cls == "util":
-        return kind == "util" and str(action.get("name") or "") == name
+        from ..grants import split_util_verb
+
+        bare, verb = split_util_verb(name)
+        args = action.get("args") or []
+        return (kind == "util" and str(action.get("name") or "") == bare
+                and (not verb or bool(args and args[0] == verb)))
     if cls == "secret":     # spent by the util call the var is actually injected into:
         if kind != "util":  # only utils DECLARING it (calls: tree included) receive it
             return False

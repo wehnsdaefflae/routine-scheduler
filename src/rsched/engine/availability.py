@@ -97,10 +97,18 @@ def _availability(loop, cls: str, name: str, eid: str) -> list[str]:  # noqa: C9
                     "directly"]
         return []
     if cls == "util":
-        if g is not None and name in g.utils:
-            return [f"{eid} is already enabled — call the util directly"]
-        if g is None or name not in g.gated_utils:
-            if utils_lib.exists(ctx.server.libraries_home, name):
+        from ..grants import split_util_verb
+
+        bare, verb = split_util_verb(name)
+        if g is not None:
+            broad = f"util:{bare}"
+            if verb and g.entity_state(broad) in ("denied_forever", "denied_now"):
+                return [g.request_route(broad)]
+            if (name in g.utils or bare in g.utils
+                    or (set(g.util_tag_index.get(bare, ())) & g.util_tags)):
+                return [f"{eid} is already enabled — call the util directly"]
+        if g is None or bare not in g.gated_utils:
+            if utils_lib.exists(ctx.server.libraries_home, bare):
                 return [f"util {name!r} is not reserved — every routine may call it; no "
                         "request needed"]
             return [f"no util {name!r} exists — there is nothing to unlock; create it "

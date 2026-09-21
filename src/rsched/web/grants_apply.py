@@ -38,13 +38,15 @@ def _covering_docs(server, cls: str, name: str) -> list[str]:
     enough to carry it through the floor. Falls back to the canonical source for gated
     kinds the library predates (the same fallback floor_capabilities honors).
     """
-    from ..grants import _DEFAULT_KIND_SOURCE, read_library_requires
+    from ..grants import _DEFAULT_KIND_SOURCE, read_library_requires, split_util_verb
 
     lib = read_library_requires(server.permissions_home)
     docs = []
     for slug, req in lib.items():
         if ((cls == "action" and name in (req.get("actions") or []))
-                or (cls == "util" and name in (req.get("utils") or []))
+                or (cls == "util" and any(
+                    entry == name or entry == split_util_verb(name)[0]
+                    for entry in (req.get("utils") or [])))
                 or (cls == "runs" and req.get("runs"))
                 or (cls == "workflows" and req.get("workflows"))
                 or (cls == "reminders" and req.get("reminders"))):
@@ -103,8 +105,12 @@ def _apply_capability(server, raw: dict, cls: str, name: str) -> None:
         # the whole class before writing it.
         raw["capabilities"] = floor_capabilities(active, lib, base)
     else:
-        raw["capabilities"] = floor_capabilities(active, lib,
-                                                 capabilities_for(active, lib, base))
+        raised = capabilities_for(active, lib, base)
+        # Access decisions are not full permission-editor saves. Previously activated
+        # conduct docs may cover only a narrowly granted util, not their whole class.
+        raised["utils"] = base.get("utils", [])
+        raised["util_tags"] = base.get("util_tags", [])
+        raw["capabilities"] = floor_capabilities(active, lib, raised)
 
 
 def apply_forever(server, routine_dir: Path, ids: list[str],
