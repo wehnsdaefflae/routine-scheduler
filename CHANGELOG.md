@@ -15,6 +15,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.354.2] — 2026-09-21
+
+### Fixed — a too-long prompt is a fault of the REQUEST, and is no longer failed over
+
+A turn whose prompt exceeded the model's context window was treated as a broken provider: the
+fallback chain advanced, the abandoned model was marked cooling for 300 s, and the identical
+oversize prompt was posted to the next model — which receives the same request and fails the
+same way, or, with a smaller window, answers from a truncated context. Worse, nothing shrank
+the prompt between attempts: the compaction gate ran once at the top of the turn, while each
+failed attempt appended to the message list. Observed live in `self-audit:20260921-000321`,
+which 400'd four times on one turn with a prompt that GREW each time — 1,017,305 → 1,025,019 →
+1,038,220 → 1,045,385 tokens against a 1,000,000 maximum — and then died.
+
+Failover now answers one question: *would another model, given this exact request, succeed?*
+A fault of the ENDPOINT (5xx, timeout, 429, exhausted credentials, a classifier refusal,
+repeated empty completions) still advances the chain, because another model genuinely serves
+it. A fault of the REQUEST is repaired where it happened — the full shrink path re-runs inside
+the retry loop under the provider's own stated figures, the same model is retried, and the
+failover registry is never touched. A prompt that cannot be shrunk fails the turn loudly,
+naming its size, instead of degrading quietly onto another model.
+
+Two details decided by an independent review of the change:
+
+- **Classification cannot rest on prose.** Rate limits ("Request too large: 32000 tokens >
+  30000 maximum tokens per minute"), billing errors and auth failures that echo the request
+  body all quote a token pair without being context faults, and reading one as an overflow is
+  worse than missing an overflow: it pins the run's window to a per-minute budget or a credit
+  balance for every remaining turn AND suppresses the failover the real fault needed. Vendor
+  context vocabulary is now required and rate-limit/quota/auth statuses are excluded outright.
+  The window guard also learned Anthropic's wording, which matched none of its hints — so that
+  net had been disarmed for this instance's main endpoint entirely.
+- **A window correction derived from a failure must not outlive it.** The run-local override is
+  recorded only once the shrink is proven to have helped; the paths that raise leave nothing
+  behind for later turns to be clamped by.
+
 ## [0.354.1] — 2026-09-21
 
 ### Fixed — a terminal report notice no longer reads as an owed reply

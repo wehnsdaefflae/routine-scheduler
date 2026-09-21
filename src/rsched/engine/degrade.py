@@ -15,14 +15,31 @@ from ..endpoints import failover
 from ..endpoints.base import EndpointError
 from ..health_events import log_health_event
 from . import refusal
-from .window import _shrink_window_to_provider, apply_media_fallback
+from .window import (
+    _recover_oversize_prompt,
+    _shrink_window_to_provider,
+    apply_media_fallback,
+)
 
 
 def _recover_transport(loop, chain, endpoint, ref, exc: EndpointError) -> tuple:
-    """The completion call failed with a hard EndpointError — the three runtime nets, in
-    order. Net 0: a context-overflow whose stated maximum is smaller than the configured
+    """The completion call failed with a hard EndpointError — the runtime nets, in order.
+
+    They are ordered by ONE question: *would another model, given this exact request,
+    succeed?* Only when the answer is yes does failing over help. A fault of the ENDPOINT
+    (5xx, timeout, 429, exhausted credentials, a classifier refusal, repeated empties) is a
+    property of that provider and the chain is the right answer. A fault of the REQUEST (a
+    prompt over the window, a body the API rejects) travels with the request: the next model
+    receives it unchanged and fails identically — or, with a smaller window, silently answers
+    from a truncated context. Nets 0 and 0b exist so a request fault is repaired HERE.
+
+    Net 0: a context-overflow whose stated maximum is smaller than the configured
     window is a lying catalog entry, not a provider failure — shrink the run-local window,
     re-clamp, and retry the SAME model (once; see _shrink_window_to_provider, F278).
+    Net 0b: an overflow whose stated maximum CONFIRMS the configured window — the catalog is
+    honest and the prompt is simply too big — re-runs the whole shrink path under the
+    provider's own numbers and retries the same model, never marking it failed
+    (_recover_oversize_prompt; self-audit:20260921-000321 died in the loop this closes).
     Net 1: a turn whose tail carries an image the endpoint couldn't show is
     converted to vision-util text (media fallback) and retried text-only on the SAME
     model — the cooldown the instrumentation just started is lifted, since the image, not
@@ -35,6 +52,10 @@ def _recover_transport(loop, chain, endpoint, ref, exc: EndpointError) -> tuple:
     if shrunk is not None:
         failover.clear(ref.endpoint, ref.model)   # the CONFIG, not the provider, was at fault
         return shrunk
+    oversize = _recover_oversize_prompt(loop, endpoint, ref, exc)
+    if oversize is not None:
+        failover.clear(ref.endpoint, ref.model)   # the REQUEST, not the provider, was at fault
+        return oversize
     if apply_media_fallback(loop, exc):
         failover.clear(ref.endpoint, ref.model)
         return endpoint, ref

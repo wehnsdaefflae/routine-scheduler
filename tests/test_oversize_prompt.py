@@ -1,0 +1,226 @@
+"""A too-long prompt is a fault of the REQUEST, not of the model.
+
+Live specimen (self-audit:20260921-000321, the run this test exists because of): the same
+turn 400'd four times with a prompt that GREW each time — 1,017,305 → 1,025,019 →
+1,038,220 → 1,045,385 tokens against a 1,000,000 maximum — and each 400 advanced the
+fallback chain and cooled a perfectly healthy model for 300 s. Every other model would
+have received the identical oversize prompt.
+
+So: parse the provider's own numbers whatever the vendor's wording, shrink on the SAME
+model, never mark it failed, and if it still does not fit, fail the turn saying so.
+Drives completion.next_action directly with fake endpoints (no network).
+"""
+
+from __future__ import annotations
+
+import dataclasses
+
+import pytest
+
+from rsched.config import ModelRef
+from rsched.endpoints import failover
+from rsched.endpoints.base import Completion, EndpointError
+from rsched.engine.compaction import estimate_input_tokens
+from rsched.engine.completion import next_action
+from rsched.engine.window import parse_overflow_limit
+from test_loop_referral import _FakeEndpoint, _loop
+
+VALID = Completion(text="", parsed={"kind": "read_file", "path": "state/probe.txt",
+                                    "say": "reading"}, usage={"in": 1, "out": 1})
+
+# Anthropic's wording, verbatim from the dead run's transcript.
+ANTHROPIC_400 = ('claude-proxy: HTTP 400: {"type":"error","error":{"type":'
+                 '"invalid_request_error","message":"prompt is too long: 1045385 tokens '
+                 '> 1000000 maximum"}}')
+
+
+class _ChainRegistry:
+    """A two-member chain whose head's catalog window MATCHES the provider's real
+    maximum — the F278 guard's "config was not lying" case, which is exactly the case
+    the live failure fell through."""
+
+    def __init__(self, head_ep, tail_ep, name="oversize-ep"):
+        self.head_ep, self.tail_ep, self.name = head_ep, tail_ep, name
+
+    def for_model(self, kind, models):
+        return self.head_ep, ModelRef(self.name, "head-model", name="Head",
+                                      context_tokens=1_000_000, max_tokens=16_384)
+
+    def for_model_chain(self, kind, models):
+        return [self.for_model(kind, models),
+                (self.tail_ep, ModelRef(self.name + "-b", "tail-model", name="Tail",
+                                        context_tokens=1_000_000, max_tokens=16_384))]
+
+    def for_uncensored(self, models):
+        return None
+
+
+@pytest.fixture(autouse=True)
+def _clean_cooldowns():
+    failover.reset()
+    yield
+    failover.reset()
+
+
+def test_parse_overflow_limit_reads_the_anthropic_wording():
+    """The proximate defect: none of the hint strings appear in Anthropic's message, so
+    the whole window guard was disarmed for the endpoint serving this instance."""
+    assert parse_overflow_limit(ANTHROPIC_400) == 1_000_000
+
+
+def test_parse_overflow_limit_keeps_the_openai_wording():
+    """The vendor shapes coexist — this is the F278 specimen and must not regress."""
+    openai = ("This model's maximum context length is 65536 tokens. However, you "
+              "requested 81746 tokens. (context_length_exceeded)")
+    assert parse_overflow_limit(openai) == 65_536
+    assert parse_overflow_limit("boom 401 unauthorized") is None
+
+
+def test_an_oversize_prompt_never_advances_the_fallback_chain(make_routine):
+    """The operator's point: another model gets the SAME prompt. Failing over cannot
+    help, and a model with a smaller window would answer from a truncated context."""
+    head = _FakeEndpoint([EndpointError(ANTHROPIC_400), VALID])
+    tail = _FakeEndpoint([VALID])
+    loop = _loop(make_routine, _ChainRegistry(head, tail))
+    loop.messages.append({"role": "user", "content": "x" * 5_000_000})
+    action, _usage = next_action(loop)
+    assert action["kind"] == "read_file"
+    assert tail.calls == 0, "the fallback model must never see an oversize prompt"
+    assert head.calls == 2, "the same model is retried once with a shrunken prompt"
+
+
+def test_an_oversize_prompt_never_cools_a_healthy_model(make_routine):
+    """`_switch_to_fallback` marks the abandoned model failed for 300 s. The model did
+    nothing wrong — the engine over-composed the prompt — and every other run resolving
+    in that window paid for it."""
+    head = _FakeEndpoint([EndpointError(ANTHROPIC_400), VALID])
+    tail = _FakeEndpoint([VALID])
+    loop = _loop(make_routine, _ChainRegistry(head, tail, name="cool-probe"))
+    loop.messages.append({"role": "user", "content": "x" * 5_000_000})
+    next_action(loop)
+    assert not failover.is_cooling("cool-probe", "head-model")
+
+
+def test_the_retry_prompt_is_smaller_than_the_one_that_was_refused(make_routine):
+    """The live loop's signature was a prompt that GREW across attempts (1,017,305 →
+    1,045,385). Recovery must shrink the request it re-sends, not merely re-send it."""
+    head = _FakeEndpoint([EndpointError(ANTHROPIC_400), VALID])
+    tail = _FakeEndpoint([VALID])
+    loop = _loop(make_routine, _ChainRegistry(head, tail, name="shrink-probe"))
+    loop.messages.append({"role": "user", "content": "x" * 5_000_000})
+    before = estimate_input_tokens(loop.messages)
+    next_action(loop)
+    assert head.calls == 2
+    # the WHOLE prompt shrank — the fixture records only messages[-1], which a tail edit
+    # could satisfy on its own, so the estimate over the full list is what proves it
+    assert estimate_input_tokens(loop.messages) < before
+    # and it is under the provider's STATED maximum, not merely smaller
+    assert estimate_input_tokens(loop.messages) <= 1_000_000
+
+
+def test_an_unshrinkable_prompt_fails_loudly_instead_of_failing_over(make_routine):
+    """When the floor itself exceeds the window there is nothing to shrink. The honest
+    outcome is a turn that dies naming the size — not a silent degrade down the chain."""
+    head = _FakeEndpoint([EndpointError(ANTHROPIC_400)])   # keeps refusing
+    tail = _FakeEndpoint([VALID])
+    loop = _loop(make_routine, _ChainRegistry(head, tail, name="floor-probe"))
+    loop.messages.append({"role": "user", "content": "x" * 5_000_000})
+    with pytest.raises(EndpointError) as exc:
+        next_action(loop)
+    # pinned to the retry-cap branch specifically: a looser match would pass on any
+    # unrelated endpoint failure and report success for the wrong reason
+    assert "shrink attempts" in str(exc.value)
+    assert tail.calls == 0
+
+
+#: A rate limit, a billing failure and an auth error that quotes the request body all carry
+#: "N tokens > M" without being context faults at all. Reading one as an overflow is worse
+#: than missing an overflow: it pins the run's window to a per-minute budget or a credit
+#: balance for every remaining turn AND suppresses the failover the real fault needed.
+NOT_OVERFLOW = [
+    pytest.param('claude-proxy: HTTP 429: {"type":"error","error":{"type":'
+                 '"rate_limit_error","message":"Request too large for claude-opus-5: '
+                 '32000 tokens > 30000 maximum tokens per minute"}}', id="429-tpm"),
+    pytest.param("codex-proxy: HTTP 402: too many tokens requested for your balance: "
+                 "900000 tokens > 100000 maximum affordable", id="402-balance"),
+    pytest.param('proxy: HTTP 401: unauthorized; request body began "my context window '
+                 'notes: 5000 tokens > 4000 maximum"', id="401-quoting-the-body"),
+]
+
+
+@pytest.mark.parametrize("text", NOT_OVERFLOW)
+def test_a_quoted_token_pair_is_not_a_context_fault(text):
+    """Classification cannot rest on prose: these all state two token counts and none of
+    them is a context-size fault."""
+    assert parse_overflow_limit(text) is None
+
+
+@pytest.mark.parametrize("text", NOT_OVERFLOW)
+def test_a_quoted_token_pair_still_fails_over_and_cools(make_routine, text):
+    """The end-to-end half of the same point — measured as a live regression: a 429 whose
+    prose carried `32000 tokens > 30000 maximum` was swallowed as an overflow, the healthy
+    fallback was never tried, and the run's window was pinned to a per-minute budget."""
+    head = _FakeEndpoint([EndpointError(text)])
+    tail = _FakeEndpoint([VALID])
+    loop = _loop(make_routine, _ChainRegistry(head, tail, name="quoted-pair"))
+    action, _usage = next_action(loop)
+    assert action["kind"] == "read_file"
+    assert tail.calls == 1, "a fault that is not a context fault must reach the next model"
+    assert failover.is_cooling("quoted-pair", "head-model")
+    assert getattr(loop, "_window_overrides", {}) == {}
+
+
+def test_a_second_oversize_error_gets_a_second_shrink(make_routine):
+    """The case `_MAX_OVERSIZE_RETRIES = 2` exists for: the provider's tokenizer counts
+    heavier than our estimate, so one shrink to the stated maximum can still be over."""
+    head = _FakeEndpoint([EndpointError(ANTHROPIC_400), EndpointError(ANTHROPIC_400), VALID])
+    tail = _FakeEndpoint([VALID])
+    loop = _loop(make_routine, _ChainRegistry(head, tail, name="twice-probe"))
+    loop.messages.append({"role": "user", "content": "x" * 5_000_000})
+    action, _usage = next_action(loop)
+    assert action["kind"] == "read_file"
+    assert head.calls == 3            # two rejections, two shrinks, one success
+    assert tail.calls == 0
+
+
+def test_an_unshrinkable_prompt_leaves_no_window_override_behind(make_routine):
+    """A correction derived from a FAILURE must not outlive it: `_override_window` re-applies
+    whatever is stored, so an override written on a raising path would clamp every later turn
+    of the run to a window no provider ever stated."""
+    head = _FakeEndpoint([EndpointError(ANTHROPIC_400)])
+    tail = _FakeEndpoint([VALID])
+    loop = _loop(make_routine, _ChainRegistry(head, tail, name="no-residue"))
+    loop.messages.append({"role": "user", "content": "short"})
+    with pytest.raises(EndpointError):
+        next_action(loop)
+    assert getattr(loop, "_window_overrides", {}) == {}
+
+
+def test_a_larger_window_downstream_does_not_earn_a_failover(make_routine):
+    """A deliberate policy, pinned so it is changed on purpose rather than by accident: even
+    when the NEXT chain member has a bigger window, an unshrinkable prompt is not handed to
+    it. Answering from a different model's larger window silently changes the substrate the
+    run is thinking on, and the incompressible head+tail floor is the real problem."""
+    head = _FakeEndpoint([EndpointError(ANTHROPIC_400)])
+    tail = _FakeEndpoint([VALID])
+    reg = _ChainRegistry(head, tail, name="bigger-tail")
+    chain = reg.for_model_chain("main", {})
+    reg.for_model_chain = lambda *_a, **_k: [   # type: ignore[method-assign]
+        chain[0], (tail, dataclasses.replace(chain[1][1], context_tokens=5_000_000))]
+    loop = _loop(make_routine, reg)
+    loop.messages.append({"role": "user", "content": "x" * 5_000_000})
+    with pytest.raises(EndpointError):
+        next_action(loop)
+    assert tail.calls == 0
+
+
+def test_a_provider_fault_still_fails_over(make_routine):
+    """The control, and the other half of the operator's question — a 429/5xx IS a fault
+    of the endpoint, another model genuinely can serve it, and failover must still fire."""
+    head = _FakeEndpoint([EndpointError("codex-proxy: HTTP 429: usage_limit_reached")])
+    tail = _FakeEndpoint([VALID])
+    loop = _loop(make_routine, _ChainRegistry(head, tail, name="provider-probe"))
+    action, _usage = next_action(loop)
+    assert action["kind"] == "read_file"
+    assert tail.calls == 1, "a genuine provider fault still advances the chain"
+    assert failover.is_cooling("provider-probe", "head-model")

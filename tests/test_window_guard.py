@@ -73,13 +73,21 @@ def test_second_overflow_never_loops(make_routine):
 
 
 def test_stated_max_at_or_above_config_declines(make_routine):
-    # 250,000 stated tokens = the configured window — config was not the problem;
-    # the guard must decline and let the ordinary nets fail the run honestly.
+    # 250,000 stated tokens = the configured window, so THIS guard declines: the catalog
+    # entry is truthful and there is nothing to correct. The prompt is still over the wall,
+    # though, and since 2026-09-21 the oversize net (_recover_oversize_prompt) owns that
+    # case — it re-runs the shrink path under the provider's own figure. Here the prompt is
+    # a single short message with no middle to elide and no body over the clamp minimum, so
+    # shrinking is impossible and the turn dies LOUDLY naming its size, which is the point:
+    # it never advances the fallback chain, because every other model gets the same prompt.
     ep = _FakeEndpoint([EndpointError("maximum context length is 250000 tokens")])
     loop = _loop(make_routine, _Registry(ep))
-    with pytest.raises(EndpointError):
+    with pytest.raises(EndpointError) as exc:
         next_action(loop)
-    assert ep.calls == 1
+    assert "too long" in str(exc.value).lower()
+    assert ep.calls == 1                      # never re-sent, never failed over
+    # and it leaves NO window correction behind: a figure derived from a failure would be
+    # re-applied to every later pick of this model by _override_window
     assert getattr(loop, "_window_overrides", {}) == {}
 
 
