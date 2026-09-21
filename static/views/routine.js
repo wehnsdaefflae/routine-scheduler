@@ -102,8 +102,19 @@ export async function render(view, slug, query = {}) {
   }
   async function archive() {
     if (!(await confirmDialog(`Archive "${slug}"? It leaves the scheduler (dir moves to .archive).`, { confirmLabel: "archive" }))) return;
-    try { await api(`/api/routines/${slug}/archive`, { method: "POST" }); location.hash = "#/routines"; }
-    catch (err) { toast(err.message, 4000, { error: true }); }
+    try {
+      const r = await api(`/api/routines/${slug}/archive`, { method: "POST" });
+      // Archiving cleans up what it owns and CANNOT touch what the routine published
+      // elsewhere — a steward card outlived its routine three times in two weeks because
+      // this moment passed in silence (R1658, bina). Say what is still out there and who
+      // can remove it, while the person who just archived it is still looking.
+      for (const item of r.external_residue || []) {
+        toast(`Still on the ${item.surface}: ${item.locator}. `
+              + `Archiving cannot remove it — ask ${item.owner} to retire it.`,
+              12000, { error: true });
+      }
+      location.hash = "#/routines";
+    } catch (err) { toast(err.message, 4000, { error: true }); }
   }
 
   // -- decisions (actionable — kept in the overview zone, never folded into a config group) --

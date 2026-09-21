@@ -323,3 +323,30 @@ def test_compression_measurement_in_transcript(ui, ui_page):
     ui_page.goto(f"{ui.url}#/run/uir:20260910-120000")
     expect(ui_page.locator(".transcript")).to_contain_text("compression measure: measured")
     expect(ui_page.locator(".transcript")).to_contain_text("1500 tokens potentially saved (estimate)")
+
+
+def test_archiving_a_publisher_names_what_it_leaves_behind(ui, ui_page, make_routine):
+    """Archiving tidies the routine dir and its secrets and CANNOT touch what the routine
+    published on another host. That was silent, and a steward card outlived its routine
+    three times in two weeks — each one found by the operator's own eyes (R1658, bina).
+
+    The console now says what is still out there and who can retire it, at the one moment
+    anything knows the routine is gone.
+    """
+    pub = make_routine(slug="hubpub")
+    cfg = yaml.safe_load((pub / "routine.yaml").read_text(encoding="utf-8"))
+    cfg["fs_read_roots"] = ["/home/mark/.local/share/routine-scheduler-libraries/web/steward"]
+    (pub / "routine.yaml").write_text(yaml.safe_dump(cfg), encoding="utf-8")
+
+    ui_page.goto(f"{ui.url}#/routine/hubpub")
+    ui_page.wait_for_selector("h1:has-text('hubpub')", timeout=10_000)
+    ui_page.get_by_role("button", name="archive").click()
+    ui_page.locator(".modal-overlay").get_by_role(
+        "button", name="archive", exact=True).click()
+
+    toast = _toast(ui_page)
+    expect(toast).to_be_visible(timeout=10_000)
+    expect(toast).to_contain_text("steward hub")
+    expect(toast).to_contain_text("hubpub")
+    # who can actually remove it — residue nobody owns is residue nobody removes
+    expect(toast).to_contain_text("steward-hub-maintainer")

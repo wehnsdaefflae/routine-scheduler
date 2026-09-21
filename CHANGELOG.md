@@ -15,6 +15,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.356.0] — 2026-09-21
+
+### Added — archiving a routine names the published state it cannot reach (R1658)
+
+Archiving tidied exactly what it owned — the routine's directory moved to `.archive/`, its
+scoped secrets dropped (D103) — and said nothing about anything the routine had published
+elsewhere. That silence cost three stale steward cards in two weeks (`birthday-admin-admin`,
+a duplicate "Fourty-Four", and `bina`, whose card outlived it), every one of them found by the
+operator's own eyes rather than by the system.
+
+The hub cannot expire them on its own: it derives a card from a published store directory and
+has no retire operation, so a card stands until that directory goes. Nor can the routine clean
+up after itself — publishing needs the credentials archiving has just dropped. The one moment
+anything knows a routine is gone is the archive request, and it was being spent in silence.
+
+- `POST /routines/{slug}/archive` now returns `external_residue`: what the routine published
+  outside the scheduler, where it is, and **who can remove it**. Always present, empty when
+  there is nothing — a caller must be able to tell "nothing was left behind" from "nobody
+  looked".
+- The inventory is DERIVED from config the routine already carries (a publisher holds the
+  kit's root to read it), so no routine has to declare anything new to be covered and none
+  can forget to.
+- The console says it while the person who just archived it is still looking.
+
+Deliberately a report and never an action: this daemon holds no credentials for those hosts,
+and publishing outward on an archive request would make the scheduler a deploy dependency of
+every host a routine ever wrote to.
+
 ## [0.355.0] — 2026-09-21
 
 ### Added — a run can ask for ONE verb of a util instead of the whole util (F447)

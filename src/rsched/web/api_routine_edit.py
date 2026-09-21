@@ -200,6 +200,41 @@ async def run_now(request: Request, slug: str) -> dict:
     return {"run_id": run_id}
 
 
+# Places a routine publishes to that OUTLIVE it, keyed by a marker in its own config.
+# `root` is the kit/library path a publisher is granted; `owner` is who can actually remove
+# the residue, because residue nobody owns is residue nobody removes.
+EXTERNAL_SURFACES = (
+    {"marker": "libraries/web/steward",
+     "surface": "steward hub",
+     "owner": "steward-hub-maintainer",
+     "locator": "_store/{slug}/ on the steward host",
+     "note": "the hub derives a card from the published store directory, so the card stands "
+             "until that directory goes"},
+)
+
+
+def external_residue(cfg) -> list[dict]:
+    """What this routine published OUTSIDE the scheduler, which archiving cannot reach.
+
+    Derived from config the routine ALREADY carries — a publisher is granted the kit's root to
+    read it — so nothing has to be declared for a routine to be covered, and a routine cannot
+    forget to declare it. Deliberately a REPORT and never an action: this daemon holds no
+    credentials for those hosts, and making an archive request publish outward would turn the
+    scheduler into a deploy dependency of every host a routine ever wrote to.
+
+    Empty list, never a missing key: a caller must be able to tell "nothing was left behind"
+    from "nobody looked".
+    """
+    roots = [str(r) for r in (getattr(cfg, "fs_read_roots", None) or [])]
+    roots += [str(r) for r in (getattr(cfg, "fs_write_roots", None) or [])]
+    return [{"surface": s["surface"],
+             "owner": s["owner"],
+             "locator": s["locator"].format(slug=cfg.slug),
+             "note": s["note"]}
+            for s in EXTERNAL_SURFACES
+            if any(s["marker"] in r for r in roots)]
+
+
 @router.post("/routines/{slug}/archive")
 def archive_routine(request: Request, slug: str) -> dict:
     info = _info(request, slug)
@@ -207,6 +242,9 @@ def archive_routine(request: Request, slug: str) -> dict:
     home = _state(request).server.routines_home
     target = home / ".archive" / f"{slug}-{run_ts()}"
     target.parent.mkdir(parents=True, exist_ok=True)
+    # Read BEFORE the move: the inventory is derived from the routine's config, and after
+    # `shutil.move` there is no routine there to ask.
+    residue = external_residue(info.cfg)
     shutil.move(str(info.cfg.dir), str(target))
     # D103: the routine's OWN secrets die with it. They live under the config dir, so the
     # move would otherwise leave live credentials behind with nothing entitled to them —
@@ -214,5 +252,11 @@ def archive_routine(request: Request, slug: str) -> dict:
     from ..secrets import drop_routine_secrets
     dropped = drop_routine_secrets(slug)
     _state(request).scheduler.rescan()
+    # R1658 / bina, 2026-09-21: archiving used to tidy what it could reach and say nothing
+    # about the rest, so a routine's steward card outlived it three times in two weeks and
+    # each one was found by the operator's eyes. This is the ONE moment anything knows the
+    # routine is gone — spending it in silence is what made the residue invisible. The
+    # routine cannot clean up after itself either: publishing needs the credentials the
+    # line above has just dropped.
     return {"ok": True, "archived_to": str(target), "ts": now_iso(),
-            "secrets_dropped": dropped}
+            "secrets_dropped": dropped, "external_residue": residue}
