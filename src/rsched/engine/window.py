@@ -36,6 +36,12 @@ from .compaction import (
 #: binding and a deferred turn is free; above it the ceiling is, and the warning is skipped.
 _EVICT_WARN_HEADROOM = 0.9
 
+#: How many times ONE turn may shrink-and-retry an oversize prompt on the same model before
+#: the turn dies naming its size. Two: the first shrink uses the provider's stated maximum,
+#: the second absorbs a tokenizer that counts heavier than our estimate. A third would be
+#: the loop this guard exists to end.
+_MAX_OVERSIZE_RETRIES = 2
+
 # F278: the window guard. The clamp (`clamp_to_cap`) sizes everything from the CATALOG's
 # context figure — when that figure claims a larger window than the provider actually
 # enforces, no compaction gate ever fires and the completion 400s with
@@ -47,12 +53,39 @@ _EVICT_WARN_HEADROOM = 0.9
 # configured window is a deliberate budget); the provider is authoritative for sizing UP —
 # a stated max at or above the configured window means config wasn't the problem, so the
 # guard declines and the ordinary transport nets take over.
-_OVERFLOW_HINTS = ("context_length_exceeded", "maximum context length", "context window")
+# Provider vocabulary. Each vendor words the same fault differently, and a hint list that
+# misses a vendor silently DISARMS this whole guard for it — on 2026-09-21 the Anthropic
+# shape ("prompt is too long: 1045385 tokens > 1000000 maximum") matched none of the three
+# openai-flavoured hints, so self-audit:20260921-000321 400'd four times with a prompt that
+# grew each time (1,017,305 → 1,045,385) while the engine read every rejection as a broken
+# provider and failed over. Add the vendor's words here when a new one appears.
+_OVERFLOW_HINTS = ("context_length_exceeded", "maximum context length", "context window",
+                   "prompt is too long", "too many tokens", "request too large")
 
 _OVERFLOW_TOKENS_RE = re.compile(
     r"(?:maximum context length(?: is)?|context (?:window|length) of(?: only)?|"
     r"context_length_exceeded\D{0,40}?)\s*(\d{4,7})\s*tokens", re.IGNORECASE)
 
+#: Anthropic: "prompt is too long: <actual> tokens > <maximum> maximum" — the only shape
+#: that states BOTH numbers, which makes the overshoot exactly computable.
+_OVERFLOW_PAIR_RE = re.compile(
+    r"(\d{4,9})\s*tokens?\s*(?:>|&gt;|\\u003e|exceeds?)\s*(\d{4,9})", re.IGNORECASE)
+
+
+def parse_overflow_pair(text: str) -> tuple[int | None, int | None]:
+    """(actual, maximum) tokens stated by a context-overflow error, either side None when
+    the text does not state it. The ACTUAL count is what makes a shrink target honest: a
+    provider that reports 1,045,385 against 1,000,000 has told us precisely how much has
+    to go, which no fraction of the window can know.
+    """
+    low = text.lower()
+    if not any(h in low for h in _OVERFLOW_HINTS):
+        return None, None
+    pair = _OVERFLOW_PAIR_RE.search(text)
+    if pair:
+        return int(pair.group(1)), int(pair.group(2))
+    m = _OVERFLOW_TOKENS_RE.search(text)
+    return None, (int(m.group(1)) if m else None)
 
 
 def parse_overflow_limit(text: str) -> int | None:
@@ -62,6 +95,9 @@ def parse_overflow_limit(text: str) -> int | None:
     low = text.lower()
     if not any(h in low for h in _OVERFLOW_HINTS):
         return None
+    pair = _OVERFLOW_PAIR_RE.search(text)
+    if pair:
+        return int(pair.group(2))
     m = _OVERFLOW_TOKENS_RE.search(text)
     return int(m.group(1)) if m else None
 
@@ -110,6 +146,81 @@ def _shrink_window_to_provider(loop, endpoint, ref, exc: EndpointError) -> tuple
                              f"enforces {stated:,} tokens — run continues on "
                              f"{corrected:,} tokens; correct the catalog entry"))
     return endpoint, new_ref
+
+def _recover_oversize_prompt(loop, endpoint, ref, exc: EndpointError) -> tuple | None:
+    """Net 0b: the prompt itself is too big for a window the catalog states CORRECTLY.
+
+    The F278 guard above answers "is the catalog lying?" and declines when the provider's
+    stated maximum is at or above the configured window. That is the right answer to that
+    question and the wrong place to stop: the request is still over the wall. On 2026-09-21
+    the decline handed a 400 to `_switch_to_fallback`, which read "the model failed" — so a
+    healthy model was cooled for 300 s and the identical oversize prompt was posted to the
+    next model in the chain, four times, growing each time, until the run died.
+
+    A too-long prompt is a fault of the REQUEST, and every model in the chain receives the
+    same request. So recovery is local: shrink here, retry the SAME model, and never touch
+    the failover registry. Returns (endpoint, ref) for one retry, or None when the error is
+    not an oversize fault at all (the ordinary nets take over) — while an oversize prompt
+    that CANNOT be shrunk raises, because the honest outcome is a turn that dies naming its
+    size, not a silent degrade onto a model that will answer from a truncated context.
+    """
+    actual, stated = parse_overflow_pair(str(exc))
+    if stated is None and actual is None:
+        return None                       # not an overflow error — not ours
+    ctx = loop.ctx
+    before = estimate_input_tokens(loop.messages)
+    # The provider's own numbers are authoritative over any estimate we could make. Scale
+    # the run-local window by the measured ratio of estimate to truth when both are known:
+    # the tokenizer counted `actual` where we estimated `before`, so our figures run light
+    # by exactly that factor and the target has to absorb it.
+    target = stated if stated is not None else int((actual or before) * 0.9)
+    if actual and before and actual > 0:
+        target = min(target, int(target * before / actual))
+    target = max(target, _reserved_tokens(loop, ref) + 1_000)
+    attempts = getattr(loop, "_oversize_attempts", None)
+    if attempts is None:
+        attempts = loop._oversize_attempts = {}
+    key = (ref.endpoint, ref.model)
+    if attempts.get(key, 0) >= _MAX_OVERSIZE_RETRIES:
+        raise EndpointError(
+            f"prompt still too long after {_MAX_OVERSIZE_RETRIES} shrink attempts "
+            f"({before:,} estimated tokens against a stated maximum of "
+            f"{stated:,} tokens)" if stated else
+            f"prompt still too long after {_MAX_OVERSIZE_RETRIES} shrink attempts "
+            f"({before:,} estimated tokens)")
+    attempts[key] = attempts.get(key, 0) + 1
+    overrides = getattr(loop, "_window_overrides", None)
+    if overrides is None:
+        overrides = loop._window_overrides = {}
+    overrides[key] = min(overrides.get(key, target), target)
+    new_ref = dataclasses.replace(ref, context_tokens=overrides[key])
+    # Re-run the FULL shrink path — archive the middle, then clamp bodies — under the
+    # corrected window. The live defect was that nothing re-ran it inside the retry loop,
+    # so every failed attempt only appended and the prompt grew monotonically.
+    compact_if_needed(loop, endpoint, new_ref)
+    after = estimate_input_tokens(loop.messages)
+    ctx.transcript.event("compaction", {"oversize_prompt": {
+        "model": ref.name or ref.model,
+        **({"provider_counted_tokens": actual} if actual else {}),
+        **({"provider_max_tokens": stated} if stated else {}),
+        "estimated_before": before, "estimated_after": after,
+        "retry_window_tokens": overrides[key], "attempt": attempts[key]}})
+    if after >= before:
+        raise EndpointError(
+            f"prompt is too long and cannot be shrunk further: {before:,} estimated "
+            f"tokens, head+tail floor is incompressible"
+            + (f", provider maximum {stated:,} tokens" if stated else ""))
+    log_health_event(ctx.server.routines_home, "prompt_oversize_shrunk",
+                     routine=ctx.routine.slug, run_id=ctx.run_id,
+                     detail=(f"{ref.name or ref.model} rejected a prompt of "
+                             f"{actual or before:,} tokens"
+                             + (f" against its {stated:,} maximum" if stated else "")
+                             + f" — shrunk to ~{after:,} estimated tokens and retried on "
+                             f"the same model (no failover: another model would receive "
+                             f"the same prompt)"),
+                     model=ref.name or ref.model)
+    return endpoint, new_ref
+
 
 def _reserved_tokens(loop, ref) -> int:
     """Reserve output plus the separately transmitted action schema."""

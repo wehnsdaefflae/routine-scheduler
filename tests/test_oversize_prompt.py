@@ -16,8 +16,8 @@ from __future__ import annotations
 import pytest
 
 from rsched.config import ModelRef
-from rsched.endpoints.base import Completion, EndpointError
 from rsched.endpoints import failover
+from rsched.endpoints.base import Completion, EndpointError
 from rsched.engine.compaction import estimate_input_tokens
 from rsched.engine.completion import next_action
 from rsched.engine.window import parse_overflow_limit
