@@ -26,10 +26,16 @@ from functools import partial
 from pathlib import Path
 
 from .. import registry
+from ..engine import inbox
 from ..paths import read_json
 from ..readmodels import memo
 
 _DECISION_RE = re.compile(r"\[AUDIT decision · ([^\]]+)\]")
+
+#: Settled decisions per routine on the page (F525). The archive is durable and grows for
+#: the life of the instance; the page shows the recent tail, and the full history stays
+#: readable in `questions/answered/`.
+SETTLED_CAP = 25
 
 #: Statuses that mean the decision is already MADE — the report carries them so the Items
 #: page can show progress, but they are not asks. `in_progress` is the big one: self-audit
@@ -151,6 +157,10 @@ def _sources(home: Path) -> list[Path]:
     - `questions/pending` and `inbox` — a new, rewritten or snoozed record, an answer file:
       every write there is an atomic rename INTO the dir, which stamps the dir's mtime (the
       registry's own `_open_questions_memo` rests on the same fact);
+    - `questions/answered` — the durable settled records (F525). Listed for the same reason
+      as the other two: a run consuming an answer, or the user revising one, lands a write
+      there, and a page still serving the pre-consumption list would show a decision as open
+      that has been settled (or miss an amendment the user just made);
     - `runs/` (a run armed, a run pruned) and every run's `status.json` — the live run's
       state and blocking question, the `run_state` a deferred record links back to. The
       FILE, not its dir: an atomic rewrite changes the inode, so no two writes can share a
@@ -172,7 +182,8 @@ def _sources(home: Path) -> list[Path]:
 def _subdirs(home: Path) -> list[tuple[Path, list[Path]]]:
     if not home.is_dir():
         return []
-    return [(d, [d / "routine.yaml", d / "questions" / "pending", d / "inbox", d / "runs"])
+    return [(d, [d / "routine.yaml", d / "questions" / "pending", d / "inbox", d / "runs",
+                 d / "questions" / "answered"])
             for d in sorted(home.iterdir()) if d.is_dir() and not d.name.startswith(".")]
 
 
@@ -220,6 +231,17 @@ def _all_questions_fresh(server, home_kind: str, home: Path) -> list[dict]:
                 item.setdefault("run_id", run.run_id)
                 item["run_state"] = run.state
             out.append(_mark_answered(info.cfg.dir, item))
+        # F525: decisions a run has ALREADY consumed. Until the durable archive existed,
+        # consumption deleted both the pending record and the answer file, so an answered
+        # card — and the user's own words in it — vanished at the next boot; the operator
+        # hit exactly that ("why can't i see this answer... i want to revise it"). These
+        # are settled, never open: they sort into the page's Settled group and carry
+        # `settled: True` so nothing counts them as work owed.
+        for rec in inbox.answered_questions(info.cfg.dir)[:SETTLED_CAP]:
+            if str(rec.get("qid")) in seen:
+                continue
+            out.append({**rec, "routine": info.slug, "mode": "deferred",
+                        "settled": True, **marker})
     return out
 
 def open_decisions(server) -> list[dict]:

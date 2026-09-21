@@ -171,6 +171,10 @@ def create_app(server: ServerConfig | None = None, *, with_scheduler: bool = Tru
                          if "meta" in info.cfg.tags]
         return {"version": __version__, "build": build, "server_tz": server_tz(),
                 "needs_setup": needs_setup, "llm_ready": llm_ready,
+                # Where the shared browser can be WATCHED (empty = this deployment never
+                # published a screen). The console shows the Browser section only when it
+                # is set, because a dead link to a port nobody opened is worse than no link.
+                "browser_view_url": server.browser_view_url,
                 "meta_routines": meta_routines, **scheduler.snapshot()}
 
     @app.post("/api/setup/complete", dependencies=deps)

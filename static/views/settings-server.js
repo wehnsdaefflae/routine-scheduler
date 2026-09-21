@@ -15,12 +15,18 @@ export function renderServerConfig(view) {
     const rescanIn = el("input", { type: "number", min: "1", value: String(c.registry_rescan_s ?? 30), style: "width:90px" });
     const ghIn = el("input", { type: "text", value: c.github_client_id || "",
       placeholder: "default: the gh CLI's client id", style: "width:100%;max-width:420px" });
+    // The noVNC page for the shared browser the routines drive. Set it and the console grows
+    // a Browser section plus a live preview in the right rail; leave it empty and neither
+    // appears — an instance that never published the port should not show a dead link.
+    const vncIn = el("input", { type: "text", value: c.browser_view_url || "",
+      placeholder: "http://host:6080/vnc.html", style: "width:100%;max-width:420px" });
     const save = el("button", { class: "btn small primary" }, "save server settings");
     save.onclick = async () => {
       try {
         const r = await api("/api/settings/server", { method: "PUT", body: {
           sandbox: sandboxSel.value, max_concurrent_runs: Number(concIn.value),
-          registry_rescan_s: Number(rescanIn.value), github_client_id: ghIn.value.trim() } });
+          registry_rescan_s: Number(rescanIn.value), github_client_id: ghIn.value.trim(),
+          browser_view_url: vncIn.value.trim() } });
         toast(r.restart_for?.length ? "server settings saved — restart to resize concurrency" : "server settings saved");
       } catch (err) { toast(err.message, 5000, { error: true }); }
     };
@@ -35,6 +41,12 @@ export function renderServerConfig(view) {
         el("label", { class: "field" }, el("span", {}, "registry rescan (s)"), rescanIn)),
       el("div", { class: "field-row" },
         el("label", { class: "field" }, el("span", {}, "github OAuth client id"), ghIn)),
+      el("div", { class: "field-row" },
+        el("label", { class: "field" }, el("span", {}, "browser screen (noVNC) URL"), vncIn)),
+      el("div", { class: "faint small", style: "margin-top:6px" },
+        "browser screen: the noVNC page showing the shared signed-in browser the routines ",
+        "drive. Set it and a Browser section appears in the nav with a live preview in the ",
+        "right rail; leave it empty and neither is shown."),
       el("div", { class: "row mt" }, save),
       el("div", { class: "faint small", style: "margin-top:6px" },
         "sandbox: strict = refuse to run a util unsandboxed · permissive = jail when the kernel ",

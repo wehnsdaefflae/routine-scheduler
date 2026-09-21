@@ -1,8 +1,9 @@
 """Server-process settings: the scalar ServerConfig knobs that are safe to change at
-runtime — the util sandbox mode, run concurrency, the registry rescan cadence, and the
-OAuth-app client id. The homes / bind / port / auth token stay install-time (config.yaml
-+ a redeploy): they decide where data lives and how the socket is served, not day-to-day
-behaviour, so the UI deliberately does not edit them.
+runtime — the util sandbox mode, run concurrency, the registry rescan cadence, the
+OAuth-app client id, and the address the shared browser can be watched at. The homes /
+bind / port / auth token stay install-time (config.yaml + a redeploy): they decide where
+data lives and how the socket is served, not day-to-day behaviour, so the UI deliberately
+does not edit them.
 """
 
 from __future__ import annotations
@@ -27,13 +28,18 @@ class ServerBody(BaseModel):
     max_concurrent_runs: int | None = None
     registry_rescan_s: int | None = None
     github_client_id: str | None = None
+    # The noVNC page showing the shared browser. An address of the DEPLOYMENT, like
+    # public_url — whether that port is reachable depends on the host's networking, so
+    # nothing here can derive it and it is set once, by hand.
+    browser_view_url: str | None = None
 
 
 @router.get("/settings/server")
 def get_server(request: Request) -> dict:
     s = server_of(request)
     return {"sandbox": s.sandbox, "max_concurrent_runs": s.max_concurrent_runs,
-            "registry_rescan_s": s.registry_rescan_s, "github_client_id": s.github_client_id}
+            "registry_rescan_s": s.registry_rescan_s, "github_client_id": s.github_client_id,
+            "browser_view_url": s.browser_view_url}
 
 
 @router.put("/settings/server")
@@ -49,10 +55,17 @@ def set_server(request: Request, body: ServerBody) -> dict:
         raise HTTPException(400, "max_concurrent_runs must be at least 1")
     if "registry_rescan_s" in updates and updates["registry_rescan_s"] < 1:
         raise HTTPException(400, "registry_rescan_s must be at least 1 second")
+    if updates.get("browser_view_url"):
+        url = str(updates["browser_view_url"]).strip().rstrip("/")
+        if not url.startswith(("http://", "https://")):
+            raise HTTPException(400, "browser_view_url must start with http:// or https:// — "
+                                     "it is the address a browser opens, e.g. "
+                                     "http://host:6080/vnc.html")
+        updates["browser_view_url"] = url
     if not updates:
         return {"ok": True, "updated": []}
     path = update_config(request, lambda raw: raw.update(updates))
     reload_into(request, path, "sandbox", "max_concurrent_runs", "registry_rescan_s",
-                "github_client_id")
+                "github_client_id", "browser_view_url")
     return {"ok": True, "updated": list(updates),
             "restart_for": ["max_concurrent_runs"] if "max_concurrent_runs" in updates else []}

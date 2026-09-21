@@ -52,6 +52,7 @@
     <a href="#/messages" data-nav="messages"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3.5 7 8.5 6 8.5-6"/></svg>Messages</a>
     <span class="nav-group">Fleet</span>
     <a href="#/routines" data-nav="dashboard"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="4" width="7" height="7" rx="1.5"/><rect x="14" y="4" width="7" height="7" rx="1.5"/><rect x="3" y="15" width="7" height="5" rx="1.5"/><rect x="14" y="15" width="7" height="5" rx="1.5"/></svg>Routines</a>
+    <a href="#/browser" data-nav="browser" id="nav-browser" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/><circle cx="6.2" cy="6.5" r=".8" fill="currentColor" stroke="none"/><circle cx="8.8" cy="6.5" r=".8" fill="currentColor" stroke="none"/></svg>Browser</a>
     <a href="#/stats" data-nav="stats"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>Stats</a>
     <span class="nav-group">System</span>
     <a href="#/library" data-nav="library"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H10v16H5.5A1.5 1.5 0 0 1 4 18.5Z"/><path d="M13 4h5.5A1.5 1.5 0 0 1 20 5.5v13a1.5 1.5 0 0 1-1.5 1.5H13Z"/></svg>Library</a>
@@ -84,6 +85,11 @@
 <!-- LLM task manager: a global, hideable dock mirroring what LLM work is in flight across the
      backend. Mounted here (sibling of the workspace) so it survives navigation. -->
 <div id="llm-tasks" hidden></div>
+<!-- The shared browser's read-only preview: permanent right-rail window onto the session the
+     routines drive. Sibling of the workspace (like #llm-tasks) so navigation never re-creates
+     the iframe and the VNC connection survives a page change. Hidden until an instance
+     publishes a screen (config: browser_view_url). -->
+<div id="browser-dock" hidden></div>
 <script type="module" src="/static/app.js"></script>
 </body>
 </html>

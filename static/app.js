@@ -9,6 +9,7 @@ import { installFormPersistence } from "/static/formpersist.js";
 import { el, fmtTs, skeleton, startTimeTicker, storage, toast } from "/static/util.js";
 import { initNotifications } from "/static/notify.js";
 import { initTaskManager } from "/static/components/taskmanager.js";
+import { initBrowserDock } from "/static/components/browserdock.js";
 import { initSearchBox } from "/static/components/searchbox.js";
 import { mountToc } from "/static/components/toc.js";
 import { mountRibbon } from "/static/components/ribbon.js";
@@ -28,6 +29,7 @@ const routes = [
   [/^#\/routine\/([a-z0-9-]+)$/, () => import("/static/views/routine.js")],
   [/^#\/run\/([a-z0-9-]+:[0-9-]+)$/, () => import("/static/views/run.js")],
   [/^#\/questions$/, () => import("/static/views/questions.js")],
+  [/^#\/browser$/, () => import("/static/views/browser.js")],
   [/^#\/library(?:\/(.*))?$/, () => import("/static/views/library.js")],
   [/^#\/settings$/, () => import("/static/views/settings.js")],
   [/^#\/help(?:\/(.*))?$/, () => import("/static/views/help.js")],
@@ -85,6 +87,7 @@ function updateLocation(path) {
   const key = path.startsWith("#/routines") || path.startsWith("#/routine/")
       || path.startsWith("#/run/") ? "dashboard"
     : path.startsWith("#/questions") ? "questions"
+    : path.startsWith("#/browser") ? "browser"
     : path.startsWith("#/messages") ? "messages"
     : path.startsWith("#/stats") ? "stats"
     : path.startsWith("#/library") ? "library"
@@ -356,6 +359,9 @@ window.addEventListener("hashchange", route);
   if (ribbonHost) mountRibbon(ribbonHost);
   initNotifications();
   initTaskManager();
+  // The shared browser's read-only preview (and its nav link) — both appear only when this
+  // instance publishes a screen, so it self-hides on an install that never opened the port.
+  initBrowserDock().catch(() => { /* a preview is a nicety, never fatal to the console */ });
   initSearchBox();
   startTimeTicker();
   const s = await refreshStatus();   // renders version, meta banner, lamp and clock tooltip

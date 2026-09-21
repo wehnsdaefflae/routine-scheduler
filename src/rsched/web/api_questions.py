@@ -207,6 +207,52 @@ def _record_match(server, qid: str) -> dict:
     return match
 
 
+class Revision(BaseModel):
+    text: str
+
+
+@router.post("/questions/{qid}/revise")
+def revise_question_answer(request: Request, qid: str, body: Revision) -> dict:
+    """Amend an answer already given (F525).
+
+    The operator answered one of four sub-questions and then wanted to add the rest:
+    "i want to revise it to add the other answers". An answer still queued is rewritten in
+    place. One a run has already consumed is re-queued from its archived record, so the
+    amendment reaches the NEXT run — a correction no run ever reads is not a correction.
+    """
+    from ..engine import inbox
+
+    server = request.app.state.server
+    if not body.text.strip():
+        raise HTTPException(400, "empty revision")
+    routine, routine_dir = _answered_record_dir(server, qid)
+    try:
+        inbox.revise_answer(routine_dir, qid, body.text)
+    except LookupError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    _announce_answer(request, qid, routine)
+    return {"ok": True, "routine": routine, "revised": True}
+
+
+def _answered_record_dir(server, qid: str):
+    """(routine slug, dir) for a qid that is EITHER still open or already settled — a
+    revision has to reach both, and only the settled half is invisible to `_all_questions`.
+    """
+    match = next((q for q in _all_questions(server)
+                  + _all_questions(server, "conversation")
+                  + _all_questions(server, "background")
+                  if q.get("qid") == qid), None)
+    if match is not None:
+        return str(match["routine"]), _record_dir(server, match)
+    for home in (server.routines_home, server.conversations_home, server.background_home):
+        if not home.is_dir():
+            continue
+        for d in sorted(home.iterdir()):
+            if (d / "questions" / "answered" / f"{qid}.json").is_file():
+                return d.name, d
+    raise HTTPException(404, f"no answer on record for {qid!r}")
+
+
 class Snooze(BaseModel):
     minutes: int = 0   # > 0 hides the record until now+minutes; <= 0 clears the snooze
 

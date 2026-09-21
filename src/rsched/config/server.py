@@ -50,6 +50,13 @@ class ServerConfig(_Config):
     # bind/port (those are the listen address). Empty until set in Settings; the connect flow
     # refuses to start an auth-code flow without it. See docs/oauth-connections.md.
     public_url: BlankableStr = ""
+    # Where a human can WATCH the shared signed-in browser the routines drive — a noVNC
+    # page served by the container's websockify (e.g. http://<host>:6080/vnc.html). Like
+    # `public_url` this is an address of the deployment, not of the process: nothing in the
+    # config can derive it, because whether that port is reachable at all depends on the
+    # host's networking (here, an opened Tailscale port). Empty = the console shows no
+    # browser screen, which is the honest state for an instance that never published one.
+    browser_view_url: BlankableStr = ""
     max_concurrent_runs: int = 2
     registry_rescan_s: int = 30
     # Util-subprocess sandbox mode (docs/sandboxing.md): every util runs inside a Landlock

@@ -24,7 +24,7 @@ const GROUPS = [
   ["Blocking — a run is waiting on you", (q) => !q.answered && q.mode === "blocking"],
   ["Deferred — the next run picks these up", (q) => !q.answered && !q.meta && q.mode !== "blocking"],
   ["Meta — system-level decisions", (q) => !q.answered && q.meta],
-  ["Settled — answered, queued for pickup", (q) => q.answered],
+  ["Settled — what you answered, and what became of it", (q) => q.answered],
 ];
 const EXPIRING_MS = 30 * 60 * 1000;   // a blocking ask this close to its timeout is LOUD
 const expiringSoon = (q) => q.mode === "blocking" && q.expires
@@ -181,19 +181,61 @@ export async function render(view, query = {}) {
     // Already answered (the inbox file exists; the routine consumes it on its next turn/run):
     // show the settled state instead of re-asking — reloads must not resurrect it as open.
     if (q.answered) {
+      // What you said stays on the page (F525). Before the durable record, consuming an
+      // answer deleted it: you answered, a run booted, and your own words were gone from
+      // the only surface that had shown them. A settled decision now keeps its card — and
+      // stays revisable, because answering one of four questions and wanting to add the
+      // other three is an ordinary thing to do, not an error to be locked out of.
+      const body = el("div", {});
+      const say = (text, note) => body.replaceChildren(
+        el("div", { class: "flow-note" }, el("span", {}, `“${text}” ${note}`)),
+        el("div", { class: "row mt" }, reviseBtn));
+      const editor = () => {
+        const box = el("textarea", { class: "answer-input", rows: "3",
+          "data-persist": `revise-${q.qid}` });
+        box.value = q.answer || "";
+        const save = el("button", { class: "btn small primary" }, "save revision");
+        const cancel = el("button", { class: "btn small" }, "cancel");
+        cancel.onclick = () => say(q.answer, settledNote());
+        save.onclick = async () => {
+          const text = box.value.trim();
+          if (!text) return;
+          save.disabled = true;
+          try {
+            await api(`/api/questions/${q.qid}/revise`, { method: "POST", body: { text } });
+            q.answer = text;
+            q.settled = false;              // re-queued: a run has to read the amendment
+            toast("revised — the next run reads the new answer");
+            say(text, "→ inbox → the next run reads this instead");
+          } catch (err) {
+            toast(err.message, 4000, { error: true });
+            save.disabled = false;
+          }
+        };
+        body.replaceChildren(box, el("div", { class: "row mt" }, save, cancel));
+        box.focus();
+      };
+      const reviseBtn = el("button", { class: "btn small",
+        title: "change what you answered — a decision a run already read is re-queued so the next one sees the amendment" },
+        "revise");
+      reviseBtn.onclick = editor;
+      const settledNote = () => (q.settled
+        ? "→ read by the run that asked"
+        : `→ inbox → consumed by the ${q.mode === "blocking" ? "waiting run"
+            : q.ran_now ? "run starting now" : "next run"}`);
+      say(q.answer, settledNote());
       return el("div", { class: "panel question-item answered" },
         el("div", { class: "q-meta" },
           q.wizard ? chip("clarify", "meta") : q.meta ? chip("meta", "meta") : null,
           q.type === "util-approval" ? chip("util approval", "partial") : null,
           q.type === "request" ? chip("access request", "partial") : null,
           chip(`answered${q.answer_source && q.answer_source !== "web" ? ` via ${q.answer_source}` : ""}`
-            + ` · ${q.ran_now ? "run started" : "queued"}`, "ok"),
+            + ` · ${q.settled ? "acted on" : q.ran_now ? "run started" : "queued"}`, "ok"),
           sourceLink(q),
-          q.asked ? el("span", {}, "asked ", when(q.asked)) : null),
+          q.asked ? el("span", {}, "asked ", when(q.asked)) : null,
+          q.consumed ? el("span", { class: "faint small" }, "read ", when(q.consumed)) : null),
         qText(q),
-        el("div", { class: "flow-note mt" },
-          el("span", {}, `“${q.answer}” → inbox → consumed by the ${q.mode === "blocking" ? "waiting run"
-            : q.ran_now ? "run starting now" : "next run"}`)));
+        el("div", { class: "mt" }, body));
     }
     const runBits = q.run_id ? [
       el("a", { class: "btn small", href: `#/run/${q.run_id}` }, "view run"),

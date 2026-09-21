@@ -210,12 +210,105 @@ def collect_deferred_answers(routine_dir: Path, consumed_dir: Path,
             if obj.get("account"):
                 pair["account"] = str(obj["account"])
         pairs.append(pair)
+        if obj.get("revised"):
+            pair["revised"] = True
+        _archive_answer(routine_dir, q, obj)
         _consume(path, consumed_dir)
         try:
             qfile.unlink()
         except OSError:
             pass
     return pairs
+
+
+def _answered_dir(routine_dir: Path) -> Path:
+    return routine_dir / "questions" / "answered"
+
+
+def _archive_answer(routine_dir: Path, question: dict, answer: dict) -> Path:
+    """Write what consumption is about to destroy (F525).
+
+    Consuming an answer used to remove BOTH the inbox file and the pending record and write
+    nothing in their place — so the Decisions page, which derives "answered" by reading
+    exactly those two, lost the card and the user's own words with it the moment a run
+    booted. The archive is that missing half: one record per question, holding the ASK and
+    the ANSWER together, so the decision stays readable (and amendable) after the run that
+    acted on it. Rewritten in place on a revision — one question, one row, never a pile of
+    versions.
+    """
+    from ..paths import atomic_write_json
+
+    qid = str(question.get("qid") or answer.get("qid") or "")
+    path = _answered_dir(routine_dir) / f"{qid}.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    prior = read_json(path)
+    record = {**question, "qid": qid,
+              "answered": True,
+              "answer": str(answer.get("text") or ""),
+              "answer_source": str(answer.get("source") or "web"),
+              "answered_ts": str(answer.get("ts") or ""),
+              "consumed": now_iso()}
+    if answer.get("decision"):
+        record["decision"] = str(answer["decision"])
+    if isinstance(prior, dict) and prior.get("consumed"):
+        # an amended answer keeps the ORIGINAL settlement time: the decision was made then,
+        # and only its wording moved
+        record["first_consumed"] = str(prior.get("first_consumed") or prior["consumed"])
+        record["revised"] = True
+    atomic_write_json(path, record)
+    return path
+
+
+def answered_questions(routine_dir: Path) -> list[dict]:
+    """Questions this routine's runs have ANSWERED and consumed — the durable settled
+    record (F525), newest first. Each row is the pending record it was filed from plus the
+    answer, its source and when a run took it, so every surface can show what was decided
+    instead of losing it to the boot that acted on it.
+    """
+    adir = _answered_dir(routine_dir)
+    if not adir.is_dir():
+        return []
+    out = [obj for path in adir.glob("*.json")
+           if isinstance(obj := read_json(path), dict) and obj.get("question")]
+    out.sort(key=lambda r: str(r.get("consumed") or ""), reverse=True)
+    return out
+
+
+def revise_answer(routine_dir: Path, qid: str, text: str) -> Path:
+    """Amend an answer the user already gave (F525) — the operator's "i want to revise it
+    to add the other answers".
+
+    Still queued: the waiting answer file is rewritten, and the next run sees only the new
+    text. Already consumed: the archived record supplies the question, the pair is re-queued
+    (answer file + pending record restored) and the amendment reaches the NEXT run marked
+    `revised`, because a correction no run ever reads is not a correction.
+
+    Raises LookupError when nothing was ever answered under this qid — inventing a record
+    would put words in the user's mouth.
+    """
+    from ..paths import atomic_write_json
+
+    answer_path = routine_dir / "inbox" / f"answer-{qid}.json"
+    waiting = read_json(answer_path)
+    if isinstance(waiting, dict) and "text" in waiting:
+        answer_path.parent.mkdir(parents=True, exist_ok=True)
+        atomic_write_json(answer_path, {**waiting, "text": text, "ts": now_iso(),
+                                        "revised": True})
+        return answer_path
+    archived = read_json(_answered_dir(routine_dir) / f"{qid}.json")
+    if not isinstance(archived, dict) or not archived.get("question"):
+        raise LookupError(f"no answer on record for {qid!r} — nothing to revise")
+    pending = routine_dir / "questions" / "pending" / f"{qid}.json"
+    pending.parent.mkdir(parents=True, exist_ok=True)
+    record = {k: v for k, v in archived.items()
+              if k not in ("answered", "answer", "answer_source", "answered_ts",
+                           "consumed", "first_consumed", "revised", "decision")}
+    atomic_write_json(pending, record)
+    answer_path.parent.mkdir(parents=True, exist_ok=True)
+    atomic_write_json(answer_path, {"qid": qid, "text": text,
+                                    "source": str(archived.get("answer_source") or "web"),
+                                    "ts": now_iso(), "revised": True})
+    return answer_path
 
 
 def file_question(routine_dir: Path, qid: str, question: str, options: list[str],  # noqa: PLR0913 — the ONE record shape: every field is a documented key of it, keyword-only

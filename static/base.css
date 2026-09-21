@@ -824,6 +824,52 @@ label.field > span, .field > .lbl {
 .lt-list { padding: var(--s1); display: flex; flex-direction: column; gap: 2px; }
 .lt-empty { padding: var(--s4) var(--s3); color: var(--ink-3); text-align: center; }
 
+/* ── the browser preview dock ──────────────────────────────────────────────────────────────
+   A permanent, read-only window onto the shared signed-in browser, in the same right-rail
+   band as the LLM dock and stacked ABOVE it (the dock is a glance; the task list is a
+   reading surface, so the list keeps the corner your eye returns to).
+
+   READ-ONLY IS A PROPERTY OF THIS BLOCK, not a promise made in JS: `pointer-events: none` on
+   the frame means a click passes through to the page instead of steering a live session a
+   run is in the middle of using. Taking over is a deliberate trip to #/browser.
+
+   SIZE. 16:10, capped against the viewport, so the preview stays a thumbnail on a laptop and
+   never becomes the page. Hidden entirely below the wide layout: a phone has no rail to
+   spare, and a 240px VNC frame shows nothing worth the bandwidth. */
+#browser-dock {
+  position: fixed; right: var(--s4); bottom: calc(var(--s4) + 44px); z-index: 60;
+  width: min(300px, calc(100vw - 2 * var(--s3)));
+  background: var(--plate); border: 1px solid var(--rule-2); border-radius: var(--r3);
+  box-shadow: var(--lift-2); overflow: hidden;
+}
+#browser-dock.bd-collapsed { width: auto; }
+.bd-head {
+  display: flex; align-items: center; gap: var(--s2); padding: var(--s2) var(--s3);
+  border-bottom: 1px solid var(--rule);
+}
+#browser-dock.bd-collapsed .bd-head { border-bottom: none; }
+.bd-title {
+  font-family: var(--f-display); font-weight: 600; letter-spacing: 0.02em;
+  color: var(--ink); text-decoration: none; font-size: var(--t-s);
+}
+.bd-title:hover { color: var(--signal); }
+.bd-toggle {
+  margin-left: auto; background: none; border: none; color: var(--ink-3); cursor: pointer;
+  font: inherit; font-size: var(--t-xs); padding: 0 var(--s1);
+}
+.bd-toggle:hover { color: var(--ink); }
+.bd-body { display: block; }
+.bd-frame-wrap { position: relative; }
+.browser-dock-frame {
+  display: block; width: 100%; aspect-ratio: 16 / 10; border: 0; background: var(--plate-2);
+  pointer-events: none;   /* read-only: a glance can never steer a live session */
+}
+.bd-note { padding: 4px var(--s3) var(--s2); }
+
+/* the full screen at #/browser — this one DOES take the keyboard */
+.browser-screen-wrap { border: 1px solid var(--rule-2); border-radius: var(--r3); overflow: hidden; }
+.browser-screen { display: block; width: 100%; height: min(72vh, 900px); border: 0; }
+
 /* the state mark, on the .chip vocabulary: running is signal and pulses because it is changing
    while you look at it; the halo is the daemon lamp's, not the old glow */
 .lt-dot {
@@ -869,4 +915,8 @@ label.field > span, .field > .lbl {
      bar on the bar's own terms: 39px of fixed height plus the padding that grows with the
      safe-area inset on a notched phone, plus the 19px of air .workspace's 62px reserve leaves. */
   #llm-tasks { right: var(--s3); bottom: calc(58px + max(4px, env(safe-area-inset-bottom))); }
+  /* the preview is a rail affordance and there is no rail here — and a thumbnail small enough
+     to fit a phone shows nothing worth a live VNC connection. The nav link still reaches the
+     full screen, which is the part that works at this width. */
+  #browser-dock { display: none; }
 }
