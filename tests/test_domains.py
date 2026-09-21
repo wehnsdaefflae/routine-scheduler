@@ -182,8 +182,14 @@ def test_config_keeps_known_keys_and_drops_the_rest(tmp_path):
         "enabled": False, "schedule": {"cron": "0 7 * * *"}, "slug": "nope"})
     # identity/lifecycle keys are NOT shareable; junk inside a list is dropped
     assert out["config"] == {"permissions": ["memory"], "grants": {"secret:X": True}}
-    # config REPLACES wholesale — dropping a key hands it back to the members
-    assert domains.update(tmp_path, rec["id"], config={})["config"] == {}
+    # config MERGES (D140): an empty patch mentions nothing, so it changes nothing. Until
+    # 0.358.0 this line read "config REPLACES wholesale" and passing {} wiped the block —
+    # which is exactly how a partial patch silently deleted a domain's 12 rules, 4 grants and
+    # 8 budget dials (R1745). Clearing is now SAID, and that is the assertion worth keeping.
+    assert domains.update(tmp_path, rec["id"], config={})["config"] == {
+        "permissions": ["memory"], "grants": {"secret:X": True}}
+    assert domains.update(tmp_path, rec["id"],
+                          remove=["permissions", "grants"])["config"] == {}
 
 
 def test_a_routine_inherits_its_domains_config_and_its_own_keys_win(tmp_path):

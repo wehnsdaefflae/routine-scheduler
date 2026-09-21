@@ -542,3 +542,43 @@ def test_routines_page_lane_editor_catchup_policy(ui, ui_page):
     assert lanes.get(ui.routines, rec["id"])["catchup"] == "skip"
     expect(ui_page.locator("[data-lane-catchup]")).to_have_value("skip")   # re-rendered
 
+
+
+def test_unticking_a_shared_setting_removes_it_and_keeps_the_rest(ui, ui_page):
+    """D140, both halves at once. The PATCH now MERGES, so a partial payload can no longer
+    delete what it fails to mention (R1745: one such patch cost a domain its 12 rules, 4 secret
+    grants, 8 budget dials and 3 fs_read_roots). But this editor removed BY omission — it sent
+    the whole block and relied on wholesale replacement — so merge alone would have turned
+    every untick into a silent no-op, failing in the opposite direction.
+
+    The editor therefore SAYS what it removes. Ticking then unticking a grant is the smallest
+    control that proves it end to end: the grant really goes, and the keys nobody touched stay.
+    """
+    from rsched import secrets
+
+    secrets.set_secret("FAU_TOKEN", "s3cret")
+    dom = domains.create(ui.routines, name="FAU",
+                         config={"tags": ["fau"], "budgets": {"max_turns": 40}})
+    _join_domain(ui, "uir", dom["id"])
+
+    panel = _open_domain_editor(ui, ui_page, dom["id"])
+    box = panel.locator('[data-domain-secret="FAU_TOKEN"]')
+
+    box.check()
+    expect(ui_page.locator("#toast:not([hidden])")).to_contain_text("FAU_TOKEN", timeout=10_000)
+    for _ in range(50):
+        if domains.get(ui.routines, dom["id"])["config"].get("grants"):
+            break
+        ui_page.wait_for_timeout(100)
+    assert domains.get(ui.routines, dom["id"])["config"]["grants"] == {"secret:FAU_TOKEN": True}
+
+    box.uncheck()
+    for _ in range(50):
+        if not domains.get(ui.routines, dom["id"])["config"].get("grants"):
+            break
+        ui_page.wait_for_timeout(100)
+
+    cfg = domains.get(ui.routines, dom["id"])["config"]
+    assert "grants" not in cfg, "unticking must actually remove the shared grant"
+    assert cfg["tags"] == ["fau"], "and must not disturb a key nobody touched"
+    assert cfg["budgets"] == {"max_turns": 40}

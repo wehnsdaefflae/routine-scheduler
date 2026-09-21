@@ -42,13 +42,16 @@ the store down.
 
 from __future__ import annotations
 
+import logging
 import uuid
 from pathlib import Path
 
 import yaml
 
-from .ids import now_iso
+from .ids import now_iso, run_ts
 from .paths import atomic_write_json, read_json, read_yaml
+
+log = logging.getLogger("rsched.domains")
 
 # The routine.yaml keys a domain may set for its members (D82). Deliberately EXCLUDES the
 # per-routine identity and lifecycle keys — slug/name/description/enabled/schedule/workflow/
@@ -159,7 +162,42 @@ def clean_config(config: object) -> dict:
     return {k: v for k, v in out.items() if v or v == {}}
 
 
+#: How many previous versions of the domain store to keep beside it.
+BACKUP_KEEP = 20
+
+
+def backups_dir(routines_home: Path) -> Path:
+    return Path(routines_home) / ".control" / "domains-history"
+
+
+def _snapshot(routines_home: Path) -> None:
+    """Keep the CURRENT bytes before overwriting them (D140).
+
+    The routines home is not a git repository, so a bad write here had no undo at all: when a
+    partial patch wiped a domain's whole shared block (R1745), it came back only because the
+    routine that made the call happened to have snapshotted its own payload first. A shared
+    config block is the kind of thing several routines inherit and nobody re-derives, so the
+    file needs a history of its own rather than the hope of one.
+
+    Best-effort by construction: failing to keep a backup must never stop a save the user
+    asked for, and a missing backup dir is not an error — it is simply the first write.
+    """
+    src = domains_file(routines_home)
+    if not src.is_file():
+        return
+    try:
+        d = backups_dir(routines_home)
+        d.mkdir(parents=True, exist_ok=True)
+        (d / f"domains-{run_ts()}.json").write_bytes(src.read_bytes())
+        old = sorted(d.glob("domains-*.json"))[:-BACKUP_KEEP]
+        for p in old:
+            p.unlink(missing_ok=True)
+    except OSError as exc:
+        log.warning("domains: could not keep a backup before saving: %s", exc)
+
+
 def _save(routines_home: Path, data: dict) -> None:
+    _snapshot(routines_home)
     atomic_write_json(domains_file(routines_home), data)
 
 
@@ -191,9 +229,25 @@ def create(routines_home: Path, *, name: str, config: dict | None = None,
 
 
 def update(routines_home: Path, domain_id: str, *, name: str | None = None,
-           config: dict | None = None) -> dict | None:
-    """Patch a domain in place (only the fields passed are touched). `config` REPLACES the
-    shared block wholesale — dropping a key there returns that setting to each member's own.
+           config: dict | None = None,
+           remove: list[str] | None = None) -> dict | None:
+    """Patch a domain in place (only the fields passed are touched).
+
+    `config` MERGES over the stored block, key by key: a key the patch does not mention is
+    left exactly as it was. It used to REPLACE wholesale, which made every partial patch a
+    silent deletion of everything it failed to mention — one such patch dropped a domain's 12
+    shared rules, 4 secret grants, 8 budget dials, 3 fs_read_roots and rule_confirm in a single
+    call (R1745/D140). The routine PATCH beside it was already field-wise, so one verb meant
+    opposite things on the two surfaces, and the routine one is what every caller learns first.
+
+    Removal is therefore SAID rather than implied, in either of two forms:
+      * `remove=["grants", "budgets"]` — drop these keys, idempotently;
+      * an explicit `None` under a key in `config` — so one payload can set and clear together.
+
+    Both exist because the domain editor PATCHes the whole block on every control and used
+    omission AS its removal mechanism: under merge alone, unticking a rule would have become a
+    silent no-op. That is why the semantics and the removal form had to land in one change.
+
     Returns the updated record, or None if no domain has that id.
     """
     data = load(routines_home)
@@ -205,8 +259,16 @@ def update(routines_home: Path, domain_id: str, *, name: str | None = None,
             if not nm:
                 raise ValueError("domain name cannot be empty")
             d["name"] = nm
-        if config is not None:
-            d["config"] = clean_config(config)
+        if config is not None or remove:
+            merged = dict(d.get("config") or {})
+            for key in remove or []:
+                merged.pop(str(key), None)          # idempotent: unsetting twice is not an error
+            for key, val in (config or {}).items():
+                if val is None:
+                    merged.pop(str(key), None)
+                else:
+                    merged[str(key)] = val
+            d["config"] = clean_config(merged)
         _save(routines_home, data)
         return d
     return None

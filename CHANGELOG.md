@@ -15,6 +15,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.358.0] — 2026-09-21
+
+### Changed — a domain PATCH merges, and removal is said out loud (D140)
+
+`PATCH /api/domains/{id}` replaced the shared config block wholesale, so a partial patch
+DELETED every key it did not mention. One such call dropped a domain's 12 shared rules, 4
+secret grants, all 8 budget dials, 3 fs_read_roots and rule_confirm (R1745). The asymmetry is
+what made it a trap: the routine PATCH beside it is field-wise, so one verb meant opposite
+things on two surfaces — and the routine one is what every caller learns first.
+
+Merge alone would have broken the domain editor invisibly, in the other direction. That editor
+PATCHes the whole block on every control and used omission AS its removal mechanism, so
+unticking a rule or clearing budgets would have become a silent no-op. Hence one coordinated
+change rather than a quiet semantics swap:
+
+- **`config` merges** over the stored block, key by key. A key the patch does not mention
+  survives.
+- **Removal is explicit**, in either of two forms: `remove: [keys]`, or a null under a key in
+  `config` so one payload can set and clear together. Both are idempotent.
+- **`static/components/domainconfig.js` moved onto it in the same change** — every control
+  that emptied a key by deleting it now names that key in `remove`.
+- **The reply says which of the three landed** (`updated`), the contract the config bridge
+  verifies each key of before telling anyone a change applied.
+
+### Added — the domain store keeps its own history
+
+`.control/domains.json` is in no git repository, so a bad write had no undo at all: the wiped
+block above came back only because the calling routine happened to snapshot its payload first.
+Every save now keeps the bytes it replaced under `.control/domains-history/`, capped at the
+last 20 and best-effort — failing to keep a backup never blocks a save the user asked for.
+
 ## [0.357.0] — 2026-09-21
 
 ### Added — a queued message in a CONVERSATION can be seen, revised and withdrawn (D139)

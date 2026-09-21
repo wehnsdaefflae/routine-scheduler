@@ -128,6 +128,10 @@ class DomainPatch(BaseModel):
     model_config = ConfigDict(extra="forbid")
     name: str | None = None
     config: dict | None = None
+    # D140: `config` MERGES, so dropping a shared setting has to be SAID. Two forms, because
+    # the editor needs one and a decision patch reads better with the other: name the keys
+    # here, or send an explicit null under a key in `config`.
+    remove: list[str] | None = None
 
 
 def _record(request: Request, d: dict) -> dict:
@@ -173,7 +177,12 @@ def create_domain(request: Request, body: DomainCreate) -> dict:
 
 @router.patch("/domains/{domain_id}")
 def update_domain(request: Request, domain_id: str, body: DomainPatch) -> dict:
-    """Patch a domain's name and/or its shared block, and SAY WHICH of the two landed.
+    """Patch a domain's name and/or its shared block, and SAY WHICH of the three landed.
+
+    `config` MERGES over the stored block (D140): a key the patch does not mention survives.
+    Removal is explicit — `remove: [keys]`, or a null under a key in `config` — because under
+    merge, omission means "leave alone" and a shared setting must never disappear because a
+    caller sent a partial payload.
 
     `updated` is the applied-field list, the same contract the routine PATCH carries (R102): a
     caller that cannot tell an applied key from a silently ignored one will report success for a
@@ -183,12 +192,13 @@ def update_domain(request: Request, domain_id: str, body: DomainPatch) -> dict:
     """
     config = _validate_config(request, body.config)
     try:
-        rec = domains.update(_routines_home(request), domain_id, name=body.name, config=config)
+        rec = domains.update(_routines_home(request), domain_id, name=body.name, config=config,
+                             remove=body.remove)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     if rec is None:
         raise HTTPException(404, f"no domain {domain_id!r}")
-    applied = [k for k in ("name", "config") if getattr(body, k) is not None]
+    applied = [k for k in ("name", "config", "remove") if getattr(body, k) is not None]
     return {**_record(request, rec), "updated": applied}
 
 

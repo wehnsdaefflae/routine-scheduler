@@ -55,8 +55,16 @@ export function domainConfigPanel(domain, { onSaved } = {}) {
   // same sitting builds on what was actually stored — and on the freshly recomputed layers and
   // orphan list — rather than on a page-load snapshot. Throws on failure: connectionsCard
   // brings its own toast/catch; `put` below is the toasting wrapper for everything else.
-  const writeConfig = async (next) => {
-    rec = await api(`/api/domains/${rec.id}`, { method: "PATCH", body: { config: next } });
+  // D140: the PATCH now MERGES, so this panel says what it REMOVES instead of removing by
+  // omission. It used to send the whole block and rely on wholesale replacement — which made
+  // every partial payload a silent deletion of what it left out (R1745 cost one domain its 12
+  // rules, 4 grants, 8 budget dials and 3 roots), and would now have made unticking a silent
+  // no-op in the other direction. `remove` is the same list this panel already computed by
+  // deleting keys; it is simply stated rather than implied.
+  const writeConfig = async (next, remove = []) => {
+    const body = { config: next };
+    if (remove.length) body.remove = remove;
+    rec = await api(`/api/domains/${rec.id}`, { method: "PATCH", body });
     renderWarnings();
     renderPerms();
     renderRules();
@@ -66,11 +74,13 @@ export function domainConfigPanel(domain, { onSaved } = {}) {
   // "no domain value" and "an explicitly empty domain value" cannot diverge.
   const writeKey = (key, value) => {
     const next = { ...(rec.config || {}) };
-    if (value == null || (Array.isArray(value) ? !value.length : !Object.keys(value).length)) {
+    const empty = value == null
+      || (Array.isArray(value) ? !value.length : !Object.keys(value).length);
+    if (empty) {
       delete next[key];
-    } else {
-      next[key] = value;
+      return writeConfig(next, [key]);
     }
+    next[key] = value;
     return writeConfig(next);
   };
   const put = async (key, value, note) => {
@@ -104,10 +114,16 @@ export function domainConfigPanel(domain, { onSaved } = {}) {
         const next = { ...(rec.config || {}) };
         next.permissions = payload.active || [];
         next.capabilities = payload.capabilities || {};
-        if (!next.permissions.length) delete next.permissions;
-        if (!Object.keys(next.capabilities).length) delete next.capabilities;
+        // Emptied here means REMOVED there (D140) — under merge, dropping the key from the
+        // payload would leave the domain's old permissions standing and the untick would
+        // appear to work while changing nothing.
+        const gone = [];
+        if (!next.permissions.length) { delete next.permissions; gone.push("permissions"); }
+        if (!Object.keys(next.capabilities).length) {
+          delete next.capabilities; gone.push("capabilities");
+        }
         try {
-          await writeConfig(next);
+          await writeConfig(next, gone);
           toast("domain permissions saved — members inherit them at their next run");
         } catch (err) { toast(err.message, 4000, { error: true }); }
       },
