@@ -24,7 +24,12 @@ import json
 
 from playwright.sync_api import expect
 
-NAV = ".topbar nav a[data-nav]"
+#: Every destination the rail is OFFERING. `:not([hidden])` is load-bearing, not tidiness:
+#: 0.359.0 added a ninth anchor, `data-nav="browser"`, which ships `hidden` and is revealed
+#: only when a shared browser is configured. A bare `a[data-nav]` counts it anyway, so this
+#: file went red on main the day that feature landed — the count assertion was measuring the
+#: markup rather than what the phone actually offers.
+NAV = ".topbar nav a[data-nav]:not([hidden])"
 PHONE = {"width": 390, "height": 780}
 
 #: A token with NO break opportunity inside it — a commit sha, a run id, a base64 blob. It has to

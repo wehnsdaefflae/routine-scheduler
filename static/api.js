@@ -139,7 +139,31 @@ async function authedJson(path, makeInit) {
   }
 }
 
+// A body that is ALREADY serialized JSON — the one mistake api()'s signature invites (F524).
+// api() stringifies unconditionally, so a caller that stringified first sends a JSON *string*
+// where the endpoint expects an object: well-formed, transported fine, and wrong in a way
+// nothing client-side can see (it surfaces as the endpoint's own 4xx, pointing at the server).
+// A string that PARSES as an object or an array is the tell; a plain string body stays legal,
+// because an endpoint may genuinely take one.
+function looksPreSerialized(body) {
+  if (typeof body !== "string") return false;
+  const s = body.trim();
+  if (!s.startsWith("{") && !s.startsWith("[")) return false;
+  try {
+    const parsed = JSON.parse(s);
+    return parsed !== null && typeof parsed === "object";
+  } catch {
+    return false;   // not JSON at all — a plain string that happens to start with a brace
+  }
+}
+
 export async function api(path, { method = "GET", body } = {}) {
+  if (looksPreSerialized(body)) {
+    throw new Error(
+      "api() serializes the body for you — this one is already JSON. " +
+      `Pass the object itself, not JSON.stringify(...): api(${JSON.stringify(path)}, ` +
+      "{ method, body: yourObject }).");
+  }
   return authedJson(path, (token) => ({
     method,
     headers: {

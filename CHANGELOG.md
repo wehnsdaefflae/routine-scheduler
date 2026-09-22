@@ -15,6 +15,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.364.0] — 2026-09-22
+
+### Fixed — `api()` refuses a body you already stringified (F524)
+
+`api(path, {body})` serializes the body for you, unconditionally. A caller that called
+`JSON.stringify` first therefore sent a JSON *string* where the endpoint expected an object —
+well-formed, transported perfectly, and wrong in the one way nothing client-side could see.
+It surfaced as the endpoint's own 4xx, which points at the server and not at the line that
+caused it. All 122 call sites passing a body get this right today; it was the next one that
+would have paid, in whichever single flow it lived.
+
+It now throws immediately, naming the mistake and the fix. A string that parses as an object
+or an array is the tell — a plain string body stays legal, because an endpoint may genuinely
+take one.
+
+### Fixed — the phone nav test counted a destination the phone is not offered (F531)
+
+`tests/ui/test_mobile_nav.py` asserted the bottom bar carries exactly the eight declared
+destinations, using `.topbar nav a[data-nav]`. 0.359.0 added a ninth anchor for the browser
+screen, which ships `hidden` and is revealed only when a shared browser is configured — so the
+selector counted a link no user is offered, and the file had been red on `main` since that
+release without anyone noticing, because that release gated selected UI files rather than the
+whole browser suite.
+
+The selector is now `a[data-nav]:not([hidden])`, which is what the assertion always meant: every
+destination the rail is OFFERING. The count constant is untouched.
+
 ## [0.363.0] — 2026-09-22
 
 ### Added — a run that skips a declared stage now says so (F521, R1681)
