@@ -187,6 +187,10 @@ def _read_one(rel_path: str, action: dict, ctx: RunContext) -> dict:
     if (path.suffix == ".md" and path.parent.name == STAGES_DIR
             and path.parent.parent == ctx.routine.dir):
         ctx.phase = path.stem
+        # …and the PATH taken, not just the current node (F521/R1681): a run that skipped
+        # a declared stage was indistinguishable from one that worked through all of them.
+        if path.stem not in ctx.phases_entered:
+            ctx.phases_entered.append(path.stem)
     obs = _windowed(rel_path, window, total, start, max_lines)
     if directory:
         obs["directory"] = True

@@ -15,6 +15,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.363.0] — 2026-09-22
+
+### Added — a run that skips a declared stage now says so (F521, R1681)
+
+A recipe with `stages/` modules declares a path through the work, and a run walks it by
+reading the module for where it is. The engine already noticed each arrival — reading
+`stages/<x>.md` stamps the live phase, with no cooperation from the recipe — but it kept
+only the CURRENT stage. The path taken was nowhere. So a run that worked through all eight
+of its stages and a run that read one module and finished ended up looking identical, and
+a silently skipped stage was invisible to everyone: the dashboard, the next run, and the
+person reading the summary.
+
+Three places now carry the difference:
+
+- **`status.json`** gains a `stages` object — `declared`, `entered`, `skipped`, each in the
+  recipe's own flow order (main.md's run-flow ordering, not alphabetical). One-of-three is
+  distinguishable from three-of-three without opening a transcript.
+- **The transcript** gains a `stages_skipped` event, written once, at the moment the finish
+  STANDS — past every deferral rung, so a finish that was set aside and retried does not
+  emit it twice.
+- **`readmodels.statemap.stage_coverage()`** is the one derivation both read, beside the
+  `stage_states()` that already answers "what does this recipe declare".
+
+**It is a notice, never a refusal.** Skipping a stage is frequently the right call — a
+gather stage with nothing to gather, a publish stage on a run with nothing to publish — and
+a gate that blocked the finish would teach recipes to read modules they do not need, which
+is worse than the problem. So the run ends normally and the gap goes on the record, the way
+an `unmet` stopping condition ends the run while carrying its residual.
+
+A recipe with no stage modules declares nothing, can skip nothing, and stays silent.
+
 ## [0.362.0] — 2026-09-21
 
 ### Fixed — the browser screen authenticates the way an iframe actually asks (F530)

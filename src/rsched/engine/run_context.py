@@ -55,6 +55,11 @@ class RunContext:
 
     turn: int = 0
     phase: str = ""
+    # Every stage module this run has ENTERED, in entry order, deduped (F521/R1681). `phase`
+    # is the CURRENT node; this is the path taken — the only thing that can tell a run which
+    # worked through its recipe from one that read one module and finished. Stamped beside
+    # `phase` at the same seam (engine/fileops.py), so it costs the recipe nothing.
+    phases_entered: list[str] = field(default_factory=list)
     # The recipe version (last recipe-touching commit — recipes.current_recipe_commit)
     # that produced this run, stamped at run start; None for unversioned dirs
     # (conversations, clarify workspaces). Lands in status.json and the run's
@@ -307,6 +312,13 @@ class RunContext:
             max_cost=lim["cost"],
         )
 
+    def stage_coverage(self) -> dict:
+        """`{declared, entered, skipped}` for this run — the recipe's stages against the
+        ones it actually entered (F521/R1681). Empty lists for a single-file recipe.
+        """
+        from ..readmodels.statemap import stage_coverage
+        return stage_coverage(self.routine.dir, self.phases_entered)
+
     def write_status(self, state: str | None = None, question: dict | None = _UNSET) -> None:
         """Update status.json (root runs only — subruns report through the parent transcript)."""
         if state is not None:
@@ -331,6 +343,10 @@ class RunContext:
             # write at run end freezes it as the run's duration
             "elapsed_s": int(self.elapsed_total_s()),
             "phase": self.phase,
+            # The PATH through the recipe, not just where it stopped (F521/R1681): which
+            # declared stages this run entered and which it never did. A single-file
+            # recipe declares none and all three lists are empty.
+            "stages": self.stage_coverage(),
             "question": self.question,
             "usage": self.usage_total(),
             "model": self.main_model,

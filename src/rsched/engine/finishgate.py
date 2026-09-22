@@ -156,6 +156,15 @@ def check_finish(loop, action: dict, ctx) -> str | None:
             return None   # deferred — the loop goes round again
         disputes = {o["id"]: o["evidence"] for o in objections}
     loop.final_summary = action["summary"]
+    # F521/R1681: the finish STANDS — so say which declared stages this run never entered.
+    # Deliberately NOT a rung on the ladder above: skipping a stage is often the right call
+    # (a gather stage with nothing to gather), and refusing the finish would teach recipes to
+    # read modules they do not need. It is a NOTICE, like the residual an `unmet` condition
+    # carries: the run ends, and the gap is on the record for whoever reads it next.
+    if ctx.depth == 0:
+        coverage = ctx.stage_coverage()
+        if coverage["skipped"]:
+            ctx.transcript.event("stages_skipped", {**coverage, "run_id": ctx.run_id})
     # F334/D98: stamp the model's own [s<n>] met/unmet accounting back into
     # the store. Without this a condition sat at `open` however often a run
     # reported it met, so every reader — the panel, the next run, the user —

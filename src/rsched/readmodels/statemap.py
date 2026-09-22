@@ -79,6 +79,26 @@ def stage_states(routine_dir: Path) -> list[dict]:
     return [{"name": p.stem, "desc": _first_heading(p)} for p in files[:MAX_STATES]]
 
 
+def stage_coverage(routine_dir: Path, entered: list[str]) -> dict:
+    """What a run DECLARED against what it actually entered (F521/R1681).
+
+    `{"declared": [...], "entered": [...], "skipped": [...]}`, every list in the
+    recipe's own flow order — the order `stage_states` derives from main.md, so a
+    reader sees the gap where it falls in the run rather than alphabetically.
+
+    A recipe with no stage modules declares nothing and can skip nothing, so it gets
+    three empty lists and the caller stays silent. `entered` is filtered against the
+    declared set: a run that read a module which is no longer declared (a recipe edited
+    mid-run) is not evidence about the current recipe, and counting it would make
+    `entered` longer than `declared`.
+    """
+    declared = [s["name"] for s in stage_states(routine_dir)]
+    seen = set(entered)
+    visited = [name for name in declared if name in seen]
+    return {"declared": declared, "entered": visited,
+            "skipped": [name for name in declared if name not in seen]}
+
+
 def current_phase(routine_dir: Path) -> str:
     """The latest run's recorded phase (status.json `phase` — the stage module the run
     last read). The routine-level graph's initial highlight; live transitions ride the
