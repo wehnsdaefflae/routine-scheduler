@@ -15,6 +15,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.366.4] — 2026-09-23
+
+### Fixed — the restart panel threw on the one path that means success
+
+Every settings section is framed by `panelSection`, which hands its render callback a `reload`
+as the THIRD argument — that is how a section that mutates the thing it lists shows the result.
+`settings-server.js`'s server panel declared `(srvBox, s)` and called `reload()` anyway, at the
+end of the restart watcher: the daemon has come back with a new `started`, the toast has already
+said *"server restarted — running the committed code"*, and the refresh then threw
+`ReferenceError: reload is not defined` into an unhandled rejection. The operator saw it twice in
+one day (`.ui-traces`, 02:52 and 09:29) — on the success branch, after being told it worked, with
+a stale panel and nothing naming the cause.
+
+Its five sibling sections all declare the parameter; this one was the outlier.
+
+`tests/test_static_imports.py` grew the guard for the class, beside the md-helper and
+stream-gauge guards that catch the same `ReferenceError` from the other direction. Those catch a
+name USED without being imported; this catches a name used without being RECEIVED: a
+`panelSection` callback that calls `reload()` without declaring it now fails with the file, the
+line, the parameter list it actually has, and where the argument comes from. Proven by failing
+first — it named `static/views/settings-server.js:58` before the fix, and the other 106 JS files
+produced no false positives.
+
+The console is no-build vanilla ES modules, so nothing but the browser executes it — which is
+why a static scan is the only cheap catch, and why the browser suite would have found this one
+view rather than the rule.
+
 ## [0.366.3] — 2026-09-23
 
 ### Fixed — the Help page lost a type, and the docs build said so on every boot

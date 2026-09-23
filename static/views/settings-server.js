@@ -55,7 +55,7 @@ export function renderServerConfig(view) {
 }
 
 export function renderServer(view) {
-  return panelSection(view, "/api/status", ["50%", "80%"], (srvBox, s) => {
+  return panelSection(view, "/api/status", ["50%", "80%"], (srvBox, s, reload) => {
     srvBox.replaceChildren(el("div", { class: "muted small", style: "margin-bottom:6px" },
       "Restart the daemon to load committed code — the same graceful path the self-audit ",
       "routine uses: nothing new fires, active runs finish (a run parked on a question defers ",

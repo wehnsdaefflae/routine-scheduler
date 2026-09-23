@@ -128,6 +128,67 @@ def test_api_stream_gauge_is_imported_where_used():
     assert not problems, "unimported api-helper usage (ReferenceError at runtime):\n" + "\n".join(problems)
 
 
+PANEL_MODULE = "/static/views/settings-common.js"
+
+
+def _panel_section_callbacks(text: str) -> list[tuple[int, str]]:
+    """Every `panelSection(...)` render callback, as (offset, parameter-list).
+
+    The call is `panelSection(view, url, skel, (box, data, reload) => {`, so the callback's
+    parameter list is the last parenthesised group before the arrow. Only the arrow form is
+    matched because that is the only form every section uses; a future `function (…)` callback
+    would go unchecked rather than falsely flagged, which is the safe direction for a guard
+    whose failure mode is a missed ReferenceError, not a blocked commit.
+    """
+    out = []
+    for m in re.finditer(r"panelSection\s*\(", text):
+        depth, i, n = 1, m.end(), len(text)
+        start = i
+        while i < n and depth:                      # walk to this call's closing paren
+            if text[i] == "(":
+                depth += 1
+            elif text[i] == ")":
+                depth -= 1
+            i += 1
+        call = text[start : i - 1]
+        arrow = re.search(r"\(([^()]*)\)\s*=>", call)
+        if arrow:
+            out.append((m.start(), arrow.group(1)))
+    return out
+
+
+def test_a_settings_section_that_reloads_declares_the_reload_it_was_handed():
+    """F536: `panelSection` hands `reload` to its render callback as the THIRD argument, and a
+    section that omits the parameter but calls `reload()` throws ReferenceError at runtime.
+
+    `static/views/settings-server.js` shipped `(srvBox, s) => {` while calling `reload()` on the
+    success branch of its restart watcher — so every SUCCESSFUL daemon restart from the console
+    ended in `ReferenceError: reload is not defined` (.ui-traces 2026-09-23, twice in one day),
+    after the toast had already told the operator it worked. Same class as the md-helper guard
+    above, from the other direction: there, a name was used without being imported; here, a name
+    is used without being RECEIVED.
+    """
+    problems = []
+    for path in _js_files():
+        text = _without_comments(path.read_text(encoding="utf-8"))
+        if "panelSection" not in text:
+            continue
+        for offset, params in _panel_section_callbacks(text):
+            names = [p.strip() for p in params.split(",") if p.strip()]
+            if "reload" in names:
+                continue
+            body = text[offset:]
+            end = body.find("panelSection", 1)      # this section's slice of the module
+            if _calls(body[: end if end > 0 else len(body)], "reload"):
+                rel = path.relative_to(STATIC.parent)
+                line = text[:offset].count("\n") + 1
+                problems.append(f"{rel}:{line}: the panelSection callback ({params}) calls "
+                                f"reload() but never declares it — panelSection passes it as "
+                                f"the third argument ({PANEL_MODULE})")
+    assert not problems, ("a settings section calls a reload it was never handed "
+                          "(ReferenceError at runtime):\n" + "\n".join(problems))
+
+
 def test_a_helper_named_only_in_prose_is_not_a_call():
     """The check reads what the browser executes. A module that explains why it renders with
     one helper rather than the other names the other one, and that sentence is worth writing.
