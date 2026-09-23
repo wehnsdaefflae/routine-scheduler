@@ -15,6 +15,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.366.1] — 2026-09-23
+
+### Fixed — the cost-trend alarm was measuring bookkeeping, and cried wolf on a third of the fleet
+
+The per-routine cost trend shipped yesterday and flagged five routines on its first morning.
+None of them had actually got more expensive: the runs that triggered it were in line with, or
+below, the days before — routine-improver ran 98 turns against 146 and 148.
+
+The cause is that a usage record is written per LEG, not per run, and the two halves of it
+disagree about what that means: `turns` is CUMULATIVE across the legs of a continued run while
+`tokens` and `cost` are per leg. Measured on this instance: **50.5% of depth-0 records are extra
+legs** — 2,445 records over 1,211 runs — so a five-record window was often two runs plus their
+bookkeeping, and one live specimen (a 148-turn leg carrying 2,080 tokens) dragged a median far
+enough to flag a routine nothing had changed.
+
+Legs are folded to one record per run before any comparison, at the seam both the time-keyed
+and the version-keyed heuristic pass through: the last leg's cumulative fields win, the per-leg
+ones sum. Measured over the whole live stream, the flagged set drops from **31 routines to 6** —
+and all six survive on real, sustained doublings rather than on a window artefact.
+
+That this was worth chasing rather than tuning is the point: the threshold was never the
+problem, the unit was. An alarm that fires on a third of the fleet on day one is one everybody
+learns to ignore, which is the failure this project has already written down about thresholds.
+
 ## [0.366.0] — 2026-09-23
 
 ### Added — the browser's two ports need a credential (the widest hole in the sandbox)

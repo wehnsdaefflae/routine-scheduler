@@ -238,3 +238,52 @@ def test_payload_carries_the_time_trend_and_the_budget_endings(tmp_path):
     assert h["trend"]["evaluated"] and h["trend"]["flagged"]
     assert any("tokens ballooned" in r for r in h["trend"]["reasons"])
     assert h["endings"]["budget_exhausted"] == 1 and h["endings"]["run_partial"] == 0
+
+
+def test_a_continued_run_is_one_run_not_three():
+    """Legs of one run are bookkeeping, not cost, and the two halves of a usage record
+    disagree about which: `turns` is cumulative across legs while `tokens` is per leg.
+
+    Measured on the live instance 2026-09-23: HALF of all depth-0 records (2,445 over 1,211
+    runs) were extra legs, so a five-record window was often two runs plus their legs — and
+    folding them dropped the flagged set from 31 routines to 6, all six genuine.
+    """
+    from rsched.readmodels.run_health import fold_legs
+
+    legs = [
+        {"run_id": "r1", "turns": 100, "tokens": 40_000, "cost": 0.1, "status": "ok"},
+        {"run_id": "r1", "turns": 148, "tokens": 2_080, "cost": 0.0, "status": "ok"},
+        {"run_id": "r2", "turns": 50, "tokens": 9_000, "cost": 0.0, "status": "ok"},
+    ]
+    folded = fold_legs(legs)
+    assert len(folded) == 2
+    # the cumulative field takes the LAST leg's value, the per-leg fields SUM
+    assert folded[0]["turns"] == 148
+    assert folded[0]["tokens"] == 42_080
+    assert abs(folded[0]["cost"] - 0.1) < 1e-9
+    assert folded[1]["turns"] == 50
+    # order is by first appearance — every caller slices these by recency
+    assert [r["run_id"] for r in folded] == ["r1", "r2"]
+
+
+def test_folding_legs_is_what_stops_a_steady_routine_flagging():
+    """The live shape that cried wolf: a routine whose real cost never moved, but whose
+    window held a short continuation leg."""
+    from rsched.readmodels.run_health import recent_trend
+
+    def run(rid, turns, tokens, legs=1):
+        out = [{"run_id": rid, "turns": turns, "tokens": tokens, "status": "ok", "depth": 0}]
+        if legs > 1:   # a continuation: cumulative turns, a small per-leg token count
+            out.append({"run_id": rid, "turns": turns + 2, "tokens": 2_000,
+                        "status": "ok", "depth": 0})
+        return out
+
+    steady = []
+    for i in range(5):
+        steady += run(f"a{i}", 100, 50_000)
+    for i in range(5):
+        steady += run(f"b{i}", 100, 50_000, legs=2)
+
+    assert recent_trend(steady)["flagged"] is False, (
+        "a routine whose per-run cost is flat must not flag because its later runs were "
+        "continued — that is the alarm everyone learns to ignore")

@@ -105,6 +105,34 @@ def _assign(rec: dict, versions: list[dict]) -> tuple[str | None, bool]:
     return versions[-1]["commit"], True   # predates every known version → the oldest
 
 
+def fold_legs(records: list[dict]) -> list[dict]:
+    """One record per RUN, not per leg — the unit every comparison here assumes it has.
+
+    A run the operator continues, or one that resumes after a restart, appends a FURTHER
+    usage record under the same `run_id`, and the two halves of that record disagree about
+    what they mean: `turns` is CUMULATIVE across the legs while `tokens` and `cost` are
+    per-leg. Measured on this instance 2026-09-23: **50.5% of depth-0 records are extra legs**
+    (2,445 records over 1,211 runs), so a five-record window was often two runs plus their
+    bookkeeping — and one live specimen, a 148-turn leg carrying 2,080 tokens, dragged a
+    median hard enough to flag a routine that had not changed.
+
+    So: keep the LAST leg (the cumulative fields are right there) and SUM the per-leg ones.
+    Order is preserved by first appearance, because every caller slices these by recency.
+    """
+    folded: dict[str, dict] = {}
+    for rec in records:
+        key = str(rec.get("run_id") or id(rec))
+        prev = folded.get(key)
+        if prev is None:
+            folded[key] = dict(rec)
+            continue
+        merged = dict(rec)                      # the newest leg's cumulative view wins
+        for field in ("tokens", "cost"):
+            merged[field] = (prev.get(field) or 0) + (rec.get(field) or 0)
+        folded[key] = merged
+    return list(folded.values())
+
+
 def regression_flag(before: list[dict], after: list[dict], *,
                     window: int = REGRESSION_WINDOW) -> dict:
     """The deterministic heuristic: are the (≤window) runs after a recipe change clearly
@@ -112,7 +140,7 @@ def regression_flag(before: list[dict], after: list[dict], *,
     a module constant with a stated reason. Returns {evaluated, flagged, reasons,
     before, after} — `reasons` name the numbers so the flag is auditable.
     """
-    before, after = before[-window:], after[:window]
+    before, after = fold_legs(before)[-window:], fold_legs(after)[:window]
 
     def profile(recs: list[dict]) -> dict:
         ok = sum(1 for r in recs if r.get("status") == "ok")
