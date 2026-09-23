@@ -15,6 +15,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.366.2] — 2026-09-23
+
+### Fixed — a util that ran out of clock was filed as killed by a signal nobody sends
+
+Three routine-improver utils were reported to the health stream this morning as
+`util_killed … by signal 1`. Signal 1 is SIGHUP, and nothing in this system sends it. They
+had timed out: two `code-search` calls and one `fs-ops sweep`, each walking the whole
+routines home, each killed by its own deadline at 300s, 240s and 180s.
+
+Three callable kinds share one runner, one clock and one process-group kill, and had three
+spellings of what the deadline exits with: 124 in `shellrun`, 124 restated in `scripts`, and
+**-1** in `utils_run` — under a comment in `shellrun` claiming the value was "kept from the
+util". A negative `returncode` means *killed by signal N* on POSIX, and the engine reads one
+to raise `util_killed` — the event that exists to catch the cgroup OOM killer, and the one an
+operator consults to decide whether a ceiling is too low. A copied constant drifted, and it
+drifted into a fabricated kernel event.
+
+The constant now has one definition, beside the runner all three kinds already share, and a
+test fails if a second one appears. A timeout writes no `util_killed` row at all: it is
+already reported as `timed_out` with the note on stderr, and it is not a kill by the kernel.
+
+What the three timeouts actually say is a separate matter, left as evidence rather than
+tuned away: a whole-tree scan of the routines home no longer finishes inside a util's
+default deadline.
+
+### Also — two gate flakes, both a deadline sized for an idle box
+
+Two consecutive full runs failed on a different test, each passing alone afterwards. Both
+were tests that are not ABOUT a deadline but had to outlive one, and in both the thing being
+timed is a FRESH INTERPRETER importing this package.
+
+The run-gate fixture allowed 8 seconds; measured under six concurrent invocations, one gate
+takes ~7s on a healthy box, so fifteen workers spend the remaining second. It now allows 60
+— the two tests that really do exercise the deadline set their own 1s and 2s, so nothing
+they prove changes. The jailed-runner rider gave a script 1 second to print before the kill,
+which is the capture this test is about; the script kind now gets 5, the shell kind keeps 1,
+and the assertion reads the limit rather than restating it.
+
+A deadline is legitimate in a test that owns it and a coin flip in a test that merely stands
+behind one. Both now clear the cold start by a wide margin.
+
+### Also — `main` was red, and two release entries reported it green (F534, R1832)
+
+`tests/test_api.py` and `tests/test_auth_tiers.py` both asserted the operator tier gets 200
+from `/api/fs/list?path=/`. Inside the Landlock jail a util subprocess runs in,
+`Path("/").iterdir()` raises EACCES even though `/` is `drwxr-xr-x`, so `api_fs` answers its
+own 403 — and the one runner that executes the release gate from inside a sandbox is the one
+that found it. Verified here by applying this repo's own `landlock.apply`: `/` and `~` fail
+alike, so the obvious alternative was wrong for the same reason. Both probes now name the
+directory pytest just made for them, which is what the TIER claim needed all along.
+
 ## [0.366.1] — 2026-09-23
 
 ### Fixed — the cost-trend alarm was measuring bookkeeping, and cried wolf on a third of the fleet

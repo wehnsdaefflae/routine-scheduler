@@ -19,7 +19,15 @@ def setup_gate(tmp_path, monkeypatch):
     server = ServerConfig(routines_home=root.parent, libraries_home=tmp_path / "lib",
                           conversations_home=tmp_path / "conversations",
                           background_home=tmp_path / "background", sandbox="strict")
-    cfg = RoutineConfig(slug=root.name, dir=root, run_gate=RunGateConfig(enabled=True, timeout_s=8))
+    # 60s, not 8: this is the deadline for tests that are not ABOUT the deadline, and a gate
+    # child is a fresh interpreter importing rsched. Measured under six concurrent runs of one
+    # of them, a single gate takes ~7s of a healthy box — one second of headroom, which the
+    # release gate's fifteen workers spend. `test_declared_optional_and_granted_secrets[False]`
+    # failed that way on 2026-09-23 and passed alone, the shape of a flake nobody diagnoses.
+    # The two tests that DO exercise the deadline set their own (1s, 2s), so nothing here
+    # weakens them; a genuinely hung gate still trips this.
+    cfg = RoutineConfig(slug=root.name, dir=root,
+                        run_gate=RunGateConfig(enabled=True, timeout_s=60))
     monkeypatch.setenv("RSCHED_CONFIG", str(tmp_path / "config.yaml"))
     return cfg, server, Runner(server, EventBus())
 

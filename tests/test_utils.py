@@ -686,7 +686,9 @@ time.sleep(120)
     start = _time.monotonic()
     code, _out, err = utils_run.run_util(home, "sleeper", [], timeout=3, policy=OFF)
     elapsed = _time.monotonic() - start
-    assert code == -1 and "timed out" in err
+    # POSITIVE, and the same code the script and shell kinds use: a negative status is
+    # "killed by signal N", which is what `util_killed` in the health stream reports.
+    assert code == utils_run.TIMEOUT_EXIT == 124 and "timed out" in err
     # F226: stdout captured BEFORE the process-group kill is kept, not discarded — it is
     # the material that explains why a util hung.
     assert "diagnostic-before-hang" in _out

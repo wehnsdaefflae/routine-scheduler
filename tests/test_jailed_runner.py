@@ -173,9 +173,14 @@ def test_both_riders_report_a_timeout_with_what_was_printed(tmp_path, make_routi
     """
     routine = make_routine(slug=f"timeout-{kind}")
     policy = sandbox.SandboxPolicy(mode="off", own_dir=routine)
+    # The deadline has to outlast the child's START, or the kill lands before the print this
+    # test is about and the assertion reads as a lost capture. `bash -c` is up immediately; a
+    # script is a fresh interpreter, and at 1s it failed under the release gate's fifteen
+    # workers and passed alone. The subject here is what survives the kill, never the clock.
+    limit = 1 if kind == "shell" else 5
     if kind == "shell":
         res = shellrun.run_shell("echo early; sleep 30", policy=policy,
-                                 libraries_home=tmp_path / "lib", cwd=routine, timeout=1)
+                                 libraries_home=tmp_path / "lib", cwd=routine, timeout=limit)
         code, out, err = res["exit"], res["stdout"], res["stderr"]
     else:
         (routine / "scripts").mkdir(exist_ok=True)
@@ -187,7 +192,7 @@ def test_both_riders_report_a_timeout_with_what_was_printed(tmp_path, make_routi
         (routine / ".venv" / "bin").mkdir(parents=True, exist_ok=True)
         (routine / ".venv" / "bin" / "python").symlink_to(sys.executable)
         code, out, err = scripts.run_script(routine, "slow", [], policy=policy,
-                                            libraries_home=tmp_path / "lib", timeout=1)
+                                            libraries_home=tmp_path / "lib", timeout=limit)
     assert code == 124
     assert "early" in out
-    assert "timed out after 1s" in err
+    assert f"timed out after {limit}s" in err

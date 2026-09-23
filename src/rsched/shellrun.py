@@ -28,10 +28,9 @@ from __future__ import annotations
 from pathlib import Path
 
 from . import sandbox
-from .utils_run import run_jailed, scoped_env
+from .utils_run import TIMEOUT_EXIT, run_jailed, scoped_env
 
 SHELL_DEFAULT_TIMEOUT_S = 120
-TIMEOUT_EXIT = 124                # the shell convention (`timeout(1)`), kept from the util
 
 
 def run_shell(command: str, *, policy: sandbox.SandboxPolicy, libraries_home: Path,

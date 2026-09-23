@@ -44,9 +44,9 @@ from pathlib import Path
 
 from . import sandbox, utils_header, utils_lib, utils_run
 from .paths import atomic_write
+from .utils_run import TIMEOUT_EXIT
 
 SCRIPT_TIMEOUT_S = 300
-TIMEOUT_EXIT = 124                # the shell convention (`timeout(1)`), shared with shellrun
 VENV_DIR = ".venv"
 _INSTALL_TIMEOUT_S = 300
 

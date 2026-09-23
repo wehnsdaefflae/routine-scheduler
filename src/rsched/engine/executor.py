@@ -52,6 +52,13 @@ def _note_if_killed(ctx: RunContext, kind: str, name: str, code: int) -> None:
     event of any kind. `children_vm_hwm_kb` is this run's high-water mark across ALL its
     finished children — an upper bound on the one that died, and the figure that says which
     ceiling refused it.
+
+    Negative therefore has to mean a SIGNAL and nothing else, which is why the deadline
+    exits `utils_run.TIMEOUT_EXIT` (124, positive) for all three kinds. The util kind spelled
+    it -1 until 0.366.2 and every timeout was filed here as "killed by signal 1" — a SIGHUP
+    nothing in this system sends. routine-improver's three timeouts on 2026-09-23 read as
+    three kernel kills, on the one event an operator consults to decide whether a ceiling is
+    too low.
     """
     if code >= 0:
         return

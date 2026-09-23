@@ -32,6 +32,15 @@ from .utils_lib import OUTPUT_CAP, exists, list_utils, read_util, util_dir
 
 log = logging.getLogger("rsched.utils_run")
 
+#: What the DEADLINE exits with, for all three callable kinds. `timeout(1)`'s convention, and
+#: the reason it must be POSITIVE: a negative `returncode` means "killed by signal N" on POSIX,
+#: and `engine/executor._note_if_killed` reads one to raise `util_killed` — the health event
+#: whose whole job is catching the cgroup OOM killer. This kind spelled it -1 until 0.366.2, so
+#: every util that ran out of clock was filed as "killed by signal 1", a SIGHUP nothing in this
+#: system sends: routine-improver's three timeouts on 2026-09-23 read as three kernel kills.
+#: One deadline, one code — `shellrun` and `scripts` import this rather than restating it.
+TIMEOUT_EXIT = 124
+
 # Vars scrubbed from every jailed subprocess UNCONDITIONALLY (declared or not). LLM-auth: a
 # util that needs an LLM (e.g. a `gu claude` equivalent) resolves its own credentials; it must
 # never inherit the orchestrator's keys and silently mis-bill or use the wrong account.
@@ -315,10 +324,10 @@ def run_util(home: Path, name: str, args: list[str], *, timeout: int = 300,
     # F226: the timed-out leg still returns what was captured BEFORE the kill — a util that
     # hung AFTER printing diagnostics (the common case) would otherwise lose exactly the
     # material that explains why it hung. `run_jailed` owns that, the process group and the
-    # bounded read; the exit code -1 is this kind's own "killed by the deadline" convention.
+    # bounded read; TIMEOUT_EXIT is the deadline's code, the same one for all three kinds.
     res = run_jailed(cmd, env=env, cwd=cwd or home, timeout=timeout, label=f"util {name!r}",
                      config_seal=policy.own_dir)
-    return (-1 if res.timed_out else res.returncode), res.stdout, res.stderr
+    return (TIMEOUT_EXIT if res.timed_out else res.returncode), res.stdout, res.stderr
 
 
 def selftest(home: Path, name: str, *, timeout: int = 120,

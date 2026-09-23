@@ -13,6 +13,8 @@ Two contracts are pinned here and they pull in opposite directions:
   would turn a gating improvement into a sandbox hole, so the jail inputs are pinned directly.
 """
 
+from pathlib import Path
+
 import jsonschema
 import pytest
 
@@ -227,3 +229,34 @@ def test_a_strict_mode_refusal_becomes_an_observation_not_a_crash(shell_ctx, mon
     obs = dispatch({"kind": "shell", "command": "true"}, shell_ctx)
     assert obs["exit"] == 2
     assert "the jail cannot engage" in obs["stderr"]
+
+
+def test_the_deadline_is_not_a_signal_and_raises_no_kernel_kill_event(shell_ctx, tmp_path):
+    """The complement of the test above, and the reason `TIMEOUT_EXIT` is positive.
+
+    `util_killed` exists to catch the cgroup OOM killer, so an operator reads it to decide
+    whether a ceiling is too low. A deadline is not a kill by the kernel and must not land
+    there — the util kind exited -1 for a timeout until 0.366.2, `_note_if_killed` reads any
+    negative status as "killed by signal N", and routine-improver's three timeouts on
+    2026-09-23 were filed as three SIGHUPs, a signal nothing in this system sends.
+    """
+    shell_ctx.server.routines_home = tmp_path / "rhome"
+    obs = dispatch({"kind": "shell", "command": "sleep 30", "timeout_s": 1}, shell_ctx)
+    assert obs["exit"] == shellrun.TIMEOUT_EXIT  # positive, so it is not read as a signal
+    assert not (tmp_path / "rhome" / ".control" / "health-events.jsonl").exists()
+
+
+def test_one_deadline_is_defined_in_exactly_one_place():
+    """Three callable kinds share one runner and one clock; they had three spellings of what
+    it exits with — 124 in `shellrun`, 124 restated in `scripts`, and -1 in `utils_run` under
+    a comment in `shellrun` claiming the value was "kept from the util". A constant copied is
+    a constant that drifts, and this one drifted into a fabricated signal number.
+    """
+    import ast
+
+    src = Path(__file__).resolve().parents[1] / "src/rsched"
+    definers = [p.relative_to(src).as_posix() for p in sorted(src.rglob("*.py"))
+                if any(isinstance(n, ast.Name) and n.id == "TIMEOUT_EXIT"
+                       and isinstance(n.ctx, ast.Store)
+                       for n in ast.walk(ast.parse(p.read_text(encoding="utf-8"))))]
+    assert definers == ["utils_run.py"], definers
