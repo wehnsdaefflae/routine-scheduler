@@ -77,6 +77,12 @@ def pytest_terminal_summary(terminalreporter) -> None:
     w.write_line("  Both need the compose `browser` network, so they run inside the container:")
     w.write_line("    docker compose exec -u 1000:1000 rsched \\")
     w.write_line("      env RSCHED_TEST_CDP=http://172.30.7.10:9222 RSCHED_TEST_BIND=172.30.7.2 \\")
+    # The sidecar's CDP port is behind a bearer proxy (deploy/browser-auth-proxy.py), so the
+    # suite needs the same token the compose `chrome` service gets. Named here because a
+    # missing one fails every browser test at the session fixture, which reads as a wedged
+    # sidecar rather than as a missing variable.
+    w.write_line('          BROWSER_CDP_TOKEN="$(grep -oP \'(?<=^BROWSER_CDP_TOKEN=).*\' '
+                 '~/.config/routine-scheduler/secrets.env)" \\')
     w.write_line("      uv run pytest -q -m ui")
     if _static_is_dirty():
         w.write_line("")

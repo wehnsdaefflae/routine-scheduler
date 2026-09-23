@@ -24,3 +24,7 @@ audit/
 # host-specific resource ceilings (see file header)
 docker-compose.override.yml
 .audit-wt/
+
+# The compose environment. It carries BROWSER_CDP_TOKEN — the bearer in front of the
+# browser sidecar's CDP and noVNC ports — so it is a credential file, never tracked.
+.env

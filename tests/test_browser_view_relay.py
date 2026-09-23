@@ -50,7 +50,8 @@ def _stub_upstream(monkeypatch, response: httpx.Response) -> dict:
         async def __aexit__(self, *_a):
             return False
 
-        async def get(self, url):
+        async def get(self, url, headers=None):
+            seen["request_headers"] = dict(headers or {})
             response.request = httpx.Request("GET", url)
             return response
 
@@ -92,3 +93,21 @@ def test_the_pass_cookie_is_secure_behind_a_terminating_proxy(app_client):
                                    "x-forwarded-proto": "https, http"})
     assert "Secure" in fronted.headers["set-cookie"]
     assert "HttpOnly" in fronted.headers["set-cookie"]
+
+
+def test_the_relay_authenticates_to_the_sidecar(app_client, monkeypatch):
+    """The sidecar's ports sit behind a bearer proxy now (deploy/browser-auth-proxy.py), so the
+    console is one of its CALLERS: without the header the screen is a 401 the user cannot act on.
+
+    Asserted on how the request is BUILT, like the redirect test beside it — the alternative is
+    a live sidecar, which a unit test must not need.
+    """
+    from rsched.web import browser_proxy
+
+    monkeypatch.setattr(browser_proxy, "auth_headers", lambda: {"Authorization": "Bearer t0k"})
+    client, _cfg = app_client
+    built = _stub_upstream(monkeypatch, httpx.Response(200, content=b"ok",
+                                                       headers={"content-type": "text/plain"}))
+    r = client.get("/browser-view/app/ui.js", headers={"Authorization": "Bearer tok"})
+    assert r.status_code == 200
+    assert built["request_headers"].get("Authorization") == "Bearer t0k"

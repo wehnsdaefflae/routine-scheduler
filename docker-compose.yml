@@ -170,8 +170,14 @@ services:
   # and nothing reporting it. Measured the hard way on 2026-08-28. A fixed address has neither
   # container depending on the other's uptime.
   #
+  # Both ports are fronted by a BEARER-TOKEN proxy in the entrypoint, because neither CDP nor VNC
+  # authenticates anything of its own and the engine container is one network away: a `net:`
+  # declaration is a boolean, so without this every outbound-capable util and every `shell`
+  # command could drive a browser holding live site sessions. The container refuses to start
+  # without BROWSER_CDP_TOKEN rather than open an unauthenticated door that looks guarded.
+  #
   # Two things make CDP work across that boundary, both handled in the entrypoint: Chrome refuses
-  # to bind DevTools anywhere but loopback (hence the socat forward), and DevTools rejects a Host
+  # to bind DevTools anywhere but loopback (hence the forward), and DevTools rejects a Host
   # header that is not an IP literal or localhost (hence the fixed IP rather than the service
   # name). Chrome then echoes that host back in the websocket URL it hands out, so a client
   # reaches the address it dialled.
@@ -188,6 +194,11 @@ services:
     init: true
     container_name: rsched-chrome
     restart: unless-stopped
+    environment:
+      # The one credential in front of CDP and noVNC. Same value the engine hands utils that
+      # declare BROWSER_CDP_TOKEN on their `secrets:` line; keep them in step or the browser
+      # goes dark for every caller at once.
+      BROWSER_CDP_TOKEN: "${BROWSER_CDP_TOKEN:?set BROWSER_CDP_TOKEN in .env — the browser ports have no auth of their own}"
     networks:
       browser:
         ipv4_address: 172.30.7.10     # CDP endpoint: http://172.30.7.10:9222 — a FIXED address,

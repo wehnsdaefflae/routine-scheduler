@@ -116,6 +116,22 @@ def _cdp_endpoint() -> str:
 SIDECAR_CONNECT_TIMEOUT_MS = 60_000
 
 
+def _cdp_headers() -> dict[str, str]:
+    """The bearer the sidecar's auth proxy requires (deploy/browser-auth-proxy.py).
+
+    CDP authenticates nothing of its own, so the port sits behind a token door and this
+    suite is one of its callers. Taken from the environment rather than the secrets store:
+    a test run is not a routine and has no grant to read from.
+    """
+    import os
+    token = os.environ.get("BROWSER_CDP_TOKEN", "").strip()
+    if not token:
+        pytest.fail("BROWSER_CDP_TOKEN is required to reach the browser sidecar — its CDP "
+                    "port is behind a bearer proxy. Export the same value the compose "
+                    "`chrome` service gets (see deploy/DOCKER.md).")
+    return {"Authorization": f"Bearer {token}"}
+
+
 @pytest.fixture(scope="session")
 def browser(playwright):
     """Attach to the shared Chrome sidecar; never launch or close a browser.
@@ -134,7 +150,7 @@ def browser(playwright):
     endpoint = _cdp_endpoint()
     try:
         return playwright.chromium.connect_over_cdp(
-            endpoint, timeout=SIDECAR_CONNECT_TIMEOUT_MS)
+            endpoint, headers=_cdp_headers(), timeout=SIDECAR_CONNECT_TIMEOUT_MS)
     except PlaywrightError as exc:
         pytest.fail(f"browser sidecar {endpoint} is wedged — it accepts TCP but never attaches "
                     f"over CDP. Restart the compose `chrome` service "

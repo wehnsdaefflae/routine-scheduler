@@ -15,6 +15,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.366.0] — 2026-09-23
+
+### Added — the browser's two ports need a credential (the widest hole in the sandbox)
+
+`net:` in a util's header is a BOOLEAN — Landlock allows all TCP or none — and the engine
+container shares a docker network with the headful Chrome sidecar, whose DevTools port and VNC
+screen authenticate nothing of their own. So every `net: outbound` util and every `shell`
+command could drive a browser holding live site sessions. `browser-session` was a reserved util
+behind a permission, but that gate is on the ACTION, not on the socket, which made it
+decoration. docs/sandboxing.md has named this as the widest remaining hole for months.
+
+Both ports now sit behind a bearer proxy (`deploy/browser-auth-proxy.py`), and the real services
+listen on loopback only. Reaching the browser became a DECLARED SECRET — the authorization
+primitive this system already has: a util names `BROWSER_CDP_TOKEN` on its `secrets:` line and
+the engine injects it only if the util declares it AND the routine was granted it. The
+reserved-util gate and the secret-exposure decision both actually bind now.
+
+The design rests on one property that makes it much cheaper than a CDP proxy usually is:
+DevTools echoes back whichever IP-literal `Host` it was dialled with, which is why the socat
+forward it replaces worked at all. The proxy listens on the address the client dialled and
+passes `Host` through, so Chrome still hands out WebSocket URLs pointing at it — nothing has to
+rewrite them. Both plain requests and the WebSocket upgrade begin with an HTTP head, so one
+check covers both, and Playwright's `connect_over_cdp(headers=…)` carries it through the
+upgrade — verified against the live sidecar rather than assumed, since that was the risk.
+
+It fails CLOSED at every level: the container refuses to start without the token, the proxy
+refuses every connection when it has none, and an unauthenticated caller gets a 401 that names
+the secret and how a routine comes to hold it. `tests/test_browser_auth_proxy.py` loads the
+deploy script by path and pins the refusals — the only thing standing between a util and a
+signed-in browser should not be the one file nobody imports.
+
+Measured after: from the engine container, both ports answer 401 without the token and 200 with
+it; Playwright drives a page with it and is refused without.
+
+### Fixed — a proposed config change the operator could read and not take
+
+A `config_patch` riding an `ask_user` was validated for its TARGET and never for its SHAPE, so a
+run could invent keys and the Decisions page rendered an apply button that answered 422. Live on
+2026-09-23: a proposed filesystem grant arrived as `{"filesystem": {"read": [...]}}` and the
+apply said `filesystem: Extra inputs are not permitted` — a decision surface in the one state it
+must never be in.
+
+The shape is checked where the record is WRITTEN, against `configflow.CLASSIFICATION`, which
+`tests/test_configflow.py` already keeps in step with the patch models, so the gate cannot drift
+behind what it stands in for. The refusal names the stray key and the valid ones, and it is
+surface-aware: a DOMAIN patch is its own body (D140) and is read from the resolved target, not
+from the body — which by then no longer says, because the router popped the key.
+
 ## [0.365.1] — 2026-09-23
 
 ### Changed — the coverage ratchet is a measured number again

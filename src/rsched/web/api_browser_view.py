@@ -142,7 +142,7 @@ async def relay_asset(request: Request, path: str = "") -> Response:
     # target named, rather than a body fetched from somewhere nobody chose.
     try:
         async with httpx.AsyncClient(timeout=ASSET_TIMEOUT_S, follow_redirects=False) as client:
-            up = await client.get(url)
+            up = await client.get(url, headers=browser_proxy.auth_headers())
     except httpx.HTTPError as exc:
         # loud, and with the upstream named: a blank frame with no explanation is the whole
         # defect this module exists to fix
@@ -190,6 +190,7 @@ async def relay_socket(ws: WebSocket) -> None:
         # the cast is the library's own vocabulary rather than a silenced check.
         binary = websockets.Subprotocol("binary")
         async with websockets.connect(upstream, subprotocols=[binary],
+                                      additional_headers=browser_proxy.auth_headers(),
                                       max_size=None, open_timeout=10) as up:
             async def to_upstream() -> None:
                 while True:

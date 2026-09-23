@@ -118,6 +118,42 @@ def _free_qid(ctx) -> str:
     return qid
 
 
+def _config_patch_shape(patch: dict | None, home: str = "") -> str:
+    """Refuse a `config_patch` whose KEYS the apply route would reject, at the moment it is
+    filed rather than when the operator clicks.
+
+    The target was already checked above; the BODY was not, so a run could invent a shape and
+    the record reached the Decisions page wearing an apply button that 422s. Measured
+    2026-09-23: a proposed filesystem grant arrived as `{"filesystem": {"read": [...]}}`, the
+    apply answered `filesystem: Extra inputs are not permitted`, and the operator had a
+    decision he could read and not take — the one state a decision surface must never be in.
+
+    `configflow.CLASSIFICATION` is the field list to check against because it is the one the
+    project already keeps honest: `tests/test_configflow.py` fails on a patch field missing
+    from it, so this can never drift behind the model it stands in for. Routing keys are not
+    fields, and an empty patch is left to the caller above.
+    """
+    if not patch:
+        return ""
+    from ..configflow import CLASSIFICATION
+    # `_config_target` has already run and POPPED the routing key, so the surface is read
+    # from the target it resolved, never from the body — which no longer says.
+    if home == "domains" or patch.get("domain"):
+        # A DOMAIN patch is a different surface with its own body (D140): the shared block
+        # merges under `config`, and dropping a key from it has to be said out loud.
+        known, surface = {"domain", "name", "config", "remove"}, "domain config"
+    else:
+        known, surface = set(CLASSIFICATION) | {"routine"}, "routine config"
+    stray = sorted(k for k in patch if k not in known)
+    if not stray:
+        return ""
+    return (f"config_patch key(s) {', '.join(repr(k) for k in stray)} are not {surface} — the "
+            f"apply would refuse them and the user would be left with a decision he can read "
+            f"and not take. The body IS the PATCH body, so filesystem roots are "
+            f"`fs_read_roots` and `fs_write_roots` (flat lists of paths), not a nested object. "
+            f"Valid keys here: {', '.join(sorted(known))}.")
+
+
 def _config_target(ctx, cpatch: dict | None) -> tuple[str, str, str]:
     """What a `config_patch` is FOR — its own asker unless the patch names another target.
 
@@ -195,6 +231,9 @@ def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question") -> di
     # target is refused loudly rather than falling back to the asker — a silent fallback is
     # precisely the defect.
     ctarget, chome, cterr = _config_target(ctx, cpatch)
+    if cterr:
+        return {"kind": qtype if qtype != "question" else "ask_user", "error": cterr}
+    cterr = _config_patch_shape(cpatch, chome)
     if cterr:
         return {"kind": qtype if qtype != "question" else "ask_user", "error": cterr}
     # A typed access request (entities.py) rides the same record; the Decisions page

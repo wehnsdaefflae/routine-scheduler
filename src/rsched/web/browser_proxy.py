@@ -113,3 +113,24 @@ def ws_upstream_for(server) -> str | None:
 def relay_headers(headers) -> dict[str, str]:
     """Upstream headers worth returning to the browser (hop-by-hop dropped)."""
     return {k: v for k, v in headers.items() if k.lower() not in DROP_HEADERS}
+
+
+#: The name the browser sidecar's auth proxy expects a bearer under, and the name a util
+#: declares on its `secrets:` line to be handed the same value. One name, three readers.
+CDP_TOKEN_KEY = "BROWSER_CDP_TOKEN"  # noqa: S105 — a store KEY, not a secret value
+
+
+def auth_headers() -> dict[str, str]:
+    """The bearer the sidecar's ports now require, read from the central secrets store.
+
+    Neither CDP nor VNC authenticates anything of its own, so both sit behind a token door
+    (deploy/browser-auth-proxy.py) and this relay is one of its callers. Returns an empty
+    mapping when the store has no such key, so a misconfigured instance gets the proxy's
+    own 401 — which names what is missing — rather than a confusing failure here.
+    """
+    from ..secrets import load_secrets
+    try:
+        token = (load_secrets().get(CDP_TOKEN_KEY) or "").strip()
+    except OSError:
+        return {}
+    return {"Authorization": f"Bearer {token}"} if token else {}

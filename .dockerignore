@@ -7,3 +7,7 @@
 !deploy/torrc
 # The chrome service's entrypoint (deploy/Dockerfile.chrome COPYs it) — same shared context.
 !deploy/chrome-entrypoint.sh
+# …and the bearer-token proxy that entrypoint runs in front of CDP and noVNC. This file is
+# an ALLOWLIST (`*` then exceptions), so a new COPY source that is not named here fails the
+# build with "not found" on a file that is plainly present.
+!deploy/browser-auth-proxy.py

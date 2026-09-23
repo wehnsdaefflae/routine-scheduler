@@ -15,6 +15,19 @@ GEOMETRY="${SCREEN_GEOMETRY:-1920x1080x24}"
 CDP_PORT="${CDP_PORT:-9222}"
 CDP_INTERNAL_PORT="${CDP_INTERNAL_PORT:-9223}"
 VNC_PORT="${VNC_PORT:-6080}"
+VNC_INTERNAL_PORT="${VNC_INTERNAL_PORT:-6081}"
+
+# Both protocols this container speaks authenticate NOTHING of their own, and the engine
+# container is one docker network away — so the ports are fronted by a bearer-token proxy and
+# the real services listen on loopback only. Refuse to start without the token rather than open
+# an unauthenticated door that looks guarded: a browser holding live site sessions is the most
+# valuable thing on this host.
+if [ -z "${BROWSER_CDP_TOKEN:-}" ]; then
+    log "FATAL: BROWSER_CDP_TOKEN is not set. The CDP and noVNC ports have no authentication"
+    log "       of their own, so this container will not start an unauthenticated browser."
+    log "       Set it in the compose environment (see deploy/DOCKER.md)."
+    exit 78    # EX_CONFIG
+fi
 # "1920x1080x24" (an Xvfb screen spec) -> "1920,1080" (what Chrome's --window-size wants)
 WINDOW_SIZE="$(printf '%s' "$GEOMETRY" | cut -d x -f1,2 | tr x ,)"
 
@@ -43,15 +56,18 @@ done
 log "starting x11vnc (loopback :5900)"
 x11vnc -display "$DISPLAY_NUM" -rfbport 5900 -localhost -forever -shared -nopw -quiet &
 
-log "starting noVNC on :$VNC_PORT"
-websockify --web=/usr/share/novnc "$VNC_PORT" 127.0.0.1:5900 &
+log "starting noVNC on 127.0.0.1:$VNC_INTERNAL_PORT (fronted by the auth proxy)"
+websockify --web=/usr/share/novnc "127.0.0.1:$VNC_INTERNAL_PORT" 127.0.0.1:5900 &
 
 # Chrome refuses to bind DevTools anywhere but loopback, so this is how another container reaches
-# it. socat also settles the Host-header check for free: the client dials this container by IP,
-# DevTools accepts an IP literal, and Chrome echoes that same host back in the websocket URL it
-# hands out — so a CDP client connects to the address it asked for rather than to 127.0.0.1.
-log "forwarding CDP :$CDP_PORT -> 127.0.0.1:$CDP_INTERNAL_PORT"
-socat "TCP-LISTEN:${CDP_PORT},fork,reuseaddr" "TCP:127.0.0.1:${CDP_INTERNAL_PORT}" &
+# it — now through the auth proxy rather than a bare socat forward. The proxy keeps the property
+# that made the forward work: it listens on the address the client dialled and passes `Host`
+# through untouched, so DevTools still accepts the IP literal and echoes it back in the
+# websocket URL it hands out. Nothing has to rewrite those URLs.
+log "fronting CDP :$CDP_PORT -> 127.0.0.1:$CDP_INTERNAL_PORT and noVNC :$VNC_PORT -> 127.0.0.1:$VNC_INTERNAL_PORT"
+python3 /usr/local/bin/browser-auth-proxy.py \
+    --map "0.0.0.0:${CDP_PORT}=127.0.0.1:${CDP_INTERNAL_PORT}:cdp" \
+    --map "0.0.0.0:${VNC_PORT}=127.0.0.1:${VNC_INTERNAL_PORT}:novnc" &
 
 # --password-store=basic: there is no keyring in a container. Left to guess, Chrome picks a
 # backend per desktop-environment heuristics and can wrap the cookie key in something that is

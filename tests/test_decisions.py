@@ -627,3 +627,43 @@ def test_deferred_answer_reaches_the_live_run(make_routine, scripted):
     assert any("Which color?" in t and "blue" in t for t in inj), inj
     assert not list((d / "questions" / "pending").glob("*.json"))   # record consumed
     assert not list((d / "inbox").glob("answer-*.json"))            # answer consumed
+
+
+def test_a_config_patch_the_apply_would_refuse_is_refused_at_filing():
+    """The exact shape that reached the operator on 2026-09-23 and could not be applied.
+
+    A `config_patch` carried the target check but never a shape check, so a run could invent
+    keys and the Decisions page rendered an apply button that answered 422 — a decision the
+    operator could read and not take. The gate runs where the record is written.
+    """
+    from rsched.engine.interact import _config_patch_shape
+
+    bad = _config_patch_shape({"filesystem": {"read": ["/home/mark/git-repos/routine-scheduler"]}})
+    assert "filesystem" in bad
+    assert "fs_read_roots" in bad and "fs_write_roots" in bad   # it teaches the right keys
+
+    # the routing keys are not fields, and a real patch passes untouched
+    assert _config_patch_shape({"routine": "suedlink-wlf", "budgets": {"max_turns": 120}}) == ""
+    assert _config_patch_shape({"fs_read_roots": ["/srv/x"]}) == ""
+    assert _config_patch_shape({}) == ""
+    assert _config_patch_shape(None) == ""
+
+    # A DOMAIN patch is its own surface (D140) and must not be judged by the routine's keys
+    # A DOMAIN patch is its own surface (D140). By the time the gate runs, `_config_target`
+    # has popped the routing key — so the surface comes from the RESOLVED target, and a gate
+    # that sniffed the body would reject every domain proposal ever filed.
+    assert _config_patch_shape({"config": {"budgets": {"max_turns": 50}}}, "domains") == ""
+    assert _config_patch_shape({"remove": ["rules"]}, "domains") == ""
+    assert "domain config" in _config_patch_shape({"budgets": {}}, "domains")
+    # ...and the same body without a domain target is judged as a routine patch
+    assert "routine config" in _config_patch_shape({"config": {}})
+
+
+def test_the_config_patch_gate_tracks_the_classification_table():
+    """It checks against `configflow.CLASSIFICATION`, which `test_configflow` already keeps in
+    step with the patch models — so the gate cannot drift behind the thing it stands in for."""
+    from rsched.configflow import CLASSIFICATION
+    from rsched.engine.interact import _config_patch_shape
+
+    for field in CLASSIFICATION:
+        assert _config_patch_shape({field: "whatever"}) == "", f"{field} should be accepted"
