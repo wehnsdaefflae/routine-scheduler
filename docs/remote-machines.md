@@ -203,6 +203,19 @@ How it works, and why it is safe:
 - Mounting is **best-effort**: an unreachable host, a missing key, or no `sshfs` on the host logs a
   warning and the run proceeds without the mount. It is unmounted on every exit path; a crash
   leaves a stale mount that the next run clears before remounting.
+- **A live share makes the routine's directory expensive to WALK, for every other run too.** The
+  mount sits inside `~/routines`, so anything that walks that tree crosses it and pays a network
+  round trip per entry — and a remote that has stopped answering turns the walk into a hang. On
+  2026-09-23 three whole-tree scans by an unrelated routine were killed at their deadlines with
+  no output (306s, 241s, 180s) while every other call in the same run answered in a second; the
+  same scans take under a second with no such mount present. Nothing can cheaply tell a stale
+  share from a local directory from inside a util: `/proc/self/mountinfo` is not readable in the
+  Landlock jail, and by `st_dev` alone every data home is already its own device while a live
+  sshfs share looks like the image layer, so a `find -xdev` prune both over- and under-shoots
+  (built and reverted, with the measurement kept in `code-search`'s `walk_files`). What holds is
+  the DEADLINE the engine already hands every util in `RSCHED_UTIL_TIMEOUT_S`: a walker that
+  honours it returns what it reached and names where it stopped, instead of being killed holding
+  the answer. A tree-walking util that ignores that variable has this failure mode.
 - **A mount is PROVEN before it is advertised** (R514). `sshfs` daemonizes, so a zero exit means
   the helper forked, not that the share is readable — and because the mountpoint directory is
   created *before* the mount, a failure used to leave an empty directory standing exactly where a
