@@ -15,6 +15,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.365.1] — 2026-09-23
+
+### Changed — the coverage ratchet is a measured number again
+
+`fail_under = 87` had not been checked since 0.57.1, roughly three hundred releases, and the
+comment beside it claimed 88 while the gate demanded 87 — a ratchet nobody had measured and
+nothing ever ran. Measured now over the fast suite: **89.72%** branch coverage across 2709
+tests. The floor is 89, with the measurement and its date written beside it so the next raise
+has something to move from.
+
+It is still not named in the inner-loop gate, deliberately. Coverage takes 375 s against the
+fast suite's 208 s, and a ratchet that nearly doubles the loop every developer runs is a
+ratchet that gets deleted rather than obeyed; it belongs in the release gate.
+
 ## [0.365.0] — 2026-09-22
 
 ### The review
