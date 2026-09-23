@@ -106,7 +106,11 @@ def test_the_routine_token_reads_no_wider_than_the_sandbox(tmp_path, make_routin
     with TestClient(app) as c:
         rt = {"Authorization": "Bearer routine-tok"}
         pt = {"Authorization": f"Bearer {TOKEN}"}
-        for path in ("/api/fs/list?path=/", "/api/settings/secrets", "/api/debug/threads"):
+        # the fs probe names the test's OWN directory, never `/`: under the Landlock jail a
+        # util subprocess runs in, listing the filesystem root raises EACCES and api_fs
+        # answers its own 403, which made this assertion depend on where the gate ran (F534).
+        for path in (f"/api/fs/list?path={tmp_path}", "/api/settings/secrets",
+                     "/api/debug/threads"):
             r = c.get(path, headers=rt)
             assert r.status_code == 403, (path, r.status_code)
             assert "read_file" in r.json()["detail"]

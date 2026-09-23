@@ -53,14 +53,21 @@ def test_no_mutation_is_open_to_the_routine_tier():
 
 
 @pytest.mark.parametrize("path", [
-    "/api/fs/list?path=/",
+    "/api/fs/list?path={dir}",
     "/api/settings/secrets",
     "/api/debug/slow",
     "/api/search?q=token",
 ])
-def test_the_reads_that_defeat_the_sandbox_take_the_operator_token(client, path):
+def test_the_reads_that_defeat_the_sandbox_take_the_operator_token(client, tmp_path, path):
+    """`{dir}` is the test's OWN directory, not `/` (F534). The claim here is about the
+    TIER — routine denied, operator served — and probing the filesystem root made the
+    operator half depend on where the suite runs: `Path("/").iterdir()` raises EACCES
+    inside the Landlock jail a util subprocess gets, so `api_fs` answered its own 403 and
+    this test failed for the one runner that executes the gate from inside a sandbox. Two
+    release entries reported green from the unjailed partition while it was red.
+    """
     assert _as_routine(client, path).status_code == 403
-    assert _as_operator(client, path).status_code == 200
+    assert _as_operator(client, path.format(dir=tmp_path)).status_code == 200
 
 
 def test_a_tier_refusal_is_distinguishable_from_an_ordinary_403(client):
