@@ -84,20 +84,35 @@ async def test_scope_bypasses_missing_gate(setup_gate, monkeypatch, reason):
 async def test_arriving_inbox_overrides_skip(setup_gate, monkeypatch):
     cfg, _, runner = setup_gate
     script(cfg, 'from pathlib import Path\nPath("inbox").mkdir()\n'
-                'Path("inbox/report.json").write_text("{}")\n' + skip_body())
+                'Path("inbox/msg-rep-R1.json").write_text("{}")\n' + skip_body())
     marker = fake_engine(monkeypatch, cfg)
     _, run, _ = await finish(runner, cfg)
-    assert marker.exists() and (cfg.dir / "inbox/report.json").exists()
+    assert marker.exists() and (cfg.dir / "inbox/msg-rep-R1.json").exists()
     assert read_json(run.run_dir / "gate.json")["reason"] == "inbox arrived during gate"
 
 
 async def test_existing_inbox_bypasses_missing_script(setup_gate, monkeypatch):
     cfg, _, runner = setup_gate
     (cfg.dir / "inbox").mkdir()
-    (cfg.dir / "inbox/report.json").write_text("{}")
+    (cfg.dir / "inbox/msg-rep-R1.json").write_text("{}")
     marker = fake_engine(monkeypatch, cfg)
     await finish(runner, cfg)
     assert marker.exists()
+
+
+def test_pending_inbox_counts_messages_only(tmp_path):
+    """`msg-*.json` — the stem the ONE writer produces — and nothing else. Counting ANY
+    file made a queued question ANSWER read as freight the gate must admit a run for (an
+    answer is exactly what does NOT start a run), and matched `paths.atomic_write`'s
+    in-flight `.msg-….json.XXXX.tmp` besides."""
+    d = tmp_path / "routine"
+    (d / "inbox").mkdir(parents=True)
+    assert not run_gate.pending_inbox(d)
+    (d / "inbox" / "answer-q-1.json").write_text("{}")
+    (d / "inbox" / ".msg-20260922T101010-ab.json.9f.tmp").write_text("{")
+    assert not run_gate.pending_inbox(d)
+    (d / "inbox" / "msg-rep-R1.json").write_text("{}")
+    assert run_gate.pending_inbox(d)
 
 
 @pytest.mark.parametrize("body", ['"""gate — predicate\ncalls: other\n"""',
@@ -201,3 +216,25 @@ async def test_timeout_kills_descendants(setup_gate):
     assert st["state"] == "failed"
     await asyncio.sleep(1.5)
     assert not (cfg.dir / "escaped").exists()
+
+
+async def test_a_gate_failure_reaches_the_health_stream(setup_gate):
+    """A gate that raises writes a `failed` run and starts no engine, so the engine's own
+    `run_failed` never fires and the reap — finding a state that is already terminal — emits
+    nothing either. The only durable trace was one clause inside the lane chain's
+    `lane_chain_done` detail, and `run_failed` is the one event the nightly audit filters for.
+
+    The failure mode this makes visible is permanent: a withdrawn gate secret or a kernel that
+    dropped Landlock fails every scheduled fire of a gated routine, forever, before turn 0.
+    """
+    import json
+    cfg, server, runner = setup_gate
+    script(cfg, 'print("junk")')
+    _, run, st = await finish(runner, cfg)
+    assert st["state"] == "failed"
+    stream = server.routines_home / ".control" / "health-events.jsonl"
+    events = [json.loads(x) for x in stream.read_text(encoding="utf-8").splitlines() if x.strip()]
+    failed = [e for e in events if e["event"] == "run_failed"]
+    assert len(failed) == 1
+    assert failed[0]["routine"] == cfg.slug and failed[0]["run_id"] == run.run_id
+    assert "before turn 0" in failed[0]["detail"]

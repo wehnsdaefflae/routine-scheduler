@@ -55,15 +55,15 @@ def commands(request: Request, slug: str) -> dict:
     this conversation's capability surface allows (the engine still enforces exactly at
     execution) and the util catalog (name + summary + usage).
     """
-    from .. import utils_lib
     from ..engine.commands import command_catalog
     from ..policyload import load_policy
+    from ..readmodels import library_reads
 
     info = conversation_info(request, slug)
     server = request.app.state.server
     policy = load_policy(server.permissions_home, info.cfg.permissions,
                          info.cfg.capabilities)
-    return command_catalog(policy, utils_lib.list_utils(server.libraries_home))
+    return command_catalog(policy, library_reads.utils(server.libraries_home))
 
 
 @router.post("/conversations/{slug}/message")

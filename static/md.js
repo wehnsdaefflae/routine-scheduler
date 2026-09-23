@@ -165,3 +165,41 @@ export function mdInline(text) {
   span.innerHTML = String(text ?? "").split("\n").map((l) => inline(esc(l))).join("<br>");
   return span;
 }
+
+// A model-written block — a run summary, a queued question — reduced to the ONE rendered line a
+// table cell or a list row has space for. Four surfaces show the same field this way and each
+// used to reduce it itself: the routine page's runs table and the dashboard's rows render it,
+// the activity feed assigned it to `textContent`, so `**One application went out…**` reached
+// that column with its asterisks. A leading heading marker goes too — a summary opening `##
+// You were right` is a sentence, not a `##` — and taking the first NON-EMPTY line is what keeps
+// a heading and the line under it from running together in a one-line cell.
+export function summaryLine(text, fallback = "") {
+  const first = String(text ?? "").split("\n").find((l) => l.trim()) || "";
+  return mdInline(first.trim().replace(/^#{1,6}\s+/, "") || fallback);
+}
+
+// A model- or operator-written body inside a LIST row: rendered inline, clamped to two lines,
+// with the button that opens it — or no button at all when it is already short.
+//
+// One seam for both queues: the Messages page's "waiting for the next run" rows and a routine
+// page's own inbox, which are two views of the same file. Each lays its row out differently
+// (the Messages row puts the expander among edit/withdraw; the routine card has an ops line in
+// its head), so this hands back the two pieces rather than a layout. A 40-line report used to
+// push everything under it two screens down on both.
+const CLAMP_OVER_CHARS = 180;
+
+export function clampedBody(text, cls = "p-text") {
+  const node = document.createElement("span");
+  node.className = `${cls} clamped`;
+  node.append(mdInline(text || ""));
+  const s = String(text || "");
+  if (s.length <= CLAMP_OVER_CHARS && !s.includes("\n")) return { node, toggle: null };
+  const toggle = document.createElement("button");
+  toggle.className = "btn small ghost";
+  toggle.type = "button";
+  toggle.textContent = "expand";
+  toggle.onclick = () => {
+    toggle.textContent = node.classList.toggle("clamped") ? "expand" : "collapse";
+  };
+  return { node, toggle };
+}

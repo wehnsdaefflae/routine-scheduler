@@ -33,6 +33,8 @@ import threading
 from dataclasses import dataclass, field
 from typing import Any
 
+from . import enginenote
+
 
 @dataclass
 class Pending:
@@ -141,11 +143,9 @@ def _record(loop, pending: Pending, *, announce: bool) -> None:
     ctx.transcript.event("compaction", {**info, "background": True})
     if not announce:
         return
-    ctx.transcript.event("user_injection", {"text": "[engine] navigable history ready",
-                                            "source": "engine"})
-    loop.messages.append({"role": "user", "content":
-        f"ENGINE NOTE: the {pending.elided} messages elided earlier have finished archiving into "
+    enginenote.append(loop,
+        f"the {pending.elided} messages elided earlier have finished archiving into "
         f"a NAVIGABLE history — `{loop._hist_rel}/INDEX.md` lists {info.get('history_files', 0)} "
         "files with a line each on what they hold. The one-line digest above stays as a map of "
         "what happened; read the index and then the specific files when you need the actual "
-        "detail of an earlier turn."})
+        "detail of an earlier turn.")

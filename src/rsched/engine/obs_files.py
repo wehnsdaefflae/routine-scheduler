@@ -40,6 +40,13 @@ def format_files(obs: dict, kind: str) -> str | None:  # noqa: C901, PLR0911, PL
                 # with "look at it now" and appended the failure at its end.
                 parts.append(f"--- {f['path']} NOT SHOWN — {f['error']}. You have not seen this "
                              "file: describe nothing from it.")
+            elif f.get("native") and obs.get("media_replayed"):
+                # On RESUME the image is not re-attached (the replay rebuilds text-only
+                # messages), so "look at it now" would tell the model to look at what is not
+                # there — the very shape R1493 was filed for, on the resume path.
+                parts.append(f"--- {f['path']} ({f['media_type']}) — was shown to an EARLIER "
+                             "leg of this run and is NOT in this prompt; view_image it again "
+                             "if you need to see it.")
             elif f.get("native"):
                 parts.append(f"--- {f['path']} ({f['media_type']}) — shown to you below; "
                              "look at it now.")
@@ -48,8 +55,12 @@ def format_files(obs: dict, kind: str) -> str | None:  # noqa: C901, PLR0911, PL
                              f"can't view it directly):\n{f.get('text', '')}")
             else:
                 parts.append(f"--- {f['path']}: (no result)")
-        head = ("OBSERVATION (view_image — image(s) attached below for you to see):"
-                if obs.get("media") else "OBSERVATION (view_image):")
+        if obs.get("media"):
+            head = "OBSERVATION (view_image — image(s) attached below for you to see):"
+        elif obs.get("media_replayed"):
+            head = "OBSERVATION (view_image — image(s) shown to an earlier leg of this run):"
+        else:
+            head = "OBSERVATION (view_image):"
         return head + "\n" + "\n\n".join(parts)
     if kind == "write_file":
         if err := obs.get("error"):

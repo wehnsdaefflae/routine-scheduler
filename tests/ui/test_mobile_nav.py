@@ -89,7 +89,7 @@ def test_mobile_bottom_nav_shows_every_destination_over_a_wide_transcript(ui, ui
     _seed_wide_transcript(ui, "uir", "20260904-000353")
     ui_page.set_viewport_size(PHONE)
     ui_page.goto(f"{ui.url}/#/run/uir:20260904-000353")
-    expect(ui_page.locator(NAV).first).to_be_visible(timeout=10_000)
+    expect(ui_page.locator(NAV).first).to_be_visible()
     expect(ui_page.locator(NAV)).to_have_count(len(NAV_ROUTES))
     assert _fits(ui_page, NAV, PHONE["width"]) == len(NAV_ROUTES)
 
@@ -104,7 +104,7 @@ def test_no_route_scrolls_sideways_on_a_phone(ui, ui_page):
     too_wide = {}
     for route in (*NAV_ROUTES, "#/run/uir:20260904-000353"):
         ui_page.goto(f"{ui.url}/{route}")
-        expect(ui_page.locator(NAV).first).to_be_visible(timeout=10_000)
+        expect(ui_page.locator(NAV).first).to_be_visible()
         ui_page.wait_for_timeout(350)   # let the view's own fetches paint
         width = ui_page.evaluate("() => document.documentElement.scrollWidth")
         if width > PHONE["width"] + 1:
@@ -147,10 +147,12 @@ def test_the_subscription_quota_chip_cannot_widen_the_dashboard_on_a_phone(ui, u
     # the dashboard mounts at #/routines (see test_dashboard_shows_proxy_quota)
     ui_page.goto(f"{ui.url}/#/routines")
     chip = ui_page.locator(".page-head .chip").first
-    expect(chip).to_be_visible(timeout=10_000)
+    expect(chip).to_be_visible()
 
-    # ONE window on the chip — the tightest, which is the only one that can summon anybody
-    expect(chip).to_have_text("7d sonnet 54% left")
+    # ONE window on the chip — the tightest, which is the only one that can summon anybody —
+    # behind the NOUN it needs: the "Claude quota" label beside it is hidden at this width, so
+    # without it the chip read "7d sonnet 54% left" with nothing saying what was 54% left.
+    expect(chip).to_have_text("quota · 7d sonnet 54% left")
     # the full breakdown is not lost, it moved to the tooltip
     assert "5h 61% left" in (chip.get_attribute("title") or "")
 

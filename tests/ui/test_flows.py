@@ -7,26 +7,26 @@ harness exists to catch.
 
 import json
 import re
-import time
 
 import yaml
 from playwright.sync_api import expect
 
+from .conftest import until
+
+
+def _unfold(page) -> None:
+    """Open every routine-page config group.
+
+    The page ships with only its leading group open (views/routine.js SECTION_GROUPS): seven
+    open at once made it 11-12 000px tall. A control inside a folded group is not visible, so a
+    test that reads one unfolds first. What the DEFAULT is, and that the choice is remembered,
+    is pinned in test_routine_groups.py — not here.
+    """
+    page.wait_for_selector(".rgroup-head")
+    page.evaluate("() => { for (const d of document.querySelectorAll('details.rgroup')) d.open = true; }")
 
 def _toast(page):
     return page.locator("#toast:not([hidden])")
-
-
-def _wait_until(cond, timeout_s=8.0):
-    """Explicit persist-wait: poll a condition instead of sleeping a fixed amount — fixed
-    sleeps before disk asserts are exactly what flakes under xdist load (standing rule,
-    self-audit 2026-07-17)."""
-    deadline = time.monotonic() + timeout_s
-    while time.monotonic() < deadline:
-        if cond():
-            return
-        time.sleep(0.1)
-    raise AssertionError(f"condition not met within {timeout_s:.1f}s")
 
 
 # ---- 1. Decisions answer flow ------------------------------------------------------------
@@ -434,7 +434,7 @@ def test_conversation_admin_toggle_sends_token(ui, ui_page):
     ui_page.wait_for_url("**/conversations/**")
 
     admin = ui_page.get_by_role("button", name="admin", exact=True)
-    admin.wait_for(timeout=10_000)                      # the composer mounts after an async fetch
+    admin.wait_for()                      # the composer mounts after an async fetch
     expect(admin).to_be_visible()                       # off by default: label is plain "admin"
     admin.click()
     # the themed prompt collects the token (no native prompt) — fill it and confirm
@@ -466,7 +466,7 @@ def test_new_conversation_admin_toggle_sends_token_on_create(ui, ui_page):
     x-admin-token header; an unarmed create carries none."""
     ui_page.goto(f"{ui.url}/#/conversations")
     admin = ui_page.get_by_role("button", name="admin", exact=True)
-    admin.wait_for(timeout=10_000)                      # composer mounts after an async fetch
+    admin.wait_for()                      # composer mounts after an async fetch
     expect(admin).to_be_visible()                       # off by default
     admin.click()
     dlg = ui_page.locator(".modal-overlay")
@@ -491,7 +491,7 @@ def test_new_conversation_composer_sets_honeypot_role_on_create(ui, ui_page):
     the refusal machinery has a honeypot from reply #1. Otherwise it was unreachable before
     the first reply."""
     ui_page.goto(f"{ui.url}/#/conversations")
-    ui_page.locator(".conv-new textarea").wait_for(timeout=10_000)
+    ui_page.locator(".conv-new textarea").wait_for()
     # the uncensored (honeypot) picker exists and offers catalog models
     hp_select = ui_page.locator('select[title="uncensored model — where refused requests are delivered"]')
     expect(hp_select).to_be_visible()
@@ -546,7 +546,7 @@ def test_run_view_deliberation_relevel(ui, ui_page):
 def test_artifact_row_shows_time_and_deletes(ui, ui_page):
     """The artifact row shows WHEN the file was last updated (user order 2026-08-14 —
     an artifact is rewritten in place, so the version must be visible, not a tooltip)
-    and its hover delete removes the file after the confirm dialog."""
+    and its hover delete removes the file after the themed confirm dialog."""
     ui.seed_run("uir", "20260715-150000", "finished", summary="done")
     art = ui.routine_dir("uir") / "artifacts"
     art.mkdir(exist_ok=True)
@@ -555,9 +555,11 @@ def test_artifact_row_shows_time_and_deletes(ui, ui_page):
     row = ui_page.locator(".art-item")
     expect(row).to_have_count(1)
     expect(row.locator(".art-time")).not_to_be_empty()
-    ui_page.on("dialog", lambda d: d.accept())
     row.hover()
     row.locator(".art-del").click()
+    # components/dialog.js, not window.confirm: no native dialog handler is installed here, so
+    # a call site falling back to confirm() would block the page and fail this test.
+    _confirm_modal(ui_page, "delete")
     expect(ui_page.locator(".art-item")).to_have_count(0)
     assert not (art / "notes.md").exists()
 
@@ -571,13 +573,13 @@ def test_composer_picks_rules_pre_start(ui, ui_page):
 
     ui_page.goto(f"{ui.url}/#/conversations")
     section = ui_page.locator("h2", has_text="General rules")
-    expect(section).to_be_visible(timeout=10_000)
+    expect(section).to_be_visible()
     picker = ui_page.locator(".rulepicker")
     expect(picker).to_be_visible()
     expect(picker.locator("button", has_text="apply")).to_have_count(0)   # pre-start: no save
 
     rows = picker.locator(".rule-bound")
-    expect(rows.first).to_be_visible(timeout=10_000)
+    expect(rows.first).to_be_visible()
     before = rows.count()
     assert before > 0, "a new conversation should start with rules bound"
     row = rows.first
@@ -614,7 +616,7 @@ def test_run_rail_sections_collapse_and_list_a_reports_deliverable(ui, ui_page):
 
     # R339: the reports/ file IS the artifact — the panel used to say "no artifacts yet"
     row = ui_page.locator(".art-item", has_text="findings.md")
-    expect(row).to_be_visible(timeout=10_000)
+    expect(row).to_be_visible()
 
     # R340/R341: the caps are toggles here, exactly as in the conversation rail
     cap = ui_page.locator('.run-rail .rail-cap[data-rail="tasks"]')
@@ -719,7 +721,7 @@ def test_conversation_composer(ui, ui_page):
     # apiUpload round-trip resolves; a toast alone (any lingering toast satisfies to_be_visible
     # under xdist load) is NOT proof the send landed. Poll for the file itself — the standing
     # anti-flake rule for disk asserts — so this does not read the inbox before the write lands.
-    _wait_until(lambda: len(list((conv_dir / "inbox").glob("msg-*.json"))) == 1)
+    until(lambda: len(list((conv_dir / "inbox").glob("msg-*.json"))) == 1)
     messages = list((conv_dir / "inbox").glob("msg-*.json"))
     assert len(messages) == 1
     assert "gym" in messages[0].read_text(encoding="utf-8")
@@ -887,6 +889,7 @@ def test_conversation_refer_to_message(ui, ui_page):
 
 def test_routine_page_saves(ui, ui_page):
     ui_page.goto(f"{ui.url}/#/routine/uir")
+    _unfold(ui_page)
     desc = ui_page.locator('textarea[placeholder^="what this routine does"]')
     expect(desc).to_have_value("A test routine.")
     desc.fill("A sharper description.\nnow spanning two lines.")
@@ -941,7 +944,7 @@ def test_routine_page_saves(ui, ui_page):
     # (the removal has no distinct toast to sync on; a 200ms nap flaked under xdist load)
     ui_page.locator(".tags .tag", has_text="nightly").locator(".x").click()
     expect(ui_page.locator(".tags .tag", has_text="nightly")).to_have_count(0)
-    _wait_until(lambda: yaml.safe_load(
+    until(lambda: yaml.safe_load(
         (ui.routine_dir("uir") / "routine.yaml").read_text(encoding="utf-8"))["tags"] == [])
 
     # permissions: the panel re-renders in place from the server's post-cascade state
@@ -962,11 +965,16 @@ def test_routine_page_permission_help_and_doc_expand(ui, ui_page):
     example help, and conduct-permission / practice-module rows expand to the FULL
     library doc (the same prose the run's prompt receives)."""
     ui_page.goto(f"{ui.url}/#/routine/uir")
+    _unfold(ui_page)
     perm_panel = ui_page.locator(
         ".panel", has=ui_page.get_by_role("button", name="save permissions"))
     # capability rows explain themselves with examples (bare kind/util names told nothing).
     # The help rides the card of the doc that REQUIRES the capability, so it is asserted on
     # what this routine holds — util-authoring and memory (config.base.DEFAULT_PERMISSIONS).
+    # A card whose requirements are ALL MET folds its stack (the badge already said "ready"),
+    # so this opens them; a card that will fail or needs a decision never folds.
+    perm_panel.evaluate(
+        "n => { for (const d of n.querySelectorAll('details.ability-more')) d.open = true; }")
     expect(perm_panel.get_by_text("pdf-stamp", exact=False)).to_be_visible()
     expect(perm_panel.get_by_text("facts earlier runs paid to learn", exact=False)).to_be_visible()
     # an ability the routine does NOT hold is a catalogue row: no stack, no state, no alarm
@@ -1031,13 +1039,12 @@ def test_library_tag_autosuggest_filters(ui, ui_page):
     removable chip, and keeps the filter in the URL; removing the chip restores the list."""
     ui_page.goto(f"{ui.url}/#/library")
     inp = ui_page.locator("[data-tag-filter]")
-    expect(inp).to_be_visible(timeout=10_000)
+    expect(inp).to_be_visible()
     total = ui_page.locator("table.list tr").count()
     tag = ui_page.locator("#lib-tag-suggest option").first.get_attribute("value")
     inp.fill(tag)
     inp.press("Enter")
-    expect(ui_page.locator(".filterbar .tag.on", has_text=tag)).to_be_visible(
-        timeout=10_000)
+    expect(ui_page.locator(".filterbar .tag.on", has_text=tag)).to_be_visible()
     assert f"tags={tag}" in ui_page.url
     assert ui_page.locator("table.list tr").count() < total, \
         "committing a tag should narrow the sections"
@@ -1048,7 +1055,7 @@ def test_library_tag_autosuggest_filters(ui, ui_page):
     # removing the chip restores the full list
     ui_page.locator(".filterbar .tag.on", has_text=tag).click()
     deadline = total
-    expect(inp).to_have_attribute("placeholder", "filter by tag…", timeout=10_000)
+    expect(inp).to_have_attribute("placeholder", "filter by tag…")
     assert ui_page.locator("table.list tr").count() == deadline
 
 
@@ -1195,7 +1202,7 @@ def test_settings_grouped_layout(ui, ui_page):
     stable sec-<id> anchor and the ?section deep-link jump the TOC and other tests rely on."""
     ui_page.set_viewport_size({"width": 1600, "height": 1000})
     ui_page.goto(f"{ui.url}/#/settings")
-    ui_page.wait_for_selector("#sec-endpoints", timeout=10_000)
+    ui_page.wait_for_selector("#sec-endpoints")
 
     # the four cognitive-model group eyebrows are present, in order
     groups = ui_page.locator(".set-group .kicker")
@@ -1203,11 +1210,18 @@ def test_settings_grouped_layout(ui, ui_page):
     for i, label in enumerate(["Intelligence", "Connections", "Code", "This instance"]):
         expect(groups.nth(i)).to_have_text(label)
 
-    # every section carries a plain reader-side description, and a group carries a why-blurb
-    # (8 since 0.192.0: the library repo has no settings surface — library-sync owns it)
-    expect(ui_page.locator(".set-desc")).to_have_count(8)
-    expect(ui_page.locator("p.set-desc").first).not_to_be_empty()
+    # ONE explanation per section. The page used to carry three layers — group blurb, section
+    # desc, panel intro — between the h1 and the first control, so a section that already
+    # explains itself inside its panel no longer repeats it above. Server is the one panel with
+    # no intro of its own, so it is the one section that keeps a `desc`. `.set-desc` is the
+    # shared class for an explanation at EITHER level — a panel's own intro wears it too, one
+    # voice at one measure — so the section-level line is the <p> that follows a section heading.
+    section_desc = ui_page.locator('h2[id^="sec-"] + p.set-desc')
+    expect(section_desc).to_have_count(1)
+    expect(ui_page.locator("#sec-server + p.set-desc")).to_contain_text("Runtime configuration")
     expect(ui_page.locator(".set-groupblurb").first).to_contain_text("reasoning")
+    # …and nothing was lost: the panel that lost its desc still opens by saying what it is
+    expect(ui_page.get_by_text("Model transports only")).to_be_visible()
 
     # the grouped nav labels mirror the groups (not one flat "section" label)
     expect(ui_page.locator(".settings-nav .lbl", has_text="Intelligence")).to_be_visible()
@@ -1270,7 +1284,9 @@ def test_item_refs_link_and_flash(ui, ui_page):
     (rdir / "audit" / "report.json").write_text(json.dumps(report), encoding="utf-8")
 
     ui_page.goto(f"{ui.url}/#/messages?type=all")
-    link = ui_page.locator(".panel.prose a.ref-link", has_text="D1")
+    # the last pass's summary is a labelled disclosure (open by default) and `data-report-summary`
+    # is its stable hook — the prose inside it is no longer the panel element itself
+    link = ui_page.locator("[data-report-summary] a.ref-link", has_text="D1")
     expect(link).to_have_attribute("href", "#/messages?focus=D1")
     expect(ui_page.locator("#ref-F1")).to_be_visible()      # findings AND decisions get cards
     expect(ui_page.locator("#ref-D1")).to_contain_text("Pick a path")
@@ -1533,7 +1549,7 @@ def test_dashboard_shows_lane_membership(ui, ui_page):
     chip = card.locator("button.lane-chip", has_text="Maintenance")
     expect(chip).to_be_visible()
     chip.click()
-    expect(ui_page.locator(f'[data-lane="{rec["id"]}"]')).to_be_visible(timeout=10_000)
+    expect(ui_page.locator(f'[data-lane="{rec["id"]}"]')).to_be_visible()
     ui_page.locator("[data-lane-editor-close]").click()
 
     # list view: a routine in a lane lives ONLY under its lane row (F281) — expand it,
@@ -1581,7 +1597,7 @@ def test_dashboard_list_default_lane_rows_and_inline_pause(ui, ui_page):
     ui_page.locator("table.list tbody tr", has_text="Test uir").last \
         .get_by_role("button", name="⏸").click()
     row = ui_page.locator("table.list tbody tr.disabled-row", has_text="Test uir")
-    expect(row).to_be_visible(timeout=10_000)          # the dimmed row…
+    expect(row).to_be_visible()          # the dimmed row…
     expect(row.locator(".chip.disabled", has_text="off")).to_be_visible()   # …and the off tag
     cfg = yaml.safe_load((ui.routines / "uir" / "routine.yaml").read_text(encoding="utf-8"))
     # The inline control still PATCHes `enabled` — that is the row's vocabulary and it is
@@ -1593,7 +1609,7 @@ def test_dashboard_list_default_lane_rows_and_inline_pause(ui, ui_page):
     ui_page.locator("table.list tbody tr", has_text="Test uir").last \
         .get_by_role("button", name="▷").click()
     expect(ui_page.locator("table.list tbody tr", has_text="Test uir").last
-           .get_by_role("button", name="⏸")).to_be_visible(timeout=10_000)
+           .get_by_role("button", name="⏸")).to_be_visible()
 
 
 def test_dashboard_lane_managed_schedule_shown(ui, ui_page):
@@ -1706,8 +1722,10 @@ def test_global_stream_remints_ticket_on_reconnect(ui, ui_page):
     # discriminator is whether the client RE-MINTS. The unfixed client lets EventSource
     # retry the SAME dead ticket, so `seen` never grows past 1; the fix mints a fresh ticket
     # on each reconnect under backoff (first retry at ~1s), so distinct tickets accumulate.
-    # Wait past the first backoff, then require ≥2 DISTINCT tickets.
-    ui_page.wait_for_timeout(3000)
+    # The unfixed client lets EventSource retry the SAME dead ticket, so `seen` never grows
+    # past 1; wait for the second DISTINCT ticket rather than for a clock, so the test costs
+    # the backoff it actually needs (~1 s) instead of three seconds every run.
+    until(lambda: len(seen) >= 2, what="a re-minted ticket", page=ui_page, timeout_s=8)
     assert len(seen) >= 2, (
         f"client did not re-mint a fresh ticket after the stream dropped (saw {len(seen)})")
 
@@ -1719,6 +1737,7 @@ def test_routine_page_rule_picker_binds_a_general_rule(ui, ui_page):
     import yaml
     rdir = ui.routines / "uir"
     ui_page.goto(f"{ui.url}/#/routine/uir")
+    _unfold(ui_page)
     panel = ui_page.locator(".panel", has=ui_page.locator(".rulepicker"))
     expect(panel).to_be_visible()
     row = panel.locator('.avail-row[data-rule="evidence-discipline"]')
@@ -1749,7 +1768,9 @@ def test_conversation_header_rule_picker(ui, ui_page):
     ui_page.wait_for_url("**/conversations/**")
     conv_dir = ui.conversations / ui_page.url.rsplit("/", 1)[-1]
 
-    ui_page.locator("details", has_text="⚙ capabilities & budgets").locator("summary").click()
+    # `.conv-caps > summary`, the hook the other browser tests use: the panel nests a disclosure
+    # per permission requirement, so a descendant `summary` no longer names one element.
+    ui_page.locator(".conv-caps > summary").click()   # ⚙ capabilities & budgets
     picker = ui_page.locator(".rulepicker")
     expect(picker).to_be_visible()
     # conversations start with their default set already ticked
@@ -1804,7 +1825,7 @@ def test_run_page_blocking_question_shows_option_buttons(ui, ui_page):
     expect(panel.locator(".answer-opts button")).to_have_count(2)
     panel.get_by_role("button", name="fast", exact=True).click()
     expect(_toast(ui_page)).to_contain_text("answer sent")
-    _wait_until((ui.routine_dir("uir") / "inbox" / "answer-q-opt.json").exists)
+    until((ui.routine_dir("uir") / "inbox" / "answer-q-opt.json").exists)
     answer = json.loads((ui.routine_dir("uir") / "inbox" / "answer-q-opt.json")
                         .read_text(encoding="utf-8"))
     assert answer["text"] == "fast"
@@ -1825,7 +1846,7 @@ def test_decisions_page_access_request_offers_the_four_decisions(ui, ui_page):
     for label in ("allow now", "allow once", "allow forever", "deny now", "never"):
         expect(panel.get_by_role("button", name=label, exact=True)).to_be_visible()
     panel.get_by_role("button", name="allow forever", exact=True).click()
-    _wait_until((ui.routine_dir("uir") / "inbox" / "answer-q-req.json").exists)
+    until((ui.routine_dir("uir") / "inbox" / "answer-q-req.json").exists)
     answer = json.loads((ui.routine_dir("uir") / "inbox" / "answer-q-req.json")
                         .read_text(encoding="utf-8"))
     assert answer["decision"] == "allow_forever"
@@ -1840,6 +1861,7 @@ def test_secret_exposure_panel_refreshes_on_decision(ui, ui_page):
     ui.seed_question("uir", "q-sec", "Expose secret FOO_TOKEN to routine 'uir'?",
                      mode="blocking", options=["approve", "decline"])
     ui_page.goto(f"{ui.url}/#/routine/uir")
+    _unfold(ui_page)
     expect(ui_page.locator(".panel", has_text="no secrets in the store yet")).to_be_visible()
 
     # the grant lands in routine.yaml (as the web decision handler persists it) …
@@ -1890,7 +1912,7 @@ def test_run_transcript_inline_blocking_approval_strip(ui, ui_page):
     expect(inline.locator(".answer-opts button")).to_have_count(2)
     assert inline.locator("textarea").count() == 0
     inline.get_by_role("button", name="approve", exact=True).click()
-    _wait_until((ui.routine_dir("uir") / "inbox" / "answer-q-wu.json").exists)
+    until((ui.routine_dir("uir") / "inbox" / "answer-q-wu.json").exists)
     answer = json.loads((ui.routine_dir("uir") / "inbox" / "answer-q-wu.json")
                         .read_text(encoding="utf-8"))
     assert answer["text"] == "approve"
@@ -1907,7 +1929,7 @@ def test_new_conversation_composer_folder_access(ui, ui_page):
     data_dir.mkdir(exist_ok=True)
     ui_page.goto(f"{ui.url}/#/conversations")
     add = ui_page.get_by_role("button", name="+ add directory…").first   # the read+write editor
-    add.wait_for(timeout=10_000)
+    add.wait_for()
     add.click()
     dlg = ui_page.locator(".modal-overlay")
     expect(dlg).to_be_visible()
@@ -1946,7 +1968,7 @@ def test_conversation_header_folder_access_edit(ui, ui_page):
     ui_page.locator("summary", has_text="capabilities & budgets").click()
     # two editors in the panel: read first, write second
     add = ui_page.get_by_role("button", name="+ add directory…").nth(1)
-    add.wait_for(timeout=10_000)
+    add.wait_for()
     add.click()
     dlg = ui_page.locator(".modal-overlay")
     expect(dlg).to_be_visible()
@@ -1969,7 +1991,7 @@ def test_model_pickers_label_window_sizes(ui, ui_page):
     header's switcher (fed by the detail's `catalog_meta`)."""
     ui_page.goto(f"{ui.url}/#/conversations")
     opt = ui_page.locator('option[value="m"]').first
-    opt.wait_for(state="attached", timeout=10_000)
+    opt.wait_for(state="attached")
     text = opt.text_content() or ""
     assert "ctx" in text and "tight window" in text
 
@@ -1978,7 +2000,7 @@ def test_model_pickers_label_window_sizes(ui, ui_page):
     ui_page.get_by_role("button", name="start conversation").click()
     ui_page.wait_for_url("**/conversations/**")
     head_opt = ui_page.locator('.conv-model option[value="m"]').first
-    head_opt.wait_for(state="attached", timeout=10_000)
+    head_opt.wait_for(state="attached")
     assert "ctx" in (head_opt.text_content() or "")
 
 
@@ -2008,7 +2030,7 @@ def test_enter_newline_shift_enter_sends(ui, ui_page):
     ui_page.get_by_role("button", name="start conversation").click()
     ui_page.wait_for_url("**/conversations/**")
     composer = ui_page.locator(".conv-composer textarea")
-    composer.wait_for(timeout=10_000)
+    composer.wait_for()
     composer.fill("line one")
     composer.press("Enter")                 # stays local: a newline, not a send
     composer.press_sequentially("line two")

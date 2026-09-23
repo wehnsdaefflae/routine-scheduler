@@ -90,6 +90,41 @@ def _log_cache_health(ctx: RunContext, slug: str) -> None:
         cache_write_tokens=writes)
 
 
+def _log_cost_trend(ctx: RunContext, slug: str) -> None:
+    """Emit `cost_trend_degraded` when this routine's last runs are clearly worse than the
+    ones before them — same thresholds as the routine page's flag, keyed on TIME.
+
+    The version-keyed flag beside it can only move when THIS routine's recipe moves, and the
+    most expensive regressions move no recipe at all: a library RULE revision reaches every
+    holder at once (error-recovery 30 routines on 2026-09-16, web-research 136 on 09-18).
+    self-audit's weekly medians went 49,409 tokens / 87% ok to 338,024 / 43% and back to
+    95,782 with no recipe change under any of it, and nothing on the instance said a word —
+    the read model had the reading, the routine page had to be OPENED to see it. This is the
+    push half: it lands in the stream the nightly audit already reads.
+
+    Called after this run's own usage record is written, so the flag includes it.
+    """
+    from ..health_events import log_health_event
+    from ..readmodels.run_health import recent_trend
+    from ..readmodels.usage_stream import usage_records
+
+    records = [rec for rec in usage_records(ctx.server.routines_home)
+               if not rec.get("depth") and rec.get("routine") == slug]
+    trend = recent_trend(records)
+    if not trend.get("flagged"):
+        return
+    before, after = trend["before"], trend["after"]
+    log_health_event(
+        ctx.server.routines_home, "cost_trend_degraded", routine=slug, run_id=ctx.run_id,
+        detail=(f"the last {trend['window']} runs against the {trend['window']} before them: "
+                + "; ".join(trend["reasons"])),
+        window=trend["window"],
+        turns_median_before=before["turns_median"], turns_median_after=after["turns_median"],
+        tokens_median_before=before["tokens_median"],
+        tokens_median_after=after["tokens_median"],
+        fail_rate_before=before["fail_rate"], fail_rate_after=after["fail_rate"])
+
+
 def load_workflow(routine_dir, cfg) -> tuple[str, dict, list[str] | None]:
     """Load the routine's OWN main.md body (the recipe was materialized into it at generation).
     Returns (main_body, provenance, allowed_tools).
@@ -193,24 +228,32 @@ def run_routine(routine_dir: Path, server: ServerConfig, *, run_ts: str | None =
         status = EngineLoop(ctx, body, instruction,
                             allowed_tools=allowed_tools, resume=bool(resume_from)).run()
         from ..health_events import log_workflow_usage
+        from ..workflows import library
 
         log_workflow_usage(server.routines_home, routine=cfg.slug, run_id=ctx.run_id,
                            workflow=prov.get("slug") or "", depth=0, status=status,
                            turns=ctx.turn,
                            tokens=int(ctx.usage.get("in", 0)) + int(ctx.usage.get("out", 0)),
                            cost=float(ctx.usage.get("cost") or 0.0), referrals=ctx.referrals,
-                           recipe_commit=ctx.recipe_commit, utils=ctx.util_stats,
+                           recipe_commit=ctx.recipe_commit,
+                           # …and the library's HEAD, read ONCE here at the run's end: a
+                           # rule revision lands on every holder without moving any
+                           # routine's recipe commit, so nothing else dates it.
+                           library_commit=library.head_commit(server.libraries_home),
+                           utils=ctx.util_stats,
                            asks_deferred=ctx.asks_deferred,
                            compression=ctx.compression_stats)
         _log_cache_health(ctx, cfg.slug)
-        # Refresh the persisted util-stats snapshot (the single source of truth the Stats tab
-        # and the util-review routine both read) now that this run's usage record has landed.
-        # Best-effort: a telemetry write must never break a finished run.
+        # Both read the stream this run's record just landed in: the persisted util-stats
+        # snapshot (the single source the Stats tab and the util-review routine share) and
+        # the cost-trend flag. Best-effort: a telemetry write must never break a finished run.
         try:
             from ..readmodels.util_stats import write_util_stats_snapshot
             write_util_stats_snapshot(server)
+            _log_cost_trend(ctx, cfg.slug)
         except Exception:  # stats telemetry must never break a run — but leave a breadcrumb
-            log.warning("util-stats snapshot refresh failed at run finish", exc_info=True)
+            log.warning("run-end telemetry failed (util-stats snapshot / cost trend)",
+                        exc_info=True)
         return status, run_dir
     finally:
         machines_mod.unmount_routine_shares(mounts)

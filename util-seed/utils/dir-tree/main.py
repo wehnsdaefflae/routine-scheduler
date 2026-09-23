@@ -12,7 +12,14 @@ fs: roots
 
 Walks <root> up to --depth levels (default 2), listing dirs and files with
 sizes. Skips nothing by default. Caps entries at --max (default 400). Data on
-stdout; diagnostics on stderr; exit 0 on success."""
+stdout; diagnostics on stderr.
+
+AN UNREADABLE DIRECTORY IS REPORTED, NEVER COUNTED AS EMPTY. A directory the walk
+cannot list (permission denied, gone mid-walk, or outside this util's sandbox roots)
+is named on stderr and in the result's `errors` list. If NOTHING could be listed the
+exit is 1 — a root outside the run's granted fs roots used to read as `entries: 0`,
+exit 0, which is indistinguishable from an empty directory and sent the caller looking
+for files that were there all along."""
 import argparse
 import json
 import os
@@ -22,8 +29,15 @@ import sys
 def run(root, depth=2, max_n=400):
     root = os.path.abspath(root)
     entries = []
+    errors = []
+
+    def note(exc):
+        """os.walk swallows every listing error unless it is handed one of these."""
+        errors.append({"path": getattr(exc, "filename", None) or root,
+                       "error": exc.strerror or str(exc)})
+
     base_depth = root.rstrip(os.sep).count(os.sep)
-    for dirpath, dirnames, filenames in os.walk(root):
+    for dirpath, dirnames, filenames in os.walk(root, onerror=note):
         cur_depth = dirpath.rstrip(os.sep).count(os.sep) - base_depth
         if cur_depth > depth:
             dirnames[:] = []
@@ -38,7 +52,7 @@ def run(root, depth=2, max_n=400):
                             "type": "file", "size": sz})
             if len(entries) >= max_n:
                 return {"root": root, "depth": depth, "truncated": True,
-                        "count": len(entries), "entries": entries}
+                        "count": len(entries), "entries": entries, "errors": errors}
         # record dirs at this level too
         dirnames.sort()
         for dn in dirnames:
@@ -46,9 +60,9 @@ def run(root, depth=2, max_n=400):
                             "type": "dir", "size": 0})
             if len(entries) >= max_n:
                 return {"root": root, "depth": depth, "truncated": True,
-                        "count": len(entries), "entries": entries}
+                        "count": len(entries), "entries": entries, "errors": errors}
     return {"root": root, "depth": depth, "truncated": False,
-            "count": len(entries), "entries": entries}
+            "count": len(entries), "entries": entries, "errors": errors}
 
 
 def main():
@@ -70,6 +84,11 @@ def main():
         paths = {e["path"] for e in res["entries"]}
         assert "a" in paths, paths
         assert os.path.join("a", "f.txt") in paths, paths
+        assert res["errors"] == [], res["errors"]
+        # an unlistable root is an ERROR, not an empty directory (R1767)
+        blind = run(os.path.join(d, "nope"))
+        assert blind["count"] == 0 and blind["errors"], blind
+        assert blind["errors"][0]["path"].endswith("nope"), blind["errors"]
         print("selftest: ok", file=sys.stderr)
         return
 
@@ -80,6 +99,15 @@ def main():
         res = run(args.root, depth=args.depth, max_n=args.max)
     except Exception as e:
         print(f"error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    for err in res["errors"]:
+        print(f"warning: cannot list {err['path']}: {err['error']}", file=sys.stderr)
+    if res["errors"] and res["count"] == 0:
+        print("error: nothing could be listed under "
+              f"{res['root']} — the directory is unreadable, not empty. If the path is "
+              "right, it is outside the fs roots this run granted: ask for a read root "
+              "covering it, or list a directory inside one.", file=sys.stderr)
         sys.exit(1)
 
     if args.json:

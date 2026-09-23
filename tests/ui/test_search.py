@@ -23,22 +23,40 @@ def test_search_finds_run_and_navigates(ui, ui_page):
     box.click()
     box.fill("zebra")
     hit = ui_page.locator(".gs-pop .gs-hit").first
-    expect(hit).to_be_visible(timeout=10_000)
+    expect(hit).to_be_visible()
     expect(hit).to_contain_text("zebra")
     expect(hit.locator("mark")).to_contain_text("zebra")          # highlighted match
     expect(ui_page.locator(".gs-pop .gs-group")).to_contain_text("uir")  # grouped by routine
     hit.click()
-    ui_page.wait_for_url(f"{ui.url}/#/run/uir:20260714-100000", timeout=10_000)
+    ui_page.wait_for_url(f"{ui.url}/#/run/uir:20260714-100000")
     expect(ui_page.locator(".gs-pop")).to_be_hidden()             # dropdown closed on navigate
 
 
 def test_search_no_matches_and_shortcut_focus(ui, ui_page):
     ui_page.goto(f"{ui.url}/#/routines")
-    ui_page.wait_for_selector("h1:has-text('Routines')", timeout=10_000)
+    ui_page.wait_for_selector("h1:has-text('Routines')")
     ui_page.keyboard.press("/")                                   # focuses from anywhere
     box = ui_page.locator("#global-search input")
     expect(box).to_be_focused()
     box.fill("xyzzy-nothing-matches-this")
-    expect(ui_page.locator(".gs-pop .gs-empty")).to_contain_text("no matches", timeout=10_000)
+    expect(ui_page.locator(".gs-pop .gs-empty")).to_contain_text("no matches")
     ui_page.keyboard.press("Escape")
     expect(ui_page.locator(".gs-pop")).to_be_hidden()
+
+
+def test_the_shortcut_is_visible_in_the_box_it_opens(ui, ui_page):
+    """The one control that reaches any run, decision or note in a keystroke advertised that
+    keystroke only in a hover tooltip. The key rides the box, steps aside while the box is in
+    use, and is absent on a phone, where there is no keyboard to advertise."""
+    ui_page.set_viewport_size({"width": 1425, "height": 900})
+    ui_page.goto(f"{ui.url}/#/routines")
+    key = ui_page.locator(".gsearch .gs-key")
+    expect(key).to_be_visible()
+    expect(key).to_have_text("/")
+    ui_page.locator("#global-search input").click()
+    expect(key).to_be_hidden()                       # out of the way of what you type
+
+    ui_page.set_viewport_size({"width": 390, "height": 844})
+    ui_page.reload()
+    ui_page.wait_for_selector("#global-search input")
+    expect(ui_page.locator(".gsearch .gs-key")).to_be_hidden()

@@ -417,13 +417,15 @@ def test_paused_lane_leaves_the_daemon_fire_table():
     from datetime import UTC, datetime
 
     from rsched import registry
-    from rsched.daemon.scheduler import Scheduler
     lane = {"cron": "0 7 * * *", "tz": "UTC", "paused": True}
     now = datetime(2026, 8, 10, 6, 0, tzinfo=UTC)
-    assert registry.next_fire(Scheduler._lane_schedulable(lane), now) is None
+    assert registry.next_fire(lanes.schedulable(lane), now) is None
+    # …and the catch-up reads the same adapter, so a paused lane has no missed fire either
+    assert registry.last_due_fire(lanes.schedulable(lane), now) is None
     lane["paused"] = False
-    nf = registry.next_fire(Scheduler._lane_schedulable(lane), now)
+    nf = registry.next_fire(lanes.schedulable(lane), now)
     assert nf is not None and nf.hour == 7
+    assert registry.last_due_fire(lanes.schedulable(lane), now).hour == 7
 
 
 def test_api_lane_pause_toggle(api_client):
@@ -472,3 +474,64 @@ def test_api_lane_catchup_patch(api_client):
     assert client.get("/api/lanes").json()["lanes"][0]["catchup"] == "skip"
     assert client.patch(f"/api/lanes/{lane_id}", json={"catchup": "twice"}).status_code == 400
 
+
+
+def test_an_unknown_lane_tz_degrades_instead_of_killing_the_scheduler(tmp_path):
+    """The lane store is hand-editable JSON with no schema on the way in, and an unknown zone
+    reaches `ZoneInfo` inside `Scheduler.rescan` and the lane boot catch-up — both of
+    which run at BOOT, before the loop's tick guard, so the exception unwound the scheduler
+    task while uvicorn kept serving. `"Europe/Berlin "` bought a daemon that answered
+    /api/status and never fired another run. It degrades like a corrupt cron: to "", which
+    every reader turns into the server zone.
+    """
+    from rsched.paths import atomic_write_json
+    home = tmp_path
+    lane = lanes.create(home, name="Sched", cron="0 7 * * *", tz="UTC")
+
+    def rewrite(tz: str) -> dict:
+        atomic_write_json(lanes.lanes_file(home),
+                          {"default_on_failure": "continue", "lanes": [{**lane, "tz": tz}]})
+        return lanes.get(home, lane["id"])
+
+    assert rewrite("Europe/Bavaria")["tz"] == ""             # unknown: fall back to the server
+    assert rewrite("Europe/Berlin ")["tz"] == "Europe/Berlin"  # a stray space is REPAIRED
+    assert rewrite("Europe/Bavaria")["cron"] == "0 7 * * *"  # the rest of the row survives
+
+
+async def test_a_boot_rescan_that_raises_does_not_stop_the_scheduler(tmp_path, monkeypatch):
+    """The tick body has been guarded since a tz typo took the heart out of a live daemon; the
+    boot rescan and boot catch-up run BEFORE the loop and were not, which is the same failure
+    with a worse blast radius — nothing fires until a human restarts it."""
+    import asyncio
+    import json
+
+    import rsched.daemon.scheduler as sched_mod
+    from conftest import FakeRunner
+    from rsched import registry
+    from rsched.config import ServerConfig
+    from rsched.daemon.events import EventBus
+    from rsched.daemon.scheduler import Scheduler
+
+    server = ServerConfig()
+    server.routines_home = tmp_path / "routines"
+    server.routines_home.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(sched_mod, "TICK_S", 0.02)
+    calls = {"n": 0}
+    real_scan = registry.scan
+
+    def exploding_scan(srv, home=None):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise ValueError("unknown timezone 'Europe/Berlin '")
+        return real_scan(srv, home) if home is not None else real_scan(srv)
+
+    monkeypatch.setattr(registry, "scan", exploding_scan)
+    sched = Scheduler(server, FakeRunner(), EventBus())
+    task = asyncio.create_task(sched.run_forever())
+    await asyncio.sleep(0.15)
+    assert not task.done()                       # the loop is alive, not unwound
+    task.cancel()
+    stream = server.routines_home / ".control" / "health-events.jsonl"
+    events = [json.loads(x) for x in stream.read_text(encoding="utf-8").splitlines() if x.strip()]
+    assert [e["event"] for e in events] == ["scheduler_tick_error"]
+    assert "boot rescan" in events[0]["detail"]

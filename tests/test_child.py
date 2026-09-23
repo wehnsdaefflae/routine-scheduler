@@ -27,9 +27,38 @@ def test_mode_noun_never_leaks_a_raw_enum():
 def test_handback_dirname_is_namespaced_per_child():
     """Concurrent siblings must not overwrite each other's deliverables, and the path must be
     stable enough for a parent to name it in later work."""
-    assert child.handback_dirname(3) == "artifacts/from-sub-3"
-    assert child.handback_dirname(1) != child.handback_dirname(2)
-    assert child.handback_dirname(1).startswith(child.HANDBACK_SUBDIR + "/")
+    assert child.handback_dirname(child.SUB, 3) == "artifacts/from-sub-3"
+    assert child.handback_dirname(child.SUB, 1) != child.handback_dirname(child.SUB, 2)
+    assert child.handback_dirname(child.SUB, 1).startswith(child.HANDBACK_SUBDIR + "/")
+
+
+def test_every_handback_noun_is_spelled_here_and_only_here():
+    """One module owns the hand-back, so it must know all three landing places — the branch
+    and the background delivery used to spell their own prefix beside their own copytree,
+    which is how the module that claims the contract knew only `from-sub-`.
+    """
+    assert child.handback_dirname(child.BACKGROUND, "bg-7") == "artifacts/from-bg-bg-7"
+    assert child.handback_dirname(child.BRANCH_HANDBACK, "c-p-b1") == (
+        "artifacts/from-branch-c-p-b1")
+
+
+def test_collect_handback_copies_and_names_what_landed(tmp_path):
+    """Paths, not a count: a parent told "3 artefact(s) were copied" has to go and list a
+    directory to find out what it was given."""
+    src, parent = tmp_path / "kid" / "artifacts", tmp_path / "parent"
+    src.mkdir(parents=True)
+    (src / "out.csv").write_text("a,b\n", encoding="utf-8")
+    (src / "deep").mkdir()
+    (src / "deep" / "notes.md").write_text("x", encoding="utf-8")
+    (parent / "artifacts").mkdir(parents=True)
+    (parent / "artifacts" / "mine.md").write_text("the parent's own", encoding="utf-8")
+
+    paths = child.collect_handback(src, parent, child.SUB, 2)
+    assert paths == ("artifacts/from-sub-2/deep/notes.md", "artifacts/from-sub-2/out.csv")
+    assert (parent / "artifacts" / "from-sub-2" / "out.csv").is_file()
+    assert (parent / "artifacts" / "mine.md").is_file()    # never clobbers the parent's own
+    # a child that wrote nothing hands back only its summary
+    assert child.collect_handback(tmp_path / "nothing", parent, child.SUB, 3) == ()
 
 
 def test_one_finished_headline_for_every_mode():
@@ -54,9 +83,9 @@ def test_finished_headline_names_what_the_child_handed_back():
     msg = control.child_finished_message(
         mode=child.PARALLEL, n=2, label="scan", workflow="general-task", status="ok",
         turns=3, summary="s", collected=("artifacts/from-sub-2/out.csv",))
-    assert "Collected from the child into your artifacts/: artifacts/from-sub-2/out.csv" in msg
-    assert "the child's own dir is gone from your reach" in msg
+    assert "Collected into your artifacts/: artifacts/from-sub-2/out.csv" in msg
+    assert "the sender's own dir is not in your reach" in msg
     # a child that wrote nothing hands back only its summary — no dangling collection line
-    assert "Collected from the child" not in control.child_finished_message(
+    assert "Collected into your artifacts/" not in control.child_finished_message(
         mode=child.PARALLEL, n=2, label="scan", workflow="general-task", status="ok",
         turns=3, summary="s")

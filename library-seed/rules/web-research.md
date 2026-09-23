@@ -10,13 +10,13 @@ tags: [tool-use, research, web]
 When a step turns on a fact about the outside world you are not certain of, **look it up
 instead of recalling it**. Your training is stale and lossy; a wrong fact quietly poisons
 everything downstream of it. Your CAPABILITIES catalog lists a web-search tool returning ranked
-title/url/snippet results, plus deeper retrieval ones (page fetch, scrapers).
+title/url/snippet results, and deeper retrieval ones (page fetch, scrapers).
 
 **When to search (default to yes for these):**
 - Anything time-sensitive or that changes: prices, availability, versions, schedules, who
   currently holds a role, "latest"/"current"/"today".
 - Specifics you'd otherwise approximate: exact names, dates, figures, identifiers, URLs.
-- A subject the instruction cares about but you only half-know — confirm before you build on it.
+- A domain the instruction cares about but you only half-know — confirm before you build on it.
 - Any claim you're about to write into a deliverable as if it were established fact.
 
 **When not to:** settled general knowledge, this routine's own state, or arithmetic — searching
@@ -27,6 +27,12 @@ those is just latency.
   page only when the snippet isn't enough.
 - Corroborate anything load-bearing with a second independent result before you rely on it;
   prefer primary/official sources over aggregators.
+- **A lookup that did not land has not landed.** When the search comes back empty or the page
+  will not open, that fact is still unverified — do not fill the gap by constructing what the
+  answer probably is. An address you assembled from a pattern is a guess wearing a URL's
+  clothes; never write one down as a source without fetching it. And an official document can
+  still be the wrong one: check that the edition you are reading is the one currently in force
+  before you build on its figures.
 - **Record provenance** — put the source URL next to the fact in your output or record so the
   claim is traceable and the next run needn't re-verify it.
 - Keep verified facts distinct from your own inferences; never present an inference as a lookup.

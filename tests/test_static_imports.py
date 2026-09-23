@@ -12,7 +12,7 @@ from pathlib import Path
 
 STATIC = Path(__file__).resolve().parents[1] / "static"
 MD_MODULE = "/static/md.js"
-HELPERS = ("mdInline", "md")
+HELPERS = ("mdInline", "md", "clampedBody", "summaryLine")
 
 
 def _js_files():

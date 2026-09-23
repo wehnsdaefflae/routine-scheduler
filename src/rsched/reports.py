@@ -65,8 +65,9 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
+from .engine import inbox
 from .ids import now_iso
-from .paths import atomic_write_json, file_lock
+from .paths import file_lock
 from .report_threads import OPEN_THREAD_CAP, ThreadCapError, open_threads, supersedable
 
 REPORTS_FILE = "reports.jsonl"
@@ -223,14 +224,20 @@ def file_report(routines_home: Path, *, routine: str, run_id: str, title: str, d
                 _append(path, {"id": old, "event": "superseded", "ts": now_iso(),
                                "by": item_id, **({"to": target} if target else {})})
         if target and target_dir is not None:
-            atomic_write_json(target_dir / "inbox" / f"msg-rep-{item_id}.json", {
-                "text": message_text(item_id, routine, title[:TITLE_MAX], detail[:DETAIL_MAX],
-                                     disposal),
-                "ts": now_iso(), "via": "report", "report": item_id, "from": routine,
+            # Through the ONE writer of the msg-* shape (engine/inbox), with the
+            # DETERMINISTIC `rep-<id>` stem: the sender reads its own delivery back by name
+            # to see whether it is still queued (retract_report, orphans.find_undelivered),
+            # so the filename here is an idempotency key, not a timestamp.
+            inbox.file_message(
+                target_dir,
+                message_text(item_id, routine, title[:TITLE_MAX], detail[:DETAIL_MAX],
+                             disposal),
+                via="report", name=f"rep-{item_id}",
                 # A closure asks nothing, so it must not BUY the target a run: the report
                 # trigger skips it (daemon/triggers) and it is read by the next run that
                 # happens anyway. Delivery is unchanged — only the waking is.
-                **({"closes": True} if closes else {})})
+                extra={"report": item_id, "from": routine,
+                       **({"closes": True} if closes else {})})
     except OSError:
         return None
     return path, item_id, folded
@@ -283,14 +290,14 @@ def retract_report(routines_home: Path, report_id: str) -> dict:
         if row.get("delivered"):
             raise ValueError(f"{report_id} was already picked up by the target — a consumed "
                              "message cannot be retracted")
-        inbox = Path(routines_home) / str(row["target"]) / "inbox"
+        inbox_dir = Path(routines_home) / str(row["target"]) / "inbox"
         try:
-            (inbox / f"msg-rep-{report_id}.json").unlink()
+            (inbox_dir / f"msg-rep-{report_id}.json").unlink()
         except FileNotFoundError:
             # No delivered stamp, yet the file is gone: an existing inbox means a drain got
             # there first (the stamp lags the rename by an instant) — refuse. A target whose
             # inbox no longer exists can never consume it, so the retraction stands.
-            if inbox.is_dir():
+            if inbox_dir.is_dir():
                 raise ValueError(f"{report_id} was already picked up by the target — a "
                                  "consumed message cannot be retracted") from None
         _append(path, {"id": report_id, "event": "retracted", "ts": now_iso()})
@@ -322,8 +329,8 @@ def discard_undelivered_report(routines_home: Path, report_id: str) -> dict:
             raise ValueError(f"{report_id} is already retracted")
         if row.get("delivered"):
             raise ValueError(f"{report_id} was delivered — it is not an undelivered orphan")
-        inbox = Path(routines_home) / str(row["target"]) / "inbox"
-        if (inbox / f"msg-rep-{report_id}.json").exists():
+        inbox_dir = Path(routines_home) / str(row["target"]) / "inbox"
+        if (inbox_dir / f"msg-rep-{report_id}.json").exists():
             raise ValueError(f"{report_id} has a delivery still waiting in {row['target']}'s "
                              "inbox — retract it instead of discarding")
         _append(path, {"id": report_id, "event": "retracted", "ts": now_iso()})
@@ -335,7 +342,20 @@ def read_reports(path: Path) -> list[dict]:
     or `superseded` event row is merged into its report as a `delivered: {ts, run_id}` /
     `retracted: {ts}` / `superseded: {ts, by, to}` key; an event with no matching report (a
     truncated or hand-trimmed file) is dropped rather than becoming a phantom item.
+
+    Folded ONCE per append, behind the read-models' stat fingerprint: the ledger is
+    append-only and 2.9 MB / 2,199 rows on the live instance, and it was re-read and
+    re-parsed by every routine-page open (the Messages panel), every orphans read and every
+    outbox retraction — a per-request cost that grows with how much the fleet talks. The
+    returned rows are SHARED and must be treated as immutable; every caller here folds them
+    into new dicts.
     """
+    from .readmodels import memo
+
+    return memo.memoized_shared(f"reports:{path}", [path], lambda: _fold_reports(path))
+
+
+def _fold_reports(path: Path) -> list[dict]:
     try:
         lines = path.read_text(encoding="utf-8").splitlines()
     except OSError:

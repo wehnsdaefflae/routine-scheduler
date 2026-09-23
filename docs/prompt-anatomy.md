@@ -38,7 +38,7 @@ Eight sections, in this order:
 | 4 | `# WORKFLOW (the control flow you follow)` | the routine's own `main.md` body | The control flow **and the task**: a top-level routine's recipe is self-contained — goal, deliverable, constraints and completion criteria are compiled into `main.md` + `stages/*.md` (stage detail read on demand); cross-cutting conduct is the shared general RULES, whose prose lives in the library and is read with `read_rule`. main.md ends with a `## Standing practices` section: one line per held rule slug + when to read it. |
 | 5 | `# INSTRUCTION (your assigned task)` | the parent's spawn `prompt` (subruns), or `instruction.md` (conversations) | **Subruns AND conversations.** A top-level scheduled ROUTINE has NO instruction section and no `instruction.md` on disk: its task is entirely its self-contained recipe (`main.md` + `stages/`) — the clarified instruction was only a transient compile **SEED**, consumed at creation and never persisted. A **subrun** has no decomposed stages, so its self-contained brief (the parent's `prompt`) rides here. A **conversation** runs at depth 0 but its task is its first message (`instruction.md`), so it carries the section too (discriminated by HOME — its dir sits directly under `conversations_home`); without it the agent would see only the converse HOW-to pattern and never its actual task. |
 | 6 | `# CAPABILITIES (what this run can actually use)` | `capabilities_digest()` | The facts: main model + context window (middle archived at ~60-80%), action kinds usable this run (workflow `tools:` ∩ capabilities — switched-off gated kinds like `memory_*`/`write_util` simply don't appear), the enabled capabilities + the held conduct permissions, each held permission's short capability note (the library doc's body, capped), any one-time grants (`Granted for THIS RUN only (one-time user approvals — they do not persist beyond this run): <entity ids>` — present only when a request was allowed now, at boot via a consumed deferred decision or already this run), the **secret NAMES** provisioned in each store — the central one (D46: names only, never a value, so a run knows which credentials exist without probing) and, listed apart, the ones that are THIS ROUTINE's own (D103: already exposed to it and shadowing a central name of the same spelling — so it never spends a turn requesting what it already holds), any **bound remote machines** (name + description + tags — the SSH hosts this routine can act on via the `remote` util, named here so the model knows its hardware without a discovery turn; a machine with a filesystem `share` carries the mount line only when that mount was PROVEN LIVE this run and otherwise reads `SHARE NOT MOUNTED this run (<reason>)` — R514: advertising a share from config alone let a run mistake a failed mount's empty directory for an empty source; a machine whose compute is `exclusive` also carries its QUEUE — `COMPUTE FREE (no jobs queued)`, or `COMPUTE QUEUED — <n> job(s) queued; <holder> is running now; yours: #<n>` and the standing note that submitting adds you to the rotation and returns immediately so the run should spend itself on work that does not need the machine, or `COMPUTE QUEUE UNKNOWN (<why>)` when the box could not be read — an unreachable machine must never read as a free one, which is the single failure mode that would cause the collision the queue exists to prevent), the spawnable sub-workflow patterns (slug + one-liner, when `spawn` is usable), and the util catalog as a **map**, grouped by a controlled category vocabulary (name + one-line summary; a reserved util is flagged `[reserved — not granted to this routine]`, or `[reserved — declined by the user]` when a deny-forever tombstone covers it — the settled decision reads differently from the requestable one; a util covered by a held `util_tags:` CLASS carries no flag, because the class grants it exactly as a by-name grant would). The map says WHAT exists; ONE util's exact flags come from `util name=list args=["<name>"]` at call time, so the prompt never serves stale usage and discovery never re-buys the whole catalog. |
-| 7 | `# STATE DIGEST (fresh at run start)` | `state_digest()` | Cross-run continuity: `state/phase.json`, the **STOPPING CONDITIONS** and **FINAL GOAL** blocks (F334/D98, rendered by `engine/stopping_digest.py` — the user's meaning-level bounds from `state/stopping.json`, rendered as the STRUCTURE they are: each group's `ALL of:` / `ANY of:` under the document's own joiner, `✓`/`○`/`–` per condition, a dormant one marked with what it waits on, and the ids that must be accounted for. The two SCOPES render apart because they ask different questions: `run` bounds THIS run and carries `last run: met — …` rather than a status that persists, `goal` is the state after which the ROUTINE is finished. Both share one accounting contract whose `unmet` half is a HAND-OFF: the verdict carries the RESIDUAL — what is still to do and what it is waiting on — which for a goal is the DISTANCE remaining, and which a run bound inherits next run as `last run left: …`, since a run bound never transitions and that note is the only thing about it that survives. When every goal condition is met the block says `EVERY final-goal condition is met — this ROUTINE is finished` and the run is told the engine stops scheduling it; while a goal is open it is told not to mark one met to close the job out, since doing so retires the routine. A run that cannot see two conditions are an OR treats them as an AND and works past where the user meant it to stop), the **WORKING PLAN** (`state/plan.md`, inlined in full up to 60 lines — the run's own living decomposition; see below), the `state/` file list and **`artifacts/` delivered so far** (name + size, newest first, each capped at `composer.DIR_LIST_MAX` = 40 with a `… and N more` tail — every other growing part of this digest is capped and these two were not, which cost one routine ~2 400 tokens per turn to name 285 state files), `stages/` module names, the general RULES binding the routine (slugs, from `routine.yaml`), the **previous run's `result.md`**, the LEDGER tail (last 30 lines), the **`.memory/INDEX.md`** (first 60 lines — bodies via `memory_read`), the newest **`.util_outputs/`** spills (path + size, only once something has spilled — `read_file one when you need what an earlier call already fetched, rather than re-running the util`), open deferred questions, answers that arrived since the last run. |
+| 7 | `# STATE DIGEST (fresh at run start)` | `state_digest()` | Cross-run continuity: `state/phase.json`, the **STOPPING CONDITIONS** and **FINAL GOAL** blocks (F334/D98, rendered by `engine/stopping_digest.py` — the user's meaning-level bounds from `state/stopping.json`, rendered as the STRUCTURE they are: each group's `ALL of:` / `ANY of:` under the document's own joiner, `✓`/`○`/`–` per condition, a dormant one marked with what it waits on, and the ids that must be accounted for. The two SCOPES render apart because they ask different questions: `run` bounds THIS run and carries `last run: met — …` rather than a status that persists, `goal` is the state after which the ROUTINE is finished. Both share one accounting contract whose `unmet` half is a HAND-OFF: the verdict carries the RESIDUAL — what is still to do and what it is waiting on — which for a goal is the DISTANCE remaining, and which a run bound inherits next run as `last run left: …`, since a run bound never transitions and that note is the only thing about it that survives. When every goal condition is met the block says `EVERY final-goal condition is met — this ROUTINE is finished` and the run is told the engine stops scheduling it; while a goal is open it is told not to mark one met to close the job out, since doing so retires the routine. A run that cannot see two conditions are an OR treats them as an AND and works past where the user meant it to stop), the **WORKING PLAN** (`state/plan.md`, inlined in full up to 60 lines — the run's own living decomposition; see below), the `state/` file list and **`artifacts/` delivered so far** (name + size, newest first, each capped at `composer.DIR_LIST_MAX` = 40 with a `… and N more` tail — every other growing part of this digest is capped and these two were not, which cost one routine ~2 400 tokens per turn to name 285 state files), `stages/` module names, the general RULES binding the routine (slugs, from `routine.yaml`), the **previous run's `result.md`**, the LEDGER tail (last 30 lines), the **`.memory/INDEX.md`** (first 60 lines — bodies via `memory_read`), the newest **`.util_outputs/`** spills (path + size, only once something has spilled — `read_file one when you need what an earlier call already fetched, rather than re-running the util`), **QUEUED FOR THIS ROUTINE'S NEXT FRESH RUN** (`inbox.queued_freight`, rendered only when the list is non-empty: one line per waiting file — `- [<via> · <ts>] <first line>`, or `- [report R1815 from <slug>] <first line>` — under the heading `QUEUED FOR THIS ROUTINE'S NEXT FRESH RUN (not delivered to this leg; read the file in inbox/ before describing any of it as open):`. It reads, and consumes, nothing. Because boot DRAINS before the digest is composed, a fresh run shows nothing here and a resumed leg lists exactly what it may not consume — no fresh/resume conditional), open deferred questions, answers that arrived since the last run. |
 
 **The projection: a run is shown only the vocabulary it has.** Sections (1), (2) and (6)
 describe action kinds; all three are filtered through the same
@@ -72,7 +72,7 @@ on demand with `read_rule`, so a library revision reaches every holder at its ne
 migration. The user binds and unbinds at any time (`POST /routines/{slug}/rules`, the same
 endpoint conversations use — `rsched/rules.py` writes the config list and rebuilds the tail from
 it). A newly bound rule reaches a run **already in flight**: the composed prompt is immutable
-under the caching contract, so `control.json` `add_rules` → `control.apply_rule_additions`
+under the caching contract, so `control.json` `add_rules` → `engine/switches.apply_rule_additions`
 appends the rule's prose as an engine note at the next turn boundary. Unbinding has no live
 counterpart on purpose — prose already in a context cannot be unsaid — so it lands at the next
 run. A run never changes which rules bind it; `read_rule` is ungated (a routine must be able to
@@ -109,7 +109,7 @@ at the turn boundary as an ENGINE NOTE carrying the new contract sentence.
 
 The same seam carries **every** config change made while a run is live (F337): a PATCH to a
 routine or conversation writes control.json `config_change` and
-`engine/control.apply_config_change` appends ONE `ENGINE NOTE: the user changed this routine's
+`engine/switches.apply_config_change` appends ONE `ENGINE NOTE: the user changed this routine's
 configuration while you are running.` listing each changed field under
 `IN EFFECT NOW, from this turn on:` — the fields `configflow` classes LIVE (budgets,
 deliberation, grants), which the engine adopts right there — or under
@@ -118,7 +118,7 @@ Naming the fields that WAIT is as load-bearing as naming the ones that land: the
 is that a run was never told which was which. Children inherit
 the parent's live level. The durable value lives in **`tuning.yaml`** — the routine's
 machine-tunable behavior parameters, classed with the RECIPE (the routine-improver may edit
-it under its fs_write_root, like main.md/stages/); `routine.yaml` stays the user's
+it when the routine holds `write_recipe`, like main.md/stages/); `routine.yaml` stays the user's
 sealed authority config, no exceptions.
 
 **The note channel** — the capture tier under the deliberation contract: ANY action may
@@ -163,6 +163,23 @@ by the model. Waiting inbox messages are then appended after the note as ordinar
 `USER MESSAGE (injected mid-run)` messages, each also recorded as a `user_injection`
 transcript event — on a resume they are NOT folded into the system prompt's section 8.
 
+**The replay reproduces what the model actually read, message for message.** Each kind goes
+through the SAME renderer the live path used — `control.injected_message`,
+`control.command_message`, `enginenote.message`, `control.child_finished_message` — so a
+resumed leg's prefix is byte-identical to the leg that wrote it, which is the whole point under
+a caching contract. Three consequences worth stating:
+
+- **An engine note is not a user message.** A `user_injection` event whose `source` is `engine`
+  was written by `enginenote.append`, which records the prose verbatim, and it replays as
+  `ENGINE NOTE: <text>` — never as `USER MESSAGE (injected mid-run)`, which would both
+  mislabel it (the harness contract tells the model an injected message IS the user talking)
+  and lose the note's text behind a stub.
+- **Some notes are re-authored rather than replayed.** The ones `boot` writes afresh on every
+  leg — the resume framing, the setup-gap list, the orphaned-children note — carry
+  `replay: false` and the replay skips them, so a leg cannot stack one copy per resume.
+- **A slash command replays as ONE message**, command plus result, the same shape
+  `control.command_message` builds live — not as two.
+
 Interrupted run (crash / budget / abort — no model-authored `finish`):
 
 ```
@@ -199,11 +216,11 @@ command results only on the NEXT prose reply, replayed like any other turn.
 Every assistant message is the raw action JSON. Every action gets exactly one user message
 back — `format_observation(obs)`, always starting `OBSERVATION (<kind>…)`:
 
-- `OBSERVATION (util websearch, exit 0):\n<stdout>` — on failure plus `[stderr]`, `[usage]`, and a `[hint]` that teaches the call shape and the grant-aware repair route. When the util declares OPTIONAL secrets (`NAME?`, D51/F290) the routine may not see, the call still runs and the observation appends `[note] optional secret(s) withheld from this call: <undecided names, with the ask_user request route> / <N> declined by the user` — required secrets keep the blocking exposure ask, optional ones never prompt
+- `OBSERVATION (util websearch, exit 0):\n<stdout>` — on failure plus `[stderr]`, `[usage]` (the util's whole usage BLOCK, not its first line) and a `[hint]` that teaches the call shape and the grant-aware repair route. When the util declares OPTIONAL secrets (`NAME?`, D51/F290) the routine may not see, the call still runs and the observation appends `[note] optional secret(s) withheld from this call: <undecided names, with the ask_user request route> / <N> declined by the user` — required secrets keep the blocking exposure ask, optional ones never prompt
 - `OBSERVATION (read_file state/hits.json, lines 1-200 of 412):\n<content>`
 - `OBSERVATION (read_file, 3 files):\n--- state/a.md (lines 1-40 of 40) ---\n<content>\n\n--- state/b.md …` — a `paths` batch: one section per file, failures inline (`--- x FAILED: …`)
 - `OBSERVATION (read_file /srv/videos/Show S01, directory listing, entries 1-8 of 8):\n<one entry per line: dir / file / link, a file's size in bytes, the name>` — a directory path reads as its LISTING, paged with `start_line`/`max_lines` like a file, and that read grounds a later `delete`/`move` of the tree. A binary file (a NUL byte in its first 8 KiB) or one over `fileops.READ_MAX_BYTES` (8 MiB) is refused from a stat BEFORE anything is decoded — `FAILED: binary file (1,523,456,789 bytes) — read_file shows text only; …` / `FAILED: 12,345,678 bytes exceeds the read_file cap of 8,388,608 bytes — page it with shell (head / sed -n) or a util instead` — and the refusal, a stat the run has seen, still counts for the destruction gate (on 2026-09-14 a run read a 1.5 GB .mkv to satisfy that gate and the read decoded the whole file; the host swap-thrashed for five hours). A file under the cap is streamed line by line, only the window ever held
-- `OBSERVATION (view_image — image(s) attached below for you to see):\n--- attachments/shot.png (image/png) — shown to you below; look at it now.` — when the run's model is multimodal the file rides the message as a `media` block; otherwise it is `described by the vision util` and the text comes back inline
+- `OBSERVATION (view_image — image(s) attached below for you to see):\n--- attachments/shot.png (image/png) — shown to you below; look at it now.` — when the run's model is multimodal the file rides the message as a `media` block; otherwise it is `described by the vision util` and the text comes back inline. On a RESUME the attachments are not re-attached (the replay rebuilds text-only messages), so the payload is marked `media_replayed` and the head reads `OBSERVATION (view_image — image(s) shown to an earlier leg of this run)` with, per file, `was shown to an EARLIER leg of this run and is NOT in this prompt; view_image it again if you need to see it` — never "look at it now" over nothing
 - `OBSERVATION (write_file): wrote 1832 bytes to state/shortlist.md`
 - `OBSERVATION (edit_file): replaced 1 occurrence(s) in state/shortlist.md (now 1790 bytes)` — failures teach the fix (`anchor not found … copy it VERBATIM`, `anchor appears N times — extend it … or set all: true`)
 - `OBSERVATION (memory_read portal-quirks.md, 14 lines):\n<note>` / `no note named 'x'. Existing topics: …`
@@ -247,7 +264,7 @@ docs/architecture.md).
 ### 3b · Tails appended to the observation (in order, each only when applicable)
 
 1. **Repeat warning** (3–4 identical actions): `[ENGINE WARNING: this exact action has now run N times in a row — 5 identical actions fail the run. Change course. …]`
-2. **Budget warning** (from 85% of the first budget to trip): `[BUDGET: … — converge DELIBERATELY now: reach a point worth handing over, record what matters (LEDGER, state files), then finish with an authored summary. Once the budget is spent you get exactly ONE turn, and it can only be a finish.]`
+2. **Budget warning** (an EVENT, not a state: said ONCE when the first budget to trip crosses its `warn_at` line — 85% — and once more at `FINAL_WARN_AT` 95%, per resource, never on every turn above a line; a warning riding every turn reads as a countdown and a budget is a runaway BACKSTOP, never a pace): `[BUDGET: … — converge DELIBERATELY now: reach a point worth handing over, record what matters (LEDGER, state files), then finish with an authored summary. Once the budget is spent you get exactly ONE turn, and it can only be a finish.]`
 3. **History note** (right after a compaction, then every 10th turn — NOT every turn): `[history: earlier turns are archived under runs/<ts>/history/INDEX.md — read_file the index and the relevant files before relying on memory.]`
 4. **History pointer** (only after a compaction, when what just happened overlaps an archived topic): `[HISTORY: you archived this (archived at turn N) — \`runs/<ts>/history/tN-<topic>.md\`: <the index line>. read_file it if you need the detail; the live context no longer has it.]` — one file, never a list, above a floor score, with a cooldown between pointers (`engine/recall.py`). A pointer, not a fetch: the run decides whether the file is worth a turn.
 5. **Rule assist** (only when a general rule the routine PRACTISES has an `observation`-moment assist whose predicate just fired): `[RULE <slug> — <what fired>] <the rule's operative line> (the full rule: read_rule name=<slug>)`. One line, one shape at every moment, and at most once per run per assist — a trigger that can fire twice on one situation livelocks a stubborn model. Costs no turn: it rides the observation the run was getting anyway. See [rule assists](rule-assists.md).
@@ -259,7 +276,7 @@ The **util reminder** — `[tools: the CAPABILITIES catalog lists the global uti
 
 - `USER MESSAGE (injected mid-run):\n<text>`
 - `USER COMMAND (the user executed this action directly):\n/<kind> …\nOBSERVATION (…)` — a chat slash command the ENGINE executed at the turn boundary (no model turn); the observation (or `COMMAND ERROR: <usage>` for a malformed/disallowed one) rides the same message so the model knows exactly what the user did
-- `CHILD RUN FINISHED (parallel child run) — #1 'child' (pattern general-task, status ok, 12 turns):\n<summary, capped 4k>`; a SEQUENTIAL one reads `CHILD RUN FINISHED (sequential child run) — #N … Fold this result into your next child run's brief, or finish:\n<summary>` — the "child finished" hook that keeps the run responsive while children run. ONE headline for every scheduling mode (F338, `engine/child.py`): the mode is named in it rather than changing the noun, which is how the copy drifted apart before. When the child handed files back, the line continues `Collected from the child into your artifacts/: <paths>` — so the parent never searches the child's dir
+- `CHILD RUN FINISHED (parallel child run) — #1 'child' (pattern general-task, status ok, 12 turns)`, then the summary (capped 4k) as its own paragraph; when the child handed files back, `Collected into your artifacts/: <paths> — read them from there; the sender's own dir is not in your reach.`; a SEQUENTIAL one closes with `Fold this result into your next child run's brief, or finish.` — the "child finished" hook that keeps the run responsive while children run. The whole message is `engine/child.handback_text`, which also renders a branch's and a detached task's hand-back: ONE hand-back, one reading, whichever mode produced it (F338). The mode is named in the headline rather than changing the noun, and the paths are NAMED rather than counted — a parent told a count has to go and list a directory
 - `ENGINE NOTE: the <n> messages elided earlier have finished archiving into a NAVIGABLE history — \`<hist>/INDEX.md\` lists <n> files with a line each on what they hold. The one-line digest above stays as a map of what happened; read the index and then the specific files when you need the actual detail of an earlier turn.` — the background archival landing (`engine/archival.py`). The prompt got the instant digest at the compaction itself; this arrives at a later turn boundary, APPENDED, so the digest message is never rewritten and one compaction costs one cache invalidation rather than two.
 - `ENGINE NOTE: the middle of this conversation is about to be ARCHIVED — … Retention is positional, not semantic: it does not know what mattered.` + `You have this turn.` + the three durable stores (`note`, memory_write, LEDGER) — the one-turn warning before positional eviction (`window._warn_before_eviction`). Once per run and only when the compaction gate's FRACTION is binding rather than the hard ceiling, so the deferred turn is free.
 - `ENGINE NOTE: model switched mid-run: main → <endpoint>/<model>. Continue the run on the new model.`
@@ -300,6 +317,13 @@ provider/machine/secret, a credential-store fs path, a sub-workflow requesting a
 Once a retry SUCCEEDS, the failed-attempt/correction pairs are dropped from the live
 message list — they earned their keep eliciting the valid reply and would otherwise be
 re-read on every remaining turn. The transcript's `error` events keep the full record.
+
+**A refusal is PROSE, and only prose is classified.** The refusal classifier
+(`refusal.is_refusal`, a `tool_call` subcall) runs only on a reply carrying no JSON object at
+all (`completion._is_prose_reply`). A JSON object that merely failed VALIDATION is a malformed
+action, not a decline, and sending one to the classifier bought a serial round trip per
+malformed reply for nothing. A classified refusal is clarified once per turn
+(`refstate["referral_tried"]`) and the clarification's output never becomes the turn's action.
 
 ### 3e · Access requests — the ask_user `request` field
 
@@ -385,8 +409,11 @@ granted). Note what is NOT here: the general rules' prose is never inlined — t
 Standing practices tail and the state digest name the held slugs; the run reads one with
 `read_rule` when it needs it. The working-directory path is shortened.
 The ACTION SCHEMA block below is the **projection** for that routine's kinds, not the full
-22-kind schema (see *The projection* above) — the kinds it cannot emit contribute neither
-fields nor prose.
+30-kind schema (see *The projection* above) — the kinds it cannot emit contribute neither
+fields nor prose, and a field a surviving kind SHARES with an absent one carries only the
+clauses that still apply. So a property missing here, or a description shorter than
+`actionschema.ACTION_SCHEMA`'s, is the projection at work rather than drift; a property here
+that the schema does not define is drift, and `tests/test_prompt_anatomy.py` fails on it.
 
 ### 5.1 System prompt
 
@@ -410,7 +437,7 @@ Ownership of prose: your recipe is self-contained — the WORKFLOW below (its ma
 
 > **Variant — recipe unlocked:** own-recipe writes are a CAPABILITY since 0.261.0 —
 > `write_recipe`, held through the **recipe-authoring** conduct doc (`engine/loopsetup.py`
-> derives `grants.recipe_unlocked` from it, plus the `revise` leg). A write root covering the
+> derives `grantpolicy.recipe_unlocked` from it, plus the `revise` leg). A write root covering the
 > routine's own dir no longer unlocks anything, so the routine-improver holds the doc like any
 > other holder. When it is held, the recipe sentence instead reads "Your own recipe (main.md,
 > stages/, tuning.yaml) IS WRITABLE to you this run…" — the prompt always states what the
@@ -423,7 +450,10 @@ Action kinds:
 Utils are your primary tools — the CAPABILITIES section below lists what exists (name + summary); for ONE util's exact usage run `util name=list args=["<util-name>"]` before relying on it (bare name=list re-dumps the whole catalog you already have). Observation = exit code + captured output.
 - write_util: create or revise a global util — name (kebab-case) + content (a complete
 PEP 723 script: `# /// script` deps block, a module docstring whose first line is
-`<name> — <one-line summary>` then a `usage:` line, a `--json` flag, a `--selftest` that runs
+`<name> — <one-line summary>` then a `usage:` BLOCK — the call form, and for a
+verb-dispatched util one line per verb directly under it (every non-blank line up to the
+next header key is part of it, and that whole block is what a caller is shown before it
+calls you) — a `--json` flag, a `--selftest` that runs
 built-in checks, data on stdout / diagnostics on stderr / exit 0 on success; on invalid or
 missing arguments it MUST print its own usage line to stderr and exit 2 — an error that
 doesn't teach the correct call wastes every future caller's turn). The engine runs
@@ -548,9 +578,15 @@ The user may inject messages mid-run; they arrive tagged "USER MESSAGE (injected
    "type": "string",
    "description": "report: OPTIONAL \u2014 the id (R<n>) of a report you RECEIVED that this one answers: what you did about it, or why you will not. That is how a report gets closed"
   },
+  "settles": {
+   "type": "array",
+   "items": {"type": "string"},
+   "maxItems": 20,
+   "description": "report: OPTIONAL \u2014 every report id (R<n>) this one TERMINALLY SETTLES. `answers` records the ONE exchange this reply belongs to; `settles` is the many-rows claim: list every OTHER row this reply disposes of and each becomes settled, naming this report as what settled it. Use it when one reply genuinely answers several rows, and on a report that asks nothing back \u2014 with `settles` a reply needs no `answers` to carry `closes`"
+  },
   "closes": {
    "type": "boolean",
-   "description": "report: with `answers` \u2014 this reply COMPLETES the exchange: it settles its target AND is itself born settled, asking nothing back. Set it whenever your answer needs no reply; a closure is reopened only by a NEW report that names it"
+   "description": "report: with `answers` or `settles` \u2014 this reply COMPLETES the exchange: it settles its target(s) AND is itself born settled, asking nothing back. Set it whenever your answer needs no reply; a closure is reopened only by a NEW report that names it"
   },
   "supersedes": {
    "type": "array",
@@ -803,9 +839,11 @@ Model capability context windows are stated in tokens (the full input + output c
 
 `output_compression` defaults to `compress`. `measure` records operator-only metadata while leaving
 observations unchanged. `compress` may replace successful command stdout before it is recorded with
-either a minified JSON copy (whitespace only — labelled `minified JSON; nothing removed`) or a
-Headroom log excerpt (labelled `Headroom log excerpt; lines omitted`). The `[full output]` pointer
-names the original captured output under the run's `outputs/` directory. `read_file` recovery
+a minified JSON copy — whitespace only, and it says so:
+`[minified JSON; nothing removed; read full output for original text]`. That is the ONE
+compression kind; anything else, a log included, falls through to the capped head plus its
+`[full output]` pointer, which names the original captured output under the run's `outputs/`
+directory. `read_file` recovery
 bypasses compression. Replay renders the recorded observation without recompression; existing
 message prefixes, instructions, permission notices and stderr are never compressed.
 See [output compression](output-compression.md) for eligibility, installation and measurements.

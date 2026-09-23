@@ -5,21 +5,39 @@ it are different jobs, and this is the one with the blast radius. Every util sub
 inside a Landlock jail scoped to the run's permissions (docs/sandboxing.md) and carries ONLY
 the secrets its header declares — `scoped_env` is the declared-only injection gate, and it is
 the reason an undeclared secret is unreachable rather than merely undocumented.
+
+`run_jailed` is the ONE process runner all three callable kinds use — a util here, a routine's
+own `scripts/<name>.py` (scripts.py) and the `shell` action (shellrun.py). The jail
+COMPOSITION still differs per kind (each builds its own `sandbox.wrap` terms); the process
+handling does not, and hand-copying it is what let two of the three lose the protections the
+third documents.
 """
 
 from __future__ import annotations
 
+import logging
 import os
 import shutil
+import signal
 import subprocess
+import tempfile
 from pathlib import Path
 from typing import NamedTuple
 
 from . import sandbox
+from .captured_output import CapturedOutput, read_capped
 from .ids import is_slug
 from .utils_header import parse_header
 from .utils_lib import OUTPUT_CAP, exists, list_utils, read_util, util_dir
 
+log = logging.getLogger("rsched.utils_run")
+
+# Vars scrubbed from every jailed subprocess UNCONDITIONALLY (declared or not). LLM-auth: a
+# util that needs an LLM (e.g. a `gu claude` equivalent) resolves its own credentials; it must
+# never inherit the orchestrator's keys and silently mis-bill or use the wrong account.
+# SSH agent: a forwarded agent in the daemon's env would let ANY net-capable util authenticate
+# to hosts outside the machine catalog, routing around the per-routine binding — so the agent
+# socket never reaches a util (remote machines carry their own scoped keys).
 STRIP_VARS = ("ANTHROPIC_API_KEY", "ANTHROPIC_KEY", "ANTHROPIC_AUTH_TOKEN",
               "ANTHROPIC_BASE_URL", "ANTHROPIC_CUSTOM_HEADERS",
               "OPENROUTER_KEY", "OPENROUTER_API_KEY", "OPENAI_API_KEY",
@@ -27,13 +45,21 @@ STRIP_VARS = ("ANTHROPIC_API_KEY", "ANTHROPIC_KEY", "ANTHROPIC_AUTH_TOKEN",
 
 
 class UtilNeeds(NamedTuple):
-    """What one util's whole call tree declares it needs — the inputs the jail is built from."""
+    """What one util's whole call tree declares it needs — the inputs the jail is built from.
+
+    `tree` is the CALL TREE itself (the root plus every sibling reached through `calls:`,
+    sorted). The jail terms above are what the tree declares; `tree` is who declared them,
+    which is what the reserved-util gate needs — a `calls:` edge hands the callee's jail and
+    its engine-injected credentials to the caller, so an ungated util reaching a gated one is
+    a second door into that channel (grantpolicy._deny_util).
+    """
 
     secrets: set[str]
     net: bool
     optional: set[str]
     fs_roots: bool
     fs_paths: tuple[tuple[str, str], ...]
+    tree: tuple[str, ...] = ()
 
 
 def util_needs(home: Path, name: str) -> UtilNeeds:
@@ -42,15 +68,22 @@ def util_needs(home: Path, name: str) -> UtilNeeds:
     declared (gmail-body-dump calls gmail → gets the GMAIL_* secrets; anything calling a
     net: outbound sibling needs the network open too, and anything calling a sibling that
     declares a private path needs that path mounted). Undeclared = not granted: an unknown
-    net line, a missing fs line, or none at all contributes nothing. A secret is optional only
-    if EVERY declarer marks it `?` — one required declaration anywhere in the tree makes it
-    required.
+    net line, a missing fs line, or none at all contributes nothing.
+
+    OPTIONALITY IS THE ROOT'S CALL. A callee's `required` means "required when I run"; only the
+    util actually being CALLED knows whether the code path that reaches that callee is taken.
+    So a `?` on the ROOT's own `secrets:` line wins over a callee's required declaration, while
+    among callees the strict rule still holds — one required declaration makes it required.
+    Without this, three live utils demanded a credential on every call because a sibling they
+    reach only under one flag rightly requires its own key (frame-fill → pangram under
+    `--score`, R1818), and the caller met a secret-exposure prompt for work that never uses it.
 
     The fs half only ever names what the jail MAY mount. Whether it actually does is decided
     in `sandbox.wrap`, against the grants the run holds — a declaration narrows, never widens.
     """
     secrets: set[str] = set()
     required: set[str] = set()
+    root_optional: set[str] = set()
     net = False
     fs_roots = False
     fs_paths: list[tuple[str, str]] = []
@@ -67,13 +100,16 @@ def util_needs(home: Path, name: str) -> UtilNeeds:
         header = parse_header(src)
         opt = {s.upper() for s in header["optional_secrets"]}
         declared = {s.upper() for s in header["secrets"]}
+        if current == name:
+            root_optional |= opt
         secrets.update(declared)
         required.update(declared - opt)
         net = net or header["net"] == "outbound"
         fs_roots = fs_roots or header["fs_roots"]
         fs_paths += [p for p in header["fs_paths"] if p not in fs_paths]
         stack += header["calls"]
-    return UtilNeeds(secrets, net, secrets - required, fs_roots, tuple(fs_paths))
+    return UtilNeeds(secrets, net, secrets - (required - root_optional), fs_roots,
+                     tuple(fs_paths), tuple(sorted(seen)))
 
 
 def scoped_env(declared: set[str], extra_secrets: dict[str, str] | None = None,
@@ -112,11 +148,105 @@ def _child_env(home: Path, name: str, extra_secrets: dict[str, str] | None = Non
     return scoped_env(util_needs(home, name).secrets, extra_secrets, withhold)
 
 
+class Jailed(NamedTuple):
+    """One jailed subprocess's outcome. `stdout`/`stderr` are `CapturedOutput` — already
+    bounded, and carrying whether the capture itself lost anything.
+    """
+
+    returncode: int
+    stdout: CapturedOutput
+    stderr: CapturedOutput
+    timed_out: bool
+
+
+def _config_bytes(routine_dir: Path | None) -> bytes | None:
+    """`routine.yaml`'s content, or None when there is none (or it cannot be read)."""
+    if routine_dir is None:
+        return None
+    try:
+        return (routine_dir / "routine.yaml").read_bytes()
+    except OSError:
+        return None
+
+
+def _seal_broken(routine_dir: Path | None, before: bytes | None, label: str) -> str:
+    """The one seal the JAIL cannot express, checked where it can be. `routine.yaml` sits in
+    the routine's own directory, which every callable kind mounts read-write because it is the
+    working directory — and Landlock unmasks access UP the path, so a narrower rule on one file
+    beneath an allowed directory subtracts nothing. The action layer refuses `write_file
+    routine.yaml`; a `shell` heredoc, a script or an `fs: roots` util is not on that path, and
+    the escalation used to land silently and take effect at the NEXT run's boot.
+
+    Detection, not prevention: the operator's own PATCH is a legitimate concurrent writer of
+    this file (a Decisions-page `approve & apply` reaches a live run by design), so the line
+    names both possibilities rather than reverting somebody's save (docs/sandboxing.md).
+    """
+    if routine_dir is None or _config_bytes(routine_dir) == before:
+        return ""
+    log.warning("routine.yaml changed while %s ran in %s — a run never writes its own config",
+                label or "a jailed command", routine_dir)
+    return (f"routine.yaml changed while {label or 'this command'} ran. Config is the user's "
+            "and no run edits it — if this call wrote it, revert it and request the change "
+            "with a deferred ask_user instead (if the operator just saved the routine page, "
+            "this is that save)")
+
+
+def run_jailed(cmd: list[str], *, env: dict, cwd: Path, timeout: int,
+               label: str = "", cap: int = OUTPUT_CAP,
+               config_seal: Path | None = None) -> Jailed:
+    """Run one already-jailed command (`sandbox.wrap` composed `cmd`) and bring back at most
+    `cap` characters of each stream. The ONE runner behind `util`, `script` and `shell`.
+
+    Its three protections are why it is one function and not three copies:
+
+    - OWN PROCESS GROUP (`start_new_session` + `killpg`): `uv run` re-execs the script as a
+      GRANDCHILD, and a shell command can background one — neither is killed by a plain
+      `subprocess.run` timeout, so the child outlives the deadline holding the pipes open and
+      blocks the engine turn forever.
+    - TEMPFILE CAPTURE read through `read_capped`, which takes `cap + 1` characters and never
+      the file: `fh.read()` on a spool file puts the whole capture back in the daemon's memory,
+      the 2026-09-14 incident (a 1.5 GB read, five hours of swap-thrash) in a seam `shell`
+      reaches with one `find /`.
+    - WHAT WAS PRINTED BEFORE THE KILL is kept: a command that hung after logging why it hung
+      would otherwise lose exactly the material that explains the hang.
+
+    `label` names the callable in the timeout and spawn-failure notes ("util 'x'",
+    "script 'x'", "the command"). `config_seal` is a routine directory whose `routine.yaml`
+    must not move across the call (`_seal_broken`).
+    """
+    before = _config_bytes(config_seal)
+    with tempfile.TemporaryFile("w+", encoding="utf-8", errors="replace") as out_f, \
+            tempfile.TemporaryFile("w+", encoding="utf-8", errors="replace") as err_f:
+        try:
+            proc = subprocess.Popen(cmd, stdout=out_f, stderr=err_f,
+                                    stdin=subprocess.DEVNULL, text=True, env=env,
+                                    cwd=str(cwd), start_new_session=True)
+        except OSError as exc:
+            return Jailed(2, CapturedOutput(""),
+                          CapturedOutput(f"could not run {label or 'the command'}: {exc}"),
+                          False)
+        timed_out = False
+        try:
+            proc.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            timed_out = True
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)
+            except (ProcessLookupError, PermissionError):
+                proc.kill()
+            proc.wait()
+        notes = [f"{label or 'the command'} timed out after {timeout}s "
+                 f"(process group killed)"] if timed_out else []
+        notes += [n for n in (_seal_broken(config_seal, before, label),) if n]
+        return Jailed(proc.returncode, read_capped(out_f, cap),
+                      read_capped(err_f, cap, diagnostic="; ".join(notes)), timed_out)
+
+
 def prewarm_script_deps(script: str, policy: sandbox.SandboxPolicy, home: Path) -> None:
     """Resolve + install a PEP 723 script's dependencies with the network OPEN, so a util
     whose runtime net policy is `none`/undeclared can still fetch its build-time deps (R40).
     Filesystem stays jailed (same policy); only this install phase gets TCP. Best-effort:
-    any failure is swallowed — the caller's real run reports the genuine error. No-op under
+    the outcome is discarded — the caller's real run reports the genuine error. No-op under
     sandbox mode 'off' would still be a harmless local `uv sync`.
     """
     try:
@@ -125,11 +255,7 @@ def prewarm_script_deps(script: str, policy: sandbox.SandboxPolicy, home: Path) 
                            fs_roots=False, fs_paths=())
     except sandbox.SandboxRefusal:
         return
-    try:
-        subprocess.run(cmd, capture_output=True, text=True, timeout=180,
-                       stdin=subprocess.DEVNULL, cwd=str(home), check=False)
-    except (OSError, subprocess.SubprocessError):
-        return
+    run_jailed(cmd, env={**os.environ}, cwd=home, timeout=180, label="the dependency prewarm")
 
 
 def run_util(home: Path, name: str, args: list[str], *, timeout: int = 300,
@@ -157,6 +283,12 @@ def run_util(home: Path, name: str, args: list[str], *, timeout: int = 300,
     # Point the `gu` dispatcher (on PATH, for sibling calls) at THIS library, so a util that
     # shells out to `gu <sibling>` always resolves siblings here.
     env["GLOBAL_UTILS_HOME"] = str(home)
+    # THE DEADLINE, so a util that waits on something slow can own its own clock instead of
+    # racing this one. Both runners export it (scripts.run_script too) — a util that sets its
+    # internal timeout from it reports what it captured; without it, two equal clocks expired
+    # together, the killpg below won, and a remote exec that had already printed its job's PID
+    # returned nothing at all (R1813, funscript-trainer 2026-09-21).
+    env["RSCHED_UTIL_TIMEOUT_S"] = str(timeout)
     needs = util_needs(home, name)
     net = needs.net
     script = str(util_dir(home, name) / "main.py")
@@ -180,39 +312,13 @@ def run_util(home: Path, name: str, args: list[str], *, timeout: int = 300,
                            fs_roots=needs.fs_roots, fs_paths=needs.fs_paths)
     except sandbox.SandboxRefusal as exc:
         return 2, "", str(exc)
-    # File-backed capture + own process GROUP: `uv run` re-execs the script as a grandchild,
-    # which a plain subprocess.run timeout never kills — it would survive the timeout and
-    # keep the pipes open, blocking the engine turn forever. killpg reaps the whole tree,
-    # and spool files (instead of PIPEs) bound memory however much the util prints.
-    import signal
-    import tempfile
-    with tempfile.TemporaryFile("w+", encoding="utf-8", errors="replace") as out_f, \
-            tempfile.TemporaryFile("w+", encoding="utf-8", errors="replace") as err_f:
-        proc = subprocess.Popen(cmd, stdout=out_f, stderr=err_f, stdin=subprocess.DEVNULL,
-                                text=True, env=env, cwd=str(cwd or home), start_new_session=True)
-        timed_out = False
-        try:
-            proc.wait(timeout=timeout)
-        except subprocess.TimeoutExpired:
-            timed_out = True
-            try:
-                os.killpg(proc.pid, signal.SIGKILL)
-            except (ProcessLookupError, PermissionError):
-                proc.kill()
-            proc.wait()
-
-        from .captured_output import read_capped
-
-        def _read_capped(fh, diagnostic: str = "") -> str:
-            return read_capped(fh, OUTPUT_CAP, diagnostic=diagnostic)
-
-        if timed_out:
-            # F226: keep the stdout/stderr captured BEFORE the kill — a util that hung
-            # AFTER printing diagnostics (the common case) would otherwise lose exactly
-            # the material that explains why it hung. The timeout note rides on stderr.
-            note = f"util {name!r} timed out after {timeout}s (process group killed)"
-            return -1, _read_capped(out_f), _read_capped(err_f, diagnostic=note)
-        return proc.returncode, _read_capped(out_f), _read_capped(err_f)
+    # F226: the timed-out leg still returns what was captured BEFORE the kill — a util that
+    # hung AFTER printing diagnostics (the common case) would otherwise lose exactly the
+    # material that explains why it hung. `run_jailed` owns that, the process group and the
+    # bounded read; the exit code -1 is this kind's own "killed by the deadline" convention.
+    res = run_jailed(cmd, env=env, cwd=cwd or home, timeout=timeout, label=f"util {name!r}",
+                     config_seal=policy.own_dir)
+    return (-1 if res.timed_out else res.returncode), res.stdout, res.stderr
 
 
 def selftest(home: Path, name: str, *, timeout: int = 120,

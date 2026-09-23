@@ -113,8 +113,12 @@ def hold(loop, action: dict, rendered: str) -> dict | None:  # noqa: ARG001 — 
     # engine asks once (a `did`/`didnt` can only be known a turn AFTER the action ran)
     loop.reminder_pending = [h.id for h in hits]
     loop.reminder_nudge = 2
+    # the tally rides the observation: `store.looks_too_broad` is what turns a hold into the
+    # moment its own evidence is readable, and obs_hold renders the line
+    live = {h.id: h for h in loop.reminders}
     return {"kind": "reminder_hold", "action": rendered,
-            "reminders": [{"id": h.id, "scope": h.scope, "description": h.description}
+            "reminders": [{"id": h.id, "scope": h.scope, "description": h.description,
+                           "stats": dict(live.get(h.id, h).stats)}
                           for h in hits]}
 
 

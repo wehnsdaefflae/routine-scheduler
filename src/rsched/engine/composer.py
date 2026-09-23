@@ -100,12 +100,12 @@ def state_digest(routine_dir: Path, deferred_qa: list[dict], open_qs: list[dict]
                      + plan)
     # F334/D98: the user's meaning-level bounds ride beside the plan — always visible, so
     # a finish can never claim it did not know them (the finish gate enforces the accounting).
-    from . import stopping_digest
-    # the phase drives stage-scoped conditions (the per-stage half of the original order);
-    # `phase` here is the recipe's own state/phase.json, read just above
+    # the phase drives stage-scoped conditions (the per-stage half of the original order).
+    # ONE source for it — `stopping.current_stage`, the recipe's own state/phase.json — shared
+    # with the finish gate and the verifier, which used to scope by a different value.
+    from . import stopping, stopping_digest
     if stop_sec := stopping_digest.digest_section(
-            routine_dir, phase=str((phase or {}).get("phase") or "") if isinstance(phase, dict)
-            else ""):
+            routine_dir, phase=stopping.current_stage(routine_dir)):
         parts.append(stop_sec)
     state_dir = routine_dir / "state"
     if state_dir.is_dir():
@@ -173,6 +173,24 @@ def state_digest(routine_dir: Path, deferred_qa: list[dict], open_qs: list[dict]
     # the prompt. Absent (not an empty heading) until something has actually spilled.
     if spilled := outputs.digest(routine_dir):
         parts.append(spilled)
+    # F529: what is in the inbox that THIS leg may not consume. A resumed leg drains only
+    # LIVE_MESSAGE_VIAS — an audit decision, a sibling's report, a queued routine-page
+    # message belongs to the next FRESH run — and the leg used to be told nothing, so a run
+    # explained an answered decision as still open three legs after the answer arrived
+    # ("did you lose my answer again?!"). Named, never delivered: boot drains BEFORE this is
+    # composed, so a fresh run shows nothing here and a resumed leg shows exactly what it
+    # may not take.
+    from . import inbox as inbox_mod
+    freight = inbox_mod.queued_freight(routine_dir, exclude_vias=inbox_mod.LIVE_MESSAGE_VIAS)
+    if freight:
+        flines = "\n".join(
+            f"- [report {f['report']} from {f['from'] or 'a sibling routine'}] {f['text']}"
+            if f.get("report") else
+            f"- [{f['via'] or 'queued'} · {f['ts'][:16]}] {f['text']}"
+            for f in freight)
+        parts.append("QUEUED FOR THIS ROUTINE'S NEXT FRESH RUN (not delivered to this leg; "
+                     "read the file in inbox/ before describing any of it as open):\n"
+                     + flines)
     if open_qs:
         qlines = "\n".join(f"- [{q['qid']}] {q['question']} (asked {q.get('asked', '?')})"
                            for q in open_qs)

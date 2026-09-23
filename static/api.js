@@ -108,8 +108,15 @@ function requestToken(message) {
   return gatePromise;
 }
 
-// The one authed-fetch loop (token prompt + one 401 retry) both call shapes share.
-async function authedJson(path, makeInit) {
+// The ONE authed-fetch loop (token prompt + one re-gate retry) every request shape shares —
+// JSON calls, multipart uploads AND the binary blob fetches behind every artifact preview,
+// thumbnail and file download. Returns the Response; the caller decides what to read off it.
+//
+// Nothing may fetch around this: an apiBlobUrl that carried the stored token itself used to
+// fail a rotated token with a bare "401 Unauthorized" toast (or a silently removed image) and
+// re-gate nobody, so the operator had to trigger some OTHER call to be offered the token
+// field at all.
+async function authedFetch(path, makeInit) {
   for (let attempt = 0; ; attempt++) {
     let token = getToken();
     if (!token) token = await requestToken("This console is token-protected. Sign in to continue.");
@@ -129,14 +136,21 @@ async function authedJson(path, makeInit) {
         : "Token rejected — enter the current one.");
       continue;
     }
-    const data = await resp.json().catch(() => ({}));
-    if (!resp.ok) {
-      const err = new Error(detailMessage(data.detail) || `${resp.status} ${resp.statusText}`);
-      err.status = resp.status;
-      throw err;
-    }
-    return data;
+    return resp;
   }
+}
+
+// JSON on top of the gate loop: the FastAPI `detail` shape is parsed HERE, because it is the
+// JSON contract and not something a binary fetch can carry.
+async function authedJson(path, makeInit) {
+  const resp = await authedFetch(path, makeInit);
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok) {
+    const err = new Error(detailMessage(data.detail) || `${resp.status} ${resp.statusText}`);
+    err.status = resp.status;
+    throw err;
+  }
+  return data;
 }
 
 // A body that is ALREADY serialized JSON — the one mistake api()'s signature invites (F524).
@@ -185,8 +199,13 @@ export async function apiUpload(path, formData, extraHeaders = {}) {
 // (iframes, images, PDFs) where no Authorization header can ride along. The caller owns
 // the URL's lifetime (URL.revokeObjectURL when done).
 export async function apiBlobUrl(path) {
-  const resp = await fetch(path, { headers: { Authorization: `Bearer ${getToken()}` } });
-  if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText}`);
+  const resp = await authedFetch(path,
+    (token) => ({ headers: { Authorization: `Bearer ${token}` } }));
+  if (!resp.ok) {
+    const err = new Error(`${resp.status} ${resp.statusText}`);
+    err.status = resp.status;
+    throw err;
+  }
   return { url: URL.createObjectURL(await resp.blob()), type: resp.headers.get("content-type") || "" };
 }
 

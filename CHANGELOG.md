@@ -15,6 +15,3157 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.365.0] — 2026-09-22
+
+### The review
+
+One complete review-and-revision of the scheduler, on the operator's order: fix every open
+report, finish the outstanding work, look at the console again as a user, find the synergies
+between the concepts, make the code pristine, check the dependencies, and make the system
+self-improving with no operator input.
+
+It was run as twenty-one parallel audits against the LIVE instance — its running daemon, its
+thirty-five routines, its library, its fleet data and screenshots of its console in both themes
+at desktop and phone width — each audit then re-checked by an adversarial reader whose job was
+to refute it. What survived was implemented in file-disjoint lanes. Several findings did not
+survive: they are recorded as refuted rather than quietly dropped, and two proposals were
+withdrawn because a reviewer showed they would erase an invariant the docs justify.
+
+The load-bearing change is that the self-improvement loop now has CONSUMERS. It was a set of
+well-instrumented producers: twenty-odd accepted research proposals that reached no builder, a
+"decided but unbuilt" document no recipe read, a measured token saving that was filed as prose
+and never bound to a routine, and no measure at all of what a routine costs over time. An
+accepted proposal, a design entry and a decided report now enter ONE queue the builder reads; a
+confirmed measurement is handed over as a binding with a watch and a revert condition; and the
+improver picks its targets by cost and regression instead of by recency.
+
+**Security and the sandbox**
+
+### Fixed — one jailed runner for the three callable kinds, and the shell capture stops being read whole (one-jailed-runner)
+
+A util, a per-routine script and a `shell` command are three jail COMPOSITIONS and one process
+problem, and the process problem was solved three times by hand. Two of the copies had lost a
+protection the third documents in its own comment. `scripts.run_script` and `scripts.ensure_env`
+used a plain `subprocess.run(timeout=)`, which never kills the `uv run` GRANDCHILD a
+`calls:`-declaring script spawns through `gu` — the child keeps the pipes open past the deadline
+and the engine turn never returns, so the run sits until its wall clock dies. `shellrun.run_shell`
+spooled to tempfiles for the stated reason that "a command that prints gigabytes must not be
+buffered in the daemon's memory", then did `capped(out_f.read())` — the entire tempfile back into
+the engine process. That is the 2026-09-14 incident (a 1.5 GB decode, five hours of swap-thrash, a
+physical reset) in a seam the `shell` action reaches with one `find /`.
+
+`utils_run.run_jailed` is now the single runner: own process group with `killpg`, tempfile capture
+read through `captured_output.read_capped` (`cap + 1` characters, never the file), whatever was
+printed before a kill kept, and one spawn-failure shape. `shellrun.capped` and its 64 KB
+head+tail `STREAM_CAP` are deleted rather than ported — one 1 MB envelope now serves every kind,
+with the observation truncation and the `.util_outputs/` spill unchanged above it, so a shell
+call's saved output gains fidelity and its observation does not change. The script kind gains the
+process group, the bounded capture and — new — the output it printed before a timeout, which it
+used to discard (`return 124, "", …`). The acceptance test is structural: exactly one module may
+open a capture tempfile, no call site anywhere may `.read()` one whole, and none of the three
+modules may contain a `subprocess.run(`.
+
+### Fixed — the never-grantable credential stores are refused where grants are made, not only where a run asks (SEC-1, SEC-2)
+
+`entities.NEVER_GRANTABLE` has always promised that the instance config dir (the console token
+plus the central secrets store), `~/.credentials` and `~/.ssh` are grantable to no routine "by
+design". `never_grantable_fs` had exactly ONE caller — the runtime access-REQUEST validator — so
+the promise was true of what a run asks for and false of what an operator types into the routine
+page's Filesystem-roots panel. That is how `~/.config/routine-scheduler` became a live read AND
+write root on the routine that audits configuration: one prompt injection from the operator's
+token, every other routine's scoped secrets, every OAuth refresh token, and a writable
+`config.yaml` (including `sandbox: off`).
+
+Two enforcers now, deliberately asymmetric. `PATCH /routines/{slug}` REFUSES such a root with a
+400 naming the path and the reason. The config LOADER REPORTS one already in a file and KEEPS it:
+dropping would break two live routines whose actual job is auditing and exporting the server's
+configuration, and a root that vanished from under their next run would fail them with nothing
+naming the cause — so the routine page's `problems` and `rsched validate` say it instead. One
+wording (`entities.GUARDED_ROOT_REASON`) and one predicate (`entities.guarded_roots`) serve both.
+
+### Fixed — the routine token no longer resolves to the console token when the tier is blank (SEC-4)
+
+`exec_env._extra_secrets` overrode `RSCHED_API_TOKEN` with the server's read-only routine token
+— but under `if routine_token:`. With a blank or deleted `routine_token:` the override never
+happened, and `scoped_env` then injected whatever the central store held for that name into every
+util declaring it. On this instance the store's `RSCHED_API_TOKEN` is byte-for-byte
+`config.yaml: token` — the PRIMARY console token, the one that authorizes every config mutation.
+A guard that fails open on the empty value is not a seal, so the override is now unconditional: a
+blank tier reaches the util as an empty string and fails visibly against a 401, which is a state
+an operator can act on.
+
+### Fixed — the reserved-util gate follows `calls:` (SEC-8)
+
+`capabilities.utils` is advertised as the switch for a reserved channel, and it gated the util
+NAME the model put in the action and nothing else. `utils_run.util_needs` unions every `calls:`
+callee's `secrets:`, `net:` and `fs:` into the caller's one jail and one env — by design, one
+call tree — and the library root is on PATH for every util, so an UNGATED util naming a reserved
+sibling both receives that sibling's credentials and can exec it. Three such edges exist in
+the library today: `captcha-fetch` → `browser-session`, and `rephrase-as-human` /
+`voice-rewrite` → `remote`, whose engine-injected `RSCHED_MACHINE_KEYS` are the bound machines'
+private SSH keys.
+
+The gate moved into its own module (`rsched/utilgate.py` — it is the one answer `GrantPolicy`
+gives that reads the util LIBRARY rather than the routine's config, and grantpolicy.py was over
+the file cap before it grew a second question). It walks the tree (`UtilNeeds.tree`, which
+`util_needs` already computed and threw away) and refuses a call reaching a gated util the routine does not hold, naming the EDGE
+rather than the endpoint — a denial reading "remote is off" for a call the run made to
+`rephrase-as-human` is unactionable — and routing to the ordinary one-click request. Holding the
+callee lets the caller through, exactly as it would for a direct call.
+
+An edge is refused for what it actually CONFERS, not for existing: either the callee carries
+credentials the caller would not otherwise receive, or the caller really execs it (`gu <name>` in
+its source, the same evidence `scripts.call_problems` reads). `captcha-fetch` names
+`browser-session` only to print "use `gu browser-session start --stealth`" in an error message,
+and `browser-session` declares no secrets — closing an ungated page fetcher to 24 routines over
+an unused line would be the gate costing more than it protects. Measured against the live fleet:
+the declaration-only rule refused 3 utils across 33 routines; the confers rule refuses exactly
+`rephrase-as-human` and `voice-rewrite` across the 27 without `remote-machines`, which is what
+both utils' own docstrings already say ("the CALLING routine must … hold the remote-machines
+permission, else this fails loudly") — the failure moves from late and obscure to immediate and
+one click from repair. The walk runs only when the library has gated utils and the policy knows
+its library root.
+
+### Fixed — `.memory/` is sealed on the resolved path, not only on the string the model typed (SEC-7)
+
+Every sibling seal in `engine/fileops.py` tests the RESOLVED path — `runs/`, `.util_outputs/`,
+`routine.yaml`. `.memory/` was tested only in `engine/actions.py`, lexically, against the raw
+`path` field, so `write_file path="state/../.memory/INDEX.md"` and the absolute form both walked
+past it and `resolve_rel` put them right back inside the own dir where the write gate passed
+them; `delete` and `move` the same. What that bypassed is the reason the index is engine-owned at
+all: a model-authored index once named files the engine then renamed and 36% of live history
+reads returned ENOENT. It also bypassed the 100-line note cap and the `memory` capability gate —
+a routine that does not hold the memory permission could read and rewrite its own `.memory/`.
+`fileops._memory_gate` is now called by `_write_gate` (write_file, edit_file, delete, move,
+mkdir) and by `_read_one`. The lexical check stays: it is the cheap schema-retry correction that
+costs no turn, and the resolved check is what makes it true.
+
+### Changed — the read-only API tier stops answering cross-routine search (SEC-6)
+
+"Read-only" is not "may read anything". `/api/fs`, `/api/settings` and `/api/debug` were already
+refused to the routine token; `/api/search` was not, and it is full-text over EVERY routine's
+transcripts, notes and ledgers, with no redaction anywhere in the observation path — so a util
+that printed a token once was queryable by every other routine forever. It joins the list. The
+tier refusal's wording names it, so the console's `insufficient_scope` handling is unchanged. The
+cross-routine FILE reads (`/api/routines/{slug}/file`, `/api/runs/{id}/file`) stay open on
+purpose: at least one routine was granted another's transcripts deliberately, and closing that
+door needs the grant re-expressed as an fs-read root first.
+
+### Fixed — the browser-view relay no longer follows a hop the upstream chooses (SEC-9)
+
+`api_browser_view.relay_asset` ran with `follow_redirects=True`. The FIRST hop is safely derived
+(`upstream_for` takes scheme+netloc from the configured URL alone; `_safe_suffix` rejects
+absolute paths and both encoded and decoded `..`), but every hop after it belonged to the
+upstream — and that upstream is a raw websockify on a port published to the whole tailnet with no
+credential, while the daemon's network position reaches cliproxy, Chrome's CDP port, the LAN and
+the internet. A 302 turned the console into an SSRF proxy answering to the browser-view pass
+alone. Redirects are no longer followed and a 3xx is refused with a 502 naming the target (the
+upstream serves static assets and emits none). In the same route, the pass cookie's `Secure` flag
+now also reads `X-Forwarded-Proto`: behind a TLS-terminating proxy the app sees `http`, so the
+flag came off exactly where the user's own connection was the encrypted one.
+
+### Changed — docs/sandboxing.md says where the code delivers less than the doc promised (SEC-3, SEC-11)
+
+Three statements were corrected rather than reworded:
+
+- **"invisible — everything else … `~/.config/routine-scheduler`"** is true *because no grant
+  covers those paths*, not because the jail knows their names. A routine granted one sees it like
+  any other root, which is what SEC-1/SEC-2 above now make impossible to arrange by accident.
+- **`routine.yaml` is sealed at the ACTION layer, not by the jail.** The file sits in the
+  routine's own directory, that directory must be mounted read-write (it is the working directory
+  relative paths resolve against), and Landlock unmasks access UP the path — a narrower rule on
+  one file beneath an allowed directory subtracts nothing, so the kernel cannot carve it out. A
+  `shell` heredoc, a script, or any `fs: roots` util handed a payload can therefore write the file
+  that `write_file path=routine.yaml` is refused for, and the change lands at the next run's boot
+  with nothing in the transcript naming it as a config change. `run_jailed` now reads the file
+  either side of every jailed call and names a change on the call's stderr, with a daemon warning
+  beside it. Detection, not prevention — deliberately not a revert, because the operator's own
+  PATCH is a legitimate concurrent writer of that file (a Decisions-page *approve & apply* reaches
+  a live run by design). A routine holding `shell` or `script` can widen its own config by one
+  run's delay; the capability, not the jail, is the decision.
+- **`net:` cannot restrict a destination**, and on this deployment that is not theoretical: the
+  engine container shares a docker network with the headful Chrome sidecar, whose DevTools port
+  (9222) and noVNC screen (6080) have no authentication of their own, because neither protocol has
+  any. `browser-session` is reserved behind `browser-sessions`, but the gate is on the action, not
+  on the socket. Closing it needs `net:` to carry an allowlisted port set (which Landlock ABI 4
+  does express) so that reaching the browser becomes a declaration only the reserved utils make —
+  designed, not built. The expired header-migration section and an orphaned comment left behind in
+  `utils_lib.py` by the `STRIP_VARS` move are deleted; the rationale now sits beside the constant
+  in `utils_run.py`.
+
+### Operator actions handed over (not code)
+
+1. **The shared browser's screen is open to the whole tailnet with no credential.**
+   `tailscale serve status` shows `tcp://ubuntuserver.taild5768c.ts.net:6080 → 172.30.7.10:6080`,
+   and `curl http://100.77.58.75:6080/vnc.html` answers 200 with nothing attached. A raw `tcp://`
+   serve forwards bytes and performs no HTTP auth, so every tailnet peer has keyboard and mouse on
+   the headful Chrome holding the signed-in sessions. No code change fixes this — the console's
+   own relay (`/browser-view`, path-scoped HttpOnly SameSite=Strict pass) is already the careful
+   design, and it proxies to a port sitting open beside it. Drop the `tcp://…:6080` serve entry
+   and leave `browser_view_url` pointing at the upstream only through the relay, or front it with
+   `tailscale serve --https=443 --set-path /browser http://127.0.0.1:6080`. Then
+   docs/browser-sessions.md:95, which asserts the opposite, becomes true again.
+2. **Delete `RSCHED_API_TOKEN` from the central secrets store** (Settings → Secrets). The engine
+   now always supplies the routine token for that name, so the row can never be injected — but it
+   is the PRIMARY console token sitting in a file that any routine granted the config dir reads
+   directly. Check `RSCHED_ADMIN_TOKEN` in the same store while there: 6 characters, declared by
+   no util, almost certainly a stale placeholder.
+3. **The residual SEC-1 decision is yours.** The WRITE root is gone from config-optimizer. The
+   READ root `~/.config/routine-scheduler` remains on THREE routines — **config-optimizer**,
+   **library-sync** and **scheduler-improvement-research** — and each will now report a problem on
+   its page and fail `rsched validate` until it is settled. Two of them audit and export the
+   server's configuration as their actual job, so dropping the root silently would break them:
+   the question is whether a routine that audits server config should reach it through a REDACTED
+   path (an export util that emits config with `token:`, `routine_token:`, `secrets.env`,
+   `connections.json` and `cliproxy/config.yaml` removed, granted as its own directory) instead of
+   through the live credential store. That is a design decision, not a defect fix, and it is the
+   only thing standing between a prompt injection in one of those three runs and the whole
+   instance's credentials.
+4. **`tv-show-tracker-seedbox-manager` binds machines without holding `remote-machines`.** Nothing
+   enforces that pairing, so its machines' private SSH keys are engine-injected on the binding
+   alone and reach any util declaring the names — which, before the `calls:` gate above, included
+   two ungated ones. Either give it the permission (if it should use the machine) or unbind the
+   machine (if the sshfs share is all it wanted).
+5. **The engine container reaches Chrome's DevTools port unauthenticated.** Verified from inside
+   as uid 1000: `http://172.30.7.10:9222/json/version` → 200, `…:6080/vnc.html` → 200, while
+   cliproxy (401) and the daemon's own API (401) are correctly gated. Until `net:` carries a
+   destination term, the boundary around a signed-in browser is the docker network. Consider
+   moving Chrome off the shared `browser` network onto one only the browser utils' sidecar joins,
+   if the compose topology allows it.
+
+**The engine**
+
+### Fixed — the window clamp no longer cuts the system prompt first (clamp-truncates-system-prompt)
+
+`clamp_to_cap` is the last resort that trims oversized message bodies so a turn fits, and it
+ordered every message by size — index 0 included. The composed system prompt is the largest body
+in every real run (~90 KB against the 8 KB observation cap), so it was cut FIRST and cut EVERY
+pass: token-lab:20260910-073700 clamped one message 90,982 → 30,097 chars on turn 1 and re-cut the
+same message 34 more times. That took the recipe's own contract, CAPABILITIES and the STATE DIGEST
+out of the prompt while the clamp marker pointed at a transcript that never carries them — nothing
+writes the composed prompt to transcript.jsonl — and it rewrote the cached prefix from byte zero on
+every single turn. Message 0 is now never a candidate. The kickoff at index 1 stays clampable: a
+conversation's pasted document lives there and is legitimately the biggest thing in the run.
+
+### Fixed — one fit test decides the archival, and a middle nothing can hold is not posted anyway (fallback-ignores-window-fit)
+
+There were two fit tests for the same request. The tool-call branch compared a bare
+`context_tokens × 0.7` against the middle alone, while only the dedicated-model branch used
+`archival_fits`, which also reserves the archival prompt, the history schema and the model's own
+output — and the automatic branch checked nothing at all. That gap is the exact shape of
+llmsectest-weekday:20260922-060001, which lost a 90,005-token archive to a 32,768-token window in
+the same minute the run itself died on the same window. Every candidate now goes through
+`archival_fits`, in one place, in one order — the configured compaction model, then the tool-call
+model, then the main model — and each rejection is named on the compaction event. When none fits,
+the archival is SKIPPED (`archival: "skipped"` plus a line saying why) instead of posted to a model
+that will 400: the middle is lost either way, and this way the run keeps the deterministic digest
+and the transcript says what happened.
+
+Paired with it, a model the failover path switches to now gets the prompt RE-FIT to its own window
+before the retry (`completion._adopt_model`). The prompt was compacted once, at the top of the
+turn, under the window of the model that then failed, so a chain step down to a smaller member
+posted the same oversize prompt and burned one of its two oversize retries proving it could not
+fit — 156,656 tokens into a 32,768-token fallback, twice, on 2026-09-22.
+
+### Fixed — anticipatory and budget-driven compaction actually compact (compaction-gate-threshold-split)
+
+The gate decided against `min(fraction × window, ceiling, budget_cap)`, spent a whole model turn
+warning the run that compaction was imminent — and then called `maybe_compact`, which re-tested its
+OWN `0.6 × context_tokens` and returned None. So uncached anticipation at a stage boundary
+(0.6 × 0.85 = 0.51 × window) and the ">10% of the remaining token budget" cap never archived
+anything: the run was told to externalize, spent the turn doing it, and the forced pass then landed
+three actions into the next step — exactly what the anticipatory trigger exists to prevent. The cap
+is now an argument (`maybe_compact(messages, turn_records, cap_tokens)`) and the caller's decision
+is the only one. The suite could not see it because the only gate tests monkeypatched
+`maybe_compact` away; one now runs the real thing.
+
+### Fixed — a degraded model can no longer break a structured file it edits (F460)
+
+`edit_file` and `write_file` applied what the model handed them byte-faithfully and nothing checked
+the RESULT against the file's own format. On 2026-09-07 a fallback model reached by failover
+emitted a schema-VALID `edit_file` whose 11,848-character replacement was half plausible JSON and
+half an echoed observation; a 59 KB `state/shared-state.json` stopped parsing at line 771 and the
+routine worked from rubble until a human diagnosed it (R1342 → R1344 — the same run broke the same
+file twice). The class is "a degraded model's output is trusted because it is well-FORMED", which
+the schema-storm guard cannot see: it counts only schema-INVALID replies.
+
+`engine/fileformat.check_after` closes the deterministic half. If a `.json` / `.yaml` / `.toml`
+file PARSED before the change and does not parse after, the write is refused, the file is untouched,
+and the run reads the parser's own line and column on the turn it made the mistake. Deliberately
+narrow: only whole-document formats (`.jsonl` is excluded — a partial line is legal in an
+append-structured ledger), only when the file parsed before (repairing an already-broken file is
+what an edit is for), and structured `write_file` content and appends are exempt by construction.
+The residue — an edit that parses and is WRONG — is not checkable here and stays with F460.
+
+### Fixed — an engine note replays as an engine note, not as a phantom user message (engine-notes-replay-as-user-messages)
+
+Nine seams put an engine-authored message into a live run — a model switch, a deliberation switch,
+a live config change, a rule bound or unbound, a rule assist, the pre-eviction warning, the archive
+announcement, the boot setup-gap list, the budget-spent notice — and each appended the full prose to
+the message list while recording a short STUB beside it (`[engine] setup gaps at boot`). Replay had
+no notion of an engine note at all and rendered every `user_injection` as "USER MESSAGE (injected
+mid-run)", so a resumed conversation read ≈380 phantom user messages across 21 days: mislabelled,
+because the harness contract tells the model an injected message IS the user talking, and lossy,
+because the stub replaced the gap list, the compaction warning and the archive pointer the model had
+actually read. A second resume then replayed the stub where the previous leg carried the prose, so
+the prompt prefix differed between legs and the provider re-WROTE the whole conversation at 1.25x
+instead of re-reading it at 0.1x.
+
+One seam now writes both halves from one string (`engine/enginenote.py`), and replay renders it back
+verbatim as `ENGINE NOTE: …`. The notes `boot` re-authors on every leg — the resume framing, the
+setup-gap list, the orphaned-children note — carry `replay: false` and are not replayed at all,
+because a 40-reply conversation was stacking one copy of each per reply. Two more renderers were
+unified for the same reason: an injected user message and a slash command (which is ONE message live
+— the command and its result — and replayed as two differently-worded ones).
+
+### Fixed — which budget ended the run is on the record (reserved-turn-cause-invisible)
+
+A fifth of this fleet's runs end on the reserved finish turn — 90 `budget_exhausted` events in 21
+days — and nothing said WHICH budget tripped: the violation went into the message list alone and the
+health event carried the model's summary. Reconstructing the cause afterwards worked for 22 of the
+90, and only for turns and wall clock, because those are the two `status.json` carried; a token or
+cost cap was simply unknowable, so nothing could tune the budget that ends a fifth of the fleet's
+work. The violation is now a transcript event, and `resource` / `limit` / `status` ride the health
+event as structured fields beside `budgets.spent` in status.json.
+
+The event is also emitted whenever the reserved turn was SPENT, whatever the finish status. The
+reserved turn is what decides, not the status: a run that spends it and still finishes `ok` was
+ended by a budget just as much, and 11 such runs since 09-01 left no event at all — so the fleet's
+budget-forced endings read as fewer than they are.
+
+### Fixed — the reserved finish turn keeps its own promise (reserved-turn-guard-edges)
+
+"This is your LAST turn — the engine executes nothing else" was only a promise. The turn's grammar
+is narrowed to `finish`, but a provider without constrained decoding can emit any kind and the
+executor ran it. A non-`finish` (non-`report`) action is now refused at the dispatch seam and the
+loop force-finishes exactly as before — the same ending, minus the action, and still exactly one
+completion past the cap. Two more edges: the fabrication guard and the unbacked-claim guard were the
+only finish-gate rungs with no reserved-turn exemption, so a reserved `finish(ok)` they set aside
+returned to a loop whose budget was still violated, which force-finished with an engine string and
+LOST the authored summary the reserve exists to produce (an unbacked claim is now recorded as a
+transcript error note instead); and `reserve_finish` re-armed `_schema_off` but not
+`_shed_schema_turns`, so a reserved turn landing right after a repeat-streak warning ran without the
+finish-only grammar at all.
+
+### Fixed — a child's deferred question reaches a person (child-deferred-ask-black-hole)
+
+A child run never blocks on the user, so its `ask_user` becomes a durable decision record — filed,
+until now, under `runs/<ts>/sub/<n>/questions/pending/`, a path no surface scans, while the child was
+told "the user will see it in the UI; the answer reaches a future run". Four such records exist on
+the live instance and not one was ever shown to anyone: a subtask hit a real blocker, filed the
+question exactly as instructed, continued on its default, and the question sat under `runs/` until
+retention deleted it. The record now goes to the ROUTINE's own `questions/pending/`, its text
+prefixed `[child task #<n> '<label>']` because the Decisions page shows the routine and a child has
+no page of its own, and its id is allocated against the ROOT pending dir — a child shares its
+parent's `run_ts` and the id is `q-<run_ts>-<turn>`, so a parent and a child asking on the same turn
+were handed the same id over an unconditional write.
+
+### Fixed — a live grants PATCH no longer revokes the recipe unlock (live-grants-patch-drops-recipe-unlock)
+
+Adopting a `grants` config change mid-run rebuilt the run's base policy from a SECOND copy of
+`load_policy`'s arguments that carried two of the five. So an operator clicking a grant on the
+Decisions page while routine-improver had its recipe unlocked silently re-locked it — the next write
+to a target's `main.md` was refused "needs the recipe-authoring permission" — an admin conversation
+leg lost `admin`, and every child of a live run (children read the ROOT control.json, so they adopt
+the parent's patch too) lost its child scope, gaining the routine's denial wording and
+`run_history: last` instead of a child's own. Both seams now call one builder,
+`loopsetup.build_base_policy`.
+
+### Changed — the consequence-reminder tally has a reader (reminder-tally-never-consumed)
+
+The four-way tally that decides whether a reminder earns its turns was written on every fire and read
+by nothing in the engine: 198 holds in 21 days, 67 of them labelled `could_not` by the runs
+themselves — the label that says the consequence was IMPOSSIBLE for the action that was held — and
+the only prune path was the model spontaneously remembering to go and look at its own store. It does
+not: 81% of holds were followed by the identical action re-emitted unchanged.
+
+`reminders.looks_too_broad` now asks one question of a reminder's own record — after at least five
+fires, is `could_not` the plurality? — and when the answer is yes the HOLD carries the evidence: the
+fire count, the `could_not` count, and the line that revises or deletes the pattern with a `remind`
+op on that same turn. This is not the passive tier the layer refuses: it costs no turn and adds no
+store, because the run is already stopped and already re-deciding this exact action, and `remind`
+rides the turn it is about to take anyway. Nothing demotes, retires or deletes a reminder behind the
+run's back — the decision stays the run's, it just stops being made blind.
+
+### Fixed — the refusal classifier stops firing on malformed actions (refusal-classifier-runs-on-every-finish)
+
+A free-text reply that looks like a content refusal is flagged and clarified, and deciding that
+takes a schema'd subcall on the tool-call model. It was running on every non-`parsed` schema
+violation as well as on prose — which includes a JSON object that merely failed VALIDATION, i.e. an
+ordinary malformed action. Measured over 21 days: 784 `refusal · classify reply` calls against 8
+refusal events, the most frequent purpose in the whole llm-tasks sidecar, each one a serial
+round-trip on the retry path. Only a reply carrying no JSON object at all is classified now.
+
+### Fixed — an image anywhere in the prompt is repaired, not just the last one (R1824)
+
+When an endpoint rejects an image, the media fallback converts it to vision-util text and retries
+text-only. It looked at the TAIL message only — and that is exactly why it failed the one case that
+mattered: on 2026-09-22 a user message landed AFTER the media-bearing observation, so the next 400
+found no media on the tail, returned False, and the chain walked four models (three of them
+`multimodal: false`) to `does not support image inputs` and killed the conversation. Every
+media-bearing message is converted now, and the vision DESCRIPTION — what the model then reasons
+from — rides the transcript event, which previously carried a 120-character excerpt of the exception
+and nothing else, so a run reporting "the vision fallback returned empty text" could be neither
+confirmed nor refuted from disk.
+
+### Fixed — a natively viewed image is no longer stored twice, in base64, in the transcript
+
+The observation for a native `view_image` captures the file's bytes so the provider re-renders
+exactly what the model was told it would see. That dict was then recorded verbatim: one live
+conversation's `transcript.jsonl` reached 10.0 MB of which 9.6 MB were 14 base64 blobs that nothing
+ever reads back — replay rebuilds observations text-only. Over `fileops.READ_MAX_BYTES` (8 MiB) the
+file is REFUSED to self-audit and to every other routine that reads transcripts, and the web
+renderer, the search index and the gzip archive all pay for it. The record keeps the path and the
+media type; the live message keeps the bytes. Relatedly, a replayed `view_image` no longer tells the
+model an image is "attached below for you to see" when the replay attaches nothing.
+
+### Fixed — a stage-scoped stopping condition is scoped by one thing (stopping-stage-phase-two-sources)
+
+The state digest scoped `stage:` conditions by `state/phase.json` — which the setup surface also
+treats as the contract — while the finish gate and the verifier scoped the same conditions by
+`ctx.phase`, the stem of the last `stages/<x>.md` the run happened to READ, which is `""` until a
+module is read at all and is free to differ from the key the recipe writes. So a condition shown
+ACTIVE in the digest was never demanded at the finish and never recorded, or a finish was deferred
+over one the digest called dormant and the model could not see why. `stopping.current_stage` is now
+the single source at all three seams.
+
+### Changed — `stage_coverage` is computed once per stage, not twice per turn
+
+`write_status` runs at least twice a turn and re-derived the recipe's declared stages from disk
+every time: `stage_states` reads `main.md`, globs `stages/` and opens every module for its first
+heading. A 7-stage recipe paid ~16 file reads per turn for a list that only changes when the run
+enters a new module. Memoized on the stages actually entered — 7 derivations on a 60-turn run
+instead of 120.
+
+### Fixed — the token estimate is calibrated from what the provider actually counted
+
+Compaction sized every gate from a 3.5-bytes-per-token guess and learned it was wrong only
+when a provider rejected the prompt: six `prompt is too long: 1017305 tokens > 1000000
+maximum` 400s in a fortnight, four of them in one run (self-audit 20260921-000321), each a
+full-prompt round trip plus a shrink pass. Every completion already reports the true prompt
+size, so the run now divides it by its own estimate of the same messages and compacts
+against the window divided by that ratio (`engine/window.note_prompt_size` →
+`_calibrated_window`, one line in `compact_if_needed`, so the archive gate, the eviction
+warning and the clamp all see it). Two guards keep a correction from becoming a defect: the
+action schema is subtracted from the reported figure (the provider counts it, the message
+list does not carry it), and only a prompt already past a fifth of the window calibrates —
+the framing overhead is roughly fixed, so `reported / estimate` explodes on a short turn.
+Clamped to [1.0, 2.0]; the overflow nets stay as the backstop.
+
+### Fixed — a budget warning is said once per line crossed, not on every turn above it
+
+`[BUDGET: … converge DELIBERATELY now]` rode EVERY observation past 85%, so a run read it
+fifteen times and wrapped up at the ceiling whether or not its stopping conditions were met
+(nanogeofeld 8 of 10 runs at 94-100 turns of 100; freelance-radar 7 of 10 at 173-200 of
+200 — none of them forced), while the harness contract two sections above told the same run
+that budgets are never a pace. Each line is now announced exactly once: the warn line, then
+95%, per resource (`BudgetLedger.warnings` returns `(line-id, text)` pairs, `RunContext`
+latches the ids). A second resource crossing later still gets its own notice.
+
+### Fixed — an image anywhere in the prompt is converted, not only one on the tail
+
+Pins the wave's media-fallback change with the case that broke: on 2026-09-22 a user message
+landed after the media-bearing observation, the tail-only fallback found nothing, and the
+chain walked four models — three of them `multimodal: false` — to `does not support image
+inputs` and killed the conversation (c-20260922-072125).
+
+### Changed — the dead `session` caching hint is gone from the whole call path
+
+`ChatEndpoint.complete` took a per-run `session` key "to keep the provider's prompt cache
+warm". No adapter has read it since the proxy cutover retired the CLI transport's `--resume`
+(both carried `noqa: ARG002`), and its docstring sent anyone debugging a cache miss to the
+wrong place. Removed at the call site, in the protocol, in both adapters and in the
+instrumentation wrapper in one change — removing either half alone TypeErrors on every turn.
+Caching is the provider's, earned by a byte-stable prefix, which the append-only message list
+already gives it.
+
+### Fixed — a finish is judged for refusal without buying a classification every time
+
+`_intercept_refusal_finish` sent EVERY finish through a `refusal · classify reply` subcall on
+its way out (784 such calls in 21 days against 8 refusals). Only a declared failure now pays
+that round trip; an `ok`/`partial` summary is judged by the marker fast-path alone — the path
+that caught the ok-status specimen c-20260822-091412 in the first place, so a refusal wrapped
+in `finish(status=ok)` is still intercepted. The re-driven turn also stops costing a schema
+attempt.
+
+### Added — `util_killed`: a child the kernel stopped is no longer invisible
+
+Five python children were cgroup-killed inside the container (2026-09-14 and 09-17, anon-rss
+1.86-2.05 GB, confirmed in `/var/log/kern.log`) and the health stream held nothing: the
+engine survives, and the run reads an ordinary failed command. A util, `script` or `shell`
+child that exits on a SIGNAL now emits `util_killed` with the kind, the name, the signal and
+the run's high-water child memory — the figure that says which ceiling refused it.
+
+### Added — `cost_trend_degraded`: the regression that moves no recipe reaches the stream
+
+The routine page's time-keyed trend flag had to be OPENED to be seen, so a library RULE
+revision that triples a routine's cost said nothing anywhere: self-audit's weekly medians
+went 49,409 tokens / 87% ok to 338,024 / 43% and back to 95,782 with no recipe change under
+any of it. The engine now evaluates the same heuristic at run end, once this run's own record
+has landed, and emits `cost_trend_degraded` while it holds (window, both medians, both fail
+rates as structured fields) — into the stream the nightly audit already reads. Beside it,
+every depth-0 usage record now carries `library_commit`, the library HEAD as of the run's
+end: the only thing that dates a change no recipe commit can.
+
+### Fixed — an oversize state file is reported when it crosses a size, not on every run
+
+`oversize_state_file` fired for the same three files on every run — 18 of the last 400 health
+events — which is how the one signal that would have caught a 2 GB partial download became
+noise by construction. It now fires when a file reaches a new size bucket: first sight, then
+only once it has doubled (`.control/oversize-state-files.json`, derived state beside the
+other markers).
+
+### Changed — output compression is JSON minification and nothing else
+
+The log branch called a PRIVATE module of `headroom-ai` and dragged 28 packages (litellm,
+openai, boto3, botocore, huggingface-hub, tokenizers, tiktoken, opentelemetry …) into the
+engine image, on a box that has already OOM-killed PID 1 — for 30,923 tokens saved over five
+days against 111 M input tokens (0.03%), from ten applications against 576 results that
+changed nothing. A log-shaped stdout now takes the outcome those 576 already took: the capped
+head plus the spill pointer that already carries the rest. The optional extra, its Dockerfile
+flag and the `unavailable` status have no producer left.
+
+### Fixed — one util's entry shows its WHOLE usage block
+
+`util name=list args=["<name>"]` is where a run learns how to CALL a util, and a
+verb-dispatched util's first usage line is `gu <name> <verb> …` or just its first verb. The
+entry now renders the whole block through `utils_lib.entry_lines` (its continuation lines had
+been reading as part of the table), the `write_util` action description asks for a block
+rather than a line — the cause of 65 one-line headers in a library of 111 utils — and the
+conversation command palette, which renders one `<code>` row per util, takes the first line.
+
+### Added — a resumed leg is told what freight it may not consume
+
+A leg that is not a fresh boot drains only the live vias, so an audit decision answer or a
+sibling's report waits in `inbox/` for the next FRESH run — and the leg was told nothing. On
+2026-09-21 a decision was answered at 16:01, the run finished at 16:02, and three legs later
+the run explained that decision as still open, with a recommendation ("did you lose my answer
+again?!"). The state digest now names it — `QUEUED FOR THIS ROUTINE'S NEXT FRESH RUN`, first
+line only, consuming nothing — so the one thing the leg could not read is the one thing it is
+told to go and look at.
+
+### Changed — `retry_base_delay`, one reader of the backoff knob
+
+Two schedules (the endpoint wrapper's exponential wait, the engine's linear pause between
+empty completions) each read `RSCHED_RETRY_BASE_DELAY` from the environment themselves. A
+second reader is how a schedule quietly stops being zeroed in the suite and starts spending
+the gate's wall clock on real sleeps; both now read `endpoints.base.retry_base_delay()`, and
+a test holds the count at one.
+
+### Changed — two 450-line engine modules split along their own admitted seams (F393)
+
+`engine/overflow.py` takes the provider-overflow vocabulary and the two request-fault nets
+out of `window.py` (497 → 351 lines): keeping a prompt inside a window we believe in and
+deciding what to believe when the provider rejects it are different jobs. `engine/
+admin_handlers.py` takes `schedule_run` and `report` out of `interact.py` (453 → 326), whose
+own docstring said they merely rode it, and puts them beside their renderer `obs_admin`. Both
+moves were blocked on files this lane now holds; behaviour is unchanged.
+
+### Fixed — two stale ModelConfig comments that send a reader the wrong way
+
+`fallbacks:` said "NOT transitive — only this list is tried"; `resolve_chain` has been
+transitive and breadth-first since R1504, and a reader trimming a chain from that comment
+would trim the wrong list. `temperature:` said nothing about cost: a current Claude model
+rejects it and the adapter drops it on a degraded retry, so a filled box there silently
+doubles every request.
+
+### Fixed — the `budget_exhausted` health event's documented shape
+
+Its header paragraph never mentioned the `resource` / `limit` / `status` fields the engine
+writes, nor that the event fires whenever the reserved finish turn was spent, whatever the
+finish status. Reconstructing which budget ended a run from status.json had worked for 22 of
+90 cases; 11 runs since 09-01 spent the reserve, finished `ok` and left no event at all.
+
+**Model transports and failover**
+
+### Fixed — a run no longer flaps back onto a model it has abandoned (failover-per-turn-repick-flaps)
+
+A fallback chain was re-walked from the HEAD on every turn, and a cooldown lasts 300 seconds,
+so a primary that was out of WEEKLY quota came back into rotation every five minutes for the
+whole life of a run. Measured over 2026-09-12..09-22: 123 switches across 28 runs, p50 390 s
+apart, each swing paying a three-try 429 cycle on a body that said `usage_limit_reached` and —
+because five minutes is also the cache TTL — a full-prefix rewrite on BOTH models. The 18
+rewrite turns that landed within 90 s of a switch account for 6.5 M cache-write tokens on the
+subscription endpoint alone.
+
+A chain now remembers which member is SERVING it, and that mark only ever moves forward: `pick`
+starts its scan there instead of at the head. Only `next_after` writes the mark — the engine's
+deliberate mid-turn abandonment — because the mark is keyed by chain HEAD and several roles
+resolve one head, so a write from `pick` would let one transient 5xx on a cheap `llm` subcall
+demote the main turn loop for the rest of the run. The registry stays process-local, so a fresh
+run still probes the head once; that single cheap probe is what brings a recovered provider
+back, with nothing to reset.
+
+Paired with it: a provider that answered with a `Retry-After` longer than the 300 s default is
+now cooled for exactly that long, at both seams that cool a model. The default is a guess; the
+header is the provider stating when it will serve again, and re-probing before then is a
+guaranteed failure.
+
+### Fixed — the fallback chain prefers a member that can actually take the request (chain-walk-ignores-capabilities)
+
+The chain walk skipped cooling members and nothing else, so a turn carrying an image travelled
+to text-only fallbacks and an oversize prompt to small-window ones — each costing a round trip
+AND marking a perfectly healthy model as cooling for five minutes. On 2026-09-22 a `Fable Max`
+conversation walked three `multimodal: false` members and died on
+`HTTP 400 … does not support image inputs` instead of a finish; `GLM 5.2 free` (32,768 tokens)
+sits in every live chain and answered `maximum context length is 32768 … you requested about
+165078` three times in the same fortnight.
+
+`failover.fits(ref, has_media=, prompt_tokens=)` now orders the walk: a member that can take the
+request as it stands wins over one that cannot, with declaration order preserved inside each
+group so an author's chain still reads the way they wrote it. It is a PREFERENCE, never a veto —
+when no remaining member fits, the next one is taken anyway, because the engine repairs both
+properties (images become vision-util text, an oversize prompt is compacted into the new
+member's window) and a chain that reported itself exhausted while a usable model was left would
+kill runs that finish today. The two inputs are a hand-set flag and an estimate, so neither is
+trusted far enough to end a run on its own.
+
+### Added — every model switch reaches the health stream (failover-invisible-in-health-stream)
+
+A run that fails over finishes `ok`, so nothing fleet-level ever said the primary had stopped
+serving: `model_chain_exhausted` fires only when the LAST rung dies too, and the ten days to
+2026-09-22 held 123 switches against one such event. A dead proxy refresh token and a weekly
+`gpt-6-astra` quota moved 28 runs onto metered models at `effort: max`, and the operator found
+it days later by reading transcripts. `engine/degrade` now emits a `model_failover` event on
+every switch, carrying the chain HEAD (the key a sweep groups by), `from_model`, `to_model` and
+a `reason` — `rate_limit` · `auth` · `server` · `refusal` · `empty` · `other` — as structured
+fields rather than prose, so "what is the fleet actually running on today" is answerable by a
+filter. Same argument as `cache_read_degraded`: a cost nothing else reports must be emitted
+where it happens.
+
+### Fixed — Anthropic models served through OpenRouter are cached, and their cache writes are counted (openrouter-anthropic-uncached)
+
+Anthropic models cache only where a `cache_control` breakpoint says to; implicit prefix caching
+is an OpenAI/DeepSeek behaviour, and routing the same model through an aggregator does not add
+it. So the metered `Opus 5 Metered` fallback re-sent its entire prefix at full price on every
+turn: twelve live turns of birthday-admin 20260914-100002 at 99,385→116,924 input tokens each,
+`cached_in` 0, $6.63. A conversation turn on an `anthropic/…` id now carries OpenRouter's
+top-level automatic breakpoint — the same moving tail marker the direct adapter places — and a
+provider that rejects the field gets the existing one-shot degraded retry. Every other model on
+this wire caches implicitly and is sent nothing.
+
+`prompt_tokens_details.cache_write_tokens` is now read and, like cached reads before it,
+SUBTRACTED from `in`: on this wire `prompt_tokens` is the total and the details are its
+breakdown, so folding the key without subtracting would double-count every written token into
+the run's budget. Without the key at all, `cache_read_share` returned None for the whole
+endpoint and `cache_read_degraded` could never fire on an aggregator path. Note the breakpoint
+is a REQUEST for caching, not a guarantee — this endpoint pins `provider.order` with fallbacks
+allowed, so read `cache_read_share` on the next metered run rather than assuming.
+
+### Fixed — a temperature a current Claude model rejects costs one round trip, not the run (anthropic-temperature-400-latent)
+
+Current Claude models removed `temperature`/`top_p`/`top_k` and answer 400 — non-retryable, so
+one filled Settings box would have failed a model over on every turn of every run and left the
+operator reading a metered bill instead of a cause. The field is not simply dropped either:
+`kind: anthropic` is a WIRE, not a provider — a subscription proxy speaks it while serving
+`gpt-*` ids, and Haiku 4.5 still honours sampling. So `temperature` joins `output_config` and
+`cache_control` in the adapter's 400-degrade block: it is sent, and the model that rejects it
+says so once. No live catalog entry or endpoint sets one today, which is the only reason this
+had not yet fired.
+
+### Fixed — a proxy timeout is retried instead of spending a model switch (http-408-classified-fatal)
+
+`raise_for_status` treated every non-200 outside 401/403/429/5xx as fatal, so
+`codex-proxy: HTTP 408 … stream disconnected before completion` — an upstream stream drop —
+skipped the one-second retry and went straight to failover: a 300 s cooldown on a healthy
+provider plus a cold cache write on both models. 408 and 409 are now retryable alongside 429 and
+5xx, which is the set both provider SDKs retry.
+
+### Fixed — a blackholed provider no longer holds a turn for half an hour (connect-timeout-equals-read-timeout)
+
+httpx applies a scalar timeout to every phase, so the 600 s that lets a reasoning model think
+also let a TCP connect that never answers run for 600 s — three times, with no observation and
+no cooldown until the end. Connect is now bounded at 10 s separately from the answer, in the
+transports and in the limits fetcher. A standing exposure rather than a paid cost: of 16,988
+turn calls in a fortnight the slowest was 414 s and none reached the ceiling.
+
+### Changed — the endpoint docs say what the code does (docs-drift-chains-not-transitive, cache-ttl, sdk-adoption, ollama-num-ctx)
+
+Four passages in `docs/endpoints.md` described behaviour that has not been true:
+
+- Fallback chains were documented as "not transitive" although `resolve_chain` has followed each
+  member's own fallbacks breadth-first since R1504 — the live catalog depends on it
+  (`Fable Max: [Fable]` reaches Opus and the GLMs only transitively), and a reader trimming the
+  catalog on the old sentence would cut the ladder out from under it.
+- "Every adapter uses prompt caching" now names who caches how, including the aggregator
+  exception above and why one-shot calls place no marker.
+- The 5-minute cache TTL is recorded as a MEASURED default, not an oversight: 38% of the
+  subscription endpoint's cache-write tokens follow a gap longer than five minutes, and raising
+  the TTL to an hour costs ~30.6 M token-equivalents on the 15,269 turns that never needed it to
+  buy back ~29.2 M. Marginally worse than break-even; the knob is not worth building either.
+- Ollama's native `num_ctx` is sized from the ENDPOINT's `context_tokens`, not the model's
+  discovered window — `complete()` is never handed the resolved window. `limits.py` claimed
+  discovery had fixed this. The claim is gone and the workaround (size the endpoint to the
+  largest model it serves) is documented where an operator configuring Ollama will read it.
+
+A "Why raw httpx" section records the transport decision so it is not re-opened: adopting the
+provider SDKs would replace ~120 lines and keep every provider-specific degrade path that needs
+the raw status and body, while adding `httpx2` as a second HTTP stack beside the `httpx` the
+daemon, web layer and utils already use. Measured: 0 of 16,988 calls needed streaming. Net one
+dependency stack, zero special cases removed.
+
+**The daemon, lanes and scheduling**
+
+### Fixed — the exclusive-machine queue mirror is read on a TTL, one refresh at a time (machine-queue-refresh-every-tick)
+
+The daemon re-read every exclusive machine's job queue over SSH on EVERY 5s tick, with no
+staleness gate and no handle on the in-flight refresh — ~17,000 SSH sessions and `uv run
+--script` interpreter boots a day to mirror a queue whose readers tolerate 15 minutes of age.
+An unreachable box was worse than a wasteful one: each attempt lives for the util's 20-60s
+connect timeout while a new one starts every 5s, so they stack on the loop's default executor
+(8 workers on this 4-core host) — the same pool `LibraryWatch.tick`, the OAuth refresh and
+every run's llm tailer are awaited on inline in the tick body. Measured live on 2026-09-22 with
+predator down: four concurrent `remote queue predator --json` processes aged 17/12/7/2s, the
+mirror rewritten every 10s, and 72h of docker logs carrying zero warnings, because `refresh()`
+records an unreachable box in the mirror's `error` field instead of raising.
+
+`machine_queue.refresh` now skips any mirror younger than `REFRESH_AFTER_S` (60s) — the rate
+follows what a READER tolerates, not the tick that notices — and the scheduler keeps one
+refresh task, so a slow box can never stack attempts. A machine that starts or stops answering
+logs once, at the transition, rather than once a minute forever.
+
+### Fixed — a pending restart takes the lane chain's member boundary (restart-gap-unreachable-between-members)
+
+`RESTART_IDLE_S` is 10s and the gap between two lane-chain members is 5: the reap pops
+`runner.active`, the next tick collects the member's result, the one after fires the next
+member. So a quiet gap was structurally unreachable while a chain ran, and the fleet is 100%
+lane-driven with chains running back to back from 00:00 to 11:00. Docker logs, 2026-09-21:
+08:25:00 → 13:35:01, 16:48:13 → 17:29:15, 19:02:00 → 19:54:15 — five hours of runs executing
+against code the release had already committed and reported as shipped, while a probe of the
+changed behaviour through the API (the documented verification) read the old code.
+
+`LaneRunManager._fire_next` now holds the next member when a restart is pending and nothing
+else is active. That refuses nothing a person started — it is the daemon's own next member,
+only while the box is otherwise idle — and the member fires on the new code at the first tick
+after boot. The unreachable `draining = False` branch in `_maybe_restart` went with it: the
+flag is set only at the moment of shutdown, so nothing could ever undo it.
+
+### Fixed — a detached background task holds the restart drain (drain-gate-excludes-background-tasks-docker)
+
+`Runner.active_states()` skipped background runs on the premise that `start_new_session=True`
+carries the engine child past the daemon's SIGTERM. No deployment honours that: under Docker
+the daemon's exit ends tini (PID 1) and the kernel SIGKILLs the whole PID namespace; under the
+systemd unit the default `KillMode=control-group` kills everything left in the cgroup. A new
+session is neither. The restart fires at the FIRST idle gap — exactly when only a background
+task is running — so the task died at rc=-9, the boot reap closed it `aborted`/`daemon_restart`
+and its owner was handed "[background task was cancelled]": the one class of run the drain
+exists to protect, restarted out from under precisely because it was excluded. The wait is
+bounded twice — a task's own 60-minute budget, and deferred-only asks, so it can never park.
+
+### Fixed — a lane fire the operator's pause skipped is no longer made up at the next boot (lane-skip-made-up-at-boot)
+
+Only an arm stamped the lane watermark, so a due fire the global pause skipped still read as
+unarmed — and this daemon restarts nightly at ~03:20, so boot catch-up fired the whole chain and
+told the health stream the daemon had been down. `pause` promises the opposite in as many words:
+resuming does not backlog-fire what came due while paused. The pause branch now stamps the
+watermark, because a deliberate skip is a HANDLED fire. `lane_fire_catchup` stopped asserting a
+cause with it ("daemon down, restarting or draining at the time"): it says what the watermark
+shows — the last due fire was not armed — the same correction F480 made to the boot reap.
+
+### Fixed — retired routines no longer fire through triggers or one-shots (retired-not-honoured-by-triggers-oneshots)
+
+`retired` (every goal-scoped stopping condition met) was honoured by the schedule and the lane
+chain and by neither of the other two fire paths, which tested `enabled` alone. A sibling filing
+an addressed report, or an earlier run's `schedule_run` coming due, fired a routine the system
+calls DONE — spending a run to re-assert a met goal and re-file the retirement proposal already
+waiting on the Decisions page. One predicate now answers for every path
+(`registry.RoutineInfo.fireable`), and a spooled event or request for a retired routine is
+dropped rather than held: nothing later will drain it.
+
+### Fixed — an admission-gate failure reaches the health stream (gate-failure-no-health-event)
+
+A gate that raises writes a `failed` run and starts no engine, so the engine's own `run_failed`
+never fires and the reap — finding a state that is already terminal — emitted nothing either.
+The only durable trace was one clause inside a lane chain's `lane_chain_done` detail. The
+failure it hides is permanent: a withdrawn gate secret or a kernel that dropped Landlock fails
+every scheduled fire of a gated routine, forever, in preparation, before turn 0 — and
+`run_failed` is the one event a health sweep reads first. `run_gate.admit` now logs `run_failed`
+(or `run_canceled` on a cancel) from its two exit branches.
+
+### Fixed — an unknown lane timezone degrades instead of stopping the scheduler (bad-lane-tz-kills-scheduler-at-boot)
+
+`lanes._normalize` degraded a corrupt cron to "" but passed `tz` through as any string, and the
+lane store is hand-editable JSON with no schema on the way in. An unknown zone reached `ZoneInfo`
+inside `Scheduler.rescan` and the lane catch-up — both of which run at BOOT, before the tick's
+guard — so the exception unwound the scheduler task while uvicorn kept serving: the daemon
+answered /api/status and never fired another run, with one CRITICAL line as the only trace. The
+zone is now checked like the cron (unknown → "" → the server zone, and a stray space is
+repaired), and the boot rescan and boot catch-up run inside the same guard as the tick.
+
+### Changed — the health-stream vocabulary is machine-checked (daemon-health-events-unread)
+
+Every reader of `.control/health-events.jsonl` filters on names a person read out of
+`health_events.py`'s header enum, so an event added at a call site and not documented there is
+invisible by construction. `prompt_oversize_shrunk` and `trigger_capped` were both written for
+weeks that way. A test now walks every `log_health_event` call site in `src/rsched` and requires
+the enum to match, in both directions — the equality `tests/test_surface.py` already uses for the
+remedy vocabulary.
+
+The blind spot it exposed was one recipe line: self-audit's evidence stage filtered the stream to
+six run-level events and named no daemon-level one, so `fire_refused`, `lane_fire_refused`,
+`lane_chain_stopped`, `lane_chain_member_skipped`, `scheduler_tick_error` and `trigger_capped`
+— the signals F316 and F276 were built to raise — were read by nobody. That stage now reads the
+stream unfiltered and checks lane STARVATION explicitly, as an absence: for every scheduled,
+unpaused lane, a `lane_chain_done` or `lane_chain_stopped` newer than the lane's previous due
+fire. There is still no console surface for these; that is a web change, not a daemon one.
+
+### Changed — retention runs off the event loop, and the library HEAD on its own interval
+
+Run retention was called straight from the reap, which runs inside the supervisor task on the
+loop thread: re-indexing every run dir, `rmtree`ing the oldest and gzipping transcripts that
+reach 9 MB, with every SSE stream, API request and scheduler tick waiting on it. It never
+touches a live run, so there is nothing to serialize it against — it is handed to a thread.
+`LibraryWatch` did the same shape of work as the machine-queue refresh: `git rev-parse HEAD`
+forked on every 5s tick, ~17k subprocesses a day on that same shared executor, to watch a value
+that moves a handful of times a day. It now reads HEAD at most once a minute, boot check
+included.
+
+### Fixed — the .control stores that three contexts write are locked (control-rmw-stores-unlocked)
+
+`lane-fires.json`, `lanes.json` and `domains.json` are each ONE file rewritten whole, and each is
+written from three places at once: the scheduler on the daemon's loop thread, the web layer's
+sync handlers on FastAPI's threadpool, and a root conversation's engine PROCESS. Two overlapping
+edits each read the file, each write their own version, and one is silently lost — a membership
+change undone, a domain's shared config block back, or a lane watermark dropped, which is exactly
+the precondition for a spurious make-up chain at the next boot. Each read-modify-write now holds
+the store's flock (`paths.file_lock`, already used by the report ledger), and `lane_runs.arm`
+does its "one in-flight chain per lane" exists-then-write inside the lane's own lock.
+
+### Changed — duplicated daemon plumbing merged (daemon-duplicated-plumbing)
+
+A lane's cron/tz was adapted to the `Schedulable` shape in the scheduler and re-implemented
+wholesale in the lane catch-up, and the two already disagreed about whether `paused` counts.
+There is one adapter now (`lanes.schedulable`) and one cron-rewind (`registry.last_due_fire`,
+which reads `enabled` like `next_fire` always has — so a paused lane has no due fire to have
+missed). `Runner.spawn` holds the create-task/track/discard bookkeeping the supervisor, the
+sigkill auto-resume, the post-finish inbox sweep and off-loop retention each repeated;
+`spool.drop` is the spool's third verb, replacing a copy of the unlink-and-warn in each of the
+two managers; and `_fire_slugs`/`_end_of_chain` were one-line aliases of `lanes.member_slugs`
+and `_finalize(rec, "done")`.
+
+**The web layer, the ledger and the read models**
+
+### Fixed — a config save no longer un-inherits a routine's domain through the second door (F489)
+
+`PUT /routines/{slug}/permissions` learned last week not to write a domain's inherited docs
+into a member's own file. The generic `PATCH /routines/{slug}`, which routes the same two
+authority keys to the same resolver, ran the cascade and skipped the strip — so a
+`config_patch` whose visible intent was a confirm dial (`{"capabilities": {"confirm":
+"creations"}}`, with `permissions` defaulting to the EFFECTIVE list) wrote the whole
+domain-unioned set into the member outright. A member's own key always wins, so the next
+domain edit could never reach that routine again: authority silently un-inherited by a save
+about something else.
+
+The cascade and the strip are now ONE function, `api_routine_edit.write_permission_layers`,
+and both doors call it. That is the shape because the defect was not a missing line: it was
+two doors performing four steps each, one of which forgot the fourth.
+
+### Fixed — the two four-second library parsers are parsed once per change, not once per request
+
+`GET /api/domains` parsed the whole permissions library twice PER DOMAIN — eleven walks and
+roughly 275 frontmatter parses for six domains — and `GET /api/library` re-linted every
+workflow, rule, permission, template, reminder and playbook and re-parsed 110 util headers,
+on every call. Measured on the live instance's slow-request ring: 3.70-4.30 s and 3.72-4.33 s
+respectively, at `in_flight 0`. Both are fetched when ANY routine page opens, where a dozen
+CPU-bound handlers then serialise under the GIL — which is why a one-file `/stopping` read
+beside them took 3.2 s. The 2026-09-12 rule took those two off the bus-event refetch path;
+nothing had made them cheap.
+
+`readmodels/library_reads` is now the ONE way the web layer reaches those parsers, each
+behind the read-models' stat fingerprint: the permission/rule docs, their `requires:`, the
+rules' `assists:`, the util catalog and the whole-library lint. The library is git-committed,
+so every change moves a file and a warm check is a few hundred stats. The same memo settles
+the routine detail, the setup surface, the conversation defaults, the secrets page and
+`validate`, all of which parsed the same documents per call.
+
+Two per-routine subprocess readers went the same way: `recipe_size._baseline_chars` (two git
+spawns per routine — 70 per `/api/stats` call on the live instance, 4.79 s) and
+`run_health`'s `recipe_log`, both keyed on the routine repo's reflog, which every commit
+appends to.
+
+### Fixed — the read-model cache evicted the expensive entries first
+
+`readmodels/memo`'s bound popped the oldest-INSERTED entry, and a Python dict does not
+reorder on re-assignment — so an entry's eviction position was fixed at its first insert. The
+costly keys are the ones fetched EARLY (the library lint and the util catalog land on the
+first routine-page open of a boot); the cheap per-dir keys arrive later and in bulk, one per
+routine, conversation and run. Past 512 entries the bound was therefore throwing out a
+four-second recompute to keep a dozen stats. A hit now moves its key to the young end.
+
+### Fixed — the report ledger is folded once per append (2.9 MB, 2,199 rows)
+
+`reports.read_reports` re-read and re-parsed the whole append-only ledger on every routine
+page's Messages panel, every `/items/orphans` read and every outbox retraction. The cost grows
+with how much the fleet talks — 1,340 reports and 2.9 MB today — so the page got slower in
+proportion. Folded once per append now, behind the same stat fingerprint; the rows it hands
+back are shared and read-only, which every consumer already was.
+
+### Fixed — a routine.yaml save tells the live run and the scheduler, at every door (F337)
+
+Seven web writers of `routine.yaml` each chose their own commit / rescan / signal
+choreography, and two of them told a live run nothing: `PUT /permissions` committed and
+stopped — so unticking a conduct doc mid-run finished under the old docs in silence, on a page
+where every other save reports `told_live_run` — and adopting a settings template changed up
+to nine fields including `budgets` and `grants`, both LIVE-classified, with nothing adopted
+and nothing said. `routines_common.write_routine_config` is the one choreography now (atomic
+write, locked commit, `scheduler.rescan()`, `signal_config_change`) and every site calls it.
+The two `except AttributeError: pass  # test apps without a scheduler` tolerances are gone:
+`create_app` always installs one.
+
+The writer that reaches the most routines had none of the four. A domain config PATCH merges
+its shared block under every member's own keys at load, and `budgets`/`grants` are LIVE — yet
+`api_domains` neither signalled a member's running run nor rescanned, though `domains.members`
+is exactly the list of routines whose effective config just moved. It now does both and
+reports `told_live_runs`.
+
+`DELETE /lanes/{id}` gained the rescan its create and update siblings already performed: the
+scheduler caches the scheduled-lane list and the member-suppression set between rescans, so a
+lane deleted at 06:29:50 was still armed by the 06:30 tick and its members' own crons stayed
+suppressed for up to 30 s.
+
+### Fixed — a budget key an endpoint ignores no longer reads as applied (R102)
+
+`PATCH /routines/{slug}` took any `budgets` mapping, wrote it verbatim and reported it in
+`updated`, while the loader DROPS an unknown budget key with a problem and blanks the whole
+mapping back to the defaults on a non-integer value. A run proposing `max_wallclock_min: 90`
+(misspelled) was told applied and its wall clock never moved. The conversation PATCH had the
+mirror defect: a bare `int(v)` raising an uncaught ValueError, i.e. a 500 with no detail where
+every sibling route answers 422. One validator over `DEFAULT_BUDGETS` now serves both, so the
+key list has no second copy and a stray key is a 422 that names it.
+
+### Fixed — a routine can be bound to a model that cannot run a single turn (R112/R128)
+
+The conversation PATCH refused a model whose own `max_tokens` fills its context window; the
+routine PATCH did not, so the binding was accepted and the next SCHEDULED run died on its
+first completion with `context_length_exceeded`. The two paths were four copies of the same
+five checks — models, connections, machines, folder roots, tags — which is how they drifted.
+`web/config_fields` is the one implementation both call.
+
+### Changed — archiving a routine takes it out of its lane
+
+Archiving moved the directory, dropped the routine's secrets, reported what it had published
+outside the scheduler — and left its slug in the lane store. Under `on_failure: stop` the next
+chain fire reached the archived slot, logged `lane member missing`, filed a health event and
+HALTED, so every member after it silently stopped firing until someone edited the lane by
+hand. CLAUDE.md justifies the missing cascade with "routines are deleted out of band" (F442);
+archive is the in-band deletion and the one moment the web layer knows. It now returns
+`lanes_left` beside `external_residue`, and deletes the routine's pending-edit spool — a
+queued mid-run edit for a routine that no longer exists can only fail at replay.
+
+### Changed — the read-only routine token reads no wider than the sandbox (R94)
+
+"Read-only" is not the same as "may read anything". A util subprocess runs inside a Landlock
+jail scoped to its routine's granted roots and is handed `RSCHED_API_TOKEN`, so three GET
+subtrees were one `curl` away from exactly what that jail forbids: any directory listing on
+the host (`/api/fs` — its own docstring calls names-only "still reconnaissance"), every secret
+NAME with the utils that declare it (`/api/settings`), and the daemon's stacks (`/api/debug`).
+Nothing logged it as a boundary crossing, because it is an authorized GET.
+`app.ROUTINE_TOKEN_DENIED_READS` refuses those three as subtrees, and the refusal names
+`read_file` as the way a run reaches a file it may actually read. `api_debug._operator_only`
+is deleted — one gate, not a carve-out per route. The reads the 2026-08-05 usage survey found
+runs actually making (items, questions, the routine cards, the runs index, status, stats) are
+untouched; cross-routine FILE reads are deliberately left open for now, because at least one
+routine was granted a sibling's transcripts on purpose and that grant has to be re-expressed
+as an fs-read root first.
+
+The two bearer comparisons are `secrets.compare_digest` now, like the webhook token's — one
+credential class had two standards and the weaker one guarded the primary token.
+
+### Changed — the routine file endpoint edits the recipe, not the config
+
+`PUT /routines/{slug}/file` bounded its path to the routine dir and wrote whatever it was
+handed, non-atomically. A `routine.yaml` through that door bypasses `RoutinePatch`'s
+`extra="forbid"`, the permission floor, the domain strip, the rescan and the live-run signal:
+a typo'd `permisions:` key written verbatim while the scheduler keeps its stale fire table and
+a booting engine can read a torn file. It now refuses by name — `routine.yaml`,
+`state/stopping.json`, `.memory/INDEX.md`, `.git/`, `runs/`, `inbox/`, `questions/` — each
+400 naming the endpoint or owner that holds the file, and writes through `paths.atomic_write`.
+The recipe stays editable, `.memory/` notes included: the engine owns the archive INDEX and
+nothing else there, so refusing the whole tree would remove the operator's only surface for a
+memory note and offer nothing in its place.
+
+### Changed — the setup surface is four modules (F393)
+
+`readmodels/surface.py` had grown to 663 lines and five `fix` kinds in three weeks, each
+landing as another sixty-line function in the same file, so every change re-read all of it to
+find the one join it touched. The JOIN stays in `surface.py` (199 lines); the row vocabulary —
+severities, `_node`, the one-row-per-entity merge — is `surface_nodes`, and the three emitters
+are `surface_needs` (util secrets, util fs stores, `expects:`), `surface_schedule` (the
+suppressed cron, the started-by-nothing check, the phase key) and `surface_caps` (capability
+coverage and where a drop can be performed). `tests/test_surface.py`'s AST bindings read all
+four emitters, so a kind that moves into a new file cannot fall out of the vocabulary on the
+way.
+
+### Fixed — the Library tab shows a broken template or global reminder as broken (D142)
+
+`lint_all` lints `templates/*.md` and `reminders/*.json` and returns their problems;
+`GET /api/library` attached `problems` to workflows, rules, permissions and playbooks and
+dropped the other two. A template with a bad `config:` key or a global reminder with an
+invalid regex therefore passed server-side and read CLEAN on the Library tab — the only
+surface that can remove a global reminder. Both rows carry their problems now, which also
+completes the scheduler-repo half of D142: the overview is the lint verdict for all six kinds
+the linter walks, and the read-only routine token still admits that GET.
+
+### Fixed — a resumed leg is told what is waiting in its inbox (F529)
+
+A leg that is not a fresh boot drains only `LIVE_MESSAGE_VIAS`: an audit decision answer, a
+sibling's report delivery and a routine-page queued message belong to the routine's next FRESH
+run, and a follow-up leg draining them wholesale silently ate answers meant for that night's
+run (D92/D93). That exclusion is right. The silence was not — on 2026-09-21 a decision was
+answered at 16:01 through the Decisions page, the run finished at 16:02, and three
+continuation legs later the operator asked what that decision meant. The run explained it as
+still OPEN, with a recommendation, because nothing in its context said an answer was sitting
+in `inbox/` that it was not allowed to consume. "did you lose my answer again?!"
+
+`inbox.queued_freight` is the read half: it names the waiting files — via, timestamp, report
+id, first line — and consumes nothing. Because boot composes the digest AFTER the drain, a
+fresh run sees nothing and a resumed leg lists exactly what it may not take, with no
+fresh/resume conditional anywhere.
+
+### Changed — one writer of the inbox's `msg-*` shape, and one glob in every scanner (F499)
+
+`engine/inbox.file_message` has called itself the one writer of that shape since it was
+written; seven modules wrote the filename themselves anyway, one of them
+character-for-character. They had a reason: five of those names are DETERMINISTIC on purpose —
+a report delivery is `msg-rep-<id>` so its sender can see whether the delivery is still queued
+and retract it, a background result is `msg-bg-<task>` so a re-delivery replaces the pending
+message instead of queuing a second — and `file_message` could only produce a timestamp. It
+takes a `name` now, so the single writer is usable by the channels that need a key.
+
+The read side matched: every scanner selected "every file that is not `answer-*`", which also
+matches `paths.atomic_write`'s in-flight `.msg-….json.XXXX.tmp`. On a fresh boot the drain
+reached that temp file, could not parse it, logged "not a message file" and RENAMED it into
+`consumed/` — so the writer's own `replace()` raised and the message was lost (a web feedback
+POST 500s; `reports.file_report` swallows the OSError and returns None after the ledger row is
+already appended). Every scanner names `msg-*.json`, the stem the one writer produces.
+
+### Fixed — an allow-forever click no longer floors away a capability the domain supplies
+
+`grants_apply` floored the member's capabilities against its OWN permission docs only, while
+the permissions editor passes the domain's docs too for exactly this reason: a capability a
+domain's doc legitimately covers is not an orphan, and flooring it away writes an explicit
+"off" that then shadows the domain forever. A member holding `utils: [signal:read]` covered
+only by its domain's `messaging-signal` lost it to an unrelated `action:memory_write`
+allow-forever, and the next run's signal call was refused and asked again.
+
+### Fixed — a bad payload answers 422, not 500 or a silent default
+
+`POST /runs/{id}/rewind` parsed its body by hand, so a missing `turn` raised a pydantic error
+INSIDE the handler and FastAPI answered 500 with no `detail` — an opaque "Internal Server
+Error" toast where every other route's 422 renders as a field list. The two items routes took
+an untyped `dict` and read `.get("read", True)` / `.get("on", True)` off it, so `{"reed":
+false}` marked the summary read and `{"on": "false"}` flagged the item priority. All three are
+typed with `extra="forbid"`, like every other save path in this layer.
+
+### Changed — smaller duplications in the web layer
+
+The three-home question lookup was spelled out four times across `api_questions` and
+`decisions_read`, with `answer` re-implementing the 404 inline;
+`decisions_read.file_backed_questions` / `find_question` are the one spelling, and `_HOME_ATTR`
+stays the single enumeration of the kinds. `api_run_control` read `status.json` and tested
+`TERMINAL_STATES` inline at eight sites with three different 409 wordings; `api_runs.run_state`
+plus `require_active` / `require_terminal` are the one reader and the one refusal each.
+`/api/playbooks` re-read and re-linted every playbook per request to produce the verdict
+`/api/library` already carries, and mutated the catalog records in place while doing it — it
+reads the shared memoized lint now and builds new records.
+
+Three module docstrings described a layout that had moved: `api_stats` and `readmodels/stats`
+claimed "no cache" while the package's whole discipline is the stat fingerprint (they now say
+what is true — the roll-up is recomputed per call, each input cached behind the file it comes
+from, and `aggregate` itself is not memoized); `api_routine_edit` still listed "the PATCH
+endpoint", which moved to `api_routine_patch.py` two releases ago, and carried an orphaned
+two-line comment fragment with no code above it.
+
+### Added — the fleet reports the work it did NOT do (`GET /api/health/blocked`)
+
+Six health events say something that was DUE did not happen — `fire_refused`,
+`lane_fire_refused`, `lane_chain_stopped`, `lane_chain_member_skipped`,
+`scheduler_tick_error`, `trigger_capped` — and every one of them produces NO run, so no run
+page, no Items row and no Stats slice could carry it. The stream had fourteen writers and no
+reader inside the product: the nightly audit opened `.control/health-events.jsonl` over ssh,
+and the console showed not a line of it. That is how F316's week of missed lane fires passed
+with zero signal.
+
+`readmodels/health_stream.py` is now the ONE parser of that file (the `usage_stream`
+discipline: shared records, unparseable lines skipped) and the fold behind
+`GET /api/health/blocked?days=<1..90>` — one row per (event, subject) with `count`, first and
+last stamps and the NEWEST `detail`, newest first, plus `vocabulary`, what each event name
+means, so a console renders a label it was not compiled with. `subject` is the event's own
+`routine` field: a slug for a refused fire, an opaque LANE ID for the three lane events, empty
+for a scheduler tick. `total: 0` is the healthy reading. Memoized on the stream's stat
+fingerprint with single-flight misses, because this rides a bus-event refresh path and an
+un-memoized parse per request is what starved the daemon behind `/api/items` and
+`/api/questions`.
+
+### Added — a routine's cost trend, keyed on time instead of on its recipe
+
+`run_health`'s regression flag buckets runs by `recipe_commit`, so it moves only when THIS
+routine's recipe moves — and a library RULE revision reaches every holder at once without
+touching a single recipe (`error-recovery` reached 30 routines on 2026-09-16, `web-research`
+136 on 09-18, `independent-verification` 34 on 09-21). The most expensive kind of regression
+there is was therefore structurally invisible: self-audit's weekly medians went 49,409 tokens /
+146 turns / 87% ok (w36) to 338,024 / 158 / 43% (w37) and back to 95,782 / 289 / 69% (w39) with
+no recipe change under any of it, so `versions` held one bucket, `regression` never evaluated,
+and nothing on the instance said a word.
+
+`run_health.recent_trend` applies the SAME thresholds to the last `REGRESSION_WINDOW` depth-0
+runs against the window before them, whatever recipe produced either side, and rides the
+routine page's health payload as `trend`. One heuristic, two keys, deliberately: a reader
+comparing the two reads a difference in WHAT changed, never in how it was judged. It needs no
+git history, so a conversation gets one too. The payload also gains `endings` — this routine's
+`budget_exhausted` vs `run_partial` counts from the health stream, a split the usage stream
+cannot make because both land there as `partial`, so a routine that outgrew its ceiling and one
+that keeps finding a source down read identically. Both flags order routine-improver's sweep
+(`orient` + `select-targets`), which is the consumer the doc now names instead of the auto-revert
+that is still out of scope.
+
+### Fixed — an in-flight inbox write no longer buys a run, and a queued answer no longer reads as freight
+
+Two daemon scanners selected "every file that is not `answer-*`" rather than `msg-*.json`, the
+stem the one inbox writer produces. `paths.atomic_write` creates its temp file IN the target
+directory, so both also matched `.msg-….json.XXXX.tmp`: in `daemon/triggers._inbox_wants_a_run`
+that file is unreadable, unreadable WAKES by design, and a race with any inbox write therefore
+bought a whole run of the recipe; in `daemon/run_gate.pending_inbox` ANY file counted, so a
+queued question ANSWER — exactly the thing that must not start a run — read as pending freight
+the gate had to admit a run for. Both now glob `msg-*.json`.
+
+### Changed — the daemon's last two inbox writers file through the one writer (F499)
+
+`daemon/triggers.py` and `daemon/schedule_once.py` hand-rolled `msg-trig-<event>.json` and
+`msg-once-<id>.json` beside `engine.inbox.file_message`, which is what `name=` exists for. Both
+now call it. Beyond the drift the single writer exists to prevent, the hand-rolled writes
+assumed an `inbox/` directory that `file_message` creates: a trigger event or a one-shot's
+wake-up reason delivered to a routine that had never been given one was silently lost, leaving
+a run that fires with no idea why.
+
+### Changed — one routine is read as one routine, not as a scan of the whole home
+
+Every `/routines/{slug}/*` handler resolved its routine by cataloguing the entire home — ~35
+directories walked, four memo lookups each, per request — and the conversation side was worse:
+`conversation_info` rebuilt a `RoutineInfo` by hand, which bypassed all four of the registry's
+memos (a fresh `load_routine` per request) AND hard-coded `open_questions=[]`, so a conversation
+with a deferred question waiting read as having none. `registry.info(server, home, slug)` now
+answers for ONE directory off the same memos — exactly what `scan(server, home).get(slug)`
+answers — and `web/routines_common._info`, `web/conversations_common.conversation_info` and
+`web/api_schedule._require_routine` are one-line wrappers over it. A name the directory does not
+answer to (a `routine.yaml` whose `slug` disagrees with its dir) falls back to the full walk, so
+the catalog's answer is unchanged; and the fast path is taken only for a well-formed slug,
+because `home / slug` is a path join and the argument arrives from a URL segment.
+
+### Fixed — the library watcher's two git reads go through the one git invoker (F285)
+
+`daemon/library_watch._head` and `_subject` each spelled their own
+`subprocess.run(["git", …], timeout=10)` with their own error shape, against `libgit.git`'s
+"the one git invoker every module uses" — a docstring that had already been made stricter than
+the code. Both now call `libgit.git`. The module keeps its own guard rather than pushing a
+missing repo or a missing binary onto `tick`'s catch-all, which would `log.exception` on every
+check: a fresh install with no library repo is an ordinary state here, not a fault.
+
+### Fixed — external residue names someone who can actually remove it
+
+`web/api_routine_edit.EXTERNAL_SURFACES` told an operator archiving a steward publisher to "ask
+`steward-hub-maintainer` to retire it". Nobody could act on that: the kit's `api.php` has no
+delete-project op (say · revise · retract · advance · put-state · put-model · put-items · seen ·
+put-progress · lease · invite-*), and no routine has a way onto that host to install one (FTP
+confinement, D128). The row now names the OPERATOR and says plainly that removing a steward
+store is a manual host operation — an owner who cannot perform the removal is the same silence
+the residue inventory exists to end.
+
+### Fixed — two meta routines were missing from the fleet's own count
+
+`/api/status` derives `meta_routines` from the `meta` tag, and `global-utils-review` and
+`scheduler-improvement-research` carried none — so the console listed 6 of 8 and the
+"self-improvement is off" notice silently excluded the two routines that own the util registry
+and the proposal backlog. Both `routine.yaml` files now carry the tag. Deriving the set from the
+Instance domain instead was rejected: `/api/status`'s contract is a FRESH-INSTANCE seed marker,
+and a fresh instance has no domains.
+
+### Changed — one slug rule for a distilled playbook
+
+`playbook_distill._slugify` kept its own regex, which preserved runs of separators the shared
+rule collapses. It is `ids.slugify(name, default="playbook")` now; only the default and the
+60-character cap stay local, so a title a routine would get and the same title a playbook gets
+cannot round-trip two different ways.
+
+**The console**
+
+### Fixed — the run view never stopped its task-tree poller (run-view-tasktree-poll-leak)
+
+Leaving a live run left a `GET /api/runs/<id>/tree` every three seconds for the rest of the
+browser session, one more per run page visited. The view's teardown stopped the tail, the
+sub-run poll, the duration timer, the artifacts panel, the plan strip and the follow handler —
+but not the tree, and the poller reschedules itself while `isLive()` is true. After teardown
+the tail is stopped, so the state variable that predicate reads is frozen at its last
+non-terminal value and stays true forever. The conversation view had always called `stop()`;
+the run view was the one that forgot.
+
+`run.js` now stops it, and `tasktree.js` defends itself the way `weekgrid.js` and
+`transcript.js` already do — a poll into a box that has left the document returns instead of
+rescheduling, so a forgotten `stop()` can no longer leak. `tests/ui/test_view_teardown.py`
+mounts a live run, navigates away and asserts the run's paths go silent: the first test in the
+suite that can see a request fired after a view is gone.
+
+### Fixed — four pollers of one endpoint, three disagreeing throttles (one-questions-store-on-the-bus, questions-view-refetches-on-every-bus-event)
+
+The header badge, the tier-1 notifier, the Decisions page and the run view's inline forms all
+read `/api/questions`, each with its own bus listener and its own rule: a 3 s cooldown, a 5 s
+one, none at all, and once at boot. The Decisions page filtered nothing, so every `llm_task`
+lifecycle event — several a second while a run works — rebuilt every card on the page; one
+`run_finished` with that page open and notifications on produced three fetches of the same list
+inside a second. What the console asked of the daemon depended on which tab was open rather
+than on what had changed.
+
+`static/questions-store.js` is now the one reader: one bus listener, one leading-plus-trailing
+3 s cadence, one in-flight fetch shared by every subscriber, and one filter — `llm_task` and
+`llm_process` and nothing else, because a run that asks a blocking question goes `waiting_user`
+and `run_state` is the only announcement the bus carries of it. The four callers became
+subscribers and lost ~40 lines of their own throttling. The Decisions page keeps its F229 focus
+guard, which the store has no equivalent for: a repaint is deferred while an answer field in
+the list holds focus, and flushed when focus leaves.
+
+### Changed — a chat message no longer rebuilds the conversation (conversation-send-remounts-head-and-relints-library)
+
+A conversation is ONE run resumed IN PLACE (`api_conversations.message` → `resume_terminal` →
+`resume`: same run dir, same run id, `_queued_status` written before the response returns). The
+view nevertheless remounted everything after each send — the detail read, the head (whose rule
+picker GETs `/api/library`, and that endpoint lints the whole library on every call: 4.3 s on
+the fleet), the connections card, the lineage, eight rail reads, and a re-render of the thread
+from offset 0 that re-fetched every attachment thumbnail. A five-message exchange cost five full
+library lints and ~50 requests, while the reply's first tokens waited behind the daemon
+answering them.
+
+The one thing a send actually changes is that the tail had ENDED and there are new events after
+its last offset, so `stream.js` grew `resume()` — a catch-up from the last confirmed offset and
+a fresh stream, which is what its own reconnect path already does. The view resumes the tail
+when the POST comes back with the run id it is already following, and falls back to a full
+remount when it does not (a fresh fire is a different run to follow).
+
+### Fixed — the routine page read the library twice and the routine detail twice (routine-page-mount-fanout)
+
+Opening a routine page put 13 requests in flight. Two of them were `/api/library`, once for the
+rule picker and once for the settings-template panel — an endpoint that lints the entire library
+per call, so every routine-page open cost the daemon two full lints, and every rule save a
+third. A fourth request re-read `/api/routines/{slug}` purely to get `grants`, which the payload
+the page had just rendered from already carried.
+
+One `/api/library` read now serves the page, handed to both panels; `templatePanel` takes the
+list instead of fetching it. The secret-exposure panel paints from the detail payload it was
+given and re-reads the routine only when a grant may have MOVED — a save here, or a
+forever-decision answered elsewhere (F193's reason for re-reading at all is preserved exactly).
+
+### Changed — the watch ribbon stopped recomputing the week on every run event (ribbon-refetches-schedule-week-on-bus)
+
+The ribbon is on every page, and its refresh fetched `/api/runs?limit=200` and
+`/api/schedule/week` together on any bus event that was not `llm_task`. Upcoming fires change
+when someone edits a schedule and never because a run started, and CLAUDE.md names
+`/api/schedule/week` among the endpoints that must not sit on the bus-event path — cron
+expansion over every routine and every lane, every 20 s, on every open tab with one run active.
+The two halves now move on their own clocks: run events repaint the rectangles from a fresh run
+index and the cached week payload; the week rides the 120 s timer.
+
+### Fixed — the activity feed polled four endpoints for a section nobody could see
+
+The dashboard's activity section is lazily started, and the comment above it says a collapsed
+section neither fetches nor polls. That was true only until its first open: `start()` armed a
+4 s interval over `/api/routines`, `/api/runs?limit=300`, `/api/status` and `/api/questions`,
+and nothing stopped it when the section was collapsed again — one request a second, for the
+life of the tab, rendering into a closed `<details>`. It now takes an `isOpen()` predicate, the
+same shape `createTaskTree` takes, checked by both the poll and the bus handler.
+
+### Fixed — an idle conversation tab polled two endpoints about empty lists
+
+`#/conversations` is the console's default route, and every mounted conversation armed a
+browser-session poll every 8 s and a background-task poll every 15 s at mount — while both rail
+sections stay hidden until they have a row. On the overwhelming majority of conversations those
+lists are empty and cannot fill, because nothing is running: ~600 requests an hour for a tab
+left where it opens. Each timer is now armed by CONTENT — rows that exist, or a live run that
+could create some — and disarmed again when neither holds.
+
+### Fixed — a reconnect re-read the two heaviest endpoints on the Routines page (reconnect-event-forces-full-dashboard-reload)
+
+The SSE stream fires a synthetic `reconnect` bus tick on every open, including the first, and
+the dashboard treats anything outside its light set as "anything may have moved" — a full load
+including `/api/schedule/week` and `/api/domains`. So the first open after a page load
+double-loaded the page, and during a daemon restart every reconnect attempt that got through
+re-ran the two heaviest reads exactly while the daemon was coldest. The first open no longer
+dispatches the tick, and a reconnect within five minutes of a full read catches up on run state
+like any other run event.
+
+### Fixed — attachment thumbnails leaked their object URLs (transcript-attachment-blob-urls-never-revoked)
+
+Every inline attachment image is fetched through the authenticated blob route and rendered from
+an object URL, and `api.js` hands the caller that URL's lifetime. Nobody took it: a conversation
+with ten screenshots, re-rendered once per message sent, accumulated a decoded image per
+attachment per render until the tab was closed — in the one view people keep open all day. The
+transcript and the chat now own an array of them (the shape `artifacts.js` already follows) and
+free it in `destroy()`, which the run view's teardown and the conversation's cleanup call; a
+nested sub-run transcript shares its parent's array, so one call frees the tree.
+
+### Fixed — `apiBlobUrl` skipped the token gate every other request goes through (api-blob-url-bypasses-token-gate)
+
+`api()` and `apiUpload()` share one loop that clears a rejected token, re-opens the sign-in
+overlay and retries once — including for a 403 carrying `insufficient_scope`, which is the
+routine-token tier hitting a mutating route. The binary fetch behind every artifact preview,
+thumbnail and file download did not: it sent the stored token bare and threw
+`401 Unauthorized`. After a token rotation every image on the page failed with a toast or
+vanished, and nothing re-gated until the operator happened to trigger some other call. The gate
+loop is now `authedFetch`, returning the Response; `authedJson` parses JSON on top of it (the
+FastAPI `detail` shape stays there, where it belongs) and `apiBlobUrl` blobs it.
+
+### Fixed — two OAuth pollers outlived their views (timers-and-listeners-outlive-views)
+
+Starting a GitHub connect and navigating away left a `POST …/device-poll` every 5 s for fifteen
+minutes, ending in a `reload()` of a panel that is no longer in the document; an abandoned OAuth
+connect did the same for ten. Both tick loops now return when their panel has left the page, the
+house pattern the rest of the console already holds. The routine page's secret-exposure bus
+listener, which used to unhook itself only when the NEXT event arrived after unmount — firing one
+stale fetch on the way out — is now detached by the view's teardown.
+
+### Fixed — ids interpolated raw into API paths (url-path-encoding-inconsistent)
+
+Endpoint, machine and queued-message names went into some paths encoded and into others raw,
+on the same page and often for the same value. Endpoint names are unvalidated server-side, so an
+endpoint called `local/ollama` — a natural name for a proxy path — could be created and its
+quota read, while test, delete and save 404'd with nothing on the card to explain it. Every
+interpolation of a user-chosen name is now encoded.
+
+### Changed — one error toast, one save-button contract (error-toast-and-save-button-idiom-124-copies)
+
+`toast(err.message, 4000, { error: true })` was hand-written 123 times across 38 files, with the
+duration drifting between 3000 and 6000 — so "how long does a failure stay on screen" had no
+answer, and anything one wanted to add to a failure had to be added 123 times. It is now
+`toastError(err)`. Beside it, `act(btn, fn, okMsg)` runs a save: disables the button, awaits,
+toasts the outcome (the queued wording when the endpoint answers `{queued:true}`), and
+re-enables in a `finally`, which is the only place that cannot be forgotten. The hand copies
+disagreed — the routine page's name, description, budgets, retention, roots and models saves
+never disabled at all, so a double-click sent the save twice, and the Decisions page's revision
+button re-enabled only on the failure path, leaving its own button dead after a save that
+worked. Those are the sites converted.
+
+### Fixed — a native confirm, a native alert and two full page reloads in an SPA (native-confirm-alert-and-location-reload-remain)
+
+`dialog.js` is documented as the console's replacement for every native `confirm()`, and a
+native `alert()` blocks the main thread while its text never reaches the error telemetry the
+improve-ui lens reads — so a failed artifact delete was invisible to the one routine that exists
+to notice it. Deleting an artifact now uses the console's own dialog and a toast. The two
+`location.reload()` calls — after a domain change and after a rewind — became `remount()`: both
+changes affect one view, while a reload drops the SSE bus, the LLM dock and the browser dock and
+re-runs the whole boot sequence.
+
+### Changed — one notification seam (raw-notification-outside-notify-js)
+
+The conversation view built a `Notification` directly, with neither the `tag` that collapses the
+same event across three open tabs into one nor the click that focuses the window and navigates.
+`notify.js` now exports `show(title, body, {tag, href})` — the only place in the console that
+constructs one — and both callers go through it.
+
+### Changed — four oversize console modules split along their own seams (routine-config-split-and-reload, dashboard-split-and-cross-view-import, settings-endpoints-split)
+
+`routine-config.js` (742 lines, twenty panels in one closure) is cut along the routine page's
+own SECTION_GROUPS, so one module is one labelled group: `-schedule` (when it fires, and the
+header refresher whose next-fire line it owns), `-identity` (name, description, tags, template,
+domain, origin), `-models` (model roles, deliberation, compression, connections, machines) and
+`-access` (own secrets, exposure, declined). What stays is what `refreshSurface` serves. Every
+`sec-<id>` anchor is unchanged — they are the address the setup surface's fix links aim at.
+
+`dashboard.js` (853) gives up its domains section, its card and table renderers, and the
+subscription-quota chip. That last one was an import FROM `views/settings-endpoints.js` — a view
+depending on another view's module, which meant a settings refactor was silently a dashboard
+change; it is now `components/quota.js`, imported by both.
+
+`settings-endpoints.js` (654) held three independent surfaces. The model catalog and the two
+instance-wide model pickers are `views/settings-models.js`; the subscription-proxy sign-in flow
+is `components/proxy-accounts.js`, which was exported for no reason but where it happened to be
+written. An endpoint is HOW to reach a provider, a model is a named entry with its own
+attributes, and routines reference the model — two concepts, two modules.
+
+No behaviour changed in any of the three: the splits move code and update every importer.
+
+### Fixed — a stylesheet token that does not exist, and two dead bus handlers
+
+`views.css` asked for `var(--line)` on the queued-message edit box; no stylesheet defines it, so
+the whole `border` declaration was invalid at computed-value time and the textarea rendered
+unframed — in the one place a reader is editing their own words. It asks for `--rule-2` now.
+And `app.js` toasted on `routine_created` / `routine_failed`, two event kinds nothing in the
+tree publishes: the bus carries exactly six, and a handler for a kind that never arrives reads
+as live wiring to the next person.
+
+### Fixed — the browser dock stopped lying on the page it is docked beside (dock-overlays-controls, dock-shows-novnc-error, dock-over-toc)
+
+The preview dock is `position: fixed` against the right edge, and the console's reading column
+is 1452px wide (`--rail-w` 212 + `--shell-max` 1240) — so at every width between 861 and 1900px
+an open dock lay ON the content. On a 1440px laptop it covered the first five lane rows'
+run-now / pause / ✎ buttons on Routines, the nano-gpt card's `save key` row in Settings, and the
+runs table's summary cells on a routine page; the only way past it was to find the 4-point `hide`
+in its own title bar. It now rests open only at ≥1900px, where there is a margin to open into
+and where the side TOC lives; below that it starts collapsed, and a click-open folds again on
+the next route change, because an overlay one navigates away from should not follow. At ≥1900px
+the TOC ends above an OPEN dock (`:has()`, so a collapsed one costs it nothing) — the two fixed
+blocks were both pinned to `right`, and the dock covered the index's last four or five links.
+
+Separately, when the relay's upstream is down the dock used to pin a red "Failed to connect to
+server" block, noVNC's dark toolbar and an inert Connect button to EVERY page of the console —
+the one dark panel in the light theme, wearing the colour reserved for what waits on a person,
+over a button the `pointer-events: none` read-only rule makes unpressable. An HTTP probe cannot
+see that failure — the noVNC document, its assets and its chrome all load — and nor can one that
+only watches the handshake, because the relay ACCEPTS the socket before it dials websockify. The
+one unambiguous signal is a BYTE: RFB is server-first, so a live screen sends its version banner
+the instant the relay bridges the two sockets, and a dead one sends nothing before the close
+(the 1006 noVNC itself reports). The dock opens that same same-origin socket under the same pass
+cookie and closes it again before the frame's own, so a screen that admits one viewer at a time
+still gets a clean seat; on failure it renders one line — "screen unreachable" — with a link to
+the full page (which keeps noVNC's own diagnosis, where it belongs) and a retry, and the iframe
+is never created. `tests/ui/test_browser_screen.py` pins where the dock rests, the transient
+open, the unreachable note and the hidden-on-#/browser case; `tests/ui/test_global_chrome.py`
+pins the one thing neither file could see alone — two fixed blocks on the same edge.
+
+On `#/browser` the dock hides itself: that page IS this screen, full size and interactive, and
+the corner mirror showed the operator the same failing frame twice.
+
+### Changed — destructive is a state you reach, not one a hundred buttons rest in (danger-buttons-at-rest)
+
+`.btn.danger` painted every `delete` in the err tone at rest: 28 model cards, ~50 secret rows,
+six domains, four endpoints, two machines, the library's rule and util editors — about a hundred
+red buttons across three pages. The eye landed on `delete` before the row's own name, and
+scanning the model catalog for the one card to edit meant reading past 28 of them. Colour is
+state, and the state on a resting row is "nothing is being deleted": the tone now arrives on
+hover and focus, where the pointer already is and the consequence is one press away. ARMED is
+the carve-out — the confirm button inside a destructive dialog, `✕ abort` on a live run,
+`confirm restart`, and the admin toggle while it holds a token — four buttons that ARE the moment
+of consequence and keep err at rest. In the same pass, the Stats utils table's `deleted` marker
+moved from `chip failed` to `chip disabled`: 86 of the fleet's 196 util rows carry it, and a util
+the library no longer holds is a historical fact, not a failure.
+
+### Changed — the routine page opens on one group instead of seven (routine-config-groups-all-open)
+
+All seven config groups were expanded by default, so a routine page ran 11-12 000px and someone
+who came to change one dial scrolled Permissions (11 cards and 14 rows), Secrets, Goal, Budgets
+and Roots to find Models. Only the leading group — when it fires — is open now; each head still
+carries the hint line that IS the map, one click opens a group, and the choice is remembered per
+browser under one key, the way the dashboard already remembers its lane rows. A setup-check fix
+link still lands on its control, because `jumpToSection` opens every `<details>` on the way down
+— `tests/ui/test_routine_groups.py` pins that journey along with the default and the persistence.
+
+Inside a held ability's card, a stack of requirements that are ALL MET now folds behind a
+"N requirements · all met" line: the card's own badge already said "ready", and eleven of them in
+a three-column grid was a screen and a half of settled rows. A card that will fail or needs a
+decision never folds — that is what the card view was built for.
+
+### Fixed — the setup check's band is weighted by its worst row (setup-note-wears-warn)
+
+A routine with one NOTE — `action:write_recipe` "on", a cron a lane's schedule suppresses — wore
+the identical amber ⚑ band as one about to park a run on a missing secret. Two of the fleet's
+healthy routines showed it, which is how a reader learns that the band means nothing and then
+misses the one that summons them. The band now takes err where something will fail, SUMMONS where
+a run will stop and ask a person (the palette's one case for coral, and the weighting
+`surface.BOOT_SEVERITIES` already applies to the boot note), and nothing at all where every row
+is a note — a note-only strip is a folded `<details>` that still carries every row and every fix
+link, one click away.
+
+### Changed — one explanation per section, not three (section-intro-twice)
+
+Settings stacked a group blurb, a section description and the mounted panel's own intro between
+the h1 and the first control, saying the same thing in different words: "Provider connections,
+the model catalog…" immediately above "Model transports only — the scheduler is the only
+harness…". The panel owns its intro, because it renders wherever the panel is mounted and the
+routine page shows the same panels — so the section `desc` is gone from all seven sections whose
+panel has one, and survives on Server, which has none. The routine page's own duplicated
+TRIGGERS / SCHEDULE ONCE / CONNECTIONS / MACHINES descriptions went the same way, with the two
+clauses they alone carried folded into the shared cards: that a machine binding is a RESOURCE and
+not a permission, and that a provider left unbound reaches the run as no account at all.
+
+### Changed — the pages that were mostly list are now mostly what you came for
+
+- **Decisions** counted answered rows as open, so a fleet with twelve settled proposals and
+  nothing waiting read "All · 12 · Deferred · 12" and the "No decisions to make right now"
+  emptyState could never fire. The counts are of what waits; when nothing does, the page says
+  so above the settled group. A settled card is a receipt — first line, the answer, revise —
+  with the full proposal body (rationale, prior art, sketch, an impact table) behind a
+  disclosure, instead of eleven thousand pixels of decisions already taken. Library-drift
+  records group by routine + commit into one card, "lost 2 permissions after faf62a6d", listing
+  both gaps and dismissing the whole event at once: the watcher files one record per gap, so one
+  commit produced two identical-looking cards.
+- **Messages** gave the report header the rule header every other block on the page has and let
+  its paragraph fold; the six per-status count chips (settled 1458, addressed 282) fold behind
+  one "more filters". A queued inbox row wears the `idle` chip, not the pulsing summons one —
+  it waits on the routine's next RUN, not on a person — and its body renders through `mdInline`
+  clamped to two lines with an expander, because two 40-line reports in that list pushed the
+  unread summaries two screens down.
+- **Stats** subtotals its 110 conversation rows into one expandable "conversations · N" row and
+  shows the 25 busiest utils with the rest, and the 86 deleted ones, behind their own reveals.
+- **Library** narrows the catalogue to the open document's own kind, with "show the whole
+  library" one click away: reading one rule had been 12 000px of six catalogues above the editor.
+- **Routines** closes the DOMAINS admin panel by default the way the activity feed already does,
+  folds the instance-wide mid-chain-failure default behind a disclosure, and stops painting a
+  filled cyan `▶ run now` on all eleven lane rows at rest.
+- **Secrets** buckets "needed by installed utils" into `needs a value · N`, `optional · unset`
+  and `set` instead of one alphabetical list — the eleven rows that need the operator were
+  scattered through fifty that do not, over 2 000px. The multi-entry and machine add forms became
+  `+ add map entry` / `+ add machine` disclosures, the shape the endpoint and model sections
+  already use; `edit` opens the machine form prefilled.
+
+### Fixed — model prose rendered as markdown on the three surfaces that still showed the markers (raw-markdown-leaks, goal-rows-misaligned)
+
+The dashboard renders a run summary through `mdInline`; the routine page's runs table, the
+Messages queue and the stopping-condition note rendered the same model-written field as text, so
+`**One application went out in the same run that discovered it**` reached the reader with its
+asterisks — on the goal panel, that is the one line saying whether the run met its bar. All three
+go through `mdInline` now, over the first non-empty line where the cell is one line high.
+
+Stopping-condition rows also settled into one shape: the meta takes a line of its own
+(`flex: 1 0 100%`), so three conditions stop reading as three different widgets — one with its
+meta in a narrow right column, the next wrapped under the text with the scope controls floating
+between. The three recorded repairs of that flex negotiation (F421 v1-v3) are kept, not rewritten.
+A group's name input is hidden when it is empty and there is only one group, which is what clipped
+it to "gro" beside "empty" in the run rail.
+
+### Fixed — small things that said the wrong thing (crumb-wrong-on-browser-page, weekgrid-labels-clipped, help-has-no-guides)
+
+The breadcrumb read "Conversations" on `#/browser`: `crumbsFor` had no case for it and the
+default said Conversations for anything unknown. The default now names the route itself,
+capitalised, so the next route added cannot inherit the wrong page's name — pinned in
+`tests/ui/test_browser_screen.py` beside the dock's own behaviour on that route.
+
+Week-grid lane labels were a fixed 120px, so four of eleven lanes truncated to their shared
+prefix — "⛓ Instance · Ni…", "⛓ Professional …" twice — and the column that says whose bars these
+are said the same thing on four rows. They size to content up to 220px.
+
+Help serves zero guides on the live instance (`/docs/index.json` → `"guides": []` against 37
+repo `docs/*.md`), so the page was one "API reference" chip over pdoc's submodule index. The
+cause is one character in `config/server.py` and is handed to the lane that owns it; what Help
+does now is SAY so — it names `docs/`, and links to Settings → Source, where the root it reads is
+set — instead of letting the module list read as all there is.
+
+### Fixed — the two pages that panned sideways on a phone, and the reason they could (conversation-sideways-model-row, settings-sideways-raw-json-error, select-has-no-width-bound, warn-line-styles-nothing)
+
+The bottom navigation bar is `position: fixed` against the LAYOUT viewport, and the layout
+viewport is exactly what a horizontally-overflowing document expands — so a page that scrolls
+sideways takes the navigation off-screen with it. Two routes did: a conversation at **742px**
+on a 390px phone, and Settings at **624px**.
+
+Both were one kind of element. A `<select>` is as wide as its widest OPTION, and `max-width:
+100%` cannot save it inside a shrink-to-fit ancestor — an `inline-flex` row, a table cell —
+because the percentage has no definite width to resolve against. The conversation head's
+`model · uncensored` pair was exactly that row. It wraps now, its selects may shrink below their
+options, and the phone block drops the automatic minimum on every `<select>`, so the next long
+catalog name cannot do it again. The other was an account status printed verbatim: a provider
+answers a dead subscription with `{"error":{"type":"usage_limit_reached",…}}`, 170 characters
+with no break opportunity in them. It breaks. Turning it into a sentence is the provider
+adapter's job and is handed over with the finding.
+
+While there: `.warn-line` was named in six places — the proxy card's errors, the quota refusal —
+and defined in NO stylesheet, so every failure it marked rendered as ordinary body ink.
+
+`tests/ui/test_mobile_layout.py` pins both symptoms at 390px with the real page: a monstrous
+option injected into the live model picker, and a real proxy account whose status is that JSON
+body. It also carries the DETAIL routes `test_mobile_nav.py` cannot — its route list is also the
+count of the bottom bar's destinations, so a routine page, a library document and a run view had
+never been measured at all.
+
+### Changed — the phone has no columns (lane-table-overflow-hides-actions, library-tables-clip-description, secrets-table-column-crushed, routine-runs-table-phone, list-tables-clip-behind-invisible-sideways-scroll)
+
+`.tablewrap` scrolls sideways. On a desktop that is a considered escape hatch; at 390px it is a
+column nobody knows is there. The dashboard's lane rows put `▶ run now / ⏸ pause / ✎` at the far
+right of a five-column table, so eight of eleven lanes offered no control at all and "run a
+routine from the dashboard" was impossible on a phone. The library clipped the one cell that
+says what a document IS ("An expert…", "iteratively", "author gra…") on 190 rows. The secrets
+table crushed "needed by" — which util will stop working without this key — to two characters.
+The runs table hid its summary column, which is the thing "read the last result" is looking for.
+
+A table that carries real columns now declares `class="list stack"`: below 860px it drops its
+columns and lays each row out as a card, cells becoming lines in source order. A cell that shares
+a line says so (`td.inline` — `when · state · turns · duration · tokens`, with the summary under
+them at full width); a cell whose meaning was its column header carries `data-label`. Nothing
+leaves the DOM, wide screens are untouched, and one class on a `<table>` is the whole opt-in —
+eleven tables took it. The two spellings of the wrapper (`.tablewrap` and `.table-wrap`, one rule,
+two names, with the border on the one surface that already read as a box) are now one, with
+`boxed` as the modifier.
+
+### Fixed — two destinations, one glyph (nav-two-question-icons, settings-glyph-reads-as-a-sun)
+
+Below 1180px the rail drops its labels, so the glyph IS the destination. Decisions and Help both
+drew a circled question mark with a dot: the one place the palette calls SUMMONS was
+indistinguishable from the documentation, and Settings' eight-spoke cog at 18px reads as the
+brightness icon the theme toggle uses. Decisions is an inbox tray; Settings is sliders. Labels
+were considered and rejected by measurement — nine slots across 390px is 43px each, and
+"DECISIONS" at 9px is ~50px.
+
+### Changed — the pages stopped opening with everything they contain (composer-landing-fully-expanded, routine-page-prose-walls, available-lists-expanded, messages-full-bodies-inline, library-editor-appended-at-bottom, settings-subnav-jumble)
+
+Six surfaces rendered their whole contents on arrival, which on a phone is measured in tens of
+thousands of pixels:
+
+- **The landing composer** put eight titled sections — model, project directory, folder access,
+  budgets, deliberation, 30 rule cards, connections, 25 ability cards — flat under the task box:
+  **12 607px** under a page whose one action is at the top. They are behind one disclosure that
+  says what starting without opening it means; open by default where there is a column to read
+  them in, remembered per browser either way.
+- **A routine page's** section descriptions (13 lines on SCHEDULE, 22 on DOMAIN, 20 on
+  PERMISSIONS) are correct, wanted, and re-read every time a dial is changed. Below 861px the
+  first sentence leads and the rest is one tap away. The same primitive gained the 68ch measure
+  its header-mode twin always had, so one voice no longer gets two line lengths on one screen.
+- **"Available · 14"** — the abilities and rules a routine does NOT hold, each with its ON/OFF/WHEN
+  lines — is ~5 000px between the held set and the save button. A disclosure on a phone, open on
+  a wide screen where a setup-check fix link lands straight on a card.
+- **The Messages page** rendered every item's full body: fifteen unread summaries with their
+  tables made it **48 554px**, so the "✓ read" button of item three sat twenty screens below item
+  two. The first block leads; the rest is one click. A routine page's own MESSAGES panel was a
+  SECOND full-length copy of the same queue — both now render through one `clampedBody` seam, two
+  lines and an expander.
+- **Opening a library document** on a phone left its catalogue above the editor; the editor is
+  what the tap asked for, and the list is one click back.
+- **Settings' section nav** flowed eleven chips and four group eyebrows into a four-line jumble
+  where a separator landed mid-line and the "Connections" eyebrow sat beside the "Connections"
+  chip. Below 861px the groups are `<optgroup>`s of one select: same destinations, same deep
+  links.
+
+### Fixed — the chrome stopped taking a sixth of the screen (page-name-duplicated-chrome, workbar-crumb-squeezed-by-search, llm-dock-overlaps-content, ribbon-summary-clipped, conversation-index-stacks-above-chat, run-view-rail-before-summary, nested-scroll-areas-on-run-view)
+
+The sticky workbar wrapped `Routines › self-audit › run 2026-09-22 00:02` into FIVE lines beside
+a search box that took whatever it wanted — on the pages with the longest content. The crumb
+takes one row and the LAST segment, the one that identifies the page, is what truncates; a
+ONE-segment crumb is hidden, because it is the page's own name and the h1 under it and the lit
+bottom-bar icon both already say it. The watch ribbon's summary — the sentence that says whether
+anything failed — was cut at the screen edge with no bound at all; it ellipsises, and its "1
+failed" is now a link to the newest failed run instead of dead text over a 6px red tick.
+
+Idle, the LLM dock was a 100×34px pill parked over the bottom-right of every phone page: over the
+lane default-on-failure select, a routine's Setup check head, a chart's remove button. Collapsed
+to its bolt it covers margin; work in flight brings the count back.
+
+And below 760px the run and conversation rails have no column — they stack in the page flow,
+where an OPEN one is read before the thing it annotates: twenty other conversations above the
+chat, forty `state/…json  wrote ⧉ ⤓` rows between the phone and the run summary. They open
+closed, from the one place that owns the rail contract (`wireRunRail`), and the artifact list
+drops its 168px inner scroller at that width — an inner scroll inside a page scroll is a touch
+trap.
+
+### Fixed — markdown tables crushed to one letter per line (md-tables-squeezed)
+
+`.md .tablewrap` is `overflow-x: auto`, but `table.list { width: 100% }` pinned the table TO the
+wrapper, so the scroll could never engage — and `.md`'s `overflow-wrap: anywhere` broke the cells
+instead: a four-column table at 340px rendered its headers one letter per line (`T/H/R/E/A/D`,
+`CLOSE/S THE/ITEM?`). These are the tables routines use to lay out the options a person is
+choosing between. The table sizes to its content and scrolls inside its own box; the cells wrap
+at words.
+
+### Fixed — the light theme's third ink was below AA, and four fields re-opened the iOS zoom (ink-3-fails-wcag-aa, inline-font-size-defeats-the-zoom-guard)
+
+`--ink-3` carries the whole label vocabulary — `.faint`, `.lbl`, the crumbs, the ribbon's ticks,
+every filter-bar caption — at 10.5px and 11.5px, i.e. never large text. Its light half measured
+**4.38:1** on `--deck` and **4.19:1** on `--deck-2`, the two grounds it actually sits on; it only
+cleared 4.5 on a white `--plate`. Darkened to ≥4.7:1 on both. The dark half is untouched.
+
+Separately, `base.css` sets every form control to 16px below 860px because anything smaller makes
+iOS Safari zoom the viewport on focus — and four controls (both conversation model pickers, the
+three per-reply budget boxes, the run view's model select, the secrets map-entry field) carried an
+inline `font-size:11.5px` that a media query cannot beat. They carry a `.tight` class instead, so
+the guard wins where it must.
+
+### Changed — a caption says what the group is; a count says whether it waits on you (decisions-captions-sentences, settled-count-wears-summons, quota-chip-wording, setup-fix-line-reads-as-a-run-on)
+
+"LIBRARY DRIFT — A LIBRARY CHANGE BROKE A ROUTINE THAT HOLDS IT; THE FIX IS ON THE ROUTINE" took
+three tracked-uppercase lines at 390px, and the flex spacer stranded the count beside line two, so
+the one number that matters was detached from its noun and the explainer was read as a heading
+every time. One renderer for both surfaces (the Decisions groups and the pending band): noun,
+count, and the sentence on a line of its own in the console's own voice. The count keeps coral
+only where somebody is actually waited on — "Settled · 12" is the opposite of that.
+
+The quota chip's noun was in a label the phone header has no room for, so where this page is
+actually read it said "7d sonnet 54% left" with nothing saying WHAT was 54% left. It says
+"quota ·" first. And a setup check's remedy ran the act straight into the place — "clear this
+routine's cron Schedule or reschedule the Professional · Daily lane ↗ the Routines page" — where
+the same read model's terminal form already separates them; the console was the half that drifted.
+
+### Changed — 55 literals in views.css became the tokens they already equalled (token-hygiene)
+
+Every `font-size: 11.5px / 10.5px / 13px / 15px` and `border-radius: 4px / 7px` is now
+`var(--t-s) / var(--t-xs) / var(--t-m) / var(--t-l) / var(--r1) / var(--r2)` — same pixels, one
+source. The remaining 88 literals are values **no token defines** (12px, 11px, 10px; 6px, 8px,
+3px, 5px radii); snapping those to the nearest token is a design change, not hygiene, and is not
+done here. The stylesheet references no undefined custom property (the one the review named was
+already fixed in this wave).
+
+### Fixed — a run summary reads as prose on every surface that shows it
+
+Four places reduce a run summary to one line for a table cell or a list row, and each spelled the
+reduction out itself. Three rendered it; the dashboard's activity feed assigned it to
+`textContent`, so `**Two applications w…` rode the feed with its asterisks, and none of them
+dropped a leading markdown heading — a summary opening `## You were right` lost its sentence
+boundary against the line under it. `md.summaryLine()` is now the one reduction (first non-empty
+line, heading marker stripped, rendered inline) and the routine page's RUNS table, the activity
+feed, the dashboard's routine rows, the routine page's decision previews, the Decisions page and
+the Messages changelog all call it.
+
+### Changed — the section index moved into the navigation rail, where a laptop can see it
+
+"On this page" parked in the right margin, which by the rails' arithmetic (212px rail + 1240px
+column) only opens up at 1900px — so a 1440px desktop got no wayfinding at all on pages between
+eleven and twenty-six thousand pixels tall (stats 26 428px, messages 18 117px, a routine 13 732px,
+settings 12 641px), beside 430px of empty rail under "Help". The index now rides the rail itself,
+between the destinations and the rail's foot: it takes the slack they leave, scrolls inside it
+when the page has more sections than the slack holds, and hides below 1181px where the rail is a
+68px icon strip. The fixed right-margin variant is gone, and with it the rule that made the index
+reserve the browser dock's band — the two are no longer on the same edge. Library's counts line
+("workflows 11 · rules 30 · … · utils 110") was dead text nine thousand pixels above the section
+it named; each count is now a jump to its own section, and every `<h2>` carries the
+scroll margin that lands a jump clear of the sticky workbar.
+
+### Added — the watch ribbon's counts are ways in
+
+"29 runs in 24h · 1 failed · 2 running" rides every page, and the run each count names was
+reachable only by finding its ~6px tick in a ~900px band. Each count that names runs is now a
+link to the newest of them. The colour is unchanged: a failed run is not SUMMONS — it asks
+nothing of anybody.
+
+### Added — the week strip's bars carry their own key
+
+The strip's hues are routine IDENTITY (`charts.slugColor`), not outcome, and the only thing
+saying so was the swatch on a routine's table row — which a lane row does not carry and which 31
+of the fleet's 35 routines never showed, because the lane rows below the strip are collapsed by
+default. Directly under a ribbon that uses colour for outcome, an orange bar read as a warning.
+Each strip row's name now opens with its members' swatches in fire order — the order the chain
+draws them in — so the mapping sits where the colour is, with no legend block and no change to
+the lane-collapse default.
+
+### Changed — a finished run's rail leads with what the run produced
+
+The rail opened on the goal panel, whose per-condition accounting is word for word the summary in
+the serif column beside it, re-set in 11px mono at a 34-character measure; the artifacts the run
+actually produced were three sections down, below the fold of a nested scroller. The order is now
+artifacts, files, state, tasks, goal — each section's collapsed state is still remembered per
+browser, so a reader who wants the goal first keeps it. And the duplication itself is gone: when
+the accounting was written BY the run on screen (`resolved_run`), the panel shows the verdict and
+leaves the prose to the summary. From any other run the note is the only copy there is, and it
+stays.
+
+### Changed — one measure for every explanation in the console
+
+A section description was capped at 68ch and a panel intro was not, so the same voice ran to
+1 350px in one place and 450px in the other on one screen — roughly twice the length a reader
+tracks without losing the line. The cap now lives on the shared class, and the ten view-level
+intros that had their own spelling (endpoints, secrets, messages, a routine's message folders,
+domain config, abilities) use it.
+
+### Added — the search box shows the key that opens it
+
+Instance-wide search reaches any run, decision or note in one keystroke, and the keystroke was
+advertised only in a hover tooltip over a box reading "search". A `<kbd>/</kbd>` now rides the
+box — the same element the Decisions page's keyboard legend uses — stepping aside while the box
+is in use and absent below 861px, where there is no keyboard to advertise.
+
+### Changed — Help is an index of the guides, not a wall of chips
+
+With the source root corrected the Help tab serves the repository's three dozen guides, and as
+chips they wrapped into a five-line wall that pushed the reading frame off the first screen. They
+are an index column beside the frame now, in the server's reading order (orientation, worked
+examples, the contract docs, then the rest alphabetically — defined once, in `docs_build`), with
+the API reference last under its own rule because it is generated rather than written. The frame
+also carries the console's theme (`?theme=`), so a reader who chose light by hand no longer gets
+a dark rectangle inside a light shell on the one page whose job is explaining the console.
+
+### Added — the temperature field says what it costs on a Claude model
+
+A current Claude model answers 400 to a sampling parameter and the adapter drops it on a degraded
+retry, so a filled temperature box silently doubles the requests, once per turn. Both boxes (the
+per-model field and the endpoint-wide default) now carry that line. The field is not hidden by
+endpoint kind: a kind is a wire and says nothing about the model behind it, and the value still
+works on much of what an `anthropic`-kind endpoint serves.
+
+**One mechanism where there were two**
+
+### Fixed — a branch hand-back is no longer read as the operator speaking (via-is-delivery-policy)
+
+An inbox message's `via` decides when it is consumed, whether the post-finish reap may resume a
+finished run for it, whether the conversation surface offers it as the operator's own editable
+queued text, and whether it counts as the user having spoken. It was chosen freehand at nine
+writers, and `branches.hand_back` chose `conversation` — a USER channel. So a branch's result
+arrived in its parent as an editable message the operator appeared to have typed; it advanced
+`ctx.user_replies`, which is the input to the create_routine confirm gate ("has the user spoken
+since the draft") and to the `user-spoke` assist predicate; and a hand-back landing in the finish
+window was swept by the reap as a stranded user message and RESUMED the parent — the wake the
+module's own contract says never happens. It now files on `branch`: a LIVE via (the parent's next
+reply drains it, unchanged) that is not a USER via.
+
+`via` is a CLOSED set now — `inbox.VIAS`, validated by `file_message`, which refuses an unknown
+channel rather than filing freight on a delivery policy nobody chose. The set was seeded from what
+the code WRITES, not from the two named tuples: the five channels neither tuple mentions
+(`report`, `pending`, `trigger`, `schedule_once`, `web-audit`) are legitimate writers, two of them
+on the daemon's own tick, and a validator that had never heard of them would have raised on the
+first tick after deploy. A test scans the source for every `via` literal and fails on one the set
+does not know. Alongside it, `inbox.MACHINE_VIAS` is the single answer to "did a PERSON write
+this": a report, a background result, a branch hand-back, a trigger text and a proposal outcome no
+longer advance the user-reply count, which previously keyed on the `report` field alone.
+
+`branches.hand_back` and `daemon/detached_delivery` also stopped hand-rolling the `msg-*` filename
+and now file through `inbox.file_message(..., name=)` like every other channel (F499); the two
+daemon managers are the remainder.
+
+### Changed — one predicate answers "is something waiting in the inbox" (one-inbox-predicate)
+
+Five hand-rolled loops asked that question with three different filters, and the differences that
+mattered were undocumented: the report trigger skips a report that only CLOSES a thread (in
+exactly one of the five), and — the axis a flag list would have missed — the trigger manager is
+fail-OPEN by contract while every live-run predicate is fail-CLOSED, because counting freight the
+drain will never take makes a live leg's wait-yield or finish-deferral spin forever on it.
+`inbox.has_pending_messages` / `count_pending` now carry exactly those differences, each
+documented with the caller it exists for, and both behaviours are pinned. The reap, the detached
+wake and the routine page's report-trigger count read them today; the two daemon call sites
+follow.
+
+The page's count changes with it: a REPORT trigger's "pending" is now counted with the same
+closure exemption the daemon fires on, so the row cannot say "1 waiting" about freight nothing
+will ever fire for.
+
+### Changed — one hand-back, three landing places (handback-owned-once)
+
+`engine/child.py` says it owns the hand-back path so "the kind copy, the observations and the docs
+cannot drift apart" — and knew only `from-sub-<n>`. `branches.py` spelled `from-branch-`,
+`daemon/detached_delivery` spelled `from-bg-`, and all three carried their own copytree loop and
+their own renderer. They had already drifted where it costs: a subtask's parent was told the
+landed PATHS, while a branch's and a background task's were told a COUNT and had to list a
+directory to find out what they had been given. The copy (`collect_handback`), the directory name
+(`handback_dirname`) and the wording (`handback_text`, `handback_paths_line`) are now one
+implementation with the three nouns in their own table — deliberately not keys of the mode
+vocabulary, because a detached task is not a scheduling mode: its budget never folds back. Every
+hand-back names its paths.
+
+Three cross-references to functions F393 moved out of `daemon/detached.py` are corrected in
+passing (`_deliver_one`, `_copy_artifacts`, `_wake`) — two of them were the docstrings cited as
+proof that the shapes were already shared.
+
+### Fixed — one standing proposal per ask, whatever kind filed it (proposals-are-questions, part)
+
+A queued proposal outlives the run that filed it by design — the operator may be away for days —
+so a scheduled routine re-proposing on its next fire is the normal case. `goal-reached` and
+`library-drift` each dedupe by hand before queueing; `create_routine` and `manage_lane`, the two a
+RUN files every time it reaches the same conclusion, did not. routine-improver proposing the same
+routine on Monday, Tuesday and Wednesday left the operator three identical cards of which two can
+only 409, and told the routine about proposals it no longer had. `pending.queue` now refuses a
+proposal equivalent to one already standing and returns that record instead, with one `identity`
+per kind saying what makes two proposals the same ask — the slug for a routine, the verb and lane
+for a lane change, the gap for a drift record, the routine for a retirement.
+
+### Changed — the spool's mechanics live in the spool module (spool-state-helpers)
+
+`rsched/spool.py` calls itself "the ONE durable request-spool mechanic", while `triggers.py` and
+`schedule_once.py` carried `read_state` / `write_state` byte-identical and `slugs_with_*` identical
+but for a prefix. Listing the slugs with unconsumed entries and reading or writing the daemon's
+fire ledger are now `spool.slugs_with` / `read_state` / `write_state`; each rider keeps only its
+vocabulary — family name, prefix, and what its records mean.
+
+### Not unified — and why
+
+- **Domain notes are not inbox messages.** The proposal to drain them through `inbox/` was
+  refuted: it would replace read-and-drop with an archived `consumed/` copy (a note that survived
+  would be re-shown every run until a human deleted it — the tracked-work-item shape the channel
+  exists to avoid), drop the twenty-note cap (a note is a nudge, not a mailbox), and put notes on
+  the Messages page, whose write contract hands the operator full write access to every waiting
+  message — making a person the author of a note a teammate signed. CLAUDE.md's "no approval, no
+  ledger row, no Messages-page item" is the invariant. The reasons are now in
+  docs/lanes-domains.md so the next reviewer does not re-raise it; the one real defect there (the
+  drain is a side effect inside the otherwise pure `composer.state_digest`) is recorded for the
+  lane that owns those files.
+- **The two decision-record shapes are still two.** Queued proposals remain invisible to the
+  badge and to Web Push, and that is not deliberate — but the Decisions page renders its own
+  band, three lanes are editing that file this wave, and merging the stores without the page
+  change shows the operator every proposal twice. What landed is the half that is safe alone (the
+  dedupe above) plus the pointer in `open_decisions`'s own docstring naming the second store and
+  the end state.
+- **The rule-assist label channel stays deferred.** Live evidence sharpens it — 72 turns across
+  three routines spent on the one `hold`-payload assist, none of them labelable — but wiring
+  `remind_feedback` to assists is four coupled changes, including a health read model that would
+  500 the moment `state/assists.json` holds a dict instead of an int. docs/rule-assists.md now
+  carries the price and the four parts instead of a half-built path.
+- **`engine-note-seam` was already done.** The ENGINE NOTE pair is one function
+  (`engine/enginenote.append`) at all twelve sites, including the boot orphan note that used to
+  append the message with no transcript event; the replay renders it back verbatim.
+
+**The self-improvement loop**
+
+### Added — the decided-work queue: an accepted proposal now reaches a builder (research-accept-reaches-no-builder, designs-md-consumed-by-nobody, accepted-proposals-wait-weekly-lane)
+
+The self-improvement loop was a set of well-instrumented PRODUCERS with almost no CONSUMERS.
+Everything that recorded a decision recorded it somewhere nobody read: roughly twenty research
+proposals accepted on the Decisions page since July reached no builder, because an acceptance is
+an answer delivered to a record-only routine and nothing else is told. One accepted-and-built
+capability was later retired by the util review as dormant, since nothing recorded that somebody
+had asked for it; and the five proposals accepted in one sweep on 2026-09-12 — which the filing
+routine itself said were ONE body of work — were still unbuilt twenty releases later.
+`docs/designs.md`, the store for work "decided but unbuilt", had five entries and no reader at
+all: its oldest had waited thirty-three days through roughly a hundred and eighty releases.
+
+One mechanism now closes all three, reusing channels that already exist rather than adding a
+fourth: **self-audit's authorized queue becomes the DECIDED-WORK QUEUE, with three sources read
+as one list** — its own settled decisions, every `## ` entry of `docs/designs.md`, and any report
+delivered to it whose title begins `DECIDED:`. All three enter APPLY under the settled-decision
+branch of the autonomy gate and are never re-surfaced as decisions, and a shipped
+`docs/designs.md` entry is deleted in the commit that ships it — the rule the file always carried
+and that never fired. **One item keeps one id**: a `DECIDED:` report already has its `R<n>` and
+the Items page already lists it, so it gets no second row; only a `docs/designs.md` entry, which
+has no id at all, gets a decision row.
+
+The producer half is `scheduler-improvement-research`, and the fix there was smaller and sharper
+than a new step. Its orient stage told the run that a proposal the daemon no longer shows as open
+should be treated as "resolved/gone" — but an ACCEPTANCE removes a question from the open set
+exactly as a rejection does, so the recipe was instructing the run to read a yes as a dismissal.
+"No longer open" is now three outcomes decided from the ANSWER, and every accepted one is handed
+to the builder: one report carrying the title verbatim behind a `DECIDED:` marker, the rationale
+condensed to what a builder needs, and a FIRST INCREMENT line — paced oldest-first to the
+engine's open-thread cap, with the remainder recorded in `decisions.md` as awaiting hand-off
+rather than dropped. The same step is now part of the `improvement-proposer` workflow pattern
+(v6), so a routine built from it does not have to rediscover that a backlog whose accepts change
+nothing costs a run a week and returns nothing.
+
+Report routing was chosen over a new surface deliberately: a report is already an item type, so
+the maintenance index sees the hand-off with no read-model change, the existing open-thread cap
+sets the pace to what a builder actually ships, and self-audit stays the single writer of its own
+report file.
+
+The queue's first item is in `docs/designs.md`: the 2026-09-12 sweep, written up as the one body
+of work it is — the unnamed 40-token thread pool shared by four latency classes, and a console
+that cannot say "alive but not answering" because `api()` has no deadline and the daemon lamp
+freezes green on a stalled poll. Five increments, cheapest first, each making the next one's
+evidence better.
+
+Also fixed a wording defect the same evidence exposed: self-audit's report triage read EVERY
+addressed row as "routed and not yours", including rows addressed to self-audit itself.
+
+### Changed — self-audit gates a release in ONE call and works the fleet before its own toolchain (self-audit-gate-bound-and-self-focused)
+
+Measured over four consecutive runs: 35 / 20 / 41 / 11 gate invocations each, 3,360 / 2,967 /
+3,963 / 2,978 seconds spent waiting on them out of 5,647 / 5,418 / 8,231 / 4,632 elapsed — 30% to
+64% of every run inside its own release gate. Over half its open findings were about its own
+gate, scripts and codemap, while it consumed 24.6% of the instance's September tokens.
+
+`scripts/candidate_gate.py` gains a `release` mode that runs quality, the fast suite and the
+browser suite in order under ONE deadline sized to the `script` action's 1800 s ceiling, and —
+the reason it is one call rather than three — **re-runs any browser failures serially by itself**
+and reports which were load flakes. It emits one verdict: `green`, `flaky` (a failure that passed
+the gate's own serial re-run of the same tree — a statement about the harness under parallel
+load, not a red verdict about the candidate), `red`, or `timeout` (a stage that did not finish is
+neither green nor red; `--from <stage>` continues it). The exit code says the same thing, so a
+glance at it cannot disagree with the verdict: 0 release, 1 restore, 2 unfinished. Only the gate
+may call a failure flaky, because a re-run the model performs by hand is a second opinion rather
+than evidence. The recipe's per-partition choreography and hand-rolled worktree pytest commands
+are gone; the worktree gate is the same one call, which also removes the trap that made a bare
+`pytest` in a worktree silently test `main`.
+
+The stage's order of work now puts FLEET defects first and the routine's own toolchain last, at
+one increment per run — the defects nobody else will find, before the instrument it finds them
+with. Twenty dated one-off scripts (`report_update_<date>.py`, `close_report_<date>.py`,
+`rebuild_*`, `reconcile_*`, `fix_<item>.py`), referenced by no recipe, were deleted — two thirds
+of a `scripts/` directory that is meant to be tooling — leaving eleven live tools, and the
+standing rule that a script which ran once is deleted by the run that ran it is now written down.
+
+### Changed — the improver picks targets by cost and regression, and says when it drops one (no-cost-trend-closes-no-loop)
+
+Nothing measured tokens and turns per routine over TIME and fed the answer back to anything that
+could act: `run_health` flags only on a page, keys on the recipe commit — so a library rule
+revision reaching 30 to 136 holders at once moves no version boundary and is invisible — and
+`routine-improver` selected targets purely by "has run since my last pass", oldest first, with
+104 of its 143 recorded visits being finished conversations that have no next run to improve.
+
+`routine-improver` now attaches a cost and a trend to every candidate from the usage stream in
+one read — median tokens and turns over its last five runs against the five before, its share of
+fleet tokens, its outcome mix — and orders the sweep by what the sweep is for: FLAGGED candidates
+first, then routines by tokens per run, then only live or report-named conversations. Several
+candidates flagging in the same window is the signature of a shared cause, so the recipe says to
+look for it before opening any one of them. It reads the same file `library-pass` already opens
+at the end of a sweep; one read, two groupings.
+
+A companion defect made that ordering necessary and would have defeated it: the instance's
+largest consumer qualified on five consecutive nightly runs and was dropped from every sweep, and
+nothing anywhere said so — a silent skip and a clean pass read identically in the summary, in
+`visits.json` and in the LEDGER. A dropped candidate must now name itself with a `dropped_by`
+reason and must not have its cursor stamped.
+
+`rules-review` supplies the version boundary that was missing: every landed revision is stamped
+with the library commit and the holder count, and `gather-evidence` now reads a previously-revised
+rule's holder outcomes ACROSS that stamp. A revision is the widest change anybody on this instance
+can make, and this is the only place it is ever checked.
+
+### Changed — config-optimizer judges model effort, and says how long the clicks are taking (token-lab-wins-never-bound, config-optimizer-blocked-on-click)
+
+`token-lab`'s largest result — one effort step cutting output tokens 63.8% (686 → 248 per turn)
+with no accuracy loss across its cases — was filed as prose on 2026-08-29, read as informational,
+closed as informational, and three weeks later was bound to no routine at all.
+
+`config-optimizer` gains an effort-fit rule beside its budget-fit rule: it resolves each
+routine's model role to its catalog row, judges from the runs whether that routine's turns are
+mechanical or judgment-dense, and flags a `max`/`xhigh` row over mechanical turns as sub-optimal
+— one effort step, same model family, with a five-run watch and a revert condition attached. The
+rule is explicit that a measurement's LIMITS travel with its number: this one is a single-turn
+proxy at n = 5, so it generalizes worst to exactly the longest, most iterative, most
+self-correcting runs, and the fleet's biggest consumer is therefore the worst first candidate
+however tempting its share of the bill. Change one routine the evidence covers, confirm, then
+extend; never a fleet-wide default off one result. `token-lab`'s side names the target, the exact
+field, the delta with its caveats, and the watch and revert — and states that it proposes while
+the owner binds, through one seam.
+
+`config-optimizer` also now reports its own throughput every run
+(`APPLY prepared=<n> applied=<n> awaiting=<n> oldest_wait=<n>d`), because three consecutive runs
+reported "Applied: 0" and each was individually unremarkable — only the sequence said anything,
+and nothing was computing the sequence. A wait past a week escalates as one report instead of
+re-filing the same patch.
+
+### Changed — the run-gate lens stops being stricter than the run gate (run-gate-built-unused-lens-stricter-than-engine)
+
+The admission gate shipped and zero routines used it. The mechanism accepts `net: outbound` and
+injects a routine's declared, granted secrets, but the only routine that installs gates had been
+told "bad predicates: anything that fetches over the network, anything that needs a credential" —
+so the daily routines whose honest question is "has the hub's sequence moved?" or "is there new
+mail?" were rejected as ineligible and the feature idled.
+
+The lens now separates two rejections that were being made as one. "This routine produces real
+output on every fire" STANDS — a gate there suppresses work rather than waste, and no predicate
+rescues it. "The only honest predicate would need the network" is void, and those targets are
+re-assessed. A network predicate is admissible in one exact shape: ONE cursor-shaped request to a
+service the routine already depends on, a hard timeout well inside the gate's own, a catch-all
+written FIRST so every failure path returns `run`, no consumption, and a secret the routine
+already holds. The lens takes the file-local candidate first, so one gate exists on the instance
+before anything is widened — a relaxation with no working example behind it is how the feature
+idled in the first place.
+
+### Changed — the util review gets a counter-metric, and stops deleting what somebody asked for (utils-review-count-only-objective)
+
+`global-utils-review`'s per-run floor was a deletion COUNT with nothing on the other side of the
+ledger, and a one-sided objective gets satisfied one-sidedly: consolidations rename the CLIs
+callers had learned, and fleet-wide util invocations stood at 11.2% `usage_error + missing` (2,821
+of 25,247 September calls) — a cost paid by every routine and visible in no completion criterion.
+
+Two additions, deliberately different in kind. The error share is a WATCH LINE reported beside its
+previous value, never a condition to satisfy: it swings several points week to week on traffic this
+routine does not control, so it is a prompt to look at last run's folds first, not a verdict on
+this run. The HARD condition is scoped to what the run does control — **a fold is not done when
+the original is deleted**, it is done when every place that named the old util has been updated,
+carried as a named open row until it is.
+
+Its dormancy test also gained the case that cost it a capability: a util BUILT BECAUSE SOMEONE
+ASKED FOR IT has the same zero-call signature on the day it lands as one nobody wanted, and the
+two have opposite verdicts. Before retiring, the run checks whether an accepted proposal or an
+open maintenance item names the capability; if one does, the verdict is "keep — awaiting its
+caller" and the finding is that the caller was never wired up.
+
+### Changed — a ceiling stop is not a completed pass (budget-paced-routines, partial)
+
+`global-utils-review` is told to spend its budget, and the instruction had no counterpart saying
+what hitting the ceiling means: it and three other routines end run after run within a few turns
+of `max_turns` with no reserved-finish observation anywhere in their transcripts — the 85%
+"~N turns left" warning has become their pace. The recipe now says a finish at or near the ceiling
+reports the ceiling as the reason it stopped, names what was left mid-flight, and says whether the
+ceiling or the scope should change. The engine half — emitting that warning once rather than on
+every turn past 85% — is cross-laned; no ceiling was raised, because this routine's own history
+shows a raise is absorbed within two runs (100 → runs of 66–100; 200 → runs of 198–213).
+
+### Changed — the improver's cruft lens knows a ledger from a derived file, and an instruction from a story (folder-reorg-state-oversize-oom, partial)
+
+One routine keeps 623 MB in `state/` across two JSONL files, one of them a 389 MB tracked
+append-only manifest that fires the engine's oversize-state warning on every run. The improver's
+productivity-floor lens already required a bound and a pruning step for every growing artefact; it
+now picks the pruning step by what the file IS. A DERIVED artefact is excluded from the repo and
+the recipe names what rebuilds it. A LEDGER — the routine's undo trail — is never silently
+excluded, because the off-site copy of the undo record then stops existing with nothing to say so;
+it gets a rotation with an archive and a compact index, and where rotation changes what "undo" can
+reach, that is the operator's decision rather than a lens edit. Excluding a file from git is
+repository relief, never disk relief, and a tracked file is not excluded by an ignore line at all.
+
+The lens also gained a section on incident narration: a recipe is read from cold at the top of
+every run, so its length is a per-run tax, and the way it gets long is always the same — something
+goes wrong and the run that fixed it writes the story into the recipe. Keep the instruction and
+one clause of evidence; the story belongs in the LEDGER, which nobody reads at boot. The same rule
+covers one-off scripts, whose dated names are the tell. Applied to self-audit in this release: its
+gate stage lost twenty lines of narration while gaining the verdict contract.
+
+### Fixed — the release gate can finish again, and it says so before it cannot
+
+The browser suite now runs on one worker (the whole `tests/ui` directory is one xdist group),
+which puts it at ~276 items × a measured 6–7.6 s — about half an hour of wall clock. A `script`
+action may last 1800 s. So self-audit's `candidate_gate release` could no longer complete a
+single release gate at all: it would spend twenty minutes inside the browser stage and return
+`timeout`, a verdict that says nothing about the candidate.
+
+The gate now DETACHES. `candidate_gate <tree> release --detach` starts the run in a session of
+its own and returns a stamp at once; `candidate_gate <tree> status --stamp <stamp>` reads back
+`running` (with the stage and how many tests have finished) until the gate writes its verdict,
+then gives the same four verdicts and the same exit codes an attached gate gives. A detached
+gate is bounded by the work (90 min) instead of by the action. An attached gate that reaches
+the browser stage with less than the serial suite needs now refuses in SECONDS, naming
+`--detach`, rather than buying a `timeout` with twenty minutes of the run's clock.
+
+Beside it, three smaller repairs to the same instrument:
+
+- **`--from` had never worked.** `args` was an `argparse.REMAINDER` positional, which starts
+  collecting at the first token after `mode` — so `release --from ui`, the exact re-run the
+  recipe prescribes after a `timeout`, silently ran from `quality` every time. Unrecognised
+  tokens are now collected with `parse_known_args`, which is what pytest's arguments actually
+  are.
+- **A wedged sidecar is named, not traced.** The browser preflight printed Playwright's raw
+  timeout traceback, which reads like a candidate failure. It now prints the same one line the
+  suite itself prints — `browser sidecar <endpoint> is wedged … docker compose restart chrome`
+  — and keeps the traceback in the evidence file.
+- **The serial re-run reports per node.** `load-flake <nodeid>` / `real <nodeid>` for every
+  browser failure it re-ran, beside the ratio. A ratio cannot be acted on; a name can.
+- `--durations=15` on every gate invocation, and a `--python` flag so a candidate that changes
+  `uv.lock` can gate the venv it synced instead of the one baked from the old lock.
+
+### Fixed — every figure read off the gate's progress ledger was doubled under `-n auto`
+
+Under xdist the controller replays each worker's runtest hooks, and `gate_progress` recorded
+both copies — the worker's, stamped with its id, and the controller's, stamped `controller`.
+Measured on a three-test file: `-n 2` wrote 3 starts / 9 reports / 3 finishes from the workers
+and another 3 / 9 / 3 from the controller, while `-n 0` wrote one set. That is the worst shape
+a measurement can have — right in the configuration nobody uses — and it sat under every count
+a run took from that ledger. Only the process that RAN a test records it now; the same file
+re-measured gives 3 / 9 / 3 either way.
+
+### Added — the release gate's own evidence is read back (`gate_evidence_fold`)
+
+The gate has written a junit XML, a progress ledger and a result summary for every stage of
+every candidate since F523, and nothing had ever read any of it. `scripts/gate_evidence_fold.py`
+folds the last N gates into the three facts a run can act on: every test whose call phase passed
+ten seconds, every node the suite re-ran more than twice across the window, and the per-stage
+seconds of each gate. self-audit's toolchain step now reads it before choosing its own increment.
+
+First run over the 40 most recent gates on the live instance: **164 tests over ten seconds** —
+led by `tests/ui/test_run_gate_control.py::test_ticking_the_gate_and_saving_persists_it` at
+80.0 s, `tests/test_quality.py::test_mypy_clean` at 58.2 s and
+`tests/ui/test_browser_screen.py::test_no_browser_screen_is_published_so_neither_surface_appears`
+at 55.9 s — and **17 nodes re-run more than twice**, four of them 24 times. The suite is the
+inner loop of every routine's release; its decay had no reader until now.
+
+### Fixed — self-audit's recipe and memory told its runs to invoke the browser suite a way that no longer works
+
+`.memory/audit-toolchain.md` carried a hand-rolled worktree pytest command with neither
+`RSCHED_TEST_CDP` nor `RSCHED_TEST_BIND`, which now dies in the session fixtures, and a
+browser-suite estimate of 15–25 min against three workers. It now states what is true: no
+browser is installed or launched, both addresses must be in the environment (the gate sets
+them), the refusal prints the container command that works, a sidecar answering `/json/version`
+can still be wedged, and a release gate must be detached. The stale `(the UI gate is ~5 min)`
+in the recipe's budgeting paragraph is now ~28–35 min, and both gate calls in the recipe pass
+`--detach`.
+
+Also in that recipe, from F528: a UI claim ships with a browser-suite test that LOADS what the
+user sees, not the attribute that points at it, shown red first.
+
+### Added — self-audit refreshes the dependency lock on a cadence, in a worktree
+
+Eleven days of drift already included cryptography one major behind, and nothing in the system
+noticed. The hygiene sweep gains a monthly (or security-triggered) step, with the trap named:
+the gate's default interpreter is the image's venv baked from the OLD lock, so upgrading the
+lock and running the ordinary gate tests the packages you did not upgrade. Upgrade in a
+worktree, sync a venv beside it, gate against that interpreter (`--python`), then commit the
+lock through the normal versioned path — the new set otherwise first executes at the next
+restart, where the container re-syncs on boot and Docker gives up after ONE failed start.
+
+### Fixed — a retracted report stayed on the open front, and three carrier spellings were dead
+
+`reports-fold` walked past a `retracted` event entirely, so a row the sender had pulled back
+settled only if something unrelated happened to dispose of it — and nothing ever would, because
+a retracted row is unlinked from its recipient and can never be answered. It now settles as
+`retracted`. In the same revision the carrier read dropped its three tolerant spellings: the
+engine writes `by` and has only ever written `by`, and all 88 `superseded` events on the live
+ledger resolve with it alone (the util's own fixture had pinned `superseded_by`, a key nothing
+produces). The docstring now names all three event kinds the ledger carries.
+
+### Changed — `rsched-lint` asks the daemon instead of shelling a linter into the sandbox (D142)
+
+The util spent most of its code on the ways `uv run --project … rsched lint` broke inside a
+util jail — a read-only project venv, an unsyncable uv cache, an `rsched` that was not
+importable — none of which was ever a fact about the library. `GET /api/library` now attaches
+`problems` to every kind the linter walks, so the verdict is one authenticated GET through
+`gu rsched-api`: 320 lines become 200, the uv env-failure markers and the `--no-sync` retry are
+gone, and `--kind` narrows the report. The daemon is the authority on purpose — it lints the
+library it is actually serving, with the interpreter it is actually running. A daemon that
+cannot be reached is still a determinate SKIP (exit 3), never a pass.
+
+### Fixed — two utils declared a secret the engine strips from every util environment
+
+`llm-complete` and `plain-language` both declared `OPENROUTER_API_KEY`, which
+`utils_run.STRIP_VARS` pops from every util env AFTER injection — so the declaration could
+never be satisfied, and `plain-language` read that dead key FIRST, which made every openrouter
+rewrite fail open on a key the jail had already removed. Both headers now declare only the keys
+that can arrive, and both selftests pin that the stripped name is not consulted.
+
+### Fixed — the library seed had drifted behind the live library by up to three revisions
+
+A library file has two copies: the live one, which runs, and the seed a fresh instance starts
+from. The seed sync is ADD-ONLY, so a live file never updates itself from a seed and the drift
+is silent. Sixteen files had drifted and two rules plus two workflow patterns existed only
+live. All of it is byte-identical to the live copy now:
+
+- `steward-project-feedback-site.py` v4 → v6 (the live had gained `prove_reader_side()` and the
+  ledger byte-cap contract); `general-task.py` v12 → v15; `cumulative-feedback-research-site.py`
+  v4 → v6; `feed-monitor-interactive-digest.py` v7 → v8; `config-audit.py` v1 → v2;
+  `application-coaching-steward.py` v2 → v3.
+- `predatory-publisher-tar-pit.py` and `repo-maintenance-sweep.py` had no seed at all.
+- `error-recovery`, `independent-verification` and `web-research` had each lost a rules-review
+  revision; `outbound-followthrough` and `reference-decay` had no seed at all.
+- Six settings templates (a key-order difference) and the `research-and-report` playbook, whose
+  live copy had been corrected to stop naming a util.
+
+### Changed — the steward feedback pattern no longer teaches a requirement that was removed
+
+The shell stamps a control id with the project slug as it files, so nothing refuses an
+unprefixed write any more. The pattern's write-test step told a run to prove one, which is a
+proof of a refusal that cannot happen. The step now proves what still matters — post, retract,
+confirm the pending set is empty — because the write path is the half no read-back exercises.
+The id FORM stays in the prose: the ingest recipes filter on that prefix.
+
+### Fixed — the library repo versioned its own test residue
+
+`store.php`'s `store_root()` creates `web/steward/_store/` (with a deny-all `.htaccess` and an
+empty `index.html`) the moment the maintainer's PHP behaviour tests run, and both files were
+tracked. The directory is now ignored. (Untracking the two files is in the operator handover
+below — this lane runs no git commands.)
+
+### Changed — steward-hub-maintainer no longer starts its next run on a renderer with no reader
+
+R1768 closed as no-customer: bina was archived 2026-09-20, nothing else emits a dossier,
+`module: "own"` is the documented answer for a project that wants one, and the pending list is
+shell-provided. R1308 was still `next_up[0]` and START HERE in the backlog, so the next lane
+fire would have spent a whole run building it. Both now name R1374 instead, the backlog row
+records why R1308 is settled, and the backlog's lessons gain the general form: build for a
+reader that exists — check who would emit the payload before spending a run on the thing that
+would draw it.
+
+### Fixed — two recipes named a util and its flags
+
+A recipe names the capability; the run picks the tool from its live catalog.
+`miz-grant-steward/stages/publish-steward-page.md` spelled an upload command with its flags,
+and `voice-model-trainer` named its rewriting tool and a listing flag in four places across
+`main.md` and a stage. Both now name what is done, not what runs it. (The tool names stay in
+`voice-model-trainer/.memory/`, which is where they belong.)
+
+### Changed — docs state the present
+
+- **notifications**: the developer section named `rsched/notify.py` and `engine/decisions.py` as
+  files deleted in 0.230.0, which is the last stale path reference the codemap checker flags in
+  `docs/`. It now says what is: no engine or daemon path reaches a person by itself, a message
+  to a person is an explicit util call gated by a `messaging-*` permission, a new channel is a
+  permission plus a util, and `web/push.py` is the web channel's delivery arm.
+  `docs/oauth-connections.md` carried the same dead reference and now says the console record
+  IS the notification.
+- **status-pages**: two passages named `config/pipeline.json`, a file that does not exist — one
+  of them saying so itself. The model document IS the pipeline UI.
+- **remote-machines**: the three changes to the `remote` util under R1813/R1807/R1730/R1734 —
+  every shipped command and every detached `job.sh` now starts with the remote user's own
+  `~/.local/bin` on PATH (a non-interactive SSH shell sources no profile, so `uv` and `gu` were
+  simply absent); `--cwd` ships `cd DIR || exit 1;` instead of `cd DIR && CMD`, and the exec
+  read polls the exit status instead of reading to EOF, so a backgrounded and-list holding the
+  session's pipes is reported rather than hanging the call; `exec --timeout` defaults from the
+  action's own `timeout_s` and a timeout is REPORTED with the output captured so far instead of
+  the engine killing the util with nothing to show.
+- **browser-sessions**: `/json/version` answering 200 does not prove CDP can attach — a wedged
+  sidecar serves the HTTP endpoint normally while `connect_over_cdp` never returns. The section
+  now says so, names the one line the repo prints for it, and states that the RELEASE GATE
+  shares this browser (isolated contexts on `172.30.7.10:9222`, the same 1280m cgroup and the
+  same DevTools thread as any routine driving it) — the second reason the browser suite runs on
+  one worker, and the reason a gate red coinciding with a browser-driving routine is read
+  against that routine's transcript first.
+- **curated-rules**: the `status-page` provenance row gains this release's four instructions and
+  one statement of fact, each against the report it answers (R1821, R1793/R1779, R1822,
+  R1819/R1360, R1800).
+
+---
+
+### Operator decisions — handed over, nothing changed in config
+
+Each of these is a `routine.yaml` or a git operation this lane may not perform. The exact change
+and its reason:
+
+1. **`bkm-foerder-steward` must hold the `status-page` rule.** Add `status-page` to its `rules:`
+   (currently ask-policy, decision-record, web-research, evidence-discipline, problem-routing,
+   error-recovery, engagement-accountability, feedback-implementation-gate). It publishes to the
+   steward host and its `main.md` names "die geltende `status-page`-Regel" in prose only — so it
+   does NOT hold the rule, and every sentence written into that rule for R1800/R1821/R1819/R1822
+   misses the one routine that reported the problem.
+
+2. **`voice-model-trainer` needs the `voice-rewrite` util granted, in the SAME deploy as the
+   policy fix.** The engine lane's `policyload` fix marks a util gated by every permission doc
+   that gates anything in its `calls:` tree; `utils/voice-rewrite` declares `calls: remote`, so
+   it becomes reserved under `permissions/remote-machines.md`. voice-model-trainer calls it
+   (`stages/evaluate-checkpoint-and-guard-regression.md`) while its `capabilities.utils` lists
+   only discord/signal/telegram/whatsapp/remote. Grant `voice-rewrite` through the web PUT, or
+   its next run is denied. (`rephrase-as-human` has the same declaration and no caller today.)
+
+3. **`eye-stabilize-folder` needs one manual "Run now".** It has `cron: ''`, belongs to no lane,
+   and therefore nothing has started it in weeks — while its `inbox/` holds `msg-rep-R1035.json`
+   and `msg-rep-R1716.json`. A routine reads its inbox only when it next RUNS, so closing R1716
+   needs exactly one operator fire; nothing else will ever drain that inbox. The two stale prose
+   lines it was reported for are already fixed. If it is meant to stay dormant, the reports
+   should be re-routed or closed instead — but they cannot simply sit there.
+
+4. **Untrack two files in the library repo.** `web/steward/_store/` is now in that repo's
+   `.gitignore`, but `web/steward/_store/.htaccess` and `web/steward/_store/index.html` are
+   still tracked, so the ignore does not reach them:
+   `git -C ~/.local/share/routine-scheduler-libraries rm --cached web/steward/_store/.htaccess web/steward/_store/index.html`
+   This lane runs no git commands, so it is left for the library-sync routine's next commit or
+   for you.
+
+5. **The coverage ratchet must be MEASURED before anything is wired to it.** `fail_under = 87`
+   has not been checked since 0.57.1 (~300 releases) and nothing runs `--cov` today. Do not add
+   the flag to any gate step first: measure once by hand
+   (`uv run pytest -q -m "" --cov` on the server under `flock /tmp/rsched-gates.lock`),
+   re-ratchet `fail_under` to the measured number in the same commit, and only then name the
+   flag anywhere. If the number is far below 87, the alternative on the table is deleting
+   pytest-cov, both `[tool.coverage.*]` blocks and the README line. Nothing was wired this wave.
+
+6. **`rules/ponytail.md` carries the MIT notice in the seed and not in the live copy.** The live
+   copy has a compact attribution footer (copyright holder, revision, a link to the licence);
+   the seed has that footer PLUS the full 24-line permission notice as an HTML comment, which a
+   holder pays for on every `read_rule`. Making the two byte-identical means either adding ~250
+   prompt tokens to every read or removing a licence notice, and that is not a call this lane
+   should make alone. Both copies are otherwise identical and the drift is recorded in
+   `doc-debt/routine-followups.md`.
+
+**The library and its utils**
+
+### Fixed — `usage:` is a BLOCK, so a multi-verb util teaches every verb (F505)
+
+The util header parser kept only the FIRST line starting with `usage:`, and that one string is
+everything the discovery surfaces show: `util name=list args=["<name>"]`, a util search hit, and
+the observation of a failed call. 65 of the 111 live utils list their invocations on continuation
+lines, so a routine doing exactly the right thing — listing a util before calling it — was taught
+one verb and guessed the rest: `doc`'s first line is `gu doc <verb>`, `gmail`'s is the `mailboxes`
+verb (the `list` verb with `--query` is line 2, hence the guessed `--search`), `browser-session`'s
+is `attach`, and nine utils write the bare label `usage:` with every verb underneath. One fleet
+window counted 702 usage errors on code-search, 157 on web-request, 66 each on gmail and fau-mail.
+
+`utils_header.usage_block` now reads the `usage:` line plus every non-blank line under it, up to
+the next header key, keeping the author's indentation (that indentation is the table). The whole
+block travels as `usage`, so the single-util surfaces teach the whole invocation table. The
+whole-library listing stays a listing: it shows the first form and counts the rest
+(`… +6 more form(s): list args=["doc"]`) — rendering all 111 blocks there would add ~19 000
+characters to a call that exists to help a run PICK a util. `header_problems` now rejects a
+`usage:` label with nothing after it AND no continuation line (the nine utils that list their
+verbs underneath stay green), and rejects prose on the `calls:` line, which the slug filter used
+to drop silently. The in-prompt catalog renders summaries only, so the static prefix and its
+caching contract are untouched.
+
+Library follow-through, same change: `whatsapp` lost `send` and six other verbs below a prose
+paragraph (all now in the block), `remote`'s eleven commands moved out of a `Commands:` paragraph
+into the block, and `fs-ops` — the fleet's highest usage-error RATE at 119 of 655 calls — gained
+its missing `sweep` verb plus a line saying that one path the run can already write to is removed,
+moved or created by the `delete`/`move`/`mkdir` ACTIONS, so the catalog stops sending callers to a
+util for an act they already hold.
+
+### Fixed — a remote exec no longer hangs on the pipes its own launch left open (R1813, R1807, R1730, R1734)
+
+A `remote exec` that backgrounded work came back empty after the engine killed it, and the report
+blamed a clock inside the util. The transcripts say otherwise: every hung launch had the form
+`cd DIR && … && nohup CMD > f 2> f < /dev/null &`, where `&` binds to the whole and-list, so what
+went to the background was a SUBSHELL still holding the SSH session's stdout and stderr. The util
+then read both streams to EOF — which never came — while the remote shell had already exited 0 and
+printed the job's PID (the routine's own `pgrep` in run 20260921 turn 42 shows that launch shell
+alive minutes later).
+
+`_run` now polls the exit status instead of reading to EOF, returns what arrived, and names the
+trap on stderr when a process is still holding the channel; `--cwd` ships `cd DIR || exit 1;`
+instead of `cd DIR && CMD`, so the util no longer lays that trap itself; and an SSH I/O timeout is
+REPORTED (`timed_out: true`, exit -1, the output captured so far) instead of raised with nothing
+to show. The two clocks that raced are now one: both util runners export `RSCHED_UTIL_TIMEOUT_S` —
+the deadline the caller gave this call — and `exec --timeout` defaults from it, less a margin, so
+the util reports before the engine kills its process group. R1730 rides along: every shipped
+command and every detached `job.sh` starts with the remote user's own `~/.local/bin` on PATH, where
+astral's installer puts `uv`, because a non-interactive SSH shell sources no profile. The
+`gmail`-on-predator half of R1807 is declined as moot — the operator repealed the remote-only
+residency rule on 2026-09-21 and the routine already ingests mail locally.
+
+### Changed — a util's own `?` decides whether a sibling's credential is required (R1818)
+
+A secret was optional only if EVERY declarer in the `calls:` tree marked it `?`, so one required
+declaration anywhere made it required everywhere. That is the wrong precedence: a callee's
+"required" only ever meant "required when I run", and only the util being CALLED knows whether the
+path reaching that callee is taken. A sweep of all 111 live utils found three paying for it —
+`frame-fill` (reaches `gu pangram` only under `--score`), `corpus-build` (only under `--screen`)
+and `ngf-build-data` (only for live pulls) each demanded a credential on every call, and the
+caller met a secret-exposure prompt for work that never touches it.
+
+The root util's `?` now wins over a callee's required declaration, in `util_needs` and in a
+script's `calls:` tree alike; between siblings the strict rule is unchanged. The three headers are
+narrowed accordingly (an ungranted `--score` call now runs with the key WITHHELD and the
+observation names it), and `browser-download`'s `calls: (none — standalone; sibling of
+page-fetch/captcha-fetch)` — the library's one prose `calls:` line — is repaired, with the lint
+that would have caught it. `experiment-runner`, which always passes `--score`, still requires both
+keys.
+
+### Fixed — an unreadable directory is reported, never counted as empty (R1767)
+
+`dir-tree` walked with `os.walk`'s default error handling, which swallows EACCES and ENOENT: a
+root outside the run's granted fs roots returned `entries: 0`, exit 0 — indistinguishable from an
+empty directory, and the reporting run went looking for files that were there all along. It now
+carries an `errors` list, names each unlistable directory on stderr, and exits 1 when nothing at
+all could be listed, with the remedy (ask for a read root covering it). `rsched-api --help` also
+stops lying: it caught every `SystemExit`, including argparse's own success, so asking what the
+util does printed the help, then the usage banner, then exited 2.
+
+### Added — the evidence rule now names the vantage a check must be made from (F528)
+
+Two console defects shipped behind a server-side 200 in one week: an iframe the browser refused as
+mixed content, and a relay the page could not authenticate. Both checks were made from the daemon,
+not from the page. `evidence-discipline` gains one bullet — observe from the claim's own vantage; a
+claim about what a person SEES is backed only by a check made the way their client makes it, and a
+regression test for such a claim counts only once it has been shown red on the defect. Seed and
+live copy are byte-identical, and docs/curated-rules.md records the provenance.
+
+### Fixed — the stale-path checker stopped flagging every absolute path in prose (F532)
+
+`codemap`'s doc-reference scan derives its scope from the tree: a reference counts only when its
+first path segment is a directory under one of the roots. For an absolute path that segment is the
+empty string, and `root / ""` is the root — always a directory — so every URL path or other host's
+path written in prose was in scope. Six of six reported stale references were false or
+disclaimed; the absolute-path case is now skipped outright, with the case pinned in the util's own
+selftest. The repo is at five, all of them prose that narrates deleted files instead of stating
+the present.
+
+### Changed — the util seeds match the library they seed
+
+A seed only ever ADDS: a live util never updates itself from one, so a stale seed is what a fresh
+install gets. `remote` was 498 diff lines behind, `pytest-run` 142 (the live copy gained the
+failure-detail block a caller needs) and `instance-export` 214. All three are synced. The seed
+also shipped `git-restore`, `git-sync` and `service-logs`, all three deleted from the live library
+— a fresh install would have re-created what this instance deliberately removed. They are replaced
+by the `git` verb dispatcher that superseded the first two.
+
+### Added — a recipe's own hygiene is REPORTED, not assumed (F516, R1710, R1743)
+
+A recipe is revised in place, one anchor at a time, by the routine itself and by
+routine-improver, and nothing in the write path ever read the finished document back:
+`do_write_file`/`do_edit_file` gate WHO may write and count bytes, `workflows/lint.py` covers
+the library and never a materialized recipe, and `cmd_validate` only checked that `main.md`
+EXISTS. R1710 is the cost — a run spent sixteen `edit_file` turns on its own `main.md` and
+stages, was asked twice by the operator whether cruft remained, re-read the whole file at turn
+198 and found three pieces — and R1743 closed the exchange with nothing built. CLAUDE.md has
+claimed since 0.106.0 that `validate` "lints its recipe prose (main.md, stages/)"; there was no
+code behind the sentence.
+
+Now there is: `workflows/recipelint.py`, the materialized-recipe counterpart to the library's
+`lint.py`, reporting the five things a machine can be SURE of — a route to a
+`stages/<x>.md` that does not exist, a stage no other recipe file names (nothing routes to it,
+so no run will read it), a step calling a `scripts/<name>.py` the routine does not have, a step
+naming a gated action kind the routine's capabilities do not enable (config and recipe are
+edited by different owners, so a capability switched off leaves its step standing), and two
+blocks of ONE file that restate each other, which is the shape an edit takes when it inserts
+its replacement and leaves the original. Semantic contradiction past that stays with
+routine-improver's periodic lens, which hunts it with a model and a whole run's budget; a regex
+has no business guessing at it.
+
+Every row is a REPORT: `rsched validate` prints it and the exit code never moves. A recipe is a
+hand-tuned document owned by the person and the run that wrote it, and a check that failed the
+command over a phrasing would be switched off within a week — the same reason the F521 skipped-
+stage notice is not a finish-gate rung. `validate` was chosen over the setup surface for two
+reasons: it is the channel CLAUDE.md already promised, and a surface row must carry a
+machine-readable `fix` that lands the reader on the control that settles it — a recipe defect's
+remedy is prose a human writes, and the boot note carries only `blocks`/`interrupts` anyway, so
+a run would never see it. The check reads the routine dir alone (no library, no network), so a
+command that walks 35 routines cannot go red on an outage. Measured on the live fleet the day
+it landed: four findings in two routines (routine-improver names `scripts/gate.py` in three
+files, grants-radar names `scripts/render_dashboard.py`; neither script exists) and zero false
+positives across the other 33. The finish-gate docstring's stale "Six guards" is corrected to
+seven in the same change — the `assist.at_finish` rung never made it into the count.
+
+### Changed — three pure network clients stop asking for the run's filesystem
+
+`darknet`, `rutorrent-rpc` and `uncensored-model-list` declare `fs: none` instead of `fs:
+roots`. Every util got `roots` before the `fs:` axis existed (0.256.0), and these three open no
+path at all: no `open(`, `Path(`, `subprocess`, `tempfile` or `os` filesystem call anywhere in
+their source — they speak HTTP, SOCKS5 and XML-RPC and print JSON. Each `--selftest` is green
+on the narrowed header. The jail is grant ∩ declaration, so a run granted a write root no
+longer hands it to a util that cannot use it. The two other candidates keep `roots` and the
+reason is the axis working as designed: `proemion` opens a caller-supplied `--signals-file`,
+and `remote` walks local trees and uploads them (`os.walk`, `sftp.put`, `sftp.get`) — a util
+told about paths by its caller is exactly what `roots` is for.
+
+### Changed — the decided-but-unbuilt queue, re-checked against this release (designs.md)
+
+Three entries of `docs/designs.md` are LARGE and were deliberately not built this release. A
+self-audit routine reads that document as a work queue, so each one's premise was re-verified
+against the tree as it now stands — a stale entry there is wasted work later.
+
+**Structured outputs instead of forced tool-use — premise HALF stale, and the stale half is the
+blocker.** The transport is unchanged: `anthropic_api.py` still sends `tools=[{name:"action",
+input_schema}]` with `tool_choice={type:"tool"}`, `output_config` still carries `effort` alone,
+and a 400 naming an effort hint still drops the whole key — so the SWAP itself is still
+unbuilt and the entry's technical body still describes today's code. What is gone is the reason
+it was parked: the entry says codex-proxy/`gpt-6-astra` is the system model for 28 of 33
+routines, and the live config now reads `system_model: Opus high` (claude-proxy) with no
+routine.yaml and no domain block binding any of the six Astra rows — they are unbound catalog
+entries, and in the last 160 runs they appear only on the FROM side of 112 failovers. The
+swap's live blast radius is claude-proxy alone, which was probed OK on 2026-09-11; the
+codex-proxy re-probe decides only whether the six Astra rows are kept or deleted. One thing
+this release adds: chains are now transitive and forward-only, so a turn already crosses
+adapters mid-run (Opus on `anthropic` → GLM 5.3 on an `openai`-kind endpoint) — schema
+enforcement is per-adapter by construction, and the swap neither helps nor hurts that.
+
+**F363, the per-stage distillate for a degraded model — premise HOLDS, and this release
+strengthened it.** No seam exists (`grep -rn distillate src/ tests/` finds one docstring
+mention in `fileformat.py` and nothing else), and strong→weak failover is still live but rare:
+across the last 160 transcripts, 122 switches in 28 runs, of which 112 are the historical
+Astra→Opus lateral and 10 are the degradation the design targets (Opus high/xhigh/5 max → GLM
+5.3 ×9, Sonnet → DeepSeek V4 Flash ×1). Two details in the entry are now wrong and one is
+wronger than before: the emitter is `engine/degrade.py::_switch_to_fallback`, not
+`completion.py` (the 0.244 split), and that function now also writes a `model_failover` health
+event, so the injection point has a neighbour doing the same bookkeeping. And the entry's
+"dropped again if the run climbs back" is false as of this release — the chain's SERVING mark
+only moves FORWARD within a process, so a run that degrades stays degraded for the rest of its
+life instead of oscillating back after the 300 s cooldown. The per-event exposure therefore
+grew while the rate held, and append-once-per-stage-never-retract is now the only reading the
+caching contract allows. Keep the entry; fix the two locations when it ships.
+
+**The per-stage case index — premise HOLDS, and its own trap got sharper.** Nothing builds or
+consumes a cross-run per-stage corpus: `readmodels/` gained `health_stream.py`,
+`library_reads.py` and the four `surface_*` splits this release and still holds no such model,
+while `statemap.phase_stats` remains a single-transcript derivation and every `assistant_action`
+is still phase-stamped. The write seams the plan named are intact (`log_workflow_usage` at
+`runtime.py:233` and `subruns.py:232`). What changed is the shape of the precedent it copies:
+the fleet's streams now measure 2.9 MB (`reports.jsonl`), 1.3 MB (`workflow-usage.jsonl`) and
+288 KB (`health-events.jsonl`), none of them rotate, and `health_stream.py` added a SECOND
+memoized whole-file fold on a bus-event path. A per-ACTION stream (~1,780 rows/day fleet-wide)
+in one file would be re-parsed in full after every run end, so the entry's first increment must
+ship one file per routine plus a size ceiling in the same change — not as a follow-up.
+
+**Tests, packages and the build**
+
+### Fixed — The browser suite runs as one work unit on one worker (F523, F506, F519)
+
+Three workers rendering into ONE headful Chrome is what the browser suite's rerun shield had
+been absorbing since 0.353.3 moved it onto the shared sidecar. Measured on the release gate's
+own ledger: the serial partitions of 2026-09-21 ran ~530 browser-test executions and produced
+3 reruns, while every 3-worker invocation from 11:48 UTC on rerun-thrashed, and the full
+3-worker `-m ui` gate on 09-22 collected 277 items, reached 241, logged 38 reruns and 6 reds,
+and hit its 1500 s deadline — five of those six reds passed on a serial re-run. Classifying
+the 232 recorded failure and rerun rows says the same thing about their shape: 70 `Page.goto`
+timeouts, 41 `expect()` pierces at the 5 s default, 40 session-fixture CDP failures, 39 pierces
+at an explicit 10 s, 15 at the 15 s action default, 15 plain asserts.
+
+The fix is a feature of a dependency already installed rather than new machinery.
+`tests/ui/conftest.py` marks its whole directory with xdist's `xdist_group`, and
+`tests/conftest.py::pytest_configure` switches xdist to `--dist loadgroup` whenever browser
+tests are in the selection — so the browser suite is one work unit on one worker while the fast
+suite keeps spreading, and the default `-m "not ui"` gate keeps the `worksteal` scheduler its
+~2 150 short tests were measured on. Under `-m ""` the browser group is the largest work unit,
+so xdist's default `--loadscope-reorder` dispatches it first: a release costs max(fast, browser),
+not their sum. The finding's own candidates — raising the `Page.goto` ceiling, per-test retry
+budgets, lower parallelism — are not taken: none of those timeouts occurs serially. A second
+browser container is not taken either; the existing cgroup caps already sum to 3.62 GiB against
+a 3.37 GB host, and every recorded CDP failure is from a 3-worker run.
+
+Both halves of xdist have to be told, and that is the part reading the source does not give you.
+A worker RE-PARSES the command line instead of inheriting the controller's options (workermanage
+sends an empty option dict), so the controller needs `dist` for the scheduler that reads the
+group and the worker needs `loadgroup` for the hook that writes the group into the nodeid;
+setting only the controller's leaves every nodeid unsuffixed and the grouping is a silent no-op.
+The marking hook is `tryfirst` for the same reason: xdist's worker-side hook is a plain
+hookimpl, and with an explicit path argument — the form the gate's own partitions use — this
+conftest becomes an INITIAL conftest registered before it, which pluggy would then run first.
+Both were measured on a four-test fixture before being written: without the worker half all four
+browser tests still scattered across three workers, and without `tryfirst` the explicit-path
+form did too.
+
+A wedged sidecar is now named where it happens, and costs one connect instead of 276.
+`connect_over_cdp` gets 60 s — it is paid once per gate now, not once per worker — and its
+failure reads `browser sidecar <endpoint> is wedged — it accepts TCP but never attaches over
+CDP. Restart the compose chrome service`. `rerun_except` exempts exactly that message from the
+rerun shield, which is what keeps it cheap: pytest caches a session-fixture failure, so every
+later test gets the cached error instantly, but scheduling a rerun CLEARS that cache and
+re-executes the fixture. One recorded partition paid 30.6 + 15.0 + 27.7 + 20.8 + 15.1 s for a
+single test that never ran a line, then did it again for every other test in the partition —
+40 of the 232 rows.
+
+`tests/test_ui_harness.py` pins all of it on the FAST gate: the marker set, the `tryfirst`
+ordering, the scheduler switch for each selection, both xdist roles, and the terminal summary's
+loudness contract — the mechanism CLAUDE.md leans on ("a suite that silently does not run reads
+exactly like a suite that passes"), which until now nothing exercised at all. That file also
+absorbs `tests/ui/test_flaky_wiring.py`, which asserted facts about collection that need no
+browser and therefore only ever ran inside the thirty-minute gate it existed to keep honest.
+
+### Fixed — The browser suite's invocation is in the repo that gates on it (F523)
+
+`tests/ui/conftest.py` refused to run without `RSCHED_TEST_CDP` and `RSCHED_TEST_BIND` and
+named neither a value nor a way to get one; the values existed only inside the self-audit
+routine's private gate script, while CLAUDE.md, the README and the fast run's own closing
+reminder all printed `uv run pytest -m ui` plus a `playwright install chromium` that is now
+forbidden. Anyone following the repo's own instructions got a session-fixture error per browser
+test and read it as a broken suite. Both refusals now print the whole working invocation —
+`docker compose exec` into the engine container with both addresses — and so does the terminal
+summary after every fast run.
+
+They stay refusals rather than becoming defaults, deliberately: both addresses exist ONLY on the
+compose `browser` network, so a default would turn one legible one-line refusal on any other box
+into a 15 s CDP timeout followed by a bind error on an address the machine does not have. What
+IS pinned is the engine service's address on that network, in docker-compose.yml, for the same
+reason chrome's already was — the sidecar has to reach the fixture console back, and the suite
+puts that address in its certificate's SAN. It was Docker's first free address by luck, named
+nowhere.
+
+### Fixed — One waiting ceiling in the browser suite, and a red that says what the browser was doing (F506)
+
+The suite had two timeout tiers: a 15 s page-action default beside `expect()`'s own 5 s, which
+246 call sites raised by hand to 10 s. 41 of the 232 recorded failures are a pierce at that
+un-raised 5 s default, on pages whose neighbouring assertions had been raised — a reader could
+not tell a regression from an author who forgot the override. `expect.set_options` now takes the
+suite's single `ACTION_TIMEOUT_MS`, and the 254 redundant per-call overrides are deleted. The
+uniform ceiling recovers only the 5 s pierces (54 of the measured ones were already at 10 or
+15 s); the lasting value is that there is now ONE number, and `RSCHED_UI_TIMEOUT_MS` raises it
+for a gate running beside live load instead of editing 246 lines.
+
+A failing browser test now carries what the browser was doing. `pytest_runtest_makereport` in
+the suite's conftest attaches the page URL, the head of the rendered text, the REQUESTS STILL IN
+FLIGHT with their age, and how long that test's own uvicorn took to accept. The last two are
+aimed at the largest failure class by far — 70 of 232 rows are a `Page.goto` timeout, which a
+body dump alone cannot tell apart from a slow fixture boot. Before this, a red read `Locator
+expected to be visible … resolved to visible <h2>` and nothing else, and the diagnosis cost
+about six hand-run gate cycles per incident; the tooling that did it lived in the routine's gate
+plugin, where only one runner could get it.
+
+Thirty fixed `wait_for_timeout` sleeps stood in for waiting on something — a dozen of them the
+"give the PATCH a beat, then read routine.yaml" shape the suite's own helper docstring calls a
+standing-rule violation. Not one recorded failure is a stale-disk read, so this is doctrine and
+tidiness rather than a fix for the flakes: one `until()` in the suite's conftest replaces the
+three private pollers (`_wait_until`, `_poll`, `_shared`) and every sleep-then-read-disk site,
+each waiter naming what did not land. It takes a `page` when the condition can only be advanced
+by Playwright — the sync API dispatches route handlers on a greenlet loop that runs only inside
+a Playwright call, so a plain sleep would spin while nothing happened. The sleeps that
+deliberately outlive a client debounce are kept, with the debounce named beside them; the one
+that was costing real time (a flat 3 s wait for an SSE ticket re-mint that arrives in ~1 s) now
+waits for the ticket.
+
+### Fixed — The Help tab's test no longer depends on whether the machine has a docs build
+
+`test_help_view_renders_docs_state` branched on `if ui_page.locator(".empty .t").count()` and
+asserted whichever state it found, so it passed in both — and the state it found came from
+`~/.cache/routine-scheduler/docs`, the one home the hermetic fixture did not own (it follows
+`RSCHED_DOCS_DIR`, not the config file). The `ui` fixture now points that at `tmp_path` and
+exposes it as `ui.docs`; two deterministic tests replace the branch, one for the empty state a
+fresh instance shows and one that seeds an `index.json` and asserts the chips and the iframe.
+`test_error_message` and `test_double_encoded_body` moved from the raw `page` fixture onto
+`ui_page`, so they get the JS-error collector and the suite's timeout like every other browser
+test; `test_token_gate` keeps the raw page on purpose, because it seeds the ROUTINE token before
+navigating and the plain fixture would overwrite it.
+
+### Fixed — The three quality gates were silently skipping in every container run
+
+`tests/test_quality.py` resolves ruff, mypy and vulture with `shutil.which` and SKIPPED when
+they were not on PATH. The running container's PATH is `/usr/local/bin:…:/bin` and
+`/opt/rsched-venv/bin` is not on it — the image sets no PATH — so all three tools come back
+`None` there (measured in the live container). Only `uv run` prepends the project env's bin;
+every invocation by absolute interpreter, the self-audit routine's own worktree gate included,
+found nothing. A skip reads as a pass in every consumer: the routine's test gate, the terminal
+summary, the junit XML. That is the exact failure this file was written for, after a ruff/mypy
+regression sailed through four releases unseen, and vulture has no other runner anywhere.
+
+The lookup now falls back to the bin directory of the interpreter running the test, and a
+genuinely missing tool FAILS instead of skipping — a machine without the dev tools has no
+business committing from this repo. Two tests pin both halves.
+
+### Fixed — Scripted engine tests no longer poll at the production two seconds
+
+`engine/actionroute.py` does `from .loopconst import POLL_S`, binding the value at import, and
+passes that bound name to every blocking wait there is: `ask_user`, the three authoring
+approvals, both call-time secret gates and the child `wait`. The `scripted` fixture patched only
+`engine.loop`, so all of those slept whole 2 s ticks between polls, and each new hold-shaped
+test inherited another 2-4 s. The fixture now patches both readers. The 13 ask/approval-shaped
+tests summed 33 s in the gate XML, but most of that is the ~1.5 s floor every server-building
+test pays — the recoverable time is ~13-15 s per fast gate. Measured after: `test_decisions.py`,
+`test_util_guard.py` and `test_scoped_requests.py` run their 50 tests in 8.5 s serial, and the
+slowest of that group (`test_ambiguous_approval_reply_is_held_not_consumed`, 4.39 s in the
+ledger) now takes 0.28 s. `tests/test_scripted_fixture.py` asserts the patched value where it is
+READ, so the next module split cannot quietly restore the production pace.
+
+### Changed — `read_yaml` parses with libyaml (packages audit)
+
+`paths.read_yaml` used the pure-Python `SafeLoader` while libyaml is present in both live
+environments. Re-measured on the server over the 35 live `routine.yaml` files (87 KB): 799 ms
+per pass against 84 ms with `CSafeLoader`, 9.5x. It is on the request path for every config
+read-modify-write — thirteen callers across `config/`, `web/api_routine_patch.py`,
+`api_hooks.py`, `api_branches.py`, `pending_edits.py`, `grants_apply.py`, `rules.py` and more —
+as well as the cold catalog scan, on a daemon whose slow-request log is already GIL-bound. No
+`getattr` fallback: an environment without libyaml should fail loudly rather than quietly serve
+a daemon ten times slower. `python-frontmatter` was measured too and left alone (63 library
+docs, 35 → 31 ms).
+
+### Changed — One slug rule, and an invoker whose exceptions are named (packages audit)
+
+`ids.slugify` takes the fallback for an empty result as a parameter, so the second copy in
+`playbook_distill` — which keeps `-` and so genuinely diverges (`foo-_bar` → `foo-bar` here,
+`foo--bar` there) — can be deleted rather than being a second spelling of one rule.
+`libgit.git`'s docstring now names the three calls that legitimately spell `subprocess.run` for
+themselves — clone (no `-C` target yet), push (60 s for the network), ls-remote (its own
+credential env) — so "the one git invoker every module uses" is a contract a reader can check
+rather than a claim with unnamed exceptions. `daemon/library_watch.py` is the one violator and
+is handed to the daemon lane.
+
+### Changed — The engine image pins its uv and verifies its lock (packages audit)
+
+`COPY --from=ghcr.io/astral-sh/uv:latest` made the resolver that runs the daemon, every util's
+PEP 723 install and the self-audit gate into whatever uv was newest on the day of the last
+rebuild — a change in `uv run` semantics or lock resolution arriving with no diff in the
+repository, which is the one kind of failure that cannot be bisected. It had already drifted:
+0.12.13 inside the container against 0.11.28 on the host. Pinned to 0.12.13, which is what the
+running container has, so the pin changes nothing today and everything afterwards.
+
+`uv sync --frozen` became `--locked` in the same file. `--frozen` installs the lock AS-IS and
+never checks it against pyproject.toml, so a dependency added without a re-lock builds a GREEN
+image that is missing the package and fails as an ImportError inside the daemon at run time —
+and with no CI and a pre-commit that runs only ruff, mypy and test_policy, nothing else would
+catch it. The base image stays `bookworm`: six of the apt names the build installs do not exist
+under those names in trixie (`libasound2`, `libatk-bridge2.0-0`, `libatk1.0-0`, `libatspi2.0-0`,
+`libcups2`, `libglib2.0-0` all took the t64 rename), so that move is its own change with its own
+rebuild-and-start probe — a container that fails to start stays down with nothing retrying it.
+
+### Changed — pyproject prose describes the suite that exists
+
+The dev-dependency block, the addopts comment and the `flaky` marker all still said
+pytest-rerunfailures might be absent and the marker "registered-but-inert until the plugin is
+installed" — while it is a declared dev dependency, pinned at 16.4 in the lock, installed by
+every `uv sync` including the image build, and applied unconditionally by the browser suite's
+conftest. A reader debugging a UI flake was being sent to look for a missing plugin instead of
+at the test. The addopts comment also counted ~135 browser tests (276) and justified the worker
+count by a per-worker chromium that has not existed since 0.353.3.
+
+**Documentation**
+
+### Fixed — the Help tab served zero written guides against 37 in the repo (F527-adjacent, docs sweep)
+
+`config/server.py`'s `source_repo` default was `Path(__file__).resolve().parents[2]`, which
+stopped being the checkout root when `config.py` became the `config/` package — it resolved to
+`…/routine-scheduler/src`. Three things failed silently off that one value: `docs_build.build_docs`
+globbed `<root>/docs/*.md`, found nothing and raised nothing, so `/docs/index.json` served
+`{"guides": []}` while the repo carried 37 guides (docs/prompt-anatomy.md, which CLAUDE.md calls
+"rendered on the Help tab", was not reachable from the console at all); `source_stamp` globbed
+`src/rsched/**/*.py` off the same root and matched nothing, so the docs stamp was `<version>:0`
+and the build only ran on a version bump; and `web/settings/source.py` computed `is_git` from it,
+so the Source panel read "⚠ not a git repo" and `set_source_remote` skipped `remote set-url` and
+`git push -u origin HEAD` while returning `{"ok":true,"pushed":false}`. `parents[3]`, with a
+comment naming all three consequences so the next mover of that file sees what hangs off it.
+
+`GUIDE_ORDER` named `subtasks`, a guide deleted when it became `child-runs` — an entry with no
+file is inert, so nothing ever reported it. The list now names every `docs/*.md` in reading order
+(a guide not named there still sorts alphabetically after the ordered ones, so a new guide reaches
+the tab whether or not anyone remembers the list).
+
+### Changed — the generated Help pages follow the console's theme instead of contradicting it
+
+`docs_build.py` shipped two hard-coded dark shells in the retired "signal deck" accent
+(`--pdoc-background:#0a0e13`, `#ffc87d`/`#ffb454`/`#45e0b0` headings), so Help was a black,
+differently-branded panel inside a light console — on the one page whose job is explaining the
+console. Both shells are now generated from ONE `light-dark()` token block over
+`color-scheme: light dark`, mirroring base.css's palette and its three type roles, and each guide
+page carries a three-line script that stamps `data-theme` from a `?theme=` query parameter for a
+reader who chose a theme by hand. The favicon moved to the console's own signal cyan.
+
+### Changed — docs/prompt-anatomy.md describes the engine as it now is, and the pin checks both directions
+
+`tests/test_prompt_anatomy.py` only ever checked `doc ⊇ engine`, so prose that outlived its
+feature read as a pass — the file's own comment records a `GROUP FIRE PHASE` paragraph surviving
+the machinery it described. Every needle is now also asserted present in the `src/rsched` source,
+whitespace-normalised with adjacent string literals joined so a needle spanning a wrapped literal
+still matches; the one needle the engine BUILDS rather than spells (`ANY of:`, from a group's
+`mode.upper()`) is named in `COMPOSED_NEEDLES` with its reason. The check immediately caught a
+stale pin: the terminal-acknowledgment needle still said "it settles its target AND is itself born
+settled" where D134 made it "target(s)".
+
+A second test asserts §5 — the "full verbatim example" — shows no action field `ACTION_SCHEMA` does
+not define. Deliberately not the reverse: §5 is the per-run PROJECTION for a routine holding
+`write_util` + memory, so 20 of 59 properties are legitimately absent, and §5's preamble now says
+so (it also said "the full 22-kind schema" against 30 kinds).
+
+The document itself was swept for this release's prompt changes: the `settles` property and the
+corrected `closes` description in §5; the `usage:` BLOCK in the `write_util` surface and in a
+failed call's `[usage]` tail; the budget warning as an EVENT said once at 85% and once at 95%
+rather than "from 85% … " on every turn; the replay contract (an engine-sourced `user_injection`
+replays as `ENGINE NOTE`, not as a user message; `replay: false` notes are re-authored by boot; a
+slash command replays as one message); the `media_replayed` wording a resumed `view_image`
+observation carries; the refusal classifier running only on a reply with no JSON object at all;
+the one-hand-back wording of `CHILD RUN FINISHED`; the QUEUED-FOR-NEXT-FRESH-RUN section of the
+state digest; and the single compression kind (stdlib JSON minification) where a Headroom log
+excerpt used to be named.
+
+### Changed — the shared docs describe the release, and state rules instead of telling stories
+
+`CLAUDE.md`, `docs/architecture.md`, `README.md` and `docs/getting-started.md` were the surfaces
+every lane handed its corrections to, and they had drifted furthest because nobody owned them.
+
+*Ghosts removed.* The README and the getting-started guide still advertised the Claude Code CLI
+transport (removed in 0.315.0) as a headline endpoint kind, and onboarded through a `clarification`
+routine and a `+ New routine` wizard that do not exist — the real path (a conversation, numbered
+`ask_user` picks, a draft, `create_routine`) was documented only 700 lines into architecture.md.
+CLAUDE.md both mandated routing implicit sends through `rsched/notify.py` and stated that no such
+file exists; it now states the present, which is also the last stale path reference in the repo.
+`docs/sandboxing.md` and `docs/architecture.md` described a boot migration deleted after it expired
+on 2026-08-17. Six module/util references pointed at names that do not resolve
+(`daemon/detached._deliver_one`, `engine/control.apply_config_change` and `.apply_rule_additions`,
+`engine/executor._extra_secrets`, `utils_lib.run_util`/`._child_env`, `machines.mount_routine_shares`,
+`grants.recipe_unlocked`, `library-seed/utils/remote`, a `run-digest` util that exists nowhere).
+
+*Tables that had gone 30-40% short.* `docs/rules-permissions.md` listed 16 of 25 permissions and 20
+of 30 rules, named 4 of 11 gated kinds and 4 of 12 reserved utils, and counted the curated set as
+eleven where its own table showed thirteen; architecture.md carried a THIRD, differently-membered
+curated list. Both tables are rebuilt from `library-seed/`, and curated membership now has ONE
+definition — a rule is curated exactly when `docs/curated-rules.md` gives it a provenance row — so
+the two lists can no longer disagree about membership as well as count.
+
+*Contradictions settled against the code.* The reminders default is `local` in three places instead
+of "off" in one of them (`config.base.DEFAULT_CAPABILITIES`); assist moments are FOUR with two
+payloads, coupled, instead of "three, only remind is built" (`assists.MOMENTS`); recipe self-write
+is the `write_recipe` capability rather than an fs_write_root side effect, in architecture.md and
+admin.md as well as where it was already right; the restart is a quiet gap that never blocks a
+start, not a drain; the transcript vocabulary is the 14 of `EVENT_TYPES`, not 12.
+
+*Two architecture passages that no longer parsed.* The F328 block had been inserted mid-sentence in
+the routine-creation narration ("… init the auto-push git repo; the" … 27 lines … "daemon's
+`registry_rescan_s` timer picks the new dir up)"), and the Search bullet had lost its
+`- **Search** (` head, so the API-auth bullet read as if it continued into the search engine.
+
+*Written up for the first time.* The console's own Browser screen and its authentication (the
+relay through the console origin, the path-scoped HttpOnly cookie a frame can actually send) —
+`docs/browser-sessions.md` offered only an ssh tunnel and a `tailscale serve` mount, the exact
+duplication the relay removed; that section also now says plainly that a raw `tailscale serve`
+`tcp://` mount performs NO HTTP auth, so "loopback only" is a claim to check rather than a property
+of the design, and that neither DevTools (9222) nor noVNC (6080) has any authentication at all.
+`/api/items`'s `target` and `folded` filters. The run gate's control in the routine page's Schedule
+section and its `run_gate` field on GET. The routine token's three denied read subtrees. The
+`health_stream` reader behind `/api/health/blocked` and the six events that mean work that was due
+did not happen. `registry.info` answering for one directory off the same memos. The recipe-health
+payload's three folds. `via` as the delivery POLICY over a closed set.
+
+*Design docs.* `docs/background-actions.md` self-declared "DESIGN, not built" while
+`docs_build.py` rendered it on the Help tab as an ordinary guide; it moved into `docs/designs.md`
+as the D118 entry, which — since self-audit reads every `## ` heading there as an order — queues it
+as decided work, which is what D118 asked for. The structured-outputs entry's blocking premise was
+corrected: the claim that runs execute with extended thinking OFF is false on the current fleet
+(`claude-opus-5` runs adaptive thinking by default and `output_config.effort` already steers it),
+`additionalProperties: false` is already set throughout `actionschema.py`, and the one genuinely
+open question is a probe that a recurring quota 429 has kept from being re-run.
+
+CLAUDE.md's ~15 incident narrations are now rules carrying only the fact that justifies them and
+an item id or date as the pointer. The file is longer than it was, not shorter: this release's
+lanes handed it about twenty-five contract corrections — the parse gate on structured file writes,
+the reserved finish turn's dispatch-seam refusal, the calibrated compaction gate, the browser
+suite's CDP addresses, the `via` policy, the single-reader rule for bus-event endpoints, the
+archive-drops-lane-membership cascade — and a working tier that omits them is a working tier that
+lies.
+
+**Outside the scheduler**
+
+### Changed — the steward question panel asks once and sends once (R1793, R1779)
+
+Every quick answer used to be its own immediate POST. A tap sent before the reader had decided it
+was their answer, and a choice could not be amended — "Agree, but only for the March batch" was
+two submissions under two ids, or nothing. An option is now a SELECTION: it writes its text into
+the answer box, marks itself pressed and waits; the one Send answer button files whatever stands
+in the box, under the selected option's id and kind. Amending a quick answer is therefore just
+typing, and the amended words are still filed as that option.
+
+An option may now carry `recommended: true`. It leads the row, is drawn as the primary button
+with a chip saying so, and pre-fills the box, which makes the common case one tap while leaving
+the words his to change. At most one is honoured and the first wins — two options both claiming
+to be the recommendation is a publisher bug, and choosing silently between them would hide it.
+An option written as a bare string is read as its own label; it used to reach the button builder
+as `undefined` and render an empty button.
+
+`Page.prototype.wire` now settles `id` and `kind` at click time exactly as it already settled
+`value`, which is what lets one button file under whichever answer is selected when it is pressed.
+Nothing calls `focus()` anywhere in the shell: the reader lands on the options because the options
+come first, and a page that moves the focus scrolls a screen reader off what it was reading and
+opens a phone keyboard over the very buttons it is recommending.
+
+Items 1 and 4 of R1793 were observed on the LIVE host and were already answered in the master —
+see the deployment note below.
+
+### Changed — an id is a label on a feedback row, not an address (R1800, R1779)
+
+`api.php` refused any control id that did not begin with the project slug: at publish time over
+every id a panel can file under, and again at `say` on the reader's click. It guarded nothing.
+Which store a row lands in is settled by `require_project()` + `require_scope()` before `say()` is
+reached, the feedback log has been per project since the 0.255.0 unification, every row carries its
+own `project`, and nothing in the kit splits an id on a separator. Its only effect was a red error
+on the reader's screen for a publisher's typo the publisher never saw — and two workarounds
+written to dodge it, one in the publisher pattern and one in a routine's own page.
+
+Both refusals are deleted. What the ingest recipes actually read is the `<slug> · …` FORM, so
+that moved to `Page.prototype.post` — the one seam every control on every page passes — where the
+shell guarantees it instead of each publisher remembering it. The renderers no longer namespace
+anything. The renderability checks the deleted block sat beside are untouched: a field name the
+shell never reads IS invisible otherwise, which is the failure those checks exist for.
+
+### Changed — the steer box is the shell's, its words are the project's (R1821)
+
+The rail appends one direction box to every page and headed it "Tell me something" whatever the
+project was: right for a radar, useless on a page whose one open question is which of four funding
+lines to write to. `direction_field` now carries `label` and `placeholder` beside `id`, and the
+rail reads both, falling back to its own wording so a project that publishes nothing still gets a
+correct box. bkm-foerder-steward was already publishing exactly those two keys and reading green
+against the undeployed host; the master refused them, so the day it deployed that publish would
+have started returning 400.
+
+Its recipe stops prescribing a page-built "großes, prominentes `direction_field`" and says what is
+true: the shell's box is that field, publish its heading and placeholder, build no second one.
+Two boxes asking for the same thing is a reader wondering which one you read.
+
+### Added — a publish says what it took away (R1822)
+
+The write path refused a key nothing reads and a panel that could not render. It could not see the
+third failure, which is the quiet one: a section that had seven rows last publish and has none now.
+Nothing is malformed, so `put-state` returned `{"ok":true}`, the field-by-field readback agreed with
+what was sent, and the page simply stopped drawing that section — the shell renders an empty list as
+nothing at all. miz-grant-steward lost its whole template shelf that way and the run that did it
+verified itself clean.
+
+`put-state` now answers `{ok, rev, emptied[]}`: every section that had entries at the last publish
+and has none now, to depth two — a top-level list, or one a declared journal view sources. It is
+informational and never a refusal, because removing a section is an ordinary thing to want and a
+store that refused it is a store routines learn to publish around. `put-items` already named a
+merge fact in its response (`preserved[]`), so this is the same shape in the same file rather than
+a new idea. The `status-page` rule tells a publisher to read the key: an `emptied` it did not
+intend is a failed publish to repair in this run, one it did intend is a line in its summary.
+
+### Added — one editor at a time, and an idle session that ends (R1819, R1360, R1355)
+
+`sessions.php` has held real session records, a 600-second server-side idle end and a 120-second
+per-project editing lease since 2026-09-14, with 46 passing assertions behind them. Nothing could
+reach the lease: no `api.php` op exposed it, no chrome rendered it, and nothing keyed a
+non-holder's controls. So miz-grant-steward faked an editor lock in its own page, wrote heartbeat
+rows into the reader's feedback log to do it, removed them again, and its user-set stopping
+condition has read `unmet` every run since 2026-09-08.
+
+- `api.php` gains `{op:"lease", want:"acquire"|"release"|"status"}` → `{ok, editing, held, held_by,
+  free_in, expires_in, idle_in}`. A caller with no session — a routine over HTTP Basic — is refused
+  by name: it publishes whole documents between runs, not keystrokes.
+- An invited guest now gets a session record too, so the idle clock, the lease key and the
+  sign-out release are ONE mechanism instead of one for the owner and nothing for anybody else.
+  Their credential is still the year-long invitation; letting the record lapse costs them nothing.
+  Keying the lease on the invitation id instead, as first proposed, would have yielded a lease no
+  sign-out ever releases and no idle clock ever ends.
+- The shell takes the lease on load and renews it only while the tab is on screen — a tab left
+  behind twelve others stops holding the project about as fast as anyone notices. Leaving releases
+  it; the TTL is the backstop. One strip names the holder and the wait, and says nothing at all
+  when there is nothing to say.
+- The refusal lives in `Page.prototype.write`, the one seam every write passes — the panels, the
+  pending list's save and delete, the board's advance. Checking it per button would mean each new
+  control remembering to, and the controls the page has not grown yet are the ones that would
+  forget. `seen` is not a leased op: marking a card read is not editing it. It FAILS OPEN — an
+  unanswerable lease question leaves the page writable, because a courtesy between two readers
+  must never be why one of them cannot answer the question in front of him.
+
+miz-grant-steward's recipe contradicted itself — one section ordered a heartbeat lease, the next
+said there was no lock to build — and now says the lock is the host's and `page.js` builds none of
+it.
+
+### Fixed — a signed-in owner was refused his own invitations page
+
+`gate_identity()` recognised the owner by the legacy passphrase-digest cookie or by HTTP Basic, and
+not by a session. The session upgrade CLEARS that legacy cookie on the device it upgrades, so after
+one visit the owner carried nothing the function knew: `gate_is_open()` let him in and
+`invites-page.php` then told him "Only Mark hands out access". It now reads the session record's
+`kind`, which is also what keeps a guest's session — new in this release — from ever reading as the
+owner's.
+
+### Changed — the steward kit master drops an archived project, and a test stops counting
+
+`bina` was archived on 2026-09-20; its page stub was still being regenerated into the master a day
+later. The stub and its entry in `pages/generate.py` are gone (12 stubs → 11). The maintainer's
+census test asserted `count($stubs) >= 12`, so removing a page correctly turned it red — it now
+compares the stubs on disk against the projects `generate.py` declares, in both directions, which
+is the thing it was really trying to say.
+
+R1768 asks for a shared dossier renderer with per-point sources. It is closed as no-customer: the
+requester is the archived routine, the "waiting for the next run" list it also asked for is
+shell-provided on every page already, and the answer to "the stock body cannot express my data" is
+`module: "own"`, which exists and is documented. No renderer was built.
+
+### Operator decision owed — nothing deploys the steward kit, and the master is three weeks ahead
+
+Measured from the server on 2026-09-22, the live host is at the 2026-09-02 kit:
+`/_shared/steward.js` md5 `929f6ec2…` against the master's `66d7c7b8…`, `steward.css` `b77b9490…`
+against `a2f0f0db…`, `board.js` `fead6a7c…` against `6aedb570…`; `/sessions.php` answers 404 while
+the master's `gate.php` requires it; `gate.php?logout=json` answers 200 with an empty body where
+the master returns `{"ok":true,"signed_out":true}`.
+
+No routine can close that gap and none is permitted to try. The publishing FTP source is confined
+to the caller's own project directory and refuses executable uploads; the `status-page` rule
+forbids any sibling directory and any executable page code; steward-hub-maintainer's own
+description and scope invariant forbid it by name; and D128 (2026-09-09) settled the question
+"without inventing production-deployment permission". Meanwhile the maintainer has closed roughly
+ten rows as "fixed in master" since 2026-09-10 — the options-first panel, the R1294 publish-time
+contracts, sessions and the lease, the `needs_you` refusal, the item merge, the min-width fixes —
+and everything in THIS release joins them. None of it is visible to a reader. `api_routine_edit.py`
+also names steward-hub-maintainer as who can remove a project's store, which nobody can act on:
+`api.php` has no delete op and no way to put one there.
+
+**The decision is the operator's and nothing here presumes it.** Two answers, both workable:
+
+- **A — give the maintainer a way onto the host.** An unconfined `steward-root` FTP entry placed in
+  the routine-SCOPED secret store (`secrets.d/steward-hub-maintainer.env`, carrying both the
+  confined `steward` source and the unconfined one), never in the central `FTP_SOURCES` JSON: that
+  one secret is granted to twelve routines and an unconfined entry added there is reachable by
+  every one of them, which is precisely the hole the confinement closed. A routine-scoped file
+  shadows the central value for that routine alone and needs no grant row. This reverses D128, so
+  it wants a Decisions-page record superseding it, and the maintainer's `routine.yaml` description
+  and `main.md` scope invariant have to stop forbidding what it is now for. Every deploy then ends
+  with a both-way hash proof — host against master, both hashes recorded — over `api.php`,
+  `store.php`, `links.php`, `sessions.php`, `gate.php`, `invites*.php`, `i.php`, `p.php`,
+  `index.php`, `_shared/steward.js`, `_shared/steward.css` and `_shared/modules/*`.
+- **B — keep D128 and make the operator step explicit.** The operator deploys by hand from the
+  library repo when the kit changes, `links.php` before `store.php` (a `store.php` without it is a
+  fatal error on every request), and records the same both-way hashes. Then every closure that
+  claims a fix must say "in the master" and the maintainer stops closing rows as done.
+
+Until one is chosen, treat "landed in the master" and "the reader can see it" as different claims —
+and the routines whose stopping conditions depend on the host (miz-grant-steward's s1, the lease)
+stay `unmet` no matter what the master holds.
+
+### Fixed — five reports routed to llmsectest-weekday, worked in the project they belong to (R1762, R1794, R1817, R1820, R1825)
+
+The scheduler's audit routed five reports to `llmsectest-weekday`; every one of them was the
+external project's or the routine's own. They are fixed in that project's working tree and in the
+routine's `scripts/`, in one diff for the operator to read. Summarised below because the items are
+closed from here.
+
+**R1817 / R1762 — one member lived outside the manifest's two lists and six readers had to
+remember it.** `qa/apps/cohort.json` carried `open-webui-shopbot` under a top-level `openwebui`
+key: `preflight.check_cohort_is_real` added it back by hand, `closeout` and `qa/drift_from_reports`
+special-cased the key, `bin/publish-reports.real_third_party()` could not see it at all because the
+row carried no `upstream` and the routine's own `cohort_census` dropped it — so the page said 26
+where the gate said 27 and each was defensible. R1762 filed it as preflight over-counting; the
+premise is inverted and the defect is the manifest's shape. The row is now `real_apps[0]` (index
+0, not the end: `_select_light_pass` pins the LAST row as the run's +1, so appending it would have
+pinned a member enrolled 2026-08-04 and rotated the actual newest out) carrying
+`upstream: open-webui/open-webui`. Every special case is deleted, the six ordinals that count the
+array were renumbered, `ledger/claims.toml`'s `cohort-members` generator stopped hard-coding `+2`
+and the published page's paragraph no longer says "besides open-webui" over a number that now
+includes it. One definition: 27, in preflight, on the page and in the census.
+
+**R1794 — two messages already in somebody's inbox had been rewritten and the gate asked for
+something nobody could do.** The 2026-09-20 word sweep edited
+`genai-red-team-lab-sandbox-findings-2026-09-16.md` and `lobehub-supply-chain-2026-09-18.md` after
+both were sent. `check_outbound_signoff` caught the drift and told the run to "put the current text
+to him again before anything goes out", which is not available for a message someone has already
+read, so four runs reported the BLOCK and none cleared it. Both payloads are restored from
+`e43ae57` and `1e92dd3` and hash to their `approved_sha256` again; a `sent` row's verdict now names
+the git command and says a correction is a NEW message. What let the edit happen is closed too:
+`ledger.frozen_payloads()` names every `sent` or `bounced` payload and the new
+`qa/githooks/pre-commit` refuses a commit that stages one — the repository had no `pre-commit` hook
+at all, which is also why `bin/check-staged-secrets.sh`'s documented install at
+`.git/hooks/pre-commit`, a path `core.hooksPath` makes git ignore, had been wired into nothing.
+
+**R1820 — a four-run stall on a correct gate, because the verdict quoted the wrong lines.**
+`bin/gate_budget.py` prints its BLOCKs at the top and a long INFO and WARN tail after them and
+`closeout.check_gates` reported `tail(out)`: the last three lines, which were a `[WARN]` about a
+recurrence that never sets an exit code. `closeout.why_a_gate_failed` now carries every BLOCK
+line's first sentence with a count and truncates per line rather than truncating the join — the
+line-budget BLOCK alone is about 330 characters and would otherwise hide every block behind it.
+The unpaid debt underneath was the same routine's own 09-20 work: 109 lines of `ai-tells` rule and
+tests, journalled nowhere. `GATE_LINE_BUDGET` is 19672 with the receipt for both raises in
+`journal/incidents/gate_budget.GATE_LINE_BUDGET.md`, its declared home.
+
+**R1825 — every application name in the run report's PDF was an empty cell and the cause was a
+font weight.** Three renders running (09-20, 09-21, 09-22) drew the matrix's first column blank
+while the HTML carried all eighteen labels and `pdftotext` read them straight back out of the PDF's
+content stream, so a text-layer check passed every time. Measured one declaration at a time against
+the live report: `font-weight:500` on those cells draws nothing under Chromium's print media, which
+is what `gu html-render-pdf` emulates; 400, 600 and bold all render. The routine's
+`scripts/render_run_report.py` uses 400, gained a `--selftest` that pins both the row labels and the
+absence of `font-weight:500` and got a print-only size block so the twelve-column grid still fits
+a page once the first column renders at full width.
+
+### Added — a cohort member with no third-party register row is now named (skeptic addition)
+
+`qa/apps/thirdparty.json` is what the consent firewall and all three disclosure checks read and
+nothing compared it against `qa/apps/cohort.json`. Five real members have a manifest row and no
+register row, so they are neither withheld nor disclosed — they are unexamined.
+`preflight.check_cohort_is_real` now names them. It is a WARN by design: the data is the routine's
+to add on its next run and warn debt turns it into a BLOCK if it is not.
+
+**The browser suite, re-aimed at the console this release built**
+
+### Changed — the browser tests assert the new console, and each re-baseline was proved rather than assumed
+
+The release gate found 15 browser failures against 308 passes. Every one was a test pinning the
+console's pre-review shape: a section that now rests collapsed, a panel that gained nested
+disclosures, a native confirm that became the themed dialog, copy that was rewritten, an owner
+label that was corrected. None was a product regression — two candidates were examined closely and
+both came back intended. Each test was re-aimed at the new intent rather than loosened, so it still
+reds if the feature breaks: the domain tests click the disclosure a user clicks instead of forcing
+it open, and the capabilities tests address the panel's own summary with a child combinator rather
+than an nth-match.
+
+One of them was worse than stale. The browser-screen test asserted that an unreachable screen
+explains itself, and pointed at a port where this deployment runs a LIVE noVNC — so it had been
+testing the reachable case under the unreachable case's name. It now uses a deliberately dead
+address, exported as a constant so the next test does not pick another live port.
+
+<!-- lane: convcaps -->
+Re-baselined two browser tests against the abilities panel's new nested disclosures. A ready
+ability card now folds its met requirements behind its own "N requirements · all met" summary,
+so `.conv-caps summary` matched five elements on a conversation page instead of one.
+`tests/ui/test_connections.py::test_conversation_connection_binding` and
+`tests/ui/test_machines.py::test_conversation_machine_binding` now address the panel's own
+disclosure with `.conv-caps > summary`; no product code changed. Any other test opening that
+panel wants the same child-combinator locator.
+
+Re-baselined to the declutter pass (lane `domains`, no code change): the four domain tests in
+`tests/ui/test_lanes.py` — `test_domains_section_edits_the_shared_config`,
+`test_domain_editor_covers_every_shareable_key`,
+`test_domain_shares_machines_models_budgets_and_tags` and
+`test_unticking_a_shared_setting_removes_it_and_keeps_the_rest` — addressed a domain row on the
+Routines page while the Domains section now rests collapsed, so each one waited on a hidden
+element until it timed out. They open the section first, once, through a shared
+`_open_domains_section` helper that clicks the disclosure summary a user clicks and asserts the
+panel opened, rather than forcing `.open` from script: a section with no working way in still
+reds the suite. `test_routine_row_domain_chip_reveals_that_domain` keeps its own pinned-closed
+state and still proves the chip is the path from a routine to its domain.
+
+<!-- lane: flows -->
+Re-baselined four browser tests in `tests/ui/test_flows.py` against this release's console; no
+product code changed. `test_artifact_row_shows_time_and_deletes` answered a native `confirm()`
+through `page.on("dialog")` — the artifact delete now goes through the themed dialog like every
+other destructive control, so the test answers `.modal-overlay` via `_confirm_modal` and
+installs no native-dialog handler, leaving a fallback to `window.confirm()` a hang and a
+failure. `test_settings_grouped_layout` counted every `.set-desc` on the Settings page, which
+is now the shared class for an explanation at either level (a panel's own intro wears it too,
+one voice at one measure); it counts the SECTION-level line — the `<p>` following a
+`h2[id^="sec-"]` — so "Server is the only section that still repeats itself above its panel"
+is still what fails when another section regains a `desc`. `test_item_refs_link_and_flash`
+addressed the last-pass summary as `.panel.prose`; that block is now a labelled disclosure, so
+the test uses its stable `data-report-summary` hook. `test_conversation_header_rule_picker`
+took the same nested-disclosure strict-mode violation as the `convcaps` lane's two tests and
+uses the same `.conv-caps > summary` child combinator.
+
+<!-- lane: rail -->
+Re-baselined five browser tests against this release's console; no product code changed, because
+each of the five new behaviours is the intended one and still visible to a reader.
+`tests/ui/test_stopping.py::test_the_rail_opens_on_what_the_run_produced` compared the run rail's
+captions against lowercase words while `base.css` uppercases `.rail-cap`, so it asserted a casing
+that belongs to the stylesheet; it compares the captions as words and still pins the ORDER —
+artifacts first, goal last — which is what the test exists for.
+`tests/ui/test_surface_fix.py::test_the_strip_stays_silent_about_a_row_that_is_not_unmet` waited
+for a note row to be visible: the setup check now weights its band by its worst row and a
+note-only strip rests folded under its own count, which is the fix for a healthy routine wearing
+the same amber flag as one about to park on a blocking secret. The test now asserts that fold —
+`<details>` closed, row hidden, summary reading "1 note" — then opens it by the summary a reader
+clicks, and `_strip_row` opens a folded strip for every caller, so a strip carrying a failure
+(never folded) is unaffected.
+`tests/ui/test_routine_page.py::test_archiving_a_publisher_names_what_it_leaves_behind` expected
+the residue toast to name `steward-hub-maintainer`; this release corrected that owner to the
+OPERATOR (the kit's `api.php` has no delete-project op and no routine has a way onto that host),
+and `tests/test_archive_residue.py` pins it server-side. The toast assertion now names the
+locator `_store/hubpub/` and the line "ask the operator to retire it", so it still proves the
+residue is named and OWNED by someone who can act.
+`tests/ui/test_browser_screen.py::test_an_unreachable_screen_is_a_note_not_a_red_vnc_frame`
+failed on its own fixture: it published `http://127.0.0.1:6080/vnc.html` as "nothing behind it",
+and 6080 is where this deployment's real noVNC listens — so the dock's RFB probe found a live
+screen, mounted the frame, and the unreachable note the test exists for never rendered. The file
+now publishes one `DEAD_SCREEN` constant (port 1, refused at once) everywhere it means "no
+screen", so no test in it depends on what the host happens to be running.
+`tests/ui/test_answer_survives_and_revises.py::test_revising_a_read_answer_re_queues_it_for_the_next_run`
+expected the in-place line "the next run reads this"; the shared questions store now repaints the
+settled card from the server a moment after the save, where the same state reads "→ inbox →
+consumed by the next run" (against "→ read by the run that asked" before the revision). The
+assertion is on the statement both moments make — back in the inbox, for the next run — and the
+file assertions that follow still prove the amendment is what a run reads.
+
 ## [0.364.0] — 2026-09-22
 
 ### Fixed — `api()` refuses a body you already stringified (F524)

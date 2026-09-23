@@ -24,7 +24,7 @@ sandboxed:
 
 ## Where the pieces live
 
-- **`config.py` `MachineConfig` + `ServerConfig.machines`** — the catalog, one entry per host:
+- **`config/modelconf.py` `MachineConfig` + `config/server.py` `ServerConfig.machines`** — the catalog, one entry per host:
   `host`, `user`, `port` (default 22), `key_var`, `host_key`, `share`, `workdir`, `description`,
   `tags`. Instance-wide config in `config.yaml`. **No secret lives here**: `key_var` names a
   Secrets-store key holding the private key (PEM); `host_key` is the server's PUBLIC host key.
@@ -36,13 +36,13 @@ sandboxed:
   - `RSCHED_MACHINES` — non-secret connection metadata (host/user/port/host_key/workdir/…).
   - `RSCHED_MACHINE_KEYS` — `{name: private-key PEM}` (a credential; its name ends in `KEYS`, so
     the util-authoring gate forces its declaration).
-  Both obey the SAME declared-var rule store secrets obey (`utils_lib._child_env`): a value reaches
+  Both obey the SAME declared-var rule store secrets obey (`utils_run._child_env`): a value reaches
   a util iff the routine binds the machine AND the util declares the var. A run may request an
   unbound catalog machine (`ask_user` with `request: "machine:<name>"`,
   docs/rules-permissions.md): allow-forever adds the binding; allow-now covers EXEC for the
   asking run only — the sshfs share is mounted at binding time by the daemon, so mounts come
   with forever-bindings.
-- **The `remote` util** (`library-seed/utils/remote`) — the ONLY thing that opens an SSH
+- **The `remote` util** (`util-seed/utils/remote`) — the ONLY thing that opens an SSH
   connection. Host keys are PINNED (a mismatch, or an unscanned machine, refuses to connect).
 - **`web/settings/machines.py`** — the Settings CRUD + `scan-host` + `test`. The routine page's
   Machines card binds catalog machines to the routine (`api_routines` PATCH `machines`).
@@ -119,6 +119,24 @@ poll `status`/`logs`, or pass `submit … --notify-webhook <the routine's own tr
 remote job POSTs the routine on completion — the routine fires to collect the result, and no run
 sits polling for hours. (See [triggers](triggers.md) for the routine's webhook URL.)
 
+**Three things about the shipped command line, each of which cost a run to learn:**
+
+- **`~/.local/bin` is on PATH, because nothing else would put it there.** A non-interactive SSH
+  shell sources no profile, so `uv` — and with it `gu` — was simply absent from every command
+  and every detached `job.sh`, while the same tool worked in the operator's login shell. Every
+  line this util ships now starts by prepending the remote user's own `~/.local/bin`.
+- **`--cwd` ships `cd DIR || exit 1;`, never `cd DIR && CMD`.** With `&&` the shipped line is
+  one and-list, so a trailing `&` backgrounds the WHOLE list — and the surviving subshell still
+  holds this SSH session's stdout and stderr, which means the session cannot finish even though
+  the command itself is gone. The exec read now polls the exit status instead of reading to EOF,
+  so a command that leaves the pipes open is reported on stderr rather than hanging the call.
+  Detach properly inside the command (`nohup CMD > log 2>&1 < /dev/null &`) or use `submit`.
+- **`exec --timeout` defaults from the action's own `timeout_s`** (less a margin), so the util
+  REPORTS the timeout — `timed_out: true`, exit -1, and the output captured up to that point —
+  instead of being killed by the engine with nothing to show. Two equal clocks raced and the
+  engine won every time. A timeout does not prove the remote command stopped — and `exec` keeps
+  no durable log: inspect the box before retrying, and use `submit` for anything long.
+
 ## Exclusive compute: one job at a time, in turns
 
 A GPU is a single resource. Two training jobs on one card do not run half as fast; they run out
@@ -141,10 +159,13 @@ Three properties are load-bearing:
 - **The truth is ON THE BOX.** The tickets are files under the machine's own job root, so the
   queue survives a daemon restart, a container recreate and an instance migration, and the `remote`
   util enforces it at the one place that opens an SSH connection. The daemon mirrors it into
-  `<routines>/.control/machine-queue/<name>.json` each tick so the prompt and the console read it
-  without an SSH round-trip; a machine that cannot be read says **UNKNOWN**, never *free* — an
-  unreachable box reading as free is the one failure mode that would cause the very collision this
-  prevents.
+  `<routines>/.control/machine-queue/<name>.json` **at most once a minute** so the prompt and the
+  console read it without an SSH round-trip; a machine that cannot be read says **UNKNOWN**, never
+  *free* — an unreachable box reading as free is the one failure mode that would cause the very
+  collision this prevents. The refresh rate follows what a reader tolerates (a mirror is shown as
+  truth for 15 minutes), not the 5s tick that notices it is due: every read is an SSH session and
+  an interpreter boot on the box, and only one refresh runs at a time, so an unreachable machine
+  costs one attempt a minute instead of one per tick.
 
 Like every other machine guard, it is COOPERATIVE. A human working on the box, or a `shell`
 action, still bypasses it. The remote host is not sandboxed and the queue does not change that.

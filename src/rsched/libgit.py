@@ -36,6 +36,11 @@ IDENTITY_FLAGS = ("-c", f"user.name={GIT_USER}", "-c", f"user.email={GIT_EMAIL}"
 def git(home: Path, *args: str, check: bool = False) -> subprocess.CompletedProcess[str]:
     """The one git invoker every module uses (F285) — five per-module `_git` copies once
     drifted on timeout/check semantics; this is the only one.
+
+    Three calls cannot come through here and spell `subprocess.run(["git", ...])` themselves,
+    each for a reason this signature has no room for: `clone` (utils_lib) has no `-C` target
+    yet, `push` (web/settings/source) needs a 60 s timeout for the network, and `ls-remote`
+    there needs its own credential env. Every other git call in the package is this function.
     """
     return subprocess.run(["git", "-C", str(home), *args], capture_output=True,
                           text=True, timeout=_TIMEOUT, check=check)

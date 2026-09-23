@@ -29,6 +29,7 @@ from . import (
     inbox,
     loopnudge,
     loopsetup,
+    mediaops,
     notes,
     recall,
     remind,
@@ -60,6 +61,11 @@ from .switches import (
 )
 
 REPEAT_WARN = 3
+#: What the RESERVED finish turn may still execute — the narrowed grammar's own vocabulary
+#: (`kindsurface.schema_for_kinds({"finish"})` carries ALWAYS_KINDS with it). Spending the
+#: reserve on a `report` instead of a `finish` is the model's call and costs it the authored
+#: summary; anything else is an action on a turn the model was told executes nothing.
+RESERVED_TURN_KINDS = frozenset({"finish", "report", "list_models"})
 # D87-A: consecutive TURNS that each needed schema-rejection retries before landing an
 # action — a model that reliably cannot hold the action schema. Fail early and clearly
 # instead of limping through the budget at full-prompt retry prices (F297/R255:
@@ -89,6 +95,7 @@ class EngineLoop:
     _archival: Any
     _challenged: set[str]
     _evict_warned: Any
+    _budget_spent: Any
     _finish_reserved: Any
     _hist_note_countdown: Any
     _hist_rel: Any
@@ -106,6 +113,7 @@ class EngineLoop:
     _schema_storm_streak: Any
     _shed_schema_turns: Any
     _sheds: Any
+    _token_ratio: Any
     abort_event: Any
     action_schema: Any
     admin_leg: Any
@@ -163,12 +171,12 @@ class EngineLoop:
             while True:
                 if self._aborted():
                     raise RunAborted
-                if violation := ctx.budget_violation():
+                if spent := ctx.budget_spent():
                     if self._finish_reserved:
                         return self._finish_run(
-                            "partial", f"Run stopped by the engine: {violation}. "
+                            "partial", f"Run stopped by the engine: {spent['message']}. "
                                        "Progress so far is in the transcript and LEDGER.")
-                    loopnudge.reserve_finish(self, violation)
+                    loopnudge.reserve_finish(self, spent)
                 pause_gate(self, poll_s=POLL_S)
                 apply_model_switch(self)
                 apply_deliberation_switch(self)
@@ -249,9 +257,21 @@ class EngineLoop:
                 # action IS, HOLDS the action — it does NOT run — and the model decides
                 # again with the caution in front of it. After execution would be after
                 # the consequence.
+                if self._finish_reserved and action["kind"] not in RESERVED_TURN_KINDS:
+                    # "This is your LAST turn — the engine executes nothing else" is a
+                    # promise, and it was only a promise: the reserved turn's grammar is
+                    # narrowed to `finish`, but a provider without constrained decoding can
+                    # emit any kind and the executor ran it. Record the refusal and go round
+                    # — the budget check at the top of the loop force-finishes, which is the
+                    # same ending as before, minus the action.
+                    ctx.transcript.event("observation", {
+                        "kind": action["kind"], "rejected": True,
+                        "reason": "the reserved finish turn executes nothing but `finish` "
+                                  "(or `report`) — the budget is spent"}, turn=ctx.turn)
+                    continue
                 obs = (hold.before_dispatch(self, action)
                        or actionroute.dispatch_action(self, action, ctx))
-                ctx.transcript.event("observation", obs, turn=ctx.turn)
+                ctx.transcript.event("observation", mediaops.without_bytes(obs), turn=ctx.turn)
                 held = hold.is_hold(obs)
                 if not held:
                     self.executed_actions += 1   # a HELD action executed nothing
@@ -348,19 +368,35 @@ class EngineLoop:
             finish_payload["reply_to"] = reply_to
         ctx.transcript.event("finish", finish_payload,
                              usage_total=ctx.usage_total(), turns=ctx.turn)
-        if status in ("partial", "failed", "aborted") and ctx.depth == 0:
+        if ctx.depth == 0:
             # A `partial` is budget_exhausted ONLY when a budget violation forced it (the
             # reserved finish turn was spent, or the engine ended it). A partial the model
             # chose on its own — the job needs another run, an ask timed out, a source was
             # down — is run_partial: every routine in the fleet was reading as "out of
             # budget" while 2 of 3 such finishes were authored with budget to spare.
-            if status != "partial":
+            #
+            # The reserved turn is what decides, NOT the status: a run that spends it and
+            # still finishes `ok` was ended by a budget just as much, and used to leave no
+            # event at all — 11 such runs since 09-01, so the fleet's budget-forced endings
+            # read as a smaller number than they are.
+            if self._finish_reserved:
+                event_type = "budget_exhausted"
+            elif status == "partial":
+                event_type = "run_partial"
+            elif status in ("failed", "aborted"):
                 event_type = "run_failed"
             else:
-                event_type = "budget_exhausted" if self._finish_reserved else "run_partial"
-            log_health_event(ctx.server.routines_home, event_type,
-                             routine=ctx.routine.slug, run_id=ctx.run_id,
-                             detail=summary[:500])
+                event_type = ""
+            if event_type:
+                # `resource` and `limit` ride as FIELDS, not prose: which budget ended the
+                # run is exactly the question a sweep must be able to filter on, and
+                # `detail` carried only the model's summary.
+                spent = self._budget_spent or {}
+                log_health_event(ctx.server.routines_home, event_type,
+                                 routine=ctx.routine.slug, run_id=ctx.run_id,
+                                 detail=summary[:500],
+                                 status=status if event_type == "budget_exhausted" else None,
+                                 resource=spent.get("resource"), limit=spent.get("limit"))
         self.final_summary = self.final_summary or summary
         if ctx.depth == 0:
             from ..paths import atomic_write

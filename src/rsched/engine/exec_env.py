@@ -91,13 +91,18 @@ def _extra_secrets(ctx: RunContext) -> dict[str, str]:
     util declares to talk to the daemon API resolves to the server's ROUTINE token — the
     read-only tier — and OVERRIDES any secrets-store value for it (extra_secrets win the
     _child_env merge by design), so the primary console token can never reach a util
-    subprocess through the store. Config stays honest: the engine reads `routine_token`
-    here, it never writes it (bootstrap.ensure_config generates it).
+    subprocess through the store. The override is UNCONDITIONAL, and that is the whole of
+    the promise: it used to be written `if routine_token:`, so a blank or deleted
+    `routine_token:` made the override vanish and `scoped_env` then injected whatever the
+    central store held under that name — which on this instance was byte-for-byte the
+    PRIMARY console token. A guard that fails open on the empty value is not a seal. An
+    empty routine token now reaches the util as an empty string and the call fails visibly
+    against a 401, which is the behaviour an operator can act on. Config stays honest: the
+    engine reads `routine_token` here, it never writes it (bootstrap.ensure_config
+    generates it).
     """
     out = {**_routine_secrets(ctx), **_connection_env(ctx), **_machine_env(ctx)}
-    routine_token = str(ctx.server.routine_token or "")
-    if routine_token:
-        out["RSCHED_API_TOKEN"] = routine_token
+    out["RSCHED_API_TOKEN"] = str(ctx.server.routine_token or "")
     out["RSCHED_ROUTINE"] = ctx.routine.slug
     return out
 

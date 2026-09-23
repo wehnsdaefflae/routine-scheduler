@@ -14,7 +14,7 @@ import { abilitiesPanel } from "/static/components/abilities.js";
 import { tagsEditor } from "/static/components/tags.js";
 import { rulePicker } from "/static/components/rulepicker.js";
 import { navigate } from "/static/router.js";
-import { el, modelOption, toast } from "/static/util.js";
+import { el, modelOption, toast, toastError } from "/static/util.js";
 
 // The model line at the top of a conversation: shows the EFFECTIVE main model and the
 // uncensored role, and switches EITHER at any point — routine.yaml is patched
@@ -28,7 +28,7 @@ function modelControl(detail, slug, isLive) {
   const sysLabel = detail.system_model || "system model";
   const meta = detail.catalog_meta || {};
   const mkSel = (cur, fallback, title) => el("select",
-    { title, style: "width:auto;font-size:11.5px;padding:3px 6px" },
+    { title, class: "tight", style: "width:auto;padding:3px 6px" },
     el("option", { value: "" }, fallback),
     (detail.catalog || []).map((n) => modelOption(n, meta[n], { selected: cur === n || null })));
   const mainSel = mkSel(detail.models?.main || "", `default · ${sysLabel}`, "main model");
@@ -55,7 +55,7 @@ function modelControl(detail, slug, isLive) {
       }
       toast(`model → ${mainName || sysLabel}${uncName ? ` · uncensored → ${uncName}` : ""}`);
       apply.hidden = true;
-    } catch (err) { toast(err.message, 4000, { error: true }); }
+    } catch (err) { toastError(err); }
   };
   return el("span", { class: "conv-model" },
     el("span", { class: "faint small" }, "model"), mainSel,
@@ -69,7 +69,7 @@ export function renderHead(head, detail, stateChip, { slug, isLive, onListChange
     const t = title.textContent.trim();
     if (!t || t === detail.title) return;
     try { await api(`/api/conversations/${slug}`, { method: "PATCH", body: { title: t } }); onListChanged(); }
-    catch (err) { toast(err.message, 4000, { error: true }); }
+    catch (err) { toastError(err); }
   };
   const tagsRow = el("span", { class: "conv-tagline" },
     tagsEditor(detail.tags, async (next) => {
@@ -80,7 +80,7 @@ export function renderHead(head, detail, stateChip, { slug, isLive, onListChange
   del.onclick = async () => {
     if (!(await confirmDialog("Delete this conversation? It is unversioned — this cannot be undone.", { confirmLabel: "delete" }))) return;
     try { await api(`/api/conversations/${slug}`, { method: "DELETE" }); navigate("#/conversations"); }
-    catch (err) { toast(err.message, 4000, { error: true }); }
+    catch (err) { toastError(err); }
   };
   // capabilities: budgets (per-reply ceilings) + permission toggles (routine-only ones
   // greyed) + rules read-only
@@ -90,7 +90,7 @@ export function renderHead(head, detail, stateChip, { slug, isLive, onListChange
   const capBody = el("div", { class: "conv-opts" });
   const b = detail.budgets || {};
   const numIn = (v, min = "1") => el("input", { type: "number", min, value: v,
-    style: "width:90px;font-size:11.5px;padding:3px 6px" });
+    class: "tight", style: "width:90px;padding:3px 6px" });
   // fallbacks mirror CONVERSATION_BUDGETS (conversations.py) — a runaway backstop, not a pace
   const turnsIn = numIn(b.max_turns ?? 40);
   const minsIn = numIn(b.max_wall_clock_min ?? 60, "-1");    // -1 = unlimited time
@@ -102,7 +102,7 @@ export function renderHead(head, detail, stateChip, { slug, isLive, onListChange
         max_turns: +turnsIn.value || 40, max_wall_clock_min: +minsIn.value || 60,
         max_total_tokens: +tokIn.value || 400000 } } });
       toast("budgets saved — they cap EACH reply, from the next one");
-    } catch (err) { toast(err.message, 4000, { error: true }); }
+    } catch (err) { toastError(err); }
   };
   const budgetField = (label, input) => el("label", { style: "flex-direction:column" },
     el("span", { class: "faint" }, label), input);
@@ -120,7 +120,7 @@ export function renderHead(head, detail, stateChip, { slug, isLive, onListChange
       await api(`/api/conversations/${slug}`, { method: "PATCH", body: {
         fs_read_roots: readRoots.value(), fs_write_roots: writeRoots.value() } });
       toast("folder access saved — applies from the next reply");
-    } catch (err) { toast(err.message, 4000, { error: true }); }
+    } catch (err) { toastError(err); }
   };
   capBody.append(el("div", { class: "mt" },
     el("div", { class: "faint small" }, "folder access — directories the conversation may "
@@ -143,7 +143,7 @@ export function renderHead(head, detail, stateChip, { slug, isLive, onListChange
             { method: "POST", body: { level } }).catch(() => {});
         }
         toast(`deliberation: ${level}`);
-      } catch (err) { toast(err.message, 4000, { error: true }); }
+      } catch (err) { toastError(err); }
     },
   });
   capBody.append(el("div", { class: "row mt", style: "gap:10px;align-items:flex-start" },
@@ -156,7 +156,7 @@ export function renderHead(head, detail, stateChip, { slug, isLive, onListChange
       try {
         await api(`/api/conversations/${slug}/permissions`, { method: "PUT", body: payload });
         toast("permissions saved — they apply from the next reply");
-      } catch (err) { toast(err.message, 4000, { error: true }); }
+      } catch (err) { toastError(err); }
     },
   }).node);
   // Connections: bind an OAuth account per provider so connector utils (google-api, notion…)

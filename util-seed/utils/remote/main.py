@@ -3,7 +3,23 @@
 # ///
 """remote — act on a bound remote machine over SSH (reserved: needs the remote-machines permission).
 
-usage: gu remote <command> [args] [--json]
+usage:
+  gu remote list [--json]                                    # the machines this routine can reach
+  gu remote exec MACHINE --command CMD [--cwd DIR] [--timeout S] [--json]
+                                                             # run CMD, WAIT, return stdout/stderr/exit
+  gu remote submit MACHINE --command CMD [--cwd DIR] [--notify-webhook URL]
+                   [--deadline-hours H] [--est-minutes N] [--json]
+                                                             # start a DETACHED job -> a job id
+  gu remote status MACHINE --job ID [--json]                 # running | exit=<code> | nojob
+  gu remote logs MACHINE --job ID [--tail BYTES] [--tail-lines N] [--json]
+                                                             # the job's stdout + stderr so far
+  gu remote cancel MACHINE --job ID [--json]                 # terminate the job's process group
+  gu remote queue MACHINE [--cancel JOBID] [--json]          # an exclusive machine's job queue
+  gu remote push MACHINE --src LOCAL --dest REMOTE [--json]  # upload a file or a tree (SFTP)
+  gu remote pull MACHINE --src REMOTE --dest LOCAL [--json]  # download a file (SFTP)
+  gu remote scan-host HOST [--port N] [--json]               # read a host key line, for pinning
+  gu remote test MACHINE [--json]                            # connect + run `true`
+  gu remote --selftest
 calls: (none)
 tags: ssh, remote, machines, gpu, execute
 secrets: RSCHED_MACHINES, RSCHED_MACHINE_KEYS, RSCHED_ROUTINE?
@@ -14,22 +30,53 @@ Runs commands and moves files on the SSH hosts the routine is BOUND to (Settings
 then bind on the routine page). The engine injects the bound machines' connection details
 (RSCHED_MACHINES) and private keys (RSCHED_MACHINE_KEYS) — you never handle credentials; a
 machine you are not bound to is invisible. Host keys are PINNED: a mismatch (or an unscanned
-machine) refuses to connect. Commands:
+machine) refuses to connect.
 
-  list                              the machines this routine can reach
-  exec MACHINE --command CMD        run CMD, wait, return stdout/stderr/exit (short jobs)
-  submit MACHINE --command CMD      start a DETACHED job (survives this call) → a job id
-  status MACHINE --job ID           running | exit=<code> | nojob
-  logs MACHINE --job ID [--tail N]  the job's stdout + stderr so far
-  cancel MACHINE --job ID           terminate the job's process group
-  queue MACHINE [--cancel ID]       an exclusive machine's job queue; --cancel drops a ticket
-  push MACHINE --src L --dest R      upload a local file over SFTP
-  pull MACHINE --src R --dest L      download a remote file over SFTP
-  scan-host HOST [--port N]         read a host's public key line (for pinning in Settings)
-  test MACHINE                      connect + run `true`, report reachability
+Every command this util ships starts with the remote user's own `~/.local/bin` on PATH, where
+astral's installer puts `uv` (and with it `gu`) — a non-interactive SSH shell reads no profile,
+so without it a tool present in the operator's login shell is simply not found. `--tail` on
+`logs` counts BYTES (default 8000); `--tail-lines` counts LINES instead.
 
-Long GPU jobs: `submit` then poll `status`, or pass `--notify-webhook <url>` and let the job
-POST the routine's own trigger URL on completion (no polling).
+BACKGROUNDING A COMMAND IS NOT DETACHING IT. `cd DIR && CMD &` backgrounds the WHOLE and-list:
+the subshell that survives still holds this SSH session's stdout and stderr, so the session
+cannot finish even though CMD itself is gone. Redirect INSIDE the command and detach from the
+session — `nohup CMD > log 2>&1 < /dev/null &` — or, for anything longer than a few seconds,
+use `submit`, which is detached by construction and keeps a durable log. When a process is
+still holding the pipes as the shell exits, the result says so on stderr instead of hanging.
+
+Long jobs (CPU or GPU): `submit` then poll `status`, or pass `--notify-webhook <url>` and let
+the job POST the routine's own trigger URL on completion (no polling).
+
+`push --src DIR` copies the tree recursively (parents created before their children). Files go
+one at a time in a deterministic order and the FIRST failure STOPS the transfer: the result is
+`ok: false` with `uploaded` (what landed), `failed` (the file and its error) and `remaining`
+(never attempted). Nothing on the remote is ever deleted, so re-running the same push is safe
+and simply re-sends — resume by repeating the command.
+
+`exec --timeout` is an SSH I/O deadline. It DEFAULTS from the action timeout_s this call was
+given (less a small margin), so the util reports the timeout — with the output captured up to
+that point, `timed_out: true` and exit -1 — instead of being killed by the engine with nothing
+to show. A timeout does not guarantee the remote command stopped, and exec has no durable job
+log. Inspect existing work before retrying; use submit for long jobs.
+
+NO SECRET FORWARDING (R1569). There is deliberately NO flag that carries an environment
+variable or a Secrets-store value into a remote command: whatever `exec`/`submit` runs sees
+only the environment the REMOTE box gives it. A routine holding, say, PANGRAM_API_KEY here
+cannot hand it to a job on a bound machine. This is a known gap, not an oversight to work
+around by echoing the value into the command string — that writes the secret into the remote
+shell history, the job script on disk, and this instance's own transcript. Until it is
+designed, put the credential on the box (its own credential convention, or
+`gu remote-service-credentials MACHINE --service …`) and have the remote job read it there.
+Closing the gap needs an operator decision, because forwarding means the secret leaves this
+instance's sandbox: a generic `--env FOO=$FOO` would let any caller forward anything the
+routine holds to any bound machine, which is wider than the `secrets:` header model intends;
+a per-call declaration (the util names which vars it will forward, the caller chooses only
+among those) keeps that property.
+
+Exclusive is currently WHOLE-MACHINE serialization: CPU-only submitted jobs share the same
+queue and lock as GPU jobs. Preserve the operator's exclusive setting; do not bypass it
+with exec or detached shells. Resource-class scheduling requires a separately authorized
+design, not an inference that idle CPU cores permit overlap.
 
 ONE JOB AT A TIME — an EXCLUSIVE machine. A machine the operator marks `exclusive` is a single
 resource: two training jobs on one card do not run half as fast, they run out of VRAM. There,
@@ -66,6 +113,7 @@ import os
 import re
 import shlex
 import sys
+import time
 
 _JOBID_RE = re.compile(r"[A-Za-z0-9_.-]+")
 
@@ -80,10 +128,43 @@ POLL_S = 5                 # how often a waiting job re-checks whether its turn 
 TICKET_KEYS = ("holder", "job", "submitted", "deadline_s", "est_min", "state")
 # A holder reaches the ticket FILENAME, and a routine addressed by directory path is no slug.
 _HOLDER_RE = re.compile(r"[^A-Za-z0-9_.-]")
+# Every shipped command starts by putting the remote user's OWN ~/.local/bin on PATH: astral's
+# installer puts `uv` (and with it `gu`) exactly there, and a non-interactive SSH session sources
+# no profile — so a command that works in the operator's login shell failed here with
+# "uv: command not found" (R1730). The line is a harmless no-op where the dir does not exist.
+PATH_PREFIX = 'export PATH="$HOME/.local/bin:$PATH"; '
+DEFAULT_EXEC_TIMEOUT_S = 120   # when nothing exported the caller's own deadline
+EXEC_TIMEOUT_MARGIN_S = 15     # report a timeout before the engine kills this process group
+_CHUNK = 65_536
+_POLL_S = 0.1                  # channel poll interval while a command runs
+_LINGER_S = 2.0                # grace for output already in flight once the shell has exited
 
 
 class RemoteError(Exception):
     """A clean, user-facing failure (bad binding, unreachable host, key mismatch)."""
+
+
+class ExecTimeout(RemoteError):
+    """The SSH I/O deadline passed with the remote shell still running. Carries what the
+    command had already written — the half a read-to-EOF threw away."""
+
+    def __init__(self, message: str, stdout: str = "", stderr: str = ""):
+        super().__init__(message)
+        self.stdout, self.stderr = stdout, stderr
+
+
+def default_exec_timeout() -> int:
+    """The `exec --timeout` default: the ENGINE's own deadline for this util call
+    (RSCHED_UTIL_TIMEOUT_S, exported by both util runners) minus a margin, so this util
+    reports a timeout — with the output captured so far — instead of being killed mid-read
+    with nothing to show. Two clocks that raced is exactly what R1813 cost: the action's
+    timeout_s: 120 and this util's own 120 expired together and the engine won.
+    """
+    try:
+        budget = int(os.environ.get("RSCHED_UTIL_TIMEOUT_S", ""))
+    except ValueError:
+        return DEFAULT_EXEC_TIMEOUT_S
+    return max(budget - EXEC_TIMEOUT_MARGIN_S, 10) if budget > 0 else DEFAULT_EXEC_TIMEOUT_S
 
 
 # ---------------------------------------------------------------------------- pure helpers ---
@@ -156,7 +237,9 @@ def build_job_script(command: str, jobid: str, cwd: str, webhook: str) -> str:
     # job body, so `code=$?` and the exit-file write below still run (a group's exit would kill
     # job.sh outright, losing the exit code). Redirections are opened in the job dir.
     inner = f"cd {shlex.quote(cwd)} || exit 1\n{command}\n" if cwd else f"{command}\n"
-    lines = ["(", inner, ") > stdout 2> stderr < /dev/null", "code=$?", "echo $code > exit"]
+    # Same PATH line as `exec` (R1730): a job.sh runs under the same profile-less shell.
+    lines = [PATH_PREFIX.strip(), "(", inner, ") > stdout 2> stderr < /dev/null",
+             "code=$?", "echo $code > exit"]
     if webhook:
         # The job POSTs the routine's trigger URL on completion (job id + exit code) so a
         # multi-hour run needs no polling. URL is base64-transported to avoid any quoting.
@@ -615,13 +698,70 @@ def connect(m: dict, keys: dict[str, str], *, timeout: int = 20):
     return client
 
 
+HELD_CHANNEL_NOTE = (
+    "[remote] the command exited but left a process holding this SSH session's stdout/stderr, "
+    "so anything written after this point is lost. Background work must redirect INSIDE the "
+    "command and detach from the session — `nohup CMD > log 2>&1 < /dev/null &` — and note that "
+    "`cd DIR && CMD &` backgrounds the WHOLE and-list, i.e. a subshell that keeps these pipes "
+    "open. For anything longer than a few seconds use `remote submit`, which is detached by "
+    "construction and keeps a durable log.")
+
+
+def _drain(chan, out: bytearray, err: bytearray) -> None:
+    """Move whatever has arrived off the channel into the buffers. Never blocks."""
+    while chan.recv_ready():
+        chunk = chan.recv(_CHUNK)
+        if not chunk:
+            break
+        out += chunk
+    while chan.recv_stderr_ready():
+        chunk = chan.recv_stderr(_CHUNK)
+        if not chunk:
+            break
+        err += chunk
+
+
 def _run(client, command: str, timeout: int, cwd: str = "") -> tuple[int, str, str]:
+    """Run ONE command on an open connection → (exit, stdout, stderr).
+
+    Two live failures shape this (R1813/R1734, funscript-trainer 2026-09-21/22):
+
+    * `--cwd` ships `cd DIR || exit 1;`, never `cd DIR && CMD`. With `&&` the shipped line is
+      one AND-LIST, so a caller ending it in `&` backgrounds the WHOLE list — a subshell that
+      inherits this session's stdout/stderr and holds them open long after the job it launched
+      has detached.
+    * the read ends when the remote SHELL exits, not when the pipes reach EOF. Reading to EOF
+      waits for the last holder of those fds, which a backgrounded subshell never releases: the
+      engine then killed this util at its own deadline and the caller got NOTHING, though the
+      shell had exited 0 and printed the job's PID. Polling the exit status returns that output,
+      with a note naming the holder so the caller can fix its launch form.
+    """
     if cwd:
-        command = f"cd {shlex.quote(cwd)} && {command}"
-    _stdin, stdout, stderr = client.exec_command(command, timeout=timeout)
-    out = stdout.read().decode("utf-8", "replace")
-    err = stderr.read().decode("utf-8", "replace")
-    return stdout.channel.recv_exit_status(), out, err
+        command = f"cd {shlex.quote(cwd)} || exit 1; {command}"
+    _stdin, stdout, _stderr = client.exec_command(PATH_PREFIX + command, timeout=timeout)
+    chan = stdout.channel
+    out, err = bytearray(), bytearray()
+    deadline = time.monotonic() + timeout
+    while not chan.exit_status_ready():
+        _drain(chan, out, err)
+        if time.monotonic() >= deadline:
+            raise ExecTimeout(f"SSH I/O timeout after {timeout}s",
+                              out.decode("utf-8", "replace"), err.decode("utf-8", "replace"))
+        time.sleep(_POLL_S)
+    # The shell has exited. Collect what is still in flight, then STOP — waiting for EOF is
+    # the hang itself, not a guarantee of completeness.
+    linger = time.monotonic() + _LINGER_S
+    while not chan.eof_received and time.monotonic() < linger:
+        _drain(chan, out, err)
+        time.sleep(_POLL_S)
+    _drain(chan, out, err)
+    code = chan.recv_exit_status()
+    held = not chan.eof_received
+    chan.close()
+    text_err = err.decode("utf-8", "replace")
+    if held:
+        text_err = (text_err + "\n" + HELD_CHANNEL_NOTE) if text_err else HELD_CHANNEL_NOTE
+    return code, out.decode("utf-8", "replace"), text_err
 
 
 # ------------------------------------------------------------------------------ commands -----
@@ -634,15 +774,31 @@ def cmd_list(machines: dict[str, dict]) -> dict:
 
 
 def cmd_exec(m: dict, keys: dict, command: str, timeout: int, cwd: str) -> tuple[dict, int]:
+    """Run and wait. A timeout is REPORTED, not raised: the payload carries the exit -1, the
+    output captured up to the deadline and the recovery route, because a timed-out exec whose
+    diagnostics were discarded is the one failure that teaches the caller nothing (R1813)."""
     client = connect(m, keys)
+    timed_out = None
     try:
         code, out, err = _run(client, command, timeout, cwd)
+    except ExecTimeout as exc:
+        timed_out, code, out, err = exc, -1, exc.stdout, exc.stderr
     finally:
         client.close()
     out_c, t1 = _capped(out)
     err_c, t2 = _capped(err)
-    return ({"command": "exec", "machine": m["name"], "exit": code, "stdout": out_c,
-             "stderr": err_c, "truncated": t1 or t2}, code)
+    payload = {"command": "exec", "machine": m["name"], "exit": code, "stdout": out_c,
+               "stderr": err_c, "truncated": t1 or t2}
+    if timed_out is None:
+        return payload, code
+    payload["timed_out"] = True
+    payload["error"] = (
+        f"remote exec on {m['name']!r} hit its SSH I/O timeout (--timeout {timeout}s), which "
+        "defaults from the action timeout_s this util was given. The remote command may still "
+        "be running; anything it printed after the deadline is unavailable. Check its state "
+        "before retrying to avoid duplicate work. For long jobs use `remote submit` then "
+        "`status`/`logs`; submit respects the exclusive machine queue.")
+    return payload, 1
 
 
 def cmd_submit(m: dict, keys: dict, command: str, cwd: str, webhook: str, *,
@@ -671,26 +827,60 @@ def cmd_submit(m: dict, keys: dict, command: str, cwd: str, webhook: str, *,
 
 
 def cmd_status(m: dict, keys: dict, jobid: str) -> dict:
+    # R1629: a QUEUED job has a job dir but no pgid, so the old chain fell through to
+    # `started` — a job whose payload has never executed was indistinguishable from one
+    # that is running. The distinction is load-bearing: a caller waiting on "running"
+    # cannot tell "waiting my turn in the queue" from "my code is executing", and (R1698)
+    # a payload that died instantly also reads as `started` because the dir exists.
+    # So: report the queue position when a ticket says waiting, and separate a dir with
+    # no pgid ever written (`pending`) from one whose process is gone (`stopped`).
     snippet = _job_cmd(m, jobid,
                        'if [ -f "$JOBDIR/exit" ]; then echo "exit=$(cat "$JOBDIR/exit")"; '
                        'elif [ -f "$JOBDIR/pgid" ] && kill -0 -"$(cat "$JOBDIR/pgid")" '
                        '2>/dev/null; then echo running; '
-                       'elif [ -d "$JOBDIR" ]; then echo started; else echo nojob; fi')
+                       'elif [ -f "$JOBDIR/queued" ]; then '
+                       'echo "queued=$(cat "$JOBDIR/queued" 2>/dev/null || echo 1)"; '
+                       'elif [ -f "$JOBDIR/pgid" ]; then echo stopped; '
+                       'elif [ -d "$JOBDIR" ]; then echo pending; else echo nojob; fi')
     client = connect(m, keys)
     try:
         _code, out, _err = _run(client, snippet, timeout=30)
     finally:
         client.close()
-    state = out.strip()
+    res = {"command": "status", "machine": m["name"], "job": jobid}
+    res.update(_decode_status(out.strip()))
+    return res
+
+
+def _decode_status(state: str) -> dict:
+    """Map the status snippet's token to the caller-facing state. Pure, so it is testable
+    without a bound machine — the mapping is the part callers branch on (R1629/R1698)."""
     exit_code = int(state.split("=", 1)[1]) if state.startswith("exit=") else None
-    return {"command": "status", "machine": m["name"], "job": jobid,
-            "state": "done" if exit_code is not None else state, "exit": exit_code}
+    res = {"state": "done" if exit_code is not None else state, "exit": exit_code}
+    if state.startswith("queued="):
+        res["state"] = "queued"
+        res["started"] = False
+        pos = state.split("=", 1)[1].strip()
+        if pos and pos != "1":
+            res["queue_note"] = pos
+    elif res["state"] == "running":
+        res["started"] = True
+    elif res["state"] in ("pending", "stopped"):
+        res["started"] = False
+        if res["state"] == "stopped":
+            res["ran"] = True
+    return res
 
 
-def cmd_logs(m: dict, keys: dict, jobid: str, tail: int) -> dict:
+def cmd_logs(m: dict, keys: dict, jobid: str, tail: int, tail_lines: int = 0) -> dict:
+    # R1496: `--tail` counts BYTES (`tail -c`). A caller who reads the flag as "last N
+    # lines" and passes `--tail 20` gets a 20-BYTE fragment, which is indistinguishable
+    # from the flag being ignored — which is exactly how it was reported. The unit is now
+    # stated in the usage line, and a caller who means lines can say so.
+    sel = f'-n {int(tail_lines)}' if tail_lines else f'-c {int(tail)}'
     snippet = _job_cmd(m, jobid,
-                       f'echo "===STDOUT==="; tail -c {tail} "$JOBDIR/stdout" 2>/dev/null; '
-                       f'echo; echo "===STDERR==="; tail -c {tail} "$JOBDIR/stderr" 2>/dev/null')
+                       f'echo "===STDOUT==="; tail {sel} "$JOBDIR/stdout" 2>/dev/null; '
+                       f'echo; echo "===STDERR==="; tail {sel} "$JOBDIR/stderr" 2>/dev/null')
     client = connect(m, keys)
     try:
         _code, out, _err = _run(client, snippet, timeout=30)
@@ -702,16 +892,53 @@ def cmd_logs(m: dict, keys: dict, jobid: str, tail: int) -> dict:
 
 
 def cmd_cancel(m: dict, keys: dict, jobid: str) -> dict:
-    snippet = _job_cmd(m, jobid,
-                       'PG="$(cat "$JOBDIR/pgid" 2>/dev/null)"; '
-                       '{ [ -n "$PG" ] && kill -TERM -"$PG" 2>/dev/null && echo cancelled; } '
-                       '|| echo "not running"')
+    """Cancel a job and report what actually happened to it.
+
+    R1618: this used to send ONE `kill -TERM` and echo `cancelled` on the strength of
+    kill's own exit code. kill succeeding means the signal was DELIVERED, not that the
+    process died — a job that traps TERM, or that is mid-syscall, or whose children
+    outlive the group leader, kept running while the caller was told it was cancelled.
+    The observed cost: a metered external API billed on after "cancellation", and a
+    queue ticket left `running` so the next queued job never started.
+
+    So: TERM, wait, re-check the group; escalate to KILL, wait, re-check again; and
+    report the OUTCOME. `result` is `cancelled` only when the group is provably gone.
+    A survivor yields `still_running` with the pgid, so the caller learns the truth.
+    """
+    snippet = _job_cmd(m, jobid, r'''
+PG="$(cat "$JOBDIR/pgid" 2>/dev/null)"
+if [ -z "$PG" ]; then echo "not running"; exit 0; fi
+if ! kill -0 -"$PG" 2>/dev/null; then echo "not running"; exit 0; fi
+kill -TERM -"$PG" 2>/dev/null
+for _ in 1 2 3 4 5 6 7 8 9 10; do
+  kill -0 -"$PG" 2>/dev/null || { echo cancelled; exit 0; }
+  sleep 0.5
+done
+kill -KILL -"$PG" 2>/dev/null
+for _ in 1 2 3 4 5 6; do
+  kill -0 -"$PG" 2>/dev/null || { echo "cancelled (SIGKILL)"; exit 0; }
+  sleep 0.5
+done
+echo "still_running pgid=$PG"
+''')
     client = connect(m, keys)
     try:
         _code, out, _err = _run(client, snippet, timeout=30)
     finally:
         client.close()
-    return {"command": "cancel", "machine": m["name"], "job": jobid, "result": out.strip()}
+    result = out.strip()
+    payload = {"command": "cancel", "machine": m["name"], "job": jobid, "result": result}
+    if result.startswith("still_running"):
+        # Loudly, and non-zero at the CLI: a control verb must never report the outcome
+        # it intended in place of the one it achieved.
+        payload["ok"] = False
+        payload["error"] = (
+            f"cancel FAILED: job {jobid} survived SIGTERM and SIGKILL on {m['name']!r} "
+            f"({result}). It is STILL RUNNING and its queue ticket is still held — "
+            "check it with `gu remote status` / `gu remote queue` before retrying.")
+    else:
+        payload["ok"] = True
+    return payload
 
 
 def _submit_queued(m: dict, keys: dict, jobid: str, script_b64: str, webhook: str,
@@ -801,17 +1028,91 @@ def _strip_home(path: str) -> str:
     return path[2:] if path.startswith("~/") else path
 
 
+def plan_push_tree(src: str, dest: str) -> tuple[list[str], list[tuple[str, str]]]:
+    """Walk a local directory and return (remote dirs to create, [(local file, remote path)]),
+    both in parent-before-child order so a directory always exists before anything lands in it.
+
+    Paths are joined with "/" REGARDLESS of the local separator: the destination is a remote
+    POSIX path, and os.path.join would emit a backslash on a non-POSIX client. Pure — the
+    selftest asserts the shape without touching the network.
+    """
+    src_root = src.rstrip(os.sep) or src
+    dest_root = _strip_home(dest).rstrip("/") or _strip_home(dest)
+    dirs: list[str] = [dest_root]
+    files: list[tuple[str, str]] = []
+    for cur, subdirs, filenames in os.walk(src_root):
+        subdirs.sort()
+        rel = os.path.relpath(cur, src_root)
+        remote_dir = dest_root if rel == "." else f"{dest_root}/" + rel.replace(os.sep, "/")
+        if remote_dir not in dirs:
+            dirs.append(remote_dir)
+        for fn in sorted(filenames):
+            local = os.path.join(cur, fn)
+            if os.path.isfile(local):          # skip sockets/fifos/broken symlinks
+                files.append((local, f"{remote_dir}/{fn}"))
+    return dirs, files
+
+
+def _sftp_mkdir_p(sftp, path: str) -> None:
+    """Create a remote directory, tolerating one that already exists (SFTP has no mkdir -p)."""
+    try:
+        sftp.stat(path)
+        return
+    except OSError:
+        pass
+    try:
+        sftp.mkdir(path)
+    except OSError as exc:                     # a racing creator, or a file in the way
+        try:
+            sftp.stat(path)
+        except OSError:
+            raise RemoteError(f"could not create remote directory {path}: {exc}") from exc
+
+
 def cmd_push(m: dict, keys: dict, src: str, dest: str) -> dict:
-    if not os.path.isfile(src):
-        raise RemoteError(f"local file not found: {src}")
+    """Upload a local FILE, or a whole DIRECTORY TREE recursively, over SFTP.
+
+    PARTIAL FAILURE (the caller's next decision depends on this): files are sent one at a time
+    in a deterministic order, and the FIRST failure stops the transfer. The result then reports
+    ok=False with `uploaded` (what definitely landed), `failed` (the one that did not, with its
+    error) and `remaining` (never attempted) — so a retry of the same command is safe and simply
+    re-sends what is already there. Nothing is deleted on the remote, ever.
+    """
+    if not os.path.exists(src):
+        raise RemoteError(f"local path not found: {src}")
+    is_dir = os.path.isdir(src)
+    if not is_dir and not os.path.isfile(src):
+        raise RemoteError(f"local path is neither a file nor a directory: {src}")
+
     client = connect(m, keys)
     try:
         sftp = client.open_sftp()
-        sftp.put(src, _strip_home(dest))
-        size = os.path.getsize(src)
+        if not is_dir:
+            sftp.put(src, _strip_home(dest))
+            return {"command": "push", "machine": m["name"], "src": src, "dest": dest,
+                    "bytes": os.path.getsize(src), "ok": True}
+        dirs, files = plan_push_tree(src, dest)
+        for d in dirs:
+            _sftp_mkdir_p(sftp, d)
+        uploaded, total = [], 0
+        for i, (local, remote) in enumerate(files):
+            try:
+                sftp.put(local, remote)
+            except OSError as exc:
+                # Stop here and SAY what landed — a half-synced folder the caller cannot see
+                # into is worse than a failure it can read.
+                return {"command": "push", "machine": m["name"], "src": src, "dest": dest,
+                        "directory": True, "ok": False, "files": len(uploaded),
+                        "bytes": total, "dirs": len(dirs), "uploaded": uploaded,
+                        "failed": {"src": local, "dest": remote, "error": str(exc)},
+                        "remaining": [lp for lp, _rp in files[i + 1:]]}
+            total += os.path.getsize(local)
+            uploaded.append(remote)
+        return {"command": "push", "machine": m["name"], "src": src, "dest": dest,
+                "directory": True, "ok": True, "files": len(uploaded), "bytes": total,
+                "dirs": len(dirs), "uploaded": uploaded}
     finally:
         client.close()
-    return {"command": "push", "machine": m["name"], "src": src, "dest": dest, "bytes": size}
 
 
 def _resolve_pull_dest(src: str, dest: str) -> str:
@@ -828,15 +1129,53 @@ def _resolve_pull_dest(src: str, dest: str) -> str:
 
 
 def cmd_pull(m: dict, keys: dict, src: str, dest: str) -> dict:
+    """Download ONE remote file.
+
+    R1491: pointing this at a remote DIRECTORY used to raise a bare `OSError` out of
+    paramiko — an error naming neither the path nor the reason — AFTER the local file
+    had already been created, leaving a 0-byte artefact the caller then mistook for a
+    real (empty) download. So: stat the source first and refuse a directory with a
+    message that teaches the working call, and never leave a partial file behind.
+    """
+    import stat as _stat
+
     client = connect(m, keys)
     try:
         sftp = client.open_sftp()
+        remote = _strip_home(src)
+        try:
+            st = sftp.stat(remote)
+        except OSError as exc:
+            raise RemoteError(
+                f"remote pull: cannot stat {src!r} on {m['name']!r} ({exc}). "
+                "Check the path exists and is readable by this routine's SSH user.") from exc
+        if _stat.S_ISDIR(st.st_mode):
+            raise RemoteError(
+                f"remote pull: {src!r} on {m['name']!r} is a DIRECTORY, and pull fetches one "
+                "FILE. Name a file inside it, or tar it on the box first — e.g. "
+                f"`gu remote exec {m['name']} --command \"tar czf /tmp/x.tgz -C {src} .\"` "
+                f"then `gu remote pull {m['name']} --src /tmp/x.tgz --dest ./x.tgz`.")
         dest = _resolve_pull_dest(src, dest)  # mkdir -p the local parent before SFTP get()
-        sftp.get(_strip_home(src), dest)
-        size = os.path.getsize(dest)
+        # Download to a temp SIBLING and rename on success. Writing straight to `dest`
+        # meant a failed transfer left a 0-byte file — and, worse, TRUNCATED an existing
+        # good file at that path before failing, destroying it. The destination is now
+        # never touched until the bytes are actually here.
+        tmp = f"{dest}.part-{os.getpid()}"
+        try:
+            sftp.get(remote, tmp)
+            size = os.path.getsize(tmp)
+            os.replace(tmp, dest)
+        except BaseException:
+            if os.path.exists(tmp):
+                try:
+                    os.unlink(tmp)
+                except OSError:
+                    pass
+            raise
     finally:
         client.close()
-    return {"command": "pull", "machine": m["name"], "src": src, "dest": dest, "bytes": size}
+    return {"command": "pull", "machine": m["name"], "src": src, "dest": dest,
+            "bytes": size, "ok": True}
 
 
 def cmd_scan_host(host: str, port: int) -> dict:
@@ -887,7 +1226,8 @@ def selftest() -> int:
     # job script: redirections + exit capture; --cwd changes only the command dir; webhook opt
     s = build_job_script("nvidia-smi", "job1", "", "")
     assert ") > stdout 2> stderr" in s and "echo $code > exit" in s, s
-    assert s.lstrip().startswith("("), "job body is a subshell so a user `exit N` is captured"
+    assert s.lstrip().startswith(PATH_PREFIX.strip()), "a job.sh gets ~/.local/bin too (R1730)"
+    assert s.splitlines()[1] == "(", "job body is a subshell so a user `exit N` is captured"
     assert "curl" not in s, "no webhook → no curl"
     assert "cd /data" in build_job_script("run", "j", "/data", ""), "cwd cd'd"
     assert "cd '/a b'" in build_job_script("run", "j", "/a b", ""), "cwd is shell-quoted"
@@ -912,6 +1252,244 @@ def selftest() -> int:
     assert os.path.isdir(os.path.dirname(nested)), "pull must mkdir -p the dest parent"
     got = _resolve_pull_dest("/remote/name.txt", td)
     assert got == os.path.join(td, "name.txt") and os.path.isdir(td), "existing-dir dest lands inside it"
+    # push of a DIRECTORY (R1413/R1420: one turn per file was the whole cost of syncing a folder)
+    tree = os.path.join(td, "personas")
+    os.makedirs(os.path.join(tree, "nested", "deep"))
+    for rel in ("a.txt", "b.txt", os.path.join("nested", "c.txt"),
+                os.path.join("nested", "deep", "d.txt")):
+        with open(os.path.join(tree, rel), "w", encoding="utf-8") as fh:
+            fh.write("x")
+    dirs, files = plan_push_tree(tree, "~/qa/personas")
+    assert dirs[0] == "qa/personas", dirs           # ~/ maps to the SFTP home, like push/pull
+    assert dirs == ["qa/personas", "qa/personas/nested", "qa/personas/nested/deep"], dirs
+    assert [r for _l, r in files] == ["qa/personas/a.txt", "qa/personas/b.txt",
+                                      "qa/personas/nested/c.txt",
+                                      "qa/personas/nested/deep/d.txt"], files
+    assert all("\\" not in r for _l, r in files), "remote paths are POSIX regardless of client"
+    # every dir BELOW the root is preceded by its parent, so nothing lands in a missing dir
+    # (the root's own parent is the pre-existing destination parent and is not ours to create)
+    for i, d in enumerate(dirs[1:], start=1):
+        assert d.rsplit("/", 1)[0] in dirs[:i], (d, dirs)
+    # a trailing slash on either side must not double up or lose the root
+    d2, f2 = plan_push_tree(tree + os.sep, "qa/personas/")
+    assert (d2, f2) == (dirs, files), (d2, f2)
+    # an empty directory still gets created remotely (its files are simply none)
+    empty = os.path.join(td, "empty")
+    os.makedirs(os.path.join(empty, "sub"))
+    de, fe = plan_push_tree(empty, "dst")
+    assert de == ["dst", "dst/sub"] and fe == [], (de, fe)
+    # THE message that misdescribed the cause: a missing path says "path", not "file"
+    try:
+        cmd_push({"name": "m"}, {}, os.path.join(td, "no-such-thing"), "d")
+    except RemoteError as exc:
+        assert "local path not found" in str(exc), exc
+    else:
+        raise AssertionError("a missing local path must be refused")
+    from unittest.mock import Mock, patch
+
+    # --- R1813: a timed-out exec REPORTS, carrying what the command already printed ---
+    fake = Mock()
+    held = ExecTimeout("SSH I/O timeout after 155s", "PID=4072019\n", "warming up\n")
+    with patch(__name__ + '.connect', return_value=fake), \
+            patch(__name__ + '._run', side_effect=held):
+        payload, code = cmd_exec({'name': 'fixture'}, {}, 'private command', 155, '')
+    assert code == 1 and payload['timed_out'] is True and payload['exit'] == -1, payload
+    assert payload['stdout'] == "PID=4072019\n", "partial output must survive the deadline"
+    assert payload['stderr'] == "warming up\n", payload
+    message = payload['error']
+    assert '--timeout 155s' in message and 'action timeout_s' in message, message
+    assert 'still be running' in message and 'remote submit' in message, message
+    assert 'private command' not in message, message
+    fake.close.assert_called_once()
+
+    # --- R1813/R1730: what `_run` actually ships, and when it stops reading ---
+    class _Chan:
+        """A channel whose command has exited while something still holds the pipes."""
+
+        def __init__(self, out=b"", err=b"", eof=False, code=0):
+            self._out, self._err, self.eof_received, self._code = out, err, eof, code
+            self.closed = False
+
+        def recv_ready(self):
+            return bool(self._out)
+
+        def recv(self, n):
+            chunk, self._out = self._out[:n], self._out[n:]
+            return chunk
+
+        def recv_stderr_ready(self):
+            return bool(self._err)
+
+        def recv_stderr(self, n):
+            chunk, self._err = self._err[:n], self._err[n:]
+            return chunk
+
+        def exit_status_ready(self):
+            return True
+
+        def recv_exit_status(self):
+            return self._code
+
+        def close(self):
+            self.closed = True
+
+    class _Client:
+        def __init__(self, chan):
+            self.chan, self.sent = chan, ""
+
+        def exec_command(self, command, timeout=None):
+            self.sent = command
+            return None, Mock(channel=self.chan), Mock(channel=self.chan)
+
+    chan = _Chan(out=b"PID=4072019\n", eof=False)      # a launcher subshell still holds the fds
+    client = _Client(chan)
+    code, out, err = _run(client, "nohup ./train.sh &", 30, cwd="~/video2funscript")
+    assert client.sent.startswith(PATH_PREFIX), client.sent
+    assert "|| exit 1;" in client.sent and "&&" not in client.sent, client.sent
+    assert code == 0 and out == "PID=4072019\n", (code, out)
+    assert "left a process holding" in err and "nohup" in err, err   # names the trap, no hang
+    assert chan.closed, "the channel must be released"
+    quiet = _Client(_Chan(out=b"done\n", eof=True))
+    code, out, err = _run(quiet, "echo done", 30)
+    assert (code, out, err) == (0, "done\n", ""), (code, out, err)   # EOF: no note, no noise
+
+    # --- R1813: ONE clock. The SSH deadline follows the engine's own budget for this call ---
+    os.environ["RSCHED_UTIL_TIMEOUT_S"] = "120"
+    assert default_exec_timeout() == 120 - EXEC_TIMEOUT_MARGIN_S, default_exec_timeout()
+    os.environ["RSCHED_UTIL_TIMEOUT_S"] = "not-a-number"
+    assert default_exec_timeout() == DEFAULT_EXEC_TIMEOUT_S
+    del os.environ["RSCHED_UTIL_TIMEOUT_S"]
+    assert default_exec_timeout() == DEFAULT_EXEC_TIMEOUT_S
+
+    # --- R1618: `cancel` must report what it ACHIEVED, never what it intended ---
+    # It used to send one SIGTERM and echo "cancelled" on kill's exit code alone, so a
+    # job that traps TERM (or outlives its group leader) kept running — and kept billing
+    # a metered API — while the caller was told it had stopped, with its queue ticket
+    # still held so nothing else could start.
+    _saved_connect, _saved_run = connect, _run
+    try:
+        class _C:
+            def close(self): pass
+        globals()["connect"] = lambda *a, **k: _C()
+        _seen = {}
+
+        def _mk(out):
+            def _fake(client, command, timeout, cwd=""):
+                _seen["cmd"] = command
+                return 0, out, ""
+            return _fake
+
+        _mach = {"name": "box", "root": "/srv/x"}
+        for _out, _ok in (("cancelled", True),
+                          ("cancelled (SIGKILL)", True),
+                          ("not running", True),
+                          ("still_running pgid=4072019", False)):
+            globals()["_run"] = _mk(_out)
+            _p = cmd_cancel(_mach, {}, "j1")
+            assert _p["ok"] is _ok, ("cancel reported the wrong outcome", _out, _p)
+            if not _ok:
+                assert "STILL RUNNING" in _p["error"] and "j1" in _p["error"], _p
+                assert "ticket" in _p["error"], "a survivor still holds its queue ticket"
+        _snip = _seen["cmd"]
+        assert "kill -TERM" in _snip and "kill -KILL" in _snip, "must escalate TERM → KILL"
+        assert _snip.count("kill -0") >= 2, "must RE-CHECK the group, not trust the signal"
+
+        # --- R1496: --tail is BYTES; --tail-lines must really switch to lines ---
+        globals()["_run"] = _mk("===STDOUT===\nx\n===STDERR===\ny")
+        cmd_logs(_mach, {}, "j1", 8000, 0)
+        assert "tail -c 8000" in _seen["cmd"], ("--tail must stay BYTES", _seen["cmd"])
+        cmd_logs(_mach, {}, "j1", 8000, 25)
+        assert "tail -n 25" in _seen["cmd"], ("--tail-lines must select LINES", _seen["cmd"])
+        assert "tail -c" not in _seen["cmd"], "line mode must not also pass a byte cap"
+    finally:
+        globals()["connect"], globals()["_run"] = _saved_connect, _saved_run
+
+    # --- R1491: `pull` on a directory, and never destroying the destination ---
+    # It used to call sftp.get() straight on the source: a remote DIRECTORY raised a bare
+    # OSError naming neither path nor reason, AFTER the local file had been created —
+    # a 0-byte artefact that reads like a real empty download. Worse, writing straight to
+    # `dest` TRUNCATED an existing good file at that path before failing.
+    import stat as _st
+    import tempfile as _tf
+
+    class _Stat:
+        def __init__(self, mode): self.st_mode = mode
+
+    class _SFTP:
+        def __init__(self, mode, fail=False): self.mode, self.fail = mode, fail
+        def stat(self, _p): return _Stat(self.mode)
+        def get(self, _r, local):
+            open(local, "w").close()              # paramiko creates the local file first
+            if self.fail:
+                raise OSError("Failure")
+            with open(local, "w") as fh:
+                fh.write("REALDATA")
+
+    class _Client:
+        def __init__(self, s): self._s = s
+        def open_sftp(self): return self._s
+        def close(self): pass
+
+    _saved_connect2 = connect
+    try:
+        _d = _tf.mkdtemp()
+        _mach2 = {"name": "box", "root": "/srv/x"}
+
+        globals()["connect"] = lambda *a, **k: _Client(_SFTP(_st.S_IFDIR | 0o755))
+        _p = os.path.join(_d, "out.bin")
+        try:
+            cmd_pull(_mach2, {}, "/data/ckpt", _p)
+            raise AssertionError("pull on a DIRECTORY must fail, not return")
+        except RemoteError as exc:
+            assert "DIRECTORY" in str(exc) and "/data/ckpt" in str(exc), exc
+            assert "tar" in str(exc), "the error must teach the working call"
+        assert not os.path.exists(_p), "a refused pull must leave NO local file"
+
+        globals()["connect"] = lambda *a, **k: _Client(_SFTP(_st.S_IFREG | 0o644, fail=True))
+        _keep = os.path.join(_d, "keep.bin")
+        with open(_keep, "w") as fh:
+            fh.write("precious")
+        try:
+            cmd_pull(_mach2, {}, "/data/f.bin", _keep)
+            raise AssertionError("a failing transfer must raise")
+        except OSError:
+            pass
+        with open(_keep) as fh:
+            assert fh.read() == "precious", "a FAILED pull destroyed the existing file"
+        assert not [f for f in os.listdir(_d) if ".part-" in f], "temp file left behind"
+
+        globals()["connect"] = lambda *a, **k: _Client(_SFTP(_st.S_IFREG | 0o644))
+        _ok = cmd_pull(_mach2, {}, "/data/f.bin", os.path.join(_d, "ok.bin"))
+        assert _ok["bytes"] == 8 and _ok["ok"] is True, _ok
+        assert not [f for f in os.listdir(_d) if ".part-" in f], "temp file left on success"
+    finally:
+        globals()["connect"] = _saved_connect2
+
+    # --- status mapping (R1629, R1698). The whole value of `status` is that a caller can
+    # tell these apart; when everything without an exit file read as `running`/`started`,
+    # a queued job and a payload that died instantly were both indistinguishable from
+    # healthy execution. Each token the on-box snippet can emit is pinned here.
+    assert _decode_status("exit=0") == {"state": "done", "exit": 0}
+    assert _decode_status("exit=137")["exit"] == 137
+    _run_st = _decode_status("running")
+    assert _run_st["state"] == "running" and _run_st["started"] is True, _run_st
+    _q = _decode_status("queued=1")
+    assert _q["state"] == "queued", "a queued job must NOT read as running/started"
+    assert _q["started"] is False, _q
+    _q3 = _decode_status("queued=3 ahead")
+    assert _q3["state"] == "queued" and _q3["queue_note"] == "3 ahead", _q3
+    _p = _decode_status("pending")
+    assert _p["state"] == "pending" and _p["started"] is False, _p
+    _s = _decode_status("stopped")
+    assert _s["state"] == "stopped" and _s["started"] is False and _s["ran"] is True, _s
+    assert _decode_status("nojob")["state"] == "nojob"
+    # the on-box snippet must actually be able to emit every token the decoder handles,
+    # or the mapping is dead code that tests itself
+    import inspect as _inspect
+    _snip = _inspect.getsource(cmd_status)
+    for _tok in ("queued=", "echo stopped", "echo pending", "echo running", "echo nojob"):
+        assert _tok in _snip, f"status snippet can never emit {_tok!r}"
+
     selftest_queue()
     print("selftest: ok", file=sys.stderr)
     return 0
@@ -1054,7 +1632,11 @@ def main() -> int:
 
     leaf("list", help="machines this routine can reach")
     sp = leaf("exec", help="run a command and wait")
-    sp.add_argument("--command", required=True); sp.add_argument("--timeout", type=int, default=120)
+    sp.add_argument("--command", required=True)
+    sp.add_argument("--timeout", type=int, default=default_exec_timeout(),
+                    help="SSH I/O deadline in seconds (defaults to this call's own action "
+                         "timeout_s, less a margin, so the timeout is REPORTED with its "
+                         "partial output instead of the util being killed)")
     sp.add_argument("--cwd", default="")
     sp = leaf("submit", help="start a detached job")
     sp.add_argument("--command", required=True); sp.add_argument("--cwd", default="")
@@ -1070,7 +1652,10 @@ def main() -> int:
     for name in ("status", "logs", "cancel"):
         sp = leaf(name); sp.add_argument("--job", required=True)
         if name == "logs":
-            sp.add_argument("--tail", type=int, default=8000, help="max bytes per stream")
+            sp.add_argument("--tail", type=int, default=8000,
+                            help="max BYTES per stream (default 8000)")
+            sp.add_argument("--tail-lines", type=int, default=0, dest="tail_lines",
+                            help="last N LINES per stream instead of bytes")
     for name in ("push", "pull"):
         sp = leaf(name, help="upload/download a file (SFTP)")
         sp.add_argument("--src", required=True); sp.add_argument("--dest", required=True)
@@ -1096,6 +1681,8 @@ def main() -> int:
             m = _pick(machines, args.machine)
             if args.op == "exec":
                 payload, exit_code = cmd_exec(m, keys, args.command, args.timeout, args.cwd)
+                if payload.get("timed_out"):
+                    print(payload["error"], file=sys.stderr)
             elif args.op == "submit":
                 payload = cmd_submit(m, keys, args.command, args.cwd, args.webhook,
                                      deadline_h=args.deadline_h, est_min=args.est_min)
@@ -1104,9 +1691,15 @@ def main() -> int:
             elif args.op == "status":
                 payload = cmd_status(m, keys, args.job)
             elif args.op == "logs":
-                payload = cmd_logs(m, keys, args.job, args.tail)
+                payload = cmd_logs(m, keys, args.job, args.tail,
+                                   getattr(args, "tail_lines", 0))
             elif args.op == "cancel":
                 payload = cmd_cancel(m, keys, args.job)
+                if payload.get("ok") is False:
+                    # R1618: a control verb that could not achieve what it was asked to
+                    # do must FAIL, not return 0 with a quiet field nobody reads.
+                    print(payload["error"], file=sys.stderr)
+                    exit_code = 1
             elif args.op == "push":
                 payload = cmd_push(m, keys, args.src, args.dest)
             elif args.op == "pull":

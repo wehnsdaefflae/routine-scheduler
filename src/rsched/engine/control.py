@@ -10,7 +10,6 @@ next turn boundary.
 
 from __future__ import annotations
 
-import logging
 import time
 
 from .. import reports
@@ -21,8 +20,6 @@ from .actions import util_rejection_outcome, validate_action
 from .actionschema import ACTION_SCHEMA
 from .commands import CommandError, parse_command
 from .observations import format_observation, truncate
-
-log = logging.getLogger("rsched.engine")
 
 _ABORT = {"flag": False}
 
@@ -85,17 +82,39 @@ def inject_user_message(loop, m: dict) -> None:
     # ALL of them, not just the media the model can view (a csv is still linkable).
     ctx.transcript.event("user_injection", {
         "text": m["text"],
+        **({"report": True} if m.get("report") else {}),
         **({"attachments": m["attachments"]} if m.get("attachments") else {})})
-    if not m.get("report"):
-        ctx.user_replies += 1   # a delivered report is a routine's message, not the user's
-    # A delivered report already carries its own "REPORT <id> from routine <slug>" heading
-    # (reports.message_text) — labelling it a USER MESSAGE would name the wrong sender.
-    lead = ("REPORT (injected mid-run)" if m.get("report")
-            else "USER MESSAGE (injected mid-run)")
-    msg: dict = {"role": "user", "content": f"{lead}:\n{m['text']}"}
+    if inbox.user_authored(str(m.get("via") or "")):
+        # `user_replies` is "has the user spoken" — the create_routine confirm gate and the
+        # `user-spoke` assist predicate both read it. A report, a background result and a
+        # branch hand-back are machines delivering; the CHANNEL is what says so (inbox.VIAS).
+        ctx.user_replies += 1
+    msg: dict = {"role": "user",
+                 "content": injected_message(m["text"], report=bool(m.get("report")))}
     if m.get("attachments") and (media := mediaops.media_from_paths(ctx, m["attachments"])):
         msg["media"] = media
     loop.messages.append(msg)
+
+
+def injected_message(text: str, *, report: bool = False) -> str:
+    """One rendering for a mid-run injected message — live and replayed prompts must read
+    identically, or a resumed leg's prefix differs from the leg that wrote it and the whole
+    conversation is re-written to the provider instead of re-read from its cache.
+
+    A delivered report already carries its own "REPORT <id> from routine <slug>" heading
+    (reports.message_text) — labelling it a USER MESSAGE would name the wrong sender.
+    """
+    lead = "REPORT (injected mid-run)" if report else "USER MESSAGE (injected mid-run)"
+    return f"{lead}:\n{text}"
+
+
+def command_message(text: str, obs: dict) -> str:
+    """One rendering for a slash command AND its result — the single message the live path
+    appends, and the single message a replay must rebuild from the injection + observation
+    pair it was recorded as.
+    """
+    return ("USER COMMAND (the user executed this action directly):\n"
+            f"{text}\n{render_command_result(obs)}")
 
 
 def render_command_result(obs: dict) -> str:
@@ -138,9 +157,7 @@ def run_user_command(loop, m: dict) -> None:
     except Exception as exc:  # a failing command must never kill the run
         obs = {"kind": "user_command", "error": f"command failed: {exc}"}
     ctx.transcript.event("observation", {**obs, "user_command": True})
-    rendered = render_command_result(obs)
-    msg: dict = {"role": "user", "content":
-                 f"USER COMMAND (the user executed this action directly):\n{text}\n{rendered}"}
+    msg: dict = {"role": "user", "content": command_message(text, obs)}
     if obs.get("media"):  # a /view_image the model can show natively
         msg["media"] = obs["media"]
     loop.messages.append(msg)
@@ -204,52 +221,38 @@ def child_finished_message(*, mode: str, n: int, label: str, workflow: str, stat
     `collected` names the child's deliverables that the engine copied up. Without it a parent
     had to know the child's dir, search it and copy files out by hand — a procedure every
     routine reinvented, and one the spawn contract used to describe WRONGLY (R409/R410: it
-    claimed children share the parent's working directory; they never did).
+    claimed children share the parent's working directory; they never did). The shape is
+    `child.handback_text`, shared with the branch and background hand-backs, so one hand-back
+    reads one way whichever mode produced it.
     """
     head, _ = truncate(summary, cap=4000)
-    got = ("\nCollected from the child into your artifacts/: "
-           + ", ".join(collected) + " — read them from there; the child's own dir is gone "
-           "from your reach." if collected else "")
-    headline = (f"CHILD RUN FINISHED ({child.mode_noun(mode)}) — #{n} {label!r} "
-                f"(pattern {workflow}, status {status}, {turns} turns)")
-    if mode == child.SEQUENTIAL:
-        return (f"{headline}. Fold this result into your next child run's brief, or "
-                f"finish:\n{head}{got}")
-    return f"{headline}:\n{head}{got}"
+    return child.handback_text(
+        headline=(f"CHILD RUN FINISHED ({child.mode_noun(mode)}) — #{n} {label!r} "
+                  f"(pattern {workflow}, status {status}, {turns} turns)"),
+        summary=head, paths=collected,
+        follow_on=("Fold this result into your next child run's brief, or finish."
+                   if mode == child.SEQUENTIAL else ""))
 
 
 def collect_child_artifacts(sub) -> tuple:
-    """Copy a finished child's deliverables into the PARENT's artifacts/, namespaced by the
-    child's number, and return the parent-relative paths — the HAND-BACK half of the child-run
-    contract (engine/child.py, F338).
+    """This mode's call into the shared hand-back (`child.collect_handback`): a finished
+    child's deliverables copied into the PARENT's artifacts/, namespaced by the child's number.
 
     The convention is the one the rest of the system already uses: a child writes what it is
     handing back into its own `artifacts/`, exactly as a detached background task does
-    (daemon/detached.py `_copy_artifacts`) and exactly what the Artifacts panel lists. Nothing
-    new to declare, no action-schema change — a child that writes nothing hands back only its
-    summary, as before.
+    (daemon/detached_delivery.copy_artifacts) and exactly what the Artifacts panel lists.
+    Nothing new to declare, no action-schema change — a child that writes nothing hands back
+    only its summary, as before.
 
     Isolation is preserved on purpose: children keep their own dirs (childrun.py), so
     concurrent siblings never race a shared tree; this is the hand-back that isolation was
-    missing. Best-effort — a copy failure must never turn a finished child into a failed one.
+    missing.
     """
-    import shutil
-
-    src = sub.ctx.routine.dir / "artifacts"
-    if not src.is_dir() or not any(src.iterdir()):
-        return ()
     parent_dir = sub.parent_dir
     if parent_dir is None:
         return ()          # a child built outside the normal path collects nothing
-    rel = child.handback_dirname(sub.n)
-    dst = parent_dir / rel
-    try:
-        shutil.copytree(src, dst, dirs_exist_ok=True)
-    except OSError as exc:
-        log.warning("subrun %s: could not collect artifacts: %s", sub.n, exc)
-        return ()
-    return tuple(sorted(f"{rel}/{p.relative_to(dst).as_posix()}"
-                        for p in dst.rglob("*") if p.is_file()))
+    return child.collect_handback(sub.ctx.routine.dir / "artifacts", parent_dir,
+                                  child.SUB, sub.n)
 
 
 def announce_finished_subruns(loop) -> None:

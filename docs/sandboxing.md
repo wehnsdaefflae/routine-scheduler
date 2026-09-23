@@ -25,9 +25,10 @@ jailed) plus **scoped secrets injection**. Three cooperating layers:
   and lacks the ABI-4 network rules; evaluated 2026-07-17.)
 - `rsched/sandbox.py` — the policy layer: derives the visible filesystem from the run,
   decides strict/permissive/off, assembles the spec, wraps the command.
-- `rsched/utils_lib.py` — the dispatch seam: every `run_util` call (the `util` action,
+- `rsched/utils_run.py` — the dispatch seam: every `run_util` call (the `util` action,
   the vision fallback, `write_util` selftests, the web Library editor's selftest, the
-  notify channel) takes a `SandboxPolicy` and builds the scoped environment. Its two
+  machine-queue reader and the Settings → Machines probe) takes a `SandboxPolicy` and
+  builds the scoped environment. Its two
   siblings pass the SAME policy through the same `sandbox.wrap`: `rsched/scripts.py`
   (`fs_roots=True`, the script's declared `net:`, its declared secrets) and
   `rsched/shellrun.py` (`fs_roots=True`, network open, **no secret at all** — a shell
@@ -38,6 +39,14 @@ jailed) plus **scoped secrets injection**. Three cooperating layers:
   jail byte-for-byte where it was. What changed is only what can GENERATE the call: a
   gated kind is projected out of the schema, where `capabilities.utils` was an exception
   list that gated 6 of 114 utils.
+
+  The three kinds compose three different jails and run ONE process: `utils_run.run_jailed`
+  — own process group (so a `uv run` grandchild dies with its deadline instead of holding
+  the engine turn open forever), tempfile capture read through `captured_output.read_capped`
+  at a single 1 MB envelope, and whatever was printed before a kill is kept. Hand-copying
+  it cost both of the other two a protection: the script kind ran a plain `subprocess.run`
+  with no process group, and the shell kind read its whole capture tempfile back into the
+  daemon's memory — the failure its own comment said the spool file prevented.
 
 ## What a util can see
 
@@ -57,9 +66,21 @@ call, live run included:
 - **invisible** — everything else. In particular the daemon user's HOME:
   `~/.config/routine-scheduler` (config + the central secrets store), `~/.credentials`,
   `~/.ssh`, browser profiles, other apps' data. `~/.ssh` stays invisible even for the
-  remote-machine feature: a bound machine's private key comes from the Secrets store
-  (injected only into the `remote` util, declared-var gated), never from disk — see
-  [remote-machines](remote-machines.md).
+  remote-machine feature: a bound machine's private key comes from the Secrets store, never
+  from disk, and reaches only a util that DECLARES those vars — the reserved `remote` util
+  and, transitively, any util whose `calls:` line names it — one call tree, one env, so a
+  sibling that names a credential-carrying util inherits its credentials and must be gated
+  with it — see [remote-machines](remote-machines.md).
+
+  Invisible **because no grant covers them**, not because the jail knows their names: the jail
+  mounts what the run was granted, so a routine granted one of those directories as a folder
+  root sees it like any other util root. `entities.NEVER_GRANTABLE` is what makes that grant
+  impossible — and it was enforced on ONE path, a run's runtime access request, leaving the
+  operator's own Filesystem-roots panel wide open. It is now refused at the PATCH edge, and a
+  file that already carries one is REPORTED by the config loader rather than silently stripped:
+  two live routines audit and export the server's own configuration as their job, and a root
+  that vanished from under their next run would fail them with nothing naming the cause. A
+  routine still listing one says so on its page and in `rsched validate`.
 
 Known tradeoffs, accepted and documented: `/proc` is readable (headless chromium needs
 it), so keep secrets out of the daemon's environment — the compose file already prefers
@@ -76,7 +97,18 @@ TCP-only — honest, not oversold. It also cannot restrict a *destination*: the 
 per-port, and the spec carries `net` as a bool, so `outbound` means the whole internet. A
 capability that must egress a particular way — `darknet`, which has to reach Tor and nothing
 else — gets that property from the util's own code, not the kernel (see
-[darknet](darknet.md)). Sibling calls resolve transitively: `util_needs` walks
+[darknet](darknet.md)).
+
+That bool is the widest hole left in this boundary, and it is not theoretical: the engine
+container shares a docker network with the headful Chrome sidecar, whose DevTools port (9222)
+and noVNC screen (6080) have no authentication of their own — by design, because neither
+protocol has any. `browser-session` is a RESERVED util behind the `browser-sessions`
+permission, but the gate is on the action, not on the socket, so every `net: outbound` util
+and every `shell` command reaches those ports directly. Closing it needs `net:` to carry a
+destination term (an allowlisted port set, which Landlock ABI 4 does express) so that
+reaching the browser becomes a declaration only the reserved utils make; until then the
+boundary around a signed-in browser is the docker network, and the deployment has to put
+something in front of the port. Sibling calls resolve transitively: `util_needs` walks
 the `calls:` graph, so a util calling a `net: outbound` sibling gets (and needs) the open
 network, and inherits the sibling's declared secrets.
 
@@ -97,6 +129,12 @@ The same header declares what the util needs to SEE, on the same terms as `net:`
 **Undeclared = none — fail closed**, and `header_problems` rejects a util without the line.
 Entries combine (`fs: roots, rw $SIGNAL_SESSION_DIR`), and they resolve transitively over
 `calls:` exactly as secrets and network do.
+
+Because they resolve transitively, a `calls:` edge is also a CAPABILITY question, not only a
+jail one: naming a reserved sibling hands the caller that sibling's jail terms and its
+engine-injected credentials. `rsched/utilgate.py` therefore walks the tree and refuses a call
+reaching a gated util the routine does not hold — see
+[rules-permissions](rules-permissions.md) § The gate follows `calls:` too.
 
 ### A declaration only ever subtracts
 
@@ -125,6 +163,24 @@ The routine's OWN directory is held apart from all of this (`SandboxPolicy.own_d
 working directory relative paths resolve against, not a grant to be narrowed, so every util
 keeps it whatever its `fs:` line says.
 
+### `routine.yaml` is sealed at the action layer, not by the jail
+
+"A run never writes its own config" is enforced three times on the ACTION path
+(`grantpolicy`, `fileops._write_gate`, `grants`) and **nowhere in the kernel**. It cannot be:
+`routine.yaml` sits in the routine's own directory, that directory must be mounted
+read-write, and Landlock unmasks access UP the path — a narrower rule on one file beneath an
+allowed directory subtracts nothing. So a `shell` heredoc, a script, or any `fs: roots` util
+handed a payload can write the file that `write_file path=routine.yaml` is refused for, and
+the change takes effect at the NEXT run's boot.
+
+What the system does instead is refuse to let that be silent: `run_jailed` reads
+`routine.yaml` either side of every jailed call and, when it moved, appends a line to the
+call's stderr naming it and logs a warning. Detection, not prevention — and deliberately not
+a revert, because the operator's own PATCH is a legitimate concurrent writer of that file (a
+Decisions-page *approve & apply* reaches a live run by design). Treat a routine holding
+`shell` or `script` as able to widen its own config by one run's delay; the capability, not
+the jail, is the decision.
+
 ## Secrets — declared-only injection (every mode)
 
 `_child_env` injects from the stores ONLY the vars the util (or a `calls:`
@@ -147,9 +203,20 @@ everything else. An **OPTIONAL** secret
 (declared `NAME?`, D51/F290 — it backs a feature most calls don't use, like page-fetch's
 Basic auth) never files that request: not granted → it is WITHHELD from the child env and
 the util observation says so, so a public call runs prompt-free and an auth-needing one
-requests exposure explicitly (`ask_user` with `request: "secret:NAME"`). Blast radius
-after both layers: a prompt-injected util can leak at most its own declared secrets, not
-the store.
+requests exposure explicitly (`ask_user` with `request: "secret:NAME"`). Optionality has ONE
+precedence: a `?` on the util the run CALLED wins over a required declaration in a util it
+`calls:`, because only the called util knows whether the path reaching that sibling is taken
+(a scorer requires its own key; a util that scores only under one flag marks the key optional
+and runs prompt-free without it). Between two siblings the strict rule stands — one required
+declaration makes the name required. The same rule applies to a per-routine script's
+`calls:` tree. Blast radius after both layers: a prompt-injected util can leak at most its
+own declared secrets, not the store.
+
+Three NON-secret vars ride along for every util and script: `PATH` (the library root, so
+`gu <sibling>` resolves), `GLOBAL_UTILS_HOME`, and `RSCHED_UTIL_TIMEOUT_S` — the deadline
+this call was given. A util that waits on something slow sets its own timeout inside that
+budget and reports what it captured; one that lets the budget expire is killed with its
+process group and reports nothing (docs/authoring.md § the util env).
 
 **Never run `uv` in the container as root.** `docker exec` defaults to root, and uv creates a
 per-script environment under `~/.cache/uv` at every util call — so one root-run `uv` leaves
@@ -183,10 +250,3 @@ unblocks the recreate (`interact.recreate_denial`, probe: `utils_lib.was_deleted
 deliberately with no allow-forever, so a fresh deletion always outranks an old grant. Any prior deletion counts — the web UI is the only deliberate
 delete path, so every deletion is user intent. The boot seed-sync obeys the same rule:
 a user-deleted seed util is never resurrected (`bootstrap.sync_seed_utils`).
-
-## Migration (one-shot, expires 2026-08-17)
-
-`bootstrap.migrate_util_headers` runs at daemon boot until deleted: pre-sandbox utils
-gain `net: outbound` (behavior-preserving — tighten per util from there), `calls:` lines
-seeded from literal `["gu", "<name>"` invocations, and undeclared credential env vars
-appended to `secrets:`. Idempotent; committed to the library repo once.

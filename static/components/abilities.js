@@ -281,7 +281,17 @@ export function abilitiesPanel(permissions, capabilities, opts = {}) {
              fromDomain ? el("span", { class: "muted" }, ` from domain “${doc.inherited}”`) : ""),
           effectLine(doc, true)),
         badge),
-      rows.length ? el("ul", { class: "ability-stack" }, ...rows.map(stackRow)) : null,
+      // A READY card's stack is confirmation of what its badge already said, and eleven of them
+      // in a three-column grid is a screen and a half of settled requirements. It folds — and
+      // ONLY when nothing is outstanding: a card that will fail or needs a decision keeps every
+      // row in front of the reader, which is what the card view was built for. A fix link from
+      // the setup check still lands inside, because jumpToSection opens every <details> on the
+      // way down.
+      !rows.length ? null
+        : bad ? el("ul", { class: "ability-stack" }, ...rows.map(stackRow))
+        : el("details", { class: "ability-more" },
+            el("summary", {}, `${rows.length} requirement${rows.length === 1 ? "" : "s"} · all met`),
+            el("ul", { class: "ability-stack" }, ...rows.map(stackRow))),
       el("div", { class: "ability-foot" }, doc_.btn), doc_.body);
     marks.push({ slug: doc.slug, node, box });
     return node;
@@ -318,7 +328,7 @@ export function abilitiesPanel(permissions, capabilities, opts = {}) {
     if (on.length) {
       host.append(el("div", { class: "abilities" }, ...on.map(card)));
     } else {
-      host.append(el("div", { class: "muted small" },
+      host.append(el("div", { class: "set-desc muted small" },
         "this routine holds no conduct permissions — it can read, write in its own dir and "
         + "call ungated utils, nothing more"));
     }
@@ -328,10 +338,19 @@ export function abilitiesPanel(permissions, capabilities, opts = {}) {
     // case, which is the one case the card is most about.
     host.append(orphanSlot);
     if (off.length) {
-      host.append(el("div", { class: "lbl mt" }, `Available · ${off.length}`),
-        el("div", { class: "muted small", style: "margin:-4px 0 8px" },
+      const avail = [
+        el("div", { class: "set-desc muted small", style: "margin:-4px 0 8px" },
           "switching one on switches on the capabilities it needs; it moves up once saved"),
-        el("div", { class: "avail" }, ...off.map(availableRow)));
+        el("div", { class: "avail" }, ...off.map(availableRow)),
+      ];
+      // Fourteen cards of what this routine does NOT hold, each with its own ON/OFF/WHEN lines,
+      // is ~5 000px on a phone — between the held set and the save button. Every line is kept;
+      // on a narrow screen the list is a disclosure. Wide, it stays open: there the held set and
+      // the catalogue are read together, and a setup-check fix link lands straight on a card.
+      host.append(window.matchMedia("(min-width: 861px)").matches
+        ? el("div", {}, el("div", { class: "lbl mt" }, `Available · ${off.length}`), ...avail)
+        : el("details", { class: "mt avail-fold" },
+            el("summary", { class: "lbl" }, `Available · ${off.length}`), ...avail));
     }
     repaint();
   }

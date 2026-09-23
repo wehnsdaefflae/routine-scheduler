@@ -45,10 +45,11 @@ OAuth has two halves that live in different places, because a routine run is hea
   the connection. The Settings tab polls the flow until the callback reports `connected`.
 - **`daemon/oauth_refresh.py`** — `OAuthRefreshManager`, ticked from the scheduler loop. It refreshes
   any *expiring*-provider connection within ~5 min of expiry, persists a rotated `refresh_token`, and
-  on a provider rejection flags the connection `needs_reauth` and notifies through `notify.py`. A
+  on a provider rejection flags the connection `needs_reauth`, which badges it in Settings →
+  Connections — the console record IS the notification, and no implicit outbound send exists. A
   no-op for non-expiring providers (Notion), so a Notion-only instance never touches it.
 - **Engine injection** — `executor.do_util` resolves the routine's bound connections to
-  `{<PROVIDER>_ACCESS_TOKEN: token}` and passes them to `utils_lib.run_util` as `extra_secrets`.
+  `{<PROVIDER>_ACCESS_TOKEN: token}` and passes them to `utils_run.run_util` as `extra_secrets`.
   `_child_env` injects each **only if the util declares the var** in its `secrets:` line — the same
   declared-only rule store secrets obey, extended to these engine-provided tokens. So the token
   reaches a util iff (routine binds the connection) AND (the util declares the var). A run may

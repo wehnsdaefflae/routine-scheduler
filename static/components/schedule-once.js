@@ -7,7 +7,7 @@
 
 import { api } from "/static/api.js";
 import { confirmDialog } from "/static/components/dialog.js";
-import { el, toast, when } from "/static/util.js";
+import { el, toast, toastError, when } from "/static/util.js";
 
 export function scheduleOnceCard(slug) {
   const body = el("div", { class: "oneshot-body" });
@@ -22,7 +22,7 @@ export function scheduleOnceCard(slug) {
 
   async function refresh() {
     try { render(await api(`/api/routines/${slug}/schedule-once`)); }
-    catch (err) { toast(err.message, 4000, { error: true }); }
+    catch (err) { toastError(err); }
   }
 
   function render(d) {
@@ -67,7 +67,7 @@ export function scheduleOnceCard(slug) {
         { method: "POST", body: { fire_at: iso, reason: reason.value || "" } });
       toast("one-shot armed");
       refresh();
-    } catch (err) { toast(err.message, 4000, { error: true }); }
+    } catch (err) { toastError(err); }
   }
 
   async function cancel(o) {
@@ -77,6 +77,6 @@ export function scheduleOnceCard(slug) {
       await api(`/api/routines/${slug}/schedule-once/${o.id}`, { method: "DELETE" });
       toast("one-shot cancelled");
       refresh();
-    } catch (err) { toast(err.message, 4000, { error: true }); }
+    } catch (err) { toastError(err); }
   }
 }

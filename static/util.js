@@ -209,6 +209,25 @@ export function skeleton(rows = ["40%", "100%", "100%", "65%"]) {
     rows.map((w) => el("div", { class: "skel", style: `width:${w}` })));
 }
 
+/** The caption over a group of decisions or proposals: the NOUN, its COUNT, and — on a line of
+ *  its own — the sentence that says what the group IS.
+ *
+ *  It used to be one tracked-uppercase sentence: "LIBRARY DRIFT — A LIBRARY CHANGE BROKE A
+ *  ROUTINE THAT HOLDS IT; THE FIX IS ON THE ROUTINE" took three lines at 390px, and the flex
+ *  spacer stranded the count beside line two, so the one number that matters was detached from
+ *  its noun and the explainer was read as a heading every time.
+ *
+ *  `waits` is what the count means: coral is the console's one colour for something waiting on
+ *  a PERSON, and an unconditional coral count put it on "Settled — what you answered", the one
+ *  group that needs nobody.
+ */
+export function groupHead(noun, count, explain, { waits = true } = {}) {
+  return el("div", { class: "q-group-head" },
+    el("span", {}, noun),
+    el("span", { class: `q-group-count${waits ? "" : " settled"}` }, String(count)),
+    explain ? el("span", { class: "q-group-why" }, explain) : null);
+}
+
 export function emptyState(glyph, title, detail) {
   return el("div", { class: "empty" },
     el("span", { class: "glyph", "aria-hidden": "true" }, glyph),
@@ -251,6 +270,16 @@ export function toast(msg, ms = 2600, { error = false } = {}) {
   }
 }
 
+/** The failure half of `toast`, with one duration for the whole console.
+ *
+ *  `toastError(err)` was hand-written 124 times across 36 files,
+ *  with the duration drifting between 3000 and 6000 — so "how long does a failure stay on
+ *  screen" had no answer, and anything one wanted to add to a failure (the failing path, a
+ *  retry offer) had to be added 124 times. */
+export function toastError(err, ms = 4000) {
+  toast(err && err.message ? err.message : String(err), ms, { error: true });
+}
+
 // D78-A: an edit made WHILE a run is active is accepted and QUEUED (applied at run end)
 // rather than bounced with a 409 busy toast. When the endpoint response says so
 // (`{queued:true}`), tell the operator it will land at run end; otherwise show the normal
@@ -260,6 +289,33 @@ export function queuedToast(res, savedMsg) {
     toast("a run is active — queued, applies when it ends");
   } else {
     toast(savedMsg);
+  }
+}
+
+/** Run one button's action: disable it, await `fn`, toast the outcome, re-enable.
+ *
+ *  This shape — `btn.disabled = true; try { await api(…); toast(ok) } catch (err)
+ *  { toast(err.message, …, {error:true}) }` — is written out at ~40 save buttons, and the
+ *  hand copies disagree: some never disable at all, so a double-click sends the save twice;
+ *  some re-enable only on the failure path, so a successful save leaves the button dead.
+ *  Here the re-enable rides `finally`, which is the only way it cannot be forgotten.
+ *
+ *  `okMsg` is the success line; when the endpoint answers `{queued:true}` (D78-A, an edit
+ *  made while a run is active) the queued wording wins, because every save that can be
+ *  queued must say so. Returns the handler's value, or undefined when it threw — a caller
+ *  that must know the difference should await `api()` itself. */
+export async function act(btn, fn, okMsg) {
+  const buttons = Array.isArray(btn) ? btn : [btn];
+  for (const b of buttons) b.disabled = true;
+  try {
+    const res = await fn();
+    if (okMsg) queuedToast(res, okMsg);
+    return res;
+  } catch (err) {
+    toastError(err);
+    return undefined;
+  } finally {
+    for (const b of buttons) b.disabled = false;
   }
 }
 

@@ -38,9 +38,10 @@ def _covering_docs(server, cls: str, name: str) -> list[str]:
     enough to carry it through the floor. Falls back to the canonical source for gated
     kinds the library predates (the same fallback floor_capabilities honors).
     """
-    from ..grants import _DEFAULT_KIND_SOURCE, read_library_requires, split_util_verb
+    from ..grants import _DEFAULT_KIND_SOURCE, split_util_verb
+    from ..readmodels import library_reads
 
-    lib = read_library_requires(server.permissions_home)
+    lib = library_reads.requires(server.permissions_home)
     docs = []
     for slug, req in lib.items():
         if ((cls == "action" and name in (req.get("actions") or []))
@@ -56,10 +57,19 @@ def _covering_docs(server, cls: str, name: str) -> list[str]:
     return sorted(docs)[:1]
 
 
-def _apply_capability(server, raw: dict, cls: str, name: str) -> None:
+def _apply_capability(server, raw: dict, cls: str, name: str,
+                      inherited: list[str]) -> None:
     """Fold one capability entity into the two permission layers, exactly as the routine
     page's save does: activate a covering conduct doc, raise the capabilities mapping,
     then floor it — so the saved mapping can never contradict the held permissions.
+
+    `inherited` is what this routine holds through its DOMAIN (D82). Those docs RAISE
+    nothing here either, but they count for the FLOOR, for the reason
+    `resolve_permission_layers` states: a capability a domain's doc legitimately covers is
+    not an orphan, and flooring it away writes an explicit "off" that then shadows the
+    domain forever. Without it, answering one access request could drop a capability the
+    click never mentioned — the member's `signal:read`, covered only by the domain's
+    `messaging-signal`, disappearing behind an `action:memory_write` allow-forever.
     """
     from ..grants import (
         REMINDER_LEVELS,
@@ -67,8 +77,8 @@ def _apply_capability(server, raw: dict, cls: str, name: str) -> None:
         capabilities_for,
         floor_capabilities,
         normalize_capabilities,
-        read_library_requires,
     )
+    from ..readmodels import library_reads
 
     docs = _covering_docs(server, cls, name)
     if not docs:
@@ -92,7 +102,8 @@ def _apply_capability(server, raw: dict, cls: str, name: str) -> None:
         current = base.get("reminders") or "none"
         if REMINDER_LEVELS.index(name) > REMINDER_LEVELS.index(current):
             base["reminders"] = name
-    lib = read_library_requires(server.permissions_home)
+    lib = library_reads.requires(server.permissions_home)
+    floor_docs = [*active, *inherited]
     raw["permissions"] = active
     if cls == "util":
         # D97=B (user decision 2026-08-20, F360): a forever-grant for ONE util activates
@@ -103,14 +114,14 @@ def _apply_capability(server, raw: dict, cls: str, name: str) -> None:
         # four personal messengers + chat/messaging tags (commits 30e1894, df2b944).
         # The routine page's full permission save keeps the raise — that surface SHOWS
         # the whole class before writing it.
-        raw["capabilities"] = floor_capabilities(active, lib, base)
+        raw["capabilities"] = floor_capabilities(floor_docs, lib, base)
     else:
         raised = capabilities_for(active, lib, base)
         # Access decisions are not full permission-editor saves. Previously activated
         # conduct docs may cover only a narrowly granted util, not their whole class.
         raised["utils"] = base.get("utils", [])
         raised["util_tags"] = base.get("util_tags", [])
-        raw["capabilities"] = floor_capabilities(active, lib, raised)
+        raw["capabilities"] = floor_capabilities(floor_docs, lib, raised)
 
 
 def apply_forever(server, routine_dir: Path, ids: list[str],
@@ -124,10 +135,14 @@ def apply_forever(server, routine_dir: Path, ids: list[str],
     if decision == "deny_forever":
         record_grants(routine_dir, dict.fromkeys(ids, False))
         return {}
+    from ..config.domainconfig import domain_config_for
+
     path = routine_dir / "routine.yaml"
     raw = read_yaml(path, {})
     if not isinstance(raw, dict):
         raise HTTPException(500, f"{path}: expected a mapping at top level")
+    shared, _ = domain_config_for(routine_dir, str(raw.get("domain") or ""))
+    inherited = [str(p) for p in shared.get("permissions") or []]
     extra: dict[str, str] = {}
     grant_rows: dict[str, bool] = {}
     for eid in ids:
@@ -152,7 +167,7 @@ def apply_forever(server, routine_dir: Path, ids: list[str],
             if name not in roots:
                 raw[key] = [*roots, name]
         else:   # action / util / runs / workflows — the two-layer cascade
-            _apply_capability(server, raw, cls, name)
+            _apply_capability(server, raw, cls, name, inherited)
     atomic_write_yaml(path, raw)
     if grant_rows:
         record_grants(routine_dir, grant_rows)   # the ONE writer for grants: rows

@@ -46,7 +46,7 @@ def test_a_queued_message_can_be_revised_from_its_own_bubble(ui, ui_page):
     ui_page.get_by_role("button", name="send").click()
 
     bubble = ui_page.locator(".msg.user.pending")
-    expect(bubble).to_be_visible(timeout=10_000)
+    expect(bubble).to_be_visible()
     queued = _queued(conv_dir)
     assert len(queued) == 1 and "teh 9:40" in queued[0][1]["text"]
     msg_id = queued[0][0]
@@ -57,8 +57,7 @@ def test_a_queued_message_can_be_revised_from_its_own_bubble(ui, ui_page):
     box.fill("book the 9:40 train")
     bubble.get_by_role("button", name="save").click()
 
-    expect(ui_page.locator(".msg.user.pending")).to_contain_text("the 9:40 train",
-                                                                timeout=10_000)
+    expect(ui_page.locator(".msg.user.pending")).to_contain_text("the 9:40 train")
     after = _queued(conv_dir)
     assert len(after) == 1, "a revision rewrites the message, it never adds a second one"
     assert after[0][0] == msg_id, "same file, so the queue position holds"
@@ -74,10 +73,10 @@ def test_a_queued_message_can_be_withdrawn_before_the_model_reads_it(ui, ui_page
     ui_page.get_by_role("button", name="send").click()
 
     bubble = ui_page.locator(".msg.user.pending")
-    expect(bubble).to_be_visible(timeout=10_000)
+    expect(bubble).to_be_visible()
     assert len(_queued(conv_dir)) == 1
 
     bubble.get_by_role("button", name="withdraw").click()
 
-    expect(ui_page.locator(".msg.user.pending")).to_have_count(0, timeout=10_000)
+    expect(ui_page.locator(".msg.user.pending")).to_have_count(0)
     assert _queued(conv_dir) == [], "the delivery is gone — the model never sees it"

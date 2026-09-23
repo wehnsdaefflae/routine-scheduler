@@ -90,7 +90,7 @@ Validation runs in `lint_rule_text`, which means one call covers all four author
 the `write_rule` action (before its approval ask), the Library tab's PUT, `rsched lint`, and
 the per-rule `problems` the Library page shows.
 
-## The three moments
+## The four moments
 
 | moment | fires | delivery | payload | cost |
 |---|---|---|---|---|
@@ -106,8 +106,10 @@ have no action in hand, so they have nothing to stop. A rule that pairs them wro
 refused at authoring time rather than silently never firing.
 
 `observation` and `boundary` are free: they append to a message the run was getting anyway.
-`boundary` uses the same carrier a mid-run rule binding already does
-(`switches.apply_rule_additions`), and both are append-only, because the composed prompt is a
+`boundary` uses the same carrier a mid-run rule binding already does — `enginenote.append`,
+the ONE seam that puts an engine-authored message into a live run, which writes the live
+message and the transcript record from the same string so a resumed leg replays the note the
+model actually read — and both are append-only, because the composed prompt is a
 caching contract.
 
 **`pre-finish` costs a turn, and has to.** A line surfaced as the run ends is a line nobody
@@ -229,6 +231,17 @@ weigh — no turn is spent — and the fire counter already answers which trigge
 often. The `hold` rung does spend a turn, and its wording asks the run to say in its next
 `say` when a rule turned out not to apply; a structured label there is the next increment, not
 a gap left by accident. `scaffold` and `do` need a helper channel that does not exist.
+
+That increment now has a price on it. The one `hold`-payload assist in the library,
+`git-checkpoint/before-the-first-repo-edit`, stands at 31 / 31 / 10 fires in
+`llmsectest-weekday`, `self-audit` and `routine-improver` — 72 turns bought, and no way to tell
+a useful hold from a false positive, which is the one number that decides whether a trigger
+keeps a turn-costing rung. Wiring it is four coupled changes and not three: `remind_feedback`
+routed by id shape (an assist key carries `/`), `state/assists.json` growing from an int per key
+to the same stat fields a reminder keeps (with a one-shot migration), the health read model and
+its table gaining the four columns, and the `assist_hold` observation asking for the label the
+way `reminder_hold` does. Until all four land the label has nowhere to go: the tally file is an
+int, and `_apply_feedback` answers an assist key with "no reminder … is live for this run".
 
 `ledger-untouched` reads `turn_records`, the run history that SURVIVES compaction — a
 predicate that greps the message list silently stops working on exactly the long runs that

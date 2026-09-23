@@ -10,12 +10,23 @@ from rsched.oauth import store
 from rsched.oauth.store import Connection
 
 
+def _unfold(page) -> None:
+    """Open every routine-page config group.
+
+    The page ships with only its leading group open (views/routine.js SECTION_GROUPS): seven
+    open at once made it 11-12 000px tall. A control inside a folded group is not visible, so a
+    test that reads one unfolds first. What the DEFAULT is, and that the choice is remembered,
+    is pinned in test_routine_groups.py — not here.
+    """
+    page.wait_for_selector(".rgroup-head")
+    page.evaluate("() => { for (const d of document.querySelectorAll('details.rgroup')) d.open = true; }")
+
 def test_connections_card(ui, ui_page, monkeypatch):
     monkeypatch.setattr(store, "connections_path", lambda: ui.tmp / "connections.json")
     secrets.set_secret("NOTION_OAUTH_CLIENT_ID", "cid-ui")   # → Notion shows "app configured"
 
     ui_page.goto(f"{ui.url}/#/settings?section=connections")
-    ui_page.wait_for_selector("#sec-connections", timeout=10_000)
+    ui_page.wait_for_selector("#sec-connections")
 
     notion = ui_page.locator('[data-provider="notion"]')
     expect(notion).to_contain_text("Notion")
@@ -48,8 +59,9 @@ def test_routine_connection_binding(ui, ui_page, monkeypatch):
     store.set_connection(Connection(provider="notion", account="acme", access_token="AT"))
 
     ui_page.goto(f"{ui.url}/#/routine/uir")
+    _unfold(ui_page)
     row = ui_page.locator('[data-conn-row="notion"]')
-    row.wait_for(timeout=10_000)
+    row.wait_for()
     row.locator("select").select_option("acme")
     ui_page.get_by_role("button", name="save connections").click()
     expect(ui_page.locator("#toast:not([hidden])")).to_contain_text("connections saved")
@@ -73,9 +85,12 @@ def test_conversation_connection_binding(ui, ui_page, monkeypatch):
     ui_page.wait_for_url("**/conversations/**")
     slug = ui_page.url.rsplit("/", 1)[-1]
 
-    ui_page.locator(".conv-caps summary").click()   # ⚙ capabilities & budgets
+    # the panel's OWN disclosure: `> summary`, because each abilities card inside it now
+    # folds its met requirements behind a "N requirements · all met" summary of its own
+    # (components/abilities.js), so a descendant match is no longer unique.
+    ui_page.locator(".conv-caps > summary").click()   # ⚙ capabilities & budgets
     row = ui_page.locator('[data-conn-row="notion"]')
-    row.wait_for(timeout=10_000)
+    row.wait_for()
     row.locator("select").select_option("acme")
     ui_page.get_by_role("button", name="save connections").click()
     expect(ui_page.locator("#toast:not([hidden])")).to_contain_text("connections saved")

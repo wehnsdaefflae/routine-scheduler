@@ -101,7 +101,11 @@ system_model: glm                 # the fallback model for setup-time work — a
 - `context_tokens` — the full input + output token window used as a fallback when model
   metadata is unavailable. Default `25_000`. Provider discovery takes precedence over this
   endpoint fallback; an explicit per-model override takes precedence over discovery.
-- `temperature` — optional **default** temperature catalog models inherit when unset.
+- `temperature` — optional **default** temperature catalog models inherit when unset. Current
+  Claude models removed the sampling parameters and answer 400 to one; that 400 is absorbed
+  (the field is dropped for one degraded retry), so setting it costs a wasted round trip per
+  turn on those models rather than failing them — steer them with `effort` instead. It still
+  works on everything else the wire serves, Haiku and a proxy's `gpt-*` ids included.
 - `quota_source` — `cliproxy` binds the PROXY to its management API (the edit form calls
   the field *Proxy management (CLIProxyAPI)*): the signed-in account rows on the card, the
   card's *re-authenticate* control that signs a dead session back in without a terminal, and
@@ -144,12 +148,18 @@ default. Routines and the system model reference a model by its catalog **name**
   Leave blank to use provider discovery, then the endpoint fallback. Compaction compares an
   explicitly estimated input token count against this window and reserves `max_tokens` for
   output. The estimate includes UTF-8 text, message framing, action schema and media; it is not
-  an exact provider tokenizer count. Provider usage is authoritative. Character counts are only used
+  an exact provider tokenizer count. Provider usage is authoritative — and it is USED: after
+  each completion the run divides the prompt size the provider reported by its own estimate of
+  the same messages and, when the estimate reads light, compacts against the window divided by
+  that ratio (`engine/window.note_prompt_size`, clamped to 2x, measured only on prompts already
+  past a fifth of the window). Without it the estimate was corrected only by a provider's
+  oversize 400 — six of those in a fortnight, four in one run. Character counts are only used
   internally when estimating text or trimming a string.
 - `effort` — a reasoning-effort hint: `low | medium | high | xhigh | max`. Each kind maps it to
   its own reasoning knob (`openai` collapses `xhigh` / `max` → `high`); lower it if a reasoning
   model spends its whole output budget thinking instead of answering.
-- `temperature` — sampling temperature; inherits the endpoint's when unset.
+- `temperature` — sampling temperature; inherits the endpoint's when unset. Leave it blank on a
+  current Claude model — see the endpoint field above.
 - `max_tokens` — the requested **output** cap per completion, sent on every engine call
   (turns and `llm` actions). Inherits the
   endpoint's `max_tokens` when unset; with neither set, a generous engine default (16,384)
@@ -188,13 +198,38 @@ engine instead **fails over**:
   provider's own recommendation) so a refusal costs one switch, not the run.
 - **Cooldown**: a hard-failed (endpoint, model) is marked *cooling* for 5 minutes — every
   later resolution in the same run process (main turns, `llm` actions, compaction, spawned
-  children) skips it for the first not-cooling chain member instead of hammering a flapping
-  provider. When every chain member is cooling, the primary is used anyway (a run never
-  stalls on bookkeeping). Cooldowns are process-local: a fresh run probes the primary once
-  and re-marks it if the outage persists.
-- Chains are **not transitive**: only the named model's own `fallbacks` list is tried, in
-  order. Self-references, duplicates, and unknown names are reported as config problems and
-  skipped. Roles without fallbacks behave exactly as before — the feature is opt-in per
+  children) skips it instead of hammering a flapping provider. When every remaining member
+  is cooling, the one already serving is used anyway (a run never stalls on bookkeeping).
+  Cooldowns are process-local: a fresh run probes the primary once and re-marks it if the
+  outage persists. A provider that answered with a `Retry-After` longer than five minutes is
+  cooled for exactly that long — it has said when it will serve again, and the default is
+  only a guess.
+- **A switch is forward-only within a run.** A cooldown expires; a weekly quota does not.
+  Once a run has moved down the chain it starts every later turn from the member that is
+  serving and never walks back up, so a quota-exhausted primary cannot flap back in five
+  minutes later. Before this, a run on an exhausted primary oscillated for its whole life —
+  123 switches across 28 runs in ten days, ~6.5 minutes apart — and each swing landed after
+  the 5-minute cache TTL had expired, so the whole prefix was re-written at 1.25× on both
+  models. A fresh run still probes the head once, which is what brings a recovered provider
+  back with nothing to reset.
+- **The chain prefers a member that can take the request.** Images and prompt size travel
+  WITH the request, so a text-only or too-small rung is passed over while a capable one
+  remains (a `multimodal: false` model answers `400 … does not support image inputs`; a 32k
+  one answers `maximum context length is 32768`) — each of those costs a round trip and
+  marks a healthy model cooling for five minutes. It is a preference, not a veto: when no
+  remaining member fits, the next one is taken anyway and the engine repairs what it can
+  (images become `vision`-util text, an oversize prompt is compacted into the new member's
+  window).
+- **Every switch reaches the health stream** as a `model_failover` event carrying the chain
+  head, both model names and a reason (`rate_limit` · `auth` · `server` · `refusal` ·
+  `empty` · `other`) — a run that fails over finishes `ok`, so without it a fleet running
+  all day on metered fallbacks looks healthy.
+- Chains are **transitive, breadth-first**: the named model's own `fallbacks` first, then
+  each of theirs, in declaration order. `Fable Max: [Fable]` therefore reaches everything
+  `Fable` falls back to, with no duplicated tails to keep in sync — write each model's own
+  alternatives and the ladder follows. Self-references, duplicates, and unknown names are
+  reported as config problems and skipped, and a broken rung never truncates the ladder
+  below it. Roles without fallbacks behave exactly as before — the feature is opt-in per
   catalog model, and `routine.yaml` still maps each role to ONE catalog name.
 
 ```yaml
@@ -212,11 +247,51 @@ models:
 
 ### Prompt caching (automatic — no config)
 
-Every adapter uses prompt caching, and it needs no setup. Cache traffic is reported separately in
-usage — `cached_in` (the ~0.1× re-reads) and `cache_write` — and kept out of the `in` count, so
-token budgets keep their meaning. The Anthropic adapter sets cache breakpoints every turn,
-including calls through subscription proxies. OpenAI-compatible providers report implicit
-prefix cache reads where supported.
+Prompt caching needs no setup. Cache traffic is reported separately in usage — `cached_in`
+(the ~0.1× re-reads) and `cache_write` (the ~1.25× writes) — and kept out of the `in` count, so
+token budgets keep their meaning.
+
+Who caches how:
+
+- **`anthropic` kind** — explicit breakpoints on the tools block, the system prompt and a moving
+  one on the last message, every turn, subscription proxies included.
+- **OpenAI-, DeepSeek- and GLM-style backends** — implicit: they hit on a byte-stable prefix by
+  themselves, which the engine's append-only message list gives them, and report the hit as
+  `cached_tokens`.
+- **Anthropic models through an aggregator** (`anthropic/…` on OpenRouter) — the exception that
+  needs saying: they cache ONLY on an explicit breakpoint, so routing one through an aggregator
+  does not inherit implicit caching. A conversation turn on such a model therefore carries a
+  top-level `cache_control` marker. Without it the metered Opus fallback re-sent its whole
+  prefix at full price every turn — twelve turns of one live run, ~100–117k input each,
+  `cached_in` 0, **$6.63**.
+- **One-shot calls** (an `llm` action, an archival digest, the refusal classifier) place no
+  marker at all on any adapter: their prefix is never sent again, so the write would buy a read
+  that never comes.
+
+**The 5-minute TTL is the right default — measured twice, do not raise it.** A cache entry
+expires five minutes after its last use, so a turn following a long tool call re-writes the whole
+prefix. That is real: over one fortnight on the subscription endpoint, 15,269 back-to-back turns
+wrote 40.8 M tokens while 109 turns after a gap wrote 25.5 M — **38% of all cache writes**,
+nearly all full rewrites, concentrated in a handful of long-tool routines. A blanket 1-hour TTL
+is still not the answer, and the arithmetic says so: writing at 2× instead of 1.25× costs about
++30.6 M on the turns that never needed it to buy back about 29.2 M. Slightly WORSE than
+break-even, and it raises the fleet's steady-state weighting. Nor is a per-model `cache_ttl`
+knob worth it for the two or three routines involved. What DOES pay is fewer long gaps inside a
+turn loop.
+
+### Why raw httpx, and not the provider SDKs
+
+The transports are `httpx` + `tenacity` on purpose. An SDK would replace ~120 lines (`post_json`,
+the status classifier, the Retry-After read, the retry wrapper) and keep every line that actually
+earns its place, because each provider-specific degrade needs the raw status and body: the
+`output_config`/`cache_control` strip for gateways, the `response_format` 400 **and** the generic
+503 that hides a schema-incapable backend, the 402 "can only afford N" retry, Ollama's native
+`/api/chat`, the four catalog readers, the proxy-management routes. On top of that the Anthropic
+SDK is built on `httpx2` — a second HTTP stack beside the `httpx` the daemon, web layer and utils
+already use — its structured-output helpers duplicate an engine-side schema guard that must stay
+provider-agnostic, and its retry policy is the one `tenacity` already implements here with a
+Retry-After hint. Measured call durations (p99 45 s, max 414 s against a 600 s ceiling) show no
+need for its streaming helper either. Net: one more dependency stack, zero special cases removed.
 
 ## Provider recipes
 
@@ -234,8 +309,10 @@ models need the bigger plan (72B-class on the base tier, 700B-class like GLM 5.2
 top tier).
 
 **Ollama** (local, free) — `kind: openai`, `base_url: http://127.0.0.1:11434/v1`, no key,
-`schema_mode: ollama_native`. Mind `context_tokens`: small local models often run with
-small windows.
+`schema_mode: ollama_native`. **Set the ENDPOINT's `context_tokens` to the largest window
+you serve**: `ollama_native` sizes its decode ceiling (`num_ctx`) from that value, and a
+prompt longer than it is truncated silently — discovery corrects compaction's budget but
+does not reach the decode ceiling.
 
 **Self-hosted vLLM** (any HF model on your own GPUs, incl. rented ones — Runpod
 serverless exposes `https://api.runpod.ai/v2/<endpoint-id>/openai/v1`) — `kind: openai`,
@@ -268,7 +345,7 @@ What can be discovered, per kind:
 | `openai` @ Nano-GPT | its own `/api/models` (the OpenAI-compatible route carries none) | same |
 | `openai` @ Ollama | `POST /api/show` → the arch's `context_length` | none — derived from the window |
 | `openai`, other | `max_model_len` / `context_length` if the gateway emits one (vLLM does) | rarely |
-| `anthropic` @ Anthropic | a built-in table — its model listing has no context-window metadata | the table |
+| `anthropic` @ Anthropic | a built-in Claude table (see below) | the table |
 | `anthropic` @ a proxy | whatever its `/v1/models` carries, then the table for Claude ids | the same |
 
 **The output cap is deliberately NOT maxed out.** Providers validate
@@ -280,10 +357,17 @@ JSON action plus reasoning, not a claim about the model.
 
 **The kind is not the provider.** An `anthropic` endpoint is Anthropic's own API only when it
 points at Anthropic's host. A subscription proxy speaks the same wire and serves whatever its
-upstreams do — OpenAI ids included — so its catalog is read like any other gateway's. Its route
-sits one segment deeper (`{base}/v1/models`), because an `anthropic` base_url omits the `/v1` an
-`openai` one carries. Claude ids are unaffected: the built-in table is a fallback on a miss, not a
+upstreams do — OpenAI ids included — so its catalog is read like any other gateway's, and a
+CLIProxyAPI listing carries ids and nothing else. Either route sits one segment deeper
+(`{base}/v1/models`), because an `anthropic` base_url omits the `/v1` an `openai` one carries.
+The built-in Claude table is the fallback for an id that was listed WITHOUT figures, not a
 property of the provider.
+
+Anthropic's own listing is the one published source this instance does not read. It has carried
+`max_input_tokens`, `max_tokens` and a capability tree since March 2026, and every configured
+`anthropic` endpoint here is a proxy, so the reader would have no caller. **Add one when you add
+a direct `kind: anthropic` endpoint** — until then a Claude id the table does not name resolves
+to the endpoint default, which is the case to watch for on a brand-new model.
 
 A miss is not a failure: the model drops to the next tier, and the Settings card says WHICH miss
 it is. Those are two different states and only one is fixable by discovery:

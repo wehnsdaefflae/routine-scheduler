@@ -259,3 +259,25 @@ def test_refusal_worded_ok_status_finish_is_intercepted(make_routine):
     assert unc.prompts == ["the risky step"]          # essence ONLY reached the honeypot
     assert loop.ctx.referrals == 1
     assert main.calls == 2
+
+
+def test_an_honest_ok_finish_never_buys_a_classification(make_routine):
+    """A finish is always JUDGED, but only a declared failure is worth a round trip.
+    Every ordinary ending used to pay a `refusal · classify reply` subcall on its way out
+    (784 such calls in 21 days against 8 refusals); an `ok`/`partial` summary is now
+    judged by the marker fast-path alone — the path that catches the ok-status specimen
+    above.
+    """
+    done = Completion(
+        text="", usage={"in": 1, "out": 1},
+        parsed={"kind": "finish", "status": "ok", "say": "done",
+                "summary": "Checked all twelve sources and filed the three new leads."})
+    main = _FakeEndpoint([done])
+    tool = _FakeEndpoint([VERDICT_NO])                # would answer — must never be asked
+    unc = _FakeEndpoint([PRETEND])
+    loop = _loop(make_routine, _FakeRegistry(main, unc, tool, main_name="plainfin-ep"))
+    action, _ = next_action(loop)
+    assert action is not None and action["kind"] == "finish" and action["status"] == "ok"
+    assert tool.calls == 0 and unc.calls == 0
+    assert _refusal_events(loop) == []
+    assert main.calls == 1

@@ -91,6 +91,30 @@ def test_state_digest_contents(make_routine, tmp_path):
         assert needle in digest, needle
 
 
+def test_state_digest_names_freight_it_may_not_consume(make_routine):
+    """F529: a resumed leg drains only the LIVE vias, so an audit answer or a sibling's
+    report sits in inbox/ addressed to the next FRESH run. Until now nothing told the leg,
+    and a run explained an answered decision as still OPEN three legs after the answer
+    landed. Named, never delivered — the section says to read the file.
+    """
+    from rsched.engine import inbox
+
+    d = make_routine(slug="freight")
+    assert "QUEUED FOR THIS ROUTINE" not in state_digest(d, [], [])    # empty inbox: silent
+    inbox.file_message(d, "[AUDIT decision · D141] selected: option B\nsecond line",
+                       via="web-audit", extra={"kind": "decision"})
+    inbox.file_message(d, "R1815: the util needs a flag", via="report", name="rep-R1815",
+                       extra={"report": "R1815", "from": "sibling"})
+    inbox.file_message(d, "talking to THIS run", via="web")            # a LIVE via: not freight
+    digest = state_digest(d, [], [])
+    assert "QUEUED FOR THIS ROUTINE'S NEXT FRESH RUN" in digest
+    assert "[AUDIT decision · D141] selected: option B" in digest
+    assert "second line" not in digest                     # first line only: go and look
+    assert "[report R1815 from sibling]" in digest
+    assert "talking to THIS run" not in digest
+    assert len(list((d / "inbox").glob("msg-*.json"))) == 3            # consumed nothing
+
+
 def test_state_digest_inlines_the_working_plan(make_routine):
     """state/plan.md is the run's OWN decomposition — a conversation's emergent counterpart
     to a routine's compiled stages/. It rides the digest in full so every later reply opens
@@ -715,15 +739,15 @@ def test_compaction_deterministic_and_bounded():
         messages.append({"role": "user", "content": f"OBSERVATION {turn}: " + "o" * 400})
         records.append({"turn": turn, "kind": "util", "brief": f'"cmd{turn}"', "say": f"say {turn}"})
     small_budget = estimate_input_tokens(messages)  # force compaction: budget*0.6 < current size
-    compacted, info = maybe_compact(list(messages), records, context_tokens=small_budget)
+    compacted, info = maybe_compact(list(messages), records, cap_tokens=small_budget * 0.6)
     assert info and info["after_estimated_tokens"] < info["before_estimated_tokens"]
     assert compacted[0]["content"].startswith("S")            # system kept
     assert compacted[-1] == messages[-1]                       # tail kept verbatim
     digest = next(m for m in compacted if "CONTEXT COMPACTED" in m["content"])
     assert "say 10" in digest["content"]                       # elided middle is digested
-    again, _ = maybe_compact(list(messages), records, context_tokens=small_budget)
+    again, _ = maybe_compact(list(messages), records, cap_tokens=small_budget * 0.6)
     assert again == compacted                                  # deterministic
-    untouched, info2 = maybe_compact(list(messages), records, context_tokens=10**9)
+    untouched, info2 = maybe_compact(list(messages), records, cap_tokens=10**9)
     assert info2 is None and untouched == messages
 
 
@@ -800,9 +824,14 @@ def test_replay_does_not_duplicate_blocking_answers():
     assert joined.count("UNIQUE-ANSWER") == 1
 
 
-def _gate_loop(monkeypatch, *, usage, phase="", last_seen_phase=None):
+def _gate_loop(monkeypatch, *, usage, phase="", last_seen_phase=None,
+               body=6070, remaining=None, real_compact=False):
     """A minimal loop stub for compact_if_needed: 40 messages estimated at 70k tokens
-    against a 100k window - between the 0.6 (60k) and 0.8 (80k) thresholds."""
+    against a 100k window - between the 0.6 (60k) and 0.8 (80k) thresholds.
+
+    `real_compact` keeps the genuine `maybe_compact`, which is the only way to see whether the
+    caller's cap actually reaches it; the default stub isolates the gate's own decision.
+    """
     from types import SimpleNamespace
 
     from rsched.engine import window
@@ -812,15 +841,17 @@ def _gate_loop(monkeypatch, *, usage, phase="", last_seen_phase=None):
     # pass shows up as both: "digest" is what the prompt got, "llm" is what was queued.
     monkeypatch.setattr(window.archival, "start",
                         lambda *_a, **_k: calls.append("llm"))
-    monkeypatch.setattr(window, "maybe_compact",
-                        lambda msgs, *_a, **_k: (calls.append("digest") or (msgs, {"elided": 1})))
+    if not real_compact:
+        monkeypatch.setattr(window, "maybe_compact",
+                            lambda msgs, *_a, **_k: (calls.append("digest")
+                                                     or (msgs, {"elided": 1})))
 
     class _Reg:
         def for_model(self, kind, models):
             raise RuntimeError("no tool_call model in this stub")
 
     ctx = SimpleNamespace(server=SimpleNamespace(compaction_model=""),
-                          usage=usage, tokens_remaining=lambda: None, registry=_Reg(),
+                          usage=usage, tokens_remaining=lambda: remaining, registry=_Reg(),
                           routine=SimpleNamespace(models={}), run_dir=None, phase=phase,
                           transcript=SimpleNamespace(event=lambda *a, **k: None),
                           add_usage=lambda u: None)
@@ -828,7 +859,7 @@ def _gate_loop(monkeypatch, *, usage, phase="", last_seen_phase=None):
                            _last_compact_after=0, _history_active=False,
                            _hist_note_countdown=0, _last_seen_phase=last_seen_phase,
                            _evict_warned=True,   # the pre-eviction warning is its own test
-                           messages=[{"role": "user", "content": "x" * 6070}
+                           messages=[{"role": "user", "content": "x" * body}
                                      for _ in range(40)])
     return loop, calls
 
@@ -890,6 +921,27 @@ def test_mid_step_inside_the_same_stage_does_not_anticipate(monkeypatch):
     compact_if_needed(loop, endpoint=None,
                       ref=ModelRef("e", "m", context_tokens=100_000, max_tokens=0))
     assert not calls, "already inside the stage — the ordinary 0.8 gate applies"
+
+
+def test_the_budget_cap_reaches_the_compaction_itself(monkeypatch):
+    """The gate's cap is the CALLER's, not a threshold re-derived inside `maybe_compact`.
+
+    40k estimated tokens against a 100k window is well under the 0.6 context gate, but the
+    ">10% of the remaining token budget" cap (15k here) is what binds — and it used to bind
+    only as far as the decision: the run was told 'compaction imminent', spent the turn, and
+    then `maybe_compact` re-tested its own 0.6 and archived nothing.
+    """
+    from rsched.config import ModelRef
+    from rsched.engine.window import compact_if_needed
+
+    loop, calls = _gate_loop(monkeypatch, usage={}, body=3_470, remaining=150_000,
+                             real_compact=True)
+    before = len(loop.messages)
+    compact_if_needed(loop, endpoint=None,
+                      ref=ModelRef("e", "m", context_tokens=100_000, max_tokens=0))
+    assert calls == ["llm"], "the budget cap must reach the compaction, not just the decision"
+    assert len(loop.messages) < before
+    assert any("CONTEXT COMPACTED" in m["content"] for m in loop.messages)
 
 
 def test_anticipation_cannot_force_a_pass_the_anti_thrash_guards_refuse(monkeypatch):

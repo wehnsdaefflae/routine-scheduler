@@ -55,7 +55,7 @@ def test_the_transcript_renders_every_event_shape_in_words(ui, ui_page):
     ts = _seed(ui)
     ui_page.set_viewport_size({"width": 1400, "height": 900})
     ui_page.goto(f"{ui.url}/#/run/uir:{ts}")
-    expect(ui_page.locator(".turn").first).to_be_visible(timeout=10_000)
+    expect(ui_page.locator(".turn").first).to_be_visible()
     # text_content, not inner_text: an observation body sits inside a collapsed <details>
     # and Chrome's innerText drops what is not rendered. What is asserted here is what the
     # renderer PRODUCED — one click away is still on the page.

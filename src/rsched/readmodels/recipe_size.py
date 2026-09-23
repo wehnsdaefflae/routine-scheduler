@@ -5,20 +5,25 @@ The recipe set is recipes.RECIPE_PATHSPECS (main.md + stages/ + tuning.yaml — 
 files the write gates protect and recipes.py versions). Current length is a live worktree
 read in bytes (markdown prose: bytes ≈ chars); the trend baseline is the recipe blob
 sizes at the last commit at least TREND_DAYS old, read with `git ls-tree -r -l` so the
-whole baseline costs TWO git calls per routine. Routines home only — conversations are
-unversioned and recipe-less. Best-effort like every readmodel: a dir without git history
-(or a younger-than-baseline repo) reports `chars_baseline: null` and the view hides the
-trend chip; git failures never break the stats call.
+whole baseline costs TWO git calls per routine. Those two are memoized on the routine
+repo's reflog (`.git/logs/HEAD`, appended by every commit) plus the day — the lookback
+window moves once a day — because the Stats tab otherwise spawned 70 git processes per
+call on the live instance (35 routines), 4.8 s with nothing else in flight. Routines home
+only — conversations are unversioned and recipe-less. Best-effort like every readmodel: a
+dir without git history (or a younger-than-baseline repo) reports `chars_baseline: null`
+and the view hides the trend chip; git failures never break the stats call.
 """
 
 from __future__ import annotations
 
 import subprocess
+from datetime import UTC, datetime
 from pathlib import Path
 
 from .. import libgit
 from ..config import ServerConfig
 from ..recipes import RECIPE_PATHSPECS
+from . import memo
 
 #: The trend lookback: current length vs the recipe as committed this many days ago.
 TREND_DAYS = 30
@@ -38,7 +43,18 @@ def _current_chars(routine_dir: Path) -> int:
 def _baseline_chars(routine_dir: Path) -> int | None:
     """Recipe bytes at the newest commit ≥ TREND_DAYS old, or None (no git / repo
     younger than the lookback / git failure).
+
+    Two git subprocesses, so the answer is cached against the repo's reflog: a commit
+    appends to `.git/logs/HEAD` and nothing else can move this number within a day. The
+    date rides in the key because the lookback is relative — yesterday's answer is a
+    different question today.
     """
+    return memo.memoized(f"recipe-baseline:{routine_dir}:{datetime.now(UTC).date().isoformat()}",
+                         [routine_dir / ".git" / "logs" / "HEAD"],
+                         lambda: _read_baseline_chars(routine_dir))
+
+
+def _read_baseline_chars(routine_dir: Path) -> int | None:
     if not (routine_dir / ".git").is_dir():
         return None
     try:

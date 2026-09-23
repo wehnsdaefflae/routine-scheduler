@@ -51,7 +51,9 @@ These structural / ownership gates stay in force under admin, by design:
 - `runs/` stays engine-owned and read-only.
 - `routine.yaml` (a routine's or conversation's config) stays the user's — **no** run writes it,
   admin included.
-- A routine's own recipe stays sealed (unless a user `fs_write_root` already covers its dir).
+- A routine's own recipe stays sealed unless the routine holds the **`write_recipe`**
+  capability (through the `recipe-authoring` permission), or the run view dropped a
+  per-leg revise marker.
 - The root-conversation-only gate on `create_routine`, `manage_lane` and `detach` still holds.
 - The workflow's `tools:` allowlist still applies — a kind must still be surfaced to the run.
 

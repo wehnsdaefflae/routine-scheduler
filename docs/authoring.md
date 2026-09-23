@@ -38,19 +38,39 @@ Line by line:
 
 - **First line** — `<name> — one-line summary`. This is the catalog entry every routine
   sees in its prompt; make the summary earn its tokens.
-- **`usage:`** — the exact CLI invocation. Shown when a routine asks
-  `util name=list args=["dir-tree"]`.
-- **`calls:`** — sibling utils this one execs via `gu <name>` (`(none)` otherwise). The
-  sandbox resolves secrets and network need TRANSITIVELY across this graph — an
-  undeclared sibling call means the callee's secrets never reach it.
+- **`usage:`** — the exact CLI invocation, and a BLOCK when there is more than one: every
+  non-blank line under the `usage:` line, up to the next header key, is part of it. A
+  verb-dispatched util lists one line per verb there (the label may stand alone on the
+  `usage:` line, with the forms underneath), and that whole block is what a routine is
+  shown — by `util name=list args=["dir-tree"]`, by a util search hit, and by the
+  observation of a failed call. A verb that lives only in the prose below the block is a
+  verb your callers will guess at.
+- **`calls:`** — sibling utils this one execs via `gu <name>`, comma-separated slugs
+  (`(none)` otherwise — prose on this line is rejected, because the parser reads slugs and
+  would silently ignore it). The sandbox resolves secrets and network need TRANSITIVELY
+  across this graph — an undeclared sibling call means the callee's secrets never reach it.
 - **`secrets:`** — the env vars it needs, e.g. `secrets: OPENROUTER_API_KEY`. The engine
   **rejects** a util whose code reads a credential env var it doesn't declare — declared
   secrets are what the Settings page can prompt for, and the ONLY store keys injected
-  into the util's environment at run time.
+  into the util's environment at run time. A trailing `?` marks one OPTIONAL: withheld
+  without a prompt when the user has not granted it, because a degraded call beats a
+  stalled run. Optionality is the CALLER's call — a `?` here wins over a required
+  declaration in a util this one `calls:`, since only this util knows whether the code
+  path reaching that sibling is taken (a scorer rightly requires its own key; a util that
+  scores only under `--score` marks it optional and runs prompt-free otherwise). Between
+  two siblings the strict rule stands: one required declaration makes the name required.
 - **`tags:`** — required; the catalog groups and filters on them.
 - **`net:`** — required: `outbound` (opens network connections) or `none`. Utils run in a
   filesystem/network sandbox (see [sandboxing](sandboxing.md)); a `none` (or undeclared)
   util gets no TCP at all.
+
+The environment a util is given, beyond its declared secrets: `PATH` carries the library
+root (so `gu <sibling>` resolves), `GLOBAL_UTILS_HOME` names that library, and
+`RSCHED_UTIL_TIMEOUT_S` is the deadline THIS call has. Read that last one when the util
+waits on something slow (an SSH read, a long HTTP poll) and set your own internal timeout
+inside it: a util that owns its clock reports what it captured, while one that outlives the
+deadline is killed with its process group and reports nothing at all. Per-routine scripts
+get the same three.
 
 Two gates run before a util reaches the library:
 
@@ -137,7 +157,8 @@ describe the WORK. None of them may name a util or show a util's flags. They nam
 a step needs — "fetch the page", "run the repo's test suite", "publish the site" — and the run
 picks the tool: it is shown the whole util catalog in its CAPABILITIES prompt section (name +
 one-line summary, derived live from disk, so it can never be stale) and gets any single util's
-exact `usage:` line for one cheap turn via the `util` action with name `list`. Which util worked,
+exact `usage:` block — every invocation form it lists, not only the first — for one cheap
+turn via the `util` action with name `list`. Which util worked,
 and with which arguments, is then persisted in the ROUTINE'S OWN memory/notes — that, not the
 recipe, is where tool knowledge accumulates across runs. A tool named in a recipe goes stale the
 day it is renamed or removed, and it pre-empts the discovery that would have found a better one.

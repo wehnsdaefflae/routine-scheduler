@@ -25,7 +25,8 @@
 
 import { api } from "/static/api.js";
 import { confirmDialog } from "/static/components/dialog.js";
-import { el, toast } from "/static/util.js";
+import { el, toast, toastError } from "/static/util.js";
+import { mdInline } from "/static/md.js";
 
 const MARK = { met: "✓", dropped: "–", open: "○" };
 const NEXT_STATUS = { open: "met", met: "dropped", dropped: "open" };
@@ -37,7 +38,7 @@ const SCOPE_TITLE = {
       + "and you are asked to retire it — click to make it a per-run bound instead",
 };
 
-export function createStopping(mount, { url, showStage = false, onVerdict } = {}) {
+export function createStopping(mount, { url, showStage = false, onVerdict, ownRun = "" } = {}) {
   const body = el("div", { class: "goals" });
   mount.append(body);
   let doc = null;             // the live document, edited in place then PUT whole
@@ -71,7 +72,7 @@ export function createStopping(mount, { url, showStage = false, onVerdict } = {}
       dirty = false;
       paint();
       toast("goal saved — it applies from the next run");
-    } catch (err) { toast(err.message, 5000, { error: true }); }
+    } catch (err) { toastError(err, 5000); }
   }
 
   // ---- rendering -------------------------------------------------------------------------
@@ -116,11 +117,23 @@ export function createStopping(mount, { url, showStage = false, onVerdict } = {}
     if (c.stage) meta.append(` · stage ${c.stage}`);
     // A run bound's mark is not a state that carries forward, so what the LAST run concluded is
     // the only thing worth showing beside it — and it has to read as history, not as status.
+    // The note is the MODEL's own accounting, written in markdown like every other line it
+    // writes, so `**five own-flags**` reached the panel with its asterisks showing — on the one
+    // line that says whether the run met its bar.
+    //
+    // `ownRun` is the run this panel sits beside. When the accounting was written BY that run,
+    // the note is word for word the summary the reader has just read in the column to the left,
+    // re-set in 11px mono at a 34-character measure — so the verdict stands and the prose goes.
+    // From any other run it is the only place that text appears, and it stays.
+    const mine = ownRun && c.resolved_run === ownRun;
+    const note = mine ? "" : c.note;
     if (scope === "run" && c.last_verdict) {
-      meta.append(el("span", { class: "goal-note" },
-        ` · last run: ${c.last_verdict}${c.note ? ` — ${c.note}` : ""}`));
-    } else if (c.note) {
-      meta.append(el("span", { class: "goal-note", title: c.note }, ` · ${c.note}`));
+      meta.append(el("span", { class: "goal-note",
+        title: mine ? "this run's own accounting — the reasoning is in its summary" : null },
+        ` · last run: ${c.last_verdict}`),
+        ...(note ? [el("span", { class: "goal-note" }, " — "), mdInline(note)] : []));
+    } else if (note) {
+      meta.append(el("span", { class: "goal-note", title: note }, " · "), mdInline(note));
     }
     // v2: the verifier objected and the run re-asserted anyway. The verdict stands — the model
     // keeps the last word — but the disagreement is the operator's to judge, so it is visible
@@ -168,7 +181,10 @@ export function createStopping(mount, { url, showStage = false, onVerdict } = {}
     const members = doc.conditions.filter((c) => c.group === g.id);
     const v = (doc.verdict?.groups || []).find((x) => x.id === g.id) || {};
     const name = el("input", { class: "goal-gname small", value: g.name,
-      placeholder: "group name" });
+      placeholder: "group name",
+      // An unnamed group is the ordinary case, and with only one group there is nothing to
+      // tell apart — so the empty input goes away instead of clipping to "gro" beside "empty".
+      hidden: !g.name && doc.groups.length < 2 });
     name.onchange = () => { g.name = name.value.trim(); markDirty(); };
 
     const mode = el("button", { class: `goal-mode ${g.mode}`,

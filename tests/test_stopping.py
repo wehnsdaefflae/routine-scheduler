@@ -168,6 +168,38 @@ def test_stage_scopes_a_routine_condition_to_one_phase():
     assert stopping.blocked_reason(by_id["s2"], by_id, phase="review") == "only in stage draft"
 
 
+def test_the_stage_a_condition_is_scoped_to_has_one_source(tmp_path):
+    """`state/phase.json` is it — at the digest, at the finish gate and at the verifier.
+
+    There were two. The digest scoped by phase.json (which the setup surface also treats as
+    the contract) while the finish gate and the verifier scoped by `ctx.phase`, the stem of
+    the last `stages/<x>.md` the run happened to READ — "" until a module is read at all. So a
+    condition the digest showed ACTIVE was never demanded at the finish, or a finish was
+    deferred over one the digest called dormant and the model could not see why.
+    """
+    import json
+
+    assert stopping.current_stage(tmp_path) == ""            # no file → no stage
+    (tmp_path / "state").mkdir()
+    (tmp_path / "state" / "phase.json").write_text(json.dumps({"phase": "scan", "note": "n"}),
+                                                   encoding="utf-8")
+    assert stopping.current_stage(tmp_path) == "scan"
+
+    stopping.save(tmp_path, _doc([
+        {"id": "s1", "text": "every candidate checked", "stage": "scan", "group": "g1"}]),
+        now=NOW)
+    # the digest shows it, and the finish gate demands an accounting for the SAME condition
+    assert "every candidate checked" in stopping_digest.digest_section(
+        tmp_path, phase=stopping.current_stage(tmp_path))
+    assert stopping.unaccounted("nothing accounted for", tmp_path,
+                                phase=stopping.current_stage(tmp_path)) == ["s1"]
+    # a recipe that has not re-read the module does not change the answer
+    (tmp_path / "state" / "phase.json").write_text(json.dumps({"phase": "report"}),
+                                                   encoding="utf-8")
+    assert stopping.unaccounted("nothing accounted for", tmp_path,
+                                phase=stopping.current_stage(tmp_path)) == []
+
+
 # ---- the prompt ---------------------------------------------------------------------------------
 
 def test_digest_renders_the_structure_not_a_flat_list(tmp_path):

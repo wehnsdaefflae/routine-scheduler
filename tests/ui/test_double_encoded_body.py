@@ -14,14 +14,11 @@ naming the mistake and the fix.
 Evaluated as a pure function in the browser ESM context — deterministic, no network.
 """
 
-from .conftest import TOKEN
 
-
-def test_a_pre_stringified_body_is_refused_with_a_teaching_error(ui, page):
-    page.add_init_script(f"localStorage.setItem('rsched_token', {TOKEN!r})")
-    page.goto(ui.url)
-    page.wait_for_selector(".topbar", timeout=15000)
-    out = page.evaluate("""() => import('/static/api.js').then(async (m) => {
+def test_a_pre_stringified_body_is_refused_with_a_teaching_error(ui, ui_page):
+    ui_page.goto(ui.url)
+    ui_page.wait_for_selector(".topbar")
+    out = ui_page.evaluate("""() => import('/static/api.js').then(async (m) => {
         const caught = async (body) => {
             try { await m.api('/api/status', {method: 'POST', body}); return null; }
             catch (e) { return e.message; }

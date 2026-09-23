@@ -29,13 +29,6 @@ from .utils_header import parse_header
 
 log = logging.getLogger("rsched.utils_lib")
 
-# Vars scrubbed from util subprocesses UNCONDITIONALLY (declared or not). LLM-auth: a util
-# that needs an LLM (e.g. a `gu claude` equivalent) resolves its own credentials; it must
-# never inherit the orchestrator's keys and silently mis-bill or use the wrong account.
-# SSH agent: a forwarded agent in the daemon's env would let ANY net-capable util
-# authenticate to hosts outside the machine catalog, routing around the per-routine binding —
-# so the agent socket never reaches a util (remote machines carry their own scoped keys).
-
 # Exit code 2 = argparse's bad-arguments convention — a USAGE error (the caller sent
 # wrong flags), distinct from a real failure. Part of the util CONTRACT, so telemetry
 # (engine executor + the Stats read-model) classifies on it.
@@ -179,6 +172,30 @@ def list_utils(home: Path) -> list[dict]:
 
 
 
+def entry_lines(u: dict, *, full_usage: bool) -> list[str]:
+    """One catalog entry: the summary line, then its usage.
+
+    `full_usage` renders the WHOLE usage block (F505) — the only honest surface for a
+    verb-dispatched util, whose first line is `gu <name> <verb> …` or, worse, its first verb.
+    The whole-library listing passes False and shows the first form plus a count of the rest:
+    65 of 111 live utils carry continuation lines, and spending them all on a listing that
+    exists to help a run PICK a util re-buys what CAPABILITIES already said.
+    """
+    head = u["summary"] or u["name"]
+    if not head.startswith(u["name"]):
+        head = f"{u['name']} — {head}"
+    lines = [f"- {head}"]
+    usage = (u.get("usage") or "").splitlines()
+    if not usage:
+        return lines
+    if full_usage:
+        return lines + [f"    {ln}" for ln in usage]
+    lines.append(f"    {usage[0]}")
+    if len(usage) > 1:
+        lines.append(f'      … +{len(usage) - 1} more form(s): list args=["{u["name"]}"]')
+    return lines
+
+
 def catalog_text(home: Path) -> str:
     utils = list_utils(home)
     if not utils:
@@ -189,12 +206,7 @@ def catalog_text(home: Path) -> str:
     # JSON array of strings.
     lines = []
     for u in utils:
-        head = u["summary"] or u["name"]
-        if not head.startswith(u["name"]):
-            head = f"{u['name']} — {head}"
-        lines.append(f"- {head}")
-        if u.get("usage"):
-            lines.append(f"    {u['usage']}")
+        lines += entry_lines(u, full_usage=False)
     lines.append('\nCall shape: {"say": "…", "kind": "util", "name": "<name>", '
                  '"args": ["<arg>", "--flag"]} — args is a JSON array of strings.')
     lines.append('Read a util\'s source with {"kind": "util", "name": "show", '
@@ -204,12 +216,13 @@ def catalog_text(home: Path) -> str:
 
 def search_utils(home: Path, query: str, limit: int = 12) -> list[dict]:
     """Keyword-rank the live util catalog against a free-text query — the two-phase
-    discovery path (D52 Phase 3): a run names what it needs, gets the handful of most
-    relevant utils + summaries, then `util name=list args=["<name>"]` for exact usage.
+    discovery path (D52 Phase 3): a run names what it needs and gets the handful of most
+    relevant utils, each with its summary and its whole usage block (search_listing).
     PURE in-process ranking over the live catalog (name/tags/summary/usage) — NOT the
     prose FTS5 index (search/index.py), which is daemon-owned and engine subprocesses
     never import. Scoring: each query term matched case-insensitively; a hit in the NAME
-    weighs most, then tags, then summary, then usage. Zero-match utils drop; ties break
+    weighs most, then tags, then summary, then usage — and `usage` is the whole block, so a
+    verb named only on a continuation line ranks its util. Zero-match utils drop; ties break
     on name. Returns the top `limit` catalog entries.
     """
     terms = [t for t in re.split(r"[^a-z0-9]+", query.lower()) if t]
@@ -238,9 +251,10 @@ def search_utils(home: Path, query: str, limit: int = 12) -> list[dict]:
 
 
 def search_listing(home: Path, query: str, limit: int = 12) -> str:
-    """Render search_utils() as the same summary+usage lines catalog_text uses, always
-    naming the always-on category floor so a retrieval miss never fully hides a tool
-    (the dominant failure mode of any tool-search layer).
+    """Render search_utils() as summary + the FULL usage block per hit — a handful of entries
+    can afford every invocation form, and a caller that searched is about to call. Always names
+    the always-on category floor so a retrieval miss never fully hides a tool (the dominant
+    failure mode of any tool-search layer).
     """
     hits = search_utils(home, query, limit=limit)
     floor = ('The FULL catalog is always in your CAPABILITIES section (grouped by category), '
@@ -251,12 +265,7 @@ def search_listing(home: Path, query: str, limit: int = 12) -> str:
         return f"No util name/tags/summary/usage matched {query!r}. " + floor
     lines = []
     for u in hits:
-        head = u["summary"] or u["name"]
-        if not head.startswith(u["name"]):
-            head = f"{u['name']} — {head}"
-        lines.append(f"- {head}")
-        if u.get("usage"):
-            lines.append(f"    {u['usage']}")
+        lines += entry_lines(u, full_usage=True)
     lines.append("\nClosest matches only. " + floor)
     return "\n".join(lines)
 

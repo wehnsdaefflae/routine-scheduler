@@ -83,6 +83,24 @@ def _view_one(rel_path: str, prompt: str, endpoint, ctx: RunContext, multimodal:
                 "b64": data}
     return _view_via_vision(rel_path, str(path), prompt, ctx)
 
+def without_bytes(obs: dict) -> dict:
+    """The observation as the TRANSCRIPT should keep it: every `media` entry minus its `b64`.
+
+    R1493 captures an image's bytes into the observation so the provider re-renders exactly
+    what the model was told it would see, and that dict was recorded verbatim. Nothing ever
+    reads the bytes back — `history.replay_messages` rebuilds observations text-only — while
+    one conversation's transcript.jsonl reached 10.0 MB of which 9.6 MB were 14 base64 blobs.
+    Over `fileops.READ_MAX_BYTES` (8 MiB) that file is REFUSED to self-audit and to every
+    other routine that reads transcripts, and the web renderer, the search index and the gzip
+    archive all pay for bytes no consumer uses. The live message keeps them; the record keeps
+    the path and the media type, which is what a reader needs.
+    """
+    media = obs.get("media")
+    if not media:
+        return obs
+    return {**obs, "media": [{k: v for k, v in item.items() if k != "b64"} for item in media]}
+
+
 def media_from_paths(ctx: RunContext, rels: list[str]) -> list[dict]:
     """`media` entries (path + media_type) for the image/PDF attachments among `rels` that
     the main endpoint can show natively — conversation auto-attach. Unsupported files (wrong

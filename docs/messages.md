@@ -25,6 +25,52 @@ the recipient's inbox is still waiting to be drained.
 Decisions page's record, and rendering them as messages would fork that vocabulary. (They do
 wake a routine's report trigger like any inbox work — docs/triggers.md.)
 
+## One writer, one stem
+
+Every `msg-*.json` file is written by `engine/inbox.file_message` and by nothing else. The
+channels differ only in what they pass it: a `via` (which decides WHEN the message is
+consumed — see below), the extra keys that channel adds (`attachments` + `command` for a
+conversation message, `report`/`from`/`closes` for a delivered report, the audit editor's
+structured feedback fields), and — for the channels whose filename is a KEY rather than a
+timestamp — a deterministic `name`.
+
+That last one is why the rule needed restating: a report delivery is `msg-rep-<id>` so the
+sender can see whether its own delivery is still queued and retract it, and a background
+result is `msg-bg-<task>` so a re-delivery replaces the pending message instead of queuing a
+second. Seven modules used to write the filename themselves to get that, each with its own
+`ts` spelling and its own uniqueness rule, and one of them was a character-for-character copy
+of the writer's own line.
+
+Every scanner selects `msg-*.json` — the stem the one writer produces — never "every file
+that is not `answer-*`". The old filter also matched `paths.atomic_write`'s in-flight
+`.msg-….json.XXXX.tmp`, and each reader lost something different to it. The drain reached
+that temp file on a fresh boot, could not parse it, logged "not a message file" and renamed
+it into `consumed/`, so the writer's `replace()` raised and the message was lost. The report
+trigger's watch (`daemon/triggers`) is documented FAIL-OPEN — anything unreadable WAKES —
+so a race with any inbox write bought a whole run of the recipe. And the run gate
+(`daemon/run_gate.pending_inbox`) counted ANY file, so a queued question ANSWER — the one
+thing that must never start a run — read as freight the gate had to admit a run for.
+
+## What a live leg is TOLD versus HANDED
+
+A FRESH run's boot drains the whole inbox. A leg that is not a fresh boot — a mid-run turn
+boundary, or a continuation leg on a finished run — drains only `LIVE_MESSAGE_VIAS`: the user
+talking to THIS run, plus a detached background task's result. Everything else (an audit
+decision answer, a sibling's report delivery, a routine-page queued message) is addressed to
+the routine's NEXT FRESH run, and a follow-up leg draining it wholesale silently ate answers
+meant for that night's run (D92/D93).
+
+That exclusion stays. What such a leg now gets is a NAME for it: `inbox.queued_freight`
+lists the waiting files — via, timestamp, report id, first line — and the composer renders
+them as one digest section, consuming nothing. The run is told to go and read the file, never
+handed its contents.
+
+The silence was the defect. On 2026-09-21 a decision was answered at 16:01 through the
+Decisions page, the run finished at 16:02, and three continuation legs later the operator
+asked what that decision meant. The run explained it as still OPEN, with a recommendation —
+because nothing in its context said an answer was sitting in `inbox/` that it was not allowed
+to consume. "did you lose my answer again?!"
+
 ## The write surface (the D74 decision record)
 
 **Inbox — full write access.** The inbox is the user's queue: what a routine's next run
@@ -99,3 +145,8 @@ DELETE /api/routines/{slug}/outbox/{report_id}    retract an undelivered address
 All writes take the operator's primary token (mutating routes are primary-only by default,
 R94). Message ids are the inbox filename stem (`msg-…`); the id pattern keeps `answer-*`
 files and path tricks out of reach.
+
+A routine's inbox is also not readable through the API by a RUN: the read-only routine token
+is refused on `/api/fs`, `/api/settings` and `/api/debug` (R94 — "read-only" is not "may read
+anything"; a util subprocess is handed that token inside a Landlock jail). A run reads what
+it may read with `read_file`.

@@ -15,7 +15,7 @@ from rsched import registry, schedule_once
 from rsched.config import ServerConfig
 from rsched.daemon.schedule_once import OneShotManager
 from rsched.engine.actions import validate_action
-from rsched.engine.interact import handle_schedule_run
+from rsched.engine.admin_handlers import handle_schedule_run
 from rsched.grantpolicy import GrantPolicy
 from rsched.paths import read_json
 
@@ -116,6 +116,31 @@ async def test_tick_fires_due_injects_reason_and_consumes(tmp_path):
     assert state["fires"] == 1 and state["last_fired"]
 
 
+async def test_the_wake_up_text_goes_through_the_one_inbox_writer(tmp_path, monkeypatch):
+    """F499: `engine.inbox.file_message` is the ONE writer of the msg-* shape, and `name=`
+    exists for exactly the channels whose filename is a KEY (`once-<id>` is an idempotency
+    key — a crash between the write and the unlink must re-deliver the same file, not queue
+    a second). This manager hand-rolled the filename beside that writer."""
+    from rsched.engine import inbox as inbox_mod
+
+    server = _server(tmp_path)
+    d = _routine(server)
+    rec = schedule_once.arm(server.routines_home, "oneshot",
+                            fire_at=datetime.now(UTC) - timedelta(minutes=1),
+                            reason="wake up", requested_by="self:1")
+    filed: list[dict] = []
+    real = inbox_mod.file_message
+
+    def spy(routine_dir, text, **kw):
+        filed.append({"dir": routine_dir, **kw})
+        return real(routine_dir, text, **kw)
+
+    monkeypatch.setattr(inbox_mod, "file_message", spy)
+    await OneShotManager(server, FakeRunner()).tick(registry.scan(server))
+    assert [f["via"] for f in filed] == ["schedule_once"]
+    assert filed[0]["name"] == f"once-{rec['id']}" and filed[0]["dir"] == d
+
+
 async def test_tick_leaves_a_not_yet_due_request(tmp_path):
     server = _server(tmp_path)
     _routine(server)
@@ -160,6 +185,25 @@ async def test_tick_drops_request_for_disabled_routine(tmp_path):
     await OneShotManager(server, runner).tick(registry.scan(server))
     assert runner.fired == []
     assert schedule_once.pending_requests(server.routines_home, "oneshot") == []   # dropped
+
+
+async def test_tick_drops_request_for_a_retired_routine(tmp_path):
+    """A routine that met its own final goal is DONE, and `retired` was honoured by the
+    schedule and the lane chain only — so an earlier run's `schedule_run` still fired it,
+    spending a run to re-assert a met goal and re-file the retirement proposal that is
+    already waiting on the Decisions page. The request is dropped, not held: a retired
+    routine has no later run that would consume it."""
+    server = _server(tmp_path)
+    _routine(server)
+    past = datetime.now(UTC) - timedelta(minutes=1)
+    schedule_once.arm(server.routines_home, "oneshot", fire_at=past, reason="x",
+                      requested_by="x")
+    catalog = registry.scan(server)
+    catalog["oneshot"].retired = True
+    runner = FakeRunner()
+    await OneShotManager(server, runner).tick(catalog)
+    assert runner.fired == []
+    assert schedule_once.pending_requests(server.routines_home, "oneshot") == []
 
 
 async def test_tick_drops_expired_request(tmp_path):

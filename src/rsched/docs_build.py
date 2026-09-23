@@ -25,68 +25,104 @@ log = logging.getLogger("rsched.docs")
 STAMP_FILE = ".stamp"
 # the console's favicon (index.html), so the iframe'd pages carry the same mark
 FAVICON = ("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'>"
-           "<circle cx='50' cy='50' r='34' fill='none' stroke='%23ffb454' stroke-width='8'/>"
-           "<circle cx='50' cy='16' r='9' fill='%23ffb454'/></svg>")
+           "<circle cx='50' cy='50' r='34' fill='none' stroke='%233fd8c2' stroke-width='8'/>"
+           "<circle cx='50' cy='16' r='9' fill='%233fd8c2'/></svg>")
 
-# Dark shell for guide pages — mirrors static/base.css ("signal deck") tokens so a guide
-# reads as part of the console even though it renders inside an iframe.
-GUIDE_CSS = """
-:root { color-scheme: dark; }
+# A generated page is read INSIDE the console's own frame, so it follows the console's theme or
+# it reads as a foreign site — which is what a hard-coded dark shell did on a light console, on
+# the one page whose job is explaining the console. Both shells below therefore declare the
+# palette once as `light-dark()` over `color-scheme: light dark`, exactly as base.css does, and
+# the frame's `?theme=` parameter stamps `data-theme` for the two explicit choices.
+THEME_SCRIPT = """
+var t = new URLSearchParams(location.search).get('theme');
+if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;
+"""
+
+# The console's own tokens, restated for a standalone page (a generated file cannot import
+# base.css — the output lands outside the source tree and is served from /docs).
+THEME_TOKENS = """
+:root { color-scheme: light dark; }
+:root[data-theme="light"] { color-scheme: light; }
+:root[data-theme="dark"] { color-scheme: dark; }
+:root {
+  --deck:    light-dark(#f4f6f9, #0d1218);
+  --plate:   light-dark(#ffffff, #151e29);
+  --plate-2: light-dark(#f7f9fc, #1b2634);
+  --rule:    light-dark(#dde3ec, #223044);
+  --ink:     light-dark(#16202c, #e3e9f0);
+  --ink-2:   light-dark(#4d5f74, #94a5b8);
+  --ink-3:   light-dark(#5a6c80, #7a90a8);
+  --signal:  light-dark(#0f9b8a, #3fd8c2);
+  --iris:    light-dark(#6a55d0, #a99cf5);
+  --f-display: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --f-mono: ui-monospace, "SF Mono", "SFMono-Regular", "Cascadia Mono", Menlo, Consolas, monospace;
+  --f-prose: ui-serif, Georgia, "Iowan Old Style", Charter, "Times New Roman", serif;
+}
+"""
+
+# The guide shell: a hand-written markdown guide rendered as part of the console.
+GUIDE_CSS = THEME_TOKENS + """
 * { box-sizing: border-box; }
-body { margin: 0; padding: 26px 32px 60px; background: #0a0e13; color: #d5dee6;
-  font: 15px/1.65 system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  max-width: 860px; }
-h1, h2, h3 { color: #ffc87d; line-height: 1.25; }
+body { margin: 0; padding: 26px 32px 60px; background: var(--deck); color: var(--ink);
+  font: 15px/1.65 var(--f-prose); max-width: 860px; }
+h1, h2, h3 { color: var(--ink); font-family: var(--f-display); line-height: 1.25; }
 h1 { font-size: 26px; } h2 { margin-top: 34px; } h3 { margin-top: 26px; }
-a { color: #45e0b0; }
-code { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px;
-  background: #141d28; border: 1px solid #1e2a37; border-radius: 4px; padding: 1px 5px; }
-pre { background: #101720; border: 1px solid #1e2a37; border-radius: 8px;
+a { color: var(--signal); }
+code { font-family: var(--f-mono); font-size: 13px;
+  background: var(--plate-2); border: 1px solid var(--rule); border-radius: 4px; padding: 1px 5px; }
+pre { background: var(--plate); border: 1px solid var(--rule); border-radius: 8px;
   padding: 12px 14px; overflow-x: auto; }
 pre code { background: none; border: none; padding: 0; }
 table { border-collapse: collapse; margin: 12px 0; display: block; overflow-x: auto; }
-th, td { border: 1px solid #1e2a37; padding: 6px 12px; text-align: left; }
-th { background: #141d28; color: #ffc87d; }
-blockquote { border-left: 3px solid #ffb454; margin-left: 0; padding-left: 14px;
-  color: #8598a9; }
-hr { border: none; border-top: 1px solid #1e2a37; }
+th, td { border: 1px solid var(--rule); padding: 6px 12px; text-align: left; }
+th { background: var(--plate-2); font-family: var(--f-display); }
+blockquote { border-left: 3px solid var(--iris); margin-left: 0; padding-left: 14px;
+  color: var(--ink-2); }
+hr { border: none; border-top: 1px solid var(--rule); }
 """
 
 
-# Dark pdoc theme in the console's palette — pdoc's own variables, our colors. Without
-# this the API reference renders in pdoc's white default and looks like a foreign site
-# inside the Help tab's iframe.
-PDOC_THEME_CSS = """
-/* signal-deck dark theme for pdoc (overrides templates/theme.css) */
-:root { --pdoc-background: #0a0e13; color-scheme: dark; }
+# pdoc in the console's palette — pdoc's own variables, our tokens. Without this the API
+# reference renders in pdoc's default and looks like a foreign site inside the Help tab.
+PDOC_THEME_CSS = THEME_TOKENS + """
+/* watchfloor theme for pdoc (overrides templates/theme.css) — pdoc's own variables, our tokens */
+:root { --pdoc-background: var(--deck); }
 .pdoc {
-    --text: #d5dee6;
-    --muted: #8598a9;
-    --link: #45e0b0;
-    --link-hover: #7deec9;
-    --code: #141d28;
-    --active: #2a2416;
+    --text: var(--ink);
+    --muted: var(--ink-2);
+    --link: var(--signal);
+    --link-hover: var(--signal);
+    --code: var(--plate-2);
+    --active: var(--plate-2);
 
-    --accent: #141d28;
-    --accent2: #1e2a37;
+    --accent: var(--plate-2);
+    --accent2: var(--rule);
 
-    --nav-hover: rgba(255, 180, 84, 0.08);
-    --name: #ffb454;
-    --def: #45e0b0;
-    --annotation: #8598a9;
+    --nav-hover: var(--plate-2);
+    --name: var(--iris);
+    --def: var(--signal);
+    --annotation: var(--ink-2);
 }
-.pdoc h1, .pdoc h2, .pdoc h3, .pdoc h4 { color: #ffc87d; }
-.pdoc pre { border: 1px solid #1e2a37; border-radius: 8px; }
-.pdoc .docstring code, .pdoc summary code { border: 1px solid #1e2a37; border-radius: 4px; }
-input[type="search"] { background: #141d28; color: #d5dee6; border: 1px solid #1e2a37; }
+.pdoc h1, .pdoc h2, .pdoc h3, .pdoc h4 { color: var(--ink); font-family: var(--f-display); }
+.pdoc pre { border: 1px solid var(--rule); border-radius: 8px; }
+.pdoc .docstring code, .pdoc summary code { border: 1px solid var(--rule); border-radius: 4px; }
+input[type="search"] { background: var(--plate-2); color: var(--ink);
+  border: 1px solid var(--rule); }
 """
 
-# The Help tab's reading order: orientation first, worked examples second, then the
-# deeper contract docs. Guides not named here sort alphabetically after them.
-GUIDE_ORDER = ["getting-started", "examples", "conversations", "playbooks",
-               "rules-permissions", "curated-rules", "notifications", "subtasks",
-               "background-tasks", "triggers", "run-analytics", "authoring", "sandboxing",
-               "remote-machines", "darknet", "usenet", "prompt-anatomy", "endpoints"]
+# The Help tab's reading order: orientation first, worked examples second, then the deeper
+# contract docs. Guides not named here sort alphabetically after them, so a NEW guide reaches
+# the tab whether or not anyone remembers this list — the list only decides where it reads well.
+# A name here that no `docs/*.md` answers to costs nothing and says nothing, which is how
+# `subtasks` outlived the guide it named; the guide is `child-runs`.
+GUIDE_ORDER = ["getting-started", "examples", "authoring", "conversations", "playbooks",
+               "child-runs", "background-tasks", "triggers", "schedule-once", "run-gates",
+               "lanes-domains", "rules-permissions", "curated-rules", "rule-assists",
+               "reminders", "items", "messages", "status-pages", "run-analytics", "search",
+               "notifications", "sandboxing", "admin", "endpoints", "oauth-connections",
+               "remote-machines", "browser-sessions", "darknet", "usenet",
+               "output-compression", "revise-recipe", "claude-proxy-cutover",
+               "prompt-anatomy", "architecture", "designs"]
 
 
 def docs_out_dir() -> Path:
@@ -114,7 +150,13 @@ def guide_title(text: str, slug: str) -> str:
 
 
 def render_guide(text: str, title: str) -> str:
-    """One hand-written markdown guide → a self-contained dark HTML page."""
+    """One hand-written markdown guide → a self-contained, theme-following HTML page.
+
+    Self-contained is a hard requirement: the page is served from `/docs`, outside the source
+    tree, so it can fetch nothing from `static/`. `?theme=light|dark` stamps `data-theme` for a
+    reader who chose one; with no parameter the page follows the machine, which is what the
+    console's own default does.
+    """
     import markdown2
 
     body = markdown2.markdown(
@@ -122,7 +164,8 @@ def render_guide(text: str, title: str) -> str:
     return (f'<!doctype html><html lang="en"><head><meta charset="utf-8">'
             f'<meta name="viewport" content="width=device-width, initial-scale=1">'
             f'<title>{title}</title><link rel="icon" href="{FAVICON}">'
-            f"<style>{GUIDE_CSS}</style></head><body>{body}</body></html>")
+            f"<style>{GUIDE_CSS}</style><script>{THEME_SCRIPT}</script>"
+            f"</head><body>{body}</body></html>")
 
 
 def build_docs(source_repo: Path, out: Path, *, modules: tuple[str, ...] = ("rsched",),

@@ -1,13 +1,21 @@
 """docs/prompt-anatomy.md is contract documentation for the Help tab: it must track the
 prompt surface. This pins the load-bearing engine strings — change composer/loop/schema
-wording and this fails until the doc is revised to match."""
+wording and this fails until the doc is revised to match.
 
+The needle list is held to the source in BOTH directions. `doc ⊇ engine` catches a wording
+change the doc has not followed; `engine ⊇ doc` catches the opposite and harder failure —
+prose that outlived its feature, which a one-way check reads as a pass. (A `GROUP FIRE PHASE`
+paragraph survived the machinery it described for months that way.)
+"""
+
+import re
 from pathlib import Path
 from types import SimpleNamespace
 
+import rsched
 from rsched.config import ServerConfig, load_routine
 from rsched.engine.actions import KIND_EXAMPLES
-from rsched.engine.actionschema import KINDS
+from rsched.engine.actionschema import ACTION_SCHEMA, KINDS
 from rsched.engine.budgets_config import Budgets
 from rsched.engine.composer import build_system_prompt, kickoff_message, state_digest
 from rsched.engine.run_context import RunContext
@@ -16,6 +24,26 @@ from rsched.grantpolicy import GrantPolicy
 from rsched.schema_guard import retry_message
 
 DOC = (Path(__file__).resolve().parents[1] / "docs" / "prompt-anatomy.md").read_text(encoding="utf-8")
+
+
+def _package_source() -> str:
+    """Every `src/rsched` module as ONE searchable string, normalised so a needle spanning a
+    wrapped literal still matches: whitespace collapsed, then adjacent string literals joined
+    (`"a " "b"` -> `a b`, prefixes included), which is what the reader sees at runtime.
+    """
+    text = " ".join(" ".join(p.read_text(encoding="utf-8").split())
+                    for p in sorted(Path(rsched.__file__).parent.rglob("*.py")))
+    return re.sub(r"""['"] ?(?:[fFrRbBuU]{1,2})?['"]""", "", text)
+
+
+ENGINE_SRC = _package_source()
+
+#: Needles the engine BUILDS rather than spells, so no source scan can find them. Keep this
+#: list at zero-plus-a-reason: an entry is an unchecked needle.
+COMPOSED_NEEDLES = frozenset({
+    # `stopping_digest._group_block` renders f"{mode.upper()} of:" from the group's own mode.
+    "ANY of:",
+})
 
 
 def _system_prompt(make_routine, tmp_path, depth=0) -> str:
@@ -80,7 +108,7 @@ def test_doc_pins_the_canonical_engine_strings(make_routine, tmp_path):
         # the terminal acknowledgment (kindsurface report bullet + ACTION_SCHEMA `closes`):
         # a reply that completes an exchange ends the thread settled instead of ratcheting
         "sets `closes: true` so the thread ends settled",
-        "it settles its target AND is itself born settled",
+        "it settles its target(s) AND is itself born settled",
         # the FOLD (F492) + the open-thread cap (D110): routing that leaves the original
         # behind is a copy, and a cap is only fair beside an operation that can consolidate
         "leaving triage at once and settling when it settles",
@@ -161,6 +189,10 @@ def test_doc_pins_the_canonical_engine_strings(make_routine, tmp_path):
     ]
     for needle in needles:
         assert needle in DOC, f"engine string {needle!r} missing from docs/prompt-anatomy.md"
+        if needle not in COMPOSED_NEEDLES:
+            assert needle in ENGINE_SRC, (
+                f"{needle!r} is pinned here but no longer emitted anywhere in src/rsched — "
+                "drop the needle and the doc prose it guards, or name it in COMPOSED_NEEDLES")
 
 
 def test_doc_pins_the_deliberation_levels():
@@ -172,6 +204,20 @@ def test_doc_pins_the_deliberation_levels():
         assert level in DOC, f"deliberation level {level!r} missing from the doc"
     for core in ("ONE terse clause", "beyond this run", "state/notes.md"):
         assert core in DOC, f"deliberation contract core {core!r} missing from the doc"
+
+
+def test_section_5_shows_no_field_the_schema_does_not_define():
+    """§5 is a PROJECTION — a routine's own kinds only — so a property the schema defines may
+    legitimately be absent and a description may legitimately be shorter. The reverse cannot be
+    legitimate: a field shown there that `ACTION_SCHEMA` no longer defines is a field the model
+    is never given, in the page that calls itself exactly what the orchestrator sees.
+    """
+    section5 = DOC[DOC.index("## 5 · Full verbatim example"):]
+    shown = set(re.findall(r'^\s{2}"([a-z_]+)": \{', section5, re.MULTILINE))
+    assert shown, "the §5 schema dump did not parse — has the example's formatting changed?"
+    assert not shown - set(ACTION_SCHEMA["properties"]), (
+        "docs/prompt-anatomy.md §5 shows action fields the schema does not define: "
+        f"{sorted(shown - set(ACTION_SCHEMA['properties']))}")
 
 
 def test_doc_names_every_action_kind_and_the_finish_example_matches():

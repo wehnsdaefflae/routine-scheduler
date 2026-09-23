@@ -18,6 +18,7 @@ from fastapi.testclient import TestClient
 from conftest import make_test_server
 from rsched import branches
 from rsched import conversations as conv_mod
+from rsched.engine import inbox
 from rsched.paths import atomic_write_json
 from rsched.web.app import create_app
 
@@ -193,15 +194,19 @@ def test_handback_delivers_summary_and_artifacts_without_merging(server):
 
     out = branches.hand_back(server, branch_dir=b, slug=slug, summary="the branch concluded X")
     assert out["parent"] == "c-p" and out["copied"] == 1
-    landed = d / "artifacts" / f"{branches.HANDBACK_PREFIX}{slug}" / "result.md"
+    landed = d / "artifacts" / f"from-branch-{slug}" / "result.md"
     assert landed.read_text() == "what the branch found"
     assert (d / "artifacts" / "parents-own.md").is_file()      # never clobbers the parent's own
 
     msgs = list((d / "inbox").glob("msg-branch-*.json"))
     assert len(msgs) == 1
-    text = json.loads(msgs[0].read_text())["text"]
+    record = json.loads(msgs[0].read_text())
+    text = record["text"]
     assert "the branch concluded X" in text and slug in text
     assert "not a merge" in text
+    # the hand-back NAMES what it left, the way a subtask's does — not a bare count the
+    # parent would have to go and list a directory to interpret
+    assert f"artifacts/from-branch-{slug}/result.md" in text
     # the parent's transcript is untouched — the hand-back is a delivery, not a rewrite
     tp = d / "runs" / "20260827-100000" / "transcript.jsonl"
     assert [json.loads(x)["type"] for x in tp.read_text().splitlines()] == [
@@ -216,8 +221,26 @@ def test_handback_is_idempotent_and_survives_a_second_pass(server):
     branches.hand_back(server, branch_dir=b, slug=slug, summary="first pass")
     (b / "artifacts" / "result.md").write_text("v2", encoding="utf-8")
     branches.hand_back(server, branch_dir=b, slug=slug, summary="second pass")
-    assert (d / "artifacts" / f"{branches.HANDBACK_PREFIX}{slug}"
-            / "result.md").read_text() == "v2"
+    assert (d / "artifacts" / f"from-branch-{slug}" / "result.md").read_text() == "v2"
+
+
+def test_handback_is_delivered_on_the_branch_channel_not_the_user_one(server):
+    """`via` is the delivery-policy switch, not a label. A hand-back filed as "conversation"
+    is a USER via: the composer offers it as the operator's own editable queued message, the
+    reap sweeps it as a stranded user message and RESUMES the parent — the wake this module's
+    own contract says never happens — and the run counts a machine delivery as the user having
+    spoken (the create_routine confirm gate and the `user-spoke` assist both read that count).
+    """
+    d = _parent(server)
+    slug = branches.fork_conversation(server, parent_dir=d, parent_slug="c-p", at_turn=1)["slug"]
+    branches.hand_back(server, branch_dir=server.conversations_home / slug, slug=slug,
+                       summary="done")
+    record = json.loads(next((d / "inbox").glob("msg-branch-*.json")).read_text())
+    assert record["via"] == "branch"
+    assert record["via"] in inbox.LIVE_MESSAGE_VIAS      # the parent's next reply drains it
+    assert record["via"] not in inbox.USER_MESSAGE_VIAS  # …but nothing wakes the parent for it
+    assert not inbox.user_authored(record["via"])
+    assert not inbox.has_pending_messages(d, vias=inbox.USER_MESSAGE_VIAS)
 
 
 def test_handback_refuses_from_a_root_conversation(server):

@@ -6,7 +6,7 @@
 
 import { api } from "/static/api.js";
 import { confirmDialog } from "/static/components/dialog.js";
-import { el, queuedToast, toast, when } from "/static/util.js";
+import { el, queuedToast, toast, toastError, when } from "/static/util.js";
 
 const COOLDOWN_HINT = "minimum seconds between trigger-initiated fires — events arriving "
   + "inside the window coalesce into one run";
@@ -29,7 +29,7 @@ export function triggersCard(slug, initial) {
 
   async function refresh() {
     try { const d = await api(`/api/routines/${slug}`); render(d.triggers || []); }
-    catch (err) { toast(err.message, 4000, { error: true }); }
+    catch (err) { toastError(err); }
   }
 
   function render(rows) {
@@ -115,7 +115,7 @@ export function triggersCard(slug, initial) {
       refresh();
     } catch (err) {
       input.value = String(current);
-      toast(err.message, 4000, { error: true });
+      toastError(err);
     }
   }
 
@@ -138,7 +138,7 @@ export function triggersCard(slug, initial) {
                 ...(Number.isFinite(cooldown) && cooldown >= 0 ? { cooldown_s: cooldown } : {}) } });
       queuedToast(res, "webhook trigger created");
       refresh();
-    } catch (err) { toast(err.message, 4000, { error: true }); }
+    } catch (err) { toastError(err); }
   }
 
   async function createReport(cooldownIn) {
@@ -149,7 +149,7 @@ export function triggersCard(slug, initial) {
                 ...(Number.isFinite(cooldown) && cooldown >= 0 ? { cooldown_s: cooldown } : {}) } });
       queuedToast(res, "report trigger created — a delivered report now wakes this routine");
       refresh();
-    } catch (err) { toast(err.message, 4000, { error: true }); }
+    } catch (err) { toastError(err); }
   }
 
   async function remove(t) {
@@ -159,6 +159,6 @@ export function triggersCard(slug, initial) {
       const res = await api(`/api/routines/${slug}/triggers/${t.id}`, { method: "DELETE" });
       queuedToast(res, "trigger deleted");
       refresh();
-    } catch (err) { toast(err.message, 4000, { error: true }); }
+    } catch (err) { toastError(err); }
   }
 }

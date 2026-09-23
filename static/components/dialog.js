@@ -17,7 +17,7 @@ function modal({ message, input = null, confirmLabel, danger }) {
       if (opener && document.contains(opener)) opener.focus();
       resolve(value);
     };
-    const ok = el("button", { class: danger ? "btn danger" : "btn primary" }, confirmLabel);
+    const ok = el("button", { class: danger ? "btn danger armed" : "btn primary" }, confirmLabel);
     const cancel = el("button", { class: "btn" }, "cancel");
     const overlay = el("div", { class: "modal-overlay" },
       el("div", { class: "panel", role: "dialog", "aria-modal": "true" },

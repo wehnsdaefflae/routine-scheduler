@@ -58,7 +58,11 @@ ONCE_CLASSES = TURN_ACTION_CLASSES | frozenset({"secret", "fs-read", "fs-write"}
 # grants: TRUE rows are legal only where no native routine.yaml switch exists.
 TRUE_ROW_CLASSES = frozenset({"secret"})
 # fs paths that are never grantable, whatever the user clicks: the instance's credential
-# stores (docs/sandboxing.md keeps them invisible even to fully-granted utils).
+# stores (docs/sandboxing.md keeps them invisible even to fully-granted utils). Enforced at
+# THREE points, because one was not enough — a run's access REQUEST (engine/availability.py),
+# the config PATCH (web/api_routine_patch.py) and the config LOADER (config/routine.py, which
+# REPORTS one already in a file rather than dropping it: a root a routine has been running on
+# for months disappears from under its next run otherwise).
 NEVER_GRANTABLE = ("~/.config/routine-scheduler", "~/.credentials", "~/.ssh")
 
 _LEVELS = {"runs": ("last", "all"), "workflows": ("generate",),
@@ -110,6 +114,27 @@ def never_grantable_fs(path: str | Path) -> bool:
         if p == guarded or p in guarded.parents or guarded in p.parents:
             return True
     return False
+
+
+#: Why a guarded root is refused, in the ONE wording every enforcer uses — the PATCH that
+#: rejects it, the loader that reports it, and the setup surface that keeps shouting about
+#: one already in a file. The promise used to be true only of the ASK path
+#: (`engine/availability.py`, the only caller of `never_grantable_fs`), so the docstring above
+#: was false for exactly the door SEC-1 came through: an operator typing the path into the
+#: routine page's Filesystem-roots panel.
+GUARDED_ROOT_REASON = (
+    "is an instance credential store. The config dir (console token + central secrets), "
+    "~/.credentials and ~/.ssh are never grantable to a routine by design: a run holding one "
+    "reads every other routine's secrets and the operator's own token (docs/sandboxing.md)")
+
+
+def guarded_roots(paths: object) -> list[str]:
+    """The entries of a folder-grant list that name a credential store — empty for a clean
+    list. Takes the raw strings a routine.yaml or a PATCH carries, `~` and all.
+    """
+    if not isinstance(paths, (list, tuple)):
+        return []
+    return [str(p) for p in paths if isinstance(p, (str, Path)) and never_grantable_fs(p)]
 
 
 def is_resource(eid: str) -> bool:

@@ -9,9 +9,13 @@ The jail is the whole point. `shell` was a reserved util until 0.287.0, and a ut
 is jailed to the run's granted roots intersected with the util's own `fs:` declaration — the
 shell util declared `fs: roots` + `net: outbound`, the widest terms available, so its
 intersection term was a no-op and its effective bound was exactly the run's granted roots.
-This runner reproduces that bound (`fs_roots=True`, `net=True`), so the move to an action kind
+This module reproduces that bound (`fs_roots=True`, `net=True`), so the move to an action kind
 changes what can GENERATE the call, never what the call can reach. Weakening either flag would
 turn a gating improvement into a sandbox regression.
+
+What this module owns is the jail TERMS and the exit convention; the process itself is
+`utils_run.run_jailed`, shared with the util and script kinds — including the bounded read
+that stops a command printing gigabytes from being materialized in the daemon's memory.
 
 Secrets: NONE. The old util declared no `secrets:` header, so `utils_run.scoped_env` injected
 nothing and scrubbed every store key out of the inherited environment; `scoped_env(set())` here
@@ -21,32 +25,13 @@ shell one-liner.
 
 from __future__ import annotations
 
-import os
-import signal
-import subprocess
-import tempfile
 from pathlib import Path
 
 from . import sandbox
-from .utils_run import scoped_env
+from .utils_run import run_jailed, scoped_env
 
 SHELL_DEFAULT_TIMEOUT_S = 120
 TIMEOUT_EXIT = 124                # the shell convention (`timeout(1)`), kept from the util
-# Per-stream cap, head+tail — inherited verbatim from the retired util, whose docstring named
-# the reason: a chatty command must never be able to flood a transcript. The observation layer
-# caps again (much harder) and spills the full text to `.util_outputs/`, so this is the size of
-# what SURVIVES a shell call, not what the reader is shown.
-STREAM_CAP = 64_000
-
-
-def capped(text: str) -> tuple[str, bool]:
-    """`(text, was_capped)` at STREAM_CAP, keeping head and tail around an elision marker."""
-    if len(text) <= STREAM_CAP:
-        return text, False
-    head = int(STREAM_CAP * 0.7)
-    tail = STREAM_CAP - head
-    return (text[:head] + f"\n[... {len(text) - STREAM_CAP} chars omitted (head+tail kept) ...]\n"
-            + text[-tail:]), True
 
 
 def run_shell(command: str, *, policy: sandbox.SandboxPolicy, libraries_home: Path,
@@ -71,37 +56,9 @@ def run_shell(command: str, *, policy: sandbox.SandboxPolicy, libraries_home: Pa
     except sandbox.SandboxRefusal as exc:
         return {"exit": 2, "stdout": "", "stderr": str(exc), "truncated": False,
                 "timed_out": False}
-    # Own process GROUP + spool files, for the reasons utils_run documents: a command that
-    # backgrounds a child survives a plain timeout and holds the pipes open forever, and a
-    # command that prints gigabytes must not be buffered in the daemon's memory.
-    with tempfile.TemporaryFile("w+", encoding="utf-8", errors="replace") as out_f, \
-            tempfile.TemporaryFile("w+", encoding="utf-8", errors="replace") as err_f:
-        try:
-            proc = subprocess.Popen(cmd, stdout=out_f, stderr=err_f,
-                                    stdin=subprocess.DEVNULL, text=True, env=env,
-                                    cwd=str(cwd), start_new_session=True)
-        except OSError as exc:
-            return {"exit": 2, "stdout": "", "stderr": f"could not run the command: {exc}",
-                    "truncated": False, "timed_out": False}
-        timed_out = False
-        try:
-            proc.wait(timeout=timeout)
-        except subprocess.TimeoutExpired:
-            timed_out = True
-            try:
-                os.killpg(proc.pid, signal.SIGKILL)
-            except (ProcessLookupError, PermissionError):
-                proc.kill()
-            proc.wait()
-        # Keep whatever was printed BEFORE the kill: a command that hung after logging why
-        # it hung would otherwise lose exactly the material that explains the hang.
-        out_f.seek(0)
-        err_f.seek(0)
-        stdout, out_trunc = capped(out_f.read())
-        stderr, err_trunc = capped(err_f.read())
-    if timed_out:
-        note = f"[timed out after {timeout}s — the process group was killed]"
-        stderr = f"{stderr}\n{note}" if stderr else note
-    return {"exit": TIMEOUT_EXIT if timed_out else proc.returncode,
-            "stdout": stdout, "stderr": stderr,
-            "truncated": out_trunc or err_trunc, "timed_out": timed_out}
+    res = run_jailed(cmd, env=env, cwd=cwd, timeout=timeout, label="the command",
+                     config_seal=policy.own_dir)
+    return {"exit": TIMEOUT_EXIT if res.timed_out else res.returncode,
+            "stdout": res.stdout, "stderr": res.stderr,
+            "truncated": res.stdout.capture_truncated or res.stderr.capture_truncated,
+            "timed_out": res.timed_out}

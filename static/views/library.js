@@ -8,7 +8,7 @@ import { confirmDialog } from "/static/components/dialog.js";
 import { impactPanel } from "/static/components/impact.js";
 import { codeEditor } from "/static/components/code.js";
 import { replaceHash, remount } from "/static/router.js";
-import { el, emptyState, requiresSummary, skeleton, tagChip, toast, when } from "/static/util.js";
+import { el, emptyState, requiresSummary, skeleton, tagChip, toast, toastError, when } from "/static/util.js";
 
 // The confirm-then-DELETE protocol showEditor's delete button runs on, written once: false when
 // the reader backs out (the button re-enables, nothing else happens), true once the file is gone
@@ -25,7 +25,7 @@ export async function render(view, sub, query = {}) {
   view.append(el("div", { class: "page-head" },
     el("div", {},
       el("h1", {}, "Library"))));
-  const countLine = el("div", { class: "sub muted" });
+  const countLine = el("div", { class: "tags", style: "margin:2px 0 10px" });
   const filterBar = el("div", { class: "filterbar" });
   const sections = el("div", {});
   const editor = el("div", {});
@@ -36,15 +36,42 @@ export async function render(view, sub, query = {}) {
   try { data = await api("/api/library"); }
   catch (err) { sections.replaceChildren(emptyState("✕", "Couldn't load the library", err.message)); return; }
   data.playbooks = data.playbooks || [];
-  countLine.textContent =
-    `workflows ${data.workflows.length} · rules ${data.rules.length} · permissions ${data.permissions.length} · templates ${(data.templates || []).length} · playbooks ${data.playbooks.length} · reminders ${(data.reminders || []).length} · utils ${data.utils.length}`;
+  // The counts ARE this page's index. They used to be dead text over eleven thousand pixels of
+  // catalogue, with `utils` some nine thousand of them below the word — so each one jumps to its
+  // own section, the same move the rail's "On this page" makes from the chrome.
+  const COUNTS = [
+    ["workflows", data.workflows.length, "Workflows"],
+    ["rules", data.rules.length, "Rules"],
+    ["permissions", data.permissions.length, "Permissions"],
+    ["templates", (data.templates || []).length, "Settings templates"],
+    ["playbooks", data.playbooks.length, "Playbooks"],
+    ["reminders", (data.reminders || []).length, "Consequence reminders"],
+    ["utils", data.utils.length, "Global utils"],
+  ];
+  const jumpTo = (title) => [...sections.querySelectorAll("h2")]
+    .find((h) => h.textContent.trim() === title)
+    ?.scrollIntoView({ behavior: "smooth", block: "start" });
+  countLine.replaceChildren(...COUNTS.map(([label, n, title]) =>
+    el("span", { class: "tag click", "data-count": label, title: `jump to ${title}`,
+      onclick: () => jumpTo(title) }, `${label} ${n}`)));
 
   // Both the tag filter and the open editor are kept in the URL (#/library/<kind>/<slug>?tags=…)
   // so the view is shareable and restores on reload — without tearing itself down on each change.
   let openSub = sub || null;
+  // With a doc open, the catalogue narrows to that doc's OWN kind. The whole library is 11
+  // workflows, 30 rules, 25 permissions, 6 templates, a playbook and 110 utils — 12 000px of
+  // list above an editor nobody asked to arrive under. Reading one rule is not browsing six
+  // catalogues, and the rest is one chip away.
+  let expandAll = false;
+  const KIND_SECTION = { workflow: "Workflows", rule: "Rules", permission: "Permissions",
+                         playbook: "Playbooks", template: "Settings templates",
+                         util: "Global utils" };
   const active = new Set((query.tags || "").split(",").filter(Boolean));
   const updateURL = () => replaceHash(openSub ? `#/library/${openSub}` : "#/library",
     { tags: [...active].join(",") });
+  // Every opener goes through here: it is what keeps the URL, the catalogue and the editor
+  // saying the same thing about which document is open.
+  const setOpen = (s) => { openSub = s; expandAll = false; updateURL(); renderSections(); };
   const matches = (tags) => !active.size || (tags || []).some((t) => active.has(t));
 
   // One autosuggest input instead of the former wall of every tag as a chip (user order
@@ -80,6 +107,17 @@ export async function render(view, sub, query = {}) {
 
   function renderSections() {
     sections.replaceChildren();
+    if (onlySection()) {
+      sections.append(el("div", { class: "row", style: "margin-bottom:6px" },
+        el("span", { class: "muted small" }, `showing ${onlySection().toLowerCase()} only`),
+        el("button", { class: "btn ghost small", "data-lib-expand": "",
+          onclick: () => { expandAll = true; renderSections(); } }, "show the whole library")));
+      // …and on a phone, not even that one catalogue: the editor is appended BELOW the list, so
+      // one kind's rows (thirty rules, a hundred and ten utils) still put the document a dozen
+      // screens down from the tap that opened it. The list and the editor are never on screen
+      // together at this width anyway.
+      if (!window.matchMedia("(min-width: 861px)").matches) return;
+    }
     section("Workflows", "the control-flow patterns routines follow",
       data.workflows.filter((w) => matches(w.tags)).map((w) =>
         item(w.name || w.slug, w.problems, w.tags, () => openWorkflow(w.slug), w.description,
@@ -146,14 +184,18 @@ export async function render(view, sub, query = {}) {
              `#/library/util/${u.name}`)));
   }
 
+  const onlySection = () =>
+    (!expandAll && openSub ? KIND_SECTION[openSub.split("/")[0]] || null : null);
+
   function section(title, desc, rows, action) {
+    if (onlySection() && title !== onlySection()) return;
     sections.append(el("h2", {}, title));
     sections.append(el("div", { class: "panel", style: "padding:0" },
       el("div", { class: "muted small",
         style: "padding:11px 16px;border-bottom:1px solid var(--rule);display:flex;justify-content:space-between;align-items:center;gap:12px" },
         el("span", {}, desc), action || ""),
       el("div", { class: "tablewrap" },
-        el("table", { class: "list" }, el("tbody", {}, rows.length ? rows
+        el("table", { class: "list stack" }, el("tbody", {}, rows.length ? rows
           : el("tr", {}, el("td", { class: "muted" }, active.size ? "none match this filter" : "none")))))));
   }
 
@@ -165,10 +207,12 @@ export async function render(view, sub, query = {}) {
         if (e.metaKey || e.ctrlKey || e.shiftKey || e.button === 1) return;
         e.preventDefault(); onopen();
       } }, label)),
-      el("td", {}, (tags || []).length ? el("div", { class: "tags" }, tags.map((t) => tagChip(t))) : ""),
-      el("td", { class: "muted prose", style: "max-width:460px" }, summary || ""),
+      // null, not "": el() drops a null child, and an empty TEXT node would keep the cell from
+      // matching `td:empty` — which is what folds an unused line away when the row stacks
+      el("td", {}, (tags || []).length ? el("div", { class: "tags" }, tags.map((t) => tagChip(t))) : null),
+      el("td", { class: "muted prose", style: "max-width:460px" }, summary || null),
       el("td", {}, (problems && problems.length)
-        ? el("span", { class: "chip failed", title: problems.join("\n") }, `${problems.length} lint`) : ""));
+        ? el("span", { class: "chip failed", title: problems.join("\n") }, `${problems.length} lint`) : null));
   }
 
   // The same confirm-then-DELETE protocol the doc editors use. Its own warning, because what
@@ -185,7 +229,7 @@ export async function render(view, sub, query = {}) {
   }
 
   async function openWorkflow(slug) {
-    openSub = `workflow/${slug}`; updateURL();
+    setOpen(`workflow/${slug}`);
     const d = await api(`/api/workflows/${slug}`);
     // converse is undeletable (every conversation is materialized from it by slug) — no button
     const wfDelete = slug === "converse" ? undefined
@@ -199,7 +243,7 @@ export async function render(view, sub, query = {}) {
       { lang: "python", del: wfDelete });
   }
   async function openDoc(kind, slug) {
-    openSub = `${kind.slice(0, -1)}/${slug}`; updateURL();
+    setOpen(`${kind.slice(0, -1)}/${slug}`);
     const d = await api(`/api/library/${kind}/${slug}`);
     // permissions get a structured, prefilled requires: panel — it is authoritative for
     // that key on save (the server merges it into the frontmatter); prose stays in the editor
@@ -282,7 +326,7 @@ export async function render(view, sub, query = {}) {
       ...(runsSel.value ? { runs: runsSel.value } : {}) }) };
   }
   async function openUtil(name) {
-    openSub = `util/${name}`; updateURL();
+    setOpen(`util/${name}`);
     const d = await api(`/api/library/utils/${name}`);
     showEditor(`util: ${name} (selftest-gated)`, d.content, null, async (content, digest) =>
       api(`/api/library/utils/${name}`, { method: "PUT",
@@ -297,7 +341,7 @@ export async function render(view, sub, query = {}) {
   // A playbook is a subfolder (MAIN.md + optional detail files) — the editor edits MAIN.md; its
   // detail files are managed by the Update-playbook distillation, viewable read-only here.
   async function openPlaybook(slug) {
-    openSub = `playbook/${slug}`; updateURL();
+    setOpen(`playbook/${slug}`);
     const d = await api(`/api/playbooks/${slug}`);
     const extra = d.details?.length
       ? el("div", { class: "panel", style: "margin-bottom:10px" },
@@ -356,7 +400,7 @@ export async function render(view, sub, query = {}) {
             remount();          // re-render the view in place — the list drops the file
             return;
           }
-        } catch (err) { toast(err.message, 5000, { error: true }); }
+        } catch (err) { toastError(err, 5000); }
         delBtn.disabled = false;
       };
     }
@@ -392,7 +436,7 @@ export async function render(view, sub, query = {}) {
           "tags live in this file's frontmatter/header — edit them here"),
         log ? el("details", { class: "mt" }, el("summary", { style: "cursor:pointer" }, "git history"),
           el("div", { class: "tablewrap" },
-            el("table", { class: "list" }, el("tbody", {}, (log || []).map((c) =>
+            el("table", { class: "list stack" }, el("tbody", {}, (log || []).map((c) =>
               el("tr", {}, el("td", {}, c.commit), el("td", {}, c.date),
                 el("td", { class: "muted" }, c.subject))))))) : null));
     editor.scrollIntoView({ behavior: "smooth" });
@@ -409,7 +453,7 @@ export async function render(view, sub, query = {}) {
                      permission: (id) => openDoc("permissions", id),
                      playbook: openPlaybook,
                      util: openUtil }[kind];
-    if (opener && id) opener(id).catch((e) => toast(e.message, 4000, { error: true }));
+    if (opener && id) opener(id).catch((e) => toastError(e));
   }
 
 }

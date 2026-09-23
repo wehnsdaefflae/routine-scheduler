@@ -12,6 +12,7 @@ the routine reverts on a red suite, and the checks run over the live tree's pend
 
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -20,9 +21,19 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def _gate(tool: str, *args: str) -> None:
-    exe = shutil.which(tool)
-    if exe is None:  # a minimal env without dev tools — the real commit gate always has them
-        pytest.skip(f"{tool} not installed")
+    # PATH first, then the bin directory of the interpreter RUNNING this test. `uv run` prepends
+    # the project env's bin, but an invocation by absolute interpreter does not — and the
+    # container sets no PATH at all, so `/opt/rsched-venv/bin` is off it. Every run launched as
+    # `/opt/rsched-venv/bin/python -m pytest` therefore found no tool; with a skip, all three
+    # gates passed by not existing. vulture has no other runner anywhere.
+    exe = shutil.which(tool) or shutil.which(tool, path=str(Path(sys.executable).parent))
+    if exe is None:
+        # NOT a skip. A skip reads as a pass in every consumer of this suite — the routine's
+        # test gate, the terminal summary, the junit XML — and this file exists because a red
+        # tree once sailed through four releases unseen. A machine without the dev tools has
+        # no business committing from this repo.
+        pytest.fail(f"{tool} is not on PATH or beside {sys.executable} — the commit gate "
+                    f"cannot run, and a gate that cannot run must not report success")
     proc = subprocess.run([exe, *args], cwd=REPO_ROOT, capture_output=True,
                           text=True, timeout=600, check=False)
     if proc.returncode != 0:
@@ -51,3 +62,23 @@ def test_vulture_clean():
     framework entry points that are called by decorator rather than by name, is in pyproject.
     """
     _gate("vulture", "src", "tests", "--min-confidence", "60")
+
+
+def test_the_gate_runs_when_its_tool_is_only_beside_the_interpreter(monkeypatch):
+    """Measured in the running container: PATH is `/usr/local/bin:…:/bin` and carries none of
+    the three tools, because the image sets no PATH and `/opt/rsched-venv/bin` is not on it. Only
+    `uv run` prepended it — so every invocation by absolute interpreter, the routine's own
+    worktree gate included, found nothing."""
+    monkeypatch.setenv("PATH", "")
+    try:
+        _gate("ruff", "--version")
+    except pytest.skip.Exception as exc:
+        pytest.fail(f"the gate skipped instead of running: {exc}")
+
+
+def test_a_missing_tool_fails_the_gate_instead_of_skipping(monkeypatch):
+    """A skip reads as a pass in every consumer of this suite."""
+    monkeypatch.setenv("PATH", "")
+    monkeypatch.setattr(sys, "executable", "/nonexistent/python")
+    with pytest.raises(pytest.fail.Exception, match="the commit gate"):
+        _gate("ruff", "--version")

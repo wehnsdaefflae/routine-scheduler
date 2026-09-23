@@ -26,10 +26,10 @@ import logging
 from datetime import UTC, datetime
 from pathlib import Path
 
-from .. import registry, schedule_once
+from .. import registry, schedule_once, spool
 from ..config import ServerConfig
+from ..engine import inbox as inbox_mod
 from ..ids import now_iso
-from ..paths import atomic_write_json
 from .runner import Runner
 
 log = logging.getLogger("rsched.schedule_once")
@@ -77,15 +77,18 @@ class OneShotManager:
         for path in paths:
             rec = schedule_once.read_request(path)
             if not rec:
-                self._drop(slug, [path], "unreadable request file")
+                spool.drop([path], what="schedule-once requests", slug=slug,
+                           reason="unreadable request file")
                 continue
             exp = _parse(rec.get("expires_at")) if rec.get("expires_at") else None
             if exp is not None and exp <= now:
-                self._drop(slug, [path], "expired before firing")
+                spool.drop([path], what="schedule-once requests", slug=slug,
+                           reason="expired before firing")
                 continue
             fire_at = _parse(rec.get("fire_at"))
             if fire_at is None:
-                self._drop(slug, [path], "unreadable fire_at")
+                spool.drop([path], what="schedule-once requests", slug=slug,
+                           reason="unreadable fire_at")
                 continue
             if fire_at <= now:
                 due.append((path, rec, fire_at))
@@ -98,8 +101,9 @@ class OneShotManager:
         paths = schedule_once.pending_requests(self.home, slug)
         if not paths:
             return
-        if info is None or not info.cfg.enabled:
-            self._drop(slug, paths, "routine missing or disabled")
+        if info is None or not info.fireable:
+            spool.drop(paths, what="schedule-once requests", slug=slug,
+                           reason="routine missing, switched off or retired")
             return
         # one-run-per-routine: fire the EARLIEST-due request; any others fire on later ticks
         # once the routine is free again (the one-shot analog of trigger coalescing).
@@ -117,7 +121,8 @@ class OneShotManager:
         conv_dir = self.server.conversations_home / spool_slug.removeprefix("conv--")
         cfg = load_routine(conv_dir)[0] if (conv_dir / "routine.yaml").is_file() else None
         if cfg is None:
-            self._drop(spool_slug, paths, "conversation missing")
+            spool.drop(paths, what="schedule-once requests", slug=spool_slug,
+                           reason="conversation missing")
             return
         first = self._due_request(spool_slug, paths)
         if first is None or self.runner.draining or self.runner.is_active(cfg.slug):
@@ -132,9 +137,8 @@ class OneShotManager:
                     *, resume_ts: str | None) -> None:
         # Inject-then-fire with no await between the is_active gate and runner.fire's own
         # re-check: one event loop, so nothing can slip a competing run in between.
-        inbox = cfg.dir / "inbox"
-        atomic_write_json(inbox / f"msg-once-{rec.get('id')}.json",
-                          {"text": _fire_text(rec), "ts": now_iso(), "via": "schedule_once"})
+        inbox_mod.file_message(cfg.dir, _fire_text(rec), via="schedule_once",
+                               name=f"once-{rec.get('id')}")
         if resume_ts:
             rid = await self.runner.resume(cfg, resume_ts, reason="schedule_once")
         else:
@@ -150,14 +154,6 @@ class OneShotManager:
         else:
             log.error("schedule-once fire refused routine=%s req=%s — reason already injected "
                       "as an inbox message; the next run picks it up", slug, rec.get("id"))
-
-    @staticmethod
-    def _drop(slug: str, paths: list[Path], reason: str) -> None:
-        for p in paths:
-            p.unlink(missing_ok=True)
-        log.warning("schedule-once requests dropped routine=%s count=%d (%s)",
-                    slug, len(paths), reason)
-
 
 def _fire_text(rec: dict) -> str:
     """The injected user-message text: a one-line provenance head + the arming reason."""

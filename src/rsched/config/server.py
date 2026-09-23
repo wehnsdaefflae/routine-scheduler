@@ -42,7 +42,13 @@ class ServerConfig(_Config):
     libraries_home: HomePath = Field(
         default_factory=lambda: expand("~/.local/share/routine-scheduler-libraries"))
     libraries_remote: BlankableStr = ""  # clone-from / sync-to for the library repo
-    source_repo: HomePath = Field(default_factory=lambda: Path(__file__).resolve().parents[2])
+    # The CHECKOUT ROOT, not the package root: `src/rsched/config/server.py` -> parents[3].
+    # Everything downstream globs repo-relative paths off this value — `docs/*.md` and
+    # `src/rsched/**/*.py` for the Help tab's guides and staleness stamp (docs_build.py), and
+    # `.git` for the Source settings panel — so one level too shallow makes all three fail
+    # SILENTLY: no guides on Help, a stamp that never changes, and "not a git repo" beside a
+    # push that reports ok and pushed nothing.
+    source_repo: HomePath = Field(default_factory=lambda: Path(__file__).resolve().parents[3])
     source_remote: BlankableStr = ""     # optional: self-audit's push target for code commits
     github_client_id: BlankableStr = ""  # OAuth client_id for the device flow (default: gh CLI's)
     # External base URL a browser reaches this instance at (e.g. a Tailscale Serve https URL),

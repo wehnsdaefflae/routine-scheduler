@@ -4,7 +4,7 @@
 
 import { api } from "/static/api.js";
 import { setQuery } from "/static/router.js";
-import { el, toast } from "/static/util.js";
+import { el, toast, toastError } from "/static/util.js";
 import { panelSection } from "/static/views/settings-common.js";
 
 export function renderGithub(view, query) {
@@ -38,6 +38,10 @@ export function renderGithub(view, query) {
       const stop = (msg, color) => { wait.style.color = color; wait.textContent = msg; connect.disabled = false; setQuery({ flow: "" }); };
       const deadline = Date.now() + (f.expires_in || 900) * 1000;
       const tick = async () => {
+        // The flow polls for up to `expires_in` (15 min by default). Navigating away detaches
+        // this panel, and a POST every 5 s into a page nobody is on — ending in a reload() of
+        // a detached panel — is the leak the house pattern guards against everywhere else.
+        if (!ghBox.isConnected) return;
         if (Date.now() > deadline) { stop("code expired — try again", "var(--err)"); return; }
         let p;
         try { p = await api("/api/settings/github/device-poll", { method: "POST", body: { flow_id: f.flow_id } }); }
@@ -53,7 +57,7 @@ export function renderGithub(view, query) {
       connect.disabled = true; flowArea.replaceChildren();
       let f;
       try { f = await api("/api/settings/github/device-start", { method: "POST" }); }
-      catch (err) { toast(err.message, 6000, { error: true }); connect.disabled = false; return; }
+      catch (err) { toastError(err, 6000); connect.disabled = false; return; }
       setQuery({ section: "github", flow: f.flow_id });   // make the connect-in-progress addressable
       runFlow(f);
     };

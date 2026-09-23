@@ -10,7 +10,6 @@ from pathlib import Path
 from fastapi import HTTPException, Request, UploadFile
 
 from .. import registry
-from ..config import load_routine
 from ..ids import run_ts
 
 MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024
@@ -21,15 +20,18 @@ def _home(request: Request) -> Path:
 
 
 def conversation_info(request: Request, slug: str) -> registry.RoutineInfo:
-    d = _home(request) / slug
-    if not (d / "routine.yaml").exists():
+    """One conversation, through `registry.info` — the SAME reader the routine side uses.
+
+    This used to rebuild a RoutineInfo by hand: it bypassed all four of the registry's
+    memos (a fresh `load_routine` per request) and hard-coded `open_questions=[]`, so a
+    conversation with a deferred question waiting read as having none wherever this was the
+    path taken. A conversation home is the same dir shape as a routine home; one reader.
+    """
+    server = request.app.state.server
+    info = registry.info(server, server.conversations_home, slug)
+    if info is None:
         raise HTTPException(404, f"no conversation {slug!r}")
-    cfg, problems = load_routine(d)
-    if cfg is None:
-        raise HTTPException(500, "; ".join(problems))
-    return registry.RoutineInfo(cfg=cfg, problems=problems,
-                                runs=registry.run_index(d, cfg.slug),
-                                open_questions=[])
+    return info
 
 
 MAX_ATTACHMENTS_PER_MESSAGE = 16

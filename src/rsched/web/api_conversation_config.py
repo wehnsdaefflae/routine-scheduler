@@ -26,11 +26,19 @@ from .api_routine_edit import (
     apply_rule_edit,
     resolve_permission_layers,
 )
+from .config_fields import (
+    BudgetsPatch,
+    clean_tags,
+    validate_connections,
+    validate_machines,
+    validate_models,
+    validate_roots,
+)
 from .conversations_common import (
     _item,
     conversation_info,
 )
-from .model_fit import model_window_problem, window_meta
+from .model_fit import window_meta
 from .routines_common import (
     active_run_dir,
     permission_layers_detail,
@@ -95,18 +103,6 @@ def detail(request: Request, slug: str) -> dict:
         "problems": info.problems,
     }
 
-def _apply_machines(server, raw: dict, names: list) -> None:
-    """Same rule as the routine PATCH (api_routine_edit): catalog membership required — a
-    machine name off the catalog is meaningless and the picker only offers catalog names.
-    REPLACE wholesale; the next reply's boot injects RSCHED_MACHINES (D102).
-    """
-    if any(not isinstance(n, str) for n in names):
-        raise HTTPException(400, "machines: must be a list of catalog machine names")
-    for n in names:
-        if n not in server.machines:
-            raise HTTPException(400, f"unknown machine {n!r} (add it in Settings → Machines)")
-    raw["machines"] = names
-
 class ConversationPatch(BaseModel):
     # forbid unknown keys, like RoutinePatch: a silently-dropped stray reads as "saved"
     model_config = ConfigDict(extra="forbid")
@@ -114,7 +110,7 @@ class ConversationPatch(BaseModel):
     title: str | None = None
     tags: list[str] | None = None
     workdir: str | None = None
-    budgets: dict | None = None
+    budgets: BudgetsPatch | None = None   # the runaway backstops, by name (config_fields)
     models: dict | None = None
     machines: list[str] | None = None   # catalog machine names (D102) — REPLACE wholesale
     connections: dict | None = None   # {provider: account} — bound OAuth connections (D55)
@@ -139,7 +135,7 @@ def patch_conversation(request: Request, slug: str, patch: ConversationPatch) ->
     if "title" in updates:
         raw["name"] = raw["description"] = updates["title"].strip() or info.cfg.name
     if "tags" in updates:
-        raw["tags"] = [t.strip() for t in updates["tags"] if t.strip()]
+        raw["tags"] = clean_tags(updates["tags"])
     if "workdir" in updates:
         # The workdir is BY CONVENTION the first write root. Replace that slot only —
         # folder grants beyond it (D70 create-time roots, allow-forever fs decisions)
@@ -157,38 +153,19 @@ def patch_conversation(request: Request, slug: str, patch: ConversationPatch) ->
     # reaches the NEXT reply's boot — a live reply keeps the roots it booted with.
     for roots_key in ("fs_read_roots", "fs_write_roots"):
         if roots_key in updates:
-            vals = updates[roots_key]
-            if any(not isinstance(p, str) or not p.strip() for p in vals):
-                raise HTTPException(400, f"{roots_key}: must be a list of non-empty "
-                                         f"path strings")
-            raw[roots_key] = [p.strip() for p in vals]
+            raw[roots_key] = validate_roots(roots_key, updates[roots_key])
+    # Every one of these five is validated by `web/config_fields`, which both this PATCH and
+    # the routine PATCH call: a conversation is routine-shaped, and two copies of one check
+    # drift (the window-fit refusal lived here alone, so a ROUTINE could be bound to a model
+    # that cannot run a single turn and found out at 3am).
     if "budgets" in updates:
-        raw.setdefault("budgets", {}).update({k: int(v) for k, v in updates["budgets"].items()})
+        raw.setdefault("budgets", {}).update(updates["budgets"])
     if "models" in updates:
-        server = request.app.state.server
-        for kind, name in (updates["models"] or {}).items():
-            if kind not in MODEL_KINDS:
-                raise HTTPException(400, f"unknown model kind {kind!r}")
-            if not isinstance(name, str) or name not in server.models:
-                raise HTTPException(400, f"models.{kind}: must be a catalog model name")
-            problem = model_window_problem(server, name)
-            if problem:   # R112/R128: the next reply would die on its first completion
-                raise HTTPException(400, problem)
-        raw["models"] = updates["models"]
+        raw["models"] = validate_models(request.app.state.server, updates["models"])
     if "connections" in updates:
-        # Same validation as a routine (api_routine_edit): known provider, non-empty account
-        # label; REPLACE wholesale (blanking a provider clears it). Existence of the connected
-        # account is NOT required — a conversation may bind ahead of connecting; the engine
-        # injects nothing until the account is connected. D55: closes R70.
-        from ..oauth.providers import PROVIDERS
-        for prov, account in (updates["connections"] or {}).items():
-            if prov not in PROVIDERS:
-                raise HTTPException(400, f"unknown connection provider {prov!r}")
-            if not isinstance(account, str) or not account:
-                raise HTTPException(400, f"connections.{prov}: must be an account label")
-        raw["connections"] = updates["connections"]
+        raw["connections"] = validate_connections(updates["connections"])
     if "machines" in updates:
-        _apply_machines(request.app.state.server, raw, updates["machines"] or [])
+        raw["machines"] = validate_machines(request.app.state.server, updates["machines"])
     raw.update({"output_compression": updates["output_compression"]}
                if "output_compression" in updates else {})
     if "deliberation" in updates:   # tuning, not config — lands in tuning.yaml

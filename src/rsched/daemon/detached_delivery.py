@@ -6,40 +6,35 @@ engine loop: the manager owns the task LIFECYCLE, this owns the hand-back.
 The ordering here is the part worth protecting. The inbox message is written BEFORE the
 `delivered.json` marker, with no await between, so a consumer can never see the marker without
 the message; a crash in the gap re-delivers the same deterministic filename, so the owner still
-ends up with exactly one. Artefacts land in `artifacts/from-bg-<id>/` — namespaced so a
-delivery never clobbers the conversation's own, and idempotent on a re-delivery.
+ends up with exactly one. Artefacts land in `artifacts/from-bg-<id>/` through the shared
+hand-back (`engine/child.py`) — namespaced so a delivery never clobbers the conversation's own,
+and idempotent on a re-delivery.
 
 Delivery never starts a run: an idle owner is WOKEN to drain its inbox, and a live one drains it
 at its next turn boundary on its own.
 """
 
-# Asked by the wake decision: an owner is woken only when something is
-# actually waiting for it, so a delivery never starts a run for nothing.
 from __future__ import annotations
 
 import asyncio
 import logging
-import shutil
 from pathlib import Path
 
 from .. import registry
 from ..config import load_routine
+from ..engine import child, inbox
 from ..ids import now_iso
 from ..paths import atomic_write_json
 from .runner_state import _pid_alive
 
+log = logging.getLogger("rsched.daemon.detached_delivery")
 
-def _has_pending_inbox(routine_dir: Path) -> bool:
-    inbox = routine_dir / "inbox"
-    if not inbox.is_dir():
-        return False
-    return any(p.is_file() and not p.name.startswith("answer-") for p in inbox.iterdir())
 
 def _has_pending_bg_message(owner_dir: Path, taskid: str) -> bool:
+    """Is THIS task's own delivery still waiting? Keyed by the deterministic stem, so it
+    asks about one delivery rather than about the owner's inbox in general.
+    """
     return owner_dir.is_dir() and (owner_dir / "inbox" / f"msg-bg-{taskid}.json").exists()
-
-
-log = logging.getLogger("rsched.daemon.detached_delivery")
 
 
 async def deliver(mgr, catalog: dict[str, registry.RoutineInfo]) -> None:
@@ -78,42 +73,37 @@ async def deliver_one(taskid: str, info: registry.RoutineInfo, state: str) -> No
         atomic_write_json(task_dir / "delivered.json", {"ts": now_iso(), "owner": "missing"})
         log.info("detached: owner of %s missing at delivery — dropped", taskid)
         return
-    copied = await copy_artifacts(task_dir, owner_dir, taskid)
+    paths = await copy_artifacts(task_dir, owner_dir, taskid)
     # msg FIRST, delivered.json SECOND, both without an await between → a consumer (a later
     # resume) can never see the msg before the marker; a crash in the tiny gap re-delivers
     # the same deterministic filename, so still exactly one pending message.
-    atomic_write_json(owner_dir / "inbox" / f"msg-bg-{taskid}.json",
-                      {"text": delivery_text(info, state, taskid, copied),
-                       "ts": now_iso(), "via": "background"})
+    inbox.file_message(owner_dir, delivery_text(info, state, taskid, paths),
+                       via="background", name=f"bg-{taskid}")
     atomic_write_json(task_dir / "delivered.json",
                       {"ts": now_iso(), "state": state, "owner": owner.get("slug")})
     log.info("detached delivered task=%s state=%s owner=%s artifacts=%d",
-             taskid, state, owner.get("slug"), copied)
+             taskid, state, owner.get("slug"), len(paths))
 
 
-async def copy_artifacts(task_dir: Path, owner_dir: Path, taskid: str) -> int:
-    src = task_dir / "artifacts"
-    if not src.is_dir() or not any(src.iterdir()):
-        return 0
-    dst = owner_dir / "artifacts" / f"from-bg-{taskid}"
-    # namespaced + overwrite: never clobber the conversation's own artifacts, and idempotent
-    # on re-delivery. Blocking fs op → off the event loop.
-    await asyncio.to_thread(shutil.copytree, src, dst, dirs_exist_ok=True)
-    return sum(1 for _ in dst.rglob("*") if _.is_file())
+async def copy_artifacts(task_dir: Path, owner_dir: Path, taskid: str) -> tuple:
+    """The shared hand-back (`engine/child.collect_handback`), off the event loop: a blocking
+    copytree on the daemon's loop thread stalls every other tick.
+    """
+    return await asyncio.to_thread(child.collect_handback, task_dir / "artifacts", owner_dir,
+                                   child.BACKGROUND, taskid)
 
 
 def delivery_text(info: registry.RoutineInfo, state: str, taskid: str,
-                  copied: int) -> str:
+                  paths: tuple) -> str:
     label = info.cfg.name or taskid
     verb = {"finished": "finished", "failed": "failed",
             "aborted": "was cancelled"}.get(state, state)
-    summary = (info.last_run.summary if info.last_run else "") or "(no summary was written.)"
-    lines = [f"[background task {verb}] The detached task “{label}” {verb}.", "", summary]
-    if copied:
-        lines += ["", f"Its {copied} artifact(s) were copied to `artifacts/from-bg-{taskid}/`."]
-    lines += ["", "Relay this result to me. (Full status of your background tasks is in "
-              "`state/background.json`.)"]
-    return "\n".join(lines)
+    return child.handback_text(
+        headline=f"[background task {verb}] The detached task “{label}” {verb}.",
+        summary=(info.last_run.summary if info.last_run else "") or "",
+        paths=paths,
+        follow_on="Relay this result to me. (Full status of your background tasks is in "
+                  "`state/background.json`.)")
 
 
 async def wake(mgr, catalog: dict[str, registry.RoutineInfo]) -> None:
@@ -141,7 +131,10 @@ async def wake(mgr, catalog: dict[str, registry.RoutineInfo]) -> None:
 async def wake_owner(mgr, owner_dir: Path, slug: str) -> None:
     if mgr.runner.is_active(slug) or mgr.runner.draining:
         return
-    if not _has_pending_inbox(owner_dir):
+    # the ONE inbox predicate (engine/inbox): every channel counts here — a wake exists to let
+    # an idle owner drain whatever is waiting — but an unparseable file does not, because the
+    # drain it would wake for is fail-closed on the same file.
+    if not inbox.has_pending_messages(owner_dir):
         return
     owner_cfg, _ = load_routine(owner_dir)
     if owner_cfg is None:

@@ -61,7 +61,12 @@
 
   --ink:   light-dark(#16202c, #e3e9f0);
   --ink-2: light-dark(#4d5f74, #94a5b8);
-  --ink-3: light-dark(#62758a, #7a90a8);
+  /* The third ink carries the whole label vocabulary — .faint, .lbl, the crumbs, the ribbon's
+     ticks, every filter-bar caption — at 10.5px and 11.5px, i.e. never large text. Its light
+     half was #62758a, which is 4.38:1 on --deck and 4.19:1 on --deck-2: below AA on the two
+     grounds it actually sits on (it only cleared 4.5 on a white --plate). Darkened to hold
+     ≥4.7:1 on both decks; the dark half is unchanged. */
+  --ink-3: light-dark(#5a6c80, #7a90a8);
 
   --signal:      light-dark(#0f9b8a, #3fd8c2);
   --signal-2:    light-dark(#0b7f71, #7fe8d8);
@@ -156,6 +161,9 @@ h2 {
   font-family: var(--f-display); font-size: var(--t-s); font-weight: 600;
   text-transform: uppercase; letter-spacing: 0.16em; color: var(--ink-2);
   margin: var(--s6) 0 var(--s3); display: flex; align-items: center; gap: var(--s3);
+  /* every jump to a section (the rail index, Library's counts, a setup-check fix link) lands
+     clear of the sticky workbar and the ribbon above it */
+  scroll-margin-top: 84px;
 }
 /* the tick is the section's mark: sections carry live data, so it is signal-coloured */
 h2::before { content: ""; width: 3px; height: 12px; background: var(--signal); border-radius: 2px; flex: 0 0 auto; }
@@ -229,9 +237,12 @@ h3 { font-size: var(--t-l); font-weight: 600; letter-spacing: -0.01em; margin: v
 .topbar nav a svg { width: 15px; height: 15px; flex: 0 0 auto; opacity: 0.85; }
 .topbar nav a.active svg { color: var(--signal); opacity: 1; }
 
+/* `margin-top: auto` pins the foot to the bottom of the rail on a page with no section index:
+   the destinations above it no longer grow to fill the column (the index takes that slack), so
+   without it the clock and the theme control would ride up under the last destination. */
 .rail-foot {
   display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap;
-  padding: var(--s3) var(--s2) 0; border-top: 1px solid var(--rule); margin-top: var(--s2);
+  padding: var(--s3) var(--s2) 0; border-top: 1px solid var(--rule); margin-top: auto;
 }
 .clock {
   font-family: var(--f-mono); font-size: var(--t-s); color: var(--ink-3);
@@ -353,10 +364,19 @@ main { max-width: var(--shell-max); width: 100%; margin: 0 auto; padding: var(--
   width: 100%;
   background: var(--plate) url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%237a90a8' stroke-width='2.2'><circle cx='10.5' cy='10.5' r='6'/><line x1='15.2' y1='15.2' x2='21' y2='21'/></svg>") no-repeat 9px center / 13px;
   color: var(--ink); border: 1px solid var(--rule-2); border-radius: var(--r2);
-  padding: 6px var(--s2) 6px 28px; font: inherit; font-size: var(--t-s);
+  /* the right pad is the shortcut's lane (.gs-key below), so a lingering query does not slide
+     under it while the box is at rest */
+  padding: 6px 26px 6px 28px; font: inherit; font-size: var(--t-s);
   transition: border-color 0.12s, box-shadow 0.12s;
 }
 .gsearch .gs-input::placeholder { color: var(--ink-3); }
+/* the shortcut, in the box it opens — the same <kbd> the Decisions legend uses (views.css) */
+.gsearch .gs-key {
+  position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+  pointer-events: none; color: var(--ink-3);
+  border: 1px solid var(--rule-2); border-bottom-width: 2px; border-radius: var(--r1);
+  padding: 0 5px; font-family: var(--f-mono); font-size: 10px; background: var(--plate-3);
+}
 .gs-pop {
   position: absolute; top: calc(100% + 8px); right: 0; width: min(560px, calc(100vw - 32px));
   max-height: 68vh; overflow-y: auto; z-index: 40; padding: var(--s1);
@@ -471,7 +491,20 @@ button.chip.lane-chip, button.chip.domain-chip { cursor: pointer; }
 .set-group { margin-bottom: 2px; }
 .set-group .kicker { color: var(--ink); }
 .set-groupblurb { margin: 3px 0 0; max-width: 68ch; }
+/* ONE measure for every explanation in the product — a section's description (settings-section
+   .js, both modes), a panel's intro line, a block's one-line why. They are one voice, and a
+   capped 68ch paragraph beside an uncapped 150-character one on the same screen reads as two
+   kinds of text. Roughly twice the length a reader tracks without losing the line is the cost
+   of leaving one uncapped. */
 .set-desc { margin: 2px 0 var(--s3); max-width: 68ch; }
+/* a section description long enough to fold: the first sentence is the summary, the rest is
+   inside. The marker is the word "more…" at the end of the lead, not a triangle — the line
+   must still read as a sentence. */
+.set-about { margin-bottom: var(--s3); }
+.set-about > summary { cursor: pointer; margin-bottom: 0; list-style: none; }
+.set-about > summary::-webkit-details-marker { display: none; }
+.set-about[open] > summary .faint { display: none; }
+.set-about > p { margin-bottom: 0; }
 
 /* ── timestamps ─────────────────────────────────────────────────────────────────────────── */
 
@@ -490,7 +523,14 @@ button.chip.lane-chip, button.chip.domain-chip { cursor: pointer; }
 .panel.warn { border-color: color-mix(in srgb, var(--warn) 45%, transparent); }
 .panel.err { border-color: color-mix(in srgb, var(--err) 45%, transparent); }
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: var(--s4); }
-.tablewrap, .table-wrap { overflow-x: auto; }
+/* ONE spelling. The rule was `.tablewrap, .table-wrap` — one concern, two names — and views.css
+   then gave only `.table-wrap` (Stats, the single user of that spelling) a border and a radius,
+   so the one table that already reads as a box was also the only one that looked scrollable.
+   `boxed` is that border, available to any of them; below 860px the tables that carried real
+   columns stack instead (see `table.list.stack`), so the invisible scroll is gone rather than
+   signposted. */
+.tablewrap { overflow-x: auto; }
+.tablewrap.boxed { border: 1px solid var(--rule); border-radius: var(--r2); }
 
 table.list { width: 100%; border-collapse: collapse; }
 table.list td, table.list th {
@@ -512,8 +552,57 @@ table.list tr.lane-row:hover td { background: color-mix(in srgb, var(--iris) 16%
 table.list tr.lane-member td:first-child { padding-left: var(--s6); }
 table.list tr.lane-member[draggable="true"] { cursor: grab; }
 table.list tr.lane-member.drop-here td { box-shadow: inset 0 2px 0 var(--iris); }
+/* A labelled BUCKET inside a list — "needs a value · 11". A long table sorted the way the
+   server happens to return it answers no question; three counted groups answer the one the
+   reader came with. Not a <th>: the columns are unchanged, this names the rows below it. */
+table.list tr.subhead td {
+  font-family: var(--f-mono); color: var(--ink-3); font-size: var(--t-xs);
+  text-transform: uppercase; letter-spacing: 0.14em; background: var(--plate-2);
+}
+table.list tr.subhead:hover td { background: var(--plate-2); }
 table.list td.row-actions { white-space: nowrap; }
 table.list td.row-actions .btn { margin-right: 6px; }
+
+/* THE PHONE HAS NO COLUMNS. `.tablewrap` scrolls sideways, which on a desktop is a considered
+   escape hatch and on a 390px screen is a column nobody knows is there: the library's rows lost
+   the one cell that says what a document IS, the secrets table crushed "needed by" to two
+   characters, the runs table hid its summary, and a lane row — whose `run now / pause / ✎` sit
+   at the far right of a five-column table — offered no control at all on eight of eleven lanes.
+   A `.stack` table drops its columns below 860px and lays each row out as a card: the cells
+   become lines, in source order, and a cell that loses its meaning without a header declares
+   `data-label`. Everything stays in the DOM and on wide screens nothing changes, so one class
+   on a `<table>` is the whole opt-in. */
+@media (max-width: 860px) {
+  table.list.stack, table.list.stack tbody { display: block; }
+  table.list.stack thead { display: none; }
+  /* the row is the card, and it is a FLEX row: a cell takes a line of its own unless it asks to
+     share one (`td.inline`), which is how "when · state · turns · duration" stays one line and
+     the summary under it gets the width it needs */
+  table.list.stack tr {
+    display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--s2);
+    padding: var(--s2) var(--s3); border-bottom: 1px solid var(--rule);
+  }
+  table.list.stack tr:last-child { border-bottom: none; }
+  /* min-width/overflow-wrap: a flex item's automatic minimum is its MIN-CONTENT, so one
+     unbreakable token in a cell (a run id, a util name, a key) would push the card — and the
+     document — past the screen, which is the bug this block exists to end */
+  table.list.stack td {
+    display: block; flex: 1 1 100%; min-width: 0; overflow-wrap: anywhere;
+    border-bottom: none; padding: 1px 0; max-width: none;
+  }
+  table.list.stack td.inline { flex: 0 1 auto; }
+  table.list.stack td:empty { display: none; }
+  /* a right-aligned nowrap number is a column idiom; stacked, it is a line like any other */
+  table.list.stack td.num { text-align: left; white-space: normal; }
+  table.list.stack td.row-actions { white-space: normal; margin-top: var(--s2); }
+  table.list.stack td[data-label]::before {
+    content: attr(data-label) " "; font-family: var(--f-mono); font-size: var(--t-xs);
+    text-transform: uppercase; letter-spacing: 0.14em; color: var(--ink-3);
+  }
+  /* the member indent is the row's, not its first cell's, once the cells are lines */
+  table.list.stack tr.lane-member td:first-child { padding-left: 0; }
+  table.list.stack tr.lane-member { padding-left: var(--s5); }
+}
 
 pre.doc {
   background: var(--deck-2); border: 1px solid var(--rule); border-radius: var(--r2);
@@ -534,8 +623,22 @@ pre.doc {
 .btn.active { color: var(--signal); border-color: color-mix(in srgb, var(--signal) 50%, transparent); background: var(--signal-dim); }
 .btn.primary { background: var(--signal); border-color: var(--signal); color: var(--on-accent); font-weight: 600; }
 .btn.primary:hover { background: var(--signal-2); border-color: var(--signal-2); }
-.btn.danger { background: var(--err-dim); border-color: color-mix(in srgb, var(--err) 45%, transparent); color: var(--err); }
-.btn.danger:hover { background: color-mix(in srgb, var(--err) 22%, transparent); }
+/* DESTRUCTIVE IS A REACHED STATE, NOT A RESTING ONE. Every `delete` on every row used to wear
+   the err tone at rest: 28 model cards, ~50 secret rows, 6 domains, the endpoints, the machines
+   — about a hundred red buttons on three pages, so the eye landed on `delete` before the row's
+   own name and the palette's loudest colour meant "a list exists". Colour is state, and the
+   state here is "nothing is being deleted". The tone arrives on hover/focus, where the pointer
+   already is and the consequence is one press away.
+   ARMED is the carve-out: a button that IS the moment of consequence keeps err at rest — the
+   confirm inside a destructive dialog, `✕ abort` on a live run, `confirm restart`, and the
+   admin toggle while it holds a token. Four sites; anything else is a row. */
+.btn.danger { background: var(--plate-2); border-color: var(--rule-2); color: var(--ink-3); }
+.btn.danger:hover, .btn.danger:focus-visible {
+  background: var(--err-dim); border-color: color-mix(in srgb, var(--err) 45%, transparent);
+  color: var(--err);
+}
+.btn.danger.armed { background: var(--err-dim); border-color: color-mix(in srgb, var(--err) 45%, transparent); color: var(--err); }
+.btn.danger.armed:hover { background: color-mix(in srgb, var(--err) 22%, transparent); }
 .btn:disabled { opacity: 0.42; cursor: default; }
 .btn.small { padding: 3px var(--s2); font-size: var(--t-s); }
 .btn.ghost { background: transparent; border-color: transparent; color: var(--ink-2); }
@@ -569,12 +672,24 @@ textarea:focus, input:focus, select:focus {
 textarea::placeholder, input::placeholder { color: var(--ink-3); }
 textarea.code { font-family: var(--f-mono); font-size: var(--t-s); min-height: 220px; line-height: 1.6; }
 select { cursor: pointer; }
+/* A control that rides inside a line of chrome rather than standing in a form — the model
+   picker on a conversation head, a per-reply budget box. It was written as an inline
+   `font-size:11.5px` on each one, which silently defeated the ≤860px rule below that exists to
+   stop iOS Safari zooming the viewport on focus: tapping the model picker zoomed the page. */
+input.tight, select.tight, textarea.tight { font-size: var(--t-s); }
 input[type=checkbox], input[type=radio] { accent-color: var(--signal); }
 
 label.field, .field { display: block; margin-bottom: var(--s3); }
 label.field > span, .field > .lbl {
   display: block; font-family: var(--f-mono); font-size: var(--t-xs); text-transform: uppercase;
   letter-spacing: 0.14em; color: var(--ink-3); margin-bottom: var(--s1);
+}
+/* A caution UNDER a control, in the console's own voice: the label above it is mono and
+   uppercased, and a sentence set that way reads as another field name rather than as advice. */
+.field > .hint {
+  display: block; margin: 3px 0 0; font-family: var(--f-display); font-size: var(--t-xs);
+  text-transform: none; letter-spacing: 0; line-height: 1.35; color: var(--ink-3);
+  max-width: 44ch;
 }
 .field-row { display: flex; gap: var(--s3); flex-wrap: wrap; align-items: flex-end; }
 .field-row > .field { flex: 1 1 200px; margin-bottom: 0; }
@@ -645,12 +760,22 @@ label.field > span, .field > .lbl {
 .modal-overlay .dlg-msg { font-size: var(--t-m); line-height: 1.55; white-space: pre-wrap; }
 
 .q-group-head {
-  display: flex; align-items: center; gap: var(--s2); margin: var(--s5) 0 var(--s2);
+  display: flex; align-items: center; flex-wrap: wrap; gap: var(--s2); margin: var(--s5) 0 var(--s2);
   font-family: var(--f-mono); font-size: var(--t-xs); text-transform: uppercase;
   letter-spacing: 0.16em; color: var(--ink-2);
 }
 .q-group-head::after { content: ""; flex: 1; border-top: 1px solid var(--rule); }
 .q-group-count { color: var(--summons); font-weight: 700; }
+/* the group that waits on NOBODY: coral is for what summons a person, and "Settled · 12" is
+   the opposite of that */
+.q-group-count.settled { color: var(--ink-2); }
+/* the sentence that says what the group is — a line of its own, in the console's own voice
+   rather than tracked uppercase, so the caption above it reads as a caption */
+.q-group-why {
+  flex: 1 0 100%; order: 3; margin-top: 2px;
+  font-family: var(--f-display); font-size: var(--t-s); text-transform: none;
+  letter-spacing: 0; color: var(--ink-3);
+}
 
 .ref-tag {
   font-family: var(--f-mono); font-size: var(--t-s); color: var(--signal);
@@ -698,9 +823,26 @@ label.field > span, .field > .lbl {
   /* the band is the point; on a narrow screen it takes the row and the count goes under it */
   .ribbon { flex-wrap: wrap; gap: var(--s2); }
   .ribbon-track { flex: 1 1 100%; order: 3; }
-  .ribbon-summary { flex: 1; order: 2; text-align: right; }
+  /* "28 runs in 24h · 1 failed" is right-aligned into whatever is left of the row, and with no
+     bound it was simply cut at the screen edge — the sentence that says whether anything went
+     wrong, ending mid-word. */
+  .ribbon-summary {
+    flex: 1; order: 2; text-align: right;
+    min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
   main { padding: var(--s4) var(--s3) var(--s6); }
-  .gsearch { flex: 1 1 auto; max-width: none; }
+  /* The workbar is a sticky 46px, and the search box used to take whatever it wanted of it —
+     so a deep crumb wrapped into five rows beside it and the bar ate a sixth of the screen.
+     The search keeps a usable box; the crumb keeps the rest and truncates instead of wrapping. */
+  .gsearch { flex: 0 1 44%; max-width: 44%; }
+  /* One segment IS the page's own name — the h1 below it and the highlighted bottom-bar icon
+     both already say it. A crumb earns its row only when it LOCATES you (routine › run). */
+  .crumbs > .here:only-child { display: none; }
+  .crumbs { flex-wrap: nowrap; }
+  .crumbs > * { flex: 0 1 auto; min-width: 3ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .crumbs > .sep { flex: 0 0 auto; min-width: 0; }
+  /* the last segment identifies this page, so it is the one that gets the room */
+  .crumbs > .here { flex: 1 1 auto; min-width: 8ch; }
   .grid { grid-template-columns: 1fr; }
   .page-head { flex-wrap: wrap; gap: var(--s3); }
   /* A chip is `white-space: nowrap` by design — a status word must not break across lines.
@@ -709,14 +851,24 @@ label.field > span, .field > .lbl {
      page then scrolls sideways on a phone. Capping it here keeps the nowrap where it earns
      its keep and truncates the one case where it does not; the full text stays in `title`. */
   .chip { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
-  .kbd-hint { display: none; }
+  /* no keyboard to advertise: the page legends and the search box's shortcut both go */
+  .kbd-hint, .gsearch .gs-key { display: none; }
   h1 { font-size: 21px; }
   .btn { min-height: 38px; padding: 7px var(--s3); }
   .btn.small { min-height: 34px; padding: 5px var(--s2); font-size: var(--t-s); }
   input[type="checkbox"], input[type="radio"] { width: 18px; height: 18px; }
-  input, select, textarea { font-size: 16px; }   /* 16px stops iOS Safari zooming a focused field */
+  /* 16px stops iOS Safari zooming a focused field — `.tight` included, which is why the
+     chrome-sized controls carry a class instead of an inline size a media query cannot beat */
+  input, select, textarea,
+  input.tight, select.tight, textarea.tight { font-size: 16px; }
   input[type="text"], input[type="search"], input[type="number"], input[type="password"] { min-height: 38px; max-width: 100%; }
-  select { min-height: 38px; }
+  /* A `<select>` is as wide as its widest OPTION, and `max-width: 100%` cannot help it inside a
+     shrink-to-fit ancestor (an inline-flex row, a table cell): the percentage has nothing
+     definite to resolve against, so the element keeps its intrinsic width and the DOCUMENT
+     grows to hold it — which is how a conversation page reached 742px on a 390px phone and
+     took the fixed bottom bar off-screen with it. Dropping the automatic minimum lets a select
+     in a flex row shrink and clip its own text instead of widening the page. */
+  select { min-height: 38px; min-width: 0; }
   textarea.code { min-height: 140px; }
   .row > input[type="text"], .row > input[type="search"] { flex: 1 1 180px; }
   /* the composer's message input takes its own full-width line; the buttons wrap beneath it */
@@ -725,36 +877,51 @@ label.field > span, .field > .lbl {
 }
 
 /* ── global chrome: mounted outside #view, positioned by this file alone ────────────────── */
-/* Two components live outside the routed view so they survive navigation — the side
-   table-of-contents and the LLM activity dock. Their markup (index.html) and their mounts
-   (app.js) carry no positioning of their own, so a `position: fixed` block deleted from HERE
-   does not fail loudly: the component still builds, still fetches, still updates, and simply
-   lands in the document flow at the foot of every page. The 0.277.0 palette migration deleted
-   both — the TOC restored in 0.280.0, the dock in 0.292.0 after twenty releases as an unstyled
-   browser button under the last card. `tests/ui/test_global_chrome.py` now pins the pair to
-   `position: fixed` so a third loss is a red test rather than a screenshot. */
+/* The components mounted outside the routed view survive navigation and carry no positioning
+   of their own — neither their markup (index.html) nor their mounts (app.js) — so a
+   `position: fixed` block deleted from HERE does not fail loudly: the component still builds,
+   still fetches, still updates, and simply lands in the document flow at the foot of every
+   page. The 0.277.0 palette migration deleted two such blocks at once; the side TOC was found
+   three releases later, the LLM dock twenty, each time by an operator reading a screenshot.
+   `tests/ui/test_global_chrome.py` pins every one of them to `position: fixed` — add any new
+   out-of-view chrome to that list the same day. The side TOC has since moved INSIDE the
+   navigation rail, so it is no longer one of them: losing its block leaves it stacked in the
+   rail where it is seen, not dropped off the foot of the page. */
 
-/* "On this page" for the long configuration pages — Settings and a routine's detail view. It
-   parks in the RIGHT margin on viewports wide enough to have one, by the same arithmetic as the
-   run/conversation rails: the navigation rail takes --rail-w off the left, the reading column
-   takes --shell-max, and what is left over is split between the two margins. Below that there is
-   no margin to park in and the page is read top-to-bottom, which is why it hides rather than
-   reflowing into the column it indexes. */
-.side-toc { display: none; }
-@media (min-width: 1900px) {
-  .side-toc {
-    display: flex; flex-direction: column; gap: 1px;
-    position: fixed; top: 118px; right: 18px; bottom: 90px;
-    width: calc((100vw - var(--rail-w) - var(--shell-max)) / 2 - 30px); max-width: 240px;
-    overflow-y: auto; z-index: 5; padding-left: 12px; border-left: 1px solid var(--rule);
+/* "On this page" for the long pages — Settings, a routine, Messages, Stats, Library. It rides
+   the NAVIGATION RAIL (toc.js inserts it between the destinations and `.rail-foot`), taking the
+   slack the destinations leave and scrolling inside it, so the index is there at every width the
+   rail carries words. It used to park in the RIGHT margin, which by the rails' arithmetic only
+   opens up at 1900px: a 1440px laptop got no index at all on pages between eleven and twenty-six
+   THOUSAND pixels tall, beside 430px of empty rail. Below 1181px the rail is a 68px icon strip
+   and below 861px a bottom bar — no room for words either way, so the index hides there and the
+   page is read top-to-bottom.
+
+   Every selector here is class-first so it outranks the rail's own `.topbar nav` rules: the
+   index is a <nav> in the same box, and a bare `.side-toc { display: none }` LOSES to
+   `.topbar nav { display: flex }` — which is exactly how it stayed on screen at the icon-rail
+   width, one word per line down a 68px strip. */
+.topbar .side-toc { display: none; }
+@media (min-width: 1181px) {
+  .topbar .side-toc {
+    display: flex; flex-direction: column; gap: 1px; flex: 1 1 auto; min-height: 0;
+    overflow-y: auto; overscroll-behavior: contain;
+    margin-top: var(--s2); padding-top: var(--s3); border-top: 1px solid var(--rule);
   }
+  /* the destinations keep their natural height; the index takes the slack under them */
+  .topbar nav { flex: 0 0 auto; }
   .side-toc-cap {
-    color: var(--ink-3); font-size: 10.5px; text-transform: uppercase; letter-spacing: .08em;
-    margin-bottom: 6px;
+    flex: 0 0 auto; font-family: var(--f-mono); font-size: var(--t-xs);
+    text-transform: uppercase; letter-spacing: 0.18em; color: var(--ink-3);
+    padding: 0 var(--s2) var(--s1);
   }
+  /* `flex: 0 0 auto` is load-bearing, not tidiness: a flex item with `overflow: hidden` has an
+     automatic minimum size of ZERO, so once the index is taller than the slack the links
+     silently shrink to nothing instead of the column scrolling. */
   .side-toc .toc-link {
-    color: var(--ink-2); font-size: 12.5px; line-height: 1.5; text-decoration: none;
-    cursor: pointer; padding: 2px 8px; border-radius: 6px; border-left: 2px solid transparent;
+    display: block; flex: 0 0 auto; color: var(--ink-2); font-size: 12.5px; line-height: 1.5;
+    text-decoration: none; cursor: pointer; padding: 2px var(--s2); border-radius: var(--r2);
+    border-left: 2px solid transparent;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
   .side-toc .toc-link:hover { color: var(--ink); background: var(--plate-2); }
@@ -835,7 +1002,13 @@ label.field > span, .field > .lbl {
 
    SIZE. 16:10, capped against the viewport, so the preview stays a thumbnail on a laptop and
    never becomes the page. Hidden entirely below the wide layout: a phone has no rail to
-   spare, and a 240px VNC frame shows nothing worth the bandwidth. */
+   spare, and a 240px VNC frame shows nothing worth the bandwidth.
+
+   IT IS AN OVERLAY, and rests open only where there is a margin to rest in. rail 212 +
+   --shell-max 1240 = 1452, so between 861px and 1900px an open dock lies ON the reading column
+   — over the Routines page's first run-now buttons, over an endpoint card's save-key row. Below
+   1900px browserdock.js therefore starts it collapsed and folds a click-open again on the next
+   route change; above it the open/closed choice is remembered. */
 #browser-dock {
   position: fixed; right: var(--s4); bottom: calc(var(--s4) + 44px); z-index: 60;
   width: min(300px, calc(100vw - 2 * var(--s3)));
@@ -911,10 +1084,19 @@ label.field > span, .field > .lbl {
 .lt-proc-children { padding: 2px var(--s1) var(--s1) 14px; border-top: 1px solid var(--rule); }
 
 @media (max-width: 860px) {
+  /* The quota chip's label is desktop-only: the chip itself is nowrap and already the widest
+     thing in the phone header, and the chip's tooltip names its subject either way. */
+  .quota-lbl { display: none; }
   /* the rail has become the bottom bar, so the corner the dock lives in is taken. It clears the
      bar on the bar's own terms: 39px of fixed height plus the padding that grows with the
      safe-area inset on a notched phone, plus the 19px of air .workspace's 62px reserve leaves. */
   #llm-tasks { right: var(--s3); bottom: calc(58px + max(4px, env(safe-area-inset-bottom))); }
+  /* IDLE, the dock is a 100x34px dead zone over the bottom-right of every phone page — it sat
+     on the lane default-on-failure select, on a routine's Setup check head, on a chart's remove
+     button. Collapsed to its bolt it is ~30px and covers nothing that is not a margin; the
+     moment there is work it wears the count again, which is when it is worth the space. */
+  #llm-tasks .lt-pill:not(.active) .lt-pill-n { display: none; }
+  #llm-tasks .lt-pill { padding: 6px var(--s2); gap: 4px; }
   /* the preview is a rail affordance and there is no rail here — and a thumbnail small enough
      to fit a phone shows nothing worth a live VNC connection. The nav link still reaches the
      full screen, which is the part that works at this width. */

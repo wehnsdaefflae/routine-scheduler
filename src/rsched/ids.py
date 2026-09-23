@@ -16,10 +16,14 @@ def is_slug(s: str) -> bool:
     return bool(SLUG_RE.match(s))
 
 
-def slugify(name: str) -> str:
+def slugify(name: str, default: str = "routine") -> str:
+    """A name reduced to the slug alphabet. `default` is what an empty result becomes — the
+    ONE slug rule, so a name a routine would get and a name a playbook would get cannot round
+    trip two different ways.
+    """
     s = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
     s = re.sub(r"-{2,}", "-", s)
-    return s or "routine"
+    return s or default
 
 
 def run_ts(now: datetime | None = None) -> str:

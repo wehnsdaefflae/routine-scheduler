@@ -4,7 +4,7 @@
 > `scheduling`-holder may target any routine; self-target always allowed). This document is
 > both the design rationale and the shipped design. Code: `src/rsched/schedule_once.py`
 > (spool), `src/rsched/daemon/schedule_once.py` (`OneShotManager`), the `schedule_run` action
-> (`engine/actions.py` + `interact.py`), the `scheduling` permission
+> (`engine/actions.py` + `engine/admin_handlers.py`), the `scheduling` permission
 > (`library-seed/permissions/scheduling.md`), the API (`web/api_schedule.py`), and
 > `tests/test_schedule_once.py`. The UI *Schedule once* card + week-strip surfacing remain a
 > follow-up.
@@ -58,6 +58,14 @@ This keeps `routine.yaml` the user's, makes the one-shot *operational state* the
 owns, and reuses an idiom the codebase already trusts (crash-safe file spool + daemon
 ledger).
 
+The idiom is a MODULE, not a shape to copy: `rsched/spool.py` owns writing an entry, listing
+one slug's entries, listing the slugs that have any (`slugs_with`), the fire ledger
+(`read_state` / `write_state`) and dropping entries that can never fire (`drop`). This module
+keeps only the one-shot VOCABULARY — the family name, the `req-` prefix, fire-time parsing and
+what a request means. "Mirrors `TriggerManager`" below is a statement about the shape of the
+tick, not a licence to re-implement the mechanics: `slugs_with_requests`, `read_state` and
+`write_state` were byte-identical to the trigger spool's until they became one.
+
 ## Firing + auto-deactivate
 
 A new **`OneShotManager`** (`daemon/schedule_once.py`) mirrors `TriggerManager`, ticked by
@@ -73,8 +81,8 @@ the `Scheduler` after the cron loop and beside `triggers.tick` (`daemon/schedule
    record the fire in `state.json` (`last_fired`, `fires++`). The armed file is gone, so
    **nothing can re-fire it** — this IS the non-repeating guarantee (no `routine.yaml`
    rewrite, no self-disabling cron).
-4. A req whose routine is missing/disabled is dropped with a log line (like
-   `TriggerManager._drop`).
+4. A req whose routine is missing, switched off or RETIRED (its own final goal met) is dropped
+   with a log line (like `TriggerManager._drop`).
 
 **Missed while the daemon was down:** a `fire_at` already past at boot is still on disk →
 it fires on the first tick (a make-up fire — desirable for a one-shot; the point is it
@@ -130,8 +138,8 @@ is a **new engine action** the engine executes un-sandboxed, exactly like `write
 ## Testing plan (implementation follow-up)
 
 - **Unit:** spool read/write/consume; `OneShotManager.tick` fires when due, defers on
-  active/draining, consumes on fire, drops on missing/disabled routine, make-up-fires a past
-  req at boot, honours `expires_at`.
+  active/draining, consumes on fire, drops on a routine that is missing, off or retired,
+  make-up-fires a past req at boot, honours `expires_at`.
 - **Action:** `validate_action` for `schedule_run` (bad slug, past `fire_at`, empty reason);
   grants gating (denied without `scheduling`).
 - **Web + UI:** the three endpoints; a `tests/ui/` Playwright flow (arm → appears → cancel →

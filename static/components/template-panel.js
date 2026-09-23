@@ -12,7 +12,7 @@
 // keep tracking. The domain block is the one layer that stayed (D82); this one is a copy.
 
 import { api } from "/static/api.js";
-import { el, toast } from "/static/util.js";
+import { el, toast, toastError } from "/static/util.js";
 
 // What a template can carry, in the words the panels below use for the same things.
 const SUPPLIES = [
@@ -39,7 +39,7 @@ function effective(d, key) {
   return d[key] || [];
 }
 
-export function templatePanel(host, slug, d, { onApplied } = {}) {
+export function templatePanel(host, slug, d, { library, onApplied } = {}) {
   let templates = [];
   let detail = d;
 
@@ -104,13 +104,14 @@ export function templatePanel(host, slug, d, { onApplied } = {}) {
         ? `applied ${sel.value}: ${r.added.join(", ")} — the panels below now show them as `
           + "this routine's own"
         : r.note || "nothing to add", 5000);
-    } catch (err) { toast(err.message, 4000, { error: true }); }
+    } catch (err) { toastError(err); }
     finally { applyBtn.disabled = false; }
   };
 
   (async () => {
-    let lib;
-    try { lib = await api("/api/library"); } catch { return; }
+    // `library` is the routine page's ONE read of /api/library (that endpoint lints the whole
+    // library per call) — this panel and the rule picker are both readers of it.
+    const lib = await library;
     templates = lib.templates || [];
     sel.replaceChildren(
       el("option", { value: "" }, "— pick a template —"),

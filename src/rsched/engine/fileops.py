@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING
 
 from ..paths import atomic_write, resolve_rel
 from ..readmodels.statemap import STAGES_DIR
+from . import fileformat
 from .observations import OBS_CAP_CHARS
 from .outputs import OUTPUTS_DIR
 from .run_context import RunContext
@@ -165,7 +166,7 @@ def _read_one(rel_path: str, action: dict, ctx: RunContext) -> dict:
     directory = False
     try:
         path = resolve_rel(ctx.routine.dir, rel_path, ctx.read_roots())
-        if err := _runs_read_gate(ctx, path):
+        if err := _memory_gate(ctx, path) or _runs_read_gate(ctx, path):
             return {"path": rel_path, "error": err}
         if path.is_dir():
             directory = True
@@ -203,10 +204,29 @@ def do_read_file(action: dict, ctx: RunContext) -> dict:
     return {"kind": "read_file", **_read_one(action["path"], action, ctx)}
 
 
+MEMORY_REFUSAL = (".memory/ is reachable only through memory_read / memory_write — the engine "
+                  "owns .memory/INDEX.md (built from each note's 'about' line) and enforces "
+                  "the note cap there, and both are bypassed by a generic file action")
+
+
+def _memory_gate(ctx: RunContext, resolved) -> str | None:
+    """The `.memory/` seal, on the RESOLVED path — where its siblings live.
+
+    `engine/actions.py` also tests it, but LEXICALLY, on the string the model supplied: it is
+    the cheap schema-retry correction that costs no turn. It is not a seal:
+    `state/../.memory/INDEX.md` and the absolute form both walk straight past it and
+    `resolve_rel` puts them right back inside the own dir. The engine-owned index, the
+    100-line note cap and the `memory` capability gate all went with them.
+    """
+    return MEMORY_REFUSAL if resolved.is_relative_to(ctx.routine.dir / ".memory") else None
+
+
 def _write_gate(ctx: RunContext, resolved) -> str | None:
     """Backstop for engine-owned and permission-gated writes (grants.deny handles the
     relative-path form; this catches absolute paths into the routine's own dir).
     """
+    if err := _memory_gate(ctx, resolved):
+        return err          # structural, not a grant: it holds with no policy loaded
     g = ctx.grants
     if g is None:
         return None
@@ -269,6 +289,13 @@ def do_write_file(action: dict, ctx: RunContext) -> dict:
             with path.open("a", encoding="utf-8") as fh:
                 fh.write(data)
         else:
+            # F460, the write_file half: only a STR body over an existing file can break a
+            # format the engine did not produce (structured content is serialized here, and
+            # an append is not one document).
+            if (isinstance(action["content"], str) and path.is_file()
+                    and (err := fileformat.check_after(
+                        path, path.read_text(encoding="utf-8", errors="replace"), data))):
+                return {"kind": "write_file", "path": action["path"], "error": err}
             # Atomic (tmp+rename): another process reading this path — self-audit reading any
             # routine, or the target routine's own run when the improver rewrites its recipe
             # under an fs_write_root — sees the old or new file whole, never a torn write. Its
@@ -334,6 +361,10 @@ def do_edit_file(action: dict, ctx: RunContext) -> dict:
                              "or set all: true to replace every occurrence"}
         new_text = text.replace(anchor, replacement) if action.get("all") \
             else text.replace(anchor, replacement, 1)
+        # F460: a structured file may not stop parsing because of an edit — refuse before
+        # the write, so the file is untouched and the run is told on the turn it erred.
+        if err := fileformat.check_after(path, text, new_text):
+            return {"kind": "edit_file", "path": action["path"], "error": err}
         # Atomic + mode-preserving (the file exists — checked above), same reasoning as
         # do_write_file: no torn read/commit for a concurrent reader of this routine's dir.
         atomic_write(path, new_text, mode=path.stat().st_mode & 0o7777)

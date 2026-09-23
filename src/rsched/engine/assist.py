@@ -28,6 +28,7 @@ from __future__ import annotations
 
 from .. import assists as lib
 from ..assists import Assist
+from . import enginenote
 from . import hold as hold_seam
 from .assist_predicates import PREDICATES, Situation
 
@@ -134,10 +135,7 @@ def at_boundary(loop) -> None:
     ctx = loop.ctx
     if loop.assists:
         for assist in _matching(loop, "boundary", Situation(loop=loop)):
-            note = _rendered(assist)
-            ctx.transcript.event("user_injection", {"text": f"[engine] {note}",
-                                                    "source": "engine"})
-            loop.messages.append({"role": "user", "content": f"ENGINE NOTE: {note}"})
+            enginenote.append(loop, _rendered(assist))
     loop.assist_user_replies = int(getattr(ctx, "user_replies", 0) or 0)
 
 

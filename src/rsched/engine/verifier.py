@@ -100,7 +100,8 @@ def refuted(loop, summary: str) -> list[dict]:
     """
     ctx = loop.ctx
     doc = stopping.load(ctx.routine.dir)
-    active = {c["id"]: c for c in stopping.active(doc, phase=ctx.phase)}
+    active = {c["id"]: c
+              for c in stopping.active(doc, phase=stopping.current_stage(ctx.routine.dir))}
     claims = [active[cid] for cid, (state, _note) in stopping.read_accounting(summary).items()
               if state == "met" and cid in active]
     if not claims:

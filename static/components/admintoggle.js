@@ -23,6 +23,7 @@ export function adminToggle({ title, prompt, onMsg, offMsg }) {
   const node = el("button", { class: "btn small ghost", title }, "admin");
   const paint = () => {
     node.classList.toggle("danger", Boolean(token));
+    node.classList.toggle("armed", Boolean(token));
     node.classList.toggle("ghost", !token);
     node.textContent = token ? "admin: on" : "admin";
   };

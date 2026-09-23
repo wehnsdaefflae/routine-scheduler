@@ -15,7 +15,7 @@
 //   onRefer({label, snippet}) — "refer to" on any message primes the composer (also passed
 //                       into the work-fold transcripts, so a single step is referable)
 
-import { attachmentRow, createTranscript, referButton, splitRef } from "/static/components/transcript.js";
+import { attachmentRow, createTranscript, referButton, revokeBlobs, splitRef } from "/static/components/transcript.js";
 import { answerForm } from "/static/components/answerform.js";
 import { md, mdInline } from "/static/md.js";
 import { el, fmtTime, fmtTokens, fullOutput, compressionInfo } from "/static/util.js";
@@ -63,11 +63,11 @@ function fenceBtns(bodyNode) {
 // a quote chip) and may carry the attachment block the API appended. When the transcript
 // event carries the attachment rels AND the mount a file route, the files render for real
 // (thumbnails / open chips via attachmentRow); otherwise the name-only chips stand in.
-function userNode(text, refBtn, attachments, fileUrl) {
+function userNode(text, refBtn, attachments, fileUrl, blobs) {
   const { ref, body: rest } = splitRef(text);
   const m = ATTACH_BLOCK.exec(rest);
   const body = m ? rest.replace(ATTACH_BLOCK, "").trimEnd() : rest;
-  const files = attachmentRow(attachments, fileUrl);
+  const files = attachmentRow(attachments, fileUrl, blobs);
   const chips = !files && m ? m[1].trim().split("\n").map((line) => {
     const p = line.replace(/^- /, "").trim();
     return el("span", { class: "attach-chip", title: p }, "📎 ", p.split("/").pop());
@@ -152,6 +152,10 @@ export function createChat(container, opts = {}) {
 
   let fold = null;         // { details, summary, transcript, steps } — the open work group
   let lastUser = "";       // the newest user message — the fork button pre-fills with it
+  // Object URLs the attachment thumbnails hold open — this chat owns them, work-fold
+  // transcripts included, and destroy() frees them when the view goes (api.js: the caller
+  // owns the URL's lifetime).
+  const blobs = [];
 
   function ensureFold() {
     if (fold) return fold;
@@ -160,7 +164,7 @@ export function createChat(container, opts = {}) {
     const details = el("details", { class: "work-fold" }, summary, box);
     const transcript = createTranscript(box, {
       answer: opts.answer, loadSub: opts.loadSub, isLive: opts.isLive, onRefer: opts.onRefer,
-      fileUrl: opts.fileUrl });
+      fileUrl: opts.fileUrl, blobs });
     root.append(details);
     fold = { details, summary, transcript, steps: 0, briefs: [] };
     return fold;
@@ -274,6 +278,8 @@ export function createChat(container, opts = {}) {
   }
 
   return {
+    /** The view's teardown: free the attachment thumbnails' object URLs. */
+    destroy() { revokeBlobs(blobs); },
     add(ev) {
       const p = ev.payload || {};
       switch (ev.type) {
@@ -293,7 +299,7 @@ export function createChat(container, opts = {}) {
             lastUser = typedBody(p.text);
             root.append(userNode(p.text || "",
               referButton(opts.onRefer, "my earlier message", lastUser),
-              p.attachments, opts.fileUrl));
+              p.attachments, opts.fileUrl, blobs));
           }
           return;
         case "finish":

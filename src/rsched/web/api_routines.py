@@ -1,5 +1,10 @@
-"""Routine CRUD: dashboard cards, detail, config edits (409 while a run is active),
-manual fire, archive, file reads.
+"""The routine READ surfaces: dashboard cards, the detail payload, the setup surface, the
+recommendations, recipe health and its revert, the state graph, and a routine's own local
+reminders.
+
+The write half is `api_routine_edit` (rules, permissions, run-now, archive) and
+`api_routine_patch` (the one validated config writer); a routine's artifacts and recipe FILES
+are `api_routine_files`.
 """
 
 from __future__ import annotations
@@ -12,13 +17,10 @@ from pydantic import BaseModel
 from .. import lanes, registry, schedule
 from .. import triggers as triggers_mod
 from ..config import MODEL_KINDS
-from ..paths import resolve_rel
 from ..readmodels.stats import monthly_spend
-from . import artifacts
 from .decisions_read import _snooze_active
 from .routines_common import (
     _catalog,
-    _git_commit,
     _info,
     _state,
     permission_layers_detail,
@@ -250,11 +252,12 @@ def routine_detail(request: Request, slug: str) -> dict:
 
 @router.get("/routines/{slug}/health")
 def recipe_health(request: Request, slug: str) -> dict:
-    """Health by recipe version: the routine's runs bucketed by the recipe commit that
-    produced them (stamped by the engine; pre-stamp history is date-attributed), plus the
-    deterministic regression evaluation of the newest recipe change — the routine page's
-    health section. Flag-first: reverting is the user's explicit POST below, never
-    automatic.
+    """The routine page's health section: runs bucketed by the recipe commit that produced
+    them (stamped by the engine; pre-stamp history is date-attributed) with the regression
+    evaluation of the newest recipe change; `trend`, the same evaluation over the last two
+    run WINDOWS regardless of version — what a shared library revision moves and no recipe
+    commit records; and `endings`, which of this routine's partial finishes a budget forced.
+    Flag-first: reverting is the user's explicit POST below, never automatic.
     """
     from ..readmodels.run_health import routine_health
 
@@ -313,22 +316,6 @@ def recipe(request: Request, slug: str) -> dict:
     return statemap.recipe_tree(info.cfg.dir)
 
 
-@router.get("/routines/{slug}/artifacts")
-def list_artifacts(request: Request, slug: str) -> list[dict]:
-    """Everything under <routine>/artifacts/ — the routine's deliverables, newest first
-    (the conversations panel's counterpart).
-    """
-    info = _info(request, slug)
-    return artifacts.list_artifacts(info.cfg.dir)
-
-
-@router.delete("/routines/{slug}/artifacts")
-def delete_artifact(request: Request, slug: str, path: str) -> dict:
-    """Remove one artifact from the sidebar (user order 2026-08-14). artifacts/ only."""
-    info = _info(request, slug)
-    return artifacts.delete_artifact(info.cfg.dir, path)
-
-
 @router.delete("/routines/{slug}/reminders/{rid}")
 def delete_local_reminder(request: Request, slug: str, rid: str) -> dict:
     """Drop one of this routine's OWN reminders, tally and all.
@@ -353,53 +340,3 @@ def delete_local_reminder(request: Request, slug: str, rid: str) -> dict:
         raise HTTPException(404, f"{slug} has no local reminder {rid!r}")
     reminders.save_local(info.cfg.dir, kept, gstats)
     return {"ok": True, "remaining": len(kept)}
-
-
-@router.get("/routines/{slug}/artifact")
-def get_artifact(request: Request, slug: str, path: str):
-    """Serve one artifact raw (blob-rendered client-side). ONLY artifacts/ is servable
-    here — routine config/recipe reads stay on the JSON /file endpoint.
-    """
-    info = _info(request, slug)
-    return artifacts.serve_file(info.cfg.dir, path)
-
-
-@router.get("/routines/{slug}/file")
-def get_routine_file(request: Request, slug: str, path: str) -> dict:
-    info = _info(request, slug)
-    try:
-        p = resolve_rel(info.cfg.dir, path)
-        return {"path": path, "content": p.read_text(encoding="utf-8")}
-    except (PermissionError, OSError) as exc:
-        raise HTTPException(404, str(exc)) from exc
-
-
-class RoutineFileBody(BaseModel):
-    path: str
-    content: str
-
-
-@router.put("/routines/{slug}/file")
-def put_routine_file(request: Request, slug: str, body: RoutineFileBody) -> dict:
-    """Edit any of the routine's own files — main.md, stage modules, state, or routine.yaml.
-    A routine owns its recipe (materialized in), so main.md and stages/ ARE editable here.
-    This is the USER editing via the web (guarded while a run is active) — distinct from a run,
-    which may never write its own recipe or config.
-    """
-    info = _info(request, slug)
-    # validate the path up front so a bad path is a 400 NOW, not a silent replay failure
-    try:
-        resolve_rel(info.cfg.dir, body.path)
-    except PermissionError as exc:
-        raise HTTPException(400, str(exc)) from exc
-
-    def _apply() -> dict:
-        p = resolve_rel(info.cfg.dir, body.path)
-        p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(body.content, encoding="utf-8")
-        _git_commit(info.cfg.dir, f"edit {body.path} via web")
-        return {"ok": True}
-
-    # D78-A: queue while a run is active (apply at run end) instead of a 409 busy toast
-    return queue_or_apply(request, info, "file",
-                          {"path": body.path, "content": body.content}, _apply)

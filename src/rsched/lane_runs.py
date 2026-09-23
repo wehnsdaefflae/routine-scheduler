@@ -50,7 +50,7 @@ from pathlib import Path
 from . import lane_fires
 from .ids import now_iso
 from .lanes import DEFAULT_ON_FAILURE, ON_FAILURE
-from .paths import atomic_write_json, read_json
+from .paths import atomic_write_json, file_lock, read_json
 
 
 def new_id() -> str:
@@ -64,6 +64,11 @@ def runs_dir(routines_home: Path) -> Path:
 
 def run_file(routines_home: Path, lane_id: str) -> Path:
     return runs_dir(routines_home) / f"{lane_id}.json"
+
+
+def arm_lock_path(routines_home: Path, lane_id: str) -> Path:
+    """The flock file `arm` holds across its exists-then-write."""
+    return runs_dir(routines_home) / f"{lane_id}.lock"
 
 
 def read(routines_home: Path, lane_id: str) -> dict | None:
@@ -108,6 +113,20 @@ def arm(routines_home: Path, lane: dict, *, default_on_failure: str,
     lane_id = str(lane.get("id") or "")
     if not lane_id:
         raise ValueError("lane has no id")
+    runs_dir(routines_home).mkdir(parents=True, exist_ok=True)
+    with file_lock(arm_lock_path(routines_home, lane_id)):
+        return _arm_locked(routines_home, lane, lane_id, default_on_failure, armed_by)
+
+
+def _arm_locked(routines_home: Path, lane: dict, lane_id: str, default_on_failure: str,
+                armed_by: str) -> dict | None:
+    """The body of `arm`, under the lane's own flock.
+
+    "One in-flight chain per lane" is an exists-then-write, and the three writers sit in three
+    different contexts — the loop thread, FastAPI's threadpool and a conversation's engine
+    PROCESS — so the check and the write have to be one critical section or a lane can be
+    armed twice and fire two chains at once.
+    """
     if run_file(routines_home, lane_id).exists():
         return None  # one in-flight chain per lane
     override = lane.get("on_failure")

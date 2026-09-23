@@ -124,6 +124,24 @@ def test_a_failing_command_reports_its_exit_and_adds_no_advice(shell_ctx):
     assert format_observation(obs).startswith("OBSERVATION (shell, exit 3):")
 
 
+def test_a_signalled_child_reaches_the_health_stream(shell_ctx, tmp_path):
+    """A child the KERNEL stops — signal 9 inside this container is the cgroup OOM killer —
+    used to leave no trace anywhere: the engine survives, the run reads an ordinary failed
+    command, and five such kills on 2026-09-14/09-17 appeared in /var/log/kern.log and in no
+    health event at all.
+    """
+    import json
+
+    shell_ctx.server.routines_home = tmp_path / "rhome"
+    obs = dispatch({"kind": "shell", "command": "kill -9 $$"}, shell_ctx)
+    assert obs["exit"] < 0                                   # a signal, not an exit status
+    events = [json.loads(x) for x in (tmp_path / "rhome" / ".control" /
+                                      "health-events.jsonl").read_text().splitlines()]
+    assert [e["event"] for e in events] == ["util_killed"]
+    assert events[0]["kind"] == "shell" and events[0]["signal"] == 9
+    assert events[0]["routine"] == "sheller"
+
+
 def test_timeout_kills_the_process_group_and_reports_124(shell_ctx):
     obs = dispatch({"kind": "shell", "command": "sleep 30", "timeout_s": 1}, shell_ctx)
     assert obs["exit"] == shellrun.TIMEOUT_EXIT == 124
@@ -153,9 +171,11 @@ def test_no_store_secret_reaches_the_command(shell_ctx, monkeypatch):
 
 
 def test_output_is_capped_per_stream_and_spilled_in_full(shell_ctx):
-    """64 KB per stream, head+tail — the retired util's cap, kept — and the band between that
-    and the (much smaller) observation cap is saved to `.util_outputs/` like a util's."""
+    """ONE capture envelope for all three callable kinds (`utils_lib.OUTPUT_CAP`, read through
+    `captured_output.read_capped`), and the band between that and the (much smaller)
+    observation cap is saved to `.util_outputs/` like a util's."""
     from rsched.engine.observations import OBS_CAP_CHARS
+    from rsched.utils_lib import OUTPUT_CAP
 
     shell_ctx.turn = 7
     obs = dispatch({"kind": "shell",
@@ -165,8 +185,7 @@ def test_output_is_capped_per_stream_and_spilled_in_full(shell_ctx):
     rel = obs["full_output"]["stdout"]
     assert "t7-shell.out" in rel
     saved = (shell_ctx.routine.dir / rel).read_text(encoding="utf-8")
-    assert len(saved) <= shellrun.STREAM_CAP + 200           # …and the spill carries the cap
-    assert "head+tail kept" in saved
+    assert len(saved) <= OUTPUT_CAP                          # …and the spill carries the cap
     assert "[full output]" in format_observation(obs)
 
 

@@ -8,15 +8,19 @@
 // A binding whose machine left the catalog stays visible so it can be cleared (it resolves
 // to nothing at run time — the row says so).
 
-import { el, toast } from "/static/util.js";
+import { el, toast, toastError } from "/static/util.js";
 
 export function machinesCard(catalog, bound, { onSave }) {
   const checks = {};
   const box = el("div", {},
+    // This card owns the section's ONE explanation — the routine page and the conversation
+    // composer both mount it, and the page-level copy that used to sit above it said the same
+    // thing in different words. The RESOURCE/permission distinction came from that copy.
     el("div", { class: "muted small", style: "margin-bottom:8px" },
-      "Remote machines this may act on over SSH (needs the ",
-      el("code", {}, "remote-machines"), " permission + the ", el("code", {}, "remote"),
-      " util). Add machines in ",
+      "Which boxes from the instance's catalog this may reach over SSH. A binding is a ",
+      "RESOURCE, not a permission: it says which machines are in reach, while the ",
+      el("code", {}, "remote-machines"), " ability is what lets a run act on one (through the ",
+      el("code", {}, "remote"), " util). Takes effect at the next run. Add machines in ",
       el("a", { href: "#/settings?section=machines" }, "Settings → Machines"), "."));
   const boundSet = new Set(bound || []);
   if (!(catalog || []).length && !boundSet.size) {
@@ -45,7 +49,7 @@ export function machinesCard(catalog, bound, { onSave }) {
     onclick: async () => {
       const machines = Object.entries(checks).filter(([, cb]) => cb.checked).map(([n]) => n);
       try { await onSave(machines); toast("machines saved"); }
-      catch (err) { toast(err.message, 4000, { error: true }); }
+      catch (err) { toastError(err); }
     } }, "save machines")));
   return box;
 }

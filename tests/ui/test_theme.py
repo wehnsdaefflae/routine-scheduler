@@ -15,7 +15,7 @@ def _load_with_theme(ui, ui_page, theme: str):
     # applies the theme BEFORE first paint exactly as it does for a real visit
     ui_page.add_init_script(f"localStorage.setItem('rsched_theme', {theme!r})")
     ui_page.goto(f"{ui.url}/#/routines")
-    ui_page.wait_for_selector(".topbar", timeout=10_000)
+    ui_page.wait_for_selector(".topbar")
 
 
 def _luminance(rgb: str) -> float:

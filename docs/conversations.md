@@ -69,6 +69,19 @@ A conversation is **one continuous run**, and every reply is a self-contained le
 - If you message while the agent is still working, it's delivered as an injection and **picked up at
   the next turn** rather than starting a new leg.
 
+**What a resumed leg reads is what the previous leg read.** A resume rebuilds the message list
+from the transcript (`history.replay_messages`), and every message it rebuilds comes from the
+SAME renderer the live path used — `control.injected_message` for your messages,
+`control.command_message` for a slash command and its result, `enginenote.message` for an
+ENGINE NOTE, `format_observation` for everything the agent did. That is not tidiness: a
+resumed leg whose prefix differs from the leg that wrote it by one label or one newline is
+re-WRITTEN to the provider at 1.25x instead of re-read from its cache at 0.1x, and the visible
+symptom is a token count that FALLS while the bill rises. Two specific repairs behind that rule:
+an engine-authored note is recorded verbatim and replays as `ENGINE NOTE:` rather than as a
+phantom "USER MESSAGE (injected mid-run)" carrying a stub, and the notes `boot` re-authors on
+every leg (the resume framing, the setup-gap list) are marked not-replayable so they do not
+stack one copy per reply.
+
 **A reply ends when you have something, not after N steps.** The agent works until it reaches a
 point worth handing you: a finished piece of the job, a verified deliverable, a decision only you
 can make, or a genuine blocker. A single message can run for many turns when the job needs it — it
@@ -232,7 +245,7 @@ running conversation, where changes apply from the next reply:
 - **Budgets** are **per reply**: turns, minutes, tokens and child tasks for each message, not the
   whole session. They are a runaway backstop — raise them for a conversation doing heavy work,
   lower them if you want short exchanges.
-- **Permissions** work exactly as they do for routines (see the *Traits & permissions* guide). A
+- **Permissions** work exactly as they do for routines (see the *Rules, permissions & capabilities* guide). A
   conversation starts with the default set; the **shell** action is a one-click grant. Previous-run depth is
   greyed out — a conversation is one continuous run, so it doesn't apply.
 - **Model** switches from the line at the top. Change it any time; if a reply is in flight, it
@@ -319,5 +332,5 @@ mirror before that run.
 ## See also
 
 - **Playbooks** — turn a conversation into a reusable one-shot brief, and reuse it.
-- **Traits & permissions** — how a session's conduct and capability are set.
+- **Rules, permissions & capabilities** — how a session's conduct and capability are set.
 - **Getting started** — routines, the scheduled counterpart, and the pieces both share.

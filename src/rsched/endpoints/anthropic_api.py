@@ -4,6 +4,13 @@ Schema enforcement via forced tool-use: one tool named "action" whose input_sche
 requested schema, with tool_choice forcing it — long-supported and reliable. Without a
 schema it is a plain messages call.
 
+`temperature` rides the body when one is configured, and a 400 naming it drops it for one
+degraded retry — the same seam `output_config` uses. Current CLAUDE models removed the
+sampling parameters (`effort` is the knob that replaced them), but this adapter's KIND is a
+WIRE, not a provider: a subscription proxy speaks it while serving `gpt-*` ids, and Haiku
+4.5 still honours temperature. So the field is neither sent blindly nor dropped blindly —
+the model that rejects it says so, once.
+
 Prompt caching is on for CONVERSATIONS: cache_control breakpoints on the tools block and
 the system prompt (static per run) plus a moving breakpoint on the last message — each turn
 re-reads the whole prefix at ~0.1x price instead of full price. The engine's message list is
@@ -146,7 +153,8 @@ def _strip_cache_control(body: dict) -> dict:
 
 class AnthropicEndpoint:
     """Anthropic-compatible Messages adapter; billing belongs to the upstream. Schema via
-    a single forced tool-use; effort via `output_config`, degraded on a 400 naming it.
+    a single forced tool-use; effort via `output_config` and `temperature` when configured,
+    each degraded on a 400 naming it.
     """
 
     def __init__(self, cfg: EndpointConfig):
@@ -172,8 +180,6 @@ class AnthropicEndpoint:
     def complete(self, messages: list[Message], *, model: str, schema: dict | None = None,
                  effort: str | None = None, max_tokens: int | None = None,
                  timeout: int = DEFAULT_TIMEOUT,
-                 session: str | None = None,  # noqa: ARG002 — protocol caching hint; the
-                 # cache_control breakpoints make a per-run key unnecessary here
                  temperature: float | None = None, cacheable: bool = True) -> Completion:
         system, rest = split_system(messages)
         rendered = _render_media(merge_consecutive(rest))
@@ -214,6 +220,13 @@ class AnthropicEndpoint:
                 degraded = dict(body)
                 if "output_config" in degraded and any(h in low for h in _EFFORT_ERROR_HINTS):
                     degraded.pop("output_config")
+                if "temperature" in degraded and "temperature" in low:
+                    # Current Claude models REMOVED the sampling parameters and answer 400.
+                    # The 400 is non-retryable, so without this one filled Settings box
+                    # would fail a model over on every turn of every run — while the same
+                    # wire still serves models (Haiku 4.5, a proxy's `gpt-*` ids) that
+                    # honour it. The model that rejects it says so; nothing is guessed.
+                    degraded.pop("temperature")
                 if "cache_control" in low:   # a proxy/old gateway that rejects caching
                     degraded = _strip_cache_control(degraded)
                 if json.dumps(degraded, sort_keys=True) != json.dumps(body, sort_keys=True):

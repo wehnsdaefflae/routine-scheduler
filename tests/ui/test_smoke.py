@@ -10,8 +10,8 @@ from playwright.sync_api import expect
 def test_dashboard_renders(ui, ui_page):
     ui.seed_run("uir", "20260714-070000", "finished", summary="all done")
     ui_page.goto(f"{ui.url}/#/routines")
-    ui_page.wait_for_selector("h1:has-text('Routines')", timeout=10_000)
-    expect(ui_page.locator("body")).to_contain_text("Test uir", timeout=10_000)
+    ui_page.wait_for_selector("h1:has-text('Routines')")
+    expect(ui_page.locator("body")).to_contain_text("Test uir")
     assert "rsched" in ui_page.title().lower()
 
 
@@ -31,13 +31,13 @@ def test_week_panel_shows_avg_runtime(ui, ui_page):
     ui.seed_run("uir", "20260714-070000", "finished", elapsed_s=1800)
     ui_page.goto(f"{ui.url}/#/routines")
     # uir's Monday cron puts it in the week grid; fires are bars, identity is the name column
-    expect(ui_page.locator(".weekpanel svg.wg")).to_be_visible(timeout=10_000)
+    expect(ui_page.locator(".weekpanel svg.wg")).to_be_visible()
     bar = ui_page.locator(".weekpanel .wg-bar").first
-    expect(bar).to_be_visible(timeout=10_000)
+    expect(bar).to_be_visible()
     want = 1800 / 86400 * _day_width(ui_page)   # 30 min to scale against a 24h day column
     assert want > 2, "the expectation must sit above the 2px floor to prove the scale"
     assert abs(float(bar.get_attribute("width")) - want) < 0.5
-    expect(ui_page.locator(".weekpanel .wg-names")).to_contain_text("Test uir", timeout=10_000)
+    expect(ui_page.locator(".weekpanel .wg-names")).to_contain_text("Test uir")
 
 
 def test_week_panel_avg_is_5_run_moving_average(ui, ui_page):
@@ -48,9 +48,9 @@ def test_week_panel_avg_is_5_run_moving_average(ui, ui_page):
     for day in ("10", "11", "12", "13", "14"):
         ui.seed_run("uir", f"202607{day}-070000", "finished", elapsed_s=1800)
     ui_page.goto(f"{ui.url}/#/routines")
-    expect(ui_page.locator(".weekpanel svg.wg")).to_be_visible(timeout=10_000)
+    expect(ui_page.locator(".weekpanel svg.wg")).to_be_visible()
     bar = ui_page.locator(".weekpanel .wg-bar").first
-    expect(bar).to_be_visible(timeout=10_000)
+    expect(bar).to_be_visible()
     # last 5 avg = 30m; the 12h run is outside the window (it would be ~14× wider)
     assert abs(float(bar.get_attribute("width")) - 1800 / 86400 * _day_width(ui_page)) < 0.5
     # the "over N runs" provenance moved into the bar's own hover title (the legend is retired)
@@ -63,14 +63,14 @@ def test_pause_scheduling_toggle(ui, ui_page):
     warn banner appears (owning the resume control, the head button hides), and resume
     clears it again. Run-now stays available throughout (option A semantics)."""
     ui_page.goto(f"{ui.url}/#/routines")
-    ui_page.wait_for_selector("h1:has-text('Routines')", timeout=10_000)
+    ui_page.wait_for_selector("h1:has-text('Routines')")
     ui_page.click("button:has-text('pause scheduling')")
-    expect(ui_page.locator(".panel.warn")).to_contain_text("Scheduling is paused", timeout=10_000)
+    expect(ui_page.locator(".panel.warn")).to_contain_text("Scheduling is paused")
     expect(ui_page.locator(".panel.warn")).to_contain_text("active routines pause after their current turn")
     expect(ui_page.locator(".panel.warn")).to_contain_text("not individual pauses")
     ui_page.click("button:has-text('resume scheduling')")
-    expect(ui_page.locator("body")).not_to_contain_text("Scheduling is paused", timeout=10_000)
-    expect(ui_page.locator("button:has-text('pause scheduling')")).to_be_visible(timeout=10_000)
+    expect(ui_page.locator("body")).not_to_contain_text("Scheduling is paused")
+    expect(ui_page.locator("button:has-text('pause scheduling')")).to_be_visible()
 
 
 def test_daemon_lamp_shows_restart_pending(ui, ui_page):
@@ -83,5 +83,5 @@ def test_daemon_lamp_shows_restart_pending(ui, ui_page):
     sentinel.write_text("{}", encoding="utf-8")
     ui_page.goto(f"{ui.url}/#/routines")
     dot = ui_page.locator("#daemon-dot")
-    expect(dot).to_have_class(re.compile(r"restart-pending"), timeout=10_000)
-    expect(dot).to_have_attribute("title", re.compile("restart pending"), timeout=10_000)
+    expect(dot).to_have_class(re.compile(r"restart-pending"))
+    expect(dot).to_have_attribute("title", re.compile("restart pending"))

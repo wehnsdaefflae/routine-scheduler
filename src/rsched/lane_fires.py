@@ -10,7 +10,9 @@ in a member's inbox. This store is what boot catch-up (`daemon/lane_catchup.py`)
 the last DUE fire against.
 
 Daemon-owned DERIVED state, like the model-limits cache: written by every `lane_runs.arm`
-(schedule, UI, `manage_lane run`, catch-up alike), never by the web layer, and safe to
+(schedule, UI, `manage_lane run`, catch-up alike) and by the scheduler when the operator's
+global pause skips a due fire on purpose — every path that HANDLES a fire, so what is left
+unstamped is a fire nobody was there for. Never written by the web layer, and safe to
 delete — a missing entry reads as "no evidence of a miss" and is stamped at the next boot.
 
     <routines_home>/.control/lane-fires.json      {"<lane_id>": "<iso of the last arm>"}
@@ -22,13 +24,18 @@ from datetime import datetime
 from pathlib import Path
 
 from .ids import now_iso
-from .paths import atomic_write_json, read_json
+from .paths import atomic_write_json, file_lock, read_json
 
 FILE = "lane-fires.json"
 
 
 def path(routines_home: Path) -> Path:
     return Path(routines_home) / ".control" / FILE
+
+
+def lock_path(routines_home: Path) -> Path:
+    """The flock file guarding the whole-file rewrite below."""
+    return path(routines_home).with_suffix(".lock")
 
 
 def load(routines_home: Path) -> dict[str, str]:
@@ -39,10 +46,19 @@ def load(routines_home: Path) -> dict[str, str]:
 
 
 def stamp(routines_home: Path, lane_id: str, when: str | None = None) -> None:
-    """Record that `lane_id`'s chain was armed now (or at `when`, ISO)."""
-    data = load(routines_home)
-    data[str(lane_id)] = when or now_iso()
-    atomic_write_json(path(routines_home), data)
+    """Record that `lane_id`'s chain was armed now (or at `when`, ISO).
+
+    LOCKED, because one file holds every lane's watermark and is rewritten whole, and three
+    contexts write it: the scheduler on the daemon's loop thread, the web layer's sync
+    handlers on FastAPI's threadpool, and a root conversation's ENGINE PROCESS through
+    `manage_lane`. Unlocked, two overlapping stamps each read the file and each write their
+    own version, and one is simply lost — which is precisely the precondition for a spurious
+    make-up chain at the next boot. flock is the one mechanism all three share.
+    """
+    with file_lock(lock_path(routines_home)):
+        data = load(routines_home)
+        data[str(lane_id)] = when or now_iso()
+        atomic_write_json(path(routines_home), data)
 
 
 def last_armed(routines_home: Path, lane_id: str) -> datetime | None:

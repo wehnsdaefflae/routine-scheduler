@@ -7,11 +7,12 @@
 
 import { replaceHash } from "/static/router.js";
 import { api } from "/static/api.js";
+import { loadQuestions, subscribeQuestions } from "/static/questions-store.js";
 import { pendingBand } from "/static/components/pending.js";
 import { answerForm } from "/static/components/answerform.js";
 import { linkifyRefs } from "/static/components/reflinks.js";
-import { md } from "/static/md.js";
-import { chip, el, emptyState, skeleton, toast, when } from "/static/util.js";
+import { md, summaryLine } from "/static/md.js";
+import { act, chip, el, emptyState, groupHead, skeleton, toast, toastError, when } from "/static/util.js";
 import { TERMINAL } from "/static/states.js";
 
 const FILTERS = [["all", "All"], ["blocking", "Blocking"], ["deferred", "Deferred"], ["meta", "Meta"], ["snoozed", "Snoozed"]];
@@ -20,11 +21,13 @@ const SORTS = [["priority", "priority"], ["newest", "newest"], ["oldest", "oldes
 
 const rank = (q) => (q.answered ? 3 : q.mode === "blocking" ? 0 : q.meta ? 2 : 1);
 // inbox groups, strongest first — the priority sort renders these as sections
+// [noun, what the group is, membership, does it wait on a person]
 const GROUPS = [
-  ["Blocking — a run is waiting on you", (q) => !q.answered && q.mode === "blocking"],
-  ["Deferred — the next run picks these up", (q) => !q.answered && !q.meta && q.mode !== "blocking"],
-  ["Meta — system-level decisions", (q) => !q.answered && q.meta],
-  ["Settled — what you answered, and what became of it", (q) => q.answered],
+  ["Blocking", "a run is waiting on you", (q) => !q.answered && q.mode === "blocking", true],
+  ["Deferred", "the next run picks these up",
+   (q) => !q.answered && !q.meta && q.mode !== "blocking", true],
+  ["Meta", "system-level decisions", (q) => !q.answered && q.meta, true],
+  ["Settled", "what you answered, and what became of it", (q) => q.answered, false],
 ];
 const EXPIRING_MS = 30 * 60 * 1000;   // a blocking ask this close to its timeout is LOUD
 const expiringSoon = (q) => q.mode === "blocking" && q.expires
@@ -129,8 +132,13 @@ export async function render(view, query = {}) {
   }
 
   function syncToolbar() {
-    const open = state.items.filter((q) => !q.snoozed);
-    const counts = { all: open.length, snoozed: state.items.length - open.length };
+    // The counts are of what WAITS, so an answered decision is not one of them. They counted
+    // every unsnoozed row, answered included, so a fleet with twelve settled proposals and
+    // nothing open read "All · 12 · Deferred · 12" — the page's own question ("does anything
+    // need me?") answered wrongly, and the emptyState below could never fire.
+    const open = state.items.filter((q) => !q.snoozed && !q.answered);
+    const counts = { all: open.length,
+                     snoozed: state.items.filter((q) => q.snoozed).length };
     for (const q of open) counts[kindOf(q)] = (counts[kindOf(q)] || 0) + 1;
     for (const [key, b] of filterChips) {
       const n = counts[key] || 0;
@@ -156,13 +164,17 @@ export async function render(view, query = {}) {
             "The routines are self-sufficient. Blocking questions pause their run here; deferred and meta ones wait for the next run."));
       return;
     }
+    // Nothing open, but settled rows to show: say so at the top rather than leaving the reader
+    // to scroll a page of answered proposals looking for one that is not.
+    if (state.filter !== "snoozed" && !qs.some((q) => !q.answered))
+      list.append(emptyState("✓", "Nothing waits on you",
+        "Every decision here is answered. Blocking questions pause their run here; deferred and meta ones wait for the next run."));
     if (state.sort === "priority") {
       let i = 0;
-      for (const [label, match] of GROUPS) {
+      for (const [noun, explain, match, waits] of GROUPS) {
         const members = qs.filter(match);
         if (!members.length) continue;
-        list.append(el("div", { class: "q-group-head" },
-          el("span", {}, label), el("span", { class: "q-group-count" }, String(members.length))));
+        list.append(groupHead(noun, members.length, explain, { waits }));
         for (const q of members) list.append(item(q, i++));
       }
     } else {
@@ -172,7 +184,7 @@ export async function render(view, query = {}) {
   }
 
   async function load({ focus = true } = {}) {
-    try { state.items = await api("/api/questions"); }
+    try { state.items = (await loadQuestions()).items; }
     catch (err) { list.replaceChildren(emptyState("✕", "Couldn't load decisions", err.message)); return; }
     renderList({ focus });
   }
@@ -197,20 +209,19 @@ export async function render(view, query = {}) {
         const save = el("button", { class: "btn small primary" }, "save revision");
         const cancel = el("button", { class: "btn small" }, "cancel");
         cancel.onclick = () => say(q.answer, settledNote());
-        save.onclick = async () => {
+        save.onclick = () => {
           const text = box.value.trim();
           if (!text) return;
-          save.disabled = true;
-          try {
-            await api(`/api/questions/${q.qid}/revise`, { method: "POST", body: { text } });
+          // act() re-enables in a `finally`, which is the only place it cannot be forgotten:
+          // this handler used to re-enable only on the failure path, so a revision that SAVED
+          // left its own button dead.
+          act(save, async () => {
+            const r = await api(`/api/questions/${q.qid}/revise`, { method: "POST", body: { text } });
             q.answer = text;
             q.settled = false;              // re-queued: a run has to read the amendment
-            toast("revised — the next run reads the new answer");
             say(text, "→ inbox → the next run reads this instead");
-          } catch (err) {
-            toast(err.message, 4000, { error: true });
-            save.disabled = false;
-          }
+            return r;
+          }, "revised — the next run reads the new answer");
         };
         body.replaceChildren(box, el("div", { class: "row mt" }, save, cancel));
         box.focus();
@@ -234,7 +245,14 @@ export async function render(view, query = {}) {
           sourceLink(q),
           q.asked ? el("span", {}, "asked ", when(q.asked)) : null,
           q.consumed ? el("span", { class: "faint small" }, "read ", when(q.consumed)) : null),
-        qText(q),
+        // A settled card is a RECEIPT: what was asked, what you said, and the chance to revise.
+        // Rendering the whole proposal body — rationale, prior art, sketch, an impact table —
+        // above the answer made the page eleven thousand pixels of decisions already taken. The
+        // first line leads; the rest is one click, and nothing is dropped.
+        el("details", { class: "q-settled" },
+          el("summary", { class: "q-text prose" },
+            summaryLine(q.question, "(no question)")),
+          qText(q)),
         el("div", { class: "mt" }, body));
     }
     const runBits = q.run_id ? [
@@ -262,7 +280,7 @@ export async function render(view, query = {}) {
             el("span", {}, "the run continues on its default — the question stays open")));
           q.mode = "deferred";
           syncToolbar();
-        } catch (err) { toast(err.message, 4000, { error: true }); lifecycle.disabled = false; }
+        } catch (err) { toastError(err); lifecycle.disabled = false; }
       };
     } else if (!q.meta) {
       if (q.snoozed) {
@@ -275,7 +293,7 @@ export async function render(view, query = {}) {
             q.snoozed = false;
             delete q.snoozed_until;
             renderList();
-          } catch (err) { toast(err.message, 4000, { error: true }); }
+          } catch (err) { toastError(err); }
         };
       } else {
         lifecycle = el("select", { class: "small", "data-nopersist": true,
@@ -291,7 +309,7 @@ export async function render(view, query = {}) {
             q.snoozed = true;
             q.snoozed_until = r.snoozed_until;
             renderList();
-          } catch (err) { toast(err.message, 4000, { error: true }); lifecycle.value = ""; }
+          } catch (err) { toastError(err); lifecycle.value = ""; }
         };
       }
     }
@@ -391,7 +409,7 @@ export async function render(view, query = {}) {
                                      : `the config change was applied to the ${noun}`)));
           state.items = state.items.filter((x) => x.qid !== q.qid);
           syncToolbar();
-        } catch (err) { toast(err.message, 5000, { error: true }); btn.disabled = false; }
+        } catch (err) { toastError(err, 5000); btn.disabled = false; }
       };
       return el("div", { class: "flow-note mt" },
         el("div", { class: "small", style: "margin-bottom:4px" },
@@ -433,29 +451,30 @@ export async function render(view, query = {}) {
   }
 
   await load();
-  // A bus tick fires on EVERY global SSE event — several a second while a run is live — and
-  // load() rebuilds the whole list (renderList → list.replaceChildren). That rebuild yanks
-  // focus out of the answer field you are typing into: on mobile it dismisses the keyboard
-  // and drops the caret, so the answer never lands. Defer the refresh while an answer control
-  // in this list holds focus, and flush the deferred one once focus leaves.
-  let deferredReload = false;
+  // This page is a READER of the shared questions store (questions-store.js): it owns the bus
+  // listener, skips the llm_task/llm_process storm, and coalesces every surface's refresh into
+  // one fetch. This view used to fetch on EVERY bus event with no filter and no timer —
+  // several GETs a second while a run worked, each rebuilding every card.
+  //
+  // The rebuild (renderList → list.replaceChildren) also yanks focus out of the answer field
+  // you are typing into: on mobile it dismisses the keyboard and drops the caret, so the answer
+  // never lands. Defer the repaint while an answer control in this list holds focus, and flush
+  // the deferred one once focus leaves.
+  let deferred = null;
   const typingHere = () => {
     const a = document.activeElement;
     return Boolean(a && list.contains(a) && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName));
   };
-  const onBus = () => {
-    if (typingHere()) { deferredReload = true; return; }
-    load({ focus: false }).catch(() => {});
+  const paint = (snapshot) => {
+    if (typingHere()) { deferred = snapshot; return; }
+    deferred = null;
+    state.items = snapshot.items;
+    renderList({ focus: false });
   };
-  window.addEventListener("rsched-bus", onBus);
+  const unsubscribe = subscribeQuestions(paint);
   list.addEventListener("focusout", () => {
     // focusout fires before focus settles on the next node — re-check on the next tick
-    setTimeout(() => {
-      if (deferredReload && !typingHere()) {
-        deferredReload = false;
-        load({ focus: false }).catch(() => {});
-      }
-    }, 0);
+    setTimeout(() => { if (deferred && !typingHere()) paint(deferred); }, 0);
   });
-  return () => window.removeEventListener("rsched-bus", onBus);
+  return unsubscribe;
 }

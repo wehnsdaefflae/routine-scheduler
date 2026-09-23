@@ -37,8 +37,8 @@ R40), `secrets:` for the exposure gate above, `calls:` for the utils it shells o
 
 from __future__ import annotations
 
+import os
 import re
-import subprocess
 import tomllib
 from pathlib import Path
 
@@ -46,6 +46,7 @@ from . import sandbox, utils_header, utils_lib, utils_run
 from .paths import atomic_write
 
 SCRIPT_TIMEOUT_S = 300
+TIMEOUT_EXIT = 124                # the shell convention (`timeout(1)`), shared with shellrun
 VENV_DIR = ".venv"
 _INSTALL_TIMEOUT_S = 300
 
@@ -118,14 +119,16 @@ def needs(routine_dir: Path, name: str,
     every util it shells out to share ONE jail and ONE env, the same rule a util's own
     siblings obey (`utils_run.util_needs`, which walks each callee's subtree). So a script
     calling a `net: outbound` util needs the network open too, and inherits that util's
-    credentials without redeclaring them. A name is OPTIONAL only if every declarer in the
-    tree marks it `?` — one required declaration anywhere makes it required.
+    credentials without redeclaring them. Optionality follows the same precedence as a util's:
+    a `?` on THIS script's own `secrets:` line wins (it knows which of its code paths run),
+    while among the utils it calls one required declaration makes the name required.
     """
     header = _header(routine_dir, name)
     if header is None:
         return set(), False, set()
     declared = {s.upper() for s in header["secrets"]}
-    required = declared - {s.upper() for s in header["optional_secrets"]}
+    own_optional = {s.upper() for s in header["optional_secrets"]}
+    required = declared - own_optional
     net = header["net"] == "outbound"
     for callee in header["calls"]:
         callee_needs = utils_run.util_needs(libraries_home, callee)
@@ -134,7 +137,7 @@ def needs(routine_dir: Path, name: str,
         declared |= c_secrets
         required |= c_secrets - c_optional
         net = net or c_net
-    return declared, net, declared - required
+    return declared, net, declared - (required - own_optional)
 
 
 def callee_fs_paths(routine_dir: Path, name: str,
@@ -265,12 +268,11 @@ def ensure_env(routine_dir: Path, name: str, *,
                                fs_roots=True,
                                fs_paths=callee_fs_paths(routine_dir, name, libraries_home),
                                net=True)
-            r = subprocess.run(cmd, capture_output=True, text=True,
-                               timeout=_INSTALL_TIMEOUT_S, stdin=subprocess.DEVNULL,
-                               cwd=str(routine_dir), check=False)
         except sandbox.SandboxRefusal as exc:
             return str(exc)
-        except subprocess.TimeoutExpired:
+        r = utils_run.run_jailed(cmd, env=dict(os.environ), cwd=routine_dir,
+                                 timeout=_INSTALL_TIMEOUT_S, label=f"venv setup ({step[1]})")
+        if r.timed_out:
             # The install cap is fixed and SEPARATE from the action's timeout_s, which bounds the
             # script's runtime, not this build step — so no recipe can raise it (R1296). A dep too
             # heavy to install inside it does not belong in a per-routine venv; say so, rather than
@@ -280,8 +282,6 @@ def ensure_env(routine_dir: Path, name: str, *,
                     "bounds the script's runtime, not this build) and cannot be raised from a "
                     "recipe — use a lighter dependency, or offload heavy compute to a util or a "
                     "remote machine.")
-        except OSError as exc:
-            return f"venv setup failed ({step[1]}): {exc}"
         if r.returncode != 0:
             return (f"venv setup failed ({step[1]}): "
                     f"{(r.stderr or r.stdout).strip()[-400:]}")
@@ -317,6 +317,10 @@ def run_script(routine_dir: Path, name: str, args: list[str], *,
         env["GLOBAL_UTILS_HOME"] = str(libraries_home)
     else:
         env.pop("GLOBAL_UTILS_HOME", None)
+    # The deadline this child has, exported by BOTH runners (utils_run.run_util) so a util or
+    # script that waits on something slow sets its own timeout INSIDE it and reports what it
+    # captured, instead of being killed at the same instant by the clock above (R1813).
+    env["RSCHED_UTIL_TIMEOUT_S"] = str(timeout)
     try:
         cmd = sandbox.wrap(
             [str(venv_python(routine_dir)), str(script_path(routine_dir, name)),
@@ -325,12 +329,10 @@ def run_script(routine_dir: Path, name: str, args: list[str], *,
             fs_paths=callee_fs_paths(routine_dir, name, libraries_home))
     except sandbox.SandboxRefusal as exc:
         return 2, "", str(exc)
-    try:
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout,
-                           stdin=subprocess.DEVNULL, cwd=str(routine_dir), env=env,
-                           check=False)
-    except subprocess.TimeoutExpired:
-        return 124, "", f"script {name!r} timed out after {timeout}s"
-    except OSError as exc:
-        return 2, "", f"could not run script {name!r}: {exc}"
-    return r.returncode, r.stdout, r.stderr
+    # The SHARED runner (utils_run.run_jailed), not a plain `subprocess.run`: a script with a
+    # `calls:` line execs `gu <util>`, i.e. the `uv run` GRANDCHILD a plain timeout never kills
+    # — it would hold the pipes open past the deadline and block the engine turn forever — and
+    # a script that dumps a large file must not be buffered whole in the daemon's memory.
+    res = utils_run.run_jailed(cmd, env=env, cwd=routine_dir, timeout=timeout,
+                               label=f"script {name!r}", config_seal=routine_dir)
+    return (TIMEOUT_EXIT if res.timed_out else res.returncode), res.stdout, res.stderr

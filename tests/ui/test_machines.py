@@ -8,10 +8,26 @@ from playwright.sync_api import expect
 from rsched.config import MachineConfig
 
 
+def _unfold(page) -> None:
+    """Open every routine-page config group.
+
+    The page ships with only its leading group open (views/routine.js SECTION_GROUPS): seven
+    open at once made it 11-12 000px tall. A control inside a folded group is not visible, so a
+    test that reads one unfolds first. What the DEFAULT is, and that the choice is remembered,
+    is pinned in test_routine_groups.py — not here.
+    """
+    page.wait_for_selector(".rgroup-head")
+    page.evaluate("() => { for (const d of document.querySelectorAll('details.rgroup')) d.open = true; }")
+
 def test_machines_card_add(ui, ui_page):
     ui_page.goto(f"{ui.url}/#/settings?section=machines")
-    ui_page.wait_for_selector("#sec-machines", timeout=10_000)
+    ui_page.wait_for_selector("#sec-machines")
     expect(ui_page.locator("[data-mach-empty]")).to_contain_text("no machines yet")
+
+    # The add form is a disclosure, like "+ add model" and "+ add endpoint" two sections up:
+    # eight inputs and two teaching paragraphs standing open cost a screen on every visit to
+    # Settings for something done once per box.
+    ui_page.locator('[data-add="machine"] summary').click()
 
     # R474: the form teaches the two-key distinction inline — KEY_VAR names a Secret
     # holding the LOGIN key; the pinned host key is the SERVER's identity, filled by scan
@@ -44,9 +60,10 @@ def test_routine_machine_binding(ui, ui_page):
     ui.server_cfg.machines = {"gpu-box": mac}   # the live server the API reads
 
     ui_page.goto(f"{ui.url}/#/routine/uir")
+    _unfold(ui_page)
     # the machine's checkbox is inside its label row
     row = ui_page.locator("label", has_text="gpu-box")
-    row.wait_for(timeout=10_000)
+    row.wait_for()
     row.locator("input[type=checkbox]").check()
     ui_page.get_by_role("button", name="save machines").click()
     expect(ui_page.locator("#toast:not([hidden])")).to_contain_text("machines saved")
@@ -70,9 +87,12 @@ def test_conversation_machine_binding(ui, ui_page):
     ui_page.wait_for_url("**/conversations/**")
     slug = ui_page.url.rsplit("/", 1)[-1]
 
-    ui_page.locator(".conv-caps summary").click()   # ⚙ capabilities & budgets
+    # the panel's OWN disclosure: `> summary`, because each abilities card inside it now
+    # folds its met requirements behind a "N requirements · all met" summary of its own
+    # (components/abilities.js), so a descendant match is no longer unique.
+    ui_page.locator(".conv-caps > summary").click()   # ⚙ capabilities & budgets
     row = ui_page.locator("label", has_text="gpu-box")
-    row.wait_for(timeout=10_000)
+    row.wait_for()
     row.locator("input[type=checkbox]").check()
     ui_page.get_by_role("button", name="save machines").click()
     expect(ui_page.locator("#toast:not([hidden])")).to_contain_text("machines saved")

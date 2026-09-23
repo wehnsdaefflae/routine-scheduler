@@ -70,12 +70,17 @@ registry. One lane document must never be the place a stale reference takes the 
 from __future__ import annotations
 
 import uuid
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
+from types import SimpleNamespace
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from croniter import croniter
 
 from .ids import now_iso
-from .paths import atomic_write_json, read_json
+from .paths import atomic_write_json, file_lock, read_json
+from .schedule import server_tz
 
 # What to do when a member run fails partway through a sequential lane fire (Phase B reads
 # this; Phase A only stores it). "stop" = abort the rest of the chain; "continue" = fire the
@@ -140,11 +145,47 @@ def _normalize(rec: dict) -> dict:
         "members": _clean_members(rec.get("members")),
         "on_failure": on_failure,
         "cron": cron,
-        "tz": str(rec.get("tz") or ""),
+        "tz": _known_zone(rec.get("tz")),
         "paused": bool(rec.get("paused")),
         "catchup": catchup,
         "created": str(rec.get("created") or ""),
     }
+
+
+def schedulable(lane: dict) -> SimpleNamespace:
+    """A lane as the `Schedulable` shape `registry.next_fire` / `registry.last_due_fire` read.
+
+    ONE adapter, so the lane and routine cron rules cannot drift: the scheduler's fire table
+    and boot catch-up both go through it. A PAUSED lane reads as a disabled schedulable —
+    next_fire yields None, so the lane simply leaves the fire table and the catch-up has
+    nothing to make up; resuming recomputes a FUTURE fire on rescan, never a backlog. An
+    explicit "Run now" / `manage_lane run` still arms the chain: pause gates the cron only.
+    `tz` falls back to the server zone — lanes are saved with it, but an older or hand-edited
+    row must still fire somewhere sensible.
+    """
+    return SimpleNamespace(cron=lane.get("cron") or "", tz=lane.get("tz") or server_tz(),
+                           enabled=not lane.get("paused"))
+
+
+def _known_zone(tz: object) -> str:
+    """A zone `ZoneInfo` accepts, or "" — which every reader turns into the server zone.
+
+    Degrades rather than raises, exactly as a corrupt cron does one field above. The lane
+    store is hand-editable JSON with no schema on the way in, and an unknown zone reaches
+    `ZoneInfo` inside `Scheduler.rescan` and the lane boot catch-up — both of which run
+    at BOOT, before the loop's tick guard, so the exception unwound the scheduler task while
+    uvicorn kept serving. `"Europe/Berlin "` with a trailing space bought a daemon that
+    answered /api/status and never fired another run. (A routine's own tz is validated by
+    pydantic at load; the lane store has no such gate, so it is checked here on the way out.)
+    """
+    name = str(tz or "").strip()
+    if not name:
+        return ""
+    try:
+        ZoneInfo(name)
+    except (ZoneInfoNotFoundError, ValueError):
+        return ""
+    return name
 
 
 def _check_cron(cron: str) -> str:
@@ -202,6 +243,20 @@ def _save(routines_home: Path, data: dict) -> None:
     atomic_write_json(lanes_file(routines_home), data)
 
 
+@contextmanager
+def _exclusive(routines_home: Path) -> Iterator[None]:
+    """Hold the store's lock across a read-modify-write.
+
+    `lanes.json` is ONE file rewritten whole, and three contexts write it: the web layer's
+    sync handlers on FastAPI's threadpool, a root conversation's ENGINE PROCESS through
+    `manage_lane`, and the Decisions page materializing a queued proposal. Two overlapping
+    edits each read the store, each write their own version, and one is silently lost — a
+    membership change undone, a deleted lane back. flock is the one mechanism all three share.
+    """
+    with file_lock(lanes_file(routines_home).with_suffix(".lock")):
+        yield
+
+
 def list_lanes(routines_home: Path) -> list[dict]:
     return load(routines_home)["lanes"]
 
@@ -226,9 +281,10 @@ def set_default_on_failure(routines_home: Path, value: str) -> str:
     """Set the instance-wide mid-chain-failure default. Raises ValueError on a bad value."""
     if value not in ON_FAILURE:
         raise ValueError(f"on_failure must be one of {ON_FAILURE}, got {value!r}")
-    data = load(routines_home)
-    data["default_on_failure"] = value
-    _save(routines_home, data)
+    with _exclusive(routines_home):
+        data = load(routines_home)
+        data["default_on_failure"] = value
+        _save(routines_home, data)
     return value
 
 
@@ -252,23 +308,24 @@ def create(routines_home: Path, *, name: str, members: list[dict] | None = None,
         raise ValueError("lane name is required")
     if on_failure is not None and on_failure not in ON_FAILURE:
         raise ValueError(f"on_failure must be one of {ON_FAILURE} or null, got {on_failure!r}")
-    if taken := _claimed_elsewhere(routines_home, members or []):
-        raise ValueError("a routine belongs to at most one lane; already claimed: "
-                         + ", ".join(taken))
     rec: dict = {
         "id": new_id(),
         "name": name,
         "members": _clean_members(members),
         "on_failure": on_failure,
         "cron": _check_cron(cron),
-        "tz": str(tz or ""),
+        "tz": _known_zone(tz),
         "paused": False,
         "catchup": DEFAULT_CATCHUP,
         "created": now_iso(),
     }
-    data = load(routines_home)
-    data["lanes"].append(rec)
-    _save(routines_home, data)
+    with _exclusive(routines_home):
+        if taken := _claimed_elsewhere(routines_home, members or []):
+            raise ValueError("a routine belongs to at most one lane; already claimed: "
+                             + ", ".join(taken))
+        data = load(routines_home)
+        data["lanes"].append(rec)
+        _save(routines_home, data)
     return rec
 
 
@@ -289,6 +346,16 @@ def update(routines_home: Path, lane_id: str, *, name: str | None = None,
     A shared config block is a DOMAIN's, named in the routine's own routine.yaml: patching a
     lane moves timing and order, never what a member may do.
     """
+    with _exclusive(routines_home):
+        return _update_locked(routines_home, lane_id, name=name, members=members,
+                              on_failure=on_failure, cron=cron, tz=tz, paused=paused,
+                              catchup=catchup)
+
+
+def _update_locked(routines_home: Path, lane_id: str, *, name: str | None,
+                   members: list[dict] | None, on_failure: object, cron: str | None,
+                   tz: str | None, paused: bool | None, catchup: str | None) -> dict | None:
+    """`update`'s body, under the store's flock — see `_exclusive`."""
     data = load(routines_home)
     for lane in data["lanes"]:
         if lane["id"] != lane_id:
@@ -311,7 +378,7 @@ def update(routines_home: Path, lane_id: str, *, name: str | None = None,
         if cron is not None:
             lane["cron"] = _check_cron(cron)
         if tz is not None:
-            lane["tz"] = str(tz)
+            lane["tz"] = _known_zone(tz)
         if paused is not None:
             lane["paused"] = bool(paused)
         if catchup is not None:
@@ -329,10 +396,11 @@ def delete(routines_home: Path, lane_id: str) -> bool:
     Nothing else has to be cleaned up: a lane owns no store and no config, so deleting one
     returns its members to their own crons and changes nothing else about them.
     """
-    data = load(routines_home)
-    before = len(data["lanes"])
-    data["lanes"] = [lane for lane in data["lanes"] if lane["id"] != lane_id]
-    if len(data["lanes"]) == before:
-        return False
-    _save(routines_home, data)
+    with _exclusive(routines_home):
+        data = load(routines_home)
+        before = len(data["lanes"])
+        data["lanes"] = [lane for lane in data["lanes"] if lane["id"] != lane_id]
+        if len(data["lanes"]) == before:
+            return False
+        _save(routines_home, data)
     return True

@@ -136,12 +136,23 @@ def test_scheduler_defers_restart_while_parked(tmp_path, monkeypatch):
     assert runner.draining is False
 
 
-def test_scheduler_resumes_when_request_withdrawn(tmp_path, monkeypatch):
+
+def test_a_background_task_holds_the_drain_like_any_other_run(tmp_path):
+    """A detached task counts as ACTIVE, so the restart waits for it.
+
+    It was excluded on the premise that `start_new_session=True` carries the engine child past
+    the daemon's SIGTERM. No deployment honours that: under Docker the daemon's exit ends tini
+    (PID 1) and the kernel SIGKILLs the PID namespace, and the systemd unit's default
+    `KillMode=control-group` kills the cgroup. So the drain fired at the first idle gap —
+    exactly when only a background task was running — the task died at rc=-9 and its owner was
+    told "[background task was cancelled]" with a `daemon_restart` cause.
+    """
     server = _server(tmp_path)
     runner = Runner(server, EventBus())
-    sched = Scheduler(server, runner, EventBus())
-    runner.draining = True                                   # was draining
-    monkeypatch.setattr(runner, "active_states", list)
-    # no sentinel present → idle: draining cleared, scheduling resumes
-    assert sched._maybe_restart() is False
-    assert runner.draining is False
+    rd = tmp_path / "scrape" / "runs" / "ts"
+    rd.mkdir(parents=True)
+    (rd / "status.json").write_text(json.dumps({"state": "running"}))
+    runner.active["scrape"] = ActiveRun(slug="scrape", run_id="scrape:ts", run_ts="ts",
+                                        run_dir=rd, background=True)
+    assert runner.active_states() == ["running"]
+    assert restart.restart_action(True, runner.active_states(), True) == "wait"

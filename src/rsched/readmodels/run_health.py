@@ -1,4 +1,4 @@
-"""Per-routine health bucketed by RECIPE VERSION, plus a deterministic regression flag.
+"""Per-routine health bucketed by RECIPE VERSION, plus two deterministic regression flags.
 
 The product claims routines improve through use (the routine-improver edits recipes
 directly) — this read-model closes the loop: every run is attributed to the recipe
@@ -15,8 +15,13 @@ old recipe changes; honest, not exact).
 
 The regression heuristic is deliberately simple thresholds — no statistics libraries:
 window medians and rate deltas over the runs just before/after the newest recipe change.
-Every constant carries its reason. It FLAGS only (the routine page + health payload);
-reverting is the user's one click, never automatic.
+Every constant carries its reason. The SAME thresholds are applied a second way, keyed on
+time rather than on version (`recent_trend`), because a library rule revision reaches every
+holder at once and moves no recipe commit, so the version-keyed flag is structurally blind
+to it. Both FLAG only: what consumes them is the routine page, the health payload and
+routine-improver's target ORDER (its `orient` stage flags a candidate on the same two
+window ratios, and `select-targets` puts the flagged ones first — a sweep spends its hour
+where the numbers moved). Reverting stays the user's one click, never automatic.
 """
 
 from __future__ import annotations
@@ -26,6 +31,7 @@ from pathlib import Path
 
 from ..config import ServerConfig
 from ..recipes import recipe_log
+from . import health_stream, library_reads, memo
 
 # --- regression heuristic constants (each with its reason) ---------------------------
 # Runs compared on each side of the newest recipe change. 5 ≈ one week of a daily
@@ -135,13 +141,38 @@ def regression_flag(before: list[dict], after: list[dict], *,
             "before": b, "after": a}
 
 
-def routine_health(server: ServerConfig, routine_dir: Path, slug: str) -> dict:
-    """The routine page's health-by-recipe-version payload: one bucket per recipe version
-    that has runs (plus the current version even when unproven), newest first, and the
-    regression evaluation of the newest recipe change. Conversations and other
-    unversioned dirs degrade to a single `untracked` bucket.
+def recent_trend(records: list[dict], *, window: int = REGRESSION_WINDOW) -> dict:
+    """The same heuristic keyed on TIME instead of on recipe version: the last `window`
+    depth-0 runs against the `window` before them, whatever recipe produced either side.
+
+    The version-keyed flag above cannot see the most expensive kind of regression there is.
+    Its buckets key on `recipe_commit`, so it moves only when THIS routine's recipe moves —
+    and a library RULE revision reaches every holder at once without touching a single
+    recipe (error-recovery hit 30 routines on 2026-09-16, web-research 136 on 09-18). The
+    measured case: self-audit's weekly medians went 49,409 tokens / 87% ok to 338,024 / 43%
+    and back to 95,782, with no recipe change of any kind under them, so `versions` held one
+    bucket, `regression` never evaluated, and nothing on the instance said a word.
+
+    Same thresholds as `regression_flag` deliberately — one heuristic, two keys — so a reader
+    comparing the two reads a difference in WHAT changed, never in how it was judged.
     """
-    versions = recipe_log(routine_dir, limit=_LOG_LIMIT)
+    return {**regression_flag(records[:-window], records[-window:], window=window),
+            "window": window}
+
+
+def routine_health(server: ServerConfig, routine_dir: Path, slug: str) -> dict:
+    """The routine page's health payload: one bucket per recipe version that has runs (plus
+    the current version even when unproven), newest first; `regression`, the evaluation of
+    the newest recipe change; `trend`, the same evaluation keyed on time instead (what a
+    library revision moves and a recipe commit does not); and `endings`, how this routine's
+    partial finishes actually ended. Conversations and other unversioned dirs degrade to a
+    single `untracked` bucket — and still get a `trend`, which needs no versions at all.
+    """
+    # One `git log` subprocess, and this payload is fetched on every routine-page open —
+    # cached against the repo's reflog, which every commit appends to.
+    versions = memo.memoized(f"recipe-log:{routine_dir}",
+                             [routine_dir / ".git" / "logs" / "HEAD"],
+                             lambda: recipe_log(routine_dir, limit=_LOG_LIMIT))
     records = _stream_records(server, slug)
 
     buckets: dict[str, dict] = {}
@@ -194,6 +225,8 @@ def routine_health(server: ServerConfig, routine_dir: Path, slug: str) -> dict:
             "versions": shown,
             "untracked": untracked if untracked["runs"] else None,
             "regression": regression,
+            "trend": recent_trend(records),
+            "endings": health_stream.budget_endings(server, slug),
             "cautions": cautions(server, routine_dir),
             "tracked": bool(versions)}
 
@@ -222,7 +255,7 @@ def cautions(server: ServerConfig, routine_dir: Path) -> dict:
         local, shared = [], []
     fired = read_json(assists_mod.state_path(routine_dir), {})
     counts = fired if isinstance(fired, dict) else {}
-    known = {a.key: a for a in assists_mod.read_library_assists(server.rules_home)}
+    known = {a.key: a for a in library_reads.assists(server.rules_home)}
     rows = []
     for key, n in sorted(counts.items(), key=lambda kv: (-int(kv[1] or 0), kv[0])):
         a = known.get(key)

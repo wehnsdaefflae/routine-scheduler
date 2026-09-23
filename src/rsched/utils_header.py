@@ -1,9 +1,15 @@
 """The util HEADER contract — what a util must declare about itself, and what it may read.
 
-Split out of `utils_lib.py` (F393). This is the authoring contract, not the store: the seven-line
+Split out of `utils_lib.py` (F393). This is the authoring contract, not the store: the
 docstring header every util carries (summary, usage, calls, tags, secrets, net, fs) and the checks
 that make a header honest. `header_problems` is what gates `write_util`, so an over-tolerant
 reading here silently admits a util nobody can audit.
+
+`usage:` is a BLOCK, not a line: a verb-dispatched util lists one invocation per verb, and the
+block is every non-blank line under the `usage:` line up to the next header key. Reading only
+the first line is what F505 measured — 65 of 111 live utils list continuation lines, so every
+discovery surface taught ONE verb of a multi-verb util and the caller guessed the rest
+(code-search 702 usage errors, web-request 157, gmail 66 in one fleet window).
 
 The `secrets:` line is the load-bearing one — it is the ONLY thing that decides which
 credentials the subprocess env carries (utils_lib.scoped_env), so `undeclared_secrets` reads
@@ -30,6 +36,29 @@ GU_CALL_RE = re.compile(r"""\[\s*["']gu["']\s*,\s*["']([a-z0-9][a-z0-9-]*)["']""
 # only ever SUBTRACTS: a declared path is mounted solely when the run already holds a grant
 # covering it, so a routine that can author utils cannot write itself a wider jail.
 _FS_ENTRY_RE = re.compile(r"^(ro|rw)\s+(\S.*)$")
+
+# Where the `usage:` block ends: the next header key, or a blank line. Anything between is an
+# invocation form the caller needs (a verb line, its one-line gloss, a wrapped flag list).
+_HEADER_KEY_RE = re.compile(r"^(tags|calls|secrets|net|fs)\s*:", re.IGNORECASE)
+
+
+def usage_block(doc: str) -> str:
+    """The `usage:` line PLUS the lines directly under it, verbatim, joined by newline.
+
+    The block ends at the first blank line or the next header key — so a verb-dispatched util's
+    whole invocation table travels as one string, and the continuation lines keep the indentation
+    their author used (that indentation is the table). Empty when the docstring has no usage line.
+    """
+    raw = doc.splitlines()
+    start = next((i for i, ln in enumerate(raw) if ln.strip().lower().startswith("usage:")), None)
+    if start is None:
+        return ""
+    block = [raw[start].strip()]
+    for line in raw[start + 1:]:
+        if not line.strip() or _HEADER_KEY_RE.match(line.strip()):
+            break
+        block.append(line.rstrip())
+    return "\n".join(block)
 
 
 def parse_fs(value: str) -> tuple[bool, list[tuple[str, str]], list[str]]:
@@ -67,7 +96,8 @@ def parse_fs(value: str) -> tuple[bool, list[tuple[str, str]], list[str]]:
 
 
 def parse_header(src: str) -> dict:
-    """The docstring header — the util's ONLY machine-read surface: summary, usage, tags,
+    """The docstring header — the util's ONLY machine-read surface: summary, the usage BLOCK
+    (`usage_block`: every invocation form the author listed, not just the first line), tags,
     declared secrets, declared sibling `calls:` (drives transitive secret/net/fs resolution,
     see util_needs), the `net:` declaration ("outbound" | "none"; "" = undeclared, which the
     sandbox treats as none — fail closed) and the `fs:` declaration, which reads the same way:
@@ -83,7 +113,7 @@ def parse_header(src: str) -> dict:
     doc = m.group(1).strip() if m else ""
     lines = [ln.strip() for ln in doc.splitlines() if ln.strip()]
     summary = lines[0] if lines else ""
-    usage = next((ln for ln in lines if ln.lower().startswith("usage:")), "")
+    usage = usage_block(doc)
     tags_line = next((ln for ln in lines if ln.lower().startswith("tags:")), "")
     tags = ([t.strip() for t in tags_line[len("tags:"):].split(",") if t.strip()]
             if tags_line else [])
@@ -164,7 +194,8 @@ def undeclared_secrets(content: str) -> list[str]:
 def header_problems(content: str) -> list[str]:
     """Doc-standard gate for saving a util. The docstring header is the util's ONLY
     machine-read surface (catalog, Settings secrets page, the sandbox): it must carry a
-    summary, a usage: line, at least one tag, a secrets: declaration covering every
+    summary, a usage: block naming at least one invocation, at least one tag, a
+    secrets: declaration covering every
     credential-looking env var the code reads, a net: declaration, and an fs: declaration.
     Comment-form `# secrets:` lines above the docstring are invisible to the parser —
     that is exactly the failure this gate stops.
@@ -173,8 +204,13 @@ def header_problems(content: str) -> list[str]:
     problems = []
     if not h["summary"]:
         problems.append("no module docstring — the first line must be '<name> — <summary>'")
+    usage_lines = h["usage"].splitlines()
     if not h["usage"]:
         problems.append("docstring needs a 'usage: gu <name> …' line")
+    elif len(usage_lines) == 1 and not usage_lines[0].split(":", 1)[1].strip():
+        problems.append("the 'usage:' label names no invocation — put the call form on that "
+                        "line, or list one per verb on the lines directly under it (that whole "
+                        "block is what a caller is shown before it calls this util)")
     if not h["tags"]:
         problems.append("docstring needs a 'tags: <tag>, <tag>, …' line (at least one tag)")
     if h["net"] not in ("outbound", "none"):
@@ -195,6 +231,20 @@ def header_problems(content: str) -> list[str]:
                         f"'secrets:' line: {', '.join(undeclared)} — declare them there "
                         "(the Settings page only prompts for declared secrets, and the "
                         "sandbox injects only declared ones)")
+    # `calls:` names slugs and nothing else. parse_header drops what is not a slug, so a line
+    # like `calls: (none — standalone; sibling of page-fetch)` parses as "calls nothing" and the
+    # prose rides along invisibly — right today by accident, and a silent miss the day one of
+    # those words IS a util name. Say so at authoring time, where it costs one edit.
+    doc_lines = [ln.strip() for ln in h["doc"].splitlines() if ln.strip()]
+    calls_value = next((ln[len("calls:"):].strip() for ln in doc_lines
+                        if ln.lower().startswith("calls:")), "")
+    junk = [tok for tok in (t.strip() for t in calls_value.split(","))
+            if tok and tok.lower() not in ("(none)", "none") and not is_slug(tok)]
+    if junk:
+        problems.append("the docstring's 'calls:' line must name util slugs, comma-separated "
+                        f"(or 'none'): {', '.join(repr(j) for j in junk)} is not a slug — the "
+                        "sandbox resolves secrets, net and fs over this line, so anything it "
+                        "cannot parse is silently ignored")
     declared_calls = set(h["calls"])
     undeclared_calls = sorted({c for c in GU_CALL_RE.findall(content)
                                if c not in declared_calls})

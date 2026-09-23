@@ -4,7 +4,7 @@
 // { refreshTree } (recipe health's roll-back re-syncs the tree through it).
 
 import { api } from "/static/api.js";
-import { el, queuedToast, toast } from "/static/util.js";
+import { el, queuedToast, toastError } from "/static/util.js";
 import { md } from "/static/md.js";
 import { recipeNav } from "/static/components/recipenav.js";
 import { setQuery } from "/static/router.js";
@@ -23,7 +23,7 @@ export function mountRecipe(navCol, editorCol, slug, initialFile) {
     renderNav();
     let data;
     try { data = await api(`/api/routines/${slug}/file?path=${encodeURIComponent(path)}`); }
-    catch (err) { toast(err.message, 4000, { error: true }); return; }
+    catch (err) { toastError(err); return; }
     editorCol.replaceChildren(fileEditorPane(path, data.content, heading));
     if (!silent) { setQuery({ file: path }); editorCol.scrollIntoView({ behavior: "smooth", block: "nearest" }); }
   }
@@ -54,7 +54,7 @@ export function mountRecipe(navCol, editorCol, slug, initialFile) {
         const res = await api(`/api/routines/${slug}/file`,
           { method: "PUT", body: { path, content: ta.value } });
         queuedToast(res, `${path} saved`); refreshTree();   // headings may have changed
-      } catch (err) { toast(err.message, 5000, { error: true }); }
+      } catch (err) { toastError(err, 5000); }
     };
     if (heading) requestAnimationFrame(() => scrollToHeading(ta, heading));
     return el("div", {},

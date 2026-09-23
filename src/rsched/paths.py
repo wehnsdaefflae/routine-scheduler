@@ -110,8 +110,15 @@ def read_yaml(path: str | Path, default: object = None) -> Any:
     Returns `Any` where `read_json` returns `object`: read_json's callers validate an
     untrusted record before touching it, while these callers index a mapping they then hand
     to pydantic, so `object` would buy nothing but an isinstance narrowing at every site.
+
+    CSafeLoader, not `safe_load`: the C parser is the same grammar an order of magnitude
+    faster (measured on the deployment — the 35 live routine.yaml files, 87 KB: 583 ms pure
+    Python, 59 ms libyaml), and this is on the request path for every config read-modify-write
+    as well as the cold catalog scan. No getattr fallback: libyaml is present in both live
+    environments, and one that lacks it should fail loudly rather than quietly serve a daemon
+    ten times slower on the surface whose slow-request log is already GIL-bound.
     """
-    return yaml.safe_load(Path(path).read_text(encoding="utf-8")) or default
+    return yaml.load(Path(path).read_text(encoding="utf-8"), Loader=yaml.CSafeLoader) or default
 
 
 def within(root: Path, candidate: Path) -> bool:

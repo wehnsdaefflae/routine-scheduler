@@ -745,3 +745,31 @@ async def test_the_boot_expires_the_mark_even_with_nothing_to_reap(make_routine,
     await asyncio.sleep(0.1)
     task.cancel()
     assert not restart.shutdown_mark_path(server).exists()
+
+
+async def test_retention_runs_off_the_event_loop(tmp_path, monkeypatch):
+    """Retention re-indexes every run dir, `rmtree`s the oldest and gzips transcripts that
+    reach 9 MB. Called straight from the reap it did all that on the loop thread, so every SSE
+    stream, API request and scheduler tick waited on it. It never touches a live run — the
+    newest dirs are the kept ones — so there is nothing to serialize it against.
+    """
+    import threading
+
+    from rsched.config import RoutineConfig
+    from rsched.daemon import runner_reap
+
+    server = _server(tmp_path)
+    runner = Runner(server, EventBus())
+    d = server.routines_home / "retained"
+    d.mkdir(parents=True)
+    cfg = RoutineConfig(slug="retained", dir=d, enabled=True)
+    loop_thread = threading.current_thread().name
+    seen: dict[str, str] = {}
+    monkeypatch.setattr(
+        "rsched.registry.apply_retention",
+        lambda *a, **k: seen.setdefault("thread", threading.current_thread().name))
+
+    runner_reap.prune_runs(runner, cfg)
+    assert seen == {}                                   # the reap returned without waiting
+    await asyncio.gather(*runner._supervisors)
+    assert seen["thread"] != loop_thread                # …and it ran in a worker thread

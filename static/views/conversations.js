@@ -25,10 +25,10 @@ import { createStateGraph } from "/static/components/stategraph.js";
 import { createStopping } from "/static/components/stopping.js";
 import { createTaskTree } from "/static/components/tasktree.js";
 import { adminToggle } from "/static/components/admintoggle.js";
-import { busy, chip, el, emptyState, relTime, toast } from "/static/util.js";
+import { busy, chip, el, emptyState, relTime, toast, toastError } from "/static/util.js";
 import { wireRunRail } from "/static/resizable.js";
 import { followScroll } from "/static/follow.js";
-import { enabled as notifyEnabled } from "/static/notify.js";
+import { show as notifyShow } from "/static/notify.js";
 import { TERMINAL, WORKING } from "/static/states.js";
 
 export async function render(view, slug, _query = {}) {
@@ -80,7 +80,7 @@ export async function render(view, slug, _query = {}) {
           pendingEcho.text = text;
           repaintEcho();
           toast("revised — the model reads this version");
-        } catch (err) { toast(err.message, 5000, { error: true }); repaintEcho(); }
+        } catch (err) { toastError(err, 5000); repaintEcho(); }
       },
       onWithdraw: async () => {
         try {
@@ -89,7 +89,7 @@ export async function render(view, slug, _query = {}) {
           pendingEcho.node?.remove();
           pendingEcho = null;
           toast("withdrawn — the model never sees it");
-        } catch (err) { toast(err.message, 5000, { error: true }); repaintEcho(); }
+        } catch (err) { toastError(err, 5000); repaintEcho(); }
       },
       onCancel: () => repaintEcho(),
     };
@@ -187,9 +187,12 @@ export async function render(view, slug, _query = {}) {
   const onBus = (e) => {
     const ev = e.detail || {};
     if (ev.event === "run_finished" || ev.event === "run_started") loadList();
-    // same opt-in as every other tier-1 notification (Settings → Notifications)
-    if (ev.event === "run_finished" && ev.routine === slug && document.hidden && notifyEnabled()) {
-      new Notification("conversation reply ready", { body: (ev.summary || "").slice(0, 120) });
+    // same opt-in as every other tier-1 notification (Settings → Notifications), through the
+    // one owner of the tag/click convention — so three open tabs raise ONE notification and
+    // clicking it lands on this conversation
+    if (ev.event === "run_finished" && ev.routine === slug && document.hidden) {
+      notifyShow("conversation reply ready", (ev.summary || "").slice(0, 120),
+                 { tag: `rsched-reply-${slug}`, href: `#/conversations/${slug}` });
     }
   };
   window.addEventListener("rsched-bus", onBus);
@@ -205,6 +208,12 @@ export async function render(view, slug, _query = {}) {
       main.replaceChildren(emptyState("✕", "Conversation not found", err.message));
       return;
     }
+    // The live tail, assigned once the run id is known (below). The composer closes over it:
+    // a send RESUMES this run in place, so the tail re-attaches instead of the page rebuilding.
+    let tail = null;
+    // Declared here rather than beside the tail: the rail sections below read it to decide
+    // whether there is anything worth polling for.
+    let curState = detail.state;
     const stateChip = chip(detail.state, detail.state);
     const head = el("div", { class: "conv-head" });
     renderHead(head, detail, stateChip,
@@ -253,6 +262,8 @@ export async function render(view, slug, _query = {}) {
 
     const BG_LIVE = new Set(["queued", "starting", "running", "waiting_user", "paused"]);
     function paintBackground(rows) {
+      bgRows = rows;
+      armPolls();
       bgBody.replaceChildren();
       rail.toggle("background", !!rows.length);
       for (const t of rows) {
@@ -276,8 +287,25 @@ export async function render(view, slug, _query = {}) {
     async function refreshBackground() {
       try { paintBackground(await api(`/api/conversations/${slug}/background`)); } catch { /* transient */ }
     }
+
+    // #/conversations is the console's DEFAULT route, and both rail sections below are hidden
+    // until they have a row — so an idle tab parked where it opens used to spend ~600 requests
+    // an hour asking two endpoints about lists that were empty and could not fill, because
+    // nothing was running. Each timer is therefore armed by CONTENT — rows that exist now, or
+    // a live run that could create some — and disarmed again the moment neither holds.
+    let bgTimer = null, brTimer = null;
+    let bgRows = [], brRows = [];
+    const arm = (timer, on, fn, ms) => {
+      if (on && !timer) return setInterval(fn, ms);
+      if (!on && timer) clearInterval(timer);
+      return on ? timer : null;
+    };
+    function armPolls() {
+      const live = WORKING.has(curState);
+      bgTimer = arm(bgTimer, bgRows.length > 0 || live, refreshBackground, 15000);
+      brTimer = arm(brTimer, brRows.length > 0 || live, refreshBrowser, 8000);
+    }
     paintBackground(detail.background || []);
-    const bgTimer = setInterval(refreshBackground, 15000);
 
     // ---- the browser section (D86): rows from the persisted session handles; the view PNG
     // is fetched WITH the auth header and blob-rendered (an <img src> can't carry the bearer)
@@ -319,12 +347,13 @@ export async function render(view, slug, _query = {}) {
     async function refreshBrowser() {
       try {
         const rows = await api(`/api/conversations/${slug}/browser`);
+        brRows = rows;
+        armPolls();
         const key = JSON.stringify(rows);
         if (key !== brLast) { brLast = key; paintBrowser(rows); }
       } catch { /* transient */ }
     }
     refreshBrowser();
-    const brTimer = setInterval(refreshBrowser, 8000);
     cleanup.push(() => { clearInterval(bgTimer); clearInterval(brTimer); freeBrBlobs();
                          artifacts.destroy(); taskTree?.stop(); });
 
@@ -346,13 +375,14 @@ export async function render(view, slug, _query = {}) {
       fileUrl: (rel) => `/api/conversations/${slug}/file?path=${encodeURIComponent(rel)}`,
     });
 
+    cleanup.push(() => chat.destroy());   // the attachment thumbnails' object URLs
+
     // The first message became instruction.md (composed into the system prompt), so no
     // transcript event carries it — seed the chat with it as the opening user bubble.
     if (detail.instruction?.trim()) {
       chat.add({ type: "user_injection", payload: { text: detail.instruction.trim() } });
     }
 
-    let curState = detail.state;
     let autoscroll = true;
     const scrollDown = () => { if (autoscroll) window.scrollTo(0, document.body.scrollHeight); };
     const setState = (s) => {
@@ -366,13 +396,14 @@ export async function render(view, slug, _query = {}) {
       stateGraph.setPhase(WORKING.has(s) ? "working" : "waiting for you");
       composer.setLive(!TERMINAL.has(s));
       if (TERMINAL.has(s)) { chat.finishOpenFold(); artifacts.refresh(); taskTree?.refresh();
-                             fileActivity?.refresh(); }
+                             fileActivity?.refresh(); refreshBrowser(); }
+      armPolls();            // the run going live or terminal changes what is worth polling for
       refreshBackground();   // a finished detached task wakes the conversation → catch it here
     };
     setState(detail.state);
 
     if (!detail.run_id) return;   // created but never fired (shouldn't happen)
-    const tail = liveTail({
+    tail = liveTail({
       page: (o) => `/api/runs/${detail.run_id}/transcript?offset=${o}`,
       events: (o) => `/api/runs/${detail.run_id}/events?offset=${o}`,
       offset: 0,
@@ -482,7 +513,7 @@ export async function render(view, slug, _query = {}) {
         try {
           const r = await api(`/api/conversations/${slug}/playbook`, { method: "POST" });
           toast(`saved playbook “${r.slug}”${r.axis ? `  ·  varies: ${r.axis}` : ""}`, 6000);
-        } catch (err) { toast(err.message, 6000, { error: true }); }
+        } catch (err) { toastError(err, 6000); }
         savePb.disabled = false;
       };
       const pbRow = el("div", { class: "row", style: "gap:8px;margin-top:6px;flex-wrap:wrap" }, savePb);
@@ -496,7 +527,7 @@ export async function render(view, slug, _query = {}) {
           try {
             const r = await api(`/api/conversations/${slug}/playbook`, { method: "PUT" });
             toast(`updated playbook “${r.slug}”`, 6000);
-          } catch (err) { toast(err.message, 6000, { error: true }); }
+          } catch (err) { toastError(err, 6000); }
           updPb.disabled = false;
         };
         pbRow.append(updPb);
@@ -510,7 +541,7 @@ export async function render(view, slug, _query = {}) {
       stopBtn.onclick = async () => {
         stopBtn.disabled = true;
         try { await api(`/api/runs/${detail.run_id}/abort`, { method: "POST" }); toast("stopping the reply…"); }
-        catch (err) { toast(err.message, 4000, { error: true }); stopBtn.disabled = false; }
+        catch (err) { toastError(err); stopBtn.disabled = false; }
       };
       // D63: the Admin toggle — armed here, it lifts capability gating for the legs this
       // composer starts (components/admintoggle.js owns the session token and the header).
@@ -557,9 +588,16 @@ export async function render(view, slug, _query = {}) {
             pendingEcho.node = echoNode();
             echoBox.append(pendingEcho.node);
           }
-          // reattach to show the result (command) or the live reply; mid-run streams already
-          if (r.delivery !== "mid-run") setTimeout(mountConversation, 700);
-        } catch (err) { toast(err.message, 5000, { error: true }); }
+          // Re-attach to show the result (command) or the live reply; a mid-run send is
+          // already streaming. A conversation is ONE run resumed IN PLACE, so the head, the
+          // rails and this composer are unchanged by a message — only the tail had ended.
+          // Resuming it from its last offset costs one catch-up GET where remounting cost the
+          // detail read, the full library lint behind the head's rule picker, and ~10 more rail
+          // fetches PER MESSAGE, plus a re-render of the whole thread from offset 0.
+          if (r.delivery === "mid-run") { /* the live tail carries it */ }
+          else if (tail && r.run_id === detail.run_id) setTimeout(() => tail.resume(), 700);
+          else setTimeout(mountConversation, 700);   // a fresh fire: a different run to follow
+        } catch (err) { toastError(err, 5000); }
         send.disabled = false;
       };
       send.onclick = submit;

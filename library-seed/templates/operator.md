@@ -43,8 +43,8 @@ config:
     util_tags: []
     confirm: always
     rule_confirm: always
-    remind_confirm: always
     reminders: local
+    remind_confirm: always
     runs: last
     workflows: generate
 ---

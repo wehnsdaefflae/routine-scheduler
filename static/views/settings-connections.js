@@ -4,7 +4,7 @@
 
 import { api } from "/static/api.js";
 import { confirmDialog } from "/static/components/dialog.js";
-import { el, toast } from "/static/util.js";
+import { el, toast, toastError } from "/static/util.js";
 import { panelSection } from "/static/views/settings-common.js";
 
 export function renderConnections(view) {
@@ -19,7 +19,7 @@ export function renderConnections(view) {
       b.onclick = async () => {
         if (!(await confirmDialog(`Disconnect ${provider}:${account}?`, { confirmLabel: "disconnect" }))) return;
         try { await api(`/api/settings/oauth/${provider}/${encodeURIComponent(account)}`, { method: "DELETE" }); reload(); }
-        catch (err) { toast(err.message, 4000, { error: true }); }
+        catch (err) { toastError(err); }
       };
       return b;
     }
@@ -30,11 +30,12 @@ export function renderConnections(view) {
       if (!account) { toast("enter an account label first"); return; }
       let f;
       try { f = await api(`/api/settings/oauth/${providerId}/authorize-start`, { method: "POST", body: { account } }); }
-      catch (err) { toast(err.message, 6000, { error: true }); return; }
+      catch (err) { toastError(err, 6000); return; }
       window.open(f.authorize_url, "_blank", "noopener");
       toast("authorize in the new tab, then return here");
       const deadline = Date.now() + 600 * 1000;
       const tick = async () => {
+        if (!connBox.isConnected) return;   // the view is gone — so is anything this could report
         if (Date.now() > deadline) return;
         let p;
         try { p = await api(`/api/settings/oauth/flow/${f.flow_id}`); } catch { return; }
@@ -54,7 +55,7 @@ export function renderConnections(view) {
     const urlSave = el("button", { class: "btn small" }, "save");
     urlSave.onclick = async () => {
       try { await api("/api/settings/oauth/public-url", { method: "PUT", body: { public_url: urlIn.value.trim() } }); toast("public URL saved"); reload(); }
-      catch (err) { toast(err.message, 5000, { error: true }); }
+      catch (err) { toastError(err, 5000); }
     };
     const callbackLine = el("div", { class: "small mt" });
     if (d.public_url) {
@@ -104,7 +105,7 @@ export function renderConnections(view) {
     // Connected accounts.
     connBox.append(el("div", { class: "mt small", style: "font-weight:600" }, "Connected accounts"));
     if (!d.connections.length) connBox.append(el("div", { class: "muted small", "data-conn-empty": "" }, "none yet"));
-    else connBox.append(el("div", { class: "tablewrap" }, el("table", { class: "list" }, el("tbody", {},
+    else connBox.append(el("div", { class: "tablewrap" }, el("table", { class: "list stack" }, el("tbody", {},
       d.connections.map((c) => el("tr", { "data-conn": `${c.provider}:${c.account}` },
         el("td", {}, `${c.provider}:${c.account}`),
         el("td", { class: "muted small" }, c.label || ""),

@@ -170,7 +170,15 @@ export function rulePicker(available, held, opts = {}) {
           "this routine follows no general rules — it works from its recipe alone"));
 
     if (rest.length) {
-      host.append(el("div", { class: "lbl mt" }, `Available · ${rest.length}`));
+      // the unbound half of the library: twenty-five cards with their ON/OFF/WHEN lines, which
+      // on a phone is the panel. Open on a wide screen, a disclosure on a narrow one — the
+      // cards themselves are untouched either way.
+      const wide = window.matchMedia("(min-width: 861px)").matches;
+      const availHost = wide ? host : el("div", {});
+      host.append(wide
+        ? el("div", { class: "lbl mt" }, `Available · ${rest.length}`)
+        : el("details", { class: "mt avail-fold" },
+            el("summary", { class: "lbl" }, `Available · ${rest.length}`), availHost));
       const byGroup = new Map();
       for (const r of rest) {
         const g = groupFor(r);
@@ -181,7 +189,7 @@ export function rulePicker(available, held, opts = {}) {
       for (const name of order) {
         const items = byGroup.get(name);
         if (!items) continue;
-        host.append(el("div", { class: "rule-group" },
+        availHost.append(el("div", { class: "rule-group" },
           el("div", { class: "rule-group-name" }, name),
           el("div", { class: "avail" }, ...items.map(availRow))));
       }

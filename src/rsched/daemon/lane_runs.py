@@ -21,6 +21,12 @@ lane: "the in-flight member is still running → wait", "it terminated → recor
 the policy", or "no member in flight → fire the member at the cursor, or end the chain
 once the cursor has run past the fire list". Nothing fires two members of one lane at once.
 
+THE MEMBER BOUNDARY IS THE RESTART'S ONLY GAP, so a pending restart takes it: with nothing
+else active the next member is HELD, the daemon restarts, and the member fires on the new
+code at the first tick after boot. Back-to-back chains otherwise close the 10s quiet window
+the restart waits for — the gap between two members is 5s — and a release sat pending for
+five hours while the fleet kept running the code it replaced.
+
 FAILURE = a non-`ok` outcome. A member run's status.json carries both `state` (partial folds
 into "finished") and `outcome` (the raw finish status: ok|partial|failed|aborted). A member
 counts as FAILED for the on_failure policy when its outcome is anything but "ok" — a
@@ -53,15 +59,11 @@ from ..health_events import log_health_event
 from ..ids import now_iso
 from ..lanes import member_slugs
 from ..paths import read_json
+from . import restart
 from .runner import Runner
 from .runner_state import _pid_alive
 
 log = logging.getLogger("rsched.lane_runs")
-
-
-def _fire_slugs(rec: dict) -> list[str]:
-    """The chain's ordered fire list (rec["cursor"] indexes into it)."""
-    return member_slugs(rec)
 
 
 class LaneRunManager:
@@ -119,10 +121,6 @@ class LaneRunManager:
                  len(rec.get("members") or []))
         lane_runs.remove(self.home, lane_id)
 
-    def _end_of_chain(self, rec: dict) -> None:
-        """The cursor ran past the fire list: the chain is complete."""
-        self._finalize(rec, "done")
-
     def _collect(self, rec: dict, catalog: dict[str, registry.RoutineInfo]) -> None:
         """The in-flight member terminated (or not yet). Record its result, advance the cursor,
         and apply the on_failure policy — leaving the NEXT fire to a following tick.
@@ -138,8 +136,8 @@ class LaneRunManager:
         rec["cursor"] = int(rec.get("cursor") or 0) + 1
         if outcome not in ("ok", "skipped") and rec.get("on_failure") == "stop":
             self._finalize(rec, "stopped")
-        elif int(rec.get("cursor") or 0) >= len(_fire_slugs(rec)):
-            self._end_of_chain(rec)
+        elif int(rec.get("cursor") or 0) >= len(member_slugs(rec)):
+            self._finalize(rec, "done")
         else:
             lane_runs.save(self.home, rec)
 
@@ -149,12 +147,25 @@ class LaneRunManager:
         rules, exactly as for cron/trigger/one-shot fires.
         """
         lane_id = str(rec.get("lane_id") or "")
-        fire_list = _fire_slugs(rec)
+        fire_list = member_slugs(rec)
         cursor = int(rec.get("cursor") or 0)
         if cursor >= len(fire_list):
-            self._end_of_chain(rec)
+            self._finalize(rec, "done")
             return
         if self.runner.draining:
+            return
+        if restart.restart_requested(self.server) and not self.runner.active:
+            # A member boundary is the only quiet gap a chain leaves, and it is 5s wide: the
+            # reap pops runner.active, the next tick collects the result, the one after fires
+            # the next member. RESTART_IDLE_S is 10, so a pending restart could never be
+            # reached BETWEEN members — chains handed the fleet to each other from 00:00 to
+            # 11:00 and a request dropped at 08:25 fired at 13:35, five hours of runs against
+            # code the release had already replaced and reported as shipped.
+            # This refuses nothing a PERSON started: it holds only the daemon's own next
+            # member, only while the box is otherwise idle, so the restart lands in this gap
+            # and the member fires on the new code at the first tick after boot (~75s).
+            log.info("lane member held for a pending restart lane=%s slug=%s", lane_id,
+                     fire_list[cursor])
             return
         slug = fire_list[cursor]
         info = catalog.get(slug)

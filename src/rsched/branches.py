@@ -20,8 +20,9 @@ conversation, so it advances when someone writes in it. That is the only thing t
 **Merging is deliberately NOT a transcript merge.** Two divergent histories cannot be
 interleaved into one coherent conversation — the result would be a record of a conversation
 that never happened. Merging is a HAND-BACK, exactly the child-run result: the branch delivers
-a summary plus its artefacts into the parent as a message and files, the way a detached
-background task delivers (`daemon/detached.py`). The parent then chooses what to do with them.
+a summary plus its artefacts into the parent as a message and files, through the same
+`engine/child.py` hand-back a subtask and a detached background task use. The parent then
+chooses what to do with them.
 
 What is copied and what is not, and why:
 
@@ -45,6 +46,7 @@ import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from .engine import child, inbox
 from .engine.history import cut_index_for_turn
 from .engine.transcript import read_events
 from .ids import now_iso, run_ts
@@ -54,10 +56,6 @@ if TYPE_CHECKING:
     from .config import ServerConfig
 
 log = logging.getLogger("rsched.branches")
-
-# Where a branch's hand-back lands in the parent — namespaced by the branch slug, mirroring the
-# child-run `from-sub-<n>/` and the detached task's `from-bg-<id>/`.
-HANDBACK_PREFIX = "from-branch-"
 
 # Copied wholesale so the branch's inherited history still resolves. `artifacts/` is
 # deliberately absent — see the module docstring.
@@ -152,28 +150,22 @@ def fork_conversation(server: ServerConfig, *, parent_dir: Path, parent_slug: st
     return {"slug": slug, "dir": branch_dir, "at_turn": at_turn, "kept_events": len(kept)}
 
 
-def _handback_text(*, branch_slug_: str, branch_name: str, summary: str, copied: int) -> str:
-    lines = [f"[branch handed back] The branch “{branch_name}” ({branch_slug_}) handed its "
-             "result back to you.", "", summary or "(no summary was written.)"]
-    if copied:
-        lines += ["", f"Its {copied} artefact(s) were copied to "
-                      f"`artifacts/{HANDBACK_PREFIX}{branch_slug_}/`."]
-    lines += ["", "This is a hand-back, not a merge: the branch's conversation stays its own. "
-                  "Take what is useful from the summary and the files, and tell me what you "
-                  "make of it."]
-    return "\n".join(lines)
-
-
 def hand_back(server: ServerConfig, *, branch_dir: Path, slug: str, summary: str) -> dict:
     """Deliver a branch's result to its parent: artefacts copied into the parent's
     `artifacts/from-branch-<slug>/`, and one inbox message carrying the summary and naming
     them. Returns `{parent, copied, message}`.
 
-    Exactly the shape a detached background task delivers in (`daemon/detached._deliver_one`) —
+    The copy, the directory name and the wording are `engine/child.py`'s, the same three a
+    subtask's and a detached task's hand-back use (`daemon/detached_delivery.deliver_one`) —
     that is the point: a hand-back is the child-run result, and the parent already knows how to
-    read one. Delivery does NOT wake the parent; its next reply drains the message, the way
-    every other inbox message reaches a conversation. Raises ValueError when the conversation is
-    not a branch or its parent is gone.
+    read one.
+
+    Delivery does NOT wake the parent; its next reply drains the message, the way every other
+    inbox message reaches a conversation. `via="branch"` is what holds that promise: it is a
+    LIVE via (the parent's next reply consumes it) but not a USER one, so the reap never
+    resumes the parent for it, the composer never offers it as the user's own editable text,
+    and it does not count as the user having spoken (inbox.MACHINE_VIAS). Raises ValueError
+    when the conversation is not a branch or its parent is gone.
     """
     raw = read_yaml(branch_dir / "routine.yaml", {})
     parent = raw.get("parent") or {}
@@ -184,18 +176,16 @@ def hand_back(server: ServerConfig, *, branch_dir: Path, slug: str, summary: str
     if not (parent_dir / "routine.yaml").is_file():
         raise ValueError(f"the parent conversation {parent_slug!r} no longer exists")
 
-    copied = 0
-    src = branch_dir / "artifacts"
-    if src.is_dir() and any(src.iterdir()):
-        dst = parent_dir / "artifacts" / f"{HANDBACK_PREFIX}{slug}"
-        # namespaced + overwrite: never clobber the parent's own artefacts, and idempotent when
-        # a branch hands back more than once as it goes.
-        shutil.copytree(src, dst, dirs_exist_ok=True)
-        copied = sum(1 for p in dst.rglob("*") if p.is_file())
-
-    text = _handback_text(branch_slug_=slug, branch_name=str(raw.get("name") or slug),
-                          summary=summary, copied=copied)
-    atomic_write_json(parent_dir / "inbox" / f"msg-branch-{slug}-{run_ts()}.json",
-                      {"text": text, "ts": now_iso(), "via": "conversation"})
-    log.info("branch: %s handed back to %s (%d artefacts)", slug, parent_slug, copied)
-    return {"parent": parent_slug, "copied": copied, "message": text}
+    paths = child.collect_handback(branch_dir / "artifacts", parent_dir,
+                                   child.BRANCH_HANDBACK, slug)
+    name = str(raw.get("name") or slug)
+    text = child.handback_text(
+        headline=f"[branch handed back] The branch “{name}” ({slug}) handed its result "
+                 "back to you.",
+        summary=summary, paths=paths,
+        follow_on="This is a hand-back, not a merge: the branch's conversation stays its own. "
+                  "Take what is useful from the summary and the files, and tell me what you "
+                  "make of it.")
+    inbox.file_message(parent_dir, text, via="branch", name=f"branch-{slug}-{run_ts()}")
+    log.info("branch: %s handed back to %s (%d artefacts)", slug, parent_slug, len(paths))
+    return {"parent": parent_slug, "copied": len(paths), "message": text}

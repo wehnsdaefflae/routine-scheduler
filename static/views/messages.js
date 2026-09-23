@@ -16,11 +16,11 @@
 // routine's own page (routine-messages.js).
 
 import { api } from "/static/api.js";
-import { md } from "/static/md.js";
+import { clampedBody, md, summaryLine } from "/static/md.js";
 import { setQuery } from "/static/router.js";
 import { itemCard } from "/static/components/itemcard.js";
 import { focusRef, linkifyRefs } from "/static/components/reflinks.js";
-import { chip, el, emptyState, skeleton, tagChip, toast, when } from "/static/util.js";
+import { chip, el, emptyState, skeleton, tagChip, toast, toastError, when } from "/static/util.js";
 
 const TYPES = [["summary", "summaries"], ["finding", "findings"], ["decision", "decisions"],
                ["report", "reports"]];
@@ -65,7 +65,7 @@ export async function render(view, query = {}) {
       const r = await api("/api/items/read-all", { method: "POST", body: {} });
       toast(r.marked ? `${r.marked} marked read` : "nothing left to mark");
       await load();
-    } catch (err) { toast(err.message, 5000, { error: true }); }
+    } catch (err) { toastError(err, 5000); }
     sweepBtn.disabled = false;
   };
 
@@ -114,7 +114,7 @@ export async function render(view, query = {}) {
           await api(`/api/items/orphans/${encodeURIComponent(o.id)}/discard`, { method: "POST" });
           toast(`${o.id} discarded — dropped from the backlog`);
           await loadOrphans();
-        } catch (err) { toast(err.message, 4000, { error: true }); b.disabled = false; }
+        } catch (err) { toastError(err); b.disabled = false; }
       };
       return b;
     };
@@ -177,7 +177,7 @@ export async function render(view, query = {}) {
     drop.onclick = async () => {
       drop.disabled = true;
       try { await withdrawMessage(p.id); }
-      catch (err) { toast(err.message, 4000, { error: true }); drop.disabled = false; }
+      catch (err) { toastError(err); drop.disabled = false; }
     };
     const edit = el("button", { class: "btn small ghost" }, "edit");
     edit.onclick = () => {
@@ -190,16 +190,24 @@ export async function render(view, query = {}) {
         try {
           if (p.kind) await updateFeedback(p.id, { kind: p.kind, target: p.target, choice: p.choice, text: ta.value }, "updated");
           else await updateMessage(p.id, ta.value);
-        } catch (err) { toast(err.message, 4000, { error: true }); save.disabled = false; }
+        } catch (err) { toastError(err); save.disabled = false; }
       };
       const cancel = el("button", { class: "btn small ghost", onclick: () => load() }, "cancel");
-      row.replaceChildren(chip("queued", "waiting_user"), ta, save, cancel, drop);
+      row.replaceChildren(chip("queued", "idle"), ta, save, cancel, drop);
       ta.focus();
     };
+    // A queued message waits on the routine's NEXT RUN — a machine, not a person. It wore the
+    // summons chip (and its pulse), so the console's one "answer me" colour marked seven things
+    // that needed nothing from anybody.
+    //
+    // The body is model or operator prose and is rendered as such: a 40-line report used to
+    // push the items below it two screens down, so it is clamped to two lines with an expander.
+    // Nothing is lost — edit and withdraw are unmoved, and the full text is one click away.
+    const { node: text, toggle: more } = clampedBody(p.text);
     // filter(Boolean): append stringifies a null argument into the text "null" (el() drops
     // null children, append does not) — a queued item with no ts rendered a literal "null".
-    row.append(...[chip("queued", "waiting_user"), el("span", { class: "p-text" }, p.text),
-      p.ts ? when(p.ts) : null, edit, drop].filter(Boolean));
+    row.append(...[chip("queued", "idle"), text,
+      p.ts ? when(p.ts) : null, more, edit, drop].filter(Boolean));
     return row;
   }
 
@@ -208,7 +216,7 @@ export async function render(view, query = {}) {
     return el("div", {},
       el("h2", {}, `Waiting for the next run · ${pending.length}`),
       el("div", { class: "panel" },
-        el("div", { class: "muted small", style: "margin-bottom:4px" },
+        el("div", { class: "set-desc muted small" },
           "the self-audit routine's whole inbox — every queued message stays editable and withdrawable right here until a run consumes it (then it disappears from this list)"),
         ...pending.map(pendingRow)));
   }
@@ -221,7 +229,9 @@ export async function render(view, query = {}) {
       el("summary", {}, el("strong", {}, `Changelog · ${entries.length} recorded changes`)),
       ...entries.map((c) => el("div", { class: "panel mt" },
         el("div", { class: "row spread" },
-          el("strong", { class: "prose" }, c.summary || c.title || "(change)"),
+          // a changelog row's summary is written by the run that made the change, in the
+          // markdown it writes everything else in — the item card already renders it
+          el("strong", { class: "prose" }, summaryLine(c.summary || c.title, "(change)")),
           el("span", { class: "muted small" },
             c.ts ? when(c.ts) : null,
             c.commit ? ` · ${String(c.commit).slice(0, 8)}` : "")),
@@ -272,10 +282,17 @@ export async function render(view, query = {}) {
     if (act.folded)
       filterBar.append(tagChip(`folded ${act.folded}`,
         { active: filters.folded === "1", onClick: () => pick("folded", "1") }));
-    for (const s of STATUSES)
-      if (counts.status[s])
-        filterBar.append(tagChip(`${s} ${counts.status[s]}`,
-          { active: filters.status === s, onClick: () => pick("status", s) }));
+    // The six per-status counts are an ARCHIVE view — settled 1458, addressed 282 — and the
+    // twelve chips they made with the four type chips read as a wall over what is, today, one
+    // choice. They fold behind one disclosure, opened when a status filter from inside it is
+    // the live one, so a bookmarked archive URL still shows which chip it is on.
+    const rare = STATUSES.filter((s) => counts.status[s]);
+    const moreFilters = !rare.length ? null
+      : el("details", { class: "filter-more", open: rare.includes(filters.status) || null },
+          el("summary", {}, "more filters"),
+          el("div", { class: "filter-more-body" },
+            ...rare.map((s) => tagChip(`${s} ${counts.status[s]}`,
+              { active: filters.status === s, onClick: () => pick("status", s) }))));
     routineSel.replaceChildren(el("option", { value: "" }, "All routines"),
       ...routines.map((r) => el("option", { value: r }, r)));
     routineSel.value = filters.routine;
@@ -285,6 +302,7 @@ export async function render(view, query = {}) {
         Object.assign(filters, { type: "", status: "", routine: "", search: "" });
         searchIn.value = ""; syncURL(); load();
       } }, "clear"));
+    if (moreFilters) filterBar.append(moreFilters);   // last: it takes a row of its own
   }
 
   // ---- load ----------------------------------------------------------------------------
@@ -305,12 +323,19 @@ export async function render(view, query = {}) {
     // report header: the current window, the summary, the last run
     const r = data.report;
     if (r) {
-      const meta = el("div", { class: "muted small", style: "margin-bottom:4px" });
+      // Every other block on this page announces itself with a rule header; this one did not,
+      // so the page opened on an unlabelled mono vitals line followed by seven lines of serif
+      // in nobody's named voice. It is the last self-audit pass — say so, and let it fold the
+      // way the changelog below it does.
+      const meta = el("span", { class: "muted small" });
       if (r.since?.window) meta.append(`${r.since.window}  ·  `);
       if (r.generated) meta.append("generated ", when(r.generated));
       if (r.since?.commit) meta.append(`  ·  since ${String(r.since.commit).slice(0, 8)}`);
-      header.append(meta);
-      if (r.summary) header.append(md(r.summary, "md panel prose"));
+      header.append(el("h2", {}, `${data.routine || "self-audit"} · last pass`));
+      header.append(r.summary
+        ? el("details", { class: "panel", open: true, "data-report-summary": "" },
+            el("summary", {}, meta), md(r.summary, "md prose mt"))
+        : el("div", { style: "margin-bottom:4px" }, meta));
     } else {
       header.append(data.last_run
         ? emptyState("▢", "No report from the last run",
@@ -355,7 +380,7 @@ export async function render(view, query = {}) {
             try {
               await api(`/api/items/${item.id}/read`, { method: "POST", body: { read } });
               await load();
-            } catch (err) { toast(err.message, 4000, { error: true }); }
+            } catch (err) { toastError(err); }
           },
           onPriority: item.type === "summary" ? null : async (on) => {
             try {
@@ -363,18 +388,18 @@ export async function render(view, query = {}) {
               toast(on ? `${item.id} flagged ⚑ — floats here, and its owner's next run reads it first`
                        : `${item.id} unflagged`);
               await load();
-            } catch (err) { toast(err.message, 4000, { error: true }); }
+            } catch (err) { toastError(err); }
           },
           onSave: item.type === "finding" ? async (text, q) => {
             const payload = { kind: "comment", target: item.id, text };
             try {
               if (q) await updateFeedback(q.id, payload, "comment updated");
               else await submit(payload, "comment sent");
-            } catch (err) { toast(err.message, 4000, { error: true }); }
+            } catch (err) { toastError(err); }
           } : null,
           onWithdraw: async (q, btn) => {
             try { await withdrawMessage(q.id); }
-            catch (err) { toast(err.message, 4000, { error: true }); if (btn) btn.disabled = false; }
+            catch (err) { toastError(err); if (btn) btn.disabled = false; }
           },
         }));
       }

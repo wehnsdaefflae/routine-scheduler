@@ -83,15 +83,21 @@ class Runner:
 
     def active_states(self) -> list[str]:
         """Current state of each active run (read from status.json) — for the drain check.
-        Detached background tasks are EXCLUDED: a self-update restart must not block on a
-        long fire-and-forget job. Its engine child spawns start_new_session=True, so it
-        survives the daemon's SIGTERM regardless; the DetachedManager's disk-poll delivers
-        it after the restart.
+
+        EVERY active run counts, a detached background task included. The exclusion that used
+        to sit here rested on `start_new_session=True` letting the task outlive the daemon's
+        SIGTERM, and no deployment honours that: under Docker the daemon's exit ends tini
+        (PID 1) and the kernel SIGKILLs the whole PID namespace; under the systemd unit the
+        default KillMode=control-group kills every process left in the cgroup. A new session
+        changes the session, not the container and not the cgroup. So the task did not survive
+        — it died at rc=-9, the boot reap closed it `aborted`/`daemon_restart`, and its owner
+        was handed "[background task was cancelled]": the one class of run the drain exists to
+        protect, restarted out from under precisely because it was excluded. The wait it costs
+        is bounded by the task's own 60-minute budget (daemon/detached.py), and a background
+        task can never park on a user, so the gap always comes.
         """
         states: list[str] = []
         for run in self.active.values():
-            if run.background:
-                continue
             st = read_json(run.run_dir / "status.json")
             states.append(st.get("state", "unknown") if isinstance(st, dict) else "unknown")
         return states
@@ -190,11 +196,22 @@ class Runner:
             return None
         return await self.resume(cfg, run.ts, reason=reason)
 
-    def _spawn_supervisor(self, run: ActiveRun, cfg: RoutineConfig, reason: str,
-                          resume: bool = False) -> None:
-        task = asyncio.create_task(self._supervise(run, cfg, reason, resume=resume))
+    def spawn(self, coro) -> asyncio.Task:
+        """Run `coro` as a tracked background task.
+
+        ONE place holds the strong reference (RUF006: a bare create_task can be garbage
+        collected mid-flight, which on this loop means a supervised run that silently stops
+        being supervised). The supervisor, the sigkill auto-resume, the post-finish inbox
+        sweep and off-loop retention all go through here.
+        """
+        task = asyncio.create_task(coro)
         self._supervisors.add(task)
         task.add_done_callback(self._supervisors.discard)
+        return task
+
+    def _spawn_supervisor(self, run: ActiveRun, cfg: RoutineConfig, reason: str,
+                          resume: bool = False) -> None:
+        self.spawn(self._supervise(run, cfg, reason, resume=resume))
 
     async def _supervise(self, run: ActiveRun, cfg: RoutineConfig, reason: str,
                          resume: bool = False) -> None:

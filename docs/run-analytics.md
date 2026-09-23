@@ -11,6 +11,10 @@ one reading that separates carrying context cheaply from paying for it twice. A 
 what an optional efficiency feature RETURNS — output compression, per routine, on that same
 durable stream.
 
+A fifth measures the runs that never happened. Work the fleet owed and did not do leaves no
+run behind, so it leaves nothing on any of the four layers above; the health stream is where
+it lands, and [Blocked work](#blocked-work-apihealthblocked) is where it is read.
+
 ## Recipe versions
 
 A routine's recipe is `main.md` + `stages/` + `tuning.yaml` — exactly the
@@ -29,6 +33,9 @@ At run start the engine stamps the current recipe commit into the run
 - The commit lands in `status.json` (`recipe_commit`) and in the run's workflow-usage
   record. Conversations and other unversioned dirs stamp `null` — they have no recipe
   history by design.
+- Beside it the record carries `library_commit`, the LIBRARY's HEAD as of the run's END
+  (depth 0 only, one read per run). A rule revision reaches every holder at once and moves no
+  recipe version, so it is the only thing that dates the change the trend below reacts to.
 
 ## The health view (routine page → Recipe health)
 
@@ -59,6 +66,38 @@ just after the newest recipe change with the runs just before it
 `partial` (budget-stopped) counts as not-ok: a recipe change that makes runs blow their
 budgets IS a degradation. The flag renders as a banner on the routine page naming the
 commit and the numbers behind each reason. **Flag-first**: nothing reverts automatically.
+
+### The time-window trend
+
+The same thresholds, applied a second way: the last `REGRESSION_WINDOW` depth-0 runs against
+the `REGRESSION_WINDOW` before them, whatever recipe produced either side
+(`run_health.recent_trend`, payload key `trend`).
+
+The version-keyed flag above cannot see the most expensive kind of regression there is. Its
+buckets key on `recipe_commit`, so it moves only when THIS routine's recipe moves — and a
+library RULE revision reaches every holder at once without touching a single recipe
+(`error-recovery` reached 30 routines on 2026-09-16, `web-research` 136 on 09-18,
+`independent-verification` 34 on 09-21). Measured: self-audit's weekly medians went 49,409
+tokens / 146 turns / 87% ok (w36) to 338,024 / 158 / 43% (w37) and back to 95,782 / 289 / 69%
+(w39), with no recipe change under any of it — so `versions` held one bucket, `regression`
+never evaluated, and nothing on the instance said a word.
+
+One heuristic, two keys, deliberately: a reader comparing the two reads a difference in WHAT
+changed, never in how it was judged. `trend` needs no git history at all, so a conversation
+gets one too.
+
+The trend is also PUSHED, not only served: the engine evaluates it at run end, once this run's
+own record has landed, and emits `cost_trend_degraded` while it is flagged
+(`engine/runtime._log_cost_trend`, carrying the window and both sides' medians and fail rates
+as structured fields). A payload nobody opens is a reading nobody has — the nightly audit reads
+the health stream, so that is where a regression this size has to appear.
+
+### How a partial finish ended
+
+`endings` (same payload) counts this routine's last week of `budget_exhausted` and
+`run_partial` health events. Both land in the usage stream as `partial`, so a routine that
+outgrew its ceiling and one that keeps finding a source down read identically there;
+only the health stream says which budget forced a finish, and `last_detail` names it.
 
 ### One-click roll-back
 
@@ -146,7 +185,7 @@ Per-turn detail lives in each run's `llm-tasks.jsonl` sidecar: a healthy run's `
 GROWS turn over turn; a broken one has it PINNED at the static prefix while `cache_write`
 tracks the conversation.
 
-## A cooling primary model (`model_chain_exhausted`)
+## A cooling primary model (`model_failover`, `model_chain_exhausted`)
 
 The same shape of invisible cost, in the model layer. A catalog model's `fallbacks:` chain
 makes a cooling primary SURVIVABLE per run — the turn fails over, the run finishes `ok`, and
@@ -157,16 +196,56 @@ Measured on 2026-09-16: 11 of 13 fleet runs opened with `All credentials for mod
 gpt-6-astra are cooling down` (81 errors across the fleet); all 13 finished `ok`, and the
 health stream for that window held exactly one event, about an unrelated oversize file.
 
-- `engine/degrade.py` emits `model_chain_exhausted` when a role's WHOLE chain is unusable
-  mid-turn — every member failed hard or is cooling. It carries `model` (the chain HEAD),
-  `last_model` (the member that failed last) and `cooldown_s` as structured fields, so a
-  sweep can group by the primary rather than parse prose.
-- Read it by the HEAD, not by the count: one event is a provider hiccup, while a run of them
-  sharing one `model` is a primary that is not serving the fleet. The per-run transcript
+- `engine/degrade.py` emits `model_failover` on EVERY switch — the event that answers "what
+  is the fleet actually running on today". It carries `model` (the chain HEAD, the key to
+  group by), `from_model`, `to_model` and a `reason` (`rate_limit` · `auth` · `server` ·
+  `refusal` · `empty` · `other`) as structured fields. Over ten days in September 2026 there
+  were 123 switches and one `model_chain_exhausted`, so a stream carrying only the latter
+  reported ~1% of the movement: a dead proxy refresh token and a weekly quota pushed 28 runs
+  onto metered models at `effort: max` and the operator found it days later, by reading
+  transcripts.
+- `model_chain_exhausted` is the same seam's harder failure: a role's WHOLE chain unusable
+  mid-turn — every member failed hard or is cooling. It carries `model`, `last_model` and
+  `cooldown_s`. A `model_failover` costs money; a `model_chain_exhausted` costs the run.
+- Read both by the HEAD, not by the count: one event is a provider hiccup, while a run of
+  them sharing one `model` is a primary that is not serving the fleet. The per-run transcript
   `error` event with its `failover` payload stays the record of which model served a given
-  turn; this is the fleet-level aggregate that no per-run artifact can give you.
+  turn; these are the fleet-level aggregate that no per-run artifact can give you.
+- A switch is FORWARD-ONLY inside a run (`endpoints/failover.py`), so repeated
+  `model_failover` events for one run_id mean successive members failing, never the same
+  primary flapping back in every five minutes.
+
+## Blocked work (`/api/health/blocked`)
+
+Everything above measures runs that HAPPENED. Six health events record the opposite —
+`fire_refused`, `lane_fire_refused`, `lane_chain_stopped`, `lane_chain_member_skipped`,
+`scheduler_tick_error`, `trigger_capped` — and each of them produces no run, so no run
+page, no Items row and no Stats slice can carry it. They had fourteen writers and no
+reader inside the product: the nightly audit opened `.control/health-events.jsonl` over
+ssh and the console showed none of it, which is how F316's week of missed lane fires
+passed with zero signal.
+
+`readmodels/health_stream.py` is the ONE parser of that file and the fold behind
+`GET /api/health/blocked?days=<1..90>`: one row per (event, subject) with `count`,
+`first_ts`, `last_ts` and the NEWEST `detail`, newest first, plus `vocabulary` — what each
+event name means — so a console renders a label it was not compiled with. `subject` is the
+event's own `routine` field: a routine slug for a refused fire or a capped trigger, an
+opaque LANE ID for the three lane events (resolve it against the lane store, never by
+reading a prefix), empty for a scheduler tick. `total: 0` is the healthy reading.
+
+Both folds are memoized on the stream's stat fingerprint with single-flight misses: this
+rides a bus-event refresh path, and an un-memoized parse per request is what starved the
+daemon behind `/api/items` and `/api/questions`.
+
+## Who reads the flags
+
+The routine page (the health banner and the one-click revert) and **routine-improver's
+target ORDER**: its `orient` stage attaches the same two window medians and the same 1.5×
+ratio to every candidate, and `select-targets` puts the flagged ones first, most-moved
+first. That is what the flags are for — a sweep spends its hour where the numbers moved,
+and this is the only place on the instance that compares a routine against its own past.
 
 ## Follow-ups
 
-- Auto-revert by the routine-improver (act on the flag instead of just raising it) is
-  deliberately out of scope — flag-first until the heuristic has earned trust.
+- Auto-revert by the routine-improver (act on a flag instead of ordering its sweep by it)
+  is deliberately out of scope — flag-first until the heuristic has earned trust.

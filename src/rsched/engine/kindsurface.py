@@ -137,7 +137,10 @@ that does it properly."""),
     (("write_util",), """- write_util: create or revise a global util — name (kebab-case) \
 + content (a complete
 PEP 723 script: `# /// script` deps block, a module docstring whose first line is
-`<name> — <one-line summary>` then a `usage:` line, a `--json` flag, a `--selftest` that runs
+`<name> — <one-line summary>` then a `usage:` BLOCK — the call form, and for a
+verb-dispatched util one line per verb directly under it (every non-blank line up to the
+next header key is part of it, and that whole block is what a caller is shown before it
+calls you) — a `--json` flag, a `--selftest` that runs
 built-in checks, data on stdout / diagnostics on stderr / exit 0 on success; on invalid or
 missing arguments it MUST print its own usage line to stderr and exit 2 — an error that
 doesn't teach the correct call wastes every future caller's turn). The engine runs

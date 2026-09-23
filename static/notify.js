@@ -1,16 +1,17 @@
 // Browser notifications for pending decisions — both tiers, opt-in (Settings → Notifications).
-// Tier 1 (tab open): the Notification API driven by the global SSE bus — any bus event
-//   schedules a rate-limited /api/questions diff; unseen open decisions notify once
-//   (qid-keyed, remembered in localStorage, OS-deduped via the notification tag).
+// Tier 1 (tab open): the Notification API driven by the shared questions store
+//   (questions-store.js, which owns the one bus listener and the one fetch for every reader
+//   of /api/questions); unseen open decisions notify once (qid-keyed, remembered in
+//   localStorage, OS-deduped via the notification tag).
 // Tier 2 (tab closed): Web Push through the service worker at /sw.js — this module only
 //   manages the per-browser subscription; the daemon sends the pushes (web/push.py).
 
 import { api, syncWorkerToken } from "/static/api.js";
+import { loadQuestions, subscribeQuestions } from "/static/questions-store.js";
 import { storage } from "/static/util.js";
 
 const ENABLED_KEY = "rsched_notify";        // "on" | anything else = off (opt-in)
 const SEEN_KEY = "rsched_notify_seen";      // qids already notified, capped
-const CHECK_MIN_MS = 5000;                  // at most one questions fetch per 5s
 
 export const supported = () => "Notification" in window;
 export const enabled = () =>
@@ -29,42 +30,46 @@ function seenSet() {
   catch { return new Set(); }
 }
 
-async function check() {
+/** Raise ONE tier-1 notification — the only place in the console that constructs one.
+ *
+ *  Two conventions ride every notification and both are easy to forget at a second call
+ *  site: the `tag`, which is how the same event raised from three open tabs collapses into
+ *  one OS notification, and the click, which focuses this window and navigates. `href` is a
+ *  hash route; omitted, the notification is inert on click. Silently does nothing while
+ *  notifications are off — the caller states the event, not the policy. */
+export function show(title, body, { tag, href } = {}) {
+  if (!enabled()) return null;
+  const n = new Notification(title, { body, ...(tag ? { tag } : {}) });
+  if (href) n.onclick = () => { window.focus(); location.hash = href; n.close(); };
+  return n;
+}
+
+function check({ items }) {
+  // Checked here, not only in show(): while notifications are off nothing may be marked
+  // seen, or switching them on would silently skip the backlog that is already waiting.
   if (!enabled()) return;
-  let qs;
-  try { qs = await api("/api/questions"); } catch { return; }
   const seen = seenSet();
   let dirty = false;
-  for (const q of qs) {
+  for (const q of items) {
     if (q.answered || !q.qid || seen.has(q.qid)) continue;
     seen.add(q.qid);
     dirty = true;
-    const n = new Notification(`decision needed · ${q.routine}`, {
-      body: (q.question || "").replace(/\s+/g, " ").slice(0, 160),
-      tag: `rsched-${q.qid}`,               // same decision never stacks up across tabs
-    });
-    n.onclick = () => { window.focus(); location.hash = "#/questions"; n.close(); };
+    show(`decision needed · ${q.routine}`,
+         (q.question || "").replace(/\s+/g, " ").slice(0, 160),
+         { tag: `rsched-${q.qid}`, href: "#/questions" });
   }
   if (dirty) storage.set(SEEN_KEY, JSON.stringify([...seen].slice(-200)));
 }
 
-let timer = null, lastCheck = 0;
-
 export function initNotifications() {
   if (!supported()) return;
-  const schedule = () => {
-    if (!enabled()) return;
-    clearTimeout(timer);
-    const wait = Math.max(0, CHECK_MIN_MS - (Date.now() - lastCheck));
-    timer = setTimeout(() => { lastCheck = Date.now(); check(); }, wait);
-  };
-  window.addEventListener("rsched-bus", schedule);
-  schedule();                                // boot: notify whatever is already waiting
+  subscribeQuestions(check);
+  loadQuestions().catch(() => { /* offline: the next snapshot notifies */ });
 }
 
 // ---- tier 2: the per-browser Web Push subscription -------------------------------------------
 
-export const pushSupported = () =>
+const pushSupported = () =>
   "serviceWorker" in navigator && "PushManager" in window && supported();
 
 function b64ToBytes(b64url) {

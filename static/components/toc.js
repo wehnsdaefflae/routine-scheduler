@@ -1,8 +1,16 @@
-// Sticky side table-of-contents. On wide viewports it parks a fixed rail in the right margin
-// (like the run/conversation rails — same 1900px breakpoint, which is where a margin exists once
-// the navigation rail has taken its 212px) listing the page's <h2> sections, with click-to-scroll
-// and the in-view section highlighted. Purely additive: no layout change, hidden below that
-// width, and skipped on views that already carry their own rail/nav.
+// "On this page": the page's <h2> sections, click to scroll, the section you are in lit.
+//
+// It lives IN THE NAVIGATION RAIL, under the destinations and above the rail's foot — the one
+// place with room at every desktop width. It used to park in the right margin like the
+// run/conversation rails, which meant a 1900px viewport: a 1440px laptop got no wayfinding at
+// all on pages between eleven and twenty-six THOUSAND pixels tall (stats 26 428px, messages
+// 18 117px, a routine 13 732px), while 430px of the rail below "Help" sat empty on every one of
+// them. The rail already scrolls and already ends in a fixed foot, so the index takes the slack
+// between the two and scrolls inside it.
+//
+// Below 1181px the rail is a 68px icon strip and below 861px a bottom bar — no room for words
+// either way, so base.css hides it there and the page is read top-to-bottom. Skipped on views
+// that carry their own page-level rail.
 
 import { el } from "/static/util.js";
 
@@ -20,7 +28,6 @@ export function mountToc(box) {
         .replace(/^-+|-+$/g, "") || "section";
       h.id = `toc-${base}-${i}`;
     }
-    h.style.scrollMarginTop = "84px";   // land clear of the sticky topbar
     const a = el("a", { class: "toc-link", title: h.textContent.trim(),
       onclick: (e) => { e.preventDefault(); h.scrollIntoView({ behavior: "smooth", block: "start" }); } },
       h.textContent.trim());
@@ -30,7 +37,10 @@ export function mountToc(box) {
 
   const nav = el("nav", { class: "side-toc", "aria-label": "on this page" },
     el("div", { class: "side-toc-cap" }, "On this page"), ...links);
-  document.body.append(nav);
+  // Between the destinations and the rail's foot. app.js calls this inside a try — a console
+  // whose rail is missing has bigger problems than a missing index.
+  const rail = document.querySelector(".topbar");
+  rail.insertBefore(nav, rail.querySelector(".rail-foot"));
 
   // Highlight whichever section is currently in view.
   const byId = new Map(links.map((a) => [a.dataset.tocFor, a]));

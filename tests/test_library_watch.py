@@ -13,7 +13,7 @@ from types import SimpleNamespace
 import pytest
 import yaml
 
-from rsched import pending
+from rsched import libgit, pending
 from rsched.daemon.library_watch import LibraryWatch
 
 
@@ -105,6 +105,36 @@ def test_an_unchanged_head_does_no_work(world):
     assert pending.load_all(routines) == []
 
 
+def test_git_reads_go_through_the_one_invoker(world, monkeypatch):
+    """F285: five per-module `_git` copies once drifted on timeout and check semantics, so
+    every git call in the package is `libgit.git`. This watcher spelled its own
+    `subprocess.run(["git", ...])` twice — the exact drift that rule exists to prevent."""
+    server, _lib, _routines = world
+    seen: list[tuple] = []
+    real = libgit.git
+
+    def spy(home, *args, **kw):
+        seen.append(args)
+        return real(home, *args, **kw)
+
+    monkeypatch.setattr(libgit, "git", spy)
+    LibraryWatch(server)._check()
+    assert seen[0] == ("rev-parse", "HEAD")
+    assert any(a[:2] == ("log", "-1") for a in seen)
+
+
+def test_a_missing_git_repo_never_reaches_the_tick_guard(world, monkeypatch):
+    """libgit.git does not catch a missing repo or a missing binary; this module must,
+    because `tick`'s catch-all log.exceptions and both are ordinary states here."""
+    server, _lib, _routines = world
+
+    def boom(home, *args, **kw):
+        raise OSError("git is not installed")
+
+    monkeypatch.setattr(libgit, "git", boom)
+    LibraryWatch(server)._check()          # no raise: an empty head is "nothing to compare"
+
+
 def test_a_non_git_library_is_a_no_op(tmp_path, monkeypatch):
     """The watcher must never be the reason a daemon tick fails."""
     monkeypatch.setattr("rsched.secrets.load_secrets", dict)
@@ -133,3 +163,25 @@ def test_only_blocking_rows_queue(world):
     _git(lib, "commit", "-qm", "status-page expects a root")
     watch._check()
     assert pending.load_all(routines) == []          # the expects: row is an interrupt
+
+
+async def test_head_is_read_on_its_own_interval_not_once_per_tick(world, monkeypatch):
+    """A `rev-parse` is cheap but it is still a FORK, and the scheduler ticks every 5s — 17k
+    subprocesses a day on the loop's shared executor to watch a value that moves a handful of
+    times. The boot check still runs immediately; the next one waits out CHECK_EVERY_S."""
+    import time
+
+    from rsched.daemon import library_watch
+
+    server, _lib, _routines = world
+    reads: list[str] = []
+    real_head = library_watch._head
+    monkeypatch.setattr(library_watch, "_head",
+                        lambda repo: reads.append(str(repo)) or real_head(repo))
+    watch = LibraryWatch(server)
+    await watch.tick()                       # boot: read
+    await watch.tick()                       # immediately after: skipped
+    assert len(reads) == 1
+    watch._last_check = time.monotonic() - library_watch.CHECK_EVERY_S - 1
+    await watch.tick()
+    assert len(reads) == 2

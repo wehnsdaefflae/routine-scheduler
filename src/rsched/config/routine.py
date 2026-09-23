@@ -364,10 +364,20 @@ def load_routine(routine_dir: Path) -> tuple[RoutineConfig | None, list[str]]:
 
     cfg.capabilities, cap_problems = normalize_capabilities(cfg.capabilities)
     problems += cap_problems
-    from ..entities import normalize_grants  # function-level: entities imports grants
+    from ..entities import GUARDED_ROOT_REASON, guarded_roots, normalize_grants
 
     cfg.grants, grant_problems = normalize_grants(cfg.grants)
     problems += grant_problems
+    # A credential store already listed as a folder grant. REPORTED, never dropped: this is
+    # the one problem where degrading quietly is worse than the problem — two live routines
+    # audit and export the server's own configuration as their actual job, and a root that
+    # vanishes from under their next run fails them with nothing naming the cause. The PATCH
+    # edge refuses a NEW one (web/api_routine_patch.py); this is how an existing one stops
+    # being silent, on the routine page and in `rsched validate`.
+    for key in ("fs_read_roots", "fs_write_roots"):
+        for root in guarded_roots(getattr(cfg, key)):
+            problems.append(f"{key}: {root} {GUARDED_ROOT_REASON}. Every run of this routine "
+                            "has it mounted — narrow the grant to what the recipe needs.")
     from ..triggers import validate_triggers
 
     cfg.triggers, trigger_problems = validate_triggers(cfg.triggers)

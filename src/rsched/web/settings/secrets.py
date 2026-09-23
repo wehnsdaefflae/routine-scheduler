@@ -20,9 +20,9 @@ router = APIRouter()
 
 @router.get("/settings/secrets")
 def list_secrets(request: Request) -> dict:
-    from ... import utils_lib
     from ...machines import machine_env_vars
     from ...oauth.providers import connection_token_vars
+    from ...readmodels import library_reads
     store_vals = secret_store.load_secrets()
     have = set(store_vals)
     # F209: a declared secret can be provisioned via the DAEMON ENVIRONMENT (os.environ) rather
@@ -45,7 +45,7 @@ def list_secrets(request: Request) -> dict:
     # binding a connection / a machine), so it must not appear as a needed store secret.
     injected = connection_token_vars() | machine_env_vars()
     # which env vars do the installed utils declare they need, and are they set yet?
-    utils = utils_lib.list_utils(server_of(request).libraries_home)
+    utils = library_reads.utils(server_of(request).libraries_home)
     by_name = {u["name"]: u for u in utils}
     declared: dict[str, list[str]] = {}
     # A secret is OPTIONAL (D51) only when EVERY util that declares it marks it optional (`NAME?`);

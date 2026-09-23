@@ -18,7 +18,7 @@ One routine = one directory under `~/routines/<slug>`, holding:
 | **Instruction** | *(consumed at creation)* | The TASK — goal, deliverable, constraints, done-criteria — you describe once. It seeds the workflow below and isn't kept as a separate file; no schedule or conduct rules live here. |
 | **Workflow** | `main.md` + `stages/*.md` | The control flow the agent follows, generated from a library *pattern* applied to your instruction — and the routine's sole source of truth once created. `main.md` is a small state machine; each stage's detail lives in a module read on demand. |
 | **Rules** | `rules:` in `routine.yaml` | The general rules that bind it (when to ask you, research discipline, what to record, git-checkpointing a project repo). Each states a principle and the run applies it to its own case. The prose lives ONCE in the shared library, so revising it there reaches every routine holding it; the routine holds slugs, not copies. |
-| **Permissions & capabilities** | `routine.yaml` | What the routine is ALLOWED to do — writing utils, Discord, memory, reading previous runs, shell. *Capabilities* are the engine-enforced switches; *permissions* are the conduct docs that ride along (the Traits & permissions guide has the full model). Only you change either — a run can never grant itself anything, nor edit its own recipe. |
+| **Permissions & capabilities** | `routine.yaml` | What the routine is ALLOWED to do — writing utils, Discord, memory, reading previous runs, shell. *Capabilities* are the engine-enforced switches; *permissions* are the conduct docs that ride along (the *Rules, permissions & capabilities* guide has the full model). Only you change either — a run can never grant itself anything, nor edit its own recipe. |
 | **Budgets** | `routine.yaml` | Hard per-run ceilings: turns, minutes, tokens (unlimited by default — turns and wall-clock are the effective bound), sub-workflows and their depth, and how long a blocking question waits for you. |
 | **State & memory** | `state/`, `LEDGER.md`, `.memory/` | What carries between runs: working files, the append-only change journal, and the notebook of hard-won surprises. |
 | **Runs** | `runs/<ts>/` | Every run's full transcript, status, and result — the conversation is the audit trail. |
@@ -39,22 +39,27 @@ Two design rules explain most of the system's shape:
 
 ## The pieces around routines
 
-- **Endpoints** (Settings) are model *transports*: OpenAI-compatible APIs (OpenRouter,
-  vLLM, Ollama), the Anthropic API, or your Claude subscription via the Claude Code CLI. A
+- **Endpoints** (Settings) are model *transports*, and there are two kinds: OpenAI-compatible
+  APIs (OpenRouter, vLLM, Ollama) and the Anthropic Messages API — which is also how a Claude or
+  Codex SUBSCRIPTION is billed, through CLIProxyAPI on the `anthropic` kind (see *The Claude
+  proxy cutover*). A
   **model** is a named catalog entry bound to an endpoint, carrying its own context window,
   vision support, effort, temperature, output limit (`max_tokens` — Settings flags models
   where it's unset or implausible), and an optional ordered **fallback chain** — other
-  catalog models the engine fails over to when this one's provider fails hard, with a
+  catalog models the engine fails over to when this one's provider fails hard (transitively:
+  the named list first, then each entry's own fallbacks), with a
   cooldown so a flapping provider isn't hammered. Each routine picks its models by name —
-  the main loop, spawned sub-workflows, the `llm` tool-call action, and (optionally) an
-  `uncensored` refusal-clarification harness — or falls back to the one **system model**. A model can be
+  `main` (the loop, and every child run by default), `tool_call` (the `llm` action and the
+  engine's own subcalls) and an optional `uncensored` refusal-clarification harness — or falls
+  back to the one **system model**. A model can be
   **multimodal**: it views images and PDFs natively
   (default on for Anthropic/Claude models, a per-model toggle for OpenAI-compatible vision
   models), otherwise through the `vision` util.
 - **The library** (Library tab) is one git repo holding the shared building blocks:
-  workflow **patterns**, **rules**, **permissions**, **utils**, and **playbooks** (reusable
-  one-shot briefs for Conversations). Routines are built FROM it but never depend on it at
-  run time.
+  workflow **patterns**, **rules**, **permissions**, **utils**, **playbooks** (reusable
+  one-shot briefs for Conversations), **settings templates**, the global **reminders** store,
+  and the shared **web kit** status pages are built on. Routines are built FROM it, and a rule
+  or util revised there reaches every holder at its next run.
 - **Decisions** (Decisions tab) is the one inbox for everything routines need from you:
   blocking questions (a run is waiting), deferred ones (the next run picks the answer up),
   util approvals, and self-audit decisions. A blocking question waits up to the routine's
@@ -72,28 +77,35 @@ fastest start; the Claude subscription needs no per-token billing). Set it as th
 model. Add any secrets your future utils need (Settings → Secrets — the shared write-only store; a credential meaningful to ONE routine belongs in that routine's own *Own secrets* section instead, where it needs no exposure grant; at
 run time a util receives ONLY the secrets its docstring declares — see the sandboxing guide).
 
-**2 · Describe the task.** *+ new routine* → write the TASK in your own words — what to
-produce or tend, what "done" looks like. Not when it runs, not how to behave; those come
-later and live elsewhere. Example draft:
+**2 · Describe the task.** Open a **conversation** (the Conversations tab is the landing
+page) and write the TASK in your own words — what to produce or tend, what "done" looks like.
+Not when it runs, not how to behave; those come later and live elsewhere. There is no create
+page and no wizard: a routine is designed in a conversation, because a scheduled run has
+nobody to design with. Example opening message:
 
 > Watch arxiv for new papers on LLM agent evaluation. Keep `state/reading-list.md`
 > fresh: newest first, one-line take each, link. Flag anything that looks like a
 > must-read for me.
 
-**3 · Answer the clarifier.** A short chat sharpens the draft into a precise instruction
-and marries it to a workflow pattern from the library. It asks only what it cannot infer —
-scope, deliverable shape, hard constraints. The chat is a real run of the protected
-`clarification` routine and lives on the standard run page — leave and come back any time
-(the setup banner up top brings you back); its questions also appear on the Decisions page.
+**3 · Answer the numbered questions.** The agent sharpens the draft into a precise
+instruction and marries it to a workflow pattern from the library, asking only what it cannot
+infer — scope, deliverable shape, hard constraints. Each open point arrives as its own
+question carrying OPTIONS, which the console renders as numbered picks, so you answer with a
+number rather than composing a paragraph. Three things must be SETTLED before it drafts: what
+the routine PRODUCES each run, what DONE looks like for ONE run, and which pattern it is built
+on. The conversation is resumed in place, so you can leave and come back; its questions also
+appear on the Decisions page.
 
 **4 · Confirm the draft in the chat.** There is no create page: the conversation shows you a
 DRAFT — slug, name, workflow pattern (or `generate` when nothing in the catalog fits), the
 instruction it compiled, and what DONE looks like for one run in your own words — and creates
 nothing until you answer. Every point still open comes back as its own numbered question.
 
-**5 · Create.** The system decomposes the pattern against your instruction into the routine's
-own `main.md` + `stages/`, records the pattern's rules and the default permissions in
-`routine.yaml`, writes the config, and git-inits the directory. Setup is tuned AFTERWARDS on the
+**5 · Create.** On your confirmation the agent emits `create_routine` and the system decomposes
+the pattern against your instruction into the routine's own `main.md` + `stages/`, records the
+pattern's rules and the default permissions in `routine.yaml`, seeds the stopping conditions
+from your own words, writes the config, and git-inits the directory; the daemon's registry
+rescan picks the new dir up shortly after. Setup is tuned AFTERWARDS on the
 routine page, where the *Recommend* button reads the finished recipe and puts advice beside every
 rule and permission toggle — you flip the switches. The instruction was only the compile seed — from here
 on the stage modules are the routine's recipe, edited directly. Optionally the first run
@@ -144,7 +156,7 @@ boundary.
 
 - **Examples** — four complete routine setups, from draft instruction to daily operation.
 - **Conversations** — the interactive counterpart to routines: work with an agent turn by turn.
-- **Traits & permissions** — how conduct and capability are split, and why.
+- **Rules, permissions & capabilities** — how conduct and capability are split, and why.
 - **Notifications** — the one way agents reach you, and which channels you switch on.
 - **Playbooks** — save a conversation as a reusable one-shot brief, and reuse it to seed new ones.
 - **Prompt anatomy** — exactly what the orchestrator model sees, message by message.

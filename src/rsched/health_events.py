@@ -2,12 +2,19 @@
 
 Writes to <routines_home>/.control/health-events.jsonl. Each line is a JSON object:
 {"ts": <iso>, "event": "run_failed"|"budget_exhausted"|"run_partial"|"orphaned_run"
-        |"run_canceled"|"oversize_state_file"
-        |"wizard_build_degraded"|"fire_refused"|"model_window_corrected"
-        |"cache_read_degraded"|"model_chain_exhausted"
+        |"run_canceled"|"oversize_state_file"|"prompt_oversize_shrunk"
+        |"wizard_build_degraded"|"fire_refused"|"trigger_capped"|"model_window_corrected"
+        |"util_killed"
+        |"cache_read_degraded"|"cost_trend_degraded"|"model_failover"|"model_chain_exhausted"
         |"lane_chain_done"|"lane_chain_stopped"|"lane_chain_member_skipped"
         |"lane_fire_refused"|"lane_fire_catchup"|"scheduler_tick_error",
  "routine": <slug>, "run_id": <id>, "detail": <str>}
+
+THIS ENUM IS THE VOCABULARY, and it is machine-checked: every event name emitted anywhere in
+`src/rsched` must appear in it (tests/test_health_events.py walks the call sites). A reader
+keyed on the documented list — the audit recipe, the `health-events` library util's filters —
+sees exactly nothing of an event that was added without a line here, which is how
+`prompt_oversize_shrunk` and `trigger_capped` were written for weeks and read by nobody.
 
 budget_exhausted vs run_partial: BOTH are a `partial` finish, and they used to be one
 event. budget_exhausted is the finish a BUDGET VIOLATION forced (the reserved finish turn
@@ -15,6 +22,12 @@ was spent, or the engine ended the run itself); run_partial is a partial the mod
 with budget to spare — the job needs another run, a source was down, an ask timed out.
 The distinction is the whole point of reading the stream: an instance where every routine
 "exhausts its budget" nightly reads as starved, when most of those were authored finishes.
+budget_exhausted carries `resource` (turns · total_turns · wall_clock · tokens · cost),
+`limit` and `status` as structured fields — WHICH budget ended the run was recorded
+nowhere, and reconstructing it from status.json worked for 22 of 90 cases. It is emitted
+whenever the RESERVED FINISH TURN was spent, whatever the finish status: a run that spends
+it and still finishes `ok` was ended by a budget just as much (11 such runs since 09-01
+left no event at all).
 
 oversize_state_file: the run-end autocommit left a file OUT of the routine's own repo
 because it exceeds `engine/autocommit.OVERSIZE_BYTES` (detail names path and size). The
@@ -22,14 +35,33 @@ file stays on disk and the run's work is untouched; what it never becomes is a g
 in a repo the instance mirrors and pushes — one 223 MB inventory once blocked every
 library push for days, and the mirror repo's history had to be rewritten to drop it.
 
+util_killed: a child command the engine ran — a util, a routine `script` or a `shell`
+command — was stopped by a SIGNAL (engine/executor). Carries `kind` (util · script ·
+shell), `util` (its name, or the head of the command), `signal` and
+`children_vm_hwm_kb` (this run's high-water memory across all its finished children — an
+upper bound on the one that died). Inside the container a signal 9 is the cgroup OOM
+killer, and the engine SURVIVES it: the run reads an ordinary failed command and carries
+on, which is why five such kills on 2026-09-14 and 09-17 (anon-rss 1.86-2.05 GB in
+/var/log/kern.log) left no trace in this stream at all. A run of them on one util is a
+util that does not stream what it reads.
+
 trigger_capped: a report trigger hit its daily cap; one event per day at the transition,
 because a capped trigger is a dark routine and dark must be visible (F276).
 
+prompt_oversize_shrunk: a composed prompt exceeded the model's window and the window guard
+shrank the run's local view to fit (engine/window.py). The turn survives, so nothing fails —
+what it marks is a run whose context is being silently truncated, which an audit reads as a
+routine that has outgrown its model or its state files.
+
 lane_fire_catchup: at daemon boot a SCHEDULED lane's most recent due fire had not been
-armed (the daemon was down, restarting or draining at that moment — a lane's fire table
-is process memory) and the lane's catchup policy is run_once, so ONE make-up chain was
-armed (routine = the lane id, run_id empty). Never a backlog: one fire, however many were
-missed, exactly like a routine's own `catchup: run_once`.
+armed and the lane's catchup policy is run_once, so ONE make-up chain was armed (routine =
+the lane id, run_id empty). Never a backlog: one fire, however many were missed, exactly
+like a routine's own `catchup: run_once`. It says WHAT the watermark showed and not WHY,
+because the daemon cannot know: the reading the code has is "nobody armed it", and the
+event asserting a cause instead ("daemon down, restarting or draining") is the same shape
+of invention F480 removed from the boot reap. Every path that HANDLES a due fire stamps
+the watermark — an arm, and the operator's global pause skipping one deliberately — so
+what remains is a fire the daemon was not there for.
 
 cache_read_degraded: a finished run's prompt-cache READ SHARE fell below half — it
 re-wrote its prefix every turn (1.25x) instead of re-reading it (0.1x), a 12.5x
@@ -40,6 +72,26 @@ because NOTHING ELSE shows it: the reads stay (the static prefix still hits), th
 count FALLS, and the cost is carried by a subscription's weighting rather than a visible
 bill — which is how September 2026 ran four days that way and burned a weekly limit.
 An endpoint reporting no cache traffic at all is silent, not degraded.
+
+cost_trend_degraded: a finished routine's LAST runs are clearly worse than the ones
+before them — the routine page's regression heuristic (readmodels/run_health, same
+thresholds) keyed on TIME rather than on recipe version, evaluated at run end. Carries
+`window` and the two medians and fail rates it compared. The version-keyed flag beside it
+moves only when THIS routine's recipe moves, and the most expensive regressions move no
+recipe at all: a library RULE revision lands on every holder at once (error-recovery on 30
+routines 2026-09-16, web-research on 136 09-18), and self-audit's weekly medians went
+49,409 tokens / 87% ok to 338,024 / 43% under no recipe change of any kind while nothing on
+the instance said a word. Emitted per finished run while the comparison holds, so a run of
+them on one routine is the regression and their end is the new normal being adopted.
+
+model_failover: one rung of a role's fallback chain failed hard mid-turn and the next
+one served the turn (engine/degrade.py). The run finishes `ok` — the chain absorbed it —
+so nothing else downstream ever says the primary stopped serving: between 2026-09-12 and
+09-22 that happened 123 times across 28 runs and was found by reading transcripts days
+later. Carries `model` (the chain HEAD, the key a sweep groups by), `from_model`,
+`to_model` and `reason` (rate_limit · auth · refusal · empty · server · other) as
+structured fields, because "why is the fleet off its primary today" has to be answerable
+by a filter rather than by 300 characters of provider prose in `detail`.
 
 model_chain_exhausted: a role's WHOLE fallback chain was unusable mid-turn — every member
 failed hard or was cooling (engine/degrade.py, F491). Carries `model` (the chain HEAD, the
@@ -155,7 +207,8 @@ def log_health_event(routines_home: Path, event: str, *, routine: str,
 def log_workflow_usage(routines_home: Path, *, routine: str, run_id: str,  # noqa: PLR0913 — a flat record writer: one keyword per stream field keeps the vocabulary explicit
                        workflow: str, depth: int, status: str, turns: int, tokens: int,
                        cost: float = 0.0, referrals: int = 0,
-                       recipe_commit: str | None = None, utils: dict | None = None,
+                       recipe_commit: str | None = None, library_commit: str | None = None,
+                       utils: dict | None = None,
                        asks_deferred: int = 0, compression: dict | None = None) -> None:
     """Append one line per finished (sub)run to <routines_home>/.control/workflow-usage.jsonl —
     the feedback stream the routine-improver routine mines to maintain the shared library it
@@ -166,6 +219,10 @@ def log_workflow_usage(routines_home: Path, *, routine: str, run_id: str,  # noq
 
     Payload extensions (never a new shape): `recipe_commit` — the recipe version that
     produced the run (health-by-recipe-version outlives retention thanks to this field);
+    `library_commit` — the LIBRARY's HEAD as of the run's END (depth 0 only), because a
+    rule revision reaches every holder at once and moves no recipe version: error-recovery
+    changed under 30 routines on 09-16 and web-research under 136 on 09-18, and a
+    per-recipe health comparison saw neither;
     `utils` — the run's per-util outcome counts (RunContext.util_stats; ALWAYS present on
     new records, even empty — its presence marks the record as util-counted, which is how
     the Stats read-model knows not to double count the run from its transcript);
@@ -189,6 +246,7 @@ def log_workflow_usage(routines_home: Path, *, routine: str, run_id: str,  # noq
                 "cost": round(cost, 6),
                 "referrals": referrals,
                 "recipe_commit": recipe_commit,
+                "library_commit": library_commit,
                 "utils": utils or {},
                 "asks_deferred": asks_deferred,
                 "compression": compression or {},

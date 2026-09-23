@@ -42,6 +42,7 @@ from urllib.parse import urlsplit
 import httpx
 
 from ..paths import atomic_write_json, read_json
+from .base import CONNECT_TIMEOUT
 
 log = logging.getLogger("rsched.limits")
 
@@ -55,9 +56,12 @@ TTL = timedelta(hours=24)
 ENGINE_OUTPUT_CEILING = 32_000
 _TIMEOUT = 20
 
-#: Kinds with no metadata channel at all, and the windows their models actually have. A static
-#: table is a guess with a longer half-life than the guess it replaces, so it is kept HERE beside
-#: the discovery code (one table, two kinds read it) and its staleness is visible in Settings as
+#: Claude windows for the ids no configured provider publishes figures FOR — a subscription
+#: proxy whose `/v1/models` carries `{id, object, created, owned_by}` and nothing else, which is
+#: every anthropic-kind endpoint here. (Anthropic's OWN listing has published
+#: `max_input_tokens`/`max_tokens` since 2026-03; read it the day a direct endpoint is
+#: configured.) A static table is a guess with a longer half-life than the guess it replaces, so
+#: it is kept HERE beside the discovery code and its staleness is visible in Settings as
 #: `source: table` rather than passing for a measurement.
 STATIC_WINDOWS: dict[str, int] = {
     # https://platform.claude.com/docs/en/build-with-claude/context-windows (2026-09-10).
@@ -152,7 +156,12 @@ def _provider(ep) -> str:
     """
     base = (ep.base_url or "").lower()
     if ep.kind == "anthropic" and ("api.anthropic.com" in base or not base):
-        return "table"          # /v1/models carries no window; a table is the honest answer
+        # Its listing DOES publish max_input_tokens/max_tokens (since 2026-03), but no
+        # direct Anthropic endpoint is configured on this instance — both anthropic-kind
+        # endpoints are subscription proxies, which are sniffed as gateways below. Read
+        # the listing the day one is added; until then the table is the honest answer and
+        # is labelled as one.
+        return "table"
     if "openrouter" in base:
         return "openrouter"
     if "nano-gpt.com" in base:
@@ -190,7 +199,8 @@ def _listed_ids(body: dict) -> set[str] | None:
 
 def _get(url: str, headers: dict | None = None) -> dict | None:
     try:
-        resp = httpx.get(url, headers=headers or {}, timeout=_TIMEOUT)
+        resp = httpx.get(url, headers=headers or {},
+                         timeout=httpx.Timeout(_TIMEOUT, connect=CONNECT_TIMEOUT))
     except httpx.HTTPError as exc:
         log.info("limits: %s unreachable (%s)", url, exc)
         return None
@@ -273,15 +283,20 @@ def _openai_generic(ep) -> Listing:
 
 def _ollama(ep, model_ids: list[str]) -> Listing:
     """`POST {origin}/api/show` per model → `model_info["<arch>.context_length"]`. Ollama has no
-    output limit of its own, so the output cap is derived from the window rather than the floor —
-    this is also what fixes `openai_compat`'s `num_ctx`, which had been sized from the ENDPOINT
-    guess and so silently truncated every local model.
+    output limit of its own, so the output cap is derived from the window rather than the floor.
+
+    What this does NOT reach is `openai_compat`'s native `num_ctx`: `complete()` is never
+    handed the resolved window, so the decode ceiling is still the ENDPOINT's
+    `context_tokens`. Discovery therefore sizes compaction's budget correctly while the
+    request itself can still be truncated — set an Ollama endpoint's `context_tokens` to
+    its largest served model.
     """
     out: dict[str, tuple[int, int | None]] = {}
     for mid in model_ids:
         try:
-            resp = httpx.post(f"{_origin(ep.base_url or '')}/api/show",
-                              json={"model": mid}, timeout=_TIMEOUT)
+            resp = httpx.post(
+                f"{_origin(ep.base_url or '')}/api/show", json={"model": mid},
+                timeout=httpx.Timeout(_TIMEOUT, connect=CONNECT_TIMEOUT))
         except httpx.HTTPError:
             continue
         if resp.status_code != 200:

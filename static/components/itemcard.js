@@ -22,6 +22,36 @@ const TYPE_LABEL = { finding: "finding", decision: "decision", report: "report",
 const OUTCOME_TONE = { partial: "partial", failed: "err", aborted: "err" };
 const SEV = ["problem", "systemic", "redundancy", "improvement", "info"];
 
+// A card's BODY: an item's prose, or — for a summary — the whole of what a run reported.
+//
+// It was rendered in full, always. Fifteen unread summaries with their tables and their
+// thousand words each made the Messages page 48 000px tall on a phone, so the "✓ read" button
+// of item three was twenty screens below item two and the page answered "what arrived" only
+// after you had read everything that had. The first block leads — a run's summary opens with
+// its verdict — and the rest is one click away. Nothing is dropped, and a short item (most
+// findings and reports) is not folded at all: a disclosure over two sentences is friction.
+const FOLD_OVER_CHARS = 420;
+
+function detailBlock(item) {
+  const text = item.detail || "";
+  if (!text) return null;
+  if (text.length <= FOLD_OVER_CHARS) return md(text, "md mt prose");
+  // The split is always at a LINE boundary — a blank line, else the first newline. Cutting a
+  // markdown body at a character count would separate a table from its header row and leave a
+  // `**` open at the seam; a body with no break at all folds whole rather than mid-sentence.
+  const para = text.search(/\n\s*\n/);
+  const cut = para > 0 ? para : text.indexOf("\n");
+  const lead = cut > 0 ? text.slice(0, cut) : "";
+  const rest = text.slice(lead.length).replace(/^\s+/, "");
+  const words = rest.split(/\s+/).filter(Boolean).length;
+  return el("div", { class: "mt" },
+    lead ? md(lead, "md prose") : null,
+    el("details", { class: "mt" },
+      el("summary", { class: "muted small" },
+        lead ? `read the rest · ${words} words` : `read it · ${words} words`),
+      md(rest, "md mt prose")));
+}
+
 function originLine(item) {
   const o = item.origin || {};
   const bits = [];
@@ -197,7 +227,7 @@ export function itemCard(item, { queued, onSave, onWithdraw, answered, onPriorit
   return el("div", { class: "panel mt", id: `ref-${item.id}` },
     head,
     archiveNote,
-    item.detail ? md(item.detail, "md mt prose") : null,
+    detailBlock(item),
     (item.evidence || []).length ? el("div", { class: "row mt", style: "gap:6px" },
       el("span", { class: "faint small" }, "evidence"),
       ...item.evidence.map((e) => el("span", { class: "ref-tag" }, String(e)))) : null,

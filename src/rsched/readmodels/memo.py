@@ -4,7 +4,15 @@ A derived view is recomputed only when any of its input files changed, judged by
 same fingerprint the registry uses (inode + mtime_ns + size — atomic tmp+rename rewrites
 always change the inode, appends change size/mtime). Values are returned as DEEP COPIES
 so a cached result can never be mutated by one consumer under another's feet; the cache
-is process-local and bounded (oldest-inserted evicted) — a pure cache, deletable state.
+is process-local and bounded (LEAST-RECENTLY-USED evicted) — a pure cache, deletable state.
+
+Least-recently-USED, not oldest-inserted, and the difference is the whole point of the
+bound: a Python dict does not reorder on re-assignment, so an entry's eviction position
+would be fixed at its first insert. The expensive keys are the ones fetched EARLY — the
+library lint and the util catalog land on the first routine-page open of a boot — while the
+cheap per-dir keys (`decisions:runs:` ×143, `recipe-log:` ×35, `recipe-baseline:` ×35 per
+day) arrive later and in bulk. Evicting by insert order would therefore throw out a 4-second
+recompute to keep a dozen stats.
 
 Misses are SINGLE-FLIGHT per key: the first caller computes while every concurrent caller
 for the same key waits on it, then re-reads the fresh entry. A burst of identical requests
@@ -71,6 +79,7 @@ def _memoized(key: str, paths: Sequence[Path], compute: Callable[[], T],  # noqa
     with _lock:
         hit = _cache.get(key)
         if hit is not None and hit[0] == fp:
+            _cache[key] = _cache.pop(key)   # youngest end: this is what makes the bound LRU
             return hit[1] if share else copy.deepcopy(hit[1])  # type: ignore[return-value]
         flight = _flights.get(key)
         if flight is None:
@@ -87,6 +96,7 @@ def _memoized(key: str, paths: Sequence[Path], compute: Callable[[], T],  # noqa
             with _lock:
                 hit = _cache.get(key)
                 if hit is not None and hit[0] == fp:
+                    _cache[key] = _cache.pop(key)
                     return hit[1] if share else copy.deepcopy(hit[1])  # type: ignore[return-value]
         value = compute()
         with _lock:
@@ -96,6 +106,18 @@ def _memoized(key: str, paths: Sequence[Path], compute: Callable[[], T],  # noqa
     finally:
         flight.release()
     return value
+
+
+def tree_paths(root: Path, *patterns: str) -> list[Path]:
+    """`root` itself plus every file under it matching `patterns` — the fingerprint list
+    for a view derived from a whole DIRECTORY (a library's docs, a util tree). The root is
+    included so a file appearing or vanishing invalidates even when nothing that survives
+    changed; the stats cost a few hundred microseconds against parses that cost seconds.
+    """
+    out = [root]
+    for pattern in patterns:
+        out.extend(sorted(root.glob(pattern)))
+    return out
 
 
 def transcript_paths(run_dir: Path) -> list[Path]:

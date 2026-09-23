@@ -150,6 +150,12 @@ def test_a_long_note_does_not_crush_the_meta_on_a_narrow_routine_run(ui, ui_page
                      "lock, only a best-effort inactivity auto-logout"}]})
     ui_page.goto(f"{ui.url}/#/run/uir:20260715-160000")
 
+    # The goal panel lives in the run's side rail, and below 760px that rail has no column —
+    # it stacks in the page flow, so it now opens CLOSED (an open one put forty file rows
+    # between the phone and the summary). The row is measured with it open, which is the state
+    # a reader reaches with one tap.
+    ui_page.locator(".run-view > .run-rail > summary").click()
+
     meta = ui_page.locator(".goal-meta").first
     expect(meta).to_be_visible()
     box = meta.evaluate("el => { const r = el.getBoundingClientRect(); "
@@ -279,3 +285,57 @@ def test_switching_a_condition_to_the_final_goal_persists(ui, ui_page):
     assert stored["conditions"][0]["scope"] == "goal"
     # a goal now exists, so the panel has a verdict to report
     expect(ui_page.locator(".goal-verdict")).to_have_text("in progress")
+
+
+# ---- the run view: the panel beside the summary it is reporting on ----------------------------
+
+def _run_with_accounting(ui, ts, resolved_run):
+    ui.seed_run("uir", ts, "finished", summary="## Verdict\n**50 findings**, 11 decisions.")
+    (ui.routine_dir("uir") / "state").mkdir(parents=True, exist_ok=True)
+    atomic_write_json(ui.routine_dir("uir") / "state" / "stopping.json", {
+        "mode": "all", "groups": [{"id": "g1", "name": "", "mode": "all"}],
+        "conditions": [{"id": "s1", "text": "the report is rewritten", "status": "open",
+                        "group": "g1", "scope": "run", "last_verdict": "met",
+                        "note": "audit/report.json rewritten: 50 findings, 11 decisions",
+                        "resolved_run": resolved_run}]})
+
+
+def test_a_runs_own_accounting_is_not_restated_in_its_rail(ui, ui_page):
+    """The rail's first screen was a verbatim second copy of the summary in the column beside
+    it, re-set in 11px mono at a 34-character measure. The verdict is the part the panel adds;
+    the reasoning is already there in serif, one glance to the left."""
+    ui_page.set_viewport_size({"width": 1425, "height": 900})
+    _run_with_accounting(ui, "20260715-170000", "uir:20260715-170000")
+    ui_page.goto(f"{ui.url}/#/run/uir:20260715-170000")
+    row = ui_page.locator(".goal-row").first
+    expect(row).to_contain_text("the report is rewritten")
+    expect(row).to_contain_text("last run: met")
+    assert "audit/report.json rewritten" not in (row.text_content() or ""), (
+        "the rail repeats the accounting the summary beside it already carries")
+
+
+def test_another_runs_accounting_still_reads_in_full(ui, ui_page):
+    """An older run's page is the only place that note appears — suppressing it there would
+    delete the evidence rather than de-duplicate it."""
+    ui_page.set_viewport_size({"width": 1425, "height": 900})
+    _run_with_accounting(ui, "20260715-180000", "uir:20260716-090000")
+    ui_page.goto(f"{ui.url}/#/run/uir:20260715-180000")
+    row = ui_page.locator(".goal-row").first
+    expect(row).to_contain_text("last run: met — audit/report.json rewritten")
+
+
+def test_the_rail_opens_on_what_the_run_produced(ui, ui_page):
+    """The rail led with the goal — whose accounting the summary beside it already carries —
+    and put the artifacts three sections down a nested scroller, below the fold of a 900px
+    screen. What the run PRODUCED leads; the goal is last, and every section's collapsed state
+    is still remembered per browser."""
+    ui_page.set_viewport_size({"width": 1425, "height": 900})
+    ui.seed_run("uir", "20260715-190000", "finished", summary="done")
+    ui_page.goto(f"{ui.url}/#/run/uir:20260715-190000")
+    caps = ui_page.locator(".run-rail .rail-cap")
+    expect(caps.first).to_be_visible()
+    # `all_inner_texts` returns what is RENDERED, and `.rail-cap` is uppercased by the
+    # stylesheet — so the captions are compared as words, in the order the rail lays them out,
+    # rather than on a casing that belongs to base.css and not to this component.
+    assert [c.strip().lower() for c in caps.all_inner_texts()] == [
+        "artifacts", "files", "state", "tasks", "goal"]

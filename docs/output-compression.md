@@ -7,14 +7,10 @@ reads a bare `on` as a boolean, and a hand-edited config must not silently becom
 that run's setting. Ponytail is independently available in the General rules picker, unbound
 by default. Existing installations receive the new rule through the ordinary add-only seed sync.
 
-Two engines, chosen by content kind. **JSON is minified with the standard library**
+ONE engine: **JSON is minified with the standard library**
 (`json.dumps(..., separators=(",", ":"))`) — whitespace is the only thing JSON's grammar lets a
-compressor drop without changing a value, so this needs no optional package and cannot lose data.
-**Logs** use the optional Headroom log excerpt: the Docker deployment includes it in the image and
-at startup; other installations add it with `uv sync --extra headroom` (or
-`pip install 'rsched[headroom]'` for a packaged installation). Without the extra, JSON still
-compresses and a log candidate records an unavailable measurement. No proxy, provider
-reconfiguration or second agent loop is involved.
+compressor drop without changing a value, so this needs no package at all and cannot lose data.
+Nothing else is a candidate. No proxy, provider reconfiguration or second agent loop is involved.
 
 Only successful util/script/shell calls with stdout of at least 2,000 characters are candidates.
 JSON is still accepted only after independent equivalence validation — minification is faithful by
@@ -22,9 +18,9 @@ construction, so the check is an assertion rather than a safety net, and it cost
 preserves every array element, object member, value and numeric spelling (including integer/decimal
 distinctions and signed zero). Whitespace, object key ordering and equivalent string escaping may
 change. Duplicate object keys, NaN/Infinity, non-JSON representations and changed numeric spellings
-are conservatively rejected, retaining the existing capped output and recovery pointer. Recognisable
-level-prefixed logs use log excerpts; their label explicitly says lines were omitted. Ordinary prose,
-source-file reads, user messages, permissions, stderr and failed commands are not compressed.
+are conservatively rejected, retaining the existing capped output and recovery pointer. Logs,
+ordinary prose, source-file reads, user messages, permissions, stderr and failed commands are not
+compressed: they keep the capped head and the spill pointer that already carries the rest.
 Existing stdout/stderr capture limits still apply: an original means the full *captured* output, not
 unlimited output.
 
@@ -41,16 +37,18 @@ Applied compression first saves the original at `runs/<run>/outputs/` (under the
 folder for children). Those files share the run's retention, independent of the five-run spill
 cache; ordinary `read_file` paging retrieves them without recompression. They are engine-owned,
 just like the transcript. Failed saves, compressor exceptions, invalid results and larger results
-retain existing output. The transcript stores the actual preview and pointer, so replay uses them
-without calling Headroom, and the already-sent conversation prefix remains untouched.
+retain existing output. The transcript stores the actual preview and pointer, so replay re-reads
+them rather than compressing anything, and the already-sent conversation prefix remains untouched.
 
-The log adapter is pinned to **headroom-ai 0.37.0** and calls its native `LogCompressor` directly,
-with CCR disabled. This intentionally avoids the Python pipeline's shared learning store, CCR
-retrieval service, model downloads, prompt rewriting and effort routing. Package upgrades must pass
-the real-package smoke test before changing the pin.
-Headroom: https://github.com/headroomlabs-ai/headroom (Apache-2.0).
+**Why logs are not excerpted.** An excerpting compressor for them (the native `LogCompressor`
+of headroom-ai) costs 28 packages in the engine image — litellm, openai, boto3, botocore,
+huggingface-hub, tokenizers, tiktoken, opentelemetry — and a private-module import, on a box
+that has already OOM-killed PID 1. Measured over five days of fleet traffic it saved 30,923
+tokens against 111 M input tokens (0.03%), from ten applications against 576 results that
+changed nothing. The capped head plus the spill pointer is the same outcome for a fraction of
+the weight.
 
-**Why JSON is not compressed by that package.** Its `SmartCrusher` truncates arrays to
+**Why JSON was never compressed by that package.** Its `SmartCrusher` truncates arrays to
 `max_items_after_crush` (15) and emits no CCR marker, and its `lossless_only` flag is inert —
 output is byte-identical with the flag on and off
 ([headroomlabs-ai/headroom#3625](https://github.com/headroomlabs-ai/headroom/issues/3625)). Measured
@@ -90,7 +88,7 @@ It retains the implementation decision order and defers to existing scheduler re
 testing conventions. The upstream MIT notice is preserved in [the license copy](licenses/ponytail-MIT.txt).
 It overlaps with `change-restraint`; bind it deliberately for a coding trial, not globally.
 
-For an evaluation, compare baseline, Ponytail alone, Headroom alone and both on equivalent tasks
-using the same model and budgets. Start with measure mode, then use isolated copies for coding
-and log-analysis trials. Keep a short conversational task as a control. These evaluation steps do
-not change live routine settings; the default described above still applies to missing settings.
+For an evaluation, compare baseline and Ponytail on equivalent tasks using the same model and
+budgets. Start with measure mode, then use isolated copies for coding trials. Keep a short
+conversational task as a control. These evaluation steps do not change live routine settings; the
+default described above still applies to missing settings.

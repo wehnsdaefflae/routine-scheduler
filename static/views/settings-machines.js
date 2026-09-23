@@ -4,7 +4,7 @@
 
 import { api } from "/static/api.js";
 import { confirmDialog } from "/static/components/dialog.js";
-import { el, toast } from "/static/util.js";
+import { el, toast, toastError } from "/static/util.js";
 import { panelSection } from "/static/views/settings-common.js";
 
 export function renderMachines(view) {
@@ -20,14 +20,14 @@ export function renderMachines(view) {
     // Existing machines — status + test/edit/delete.
     if (!d.machines.length)
       machBox.append(el("div", { class: "muted small", "data-mach-empty": "" }, "no machines yet"));
-    else machBox.append(el("div", { class: "tablewrap" }, el("table", { class: "list" }, el("tbody", {},
+    else machBox.append(el("div", { class: "tablewrap" }, el("table", { class: "list stack" }, el("tbody", {},
       d.machines.map((m) => {
         const testOut = el("span", { class: "small mono" });
         const testBtn = el("button", { class: "btn small" }, "test");
         testBtn.onclick = async () => {
           testBtn.disabled = true; testOut.style.color = ""; testOut.textContent = "testing…";
           try {
-            const r = await api(`/api/settings/machines/${m.name}/test`, { method: "POST" });
+            const r = await api(`/api/settings/machines/${encodeURIComponent(m.name)}/test`, { method: "POST" });
             testOut.style.color = r.ok ? "var(--ok)" : "var(--err)";
             testOut.textContent = r.ok ? "✓ reachable" : `✗ ${r.error}`;
             testOut.title = (r.warnings || []).join("; ");
@@ -39,8 +39,8 @@ export function renderMachines(view) {
         const delBtn = el("button", { class: "btn small danger" }, "delete");
         delBtn.onclick = async () => {
           if (!(await confirmDialog(`Delete machine ${m.name}?`, { confirmLabel: "delete" }))) return;
-          try { await api(`/api/settings/machines/${m.name}`, { method: "DELETE" }); reload(); }
-          catch (err) { toast(err.message, 4000, { error: true }); }
+          try { await api(`/api/settings/machines/${encodeURIComponent(m.name)}`, { method: "DELETE" }); reload(); }
+          catch (err) { toastError(err); }
         };
         const flags = [
           m.has_host_key ? null : el("span", { class: "small", style: "color:var(--warn)" }, "no host key"),
@@ -81,6 +81,7 @@ export function renderMachines(view) {
       nameIn.value = m.name; hostIn.value = m.host; userIn.value = m.user; portIn.value = m.port;
       keyVarIn.value = m.key_var || ""; wdIn.value = m.workdir || ""; descIn.value = m.description || "";
       shareIn.value = m.share || ""; tagsIn.value = (m.tags || []).join(", "); hkIn.value = m.host_key || "";
+      form.open = true;                 // "edit" opens the same form, prefilled
       machBox.scrollIntoView({ behavior: "smooth", block: "end" });
     }
     const saveBtn = el("button", { class: "btn primary" }, "save machine");
@@ -98,10 +99,14 @@ export function renderMachines(view) {
         toast(`machine ${name} saved`);
         [nameIn, hostIn, userIn, keyVarIn, wdIn, shareIn, descIn, tagsIn, hkIn].forEach((i) => (i.value = ""));
         portIn.value = "22"; reload();
-      } catch (err) { toast(err.message, 5000, { error: true }); }
+      } catch (err) { toastError(err, 5000); }
     };
-    machBox.append(
-      el("div", { class: "mt small", style: "font-weight:600" }, "Add / edit a machine"),
+    // Behind a "+ add machine" disclosure, the shape the endpoint and model sections already
+    // use. Eight inputs, a host-key textarea, two teaching paragraphs and a scan button stood
+    // open at rest — a screen of form on every visit to Settings for something done once per
+    // box. `edit` opens it prefilled, so nothing is harder to reach than it was.
+    const form = el("details", { class: "panel mt", "data-add": "machine" },
+      el("summary", {}, "+ add machine"),
       el("div", { class: "row mt", style: "flex-wrap:wrap;gap:6px" }, nameIn, hostIn, userIn, portIn),
       el("div", { class: "row mt", style: "flex-wrap:wrap;gap:6px" }, keyVarIn, wdIn, tagsIn),
       // R474: the two keys confused a first-time user — per-field teaching lines, not just
@@ -123,5 +128,6 @@ export function renderMachines(view) {
           "you normally never type here. Your login key does NOT go in this box (see ",
           el("code", {}, "KEY_VAR"), " above).")),
       el("div", { class: "row mt" }, saveBtn));
+    machBox.append(form);
   });
 }

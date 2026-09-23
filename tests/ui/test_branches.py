@@ -55,7 +55,7 @@ def _fork_at(ui_page):
     """Fork via the per-message control on the reply — the only fork path since the header
     ⑂ branch button was removed (D113). The fork point is the reply's own turn (2 here)."""
     reply = ui_page.locator(".msg.assistant", has_text="Option B, on the cost curve")
-    expect(reply).to_be_visible(timeout=10_000)
+    expect(reply).to_be_visible()
     reply.locator(".branch-msg").click()
 
 
@@ -134,7 +134,7 @@ def test_branch_refuses_while_a_reply_is_live(ui, ui_page):
                       {"state": "running", "turn": 2})
     ui_page.reload()
     reply = ui_page.locator(".msg.assistant", has_text="Option B, on the cost curve")
-    expect(reply).to_be_visible(timeout=10_000)
+    expect(reply).to_be_visible()
     reply.locator(".branch-msg").click()
     expect(ui_page.locator("#toast")).to_contain_text("mid-reply")
     assert not (ui.conversations / f"{slug}-b1").exists()
@@ -165,7 +165,7 @@ def test_a_reply_carries_a_branch_from_here_control_that_needs_no_turn_number(ui
     ui_page.reload()
 
     reply = ui_page.locator(".msg.assistant", has_text="Option B, on the cost curve")
-    expect(reply).to_be_visible(timeout=10_000)
+    expect(reply).to_be_visible()
     fork = reply.locator(".branch-msg")
     # the fork point is the reply's own turn — no modal, no typed number
     expect(fork).to_have_attribute("data-branch-turn", "2")
@@ -194,7 +194,7 @@ def test_a_user_message_carries_no_fork_control(ui, ui_page):
     atomic_write_json(run_dir / "status.json", {"state": "finished", "turn": 2})
     ui_page.reload()
 
-    expect(ui_page.locator(".msg.assistant .branch-msg")).to_have_count(1, timeout=10_000)
+    expect(ui_page.locator(".msg.assistant .branch-msg")).to_have_count(1)
     expect(ui_page.locator(".msg.user .branch-msg")).to_have_count(0)
 
 
@@ -223,7 +223,7 @@ def test_a_reply_carries_a_rewind_to_here_control_that_posts_the_reply_turn(ui, 
     ui_page.reload()
 
     reply = ui_page.locator(".msg.assistant", has_text="Option B, on the cost curve")
-    expect(reply).to_be_visible(timeout=10_000)
+    expect(reply).to_be_visible()
     rewind = reply.locator(".rewind-msg")
     expect(rewind).to_have_attribute("data-rewind-turn", "2")   # the reply's own turn — no prompt
     rewind.click()
@@ -250,6 +250,6 @@ def test_agent_reply_can_target_an_earlier_message(ui, ui_page):
     ui_page.reload()
 
     reply = ui_page.locator(".msg.assistant", has_text="Answering your deploy-target question")
-    expect(reply).to_be_visible(timeout=10_000)
+    expect(reply).to_be_visible()
     # the ↩ reference chip shows WHICH earlier message this reply addresses
     expect(reply.locator(".reply-ref")).to_contain_text("your question about the deploy target")

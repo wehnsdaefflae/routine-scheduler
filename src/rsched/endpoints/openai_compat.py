@@ -10,6 +10,14 @@ A provider/model that rejects the requested response_format is retried once with
 whether it says so with an HTTP 400 naming the field, or hides a schema-incapable backend
 behind a generic 503 (some NanoGPT community backends). The schema guard downstream still
 validates every reply.
+
+Prompt caching is mostly implicit on this wire: OpenAI-, DeepSeek- and GLM-style backends
+hit on a byte-stable prefix by themselves, and the hit comes back as
+`prompt_tokens_details.cached_tokens`. Anthropic models served through an aggregator are
+the exception — they cache only where a breakpoint says to — so a conversation turn on one
+carries a top-level `cache_control` (OpenRouter's automatic last-block mode) and its
+`cache_write_tokens` are folded into usage. A ONE-SHOT call (`cacheable=False`) places no
+marker: its prefix is never sent again, so the write would buy a read that never comes.
 """
 
 from __future__ import annotations
@@ -52,6 +60,16 @@ _AFFORD_RE = re.compile(r"can only afford\s+(\d+)", re.IGNORECASE)
 _MIN_AFFORDABLE_TOKENS = 600
 
 _THINK_RE = re.compile(r"<think>.*?</think>\s*", re.DOTALL)
+
+#: Aggregator id prefixes whose upstream caches ONLY on an explicit breakpoint. Everything
+#: else served over this wire (OpenAI, DeepSeek, the GLM/Qwen hosts) caches implicitly on a
+#: byte-stable prefix, which the engine's append-only message list already gives them — so
+#: the marker is sent to the models that need it and to no others.
+_EXPLICIT_CACHE_PREFIXES = ("anthropic/",)
+
+
+def _needs_explicit_cache(model: str) -> bool:
+    return model.lstrip("~").startswith(_EXPLICIT_CACHE_PREFIXES)
 
 
 def _strip_think(text: str) -> str:
@@ -146,13 +164,11 @@ class OpenAICompatEndpoint:
     def complete(self, messages: list[Message], *, model: str, schema: dict | None = None,
                  effort: str | None = None, max_tokens: int | None = None,
                  timeout: int = DEFAULT_TIMEOUT,
-                 session: str | None = None,  # noqa: ARG002 — protocol caching hint (below)
-                 cacheable: bool = True,  # noqa: ARG002 — no explicit breakpoints to place:
-                 # these providers cache implicitly, so there is nothing here to switch off
+                 cacheable: bool = True,
                  temperature: float | None = None) -> Completion:
-        # `session` is unused here: OpenAI-style providers cache implicitly on byte-stable
-        # prefixes, which the engine's append-only message list already gives them; the
-        # cached share shows up as usage "cached_in" (see _parse).
+        # Nothing identifies the conversation: OpenAI-style providers cache implicitly on
+        # byte-stable prefixes, which the engine's append-only message list already gives
+        # them; the cached share shows up as usage "cached_in" (see _parse).
         temp = temperature if temperature is not None else self.temperature  # model wins
         if self.native and schema is not None:
             return self._complete_native(messages, model, schema, max_tokens, timeout, temp)
@@ -162,6 +178,22 @@ class OpenAICompatEndpoint:
         if "openrouter" in self.base_url:
             # usage accounting: the response's usage block then carries the real $ cost
             body.setdefault("usage", {"include": True})
+            if cacheable and _needs_explicit_cache(model):
+                # Anthropic models cache ONLY where a cache_control breakpoint says to —
+                # implicit prefix caching is an OpenAI/DeepSeek behaviour, and routing the
+                # same model through an aggregator does not add it. Without this the
+                # metered Opus fallback re-sent its whole prefix at full price every turn:
+                # birthday-admin 20260914-100002 turns 53-63, `in` ~100-117k each,
+                # `cached_in` 0, $6.63 for twelve turns. OpenRouter's top-level field marks
+                # the last cacheable block automatically, which is the same moving tail
+                # breakpoint the direct adapter places. A provider that rejects the field
+                # 400s naming it and gets one degraded retry without it (below).
+                #
+                # A request for caching, not a guarantee: this endpoint pins
+                # `provider.order` with `allow_fallbacks: true`, and the measured run above
+                # was served by a provider that was not first on that list. Read
+                # `cache_read_share` on a metered run to know whether it took.
+                body["cache_control"] = {"type": "ephemeral"}
         if temp is not None:
             body["temperature"] = temp
         if max_tokens:
@@ -186,6 +218,8 @@ class OpenAICompatEndpoint:
                     degraded.pop("response_format")
                 if "reasoning" in degraded and "reasoning" in low:
                     degraded.pop("reasoning")
+                if "cache_control" in degraded and "cache_control" in low:
+                    degraded.pop("cache_control")
                 if degraded.keys() != body.keys():
                     resp = self._post(degraded, headers, timeout)
             elif resp.status_code == 402 and (afford := _AFFORD_RE.search(resp.text)):
@@ -221,8 +255,13 @@ class OpenAICompatEndpoint:
         """Ollama native /api/chat with `format` = the JSON schema → constrained decoding."""
         # num_ctx MUST be set: Ollama's default context is tiny, so a large prompt gets
         # silently truncated and schema enforcement degrades (the model emits stray keys).
-        # It uses the endpoint's context_tokens default — the per-model window drives the
-        # engine's compaction budget, not this local decode ceiling.
+        #
+        # It is sized from the ENDPOINT's context_tokens, which is the only window this
+        # adapter is given — `complete` receives the model's max_tokens but never its
+        # resolved window. So an endpoint left at the 25,000 default in front of a 128k
+        # model decodes at 25,000 however much compaction budgeted, and the prompt is
+        # truncated silently. Set `context_tokens` on an Ollama ENDPOINT to its largest
+        # served model until the resolved window is threaded through the protocol.
         options = {"num_ctx": max(8192, self.context_tokens)}
         if temperature is not None:
             options["temperature"] = temperature
@@ -286,11 +325,22 @@ class OpenAICompatEndpoint:
         # (token budgets keep their meaning; cache hit rates stay visible per run).
         details = usage.get("prompt_tokens_details") or {}
         cached = int(details.get("cached_tokens") or 0)
+        # Writes are reported only by providers that cache EXPLICITLY (the Anthropic models
+        # above). They come out of "in" exactly as reads already do — on THIS wire
+        # `prompt_tokens` is the total and the details are its breakdown, so folding the key
+        # without subtracting would double-count every written token into the run's token
+        # budget, the opposite of the convention. Without the key at all,
+        # `cache_read_share` returns None for the whole endpoint and `cache_read_degraded`
+        # — the one signal separating a warm prefix from one re-written every turn — can
+        # never fire on an aggregator path.
+        written = int(details.get("cache_write_tokens") or 0)
         out: dict[str, int | float] = {
-            "in": max(int(usage.get("prompt_tokens") or 0) - cached, 0),
+            "in": max(int(usage.get("prompt_tokens") or 0) - cached - written, 0),
             "out": int(usage.get("completion_tokens") or 0)}
         if cached:
             out["cached_in"] = cached
+        if written:
+            out["cache_write"] = written
         if usage.get("cost") is not None:   # OpenRouter usage accounting → $ (credits)
             out["cost"] = float(usage.get("cost") or 0)
         stop = str(data["choices"][0].get("finish_reason") or "")

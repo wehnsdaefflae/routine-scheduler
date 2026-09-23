@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from .. import reports
 from ..paths import read_json, resolve_rel
-from . import inbox, mediaops
+from . import enginenote, inbox, mediaops
 from .composer import build_system_prompt, kickoff_message, state_digest
 from .control import inject_user_message, run_user_command
 from .history import orphaned_children, prior_counters, prior_usage, replay_messages, seen_paths
@@ -115,10 +115,10 @@ def boot(loop) -> None:
                 "turns": 0, "usage": {}})
         if orphans:
             names = ", ".join(f"#{o['n']} {o['label']!r} ({o['mode']})" for o in orphans)
-            loop.messages.append({"role": "user", "content":
-                f"ENGINE NOTE: these child tasks were RUNNING when the run was interrupted "
+            enginenote.append(loop,
+                f"these child tasks were RUNNING when the run was interrupted "
                 f"and did NOT survive the restart (results lost): {names}. Re-issue any you "
-                "still need."})
+                "still need.", replay=False)
         fin = next((e for e in reversed(events) if e.get("type") == "finish"), None)
         fin_payload = (fin.get("payload") or {}) if fin else {}
         # an authored finish means the model handed the speaker turn back to the user — a
@@ -128,24 +128,22 @@ def boot(loop) -> None:
             # the model itself concluded this run (web converse on a finished run):
             # a follow-up conversation, not crash recovery
             status = fin_payload.get("status", "?")
-            ctx.transcript.event("user_injection", {
-                "text": "the user continued the conversation after the run ended",
-                "source": "engine"})
-            loop.messages.append({"role": "user", "content":
-                f"ENGINE NOTE: this run already ENDED (status {status}) — the conversation "
+            # replay=False on both: `boot` re-authors the note on EVERY leg, so replaying it
+            # would stack one copy per leg — a 40-reply conversation carried 40 of them.
+            enginenote.append(loop,
+                f"this run already ENDED (status {status}) — the conversation "
                 "continues in place; the user's message follows. This is a follow-up, "
                 "NOT a new run: do not restart the workflow and do not redo work that is "
                 "already done. Respond to the user's message — do new work only if it asks "
                 "for some — then finish again with an updated summary (the previous result "
                 "plus what this follow-up changed). Anything left open waits for the user's "
-                "next reply in this same conversation — never hand it to a 'next run'."})
+                "next reply in this same conversation — never hand it to a 'next run'.",
+                replay=False)
         else:
-            ctx.transcript.event("user_injection", {"text": "run resumed after interruption",
-                                                    "source": "engine"})
-            loop.messages.append({"role": "user", "content":
-                "ENGINE NOTE: this run was interrupted (budget/error) and is now RESUMED. The "
+            enginenote.append(loop,
+                "this run was interrupted (budget/error) and is now RESUMED. The "
                 "conversation above is the run so far — continue from the last observation; "
-                "do NOT restart from step 1. Re-orient briefly, then proceed."})
+                "do NOT restart from step 1. Re-orient briefly, then proceed.", replay=False)
         if loop.util_reminder:   # one-shot, on the resume note (the kickoff's counterpart)
             loop.messages[-1] = {"role": "user",
                                  "content": loop.messages[-1]["content"] + loop.util_reminder}
@@ -199,14 +197,14 @@ def _setup_gap_note(loop) -> None:
     if not lines:
         return
     body = "\n".join(f"- {ln}" for ln in lines)
-    note = ("ENGINE NOTE: this routine's setup has gaps its own config cannot close. Plan "
+    note = ("this routine's setup has gaps its own config cannot close. Plan "
             "around them — do not spend turns discovering them.\n" + body
             + "\nFAIL means the call will be rejected or fail outright; WARN means it will "
               "stop to ask you. Report anything that blocks the task in your finish summary "
               "so the user can grant it.")
-    ctx.transcript.event("user_injection", {"text": "[engine] setup gaps at boot",
-                                            "source": "engine"})
-    loop.messages.append({"role": "user", "content": note})
+    # replay=False: _setup_gap_note runs on every leg (the library may have moved), so the
+    # live note is always the current one and a replayed copy would only be a stale duplicate.
+    enginenote.append(loop, note, replay=False)
 
 
 def _ingest(loop, msgs: list[dict], *, resuming: bool) -> None:

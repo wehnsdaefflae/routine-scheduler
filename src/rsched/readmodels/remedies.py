@@ -25,7 +25,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 
-from .surface import BLOCKS, INTERRUPTS, NOTE, OK
+from .surface_nodes import BLOCKS, INTERRUPTS, NOTE, OK
 
 #: Every `fix` kind and how it READS with no screen to click. This is the whole vocabulary in
 #: one place: a kind absent from here renders no remedy, so adding a node type and adding its

@@ -33,6 +33,18 @@ export async function panelSection(view, url, skel, render) {
   await reload();
 }
 
+// The one caution the temperature boxes need, spelled once for the two that carry it (the
+// per-model field and the endpoint-wide default). The field is NOT hidden by endpoint kind: a
+// kind is a wire and says nothing about the model behind it, and the box still works on much of
+// what an `anthropic`-kind endpoint serves. On a current Claude model the provider answers 400
+// and the adapter drops the value on a degraded retry — so a filled box there silently doubles
+// the requests, once per turn, and nothing in the console said so.
+export function temperatureHint() {
+  return el("span", { class: "hint" },
+    "rejected by current Claude models — they are steered with effort, and a value here costs "
+    + "a retry per turn");
+}
+
 export function remoteTester(input) {
   const result = el("span", { class: "small mono" });
   const btn = el("button", { class: "btn small" }, "test");

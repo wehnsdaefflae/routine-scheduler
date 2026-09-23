@@ -1,6 +1,3 @@
-# /// script
-# dependencies = ["pyyaml"]
-# ///
 """instance-export — mirror this instance's routines + sanitized config into the library repo tree.
 
 usage: gu instance-export DEST [--routines-home PATH] [--config PATH] [--json]
@@ -18,31 +15,82 @@ already holds workflows/, traits/, permissions/, playbooks/, utils/): (a) every 
 LEDGER.md all stay); (b) the server config (default ~/.config/routine-scheduler/config.yaml)
 into DEST/config/config.yaml with every `token` and `api_key` value replaced by REDACTED —
 parsed as YAML, never regexed. Idempotent and rsync-like: files gone from the source are deleted
-from DEST. Run it right before git-sync on DEST. --selftest builds a fake instance in a temp dir
-and asserts exclusions, redaction, and deletion of vanished files — fully offline."""
+from DEST. An unreadable file or directory (permission-denied mounts etc.) is SKIPPED and
+recorded in `errors` rather than aborting the whole export. Two guards keep the mirror
+pushable and private: a routine that is a git repo is enumerated through ITS OWN git view
+(`git ls-files --cached --others --exclude-standard`), so whatever the routine's .gitignore
+keeps out of its repo — a .secrets/ folder, mnt/, .venv — never reaches the mirror either;
+and any file at or over MAX_FILE_BYTES (10 MiB) is never copied and is pruned from DEST if a
+previous run copied it, listed in `oversize` (GitHub refuses a 100 MB blob outright and a
+223 MB state inventory once blocked every push for days; the routine's own repo is the
+place for such a file, not the off-box mirror). Run it right before git-sync on DEST.
+--selftest builds a fake instance in a temp dir (including a permission-denied subdirectory,
+a git-ignored secret and an oversize file) and asserts exclusions, redaction, deletion of
+vanished files, and that a permission error is recorded without crashing — fully offline."""
 
 import argparse
 import json
+import os
 import shutil
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
 
 import yaml
 
-EXCLUDE = {"runs", ".git", "inbox", "questions", "status.json"}   # transient run state
+EXCLUDE = {"runs", ".git", "inbox", "questions", "status.json",
+           ".venv", ".util_outputs", "mnt"}   # transient run state / generated caches / external mount points
 REDACT_KEYS = {"token", "api_key"}
+MAX_FILE_BYTES = 10 * 1024 * 1024   # a mirror carries files people read; nothing they read is 10 MiB
 
 
-def _wanted_files(routine_dir: Path) -> list[Path]:
-    """Every file under routine_dir except the transient-state names, at any depth."""
-    out = []
-    for p in sorted(routine_dir.rglob("*")):
-        if any(part in EXCLUDE for part in p.relative_to(routine_dir).parts):
-            continue
-        if p.is_file():
+def _git_listed(routine_dir: Path) -> list[Path] | None:
+    """The files the routine's OWN repo tracks or would track (tracked + untracked-not-ignored),
+    or None when the routine is not a git repo or git cannot answer. This is the routine's own
+    statement of what belongs to it: its .gitignore already keeps runs/, mnt/, .venv/ and any
+    .secrets/ out, and the mirror must not know better than the routine does."""
+    if not (routine_dir / ".git").is_dir():
+        return None
+    try:
+        r = subprocess.run(["git", "-C", str(routine_dir), "ls-files", "-z", "--cached",
+                            "--others", "--exclude-standard"],
+                           capture_output=True, text=True, timeout=60, check=False)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if r.returncode != 0:
+        return None
+    return [routine_dir / rel for rel in r.stdout.split("\0") if rel]
+
+
+def _wanted_files(routine_dir: Path) -> tuple[list[Path], list[str]]:
+    """Every file under routine_dir except the transient-state names, at any depth — taken
+    from the routine's own git view when it has one (see _git_listed), from a plain walk
+    otherwise. Returns (files, errors): a directory os.walk cannot list (permission denied, a
+    broken mount, ...) is skipped and its error recorded here instead of raising and aborting
+    the whole export — the fault of one routine's stray mount must never sink every routine's
+    sync."""
+    out: list[Path] = []
+    errors: list[str] = []
+    listed = _git_listed(routine_dir)
+    if listed is not None:
+        for p in listed:
+            rel_parts = p.relative_to(routine_dir).parts
+            if any(part in EXCLUDE for part in rel_parts):
+                continue
             out.append(p)
-    return out
+        return sorted(out), errors
+
+    def onerror(exc: OSError) -> None:
+        errors.append(str(exc))
+
+    for dirpath, dirnames, filenames in os.walk(routine_dir, onerror=onerror):
+        dirnames[:] = [d for d in dirnames if d not in EXCLUDE]
+        for fname in filenames:
+            if fname in EXCLUDE:
+                continue
+            out.append(Path(dirpath) / fname)
+    return sorted(out), errors
 
 
 def export_routines(routines_home: Path, dest_routines: Path) -> dict:
@@ -50,6 +98,8 @@ def export_routines(routines_home: Path, dest_routines: Path) -> dict:
     exported, skipped = [], []
     desired: set[Path] = set()                        # rel-to-dest_routines paths that should exist
     slugs: set[str] = set()
+    all_errors: list[str] = []
+    oversize: list[dict] = []
     if routines_home.is_dir():
         for rdir in sorted(p for p in routines_home.iterdir() if p.is_dir()):
             if rdir.name.startswith("."):
@@ -57,11 +107,29 @@ def export_routines(routines_home: Path, dest_routines: Path) -> dict:
                 continue
             slugs.add(rdir.name)
             copied = unchanged = 0
-            for src in _wanted_files(rdir):
+            files, walk_errors = _wanted_files(rdir)
+            all_errors.extend(walk_errors)
+            for src in files:
                 rel = Path(rdir.name) / src.relative_to(rdir)
+                try:
+                    if not src.is_file() or src.is_symlink():
+                        continue
+                    size = src.stat().st_size
+                except OSError as exc:
+                    all_errors.append(f"{src}: {exc}")
+                    desired.add(rel)                   # keep on a transient fault — never prune blind
+                    continue
+                if size >= MAX_FILE_BYTES:
+                    # never mirrored, and NOT in `desired`, so a copy a previous run made is pruned
+                    oversize.append({"path": str(rel), "bytes": size})
+                    continue
                 desired.add(rel)
                 dst = dest_routines / rel
-                data = src.read_bytes()
+                try:
+                    data = src.read_bytes()
+                except OSError as exc:
+                    all_errors.append(f"{src}: {exc}")
+                    continue
                 if dst.is_file() and dst.read_bytes() == data:
                     unchanged += 1
                     continue
@@ -78,7 +146,8 @@ def export_routines(routines_home: Path, dest_routines: Path) -> dict:
                 removed += 1
             elif p.is_dir() and not any(p.iterdir()):
                 p.rmdir()
-    return {"exported": exported, "skipped": skipped, "removed": removed, "slugs": sorted(slugs)}
+    return {"exported": exported, "skipped": skipped, "removed": removed,
+            "slugs": sorted(slugs), "errors": all_errors, "oversize": oversize}
 
 
 def redact(obj):
@@ -131,32 +200,65 @@ def selftest() -> int:
             p = home / "demo" / rel
             p.parent.mkdir(parents=True, exist_ok=True)
             p.write_text(f"content of {rel}\n")
+        # a second routine that IS a git repo: its own .gitignore decides what the mirror
+        # sees (a .secrets/ folder stays home), and an oversize state file is never mirrored
+        repo = home / "gitty"
+        (repo / "state").mkdir(parents=True)
+        (repo / ".secrets").mkdir()
+        (repo / "routine.yaml").write_text("slug: gitty\n")
+        (repo / "state" / "ok.json").write_text("{}\n")
+        (repo / "state" / "huge.jsonl").write_bytes(b"x" * (MAX_FILE_BYTES + 1))
+        (repo / ".secrets" / "key.pem").write_text("PRIVATE\n")
+        (repo / ".gitignore").write_text(".secrets/\n")
+        for args in (["init", "-q"], ["add", "-A"],
+                     ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "seed"]):
+            subprocess.run(["git", "-C", str(repo), *args], check=True, capture_output=True)
+        (repo / "state" / "untracked.json").write_text("{}\n")   # not yet committed: still exported
         (home / ".control").mkdir(parents=True)
         (home / ".control" / "restart.request").write_text("{}")
-        cfg = Path(tmp) / "config.yaml"
-        cfg.write_text("bind: 127.0.0.1\ntoken: \"super-secret\"\n"
-                       "endpoints:\n  or:\n    kind: openai\n    api_key: sk-live-123\n"
-                       "  local:\n    kind: openai\n    api_key: \"\"\n")
-        dest = Path(tmp) / "library"
-        dest.mkdir()
-        result = run(str(dest), str(home), str(cfg))
-        for rel in keep:                                              # persistent files exported
-            assert (dest / "routines" / "demo" / rel).is_file(), rel
-        for rel in drop:                                              # transient state excluded
-            assert not (dest / "routines" / "demo" / rel).exists(), rel
-        assert not (dest / "routines" / ".control").exists()          # dot-dirs are not routines
-        assert result["routines"]["skipped"] == [".control"], result["routines"]
-        out_cfg = yaml.safe_load((dest / "config" / "config.yaml").read_text())
-        assert out_cfg["token"] == "REDACTED"
-        assert out_cfg["endpoints"]["or"]["api_key"] == "REDACTED"
-        assert out_cfg["endpoints"]["local"]["api_key"] == ""         # empty stays empty
-        assert out_cfg["bind"] == "127.0.0.1" and result["config"]["redacted_values"] == 2
-        # idempotence + rsync-like pruning: delete at the source → gone from the mirror
-        (home / "demo" / "stages" / "one.md").unlink()
-        second = run(str(dest), str(home), str(cfg))
-        assert not (dest / "routines" / "demo" / "stages").exists()
-        demo = second["routines"]["exported"][0]
-        assert demo["copied"] == 0 and second["routines"]["removed"] == 1, second["routines"]
+        # a permission-denied subdirectory (a stray mount, an unreadable cache) must not abort the export
+        restricted = home / "demo" / "restricted"
+        restricted.mkdir()
+        (restricted / "secret.txt").write_text("nope\n")
+        restricted.chmod(0o000)
+        try:
+            cfg = Path(tmp) / "config.yaml"
+            cfg.write_text("bind: 127.0.0.1\ntoken: \"super-secret\"\n"
+                           "endpoints:\n  or:\n    kind: openai\n    api_key: sk-live-123\n"
+                           "  local:\n    kind: openai\n    api_key: \"\"\n")
+            dest = Path(tmp) / "library"
+            dest.mkdir()
+            result = run(str(dest), str(home), str(cfg))
+            for rel in keep:                                              # persistent files exported
+                assert (dest / "routines" / "demo" / rel).is_file(), rel
+            for rel in drop:                                              # transient state excluded
+                assert not (dest / "routines" / "demo" / rel).exists(), rel
+            assert not (dest / "routines" / ".control").exists()          # dot-dirs are not routines
+            assert result["routines"]["skipped"] == [".control"], result["routines"]
+            assert result["routines"]["errors"], "expected the permission-denied dir to be recorded"
+            gd = dest / "routines" / "gitty"
+            assert (gd / "state" / "ok.json").is_file() and (gd / "state" / "untracked.json").is_file()
+            assert not (gd / ".secrets").exists(), "a git-ignored folder must never reach the mirror"
+            assert not (gd / "state" / "huge.jsonl").exists(), "an oversize file must never be mirrored"
+            assert result["routines"]["oversize"] == [
+                {"path": "gitty/state/huge.jsonl", "bytes": MAX_FILE_BYTES + 1}], result["routines"]
+            # a copy a PREVIOUS run made of a now-oversize file is pruned, not kept
+            (gd / "state" / "stale-big.jsonl").write_bytes(b"old copy")
+            (repo / "state" / "stale-big.jsonl").write_bytes(b"y" * (MAX_FILE_BYTES + 1))
+            out_cfg = yaml.safe_load((dest / "config" / "config.yaml").read_text())
+            assert out_cfg["token"] == "REDACTED"
+            assert out_cfg["endpoints"]["or"]["api_key"] == "REDACTED"
+            assert out_cfg["endpoints"]["local"]["api_key"] == ""         # empty stays empty
+            assert out_cfg["bind"] == "127.0.0.1" and result["config"]["redacted_values"] == 2
+            # idempotence + rsync-like pruning: delete at the source → gone from the mirror
+            (home / "demo" / "stages" / "one.md").unlink()
+            second = run(str(dest), str(home), str(cfg))
+            assert not (dest / "routines" / "demo" / "stages").exists()
+            assert not (gd / "state" / "stale-big.jsonl").exists()
+            demo = second["routines"]["exported"][0]
+            assert demo["copied"] == 0 and second["routines"]["removed"] == 2, second["routines"]
+        finally:
+            restricted.chmod(0o700)                    # restore so TemporaryDirectory cleanup can proceed
     print("selftest: ok", file=sys.stderr)
     return 0
 
@@ -185,7 +287,10 @@ def main() -> int:
     else:
         r, c = result["routines"], result["config"]
         cfg_note = "config sanitized" if c.get("exported") else f"config skipped ({c.get('reason')})"
-        print(f"exported {len(r['exported'])} routines ({r['removed']} stale files pruned); {cfg_note}")
+        err_note = f"; {len(r['errors'])} errors" if r.get("errors") else ""
+        big_note = (f"; {len(r['oversize'])} oversize file(s) NOT mirrored: "
+                    + ", ".join(o["path"] for o in r["oversize"])) if r.get("oversize") else ""
+        print(f"exported {len(r['exported'])} routines ({r['removed']} stale files pruned); {cfg_note}{err_note}{big_note}")
     return 0
 
 

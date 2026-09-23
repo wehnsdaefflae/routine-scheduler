@@ -65,3 +65,15 @@ def test_a_picked_fallback_can_be_removed_again(ui, ui_page):
     card.get_by_role("button", name="save changes", exact=True).click()
     expect(ui_page.locator("#toast")).to_contain_text("primary: updated")
     assert load_server_config(ui.server_cfg.source)[0].models["primary"].fallbacks == []
+
+
+def test_the_temperature_field_says_what_it_costs_on_a_claude_model(ui, ui_page):
+    """A current Claude model answers 400 to a sampling parameter and the adapter drops it on a
+    degraded retry, so a filled box silently doubles the requests — once per turn. The field is
+    NOT hidden by endpoint kind: a kind is a wire and says nothing about the model behind it."""
+    _catalog(ui, ui_page)
+    ui_page.goto(f"{ui.url}/#/settings?section=endpoints")
+    card = _card(ui_page, "primary")
+    hint = card.locator("label.field", has_text="temperature").locator(".hint")
+    expect(hint).to_be_visible()
+    expect(hint).to_contain_text("steered with effort")

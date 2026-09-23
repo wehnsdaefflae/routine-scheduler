@@ -24,9 +24,10 @@ because each names a different scheduling intent a run genuinely chooses between
 is the contract underneath. This unification is F338, and it exists because three names had
 invited three mental models: the prompt copy drifted between them until it claimed something
 false — that children share the parent's working directory (R409/R410) — which cost a run a
-recovery detour. `engine/child.py` owns the mode vocabulary the prompt renders (`mode_noun`) and
-the hand-back path (`handback_dirname`), so the kind copy, the observations and these docs cannot
-drift apart again.
+recovery detour. `engine/child.py` owns the mode vocabulary the prompt renders (`mode_noun`)
+and the WHOLE hand-back — the landing directory (`handback_dirname`), the copy
+(`collect_handback`) and the wording (`handback_text`) — so the kind copy, the observations and
+these docs cannot drift apart again.
 
 **The contract, obeyed by every mode:**
 
@@ -94,6 +95,32 @@ names the landed paths, so nothing greps the runs tree. A child that writes noth
 only its summary: the hand-back is opt-in by writing, needing no new action field, so a run with
 no children pays nothing for it.
 
+**Three landing places, one implementation.** `from-sub-<n>` is the in-engine modes';
+`from-branch-<slug>` is a branch's (`branches.hand_back`) and `from-bg-<taskid>` a detached
+task's delivery (`daemon/detached_delivery`). A detached task is not a MODE — its budget never
+folds back (§ Process model) — so the three nouns are their own table in `engine/child.py`
+rather than keys of the mode vocabulary; what they share is the copy, the namespacing and the
+wording. Every one of them tells the parent the landed PATHS: the branch and the background
+delivery used to report a count, so a parent that was handed three files had to list a
+directory to find out what they were.
+
+**Asking the user.** A child never blocks a run on a person (`interact.handle_ask` forces
+`mode: deferred` at depth > 0 — a child has no speaking turn with the user), so its question
+becomes a durable DECISION RECORD like any other. That record is filed into the ROUTINE's own
+`questions/pending/`, never the child's dir: `runs/<ts>/sub/<n>/questions/pending/` is a path no
+surface scans, and four live records sat there unseen while the child was being told "the user
+will see it in the UI". Two consequences of filing it where a person reads it:
+
+- the question text is prefixed `[child task #<n> '<label>']`, because the Decisions page shows
+  the ROUTINE and a child has no page of its own — without the prefix the reader cannot tell
+  which piece of work is blocked;
+- the id is allocated against the ROOT pending dir. A child shares its parent's `run_ts` and the
+  id is `q-<run_ts>-<turn>`, so allocating against the child's own (empty) dir handed a parent
+  and a child asking on the same turn the same id, and `file_question` is an unconditional write.
+
+The answer reaches the routine's next run, like every deferred answer; the child itself continues
+on its `default` and says so in its summary.
+
 Collection happens in `subruns._collect`, the child's single finalization point — **not** in
 either reporter. Two paths report an exit (`wait`, which consumes finished children directly, and
 the turn-boundary announcement), so collecting in a reporter meant a child that finished during a
@@ -128,7 +155,9 @@ when the token budget is nearly spent.
 
 Every budget in the system — the whole run, a conversation reply window, a subtask, a subrun —
 is the same primitive: a **stop condition** (a limit, and whether tripping it is hard) over a
-**resource** (turns, tokens, wall-clock, cost), with an 85% warning. A subtask gets its own
+**resource** (turns, tokens, wall-clock, cost), with a warning at 85% and again at 95% — each
+said ONCE, because a warning repeated on every turn above the line reads as a countdown and
+makes a run wrap up at the ceiling whatever its stopping conditions say. A subtask gets its own
 ledger, sliced from the parent's remainder (or pinned by `turns`). Enforcement is **soft at the
 parent**: a subtask that overruns its own turn cap force-finishes `partial` (like a subrun), its
 85% warning fires inside the child so its model wraps up first, and the parent gets the partial

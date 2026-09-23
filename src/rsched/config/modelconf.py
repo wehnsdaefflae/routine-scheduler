@@ -71,13 +71,17 @@ class ModelConfig(_Config):
     # None = discover the provider window, then inherit the endpoint default.
     context_tokens: int | None = None
     effort: str | None = None          # reasoning-effort hint (low|medium|high|xhigh|max)
-    temperature: float | None = None   # None = inherit the endpoint's temperature default
+    # None = inherit the endpoint's temperature default. On a current Claude model it is
+    # REJECTED and dropped on a degraded retry, so setting one there costs a wasted round
+    # trip per turn rather than failing — leave it blank and steer with `effort`.
+    temperature: float | None = None
     # Requested OUTPUT token cap per completion, reserved separately from input. None uses
     # discovered output limits capped for this harness, then the endpoint/default fallback.
     max_tokens: int | None = None
     # Ordered failover chain: catalog model NAMES tried in order when this model fails hard
-    # (transport retries exhausted / non-retryable error). NOT transitive — only this list is
-    # tried, each entry with its own endpoint and attributes. See endpoints/failover.py.
+    # (transport retries exhausted / non-retryable error). TRANSITIVE and breadth-first —
+    # this list first, then each entry's own fallbacks, each with its own endpoint and
+    # attributes. See endpoints/failover.py.
     fallbacks: list[str] = Field(default_factory=list)
 
 

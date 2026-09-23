@@ -120,6 +120,22 @@ def test_clamp_forces_short_conversation_floor_under_ceiling():
         assert any("window clamp" in m["content"] for m in messages)
 
 
+def test_clamp_never_touches_the_composed_system_prompt():
+    """Message 0 is the composed system prompt — the recipe's contract, CAPABILITIES, the
+    state digest — and it is the largest body in every real run (~90 KB against the 8 KB
+    observation cap). Ordering by size therefore cut it first and cut it EVERY pass
+    (token-lab:20260910-073700: 35 clamps, the first 90,982 -> 30,097 chars), which both
+    truncated the contract and rewrote the cached prefix from byte zero each turn.
+    """
+    messages = [{"role": "system", "content": "S" * 90_000}]
+    messages += [{"role": "user", "content": "x" * 9000} for _ in range(29)]
+    info = clamp_to_cap(messages, 65536, 16384)
+    assert info and info["clamped_messages"] > 0
+    assert messages[0]["content"] == "S" * 90_000
+    assert "window clamp" not in messages[0]["content"]
+    assert any("window clamp" in m["content"] for m in messages[1:])
+
+
 def test_clamp_noop_when_already_under_ceiling():
     messages = [{"role": "user", "content": "x" * 500} for _ in range(30)]
     assert clamp_to_cap(messages, 65536, 16384) is None
@@ -142,7 +158,8 @@ def test_schema_tokens_are_reserved_separately():
     ref = SimpleNamespace(max_tokens=16384)
     reserve = _reserved_tokens(loop, ref)
     assert reserve > ref.max_tokens
-    messages = [{"role": "user", "content": "observation " * 30000}]
+    messages = [{"role": "system", "content": "prompt"},
+                {"role": "user", "content": "observation " * 30000}]
     clamp_to_cap(messages, 65536, reserve)
     schema_estimate = estimate_input_tokens([{"content": json.dumps(schema, ensure_ascii=False)}])
     assert estimate_input_tokens(messages) + schema_estimate + ref.max_tokens <= 65536

@@ -1,6 +1,7 @@
 """Web API: auth, routine CRUD + 409 guard, runs/transcripts, questions, settings."""
 
 import json
+from types import SimpleNamespace
 
 import pytest
 import yaml
@@ -87,6 +88,40 @@ def test_routine_token_tier_reads_but_never_mutates_config(tmp_path, make_routin
                        headers=pt).status_code == 200
 
 
+def test_the_routine_token_reads_no_wider_than_the_sandbox(tmp_path, make_routine):
+    """"Read-only" is not the same as "may read anything". A util subprocess runs inside a
+    Landlock jail scoped to its routine's granted roots — and is handed RSCHED_API_TOKEN, so
+    three GET subtrees were one curl away from exactly what that jail forbids: any directory
+    listing on the host (api_fs's own docstring calls names-only "still reconnaissance"),
+    every secret NAME with the utils declaring it, and the daemon's stacks.
+
+    Nothing logged it as a boundary crossing, because it is an authorized GET. The reads a
+    run genuinely uses (the 2026-08-05 rsched-api survey: items, questions, routine cards,
+    the runs index, status, stats) stay open, and the refusal names `read_file` — the way a
+    run reaches a file it may actually read.
+    """
+    make_routine(slug="apir")
+    server = make_test_server(tmp_path, routine_token="routine-tok")
+    app = create_app(server, with_scheduler=False)
+    with TestClient(app) as c:
+        rt = {"Authorization": "Bearer routine-tok"}
+        pt = {"Authorization": f"Bearer {TOKEN}"}
+        for path in ("/api/fs/list?path=/", "/api/settings/secrets", "/api/debug/threads"):
+            r = c.get(path, headers=rt)
+            assert r.status_code == 403, (path, r.status_code)
+            assert "read_file" in r.json()["detail"]
+            assert 'error="insufficient_scope"' in r.headers["www-authenticate"]
+            assert c.get(path, headers=pt).status_code == 200, path
+        # the reads runs actually make are untouched
+        for path in ("/api/routines", "/api/routines/apir", "/api/items", "/api/status"):
+            assert c.get(path, headers=rt).status_code == 200, path
+        # subtree, never a bare prefix: a sibling route sharing the string is not swallowed
+        assert _routine_token_allowed(
+            SimpleNamespace(method="GET", url=SimpleNamespace(path="/api/fs-something")))
+        assert not _routine_token_allowed(
+            SimpleNamespace(method="GET", url=SimpleNamespace(path="/api/fs/list")))
+
+
 def test_bootstrap_generates_and_backfills_the_routine_token(tmp_path, monkeypatch):
     """A fresh config carries both tokens; an existing config that predates the tier gains
     a routine_token at the next boot (idempotent — a second call changes nothing)."""
@@ -113,20 +148,31 @@ def test_bootstrap_generates_and_backfills_the_routine_token(tmp_path, monkeypat
     assert (tmp_path / "cfg" / "config.yaml").read_text() == before
 
 
-def test_engine_injects_the_routine_token_for_the_reserved_name():
+def test_engine_injects_the_routine_token_for_the_reserved_name(monkeypatch):
     """The util-side override: RSCHED_API_TOKEN resolves to the server's routine_token
     (beating any secrets-store value in the _child_env merge), so utils talk to the API
-    on the read-only tier."""
+    on the read-only tier.
+
+    UNCONDITIONALLY, which is the seal itself: the override used to be skipped when
+    `routine_token` was empty, and `scoped_env` then injected the central store's row for
+    the name — which on the live instance was the PRIMARY console token. An empty tier now
+    reaches the util as an empty string and fails visibly against a 401.
+    """
     from types import SimpleNamespace
 
     from rsched.engine.exec_env import _extra_secrets
+    from rsched.utils_run import scoped_env
 
     ctx = SimpleNamespace(server=SimpleNamespace(routine_token="routine-tok", machines={}),
                           routine=SimpleNamespace(slug="apir", connections={}, machines=[]),
                           granted_now=set(), grant_args={})
     assert _extra_secrets(ctx)["RSCHED_API_TOKEN"] == "routine-tok"
-    ctx.server.routine_token = ""              # tier off → nothing injected for the name
-    assert "RSCHED_API_TOKEN" not in _extra_secrets(ctx)
+    ctx.server.routine_token = ""              # tier off → the name still cannot come from the store
+    assert _extra_secrets(ctx)["RSCHED_API_TOKEN"] == ""
+    monkeypatch.setattr("rsched.secrets.load_secrets",
+                        lambda: {"RSCHED_API_TOKEN": "the-primary-console-token"})
+    env = scoped_env({"RSCHED_API_TOKEN"}, _extra_secrets(ctx))
+    assert env["RSCHED_API_TOKEN"] == ""
 
 
 def test_sse_ticket_flow(client):
@@ -2161,6 +2207,214 @@ def test_patch_routine_applies_permissions_through_the_canonical_resolve(client)
     # junk is a legible refusal, not a silent unvalidated write
     bad = c.patch("/api/routines/apir", json={"capabilities": {"actions": "write_util"}})
     assert bad.status_code == 422
+
+
+def test_patch_permissions_does_not_flatten_the_domain_into_the_member(client):
+    """F489 through the SECOND door. `PUT /permissions` learned not to write a domain's
+    inherited docs into the member's own file; the generic PATCH, which routes the same two
+    authority keys to the same resolver, ran the cascade and skipped the strip.
+
+    So a config_patch whose visible intent was a confirm dial — `{"capabilities":
+    {"confirm": "creations"}}`, with `permissions` defaulted to the EFFECTIVE list — wrote
+    the domain's docs and list entries into the member outright. A member's own key always
+    wins, so the next domain edit could never reach that routine again: authority silently
+    un-inherited by a save about something else.
+    """
+    from rsched import domains
+
+    c, tmp = client
+    perms_home = tmp / "library" / "permissions"
+    perms_home.mkdir(parents=True, exist_ok=True)
+    (perms_home / "workflow-generation.md").write_text(
+        "---\ntags: [a, b, c]\nrequires:\n  actions: [detach]\n---\n"
+        "# permission: workflow-generation — doc\nbody\n", encoding="utf-8")
+    (perms_home / "memory.md").write_text(
+        "---\ntags: [a, b, c]\nrequires:\n  actions: [memory_read]\n---\n"
+        "# permission: memory — doc\nbody\n", encoding="utf-8")
+    home = tmp / "routines"
+    did = domains.create(home, name="FAU",
+                         config={"permissions": ["workflow-generation"],
+                                 "capabilities": {"actions": ["detach"]}})["id"]
+    cfg_path = home / "apir" / "routine.yaml"
+    raw = yaml.safe_load(cfg_path.read_text())
+    raw["domain"] = did
+    raw["permissions"] = ["memory"]
+    cfg_path.write_text(yaml.safe_dump(raw), encoding="utf-8")
+
+    # a patch that names ONLY a dial — `permissions` defaults to the effective (unioned) list
+    r = c.patch("/api/routines/apir", json={"capabilities": {"confirm": "creations"}})
+    assert r.status_code == 200, r.text
+    saved = yaml.safe_load(cfg_path.read_text())
+    assert saved["permissions"] == ["memory"]                 # the domain stayed the domain's
+    assert "detach" not in (saved["capabilities"].get("actions") or [])
+    assert saved["capabilities"]["confirm"] == "creations"
+    # the effective state still carries both, so nothing was actually taken away
+    rows = {p["slug"]: p for p in c.get("/api/routines/apir").json()["permissions"]}
+    assert rows["workflow-generation"]["active"] is True
+    assert rows["workflow-generation"]["inherited"] == "FAU"
+
+
+def test_patch_budgets_refuses_a_key_the_loader_would_drop(client):
+    """R102: a key an endpoint silently ignores must never read as success. `budgets` was an
+    untyped mapping written verbatim and reported in `updated`, while the loader drops an
+    unknown budget key with a problem and blanks the whole mapping back to the defaults on a
+    non-integer value. A run proposing `max_wallclock_min: 90` (misspelled) was told applied
+    and its wall clock never moved.
+    """
+    c, tmp = client
+    bad = c.patch("/api/routines/apir", json={"budgets": {"max_wallclock_min": 90}})
+    assert bad.status_code == 422
+    assert "max_wallclock_min" in bad.text
+    assert c.patch("/api/routines/apir",
+                   json={"budgets": {"max_turns": "lots"}}).status_code == 422
+    ok = c.patch("/api/routines/apir", json={"budgets": {"max_wall_clock_min": 90}})
+    assert ok.status_code == 200, ok.text
+    assert ok.json()["updated"] == ["budgets"]
+    saved = yaml.safe_load((tmp / "routines" / "apir" / "routine.yaml").read_text())
+    assert saved["budgets"]["max_wall_clock_min"] == 90
+
+
+def test_patch_models_refuses_a_model_that_cannot_run_a_turn(client):
+    """R112/R128. The conversation PATCH refused a model whose own max_tokens fills its
+    context window; the routine PATCH did not, so the binding was accepted and the next
+    SCHEDULED run died on its first completion. One validator (`web/config_fields`) now
+    serves both, which is the only way two copies of a check stop drifting.
+    """
+    c, _tmp = client
+    from rsched.config import ModelConfig
+    server = c.app.state.server
+    server.models["tiny"] = ModelConfig(endpoint="fake", model="tiny",
+                                        context_tokens=1000, max_tokens=1000)
+    bad = c.patch("/api/routines/apir", json={"models": {"main": "tiny"}})
+    assert bad.status_code == 400
+    assert "cannot run a single turn" in bad.text
+
+
+def test_library_overview_carries_template_and_reminder_problems(client):
+    """`lint_all` lints templates and global reminders, and the overview dropped both —
+    so a template with a bad `config:` key or a global reminder with an invalid regex passed
+    server-side and read CLEAN on the Library tab, which is the only surface that can remove
+    a global reminder.
+    """
+    c, tmp = client
+    lib = tmp / "library"
+    (lib / "templates").mkdir(parents=True, exist_ok=True)
+    (lib / "templates" / "broken.md").write_text(
+        "---\nsummary: a template\nconfig:\n  nonsense_key: 1\n---\nbody\n",
+        encoding="utf-8")
+    (lib / "reminders").mkdir(parents=True, exist_ok=True)
+    (lib / "reminders" / "rem-mute.json").write_text(
+        '{"id": "rem-mute", "regex": "^util:", "description": ""}', encoding="utf-8")
+    body = c.get("/api/library").json()
+    tpl = {t["slug"]: t for t in body["templates"]}
+    assert tpl["broken"]["problems"], "a template's lint problems must reach the page"
+    rem = {r["id"]: r for r in body["reminders"]}
+    assert rem["rem-mute"]["problems"], "a global reminder's lint problems must reach the page"
+
+
+def test_a_permissions_save_tells_a_live_run_and_the_scheduler(client, monkeypatch):
+    """Seven web writers of routine.yaml each chose their own commit/rescan/signal steps, and
+    two of them told a live run nothing: `PUT /permissions` committed and stopped, so unticking
+    a conduct doc mid-run finished under the old docs in silence — on a page where every other
+    save reports `told_live_run` — and adopting a template changed `budgets` and `grants`
+    (both LIVE-classified) with nothing said. One writer, four steps, no site choosing.
+    """
+    c, tmp = client
+    perms_home = tmp / "library" / "permissions"
+    perms_home.mkdir(parents=True, exist_ok=True)
+    (perms_home / "memory.md").write_text(
+        "---\ntags: [a, b, c]\nrequires:\n  actions: [memory_read]\n---\n"
+        "# permission: memory — doc\nbody\n", encoding="utf-8")
+    run_dir = tmp / "routines" / "apir" / "runs" / "20260922-100000"
+    mk_run(tmp / "routines" / "apir", "20260922-100000", "running", turn=1, pid=4242)
+    rescans = []
+    monkeypatch.setattr(c.app.state.scheduler, "rescan", lambda: rescans.append(1))
+
+    r = c.put("/api/routines/apir/permissions",
+              json={"active": ["memory"], "capabilities": {}})
+    assert r.status_code == 200, r.text
+    assert r.json()["own"] == ["memory"]
+    assert rescans, "the fire table must see the save now, not at the next periodic rescan"
+    signal = read_json(run_dir / "control.json")["config_change"]
+    assert set(signal["fields"]) == {"permissions", "capabilities"}
+
+
+def test_archiving_a_routine_takes_it_out_of_its_lane(client):
+    """CLAUDE.md justifies the missing cascade with "routines are deleted out of band"
+    (F442) — but archive IS the in-band deletion, and the one moment the web layer knows the
+    routine is gone. Left in the lane, the slug becomes a member with no catalog entry: the
+    next chain fire logs `lane member missing`, files a health event, and under
+    `on_failure: stop` halts the chain, so every member after it silently stops firing.
+    """
+    from rsched import lanes
+
+    c, tmp = client
+    home = tmp / "routines"
+    lane = lanes.create(home, name="Morning", members=[{"slug": "apir"}],
+                        cron="0 7 * * *", tz="UTC")
+    r = c.post("/api/routines/apir/archive")
+    assert r.status_code == 200, r.text
+    assert r.json()["lanes_left"] == [lane["id"]]
+    assert lanes.member_slugs(lanes.get(home, lane["id"])) == []
+
+
+def test_the_file_endpoint_edits_the_recipe_and_nothing_that_has_an_owner(client):
+    """`PUT /routines/{slug}/file` bounded its path to the routine dir and wrote whatever it
+    was handed — a second, unvalidated, non-atomic config writer beside the one PATCH. A
+    `routine.yaml` through this door bypasses RoutinePatch's extra="forbid", the permission
+    floor, the domain strip, the rescan and the live-run signal; `state/stopping.json` has an
+    endpoint documented as its only writer, and the engine owns `.memory/INDEX.md`.
+
+    The recipe stays editable — that is what this endpoint is for, `.memory/` notes included.
+    """
+    c, tmp = client
+    ok = c.put("/api/routines/apir/file",
+               json={"path": "stages/plan.md", "content": "# plan\n"})
+    assert ok.status_code == 200, ok.text
+    assert (tmp / "routines" / "apir" / "stages" / "plan.md").read_text() == "# plan\n"
+    assert c.put("/api/routines/apir/file",
+                 json={"path": ".memory/note.md", "content": "a note\n"}).status_code == 200
+    for path, owner in (("routine.yaml", "PATCH"),
+                        ("state/stopping.json", "stopping"),
+                        (".memory/INDEX.md", "engine"),
+                        ("runs/2026-01-01T000000/status.json", "engine"),
+                        ("inbox/msg-x.json", "message")):
+        r = c.put("/api/routines/apir/file", json={"path": path, "content": "x"})
+        assert r.status_code == 400, (path, r.status_code)
+        assert owner in r.json()["detail"], (path, r.json()["detail"])
+    # …and the config it refused is untouched
+    assert yaml.safe_load((tmp / "routines" / "apir" / "routine.yaml").read_text())["slug"] \
+        == "apir"
+
+
+def test_a_domain_save_reaches_its_members(client, monkeypatch):
+    """The only config write whose ONE click changes what N routines effectively hold — the
+    shared block is merged under each member's own keys at load, and `budgets`/`grants` are
+    LIVE in configflow.CLASSIFICATION. It was also the only writer that told nobody: no
+    signal to a member's live run, and no rescan, though `domains.members` is exactly the
+    list of routines whose effective config just moved.
+    """
+    from rsched import domains
+
+    c, tmp = client
+    home = tmp / "routines"
+    did = domains.create(home, name="FAU", config={})["id"]
+    cfg_path = home / "apir" / "routine.yaml"
+    raw = yaml.safe_load(cfg_path.read_text())
+    raw["domain"] = did
+    cfg_path.write_text(yaml.safe_dump(raw), encoding="utf-8")
+    run_dir = home / "apir" / "runs" / "20260922-110000"
+    mk_run(home / "apir", "20260922-110000", "running", turn=1, pid=4242)
+    rescans = []
+    monkeypatch.setattr(c.app.state.scheduler, "rescan", lambda: rescans.append(1))
+
+    r = c.patch(f"/api/domains/{did}", json={"config": {"budgets": {"max_turns": 5}}})
+    assert r.status_code == 200, r.text
+    assert r.json()["told_live_runs"] == ["apir"]
+    assert rescans
+    signal = read_json(run_dir / "control.json")["config_change"]
+    assert signal["fields"] == ["budgets"]
+    assert signal["values"]["budgets"] == {"max_turns": 5}
 
 
 def test_library_permission_doc_requires_roundtrip(client):

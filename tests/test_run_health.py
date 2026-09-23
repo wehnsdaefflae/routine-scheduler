@@ -4,6 +4,7 @@ durable usage stream + a real git recipe history.
 """
 
 import json
+from datetime import UTC, datetime
 
 from conftest import git_in
 from rsched.config import ServerConfig
@@ -14,6 +15,7 @@ from rsched.readmodels.run_health import (
     REGRESSION_WINDOW,
     TOKENS_FLOOR,
     TURNS_FLOOR,
+    recent_trend,
     regression_flag,
     routine_health,
 )
@@ -84,6 +86,24 @@ def test_windows_slice_last_before_and_first_after():
     verdict = regression_flag(before, after)
     assert verdict["evaluated"] and not verdict["flagged"]
     assert verdict["before"]["runs"] == verdict["after"]["runs"] == REGRESSION_WINDOW
+
+
+def test_recent_trend_compares_the_last_two_windows():
+    """The time-keyed flag is version-blind: it slices the tail into two windows and
+    applies the SAME thresholds, which is the only way a library-rule revision — one that
+    moves no recipe commit anywhere — can register at all."""
+    records = [_rec(tokens=10_000) for _ in range(REGRESSION_WINDOW)] + \
+              [_rec(tokens=200_000) for _ in range(REGRESSION_WINDOW)]
+    verdict = recent_trend(records)
+    assert verdict["evaluated"] and verdict["flagged"]
+    assert verdict["window"] == REGRESSION_WINDOW
+    assert any("tokens ballooned" in r for r in verdict["reasons"])
+    assert verdict["before"]["runs"] == verdict["after"]["runs"] == REGRESSION_WINDOW
+
+
+def test_recent_trend_needs_two_windows_of_runs():
+    """A routine with only one window of history is not judged — MIN_RUNS on both sides."""
+    assert not recent_trend([_rec() for _ in range(REGRESSION_WINDOW)])["evaluated"]
 
 
 # ---- the read-model over stream + git -------------------------------------------------
@@ -190,3 +210,31 @@ def test_no_stream_at_all(tmp_path):
     h = routine_health(server, d, "gitr")
     assert [b["runs"] for b in h["versions"]] == [0]
     assert h["untracked"] is None
+
+
+def test_payload_carries_the_time_trend_and_the_budget_endings(tmp_path):
+    """A cost jump with NO recipe change: `regression` cannot see it (one bucket, nothing
+    to compare), `trend` does — and `endings` says a budget forced the partial finishes the
+    usage stream files indistinguishably from the ones the model chose."""
+    from rsched.readmodels import memo
+
+    server, d = _setup(tmp_path)
+    cheap = [{"routine": "gitr", "run_id": f"gitr:c{i}", "depth": 0, "status": "ok",
+              "turns": 5, "tokens": 10_000, "ts": f"2026-07-0{i}T07:00:00+00:00"}
+             for i in range(1, 6)]
+    dear = [{"routine": "gitr", "run_id": f"gitr:d{i}", "depth": 0, "status": "partial",
+             "turns": 5, "tokens": 200_000, "ts": f"2026-07-1{i}T07:00:00+00:00"}
+            for i in range(1, 6)]
+    _stream(server, cheap + dear)
+    control = server.routines_home / ".control"
+    (control / "health-events.jsonl").write_text(
+        json.dumps({"event": "budget_exhausted", "routine": "gitr", "run_id": "gitr:d1",
+                    "ts": datetime.now(UTC).isoformat(), "detail": "turns 5/5"}) + "\n",
+        encoding="utf-8")
+    memo.reset()
+
+    h = routine_health(server, d, "gitr")
+    assert not h["regression"]["flagged"]             # one recipe version: nothing to compare
+    assert h["trend"]["evaluated"] and h["trend"]["flagged"]
+    assert any("tokens ballooned" in r for r in h["trend"]["reasons"])
+    assert h["endings"]["budget_exhausted"] == 1 and h["endings"]["run_partial"] == 0

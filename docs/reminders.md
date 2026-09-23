@@ -112,6 +112,22 @@ accept the action and drop it. Recurring `would_have` with low `could_not`, over
 that is about the action itself → a global candidate. And `fires - Σlabels` is the count of holds
 the model never labelled, which is itself the signal that the layer is being paid for and not read.
 
+**The tally has exactly one automatic reader, and it decides nothing.**
+`reminders.looks_too_broad` asks one question of a reminder's own record — after at least
+`PRUNE_MIN_FIRES` (5) fires, is `could_not` the plurality? — and when the answer is yes the HOLD
+itself carries the evidence: the fire count, the `could_not` count, and the line "revise its regex
+or delete it with a `remind` op on this turn". Nothing demotes, retires or deletes a reminder
+behind the run's back.
+
+This is not the passive tier the layer refuses. It costs no turn and adds no store: the run is
+already stopped, already re-deciding this exact action, and `remind` rides the turn it is about to
+take anyway — so the moment the pattern is under review is the moment the evidence about it is
+readable. The alternative was what ran for 21 days: 198 holds, 67 of them labelled `could_not` by
+the runs themselves, and no code anywhere reading a single one, so the only prune path was the
+model spontaneously remembering to go and look. `could_not` is the one label that indicts the
+PATTERN rather than the action — `would_have` and `didnt` both describe a reminder doing its job,
+which is why a plurality of `could_not`, not a majority of "unhelpful", is the test.
+
 Labelling is **not** enforced. `remind_feedback` rides every kind, so rejecting an action for
 omitting bookkeeping would put the layer in the way of the work — and the schema-storm guard fails
 a run whose turns keep needing retries. So the hold demands the label, the engine asks once more

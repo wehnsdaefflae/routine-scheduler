@@ -30,12 +30,40 @@ export function settingsSection(title, description, ...body) {
   }
   // Panel mode — heading + one panel wrapping the description and the body rows (the routine
   // config page and the new-conversation composer).
-  return [
-    h2,
-    el("div", { class: "panel" },
-      description
-        ? el("div", { class: "muted small", style: "margin-bottom:10px" }, description)
-        : null,
-      ...body.filter(Boolean)),
-  ];
+  return [h2, el("div", { class: "panel" }, sectionAbout(description), ...body.filter(Boolean))];
+}
+
+//: Where a description stops being a line and becomes a paragraph. Above it the reader gets the
+//: first sentence and opens the rest; below it folding costs more attention than it saves.
+const LEAD_MAX = 160;
+
+/** The section's explanation — one job, one shape, at both measures.
+ *
+ * It used to be an uncapped `div` in panel mode and a 68ch-capped `p.set-desc` in header mode,
+ * so the SAME voice ran to 1 350px in one place and 450px in the other on one screen. One class
+ * now, capped by one rule.
+ *
+ * On a PHONE it is also not in the reading path. A routine page opened with 13 lines on
+ * SCHEDULE, 22 on DOMAIN, 20 on PERMISSIONS before their first control — correct, wanted, and
+ * read again every time a dial is changed; at 390px that is four screens of prose per group,
+ * where at 1440px the same copy is a paragraph beside the controls it explains. Below 861px the
+ * first sentence leads and the rest is one tap away. Nothing is shortened at either width.
+ */
+function sectionAbout(description) {
+  if (!description) return null;
+  // a description is a string, or the parts of one — most of the routine page's carry an inline
+  // <span> (a slug chip, a link) between two strings, so the parts arrive as an array
+  const parts = (Array.isArray(description) ? description : [description]).filter(Boolean);
+  const chars = parts.reduce((n, p) => n + (typeof p === "string" ? p.length : 0), 0);
+  const wide = window.matchMedia("(min-width: 861px)").matches;
+  if (wide || chars <= LEAD_MAX || typeof parts[0] !== "string")
+    return el("p", { class: "set-desc muted small" }, ...parts);
+  const head = parts[0];
+  const stop = head.search(/[.?!](\s|$)/);
+  const space = head.lastIndexOf(" ", LEAD_MAX);
+  const cut = stop > 0 && stop < LEAD_MAX ? stop + 1 : (space > 0 ? space : LEAD_MAX);
+  return el("details", { class: "set-about" },
+    el("summary", { class: "set-desc muted small" },
+      head.slice(0, cut).trim(), el("span", { class: "faint" }, " more…")),
+    el("p", { class: "set-desc muted small" }, head.slice(cut).trim(), ...parts.slice(1)));
 }

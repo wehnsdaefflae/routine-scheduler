@@ -6,8 +6,9 @@ and nothing could name it: the engine container has no `ps`, py-spy cannot ptrac
 did not start, and every read model measured in a fresh process came back in well under a
 second. The daemon looked slow from outside and had nothing to say about why from inside.
 
-Two views, both read-only and OPERATOR-token only (a routine's read-only token is refused —
-a stack is the daemon's own business, and a run has no use for it):
+Two views, both read-only and OPERATOR-token only — `app.ROUTINE_TOKEN_DENIED_READS` holds
+this whole prefix, beside the other reads that would hand a run what its sandbox forbids (a
+stack is the daemon's own business, and a run has no use for it):
 
 - `GET /api/debug/threads` — every Python thread with its name and its top frames
   (`sys._current_frames()`), the threadpool's token accounting (how many of the sync-handler
@@ -26,23 +27,11 @@ import sys
 import threading
 import traceback
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Request
 
 router = APIRouter(tags=["debug"])
 
 FRAMES_PER_THREAD = 12
-
-
-def _operator_only(request: Request) -> None:
-    """The primary token only: `require_auth` lets the read-only routine token through on
-    every GET, and this is the one GET a run must never read.
-    """
-    server = request.app.state.server
-    if not server.token:
-        return   # auth disabled instance-wide: nothing to distinguish
-    if request.headers.get("authorization", "") != f"Bearer {server.token}":
-        raise HTTPException(status_code=403,
-                            detail="the daemon's stacks are the operator's — primary token only")
 
 
 def thread_stacks(limit: int = FRAMES_PER_THREAD) -> list[dict]:
@@ -73,7 +62,6 @@ def _limiter() -> dict:
 
 @router.get("/debug/threads")
 async def debug_threads(request: Request) -> dict:
-    _operator_only(request)
     return {"in_flight": int(getattr(request.app.state, "in_flight", 0)),
             "threadpool": _limiter(),
             "threads": thread_stacks()}
@@ -81,6 +69,5 @@ async def debug_threads(request: Request) -> dict:
 
 @router.get("/debug/slow")
 async def debug_slow(request: Request) -> dict:
-    _operator_only(request)
     return {"slow_request_s": request.app.state.slow_request_s,
             "requests": list(getattr(request.app.state, "slow_requests", []))}

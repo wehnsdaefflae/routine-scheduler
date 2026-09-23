@@ -43,7 +43,7 @@ def test_a_questions_table_renders_as_a_table_on_the_decisions_page(ui, ui_page)
     ui_page.set_viewport_size({"width": 1400, "height": 1000})
     ui_page.goto(f"{ui.url}/#/questions")
     card = ui_page.locator(".question-item").first
-    expect(card).to_be_visible(timeout=10_000)
+    expect(card).to_be_visible()
 
     # the table is a TABLE, not four lines of pipes
     table = card.locator("table")
@@ -63,7 +63,7 @@ def test_the_answer_card_renders_the_body_as_a_block(ui, ui_page):
     _seed(ui)
     ui_page.set_viewport_size({"width": 1400, "height": 1000})
     ui_page.goto(f"{ui.url}/#/questions")
-    expect(ui_page.locator(".question-item").first).to_be_visible(timeout=10_000)
+    expect(ui_page.locator(".question-item").first).to_be_visible()
     # the answer affordance and the rendered table live in the same card
     card = ui_page.locator(".question-item").first
     expect(card.locator("textarea")).to_be_visible()
@@ -78,7 +78,7 @@ def test_the_routine_page_strip_previews_one_line_and_does_not_break_the_row(ui,
     ui_page.set_viewport_size({"width": 1400, "height": 1000})
     ui_page.goto(f"{ui.url}/#/routine/uir")
     row = ui_page.locator(".panel.warn .row.spread").first
-    expect(row).to_be_visible(timeout=10_000)
+    expect(row).to_be_visible()
     text = row.inner_text()
     assert "Straight answer" in text                # the first line
     assert "| sent | 17 |" not in text              # never the raw table

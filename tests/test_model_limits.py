@@ -126,8 +126,9 @@ def test_nanogpt_is_read_from_its_own_route(tmp_path, monkeypatch):
     assert row["context_tokens"] == 1_048_576 and row["source"] == "nanogpt"
 
 
-def test_a_kind_with_no_metadata_api_uses_the_static_table(tmp_path, monkeypatch):
-    """The Anthropic models listing carries no context-window figure — so the table is the honest answer, and it is labelled as one."""
+def test_a_listing_that_answers_nothing_falls_back_to_the_static_table(tmp_path, monkeypatch):
+    """The table is the fallback for an id listed WITHOUT figures — a subscription proxy's
+    ids-only catalog, or a listing that could not be read at all — never the first answer."""
     server = _server(tmp_path, endpoints={
         "claude": EndpointConfig(name="claude", kind="anthropic", context_tokens=2_000_000)},
         models={"opus": ModelConfig(name="opus", endpoint="claude", model="claude-opus-4-8")})

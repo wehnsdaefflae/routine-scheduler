@@ -88,10 +88,19 @@ export async function setupCheck(host, slug, surface = null) {
     v.interrupts ? `${v.interrupts} will interrupt` : "",
     v.notes ? `${v.notes} note${v.notes > 1 ? "s" : ""}` : "",
   ].filter(Boolean).join(" · ");
-  host.append(el("div", { class: `setup-check${v.blocks ? " has-blocks" : ""}`,
-                          "data-setup-check": "" },
-    el("div", { class: "setup-head" },
-      el("span", {}, "⚑"), el("b", {}, "Setup check"), el("span", { class: "muted" }, counts)),
-    ...unsatisfied.map(row)));
+  // THE BAND IS WEIGHTED BY THE WORST ROW, and the three weights are the palette's own: err
+  // where a call will be rejected, SUMMONS where a run will stop to ask a person — that is what
+  // the coral is for — and no band at all where every row is a note. A healthy routine used to
+  // wear the identical amber ⚑ as one about to park on a blocking secret, so the band taught
+  // the reader to ignore it and then failed on the one case it existed for. Notes still say
+  // everything they said; they say it folded, under a one-line summary the reader opens.
+  const tone = v.blocks ? "blocks" : v.interrupts ? "interrupts" : "note";
+  const head = [el("span", {}, "⚑"), el("b", {}, "Setup check"),
+    el("span", { class: "muted" }, counts)];
+  host.append(tone === "note"
+    ? el("details", { class: "setup-check tone-note", "data-setup-check": "" },
+        el("summary", { class: "setup-head" }, ...head), ...unsatisfied.map(row))
+    : el("div", { class: `setup-check tone-${tone}`, "data-setup-check": "" },
+        el("div", { class: "setup-head" }, ...head), ...unsatisfied.map(row)));
   return data;
 }

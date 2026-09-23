@@ -22,10 +22,8 @@
 import { api } from "/static/api.js";
 import { confirmDialog } from "/static/components/dialog.js";
 import { scheduleEditor } from "/static/components/schedule.js";
-import { el, toast } from "/static/util.js";
+import { el, toast, toastError as err } from "/static/util.js";
 
-
-const err = (e) => toast(e.message, 4000, { error: true });
 
 /** Slugs some OTHER lane already holds (`skip` = the lane being edited). The exclusivity the
  *  store enforces, applied to the pickers so it reads as an absence rather than a rejection. */
@@ -44,7 +42,9 @@ function claimedElsewhere(data, skip = "") {
  *  the dashboard after a mutation. Returns an array of nodes (some conditional). */
 export function laneControls(lane, data, { reload }) {
   const flight = (data.in_flight || {})[lane.id];
-  const run = el("button", { class: "btn small primary", "data-lane-run": "",
+  // Not `primary`: eleven lanes put eleven filled cyan buttons on the page at rest, and signal
+  // is the colour of something HAPPENING. The row is still the one place a lane is fired.
+  const run = el("button", { class: "btn small", "data-lane-run": "",
     title: flight ? "a chain is already in flight" : "fire the members in order now",
     ...(flight || !(lane.members || []).length ? { disabled: "" } : {}) }, "▶ run now");
   run.onclick = async (e) => {
@@ -55,7 +55,7 @@ export function laneControls(lane, data, { reload }) {
   };
   // Whole-lane pause gates the cron only — nothing to pause on an unscheduled lane.
   const pause = lane.cron
-    ? el("button", { class: "btn small", "data-lane-pause-toggle": "",
+    ? el("button", { class: "btn small ghost", "data-lane-pause-toggle": "",
         title: lane.paused ? "resume this lane's schedule"
           : "stop the schedule from firing this lane — ▶ run now still works" },
         lane.paused ? "▶ resume" : "⏸ pause")
@@ -100,11 +100,16 @@ export function lanesToolbar(data, { reload }) {
       toast(`default on failure → ${defSel.value}`); reload(); }
     catch (ex) { err(ex); reload(); }
   };
+  // The instance default is set once and then never again, while this bar sits above the
+  // routine list on every visit — so it folds. "＋ new lane" stays out, because creating a lane
+  // is what this bar is for.
   return el("div", { class: "row", style: "gap:8px;align-items:center;flex-wrap:wrap" },
     el("span", { class: "lbl" }, "⛓ lanes"), add,
-    el("span", { class: "muted small", style: "margin-left:8px" }, "default on mid-chain failure:"),
-    defSel,
-    el("span", { class: "muted small" }, "applies to any lane set to “inherit”"));
+    el("details", { class: "filter-more", "data-lane-defaults": "" },
+      el("summary", {}, "instance default"),
+      el("div", { class: "filter-more-body" },
+        el("span", { class: "muted small" }, "on mid-chain failure:"), defSel,
+        el("span", { class: "muted small" }, "applies to any lane set to “inherit”"))));
 }
 
 // ---- the overlay editors ---------------------------------------------------------------------

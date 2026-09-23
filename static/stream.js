@@ -16,7 +16,7 @@
 import { api, openStreamCount, sse } from "/static/api.js";
 
 const MAX_BACKOFF_MS = 15000;
-export const MAX_TAIL_STREAMS = 3;   // held tail sockets; + the global bus ≤ 4 of ~6/origin
+const MAX_TAIL_STREAMS = 3;          // held tail sockets; + the global bus ≤ 4 of ~6/origin
 const POLL_MS = 3000;                // REST-fallback cadence while no SSE slot is free
 
 let tailStreams = 0;                 // module-wide census of held tail EventSources
@@ -123,6 +123,21 @@ export function liveTail({ page, events, offset = 0, onEvent, onState, onStatus,
   kick();
 
   return {
+    /** Re-attach to a resource that ENDED and has more to say.
+     *
+     *  A conversation is one run resumed in place (api_conversations.message): the `end`
+     *  event stops this tail, and the next user message wakes the SAME run at the SAME
+     *  offset. Re-attaching is therefore a catch-up from `base` and a fresh stream — what
+     *  kick() already does — never a new tail from offset 0, which would re-render the
+     *  whole thread and re-fetch every attachment. A stopped tail stays stopped: stop() is
+     *  the view's teardown and nothing outlives it. */
+    resume() {
+      if (stopped || !ended) return;
+      ended = false;
+      retry = 0;
+      clearTimeout(timer);
+      kick();
+    },
     stop() {
       stopped = true;
       close();

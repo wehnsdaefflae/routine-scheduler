@@ -23,6 +23,53 @@ def _mk_run(d, ts, state, summary=""):
                   transcript=[{"type": "header"}])
 
 
+def test_info_answers_for_one_dir_exactly_as_scan_does(make_routine, tmp_path):
+    """Every per-slug web route wanted ONE routine and scanned a whole home to get it.
+    `info` reads the one directory off the same four memos, and must agree with `scan`
+    everywhere — including the unloadable routine.yaml that scan reports as disabled."""
+    d = make_routine(slug="alpha")
+    make_routine(slug="beta")
+    (tmp_path / "routines" / "broken").mkdir()
+    (tmp_path / "routines" / "broken" / "routine.yaml").write_text(":::not yaml{{{")
+    _mk_run(d, "20260706-070000", "finished", "did the thing")
+    server = _server(tmp_path)
+    catalog = registry.scan(server)
+
+    for slug in ("alpha", "beta", "broken"):
+        one = registry.info(server, server.routines_home, slug)
+        assert one is not None and one.cfg.slug == catalog[slug].cfg.slug
+        assert one.problems == catalog[slug].problems
+        assert [r.ts for r in one.runs] == [r.ts for r in catalog[slug].runs]
+        assert one.cfg.enabled == catalog[slug].cfg.enabled
+    assert registry.info(server, server.routines_home, "nobody") is None
+
+
+def test_info_never_joins_a_path_it_was_handed(tmp_path, make_routine):
+    """`home / slug` is a path join and the argument arrives from a URL segment, where the
+    old dict lookup could not be walked out of. A name that is not a slug takes the full
+    scan, which builds every path itself."""
+    make_routine(slug="alpha")
+    server = _server(tmp_path)
+    (tmp_path / "routine.yaml").write_text("slug: escaped\n")
+    for hostile in ("..", "../..", ".control", "Alpha/../alpha"):
+        assert registry.info(server, server.routines_home, hostile) is None
+
+
+def test_info_falls_back_when_the_file_names_a_different_slug(tmp_path, make_routine):
+    """A routine.yaml whose slug disagrees with its directory is a reported problem, not a
+    refusal, and `scan` keys it by the name in the FILE — so that name must still resolve."""
+    import yaml
+
+    d = make_routine(slug="alpha")
+    cfg = yaml.safe_load((d / "routine.yaml").read_text(encoding="utf-8"))
+    cfg["slug"] = "renamed"
+    (d / "routine.yaml").write_text(yaml.safe_dump(cfg), encoding="utf-8")
+    server = _server(tmp_path)
+    assert registry.info(server, server.routines_home, "alpha") is None
+    found = registry.info(server, server.routines_home, "renamed")
+    assert found is not None and found.cfg.dir == d
+
+
 def test_scan_catalog(make_routine, tmp_path):
     d = make_routine(slug="alpha")
     make_routine(slug="beta")

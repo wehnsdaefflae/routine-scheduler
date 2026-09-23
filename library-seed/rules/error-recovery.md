@@ -33,5 +33,10 @@ without reading it converts hard evidence into burned turns, and the identical r
 - **Two failures means the approach is wrong.** After the second failed attempt at the same
   step, stop tuning it and change route: a different tool, a different decomposition, or a
   deferred question that names the blocker precisely.
+- **Leave a blocked step visibly undone.** When the route change is to abandon the step for
+  now, stop at a state that still says so: record what was blocked and where, and do not
+  advance a marker, a cursor or a claim past work that did not happen. Above all, never let a
+  missing result become an invented one — an unreadable source produces a gap, never a
+  plausible value.
 - **Dead ends are worth keeping.** A route that cost real turns and did not work goes into a
   `note`, so the next run does not buy the same lesson twice.

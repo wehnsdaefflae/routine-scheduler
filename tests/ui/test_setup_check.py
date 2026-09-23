@@ -5,6 +5,17 @@ import yaml
 from playwright.sync_api import expect
 
 
+def _unfold(page) -> None:
+    """Open every routine-page config group.
+
+    The page ships with only its leading group open (views/routine.js SECTION_GROUPS): seven
+    open at once made it 11-12 000px tall. A control inside a folded group is not visible, so a
+    test that reads one unfolds first. What the DEFAULT is, and that the choice is remembered,
+    is pinned in test_routine_groups.py — not here.
+    """
+    page.wait_for_selector(".rgroup-head")
+    page.evaluate("() => { for (const d of document.querySelectorAll('details.rgroup')) d.open = true; }")
+
 def _hold_util(ui, slug: str, name: str, *, secrets: str = "(none)", fs: str = "none") -> None:
     """Give the fixture routine a reserved util whose header declares something it lacks."""
     d = ui.server_cfg.libraries_home / "utils" / name
@@ -36,8 +47,8 @@ def test_a_blocking_gap_is_named_above_the_panels(ui_page, ui):
     _hold_util(ui, "uir", "sig", fs="rw /srv/sig-sessions")
     ui_page.goto(f"{ui.url}/#/routine/uir")
     strip = ui_page.locator("[data-setup-check]")
-    strip.wait_for(state="visible", timeout=10000)
-    assert "has-blocks" in (strip.get_attribute("class") or "")
+    strip.wait_for(state="visible")
+    assert "tone-blocks" in (strip.get_attribute("class") or "")
     row = ui_page.locator('.setup-row[data-entity="fs-write:/srv/sig-sessions"]')
     assert row.count() == 1
     assert "fails" in row.locator(".setup-sev").inner_text().lower()
@@ -64,11 +75,19 @@ def test_a_note_renders_without_making_the_strip_look_broken(ui_page, ui):
 
     ui_page.goto(f"{ui.url}/#/routine/uir")
     strip = ui_page.locator("[data-setup-check]")
-    strip.wait_for(state="visible", timeout=10000)
-    assert "has-blocks" not in (strip.get_attribute("class") or "")   # a note is not a failure
+    strip.wait_for(state="visible")
+    # A note is neither a failure nor a summons: no band, and the rows are FOLDED. Two healthy
+    # fleet routines used to wear the identical amber ⚑ as one about to park a run on a missing
+    # secret, so the band taught the reader to ignore it.
+    cls = strip.get_attribute("class") or ""
+    assert "tone-note" in cls and "tone-blocks" not in cls and "tone-interrupts" not in cls
+    assert strip.evaluate("n => n.tagName.toLowerCase()") == "details"
+    assert strip.evaluate("n => n.open") is False
     row = ui_page.locator('.setup-row[data-entity="action:write_recipe"]')
     assert row.count() == 1
     assert "sev-note" in (row.get_attribute("class") or "")
+    # nothing is LOST by folding — one click and the same row, in the same words, is there
+    strip.locator("summary.setup-head").click()
     assert "rewrite its own instructions" in row.inner_text()
     # the orphan check reaches the same entity (nothing here requires the capability), and one
     # entity gets ONE row — two rows saying different things about it would read as a bug
@@ -95,8 +114,9 @@ def test_a_resolved_need_appears_inside_the_ability_that_owns_it(ui_page, ui):
     path.write_text(yaml.safe_dump(cfg), encoding="utf-8")
 
     ui_page.goto(f"{ui.url}/#/routine/uir")
+    _unfold(ui_page)
     card = ui_page.locator('.ability[data-ability="messaging-discord"]')
-    card.wait_for(state="visible", timeout=10000)
+    card.wait_for(state="visible")
     # the capability it requires AND the store that capability turned out to need, together
     assert card.locator('.ab-row[data-entity="discord"]').count() >= 1
     store = card.locator('.ab-row[data-entity="/srv/discord-state"]')
@@ -111,8 +131,9 @@ def test_an_ability_that_is_off_is_a_catalogue_row_not_an_alarm(ui_page, ui):
     dots. Rendering its requirements as unmet painted the page red for things that were merely
     not switched on — which said the opposite of the truth."""
     ui_page.goto(f"{ui.url}/#/routine/uir")
+    _unfold(ui_page)
     row = ui_page.locator('.avail-row[data-ability="shell"]')
-    row.wait_for(state="visible", timeout=10000)
+    row.wait_for(state="visible")
     assert row.locator("input[type=checkbox]").is_checked() is False
     assert row.locator(".dot").count() == 0
     assert ui_page.locator('.ability[data-ability="shell"]').count() == 0
@@ -129,10 +150,11 @@ def test_a_toggle_states_both_sides_and_when_to_hold_it(ui, ui_page):
     decision it actually asks: is this one for THIS routine?
     """
     ui_page.goto(f"{ui.url}/#/routine/uir")
-    ui_page.wait_for_selector("h2:has-text('Permissions & capabilities')", timeout=10_000)
+    _unfold(ui_page)
+    ui_page.wait_for_selector("h2:has-text('Permissions & capabilities')")
 
     held = ui_page.locator('.ability[data-ability="memory"] [data-effect="memory"]')
-    expect(held).to_be_visible(timeout=10_000)
+    expect(held).to_be_visible()
     # both sides are present, and the one the routine is actually in is the emphasised one
     expect(held.locator('[data-effect-side="with"]')).to_have_class("effect-side active")
     expect(held.locator('[data-effect-side="without"]')).not_to_have_class("effect-side active")
@@ -154,9 +176,10 @@ def test_a_rule_toggle_states_both_sides_too(ui, ui_page):
     """Same three fields on the rules panel — a rule's on/off difference is the one thing the
     principle prose never states, because it is written as if it always applies."""
     ui_page.goto(f"{ui.url}/#/routine/uir")
-    ui_page.wait_for_selector("h2:has-text('General rules')", timeout=10_000)
+    _unfold(ui_page)
+    ui_page.wait_for_selector("h2:has-text('General rules')")
     bound = ui_page.locator('.rule-bound[data-rule="ask-policy"] [data-effect="ask-policy"]')
-    expect(bound).to_be_visible(timeout=10_000)
+    expect(bound).to_be_visible()
     expect(bound).to_contain_text("interrupts you only for a decision that is genuinely yours")
     expect(bound).to_contain_text("asks you whenever it is unsure")
     expect(bound).to_contain_text("runs unattended")
@@ -183,13 +206,14 @@ def test_no_effect_row_overflows_the_box_it_is_in(ui, ui_page):
     """
     ui_page.set_viewport_size({"width": 1400, "height": 1000})
     ui_page.goto(f"{ui.url}/#/routine/uir")
-    ui_page.wait_for_selector("h2:has-text('General rules')", timeout=10_000)
-    ui_page.wait_for_selector(".effect-side", timeout=10_000)
+    _unfold(ui_page)
+    ui_page.wait_for_selector("h2:has-text('General rules')")
+    ui_page.wait_for_selector(".effect-side")
     # The rules panel paints after the abilities one, and `.effect-side` belongs to both — so
     # waiting on it proved only that the ABILITIES had arrived, and the second half of this test
     # read `.rule-bound` out of a panel that was not there yet. Wait for the element the
     # measurement is actually about.
-    ui_page.wait_for_selector(".rule-bound .rule-line", timeout=10_000)
+    ui_page.wait_for_selector(".rule-bound .rule-line")
     over = ui_page.evaluate("""() => {
       const bad = [];
       for (const n of document.querySelectorAll('.effect-side, .effect-text')) {
@@ -231,17 +255,26 @@ def test_cards_keep_real_columns_on_a_phone_viewport(ui, ui_page):
     """
     ui_page.set_viewport_size({"width": 390, "height": 844})
     ui_page.goto(f"{ui.url}/#/routine/uir")
-    ui_page.wait_for_selector("h2:has-text('Permissions & capabilities')", timeout=10_000)
+    _unfold(ui_page)
+    ui_page.wait_for_selector("h2:has-text('Permissions & capabilities')")
 
-    # a held ability's stack row: its entity id must get a real column, not the 9px dot column
+    # a held ability's stack row: its entity id must get a real column, not the 9px dot column.
+    # A card whose requirements are all met folds its stack (its badge already says "ready"),
+    # so the measurement opens them — a folded box has no width to measure.
+    # …and at THIS width the unheld half of the catalogue is itself a disclosure
+    # (`details.avail-fold`): fourteen cards of what the routine does not hold is ~5 000px of
+    # phone between the held set and the save button. Both are opened to be measured.
+    ui_page.evaluate(
+        "() => { for (const d of document.querySelectorAll("
+        "'details.ability-more, details.avail-fold')) d.open = true; }")
     ent = ui_page.locator('.ability[data-ability="memory"] .ab-row .ent').first
-    ent.wait_for(state="visible", timeout=10_000)
+    ent.wait_for(state="visible")
     ent_w = (ent.bounding_box() or {}).get("width", 0)
     assert ent_w > 150, f"stack-row entity is crushed into the dot column ({ent_w}px wide)"
 
     # an available ability's effect sentence must span, not fold into the checkbox column
     eff = ui_page.locator('.avail-row[data-ability="shell"] .effect-text').first
-    eff.wait_for(state="visible", timeout=10_000)
+    eff.wait_for(state="visible")
     eff_w = (eff.bounding_box() or {}).get("width", 0)
     assert eff_w > 150, f"available-ability effect text is crushed ({eff_w}px wide)"
 

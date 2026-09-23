@@ -20,10 +20,10 @@
   position: relative; overflow: hidden;
 }
 .card .title { display: flex; align-items: center; gap: 10px; justify-content: space-between; }
-.card .title a { font-weight: 700; font-size: 15px; color: var(--ink); letter-spacing: 0.01em; }
+.card .title a { font-weight: 700; font-size: var(--t-l); color: var(--ink); letter-spacing: 0.01em; }
 .card .title a:hover { color: var(--signal); }
 .card .desc { color: var(--ink-2); font-size: 13.5px; font-family: var(--f-prose); line-height: 1.5; }
-.card .meta { color: var(--ink-2); font-size: 11.5px; display: flex; gap: 8px 16px; flex-wrap: wrap; }
+.card .meta { color: var(--ink-2); font-size: var(--t-s); display: flex; gap: 8px 16px; flex-wrap: wrap; }
 .card .lastrun {
   border-left: 2px solid var(--rule-2); padding: 2px 0 2px 11px; font-size: 12px;
   display: flex; flex-direction: column; gap: 3px;
@@ -33,7 +33,7 @@
   font-family: var(--f-prose); font-size: 13.5px; color: var(--ink-2); max-height: 64px; overflow: hidden; line-height: 1.55;
 }
 .card .actions { display: flex; gap: 8px; margin-top: 2px; flex-wrap: wrap; }
-.card .problem { color: var(--err); font-size: 11.5px; }
+.card .problem { color: var(--err); font-size: var(--t-s); }
 /* run-history heartbeat strip (components/heartbeat.js) — card row + list-view cell */
 .heartbeat { display: block; width: 147px; max-width: 100%; height: 24px; }
 .heartbeat .hb-ok { fill: var(--ok); }
@@ -44,6 +44,9 @@
 .heartbeat .hb-empty { fill: var(--rule); }
 .heartbeat a.hb-bar:hover rect:last-child { opacity: 0.7; }
 td.hb-cell { min-width: 155px; }
+/* stacked (base.css `table.list.stack`, ≤860px) the row is a flex card and a 155px floor on one
+   line is a column rule with no column to keep */
+@media (max-width: 860px) { table.list.stack td.hb-cell { min-width: 0; } }
 /* live: the left edge breathes signal while a run is in flight */
 .card.live { border-color: color-mix(in srgb, var(--signal) 38%, transparent); }
 .card.live::before {
@@ -74,12 +77,32 @@ td.hb-cell { min-width: 155px; }
 /* two-day zoom: the name column sits OUTSIDE the scroll area; the seven-day SVG is laid out
    at true pixel scale inside it, two day columns per visible width */
 .weekgrid .wg-wrap { display: flex; align-items: flex-start; }
-.weekgrid .wg-names { flex: 0 0 120px; max-width: 120px; min-width: 0; }
+/* The name column's width has ONE definition, here: weekgrid.js reads `--wg-names-w` off the
+   grid to lay the SVG out beside it, so the two cannot drift (it used to mirror the number as a
+   JS constant with a comment asking the next person to keep them equal). At the old 120px the
+   fleet's lane names all truncated to their shared prefix — "⛓ Instance · Ni…", "⛓ Instance ·
+   Tr…", "⛓ Professional …" twice — so the column that says WHOSE bars these are said the same
+   thing on four rows. 200px reads them; the phone keeps 120 because there the day span is the
+   scarce thing. */
+.weekgrid { --wg-names-w: 200px; }
+.weekgrid .wg-names { flex: 0 0 var(--wg-names-w); max-width: var(--wg-names-w); min-width: 0; }
 .weekgrid .wg-names-head { height: 22px; }
-.weekgrid .wg-lane-label { display: block; height: 22px; line-height: 22px; font-size: 11px;
-  color: var(--ink-2); text-decoration: none; white-space: nowrap; overflow: hidden;
-  text-overflow: ellipsis; padding-right: 8px; }
+@media (max-width: 860px) { .weekgrid { --wg-names-w: 120px; } }
+/* On a phone 120px is eleven characters, so "Professional · Daily" and "Professional ·
+   Weekly" both render as "Professional …" and the column that says whose bars these are
+   says the same thing on four rows. The strip scrolls sideways inside its own box, so the
+   names can take a bigger share of it than the days can. */
+@media (max-width: 560px) { .weekgrid { --wg-names-w: 165px; } }
+.weekgrid .wg-lane-label { display: flex; align-items: center; height: 22px; line-height: 22px;
+  font-size: 11px; color: var(--ink-2); text-decoration: none; padding-right: 8px; }
+.weekgrid .wg-lane-label .wg-name { min-width: 0; white-space: nowrap; overflow: hidden;
+  text-overflow: ellipsis; }
 .weekgrid a.wg-lane-label:hover { color: var(--ink); }
+/* The row's identity key: one stripe per member in fire order, shaped like the bars it
+   explains. `flex: 0 0 auto` so the name gives way first — a six-member lane still reads. */
+.weekgrid .wg-key { display: inline-flex; align-items: center; gap: 2px; flex: 0 0 auto;
+  margin-right: 6px; }
+.weekgrid .wg-key .id-swatch { width: 5px; height: 10px; border-radius: 2px; margin-right: 0; }
 /* a strip row that chains a whole lane is named for the lane, not a routine — iris, the
    structure colour, with no link (a lane has no page of its own) */
 .weekgrid .wg-lane-label.chained { color: var(--iris); }
@@ -167,8 +190,8 @@ table.list tr.disabled-row td { opacity: 0.55; }
 .turn { border: 1px solid var(--rule); border-radius: 8px; overflow: hidden; background: var(--plate); }
 .turn .say { padding: 11px 14px; display: flex; gap: 9px; align-items: flex-start; flex-wrap: wrap; }
 .turn .say .turnmeta { display: flex; flex-direction: column; gap: 1px; flex: none; }
-.turn .say .n { color: var(--signal); font-size: 10.5px; font-weight: 600; letter-spacing: 0.06em; white-space: nowrap; }
-.turn .say .ts { color: var(--ink-3); font-size: 10.5px; white-space: nowrap; }
+.turn .say .n { color: var(--signal); font-size: var(--t-xs); font-weight: 600; letter-spacing: 0.06em; white-space: nowrap; }
+.turn .say .ts { color: var(--ink-3); font-size: var(--t-xs); white-space: nowrap; }
 .turn .say .saytext { flex: 1; min-width: 200px; font-family: var(--f-prose); font-size: 14.5px; line-height: 1.6; overflow-wrap: anywhere; }
 /* a captured note (the turn-free `note` field, engine-filed to state/notes.md) */
 .turn .note {
@@ -176,7 +199,7 @@ table.list tr.disabled-row td { opacity: 0.55; }
   border-top: 1px dashed var(--rule); overflow-wrap: anywhere;
 }
 .turn .act {
-  padding: 7px 14px; background: var(--deck-2); font-size: 11.5px; color: var(--signal);
+  padding: 7px 14px; background: var(--deck-2); font-size: var(--t-s); color: var(--signal);
   display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; border-top: 1px solid var(--rule);
 }
 /* the action brief is a 200-char slice of model-chosen text — a path, an id, a hash. `min-width: 0`
@@ -184,17 +207,17 @@ table.list tr.disabled-row td { opacity: 0.55; }
    with it alone the text still can't break. See the .goal-meta note below for the other failure. */
 .turn .act .muted { min-width: 0; overflow-wrap: anywhere; }
 .turn .obs {
-  padding: 10px 14px; color: var(--ink-2); font-size: 11.5px; white-space: pre-wrap;
+  padding: 10px 14px; color: var(--ink-2); font-size: var(--t-s); white-space: pre-wrap;
   max-height: 300px; overflow: auto; background: var(--deck); border-top: 1px solid var(--rule);
 }
 .obs-collapse > summary {
-  cursor: pointer; padding: 7px 14px; color: var(--ink-3); font-size: 11.5px;
+  cursor: pointer; padding: 7px 14px; color: var(--ink-3); font-size: var(--t-s);
   background: var(--deck); border-top: 1px solid var(--rule); list-style: none;
 }
 .obs-collapse > summary::before { content: "▸ "; color: var(--signal); }
 .obs-collapse[open] > summary::before { content: "▾ "; }
 .obs-collapse > summary:hover { color: var(--ink); }
-.ev { padding: 9px 13px; border-radius: 7px; font-size: 12px; overflow-wrap: anywhere; }
+.ev { padding: 9px 13px; border-radius: var(--r2); font-size: 12px; overflow-wrap: anywhere; }
 .ev.injection { background: var(--signal-dim); color: var(--signal); border: 1px solid color-mix(in srgb, var(--signal) 38%, transparent); }
 .ev.question { background: var(--summons-dim); color: var(--summons); border: 1px solid color-mix(in srgb, var(--summons) 38%, transparent); }
 .ev.answer { background: var(--ok-dim); color: var(--ok); border: 1px solid color-mix(in srgb, var(--ok) 38%, transparent); }
@@ -218,7 +241,7 @@ table.list tr.disabled-row td { opacity: 0.55; }
    reads as a story chaptered by the routine's own stages */
 .phase-divider {
   display: flex; align-items: center; gap: 9px; margin: 4px 0 -3px; color: var(--signal);
-  font-size: 10.5px; font-weight: 600; letter-spacing: 0.09em; text-transform: uppercase;
+  font-size: var(--t-xs); font-weight: 600; letter-spacing: 0.09em; text-transform: uppercase;
 }
 .phase-divider::before, .phase-divider::after { content: ""; height: 1px; background: var(--rule-2); flex: 1; }
 /* "refer to" — the messenger reply analog: a hover ↩ on any message primes the composer
@@ -226,19 +249,19 @@ table.list tr.disabled-row td { opacity: 0.55; }
 .turn, .ev, .finish-banner, .msg { position: relative; }
 .refer-btn {
   position: absolute; top: 3px; right: 4px; background: none; border: none; cursor: pointer;
-  color: var(--ink-3); font-size: 13px; line-height: 1; padding: 3px 5px;
+  color: var(--ink-3); font-size: var(--t-m); line-height: 1; padding: 3px 5px;
   opacity: 0; transition: opacity 0.12s;
 }
 .turn:hover > .refer-btn, .ev:hover > .refer-btn, .finish-banner:hover > .refer-btn,
 .msg:hover > .refer-btn, .refer-btn:focus-visible { opacity: 1; }
 .refer-btn:hover { color: var(--ink); }
 .reply-ref {
-  color: var(--ink-3); font-size: 11.5px; border-left: 2px solid var(--rule-2);
+  color: var(--ink-3); font-size: var(--t-s); border-left: 2px solid var(--rule-2);
   padding: 1px 8px; margin-bottom: 6px; max-width: 100%;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .composer-ref {
-  display: flex; align-items: center; gap: 6px; color: var(--ink-2); font-size: 11.5px;
+  display: flex; align-items: center; gap: 6px; color: var(--ink-2); font-size: var(--t-s);
   border-left: 2px solid var(--signal); padding: 2px 8px; margin-bottom: 4px;
 }
 .composer-ref .ref-text { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -250,7 +273,7 @@ table.list tr.disabled-row td { opacity: 0.55; }
 .md pre, .md code, .md .mdi code, .md table.list { font-family: var(--f-mono); }
 .md p { margin: 0 0 7px; }
 .md > :last-child { margin-bottom: 0; }
-.md h3, .md h4, .md h5 { margin: 10px 0 5px; font-size: 13px; }
+.md h3, .md h4, .md h5 { margin: 10px 0 5px; font-size: var(--t-m); }
 .md h4 { font-size: 12.5px; }
 .md h5 { font-size: 12px; }
 .md :first-child { margin-top: 0; }
@@ -260,7 +283,7 @@ table.list tr.disabled-row td { opacity: 0.55; }
 .md pre code { background: none; border: none; padding: 0; }
 .md code, .mdi code {
   font-family: var(--f-mono); font-size: 0.92em; background: var(--signal-dim);
-  border: 1px solid var(--rule); border-radius: 4px; padding: 0 4px;
+  border: 1px solid var(--rule); border-radius: var(--r1); padding: 0 4px;
 }
 .md a, .mdi a { color: var(--signal); }
 .md blockquote {
@@ -268,9 +291,18 @@ table.list tr.disabled-row td { opacity: 0.55; }
   color: var(--ink-2);
 }
 .md blockquote > :last-child { margin-bottom: 0; }
-/* GFM pipe tables reuse table.list; tightened for chat/summary surfaces, scroll contained */
-.md .tablewrap { margin: 4px 0 8px; border: 1px solid var(--rule); border-radius: 6px; }
-.md table.list td, .md table.list th { padding: 4px 9px; font-size: 12px; }
+/* GFM pipe tables reuse table.list; tightened for chat/summary surfaces, scroll contained.
+   The wrapper is `overflow-x: auto`, but `table.list { width: 100% }` pinned the table TO that
+   wrapper, so the scroll could never engage and `.md`'s `overflow-wrap: anywhere` broke the
+   cells instead — a four-column table at 340px rendered its headers one letter per line
+   ("T/H/R/E/A/D"). The table sizes to its content and overflows into the scroller; the cells
+   wrap at words like prose does. */
+.md .tablewrap { margin: 4px 0 8px; border: 1px solid var(--rule); border-radius: var(--r2); }
+.md table.list { width: auto; min-width: 100%; }
+.md table.list td, .md table.list th {
+  padding: 4px 9px; font-size: 12px; overflow-wrap: normal; min-width: 6ch;
+}
+.md table.list th { white-space: nowrap; }
 
 details.raw summary {
   cursor: pointer; color: var(--ink-3); font-size: 10px; padding: 3px 14px;
@@ -288,22 +320,29 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
 .question-item:focus-within { border-color: color-mix(in srgb, var(--summons) 45%, transparent); }
 .question-item.answered { opacity: 0.68; }
 .question-item .q-text { font-family: var(--f-prose); font-size: 15.5px; line-height: 1.55; margin: 10px 0 2px; overflow-wrap: anywhere; }
-.question-item .q-meta { display: flex; gap: 8px 12px; align-items: center; flex-wrap: wrap; font-size: 11.5px; color: var(--ink-2); }
+.question-item .q-meta { display: flex; gap: 8px 12px; align-items: center; flex-wrap: wrap; font-size: var(--t-s); color: var(--ink-2); }
 .kbd-hint kbd {
-  border: 1px solid var(--rule-2); border-bottom-width: 2px; border-radius: 4px;
+  border: 1px solid var(--rule-2); border-bottom-width: 2px; border-radius: var(--r1);
   padding: 0 5px; font-family: var(--f-mono); font-size: 10px; background: var(--plate-3);
 }
 
 /* ---------- audit ---------- */
 .flow-note {
-  display: flex; gap: 9px; align-items: baseline; font-size: 11.5px; color: var(--ink-2);
-  padding: 8px 11px; border: 1px dashed var(--rule-2); border-radius: 7px; margin-top: 10px;
+  display: flex; gap: 9px; align-items: baseline; font-size: var(--t-s); color: var(--ink-2);
+  padding: 8px 11px; border: 1px dashed var(--rule-2); border-radius: var(--r2); margin-top: 10px;
 }
 .flow-note .arrow { color: var(--signal); }
 /* one queued message (Messages page) / one changelog row on an item card */
 .pending-item, .addressed-item { display: flex; flex-wrap: wrap; gap: 10px; align-items: baseline; padding: 7px 0; border-bottom: 1px solid var(--rule); font-size: 12px; }
 .pending-item:last-child, .addressed-item:last-child { border-bottom: none; }
 .pending-item .p-text, .addressed-item .p-text { flex: 1 1 240px; font-family: var(--f-prose); font-size: 14px; color: var(--ink); min-width: 0; overflow-wrap: break-word; }
+/* A queued message may be a 40-line report. Two lines here, the rest behind the row's own
+   expander — a list answers "what is waiting", not "what does it say". One rule, because the
+   Messages page's queue and a routine page's own four folders are views of the same files
+   (md.js clampedBody builds both). */
+.clamped {
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
 
 /* ---------- library / editors ---------- */
 /* code editor: a highlighted <pre> under a transparent-text <textarea> (components/code.js).
@@ -328,13 +367,24 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
 .tok-def { color: var(--signal); }
 
 .save-errors {
-  margin-top: 10px; padding: 10px 13px; border-radius: 7px; font-size: 11.5px;
+  margin-top: 10px; padding: 10px 13px; border-radius: var(--r2); font-size: var(--t-s);
   background: var(--err-dim); border: 1px solid color-mix(in srgb, var(--err) 38%, transparent);
   color: var(--err); white-space: pre-wrap; max-height: 260px; overflow: auto;
 }
 
 /* ---------- settings ---------- */
-.test-result { font-size: 11.5px; margin-top: 6px; white-space: pre-wrap; overflow-wrap: anywhere; }
+/* A line about something that is WRONG with a transport: a provider error, a quota refusal, a
+   proxy the console could not reach. Six call sites (components/proxy-accounts.js,
+   views/settings-endpoints.js) named this class and no stylesheet defined it, so every one of
+   them rendered as plain body ink — the warning colour was in the markup and nowhere on screen.
+   Both properties are load-bearing: a provider error arrives as ITS text, which has been a
+   250-character JSON body with no break opportunity in it. */
+.warn-line { color: var(--warn); overflow-wrap: anywhere; }
+/* The signed-in account's status is provider text too, and it widened the whole Settings
+   document to 624px on a 375px phone — a raw `{"error":{"type":"usage_limit_reached",…}` with
+   nowhere to break. It breaks here; making it a sentence is the provider adapter's job. */
+.proxy-accounts { overflow-wrap: anywhere; }
+.test-result { font-size: var(--t-s); margin-top: 6px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .test-result.ok { color: var(--ok); }
 .test-result.bad { color: var(--err); }
 .test-result .dim { color: var(--ink-2); }
@@ -348,9 +398,41 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
 }
 
 /* ---------- help (generated docs) ---------- */
+/* An index column beside the page, not a row of three dozen chips above it: the chips wrapped
+   into five lines with no visible order and pushed the reading frame off the first screen. The
+   column keeps the server's reading order, sticks while the frame scrolls, and scrolls itself
+   when the guide set outgrows the viewport. Below 861px it folds above the frame — a phone has
+   no second column, and the frame is what the reader came for. */
+.help-layout { display: flex; gap: 16px; align-items: flex-start; margin-top: 12px; }
+.help-index {
+  flex: 0 0 190px; position: sticky; top: 64px; display: flex; flex-direction: column; gap: 1px;
+  max-height: calc(100vh - 150px); overflow-y: auto; overscroll-behavior: contain;
+}
+.help-index-cap {
+  flex: 0 0 auto; font-family: var(--f-mono); font-size: var(--t-xs); text-transform: uppercase;
+  letter-spacing: 0.18em; color: var(--ink-3); padding: 0 8px 4px;
+}
+.help-index-cap.gen { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--rule); }
+/* `flex: 0 0 auto` is load-bearing: a flex item with `overflow: hidden` has an automatic
+   minimum size of ZERO, so in a height-capped column the entries shrink away to nothing
+   instead of the column scrolling — which is exactly what the folded phone index did. */
+.help-entry {
+  flex: 0 0 auto; color: var(--ink-2); font-size: 12.5px; line-height: 1.5;
+  text-decoration: none; padding: 2px 8px; border-radius: 6px;
+  border-left: 2px solid transparent;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.help-entry:hover { color: var(--ink); background: var(--plate-2); text-decoration: none; }
+/* the guide you are READING — signal, the same mark the section index uses */
+.help-entry.on { color: var(--signal); border-left-color: var(--signal); }
+.help-main { flex: 1; min-width: 0; }
 .help-frame {
-  width: 100%; height: calc(100vh - 235px); min-height: 420px; margin-top: 12px;
+  width: 100%; height: calc(100vh - 235px); min-height: 420px;
   border: 1px solid var(--rule); border-radius: 9px; background: var(--plate);
+}
+@media (max-width: 860px) {
+  .help-layout { flex-direction: column; }
+  .help-index { flex: 0 0 auto; position: static; width: 100%; max-height: 210px; }
 }
 
 /* ---------- conversations ---------- */
@@ -363,7 +445,7 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
 /* one line per conversation — details live in the hover card */
 .conv-item {
   display: flex; align-items: center; gap: 7px; padding: 5px 9px;
-  border: 1px solid var(--rule); border-radius: 7px;
+  border: 1px solid var(--rule); border-radius: var(--r2);
   background: var(--plate); text-decoration: none; color: var(--ink);
 }
 .conv-item:hover { border-color: var(--rule-2); }
@@ -377,7 +459,7 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
   padding: 10px 12px; box-shadow: 0 8px 22px var(--scrim);
 }
 .conv-hover-title { font-weight: 600; font-size: 12.5px; margin-bottom: 3px; }
-.conv-hover-snippet { font-size: 13px; color: var(--ink-2); margin: 6px 0 0; font-family: var(--f-prose); }
+.conv-hover-snippet { font-size: var(--t-m); color: var(--ink-2); margin: 6px 0 0; font-family: var(--f-prose); }
 .conv-hover-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 7px; }
 .conv-hover-tags .tag { font-size: 9.5px; padding: 1px 6px; }
 .dot { width: 7px; height: 7px; border-radius: 50%; flex: none; background: var(--ink-3); }
@@ -391,11 +473,16 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
 .conv-h1:focus { background: var(--plate-2); box-shadow: 0 0 0 1px var(--rule-2); }
 .conv-tagline { display: inline-flex; gap: 4px; align-items: center; flex-wrap: wrap; }
 .conv-head-row.sub { margin-top: 7px; gap: 16px; }
-.conv-model { display: inline-flex; align-items: center; gap: 6px; }
+/* model · <select> · uncensored · <select> · apply. An inline-flex row sizes to its content and
+   a `<select>` sizes to its widest OPTION, so a catalog with long model names made this span
+   367px wider than the phone it was on — the document scrolled sideways and took the fixed
+   bottom bar with it. It wraps, and its selects may shrink below their options. */
+.conv-model { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; max-width: 100%; }
+.conv-model select { flex: 1 1 14ch; min-width: 0; }
 .conv-tagwrap { display: inline-flex; align-items: center; gap: 7px; }
 .conv-caps { margin-top: 8px; }
 .conv-opts { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
-.conv-opts label { display: flex; flex-direction: column; gap: 4px; font-size: 11.5px; color: var(--ink-2); }
+.conv-opts label { display: flex; flex-direction: column; gap: 4px; font-size: var(--t-s); color: var(--ink-2); }
 .conv-opts label.row { flex-direction: row; align-items: center; }
 
 /* answerForm option buttons: long labels (e.g. full-sentence decision options) wrap
@@ -413,7 +500,7 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
    keyboard-focused; ✓/✕ feedback swaps the glyph for a moment after a click. */
 .msg .copy-msg {
   position: absolute; top: 3px; right: 28px; background: none; border: none; cursor: pointer;
-  color: var(--ink-3); font-size: 11.5px; line-height: 1; padding: 3px 5px;
+  color: var(--ink-3); font-size: var(--t-s); line-height: 1; padding: 3px 5px;
   opacity: 0; transition: opacity 0.12s;
 }
 /* mellowed (operator order 2026-08-23): hover reveals it at HALF strength — full contrast
@@ -443,7 +530,7 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
 .msg-body pre { position: relative; }
 .msg-body pre .copy-fence {
   position: absolute; top: 4px; right: 4px; background: none; border: none; cursor: pointer;
-  color: var(--ink-3); font-size: 11.5px; line-height: 1; padding: 3px 5px;
+  color: var(--ink-3); font-size: var(--t-s); line-height: 1; padding: 3px 5px;
   opacity: 0; transition: opacity 0.12s;
 }
 .msg-body pre:hover .copy-fence { opacity: .45; }
@@ -473,29 +560,29 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
 .msg.user.pending .pending-act:hover { color: var(--ink); }
 .msg.user.pending .pending-edit {
   width: 100%; min-height: 60px; font: inherit; color: inherit;
-  background: var(--plate); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px;
+  background: var(--plate); border: 1px solid var(--rule-2); border-radius: 6px; padding: 6px 8px;
 }
 .msg.assistant { align-self: flex-start; background: var(--plate); }
 .msg.question-msg { align-self: flex-start; background: var(--warn-dim); border-color: color-mix(in srgb, var(--warn) 38%, transparent); }
-.msg-body { font-size: 13px; line-height: 1.55; overflow-wrap: anywhere; }
+.msg-body { font-size: var(--t-m); line-height: 1.55; overflow-wrap: anywhere; }
 .msg-body p { margin: 0 0 6px; }
 .msg-body p:last-child { margin-bottom: 0; }
-.msg-meta { display: flex; gap: 10px; margin-top: 7px; font-size: 10.5px; color: var(--ink-3); align-items: center; }
+.msg-meta { display: flex; gap: 10px; margin-top: 7px; font-size: var(--t-xs); color: var(--ink-3); align-items: center; }
 .msg-attach { margin-top: 7px; display: flex; gap: 5px; flex-wrap: wrap; }
 .attach-chip {
-  font-size: 10.5px; padding: 2px 8px; border-radius: 20px; border: 1px solid var(--rule-2);
+  font-size: var(--t-xs); padding: 2px 8px; border-radius: 20px; border: 1px solid var(--rule-2);
   color: var(--ink-2); background: var(--plate-2); max-width: 220px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .attach-chips { display: inline-flex; gap: 4px; flex-wrap: wrap; }
 .topic-shift {
   display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 8px;
-  padding: 6px 9px; border-radius: 7px; font-size: 11.5px; color: var(--warn);
+  padding: 6px 9px; border-radius: var(--r2); font-size: var(--t-s); color: var(--warn);
   background: var(--warn-dim); border: 1px solid color-mix(in srgb, var(--warn) 38%, transparent);
 }
 .work-fold {
   align-self: stretch; border: 1px dashed var(--rule); border-radius: 8px;
-  background: var(--deck-2); font-size: 11.5px;
+  background: var(--deck-2); font-size: var(--t-s);
 }
 .work-fold > summary { cursor: pointer; padding: 7px 11px; color: var(--ink-2); list-style: none; }
 .work-fold > summary::before { content: "▸ "; color: var(--ink-3); }
@@ -504,17 +591,32 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
 .conv-composer { position: sticky; bottom: 0; margin-top: 14px; padding: 10px 0 14px; background: var(--deck); }
 .conv-composer textarea { width: 100%; resize: vertical; margin-bottom: 8px; }
 .conv-new textarea { width: 100%; resize: vertical; }
+/* The composer's pre-start settings (conversations-new.js): eight titled sections behind one
+   disclosure, because flat they were 12 600px of configuration under a page whose one action is
+   at the top. Panel-shaped, so an open one reads as the same kind of object as the task box. */
+.conv-setup > summary { cursor: pointer; list-style: none; }
+.conv-setup > summary::-webkit-details-marker { display: none; }
+.conv-setup > summary::before { content: "▸ "; color: var(--ink-3); }
+.conv-setup[open] > summary::before { content: "▾ "; }
+.conv-setup[open] > summary {
+  padding-bottom: var(--s2); margin-bottom: var(--s3); border-bottom: 1px solid var(--rule);
+}
+.conv-setup h2:first-of-type { margin-top: 0; }
 
 .art-list { display: flex; flex-direction: column; gap: 3px; max-height: 168px; overflow: auto; }
+/* In its own sticky column the artifact list keeps its own scroll. Below 760px the rail is a
+   block in the page flow, where a 168px inner scroller is a touch trap: a drag inside it
+   scrolls five rows and stops the page moving at all. */
+@media (max-width: 759px) { .art-list { max-height: none; overflow: visible; } }
 .art-item {
   display: flex; gap: 7px; align-items: center; text-align: left; width: 100%;
-  padding: 5px 8px; border: 1px solid var(--rule); border-radius: 7px;
+  padding: 5px 8px; border: 1px solid var(--rule); border-radius: var(--r2);
   background: var(--plate); color: var(--ink); cursor: pointer; font: inherit;
 }
 .art-item:hover { border-color: var(--rule-2); }
 .art-item.on { border-color: var(--rule-2); background: var(--plate-2); }
 .art-ico { flex: none; }
-.art-item .art-name { flex: 1; min-width: 0; font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.art-item .art-name { flex: 1; min-width: 0; font-size: var(--t-s); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .art-item .art-time { flex: none; white-space: nowrap; }
 /* delete stays quiet until the row is hovered — a destructive control never competes
    with the open affordance it sits beside */
@@ -551,11 +653,13 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
 
 .stat-section { margin: 22px 0; }
 .stat-section h2 { font-size: 14px; color: var(--ink); margin: 0 0 10px; letter-spacing: 0.01em; }
-.table-wrap { overflow-x: auto; border: 1px solid var(--rule); border-radius: 8px; }
+
 .stat-table { width: 100%; border-collapse: collapse; font-size: 12px; }
 .stat-table th, .stat-table td { padding: 7px 11px; text-align: left; border-bottom: 1px solid var(--rule); }
-.stat-table thead th { color: var(--ink-2); text-transform: uppercase; font-size: 10.5px; letter-spacing: 0.04em; background: var(--plate-2); }
-.stat-table td.num, .stat-table th.num { text-align: right; font-variant-numeric: tabular-nums; }
+.stat-table thead th { color: var(--ink-2); text-transform: uppercase; font-size: var(--t-xs); letter-spacing: 0.04em; background: var(--plate-2); }
+/* nowrap: a spend cell broke as `7.11M ·` / `$0.00` with a lone separator on the second
+   line, in a table whose whole job is comparable numbers */
+.stat-table td.num, .stat-table th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 /* Recipe-length bars (F371): instruction mass, deliberately NOT a usage-series colour — iris
    says "structure", the charts' palette says "spend". A hardcoded hex here could not follow the
    theme, so it stayed a dark-mode violet on a white sheet. */
@@ -563,11 +667,15 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
 .recipe-bar { height: 10px; border-radius: 3px; background: var(--iris); min-width: 2px; }
 .stat-table tbody tr:last-child td { border-bottom: none; }
 .stat-table tbody tr:hover { background: var(--plate-2); }
+/* the reveal row under a folded table, and the row that stands for what is folded */
+.stat-table tr.fold-row td { text-align: center; padding: 4px 11px; }
+.stat-table tr.fold-row:hover { background: transparent; }
+.stat-table tr.subtotal td { color: var(--ink-2); font-style: italic; }
 .stat-foot { color: var(--ink-2); font-size: 11px; margin: 16px 0 4px; font-family: var(--f-display); }
 /* configurable charts (components/charts.js) */
 .chart-card { margin-bottom: 12px; }
 .chart-config { gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
-.chart-sel { font-size: 11.5px; padding: 3px 6px; }
+.chart-sel { font-size: var(--t-s); padding: 3px 6px; }
 .chart-svg { width: 100%; height: auto; display: block; }
 .chart-grid { stroke: var(--rule); stroke-width: 1; }
 .chart-ylabel, .chart-xlabel { fill: var(--ink-3); font-size: 10px; font-family: var(--f-display); }
@@ -576,8 +684,8 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
 .chart-swatch { width: 9px; height: 9px; border-radius: 2px; flex: none; }
 .chart-tip {
   position: fixed; z-index: 60; pointer-events: none; background: var(--plate-2);
-  border: 1px solid var(--rule-2); border-radius: 7px; padding: 7px 10px;
-  font-size: 11.5px; color: var(--ink); font-family: var(--f-display);
+  border: 1px solid var(--rule-2); border-radius: var(--r2); padding: 7px 10px;
+  font-size: var(--t-s); color: var(--ink); font-family: var(--f-display);
   box-shadow: 0 6px 18px var(--scrim); max-width: 260px;
 }
 .chart-tip div:first-child { color: var(--ink-2); margin-bottom: 3px; }
@@ -623,8 +731,8 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
   padding: 2px 4px; border-radius: 6px;
 }
 .sg-node .sg-dot { width: 14px; text-align: center; flex: none; color: var(--ink-3); }
-.sg-node .sg-stats { margin-left: auto; padding-left: 10px; color: var(--ink-2); font-size: 10.5px; white-space: nowrap; }
-.sg-foot { margin-top: 6px; color: var(--ink-3); font-size: 10.5px; }
+.sg-node .sg-stats { margin-left: auto; padding-left: 10px; color: var(--ink-2); font-size: var(--t-xs); white-space: nowrap; }
+.sg-foot { margin-top: 6px; color: var(--ink-3); font-size: var(--t-xs); }
 .sg-node.done { color: var(--ink-3); }
 .sg-node.done .sg-dot { color: var(--signal); }
 .sg-node.current {
@@ -659,11 +767,15 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
 }
 .goal-mode.any { color: var(--signal); border-color: var(--signal); }
 .goal-mode:hover { color: var(--ink); }
+/* max-width, not flex:1 — the name shared the head with ALL/ANY, the count and two buttons, and
+   at run-rail width `flex:1; min-width:0` collapsed a named group to three letters ("gro"). It
+   is hidden entirely when it is empty and there is only one group (stopping.js): an unnamed
+   sole group has no name to show and an empty input beside "empty" reads as a bug. */
 .goal-gname {
-  flex: 1; min-width: 0; background: none; border: none; color: var(--ink);
+  flex: 0 1 22ch; min-width: 6ch; background: none; border: none; color: var(--ink);
   font-size: 12px; padding: 1px 2px; font-family: var(--f-display);
 }
-.goal-gname:focus { outline: 1px solid var(--rule-2); border-radius: 4px; }
+.goal-gname:focus { outline: 1px solid var(--rule-2); border-radius: var(--r1); }
 .goal-row {
   display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; font-size: 12.5px;
   color: var(--ink-2); padding: 2px 2px; min-width: 0;
@@ -685,7 +797,7 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
    condition to one word per line — a run that writes a paragraph of accounting destroyed the
    panel it was reporting into. */
 .goal-text { flex: 1 1 auto; min-width: 22ch; }
-.goal-text:focus { outline: 1px solid var(--rule-2); border-radius: 4px; }
+.goal-text:focus { outline: 1px solid var(--rule-2); border-radius: var(--r1); }
 /* F421 let the note WRAP so it stopped running off the sidebar — necessary, and not sufficient:
    wrapping says how the note breaks, not how much of the row it may claim, so a paragraph-long
    note still won the flex negotiation and starved the condition. A shrinkable basis bounds it. */
@@ -694,7 +806,12 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
    the line it collapsed to ~0 and overflow-wrap:anywhere broke it one letter per line. .goal-row
    now wraps so the meta drops to its own line; the min-width floor keeps it readable even when it
    shares a wrapped line, while flex:0 1 34ch still lets it yield width to the condition text. */
-.goal-meta { font-size: 10px; min-width: 12ch; flex: 0 1 34ch; overflow-wrap: anywhere; }
+/* F421 v4 (2026-09-22): the meta takes a LINE OF ITS OWN. Sharing the row made each condition
+   negotiate a different settlement — one row's meta in a narrow right column, the next's wrapped
+   under the text with the scope controls floating between — so three conditions read as three
+   different widgets. A full basis keeps every wrap fix above (it still wraps, it still yields
+   the whole width to the condition text) and gives the accounting one predictable place. */
+.goal-meta { font-size: 10px; flex: 1 0 100%; overflow-wrap: anywhere; }
 .goal-note { color: var(--ink-3); }
 /* The SCOPE toggle. A per-run bound is ordinary machinery and stays quiet; a FINAL GOAL is
    structure — it is what the routine is FOR, and meeting it stops the routine — so it takes
@@ -727,7 +844,7 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
    paths truncate LEFT (rtl trick) so the filename end stays visible */
 .filelist { display: flex; flex-direction: column; gap: 1px; font-family: var(--f-display); }
 .file-row {
-  display: flex; align-items: baseline; gap: 8px; font-size: 11.5px; color: var(--ink-2);
+  display: flex; align-items: baseline; gap: 8px; font-size: var(--t-s); color: var(--ink-2);
   padding: 1px 4px; min-width: 0;
 }
 .file-row .file-path {
@@ -735,7 +852,7 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
   direction: rtl; text-align: left;
 }
 .file-row .file-ops { margin-left: auto; padding-left: 8px; color: var(--ink-3);
-  font-size: 10.5px; white-space: nowrap; }
+  font-size: var(--t-xs); white-space: nowrap; }
 .file-row.err .file-ops { color: var(--err); }
 /* view/download affordances on every row — quiet until hovered (user order 2026-08-12) */
 .file-row .file-act {
@@ -923,7 +1040,7 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
 .rn-headings { margin-left: 10px; border-left: 1px solid var(--rule-2); padding-left: 6px;
   display: flex; flex-direction: column; gap: 1px; }
 .rn-h { text-align: left; background: none; border: 0; color: var(--ink-2); font: inherit;
-  font-size: 11.5px; padding: 1px 6px; border-radius: 5px; cursor: pointer; overflow: hidden;
+  font-size: var(--t-s); padding: 1px 6px; border-radius: 5px; cursor: pointer; overflow: hidden;
   text-overflow: ellipsis; white-space: nowrap; }
 .rn-h:hover { background: var(--plate-2); color: var(--ink); }
 .rn-h3 { padding-left: 16px; }
@@ -944,7 +1061,7 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
 .cmd-suggest code { color: var(--signal); white-space: nowrap; }
 .cmd-suggest .cs-hint { color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cmd-help { background: var(--plate); border: 1px solid var(--rule); border-radius: 6px; padding: 8px 12px 10px; margin-bottom: 8px; max-height: 300px; overflow: auto; }
-.cmd-help .cmd-cap { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--ink-2); margin: 8px 0 4px; }
+.cmd-help .cmd-cap { font-size: var(--t-xs); text-transform: uppercase; letter-spacing: 0.1em; color: var(--ink-2); margin: 8px 0 4px; }
 .cmd-help .cmd-row { display: flex; gap: 10px; padding: 2px 0; font-size: 12px; align-items: baseline; }
 .cmd-help code { color: var(--signal); white-space: nowrap; }
 .msg.user.cmd .msg-body { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
@@ -994,7 +1111,7 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
 .hero-label {
   font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.22em; color: var(--ink-3);
 }
-.hero-strong { font-size: 15px; font-weight: 600; color: var(--ink); min-width: 0; }
+.hero-strong { font-size: var(--t-l); font-weight: 600; color: var(--ink); min-width: 0; }
 .hero-sub { font-size: 11px; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; }
 .hero-link { color: var(--signal); }
 .hero-tile .heartbeat { width: 100%; max-width: 156px; height: 26px; }
@@ -1054,26 +1171,59 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
 .msg-item.inbox { border-left-color: var(--signal); }          /* waiting — the live queue */
 .msg-item.outbox { border-left-color: var(--iris); }        /* pending hand-off */
 .msg-item.read, .msg-item.received { opacity: 0.92; }         /* consumed — history */
-.msg-head { display: flex; gap: 8px 12px; align-items: baseline; flex-wrap: wrap; font-size: 11.5px; color: var(--ink-2); }
+.msg-head { display: flex; gap: 8px 12px; align-items: baseline; flex-wrap: wrap; font-size: var(--t-s); color: var(--ink-2); }
 .msg-head .msg-src { font-weight: 600; color: var(--ink); }
 .msg-head .msg-ops { margin-left: auto; display: flex; gap: 6px; }
-.msg-text { margin-top: 6px; font-family: var(--f-prose); font-size: 14px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
-.msg-title { margin-top: 6px; font-weight: 600; font-size: 13px; font-family: var(--f-display); }
+/* the body is rendered through mdInline, which turns the message's own newlines into <br>:
+   `pre-wrap` on top of that doubled every blank line */
+.msg-text { display: block; margin-top: 6px; font-family: var(--f-prose); font-size: 14px; line-height: 1.55; overflow-wrap: anywhere; }
+.msg-title { margin-top: 6px; font-weight: 600; font-size: var(--t-m); font-family: var(--f-display); }
 .msg-item .msg-detail { margin-top: 3px; color: var(--ink-2); font-family: var(--f-prose); font-size: 13.5px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* A filter bar's rarely-used half, folded into the bar itself: the summary sits in the flex
+   row like a chip, and its chips drop below when opened. */
+.filter-more > summary { cursor: pointer; color: var(--ink-3); font-size: var(--t-s); }
+.filter-more > summary:hover { color: var(--ink); }
+.filter-more { flex-basis: 100%; }
+.filter-more-body { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 
 /* --- setup check (components/setupcheck.js) -----------------------------------------------
    The severity STRIPE carries the reading, not the row background: a page of tinted rows is a
-   page you stop seeing. Amber by default, red once something will actually fail. */
+   page you stop seeing. And it is weighted by the WORST row, in the palette's own terms:
+
+     tone-blocks      err      — a call will be rejected outright
+     tone-interrupts  SUMMONS  — the run will stop and ask a person. That is the whole meaning
+                                 of the coral, and this is the strip's one case for it.
+     tone-note        none     — nothing is missing; the row states how the routine is set.
+                                 A note-only strip is a folded <details>, because two of the
+                                 fleet's healthy routines wore the identical amber band as the
+                                 one about to park on a blocking secret, which taught the
+                                 reader that the band means nothing. */
 .setup-check {
-  border: 1px solid color-mix(in srgb, var(--warn) 38%, transparent); border-left: 3px solid var(--warn);
-  border-radius: 3px; background: var(--warn-dim); margin-top: 14px;
+  border: 1px solid var(--rule); border-left: 3px solid var(--rule-2);
+  border-radius: 3px; background: var(--plate-2); margin-top: 14px;
 }
-.setup-check.has-blocks { border-color: color-mix(in srgb, var(--err) 38%, transparent); border-left-color: var(--err); }
+.setup-check.tone-interrupts {
+  border-color: color-mix(in srgb, var(--summons) 38%, transparent);
+  border-left-color: var(--summons); background: var(--summons-dim);
+}
+.setup-check.tone-blocks {
+  border-color: color-mix(in srgb, var(--err) 38%, transparent);
+  border-left-color: var(--err); background: var(--err-dim);
+}
 .setup-head {
   display: flex; align-items: center; gap: 10px; padding: 9px 13px;
-  border-bottom: 1px solid color-mix(in srgb, var(--warn) 38%, transparent); color: var(--warn); font-size: 12px;
+  border-bottom: 1px solid var(--rule); color: var(--ink-2); font-size: 12px;
 }
-.setup-check.has-blocks .setup-head { color: var(--err); border-bottom-color: var(--err-dim); }
+summary.setup-head { cursor: pointer; list-style: none; }
+summary.setup-head::-webkit-details-marker { display: none; }
+.setup-check.tone-note:not([open]) .setup-head { border-bottom: none; }
+.setup-check.tone-note .setup-head::after { content: "▸"; color: var(--ink-3); }
+.setup-check.tone-note[open] .setup-head::after { content: "▾"; }
+.setup-check.tone-interrupts .setup-head {
+  color: var(--summons); border-bottom-color: color-mix(in srgb, var(--summons) 38%, transparent);
+}
+.setup-check.tone-blocks .setup-head { color: var(--err); border-bottom-color: var(--err-dim); }
 .setup-row {
   display: grid; grid-template-columns: 74px 1fr; gap: 12px; align-items: start;
   padding: 9px 13px; border-top: 1px solid var(--rule);
@@ -1083,7 +1233,7 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
   font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; padding-top: 2px;
 }
 .sev-blocks .setup-sev { color: var(--err); }
-.sev-interrupts .setup-sev { color: var(--warn); }
+.sev-interrupts .setup-sev { color: var(--summons); }
 .sev-note .setup-sev { color: var(--iris); }
 .setup-id { font-size: 12px; color: var(--ink); word-break: break-all; }
 @media (max-width: 560px) {
@@ -1106,7 +1256,7 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
   font-family: var(--f-display); line-height: 1.45;
 }
 .fix-link {
-  padding: 0; border: 0; background: none; font: inherit; font-size: 11.5px;
+  padding: 0; border: 0; background: none; font: inherit; font-size: var(--t-s);
   color: var(--signal); cursor: pointer; text-align: left;
 }
 .fix-link:hover {
@@ -1115,7 +1265,7 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
 .fix-link:disabled { color: var(--ink-3); cursor: default; text-decoration: none; }
 .fix-away, .fix-away:hover { text-decoration: underline dotted; text-underline-offset: 2px; }
 .fix-away::after { content: " ↗"; }
-.fix-act { font-size: 11.5px; color: var(--ink-2); }
+.fix-act { font-size: var(--t-s); color: var(--ink-2); }
 .fix-where { font-size: 11px; color: var(--ink-3); }
 .fix-or { font-size: 11px; color: var(--ink-3); font-style: italic; }
 
@@ -1138,7 +1288,7 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
   align-items: start; padding: 11px 13px; cursor: pointer;
 }
 .ability.orphan .ability-head { cursor: default; }
-.ability-name { font-size: 13px; color: var(--ink); }
+.ability-name { font-size: var(--t-m); color: var(--ink); }
 .ability-stack { list-style: none; margin: 0; padding: 0 0 2px; border-top: 1px solid var(--rule); }
 .ab-row {
   display: grid; grid-template-columns: 9px 76px 1fr; gap: 9px; align-items: start;
@@ -1159,6 +1309,15 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
 .ab-row .ent { min-width: 0; }            /* let the grid shrink it instead of the select */
 .ab-row .ent-id { color: var(--ink); word-break: break-all; }
 .ab-row.has-control select { width: 100%; max-width: 260px; }
+.ability-more > summary {
+  cursor: pointer; list-style: none; padding: 5px 13px; font-size: var(--t-s);
+  color: var(--ink-3); border-top: 1px solid var(--rule);
+}
+.ability-more > summary::-webkit-details-marker { display: none; }
+.ability-more > summary::after { content: " ▸"; }
+.ability-more[open] > summary::after { content: " ▾"; }
+.ability-more > summary:hover { color: var(--ink); }
+.ability-more .ability-stack { border-top: 1px solid var(--rule); }
 .ability-foot { padding: 5px 13px 9px; }
 
 /* the catalogue: one line each, no state, no stack */
@@ -1203,7 +1362,7 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
 .rule-name { color: var(--ink); white-space: nowrap; }
 .rule-group { margin-top: 12px; }
 .rule-group-name {
-  font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-3);
+  font-size: var(--t-xs); letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-3);
   margin-bottom: 5px;
 }
 @media (max-width: 620px) {
@@ -1269,7 +1428,7 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
    clipped at the card edge instead of wrapping (which is exactly what shipped). The label
    column is sized for the longest label — which is why the labels are one short word each:
    "hold it when" overran its column and butted straight against the text with no gap. */
-.effect-line { font-size: 11.5px; line-height: 1.5; display: grid; gap: 1px; min-width: 0; }
+.effect-line { font-size: var(--t-s); line-height: 1.5; display: grid; gap: 1px; min-width: 0; }
 .effect-side {
   display: grid; grid-template-columns: 2.6rem minmax(0, 1fr); gap: 8px;
   color: var(--ink-3); min-width: 0;

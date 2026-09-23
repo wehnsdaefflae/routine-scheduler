@@ -4,7 +4,7 @@
 // separate save button to forget). onChange must return the API promise; on failure the
 // local state stays untouched so the UI never lies about what was persisted.
 
-import { el, tagChip, toast } from "/static/util.js";
+import { el, tagChip, toastError } from "/static/util.js";
 
 export function tagsEditor(initial, onChange, { placeholder = "add tag…" } = {}) {
   let tags = [...(initial || [])];
@@ -19,7 +19,7 @@ export function tagsEditor(initial, onChange, { placeholder = "add tag…" } = {
       draw();
       return true;
     } catch (err) {
-      toast(err.message, 3000, { error: true });
+      toastError(err, 3000);
       return false;
     }
   };

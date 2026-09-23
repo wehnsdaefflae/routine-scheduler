@@ -106,7 +106,7 @@ def test_a_library_drift_record_gets_its_own_band_and_no_create_button(ui, ui_pa
     ui_page.goto(f"{ui.url}/#/questions")
 
     band = ui_page.locator(".q-group-head", has_text="library drift")
-    expect(band).to_be_visible(timeout=10_000)
+    expect(band).to_be_visible()
     card = ui_page.locator("[data-drift]")
     expect(card).to_contain_text("uir")
     expect(card).to_contain_text("secret:ZULIP_API_KEY")
@@ -118,10 +118,41 @@ def test_a_library_drift_record_gets_its_own_band_and_no_create_button(ui, ui_pa
     expect(ui_page.get_by_role("button", name="create it")).to_have_count(0)
 
     card.get_by_role("button", name="dismiss").click()
-    expect(ui_page.locator("[data-drift]")).to_have_count(0, timeout=10_000)
+    expect(ui_page.locator("[data-drift]")).to_have_count(0)
     assert list(d.glob("pc-*.json")) == []
     # nothing was messaged: `uir` is the routine the drift BROKE, not a proposer
     assert list((ui.routine_dir("uir") / "inbox").glob("msg-pending-*.json")) == []
+
+
+def test_two_gaps_from_one_commit_are_one_card(ui, ui_page):
+    """The watcher files one record per GAP, so a library commit that cost a routine two
+    permissions produced two cards with the same routine, the same commit and the same "what
+    broke" — and the reader had to work out they were one event. One commit is one card."""
+    d = ui.routines / ".control" / "pending-creations"
+    d.mkdir(parents=True, exist_ok=True)
+    for n, ent in enumerate(["secret:ZULIP_API_KEY", "util:zulip"]):
+        atomic_write_json(d / f"pc-20260828-04000{n}-cccccc.json", {
+            "id": f"pc-20260828-04000{n}-cccccc", "kind": "library-drift", "routine": "uir",
+            "run_id": "", "created_at": "2026-08-28T04:00:00+02:00",
+            "summary": f"uir: {ent}", "fields": {
+                "entity": f"uir:{ent}", "head": "faf62a6d99",
+                "node": {"id": ent, "severity": "blocks", "why": "held, but not switched on",
+                         "effect": "it fails closed"}}})
+    ui_page.goto(f"{ui.url}/#/questions")
+
+    card = ui_page.locator("[data-drift]")
+    expect(card).to_have_count(1)
+    expect(card).to_have_attribute("data-drift-count", "2")
+    expect(card).to_contain_text("lost 2 permissions")
+    expect(card).to_contain_text("faf62a6d")
+    # both gaps are named on the one card — grouping folds the duplication, not the content
+    expect(card).to_contain_text("secret:ZULIP_API_KEY")
+    expect(card).to_contain_text("util:zulip")
+
+    # and one dismissal settles the whole event, which is what the reader means by it
+    card.get_by_role("button", name="dismiss all 2").click()
+    expect(ui_page.locator("[data-drift]")).to_have_count(0)
+    assert list(d.glob("pc-*.json")) == []
 
 
 # ---- the FINISHED band: a routine reporting its final goal met ------------------------------------
@@ -143,7 +174,7 @@ def test_the_finished_band_says_the_routine_has_already_stopped(ui, ui_page):
     _queue_goal(ui)
     ui_page.goto(f"{ui.url}/#/questions")
     card = ui_page.locator("[data-goal]")
-    expect(card).to_be_visible(timeout=10_000)
+    expect(card).to_be_visible()
     expect(card).to_contain_text("reports its final goal met")
     # the mechanism, stated on the card: neither button is what stopped it
     expect(card).to_contain_text("it has already stopped running")
@@ -163,7 +194,7 @@ def test_not_yet_reopens_the_goal_and_the_routine_is_scheduled_again(ui, ui_page
                         "group": "g1", "scope": "goal"}]})
     _queue_goal(ui)
     ui_page.goto(f"{ui.url}/#/questions")
-    expect(ui_page.locator("[data-goal]")).to_be_visible(timeout=10_000)
+    expect(ui_page.locator("[data-goal]")).to_be_visible()
 
     ui_page.get_by_role("button", name="not yet").click()
     expect(ui_page.locator("#toast")).to_contain_text("goal reopened")

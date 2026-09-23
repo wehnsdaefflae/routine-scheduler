@@ -12,6 +12,11 @@ from pathlib import Path
 
 from ..health_events import log_health_event
 from ..libgit import commit, git
+from ..paths import atomic_write_json, read_json
+
+#: Where the last REPORTED size bucket of each oversize file lives — derived state beside the
+#: other `.control` markers, never config.
+SEEN_FILE = ".control/oversize-state-files.json"
 
 #: A file at or above this size is left OUT of the routine's own repo. The routine repo is
 #: mirrored into the library repo and PUSHED (library-sync), and GitHub refuses a push
@@ -50,6 +55,37 @@ def oversize_files(routine_dir: Path, limit: int | None = None) -> list[tuple[st
     return sorted(found)
 
 
+def _size_bucket(size: int) -> int:
+    """The file's size in MB, rounded DOWN to a power of two — the identity of the event.
+
+    An oversize state file is oversize on every run, so reporting each one every time is how
+    the one signal that would have caught a 2 GB download became noise: 18 of the last 400
+    health events were three files saying the same thing again. A bucket makes the event mean
+    "this file crossed a new size" — it fires once, then only when the file has DOUBLED.
+    """
+    mb = max(1, size // (1024 * 1024))
+    return 1 << (mb.bit_length() - 1)
+
+
+def _newly_oversize(routines_home: Path, routine: str,
+                    big: list[tuple[str, int]]) -> list[tuple[str, int]]:
+    """The subset worth an event — those whose size bucket is new for this routine — with
+    the marker updated. Best-effort: an unreadable marker reports everything once more.
+    """
+    marker = Path(routines_home) / SEEN_FILE
+    seen = read_json(marker)
+    seen = seen if isinstance(seen, dict) else {}
+    fresh = [(rel, size) for rel, size in big
+             if seen.get(f"{routine}/{rel}") != _size_bucket(size)]
+    if fresh:
+        seen.update({f"{routine}/{rel}": _size_bucket(size) for rel, size in fresh})
+        try:
+            atomic_write_json(marker, seen)
+        except OSError:
+            pass
+    return fresh
+
+
 def autocommit(routine_dir: Path, message: str, *, routines_home: Path | None = None,
                run_id: str = "") -> None:
     """Commit the routine's working dir at run end (best-effort), through the shared
@@ -61,15 +97,16 @@ def autocommit(routine_dir: Path, message: str, *, routines_home: Path | None = 
     that never persisted git config.
 
     Files over OVERSIZE_BYTES are excluded from the stage and each one is reported as an
-    `oversize_state_file` health event (when `routines_home` is known), so the run's work
-    is kept and the repo the instance pushes never carries a blob no remote will take.
+    `oversize_state_file` health event (when `routines_home` is known) the first time it
+    reaches a given size bucket, so the run's work is kept and the repo the instance pushes
+    never carries a blob no remote will take.
     """
     if not (routine_dir / ".git").is_dir():
         return
     big = oversize_files(routine_dir)
     commit(routine_dir, message, exclude=[rel for rel, _size in big])
     if big and routines_home is not None:
-        for rel, size in big:
+        for rel, size in _newly_oversize(routines_home, routine_dir.name, big):
             log_health_event(routines_home, "oversize_state_file",
                              routine=routine_dir.name, run_id=run_id,
                              detail=f"{rel} is {size / (1024 * 1024):.0f} MB — left out of the "

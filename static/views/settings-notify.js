@@ -4,7 +4,7 @@
 
 import { api } from "/static/api.js";
 import * as notify from "/static/notify.js";
-import { el, toast } from "/static/util.js";
+import { el, toast, toastError } from "/static/util.js";
 
 // ---- notifications: tier 1 (tab open) + tier 2 (Web Push, tab closed) -------------------------
 export function renderNotifications() {
@@ -68,17 +68,17 @@ export function renderNotifications() {
     sub.onclick = async () => {
       sub.disabled = true;
       try { await notify.pushSubscribe(); toast("subscribed — decisions push to this browser now"); renderPush(); }
-      catch (err) { toast(err.message, 5000, { error: true }); sub.disabled = false; }
+      catch (err) { toastError(err, 5000); sub.disabled = false; }
     };
     unsub.onclick = async () => {
       unsub.disabled = true;
       try { await notify.pushUnsubscribe(); toast("push disabled on this browser"); renderPush(); }
-      catch (err) { toast(err.message, 5000, { error: true }); unsub.disabled = false; }
+      catch (err) { toastError(err, 5000); unsub.disabled = false; }
     };
     test.onclick = async () => {
       try { const r = await api("/api/push/test", { method: "POST" });
         toast(`test sent to ${r.sent} browser(s)`); }
-      catch (err) { toast(err.message, 5000, { error: true }); }
+      catch (err) { toastError(err, 5000); }
     };
     pushRow.append(head,
       el("div", { class: "muted small" },

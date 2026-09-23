@@ -14,12 +14,12 @@ fields (kind/target/choice/raw) alongside the formatted text so an edit can re-f
 
 from __future__ import annotations
 
-import uuid
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
+from ..engine import inbox
 from ..ids import now_iso
 from ..paths import atomic_write_json, read_json
 from ..readmodels.items import SELF_AUDIT_SLUG
@@ -134,14 +134,20 @@ def write_feedback(routine_dir, body: Feedback) -> str:
     """Format + drop one feedback message into the self-audit inbox (shared with the
     Decisions page, which answers audit decisions through the same channel). Returns the
     message id — the handle for editing/withdrawing it until a run consumes it.
-    Unique suffix: now_iso() is only second-resolution, so several submissions in the
-    same second would otherwise share a filename and clobber each other.
+    Filed through `engine.inbox.file_message`, the ONE writer of the msg-* shape — the
+    filename this used to build was a character-for-character copy of that function's, which
+    is the shape of drift the single writer exists to prevent. The structured fields ride in
+    `extra`; the in-place EDITOR below still rewrites the same file through
+    `_message_payload`, because replacing a queued message must keep its name and its
+    position in the inbox.
     """
-    fname = f"msg-{now_iso().replace(':', '')}-{uuid.uuid4().hex[:8]}.json"
-    atomic_write_json(routine_dir / "inbox" / fname, _message_payload(body, now_iso()))
+    fields = _message_payload(body, "")
+    path = inbox.file_message(routine_dir, fields["text"], via="web-audit",
+                              extra={k: v for k, v in fields.items()
+                                     if k not in ("text", "ts", "via")})
     if body.kind == "decision" and (body.target or "").strip():
         _record_decision_answer(routine_dir, (body.target or "").strip())
-    return Path(fname).stem
+    return path.stem
 
 
 @router.post("/audit/feedback")

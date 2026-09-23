@@ -9,7 +9,7 @@
 import { api } from "/static/api.js";
 import { forgetField } from "/static/formpersist.js";
 import { md } from "/static/md.js";
-import { el, toast, when } from "/static/util.js";
+import { el, toast, toastError, when } from "/static/util.js";
 
 export function answerForm(q, {
   control = "textarea",        // "textarea" (Shift+Enter sends) | "input" (Enter sends)
@@ -84,7 +84,7 @@ export function answerForm(q, {
         onSuccess?.(phrase, false);
         return;
       }
-      toast(err.message, 4000, { error: true });
+      toastError(err);
       for (const b of btnRow.querySelectorAll("button")) b.disabled = false;
     }
   };
@@ -134,7 +134,7 @@ export function answerForm(q, {
         onSuccess?.(text, intermediate);
         return;
       }
-      toast(err.message, 4000, { error: true });
+      toastError(err);
       send.disabled = false;
       if (discuss) discuss.disabled = false;
     }

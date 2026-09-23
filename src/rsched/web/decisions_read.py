@@ -146,6 +146,21 @@ def _all_questions(server, home_kind: str = "routine") -> list[dict]:
                          lambda: _all_questions_fresh(server, home_kind, home))
 
 
+def file_backed_questions(server) -> list[dict]:
+    """Every open FILE-BACKED question, across all three homes. One spelling of the
+    three-home loop: a fourth home (or a renamed one) is one edit, not four, and `_HOME_ATTR`
+    stays the single enumeration of the kinds.
+    """
+    return [q for kind in _HOME_ATTR for q in _all_questions(server, kind)]
+
+
+def find_question(server, qid: str) -> dict | None:
+    """The open file-backed record for `qid`, or None. Audit decisions live in the report
+    rather than as records (they can be neither snoozed nor deferred), so they are not here.
+    """
+    return next((q for q in file_backed_questions(server) if q.get("qid") == qid), None)
+
+
 def _sources(home: Path) -> list[Path]:
     """Every path whose change can alter one home's open-question list — the memo's inputs,
     stat'd BEFORE the walk so a change during it misses next time:
@@ -245,14 +260,22 @@ def _all_questions_fresh(server, home_kind: str, home: Path) -> list[dict]:
     return out
 
 def open_decisions(server) -> list[dict]:
-    """Every decision across the instance, one shape — the Decisions page, the badge, the
-    tab-open notifier, and the Web Push sender all read this. A record snoozed into the
-    future carries `snoozed: True` (still open, still visible to runs — hidden by default
+    """Every QUESTION-shaped decision across the instance, one shape — the Decisions page, the
+    badge, the tab-open notifier, and the Web Push sender all read this. A record snoozed into
+    the future carries `snoozed: True` (still open, still visible to runs — hidden by default
     on the user surfaces only). The four parts are memoized (module docstring); the snooze
     mark is the one clock-dependent step, so it is applied to the copies on every call.
+
+    It is NOT yet everything a person has to decide. Queued PROPOSALS — a routine a scheduled
+    run designed, a lane change, a met goal, a library commit that broke a routine — are a
+    second record shape in `.control/pending-creations/` (`rsched/pending.py`) with its own
+    route and its own band on the page, and they are absent here: the badge and the push
+    sender therefore count none of them. Both stores answer "what needs a person", so the end
+    state is ONE — a proposal filed as a `type: "proposal"` question the existing approve path
+    settles — and until the page stops rendering its own band, adding them here would show the
+    operator every proposal twice.
     """
-    items = (_all_questions(server) + _all_questions(server, "conversation")
-             + _all_questions(server, "background") + _audit_decisions(server))
+    items = file_backed_questions(server) + _audit_decisions(server)
     now = datetime.now(UTC)
     for item in items:
         if _snooze_active(item.get("snoozed_until"), now):

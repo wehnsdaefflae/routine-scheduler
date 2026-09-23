@@ -116,6 +116,7 @@ def _include_api_routers(app: FastAPI, deps: list) -> None:
         api_debug,
         api_domains,
         api_fs,
+        api_health,
         api_hooks,
         api_items,
         api_lanes,
@@ -126,6 +127,7 @@ def _include_api_routers(app: FastAPI, deps: list) -> None:
         api_push,
         api_questions,
         api_routine_edit,
+        api_routine_files,
         api_routine_patch,
         api_routine_secrets,
         api_routines,
@@ -141,14 +143,14 @@ def _include_api_routers(app: FastAPI, deps: list) -> None:
     )
 
     for module in (api_push, api_routines, api_routine_edit, api_routine_patch,
-                   api_routine_secrets,
+                   api_routine_files, api_routine_secrets,
                    api_conversation_create,   # before api_conversations: its
                    # /conversations/defaults must be matched before /{slug}
                    api_conversations,
                    api_conversation_config,
                    api_conversation_playbooks,
                    api_background, api_branches, api_browser, api_runs, api_run_control,
-                   api_schedule, api_stats, api_stopping, api_questions, api_audit,
+                   api_schedule, api_stats, api_health, api_stopping, api_questions, api_audit,
                    api_items, api_messages, api_pending,
                    api_traces,
                    settings,

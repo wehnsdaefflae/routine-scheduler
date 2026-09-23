@@ -78,6 +78,33 @@ MAX_LOCAL = 40
 MATCH_TARGET_CHARS = 2_000
 
 
+#: How many fires before a reminder's own tally is evidence about its pattern rather than
+#: noise. Five: enough that a plurality means something, few enough that a bad pattern is
+#: caught inside one routine's week rather than after a hundred wasted turns.
+PRUNE_MIN_FIRES = 5
+
+
+def looks_too_broad(stats: dict) -> bool:
+    """Does this reminder's OWN tally say its pattern fires where the consequence cannot apply?
+
+    `could_not` is the one label that indicts the pattern: the consequence was impossible for
+    the action that was held, so the turn bought nothing and would buy nothing next time. The
+    test is a plurality over enough fires, never a majority over all four — `would_have` and
+    `didnt` both describe a working reminder and would otherwise drown the signal.
+
+    This is the tally's ONLY automatic consumer, and it decides nothing: it selects which holds
+    show the model its own evidence, in the hold it was already paying for. Nothing demotes or
+    deletes a reminder behind the run's back — 21 days of live holds carried 67 `could_not`
+    labels that no code anywhere read, and the fix for that is to put them where the decision
+    is made, not to move the decision.
+    """
+    fires = int(stats.get("fires") or 0)
+    if fires < PRUNE_MIN_FIRES:
+        return False
+    could_not = int(stats.get("could_not") or 0)
+    return could_not > max(int(stats.get(lbl) or 0) for lbl in LABELS if lbl != "could_not")
+
+
 def blank_stats() -> dict:
     return dict.fromkeys(STAT_FIELDS, 0)
 

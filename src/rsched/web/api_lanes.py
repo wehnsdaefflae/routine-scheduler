@@ -158,10 +158,7 @@ def _rescan(request: Request) -> None:
     """A schedule change must reach the daemon's fire table (and the member-suppression
     set) now, not at the next periodic rescan — mirroring the routine-schedule save.
     """
-    try:
-        request.app.state.scheduler.rescan()
-    except AttributeError:
-        pass   # test apps without a scheduler — the store on disk is already right
+    request.app.state.scheduler.rescan()
 
 
 @router.post("/lanes")
@@ -204,8 +201,16 @@ def update_lane(request: Request, lane_id: str, body: LanePatch) -> dict:
 
 @router.delete("/lanes/{lane_id}")
 def delete_lane(request: Request, lane_id: str) -> dict:
+    """Delete a lane; its members return to their own crons at once.
+
+    "At once" is the rescan. The scheduler caches the scheduled-lane list and the
+    member-suppression set at rescan time (D71 suppresses a member's own cron while its lane
+    schedules it), so without this a lane deleted at 06:29:50 was still armed by the 06:30
+    tick and its members stayed suppressed for up to `registry_rescan_s` (30 s).
+    """
     if not lanes.delete(_routines_home(request), lane_id):
         raise HTTPException(404, f"no lane {lane_id!r}")
+    _rescan(request)
     return {"ok": True}
 
 

@@ -6,8 +6,8 @@ manage them, watch every conversation live, and intervene mid-run. The system is
 routine, and the same machinery — pointed at this very codebase — audits and improves the
 system as a whole.
 
-A **routine** = one **instruction** (a user prompt refined through clarifying questions in
-the wizard) + one **workflow** (a Python control-flow pattern from a git-synced library,
+A **routine** = one **instruction** (a user prompt walked to a decision in a conversation,
+one numbered question at a time) + one **workflow** (a Python control-flow pattern from a git-synced library,
 decomposed into the routine's own markdown) + a schedule. Each routine lives in its own git
 repository under `~/routines/<slug>`, bound by shared general **rules** (one library copy each)
 and user-set **permissions** — the held set is per-routine config in `routine.yaml`.
@@ -25,22 +25,23 @@ run ordered `subtask` steps sequentially (each a fresh-context child on its own 
 ask the user (blocking or deferred), or finish. Children never outlive the parent; the recursive
 task tree is shown live in the run rail. A conversation can also `detach` a LONG job that OUTLIVES a
 reply (its own daemon-managed process, reporting back on completion). The engine commits each routine's working dir automatically. Endpoints
-are model **transports** only: any OpenAI-compatible API (OpenRouter, Featherless, vLLM,
-local Ollama), the Anthropic Messages API — or the Claude Code CLI in fully stripped print
-mode (`--tools ""`, no settings/MCP/session, our system prompt replacing its own) as a
-subscription-billed completion function. Setup guide with per-provider recipes:
+are model **transports** only, and there are two kinds: any OpenAI-compatible API
+(OpenRouter, Featherless, vLLM, local Ollama) and the Anthropic Messages API — which is also
+how a Claude or Codex SUBSCRIPTION is billed, through CLIProxyAPI on the `anthropic` kind
+(`docs/claude-proxy-cutover.md`). Setup guide with per-provider recipes:
 [docs/endpoints.md](docs/endpoints.md). What is banned is a second *agent loop* in the
 path: this scheduler is the only harness.
 
 Optional efficiency controls: [output compression and the Ponytail coding rule](docs/output-compression.md).
-Compression is enabled by default — JSON is minified with the stdlib, logs use the optional Headroom
-excerpt — and measurement mode and Off remain available. Ponytail is opt-in.
+Compression is enabled by default: JSON stdout is minified with the stdlib, provably
+faithful and needing no dependency. Nothing else is compressed; measurement mode and Off remain
+available. Ponytail is opt-in.
 What compression actually bought each routine — applications, estimated savings, rejections and the
 time all three cost — is a table on the Stats tab.
 
 ## How the system improves itself
 
-- **Across routines**: the bundled `routine-improver` meta routine sweeps every routine
+- **Across routines**: the `routine-improver` meta routine sweeps every routine
   that hasn't opted out with `improve: false` — **itself included** — and improves
   each through five lenses (bugfix, research, features, ui, efficiency) plus a fresh-eyes
   de-clutter pass that hunts what accumulated over many revisions. It infers each routine's
@@ -57,10 +58,12 @@ time all three cost — is a table on the Stats tab.
   (measures token usage and A/B-tests efficiency methods via `llm` subcalls only — never
   integrating — and publishes a report). The shared library — workflow patterns, rules,
   playbooks — is owned by `routine-improver`, which fixes them lint-gated and committed; you
-  can edit or delete any of them on the Library tab. They ship **disabled**; the
-  dashboard says so until you enable them, because self-improvement costs tokens. The
+  can edit or delete any of them on the Library tab. There is no routine SEED: a meta routine
+  is authored through the ordinary create flow like any other, so a fresh instance starts with
+  none — while every meta routine an instance HAS is disabled, a dismissible console banner says
+  so and offers one click per routine to enable it, because self-improvement costs tokens. The
   instance itself syncs to one GitHub repo — routines, workflows, rules, utils, sanitized
-  config — via the bundled **library-sync** routine (daily; it reports a failed push instead
+  config — via the **library-sync** routine (daily; it reports a failed push instead
   of burying it in a status file).
 - **Across routines**: workflows and global utils live in one shared library repo, so what
   one routine learns transfers to all — and utils compose (`gu` utils may call other utils),
@@ -98,8 +101,15 @@ endpoints, the central Secrets store, GitHub, the library repo.
   and run history; drill into any run to watch its conversation live. Its activity section
   is the live cross-routine run feed — filterable, and expanding a row tails that run's
   transcript inline.
-- **Library** — browse and edit the shared workflows, rules, permissions, playbooks, and global utils; every
-  save is lint/selftest-gated.
+- **Conversations** — the landing page: interactive sessions on the same engine, resumed in
+  place with every reply. This is where a new routine is designed and materialized.
+- **Routines → Dashboard** — the fleet at a glance: what ran, what is due, the week strip.
+- **Browser** — the shared signed-in browser's screen, relayed through the console's own
+  origin so it works over https; the right rail carries a read-only preview of it on every page.
+- **Stats** — spend and token flow per routine, model and util, with the prompt-cache
+  read share beside every slice.
+- **Library** — browse and edit the shared workflows, rules, permissions, playbooks,
+  settings templates, global reminders and global utils; every save is lint/selftest-gated.
 - **Settings** — LLM endpoints (live test call + a credential-source indicator: which of
   inline key / secret / env file is in use, warning when an inline key shadows a set
   secret) and the model catalog (per-model window, output `max_tokens` with an audit flag
@@ -126,12 +136,17 @@ endpoints, the central Secrets store, GitHub, the library repo.
 
 ## Creating a routine
 
-Click **+ New routine**: describe the task, and the clarifier interrogates your draft — a
-real run of the protected `clarification` routine, living on the **standard run page**
-(`#/run/clarification:<ts>`, resumable from the setup banner). When the chat finishes, the
-same page becomes the create form: it suggests a library workflow (or generates a draft
-one) and scaffolds the routine — its own git repo, materialized workflow with the standard
-rules bound, seeded LEDGER, chosen cron. Or from the shell:
+**From a conversation** — there is no create page and no wizard. Open a conversation, say
+what you want the routine to do, and the agent walks the intake as numbered questions (each
+one an `ask_user` carrying options, answered with a number rather than a paragraph). Three
+things must be SETTLED before it drafts: what the routine produces each run, what DONE looks
+like for one run, and which library pattern it is built on — that last from a catalog that
+always ends in `generate`, drafting a new pattern fitted to the task. It then shows you the
+DRAFT and materializes it on your confirmation (`create_routine`): its own git repo, the
+workflow decomposed into `main.md` + `stages/`, the chosen rules bound, the stopping
+conditions seeded from your own words. A run with no user in the loop cannot create anything
+— it queues a proposal to the Decisions page instead, which you materialize with one click.
+Or from the shell:
 
 ```bash
 uv run rsched scaffold my-routine --workflow general-task --cron "0 7 * * 1" \
@@ -171,7 +186,9 @@ at an https URL — a Tailscale Serve URL is enough). Bind the account on a rout
 var then receives a fresh access token at run time — injected only under that declared-var +
 bound-connection gate, never sitting in the prompt or a transcript. Expiring tokens are
 refreshed by the daemon before they lapse (a no-op for Notion's long-lived tokens); a lapsed one
-is flagged for re-auth and pinged to you. See `docs/oauth-connections.md` (also on the Help tab).
+is flagged `needs_reauth`, which badges the connection in Settings → Connections — the console
+record IS the notification, since no engine or daemon path reaches a person by itself. See
+`docs/oauth-connections.md` (also on the Help tab).
 
 ## Remote machines
 
@@ -225,9 +242,13 @@ adds live endpoint smoke tests). Quality gates are strict and enforced:
   (`workflows/lint.py`; util header checks + `--selftest`).
 - `uv run mypy` — type check of `src/rsched`.
 - `uv run pre-commit install` once — both gates then run on every commit.
-- `uv run pytest --cov` — coverage report (branch coverage on; `fail_under` is a ratchet).
-- `tests/ui/` — Playwright browser tests that drive the real console against fixture
-  state and a stub runner (no LLM). One-time setup: `uv run playwright install chromium`.
+- `uv run pytest --cov` — coverage report (branch coverage on; `fail_under` is a ratchet
+  nothing runs today — re-measure it before wiring any gate to the number).
+- `-m ui` — Playwright browser tests that drive the real console against fixture state and a
+  stub runner (no LLM). No local browser: the suite attaches over CDP to the compose `chrome`
+  sidecar, so it runs INSIDE the engine container with `RSCHED_TEST_CDP` and `RSCHED_TEST_BIND`
+  set — the conftest's refusal prints the full command. `uv run pytest -q` is the fast suite
+  and says so at the end; `-m ""` runs everything, which is what ships a release.
 
 Working conventions, the action/transcript contracts, and the module standards live in
 `CLAUDE.md`; the subsystem-by-subsystem reference is `docs/architecture.md`. The Help
@@ -240,10 +261,13 @@ user-facing here.
   `daemon/` (cron scheduler + subprocess runner), `web/` (FastAPI + SSE),
   `workflows/` (library, lint, adapt, scaffold, suggest, generate)
 - `static/` — no-build vanilla-JS frontend; `docs/` — hand-written guides, rendered into
-  the Help tab next to the pdoc-generated API reference (`docs_build.py`, at boot)
+  the Help tab next to the pdoc-generated API reference (`docs_build.py`, at boot, from the
+  checkout named by Settings → Source)
 - `library-seed/` + `util-seed/` — seeded to `~/.local/share/routine-scheduler-libraries`,
-  ONE git repo holding `workflows/`, `rules/`, `permissions/`, `playbooks/`, `reminders/` and
-  `utils/` (with the `gu` dispatcher at the root). Routines are never seeded from the repo — they are authored on the instance
+  ONE git repo holding `workflows/`, `rules/`, `permissions/`, `playbooks/`, `templates/`,
+  `reminders/`, `web/` (the shared steward kit status pages are built on) and `utils/` (with
+  the `gu` dispatcher at the root). Routines are never seeded from the repo — they are authored
+  on the instance
 - Routine dirs: `routine.yaml`, `main.md` (the workflow, materialized) + `stages/` modules
   (the routine's sole source of truth — no persisted instruction, no recompile),
   `state/`, `LEDGER.md`, `inbox/`, `questions/`, `runs/<ts>/` (transcripts, gitignored,

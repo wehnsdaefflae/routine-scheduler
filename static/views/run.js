@@ -9,6 +9,7 @@ import { questionPanel } from "/static/components/answerform.js";
 import { deliberationControl } from "/static/components/deliberation.js";
 import { confirmDialog, promptDialog } from "/static/components/dialog.js";
 import { setQuery, remount } from "/static/router.js";
+import { loadQuestions } from "/static/questions-store.js";
 import { liveTail } from "/static/stream.js";
 import { createArtifacts } from "/static/components/artifacts.js";
 import { createRail } from "/static/components/rail.js";
@@ -20,7 +21,7 @@ import { createStopping } from "/static/components/stopping.js";
 import { createTaskTree } from "/static/components/tasktree.js";
 import { createTranscript } from "/static/components/transcript.js";
 import { busy, chip, el, emptyState, fmtDur, fmtTokens, fmtTs, skeleton, streamStatus,
-         toDate, toast } from "/static/util.js";
+         toast, toastError, toDate } from "/static/util.js";
 import { forgetField } from "/static/formpersist.js";
 import { followScroll } from "/static/follow.js";
 import { TERMINAL, WORKING } from "/static/states.js";
@@ -89,11 +90,17 @@ export async function render(view, runId, query = {}) {
   view.append(railHost);
   wireRunRail(railHost, "right");
   const rail = createRail(railHost);
-  const goalBody = rail.add("goal", el("div", {}));
+  // WHAT THE RUN PRODUCED leads. The rail opened on the goal, whose per-condition accounting is
+  // the same text the summary in the serif column beside it already carries — two thirds of the
+  // visible rail was a second copy of what the reader had just read, in 11px mono at a
+  // 34-character measure, while the artifacts sat below the fold of a nested scroller. Each
+  // section's collapsed state is remembered per browser, so a reader who wants the goal first
+  // keeps it open and everything else shut.
+  const artBody = rail.add("artifacts", el("div", {}));
+  const filesBody = rail.add("files", el("div", {}));
   const graphBody = rail.add("state", el("div", {}));
   const treeBody = rail.add("tasks", el("div", {}));
-  const filesBody = rail.add("files", el("div", {}));
-  const artBody = rail.add("artifacts", el("div", {}));
+  const goalBody = rail.add("goal", el("div", {}));
   // stategraph + artifacts are HOME-scoped (routines vs conversations routes) — created
   // at boot once the run detail names its home; tree/files key off the run id (home-free).
   let stateGraph = null;
@@ -187,7 +194,7 @@ export async function render(view, runId, query = {}) {
 
   let paused = false;
   const pauseBtn = el("button", { class: "btn small" }, "⏸ pause");
-  const abortBtn = el("button", { class: "btn small danger" }, "✕ abort");
+  const abortBtn = el("button", { class: "btn small danger armed" }, "✕ abort");
   const resumeBtn = el("button", { class: "btn small", hidden: true }, "↻ resume run");
   resumeBtn.onclick = async () => {
     resumeBtn.disabled = true;
@@ -195,7 +202,7 @@ export async function render(view, runId, query = {}) {
       await api(`/api/runs/${runId}/resume-run`, { method: "POST" });
       toast("resuming where it left off — reconnecting…");
       setTimeout(remount, 800);
-    } catch (err) { toast(err.message, 4000, { error: true }); resumeBtn.disabled = false; }
+    } catch (err) { toastError(err); resumeBtn.disabled = false; }
   };
   // D69: rewind a terminal run to a chosen turn and re-open it live from there — the remedy
   // for a run that died or derailed (e.g. a context overflow) instead of losing the whole
@@ -218,7 +225,7 @@ export async function render(view, runId, query = {}) {
         { method: "POST", body: { turn } });
       toast(`rewound to turn ${r.kept_through_turn} — reconnecting…`);
       setTimeout(remount, 800);
-    } catch (err) { toast(err.message, 4000, { error: true }); rewindBtn.disabled = false; }
+    } catch (err) { toastError(err); rewindBtn.disabled = false; }
   };
   controls.append(pauseBtn, abortBtn, resumeBtn, rewindBtn);
 
@@ -245,7 +252,7 @@ export async function render(view, runId, query = {}) {
     if (!models.length) return;
     resolveModel = (m) => (models.find((x) => x.name === m
       || (x.endpoint && x.model && `${x.endpoint}/${x.model}` === m)) || { name: m }).name;
-    const mSel = el("select", { style: "width:auto;font-size:11.5px;padding:3px 6px" },
+    const mSel = el("select", { class: "tight", style: "width:auto;padding:3px 6px" },
       models.map((m) => el("option", { value: m.name }, m.name)));
     mSelRef = mSel;
     syncSel();   // preselect the run's actual model (name OR endpoint/model id), not option #1
@@ -255,7 +262,7 @@ export async function render(view, runId, query = {}) {
         const r = await api(`/api/runs/${runId}/model`, { method: "POST",
           body: { model: mSel.value } });
         toast(`${r.switch} — takes effect next turn`);
-      } catch (err) { toast(err.message, 4000, { error: true }); }
+      } catch (err) { toastError(err); }
     };
     switchBox.append(el("div", { class: "row mt", style: "gap:5px" }, mSel, go));
   }).catch(() => {});
@@ -273,7 +280,7 @@ export async function render(view, runId, query = {}) {
           body: { level } });
         toast(`${r.switch} — takes effect next turn (this run)`);
         delibSummary.textContent = `⚙ deliberation: ${level}`;
-      } catch (err) { toast(err.message, 4000, { error: true }); }
+      } catch (err) { toastError(err); }
     },
   });
   delibBox.append(el("div", { class: "mt" }, delib.node));
@@ -305,7 +312,12 @@ export async function render(view, runId, query = {}) {
     if (active && viewingSub == null) waitingBox.append(busy(waitingLabel()));
   };
 
-  function stopSubPoll() { if (subPoll) { clearInterval(subPoll); subPoll = null; } }
+  function stopSubPoll() {
+    if (subPoll) { clearInterval(subPoll); subPoll = null; }
+    // the sub-run transcript owns its own attachment object URLs — a tab switch and the view's
+    // teardown both come through here, and both are the end of that render
+    subTranscript?.destroy();
+  }
 
   function renderSubBar() {
     if (!subs.size) { subBar.hidden = true; subBar.replaceChildren(); return; }
@@ -391,12 +403,12 @@ export async function render(view, runId, query = {}) {
 
   pauseBtn.onclick = async () => {
     try { await api(`/api/runs/${runId}/${paused ? "resume" : "pause"}`, { method: "POST" }); }
-    catch (err) { toast(err.message, 4000, { error: true }); }
+    catch (err) { toastError(err); }
   };
   abortBtn.onclick = async () => {
     if (!(await confirmDialog(`Abort ${runId}?`, { confirmLabel: "abort" }))) return;
     try { await api(`/api/runs/${runId}/abort`, { method: "POST" }); }
-    catch (err) { toast(err.message, 4000, { error: true }); }
+    catch (err) { toastError(err); }
   };
   const doSend = async () => {
     if (!msgInput.value.trim()) return;
@@ -427,7 +439,7 @@ export async function render(view, runId, query = {}) {
       clearFiles();
       setRef(null);
       forgetField(msgInput);   // sent — the draft must not refill on reload
-    } catch (err) { toast(err.message, 4000, { error: true }); }
+    } catch (err) { toastError(err); }
     sendBtn.disabled = false;
   };
   sendBtn.onclick = doSend;
@@ -451,7 +463,7 @@ export async function render(view, runId, query = {}) {
       graphUrl: `/api/conversations/${slug}/stategraph`,
       statsUrl: `/api/runs/${runId}/phases` });
     artifacts = createArtifacts(artBody, { slug, base: "conversations" });
-    createStopping(goalBody, { url: `/api/conversations/${slug}/stopping` });
+    createStopping(goalBody, { url: `/api/conversations/${slug}/stopping`, ownRun: runId });
   } else if (home === "background") {
     // a detached task has no page/routes of its own — results deliver to the owner
     kickerEl.textContent = `background task / ${slug}`;
@@ -466,7 +478,8 @@ export async function render(view, runId, query = {}) {
       statsUrl: `/api/runs/${runId}/phases` });
     artifacts = createArtifacts(artBody, { slug, base: "routines" });
     // showStage: a per-stage condition is a ROUTINE concept — a conversation has no stages
-    createStopping(goalBody, { url: `/api/routines/${slug}/stopping`, showStage: true });
+    createStopping(goalBody, { url: `/api/routines/${slug}/stopping`, showStage: true,
+                               ownRun: runId });
   }
   mainBox.replaceChildren();
   const transcript = createTranscript(mainBox, {
@@ -492,10 +505,11 @@ export async function render(view, runId, query = {}) {
   window.addEventListener("rsched-bus", onBus);
   const syncQuestions = async () => {
     try {
-      const t0 = Date.now();
-      const qs = await api("/api/questions");
+      // through the shared store (questions-store.js): one reader, so this joins whatever
+      // fetch the header badge or the notifier already has in flight
+      const { items, at } = await loadQuestions();
       transcript.reconcileQuestions(
-        new Set(qs.filter((q) => q.routine === slug && !q.answered).map((q) => q.qid)), t0);
+        new Set(items.filter((q) => q.routine === slug && !q.answered).map((q) => q.qid)), at);
     } catch { /* cosmetic — forms just stay open */ }
   };
   setTimeout(syncQuestions, 1500);   // after the initial transcript page has rendered
@@ -567,6 +581,9 @@ export async function render(view, runId, query = {}) {
 
   return () => { if (tail) tail.stop(); stopSubPoll(); clearInterval(durTimer);
                  artifacts?.destroy();
+                 taskTree.stop();   // its 3s poll reschedules while isLive(), which a torn-down
+                                    // view freezes at its last non-terminal state — forever
+                 transcript.destroy();
                  planStrip.destroy();
                  stopFollow();
                  window.removeEventListener("rsched-bus", onBus); };

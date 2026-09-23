@@ -15,14 +15,12 @@ import asyncio
 import logging
 import time
 from datetime import UTC, datetime
-from types import SimpleNamespace
 
+from .. import lane_fires, lanes, registry
 from .. import lane_runs as lane_runs_store
-from .. import lanes, registry
 from ..config import ServerConfig
 from ..health_events import log_health_event
 from ..ids import now_iso
-from ..schedule import server_tz
 from . import pause, restart, runner_reap
 from .detached import DetachedManager
 from .events import EventBus
@@ -94,6 +92,9 @@ class Scheduler:
         # A pending restart waits for a quiet gap instead of blocking new runs (restart.py): the
         # monotonic stamp of when runner.active last emptied, or None while a run is active.
         self._idle_since: float | None = None
+        # The one in-flight machine-queue mirror refresh, so a box that answers slowly (or not at
+        # all) can never stack one SSH attempt per tick on the loop's shared executor.
+        self._queue_refresh: asyncio.Future[None] | None = None
         self.started = now_iso()   # process birth — a restart is visible as a changed value
 
     def rescan(self) -> None:
@@ -111,12 +112,12 @@ class Scheduler:
         for slug, info in self.catalog.items():
             if slug in self.suppressed_members:
                 continue
-            if info.retired:
-                # Every goal-scoped stopping condition is met: the routine is finished, so it
-                # gets no fire table entry at all. Derived from its own goal document, never
-                # written — clearing a goal condition puts it back on the next rescan, and
-                # `enabled` is untouched. A retirement proposal is waiting on the Decisions
-                # page to make it permanent (engine/goalreached.py).
+            if not info.fireable:
+                # Switched off, or RETIRED — every goal-scoped stopping condition met, so the
+                # routine is finished and gets no fire table entry at all. Retirement is derived
+                # from its own goal document, never written: clearing a goal condition puts it
+                # back on the next rescan, and `enabled` is untouched. A retirement proposal is
+                # waiting on the Decisions page to make it permanent (engine/goalreached.py).
                 continue
             nf = registry.next_fire(info.cfg, now)
             if nf is None:
@@ -125,27 +126,14 @@ class Scheduler:
             # a fire that came due since the last tick is still owed — don't recompute past it
             fires[slug] = prev if (prev is not None and prev <= now) else nf
         self.next_fires = fires
-        lane_fires: dict[str, datetime] = {}
+        by_lane: dict[str, datetime] = {}
         for lane in self.scheduled_lanes:
-            nf = registry.next_fire(self._lane_schedulable(lane), now)
+            nf = registry.next_fire(lanes.schedulable(lane), now)
             if nf is None:
                 continue
             prev = self.lane_next_fires.get(lane["id"])
-            lane_fires[lane["id"]] = prev if (prev is not None and prev <= now) else nf
-        self.lane_next_fires = lane_fires
-
-    @staticmethod
-    def _lane_schedulable(lane: dict) -> SimpleNamespace:
-        """A lane's cron/tz as the Schedulable shape next_fire reads. tz falls back to
-        the server zone — lanes are saved with the server tz by the web layer, but an
-        older or hand-edited row must still fire somewhere sensible.
-        """
-        # A PAUSED lane reads as a disabled schedulable: next_fire yields None, so the
-        # lane simply leaves the fire table — nothing to skip in the loop. Resuming
-        # recomputes a FUTURE fire on rescan (never a backlog of missed ones). An explicit
-        # "Run now" / manage_lane run still arms the chain: pause gates the cron only.
-        return SimpleNamespace(cron=lane["cron"], tz=lane.get("tz") or server_tz(),
-                               enabled=not lane.get("paused"))
+            by_lane[lane["id"]] = prev if (prev is not None and prev <= now) else nf
+        self.lane_next_fires = by_lane
 
     async def boot_catchup(self) -> None:
         if pause.paused(self.server):
@@ -154,8 +142,8 @@ class Scheduler:
             if slug in self.suppressed_members:
                 # D71: a lane-managed member's own cron never fires, catch-up included
                 continue
-            if info.retired:
-                continue     # a finished routine has no missed fire worth making up
+            if not info.fireable:
+                continue     # switched off, or finished: no missed fire worth making up
             missed = registry.missed_fire(info.cfg, info.runs, _now())
             if missed is not None:
                 log.info("catchup routine=%s missed_fire=%s → one make-up run", slug, missed)
@@ -166,8 +154,29 @@ class Scheduler:
         from .lane_catchup import boot_catchup as lane_boot_catchup
         lane_boot_catchup(self.server, _now())
 
+    def _log_loop_failure(self, what: str) -> None:
+        """One bad pass must never kill scheduling for good — at BOOT as much as in the loop.
+
+        An exception anywhere in a scheduling pass (a hand-edited lane tz reaching ZoneInfo, a
+        disk-full stat, an sshfs blip) used to unwind run_forever silently while the web UI kept
+        serving — the daemon looked alive with its heart stopped. The tick body has been guarded
+        since; the BOOT rescan and boot catch-up run before the loop starts and were not, which
+        is the same failure with a worse blast radius: nothing fires until someone restarts it.
+        Log it, flag it in the health stream, keep going — a later rescan recovers.
+        """
+        log.exception("scheduler %s failed — continuing", what)
+        try:
+            log_health_event(self.server.routines_home, "scheduler_tick_error",
+                             routine="(daemon)", run_id="",
+                             detail=f"scheduler {what} raised; see daemon log")
+        except Exception:   # the guard itself must never take the loop down
+            pass
+
     async def run_forever(self) -> None:
-        self.rescan()
+        try:
+            self.rescan()
+        except Exception:
+            self._log_loop_failure("boot rescan")
         # One pass retains shutdown evidence; home-qualified keys preserve colliding slugs.
         recovery_catalog = {
             **{f"routines:{slug}": info for slug, info in self.catalog.items()},
@@ -186,19 +195,22 @@ class Scheduler:
         self._refresh_limits()
         self._refresh_machine_queues()
         if fixed:
-            self.rescan()
-        await self.boot_catchup()
+            try:
+                self.rescan()
+            except Exception:
+                self._log_loop_failure("boot rescan")
+        try:
+            await self.boot_catchup()
+        except Exception:
+            self._log_loop_failure("boot catch-up")
         loop = asyncio.get_event_loop()
         self._last_scan = loop.time()
         log.info("scheduler up: %d routines, next fires: %s", len(self.catalog),
                  {s: t.isoformat(timespec="minutes") for s, t in self.next_fires.items()})
         while True:
             await asyncio.sleep(TICK_S)
-            # One bad tick must never kill scheduling for good: an exception anywhere in
-            # the tick body (a tz typo surfacing in next_fire, a disk-full stat, an sshfs
-            # blip) used to unwind run_forever silently while the web UI kept serving —
-            # the daemon looked alive with its heart stopped. Log it, flag it, keep
-            # ticking. (CancelledError is a BaseException and still propagates.)
+            # Guarded like the boot above (_log_loop_failure). CancelledError is a
+            # BaseException and still propagates.
             try:
                 self._tick_once(loop)
                 now = _now()
@@ -227,9 +239,15 @@ class Scheduler:
                         self.lane_next_fires.pop(lane_id, None)
                         continue
                     self.lane_next_fires[lane_id] = (
-                        registry.next_fire(self._lane_schedulable(lane), now) or due)
+                        registry.next_fire(lanes.schedulable(lane), now) or due)
                     if is_paused:
                         log.info("scheduling paused — skipped due lane fire of %r", lane_id)
+                        # A deliberate skip is a HANDLED fire, so it moves the watermark. Only
+                        # an arm stamped it before, so the operator's pause left the lane's last
+                        # due fire reading as unarmed, and the next boot — nightly, here — made
+                        # it up as a whole chain and blamed the daemon for being down. Pause's
+                        # own promise is that resuming does not backlog-fire (daemon/pause.py).
+                        lane_fires.stamp(self.server.routines_home, lane_id)
                         continue
                     rec = lane_runs_store.arm(
                         self.server.routines_home, lane,
@@ -266,13 +284,7 @@ class Scheduler:
             except _TickSkip:
                 continue  # draining / shutting down: fire nothing this tick
             except Exception:
-                log.exception("scheduler tick failed — continuing")
-                try:
-                    log_health_event(self.server.routines_home, "scheduler_tick_error",
-                                     routine="(daemon)", run_id="",
-                                     detail="scheduler tick raised; see daemon log")
-                except Exception:  # the guard itself must never take the loop down
-                    pass
+                self._log_loop_failure("tick")
 
     def _refresh_machine_queues(self) -> None:
         """Mirror every EXCLUSIVE machine's job queue (rsched/machine_queue.py) so the prompt and
@@ -280,10 +292,19 @@ class Scheduler:
         never fatal: a GPU box being down must not stop the scheduler, and a stale mirror reads as
         UNKNOWN rather than as a free machine — which is the one failure mode that would cause the
         collision this mechanism exists to prevent.
+
+        Noticing every 5s is not the same as READING every 5s, and the two were once the same
+        call: the TTL is machine_queue's (REFRESH_AFTER_S), and ONE refresh runs at a time. An
+        unreachable box holds each attempt for its connect timeout (20-60s), so a fresh attempt
+        per tick stacked up to a dozen threads on the loop's default executor (8 workers on the
+        4-core host) — the same pool LibraryWatch, the OAuth refresh and every run's llm tailer
+        await inline in this tick body.
         """
         from ..machine_queue import refresh as refresh_queues
 
         if not any(m.exclusive for m in (self.server.machines or {}).values()):
+            return
+        if self._queue_refresh is not None and not self._queue_refresh.done():
             return
 
         async def go() -> None:
@@ -292,7 +313,7 @@ class Scheduler:
             except Exception as exc:
                 log.warning("machine queue refresh failed: %s", exc)
 
-        asyncio.ensure_future(go())   # noqa: RUF006 — fire-and-forget by design
+        self._queue_refresh = asyncio.ensure_future(go())
 
     def _refresh_limits(self) -> None:
         """Re-ask each provider what its models' real limits are, behind a 24h TTL
@@ -349,8 +370,6 @@ class Scheduler:
                             and now - self._idle_since >= restart.RESTART_IDLE_S)
         action = restart.restart_action(requested, active, idle_long_enough)
         if action == "idle":
-            if self.runner.draining:   # a request withdrawn in the SIGTERM window — undo the gate
-                self.runner.draining = False
             self._deferred_logged = False
             return False
         if action in ("defer", "wait"):

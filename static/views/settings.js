@@ -8,7 +8,7 @@
 import { api } from "/static/api.js";
 import { setQuery } from "/static/router.js";
 import { settingsSection } from "/static/components/settings-section.js";
-import { el, toast } from "/static/util.js";
+import { el, toast, toastError } from "/static/util.js";
 import { renderConnections } from "/static/views/settings-connections.js";
 import { renderEndpoints } from "/static/views/settings-endpoints.js";
 import { renderGithub } from "/static/views/settings-github.js";
@@ -25,49 +25,49 @@ export async function render(view, query = {}) {
 
   const st = await api("/api/status").catch(() => ({}));
 
-  // The cognitive model: four groups answering "what am I configuring?". A section's `desc` is a
-  // reader-side one-liner (what it controls); a group's `blurb` says why those sections belong
-  // together. `nav` is the short chip label; `title` is the section heading (and TOC text).
-  // Intelligence leads because LLM endpoints are the first-run critical path.
+  // The cognitive model: four groups answering "what am I configuring?". A group's `blurb` says
+  // why those sections belong together. `nav` is the short chip label; `title` is the section
+  // heading (and TOC text). Intelligence leads because LLM endpoints are the first-run critical
+  // path.
+  //
+  // ONE EXPLANATION PER SECTION. The page used to stack three: the group blurb, a section
+  // `desc`, and the mounted panel's own intro — all three between the h1 and the first control,
+  // saying the same thing in different words ("Provider connections, the model catalog…" then
+  // "Model transports only — the scheduler is the only harness…"). The panel owns its intro,
+  // because it renders wherever the panel is mounted and the routine page shows the same panels;
+  // so `desc` survives only where the panel has none, which today is Server alone.
   const GROUPS = [
     { label: "Intelligence",
       blurb: "Where your routines get their reasoning — the providers they call and the models they pick from.",
       sections: [
         { id: "endpoints", nav: "Endpoints", title: "LLM endpoints",
-          desc: "Provider connections, the model catalog, and the system model for the scheduler's own helper calls.",
           fill: (v) => renderEndpoints(v) },
       ] },
     { label: "Connections",
       blurb: "External accounts and machines the scheduler signs into on your behalf.",
       sections: [
         { id: "github", nav: "GitHub", title: "GitHub",
-          desc: "The GitHub account used to clone and push your routine and library repositories.",
           fill: (v) => renderGithub(v, query) },
         { id: "connections", nav: "Connections", title: "Connections",
-          desc: "OAuth logins — Google, Notion and more — that routines act through, bound per routine.",
           fill: (v) => renderConnections(v) },
         { id: "machines", nav: "Machines", title: "Machines",
-          desc: "Remote hosts routines can reach over SSH for work that must run on another machine.",
           fill: (v) => renderMachines(v) },
       ] },
     { label: "Code",
       blurb: "The Git repository that defines the scheduler itself. (The shared library repo has no settings surface — the library-sync routine manages it.)",
       sections: [
         { id: "source", nav: "Source", title: "Source repository",
-          desc: "The scheduler's own code — the fork the self-audit routine commits and pushes its changes to.",
           fill: (v) => renderSource(v) },
       ] },
     { label: "This instance",
       blurb: "The secret store, this server process, and how the console reaches you.",
       sections: [
         { id: "secrets", nav: "Secrets", title: "Secrets",
-          desc: "The central credential store — keys and passwords injected only into utils that declare them.",
           fill: (v) => renderSecrets(v) },
         { id: "server", nav: "Server", title: "Server",
           desc: "Runtime configuration for this process, plus a graceful restart.",
           fill: (v) => Promise.all([renderServerConfig(v), renderServer(v)].filter(Boolean)) },
         { id: "notifications", nav: "Notifications", title: "Notifications",
-          desc: "Browser and push alerts for decisions waiting on you.",
           fill: (v) => { v.append(renderNotifications()); } },
       ] },
   ];
@@ -76,17 +76,31 @@ export async function render(view, query = {}) {
   // in the URL (#/settings?section=endpoints), so a deep link / reload lands on the same section.
   const secNav = el("div", { class: "filterbar settings-nav" });
   view.append(secNav);
+  // On a phone the SAME eleven chips and four eyebrows flow into a four-line jumble where a
+  // separator lands mid-line and the "Connections" eyebrow sits beside the "Connections" chip
+  // — the only navigation a 20 000px page has, unreadable as a structure. The groups are an
+  // <optgroup> each: same destinations, same deep links, one control.
+  const narrow = !window.matchMedia("(min-width: 861px)").matches;
+  const secSel = !narrow ? null : el("select", { "aria-label": "settings section" },
+    GROUPS.map((g) => el("optgroup", { label: g.label },
+      g.sections.map((s) => el("option", { value: s.id }, s.nav)))));
   const goSection = (id, smooth = true) => {
     setQuery({ section: id });
     document.getElementById(`sec-${id}`)?.scrollIntoView({ behavior: smooth ? "smooth" : "auto", block: "start" });
     secNav.querySelectorAll(".tag").forEach((b) => b.classList.toggle("on", b.dataset.sec === id));
+    if (secSel) secSel.value = id;
   };
-  for (const g of GROUPS) {
-    secNav.append(el("span", { class: "lbl" }, g.label));
-    for (const s of g.sections) {
-      const b = el("span", { class: "tag click", onclick: () => goSection(s.id) }, s.nav);
-      b.dataset.sec = s.id;
-      secNav.append(b);
+  if (secSel) {
+    secSel.onchange = () => goSection(secSel.value);
+    secNav.append(el("span", { class: "lbl" }, "section"), secSel);
+  } else {
+    for (const g of GROUPS) {
+      secNav.append(el("span", { class: "lbl" }, g.label));
+      for (const s of g.sections) {
+        const b = el("span", { class: "tag click", onclick: () => goSection(s.id) }, s.nav);
+        b.dataset.sec = s.id;
+        secNav.append(b);
+      }
     }
   }
 
@@ -96,7 +110,7 @@ export async function render(view, query = {}) {
     const done = el("button", { class: "btn small primary" }, "finish setup");
     done.onclick = async () => {
       try { await api("/api/setup/complete", { method: "POST" }); toast("setup complete - no more first-run redirect"); banner.remove(); }
-      catch (err) { toast(err.message, 5000, { error: true }); }
+      catch (err) { toastError(err, 5000); }
     };
     banner.append(
       el("strong", {}, "First-run setup"),

@@ -56,7 +56,7 @@ def test_messages_page_lists_every_type_with_status_and_history(ui, ui_page, mak
     inventing prose, and a prose-matched changelog link is labelled best-effort."""
     _seed(ui, make_routine)
     ui_page.goto(f"{ui.url}/#/messages?status=all&type=all")
-    ui_page.wait_for_selector("h1:has-text('Messages')", timeout=10_000)
+    ui_page.wait_for_selector("h1:has-text('Messages')")
 
     # the report header rides along (window + since-commit), the arrays are items now
     expect(ui_page.locator(".sub")).to_contain_text("findings, decisions and reports")
@@ -84,7 +84,7 @@ def test_messages_filters_narrow_the_list_and_counts_stay_whole(ui, ui_page, mak
     UNFILTERED set so a chip never counts only what the current filter already shows."""
     _seed(ui, make_routine)
     ui_page.goto(f"{ui.url}/#/messages?status=all&type=all")
-    ui_page.wait_for_selector("#ref-F1", timeout=10_000)
+    ui_page.wait_for_selector("#ref-F1")
 
     ui_page.locator(".filterbar .tag", has_text="reports").click()
     expect(ui_page.locator("#ref-R1")).to_be_visible()
@@ -93,11 +93,11 @@ def test_messages_filters_narrow_the_list_and_counts_stay_whole(ui, ui_page, mak
     expect(ui_page).to_have_url(re.compile(r"type=report"))
 
     ui_page.locator(".filterbar .btn", has_text="clear").click()
-    expect(ui_page.locator("#ref-F1")).to_be_visible(timeout=10_000)
+    expect(ui_page.locator("#ref-F1")).to_be_visible()
 
     # search reaches the prose; an archive-only item is findable through its changelog summary
     ui_page.locator(".filterbar input[type=search]").fill("older thing")
-    expect(ui_page.locator("#ref-F7")).to_be_visible(timeout=10_000)
+    expect(ui_page.locator("#ref-F7")).to_be_visible()
     expect(ui_page.locator("#ref-F1")).to_have_count(0)
 
 
@@ -111,11 +111,11 @@ def test_the_active_chip_separates_the_worklist_from_the_unread_feed(ui, ui_page
     _seed(ui, make_routine)
     ui.seed_run("self-audit", "20260915-120000", "finished", summary="what this run did")
     ui_page.goto(f"{ui.url}/#/messages?status=all&type=all")
-    ui_page.wait_for_selector("#ref-F1", timeout=10_000)
+    ui_page.wait_for_selector("#ref-F1")
 
     chip = ui_page.locator(".filterbar .tag", has_text="active")
     # one unread summary beside the seeded worklist — named apart, not summed
-    expect(chip).to_contain_text("unread 1", timeout=10_000)
+    expect(chip).to_contain_text("unread 1")
     expect(chip).not_to_contain_text("active 0")
 
 
@@ -127,13 +127,13 @@ def test_messages_composer_queues_edits_and_withdraws_feedback(ui, ui_page, make
     _seed(ui, make_routine)
     inbox = ui.routines / "self-audit" / "inbox"
     ui_page.goto(f"{ui.url}/#/messages?status=all&type=all")
-    ui_page.wait_for_selector("#ref-F1", timeout=10_000)
+    ui_page.wait_for_selector("#ref-F1")
 
     ui_page.locator("#ref-F1 textarea").fill("please fix this first")
     ui_page.locator("#ref-F1 button", has_text="send comment").click()
 
     pending = ui_page.locator(".pending-item", has_text="please fix this first")
-    expect(pending).to_be_visible(timeout=10_000)
+    expect(pending).to_be_visible()
     msgs = list(inbox.glob("msg-*.json"))
     assert len(msgs) == 1
     assert json.loads(msgs[0].read_text())["text"] == \
@@ -143,12 +143,11 @@ def test_messages_composer_queues_edits_and_withdraws_feedback(ui, ui_page, make
     expect(ui_page.locator("#ref-F1 textarea")).to_have_value("please fix this first")
     ui_page.locator("#ref-F1 textarea").fill("actually, do this instead")
     ui_page.locator("#ref-F1 button", has_text="update comment").click()
-    expect(ui_page.locator(".pending-item", has_text="actually, do this instead")).to_be_visible(
-        timeout=10_000)
+    expect(ui_page.locator(".pending-item", has_text="actually, do this instead")).to_be_visible()
     assert len(list(inbox.glob("msg-*.json"))) == 1        # SAME file, not a second message
 
     ui_page.locator("#ref-F1 button", has_text="withdraw").click()
-    expect(ui_page.locator(".pending-item")).to_have_count(0, timeout=10_000)
+    expect(ui_page.locator(".pending-item")).to_have_count(0)
     assert list(inbox.glob("msg-*.json")) == []
 
 
@@ -160,19 +159,19 @@ def test_messages_note_is_a_plain_inbox_message(ui, ui_page, make_routine):
     _seed(ui, make_routine)
     inbox = ui.routines / "self-audit" / "inbox"
     ui_page.goto(f"{ui.url}/#/messages?status=all&type=all")
-    ui_page.wait_for_selector("h1:has-text('Messages')", timeout=10_000)
+    ui_page.wait_for_selector("h1:has-text('Messages')")
     expect(ui_page.locator("h2", has_text="Message the next run")).to_have_count(0)
     ui_page.goto(f"{ui.url}/#/routine/self-audit")
     box = ui_page.locator(".msg-composer textarea")
-    box.wait_for(timeout=10_000)
+    box.wait_for()
     box.fill("focus on the daemon logging")
     ui_page.locator("button", has_text="queue for the next run").click()
     expect(ui_page.locator(".msg-item", has_text="focus on the daemon logging")
-           ).to_be_visible(timeout=10_000)
+           ).to_be_visible()
     ui_page.goto(f"{ui.url}/#/messages?status=all&type=all")
 
     row = ui_page.locator(".pending-item", has_text="focus on the daemon logging")
-    expect(row).to_be_visible(timeout=10_000)
+    expect(row).to_be_visible()
     msgs = list(inbox.glob("msg-*.json"))
     assert len(msgs) == 1
     assert json.loads(msgs[0].read_text())["text"] == "focus on the daemon logging"
@@ -184,13 +183,13 @@ def test_messages_note_is_a_plain_inbox_message(ui, ui_page, make_routine):
     edit_box.fill("focus on the scheduler instead")
     ui_page.locator(".pending-item button", has_text="save").click()
     expect(ui_page.locator(".pending-item", has_text="focus on the scheduler instead")
-           ).to_be_visible(timeout=10_000)
+           ).to_be_visible()
     msgs = list(inbox.glob("msg-*.json"))
     assert len(msgs) == 1
     assert json.loads(msgs[0].read_text())["text"] == "focus on the scheduler instead"
 
     ui_page.locator(".pending-item button", has_text="withdraw").click()
-    expect(ui_page.locator(".pending-item")).to_have_count(0, timeout=10_000)
+    expect(ui_page.locator(".pending-item")).to_have_count(0)
     assert list(inbox.glob("msg-*.json")) == []
 
 
@@ -200,15 +199,15 @@ def test_messages_without_a_report_still_lists_the_archive(ui, ui_page, make_rou
     user order 2026-08-12)."""
     _seed(ui, make_routine, report=False)
     ui_page.goto(f"{ui.url}/#/messages?status=all&type=all")
-    ui_page.wait_for_selector("h1:has-text('Messages')", timeout=10_000)
-    expect(ui_page.locator("#ref-R1")).to_be_visible(timeout=10_000)
+    ui_page.wait_for_selector("h1:has-text('Messages')")
+    expect(ui_page.locator("#ref-R1")).to_be_visible()
     expect(ui_page.locator("#ref-F7")).to_be_visible()
     expect(ui_page.locator("h2", has_text="Message the next run")).to_have_count(0)
 
 
 def test_messages_empty_state_without_the_self_audit_routine(ui, ui_page):
     ui_page.goto(f"{ui.url}/#/messages?status=all&type=all")
-    expect(ui_page.locator(".empty .t")).to_contain_text("isn't set up yet", timeout=10_000)
+    expect(ui_page.locator(".empty .t")).to_contain_text("isn't set up yet")
 
 
 def test_messages_defaults_to_the_summaries(ui, ui_page, make_routine):
@@ -219,15 +218,15 @@ def test_messages_defaults_to_the_summaries(ui, ui_page, make_routine):
     _seed(ui, make_routine)
     ui.seed_run("uir", "20260905-080000", "finished", summary="the report is published")
     ui_page.goto(f"{ui.url}/#/messages")
-    ui_page.wait_for_selector("h1:has-text('Messages')", timeout=10_000)
-    expect(ui_page.locator("#ref-uir\\:20260905-080000")).to_be_visible(timeout=10_000)
+    ui_page.wait_for_selector("h1:has-text('Messages')")
+    expect(ui_page.locator("#ref-uir\\:20260905-080000")).to_be_visible()
     expect(ui_page.locator("#ref-D1")).to_have_count(0)                # a finding is not shown
     expect(ui_page.locator(".filterbar .tag.on", has_text="summaries")).to_be_visible()
     # the bulk sweep is offered only while summaries are what you are looking at (F303)
     expect(ui_page.get_by_role("button", name="✓ mark all read")).to_be_visible()
 
     ui_page.locator(".filterbar .tag", has_text="decisions").click()
-    expect(ui_page.locator("#ref-D1")).to_be_visible(timeout=10_000)
+    expect(ui_page.locator("#ref-D1")).to_be_visible()
     expect(ui_page.get_by_role("button", name="✓ mark all read")).to_have_count(0)
 
 
@@ -238,11 +237,11 @@ def test_messages_marks_a_summary_read_and_it_stays_read(ui, ui_page, make_routi
     ui.seed_run("uir", "20260905-080000", "finished", summary="the report is published")
     ui_page.goto(f"{ui.url}/#/messages")
     card = ui_page.locator("#ref-uir\\:20260905-080000")
-    expect(card).to_contain_text("unread", timeout=10_000)
+    expect(card).to_contain_text("unread")
 
     card.get_by_role("button", name="✓ read").click()
     # settled != open, so the default (open,in_progress) view drops it
-    expect(ui_page.locator("#ref-uir\\:20260905-080000")).to_have_count(0, timeout=10_000)
+    expect(ui_page.locator("#ref-uir\\:20260905-080000")).to_have_count(0)
     store = json.loads((ui.routines / ".control" / "summary-read.json").read_text(encoding="utf-8"))
     assert store["uir"] == "uir:20260905-080000"
 
@@ -252,14 +251,14 @@ def test_messages_defaults_to_the_active_backlog(ui, ui_page, make_routine):
     the `active` chip lit — the archive (addressed/settled/unknown) needs ?status=all (D75)."""
     _seed(ui, make_routine)
     ui_page.goto(f"{ui.url}/#/messages?type=all")
-    ui_page.wait_for_selector("h1:has-text('Messages')", timeout=10_000)
-    expect(ui_page.locator("#ref-D1")).to_be_visible(timeout=10_000)   # open → shown
+    ui_page.wait_for_selector("h1:has-text('Messages')")
+    expect(ui_page.locator("#ref-D1")).to_be_visible()   # open → shown
     expect(ui_page.locator("#ref-R1")).to_have_count(0)                # addressed → hidden
     expect(ui_page.locator("#ref-F1")).to_have_count(0)                # unknown → hidden
     expect(ui_page.locator(".filterbar .tag.on", has_text="active")).to_be_visible()
     # clearing the filters is the explicit "show everything" and survives as ?status=all
     ui_page.locator(".filterbar .btn", has_text="clear").click()
-    expect(ui_page.locator("#ref-R1")).to_be_visible(timeout=10_000)
+    expect(ui_page.locator("#ref-R1")).to_be_visible()
     expect(ui_page).to_have_url(re.compile(r"status=all"))
 
 
@@ -269,14 +268,13 @@ def test_messages_priority_flag_round_trips(ui, ui_page, make_routine):
     clears the store again."""
     _seed(ui, make_routine)
     ui_page.goto(f"{ui.url}/#/messages?type=all")
-    ui_page.wait_for_selector("#ref-D1", timeout=10_000)
+    ui_page.wait_for_selector("#ref-D1")
     ui_page.locator("#ref-D1 button[title*='flag as priority']").click()
-    expect(ui_page.locator("#ref-D1")).to_contain_text("⚑ priority", timeout=10_000)
+    expect(ui_page.locator("#ref-D1")).to_contain_text("⚑ priority")
     store = ui.routines / ".control" / "item-priorities.json"
     assert "D1" in json.loads(store.read_text(encoding="utf-8"))
     ui_page.locator("#ref-D1 button[title*='unflag']").click()
-    expect(ui_page.locator("#ref-D1 button[title*='flag as priority']")).to_be_visible(
-        timeout=10_000)
+    expect(ui_page.locator("#ref-D1 button[title*='flag as priority']")).to_be_visible()
     assert json.loads(store.read_text(encoding="utf-8")) == {}
 
 
@@ -293,16 +291,15 @@ def test_messages_discards_an_undelivered_orphan(ui, ui_page, make_routine):
                              "target": "routine-improver",
                              "title": "batch-appended, never delivered"}) + "\n")
     ui_page.goto(f"{ui.url}/#/messages?status=all&type=all")
-    ui_page.wait_for_selector("h1:has-text('Messages')", timeout=10_000)
+    ui_page.wait_for_selector("h1:has-text('Messages')")
 
-    expect(ui_page.locator(".q-group-head", has_text="addressed, never delivered")).to_be_visible(
-        timeout=10_000)
+    expect(ui_page.locator(".q-group-head", has_text="addressed, never delivered")).to_be_visible()
     discard = ui_page.locator("button", has_text="discard")      # unique to the undelivered banner
     expect(discard).to_have_count(1)
     discard.click()
 
     # the banner empties (its only orphan is gone)…
-    expect(ui_page.locator("button", has_text="discard")).to_have_count(0, timeout=10_000)
+    expect(ui_page.locator("button", has_text="discard")).to_have_count(0)
     expect(ui_page.locator(".q-group-head", has_text="addressed, never delivered")).to_have_count(0)
     # …because a `retracted` event was appended to the ledger, so R2 now reads dropped
     rows = [json.loads(x) for x in (control / "reports.jsonl").read_text(
@@ -334,7 +331,7 @@ def test_a_settling_reply_names_the_rows_it_finished_on_its_card(ui, ui_page, ma
         "\n".join(json.dumps(r) for r in rows) + "\n", encoding="utf-8")
 
     ui_page.goto(f"{ui.url}/#/messages?status=all&type=all")
-    ui_page.wait_for_selector("h1:has-text('Messages')", timeout=10_000)
+    ui_page.wait_for_selector("h1:has-text('Messages')")
 
     # the reply NAMES the row it settled beyond the one it answers
     expect(ui_page.locator("#ref-R3")).to_contain_text("answers R1 — closes it")

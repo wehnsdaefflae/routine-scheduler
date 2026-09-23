@@ -14,19 +14,31 @@ PNG_1PX = base64.b64decode(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==")
 
 
-def test_help_view_renders_docs_state(ui, ui_page):
-    """The Help tab renders whichever docs state the machine has: the page chips + iframe
-    when a build exists (docs_out_dir is per-user, so a dev box usually has one), the
-    still-being-generated empty state otherwise - and never a blank page or a JS error
-    (the ui_page teardown asserts the console stayed clean)."""
+def test_help_view_says_so_before_the_docs_build_lands(ui, ui_page):
+    """A fresh instance boots before pdoc finishes, so the Help tab's first state is the
+    empty one — and it must SAY that rather than render a blank page or throw (the ui_page
+    teardown asserts the console stayed clean)."""
     ui_page.goto(f"{ui.url}/#/help")
-    ui_page.wait_for_selector("h1:has-text('Help')", timeout=10_000)
-    ui_page.wait_for_selector(".filterbar .tag, .empty .t", timeout=10_000)
-    if ui_page.locator(".empty .t").count():
-        expect(ui_page.locator(".empty .t")).to_contain_text(
-            "documentation is still being generated")
-    else:
-        expect(ui_page.locator("iframe.help-frame")).to_be_visible()
+    ui_page.wait_for_selector("h1:has-text('Help')")
+    expect(ui_page.locator(".empty .t")).to_contain_text(
+        "documentation is still being generated")
+
+
+def test_help_view_embeds_the_built_docs(ui, ui_page):
+    """With a build on disk the tab is an index entry per guide plus the API reference, and the
+    chosen page in an iframe. Seeded here rather than built, because a pdoc run is ~19 s and
+    the contract under test is index.json → index + frame."""
+    (ui.docs / "guides").mkdir(parents=True)
+    (ui.docs / "guides" / "getting-started.html").write_text("<h1>Start</h1>", encoding="utf-8")
+    (ui.docs / "index.json").write_text(json.dumps({
+        "version": "9.9.9", "stamp": "t",
+        "guides": [{"slug": "getting-started", "title": "Getting started"}],
+        "api": "api/rsched.html"}), encoding="utf-8")
+
+    ui_page.goto(f"{ui.url}/#/help")
+    expect(ui_page.locator(".help-entry", has_text="Getting started")).to_be_visible()
+    expect(ui_page.locator(".help-entry", has_text="API reference")).to_be_visible()
+    expect(ui_page.locator("iframe.help-frame")).to_be_visible()
 
 
 # A human message carrying every markdown construct the answer/injection bodies used to
@@ -84,7 +96,7 @@ def _expect_message_markdown(scope):
     """Both human-authored bodies rendered as markup, not as literal asterisks/backticks -
     the same assertion for whichever mount of createTranscript `scope` wraps."""
     answer = scope.locator(".ev.answer")
-    expect(answer).to_contain_text("answer (web): take B", timeout=10_000)
+    expect(answer).to_contain_text("answer (web): take B")
     expect(answer.locator(".md strong")).to_have_text("B")
     expect(answer.locator(".md code")).to_have_text("run.py")
     expect(answer.locator(".md ul li")).to_have_count(2)
@@ -108,13 +120,13 @@ def test_dashboard_activity_section_lists_runs(ui, ui_page):
     run_dir = ui.seed_run("uir", ts, "finished", summary="all done")
     _seed_message_events(run_dir)
     ui_page.goto(f"{ui.url}/#/routines")
-    ui_page.wait_for_selector("details.activity-panel", timeout=10_000)
+    ui_page.wait_for_selector("details.activity-panel")
     ui_page.locator("details.activity-panel summary").click()
-    expect(ui_page.locator(".activity-panel .stats .stat").first).to_be_visible(timeout=10_000)
-    expect(ui_page.locator(".activity-panel .feed")).to_contain_text("uir", timeout=10_000)
+    expect(ui_page.locator(".activity-panel .stats .stat").first).to_be_visible()
+    expect(ui_page.locator(".activity-panel .feed")).to_contain_text("uir")
     # inline transcript: the row expands into the run's own events
     ui_page.locator(".activity-panel .logrow .rowhead").first.click()
-    expect(ui_page.locator(".activity-panel .logrow.open .logbody")).to_be_visible(timeout=10_000)
+    expect(ui_page.locator(".activity-panel .logrow.open .logbody")).to_be_visible()
     # the SECOND mount of createTranscript: the markdown fix has to hold here too
     _expect_message_markdown(ui_page.locator(".activity-panel .logrow.open .logbody"))
 
@@ -127,14 +139,14 @@ def test_transcript_renders_lifecycle_events(ui, ui_page):
     _seed_message_events(run_dir)
     ui_page.goto(f"{ui.url}/#/run/uir:20260714-070000")
     expect(ui_page.locator(".ev.question")).to_contain_text(
-        "Which path should I take?", timeout=10_000)
+        "Which path should I take?")
     _expect_message_markdown(ui_page)
     # the injected message's attachment renders as a real inline thumbnail, loaded
     # through the authenticated blob route (user report 2026-08-22: the transcript
     # used to show only the bare filename list inside the text block)
     thumb = ui_page.locator(".ev.injection img.att-thumb")
-    expect(thumb).to_be_visible(timeout=10_000)
-    expect(thumb).to_have_attribute("src", re.compile(r"^blob:"), timeout=10_000)
+    expect(thumb).to_be_visible()
+    expect(thumb).to_have_attribute("src", re.compile(r"^blob:"))
     err = ui_page.locator(".ev.error")
     expect(err).to_contain_text("error (endpoint, attempt 1, via stub-inc): boom")
     # the attempted reply folds under the card, collapsed by default, readable on open

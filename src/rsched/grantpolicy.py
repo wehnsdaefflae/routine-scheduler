@@ -19,7 +19,9 @@ own config, so this object is read-only with respect to what created it.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from pathlib import Path
 
+from . import utilgate
 from .grants import (
     _DEFAULT_KIND_SOURCE,
     _DEFAULT_REMINDERS_SOURCE,
@@ -29,7 +31,6 @@ from .grants import (
     CONFIG_FILE,
     GATED_KINDS,
     RECIPE_PREFIXES,
-    split_util_verb,
 )
 
 
@@ -111,6 +112,10 @@ class GrantPolicy:
     # only reshapes denial WORDING — a child's gated-kind denial must name the child
     # workflow as the scope that lacks the kind, not claim the routine lacks it (R46).
     is_subrun: bool = False
+    # The util library root, so the reserved-util gate can resolve a call's `calls:` TREE and
+    # not just its name. None (hand-built policies, tests) skips that check — the direct-name
+    # gate is unaffected either way.
+    libraries_home: Path | None = None
 
     def allows_kind(self, kind: str) -> bool:
         if self.admin or kind not in GATED_KINDS:
@@ -251,33 +256,6 @@ class GrantPolicy:
         return (self.remind_confirm == "always"
                 or (self.remind_confirm == "creations" and creating))
 
-    def _deny_util(self, action: dict) -> str | None:
-        """The reserved-util gate. A util is granted BY NAME (`capabilities.utils`), BY TAG
-        CLASS (`util_tags` — covers every util in the class, including ones the library gains
-        later), or BY VERB (`name:verb` — that one subcommand, matched against the call's
-        first positional argument, which is how read-only access to a channel is expressed).
-        """
-        name = str(action.get("name") or "")
-        if name not in self.gated_utils or name in self.utils or self.admin:
-            return None
-        if set(self.util_tag_index.get(name, ())) & self.util_tags:
-            return None
-        args = action.get("args") or []
-        verb = str(args[0]) if args and isinstance(args[0], str) else ""
-        scoped = {v for u in self.utils
-                  if (n := split_util_verb(u))[0] == name and (v := n[1])}
-        if scoped:
-            if verb in scoped:
-                return None
-            miss = f"{verb!r} is not one of those" if verb else "this call names no verb"
-            return (f"util {name!r} is granted to this routine only for: "
-                    f"{', '.join(sorted(scoped))}. {miss} — a read-only channel is not a "
-                    f"write one. {self.request_route(f'util:{name}')}")
-        perms = ", ".join(self.gated_utils[name])
-        return (f"util {name!r} is a reserved capability switched OFF for this "
-                f"routine — this channel is off limits (the {perms} permission "
-                f"covers its conduct). {self.request_route(f'util:{name}')}")
-
     def deny(self, action: dict) -> str | None:
         """A precise, actionable rejection for a gated call — or None when permitted. Worded
         for the model inside the schema-retry cycle: capabilities are switched by the USER
@@ -314,7 +292,7 @@ class GrantPolicy:
                     f"conduct). Work with what you have. "
                     f"{self.request_route(f'action:{kind}')}")
         if kind == "util":
-            refusal = self._deny_util(action)
+            refusal = utilgate.deny_util(self, action)
             if refusal is not None:
                 return refusal
         if kind in ("read_file", "view_image", "write_file", "edit_file"):

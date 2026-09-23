@@ -20,7 +20,12 @@ from pydantic import BaseModel
 from .. import registry
 from ..ids import now_iso
 from ..paths import atomic_write_json, read_json
-from .decisions_read import _all_questions, _audit_decisions, _record_dir, open_decisions
+from .decisions_read import (
+    _audit_decisions,
+    _record_dir,
+    find_question,
+    open_decisions,
+)
 
 router = APIRouter(tags=["questions"])
 
@@ -65,12 +70,7 @@ async def answer(request: Request, qid: str, body: Answer) -> dict:
         _announce_answer(request, qid, match["routine"])
         return {"ok": True, "routine": match["routine"], "mode": "deferred", "meta": True}
     server = request.app.state.server
-    match = next((q for q in _all_questions(server)
-                  + _all_questions(server, "conversation")
-                  + _all_questions(server, "background")
-                  if q.get("qid") == qid), None)
-    if match is None:
-        raise HTTPException(404, f"no open question {qid!r}")
+    match = _record_match(server, qid)
     routine_dir = _record_dir(server, match)
     payload: dict = {"qid": qid, "text": body.text, "source": "web",
                      "intermediate": body.intermediate and match["mode"] == "blocking",
@@ -146,10 +146,7 @@ def _decide_request(request: Request, match: dict, routine_dir,
                                               req_ids, decision))
         _git_commit(routine_dir, f"grant decision via web ({decision}: "
                                  f"{', '.join(req_ids)})")
-        try:
-            request.app.state.scheduler.rescan()
-        except AttributeError:
-            pass   # test apps without a scheduler — config on disk is already right
+        request.app.state.scheduler.rescan()
     elif decision == "allow_now":
         # a one-run connection grant still needs its account resolved at decision time
         for eid in req_ids:
@@ -198,10 +195,7 @@ def _record_match(server, qid: str) -> dict:
     """The open FILE-BACKED decision for qid (audit decisions live in the report, not as
     records — they can't be snoozed or deferred).
     """
-    match = next((q for q in _all_questions(server)
-                  + _all_questions(server, "conversation")
-                  + _all_questions(server, "background")
-                  if q.get("qid") == qid), None)
+    match = find_question(server, qid)
     if match is None:
         raise HTTPException(404, f"no open question {qid!r}")
     return match
@@ -236,12 +230,9 @@ def revise_question_answer(request: Request, qid: str, body: Revision) -> dict:
 
 def _answered_record_dir(server, qid: str):
     """(routine slug, dir) for a qid that is EITHER still open or already settled — a
-    revision has to reach both, and only the settled half is invisible to `_all_questions`.
+    revision has to reach both, and only the settled half is invisible to `find_question`.
     """
-    match = next((q for q in _all_questions(server)
-                  + _all_questions(server, "conversation")
-                  + _all_questions(server, "background")
-                  if q.get("qid") == qid), None)
+    match = find_question(server, qid)
     if match is not None:
         return str(match["routine"]), _record_dir(server, match)
     for home in (server.routines_home, server.conversations_home, server.background_home):

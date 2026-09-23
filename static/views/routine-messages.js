@@ -8,8 +8,9 @@
 // addressed reports the recipient's run picked up. The last two are history, read-only.
 
 import { api } from "/static/api.js";
+import { clampedBody } from "/static/md.js";
 import { confirmDialog } from "/static/components/dialog.js";
-import { el, tagChip, toast, when } from "/static/util.js";
+import { el, tagChip, toast, toastError, when } from "/static/util.js";
 import { forgetField } from "/static/formpersist.js";
 
 const FOLDERS = [
@@ -31,7 +32,7 @@ const fromLabel = (m) => (/^web(-|$)/.test(m.from || "") ? "you" : m.from || "us
 
 export function mountMessages(host, slug) {
   const tabs = el("div", { class: "msg-tabs" });
-  const hint = el("div", { class: "muted small", style: "margin:4px 0 2px" });
+  const hint = el("div", { class: "set-desc muted small", style: "margin:4px 0 2px" });
   const body = el("div", {});
   host.append(el("div", { class: "panel" }, tabs, hint, body));
   let data = { inbox: [], outbox: [], read: [], received: [] };
@@ -83,7 +84,7 @@ export function mountMessages(host, slug) {
           ? "queued — the RUNNING run picks it up at its next turn"
           : "queued — the next run reads it at boot");
         await load();
-      } catch (err) { box.value = text; toast(err.message, 4000, { error: true }); }
+      } catch (err) { box.value = text; toastError(err); }
       finally { send.disabled = false; }
     };
     return el("div", { class: "msg-composer" },
@@ -96,7 +97,10 @@ export function mountMessages(host, slug) {
 
   function inboxCard(m) {
     const card = el("div", { class: "msg-item inbox" });
-    const text = el("div", { class: "msg-text" }, m.text || "");
+    // The same queue the Messages page shows, so the same treatment and the same code: a
+    // delivered REPORT runs to 700px, and seven of them made a routine page's MESSAGES panel
+    // 1 700px of the seven items you can already read in full one click away.
+    const { node: text, toggle: more } = clampedBody(m.text, "msg-text");
     const edit = el("button", { class: "btn small ghost",
       title: "rewrite the message in place — same file, same queue position" }, "edit");
     edit.onclick = () => {
@@ -107,11 +111,11 @@ export function mountMessages(host, slug) {
         if (!ta.value.trim()) return;
         save.disabled = true;
         try {
-          await api(`/api/routines/${slug}/messages/${msgId(m)}`,
+          await api(`/api/routines/${slug}/messages/${encodeURIComponent(msgId(m))}`,
             { method: "PUT", body: { text: ta.value } });
           toast("updated — still queued for the next run");
           await load();
-        } catch (err) { toast(err.message, 4000, { error: true }); save.disabled = false; }
+        } catch (err) { toastError(err); save.disabled = false; }
       };
       const cancel = el("button", { class: "btn small ghost", onclick: () => render() }, "cancel");
       card.replaceChildren(head(), ta, el("div", { class: "row mt", style: "gap:6px" }, save, cancel));
@@ -122,17 +126,17 @@ export function mountMessages(host, slug) {
     drop.onclick = async () => {
       drop.disabled = true;
       try {
-        await api(`/api/routines/${slug}/messages/${msgId(m)}`, { method: "DELETE" });
+        await api(`/api/routines/${slug}/messages/${encodeURIComponent(msgId(m))}`, { method: "DELETE" });
         toast("withdrawn — the run won't see it");
         await load();
-      } catch (err) { toast(err.message, 4000, { error: true }); drop.disabled = false; }
+      } catch (err) { toastError(err); drop.disabled = false; }
     };
     const head = () => el("div", { class: "msg-head" },
       el("span", { class: "msg-src" }, fromLabel(m)),
       m.report ? el("a", { class: "ref-link", href: `#/messages?focus=${m.report}`,
         title: "the delivered report behind this message" }, m.report) : null,
       m.ts ? when(m.ts) : null,
-      el("span", { class: "msg-ops" }, edit, drop));
+      el("span", { class: "msg-ops" }, ...[more, edit, drop].filter(Boolean)));
     card.append(head(), text);
     return card;
   }
@@ -143,13 +147,16 @@ export function mountMessages(host, slug) {
   function reportish(m) {
     const card = el("div", { class: `msg-item ${folder}` });
     if (folder === "read") {
+      // fifty consumed messages is history, and history is read by its heads — same clamp
+      const { node: text, toggle: more } = clampedBody(m.text, "msg-text");
       card.append(el("div", { class: "msg-head" },
         el("span", { class: "msg-src" }, fromLabel(m)),
         m.report ? el("a", { class: "ref-link", href: `#/messages?focus=${m.report}` }, m.report) : null,
         m.ts ? when(m.ts) : null,
         m.run_ts ? el("a", { href: `#/run/${slug}:${m.run_ts}`,
-          title: "the run that consumed it" }, "consumed by run ↗") : null),
-        el("div", { class: "msg-text" }, m.text || ""));
+          title: "the run that consumed it" }, "consumed by run ↗") : null,
+        more ? el("span", { class: "msg-ops" }, more) : null),
+        text);
       return card;
     }
     // outbox + received: an addressed report row (title + detail, ledger-derived)
@@ -171,7 +178,7 @@ export function mountMessages(host, slug) {
           await api(`/api/routines/${slug}/outbox/${m.report}`, { method: "DELETE" });
           toast(`${m.report} retracted — ${m.to} never sees it`);
           await load();
-        } catch (err) { toast(err.message, 5000, { error: true }); retract.disabled = false; }
+        } catch (err) { toastError(err, 5000); retract.disabled = false; }
       };
       head.append(el("span", { class: "msg-ops" }, retract));
     } else if (m.delivered) {

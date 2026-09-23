@@ -73,8 +73,11 @@ def pytest_terminal_summary(terminalreporter) -> None:
         return
     w = terminalreporter
     w.write_sep("-", "the browser suite did not run")
-    w.write_line("  uv run pytest -m ui        the browser suite")
-    w.write_line('  uv run pytest -m ""       everything, which is what ships a release')
+    w.write_line('  -m ui   the browser suite      -m ""   everything, which ships a release')
+    w.write_line("  Both need the compose `browser` network, so they run inside the container:")
+    w.write_line("    docker compose exec -u 1000:1000 rsched \\")
+    w.write_line("      env RSCHED_TEST_CDP=http://172.30.7.10:9222 RSCHED_TEST_BIND=172.30.7.2 \\")
+    w.write_line("      uv run pytest -q -m ui")
     if _static_is_dirty():
         w.write_line("")
         w.write_line("  static/ HAS UNCOMMITTED CHANGES and none of them were exercised.",
@@ -84,21 +87,52 @@ def pytest_terminal_summary(terminalreporter) -> None:
 def pytest_xdist_auto_num_workers(config) -> int:
     """What `-n auto` means for THIS suite: one worker fewer than the machine has cores.
 
-    xdist's own `auto` is `os.cpu_count()`, which assumes one busy process per worker. That
-    holds for the ~1750 unit tests and is badly wrong for the ~155 browser tests: each of those
-    workers drives a chromium (several processes) AND serves a uvicorn in-process, so `-n 4` on
-    a 4-core box runs three times that many runnable processes and the box thrashes instead of
-    working. Measured on the 4-core deployment (2026-08-30, whole suite):
+    xdist's own `auto` is `os.cpu_count()`, which assumes one busy process per worker. A worker
+    here serves a uvicorn in-process on top of the test itself, so `-n 4` on a 4-core box runs
+    more runnable processes than the box has and it thrashes instead of working. Measured on
+    the 4-core deployment (2026-08-30, whole suite):
 
         -n 4 (auto)   574 s   149 % cpu     ← 4 cores available, under 1.5 used
         -n 3          445 s   179 % cpu     ← 22 % faster AND better utilised
-        -n 6          browser tests collapse: 13 failures in one file alone
 
     Fewer workers is faster because the loss is contention, not idleness — the workers were
     never CPU-bound, they were waiting on a box that had been oversubscribed. Reserving a core
     keeps `auto` portable (a 16-core CI machine still gets 15) instead of pinning a literal.
+    The browser tests do not enter this arithmetic: they are one work unit on one worker
+    (`pytest_configure` below), and no worker launches a browser of its own.
     """
     return max(2, (os.cpu_count() or 4) - 1)
+
+
+def pytest_configure(config) -> None:
+    """Distribute by GROUP whenever the browser tests are in the selection.
+
+    The browser suite shares one headful Chrome (tests/ui/conftest.py marks the directory as a
+    single `xdist_group`), and `loadgroup` is what makes a group mean one worker. Measured on
+    the release gate's own ledger: ~530 serial browser-test executions produced 3 reruns, while
+    every 3-worker invocation produced dozens and the full 3-worker browser gate timed out at
+    1500 s with 38 reruns and 6 reds — five of which passed on a serial re-run.
+
+    The fast suite is untouched: the default `-m "not ui"` selection keeps `worksteal`, which
+    is the scheduler its ~2 150 short tests were measured on. Under `-m ""` the browser group
+    is the largest work unit, so `--loadscope-reorder` (xdist's default) dispatches it first
+    and the release gate costs max(fast, browser) rather than their sum.
+
+    Both halves of xdist have to be told, because a worker RE-PARSES the command line instead
+    of inheriting the controller's options (workermanage sends an empty option dict): the
+    controller needs `dist` for the scheduler that reads the group, the worker needs
+    `loadgroup` for the hook that writes the group into the nodeid. Setting only the
+    controller's leaves every nodeid unsuffixed and the grouping is silently a no-op.
+    """
+    markexpr = (getattr(config.option, "markexpr", "") or "").replace("  ", " ")
+    if "not ui" in markexpr:
+        return
+    if hasattr(config, "workerinput"):
+        config.option.loadgroup = True   # a worker's own `dist` is always "no"
+        return
+    if getattr(config.option, "dist", "no") == "no":
+        return                           # `-n0`: nothing to distribute
+    config.option.dist = "loadgroup"
 
 
 @pytest.fixture(autouse=True)
@@ -325,10 +359,17 @@ def make_routine(tmp_path):
 def scripted(monkeypatch):
     """Returns a factory: scripted([replies]) → ScriptedEndpoint wired into run_routine
     (runtime.EndpointRegistry is monkeypatched) with fast polling."""
+    import rsched.engine.actionroute as actionroute_mod
     import rsched.engine.loop as loop_mod
     import rsched.engine.runtime as runtime_mod
 
+    # BOTH readers of the constant. loop imports POLL_S for the pause gate and the reminder
+    # ops; actionroute imports its own bound name and passes it to every blocking wait there
+    # is — ask, the three authoring approvals, the two call-time secret gates and the child
+    # `wait`. Patching only the loop left all of those ticking at the production 2 s: 13
+    # ask/approval-shaped tests spent 33 s per gate asleep.
     monkeypatch.setattr(loop_mod, "POLL_S", 0.02)
+    monkeypatch.setattr(actionroute_mod, "POLL_S", 0.02)
     loop_mod._ABORT["flag"] = False
 
     def _factory(replies: list) -> ScriptedEndpoint:

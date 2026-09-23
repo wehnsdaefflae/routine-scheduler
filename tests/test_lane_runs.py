@@ -377,3 +377,66 @@ async def test_gate_skipped_member_advances_under_stop_policy(tmp_path):
     assert rec["log"][0]["outcome"] == "skipped"
     await mgr.tick(catalog)
     assert runner.fired == [("a", "lane"), ("b", "lane")]
+
+
+# -- the restart's only quiet gap ------------------------------------------------------------
+
+
+async def test_a_pending_restart_holds_the_next_member_when_nothing_else_runs(tmp_path):
+    """The member boundary is the ONLY gap a back-to-back chain leaves, and it is 5s wide
+    against a 10s quiet window — so a pending restart could never be reached between members.
+    Live: a request dropped at 08:25 restarted at 13:35, five hours of runs against code the
+    release had already replaced and reported as shipped.
+
+    What is held is the DAEMON's own next member, and only while nothing else is active. The
+    member fires on the new code at the first tick after boot.
+    """
+    from rsched.daemon import restart
+    from rsched.daemon.lane_runs import LaneRunManager
+    server = _server(tmp_path)
+    da = _routine(server, "a")
+    _routine(server, "b")
+    lane = lanes.create(server.routines_home, name="Nightly", members=[m("a"), m("b")],
+                        on_failure="continue")
+    lane_runs.arm(server.routines_home, lane, default_on_failure="continue")
+    runner = FakeRunner()
+    mgr = LaneRunManager(server, runner)
+    catalog = registry.scan(server)
+    await mgr.tick(catalog)                                     # fires a
+    mk_run(da, "20260717-120000", "finished", outcome="ok")
+    runner.active.clear()
+    await mgr.tick(catalog)                                     # collects a — the gap opens
+
+    sentinel = restart.sentinel_path(server)
+    sentinel.parent.mkdir(parents=True, exist_ok=True)
+    sentinel.write_text("{}", encoding="utf-8")
+    await mgr.tick(catalog)
+    assert [slug for slug, _ in runner.fired] == ["a"]          # b held for the restart
+    rec = lane_runs.read(server.routines_home, lane["id"])
+    assert rec is not None and rec["current_run"] is None and rec["cursor"] == 1
+
+    sentinel.unlink()                                           # the restart happened
+    await mgr.tick(catalog)
+    assert [slug for slug, _ in runner.fired] == ["a", "b"]     # b fires on the new code
+
+
+async def test_a_pending_restart_does_not_hold_a_chain_while_a_person_is_running_something(
+        tmp_path):
+    """The restart itself never fires while anything is active, so holding the member then
+    would stall the chain behind a run the restart is already waiting for — including a
+    conversation parked on the user, which defers the restart with no deadline at all."""
+    from rsched.daemon import restart
+    from rsched.daemon.lane_runs import LaneRunManager
+    server = _server(tmp_path)
+    _routine(server, "a")
+    lane = lanes.create(server.routines_home, name="Nightly", members=[m("a")],
+                        on_failure="continue")
+    lane_runs.arm(server.routines_home, lane, default_on_failure="continue")
+    runner = FakeRunner()
+    runner.active["someone-else"] = "20260717-120000"
+    sentinel = restart.sentinel_path(server)
+    sentinel.parent.mkdir(parents=True, exist_ok=True)
+    sentinel.write_text("{}", encoding="utf-8")
+    mgr = LaneRunManager(server, runner)
+    await mgr.tick(registry.scan(server))
+    assert [slug for slug, _ in runner.fired] == ["a"]

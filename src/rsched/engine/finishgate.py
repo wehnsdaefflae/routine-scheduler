@@ -15,10 +15,11 @@ def check_finish(loop, action: dict, ctx) -> str | None:
     """May this run END? Returns the run status when the finish stands, None when it is
     set aside for one turn (the R108 deferral shape) and the loop should go round again.
 
-    Split out of `EngineLoop.run` (F393). Six guards, one question: an undrained user
-    message, unaccounted stopping conditions, an `unmet` verdict with no residual, a
-    fabricated first-action finish, an unbacked action claim, and (F334 v2) a claim the
-    run's own transcript does not support. Each costs one turn and says exactly why — the
+    Split out of `EngineLoop.run` (F393). Seven guards, one question: an undrained user
+    message, unaccounted stopping conditions, an `unmet` verdict with no residual, a rule
+    whose moment is the ending itself (`assist.at_finish`), a fabricated first-action
+    finish, an unbacked action claim, and (F334 v2) a claim the run's own transcript does
+    not support. Each costs one turn and says exactly why — the
     engine never ends a run the model could have ended itself, so every rung hands the
     turn back rather than force-finishing.
     """
@@ -52,7 +53,7 @@ def check_finish(loop, action: dict, ctx) -> str | None:
         from . import stopping
         if missing := stopping.unaccounted(
                 str(action.get("summary") or ""), ctx.routine.dir,
-                phase=ctx.phase):
+                phase=stopping.current_stage(ctx.routine.dir)):
             obs = {"kind": "finish", "rejected": True,
                    "stopping_unaccounted": missing}
             ctx.transcript.event("observation", obs, turn=ctx.turn)
@@ -73,7 +74,7 @@ def check_finish(loop, action: dict, ctx) -> str | None:
         from . import stopping
         if bare := stopping.without_residual(
                 str(action.get("summary") or ""), ctx.routine.dir,
-                phase=ctx.phase):
+                phase=stopping.current_stage(ctx.routine.dir)):
             obs = {"kind": "finish", "rejected": True,
                    "stopping_without_residual": bare}
             ctx.transcript.event("observation", obs, turn=ctx.turn)
@@ -99,10 +100,15 @@ def check_finish(loop, action: dict, ctx) -> str | None:
             loop.messages.append({"role": "user", "content": message})
             ctx.write_status()
             return None   # deferred — the loop goes round again
-    if action["status"] == "ok" and loop.executed_actions == 0 and ctx.depth == 0:
+    if (action["status"] == "ok" and loop.executed_actions == 0 and ctx.depth == 0
+            and not loop._finish_reserved):
         # Fabrication guard: a top-level ok-finish as the very first action
         # is a hallucinated completion (the classic no-tools failure mode) —
         # no observation exists that could ground any of its claims.
+        # Exempt on the RESERVED finish turn, like every rung above: rejecting there
+        # returns to a loop whose budget is still violated, which force-finishes with an
+        # engine string — so the guard costs the run the very summary the reserve exists
+        # to author. A reserved turn that reached here executed nothing all run anyway.
         obs = {"kind": "finish", "rejected": True}
         ctx.transcript.event("observation", obs, turn=ctx.turn)
         loop.messages.append({"role": "user", "content":
@@ -122,7 +128,15 @@ def check_finish(loop, action: dict, ctx) -> str | None:
             action.get("summary", ""),
             {r["kind"] for r in loop.turn_records},
             is_meta="meta" in (ctx.routine.tags or []))
-        if unbacked:
+        if unbacked and loop._finish_reserved:
+            # On the reserved turn the summary is the only thing that survives, and a
+            # rejection here loses it to the force-finish. Record the unbacked claim as a
+            # note the operator can read instead of refusing the finish over it.
+            ctx.transcript.event("error", {"where": "finish",
+                "message": "reserved finish turn: summary claims "
+                           f"{', '.join(unbacked)} with no such action this run — the "
+                           "finish stands because rejecting it would lose the summary"})
+        elif unbacked:
             obs = {"kind": "finish", "rejected": True,
                    "unbacked_claims": unbacked}
             ctx.transcript.event("observation", obs, turn=ctx.turn)

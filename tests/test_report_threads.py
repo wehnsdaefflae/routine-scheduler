@@ -23,8 +23,8 @@ from types import SimpleNamespace
 import pytest
 
 from rsched.engine.actions import validate_action
+from rsched.engine.admin_handlers import handle_report
 from rsched.engine.inbox import drain_messages
-from rsched.engine.interact import handle_report
 from rsched.engine.observations import format_observation
 from rsched.readmodels import items
 from rsched.report_threads import OPEN_THREAD_CAP, open_threads, supersedable

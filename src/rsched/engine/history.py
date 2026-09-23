@@ -15,6 +15,7 @@ import json
 from pathlib import Path
 
 from ..endpoints.base import fold_usage
+from . import enginenote
 from .actionschema import brief_value
 from .observations import format_observation
 
@@ -30,14 +31,23 @@ def replay_messages(events: list[dict]) -> tuple[list[dict], int, list[dict]]:
     assistant turn; a child whose summary rode a `wait` observation is not re-announced),
     and blocking-ask answers are NOT replayed from `answer` events — the answer text
     already lives inside the ask_user observation, so replaying both would duplicate it.
+
+    Every message this rebuilds comes from the SAME renderer the live path used
+    (`control.injected_message`, `control.command_message`, `enginenote.message`,
+    `format_observation`). It is not tidiness: a resumed leg whose prefix differs by one
+    label or one newline is re-WRITTEN to the provider at 1.25x instead of re-read at 0.1x,
+    and the token count falls while the bill rises.
     """
-    from .control import child_finished_message, render_command_result
+    from .control import child_finished_message, command_message, injected_message
 
     messages: list[dict] = []
     records: list[dict] = []
     last_turn = 0
     # subrun_end events whose announcement has not been placed yet: n → payload
     pending_children: dict[int, dict] = {}
+    # a slash command's text, waiting for the observation it was recorded apart from: live it
+    # is ONE message (command_message), so the replay has to put the pair back together
+    pending_command: str | None = None
 
     def flush_children() -> None:
         messages.extend({"role": "user", "content": child_finished_message(
@@ -67,13 +77,33 @@ def replay_messages(events: list[dict]) -> tuple[list[dict], int, list[dict]]:
                 for row in p.get("finished") or []:
                     if isinstance(row, dict) and isinstance(row.get("n"), int):
                         pending_children.pop(row["n"], None)
-            rendered = (render_command_result(p) if p.get("user_command")
-                        else format_observation(p))
-            messages.append({"role": "user", "content": rendered})
+            if p.get("user_command"):
+                messages.append({"role": "user",
+                                 "content": command_message(pending_command or "", p)})
+                pending_command = None
+                continue
+            if p.get("media"):
+                # the replay rebuilds TEXT-only messages, so the media is not re-attached:
+                # say so instead of replaying "attached below for you to see" over nothing
+                p = {k: v for k, v in p.items() if k != "media"} | {"media_replayed": True}
+            messages.append({"role": "user", "content": format_observation(p)})
         elif kind_ev == "user_injection":
-            label = ("USER COMMAND (executed directly)" if p.get("command")
-                     else "USER MESSAGE (injected mid-run)")
-            messages.append({"role": "user", "content": f"{label}: {p.get('text', '')}"})
+            if p.get("command"):
+                pending_command = str(p.get("text", ""))
+                continue
+            if p.get("source") == "engine":
+                # An ENGINE NOTE, not the user. Replaying it as "USER MESSAGE (injected
+                # mid-run)" both mislabelled it — the harness contract tells the model an
+                # injected message IS the user talking — and lost the note's actual text,
+                # because the writers recorded a stub beside the prose. `enginenote.append`
+                # now records the note verbatim, so the replay reproduces what the model read.
+                if p.get("replay") is False:
+                    continue        # boot re-authors this note on every leg; see enginenote
+                messages.append({"role": "user",
+                                 "content": enginenote.message(str(p.get("text", "")))})
+                continue
+            messages.append({"role": "user", "content": injected_message(
+                str(p.get("text", "")), report=bool(p.get("report")))})
         elif kind_ev == "subrun_end":
             n = p.get("n")
             if isinstance(n, int):

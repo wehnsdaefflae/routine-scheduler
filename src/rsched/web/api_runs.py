@@ -1,5 +1,6 @@
-"""Run access: index, transcripts (paged + SSE live tail), intervention
-(inject / pause / resume / abort).
+"""Run access: index, transcripts (paged + SSE live tail), the per-run read models, and
+the one reader of a run's state (`run_state` + the two guards every control route in
+api_run_control uses).
 """
 
 from __future__ import annotations
@@ -14,6 +15,7 @@ from ..config import load_routine
 from ..engine.transcript import read_events
 from ..ids import parse_run_id
 from ..paths import read_json
+from ..registry import TERMINAL_STATES
 from .sse import traced_run_stream
 
 router = APIRouter(tags=["runs"])
@@ -54,6 +56,29 @@ def run_index(request: Request, routine: str | None = None, limit: int = 30) -> 
              "state": r.state, "turn": r.turn, "summary": r.summary[:200],
              "usage": r.usage, "elapsed_s": r.elapsed_s, "updated": r.updated}
             for r in runs[:limit]]
+
+
+def run_state(run_dir: Path) -> str | None:
+    """The run's state off its status.json, or None for a run with no readable status.
+
+    One reader for every route that guards on it — the `isinstance` dance at each site was
+    the reason the three 409 wordings drifted apart.
+    """
+    st = read_json(run_dir / "status.json")
+    return st.get("state") if isinstance(st, dict) else None
+
+
+def require_active(run_dir: Path, what: str) -> None:
+    """409 unless a run is still going — for the mid-flight controls (`what` names the act)."""
+    if run_state(run_dir) in TERMINAL_STATES:
+        raise HTTPException(409, f"run is not active; nothing to {what}")
+
+
+def require_terminal(run_dir: Path, what: str) -> None:
+    """409 unless a run has ended — for the controls that re-open one (`what` names the act)."""
+    if run_state(run_dir) not in TERMINAL_STATES:
+        raise HTTPException(409, f"run is still active — only a finished/failed/aborted "
+                                 f"run {what}")
 
 
 @router.get("/runs/{run_id}")

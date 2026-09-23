@@ -18,6 +18,8 @@ from datetime import UTC, datetime, timedelta
 
 from playwright.sync_api import expect
 
+from .conftest import until
+
 NAV = ".topbar nav a[data-nav]"
 
 
@@ -27,7 +29,7 @@ def test_watch_ribbon_paints_a_bar_for_a_recent_run(ui, ui_page):
     ui_page.set_viewport_size({"width": 1400, "height": 900})
     ui_page.goto(f"{ui.url}/#/routines")
     # the ribbon polls /api/runs on mount; the seeded run sits inside the last-24h window
-    expect(ui_page.locator(".ribbon-track svg .rb-run").first).to_be_visible(timeout=10_000)
+    expect(ui_page.locator(".ribbon-track svg .rb-run").first).to_be_visible()
 
 
 def test_routines_view_refetches_cards_on_nav_back(ui, ui_page):
@@ -38,11 +40,10 @@ def test_routines_view_refetches_cards_on_nav_back(ui, ui_page):
                if r.method == "GET" and "/api/routines" in r.url else None)
     ui_page.set_viewport_size({"width": 1400, "height": 900})
     ui_page.goto(f"{ui.url}/#/routines")
-    expect(ui_page.locator(NAV).first).to_be_visible(timeout=10_000)
+    expect(ui_page.locator(NAV).first).to_be_visible()
     ui_page.wait_for_timeout(400)
     before = len(calls)
     ui_page.locator('.topbar nav a[data-nav="messages"]').click()
     ui_page.wait_for_timeout(200)
     ui_page.locator('.topbar nav a[data-nav="dashboard"]').click()
-    ui_page.wait_for_timeout(700)
-    assert len(calls) > before, (before, len(calls))
+    until(lambda: len(calls) > before, what="the re-fetch on nav-back")

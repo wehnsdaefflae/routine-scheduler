@@ -148,6 +148,31 @@ async def test_tick_fires_once_and_injects_every_payload(tmp_path):
     assert state["fires"] == 1 and state["triggers"]["t-aaaa1111"]["events"] == 3
 
 
+async def test_the_injection_goes_through_the_one_inbox_writer(tmp_path, monkeypatch):
+    """F499: `engine.inbox.file_message` is the ONE writer of the msg-* shape, and `name=`
+    exists for exactly the channels whose filename is a KEY. This manager hand-rolled its
+    own `atomic_write_json(... / "inbox" / f"msg-trig-…")` beside it — the drift the single
+    writer exists to prevent, one `ts` spelling and one uniqueness rule per endpoint."""
+    from rsched.engine import inbox as inbox_mod
+
+    server = _server(tmp_path)
+    d = _routine(server, slug="fresh", trig=[dict(WEBHOOK)])
+    triggers.write_event(server.routines_home, "fresh", trigger_id="t-aaaa1111",
+                         payload="hello")
+    filed: list[dict] = []
+    real = inbox_mod.file_message
+
+    def spy(routine_dir, text, **kw):
+        filed.append({"dir": routine_dir, **kw})
+        return real(routine_dir, text, **kw)
+
+    monkeypatch.setattr(inbox_mod, "file_message", spy)
+    await TriggerManager(server, FakeRunner()).tick(registry.scan(server))
+    assert [f["via"] for f in filed] == ["trigger"]
+    assert filed[0]["name"].startswith("trig-") and filed[0]["dir"] == d
+    assert len(list((d / "inbox").glob("msg-trig-*.json"))) == 1
+
+
 async def test_tick_coalesces_while_active_and_draining(tmp_path):
     server = _server(tmp_path)
     d = _routine(server, trig=[dict(WEBHOOK)])
@@ -370,3 +395,53 @@ async def test_report_trigger_respects_disabled_active_closures_and_answers(tmp_
     mgr = TriggerManager(server, runner)
     await mgr.tick(registry.scan(server))
     assert runner.fired == []
+
+
+async def test_an_in_flight_temp_file_never_buys_a_run(tmp_path):
+    """The report-trigger watch selects `msg-*.json` — the stem the ONE writer produces —
+    and not "any file that is not `answer-*`". `paths.atomic_write` creates its temp file IN
+    the target directory, so the old filter also matched `.msg-….json.XXXX.tmp`; that file
+    is unreadable, unreadable WAKES here by design, and a race with any inbox write
+    therefore bought a whole run of the recipe."""
+    server = _server(tmp_path)
+    d = _routine(server, slug="racy", trig=[dict(REPORT_TRIG)])
+    (d / "inbox" / ".msg-20260922T101010-abcd1234.json.9f3a.tmp").write_text(
+        '{"text": "hal', encoding="utf-8")
+    runner = FakeRunner()
+    await TriggerManager(server, runner).tick(registry.scan(server))
+    assert runner.fired == []
+
+
+async def test_a_retired_routine_is_not_fired_by_a_report_trigger(tmp_path):
+    """`retired` is the routine's own final goal being met, and it was honoured by the
+    schedule and the lane chain only. A sibling filing an addressed report would then fire a
+    routine the system says is DONE — one run spent re-asserting a met goal and re-filing the
+    retirement proposal already waiting on the Decisions page."""
+    from rsched.reports import file_report
+
+    server = _server(tmp_path)
+    d = _routine(server, slug="finished", trig=[dict(REPORT_TRIG)])
+    file_report(server.routines_home, routine="s", run_id="s:1", title="one more thing",
+                target="finished", target_dir=d)
+    catalog = registry.scan(server)
+    catalog["finished"].retired = True          # every goal-scoped condition met
+    runner = FakeRunner()
+    await TriggerManager(server, runner).tick(catalog)
+    assert runner.fired == []
+    assert list((d / "inbox").glob("msg-rep-*.json"))   # the message keeps, unread
+
+
+async def test_a_retired_routine_drops_its_spooled_webhook_events(tmp_path):
+    """The same rule for the webhook path, and the spool is dropped rather than held: a
+    retired routine has no later run to drain it, so keeping the events would hold a spool
+    open forever for a routine that is finished."""
+    server = _server(tmp_path)
+    _routine(server, slug="webby", trig=[dict(WEBHOOK)])
+    triggers.write_event(server.routines_home, "webby", trigger_id=WEBHOOK["id"],
+                         payload="hello")
+    catalog = registry.scan(server)
+    catalog["webby"].retired = True
+    runner = FakeRunner()
+    await TriggerManager(server, runner).tick(catalog)
+    assert runner.fired == []
+    assert triggers.pending_events(server.routines_home, "webby") == []

@@ -67,9 +67,19 @@ export function createTaskTree(container, { treeUrl, isLive }) {
     }
   }
 
+  // The poller is SELF-DEFENDING (weekgrid.js, transcript.js hold the same guard): a view that
+  // forgets stop() would otherwise leave a 3s GET running for the rest of the browser session,
+  // because isLive() reads a state variable frozen at whatever it held when the view was torn
+  // down — the run view did exactly that until 0.365.0. Once the box has left the document
+  // nothing can render the answer, so nothing asks for it.
   function poll() {
     if (timer) clearTimeout(timer);
-    if (isLive && isLive()) timer = setTimeout(async () => { await refresh(); poll(); }, 3000);
+    if (!box.isConnected) return;
+    if (isLive && isLive()) timer = setTimeout(async () => {
+      if (!box.isConnected) return;
+      await refresh();
+      poll();
+    }, 3000);
   }
 
   refresh().then(poll);

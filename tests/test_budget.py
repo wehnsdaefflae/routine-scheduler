@@ -48,12 +48,28 @@ def test_violation_is_first_hard_budget_exceeded_in_order():
 
 def test_warning_wording_per_resource():
     led = _run_ledger()
-    assert led.warning({"turns": 55}) == "~5 turns left"                 # 55 >= 0.85*60
-    assert led.warning({"wall_clock": 40}) == "~5 minutes left"          # 40 >= 0.85*45
-    assert led.warning({"cost": 4.5}) == "~$0.5 of budget left"          # 4.5 >= 0.85*5
+    assert led.warnings({"turns": 55}) == [("turns@0.85", "~5 turns left")]   # 55 >= 0.85*60
+    assert led.warnings({"wall_clock": 40}) == [("wall_clock@0.85", "~5 minutes left")]
+    assert led.warnings({"cost": 4.5}) == [("cost@0.85", "~$0.5 of budget left")]
     # total_turns has its own phrasing (shows turns LEFT: 40 - 34 = 6)
     led2 = BudgetLedger([Budget("total_turns", 40)])
-    assert led2.warning({"total_turns": 34}) == "~6 turns left in this conversation"
+    assert led2.warnings({"total_turns": 34}) == [
+        ("total_turns@0.85", "~6 turns left in this conversation")]
+
+
+def test_each_warning_line_is_its_own_identity():
+    """A warning is an EVENT and its text moves every turn ("~5 turns left", "~4 turns
+    left"), so the LINE is what a caller latches on. Two lines per resource — the warn
+    line and 95% — and nothing between them.
+    """
+    led = _run_ledger()
+    assert led.warnings({"turns": 50}) == []                       # below 0.85 * 60
+    assert [line for line, _ in led.warnings({"turns": 55})] == ["turns@0.85"]
+    assert [line for line, _ in led.warnings({"turns": 57})] == ["turns@0.95"]
+    # every crossed budget is reported, in check order — a second resource crossing later
+    # is its own notice and is not hidden by the first
+    assert [line for line, _ in led.warnings({"turns": 55, "cost": 4.9})] == [
+        "turns@0.85", "cost@0.95"]
 
 
 def test_remaining():

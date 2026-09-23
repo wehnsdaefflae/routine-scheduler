@@ -7,9 +7,10 @@
 // merge: the branch keeps its own conversation, and the parent receives a summary plus files.
 
 import { api } from "/static/api.js";
+import { remount } from "/static/router.js";
 import { confirmDialog, promptDialog } from "/static/components/dialog.js";
 import { navigate } from "/static/router.js";
-import { el, toast } from "/static/util.js";
+import { el, toast, toastError } from "/static/util.js";
 
 // Fork this conversation at `turn` — the fork path used by the per-message "branch from here"
 // control in the chat, where the clicked reply IS the fork point (R1006). One set of guards, one
@@ -29,7 +30,7 @@ export async function forkAt(slug, turn, { isLive } = {}) {
     toast(`branched at turn ${r.at_turn} — opening the branch`);
     navigate(`#/conversations/${r.slug}`);
     return r;
-  } catch (err) { toast(err.message, 4000, { error: true }); return null; }
+  } catch (err) { toastError(err); return null; }
 }
 
 // Rewind this conversation to `turn` — the D69 remedy for a reply you want to redo: everything
@@ -54,9 +55,12 @@ export async function rewindTo(slug, runId, turn, { isLive } = {}) {
   try {
     const r = await api(`/api/runs/${runId}/rewind`, { method: "POST", body: { turn } });
     toast(`rewound to turn ${r.kept_through_turn} — reopening…`);
-    setTimeout(() => window.location.reload(), 800);
+    // remount(), not a page reload: the rewind changes THIS view's transcript and nothing
+    // else, while a reload drops the SSE bus, the LLM dock and the browser dock and re-runs
+    // the whole boot sequence.
+    setTimeout(remount, 800);
     return r;
-  } catch (err) { toast(err.message, 4000, { error: true }); return null; }
+  } catch (err) { toastError(err); return null; }
 }
 
 // Hand-back button (only on a conversation that HAS a parent) plus a lineage line. Forking is
@@ -112,7 +116,7 @@ export function branchControls(slug) {
       toast(r.copied
         ? `handed back to ${r.parent} with ${r.copied} artefact(s) — its next reply picks it up`
         : `handed back to ${r.parent} — its next reply picks it up`, 5000);
-    } catch (err) { toast(err.message, 4000, { error: true }); }
+    } catch (err) { toastError(err); }
     finally { backBtn.disabled = false; }
   };
 

@@ -1,9 +1,9 @@
-"""The ASK protocol — every kind of required user feedback, and the two small handlers that
-ride it (`schedule_run`, `report`).
+"""The ASK protocol — every kind of required user feedback.
 
-Library authoring moved to `authoring.py` and the secret-exposure gate to `secretgate.py`
-(F393): three responsibilities had accumulated in one file. What is left is one — turning a
-run's need for a human into a decision record and back into an answer.
+Library authoring moved to `authoring.py`, the secret-exposure gate to `secretgate.py` and
+the two handlers that merely RODE this file — `schedule_run` and `report` — to
+`admin_handlers.py` (F393): four responsibilities had accumulated in one file. What is left
+is one — turning a run's need for a human into a decision record and back into an answer.
 
 EVERY kind of required user feedback funnels into the same decision record
 (inbox.file_question): plain asks and util approvals, deferred and blocking. A blocking
@@ -16,11 +16,9 @@ back to the wall-clock budget.
 
 from __future__ import annotations
 
-import difflib
 import time
 from datetime import datetime, timedelta
 
-from .. import report_threads, reports, schedule_once
 from ..ids import question_id
 from . import availability, detach, inbox, requests
 from .control import RunAborted
@@ -110,7 +108,9 @@ def _free_qid(ctx) -> str:
     only what is still pending.
     """
     base = question_id(ctx.run_ts, ctx.turn)
-    pending = ctx.routine.dir / "questions" / "pending"
+    # the ROOT routine's pending dir, not `ctx.routine.dir`: a child shares its parent's
+    # run_ts, so a parent and a child asking on the same turn derive the same base id
+    pending = ctx.root_routine_dir / "questions" / "pending"
     qid, n = base, 1
     while (pending / f"{qid}.json").exists():
         n += 1
@@ -206,12 +206,17 @@ def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question") -> di
     if req_ids:
         qtype = "request"
     question, default = _normalize_plain(qtype, str(action["question"]), default)
+    if ctx.depth > 0:
+        # The record lands in the ROUTINE's pending dir, where a person reads it — so it has
+        # to say who is asking. A child has no page of its own and its label is the only
+        # thing that makes the question answerable in context.
+        question = f"[child task #{ctx.sub_n} {ctx.sub_label!r}] {question}"
     extra = {"type": qtype, **({"default": default} if default else {})}
     ctx.transcript.event("question", {"qid": qid, "mode": mode, "question": question,
                                       "options": options, **extra,
                                       **({"request": req_ids} if req_ids else {})})
     if mode == "deferred":
-        inbox.file_question(ctx.routine.dir, qid, question, options, ctx.run_ts,
+        inbox.file_question(ctx.root_routine_dir, qid, question, options, ctx.run_ts,
                             qtype=qtype, default=default, config_patch=cpatch,
                             config_target=ctarget, config_home=chome, request=req_ids)
         ctx.asks_deferred += 1   # churn telemetry: a decision thrown over the wall
@@ -223,7 +228,7 @@ def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question") -> di
                .isoformat(timespec="seconds"))
     # blocking decisions are durable records too — the Decisions page never depends on a
     # live status.json to show one, and an aborted run leaves it behind as deferred
-    inbox.file_question(ctx.routine.dir, qid, question, options, ctx.run_ts,
+    inbox.file_question(ctx.root_routine_dir, qid, question, options, ctx.run_ts,
                         mode="blocking", qtype=qtype, default=default, expires=expires,
                         config_patch=cpatch, config_target=ctarget, config_home=chome,
                         request=req_ids)
@@ -319,128 +324,3 @@ def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question") -> di
     ctx.asks_deferred += 1
     return {"kind": "ask_user", "qid": qid, "mode": mode, "timed_out": True,
             "timeout_min": timeout_min, **({"default": default} if default else {})}
-
-
-def handle_schedule_run(loop, action: dict) -> dict:
-    """Arm or cancel a one-shot time trigger on a routine — the cross-routine setter the
-    `scheduling` capability gates. The engine writes the request spool un-sandboxed (like
-    write_util's library write); the daemon's OneShotManager fires the request once at
-    fire_at then CONSUMES it (auto-deactivate). Scope (a): any scheduling-holder may target
-    ANY routine; self-targeting (a run arming its own follow-up) is the common case.
-    """
-    ctx = loop.ctx
-    target = str(action.get("target") or "")
-    home = ctx.server.routines_home
-    # Self-target is ALWAYS allowed (the schema promises it) — including for a
-    # CONVERSATION, which lives outside routines_home: its spool entry is namespaced
-    # (`conv--<slug>`) so a same-named routine can never be mis-fired, and the daemon's
-    # OneShotManager resolves that namespace back to conversations_home (waking the
-    # conversation by RESUMING it — the "remind me in 3 days" flow).
-    spool_slug = target
-    if target == ctx.routine.slug and not (home / target / "routine.yaml").is_file() \
-            and (ctx.routine.dir / "routine.yaml").is_file():
-        spool_slug = f"conv--{target}"
-    elif not (home / target / "routine.yaml").is_file():
-        # Discoverability: a scheduling routine guessing a sibling's slug (the train-seat
-        # friction) should get the valid slugs + close matches back, not a bare rejection.
-        slugs = sorted(p.name for p in home.iterdir()
-                       if not p.name.startswith(".") and (p / "routine.yaml").is_file())
-        return {"kind": "schedule_run", "target": target, "unknown_target": True,
-                "suggestions": difflib.get_close_matches(target, slugs, n=3, cutoff=0.5),
-                "valid_targets": slugs}
-    if action.get("cancel"):
-        req_id = str(action.get("id")).strip() if action.get("id") else None
-        removed = schedule_once.cancel(home, spool_slug, req_id)
-        return {"kind": "schedule_run", "target": target, "cancelled": removed, "id": req_id}
-    try:
-        fire_at = schedule_once.parse_fire_at(str(action.get("fire_at") or ""))
-    except ValueError as exc:
-        return {"kind": "schedule_run", "target": target, "bad_fire_at": str(exc)}
-    rec = schedule_once.arm(home, spool_slug, fire_at=fire_at,
-                            reason=str(action.get("reason") or ""),
-                            requested_by=ctx.run_id)
-    return {"kind": "schedule_run", "target": target, "armed": rec["id"],
-            "fire_at": rec["fire_at"]}
-
-
-def handle_report(loop, action: dict) -> dict:
-    """File a REPORT — the ungated channel every routine holds for work that is not its own
-    task. Appends to <routines_home>/.control/reports.jsonl under an `R<n>` id.
-
-    UNADDRESSED (no `target`): the entry waits in the stream for self-audit's triage. Filing
-    it is best-effort like the health log — a failed write never aborts the reporting run,
-    whose real job is elsewhere; it just reports filed=False.
-
-    ADDRESSED (`target`): the report is ALSO delivered into that routine's inbox, and its next
-    scheduled run reads it. Nothing is fired and nothing is woken — another routine's schedule
-    is its own.
-
-    Self-targeting is refused: a note to yourself is `note` or `memory_write`, and queueing
-    prose into your own next prompt is a loop with no reader in between. Works at any depth —
-    subruns report too, and the row carries the run that saw the problem.
-
-    Three things can REFUSE a report here, each returning an observation instead of filing:
-    an unknown or self target; `supersedes` naming a row that cannot be taken over; and the
-    OPEN-THREAD CAP, which names the ids already open to this owner so the run has something
-    to fold into rather than just a count (docs/items.md § Reports).
-    """
-    ctx = loop.ctx
-    title = str(action.get("title") or "").strip()
-    detail = str(action.get("detail") or "").strip()
-    target = str(action.get("target") or "").strip()
-    home = ctx.server.routines_home
-    target_dir = None
-    if target:
-        if target == ctx.routine.slug:
-            return {"kind": "report", "target": target, "self_target": True}
-        target_dir = home / target
-        if not (target_dir / "routine.yaml").is_file():
-            # Discoverability: a routine guessing a sibling's slug should get the valid slugs
-            # and close matches back, not a bare rejection (as schedule_run does).
-            slugs = sorted(p.name for p in home.iterdir()
-                           if not p.name.startswith(".") and (p / "routine.yaml").is_file())
-            return {"kind": "report", "target": target, "unknown_target": True,
-                    "suggestions": difflib.get_close_matches(target, slugs, n=3, cutoff=0.5),
-                    "valid_targets": slugs}
-    answers = str(action.get("answers") or "").strip()
-    wanted = [str(i).strip().upper() for i in (action.get("supersedes") or [])]
-    folded: list[str] = []
-    if wanted:
-        rows = reports.read_reports(reports.reports_path(home))
-        folded, unusable = report_threads.supersedable(rows, wanted)
-        if unusable:
-            # Naming them beats folding what it can: a run told "3 of 5 taken over" has to
-            # work out which two it still owns, and that is the bookkeeping this field exists
-            # to remove.
-            return {"kind": "report", "target": target, "supersedes": wanted,
-                    "unusable": unusable, "reason": "unknown to the ledger, retracted, or "
-                    "already folded into another thread — a row belongs to exactly one"}
-    settles = [str(i).strip().upper() for i in (action.get("settles") or []) if str(i).strip()]
-    try:
-        filed = reports.file_report(home, routine=ctx.routine.slug, run_id=ctx.run_id,
-                                    title=title, detail=detail, target=target,
-                                    target_dir=target_dir,
-                                    disposal=reports.Disposal(
-                                        answers=answers,
-                                        closes=bool(action.get("closes")),
-                                        settles=tuple(settles)),
-                                    supersedes=tuple(folded))
-    except report_threads.ThreadCapError as cap:
-        return {"kind": "report", "target": target, "thread_cap": report_threads.OPEN_THREAD_CAP,
-                "open_to_target": cap.open_ids, "oldest": cap.open_ids[0]}
-    out = {"kind": "report", "title": title, "filed": filed is not None,
-           "id": filed[1] if filed else ""}
-    if target:
-        out["target"] = target
-        out["delivery"] = "the target reads it on its next scheduled run"
-    if filed and filed[2]:
-        out["supersedes"] = filed[2]        # what the LEDGER folded, under its own lock
-    if settles and filed:
-        out["settles"] = settles
-    if filed and (answers or settles):
-        # This run has now disposed of those threads — the pre-finish assist reads what is
-        # LEFT. `answers` ends one exchange, `settles` ends every row it names, and both have
-        # to leave the open set or the assist keeps asking for work that is already done.
-        done = {answers.upper(), *settles} - {""}
-        ctx.reports_open = [r for r in ctx.reports_open if r not in done]
-    return out

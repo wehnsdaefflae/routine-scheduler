@@ -22,7 +22,7 @@ from ..daemon.runner_state import abort_process
 from ..ids import now_iso
 from ..paths import read_json
 from ..registry import TERMINAL_STATES
-from .api_runs import _run_dir
+from .api_runs import _run_dir, require_active, require_terminal, run_state
 from .routines_common import merge_control
 
 router = APIRouter(tags=["run-control"])
@@ -56,8 +56,7 @@ async def inject(request: Request, run_id: str, text: Annotated[str, Form()],
     text = text.replace("\r\n", "\n")   # multipart encodes newlines CRLF; \n is canonical
     if not text.strip():
         raise HTTPException(400, "empty message")
-    st = read_json(run_dir / "status.json")
-    state = st.get("state") if isinstance(st, dict) else None
+    state = run_state(run_dir)
     await _file_inbox_message(run_dir, text, files, via="web")
     return {"ok": True,
             "delivery": "mid-run" if state not in TERMINAL_STATES else "next-run"}
@@ -83,12 +82,10 @@ async def converse(request: Request, run_id: str, text: Annotated[str, Form()],
         from ..paths import within
         if not within(request.app.state.server.routines_home, routine_dir):
             raise HTTPException(400, "recipe editing applies to routine runs only")
-        st0 = read_json(run_dir / "status.json")
-        if (st0.get("state") if isinstance(st0, dict) else None) not in TERMINAL_STATES:
+        if run_state(run_dir) not in TERMINAL_STATES:
             raise HTTPException(409, "recipe editing unlocks when a FINISHED run is "
                                      "resumed — wait for the run to finish")
-    st = read_json(run_dir / "status.json")
-    state = st.get("state") if isinstance(st, dict) else None
+    state = run_state(run_dir)
     # R81: a message to a TERMINAL run resumes it, but resume() refuses while the daemon is
     # draining for a self-update restart — and nothing re-drives a terminal conversation's
     # pending inbox after relaunch (recover_orphans only closes dead-pid ACTIVE runs). Filing
@@ -136,8 +133,7 @@ def resume(request: Request, run_id: str) -> dict:
 
 def _set_pause(request: Request, run_id: str, value: bool) -> dict:
     _, run_dir = _run_dir(request, run_id)
-    st = read_json(run_dir / "status.json")
-    state = st.get("state") if isinstance(st, dict) else None
+    state = run_state(run_dir)
     if state in TERMINAL_STATES:
         raise HTTPException(409, f"run is already {state}")
     merge_control(run_dir, {"pause": value, "ts": now_iso()})
@@ -158,9 +154,7 @@ def switch_model(request: Request, run_id: str, body: ModelSwitch) -> dict:
         raise HTTPException(400, f"unknown model {body.model!r} — add it to the catalog first")
     if body.kind not in ("main", "tool_call", "uncensored"):
         raise HTTPException(400, "kind must be main|tool_call|uncensored")
-    st = read_json(run_dir / "status.json")
-    if (st.get("state") if isinstance(st, dict) else None) in TERMINAL_STATES:
-        raise HTTPException(409, "run is not active; nothing to switch")
+    require_active(run_dir, "switch")
     # merge per-role into any PENDING switch (two quick per-role POSTs must not race:
     # the dict is replaced wholesale, so without the fold the second would drop the
     # first before the engine drains it at the turn boundary; re-applying an already
@@ -186,9 +180,7 @@ def switch_deliberation(request: Request, run_id: str, body: DeliberationSwitch)
     if body.level not in DELIBERATION_LEVELS:
         raise HTTPException(400, f"unknown level {body.level!r} "
                                  f"(expected one of {DELIBERATION_LEVELS})")
-    st = read_json(run_dir / "status.json")
-    if (st.get("state") if isinstance(st, dict) else None) in TERMINAL_STATES:
-        raise HTTPException(409, "run is not active; nothing to switch")
+    require_active(run_dir, "switch")
     merge_control(run_dir, {"set_deliberation": {"level": body.level, "ts": now_iso()}})
     return {"ok": True, "switch": f"deliberation → {body.level}"}
 
@@ -198,10 +190,7 @@ async def resume_run(request: Request, run_id: str) -> dict:
     transcript so it continues where it left off (fresh budget window). Only terminal runs.
     """
     slug, run_dir = _run_dir(request, run_id)
-    st = read_json(run_dir / "status.json")
-    if (st.get("state") if isinstance(st, dict) else None) not in TERMINAL_STATES:
-        raise HTTPException(409,
-                            "run is still active — only a finished/failed/aborted run resumes")
+    require_terminal(run_dir, "resumes")
     from ..config import load_routine
 
     cfg, _ = load_routine(run_dir.parent.parent)
@@ -220,18 +209,14 @@ class Rewind(BaseModel):
     turn: int   # keep the transcript THROUGH this turn, drop everything after, then resume
 
 @router.post("/runs/{run_id}/rewind")
-async def rewind_run(request: Request, run_id: str) -> dict:
+async def rewind_run(request: Request, run_id: str, body: Rewind) -> dict:
     """D69: rewind a terminal conversation to a chosen turn and re-open it live from there —
     the remedy for a run that died or derailed (e.g. a context overflow) instead of losing it.
     Truncates the transcript through `turn` (archiving the dropped tail) and then resumes on the
     same run dir, so the replay continues from the kept point with a fresh budget window.
     """
     slug, run_dir = _run_dir(request, run_id)
-    body = Rewind(**(await request.json()))
-    st = read_json(run_dir / "status.json")
-    if (st.get("state") if isinstance(st, dict) else None) not in TERMINAL_STATES:
-        raise HTTPException(409,
-                            "run is still active — only a finished/failed/aborted run rewinds")
+    require_terminal(run_dir, "rewinds")
     from ..engine.history import rewind_transcript
 
     info = rewind_transcript(run_dir, body.turn)

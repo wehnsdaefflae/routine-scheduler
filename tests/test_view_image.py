@@ -221,8 +221,8 @@ def test_drain_messages_carries_attachments(tmp_path):
                       {"text": "hi", "attachments": ["attachments/a.png"]})
     atomic_write_json(d / "inbox" / "msg-2.json", {"text": "yo"})
     assert inbox.drain_messages(d, tmp_path / "consumed") == [
-        {"text": "hi", "attachments": ["attachments/a.png"]},
-        {"text": "yo", "attachments": []}]
+        {"text": "hi", "via": "", "attachments": ["attachments/a.png"]},
+        {"text": "yo", "via": "", "attachments": []}]
 
 
 # --- loop runtime fallback net -----------------------------------------------
@@ -274,6 +274,27 @@ def test_apply_media_fallback(make_routine, tmp_path, monkeypatch):
     # a tail with no media → False: a genuine endpoint error must propagate
     loop.messages = [{"role": "user", "content": "plain"}]
     assert apply_media_fallback(loop, EndpointError("x")) is False
+
+
+def test_apply_media_fallback_converts_every_message_not_just_the_tail(
+        make_routine, tmp_path, monkeypatch):
+    """An image the run viewed SEVERAL turns ago is still a liability to a model that
+    cannot see one. c-20260922-072125: a user message landed after the media-bearing
+    observation, the tail-only fallback found nothing, and the chain walked three
+    text-only models to `does not support image inputs` and killed the conversation.
+    """
+    monkeypatch.setattr(mediaops, "vision_describe", lambda ctx, _ab, pr: "DESCRIBED")
+    loop = _loop(make_routine, tmp_path)
+    loop.messages = [
+        {"role": "user", "content": "OBS",
+         "media": [{"path": str(tmp_path / "x.png"), "media_type": "image/png"}]},
+        {"role": "assistant", "content": "{}"},
+        {"role": "user", "content": "and now do this"},       # the tail carries no media
+    ]
+    from rsched.engine.window import apply_media_fallback
+    assert apply_media_fallback(loop, EndpointError("does not support image inputs")) is True
+    assert all("media" not in m for m in loop.messages)
+    assert "DESCRIBED" in loop.messages[0]["content"]
 
 
 def test_view_image_native_end_to_end(make_routine, scripted, tmp_path):

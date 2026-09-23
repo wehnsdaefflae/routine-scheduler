@@ -37,23 +37,13 @@ def _stranded_user_messages(routine_dir: Path) -> bool:
     USER_MESSAGE_VIAS is the injection channels that count as "a user is talking to this run"
     for the post-finish sweep (R108/F268): the conversation composer and the run page.
     Everything else that lands in an inbox — report deliveries, trigger events, one-shot
-    provenance, background results, audit feedback — has its own wake policy and must never
-    re-open a finished run from the reap. The tuple lives with the engine's inbox
-    (`engine.inbox.USER_MESSAGE_VIAS`) because the resume-boot drain (F359) keys on the same
-    channels, so wake policy and consumption policy stay ONE vocabulary.
+    provenance, background results, branch hand-backs, audit feedback — has its own wake
+    policy and must never re-open a finished run from the reap. Both the vocabulary and the
+    scan live with the engine's inbox (`engine.inbox`) because the resume-boot drain (F359)
+    keys on the same channels, so wake policy and consumption policy stay ONE rule.
     """
-    from ..engine.inbox import USER_MESSAGE_VIAS
-    inbox = routine_dir / "inbox"
-    if not inbox.is_dir():
-        return False
-    for p in inbox.iterdir():
-        if not p.is_file() or p.name.startswith("answer-"):
-            continue
-        obj = read_json(p)
-        if (isinstance(obj, dict) and obj.get("text")
-                and str(obj.get("via") or "") in USER_MESSAGE_VIAS):
-            return True
-    return False
+    from ..engine import inbox
+    return inbox.has_pending_messages(routine_dir, vias=inbox.USER_MESSAGE_VIAS)
 
 def _notable_stderr(stderr: bytes, *, max_lines: int = 12, max_chars: int = 800) -> str:
     """A compact tail of the WARNING/ERROR/CRITICAL/traceback lines in captured stderr, or
@@ -130,7 +120,7 @@ class ActiveRun:
     proc: asyncio.subprocess.Process | None = None  # None while queued for a slot
     holds_slot: bool = False
     sem: asyncio.Semaphore | None = None  # the pool this run draws from (cron vs interactive)
-    background: bool = False  # a detached task — excluded from the self-update drain gate
+    background: bool = False  # a detached task — its own slot pool, and no gate corrections
     cancelled: bool = False   # aborted while still QUEUED — the supervisor spawns nothing
     # user-requested abort of a RUNNING process (F188): the kill leaves no engine finish, so
     # the reap closes the run out itself — and logs `run_canceled` rather than `orphaned_run`,

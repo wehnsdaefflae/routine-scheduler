@@ -28,11 +28,12 @@ import logging
 from datetime import UTC, datetime
 from pathlib import Path
 
-from .. import registry, triggers
+from .. import registry, spool, triggers
 from ..config import ServerConfig
+from ..engine import inbox as inbox_mod
 from ..health_events import log_health_event
 from ..ids import now_iso
-from ..paths import atomic_write_json, read_json
+from ..paths import read_json
 from .runner import Runner
 
 log = logging.getLogger("rsched.triggers")
@@ -51,12 +52,15 @@ def _inbox_wants_a_run(inbox: Path) -> bool:
     exempt too: it asks nothing, and buying a full run of a recipe to read "no reply needed"
     is exactly the amplification the cooldown cannot see. Anything unreadable or unrecognised
     WAKES (fail open — a message the daemon cannot classify must never be silently swallowed).
+
+    The scan selects `msg-*.json`, the stem the ONE writer produces, and not "any file that
+    is not `answer-*`": `paths.atomic_write` puts its temp file IN the target directory, so
+    the old filter also matched an in-flight `.msg-….json.XXXX.tmp` — unreadable, and
+    unreadable WAKES here, which bought a whole run off a race with a write.
     """
     if not inbox.is_dir():
         return False
-    for path in inbox.iterdir():
-        if not path.is_file() or path.name.startswith("answer-"):
-            continue
+    for path in sorted(inbox.glob("msg-*.json")):
         msg = read_json(path)
         if not isinstance(msg, dict) or not msg.get("closes"):
             return True
@@ -91,12 +95,13 @@ class TriggerManager:
         """Fire a routine whose inbox holds an unconsumed report/message, if it declares
         a `report` trigger: one fire per cooldown window (everything that lands meanwhile
         is drained by that one run — coalescing), never while a run is active/queued or
-        the daemon drains, never for a disabled routine. Nothing is consumed here: the
+        the daemon drains, never for a routine that is switched off or RETIRED (a finished
+        routine has no work its inbox can restart). Nothing is consumed here: the
         fired run's own boot drain empties the inbox, and a crash before the drain just
         means one more fire after the cooldown — the messages are durable either way.
         """
         trig = next((t for t in info.cfg.triggers if t.get("type") == "report"), None)
-        if trig is None or not info.cfg.enabled:
+        if trig is None or not info.fireable:
             return
         if not _inbox_wants_a_run(info.cfg.dir / "inbox"):
             return
@@ -140,8 +145,9 @@ class TriggerManager:
         events = triggers.pending_events(self.home, slug)
         if not events:
             return
-        if info is None or not info.cfg.enabled:
-            self._drop(slug, events, "routine missing or disabled")
+        if info is None or not info.fireable:
+            spool.drop(events, what="trigger events", slug=slug,
+                       reason="routine missing, switched off or retired")
             return
         configured = {str(t["id"]): t for t in info.cfg.triggers
                       if t.get("type") == "webhook"}
@@ -154,7 +160,8 @@ class TriggerManager:
             else:
                 stale.append(path)
         if stale:
-            self._drop(slug, stale, "trigger deleted or event unreadable")
+            spool.drop(stale, what="trigger events", slug=slug,
+                       reason="trigger deleted or event unreadable")
         if not live:
             return
         # coalesce: the spool holds the events; ONE fire once the routine is free again
@@ -189,10 +196,9 @@ class TriggerManager:
         # Inject-then-fire with no await between the is_active gate and runner.fire's own
         # re-check: one event loop, so nothing can slip a competing run in between — the
         # injected messages can only be drained by THIS fire.
-        inbox = info.cfg.dir / "inbox"
         for path, ev in live:
-            atomic_write_json(inbox / f"msg-trig-{path.stem}.json",
-                              {"text": _event_text(ev), "ts": now_iso(), "via": "trigger"})
+            inbox_mod.file_message(info.cfg.dir, _event_text(ev), via="trigger",
+                                   name=f"trig-{path.stem}")
             path.unlink(missing_ok=True)
         rid = await self.runner.fire(info.cfg, reason="trigger")
         now = now_iso()
@@ -212,14 +218,6 @@ class TriggerManager:
             # the inbox and the routine's next run drains them — nothing is lost
             log.error("trigger fire refused routine=%s — %d event(s) already injected as "
                       "inbox messages; the next run picks them up", slug, len(live))
-
-    @staticmethod
-    def _drop(slug: str, paths: list[Path], reason: str) -> None:
-        for p in paths:
-            p.unlink(missing_ok=True)
-        log.warning("trigger events dropped routine=%s count=%d (%s)",
-                    slug, len(paths), reason)
-
 
 def _event_text(ev: dict) -> str:
     """The injected user-message text: a one-line provenance head + the verbatim payload."""

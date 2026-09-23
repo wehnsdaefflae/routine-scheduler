@@ -40,7 +40,8 @@ log = logging.getLogger("rsched.sandbox")
 
 # System trees every util needs to EXECUTE at all (read+execute): interpreters, libraries,
 # /etc (DNS, SSL certs, locale), /proc + /sys (uv, headless chromium), /run (resolved DNS),
-# /var/log (the service-logs util). DAC still applies underneath — Landlock only ever
+# /var/log (host service logs, read through a `shell` command). DAC still applies underneath —
+# Landlock only ever
 # SUBTRACTS access. The daemon-user's HOME is deliberately NOT here: the high-value targets
 # (~/.config/routine-scheduler/secrets.env, ~/.credentials, ~/.ssh) stay invisible.
 _SYSTEM_RO = ("/usr", "/bin", "/sbin", "/lib", "/lib32", "/lib64", "/etc", "/opt",

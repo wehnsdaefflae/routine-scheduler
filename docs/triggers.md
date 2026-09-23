@@ -100,10 +100,22 @@ the durable inbox message file IS the event, the daemon's watch is a cheap per-t
 of exactly the routines that declare the trigger, and nothing is consumed daemon-side (the
 fired run's own boot drain empties the inbox; a crash before the drain just means one more
 fire after the cooldown). The usual guards apply unchanged: never while the routine has an
-active/queued run, never while the daemon drains for a restart, never for a disabled
-routine, and at most one fire per cooldown window. One report trigger per routine (one
+active/queued run, never while the daemon drains for a restart, never for a routine that is
+switched off or RETIRED, and at most one fire per cooldown window. One report trigger per routine (one
 inbox, one watcher); create it on the Triggers card — no URL, nothing external can reach
 it. Answer files (`answer-*.json`) never fire it — an answer waits, see below.
+
+The watch asks the ONE inbox predicate (`engine/inbox.has_pending_messages`), which every
+surface that wants to know whether something is waiting now shares. Its flags are exactly the
+three ways the question legitimately differs, and the report trigger uses two of them: it does
+not count closures (below), and it is **fail-OPEN** — anything unreadable or unrecognised
+WAKES, because a spurious run costs a run while a missed one costs silence. Every live-run
+predicate is fail-CLOSED for the opposite reason, and that axis is why the five hand-rolled
+copies could not simply be merged. The scan selects `msg-*.json`, the stem the ONE inbox writer
+produces (`engine/inbox.file_message`), and not "any file that is not `answer-*`":
+`paths.atomic_write` creates its temp file IN the target directory, so the broader filter also
+matched an in-flight `.msg-….json.XXXX.tmp` — unreadable, and unreadable wakes, so a race with
+any inbox write bought a whole run of the recipe.
 
 ## An answer waits for the next run — or for your click
 
@@ -168,15 +180,19 @@ These are the trigger analog of the schedule's catchup/overrun rules:
   a later tick) or already injected into the routine's inbox (drained by the routine's
   next run, whoever starts it). Injection uses deterministic filenames, so a crash between
   steps can't duplicate or lose a message.
-- **Dropped events.** Events for a routine that was deleted/disabled, or whose trigger was
-  deleted after arrival, are dropped with a log line — the hook itself already rejects new
-  ones in those states.
+- **Dropped events.** Events for a routine that was deleted, switched off or retired (its own
+  final goal met, so nothing later will drain the spool), or whose trigger was deleted after
+  arrival, are dropped with a log line — the hook itself already rejects new ones in those
+  states.
 - **Interplay with cron.** A trigger fire is an ordinary run (`reason: "trigger"` in the
   log/SSE); the schedule keeps its own rhythm. Boot catchup (`run_once`) considers cron
   fires only.
 
 The Triggers card shows the per-trigger fire ledger (last fired, delivered events, pending
-count), read from the daemon-maintained `state.json` next to the spool.
+count), read from the daemon-maintained `state.json` next to the spool. A REPORT trigger has no
+spool, so its pending count is the inbox itself — counted through the same predicate, with the
+same closure exemption, so the number on the page cannot say "1 waiting" about freight the
+daemon will never fire on.
 
 ## What the run sees
 

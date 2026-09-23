@@ -2,8 +2,8 @@
 
 import pytest
 
+from rsched.engine.admin_handlers import handle_report
 from rsched.engine.inbox import drain_messages
-from rsched.engine.interact import handle_report
 from rsched.reports import stamp_delivered
 from test_reports import _loop, _routine, _rows
 

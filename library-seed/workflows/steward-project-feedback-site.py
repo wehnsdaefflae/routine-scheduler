@@ -27,7 +27,7 @@ from routine.params import (
     STATE_FILES,        # dict      — the curated running-state files in the routine dir (fixed convention: STATE = current truth + where-things-live; DELIVERABLES = obligations register with due/owner/status/evidence; BACKLOG = prioritized todo + dated R&D finds; WORKLOG = append-only dated log). The clarifier confirms names/paths
     SIGNAL_SOURCES,     # list[str] — the connected inputs scanned every run and how "new since last run" is tracked (e.g. a mailbox, a calendar, a shared drive, a chat) — the run finds the tool for each in its catalog
     DELIVERABLES,       # list      — the concrete obligations/milestones this project must meet, each with a due date and an owner (routine vs. user) — the seed of DELIVERABLES.md
-    SITE,               # dict      — the status site, published into this project's OWN SUBFOLDER of a SHARED, access-restricted webroot that indexes ALL steward projects (ONE publish target for all of them): SUBDIR (this project's slug folder under the shared root), PUBLISH (the publish target + credentials, writing ONLY inside SUBDIR), HUB (the shared root index + a projects registry this routine upserts its own card into but never owns), FEEDBACK_ENDPOINT (the SHARED receiver at the root: token + input cap, ids namespaced by project slug), FEEDBACK_PRIVATE (the shared append-only store's PRIVATE path — never served, never a public URL), SECTIONS (fixed per-item sections)
+    SITE,               # dict      — the status site, published into this project's OWN SUBFOLDER of a SHARED, access-restricted webroot that indexes ALL steward projects (ONE publish target for all of them): SUBDIR (this project's slug folder under the shared root), PUBLISH (the publish target + credentials, writing ONLY inside SUBDIR), HUB (the shared root index + a projects registry this routine upserts its own card into but never owns), FEEDBACK_ENDPOINT (the SHARED receiver at the root: token + input cap, stored rows carrying the project-slug prefix the page stamps on as it files), FEEDBACK_PRIVATE (the shared append-only store's PRIVATE path — never served, never a public URL), SECTIONS (fixed per-item sections)
     HANDOFF,            # dict      — reaching the user: REALTIME (a realtime message channel — send, then wait) for a same-run unblock, ASYNC (a calendar event) otherwise, and the GATES list (send/publish/spend/sign/public/first-time) that require a one-word go
 )
 
@@ -60,7 +60,7 @@ META = {
                    "claims done without evidence or makes a false external claim. NOT for one-off "
                    "tasks, a pure feed digest with no deliverables, or work with no counterparty "
                    "to be accountable to.",
-    "version": 4,
+    "version": 6,
     "tags": ["project-management", "stewardship", "feedback-loop", "status-site", "deliverables",
              "self-sufficiency", "publishing", "accountability"],
     "includes": ["ask-policy", "web-research", "decision-record", "evidence-discipline", "independent-verification", "failure-visibility", "change-restraint", "interface-design", "feedback-implementation-gate", "email-thread-continuation"],
@@ -145,6 +145,7 @@ def main():
 
     # 7. Regenerate + GUARDED-PUBLISH the self-updating status site (state + deliverables + question).
     publish_status_site(direction)
+    prove_reader_side()                             # an upload with no error is not a published page
 
     if done():
         phase.set("wind-down")
@@ -172,7 +173,7 @@ def bootstrap():
     hub only needs setting up once for the whole family) and register this project as a card in the
     hub's projects list. The endpoint uses a shared token + capped input, its append-only data file
     OUT of public HTTP view. Record the shared-webroot contract (hub URL, SUBDIR, token, private
-    store path, slug-namespaced-id convention, upload order, never-clobber-siblings rule) into
+    store path, the slug-prefixed id form, upload order, never-clobber-siblings rule) into
     `.memory/` so it survives context loss; file deferred questions for genuinely pivotal unknowns
     (ask-policy). Advance phase.json to 'steady' once real state + a live site exist."""
 
@@ -192,7 +193,7 @@ def light_delta_pass():
 def ingest_feedback():
     """Fetch the SHARED feedback store via SITE.FEEDBACK_PRIVATE (a private path on the shared
     publish target — NEVER a public URL). The store holds EVERY steward project's feedback, so read ONLY
-    entries whose id is namespaced to THIS project (SITE.SUBDIR slug) AND past this routine's own
+    entries whose id carries THIS project's slug prefix (SITE.SUBDIR) AND past this routine's own
     state/ cursor; then advance the cursor to the highest sequence consumed. Fold the signals into
     the project's persistent
     direction/preference model and return it:
@@ -308,7 +309,27 @@ def record(work):
     · research · close-out · artifacts · next), rotating it when large. Keep files LEAN — git
     history is the archive (the engine auto-commits the routine dir); prune detail into it, never
     into bloat. Append exactly one LEDGER entry (feedback consumed + cursor moved, what advanced,
-    decisions, candidates rejected + why)."""
+    decisions, candidates rejected + why).
+
+    ROTATE THE LEDGER IN THE RUN THE THRESHOLD TRIPS, and measure that threshold in
+    BYTES derived from this routine's own entries. A count of lines or entries cannot see
+    what a reader actually pays: entries grow from one-liners into narratives, so the same
+    count means a 20 KB file one month and a 130 KB file the next. Measured across a
+    33-routine instance on 2026-09-21, EVERY ledger over 100 KB was comfortably inside its
+    own count-based limit -- one was 112 KB at 30 entries against a 40-entry trigger, so a
+    fully compliant run correctly did nothing. The LEDGER tail is in every run's context,
+    so the cost is paid before any work starts.
+    THE CAP AND THE KEPT TAIL ARE ONE PAIR, AND A CROSSED PAIR IS WORSE THAN NO TRIGGER.
+    The cap is a byte CEILING; keeping the last N entries is a count FLOOR worth N x the
+    mean entry size, and the larger of the two is the one that actually binds. A cap set at
+    "about N entries" makes them equal by construction and the trigger is inert either way:
+    at or just above the floor it rotates one entry, lands just under, and re-trips on the
+    next append -- a rotation every run forever; below the floor it cannot be satisfied at
+    all while keeping N entries, so skipping it is a correct run's only option. Both were
+    live on that instance the same day. Set the cap ABOVE the floor with headroom, and if a
+    rotation leaves the file still over the cap -- or lands it within one entry's size of
+    the cap -- the numbers are wrong: fix them with the measurement that justifies it. A
+    threshold you trip by complying with it is one every run learns to ignore."""
     ledger.append("feedback consumed, what advanced, obligations guarded, decisions, rejected + why")
 
 
@@ -339,6 +360,43 @@ def publish_status_site(direction):
     SITE.SUBDIR before pushing); the server assigns each submission a monotonic id so the cursor read
     is idempotent regardless of when the user's deploy pull lands. Tell the user this project's site
     URL (the shared hub URL + SITE.SUBDIR)."""
+
+
+def prove_reader_side():
+    """Prove the page a READER gets, not the data you sent. A 200 on the live URL, a field-by-field
+    read-back of the stored payload and the 401/403 access probes can ALL be green while the page is
+    unusable: those check the store and the access rules, and nothing in them renders the page or
+    exercises a control. Two proofs, both required, both after the push:
+
+    1. FETCH IT RENDERED AND LOOK AT IT. Pull the live page with a real browser (screenshot + text),
+       through a guest/invitation URL where one exists because that renders without a credential and
+       shows exactly the reader's view — then actually VIEW the screenshot. Look for what only
+       rendering reveals: a section shown twice (e.g. the shell's own question panel PLUS your body's
+       copy of it), something expanded that should be collapsed, an empty control that asks nothing,
+       text inheriting a foreign transform or family from a parent, a class your body uses with no
+       CSS rule behind it. If a full-page capture times out, lower the wait and fall back to the
+       text — but never skip the fetch.
+
+    2. WRITE-TEST ONE CONTROL end to end. Post one feedback write, then retract it and confirm
+       the pending set is empty again. A control can be published, styled and readable and still
+       reach nothing — the write path is the half no read-back exercises — it fails only when
+       the reader clicks, by which time his input is already lost. Sequence numbers your test
+       created are YOURS: advance the cursor over them honestly and note in the cursor comment
+       that they were your own test rows, so the next run does not read them as the user's
+       feedback.
+
+    A failure here means the page is not published, whatever the upload returned — fix and re-prove
+    in the same run."""
+
+
+def report_shared_kit_gap(requirement, workaround):
+    """When a requirement from your reader can only be satisfied by changing the SHARED kit — the
+    page shell, a stock module, the store, or the payload shape — do not fork the shared asset and do
+    not detour around it silently. Report it to the kit's owner with the file, the function, the
+    observed behaviour, the requirement in the reader's own words, and the workaround you chose; then
+    name that workaround AND its cost in the closing summary. Many projects publish against one kit:
+    unreported, each invents its own private detour around the same gap and none is visible to
+    whoever could fix it once for everyone."""
 
 
 def prepare_and_gate(gate):

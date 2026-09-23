@@ -6,6 +6,16 @@ re-deriving it. An entry is deleted the moment it ships (its narration moves to 
 subsystem doc it belongs to); an entry that stops being wanted is deleted too. Nothing here
 describes current behaviour, so nothing here is a reference for how the system works today.
 
+**Who builds from this file.** The `self-audit` routine reads every `## ` heading here at
+orient as one of the three sources of its decided-work queue, gives each an `in_progress`
+decision row whose detail names this file as where it was decided so the Items page can see
+it, and deletes the entry in the commit that ships it. Adding an entry here is therefore an
+order, not a note: write one only for work that is actually decided, and delete one the
+moment it stops being wanted.
+From 2026-08-26 to 2026-09-22 this file had no reader at all: five entries accumulated and
+none was built, the oldest waiting thirty-three days through roughly a hundred and eighty
+releases, because the builder's queue could not see it.
+
 Started 2026-08-26 against 0.230.x, on the operator's order to clear the queued design
 backlog. An entry headed by an item id answers that Messages-page finding; an entry
 decided in conversation before any finding exists says so and carries none.
@@ -22,12 +32,12 @@ this transport simply cannot reach that model tier. The modern equivalent is str
 outputs — `output_config: {format: {type: "json_schema", schema: <schema>}}` — where the
 reply comes back as a TEXT block containing schema-valid JSON rather than a `tool_use` block.
 
-Second prize, and arguably the bigger one: the adapter sends no `thinking` field at all, so
-on `claude-opus-4-8` (today's main model behind claude-proxy) runs execute with extended
-thinking OFF while three catalog entries pay for an `effort` knob. Whether to turn thinking
-ON is a separate decision — it touches the deliberation doctrine ("deliberation is ink,
-effort is scratch paper") and raises a replay question, since the engine's message list is
-text-only and would drop thinking blocks between turns.
+There is no second prize here any more, and the entry must not be read as if there were: the
+claim that runs execute with extended thinking OFF is FALSE on the current fleet. The live
+system model is `Opus high` = `claude-opus-5`, and on Opus 5 / Sonnet 5 / Fable 5 omitting
+`thinking` runs ADAPTIVE thinking by default, while `output_config.effort`
+(`endpoints/anthropic_api.py`) already steers its depth on every turn. Nothing about thinking
+is owed; what remains owed is the format swap below.
 
 **Verified 2026-09-11 against the live transports** (probe:
 `~/.config/routine-scheduler/so-probe.py`, run inside the container — `cliproxy` resolves
@@ -35,7 +45,7 @@ only on the compose network):
 
 | | forced tool use | structured outputs | strict tool + auto | adaptive thinking |
 |---|---|---|---|---|
-| claude-proxy / claude-opus-4-8 | ok | **ok** (`blocks=['text']`, valid JSON) | ok | ok |
+| claude-proxy / the Claude model | ok | **ok** (`blocks=['text']`, valid JSON) | ok | ok |
 | codex-proxy / gpt-6-astra | *429 — quota* | *429 — quota* | *429 — quota* | *429 — quota* |
 
 **Why it is blocked.** `codex-proxy` serves `gpt-6-astra`, the system model for 28 of the 33
@@ -49,9 +59,13 @@ a hard swap that 400s on the system model breaks the fleet at the next scheduled
 outputs works there too: swap `tools`/`tool_choice` for `output_config.format` in
 `AnthropicEndpoint.complete`, change `_parse` to read the JSON out of the text block instead
 of the `tool_use` block, and make sure `actionschema` emits `additionalProperties: false`
-(structured outputs wants it). The existing 400-degradation path needs rethinking too: it
+(structured outputs wants it — it already is, throughout `actionschema.py`, so nothing is owed there).
+The existing 400-degradation path DOES need changing: it
 currently strips the whole of `output_config` on an effort-related 400, which would take the
-FORMAT with it and leave a turn with no schema enforcement at all. If structured outputs
+FORMAT with it and leave a turn with no schema enforcement at all — make it
+`output_config.pop("effort")` so the format survives. The one genuinely open question is the
+probe: that same codex-proxy quota 429 has recurred since, so the probe has simply not been
+re-run. If structured outputs
 does NOT work on codex-proxy, the swap stays unbuilt until that transport changes — and the
 Fable tier stays unreachable, which is the cost of keeping the fleet up.
 
@@ -187,41 +201,6 @@ it will confidently report convergence over whatever window happens to survive.
 
 ---
 
-## `fs:` narrowing review — the candidate set is five utils, not a hundred
-
-**Decided in conversation 2026-08-30; no finding.** 0.256.0 gave every util an `fs:` header and
-narrowed each subprocess jail to `grant ∩ declaration`. The ~110 already-existing utils were
-migrated MECHANICALLY to `fs: roots`, which preserved their previous exposure exactly and was the
-only safe move at the time — but nobody has since asked which of them declare more than they use.
-
-**What the review found (static pass over the live library, 136 utils).** There is no bulk edit
-to make; the intuition that "utils touching only caller-supplied paths could be narrowed" does
-not survive contact with the header vocabulary: `roots` MEANS the run's granted roots, so a util
-that opens whatever path its caller names needs exactly `roots` and cannot be narrowed without a
-new declaration form (`fs: args`, only the paths on the command line) that does not exist and
-would be its own decision.
-
-- 113 of the 123 `fs: roots` utils perform a filesystem operation in their own source.
-- 10 do not. Four of those spawn a child that plausibly does and must keep `roots`:
-  `captcha-fetch`, `job-scrape`, `rsched-lint`, `surface-captcha-to-user`. (`shell` was a fifth
-  until 0.287.0 retired the util for the `shell` action, whose jail is composed on the same
-  `fs: roots` terms in code.)
-- **The candidate set is the other five** — no filesystem call and no subprocess anywhere in
-  their source, i.e. pure network clients that could declare `fs: none`:
-  `darknet`, `proemion`, `remote`, `rutorrent-rpc`, `uncensored-model-list`.
-
-**First increment.** Read those five and change the ones that are genuinely path-free, one at a
-time, each with its `--selftest` still green. `remote` needs the closest look: the engine mounts a
-machine's sshfs share under `<routine>/mnt/<name>/`, so the question is whether the util itself
-ever reaches into that mount or only ever execs over SSH.
-
-**Not a linter.** The signal is "declares more than it uses", which no check can assert without
-knowing what a util is for; a rule that fires on 113 correct declarations would be turned off in a
-week. This is a review somebody does once, then re-does when the count of `fs: roots` utils has
-grown enough to be worth it.
-
----
-
 ## A third stopping SCOPE: work that outlives one run but does not retire the routine
 
 **Decided in conversation 2026-09-17; no finding.** The survey that produced it compared this
@@ -272,3 +251,225 @@ same piece, is the evidence. Build it if that evidence exists; delete this entry
 (and nothing else — `evaluate` must keep ignoring it), render it in `stopping_digest` as its own
 block beside the other two, and let `api_stopping` write it. That is testable on its own and
 leaves the lease — the part with real concurrency in it — as a second decision.
+
+---
+
+## One unnamed thread pool serves four latency classes, and the console cannot say "alive but not answering"
+
+**Decision** (operator, 2026-09-12, five proposals accepted mid-run: `q-20260912-121159-20`,
+`-26`, `-32`, `-35`, `-40`, plus `q-20260912-115143-34` asking for this very entry). They are ONE
+body of work, not five, and the routine that filed them said so. Ten days and roughly twenty
+releases later none of it was built, because an acceptance on the Decisions page reached no
+builder — which is the defect the decided-work queue now closes, and this entry is its first item.
+
+**Problem.** The daemon's stalls are invisible from both ends at once.
+
+*Server.* FastAPI runs every `def` handler on anyio's default limiter and `asyncio.to_thread`
+draws from the same one. No `total_tokens` / `CapacityLimiter` assignment exists repo-wide, so it
+is the stock **40 tokens, unnamed**, shared by four latency classes: fast local reads
+(`/api/status`, `/api/lanes`, items, questions); daemon background work (`oauth_refresh.tick`,
+the scheduler's own to-threads, `library_watch.tick`, the llm tailer's poll loop,
+`detached_delivery`'s `copytree`); **unbounded outbound network** (`endpoint_probe` — provider
+quota reads and a real LLM completion probe; `machines.scan-host` over SSH); and the pdoc build,
+which "cannot be cancelled, only awaited". The project isolates by construction everywhere else
+and says so — a watcher "must never take the scheduler down", docs "must not take the daemon
+down", SSE is exempt from timing because it is slow by design, runs are subprocesses. It isolates
+by FAILURE and not by LATENCY, and a starved pool is a latency failure. No module owns the pool,
+which is why nothing documents the 40 and `api_debug._limiter()` has to discover it at runtime.
+
+*Client.* `static/api.js`'s `api()`, `apiUpload()` and `apiBlobUrl()` have no `AbortController`
+and no deadline (all three now share `authedFetch`'s 401/403 gate loop, so only the deadline half
+of this stands). A stalled request never settles, so `!resp.ok` — the
+only failure path — is never reached: no toast, no log, no state change, an eternal skeleton.
+`refreshStatus()` polls `/api/status` every 30 s through that same helper, so when the poll
+stalls control reaches neither the branch that turns the daemon lamp on nor the `catch` that
+turns it off: the lamp freezes in its last state, i.e. GREEN. Three situations, two states —
+healthy, dead, and **alive-but-not-answering, which renders as healthy** — and the third is the
+one the lamp exists for. It is the second confident falsehood from that indicator; the amber
+`restart-pending` state already proves the design accepts more than binary. A caller has worked
+around the missing deadline in place: `static/components/searchbox.js` keeps a sequence counter
+commented "stale-response guard (no AbortController in api())".
+
+**First increment** — the ordering is the filing routine's own, and it is cheapest-first because
+each step makes the next one's evidence better:
+
+1. **Stamp `borrowed_tokens` / `total_tokens` on every slow-request record.** One field pair on a
+   record that already exists. It turns the next stall into a self-naming incident instead of one
+   inferred from status codes, and it is the evidence every later step wants.
+2. **Persist the slow-request ring as a health event**, so that evidence survives a restart.
+3. **Give `api()` a deadline and a pending-request counter** — one `AbortController` in the one
+   shared helper, a counter beside the existing `openStreams` gauge. No backend change. This is
+   the prerequisite for step 4's third item, and it lets `searchbox.js` drop its workaround.
+4. **A third daemon-lamp state.** One CSS class plus a `lastGoodPoll` timestamp: degraded when
+   the last good poll is older than the poll interval, with its age shown. Items 1-2 of it stand
+   alone; the third needs step 3.
+5. **Name the pool, then bulkhead it** — a second `CapacityLimiter` for network-bound work and
+   deadlines at the five call sites named above. This is the only medium-sized step, and by the
+   time it is reached steps 1-2 have measured whether it is the right one.
+
+A convention rides along with all of it, accepted in the same sweep: **a measurement carries its
+load conditions** — how many runs were active, in-process or fresh, idle or loaded. Its first
+application is the numbers step 1 produces.
+
+---
+
+## D118 — background actions: every action runnable in the background (decided 2026-09-04)
+
+Operator: *"okay if it's too big for now then you plan the full feature and its implementation."* Build it in the phases below, each test-gated.
+
+### The problem
+
+A run — and a conversation is a run resumed in place each reply — advances **one action per turn**,
+and every action is dispatched **synchronously**: the loop calls `actionroute.dispatch_action`, waits
+for the observation, appends it, and only then takes the next turn
+(`engine/loop.py`, the `obs = actionroute.dispatch_action(self, action, ctx)` line). That is the
+right model for a scheduled routine — nobody is watching it work — but in a **conversation** a slow
+action freezes the human: a `page-fetch` of a heavy site, a long `llm` subcall, a `util` that scrapes
+for two minutes, a `pytest-run` that takes ten. The user sits and waits, unable to say anything that
+becomes a turn until the observation lands (a mid-work message is only *injected*, picked up at the
+next turn — after the slow action finishes).
+
+We already background exactly ONE thing: `detach` (see `docs/background-tasks.md`,
+`daemon/detached.py`, `daemon/detached_delivery.py`). But detach is heavy and coarse — it spawns a
+**whole child RUN** as its own OS process, with its own budget and fresh context, for a big
+self-contained job, and delivers a *finish summary* back. You cannot background a single `util` call
+and keep working in the same context.
+
+**D118 asks for the general case:** let the agent mark *any* (safe) action to run in the background,
+return the turn immediately, keep the conversation live, and deliver the observation back when it is
+ready.
+
+### Current mechanics this builds on (all real today)
+
+- **Synchronous dispatch.** `engine/actionroute.py::dispatch_action(loop, action, ctx)` runs the
+  action and returns the observation dict; `engine/loop.py` writes it as an `observation` transcript
+  event and loops. One in-flight action at a time.
+- **Async result delivery already exists for children.** `engine/loop.py` calls
+  `announce_finished_subruns(self)` at the top of each turn; `engine/subruns.py` /
+  `engine/obs_children.py` track spawned/subtask children and surface their completion as an
+  observation the agent reads on a later turn. This is the exact shape a backgrounded action needs:
+  *start now, collect later, announce at a turn boundary.*
+- **Detached delivery into a conversation.** `daemon/detached.py` runs a detached unit as its own
+  process under `background_home` (a `ServerConfig` field) and `daemon/detached_delivery.py` delivers
+  its result back into the originating conversation as a message. The delivery-into-a-live-thread
+  plumbing is done; D118 reuses it for finer-grained units.
+- **The transcript vocabulary.** `EVENT_TYPES` (`engine/transcript.py`) already has
+  `subrun_start`/`subrun_end`; a backgrounded action fits the same start/observation pair.
+- **Reply targeting (D117, shipped 0.288.0).** `finish.reply_to` lets a reply name WHICH earlier
+  message it answers. Once results arrive out of order (below), that legibility stops being a nicety
+  and becomes necessary — D117 is the deliberate precursor.
+
+### The proposed model
+
+1. **A `background: true` flag** on an action (schema field on the flat `ACTION_SCHEMA`,
+   `engine/actionschema.py`; allowed per-kind in `KIND_FIELDS`, `engine/actions.py`). Only for kinds
+   that are safe to defer (see the safety matrix). The agent sets it when it wants to keep talking
+   while the work runs.
+2. **Non-blocking dispatch.** For a backgrounded action, `dispatch_action` hands the work to a
+   background worker (reusing the detached-process machinery, sized to a single action rather than a
+   whole run) and **returns immediately** with a *started* observation: a handle id, the kind, and a
+   one-line "running in background" note. The turn ends; the loop continues; the conversation is live.
+3. **Deferred observation.** When the background action completes, its real observation is queued and
+   **announced at the next turn boundary**, exactly like `announce_finished_subruns` — appended as an
+   `observation` event tagged with its handle so the transcript stays coherent. The user is notified
+   (a pending→done indicator in the chat, mirroring the subrun/detached UI).
+4. **The conversation keeps its speaking turn.** Because the started-observation ends the turn, the
+   user can send messages that DO become turns while the work runs; the agent interleaves them with
+   background completions. `finish.reply_to` (D117) makes an out-of-order reply legible ("↩ re your
+   scrape request: 42 hits").
+
+### The hard part: which actions may be backgrounded
+
+The one-action-per-turn contract keeps state changes ordered. Backgrounding breaks that ordering, so
+the safety matrix is the crux, not the plumbing:
+
+| Class | Examples | Backgroundable? |
+|---|---|---|
+| Pure reads / external fetches | `util` (scrape/search), `page-fetch`, `llm`, `read_file`, `pytest-run` | **Yes** — no shared-state mutation; the observation is the only effect |
+| Local state mutations | `write_file`, `edit_file`, `write_util`, `memory_write` | **No (phase 1)** — a later synchronous action can read stale state; ordering hazard |
+| Control / lifecycle | `finish`, `ask_user`, `report`, `spawn`, `subtask`, `wait`, `kill` | **No** — already async (children) or must be synchronous (finish/ask) |
+
+Phase 1 backgrounds only the read/fetch class — the ones that actually make a human wait — and leaves
+mutations synchronous. Backgrounding mutations needs a dependency/ordering model (phase 3) and is its
+own decision.
+
+### Open decisions to settle before/while building (surface as their own D-items)
+
+- **Concurrency cap.** How many background actions per conversation at once (a small N, e.g. 3)? A
+  cap plus back-pressure, or unbounded?
+- **Budget accounting.** A backgrounded `util` costs no model tokens but consumes wall-clock and a
+  worker slot; a backgrounded `llm` costs tokens. Where do those book against the per-reply budget?
+- **Cancellation.** Does the user/agent get a `kill`-equivalent for a background action? (Reuse
+  `kill n`.)
+- **Failure delivery.** A background action that errors delivers its error observation the same way —
+  confirm it never silently vanishes (the `failure-visibility` rule).
+- **Does this touch the "one action per turn" contract?** The started-observation preserves it (one
+  action starts, one observation returns — just deferred). Confirm CLAUDE.md wording still holds;
+  if it must change, that is a contract decision, not a self-evident edit.
+- **Routines vs conversations.** Backgrounding only helps where a human waits. Consider gating the
+  `background` flag to conversation runs (like `reply_to`), or allowing it for routines that spawn
+  many independent reads.
+
+### Implementation plan (phased, each test-gated)
+
+- **Phase 0 — spec.** This document. *(done)*
+- **Phase 1 — read/fetch backgrounding, happy path.** `background` schema field +
+  `KIND_FIELDS` (read/fetch kinds only); `dispatch_action` routes a flagged action to a single-action
+  background worker built on `daemon/detached.py`; a *started* observation returns immediately; a
+  completion queue + `announce_*` delivers the real observation at the next turn. Tests: a flagged
+  `util`/`llm` returns a started-observation same turn, the real observation lands on a later turn,
+  transcript stays coherent (`test_loop.py`, `test_actions.py`).
+- **Phase 2 — conversation UX.** Chat shows a "⏳ running in background" chip that resolves to the
+  result; the user can send turns meanwhile; completion announced. Tests: `tests/ui/` flow — start a
+  background action, send a message, see both resolve in order. Wire the pending indicator like the
+  subrun fold.
+- **Phase 3 — mutation ordering.** A dependency rule (or explicit barrier) so a backgrounded mutation
+  cannot be read stale; only then widen the safety matrix. Its own decision item.
+- **Phase 4 — ergonomics.** Concurrency cap, cancellation via `kill`, budget accounting, and the
+  agent naming which background result a reply addresses (D117 `reply_to`).
+
+### Why not just use `detach`?
+
+`detach` is the right tool for a *big, self-contained* job that deserves its own run, budget and
+context (a bulk scrape, a slow build). D118 is the opposite end: keep the SAME context and just not
+block on one slow step. Both share the delivery-into-a-live-conversation plumbing; D118 adds a
+lightweight, same-context unit of work on top of it. Keep both — they answer different needs.
+
+---
+
+## The seams the 2026-09-22 review named but did not finish (decided 2026-09-22)
+
+**Decided in the review that shipped 0.365.0; no finding.** That review worked every open item
+and every subsystem in file-disjoint lanes, and a lane that needed a change in another lane's
+file left a precise request rather than reaching across. Most were landed in the same release.
+These are the ones no lane could take, each already specified by the lane that asked for it —
+the full text is in that release's working notes and the summary below is enough to start.
+
+**Why one entry and not six.** They share a cause: each is the LAST caller of a seam this
+release unified, and a seam with one straggler is a seam that will grow a second convention.
+Building them together is what makes the unifications true rather than mostly true.
+
+- **`engine/inbox.py` is 529 lines against the ~350 standard**, and the split is already named:
+  messages on one side, questions on the other. The release put one writer and one glob behind
+  the `msg-*` shape, which is what makes the seam clean enough to cut.
+- **Two hand-rolled `msg-*` writers remain** (`engine/*` and `daemon/detached_delivery.py`)
+  after the rest moved to the one writer. Until they move, the single-writer scan the finding
+  asks for in `tests/test_policy.py` would arrive red, and a gate that arrives red is deleted
+  rather than obeyed.
+- **A fourth renderer of the collected-children line** lives in `engine/obs_children.py`, beside
+  the three the hand-back unification merged.
+- **Two of the five "is something waiting in the inbox" predicates** are in daemon files the
+  unification lane did not own. One of them is fail-open by contract and one fail-closed, so
+  the shared predicate already carries the flag they need.
+- **The domain-notes drain is a side effect inside `composer.state_digest`**, whose only
+  production caller is boot. Moving the drain to boot leaves the digest builder pure.
+- **The proposal-and-question merge is half done**: one standing proposal per ask now holds for
+  every kind, but the badge and the browser push still count no proposals, so two records have
+  been invisible on the Decisions page since 2026-09-21.
+- **The assist label increment is priced and deferred**: a pre-action rule assist holds a run and
+  cannot be labelled, measured at 72 unlabelable turns across three routines. The four coupled
+  parts are listed in `docs/rule-assists.md`.
+
+**First increment.** The two remaining `msg-*` writers plus the policy scan, in one change: it is
+the smallest of these, it closes a finding rather than half-closing it, and it is what lets the
+`engine/inbox.py` split land against a settled contract rather than a moving one.

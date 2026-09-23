@@ -144,7 +144,7 @@ def test_a_forever_grant_on_a_reminders_request_finds_its_covering_doc(tmp_path)
     server = SimpleNamespace(permissions_home=perms)
     assert _covering_docs(server, "reminders", "local") == ["reminders"]
     raw: dict = {"permissions": [], "capabilities": {}}
-    _apply_capability(server, raw, "reminders", "global")
+    _apply_capability(server, raw, "reminders", "global", [])
     assert raw["permissions"] == ["reminders"]
     assert raw["capabilities"]["reminders"] == "global"   # the LEVEL granted, not the floor
 

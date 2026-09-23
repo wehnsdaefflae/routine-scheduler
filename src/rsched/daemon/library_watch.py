@@ -7,8 +7,10 @@ disk, a container restored from a bundle. Those are legitimate ways for the libr
 they are exactly the ones nobody is looking at when they happen.
 
 The library is a git repo, so every such change has a commit. This compares HEAD against the
-last seen value on each scheduler tick — a `rev-parse` costs about a millisecond, which is not a
-poll worth avoiding — and on a change re-resolves every routine.
+last seen value and, on a change, re-resolves every routine. It runs on its own interval
+(CHECK_EVERY_S) rather than on every 5s scheduler tick: a `rev-parse` is cheap but it is still
+a FORK, at one per tick ~17k of them a day, on the same loop executor the machine-queue refresh
+and every run's llm tailer draw from — to watch a value that moves a few times a day.
 
 What it does with a break is deliberately NOT a new channel. A routine that can no longer reach
 a secret needs a DECISION (expose it, withhold it, unbind the rule), which is what the Decisions
@@ -23,7 +25,9 @@ from __future__ import annotations
 import asyncio
 import logging
 import subprocess
+import time
 
+from .. import libgit
 from ..config import ServerConfig
 from ..paths import atomic_write_json, read_json
 
@@ -34,23 +38,34 @@ log = logging.getLogger("rsched.library_watch")
 # reporting — the alternative is every fresh install announcing its whole library as drift.
 _MARKER = ".control/library-head.json"
 
+#: How often HEAD is actually read. The library moves a handful of times a day — a sync pull, a
+#: hand edit, a restore — and what this produces is a Decisions-page record a person reads later,
+#: so a minute of latency costs nothing and 11 of every 12 forks were pure tax.
+CHECK_EVERY_S = 60.0
 
-def _head(repo) -> str:
+
+def _read(repo, *args: str) -> str:
+    """One git read against the library repo, through the package's single invoker.
+
+    The guard stays here rather than in `libgit.git`: that function is best-effort about
+    git's own exit status but does not catch a MISSING repo or a missing git binary, and
+    letting either reach `tick`'s catch-all would `log.exception` on every check. Both are
+    ordinary states for this watcher — a fresh install has no library repo yet — so they
+    are an empty string, which `_check` reads as "nothing to compare".
+    """
     try:
-        out = subprocess.run(["git", "rev-parse", "HEAD"], cwd=str(repo), check=False,
-                             capture_output=True, text=True, timeout=10)
+        out = libgit.git(repo, *args)
     except (OSError, subprocess.SubprocessError):
         return ""
     return out.stdout.strip() if out.returncode == 0 else ""
+
+
+def _head(repo) -> str:
+    return _read(repo, "rev-parse", "HEAD")
 
 
 def _subject(repo, rev: str) -> str:
-    try:
-        out = subprocess.run(["git", "log", "-1", "--format=%s", rev], cwd=str(repo),
-                             check=False, capture_output=True, text=True, timeout=10)
-    except (OSError, subprocess.SubprocessError):
-        return ""
-    return out.stdout.strip() if out.returncode == 0 else ""
+    return _read(repo, "log", "-1", "--format=%s", rev)
 
 
 class LibraryWatch:
@@ -59,8 +74,13 @@ class LibraryWatch:
     def __init__(self, server: ServerConfig):
         self.server = server
         self._seen: str | None = None
+        self._last_check: float | None = None   # monotonic stamp of the last HEAD read
 
     async def tick(self) -> None:
+        now = time.monotonic()
+        if self._last_check is not None and now - self._last_check < CHECK_EVERY_S:
+            return
+        self._last_check = now
         try:
             await asyncio.to_thread(self._check)
         except Exception:

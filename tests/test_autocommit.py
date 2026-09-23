@@ -79,3 +79,37 @@ def test_oversize_file_is_left_out_of_the_commit_and_reported(make_routine, tmp_
     big_now = [rel for rel, _ in ac.oversize_files(d)]
     assert "state/inventory.jsonl" in big_now and "mnt/huge.bin" not in big_now
 
+
+def test_the_same_oversize_file_is_reported_once_per_size_bucket(make_routine, tmp_path,
+                                                                 monkeypatch):
+    """An oversize state file is oversize on EVERY run, so re-reporting it each time made
+    the one signal that would have caught a 2 GB download into noise by construction (18 of
+    the last 400 events were three files repeating). It fires when the file crosses a new
+    size bucket — first sight, then only once it has DOUBLED.
+    """
+    import json
+
+    from rsched.engine import autocommit as ac
+    d = make_routine(slug="repeater")
+    assert _git(d, "init", "-q").returncode == 0
+    monkeypatch.setattr(ac, "OVERSIZE_BYTES", 1)      # every file counts; buckets do the work
+    home = d.parent
+    events = home / ".control" / "health-events.jsonl"
+
+    def rows():
+        return [json.loads(x) for x in events.read_text(encoding="utf-8").splitlines()
+                if "ledger.jsonl" in x]
+
+    (d / "state").mkdir(exist_ok=True)
+    (d / "state" / "ledger.jsonl").write_text("x" * (3 * 1024 * 1024), encoding="utf-8")
+    ac.autocommit(d, "run 1", routines_home=home, run_id="repeater:1")
+    assert len(rows()) == 1
+    ac.autocommit(d, "run 2", routines_home=home, run_id="repeater:2")   # unchanged
+    assert len(rows()) == 1
+    (d / "state" / "ledger.jsonl").write_text("x" * (3400 * 1024), encoding="utf-8")
+    ac.autocommit(d, "run 3", routines_home=home, run_id="repeater:3")   # grew, same bucket
+    assert len(rows()) == 1
+    (d / "state" / "ledger.jsonl").write_text("x" * (5 * 1024 * 1024), encoding="utf-8")
+    ac.autocommit(d, "run 4", routines_home=home, run_id="repeater:4")   # doubled: say so
+    assert len(rows()) == 2
+

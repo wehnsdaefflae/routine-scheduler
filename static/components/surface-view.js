@@ -234,11 +234,16 @@ export function fixLine(node) {
   const build = node.severity === "ok" ? null : FIX[fix.kind];
   if (!build) return null;
   const spec = build(fix);
+  // " — in <place>": the act and the place it happens ran straight into each other, so the line
+  // read "clear this routine's cron Schedule or reschedule the Professional · Daily lane ↗ the
+  // Routines page". The terminal form of the same read model (readmodels/remedies.py) already
+  // separates them with a dash; this is the half that drifted.
+  const where = (w) => el("span", { class: "fix-where" }, " — in ", w);
   return el("div", { class: "fix-line", "data-fix": fix.kind },
-    fixControl(spec), el("span", { class: "fix-where" }, spec.where),
+    fixControl(spec), spec.where ? where(spec.where) : null,
     spec.alt ? el("span", { class: "fix-or" }, "or") : null,
     spec.alt ? fixControl(spec.alt) : null,
-    spec.alt?.where ? el("span", { class: "fix-where" }, spec.alt.where) : null);
+    spec.alt?.where ? where(spec.alt.where) : null);
 }
 
 function row(node) {
@@ -302,7 +307,7 @@ export function surfaceView(host, slug, surface = null) {
       body.append(
         el("div", { class: "tpl-head" }, ...sourceLabel(key)),
         el("div", { class: "tablewrap" },
-          el("table", { class: "list surface-table" }, el("tbody", {}, ...rows.map(row)))));
+          el("table", { class: "list stack surface-table" }, el("tbody", {}, ...rows.map(row)))));
     }
   }
 

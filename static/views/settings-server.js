@@ -3,7 +3,7 @@
 // promise so settings.js can await all sections before the anchor jump.
 
 import { api } from "/static/api.js";
-import { el, toast, when } from "/static/util.js";
+import { el, toast, toastError, when } from "/static/util.js";
 import { panelSection } from "/static/views/settings-common.js";
 
 export function renderServerConfig(view) {
@@ -28,7 +28,7 @@ export function renderServerConfig(view) {
           registry_rescan_s: Number(rescanIn.value), github_client_id: ghIn.value.trim(),
           browser_view_url: vncIn.value.trim() } });
         toast(r.restart_for?.length ? "server settings saved — restart to resize concurrency" : "server settings saved");
-      } catch (err) { toast(err.message, 5000, { error: true }); }
+      } catch (err) { toastError(err, 5000); }
     };
     srvCfgBox.replaceChildren(
       el("div", { class: "muted small", style: "margin-bottom:8px" },
@@ -108,14 +108,14 @@ export function renderServer(view) {
     let armed = false;
     const disarm = () => {
       armed = false; cancel.hidden = true;
-      btn.textContent = "↻ restart server"; btn.classList.remove("danger");
+      btn.textContent = "↻ restart server"; btn.classList.remove("danger", "armed");
       statusLine.textContent = "";
     };
     cancel.onclick = disarm;
     btn.onclick = async () => {
       if (!armed) {   // two-step confirm, in place
         armed = true; cancel.hidden = false;
-        btn.textContent = "confirm restart"; btn.classList.add("danger");
+        btn.textContent = "confirm restart"; btn.classList.add("danger", "armed");
         statusLine.style.color = "";
         statusLine.textContent = "drains active runs, then the console goes down for a few seconds";
         return;
@@ -127,11 +127,11 @@ export function renderServer(view) {
           ? "⟳ requested — a run is parked waiting on you (see Decisions); the drain starts once nothing is parked"
           : "⟳ requested…";
         watch(s.started);
-      } catch (err) { toast(err.message, 5000, { error: true }); }
+      } catch (err) { toastError(err, 5000); }
     };
     withdraw.onclick = async () => {
       try { await api("/api/settings/restart", { method: "DELETE" }); toast("restart request withdrawn"); }
-      catch (err) { toast(err.message, 4000, { error: true }); }
+      catch (err) { toastError(err); }
     };
 
     srvBox.append(

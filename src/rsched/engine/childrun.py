@@ -140,7 +140,7 @@ def build_child(parent_ctx: RunContext, action: dict, *, mode: str,
                              deliberation=parent_ctx.deliberation),
         server=parent_ctx.server, registry=parent_ctx.registry, run_ts=parent_ctx.run_ts,
         run_dir=sub_dir, transcript=transcript, budgets=child_budgets,
-        depth=parent_ctx.depth + 1,
+        depth=parent_ctx.depth + 1, sub_n=n, sub_label=label,
         sub_counter=parent_ctx.sub_counter, sub_lock=parent_ctx.sub_lock,
         # Children inherit their parent's RESOURCES, one-time grants included (fs roots,
         # secrets, connections, machines) — but never its capability-class grants: sub-

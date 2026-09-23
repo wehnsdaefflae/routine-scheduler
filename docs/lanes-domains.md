@@ -12,15 +12,32 @@ decision from silently making another.
 | **domain** | the shared config block, the shared store, the notes boundary | at most one per routine | the record in `.control/domains.json`; MEMBERSHIP in the routine's OWN `domain:` key | user-only config, like every other key there |
 | **tags** | what it is about | any number | `tags:` in routine.yaml, plus whatever its domain contributes | "a label, not behaviour" (`configflow.py`) |
 
-A lane's chain fires each member ONCE, in order. A flow with an inbound and an outbound end
-BRACKETS the lane — a dedicated inbound-router member placed first and a dedicated
-outbound-sender member placed last — rather than running one member twice.
+A lane's chain fires each member ONCE, in order. The boundary between two members is also the
+only quiet gap a back-to-back chain leaves, so a pending self-update restart takes it: with
+nothing else active the next member is HELD, the daemon restarts, and the member fires on the new
+code at the first tick after boot. Nothing a person starts is refused — the hold is the daemon's
+own next member, and a parked or background run keeps the chain advancing.
+
+A flow with an inbound and an outbound end BRACKETS the lane — a dedicated inbound-router member
+placed first and a dedicated outbound-sender member placed last — rather than running one member
+twice.
 
 A scheduled lane also carries a **catch-up policy** (`catchup: run_once`, the default, or
 `skip`): a fire that came due while the daemon was not running to arm it is made up ONCE at the
 next boot — never a backlog — because a lane's fire table is process memory and its members'
 own crons are suppressed, so a lost lane fire has no other path (docs/architecture.md, "Lane
-catch-up").
+catch-up"). What boot compares is a WATERMARK on disk (`.control/lane-fires.json`), and every
+path that HANDLES a due fire moves it: an arm, and a fire the operator's global pause skipped
+on purpose. A deliberate skip is handled, not missed — resuming from a pause backlog-fires
+nothing, and the nightly restart does not fire it for the pause either.
+
+What a lane FAILED to do is read at `GET /api/health/blocked` (docs/run-analytics.md): a
+`lane_fire_refused` (the previous chain is still in flight), a `lane_chain_stopped` (the
+chain ended early, so its remaining members never ran) and a `lane_chain_member_skipped` (a
+member slug that is no routine in any home) each produce NO run, so a lane that is quietly
+not firing looks exactly like a lane with nothing to do. `subject` on those rows is the
+LANE ID, which is opaque by contract — resolve it against the lane store, never by reading
+a prefix.
 
 **The third axis crosses the second.** `tags` is one of a domain's `CONFIG_KEYS` and one of its
 list keys, so a domain UNIONS its tags onto every member: a routine's effective tags are its own
@@ -33,6 +50,19 @@ which routines are close enough to share? — and they have the same cardinality
 would dissolve the argument that makes a domain note approval-free: a note cannot leave the
 domain because the domain's store is in its members' fs roots and nobody else's. The boundary IS
 the safety model.
+
+**A domain note is NOT an inbox message, and the differences are the design.** The two look
+alike — both are a JSON file a run finds at boot, delivered exactly once — and `domainnotes`
+says outright that it drains "mirroring how `inbox/` drains", which reads like an invitation to
+fold one into the other. It is not one. A note is READ AND DROPPED where an inbox message is
+MOVED to `runs/<ts>/consumed/`, because a note that survived would be re-shown every run until
+someone deleted it by hand — the tracked-work-item shape this channel exists to avoid. A note
+is CAPPED at twenty per boot where the inbox has no cap, because a note is a nudge, not a
+mailbox, and past that the run is being handed a backlog it will not read. And a note appears
+on no Messages folder, because the Messages page's write contract gives the operator full
+write access to every waiting `msg-*` — extending it to notes would make a person the author of
+a message a teammate signed. Coordination that leaves no ledger row is the whole point; a note
+that must be tracked is a `report`, which is a different channel on purpose.
 
 ### What a domain shares
 

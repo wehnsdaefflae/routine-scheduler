@@ -90,44 +90,55 @@ noVNC, sign in to each site once.
 
 ## Signing in
 
-The browser has a real screen; noVNC is how a person reaches it.
+The browser has a real screen; noVNC is how a person reaches it. Reach it **through the
+console**.
 
-Compose publishes it on the **host's loopback only** (`127.0.0.1:6080`). This is a keyboard and
-a mouse attached to a browser holding live sessions, so it is deliberately not a LAN port. Two
-ways in:
+### From the console (F527/F530)
+
+The **Browser** tab (`#/browser`) is the screen, full height and interactive — a keyboard is
+what signing a session in needs. The right rail carries the same screen as a permanent
+READ-ONLY preview on every page (`components/browserdock.js`, `pointer-events: none`), so an
+unattended run can be watched without steering it; it rests open only at ≥1900px, where the
+reading column leaves a margin, and starts collapsed below that.
+
+Both load through the console's OWN origin — `/browser-view/…`, relayed by
+`web/api_browser_view.py` to the sidecar's websockify — never from the configured address
+directly. That is what makes it work over https: a page served over https may not open an
+insecure `ws://`, so an embedded raw screen stayed blank exactly where the operator uses it.
+Same-origin means the browser upgrades to `wss://` by itself under the TLS the console already
+terminates: no certificate on the noVNC port, no second hostname to publish.
+
+The relay authenticates the way a frame actually asks. An `<iframe src>` is a naked GET, and
+noVNC then fetches its own assets with URLs it builds itself, so no query parameter the
+embedding page chooses reaches them. The console therefore mints a **path-scoped HttpOnly
+`SameSite=Strict` cookie** (`POST /api/browser-view/pass`, 12 h) before the frame is created:
+the one credential a browser attaches to a frame's sub-resources and its websocket handshake
+unasked, reaching this screen and nothing else.
+
+### Fallbacks when the console is not the way in
+
+Compose publishes websockify on the host's loopback (`127.0.0.1:6080`), which an SSH tunnel
+reaches:
 
 ```bash
 ssh -N -L 6080:127.0.0.1:6080 mark@192.168.0.128
 ```
 
 then open `http://127.0.0.1:6080/vnc.html` and click Connect. That works from the machine with
-the tunnel and nowhere else, which is fine for a one-off login and useless for a run that needs
-to TELL someone where to look.
+the tunnel and nowhere else.
 
-### One address that works from everywhere (D133)
-
-The console is already fronted by the tailnet proxy (`deploy/DOCKER.md`, "HTTPS via
-Tailscale"). Put the browser's screen behind **that same proxy**, on a path, instead of giving
-it a second port and a second address to remember:
-
-```bash
-docker exec tailscale tailscale serve --bg --set-path /browser http://127.0.0.1:6080
-docker exec tailscale tailscale serve status        # confirms both mounts
-```
-
-The screen is then at `https://<node>.<tailnet>.ts.net/browser/vnc.html` — the same origin,
-certificate and tailnet-only reach as the console itself, from a phone as readily as from the
-desk. One address, no tunnel, nothing published to the LAN.
-
-This is deliberate, persistent tailnet configuration and it is the OPERATOR's to run: the
-`tailscale` container is host infrastructure, not something an engine run reconfigures. Undo
-the browser mount alone with
-`docker exec tailscale tailscale serve --set-path /browser off`.
+A `tailscale serve --set-path /browser http://127.0.0.1:6080` mount is the other historical
+form, and it is the one to avoid: `tailscale serve` in raw `tcp://` mode forwards bytes and
+performs no HTTP auth, so **on this deployment the screen has been reachable from every tailnet
+peer with no credential at all** — a keyboard and a mouse on the browser holding the operator's
+signed-in sessions. Treat "loopback only" as a claim to CHECK (`docker exec tailscale tailscale
+serve status`) rather than a property of the design. The console relay above is careful, but it
+is not the boundary while a second unauthenticated path to the same port exists; closing that
+is a deployment change — drop the raw serve entry, or put the console relay in front of it.
 
 **What a run may claim about it.** Only what is configured. There is no API that reports the
 public address, so a run that needs to hand a person a link must be TOLD the base URL rather
-than construct one — see the note in `docs/browser-sessions.md` above about `--https=8443`,
-which was the older, second-address form and is superseded by the path mount here.
+than construct one.
 
 Sign in to each site normally. Choose "stay signed in" where offered. Nothing else is needed:
 the profile is written as you go.
@@ -158,6 +169,29 @@ From the engine container, at the address the routines name:
 docker exec -u 1000:1000 rsched curl -s http://172.30.7.10:9222/json/version
 ```
 
-A JSON body naming the Chrome build means CDP is up. Whether a given site is *signed in* is a
-separate question, and the honest test is the util itself — every `job-inbox` source reports a
-`logged_out` flag rather than returning an empty list.
+That probe answers 200 from the engine container as uid 1000 with **no authentication** —
+DevTools has none, and neither does noVNC. `browser-session` is a reserved util behind the
+`browser-sessions` permission, but a capability gates the ACTION KIND, not the socket: every
+`net: outbound` util and every `shell` command in the jail reaches 9222 and 6080 directly.
+Landlock cannot close them either — its ABI-4 network rules are a port ALLOWLIST with no
+destination term — so the only boundary available today is who can reach the compose network.
+
+A JSON body naming the Chrome build means the HTTP endpoint answers. **It does not prove CDP
+can attach.** A wedged sidecar serves `/json/version` normally while `connect_over_cdp` never
+returns — which is why both the release gate's preflight and the browser suite's session
+fixture name that case in one line ("browser sidecar … is wedged") instead of printing a
+timeout traceback that reads like a failure of whatever was being tested. `docker compose
+restart chrome` clears it.
+
+Whether a given site is *signed in* is a separate question again; the honest test is the
+util itself — every `job-inbox` source reports a `logged_out` flag rather than returning an
+empty list.
+
+**The release gate shares this browser.** `tests/ui/` attaches to the same sidecar at
+`172.30.7.10:9222` with isolated contexts and serves its fixture console back at the engine's
+own address on that network (`172.30.7.2`); both are pinned in `docker-compose.yml`. So the
+suite shares the sidecar's 1280m cgroup and its DevTools thread with any routine driving the
+browser at the same time — and that is the SECOND reason the browser suite runs on one worker,
+beside the three-workers-into-one-headful-Chrome flake. A gate red that coincides with a
+browser-driving routine is read against that routine's transcript before it is read as a
+verdict on the candidate.

@@ -122,6 +122,30 @@ def test_util_show_and_missing_answer_with_the_catalog(util_ctx):
     assert set(gone["available"]) == {"crasher", "echoer", "flooder"}
 
 
+def test_one_utils_entry_shows_its_whole_usage_block(util_ctx):
+    """F505: `util name=list args=["<name>"]` is where a run learns how to CALL one util.
+    A verb-dispatched util's first usage line is `gu <name> <verb> …` or just its first
+    verb, so rendering one line answered the question wrongly — and interpolating the whole
+    block into one indented line left its continuations reading as part of the table.
+    """
+    verbs = ('"""multi — a verb-dispatched util.\n\n'
+             "usage: gu multi <verb> [args]\n"
+             "  gu multi add NAME\n"
+             "  gu multi remove NAME\n"
+             'tags: test\n"""\n')
+    d = util_ctx.server.libraries_home / "utils" / "multi"
+    d.mkdir(parents=True)
+    (d / "main.py").write_text(verbs, encoding="utf-8")
+    obs = dispatch({"kind": "util", "name": "list", "args": ["multi"]}, util_ctx)
+    listing = obs["listing"]
+    for line in ("gu multi <verb> [args]", "gu multi add NAME", "gu multi remove NAME"):
+        assert line in listing, line
+    # every usage line is indented under the entry — none of them reads as its own entry,
+    # and the header keys still come after the block
+    assert all(ln.startswith("    ") for ln in listing.splitlines()[1:])
+    assert listing.splitlines()[-1].strip() == "tags: test"
+
+
 def test_util_miss_names_a_matching_routine_local_script(util_ctx):
     # F330/R367: `util name=X` where X is a routine-local script must point at the script
     # action instead of dead-ending on the global catalog — the reporter was told scripts/

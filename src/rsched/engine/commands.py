@@ -165,6 +165,10 @@ def command_catalog(policy, utils: list[dict]) -> dict:
     kinds = [{"kind": kind, "usage": usage, "summary": summary}
              for kind, usage, summary in COMMAND_HELP
              if policy is None or policy.allows_kind(kind)]
+    # The palette renders ONE <code> row per util (static/views/conversations.js), so it takes
+    # the first usage line only — the block's remaining verbs would turn each row into a
+    # paragraph. The whole block is one `util name=list args=["<name>"]` away.
     return {"kinds": kinds,
             "utils": [{"name": u["name"], "summary": u.get("summary") or "",
-                       "usage": u.get("usage") or ""} for u in utils]}
+                       "usage": (u.get("usage") or "").splitlines()[0] if u.get("usage") else ""}
+                      for u in utils]}

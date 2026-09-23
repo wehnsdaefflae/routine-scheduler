@@ -3,7 +3,10 @@
 While the sentinel exists the scheduler fires NOTHING on its own:
 
   * scheduled fires are SKIPPED — their next-fire time still advances normally, so
-    resuming does not backlog-fire every routine that came due while paused;
+    resuming does not backlog-fire every routine that came due while paused. A skipped
+    LANE fire also moves the lane's on-disk watermark (`rsched/lane_fires.py`), because
+    that promise has to survive the next boot too: boot catch-up makes up a due fire
+    nobody handled, and a deliberate skip is handled;
   * trigger and one-shot intake is DEFERRED (their ticks don't run) — spooled webhook
     events and armed one-shots fire after resume; a one-shot is never consumed unfired;
   * manual "run now" BYPASSES the pause on purpose: it is the operator's explicit

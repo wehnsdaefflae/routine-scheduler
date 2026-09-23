@@ -299,3 +299,14 @@ def test_update_playbook_requires_binding(client):
     c, _server = client
     slug = c.post("/api/conversations", data={"text": "no playbook here"}).json()["slug"]
     assert c.put(f"/api/conversations/{slug}/playbook").status_code == 400
+
+
+def test_distilled_slug_follows_the_one_slug_rule():
+    """`ids.slugify` owns the alphabet, so a title a routine would get and the same title a
+    playbook gets cannot round-trip two different ways — the local regex kept runs of
+    separators the shared rule collapses. Only the default and the 60-char cap stay here."""
+    from rsched.playbook_distill import _slugify
+
+    assert _slugify("Deep  --  Research") == "deep-research"
+    assert _slugify("") == "playbook"
+    assert len(_slugify("x" * 200)) == 60

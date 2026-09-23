@@ -3,7 +3,7 @@
 // promise so settings.js can await all sections before the anchor jump.
 
 import { api } from "/static/api.js";
-import { el, toast } from "/static/util.js";
+import { el, toast, toastError } from "/static/util.js";
 import { panelSection, remoteTester } from "/static/views/settings-common.js";
 
 export function renderSource(view) {
@@ -23,7 +23,7 @@ export function renderSource(view) {
         const r = await api("/api/settings/source", { method: "PUT", body: { remote: input.value.trim() } });
         toast(r.pushed ? "source: saved + pushed"
           : r.push_error ? `source: saved (push failed: ${r.push_error})` : "source: saved");
-      } catch (err) { toast(err.message, 5000, { error: true }); }
+      } catch (err) { toastError(err, 5000); }
     };
     const t = remoteTester(input);
     srcBox.append(el("div", { class: "row", style: "margin:9px 0" },

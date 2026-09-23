@@ -4,7 +4,12 @@
 predicate at `scripts/gate.py`. Omission defaults off; timeout is a strict integer 1–300.
 Malformed gate settings reject loading, even when disabled. Unrecoverable unrelated
 configuration errors reject an enabled gate rather than silently dropping it.
-PATCH accepts partial nested fields; top-level null is a no-op.
+
+The control is on the routine page, inside the **Schedule** section and saved by that
+section's own button — the gate decides whether a scheduled fire becomes a run at all, so it
+belongs beside the schedule rather than in a config file. The timeout field appears once the
+gate is on. `GET /api/routines/{slug}` returns `run_gate: {enabled, timeout_s}` in the same
+payload; `PATCH` accepts partial nested fields and a top-level null is a no-op.
 
 Only fresh `schedule`, `catchup`, and `lane` attempts evaluate the predicate. Direct
 Run now, CLI run-once, triggers, one-shots, conversations, background jobs, and resume
@@ -55,3 +60,9 @@ child may execute instructions before the parent receives its process handle.
 A skip writes `state: finished`, `outcome: skipped`, zero usage/turn, `result.md`, and
 `gate.json`. It advances a lane even under stop-on-failure. Errors write failed status and
 gate metadata; bypasses record their reason. There is no second agent loop and no gate retry.
+
+An error also writes a **`run_failed` health event** (a cancel writes `run_canceled`). It has
+to be written here: no engine ever started, so the engine's own event cannot fire and the reap
+finds a run that is already terminal. A withdrawn gate secret or a kernel that dropped Landlock
+fails every scheduled fire of a gated routine forever, before turn 0, and `run_failed` is the
+event a health sweep reads first.

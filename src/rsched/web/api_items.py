@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query, Request
+from pydantic import BaseModel, ConfigDict
 
 from .. import priorities, registry
 from ..paths import read_json
@@ -139,8 +140,20 @@ def items(request: Request,
             "answered_decisions": answered_decisions(routine_dir, report)}
 
 
+class ReadBody(BaseModel):
+    # extra="forbid" like every other save path in this layer: `{"reed": false}` used to
+    # mark the summary READ off the default, which is the silent-ignore R102 forbids.
+    model_config = ConfigDict(extra="forbid")
+    read: bool = True
+
+
+class PriorityBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    on: bool = True
+
+
 @router.post("/items/{item_id}/read")
-def set_item_read(request: Request, item_id: str, body: dict) -> dict:
+def set_item_read(request: Request, item_id: str, body: ReadBody) -> dict:
     """Dismiss (or un-dismiss) a routine's latest finish message (`{"read": true|false}`).
 
     Summaries only — the maintenance items have their own status vocabulary and are settled by
@@ -150,7 +163,7 @@ def set_item_read(request: Request, item_id: str, body: dict) -> dict:
     server = request.app.state.server
     if ":" not in item_id:
         raise HTTPException(400, "only a summary can be marked read — its id is a run id")
-    read = bool((body or {}).get("read", True))
+    read = body.read
     slug = summaries.mark_read(server.routines_home, item_id, read=read)
     return {"ok": True, "id": item_id, "routine": slug, "read": read}
 
@@ -165,12 +178,12 @@ def mark_all_summaries_read(request: Request) -> dict:
 
 
 @router.post("/items/{item_id}/priority")
-def set_item_priority(request: Request, item_id: str, body: dict) -> dict:
+def set_item_priority(request: Request, item_id: str, body: PriorityBody) -> dict:
     """Flag or unflag one item as a user priority (`{"on": true|false}`). The ⚑ floats
     the item to the top of the page AND reaches the OWNING routine's next run as a
     state-digest section — ownership resolution lives in priorities.py (D75).
     """
-    on = bool((body or {}).get("on", True))
+    on = body.on
     try:
         priorities.set_priority(request.app.state.server.routines_home, item_id, on)
     except ValueError as exc:

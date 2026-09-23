@@ -15,12 +15,15 @@
 //   fileUrl(rel)       — maps a message attachment's rel path (e.g. "attachments/x.png") to
 //                        this mount's serving route, enabling inline thumbnails on injected
 //                        user messages; omitted = the text block's plain list stands alone.
+//   blobs              — an object-URL array to register thumbnails in instead of owning one
+//                        (a nested subrun transcript shares its parent's, so one destroy()
+//                        frees the tree). Omitted = this transcript owns its own.
 
 import { apiBlobUrl } from "/static/api.js";
 import { actionTime } from "/static/components/actiontime.js";
 import { md, mdInline } from "/static/md.js";
 import { answerForm } from "/static/components/answerform.js";
-import { el, fmtTime, fmtTokens, fullOutput, compressionInfo } from "/static/util.js";
+import { el, fmtTime, fmtTokens, fullOutput, compressionInfo, toast } from "/static/util.js";
 
 // Mirror of engine/actions.py BRIEF_FIELD (the source of truth) — a kind missing here
 // renders its turn line with an EMPTY brief, which is how this map drifted 10 kinds
@@ -57,9 +60,14 @@ export function referButton(onRefer, label, snippet) {
 // blob route (a bare <img src> cannot carry the Authorization header — the artifact
 // panel's pattern), everything else a fetch-and-open chip. Shared by the transcript's
 // injection renderer and the conversation chat's user bubbles.
+//
+// `blobs` is the OWNER's array of object URLs (api.js: "the caller owns the URL's lifetime",
+// the shape artifacts.js already holds). Every thumbnail holds its decoded image in memory
+// until its URL is revoked, and a long conversation re-renders its whole history — so the
+// component that mounted the row revokes them in its destroy(), exactly once.
 const ATT_IMG = new Set(["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp"]);
 
-export function attachmentRow(rels, fileUrl) {
+export function attachmentRow(rels, fileUrl, blobs) {
   if (!rels?.length || !fileUrl) return null;
   const row = el("div", { class: "att-row" });
   for (const rel of rels) {
@@ -68,19 +76,24 @@ export function attachmentRow(rels, fileUrl) {
     if (ATT_IMG.has(ext)) {
       const img = el("img", { class: "att-thumb", alt: name, title: `${name} — click to open` });
       img.onclick = () => { if (img.src) window.open(img.src, "_blank"); };
-      apiBlobUrl(fileUrl(rel)).then(({ url }) => { img.src = url; })
+      apiBlobUrl(fileUrl(rel)).then(({ url }) => { blobs?.push(url); img.src = url; })
         .catch(() => img.replaceWith(
           el("span", { class: "faint small" }, `🖼 ${name} (unavailable)`)));
       row.append(img);
     } else {
       const btn = el("button", { class: "btn small att-file", title: rel }, `📎 ${name}`);
       btn.onclick = () => apiBlobUrl(fileUrl(rel))
-        .then(({ url }) => window.open(url, "_blank"))
-        .catch((err) => window.alert(`could not load ${name}: ${err.message}`));
+        .then(({ url }) => { blobs?.push(url); window.open(url, "_blank"); })
+        .catch((err) => toast(`could not load ${name}: ${err.message}`, 4000, { error: true }));
       row.append(btn);
     }
   }
   return row;
+}
+
+/** Revoke and forget every object URL in an owner's array. */
+export function revokeBlobs(blobs) {
+  for (const url of blobs.splice(0)) URL.revokeObjectURL(url);
 }
 
 export function createTranscript(container, opts = {}) {
@@ -90,6 +103,11 @@ export function createTranscript(container, opts = {}) {
   let openClock = null; // timing feedback for the action awaiting completion
   let lastPhase = null; // the acting stage of the previous turn — a change inserts a divider
   const qforms = new Map();   // qid -> { controls, created } for open inline answer forms
+  // Object URLs the attachment thumbnails below hold open (api.js hands the caller the
+  // lifetime). A nested subrun transcript is handed THIS array, so the one destroy() at the
+  // view's teardown frees the whole tree — and a conversation left open all day stops
+  // accumulating a decoded image per attachment per re-render.
+  const blobs = opts.blobs ?? [];
   const referBtn = (label, snippet) => referButton(opts.onRefer, label, snippet);
 
   function closeQuestion(qid, note) {
@@ -160,7 +178,7 @@ export function createTranscript(container, opts = {}) {
       details.append(box);
       const sub = createTranscript(box, {
         loadSub: (m, o) => opts.loadSub(`${p.n}/${m}`, o), isLive: opts.isLive,
-        fileUrl: opts.fileUrl });
+        fileUrl: opts.fileUrl, blobs });
       let off = 0, pulling = false;
       const pull = async () => {
         if (pulling) return;
@@ -361,7 +379,7 @@ export function createTranscript(container, opts = {}) {
       return el("div", { class: "ev injection" },
         ref ? el("div", { class: "reply-ref", title: ref }, "↩ ", ref) : null,
         evlabel("\u{1F4E8} user: "), md(body),
-        attachmentRow(ev.payload.attachments, opts.fileUrl));
+        attachmentRow(ev.payload.attachments, opts.fileUrl, blobs));
     },
     question: questionNode,
     answer: (ev) => {
@@ -474,6 +492,8 @@ export function createTranscript(container, opts = {}) {
   };
 
   return {
+    /** The view's teardown: free the attachment thumbnails' object URLs. */
+    destroy() { revokeBlobs(blobs); },
     // Close inline forms whose question is no longer open anywhere (answered elsewhere or
     // consumed by a later run). Fresh forms are spared: `open` may predate them.
     reconcileQuestions(open, fetchedAt = Date.now()) {

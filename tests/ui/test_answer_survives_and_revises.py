@@ -17,10 +17,14 @@ because that file is what the next run actually reads.
 
 from __future__ import annotations
 
+import re
+
 from playwright.sync_api import expect
 
 from rsched.engine import inbox
 from rsched.paths import read_json
+
+from .conftest import until
 
 
 def _seed(ui, qid):
@@ -39,11 +43,12 @@ def test_an_answer_a_run_has_read_is_still_on_the_page(ui, ui_page):
     _seed(ui, qid)
     ui_page.goto(f"{ui.url}/#/questions")
     card = ui_page.locator(".question-item").first
-    expect(card).to_be_visible(timeout=10_000)
+    expect(card).to_be_visible()
     card.locator("textarea.answer-input").fill("1. i opened the tailgate port")
     card.get_by_role("button", name="answer", exact=True).click()
-    expect(card).to_contain_text("answered", timeout=10_000)
-    ui_page.wait_for_timeout(300)
+    expect(card).to_contain_text("answered")
+    until((ui.routines / "uir" / "inbox" / f"answer-{qid}.json").exists,
+          what="the answer file")
 
     pairs = _consume(ui)
     assert [p["answer"] for p in pairs] == ["1. i opened the tailgate port"]
@@ -51,7 +56,7 @@ def test_an_answer_a_run_has_read_is_still_on_the_page(ui, ui_page):
     # the boundary the operator fell off: reload AFTER the run took the answer
     ui_page.reload()
     settled = ui_page.locator(".question-item.answered").first
-    expect(settled).to_be_visible(timeout=10_000)
+    expect(settled).to_be_visible()
     expect(settled).to_contain_text("i opened the tailgate port")
     expect(settled).to_contain_text("acted on")
     expect(settled.get_by_role("button", name="revise")).to_be_visible()
@@ -62,26 +67,34 @@ def test_revising_a_read_answer_re_queues_it_for_the_next_run(ui, ui_page):
     _seed(ui, qid)
     ui_page.goto(f"{ui.url}/#/questions")
     card = ui_page.locator(".question-item").first
-    expect(card).to_be_visible(timeout=10_000)
+    expect(card).to_be_visible()
     card.locator("textarea.answer-input").fill("1. it works now")
     card.get_by_role("button", name="answer", exact=True).click()
-    expect(card).to_contain_text("answered", timeout=10_000)
-    ui_page.wait_for_timeout(300)
+    expect(card).to_contain_text("answered")
+    until((ui.routines / "uir" / "inbox" / f"answer-{qid}.json").exists,
+          what="the answer file")
     _consume(ui)
 
     ui_page.reload()
     settled = ui_page.locator(".question-item.answered").first
-    expect(settled).to_be_visible(timeout=10_000)
+    expect(settled).to_be_visible()
     settled.get_by_role("button", name="revise").click()
     box = settled.locator("textarea.answer-input")
     expect(box).to_be_visible()
     box.fill("1. it works now\n2. copy the gmail creds over\n3. it can request the grant itself")
     settled.get_by_role("button", name="save revision").click()
-    expect(settled).to_contain_text("the next run reads this", timeout=10_000)
-    ui_page.wait_for_timeout(300)
+    # The card says the amendment went BACK to the inbox for a run to read — the whole claim of
+    # revising something already acted on. It says it twice over: the save writes the line in
+    # place, and the shared questions store repaints the card from the server a moment later
+    # ("→ inbox → consumed by the next run", against "→ read by the run that asked" before the
+    # revision). The two moments are one statement, so the assertion is on the statement.
+    expect(settled).to_contain_text(re.compile(r"→ inbox.*next run"))
+    revised = ui.routines / "uir" / "inbox" / f"answer-{qid}.json"
+    until(lambda: revised.exists() and read_json(revised).get("revised"),
+          what="the revision")
 
     # the amendment is queued where a run will read it — the whole point of revising
-    queued = read_json(ui.routines / "uir" / "inbox" / f"answer-{qid}.json")
+    queued = read_json(revised)
     assert "3. it can request the grant itself" in queued["text"]
     assert queued["revised"] is True
     pairs = _consume(ui, run="20260921-140000")

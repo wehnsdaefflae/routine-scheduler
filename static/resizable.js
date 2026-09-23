@@ -129,6 +129,13 @@ function gripFor(place, cls, title, opts) {
  *  brings it back. Its stylesheet decides where it lands in each of the two wide layouts. */
 export function wireRunRail(rail, side) {
   const left = side === "left";
+  // Below 760px there IS no column: the rail stacks in the page flow, and an open one is read
+  // before the thing it annotates — the conversation index put twenty other conversations above
+  // the chat, and the run rail put forty `state/…json  wrote ⧉ ⤓` rows between the phone and
+  // the finish summary. It opens closed at that width; its own summary line is the way in.
+  // Here, not at the three call sites: this function IS the rail contract, and the tier it
+  // keys off is the one its stylesheet block already draws.
+  if (!window.matchMedia("(min-width: 760px)").matches) rail.open = false;
   return gripFor((g) => rail.parentElement.insertBefore(g, rail.nextSibling),
     left ? "runrail-l" : "runrail-r",
     "drag to resize this rail · click to hide or show it",

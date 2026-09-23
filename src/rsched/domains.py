@@ -44,12 +44,14 @@ from __future__ import annotations
 
 import logging
 import uuid
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 import yaml
 
 from .ids import now_iso, run_ts
-from .paths import atomic_write_json, read_json, read_yaml
+from .paths import atomic_write_json, file_lock, read_json, read_yaml
 
 log = logging.getLogger("rsched.domains")
 
@@ -201,6 +203,20 @@ def _save(routines_home: Path, data: dict) -> None:
     atomic_write_json(domains_file(routines_home), data)
 
 
+@contextmanager
+def _exclusive(routines_home: Path) -> Iterator[None]:
+    """Hold the store's lock across a read-modify-write.
+
+    `domains.json` is ONE file rewritten whole, and it is written from the web layer's sync
+    handlers on FastAPI's threadpool as well as from a conversation's engine process. Two
+    overlapping patches each read the store and each write their own version, and one is
+    silently lost — which for this file means a domain's shared config block, the thing a
+    merge-not-replace patch semantics was already built to protect (R1745/D140).
+    """
+    with file_lock(domains_file(routines_home).with_suffix(".lock")):
+        yield
+
+
 def list_domains(routines_home: Path) -> list[dict]:
     return load(routines_home)["domains"]
 
@@ -222,9 +238,10 @@ def create(routines_home: Path, *, name: str, config: dict | None = None,
         raise ValueError(f"a domain with id {domain_id!r} already exists")
     rec = {"id": domain_id or new_id(), "name": name,
            "config": clean_config(config), "created": now_iso()}
-    data = load(routines_home)
-    data["domains"].append(rec)
-    _save(routines_home, data)
+    with _exclusive(routines_home):
+        data = load(routines_home)
+        data["domains"].append(rec)
+        _save(routines_home, data)
     return rec
 
 
@@ -250,6 +267,14 @@ def update(routines_home: Path, domain_id: str, *, name: str | None = None,
 
     Returns the updated record, or None if no domain has that id.
     """
+    with _exclusive(routines_home):
+        return _update_locked(routines_home, domain_id, name=name, config=config,
+                              remove=remove)
+
+
+def _update_locked(routines_home: Path, domain_id: str, *, name: str | None,
+                   config: dict | None, remove: list[str] | None) -> dict | None:
+    """`update`'s body, under the store's flock — see `_exclusive`."""
     data = load(routines_home)
     for d in data["domains"]:
         if d["id"] != domain_id:
@@ -282,12 +307,13 @@ def delete(routines_home: Path, domain_id: str) -> bool:
     nobody asked about. Members still naming the id stop inheriting and stop being handed the
     root; the directory stays until someone removes it knowingly.
     """
-    data = load(routines_home)
-    before = len(data["domains"])
-    data["domains"] = [d for d in data["domains"] if d["id"] != domain_id]
-    if len(data["domains"]) == before:
-        return False
-    _save(routines_home, data)
+    with _exclusive(routines_home):
+        data = load(routines_home)
+        before = len(data["domains"])
+        data["domains"] = [d for d in data["domains"] if d["id"] != domain_id]
+        if len(data["domains"]) == before:
+            return False
+        _save(routines_home, data)
     return True
 
 

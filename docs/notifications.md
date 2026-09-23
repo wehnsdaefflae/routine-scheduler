@@ -23,7 +23,8 @@ expires}`). Answering on any surface resolves the record everywhere.
   page, the in-app notification tier (Settings → Notifications, opt-in), and browser **Web
   Push** (opt-in per browser, works with the tab closed). Both push tiers key off the same
   open-decisions source the Decisions page reads, so the surfaces can never disagree.
-- **A messenger** (Discord, Signal, Telegram, WhatsApp, Zulip, e-mail, …) is an ordinary
+- **A messenger** (Discord, Signal, Telegram, WhatsApp, Zulip, e-mail, an `ntfy` push to your
+  own devices, …) is an ordinary
   **util call by the agent itself**: visible in the transcript, gated by that channel's
   `messaging-*` permission, never engine-implicit. A run sends there because its workflow
   says to reach a *person*, not because the system decided you should be pinged.
@@ -92,14 +93,16 @@ marker and are left alone.
 
 ## For developers: no implicit outbound send exists
 
-There is no notification seam module any more, because there is nothing for it to carry:
-`rsched/notify.py` and `engine/decisions.py` were deleted in 0.230.0 along with their two
-daemon callers. The engine and the daemon reach the user by writing the durable record and
-nothing else; `web/push.py` renders that record to subscribed browsers.
+No engine or daemon path reaches a person by itself. Both reach the user by writing the
+durable record and nothing else; `web/push.py` renders that record to subscribed
+browsers — that is the whole away-from-console tier. There is no notification seam module,
+because there is nothing for one to carry.
 
-If an engine-implicit channel is ever wanted again, it comes back as a permission plus ONE
-seam module every implicit send goes through — never as an inline util call sprinkled into
-a caller. What must not come back without it is the failure D48 recorded: a channel that
-looks like it can answer a decision, and silently cannot.
+A message to a person is therefore an explicit util call by the RUN, gated by a
+`messaging-*` permission; a new channel is a permission plus a util. If an
+engine-implicit channel is ever wanted, it arrives the same way plus ONE seam module every
+implicit send goes through — never as an inline util call sprinkled into a caller. What
+must not arrive without it is the failure D48 recorded: a channel that looks like it can
+answer a decision, and silently cannot.
 
 See also: [Rules & permissions](rules-permissions.md) · [Background tasks](background-tasks.md)

@@ -2,7 +2,8 @@
 
 Split out of `completion.py` (F393): asking the model for one action and keeping the request
 inside the provider's limits are different jobs, and only this one is allowed to rewrite the
-message list.
+message list. Reading a provider's overflow 400 and recovering from it is a third job and
+lives in `overflow.py`, which builds on this file.
 
 That permission is the reason it is worth isolating. The composed prompt is a CACHING CONTRACT
 — appended-to, never mutated — and compaction, the schema-retry cleanup and the media fallback
@@ -14,12 +15,10 @@ from __future__ import annotations
 
 import dataclasses
 import json
-import re
 from pathlib import Path
 
 from ..endpoints.base import EndpointError
-from ..health_events import log_health_event
-from . import archival, mediaops
+from . import archival, enginenote, mediaops
 from .compaction import (
     ANTICIPATE_AT,
     KEEP_HEAD_MSGS,
@@ -36,92 +35,20 @@ from .compaction import (
 #: binding and a deferred turn is free; above it the ceiling is, and the warning is skipped.
 _EVICT_WARN_HEADROOM = 0.9
 
-#: How many times one turn may shrink-and-retry an oversize prompt ON ONE MODEL before the
-#: turn dies naming its size. Two: the first shrink uses the provider's stated maximum, the
-#: second absorbs a tokenizer that counts heavier than our estimate. A third would be the
-#: loop this guard exists to end. The counter is keyed (endpoint, model), so a chain of K
-#: models permits K × 2 recoveries in one turn; the whole-turn ceiling on completion calls
-#: is K × (MAX_SCHEMA_ATTEMPTS + _MAX_OVERSIZE_RETRIES) + 1 for the media fallback.
-_MAX_OVERSIZE_RETRIES = 2
+#: The measured estimate→provider ratio is clamped to this band. Below 1.0 there is nothing
+#: to correct — an estimate that runs HEAVY already keeps the prompt inside the window, and
+#: acting on it would compact later than the gate intends. Above 2.0 the reading is not a
+#: tokenizer difference any more but a measurement fault, and a run must not shrink its own
+#: window to a third on one bad sample.
+_RATIO_BOUNDS = (1.0, 2.0)
 
-# F278: the window guard. The clamp (`clamp_to_cap`) sizes everything from the CATALOG's
-# context figure — when that figure claims a larger window than the provider actually
-# enforces, no compaction gate ever fires and the completion 400s with
-# context_length_exceeded (2026-08-05: a gemma entry raised to 250k tokens against the
-# provider's real 65,536 disarmed the whole net and killed two live conversations). The
-# guard closes the loop at the error itself: parse the provider's STATED maximum from the
-# overflow text, shrink this RUN's view of that model's window to it, re-clamp the prompt,
-# and retry the same model once. Config stays authoritative for sizing DOWN (a smaller
-# configured window is a deliberate budget); the provider is authoritative for sizing UP —
-# a stated max at or above the configured window means config wasn't the problem, so the
-# guard declines and the ordinary transport nets take over.
-# Provider vocabulary. Each vendor words the same fault differently, and a hint list that
-# misses a vendor silently DISARMS this whole guard for it — on 2026-09-21 the Anthropic
-# shape ("prompt is too long: 1045385 tokens > 1000000 maximum") matched none of the three
-# openai-flavoured hints, so self-audit:20260921-000321 400'd four times with a prompt that
-# grew each time (1,017,305 → 1,045,385) while the engine read every rejection as a broken
-# provider and failed over. Add the vendor's words here when a new one appears.
-_OVERFLOW_HINTS = ("context_length_exceeded", "maximum context length", "context window",
-                   "prompt is too long")
+#: Only a prompt already occupying this much of the window calibrates. The provider counts
+#: things the message list never carries — the request framing around every message — so the
+#: gap is roughly FIXED and `reported / estimate` explodes on a short prompt: an early
+#: 18-token turn would otherwise write a 1.8 ratio and compact a healthy run every few turns.
+#: These are also the only turns where the correction changes any decision.
+_CALIBRATE_ABOVE = 0.2
 
-# …and a fault that merely QUOTES two token counts is not an overflow. Rate limits ("Request
-# too large: 32000 tokens > 30000 maximum tokens per minute"), billing errors and an auth
-# failure echoing the request body all carry that shape, and reading one as an overflow is
-# worse than missing an overflow: it pins the run's window to a number that was never a
-# context size — a per-minute budget, a credit balance — for every remaining turn, while
-# suppressing the failover the real fault needed. These statuses are therefore never an
-# overflow, whatever their prose says.
-_NEVER_OVERFLOW_STATUS = ("http 429", "http 402", "http 401", "http 403",
-                          "rate_limit", "rate limit", "insufficient_quota",
-                          "per minute", "per day", "tokens per")
-
-_OVERFLOW_TOKENS_RE = re.compile(
-    r"(?:maximum context length(?: is)?|context (?:window|length) of(?: only)?|"
-    r"context_length_exceeded\D{0,40}?)\s*(\d{4,7})\s*tokens", re.IGNORECASE)
-
-#: Anthropic: "prompt is too long: <actual> tokens > <maximum> maximum" — the only shape
-#: that states BOTH numbers, which makes the overshoot exactly computable.
-_OVERFLOW_PAIR_RE = re.compile(
-    r"(\d{4,9})\s*tokens?\s*(?:>|&gt;|\\u003e|exceeds?)\s*(\d{4,9})", re.IGNORECASE)
-
-
-def _is_overflow_text(text: str) -> bool:
-    """Whether this error is a CONTEXT-SIZE fault at all. Prose alone is not enough: the
-    vendor vocabulary has to be there AND the fault must not be one of the statuses that
-    quote token counts for a different reason entirely (a rate limit, a quota, a balance).
-    """
-    low = text.lower()
-    if any(bad in low for bad in _NEVER_OVERFLOW_STATUS):
-        return False
-    return any(h in low for h in _OVERFLOW_HINTS)
-
-
-def parse_overflow_pair(text: str) -> tuple[int | None, int | None]:
-    """(actual, maximum) tokens stated by a context-overflow error, either side None when
-    the text does not state it. The ACTUAL count is what makes a shrink target honest: a
-    provider that reports 1,045,385 against 1,000,000 has told us precisely how much has
-    to go, which no fraction of the window can know.
-    """
-    if not _is_overflow_text(text):
-        return None, None
-    pair = _OVERFLOW_PAIR_RE.search(text)
-    if pair:
-        return int(pair.group(1)), int(pair.group(2))
-    m = _OVERFLOW_TOKENS_RE.search(text)
-    return None, (int(m.group(1)) if m else None)
-
-
-def parse_overflow_limit(text: str) -> int | None:
-    """The provider-stated maximum context TOKENS from a context-overflow error message,
-    or None when the text is not an overflow error (or states no usable figure).
-    """
-    if not _is_overflow_text(text):
-        return None
-    pair = _OVERFLOW_PAIR_RE.search(text)
-    if pair:
-        return int(pair.group(2))
-    m = _OVERFLOW_TOKENS_RE.search(text)
-    return int(m.group(1)) if m else None
 
 def _override_window(loop, ref):
     """This run's corrected view of a model's window, when the guard has shrunk it: every
@@ -134,134 +61,61 @@ def _override_window(loop, ref):
         return dataclasses.replace(ref, context_tokens=shrunk)
     return ref
 
-def _shrink_window_to_provider(loop, endpoint, ref, exc: EndpointError) -> tuple | None:
-    """Net 0 of _recover_transport: a context-overflow failure whose stated maximum is
-    SMALLER than the configured window means the catalog entry lies — shrink the run-local
-    window to the provider's figure, re-clamp the prompt under it, emit the audit trail
-    (transcript event + `model_window_corrected` health event naming the bad entry), and
-    hand back the same endpoint with the corrected ref for one clean retry. Returns None
-    when the error is not an overflow, states no figure, config was not the problem, or
-    this model was already corrected once this run (never loops).
+def _schema_tokens(loop) -> int:
+    """The action schema's own cost. It travels BESIDE the message list — the provider
+    counts it in the prompt, `estimate_input_tokens(loop.messages)` never sees it.
     """
-    stated = parse_overflow_limit(str(exc))
-    if stated is None:
-        return None
-    corrected = stated
-    key = (ref.endpoint, ref.model)
-    overrides = getattr(loop, "_window_overrides", None)
-    if overrides is None:
-        overrides = loop._window_overrides = {}
-    if overrides.get(key, float("inf")) <= corrected or corrected >= ref.context_tokens:
-        return None
-    overrides[key] = corrected
-    new_ref = dataclasses.replace(ref, context_tokens=corrected)
-    cl = clamp_to_cap(loop.messages, new_ref.context_tokens, _reserved_tokens(loop, new_ref))
-    ctx = loop.ctx
-    ctx.transcript.event("compaction", {"window_guard": {
-        "model": ref.name or ref.model, "configured_tokens": ref.context_tokens,
-        "provider_max_tokens": stated, "corrected_tokens": corrected,
-        **({"clamp": cl} if cl else {})}})
-    log_health_event(ctx.server.routines_home, "model_window_corrected",
-                     routine=ctx.routine.slug, run_id=ctx.run_id,
-                     detail=(f"{ref.name or ref.model}: catalog claims "
-                             f"{ref.context_tokens:,} context tokens but the provider "
-                             f"enforces {stated:,} tokens — run continues on "
-                             f"{corrected:,} tokens; correct the catalog entry"))
-    return endpoint, new_ref
-
-def _recover_oversize_prompt(loop, endpoint, ref, exc: EndpointError) -> tuple | None:
-    """Net 0b: the prompt itself is too big for a window the catalog states CORRECTLY.
-
-    The F278 guard above answers "is the catalog lying?" and declines when the provider's
-    stated maximum is at or above the configured window. That is the right answer to that
-    question and the wrong place to stop: the request is still over the wall. On 2026-09-21
-    the decline handed a 400 to `_switch_to_fallback`, which read "the model failed" — so a
-    healthy model was cooled for 300 s and the identical oversize prompt was posted to the
-    next model in the chain, four times, growing each time, until the run died.
-
-    A too-long prompt is a fault of the REQUEST, and every model in the chain receives the
-    same request. So recovery is local: shrink here, retry the SAME model, and never touch
-    the failover registry. Returns (endpoint, ref) for one retry, or None when the error is
-    not an oversize fault at all (the ordinary nets take over) — while an oversize prompt
-    that CANNOT be shrunk raises, because the honest outcome is a turn that dies naming its
-    size, not a silent degrade onto a model that will answer from a truncated context.
-    """
-    actual, stated = parse_overflow_pair(str(exc))
-    if stated is None and actual is None:
-        return None                       # not an overflow error — not ours
-    ctx = loop.ctx
-    before = estimate_input_tokens(loop.messages)
-    # The provider's own numbers are authoritative over any estimate we could make. Scale
-    # the run-local window by the measured ratio of estimate to truth when both are known:
-    # the tokenizer counted `actual` where we estimated `before`, so our figures run light
-    # by exactly that factor and the target has to absorb it.
-    target = stated if stated is not None else int((actual or before) * 0.9)
-    if actual and before and actual > 0:
-        target = min(target, int(target * before / actual))
-    # A floor, so a pathological ratio cannot shrink the window to nothing — but never
-    # ABOVE what the provider said it accepts, or the retry is posted over the wall again
-    # and burns both attempts proving it (reviewer's worked case: a large `max_tokens` plus
-    # a big action schema floors at 1,101,000 against a stated 1,000,000).
-    target = max(target, _reserved_tokens(loop, ref) + 1_000)
-    if stated is not None:
-        target = min(target, stated)
-    attempts = getattr(loop, "_oversize_attempts", None)
-    if attempts is None:
-        attempts = loop._oversize_attempts = {}
-    key = (ref.endpoint, ref.model)
-    if attempts.get(key, 0) >= _MAX_OVERSIZE_RETRIES:
-        raise EndpointError(
-            f"prompt still too long after {_MAX_OVERSIZE_RETRIES} shrink attempts "
-            f"({before:,} estimated tokens against a stated maximum of "
-            f"{stated:,} tokens)" if stated else
-            f"prompt still too long after {_MAX_OVERSIZE_RETRIES} shrink attempts "
-            f"({before:,} estimated tokens)")
-    attempts[key] = attempts.get(key, 0) + 1
-    overrides = getattr(loop, "_window_overrides", None)
-    if overrides is None:
-        overrides = loop._window_overrides = {}
-    # NOT committed to `overrides` yet. `_override_window` re-applies whatever is stored
-    # here on every later pick, so an override written on a path that then RAISES would
-    # clamp every remaining turn of the run to a window derived from a failure (measured in
-    # review: an 18-token prompt that drew a spurious oversize 400 left a 21,106-token
-    # override behind). It is recorded only once the shrink is proven to have helped.
-    corrected = min(overrides.get(key, target), target)
-    new_ref = dataclasses.replace(ref, context_tokens=corrected)
-    # Re-run the FULL shrink path — archive the middle, then clamp bodies — under the
-    # corrected window. The live defect was that nothing re-ran it inside the retry loop,
-    # so every failed attempt only appended and the prompt grew monotonically.
-    compact_if_needed(loop, endpoint, new_ref)
-    after = estimate_input_tokens(loop.messages)
-    ctx.transcript.event("compaction", {"oversize_prompt": {
-        "model": ref.name or ref.model,
-        **({"provider_counted_tokens": actual} if actual else {}),
-        **({"provider_max_tokens": stated} if stated else {}),
-        "estimated_before": before, "estimated_after": after,
-        "retry_window_tokens": corrected, "attempt": attempts[key]}})
-    if after >= before:
-        raise EndpointError(
-            f"prompt is too long and cannot be shrunk further: {before:,} estimated "
-            f"tokens, head+tail floor is incompressible"
-            + (f", provider maximum {stated:,} tokens" if stated else ""))
-    overrides[key] = corrected      # the shrink helped — now it is worth carrying forward
-    log_health_event(ctx.server.routines_home, "prompt_oversize_shrunk",
-                     routine=ctx.routine.slug, run_id=ctx.run_id,
-                     detail=(f"{ref.name or ref.model} rejected a prompt of "
-                             f"{actual or before:,} tokens"
-                             + (f" against its {stated:,} maximum" if stated else "")
-                             + f" — shrunk to ~{after:,} estimated tokens and retried on "
-                             f"the same model (no failover: another model would receive "
-                             f"the same prompt)"),
-                     model=ref.name or ref.model)
-    return endpoint, new_ref
+    schema = getattr(loop, "action_schema", None)
+    if not schema or getattr(loop, "_schema_off", False):
+        return 0
+    return estimate_input_tokens([{"content": json.dumps(schema, ensure_ascii=False)}])
 
 
 def _reserved_tokens(loop, ref) -> int:
     """Reserve output plus the separately transmitted action schema."""
-    schema = getattr(loop, "action_schema", None)
-    schema_cost = (estimate_input_tokens([{"content": json.dumps(schema, ensure_ascii=False)}])
-                   if schema and not getattr(loop, "_schema_off", False) else 0)
-    return ref.max_tokens + schema_cost
+    return ref.max_tokens + _schema_tokens(loop)
+
+
+def note_prompt_size(loop, ref, usage: dict | None) -> None:
+    """Calibrate this run's token ESTIMATE against what the provider just counted.
+
+    `estimate_input_tokens` is 3.5 UTF-8 bytes per token — a packing guess, not a tokenizer
+    — and every gate in this file compares it against a real window. When it runs light the
+    compaction gate never fires and the turn dies at the provider instead: self-audit
+    20260921-000321 took four `prompt is too long: 1017305 tokens > 1000000 maximum` 400s in
+    one run (6 such 400s in a fortnight), each one a full-prompt round trip plus a shrink
+    pass. Until now the only correction came FROM that 400 (`_recover_oversize_prompt`),
+    although every completion already reports the true prompt size.
+
+    So the ratio is measured on the turn that just came back and applied to the next one by
+    `_calibrated_window`. The schema is subtracted because the provider counted it and the
+    message list does not carry it; `ref.max_tokens` is NOT, because a provider counts an
+    output reservation against the window, never as part of the prompt — subtracting it
+    would drive every ratio under 1.0 and disarm the whole correction.
+
+    It is run-local, not per-model: what it mostly measures is how this CONTENT packs (a
+    German transcript packs differently from JSON), and every completion re-measures it, so a
+    chain step onto a different tokenizer carries the old ratio for exactly one turn.
+    """
+    reported = sum(int((usage or {}).get(k) or 0) for k in ("in", "cached_in", "cache_write"))
+    if reported <= 0:
+        return
+    estimate = estimate_input_tokens(loop.messages)
+    if estimate <= 0 or estimate < _CALIBRATE_ABOVE * ref.context_tokens:
+        return
+    low, high = _RATIO_BOUNDS
+    loop._token_ratio = min(max((reported - _schema_tokens(loop)) / estimate, low), high)
+
+
+def _calibrated_window(loop, ref):
+    """`ref` with its window restated in ESTIMATE tokens — the currency every gate below
+    compares against. A run whose estimate reads 30% light has, in those units, 30% less
+    window than the catalog says, and that is the honest figure to compact against.
+    """
+    ratio = getattr(loop, "_token_ratio", 1.0)
+    if ratio <= 1.0:
+        return ref
+    return dataclasses.replace(ref, context_tokens=int(ref.context_tokens / ratio))
 
 
 def compact_if_needed(loop, endpoint, ref) -> None:
@@ -272,7 +126,11 @@ def compact_if_needed(loop, endpoint, ref) -> None:
     observations would otherwise 400 with context_length_exceeded and die (F265, three
     recurrences on c-20260802-110156). The clamp trims oversized bodies in place with a visible
     marker; the full text stays in the transcript.
+
+    Every gate below sizes in ESTIMATED tokens, so the window they are given is this run's
+    measured view of it (`_calibrated_window`) and not the catalog's figure.
     """
+    ref = _calibrated_window(loop, ref)
     _archive_if_needed(loop, endpoint, ref)
     ctx = loop.ctx
     cl = clamp_to_cap(loop.messages, ref.context_tokens, _reserved_tokens(loop, ref))
@@ -304,18 +162,65 @@ def _warn_before_eviction(loop, size: float, ref) -> bool:
     if size > ceiling * _EVICT_WARN_HEADROOM:
         return False            # no slack: the ceiling is binding, archive now
     loop._evict_warned = True
-    loop.ctx.transcript.event("user_injection", {
-        "text": "[engine] compaction imminent — one turn to externalize", "source": "engine"})
-    loop.messages.append({"role": "user", "content":
-        "ENGINE NOTE: the middle of this conversation is about to be ARCHIVED — the first "
+    enginenote.append(loop,
+        "the middle of this conversation is about to be ARCHIVED — the first "
         f"{KEEP_HEAD_MSGS} and last {KEEP_TAIL_MSGS} messages stay, everything between them "
         "moves to on-disk history you would have to go looking for. Retention is positional, "
         "not semantic: it does not know what mattered.\n"
         "You have this turn. Anything in the middle worth keeping — a finding, a value you "
         "will need again, a dead end worth not repeating, a decision and why — put it in a "
         "durable store NOW: a `note` (free, rides any action), a memory_write, or a LEDGER "
-        "entry. Then carry on; the archive happens on your next turn either way."})
+        "entry. Then carry on; the archive happens on your next turn either way.")
     return True
+
+
+def _pick_archival_model(loop, middle: list[dict], endpoint, ref, cinfo: dict):
+    """The (endpoint, ref) that will archive this middle, or None when nothing can hold it.
+
+    ONE fit test decides every candidate: `archival_fits`, which reserves the archival prompt,
+    the history schema and the model's own output. There used to be two — the tool-call branch
+    compared a bare `context_tokens * 0.7` against the middle alone, which is the exact gap a
+    90,005-token archival slipped through into a 32,768-token window (llmsectest-weekday:
+    20260922-060001, turn 106: the run died AND its archive was lost in the same minute).
+
+    Order: the configured compaction model when it fits (it was chosen on purpose), then the
+    tool-call model (machine work belongs on the cheaper tier), then the main model. Every
+    rejection is named in `cinfo` so the transcript says which model was skipped and why.
+    """
+    ctx = loop.ctx
+    candidates = []
+    dedicated = ctx.server.compaction_model
+    if dedicated:
+        try:
+            d_endpoint, d_ref = ctx.registry.for_name(dedicated)
+            if d_ref.name != dedicated:
+                cinfo["archival_selection_fallback"] = (
+                    f"{dedicated}: unavailable; catalog fallback {d_ref.name}")
+            candidates.append((d_endpoint, d_ref))
+        except Exception as exc:
+            cinfo["archival_selection_fallback"] = (
+                f"{dedicated}: unavailable ({exc}); using Automatic")
+    try:
+        candidates.append(ctx.registry.for_model("tool_call", ctx.routine.models))
+    except Exception:
+        pass
+    candidates.append((endpoint, ref))
+    declined: list[str] = []
+    for c_endpoint, c_ref in candidates:
+        if archival_fits(middle, c_ref):
+            if dedicated:
+                cinfo["archival_model"] = c_ref.name or c_ref.model
+            if declined:
+                cinfo["archival_selection_fallback"] = (
+                    "; ".join(declined) + f" — archiving on {c_ref.name or c_ref.model}")
+            return c_endpoint, c_ref
+        declined.append(f"{c_ref.name or c_ref.model}: the archival request does not fit "
+                        f"its {c_ref.context_tokens:,}-token window")
+    cinfo["archival_skipped"] = (
+        f"the middle is ~{estimate_input_tokens(middle):,} estimated tokens and no available "
+        f"model can archive it ({'; '.join(declined)}) — the deterministic digest stands "
+        "alone for these turns")
+    return None
 
 
 def _archive_if_needed(loop, endpoint, ref) -> None:
@@ -368,18 +273,6 @@ def _archive_if_needed(loop, endpoint, ref) -> None:
         return
     if _warn_before_eviction(loop, size, ref):
         return          # one turn to externalize what matters; the archive happens next turn
-    # Archival is machine work — route it to the (usually cheaper) tool-call model
-    # whenever its window can hold the middle being archived; the main model is the
-    # fallback, never the default.
-    c_endpoint, c_ref = endpoint, ref
-    try:
-        t_endpoint, t_ref = ctx.registry.for_model("tool_call", ctx.routine.models)
-        middle_size = estimate_input_tokens(
-            loop.messages[KEEP_HEAD_MSGS:len(loop.messages) - KEEP_TAIL_MSGS])
-        if t_ref.context_tokens * 0.7 >= middle_size:
-            c_endpoint, c_ref = t_endpoint, t_ref
-    except Exception:
-        pass
     # The INSTANT tier takes the pass and the run carries straight on; the navigable
     # archive is built off the hot path and announced when it lands (engine/archival.py).
     # The archival call is the slow one — 180-600s of a run's time, spent mid-work — and
@@ -390,29 +283,20 @@ def _archive_if_needed(loop, endpoint, ref) -> None:
     # deliberately does not adopt.
     middle = loop.messages[KEEP_HEAD_MSGS:len(loop.messages) - KEEP_TAIL_MSGS]
     turn = max((r["turn"] for r in loop.turn_records), default=0)
-    loop.messages, cinfo = maybe_compact(loop.messages, loop.turn_records,
-                                        ref.context_tokens)
+    loop.messages, cinfo = maybe_compact(loop.messages, loop.turn_records, cap)
     if cinfo is not None:
-        dedicated = ctx.server.compaction_model
-        if dedicated:
-            try:
-                d_endpoint, d_ref = ctx.registry.for_name(dedicated)
-                if archival_fits(middle, d_ref):
-                    c_endpoint, c_ref = d_endpoint, d_ref
-                    if d_ref.name != dedicated:
-                        cinfo["archival_selection_fallback"] = (
-                            f"{dedicated}: unavailable; catalog fallback {d_ref.name}")
-                else:
-                    cinfo["archival_selection_fallback"] = (
-                        f"{dedicated}: archival request exceeds safe context budget; "
-                        "using Automatic")
-            except Exception as exc:
-                cinfo["archival_selection_fallback"] = (
-                    f"{dedicated}: unavailable ({exc}); using Automatic")
-        if dedicated:
-            cinfo["archival_model"] = c_ref.name or c_ref.model
-        archival.start(loop, middle, c_endpoint, c_ref, turn)
-        cinfo["archival"] = "background"
+        picked = _pick_archival_model(loop, middle, endpoint, ref, cinfo)
+        if picked is None:
+            # Every candidate's window is too small to hold the middle plus the archival
+            # prompt, the schema and its own output reserve. Posting it anyway buys a 400
+            # and loses the middle just the same (llmsectest-weekday:20260922-060001: a
+            # 90,005-token archival posted to a 32,768-token fallback), so the run keeps
+            # the deterministic digest and the transcript says why the archive is missing.
+            cinfo["archival"] = "skipped"
+        else:
+            c_endpoint, c_ref = picked
+            archival.start(loop, middle, c_endpoint, c_ref, turn)
+            cinfo["archival"] = "background"
     if cinfo:
         # the archival call's spend is booked by archival.collect, on the turn the
         # archive lands — this pass is the deterministic digest and calls no model
@@ -425,26 +309,47 @@ def _archive_if_needed(loop, endpoint, ref) -> None:
 
 
 def apply_media_fallback(loop, exc: EndpointError) -> bool:
-    """The main endpoint failed on a turn whose tail user message carries image `media`
-    (for example, it rejected the file). Convert that
-    media to vision-util text IN PLACE and drop it, so the retried completion is text-only
-    and the model still gets the content. False when the tail has no media — then the
-    failure is a genuine endpoint error that must propagate.
+    """The endpoint failed on a turn whose prompt carries image `media` (it rejected the
+    file, or serves no model that can see one). Convert EVERY media-bearing message to
+    vision-util text in place and drop the attachments, so the retried completion is
+    text-only and the model still gets the content. False when the prompt carries no media
+    at all — then the failure is a genuine endpoint error that must propagate.
+
+    EVERY message, not just the tail. The tail is where the image usually is, and that is
+    exactly why looking only there failed the one case that mattered: on 2026-09-22 a user
+    message landed AFTER the media-bearing observation, so the next 400 found no media on
+    the tail, returned False, and the chain walked four models — three of them
+    `multimodal: false` — to `does not support image inputs` and killed the conversation
+    (c-20260922-072125). An image anywhere in the prompt is a liability to a model that
+    cannot see one; converting the lot costs one vision call each and keeps the run alive.
+
+    This rewrites the message list, which is deliberate and one of the three sanctioned
+    breaks in the prompt-caching contract.
     """
-    if not loop.messages:
+    converted = 0
+    files = 0
+    for msg in loop.messages:
+        media = msg.get("media")
+        if not media:
+            continue
+        notes = []
+        for item in media:
+            desc = mediaops.vision_describe(loop.ctx, item["path"], "")
+            notes.append(f"[{Path(item['path']).name}: this run's model could not display it — "
+                         f"description from the vision util]\n{desc}")
+        msg.pop("media", None)
+        msg["content"] = msg["content"] + "\n\n" + "\n\n".join(notes)
+        converted += 1
+        files += len(media)
+    if not converted:
         return False
-    last = loop.messages[-1]
-    media = last.get("media")
-    if not media:
-        return False
-    notes = []
-    for item in media:
-        desc = mediaops.vision_describe(loop.ctx, item["path"], "")
-        notes.append(f"[{Path(item['path']).name}: this run's model could not display it — "
-                     f"description from the vision util]\n{desc}")
-    last.pop("media", None)
-    last["content"] = last["content"] + "\n\n" + "\n\n".join(notes)
+    # The DESCRIPTION is what the model then reasons from, so it belongs on the record: the
+    # event used to carry a 120-char excerpt of the exception and nothing else, and a run
+    # reporting "the vision fallback returned empty text" could be neither confirmed nor
+    # refuted from disk.
     loop.ctx.transcript.event("error", {"where": "media",
-        "message": f"main endpoint could not show {len(media)} file(s) "
-                   f"({str(exc)[:120]}); fell back to the vision util"})
+        "message": f"this run's model could not show {files} file(s) in {converted} message(s) "
+                   f"({str(exc)[:120]}); fell back to the vision util",
+        "descriptions": [m["content"][-2000:] for m in loop.messages
+                         if "description from the vision util]" in m["content"]][-3:]})
     return True

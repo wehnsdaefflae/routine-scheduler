@@ -103,7 +103,11 @@ Three things keep ten such pages one site rather than ten:
 
 The shell still renders what waits on the reader, above your body and before anything else, so a
 body cannot forget it — one module did and four pages reported a waiting decision on the hub and
-then showed nothing when opened.
+then showed nothing when opened. The box he steers you with is the shell's for the same reason
+and closes every page whatever your body draws. Its WORDS are yours: publish
+`direction_field.label` and `direction_field.placeholder` and the box asks your project's
+question instead of the generic one. Never build a second steer box above the shell's — two
+boxes asking for the same thing is a reader wondering which one you read.
 
 **If your page is not a shell at all** — an installed app that IS its own page, loading none of
 this — then nothing renders those panels for you and the same failure is yours to avoid. Either
@@ -239,6 +243,12 @@ that changes every few seconds is noise on a page somebody reads once a day.
 A page can be shared. An invitation carries a name, a role and the projects it covers — and every
 row in the store records who wrote it.
 
+Two people cannot edit one project at the same moment, either. Whoever has the page open holds
+it for a couple of minutes at a time; everybody else reads it and is told who is in there and
+for how long. That is a courtesy between readers, never a permission — it expires on its own,
+it can always be taken over once stale, and nothing already saved is ever withdrawn by it. It
+does not touch you: you publish whole documents between runs, not keystrokes.
+
 **So read the author before you act on the words.** A guest's "looks right" is not his approval,
 and a routine that cannot tell them apart will read a colleague's agreement as the go-ahead and
 send the mail. Treat a guest's input as what it is: informed comment from someone he invited,
@@ -256,6 +266,13 @@ Every question takes a free-text answer. Offer quick answers when there genuinel
 three likely ones, but never *only* those: a question that can be answered with agree or
 disagree alone is a question he has already told you he cannot answer.
 
+A quick answer FILLS his box rather than sending for him — he taps one, adds "but only for the
+March batch", and the one send files the whole thing under that choice. So when you have a view,
+mark one option `recommended`: it leads the row and pre-fills the box, which makes the common
+case a single tap and still leaves the words his to change. Mark at most one — only where you
+would actually say it out loud; a recommendation on every question is a routine that has stopped
+having an opinion.
+
 His feedback stays visible, editable and deletable until you have read it, then disappears. He
 has asked for this in three different projects and the mechanism only works if your marker is
 honest — advancing it past something you did not actually act on makes his note vanish unread.
@@ -266,6 +283,9 @@ The store is append-only. An edit and a delete are new rows that supersede an ea
 the original wording is always still there. Uphold that from your side too:
 
 - Read the store, consume by sequence number, advance your marker to what you actually read.
+- Every row carries the id you published for the control he used, stamped with your project
+  slug — the page adds that prefix once, as it files. So name a gate, a question or a steer box
+  whatever reads well to you; match on the slug prefix when you read the store back.
 - Never rewrite, truncate or re-create a store. If one looks wrong, report it and stop —
   a repaired store re-issues sequence numbers below every marker and everything it holds
   becomes permanently invisible.
@@ -303,6 +323,12 @@ One run built its document links wrong, learned the rule it had broken four turn
 builder along with its own copy on disk, then published its state document again — never the
 collection those links live in. The corrected values sat on its disk for five hours while the page
 served the broken ones. He found it by clicking.
+
+The store answers your publish with `emptied`: every section that had entries last time and has
+none now. Read it. An empty section renders as nothing at all, so a section your builder dropped
+by accident does not look broken, it looks absent — which is how a page lost its whole template
+shelf under a publish that verified itself clean. An `emptied` you did not intend is a failed
+publish to repair in this run; one you did intend is a line in your summary.
 
 **2. Fetch your own page with NO credential and require a refusal — and fetch a DATA file too.**
 Signing in first proves nothing: the question is what a stranger gets. Anything holding data must

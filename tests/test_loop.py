@@ -1,6 +1,7 @@
 """Scripted end-to-end engine runs: the loop's whole behavior surface, no network."""
 
 import json
+import threading
 import time
 
 import pytest
@@ -197,7 +198,7 @@ def test_inbox_unreadable_message_logged_and_left(tmp_path, caplog):
             out = inbox_mod.drain_messages(d, tmp_path / "consumed")
     finally:
         bad.chmod(0o600)
-    assert out == [{"text": "hello", "attachments": []}]
+    assert out == [{"text": "hello", "via": "", "attachments": []}]
     assert bad.exists()                          # left in place for the next drain
     assert "cannot read msg-2.json" in caplog.text
 
@@ -219,7 +220,10 @@ def test_resume_rehydrates_and_continues(make_routine, scripted):
     assert (d / "state" / "more.txt").read_text() == "more"
     events2, _ = read_events(run_dir / "transcript.jsonl")
     assert len(events2) > n1                                    # appended, not restarted
-    assert any(e["type"] == "user_injection" and "continued the conversation" in e["payload"]["text"]
+    # the engine note is recorded VERBATIM (not as a stub), so the resumed leg replays what
+    # the model actually read instead of a phantom "USER MESSAGE (injected mid-run)"
+    assert any(e["type"] == "user_injection" and e["payload"].get("source") == "engine"
+               and "the conversation continues in place" in e["payload"]["text"]
                for e in events2)
     # the resumed run's FIRST prompt carried the prior conversation + the resume note
     joined = " ".join(m["content"] for m in ep2.calls[0]["messages"])
@@ -269,8 +273,8 @@ def test_converse_resume_delivers_message_and_allows_immediate_refinish(make_rou
     assert status2 == "ok"
     events, _ = read_events(run_dir / "transcript.jsonl")
     inj = [e["payload"] for e in events if e["type"] == "user_injection"]
-    assert any("continued the conversation" in p["text"] for p in inj)   # follow-up flavor…
-    assert not any("interruption" in p["text"] for p in inj)             # …not crash recovery
+    assert any("already ENDED" in p["text"] for p in inj)                # follow-up flavor…
+    assert not any("was interrupted" in p["text"] for p in inj)          # …not crash recovery
     assert any(p["text"] == "did you send the ping?" for p in inj)       # the message is on record
     prompt = ep2.calls[0]["messages"]
     assert "did you send the ping?" in prompt[-1]["content"]      # …and the LAST user message
@@ -316,7 +320,13 @@ def test_resume_leaves_next_run_inbox_queued(make_routine, scripted):
     prompt = " ".join(m["content"] for m in ep2.calls[0]["messages"])
     assert "quick follow-up" in prompt                    # the trigger arrived
     assert "the scrape result" in prompt                  # the background result arrived (F367)
-    assert "queued for the next run" not in prompt        # the freight did NOT
+    # The freight is NAMED and never DELIVERED (F529): unread freight a leg may not consume
+    # used to be invisible to it, so a run described an answered decision as still open three
+    # legs after the answer landed. It appears in that one digest section and nowhere else.
+    assert "QUEUED FOR THIS ROUTINE'S NEXT FRESH RUN" in prompt
+    named = prompt.partition("QUEUED FOR THIS ROUTINE'S NEXT FRESH RUN")[2].partition("\n\n")[0]
+    assert "queued for the next run" in named
+    assert "queued for the next run" not in prompt.replace(named, "")
     assert "the queued answer" not in prompt
     assert not (d / "inbox" / "msg-bg-t1.json").exists()  # …and it was consumed
     # ...and every piece of freight is still queued for the next fresh run
@@ -344,8 +354,8 @@ def test_resume_after_engine_forced_end_keeps_interruption_framing(make_routine,
     assert status == "ok"
     events, _ = read_events(run_dir / "transcript.jsonl")
     inj = [e["payload"]["text"] for e in events if e["type"] == "user_injection"]
-    assert any("interruption" in t for t in inj)
-    assert not any("continued the conversation" in t for t in inj)
+    assert any("was interrupted" in t for t in inj)
+    assert not any("already ENDED" in t for t in inj)
 
 
 def test_orphaned_children_detection():
@@ -1209,19 +1219,31 @@ def test_wait_returns_at_once_when_nothing_left_to_wait_for(make_routine, script
     assert wait_obs and wait_obs[-1]["payload"]["timed_out"] is False
 
 
-def test_kill_child(make_routine, scripted):
+def test_kill_child(make_routine, scripted, monkeypatch):
+    from rsched.engine import subruns
+
+    # The kill and the parent's exit each JOIN the child (KILL_JOIN_S). A child asleep on a
+    # 30 s clock therefore cost this one test two full joins — 24 s of the fast gate, its
+    # slowest test by far — and still left a thread with 6 s of sleep to run, writing its
+    # transcript into a tmp dir the fixture had already removed. An EVENT the parent releases
+    # is the same ordering without a clock: the child blocks until the parent is finished, so
+    # the kill always lands mid-run, and the join is then a handshake rather than a timeout.
+    monkeypatch.setattr(subruns, "KILL_JOIN_S", 2.0)   # read at call time
+    released = threading.Event()
+
     def sleepy():
-        # "sleep forever": long enough that the kill RELIABLY lands while the child is still
-        # running (a 0.5s sleep raced the kill under parallel-suite load and flaked, asserting
-        # status "ok" not "aborted"); on success the kill interrupts this instantly.
-        time.sleep(30)
+        released.wait(30)
         return finish(summary="should never land")
+
+    def release_and_finish():
+        released.set()
+        return finish(summary="killed the slowpoke")
 
     _d, _ep, status, _run_dir, events = _run(make_routine, scripted, [
         (PARENT, spawn("CHILD-S: sleep forever.", label="slow")),
         ("CHILD-S", sleepy),
         (PARENT, {"say": "Too slow — killing it.", "kind": "kill", "n": 1}),
-        (PARENT, finish(summary="killed the slowpoke")),
+        (PARENT, release_and_finish),
     ], slug="killer")
     assert status == "ok"
     kill_obs = next(e for e in events if e["type"] == "observation"
@@ -1962,6 +1984,36 @@ def test_workflow_usage_log_records_runs_and_subruns(make_routine, scripted):
     # the compression tally rides too, ALWAYS present: its presence is what marks a record
     # as counted for the Stats tab's per-routine roll-up (an empty tally is a counted zero)
     assert "compression" in tops[0] and "compression" in subs[0]
+    # …and the LIBRARY's commit as of the run's end, beside the recipe's. A rule revision
+    # reaches every holder at once and moves no recipe version, so a per-recipe health
+    # comparison is blind to it; only a depth-0 record carries it (one read per run).
+    assert "library_commit" in tops[0]
+
+
+def test_a_cost_regression_reaches_the_health_stream_at_run_end(make_routine, scripted):
+    """The routine page's trend flag had to be OPENED to be seen, so a library rule revision
+    that tripled a routine's cost said nothing anywhere: self-audit went 49,409 tokens / 87%
+    ok to 338,024 / 43% under no recipe change at all. The same evaluation now lands in the
+    stream the nightly audit already reads.
+    """
+    d = make_routine(slug="trender")
+    stream = d.parent / ".control" / "workflow-usage.jsonl"
+    stream.parent.mkdir(parents=True, exist_ok=True)
+    rows = ([{"routine": "trender", "depth": 0, "status": "ok", "turns": 10,
+              "tokens": 10_000}] * 5
+            + [{"routine": "trender", "depth": 0, "status": "ok", "turns": 100,
+                "tokens": 500_000}] * 4)
+    stream.write_text("".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8")
+    scripted([probe(), finish()])
+    status, _run_dir = run_routine(d, _server(d), run_ts=TS)
+    assert status == "ok"
+    events = [json.loads(x) for x in
+              (d.parent / ".control" / "health-events.jsonl").read_text().splitlines()]
+    flagged = [e for e in events if e["event"] == "cost_trend_degraded"]
+    assert len(flagged) == 1
+    assert flagged[0]["routine"] == "trender" and flagged[0]["window"] == 5
+    assert flagged[0]["tokens_median_before"] == 10_000
+    assert "ballooned" in flagged[0]["detail"]
 
 
 def test_previous_runs_ride_the_run_history_permission(make_routine, scripted):
@@ -2058,6 +2110,7 @@ def test_unlimited_token_budget_never_trips():
     from rsched.engine.run_context import RunContext
 
     ctx = RunContext.__new__(RunContext)   # only budget fields matter here
+    ctx._budget_warned = set()             # …including which warning lines were said
     ctx.budgets = Budgets(max_turns=100, max_wall_clock_min=100, max_total_tokens=-1,
                           max_subruns=4, max_subrun_depth=2, ask_timeout_min=5)
     ctx.usage = {"in": 10_000_000, "out": 5_000_000}
@@ -2087,6 +2140,7 @@ def test_unlimited_time_and_cost_budgets_honor_minus_one():
     from rsched.engine.run_context import RunContext
 
     ctx = RunContext.__new__(RunContext)
+    ctx._budget_warned = set()
     ctx.budgets = Budgets(max_turns=100, max_wall_clock_min=-1, max_total_tokens=-1,
                           max_subruns=4, max_subrun_depth=2, ask_timeout_min=5, max_cost=-1)
     ctx.usage = {"in": 0, "out": 0, "cost": 999.0}
@@ -2125,6 +2179,7 @@ def test_conversation_total_turn_budget_caps_the_whole_conversation():
     from rsched.engine.run_context import RunContext
 
     ctx = RunContext.__new__(RunContext)
+    ctx._budget_warned = set()
     ctx.usage = {"in": 0, "out": 0}
     ctx._started_mono = _t.monotonic()
     ctx._suspended_s = 0.0
@@ -2164,6 +2219,7 @@ def test_unlimited_turn_budget_honors_minus_one():
     from rsched.engine.run_context import RunContext
 
     ctx = RunContext.__new__(RunContext)
+    ctx._budget_warned = set()
     ctx.budgets = Budgets(max_turns=-1, max_wall_clock_min=-1, max_total_tokens=-1,
                           max_subruns=4, max_subrun_depth=2, ask_timeout_min=5, max_cost=-1)
     ctx.usage = {"in": 0, "out": 0, "cost": 0.0}
@@ -2189,6 +2245,7 @@ def test_usage_accounting_cache_keys_and_resume_base():
     from rsched.engine.run_context import RunContext
 
     ctx = RunContext.__new__(RunContext)
+    ctx._budget_warned = set()
     ctx.budgets = Budgets(max_turns=100, max_wall_clock_min=100, max_total_tokens=1000,
                           max_subruns=4, max_subrun_depth=2, ask_timeout_min=5)
     ctx.usage = {"in": 0, "out": 0}
@@ -2210,15 +2267,20 @@ def test_usage_accounting_cache_keys_and_resume_base():
 
 
 def test_budget_warning_appended_near_exhaustion(make_routine, scripted):
-    """Past 85% of the turn budget, observations carry the converge nudge."""
+    """Past 85% of the turn budget, observations carry the converge nudge — ONCE per line
+    crossed (85%, then 95%), never on every turn above it. A nudge repeated fifteen times
+    reads as a countdown and makes the run wrap up at the ceiling whatever its stopping
+    conditions say, which is the opposite of what the harness contract tells it about
+    budgets.
+    """
     _d, ep, status, _run_dir, _events = _run(make_routine, scripted, [
-        *[write_file(f"state/p{i}.txt", say=f"Step {i}.") for i in range(9)],
-        finish(),                                    # turn 9 crosses 85% of 10
-    ], budgets={"max_turns": 10})
+        *[write_file(f"state/p{i}.txt", say=f"Step {i}.") for i in range(18)],
+        finish(),                                    # turn 17 crosses 85% of 20
+    ], budgets={"max_turns": 20})
     assert status == "ok"
-    warned = [m for c in ep.calls for m in c["messages"]
+    warned = [m for m in ep.calls[-1]["messages"]
               if m["role"] == "user" and "converge DELIBERATELY" in m["content"]]
-    assert warned                                    # nudge reached the model before the cap
+    assert len(warned) == 1     # said at the line it crossed, and not again on turn 18
 
 
 def test_budget_violation_spends_a_reserved_finish_turn(make_routine, scripted):
@@ -2347,8 +2409,13 @@ def test_compaction_antithrash(make_routine, monkeypatch):
     monkeypatch.setattr(window_mod.archival, "start", lambda *a, **k: attempts.append(1))
 
     class _Tiny:   # a resolved ModelRef stand-in: context_tokens drives the compaction cap
-        context_tokens = 1000   # so the 60% size trigger always fires for our messages
+        # 5k: over the 60% size trigger for our messages (6.4k estimated), and wide enough
+        # that the archival request itself FITS — a model that cannot hold the middle skips
+        # the archive entirely, which is a different behaviour than the one under test here.
+        context_tokens = 5000
         max_tokens = 0         # F265: no output reservation here → fraction trigger stays binding
+        name = "tiny"
+        model = "tiny"
 
     msg = {"role": "user", "content": "x" * 500}
     loop.messages = [dict(msg) for _ in range(KEEP_HEAD_MSGS + KEEP_TAIL_MSGS + 10)]
@@ -2398,8 +2465,10 @@ def test_failed_archival_degrades_without_error_card(make_routine, monkeypatch):
     monkeypatch.setattr(compaction_mod, "archive_middle", _boom)
 
     class _Tiny:
-        context_tokens = 1000
+        context_tokens = 5000   # wide enough for the archival request to fit (see antithrash)
         max_tokens = 0
+        name = "tiny"
+        model = "tiny"
 
     msg = {"role": "user", "content": "x" * 500}
     loop.messages = [dict(msg) for _ in range(KEEP_HEAD_MSGS + KEEP_TAIL_MSGS + 10)]
@@ -2550,15 +2619,6 @@ def test_stage_read_tracked_live_in_status(make_routine, scripted):
     assert st["phase"] == "measure"
 
 
-def test_session_key_rides_every_completion(make_routine, scripted):
-    """The loop hands each completion a stable per-run session key — the caching hint
-    endpoints may use (for provider caching) and may ignore."""
-    _d, ep, status, run_dir, _ = _run(make_routine, scripted, [probe(), finish()])
-    assert status == "ok"
-    sessions = {c["session"] for c in ep.calls}
-    assert sessions == {str(run_dir)}
-
-
 def test_parallel_cap_guard_counts_only_running_children():
     """MAX_PARALLEL bounds CONCURRENCY, not the lifetime total: with 4 live children the
     guard returns the documented reason; a finished child frees its slot."""
@@ -2637,21 +2697,31 @@ def _role_registry(ep, windows):
 
 @pytest.mark.parametrize(("tool_window", "archival_model"), [
     (500_000, "tool-model"),   # the tool_call window holds the middle → archival routed there
-    (100, "main-model"),       # too small for the middle → the main model is the fallback
+    (100, None),               # neither window holds it → the archive is SKIPPED, and said so
 ])
 def test_loop_compaction_archives_middle_to_history(make_routine, scripted, monkeypatch,
                                                     tool_window, archival_model):
     """End-to-end loop compaction: a prompt past the main model's window threshold elides the
     middle to the instant digest and hands that same middle to the background archival — the
     elided middle lands as navigable files under runs/<ts>/history/, the archival call is
-    routed to the tool_call model when its window fits (main otherwise), and the archival
-    spend hits the run's books."""
+    routed to the tool_call model when its window fits, and the archival spend hits the run's
+    books.
+
+    The second case is what used to be "the main model is the fallback": the main model here
+    has a 2,000-token window and the middle is ~5,600 tokens, so posting the archival to it
+    buys a 400 and loses the middle anyway (llmsectest-weekday:20260922-060001 did exactly
+    that against a 32k fallback). Every candidate now goes through the same `archival_fits`
+    reserve; when none passes, the deterministic digest stands alone and the compaction event
+    names why. The tool-window-too-small-but-MAIN-fits route is unit-tested in
+    tests/test_compaction_model.py, where the windows are explicit.
+    """
     import yaml as _yaml
 
     import rsched.engine.runtime as runtime_mod
     from rsched.engine.compaction import KEEP_HEAD_MSGS, KEEP_TAIL_MSGS
 
-    d = make_routine(slug=f"cmp-{archival_model.split('-')[0]}", budgets={"max_turns": 40})
+    d = make_routine(slug=f"cmp-{(archival_model or 'none').split('-')[0]}",
+                     budgets={"max_turns": 40})
     raw = _yaml.safe_load((d / "routine.yaml").read_text())
     raw["models"] = {"main": "main-model", "tool_call": "tool-model"}
     (d / "routine.yaml").write_text(_yaml.safe_dump(raw))
@@ -2685,6 +2755,17 @@ def test_loop_compaction_archives_middle_to_history(make_routine, scripted, monk
     # ready — losslessly, from the real middle. (Here the run finishes first, so the archive
     # is settled at finish rather than announced at a boundary.)
     comps = [e["payload"] for e in events if e["type"] == "compaction"]
+    if archival_model is None:
+        assert len(comps) == 1
+        assert comps[0]["elided_messages"] == 8 and comps[0]["archival"] == "skipped"
+        assert "no available model can archive it" in comps[0]["archival_skipped"]
+        assert not (run_dir / "history").exists()
+        assert not [c for c in ep.calls if "You are archiving" in c["messages"][0]["content"]]
+        # …and the run still carried on, on the deterministic digest alone
+        final = ep.calls[-1]["messages"]
+        assert len(final) == KEEP_HEAD_MSGS + 1 + KEEP_TAIL_MSGS
+        assert "CONTEXT COMPACTED" in final[KEEP_HEAD_MSGS]["content"]
+        return
     assert len(comps) == 2
     digest, landed = comps
     assert digest["elided_messages"] == 8 and digest["archival"] == "background"

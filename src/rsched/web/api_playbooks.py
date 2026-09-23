@@ -10,6 +10,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from .. import playbooks
+from ..readmodels import library_reads
 from ..workflows import library
 from ..workflows.lint import lint_playbook_text
 
@@ -25,13 +26,17 @@ def _home(request: Request):
 
 @router.get("/playbooks")
 def list_playbooks(request: Request) -> dict:
-    """The catalog — feeds the new-conversation playbook picker AND the Library tab."""
+    """The catalog — feeds the new-conversation playbook picker AND the Library tab.
+
+    `problems` comes off the SAME whole-library lint `/api/library` reports from
+    (`library_reads.lint`, memoized on the library tree), not a second per-request pass over
+    the same files: two lint paths over one document is how the composer's picker and the
+    Library tab come to disagree about whether a playbook is clean.
+    """
     home = _home(request)
-    items = playbooks.list_playbooks(home)
-    for it in items:
-        pb = playbooks.read_playbook(home, it["slug"])
-        it["problems"] = (lint_playbook_text(pb["content"], filename=f"{it['slug']}/MAIN.md")
-                          if pb else [])
+    lint = library_reads.lint(home)
+    items = [{**it, "problems": lint.get(f"playbooks/{it['slug']}/MAIN.md", [])}
+             for it in playbooks.list_playbooks(home)]
     return {"playbooks": items, "head": library.head_commit(home)}
 
 

@@ -159,6 +159,13 @@ def test_needs_resolves_declared_util_calls(tmp_path):
     (d / "scripts" / "strict.py").write_text(both, encoding="utf-8")
     _declared, _net, optional = scripts.needs(d, "strict", home)
     assert optional == set()
+    # …and so does its own `?` over a callee's REQUIRED one (R1818): the script knows which of
+    # its code paths reach that util, so it may declare the credential optional and run the
+    # rest prompt-free — the callee's "required" only ever meant "required when I run".
+    lax = CALLER.replace("secrets: (none)", "secrets: SMTP_PASS?")
+    (d / "scripts" / "lax.py").write_text(lax, encoding="utf-8")
+    declared, _net, optional = scripts.needs(d, "lax", home)
+    assert "SMTP_PASS" in declared and optional == {"OPT_TOKEN", "SMTP_PASS"}
 
 
 def test_call_problems_refuse_undeclared_and_unknown_utils(tmp_path):

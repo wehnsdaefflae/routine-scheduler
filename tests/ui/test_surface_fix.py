@@ -170,25 +170,47 @@ def _stored(ui) -> dict:
     return yaml.safe_load((ui.routines / "uir" / "routine.yaml").read_text(encoding="utf-8"))
 
 
+def _unfold(page) -> None:
+    """Open every routine-page config group.
+
+    The page ships with only its leading group open (views/routine.js SECTION_GROUPS): seven
+    open at once made it 11-12 000px tall. A control inside a folded group is not visible, so a
+    test that reads one unfolds first. What the DEFAULT is, and that the choice is remembered,
+    is pinned in test_routine_groups.py — not here.
+    """
+    page.wait_for_selector(".rgroup-head")
+    page.evaluate("() => { for (const d of document.querySelectorAll('details.rgroup')) d.open = true; }")
+
+
 def _open(ui_page, ui):
     """The routine page at a laptop viewport. The size is realism, NOT a precondition: nothing
     here asserts what happens to be above or below the fold at this height."""
     ui_page.set_viewport_size({"width": 1100, "height": 620})
     ui_page.goto(f"{ui.url}/#/routine/uir")
+    _unfold(ui_page)
 
 
 def _row(ui_page, ui, entity: str):
     """Open the routine page and return the effective-surface row for one entity."""
     _open(ui_page, ui)
     row = ui_page.locator(f'{PANEL} [data-surface-row="{entity}"]')
-    row.wait_for(state="visible", timeout=10_000)
+    row.wait_for(state="visible")
     return row
 
 
 def _strip_row(ui_page, entity: str):
-    """The same node as the STRIP renders it — above the hero, where a failure is read first."""
+    """The same node as the STRIP renders it — above the hero, where a failure is read first.
+
+    The band is weighted by its WORST row, and a strip whose every row is a note rests folded
+    under its own count — so the fold is opened the way the reader opens it, by its summary.
+    A strip carrying anything that fails or interrupts is never folded, and the click is skipped.
+    """
+    strip = ui_page.locator(STRIP)
+    strip.wait_for(state="attached")
+    if strip.evaluate("(n) => n.tagName === 'DETAILS' && !n.open"):
+        strip.locator("summary").click()
     row = ui_page.locator(f'{STRIP} .setup-row[data-entity="{entity}"]')
-    row.wait_for(state="visible", timeout=10_000)
+    row.wait_for(state="visible")
     return row
 
 
@@ -227,10 +249,10 @@ def _operable(control, act: str) -> None:
     that the link arrived somewhere; none checked that what it arrived at could be operated, so
     a disabled select, a read-only list and a page with no button each shipped as a live offer.
     """
-    expect(control).to_have_count(1, timeout=10_000)
+    expect(control).to_have_count(1)
     kind = control.evaluate(CONTROL_KIND)
     assert kind in OPERABLE, f"{act}: the landing carries a <{kind}>, which nobody can operate"
-    expect(control).to_be_enabled(timeout=10_000)
+    expect(control).to_be_enabled()
 
 
 def _orphan_row(entity: str) -> str:
@@ -455,9 +477,9 @@ def test_every_fix_kind_lands_on_a_control_that_can_perform_it(ui, ui_page, monk
             f"a fix that leaves the page has to say where it goes: {act!r}")
         control.click()
         ui_page.wait_for_function("(h) => location.hash.startsWith(h)", arg=base)
-        ui_page.wait_for_selector(case.arrive, timeout=10_000)
+        ui_page.wait_for_selector(case.arrive)
     else:
-        ui_page.wait_for_selector(case.landing, state="attached", timeout=10_000)
+        ui_page.wait_for_selector(case.landing, state="attached")
         flash = _lands_on(ui_page, control, case.landing)
         assert flash["on"] or flash["around"], (
             f"{case.kind} flashed something unrelated to its control: {flash['classes']}")
@@ -619,7 +641,7 @@ def test_the_offer_lands_on_the_control_not_the_top_of_the_panel(ui, ui_page):
     """
     _configure(ui, permissions=["run-history"], capabilities={"runs": "none"})
     row = _row(ui_page, ui, "permission:run-history")
-    ui_page.wait_for_selector(ABILITY, timeout=10_000)
+    ui_page.wait_for_selector(ABILITY)
 
     flash = _lands_on(ui_page, row.locator(CONTROL), ABILITY)
     assert flash["on"], (
@@ -668,7 +690,7 @@ def test_a_fix_that_lives_elsewhere_says_so_and_goes_there(ui, ui_page):
     expect(control).to_have_attribute("href", "#/settings?section=secrets")
     control.click()
     ui_page.wait_for_function("() => location.hash.startsWith('#/settings')")
-    ui_page.wait_for_selector(SECRETS_SECTION, timeout=10_000)
+    ui_page.wait_for_selector(SECRETS_SECTION)
 
 
 def test_an_offer_for_one_of_a_class_never_prints_the_asterisk(ui, ui_page):
@@ -720,7 +742,7 @@ def test_a_withheld_secret_lands_where_its_control_actually_is(ui, ui_page):
     # the control the row is talking about, waited for before the press: the exposure select for
     # this very secret, sitting at "withhold"
     dial = ui_page.locator('[data-secret-row="UI_FIX_TOKEN"] select')
-    expect(dial).to_have_value("false", timeout=10_000)
+    expect(dial).to_have_value("false")
     # …and the panel the link used to aim at cannot show it at all, which is why aiming there
     # produced a flash over nothing
     expect(ui_page.locator('[data-declined-row="secret:UI_FIX_TOKEN"]')).to_have_count(0)
@@ -792,7 +814,7 @@ def test_the_strip_offers_the_same_act_as_the_panel(ui, ui_page):
 
     strip = _strip_row(ui_page, "permission:run-history")
     panel = ui_page.locator(f'{PANEL} [data-surface-row="permission:run-history"]')
-    panel.wait_for(state="visible", timeout=10_000)
+    panel.wait_for(state="visible")
 
     up = strip.locator(FIX)
     expect(up).to_have_count(1)
@@ -813,10 +835,23 @@ def test_the_strip_stays_silent_about_a_row_that_is_not_unmet(ui, ui_page):
     """The strip filters on "not ok", which is a WIDER test than "unmet": a NOTE reporting a
     deliberate switch reaches it too. That row carries no offer by design, so the strip has to
     read as a statement there rather than as a task somebody forgot to finish.
+
+    It also has to be QUIETER than a failure. A routine with nothing but notes wore the same
+    amber flag as one about to park on a blocking secret, which taught the reader to skip the
+    strip and then failed on the one case it exists for — so a note-only strip rests folded
+    under its own count, and the statement is one click below it.
     """
     _configure(ui, capabilities={"actions": ["write_recipe"]})
     _open(ui_page, ui)
 
+    strip = ui_page.locator(STRIP)
+    expect(strip).to_be_visible()
+    expect(strip.locator("summary")).to_contain_text("1 note")
+    assert strip.evaluate("(n) => n.tagName === 'DETAILS' && !n.open"), \
+        "a note-only strip must rest folded — a flag that is always up is a flag nobody reads"
+    expect(strip.locator('.setup-row[data-entity="action:write_recipe"]')).to_be_hidden()
+
+    # and opening it, the way a reader does, reaches the statement itself
     row = _strip_row(ui_page, "action:write_recipe")
     expect(row.locator(".setup-sev")).to_have_text("note")
     expect(row.locator(FIX)).to_have_count(0)
@@ -832,7 +867,7 @@ def test_a_fix_with_nowhere_to_land_disables_itself(ui, ui_page):
     """
     _configure(ui, permissions=["run-history"], capabilities={"runs": "none"})
     row = _row(ui_page, ui, "permission:run-history")
-    ui_page.wait_for_selector(ABILITY, timeout=10_000)
+    ui_page.wait_for_selector(ABILITY)
 
     # take the whole destination away — heading and panel, so nothing the fix could name remains
     ui_page.evaluate("""() => {

@@ -9,6 +9,17 @@ import subprocess
 from playwright.sync_api import expect
 
 
+def _unfold(page) -> None:
+    """Open every routine-page config group.
+
+    The page ships with only its leading group open (views/routine.js SECTION_GROUPS): seven
+    open at once made it 11-12 000px tall. A control inside a folded group is not visible, so a
+    test that reads one unfolds first. What the DEFAULT is, and that the choice is remembered,
+    is pinned in test_routine_groups.py — not here.
+    """
+    page.wait_for_selector(".rgroup-head")
+    page.evaluate("() => { for (const d of document.querySelectorAll('details.rgroup')) d.open = true; }")
+
 def _toast(page):
     return page.locator("#toast:not([hidden])")
 
@@ -37,6 +48,7 @@ def _stream(ui, records):
 def test_recipe_health_untracked_note(ui, ui_page):
     """The fixture routine has no git history — the card says so instead of pretending."""
     ui_page.goto(f"{ui.url}/#/routine/uir")
+    _unfold(ui_page)
     expect(ui_page.get_by_text("recipe versions aren't tracked")).to_be_visible()
 
 
@@ -64,6 +76,7 @@ def test_recipe_health_buckets_regression_and_rollback(ui, ui_page):
     ])
 
     ui_page.goto(f"{ui.url}/#/routine/uir")
+    _unfold(ui_page)
     banner = ui_page.locator(".panel.err", has_text="possible regression")
     expect(banner).to_contain_text("recipe: sharpen the scan")
     expect(banner).to_contain_text("fail rate jumped")
@@ -202,10 +215,11 @@ def test_cautions_table_shows_the_tallies_and_deletes_a_local_reminder(ui, ui_pa
     atomic_write_json(d / "state" / "assists.json", {"git-checkpoint:pre-action": 4})
 
     ui_page.goto(f"{ui.url}/#/routine/uir")
-    expect(ui_page.get_by_text("it overwrites the destination")).to_be_visible(timeout=10_000)
+    _unfold(ui_page)
+    expect(ui_page.get_by_text("it overwrites the destination")).to_be_visible()
     expect(ui_page.locator('td[title="git-checkpoint:pre-action"]')).to_be_visible()
 
     ui_page.get_by_role("button", name="delete").first.click()
     ui_page.get_by_role("button", name="delete", exact=True).last.click()
-    expect(ui_page.get_by_text("it overwrites the destination")).to_have_count(0, timeout=10_000)
+    expect(ui_page.get_by_text("it overwrites the destination")).to_have_count(0)
     assert store.load_local(d)[0] == []

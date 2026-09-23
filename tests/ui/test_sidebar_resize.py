@@ -18,6 +18,17 @@ from __future__ import annotations
 from playwright.sync_api import expect
 
 
+def _unfold(page) -> None:
+    """Open every routine-page config group.
+
+    The page ships with only its leading group open (views/routine.js SECTION_GROUPS): seven
+    open at once made it 11-12 000px tall. A control inside a folded group is not visible, so a
+    test that reads one unfolds first. What the DEFAULT is, and that the choice is remembered,
+    is pinned in test_routine_groups.py — not here.
+    """
+    page.wait_for_selector(".rgroup-head")
+    page.evaluate("() => { for (const d of document.querySelectorAll('details.rgroup')) d.open = true; }")
+
 def _rail_var(ui_page, name: str) -> str:
     return ui_page.evaluate(
         f"() => getComputedStyle(document.documentElement).getPropertyValue('{name}').trim()")
@@ -27,7 +38,7 @@ def test_the_nav_rail_can_be_dragged_wider_and_the_width_persists(ui, ui_page):
     ui_page.set_viewport_size({"width": 1400, "height": 900})
     ui_page.goto(f"{ui.url}/#/routines")
     grip = ui_page.locator(".sb-grip.rail")
-    expect(grip).to_be_visible(timeout=10_000)
+    expect(grip).to_be_visible()
     assert _rail_var(ui_page, "--rail-w-set") == "212px"      # the shipped default
 
     box = grip.bounding_box()
@@ -44,7 +55,7 @@ def test_the_nav_rail_can_be_dragged_wider_and_the_width_persists(ui, ui_page):
 
     # a reload restores the stored width before the rail is used again
     ui_page.reload()
-    expect(ui_page.locator(".sb-grip.rail")).to_be_visible(timeout=10_000)
+    expect(ui_page.locator(".sb-grip.rail")).to_be_visible()
     assert _rail_var(ui_page, "--rail-w-set") == f"{saved}px"
 
 
@@ -52,7 +63,7 @@ def test_clicking_the_grip_hides_then_shows_the_nav_rail(ui, ui_page):
     ui_page.set_viewport_size({"width": 1400, "height": 900})
     ui_page.goto(f"{ui.url}/#/routines")
     grip = ui_page.locator(".sb-grip.rail")
-    expect(grip).to_be_visible(timeout=10_000)
+    expect(grip).to_be_visible()
     assert _rail_var(ui_page, "--rail-w") != "0px"            # visible to begin with
 
     grip.click()                                             # a click (no drag) hides the rail
@@ -80,8 +91,9 @@ def _root_var(ui_page, name: str) -> str:
 def test_the_recipe_file_tree_resizes_hides_and_leaves_the_gutter_alone(ui, ui_page):
     ui_page.set_viewport_size({"width": 1400, "height": 900})
     ui_page.goto(f"{ui.url}/#/routine/uir")
+    _unfold(ui_page)
     grip = ui_page.locator(".sb-grip.pagenav")
-    expect(grip).to_be_visible(timeout=10_000)
+    expect(grip).to_be_visible()
     navcol = ui_page.locator(".recipe-navcol")
     expect(navcol).to_be_visible()
     assert _root_var(ui_page, "--pagenav-w") == "236px"        # the shipped default
@@ -134,7 +146,7 @@ def test_both_conversation_rails_resize_and_hide_independently(ui, ui_page):
     ui_page.set_viewport_size({"width": 1500, "height": 900})   # the grid mode (1100-1899)
     _open_conversation(ui, ui_page)
     left, right = ui_page.locator(".sb-grip.runrail-l"), ui_page.locator(".sb-grip.runrail-r")
-    expect(left).to_be_visible(timeout=10_000)
+    expect(left).to_be_visible()
     assert _root_var(ui_page, "--runrail-l-w") == "218px"       # the grid-mode defaults
     assert _root_var(ui_page, "--runrail-r-w") == "280px"
 
@@ -175,10 +187,10 @@ def test_a_dragged_rail_width_drives_the_content_column_at_every_wide_width(ui, 
     ui_page.set_viewport_size({"width": 1500, "height": 900})
     _open_conversation(ui, ui_page)
     grip = ui_page.locator(".sb-grip.runrail-r")
-    expect(grip).to_be_visible(timeout=10_000)
+    expect(grip).to_be_visible()
     ui_page.evaluate("() => localStorage.setItem('rsched_sb_runrail-right_w', '300')")
     ui_page.reload()
-    expect(ui_page.locator(".sb-grip.runrail-r")).to_be_visible(timeout=10_000)
+    expect(ui_page.locator(".sb-grip.runrail-r")).to_be_visible()
     assert _root_var(ui_page, "--runrail-r-w") == "300px"
 
     def widths():
@@ -209,7 +221,7 @@ def test_the_run_view_rail_is_a_resizable_column_at_every_wide_width(ui, ui_page
     ui_page.set_viewport_size({"width": 1280, "height": 900})
     ui_page.goto(f"{ui.url}/#/run/uir:20260715-140000")
     grip = ui_page.locator(".run-view > .sb-grip.runrail-r")
-    expect(grip).to_be_visible(timeout=10_000)
+    expect(grip).to_be_visible()
     assert _root_var(ui_page, "--runrail-r-w") == "280px"
 
     def main_width():

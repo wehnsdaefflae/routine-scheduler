@@ -8,7 +8,7 @@ server. This file is a PATTERN, not a program: the orchestrator never executes i
 out*, one engine action per turn, following the control flow below (its branches, loops, and error
 handling). The dummy imports name the parameters this routine works with; the clarifier pins them
 down for the concrete task, and `decompose` turns this pattern into the routine's own markdown
-state-machine (main.md + stages/).
+state-machine (main.md + steps/).
 
 Design note: nothing here hosts a long-lived web server — a run ends, and with it anything it
 started — so this pattern does NOT stand up a `POST /vote` server. It needs exactly two outside
@@ -57,7 +57,7 @@ META = {
                    "is a STATIC page — nothing here hosts a server, so the feedback loop runs "
                    "through a shared store the browser writes to. Needs two capabilities: a site "
                    "publisher, and a browser-writable shared-state store.",
-    "version": 7,
+    "version": 8,
     "tags": ["monitor", "digest", "publishing", "feedback-loop", "categorization", "ranking"],
     "includes": ["decision-record", "ask-policy", "engagement-accountability", "feedback-implementation-gate"],
     "tools": None,          # None = every action kind is allowed
@@ -228,9 +228,27 @@ def file_exists(path):
 
 
 def record(url):
-    """Update state/phase.json and any state files; append exactly one LEDGER entry for the run."""
-    ledger.append(f"Processed N new items, published digest to {url}, consumed prior votes from "
-                  "the shared vote store.")
+    """Update state/phase.json and any state files; append exactly one LEDGER entry for the run.
+
+    DELIVER THE URL, AND GIVE DELIVERY AN OWNING STEP. Publishing a page is not the same as the
+    user learning it changed. If the routine's completion criteria say the URL reaches the user
+    over an instant channel, some step has to actually send it — a requirement stated in the
+    criteria and implemented by no step is not a step that gets skipped, it is a step that was
+    never there, and the first run to notice will be the one that ran out of turns. If it cannot
+    be sent, that is a `partial` finish naming the undelivered URL, never an `ok` that mentions
+    it in passing.
+
+    WHEN TURNS RUN SHORT, CUT PRODUCTION — NEVER THE DELIVERABLE. This shape front-loads the
+    expensive work (fetch, extract, deduplicate, categorize) and leaves publish, verify and
+    deliver at the end, so budget pressure lands squarely on the deliverable. Invert that
+    deliberately: process fewer source items this run and leave the rest unconsumed — the
+    last-processed marker is per item, so anything not handled is simply picked up next run and
+    nothing is lost — and keep publish, its verification, and delivery whole. A run that extracts
+    everything and delivers nothing has produced nothing; a run that extracts three of five and
+    delivers has done the job for three. Verification belongs to publishing, not to an optional
+    tail: if a check was skipped for budget, the publish is unverified and the record says so."""
+    ledger.append(f"Processed N new items, published digest to {url}, delivered that URL to the "
+                  "user, consumed prior votes from the shared vote store.")
 
 
 if __name__ == "__main__":

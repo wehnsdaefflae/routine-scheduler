@@ -15,16 +15,25 @@ from typing import Literal
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, ConfigDict
 
-from .. import domains, schedule
+from .. import domains, entities, schedule
 from .. import rules as rules_mod
-from ..config import DELIBERATION_LEVELS, MODEL_KINDS, write_tuning
+from ..config import DELIBERATION_LEVELS, write_tuning
 from ..config.routine import RunGateConfig
-from ..paths import atomic_write_yaml, read_yaml
+from ..paths import read_yaml
+from .config_fields import (
+    BudgetsPatch,
+    clean_tags,
+    validate_connections,
+    validate_machines,
+    validate_models,
+    validate_roots,
+)
 from .routines_common import (
     _git_commit,
     _info,
     _state,
     signal_config_change,
+    write_routine_config,
 )
 
 router = APIRouter(tags=["routine-patch"])
@@ -40,7 +49,8 @@ class RoutinePatch(BaseModel):
     enabled: bool | None = None
     run_gate: RunGateConfig | None = None
     schedule: dict | None = None            # {"friendly":…, "catchup":…} (cron built server-side)
-    budgets: dict | None = None
+    budgets: BudgetsPatch | None = None     # the runaway backstops, by name — a misspelled
+    #                                          key is a 422 here, never a silent revert at load
     models: dict | None = None              # {main|tool_call|uncensored: catalog name}
     connections: dict | None = None         # {provider: account-label} OAuth connection bindings
     grants: dict | None = None              # {entity-id: bool} decision rows (secret exposure
@@ -124,12 +134,16 @@ def _apply_permissions_fields(request: Request, info, raw: dict, updates: dict) 
     permissions surface, with the honesty gate kept.
 
     Routing, not merging, is the whole point. These two keys are the authority surface, and
-    `resolve_permission_layers` is what makes them safe: unknown doc slugs are dropped, a junk
+    `write_permission_layers` is what makes them safe: unknown doc slugs are dropped, a junk
     capabilities mapping is a 422, the mapping is RAISED to cover every held doc's requires and
-    FLOORED back to them (D8), and `strip_shared_dials` keeps a domain-supplied dial out of the
-    routine's own file (D82). Letting these fall through to the generic top-level merge instead
-    would write an unvalidated `permissions:` list and a capabilities mapping that could
-    contradict it — authority granted by a key nobody cascaded.
+    FLOORED back to them (D8), and what lands in the file is only what this routine OWNS —
+    its DOMAIN's docs, list entries and dials are left to the domain (D82). Letting these fall
+    through to the generic top-level merge instead would write an unvalidated `permissions:`
+    list and a capabilities mapping that could contradict it — authority granted by a key
+    nobody cascaded. Sharing the writer with the editor is what makes that true of BOTH doors:
+    this path used to run the resolve and skip the strip, so a patch naming only a confirm
+    dial wrote the whole domain-unioned set into the member's file, where a member's own key
+    always wins — the domain never reached that routine again (F489 through the second door).
 
     REPLACE wholesale, exactly like the editor: `permissions` is the held-doc set, not an
     addition to it, because that is what the one canonical resolver means by `active`. A patch
@@ -139,8 +153,7 @@ def _apply_permissions_fields(request: Request, info, raw: dict, updates: dict) 
     """
     if "permissions" not in updates and "capabilities" not in updates:
         return
-    from ..config.domainconfig import domain_config_for, strip_shared_dials
-    from .api_routine_edit import PermissionsBody, resolve_permission_layers
+    from .api_routine_edit import PermissionsBody, write_permission_layers
 
     want_docs = updates.pop("permissions", None)
     want_caps = updates.pop("capabilities", None)
@@ -150,15 +163,8 @@ def _apply_permissions_fields(request: Request, info, raw: dict, updates: dict) 
         raise HTTPException(400, "permissions: must be a list of permission-doc slugs")
     if want_caps is not None and not isinstance(want_caps, dict):
         raise HTTPException(400, "capabilities: must be a mapping")
-    server = _state(request).server
-    shared, _ = domain_config_for(info.cfg.dir, info.cfg.domain)
     body = PermissionsBody(active=want_docs, capabilities=want_caps)
-    active, caps = resolve_permission_layers(
-        server, body, info.cfg.capabilities or {},
-        inherited=list(shared.get("permissions") or []))
-    caps = strip_shared_dials(caps, shared.get("capabilities") or {}, want_caps or {})
-    raw["permissions"] = active
-    raw["capabilities"] = caps
+    write_permission_layers(_state(request).server, info, body, raw)
 
 
 def _apply_resource_fields(raw: dict, updates: dict) -> None:
@@ -176,11 +182,16 @@ def _apply_resource_fields(raw: dict, updates: dict) -> None:
         raw.setdefault("retention", {})["keep_runs"] = n
     for roots_key in ("fs_read_roots", "fs_write_roots"):
         if roots_key in updates:
-            vals = updates[roots_key] or []
-            if not isinstance(vals, list) or any(not isinstance(p, str) or not p.strip()
-                                                 for p in vals):
-                raise HTTPException(400, f"{roots_key}: must be a list of non-empty path strings")
-            updates[roots_key] = [p.strip() for p in vals]
+            updates[roots_key] = validate_roots(roots_key, updates[roots_key])
+            # The never-grantable guard, at the edge where the grant is MADE. It existed only
+            # on the runtime ask path (engine/availability.py), so "never grantable, to any
+            # routine, by design" was true of what a run asked for and false of what an
+            # operator typed into the Filesystem-roots panel — which is how the instance's
+            # credential dir became a live read+write root on a routine (SEC-1). A refusal
+            # here, naming the path, is the difference between a promise and a seal.
+            if guarded := entities.guarded_roots(updates[roots_key]):
+                raise HTTPException(
+                    400, f"{roots_key}: {', '.join(guarded)} {entities.GUARDED_ROOT_REASON}")
     # F448: `enabled` is the OLD spelling of "does this routine fire", kept because the
     # dashboard's D72 start/pause toggle PATCHes it. The firing gate reads `schedule.disabled`
     # alone, so without this the key fell through the generic merge below and wrote a bare
@@ -250,37 +261,17 @@ def patch_routine(request: Request, slug: str, patch: RoutinePatch) -> dict:
     # Validate per-routine models: known kinds, each a catalog model NAME. Models REPLACE
     # wholesale (not merge) so blanking a kind clears it back to the system_model fallback.
     if "models" in updates:
-        server = _state(request).server
-        for kind, name in (updates["models"] or {}).items():
-            if kind not in MODEL_KINDS:
-                raise HTTPException(
-                    400, f"unknown model kind {kind!r} (expected one of {MODEL_KINDS})")
-            if not isinstance(name, str) or name not in server.models:
-                raise HTTPException(400, f"models.{kind}: must be a catalog model name")
-        raw["models"] = updates.pop("models")
+        raw["models"] = validate_models(_state(request).server, updates.pop("models"))
     # Validate connection bindings: known provider, non-empty account label; REPLACE wholesale
     # (blanking a provider clears it). Existence of the connection is NOT required — a routine may
     # bind ahead of connecting; the engine injects nothing until the account is connected.
     if "connections" in updates:
-        from ..oauth.providers import PROVIDERS
-        for prov, account in (updates["connections"] or {}).items():
-            if prov not in PROVIDERS:
-                raise HTTPException(400, f"unknown connection provider {prov!r}")
-            if not isinstance(account, str) or not account:
-                raise HTTPException(400, f"connections.{prov}: must be an account label")
-        raw["connections"] = updates.pop("connections")
+        raw["connections"] = validate_connections(updates.pop("connections"))
     # Validate machine bindings: each a name in the instance catalog; REPLACE wholesale (an empty
     # list clears them). Unlike connections, we DO require catalog membership — a machine name is
     # meaningless off the catalog, and the picker only offers catalog names.
     if "machines" in updates:
-        catalog = _state(request).server.machines
-        names = updates["machines"] or []
-        if not isinstance(names, list) or any(not isinstance(n, str) for n in names):
-            raise HTTPException(400, "machines: must be a list of catalog machine names")
-        for n in names:
-            if n not in catalog:
-                raise HTTPException(400, f"unknown machine {n!r} (add it in Settings → Machines)")
-        raw["machines"] = updates.pop("machines")
+        raw["machines"] = validate_machines(_state(request).server, updates.pop("machines"))
     # Validate the grant-decision rows (entities.py ids → bool); REPLACE wholesale —
     # removing a row returns that entity to undecided (asked on first use / requestable).
     if "grants" in updates:
@@ -300,18 +291,18 @@ def patch_routine(request: Request, slug: str, patch: RoutinePatch) -> dict:
     _apply_permissions_fields(request, info, raw, updates)
     _apply_domain_field(_state(request).server.routines_home, raw, updates)
     _apply_resource_fields(raw, updates)
+    if "tags" in updates:
+        raw["tags"] = clean_tags(updates.pop("tags"))
     for key, val in updates.items():
         if isinstance(val, dict) and isinstance(raw.get(key), dict):
             raw[key].update(val)
         else:
             raw[key] = val
-    atomic_write_yaml(path, raw)
-    _git_commit(info.cfg.dir, f"routine.yaml edit via web ({', '.join(requested)})")
-    _state(request).scheduler.rescan()
-    # F337: a run already in flight booted its policy, schema and prompt from the OLD config.
-    # Tell it what changed and which half of it reaches it now — the drift this closes is that
-    # some fields silently did and most silently did not.
-    live = signal_config_change(info, requested, signal_values)
+    # F337 rides in the shared writer: a run already in flight booted its policy, schema and
+    # prompt from the OLD config, and is told what changed and which half reaches it now.
+    live = write_routine_config(request, info, raw,
+                                message=f"routine.yaml edit via web ({', '.join(requested)})",
+                                fields=requested, values=signal_values)
     return {"ok": True, "updated": requested, **({"told_live_run": True} if live else {})}
 
 
@@ -338,13 +329,16 @@ def adopt_template(request: Request, slug: str, body: AdoptTemplate) -> dict:
     tpl = read_template(server.libraries_home, body.template.strip())
     if tpl is None:
         raise HTTPException(404, f"no settings template {body.template!r} in the library")
-    path = info.cfg.dir / "routine.yaml"
-    raw = read_yaml(path, {})
+    raw = read_yaml(info.cfg.dir / "routine.yaml", {})
     merged, added = adopt_into(raw, tpl["config"])
     if not added:
         return {"ok": True, "template": tpl["slug"], "added": [],
                 "note": "this routine already has everything the template supplies"}
-    atomic_write_yaml(path, merged)
-    _git_commit(info.cfg.dir, f"adopt settings template {tpl['slug']} via web")
-    _state(request).scheduler.rescan()
-    return {"ok": True, "template": tpl["slug"], "added": added}
+    # An adoption can change nine fields at once, `budgets` and `grants` among them — both
+    # LIVE-classified — so it goes through the same writer as every other save and a live run
+    # is told, instead of quietly running the rest of its turn under the old values.
+    live = write_routine_config(request, info, merged,
+                                message=f"adopt settings template {tpl['slug']} via web",
+                                fields=added, values=tpl["config"])
+    return {"ok": True, "template": tpl["slug"], "added": added,
+            **({"told_live_run": True} if live else {})}

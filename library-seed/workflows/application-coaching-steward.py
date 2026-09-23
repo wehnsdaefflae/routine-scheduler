@@ -54,7 +54,7 @@ META = {
                    "collaborative page as the deliverable. Prefer this over general-task whenever "
                    "the human edits between runs are authoritative inputs and the routine is the "
                    "coach that regenerates the surface.",
-    "version": 2,
+    "version": 3,
     "tags": ["coaching", "collaboration", "grant-application", "status-page", "authorship-scoring"],
     "includes": ["web-research", "status-page", "interface-design", "interface-copy",
                  "feedback-implementation-gate", "ai-writing-tells", "evidence-discipline",
@@ -224,8 +224,17 @@ def record():
     attachments recompiled, checklist changes, decisions raised, and candidates considered and
     dropped with why. Then sweep the run once for machinery friction you merely worked around — an
     action or tool that failed or misled you — and file each real hitch with the `report` action
-    before finishing. When LEDGER.md grows past ~400 lines or ~40 entries, rotate it THAT run:
-    archive the older entries behind a one-line rollup and keep only the recent tail."""
+    before finishing. Rotate LEDGER.md THAT run whenever it exceeds the SIZE IN BYTES the
+    recipe names: archive the older entries behind a one-line rollup and keep only the
+    recent tail. MEASURE THAT THRESHOLD IN BYTES, DERIVED FROM THIS ROUTINE'S OWN
+    ENTRIES — a count of lines or entries stops tracking what a reader pays once entries
+    grow from one-liners into narratives. Measured across a 33-routine instance on
+    2026-09-21, every ledger over 100 KB was comfortably INSIDE its own count-based
+    limit; one was 112 KB at 30 entries against a 40-entry trigger, so a fully compliant
+    run correctly did nothing. Set it at roughly ten to fifteen real entries, and if a
+    rotation leaves the file still over it, fix the number with the measurement that
+    justifies it: a threshold you trip by complying with it is one every run learns to
+    ignore."""
     ledger.append("rating delta, segment moves, attachments, checklist, decisions, rejected candidates")
 
 

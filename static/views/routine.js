@@ -9,14 +9,20 @@ import { mountMessages } from "/static/views/routine-messages.js";
 import { mountRecipe } from "/static/views/routine-recipe.js";
 import { groupSections, routineHero } from "/static/views/routine-overview.js";
 import { confirmDialog } from "/static/components/dialog.js";
-import { mdInline } from "/static/md.js";
+import { summaryLine } from "/static/md.js";
 import { wireRecipeNav } from "/static/resizable.js";
-import { chip, el, emptyState, fmtDur, fmtTokens, skeleton, toast, when } from "/static/util.js";
+import { chip, el, emptyState, fmtDur, fmtTokens, skeleton, toast, toastError, when } from "/static/util.js";
 
 // The config sections (rendered flat by routine-config.js + the recipe/state blocks below)
 // are regrouped into these labeled, collapsible groups — an operator scans the group they
 // need instead of a single wall. Order = most-touched first; every heading each module emits
 // is claimed here, and groupSections keeps any stray in a trailing "More" group.
+//
+// ONLY THE LEADING GROUP OPENS BY DEFAULT. With all seven open the page ran 11-12 000px, so
+// the runs table and "Run now" — the two things most visits are for — sat below ten thousand
+// pixels of forms, and someone who came to change one dial had no map. Each head carries its
+// own hint line, which IS the map. Nothing is hidden: one click opens a group, and
+// groupSections remembers the choice per browser from then on.
 const SECTION_GROUPS = [
   { title: "Schedule & triggers", hint: "when and how it fires",
     headings: ["Schedule", "Triggers", "Schedule once"] },
@@ -26,23 +32,23 @@ const SECTION_GROUPS = [
   // "Domain" sits second because it answers the same question the other way round: a template
   // COPIES once and the copy becomes this routine's own, a domain LAYERS under this routine's
   // file at every load and brings a shared store with it (docs/lanes-domains.md).
-  { title: "Permissions & practices", hint: "its starting point, what it may do, and how it works",
+  { title: "Permissions & practices", open: false, hint: "its starting point, what it may do, and how it works",
     headings: ["Start from a template", "Domain", "Recommended setup",
                "Permissions & capabilities", "General rules", "Effective surface"] },
   // D103: the two secret scopes read together — what this routine OWNS, and which shared
   // names it may be handed. Before this group they fell into the trailing "More" fold.
-  { title: "Secrets & access", hint: "its own credentials · shared-store exposure · settled denials",
+  { title: "Secrets & access", open: false, hint: "its own credentials · shared-store exposure · settled denials",
     headings: ["Own secrets", "Secret exposure", "Declined access"] },
   // "Goal" leads this group, ahead of the budgets: F334/D98's whole claim is that budgets are a
   // runaway BACKSTOP and the stopping conditions are what decides when a job is finished, so
   // the group that holds the ceilings has to say the meaning-level bound first.
-  { title: "Goal & limits", hint: "what DONE means · per-run ceilings · retention · filesystem reach",
+  { title: "Goal & limits", open: false, hint: "what DONE means · per-run ceilings · retention · filesystem reach",
     headings: ["Goal", "Budgets", "Retention", "Filesystem roots"] },
-  { title: "Models & resources", hint: "models · connections · machines",
+  { title: "Models & resources", open: false, hint: "models · connections · machines",
     headings: ["Models", "Connections", "Machines"] },
-  { title: "Recipe & memory", hint: "the workflow files, their health, and run state",
+  { title: "Recipe & memory", open: false, hint: "the workflow files, their health, and run state",
     headings: ["Recipe health", "Recipe", "State & memory"] },
-  { title: "Identity & origin", hint: "name · description · tags · provenance",
+  { title: "Identity & origin", open: false, hint: "name · description · tags · provenance",
     headings: ["Name", "Description", "Tags", "Origin"] },
 ];
 
@@ -98,7 +104,7 @@ export async function render(view, slug, query = {}) {
     e.target.disabled = true;
     try { const r = await api(`/api/routines/${slug}/run`, { method: "POST" });
       location.hash = `#/run/${r.run_id}`; }
-    catch (err) { toast(err.message, 4000, { error: true }); e.target.disabled = false; }
+    catch (err) { toastError(err); e.target.disabled = false; }
   }
   async function archive() {
     if (!(await confirmDialog(`Archive "${slug}"? It leaves the scheduler (dir moves to .archive).`, { confirmLabel: "archive" }))) return;
@@ -114,7 +120,7 @@ export async function render(view, slug, query = {}) {
               12000, { error: true });
       }
       location.hash = "#/routines";
-    } catch (err) { toast(err.message, 4000, { error: true }); }
+    } catch (err) { toastError(err); }
   }
 
   // -- decisions (actionable — kept in the overview zone, never folded into a config group) --
@@ -128,9 +134,11 @@ export async function render(view, slug, query = {}) {
           // carry a table is read where it is answered; a block body cannot sit in a row.
           el("span", { class: "prose", title: q.question },
             q.answered ? "✓ " : "❓ ",
-            mdInline((q.question || "").split("\n").find((l) => l.trim()) || "(no question)")),
+            summaryLine(q.question, "(no question)")),
           q.answered
-            ? chip("answered — queued for next run", "waiting_user")
+            // Answered and waiting for the routine's next run: that waits on a MACHINE, so it
+            // is not the summons colour. Coral is only ever "this needs a person".
+            ? chip("answered — queued for next run", "idle")
             : el("a", { class: "btn small primary",
                         href: `#/questions?routine=${encodeURIComponent(slug)}` },
                  "answer")))));
@@ -157,7 +165,7 @@ export async function render(view, slug, query = {}) {
   // into labeled, collapsible groups. Every section body is untouched; the async panels
   // (permissions/rules/connections/machines) fill node refs that grouping only relocates. --
   const cfgHost = el("div", {});
-  const { refreshHead, refreshSurface } = renderConfigSections(cfgHost, d, {
+  const { refreshHead, refreshSurface, dispose: disposeConfig } = renderConfigSections(cfgHost, d, {
     slug, titleH1, chipHost, runChip,
     // The strip is a READER of the surface; every writer of it is in these panels. So the
     // config side re-reads once per change and hands the answer here, where the strip lives.
@@ -215,7 +223,7 @@ export async function render(view, slug, query = {}) {
     }
   };
   window.addEventListener("rsched-bus", onBus);
-  return () => window.removeEventListener("rsched-bus", onBus);
+  return () => { window.removeEventListener("rsched-bus", onBus); disposeConfig(); };
 
   // The Runs table is capped (user order 2026-08-15, F345): with keep_runs at 30+ the full
   // history made this element the tallest thing on the page, pushing every section below
@@ -229,17 +237,24 @@ export async function render(view, slug, query = {}) {
   const all = d.runs || [];
   const expanded = runsBox.dataset.expanded === "1";
   const shown = expanded ? all : all.slice(0, RUNS_PREVIEW);
+  // `inline` marks the cells that share ONE line when the table stacks on a phone (base.css):
+  // when · state · turns · duration · tokens, and the summary below them with the width it
+  // needs. Unstacked they are ordinary columns and the class does nothing.
   const rows = shown.map((r) => el("tr", {},
-    el("td", {}, el("a", { href: `#/run/${r.run_id}` }, when(r.ts))),
-    el("td", {}, chip(r.state, r.state)),
-    el("td", { class: "num" }, String(r.turn ?? "")),
-    el("td", { class: "num muted" }, r.elapsed_s != null ? fmtDur(r.elapsed_s) : "—"),
-    el("td", { class: "muted" }, fmtTokens(r.usage)),
+    el("td", { class: "inline" }, el("a", { href: `#/run/${r.run_id}` }, when(r.ts))),
+    el("td", { class: "inline" }, chip(r.state, r.state)),
+    el("td", { class: "num inline", "data-label": "turns" }, r.turn == null ? null : String(r.turn)),
+    el("td", { class: "num muted inline" }, r.elapsed_s != null ? fmtDur(r.elapsed_s) : "—"),
+    el("td", { class: "muted inline" }, fmtTokens(r.usage)),
+    // The summary is MODEL PROSE, and four surfaces show this one field — so ONE helper
+    // reduces it (md.summaryLine): first non-empty line, its heading marker dropped, rendered.
+    // Spelled out per surface it drifted, and `**One application went out…**` reached this
+    // cell with its asterisks.
     el("td", { class: "muted prose", style: "max-width:420px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" },
-      r.summary || "")));
+      summaryLine(r.summary))));
   view.append(el("div", { class: "panel", style: "padding:0" },
     el("div", { class: "tablewrap" },
-      el("table", { class: "list" },
+      el("table", { class: "list stack" },
         el("thead", {}, el("tr", {}, ["when", "state", "turns", "duration", "tokens", "summary"].map((h) => el("th", {}, h)))),
         el("tbody", {}, rows.length ? rows
           : el("tr", {}, el("td", { class: "muted", colspan: 6 }, "no runs yet — fire one with ▶ run now")))))));

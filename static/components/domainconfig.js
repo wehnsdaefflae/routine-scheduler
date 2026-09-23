@@ -29,13 +29,13 @@ import { abilitiesPanel } from "/static/components/abilities.js";
 import { rulePicker } from "/static/components/rulepicker.js";
 import { tagsEditor } from "/static/components/tags.js";
 import { BUDGET_FIELDS, UNLIMITED_BUDGETS } from "/static/components/budgetfields.js";
-import { el, toast } from "/static/util.js";
+import { el, toast, toastError } from "/static/util.js";
 
 /** One labelled block: a heading, a one-line why, and the control. */
 function block(title, hint, ...nodes) {
   return el("div", { class: "mt", "data-dcfg-block": title },
     el("div", { class: "small", style: "font-weight:600" }, title),
-    ...(hint ? [el("div", { class: "muted small" }, hint)] : []),
+    ...(hint ? [el("div", { class: "set-desc muted small" }, hint)] : []),
     ...nodes);
 }
 
@@ -85,7 +85,7 @@ export function domainConfigPanel(domain, { onSaved } = {}) {
   };
   const put = async (key, value, note) => {
     try { await writeKey(key, value); toast(note); }
-    catch (err) { toast(err.message, 4000, { error: true }); }
+    catch (err) { toastError(err); }
   };
 
   // ORPHAN capabilities: switched on by this shared block with nothing in the SAME block
@@ -100,7 +100,7 @@ export function domainConfigPanel(domain, { onSaved } = {}) {
             el("b", {}, "⚠ switched on, but nothing here asks for it")),
           el("ul", { class: "small", style: "margin:6px 0 0;padding-left:18px" },
             warns.map((w) => el("li", {}, w))),
-          el("div", { class: "muted small", style: "margin-top:6px" },
+          el("div", { class: "set-desc muted small", style: "margin-top:6px" },
             "each reaches only the members that hold a covering conduct doc themselves — the "
             + "rest get the means with no conduct behind it"))]
       : []));
@@ -125,7 +125,7 @@ export function domainConfigPanel(domain, { onSaved } = {}) {
         try {
           await writeConfig(next, gone);
           toast("domain permissions saved — members inherit them at their next run");
-        } catch (err) { toast(err.message, 4000, { error: true }); }
+        } catch (err) { toastError(err); }
       },
     }).node);
   }
@@ -149,7 +149,7 @@ export function domainConfigPanel(domain, { onSaved } = {}) {
   // word on the page, where `el()` would have dropped it. The two read identically at the call
   // site, which is why tests/test_static_dom.py scans for exactly this shape.
   host.append(...[warnBox,
-    el("div", { class: "muted small" },
+    el("div", { class: "set-desc muted small" },
       "Every member inherits this, in one of two ways. LISTS here add to each member's own — "
       + "a member can add to one, never drop an entry this domain sets. Everything else fills "
       + "in only what a member leaves unset, so a member deciding a key for itself keeps its "

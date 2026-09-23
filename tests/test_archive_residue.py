@@ -51,6 +51,15 @@ def test_a_steward_publisher_is_recognised_from_the_config_it_already_carries(ma
         "residue nobody owns is residue nobody removes"
 
 
+def test_the_named_owner_is_someone_who_can_actually_remove_it():
+    """An owner who cannot perform the removal is the silence this inventory exists to end.
+    The steward store has no delete operation in the kit's api.php and no routine has a way
+    onto that host to install one, so the row names the OPERATOR, never a routine — a slug
+    here reads as "someone else will handle it" and nothing ever does."""
+    for surface in edit.EXTERNAL_SURFACES:
+        assert "operator" in surface["owner"], surface["surface"]
+
+
 def test_a_routine_that_publishes_nothing_external_reports_no_residue(make_routine):
     d = make_routine(slug="quietr")
     from rsched.config import load_routine

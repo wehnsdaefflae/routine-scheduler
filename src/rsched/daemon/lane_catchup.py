@@ -19,26 +19,12 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
-from zoneinfo import ZoneInfo
 
-from croniter import croniter
-
-from .. import lane_fires, lane_runs, lanes
+from .. import lane_fires, lane_runs, lanes, registry
 from ..config import ServerConfig
 from ..health_events import log_health_event
-from ..schedule import server_tz
 
 log = logging.getLogger("rsched.lane_catchup")
-
-
-def last_due_fire(lane: dict, before: datetime) -> datetime | None:
-    """The most recent instant `lane`'s cron came due at or before `before`, or None for an
-    unscheduled or paused lane (mirrors `Scheduler._lane_schedulable`'s reading of pause).
-    """
-    if not lane.get("cron") or lane.get("paused"):
-        return None
-    tz = ZoneInfo(lane.get("tz") or server_tz())
-    return croniter(str(lane["cron"]), before.astimezone(tz)).get_prev(datetime)
 
 
 def missed_lanes(server: ServerConfig, now: datetime) -> list[dict]:
@@ -48,7 +34,7 @@ def missed_lanes(server: ServerConfig, now: datetime) -> list[dict]:
     home = server.routines_home
     out: list[dict] = []
     for lane in lanes.list_lanes(home):
-        due = last_due_fire(lane, now)
+        due = registry.last_due_fire(lanes.schedulable(lane), now)
         if due is None:
             continue
         armed = lane_fires.last_armed(home, lane["id"])
@@ -76,6 +62,5 @@ def boot_catchup(server: ServerConfig, now: datetime) -> list[str]:
         log.info("lane catch-up armed lane=%s (%s)", lane["id"], lane.get("name"))
         log_health_event(home, "lane_fire_catchup", routine=lane["id"], run_id="",
                          detail=f"{lane.get('name') or lane['id']}: the last due fire was "
-                                "not armed (daemon down, restarting or draining at the "
-                                "time) - one make-up chain armed at boot")
+                                "not armed - one make-up chain armed at boot")
     return armed

@@ -1,11 +1,10 @@
-"""Shared routine-endpoint plumbing: catalog lookups, the locked
-git-commit, and the permission-layer detail — imported by api_routines,
-api_routine_edit, api_conversations, api_hooks, and api_runs alike (it used to live
-inside api_routines, which every sibling then reached into).
+"""Shared routine-endpoint plumbing: catalog lookups, the locked git-commit, the ONE
+routine.yaml write choreography (`write_routine_config`), and the permission-layer detail
+— imported by api_routines, api_routine_edit, api_routine_patch, api_conversations,
+api_hooks, and api_runs alike (it used to live inside api_routines, which every sibling
+then reached into).
 """
 
-# the ONE web->engine signal seam: control.json is merged, never overwritten, so no endpoint can
-# drop a sibling's pending signal.
 from __future__ import annotations
 
 import re
@@ -16,7 +15,7 @@ from fastapi import HTTPException, Request
 from .. import registry
 from ..grants import EMPTY_CAPABILITIES, GATED_KINDS
 from ..ids import now_iso, parse_run_id
-from ..paths import atomic_write_json, read_json
+from ..paths import atomic_write_json, atomic_write_yaml, read_json
 
 #: The only inbox filenames a web write endpoint may address. `answer-*` files belong to the
 #: Decisions page and a path segment belongs to nobody: this pattern, not any caller, is what
@@ -74,7 +73,12 @@ def _catalog(request: Request) -> dict[str, registry.RoutineInfo]:
 
 
 def _info(request: Request, slug: str) -> registry.RoutineInfo:
-    info = _catalog(request).get(slug)
+    """One routine, read directly — `registry.info`, not a catalog walk. Every
+    `/routines/{slug}/*` handler starts here, and scanning ~35 directories to answer about
+    one of them is the cost that made the per-routine surface expensive on a busy instance.
+    """
+    server = _state(request).server
+    info = registry.info(server, server.routines_home, slug)
     if info is None:
         raise HTTPException(404, f"no routine {slug!r}")
     return info
@@ -130,10 +134,10 @@ def permission_layers_detail(server, cfg, *,
     the domain straight back in (F489/F490). `inherited` marks exactly those rows, so the panel
     can send the user to the domain's editor instead of offering a control that cannot act.
     """
-    from .. import library_docs
     from ..config.domainconfig import domain_config_for
+    from ..readmodels import library_reads
 
-    all_perms = library_docs.list_docs(server.permissions_home)
+    all_perms = library_reads.docs(server.permissions_home)
     held = set(cfg.permissions)
     # A DOMAIN's own editor renders this same shape through a stand-in carrying only the two
     # layers (api_domains._config_layers), and a domain inherits from nothing — so the lookup
@@ -166,6 +170,32 @@ def _git_commit(routine_dir: Path, message: str) -> None:
         return
     from ..libgit import commit
     commit(routine_dir, message)
+
+
+def write_routine_config(request: Request, info: registry.RoutineInfo, raw: dict, *,
+                         message: str, fields: list[str],
+                         values: dict | None = None) -> bool:
+    """Land one edit of a routine's `routine.yaml` — the ONE choreography every web writer
+    of that file performs, and the reason it is one function: the four steps are not
+    optional and each site used to pick its own subset.
+
+    Atomic write, commit under the per-repo lock, `scheduler.rescan()` so the fire table and
+    the member-suppression set see the change now rather than at the next periodic pass, and
+    (F337) `signal_config_change` so a run already in flight is TOLD what changed and which
+    half of it reaches it. Returns whether a live run was told, which the caller reports as
+    `told_live_run`.
+
+    Before this, `PUT /permissions` committed and did neither of the last two and
+    adopt-template did not signal — so unticking a conduct doc mid-run finished under the
+    old docs in silence, on a page where every other save says `told_live_run`. `fields` is
+    the applied-field list (R102), and `values` carries what the LIVE-classified half of
+    those fields now holds (`configflow.CLASSIFICATION`); it defaults to nothing to send,
+    which is correct for a purely NEXT_RUN edit.
+    """
+    atomic_write_yaml(info.cfg.dir / "routine.yaml", raw)
+    _git_commit(info.cfg.dir, message)
+    _state(request).scheduler.rescan()
+    return signal_config_change(info, fields, values or {})
 
 
 def active_run_dir(info: registry.RoutineInfo) -> Path | None:

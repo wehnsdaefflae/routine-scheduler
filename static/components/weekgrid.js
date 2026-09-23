@@ -5,9 +5,10 @@
 // fixed column LEFT of the scroll area, so they never overlap the timeline and stay put while
 // it scrolls. A bar starts at its fire time; its width is the routine's average runtime drawn
 // true to scale against a day's width, with a small minimum so a short run still shows and the
-// exact value (with its N-run provenance) in the hover tooltip. There is NO legend: a bar's
-// color is the routine's stable identity color (charts.slugColor), the same swatch its table
-// row and card carry — the color mapping lives on the routines themselves.
+// exact value (with its N-run provenance) in the hover tooltip. There is no legend BLOCK: a
+// bar's color is the routine's stable identity color (charts.slugColor), and the key is the
+// stripe (or, on a lane row, the stripes in fire order) that opens each row's name — the same
+// swatch the routine's table row and card carry, put where the colour it explains is.
 // Times are in the browser's timezone; fires already behind us render dimmed; a live cursor
 // marks now. Rows follow the dashboard's own filters, ordered by next upcoming fire.
 //
@@ -42,11 +43,29 @@ const DAYS = 7, HEAD_H = 22, ROW_H = 22, PAD_B = 8;
 // The zoom: how many day columns share the visible strip width — the other days scroll.
 // A day is never narrower than MIN_DAY_W (a collapsed/unmeasured panel falls back to it).
 const VISIBLE_DAYS = 2, MIN_DAY_W = 160;
-// The name column's fixed width (mirrored by .wg-names in views.css).
-const NAMES_W = 120;
+// The name column's width. ONE definition, and it is the stylesheet's: `--wg-names-w` on
+// `.weekgrid` (views.css), read here so the SVG is laid out beside exactly the column the page
+// draws. It used to be a constant here with a comment asking the next person to keep the two
+// equal, which is the shape that drifts — and widening the column is what stopped four of the
+// fleet's eleven lane names truncating to their shared prefix.
+const NAMES_W_FALLBACK = 120;
+const namesWidth = (node) =>
+  parseFloat(getComputedStyle(node).getPropertyValue("--wg-names-w")) || NAMES_W_FALLBACK;
 // A fire's bar width = its average runtime as a fraction of a day × the day width (true to
 // scale), floored at MIN_BAR_W so a short run is still a visible mark.
 const BAR_H = 8, MIN_BAR_W = 2;
+
+// The row's KEY. A bar's colour is its routine's identity (slugColor) and not an outcome, but
+// the only thing saying so was the swatch on that routine's table row — which a lane row does
+// not carry and which 31 of the fleet's 35 routines never showed, because the lane rows below
+// the strip are collapsed by default. So the mapping rides the strip's own name column: one
+// stripe per member, in fire order, exactly the order the chain draws them in. No legend block,
+// and nothing about the lane-collapse decision changes.
+function rowKey(row) {
+  return el("span", { class: "wg-key" }, ...row.members.map((m) =>
+    el("span", { class: "id-swatch", style: `background:${slugColor(m.c.slug)}`,
+      title: `${m.c.name || m.c.slug} — its colour on this strip` })));
+}
 
 const fmtDay = new Intl.DateTimeFormat(undefined, { weekday: "short", day: "numeric" });
 const fmtAt = new Intl.DateTimeFormat(undefined, { weekday: "short", hour: "2-digit", minute: "2-digit" });
@@ -98,7 +117,8 @@ export function weekGrid(dragHandlers = null) {
     // Pixel-true geometry: two day columns fill the strip beside the name column; the SVG is
     // laid out at the full seven-day width inside the scroll container.
     lastMeasuredW = node.clientWidth;
-    const DAY_W = Math.max(MIN_DAY_W, (lastMeasuredW - NAMES_W) / VISIBLE_DAYS);
+    const DAY_W = Math.max(MIN_DAY_W,
+                           (lastMeasuredW - namesWidth(node)) / VISIBLE_DAYS);
     const W = DAYS * DAY_W;
     const MIN_STEP_S = (MIN_BAR_W / DAY_W) * DAY_SECONDS;
     const start = new Date();
@@ -186,9 +206,11 @@ export function weekGrid(dragHandlers = null) {
       const laneNote = chained ? ` · lane ${row.lane.name}` : "";
       names.append(chained
         ? el("span", { class: "wg-lane-label chained",
-            title: row.lane.schedule_desc || row.lane.name }, `⛓ ${row.lane.name}`)
+            title: row.lane.schedule_desc || row.lane.name },
+            rowKey(row), el("span", { class: "wg-name" }, `⛓ ${row.lane.name}`))
         : el("a", { class: "wg-lane-label", href: `#/routine/${row.members[0].c.slug}` },
-            row.members[0].c.name || row.members[0].c.slug));
+            rowKey(row), el("span", { class: "wg-name" },
+              row.members[0].c.name || row.members[0].c.slug)));
       // Every member's OWN bars (individual cron fires — none on scheduled-lane rows — plus
       // one-shots as hollow bars, not draggable: re-arming is the Schedule-once card's job).
       for (const m of row.members) {

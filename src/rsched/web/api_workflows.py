@@ -10,9 +10,9 @@ from pydantic import BaseModel
 
 from .. import templates, utils_header, utils_run
 from ..paths import atomic_write
+from ..readmodels import library_reads
 from ..workflows import library
 from ..workflows.lint import (
-    lint_all,
     lint_permission_text,
     lint_rule_text,
     lint_template_text,
@@ -38,33 +38,36 @@ def _workflow_file(home, slug: str):
 @router.get("/library")
 def library_overview(request: Request) -> dict:
     """Everything under the Library tab: workflows, rules, permissions, playbooks, global utils."""
-    from .. import library_docs, playbooks, reminders, utils_lib
+    from .. import playbooks, reminders
     from ..config import DEFAULT_BUDGETS, DEFAULT_DELIBERATION, DEFAULT_PERMISSIONS, DEFAULT_RULES
 
     home = _home(request)
     server = request.app.state.server
-    lint = lint_all(home)
+    lint = library_reads.lint(home)
     return {
         "workflows": [{**w, "problems": lint.get(f"workflows/{w['file']}", [])}
                       for w in library.list_workflows(home)],
         "rules": [{**r, "problems": lint.get(f"rules/{r['slug']}.md", [])}
-                  for r in library_docs.list_docs(server.rules_home)],
+                  for r in library_reads.docs(server.rules_home)],
         "permissions": [{**p, "problems": lint.get(f"permissions/{p['slug']}.md", [])}
-                        for p in library_docs.list_docs(server.permissions_home)],
+                        for p in library_reads.docs(server.permissions_home)],
         # Settings TEMPLATES: the named starting points a ROUTINE adopts (a copy, never a
         # layer — the live shared layer is a DOMAIN's config block, which is a different
         # claim: "this is what I share" rather than "this is where I started"). Carried
         # in the same payload as the docs they bundle, because the routine page's picker and
         # the Library tab's editor read the one call.
-        "templates": templates.list_templates(server.libraries_home),
+        "templates": [{**t, "problems": lint.get(f"templates/{t['slug']}.md", [])}
+                      for t in templates.list_templates(server.libraries_home)],
         "playbooks": [{**p, "problems": lint.get(f"playbooks/{p['slug']}/MAIN.md", [])}
                       for p in playbooks.list_playbooks(home)],
-        "utils": utils_lib.list_utils(server.libraries_home),
+        "utils": library_reads.utils(server.libraries_home),
         # The CURATED consequence reminders (rsched/reminders.py). A global reminder holds a
         # matching action in every routine at `reminders: global`, so the one surface that
         # must exist is the one that shows what is in there and can take one out again — the
         # approval gate decides what gets IN, and nothing else could revoke it.
-        "reminders": [r.as_record() for r in reminders.load_global(server.reminders_home)],
+        "reminders": [{**r.as_record(),
+                       "problems": lint.get(f"reminders/{r.id}.json", [])}
+                      for r in reminders.load_global(server.reminders_home)],
         "default_rules": list(DEFAULT_RULES),
         "default_permissions": list(DEFAULT_PERMISSIONS),
         "default_budgets": dict(DEFAULT_BUDGETS),
@@ -336,11 +339,9 @@ class PutBody(BaseModel):
 
 @router.put("/workflows/{slug}")
 def put_workflow(request: Request, slug: str, body: PutBody) -> dict:
-    from .. import library_docs
-
     home = _home(request)
     server = request.app.state.server
-    rules = library_docs.slugs(server.rules_home)
+    rules = library_reads.doc_slugs(server.rules_home)
     problems = lint_workflow_py(body.content, filename=f"{slug}.py", rule_slugs=rules)
     if problems:
         raise HTTPException(422, "; ".join(problems))

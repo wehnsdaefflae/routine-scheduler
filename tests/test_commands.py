@@ -62,11 +62,14 @@ def test_catalog_filters_kinds_by_policy_and_lists_utils():
         def allows_kind(self, kind):
             return kind not in ("memory_read", "memory_write")
 
-    catalog = command_catalog(Policy(), [{"name": "websearch", "summary": "search the web",
-                                          "usage": "gu websearch QUERY"}])
+    catalog = command_catalog(Policy(), [
+        {"name": "websearch", "summary": "search the web",
+         "usage": "gu websearch QUERY\n  gu websearch --news QUERY"}])
     kinds = [k["kind"] for k in catalog["kinds"]]
     assert "util" in kinds and "read_file" in kinds
     assert "memory_read" not in kinds and "memory_write" not in kinds
     assert all(k["usage"].startswith("/") and k["summary"] for k in catalog["kinds"])
+    # the palette is ONE <code> row per util, so it takes the first usage line only — the
+    # whole block (F505) would render each row as a paragraph
     assert catalog["utils"] == [{"name": "websearch", "summary": "search the web",
                                  "usage": "gu websearch QUERY"}]

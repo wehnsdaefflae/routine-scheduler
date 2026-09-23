@@ -77,6 +77,10 @@ def load_policy(permissions_home: Path, active: list[str] | None,
     known_utils = (frozenset(u["name"] for u in _catalog_tags(permissions_home))
                    if len(held_write) == 1 else frozenset())
     return GrantPolicy(active=tuple(active or []),
+                       # `<libraries_home>/permissions` by construction (ServerConfig), so the
+                       # util catalog sits beside it — the reserved-util gate resolves a call's
+                       # `calls:` tree from there.
+                       libraries_home=Path(permissions_home).parent,
                        known_utils=known_utils,
                        actions=frozenset(k for k in caps.get("actions") or []
                                          if k in GATED_KINDS),

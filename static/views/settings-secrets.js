@@ -4,13 +4,13 @@
 
 import { api } from "/static/api.js";
 import { confirmDialog } from "/static/components/dialog.js";
-import { el, toast } from "/static/util.js";
+import { el, toast, toastError } from "/static/util.js";
 import { panelSection } from "/static/views/settings-common.js";
 
 export function renderSecrets(view) {
   // -- central secrets store ------------------------------------------------------
   return panelSection(view, "/api/settings/secrets", ["60%", "90%"], (secBox, s, reload) => {
-    secBox.replaceChildren(el("div", { class: "muted small", style: "margin-bottom:6px" },
+    secBox.replaceChildren(el("div", { class: "set-desc muted small" },
       "One store for every credential — injected into all utils, LLM endpoints, and the Claude ",
       "subscription (as CLAUDE_CODE_OAUTH_TOKEN) at run time. Values are write-only — never shown back."));
 
@@ -26,16 +26,32 @@ export function renderSecrets(view) {
       b.onclick = async () => {
         if (!(await confirmDialog(`Delete secret ${k}?`, { confirmLabel: "delete" }))) return;
         try { await api(`/api/settings/secrets/${encodeURIComponent(k)}`, { method: "DELETE" }); reload(); }
-        catch (err) { toast(err.message, 4000, { error: true }); }
+        catch (err) { toastError(err); }
       };
       return b;
     };
 
     // What the installed utils DECLARE they need — so you know exactly what to add (unset flagged).
+    //
+    // BUCKETED, not alphabetical. The server hands these back sorted by key, so the eleven rows
+    // that actually need the operator sat scattered through fifty that do not, over 2 000px —
+    // and "what still needs a value?", the only question this table answers, meant reading every
+    // row. Three groups, each labelled with its count, alphabetical within: what is missing,
+    // what is optional, what is done.
+    const BUCKETS = [
+      ["needs a value", (n) => !n.set && !n.optional],
+      ["optional · unset", (n) => !n.set && n.optional],
+      ["set", (n) => n.set],
+    ];
     if (s.needed?.length) {
+      const ordered = BUCKETS.flatMap(([label, match]) => {
+        const rows = s.needed.filter(match);
+        return rows.length ? [{ head: `${label} · ${rows.length}` }, ...rows] : [];
+      });
       secBox.append(el("div", { class: "mt small", style: "font-weight:600" }, "Needed by installed utils"));
       secBox.append(el("div", { class: "tablewrap" },
-        el("table", { class: "list" }, el("tbody", {}, s.needed.map((n) => {
+        el("table", { class: "list stack" }, el("tbody", {}, ordered.map((n) => {
+          if (n.head) return el("tr", { class: "subhead" }, el("td", { colspan: "4" }, n.head));
           const setBtn = el("button", { class: "btn small" }, n.set ? "replace" : "set");
           setBtn.onclick = () => { keyIn.value = n.key; valIn.value = ""; valIn.focus(); };
           // The declaring util's usage + docstring — shows the expected FORMAT of a structured
@@ -52,9 +68,11 @@ export function renderSecrets(view) {
           const statusText = n.set ? "✓ set" : (n.optional ? "optional" : "unset");
           return el("tr", {},
             el("td", {}, el("div", { class: "mono" }, n.key), fmt),
-            el("td", { class: "small", style: `color:${statusColor}`, "data-secret-status": n.key }, statusText),
-            el("td", { class: "muted small" }, n.utils.join(", ")),
-            el("td", {}, n.set ? delBtn(n.key) : setBtn));
+            el("td", { class: "small inline", style: `color:${statusColor}`, "data-secret-status": n.key }, statusText),
+            // stacked on a phone this cell is a line of its own, and "fau-mail, fau-mail-send"
+            // means nothing without the column head the stack drops
+            el("td", { class: "muted small", "data-label": "needed by" }, n.utils.join(", ") || null),
+            el("td", { class: "row-actions" }, n.set ? delBtn(n.key) : setBtn));
         })))));
     }
 
@@ -64,7 +82,7 @@ export function renderSecrets(view) {
     if (extra.length) {
       secBox.append(el("div", { class: "mt small", style: "font-weight:600" }, "Other secrets set"));
       secBox.append(el("div", { class: "tablewrap" },
-        el("table", { class: "list" }, el("tbody", {}, extra.map((k) =>
+        el("table", { class: "list stack" }, el("tbody", {}, extra.map((k) =>
           el("tr", {}, el("td", {}, k), el("td", { class: "muted" }, "••••••••"), el("td", {}, delBtn(k))))))));
     }
     if (!s.needed?.length && !extra.length)
@@ -77,7 +95,7 @@ export function renderSecrets(view) {
       try {
         await api("/api/settings/secrets", { method: "PUT", body: { key, value: valIn.value } });
         toast(`${key} saved`); keyIn.value = ""; valIn.value = ""; reload();
-      } catch (err) { toast(err.message, 5000, { error: true }); }
+      } catch (err) { toastError(err, 5000); }
     };
     // show/hide the value while typing — a JSON map is unreadable when masked
     let valMasked = true;
@@ -102,7 +120,7 @@ export function renderSecrets(view) {
           x.onclick = async () => {
             if (!(await confirmDialog(`Delete entry “${name}” from ${k}?`, { confirmLabel: "delete" }))) return;
             try { await api(`/api/settings/secrets/${encodeURIComponent(k)}/entry/${encodeURIComponent(name)}`, { method: "DELETE" }); reload(); }
-            catch (err) { toast(err.message, 4000, { error: true }); }
+            catch (err) { toastError(err); }
           };
           return x;
         });
@@ -114,7 +132,7 @@ export function renderSecrets(view) {
     }
     const mKey = el("input", { type: "text", placeholder: "secret (e.g. FTP_SOURCES)", style: "flex:1", list: "secret-names", "data-map-entry": "key" });
     const mName = el("input", { type: "text", placeholder: "entry name (e.g. grantsforbina)", style: "flex:1", "data-map-entry": "name" });
-    const mVal = el("textarea", { placeholder: '{"host": "…", "user": "…", "pass": "…"}', rows: "3", style: "width:100%;font-size:12px", "data-map-entry": "value" });
+    const mVal = el("textarea", { placeholder: '{"host": "…", "user": "…", "pass": "…"}', rows: "3", class: "tight", style: "width:100%", "data-map-entry": "value" });
     const mSave = el("button", { class: "btn small primary" }, "add / replace entry");
     mSave.onclick = async () => {
       const key = mKey.value.trim(), name = mName.value.trim();
@@ -128,13 +146,18 @@ export function renderSecrets(view) {
       try {
         await api(`/api/settings/secrets/${encodeURIComponent(key)}/entry`, { method: "PUT", body: { name, value } });
         toast(`${key} · ${name} saved`); mName.value = ""; mVal.value = ""; reload();
-      } catch (err) { toast(err.message, 5000, { error: true }); }
+      } catch (err) { toastError(err, 5000); }
     };
+    // Behind a "+ add map entry" disclosure, the shape the endpoint and model sections already
+    // use for their own add forms. A screen of inputs open at rest is a screen the reader pays
+    // for on every visit to Settings, and this form is used once per credential.
     secBox.append(
       el("datalist", { id: "secret-names" }, ...(s.needed || []).map((n) => el("option", { value: n.key }))),
-      el("div", { class: "muted small mt" }, "Add or replace ONE entry of a JSON-map secret — the other entries stay untouched and their values are never shown."),
-      el("div", { class: "row mt" }, mKey, mName),
-      el("div", { class: "mt" }, mVal),
-      el("div", { class: "row mt" }, mSave));
+      el("details", { class: "panel mt", "data-add": "map-entry" },
+        el("summary", {}, "+ add map entry"),
+        el("div", { class: "muted small mt" }, "Add or replace ONE entry of a JSON-map secret — the other entries stay untouched and their values are never shown."),
+        el("div", { class: "row mt" }, mKey, mName),
+        el("div", { class: "mt" }, mVal),
+        el("div", { class: "row mt" }, mSave)));
   });
 }

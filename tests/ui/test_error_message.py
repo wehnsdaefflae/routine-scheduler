@@ -7,14 +7,11 @@ RoutinePatch's extra=forbid). Evaluated as a pure function in the browser ESM co
 deterministic, no network, no timing.
 """
 
-from .conftest import TOKEN
 
-
-def test_detail_message_renders_a_422_validation_list_legibly(ui, page):
-    page.add_init_script(f"localStorage.setItem('rsched_token', {TOKEN!r})")
-    page.goto(ui.url)
-    page.wait_for_selector(".topbar", timeout=15000)
-    out = page.evaluate("""() => import('/static/api.js').then((m) => ({
+def test_detail_message_renders_a_422_validation_list_legibly(ui, ui_page):
+    ui_page.goto(ui.url)
+    ui_page.wait_for_selector(".topbar")
+    out = ui_page.evaluate("""() => import('/static/api.js').then((m) => ({
         string: m.detailMessage('keep_runs must be a positive integer'),
         list: m.detailMessage([{loc: ['body', 'rules'], msg: 'extra fields not permitted',
                                 type: 'extra_forbidden'}]),

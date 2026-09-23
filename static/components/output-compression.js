@@ -1,6 +1,6 @@
 // Shared compression control for routines and conversations; settings apply at next boot.
 import { api } from "/static/api.js";
-import { el, toast } from "/static/util.js";
+import { el, toast, toastError } from "/static/util.js";
 
 export function outputCompression(value, endpoint) {
   let saved = value || "compress";
@@ -17,7 +17,7 @@ export function outputCompression(value, endpoint) {
       toast("Output compression saved — applies from the next run or reply");
     } catch (err) {
       select.value = saved;
-      toast(err.message, 4000, { error: true });
+      toastError(err);
     } finally { select.disabled = false; }
   };
   return el("div", { class: "mt" }, el("label", {}, "Output compression ", select),

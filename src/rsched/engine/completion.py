@@ -9,11 +9,10 @@ function takes the live EngineLoop; the turn ORDER stays in loop.run().
 from __future__ import annotations
 
 import json
-import os
 import time
 
 from ..endpoints import failover
-from ..endpoints.base import EndpointError
+from ..endpoints.base import EndpointError, retry_base_delay
 from ..endpoints.base import fold_usage as base_fold
 from ..schema_guard import SchemaViolation, extract_json, retry_message, validate
 from . import refusal
@@ -26,7 +25,7 @@ from .degrade import (
     _recover_transport,
     _turn_task_text,
 )
-from .window import _override_window, compact_if_needed
+from .window import _override_window, compact_if_needed, note_prompt_size
 
 MAX_SCHEMA_ATTEMPTS = 3   # 1 initial + 2 retries per turn
 
@@ -51,6 +50,37 @@ def fold_usage(usage_sum: dict, completion) -> None:
     base_fold(usage_sum, completion.usage)
     if completion.provider:
         usage_sum["provider"] = completion.provider
+
+
+def _is_prose_reply(text: str) -> bool:
+    """Whether the reply carries no JSON object at all.
+
+    A refusal is PROSE. An action that merely failed VALIDATION is a malformed action, and
+    sending one to the refusal classifier bought a serial model round-trip per malformed
+    reply for nothing — 784 `refusal · classify reply` calls in 21 days against 8 refusals.
+    """
+    try:
+        extract_json(text or "")
+    except SchemaViolation:
+        return True
+    return False
+
+
+def _adopt_model(loop, pair) -> tuple:
+    """Take up a (endpoint, ref) the failover/refusal path switched to: re-apply this run's
+    window correction, stamp it on the run, and RE-FIT the prompt to ITS window.
+
+    The re-fit is the load-bearing half. The prompt was compacted once, at the top of the turn,
+    under the window of the model that then failed — so a chain step down to a smaller member
+    used to post the same oversize prompt, burn one of its two oversize retries proving it
+    could not fit, and only then shrink. On 2026-09-22 llmsectest-weekday:20260922-060001 handed
+    a 156,656-token prompt to a 32,768-token fallback and died on the second attempt.
+    """
+    endpoint, ref = pair
+    ref = _override_window(loop, ref)
+    loop.ctx.main_model = f"{ref.endpoint}/{ref.model}"
+    compact_if_needed(loop, endpoint, ref)
+    return endpoint, ref
 
 
 def next_action(loop) -> tuple[dict | None, dict]:
@@ -78,7 +108,6 @@ def next_action(loop) -> tuple[dict | None, dict]:
                                            schema=schema, effort=ref.effort,
                                            temperature=ref.temperature,
                                            max_tokens=ref.max_tokens,
-                                           session=str(ctx.run_dir),
                                            # bookkeeping only — the wrapper consumes
                                            # these; they never reach the transport, so
                                            # the prompt is untouched
@@ -89,11 +118,15 @@ def next_action(loop) -> tuple[dict | None, dict]:
         except EndpointError as exc:
             # media repair / transport failover — neither consumes a schema attempt;
             # a chain-exhausted failure re-raises out of _recover_transport.
-            endpoint, ref = _recover_transport(loop, chain, endpoint, ref, exc)
-            ctx.main_model = f"{ref.endpoint}/{ref.model}"
+            endpoint, ref = _adopt_model(
+                loop, _recover_transport(loop, chain, endpoint, ref, exc))
             attempt -= 1
             continue
         fold_usage(usage_sum, completion)
+        # The prompt this call posted has now been counted by the provider — the one
+        # measurement of our own estimate that costs nothing (window.note_prompt_size).
+        # loop.messages is still exactly what was sent: nothing appends until below.
+        note_prompt_size(loop, ref, completion.usage)
         switched = None
         if completion.stop_reason in REFUSAL_STOPS:
             # BEFORE the empty check: a mid-stream classifier cut can leave partial text
@@ -107,14 +140,12 @@ def next_action(loop) -> tuple[dict | None, dict]:
             if switched is None:
                 if attempt == MAX_SCHEMA_ATTEMPTS - 1:
                     schema = None
-                # Same test knob as endpoints.base.with_retries: the retry LOGIC always
-                # runs, the backoff clock is zeroed in the suite (RSCHED_RETRY_BASE_DELAY).
-                time.sleep(1.5 * attempt
-                           * float(os.environ.get("RSCHED_RETRY_BASE_DELAY", "1.0")))
+                # Same knob as endpoints.base.with_retries, read through the one reader:
+                # the retry LOGIC always runs, the clock is zeroed in the suite.
+                time.sleep(1.5 * attempt * retry_base_delay())
                 continue
         if switched is not None:
-            endpoint, ref = switched
-            ctx.main_model = f"{ref.endpoint}/{ref.model}"
+            endpoint, ref = _adopt_model(loop, switched)
             attempt -= 1   # the fallback model gets this attempt's clean retry
             continue
         refstate["empty"] = 0
@@ -132,6 +163,7 @@ def next_action(loop) -> tuple[dict | None, dict]:
             # because the action parsed cleanly). Intercept it, clarify, and re-drive.
             if (not refstate["referral_tried"]
                     and _intercept_refusal_finish(loop, candidate, ref, refstate)):
+                attempt -= 1   # the re-driven turn is not a schema violation
                 continue
             if len(loop.messages) > base_len:
                 # Drop the failed-attempt/correction pairs from the live prompt — they
@@ -159,6 +191,7 @@ def next_action(loop) -> tuple[dict | None, dict]:
             # on the operator's order, 2026-08-22).
             essence_note = ""
             if (not refstate["referral_tried"] and completion.parsed is None
+                    and _is_prose_reply(completion.text)
                     and refusal.is_refusal(ctx, completion.text)):
                 refstate["referral_tried"] = True
                 rec = refusal.clarify_refusal(ctx, task=_turn_task_text(loop),

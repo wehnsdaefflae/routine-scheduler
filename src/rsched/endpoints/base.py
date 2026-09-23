@@ -24,6 +24,13 @@ Message = dict
 
 DEFAULT_TIMEOUT = 600
 
+#: How long to wait for the TCP/TLS handshake, separately from the 600 s a model may
+#: legitimately spend THINKING. httpx applies a scalar timeout to every phase, so one
+#: value meant a provider that stopped answering at the IP level (route flap, firewall)
+#: held a turn for 600 s × 3 tries = half an hour, with no observation and no cooldown
+#: until the end. A connect that has not completed in ten seconds is not slow, it is gone.
+CONNECT_TIMEOUT = 10.0
+
 # F220: the longest a server-sent Retry-After hint is honored before with_retries falls back
 # to its own schedule — bounds how long a single rate-limited attempt can pause a run.
 RETRY_AFTER_CAP_S = 30.0
@@ -131,9 +138,9 @@ def fold_usage(total: dict, delta: dict) -> None:
 class ChatEndpoint(Protocol):
     """What every adapter implements: one stateless completion in, a Completion out.
     No streaming, no state, no tools — endpoints are transports, never a second harness.
-    `session` is a CACHING hint only (a stable opaque key per conversation): an adapter
-    may use it to keep the provider's prompt cache warm across turns; semantics never depend
-    on it — every call still carries the full message list and adapters are free to ignore it.
+    Nothing identifies the conversation: caching is the PROVIDER's, earned by a byte-stable
+    prefix (implicit for OpenAI-style providers, `cache_control` breakpoints for anthropic),
+    which the engine's append-only message list gives it without a key.
     """
 
     name: str
@@ -148,7 +155,6 @@ class ChatEndpoint(Protocol):
         effort: str | None = None,
         max_tokens: int | None = None,
         timeout: int = DEFAULT_TIMEOUT,
-        session: str | None = None,
         temperature: float | None = None,
         cacheable: bool = True,
     ) -> Completion: ...
@@ -240,24 +246,37 @@ def post_json(url: str, body: dict, headers: dict | None, timeout: int,
               *, name: str) -> httpx.Response:
     """POST a JSON body. A network-level failure (the provider was never reached) is always
     retryable; status-code classification is the caller's (`raise_for_status`).
+
+    `timeout` bounds the ANSWER (a reasoning model's whole turn); reaching the host is
+    bounded much tighter — see CONNECT_TIMEOUT.
     """
     try:
-        return httpx.post(url, json=body, headers=headers, timeout=timeout)
+        return httpx.post(url, json=body, headers=headers,
+                          timeout=httpx.Timeout(timeout, connect=CONNECT_TIMEOUT))
     except httpx.HTTPError as exc:
         raise EndpointError(f"{name}: {exc}", retryable=True) from exc
 
 
+#: Statuses that mean "the request never got a verdict", so sending it again can work:
+#: 408 request timeout, 409 conflict, 429 rate limit, and every 5xx (anthropic's 529
+#: overloaded rides that branch). The same set the Anthropic and OpenAI SDKs retry.
+#: 408 is here because a proxy answers it when its own upstream stream drops —
+#: `codex-proxy: HTTP 408 … stream disconnected before completion` — and classifying that
+#: transient as fatal skipped the one-second retry and spent a MODEL SWITCH on it: a
+#: 300 s cooldown on a healthy provider plus a cold cache write on both models.
+RETRYABLE_STATUSES = frozenset({408, 409, 429})
+
+
 def raise_for_status(resp: httpx.Response, name: str) -> None:
     """The shared HTTP-status classifier: 401/403 → auth (the UI says "check the key"),
-    429/5xx → retryable (rate limit, outage — anthropic's 529 overloaded rides the 5xx
-    branch), any other non-200 → fatal.
+    408/409/429/5xx → retryable (see RETRYABLE_STATUSES), any other non-200 → fatal.
     """
     if resp.status_code == 200:
         return
     msg = f"{name}: HTTP {resp.status_code}: {resp.text[:300]}"
     if resp.status_code in (401, 403):
         raise EndpointError(msg, auth=True)
-    if resp.status_code == 429 or resp.status_code >= 500:
+    if resp.status_code in RETRYABLE_STATUSES or resp.status_code >= 500:
         raise EndpointError(msg, retryable=True, retry_after=_retry_after_seconds(resp))
     raise EndpointError(msg)
 
@@ -326,16 +345,26 @@ def json_or_raise(resp, name: str) -> dict:
         ) from exc
 
 
+def retry_base_delay() -> float:
+    """The unit of every retry backoff in the system, read PER CALL from
+    RSCHED_RETRY_BASE_DELAY (default 1.0). The suite zeroes it so retry LOGIC runs while
+    the clock does not — which only holds if every schedule reads it from here. The two
+    schedules themselves differ on purpose and stay apart: this wrapper's exponential
+    wait, and the engine's linear empty-completion pause (engine/completion.py).
+    """
+    import os
+
+    return float(os.environ.get("RSCHED_RETRY_BASE_DELAY", "1.0"))
+
+
 def with_retries(fn, *, tries: int = 3, base_delay: float | None = None):
     """Run fn(); on EndpointError(retryable=True) back off 1s/2s and retry (3 tries total).
     Non-retryable EndpointErrors propagate immediately; the last error is re-raised as-is.
-    The default backoff honors RSCHED_RETRY_BASE_DELAY (read per call): the test suite
-    zeroes it — dead-endpoint tests exercise the retry LOGIC, never the backoff clock.
+    The default backoff honors RSCHED_RETRY_BASE_DELAY (`retry_base_delay`, read per call):
+    the test suite zeroes it — dead-endpoint tests exercise the retry LOGIC, never the clock.
     """
     if base_delay is None:
-        import os
-
-        base_delay = float(os.environ.get("RSCHED_RETRY_BASE_DELAY", "1.0"))
+        base_delay = retry_base_delay()
     exp = wait_exponential(multiplier=base_delay)
 
     def wait(state):

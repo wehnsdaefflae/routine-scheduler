@@ -70,6 +70,36 @@ def test_scheduled_run_queues_a_routine_instead_of_being_refused(server, sched_c
     assert "Do NOT re-issue" in obs["next"]
 
 
+def test_one_standing_proposal_per_ask_however_often_a_run_repeats_it(server, sched_ctx):
+    """A proposal outlives the run that made it BY DESIGN — the operator may be away for days
+    — so a scheduled routine re-proposing on its next fire is the normal case. Without one
+    rule at the write, the operator comes back to three identical cards of which two can only
+    409, and `notify_proposer` tells the routine about a proposal it no longer has.
+
+    The rule was written twice by hand (goal-reached, library-drift) and not at all for the two
+    kinds a RUN files, which is exactly the half that repeats every run.
+    """
+    ask = {"target": "fau-comms-steward", "name": "FAU comms steward",
+           "prompt": "Watch the comms inbox and stage replies.", "workflow": "general-task"}
+    first = handle_create_routine(sched_ctx, ask)
+    # the next run words it differently — it is still the same routine being asked for
+    again = handle_create_routine(sched_ctx, {**ask, "prompt": "Watch comms; draft replies."})
+    assert again["id"] == first["id"]
+    assert len(pending.load_all(server.routines_home)) == 1
+    # …and what the operator would approve is what the FIRST run proposed, not a silent rewrite
+    rec = pending.load_all(server.routines_home)[0]
+    assert rec["fields"]["instruction"].startswith("Watch the comms inbox")
+    # a DIFFERENT ask is a different card
+    handle_create_routine(sched_ctx, {**ask, "target": "fau-mail-steward"})
+    assert len(pending.load_all(server.routines_home)) == 2
+    # a lane proposal dedupes on its verb and target, not on the whole payload
+    lane = {"verb": "create", "name": "FAU comms", "members": ["routine-improver"]}
+    handle_manage_lane(sched_ctx, lane)
+    handle_manage_lane(sched_ctx, {**lane, "members": ["routine-improver", "self-audit"]})
+    assert len([r for r in pending.load_all(server.routines_home)
+                if r["kind"] == "manage_lane"]) == 1
+
+
 def test_scheduled_run_queues_a_lane_change_but_still_reads_the_store(server, sched_ctx):
     """`list` writes nothing; a run that cannot read the lane store cannot propose a correct
     change to it. Only the MUTATING verbs queue."""

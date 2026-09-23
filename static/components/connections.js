@@ -7,7 +7,7 @@
 // {provider: account} map; `onSave` receives the new map and PATCHes the owner.
 
 import { api } from "/static/api.js";
-import { el, skeleton, toast } from "/static/util.js";
+import { el, skeleton, toast, toastError } from "/static/util.js";
 
 export function connectionsCard(bound, { onSave, onChange } = {}) {
   // Two modes. With `onSave` it is the routine/domain editor: a save button PATCHes the
@@ -22,9 +22,13 @@ export function connectionsCard(bound, { onSave, onChange } = {}) {
   };
   const box = el("div", { class: "panel" }, skeleton(["50%"]));
   api("/api/settings/oauth").then((oauth) => {
+    // The card owns the section's ONE explanation (it mounts on the routine page and in the
+    // conversation composer alike); the "unbound reaches the run as no account" half came from
+    // the page-level copy that used to repeat this paragraph above it.
     box.replaceChildren(el("div", { class: "muted small", style: "margin-bottom:8px" },
-      "Bind an OAuth account per provider — its access token is injected into utils that "
-      + "declare it (e.g. NOTION_ACCESS_TOKEN). Connect accounts in ",
+      "Bind an OAuth account per provider so util calls act as that account — its access token "
+      + "is injected into utils that declare it (e.g. NOTION_ACCESS_TOKEN), and a provider left "
+      + "unbound reaches the run as no account at all. Connect accounts in ",
       el("a", { href: "#/settings?section=connections" }, "Settings → Connections"), "."));
     const byProvider = {};
     for (const c of (oauth.connections || [])) (byProvider[c.provider] ||= []).push(c.account);
@@ -44,7 +48,7 @@ export function connectionsCard(bound, { onSave, onChange } = {}) {
       box.append(el("div", { class: "row mt" }, el("button", { class: "btn primary",
         onclick: async () => {
           try { await onSave(current()); toast("connections saved"); }
-          catch (err) { toast(err.message, 4000, { error: true }); }
+          catch (err) { toastError(err); }
         } }, "save connections")));
     }
   }).catch((err) => box.replaceChildren(el("div", { class: "muted" }, err.message)));

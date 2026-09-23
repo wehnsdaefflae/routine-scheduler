@@ -22,6 +22,7 @@ from croniter import croniter
 
 from .config import RoutineConfig, ServerConfig, load_routine
 from .engine.inbox import open_questions
+from .ids import is_slug
 from .paths import read_json
 from .readmodels.memo import fingerprint
 
@@ -75,6 +76,19 @@ class RoutineInfo:
     @property
     def slug(self) -> str:
         return self.cfg.slug
+
+    @property
+    def fireable(self) -> bool:
+        """May the daemon start a run of this routine at all? ONE predicate for every fire
+        path — schedule, boot catch-up, lane chain, event trigger, one-shot.
+
+        Two different "no"s: `enabled` is the user's switch, `retired` is the routine's own
+        final goal being met. `retired` used to be honoured by the schedule and the lane chain
+        alone, so a routine the system calls DONE still fired on a report trigger or an earlier
+        run's `schedule_run` — spending a run re-asserting a met goal and re-filing the
+        retirement proposal that is already waiting on the Decisions page.
+        """
+        return self.cfg.enabled and not self.retired
 
     @property
     def last_run(self) -> RunInfo | None:
@@ -193,6 +207,41 @@ def scan(server: ServerConfig, home: Path | None = None) -> dict[str, RoutineInf
     return catalog
 
 
+def info(server: ServerConfig, home: Path, slug: str) -> RoutineInfo | None:
+    """ONE routine's RoutineInfo, off the same four memos `scan` uses — or None when this
+    home holds no such routine/conversation. Exactly what `scan(server, home).get(slug)`
+    answers, without walking the home to answer it.
+
+    Every per-slug web route wants this and had to scan a whole home for it: ~35 directories
+    walked, four memo lookups each, on every `/routines/{slug}/*` request. The conversation
+    side was worse — it rebuilt a RoutineInfo by hand, which bypassed all four memos AND
+    passed `open_questions=[]`, so a conversation's deferred questions read as none wherever
+    that path was taken.
+
+    A routine's addressable name is its DIRECTORY, which is the one-lookup fast path — taken
+    only for a well-formed slug, because `home / slug` is a path join and the argument comes
+    from a URL segment, while `scan` builds every path itself and can be handed anything. A
+    routine.yaml whose `slug` disagrees with its directory is a reported problem, not a
+    refusal, and `scan` keys such a routine by the name in the FILE — so a requested name the
+    directory does not answer to falls back to the full walk rather than 404ing on a routine
+    the catalog can see.
+
+    Nothing is pruned here: pruning is `scan`'s job, because only a whole-home walk knows
+    which memo entries belong to directories that are gone.
+    """
+    d = home / slug
+    if is_slug(slug) and (d / "routine.yaml").exists():
+        cfg, problems = _load_routine_memo(d)
+        if cfg is None:
+            cfg = RoutineConfig(slug=slug, dir=d, enabled=False)
+            problems = [*problems, "unloadable routine.yaml — treated as disabled"]
+        if cfg.slug == slug:
+            return RoutineInfo(cfg=cfg, problems=problems, runs=run_index(d, cfg.slug),
+                               open_questions=_open_questions_memo(d),
+                               retired=_retired_from_goal(d))
+    return scan(server, home).get(slug)
+
+
 def _load_routine_memo(d: Path) -> tuple[RoutineConfig | None, list[str]]:
     # Config, tuning AND the domain store all feed the parsed RoutineConfig, so an edit to any
     # of the three must miss the memo. Tuning, because a slider move (or the improver
@@ -275,8 +324,13 @@ def next_fire(cfg: Schedulable, after: datetime) -> datetime | None:
     return croniter(cfg.cron, after.astimezone(tz)).get_next(datetime)
 
 
-def last_due_fire(cfg: RoutineConfig, before: datetime) -> datetime | None:
-    if not cfg.cron:
+def last_due_fire(cfg: Schedulable, before: datetime) -> datetime | None:
+    """The most recent instant `cfg`'s cron came due at or before `before`.
+
+    Reads `enabled` like `next_fire` does: a schedule that is switched off — or a lane that is
+    PAUSED, which `lanes.schedulable` presents the same way — has no due fire to have missed.
+    """
+    if not cfg.cron or not cfg.enabled:
         return None
     tz = ZoneInfo(cfg.tz)
     return croniter(cfg.cron, before.astimezone(tz)).get_prev(datetime)

@@ -57,8 +57,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && npm cache clean --force \
     && rm -rf /var/lib/apt/lists/*
 
-# uv — runs the daemon and each util's inline-dependency script
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+# uv — runs the daemon and each util's inline-dependency script. PINNED, because `:latest`
+# made the resolver that runs this whole system whatever was newest on the day of the last
+# rebuild: a `uv run` or lock-resolution change would then arrive with no diff in the
+# repository, which is the one kind of failure that cannot be bisected. It had already drifted
+# — 0.12.13 in the container against 0.11.28 on the host. Bump it deliberately, like any
+# other dependency, and rebuild.
+COPY --from=ghcr.io/astral-sh/uv:0.12.13 /uv /uvx /bin/
 
 # A non-root user whose uid/gid match the host owner of the bind mounts (default 1000), so the
 # engine's commits + run files stay host-owned and the claude CLI never runs as root.
@@ -86,7 +91,11 @@ WORKDIR /home/mark/git-repos/routine-scheduler
 # lockfile alone (as root; chowned to mark after). The package itself installs editable from the
 # bind-mounted source at run time, so `uv run` still re-syncs on a self-audit dependency change.
 COPY pyproject.toml uv.lock ./
-RUN uv sync --frozen --extra headroom --no-install-project \
+# --locked, not --frozen: `--frozen` installs the lock AS-IS and never checks it against
+# pyproject.toml, so a dependency added without a re-lock builds a GREEN image that is missing
+# the package and fails as an ImportError inside the daemon at run time — with no CI and a
+# pre-commit that runs only ruff, mypy and test_policy, nothing else would catch it.
+RUN uv sync --locked --extra headroom --no-install-project \
     && chown -R mark:mark /opt/rsched-venv /home/mark
 
 # Entrypoint runs as ROOT to make bind mounts writable (Docker creates missing ones root-owned),

@@ -44,10 +44,12 @@ ON THE BOX. The tickets are files under the machine's own job root, so the queue
 restart, a container recreate, an instance migration, and a human working on the machine by hand —
 and the `remote` util enforces it at the one place that opens an SSH connection. This module is a
 READ MODEL over that truth plus the write path for an operator cancel: the daemon mirrors the
-queue into `<routines_home>/.control/machine-queue/<name>.json` on its tick so the prompt and the
-console can render it without an SSH round-trip per reader.
+queue into `<routines_home>/.control/machine-queue/<name>.json` at most once a minute
+(REFRESH_AFTER_S) so the prompt and the console can render it without an SSH round-trip per
+reader. The rate is set by what a READER tolerates, not by the tick that notices: every read is
+an SSH session and an interpreter boot on the box.
 
-Derived state, never config: deleting the mirror costs one tick.
+Derived state, never config: deleting the mirror costs one refresh.
 """
 
 from __future__ import annotations
@@ -66,6 +68,11 @@ QUEUE_DIR = Path(".control") / "machine-queue"
 #: A mirror older than this is not shown as truth — a machine we cannot reach must read as
 #: unknown rather than as empty, or a run would think the GPU is free because the box is down.
 STALE_AFTER_S = 900
+#: How old a mirror may get before `refresh` re-reads the box. Every read is an SSH session and a
+#: `uv run --script` interpreter boot, so the refresh rate is set by what READERS tolerate, not by
+#: the scheduler's 5s tick: consumers accept STALE_AFTER_S (15 min) of age, and once a minute
+#: keeps the mirror an order of magnitude inside that while turning ~17k sessions a day into ~1.4k.
+REFRESH_AFTER_S = 60
 
 
 def mirror_path(routines_home: Path, machine: str) -> Path:
@@ -95,14 +102,14 @@ def load(routines_home: Path, machine: str) -> dict:
     return doc
 
 
-def _stale(fetched: str) -> bool:
+def _stale(fetched: str, max_age_s: float = STALE_AFTER_S) -> bool:
     if not fetched:
         return True
     try:
         age = (datetime.now(UTC) - datetime.fromisoformat(fetched)).total_seconds()
     except ValueError:
         return True
-    return age > STALE_AFTER_S
+    return age > max_age_s
 
 
 def fair_share_order(tickets: list[dict]) -> list[dict]:
@@ -187,8 +194,28 @@ def capability_note(routines_home: Path, machine: str, slug: str) -> str:
 REMOTE_UTIL = "remote"
 
 
+def _record(routines_home: Path, machine: str, tickets: list[dict], *,
+            error: str, was: str) -> dict:
+    """Save one mirror and log the moment a machine starts or stops answering.
+
+    Only the TRANSITION is worth a line: a box that is down stays down for hours, and at one
+    refresh a minute a per-attempt warning would bury the daemon log in the same sentence. The
+    mirror itself carries the current reason for every reader.
+    """
+    if error and not was:
+        log.warning("machine %s queue unreadable: %s", machine, error)
+    elif was and not error:
+        log.info("machine %s queue readable again", machine)
+    return save(routines_home, machine, tickets, error=error)
+
+
 def refresh(server, *, timeout: int = 60) -> dict[str, dict]:
-    """Re-read every EXCLUSIVE machine's queue and rewrite its mirror. `{name: doc}`.
+    """Re-read every EXCLUSIVE machine whose mirror is older than REFRESH_AFTER_S and rewrite it.
+    `{name: doc}` for the machines actually re-read.
+
+    The TTL is the point: reading the queue costs an SSH session and an interpreter boot on the
+    box, so a fresh mirror is simply handed back unread. A machine that is down is re-attempted on
+    the same clock, which bounds the SSH attempts an unreachable box can pile onto the caller.
 
     Never raises. A machine we cannot reach records its reason, and `capability_note` renders that
     as UNKNOWN rather than as an empty queue — the one failure mode that would actually cause the
@@ -199,11 +226,19 @@ def refresh(server, *, timeout: int = 60) -> dict[str, dict]:
     from .secrets import load_secrets
 
     out: dict[str, dict] = {}
-    exclusive = [n for n, m in (server.machines or {}).items() if m.exclusive]
-    if not exclusive:
+    # machine -> the error its mirror last recorded, for the machines due a re-read
+    due: dict[str, str] = {}
+    for name, mac in (server.machines or {}).items():
+        if not mac.exclusive:
+            continue
+        doc = load(server.routines_home, name)
+        if not _stale(str(doc.get("fetched") or ""), REFRESH_AFTER_S):
+            continue
+        due[name] = str(doc.get("error") or "")
+    if not due:
         return out
     secrets = load_secrets()
-    for name in exclusive:
+    for name, was in due.items():
         # `resolve_machines` OWNS the two env-var shapes the util reads — the metadata list and
         # `{machine NAME: PEM}`. Hand-rolling them here keyed the PEM by `key_var` instead, so the
         # util reported "no private key available" and the mirror recorded UNKNOWN forever. One
@@ -216,12 +251,12 @@ def refresh(server, *, timeout: int = 60) -> dict[str, dict]:
                 extra_secrets={"RSCHED_MACHINE_KEYS": json.dumps(keys),
                                "RSCHED_MACHINES": json.dumps(meta)})
         except OSError as exc:
-            out[name] = save(server.routines_home, name, [], error=str(exc))
+            out[name] = _record(server.routines_home, name, [], error=str(exc), was=was)
             continue
         if code != 0:
-            out[name] = save(server.routines_home, name, [],
-                             error=(stderr.strip() or stdout.strip()
-                                    or f"remote util exited {code}")[:300])
+            out[name] = _record(server.routines_home, name, [], was=was,
+                                error=(stderr.strip() or stdout.strip()
+                                       or f"remote util exited {code}")[:300])
             continue
         try:
             payload = json.loads(stdout)
@@ -229,9 +264,9 @@ def refresh(server, *, timeout: int = 60) -> dict[str, dict]:
         except ValueError:
             tickets = None
         if not isinstance(tickets, list):
-            out[name] = save(server.routines_home, name, [],
-                             error="the remote util did not report a queue (is it new enough "
-                                   "to support `remote queue`?)")
+            out[name] = _record(server.routines_home, name, [], was=was,
+                                error="the remote util did not report a queue (is it new enough "
+                                      "to support `remote queue`?)")
             continue
-        out[name] = save(server.routines_home, name, tickets)
+        out[name] = _record(server.routines_home, name, tickets, error="", was=was)
     return out

@@ -245,7 +245,10 @@ counting them would make every deferral its own proof of delivery.)
 **An addressed report whose message was never written.** The same module carries the second loss
 mechanism, because it is lost the same way — off every filter, counted in every backlog figure,
 and owned by nobody. `file_report` writes the ledger row and the target's `inbox/msg-rep-<id>.json`
-in ONE call, so an addressed report always has a message waiting for its target's next run. A row
+in ONE call (through `engine/inbox.file_message`, the one writer of that shape — the
+`rep-<id>` stem is an idempotency key, which is exactly why the delivery can be read back by
+name and retracted), so an addressed report always has a message waiting for its target's
+next run. A row
 appended any other way — an operator batch written straight to the stream — has a `target` and no
 message, so the target can never drain it, never stamp it `delivered`, and it reads `open`
 forever. Twelve rows from the 2026-08-29 web-UI migration are exactly that (D114). The check is
@@ -259,7 +262,12 @@ filter below it. It SURFACES rather than gates — a human judges the promise, a
 false-positive deferral is to write the closure note so it names what it delivered.
 
 The stream is append-only. The report row is written by the `report` action; the `delivered`,
-`retracted` and `superseded` events are further rows, folded onto it by `reports.read_reports`.
+`retracted` and `superseded` events are further rows, folded onto it by `reports.read_reports`
+— ONCE per append, behind the read-models' stat fingerprint. The fold is not cheap and it
+grows with the fleet's traffic (2.9 MB / 2,199 lines today), and it answers every routine
+page's Messages panel, every orphans read and every outbox retraction; re-parsing it per
+request made the page slower in proportion to how much the fleet talks. The rows it hands
+back are shared and read-only — every consumer folds them into new dicts.
 
 A closure (`closes: true`) is delivered like any other addressed report but never WAKES its
 target: the receiving routine's `report` trigger skips a closure-only inbox, so an
@@ -318,7 +326,11 @@ changelog rides along because an item's own history sits on its card, and a row 
 item would otherwise be unreachable.
 
 Filters (all optional, combinable): `type`, `status`, `routine` (matches `origin.routine`),
-`search` (substring over id, title, detail, and the addressed summaries), `limit`.
+`target` (who a report was addressed TO — the other end of `routine`, and what a routine
+reconciling its own inbox asks with), `search` (substring over id, title, detail, and the
+addressed summaries), `folded` (include rows another report has TAKEN OVER; hidden from
+browsing by default because a folded row cannot be answered and settles with its carrier,
+never hidden from a `search` that names one), `limit`.
 
 The STRUCTURED reviewer feedback (finding comments, decision answers) keeps its tagged
 channel: `POST`/`PUT /api/audit/feedback` (`rsched/web/api_audit.py`) write and edit tagged

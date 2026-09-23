@@ -4,15 +4,15 @@ Orient, do the instruction's work in verified steps, record, commit. This file i
 PATTERN, not a program: the orchestrator never executes it —
 it *acts it out*, one engine action per turn, following the control flow below (its branches,
 loops, and error handling). The dummy imports name the parameters this routine works with; the
-clarifier pins them down for the concrete task and `decompose` turns this pattern into the
-routine's own markdown state-machine (main.md + stages/).
+clarifier pins them down for the concrete task, and `decompose` turns this pattern into the
+routine's own markdown state-machine (main.md + steps/).
 """
 
 # --- Parameter contract -------------------------------------------------------------------------
 # These imports do not resolve to anything at run time. Each names one piece of information the
-# clarifier must fix for THIS routine — the type and what it means live in the comment.
+# clarifier must fix for THIS routine — the type, and what it means, live in the comment.
 from routine.params import (
-    DELIVERABLE,    # str       — the concrete artifact this routine produces and where it lives
+    DELIVERABLE,    # str       — the concrete artifact this routine produces, and where it lives
     SOURCES,        # list[str] — the inputs/feeds each run draws from (may be empty)
     SINCE_MARKER,   # str       — how "new since the last run" is tracked (a file under state/)
 )
@@ -31,7 +31,7 @@ META = {
                    "/ maintain something on a schedule, tend a long-running goal, run a periodic "
                    "check. Use it when the instruction says WHAT to deliver and the HOW is "
                    "ordinary tool work.",
-    "version": 12,
+    "version": 15,
     "tags": ["general", "research", "tool-use"],
     "includes": ["ask-policy", "web-research", "decision-record"],
     "tools": None,          # None = every action kind is allowed
@@ -93,10 +93,10 @@ def orient():
 
 
 def bootstrap():
-    """First run(s): create state/, understand the subject matter the instruction turns on, and
-    file deferred questions for genuinely pivotal unknowns (ask-policy). Advance state/phase.json
-    to 'steady' once the basic loop can run, then continue into this run's normal work — a first
-    fire that delivers nothing but setup costs the user a whole cadence."""
+    """First run(s): create state/, understand the instruction's domain, and file deferred
+    questions for genuinely pivotal unknowns (ask-policy). Advance state/phase.json to 'steady'
+    once the basic loop can run, then continue into this run's normal work — a first fire that
+    delivers nothing but setup costs the user a whole cadence."""
 
 
 def pick_work():
@@ -107,7 +107,7 @@ def pick_work():
     Take everything that is genuinely due — this is a work LIST, not a token gesture. What bounds
     a run is the stopping conditions in `state/stopping.json` (the user's own words for what DONE
     means, inlined above and accounted for in your finish summary). The turn budget is a runaway
-    BACKSTOP, not a ration: do not stop early because turns are being spent and do not stretch a
+    BACKSTOP, not a ration: do not stop early because turns are being spent, and do not stretch a
     finished job to fill them."""
 
 
@@ -171,10 +171,43 @@ def record():
     consent flow that asked for too much or too little — and file each real hitch with the
     `report` action before finishing (leave `target` unset if you cannot name the owner; triage
     routes it). A finish summary is read as the task's outcome, not as a defect stream.
-    When LEDGER.md grows past ~400 lines or ~40 entries, rotate it THAT run as a required
-    part of recording (not deferrable housekeeping): archive the older entries with a
-    one-line rollup note pointing at the archive, keeping only the recent tail — an
-    unbounded LEDGER is its own defect."""
+    Rotate LEDGER.md THAT run, as a required part of recording rather than deferrable
+    housekeeping, whenever it exceeds the SIZE IN BYTES the recipe names: archive the
+    older entries with a one-line rollup note pointing at the archive, keeping only the
+    recent tail — an unbounded LEDGER is its own defect.
+    MEASURE THE THRESHOLD IN BYTES, AND DERIVE IT FROM THIS ROUTINE'S OWN ENTRIES. A
+    trigger counting lines or entries cannot see the thing that costs a reader anything:
+    entries grow from one-liners into narratives, so the same count means a 20 KB file one
+    month and a 130 KB file the next. Measured across a 33-routine instance on 2026-09-21,
+    every ledger over 100 KB was inside its own count-based limit — one was 112 KB at 30
+    entries against a 40-entry trigger, so a fully compliant run correctly did nothing.
+    THE CAP AND THE KEPT TAIL ARE ONE PAIR, AND A CROSSED PAIR IS WORSE THAN NO TRIGGER.
+    The cap is a byte CEILING; keeping the last N entries is a count FLOOR worth N x the
+    mean entry size, and whichever is LARGER is the one that actually binds. Setting the
+    cap at "about N entries" therefore makes ceiling and floor equal by construction, and
+    the trigger is inert in one of two ways: a cap at or just above the floor rotates one
+    entry, lands the file just under, and re-trips on the very next append -- a rotation
+    every single run forever, the live file never holding more than the floor; a cap BELOW
+    the floor cannot be satisfied at all while keeping N entries, so a correct run's only
+    option is to skip it. Both failure modes were live on a 33-routine instance on
+    2026-09-21: five recipes paired a byte cap with a kept tail and four were already
+    crossed, one self-defeating by a single kilobyte, while a sixth sat at 2.8x a cap no
+    run had ever been able to honour. So set the cap ABOVE the floor with real headroom --
+    the mean of the last three entries, times the tail you keep, plus room for several more
+    runs -- and if a rotation leaves the file still over the cap, OR lands it within one
+    entry's size of the cap, the numbers are wrong: fix them with the measurement that
+    justifies it, raising the ceiling or lowering the floor, but never leaving them
+    crossed. A threshold you trip by complying with it is one every run learns to ignore --
+    that is how a ledger reached 9.5x its own stated limit.
+    The same discipline governs `state/`, and for the same reason. Before writing a file
+    there, apply the read-back test: will a LATER run read this? If yes it gets a STABLE
+    name and is overwritten in place; if no it is scratch, so write it outside the durable
+    state directory or delete it before finishing. A date or a record id embedded in a
+    state filename is the signature of a file nobody will read again, because the next run
+    computes a new name and looks for one that does not exist — so the directory grows
+    without bound while every run reads only the handful of files the recipe actually
+    names. Keep what a future run consults; leave nothing whose only reader was the run
+    that wrote it."""
     ledger.append("what changed, why, decisions, rejected candidates")
 
 
@@ -184,7 +217,7 @@ def wrap_up():
     source (never against your own state files), TELL the user in plain words where it lives and
     how to reach it, and FINISH accounting those conditions as met. Start no new work, draw
     nothing new from SOURCES, and open no new question."""
-    return finish("ok", "Goal reached: deliverable verified, plus where it lives.")
+    return finish("ok", "Goal reached: deliverable verified, and where it lives.")
 
 
 if __name__ == "__main__":

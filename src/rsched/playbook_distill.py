@@ -14,6 +14,8 @@ import re
 from datetime import datetime
 from pathlib import Path
 
+from . import ids
+
 PLAYBOOK_SCHEMA = {
     "type": "object", "additionalProperties": False,
     "required": ["slug", "title", "when", "tags", "axis", "main"],
@@ -132,7 +134,11 @@ def _oneline(v: object) -> str:
 
 
 def _slugify(v: object) -> str:
-    return (re.sub(r"[^a-z0-9-]+", "-", str(v or "").lower()).strip("-") or "playbook")[:60]
+    """The ONE slug rule, capped at a filename-sane length. `ids.slugify` owns the alphabet
+    so a name a routine gets and a name a playbook gets cannot round-trip two different
+    ways; only the default and the cap are this module's.
+    """
+    return ids.slugify(str(v or ""), default="playbook")[:60]
 
 
 def _normalize(data: dict) -> dict:

@@ -1,6 +1,9 @@
 """Usage statistics endpoint — time, tokens, cost rolled up across every run in the
-routines and conversations homes (see rsched.stats.aggregate). Read-only; the filesystem
-is the source of truth, so every call reflects the live state with no cache.
+routines and conversations homes (see rsched.stats.aggregate). Read-only; the filesystem is
+the source of truth and the roll-up is recomputed per call, with every input cached only
+behind a stat fingerprint of the file it comes from — so a run that just finished shows up
+on the next call, and the git subprocesses behind the recipe-size trend do not run again
+until a routine commits.
 """
 
 from __future__ import annotations

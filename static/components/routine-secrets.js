@@ -10,7 +10,7 @@
 // connections and machines have theirs: one panel, one responsibility, one place to fix.
 
 import { api } from "/static/api.js";
-import { el, skeleton, toast } from "/static/util.js";
+import { el, skeleton, toast, toastError } from "/static/util.js";
 
 export function routineSecretsCard(slug) {
   const box = el("div", {}, skeleton(["50%"]));
@@ -36,7 +36,7 @@ export function routineSecretsCard(slug) {
             await api(`/api/routines/${slug}/secrets/${encodeURIComponent(name)}`,
                       { method: "DELETE" });
             toast(`${name} removed`); load();
-          } catch (err) { toast(err.message, 4000, { error: true }); }
+          } catch (err) { toastError(err); }
         } }, "remove")));
     }
     if (!(own.keys || []).length)
@@ -54,7 +54,7 @@ export function routineSecretsCard(slug) {
                     { method: "PUT", body: { key: keyIn.value.trim(), value: valIn.value } });
           toast(`${keyIn.value.trim()} saved`); keyIn.value = ""; valIn.value = "";
           load();
-        } catch (err) { toast(err.message, 4000, { error: true }); }
+        } catch (err) { toastError(err); }
       } }, "set")));
   };
 

@@ -14,7 +14,7 @@ import logging
 
 from ..config import DELIBERATION_LEVELS
 from ..paths import read_json
-from . import deliberation
+from . import deliberation, enginenote
 
 log = logging.getLogger("rsched.control")
 
@@ -66,10 +66,8 @@ def apply_model_switch(loop) -> None:
             ctx.routine.models[kind] = name
             applied.append(f"{kind} → {name}")
     if applied:
-        note = "model switched mid-run: " + "; ".join(applied)
-        ctx.transcript.event("user_injection", {"text": f"[engine] {note}", "source": "engine"})
-        loop.messages.append({"role": "user", "content":
-            f"ENGINE NOTE: {note}. Continue the run on the new model."})
+        enginenote.append(loop, "model switched mid-run: " + "; ".join(applied)
+                          + ". Continue the run on the new model.")
 
 def apply_deliberation_switch(loop) -> None:
     """Turn-boundary: honour a mid-run deliberation switch written to control.json by the
@@ -89,8 +87,7 @@ def apply_deliberation_switch(loop) -> None:
         return
     note = deliberation.switch_note(ctx.deliberation, level)
     ctx.deliberation = level
-    ctx.transcript.event("user_injection", {"text": f"[engine] {note}", "source": "engine"})
-    loop.messages.append({"role": "user", "content": f"ENGINE NOTE: {note}"})
+    enginenote.append(loop, note)
 
 def apply_config_change(loop) -> None:
     """Turn-boundary: a config PATCH made while this run is LIVE (F337).
@@ -124,8 +121,7 @@ def apply_config_change(loop) -> None:
         if field in ADOPTABLE:
             _adopt(loop, field, values.get(field))
     if note := change_note(fields, values):
-        ctx.transcript.event("user_injection", {"text": f"[engine] {note}", "source": "engine"})
-        loop.messages.append({"role": "user", "content": f"ENGINE NOTE: {note}"})
+        enginenote.append(loop, note)
 
 def _adopt(loop, field: str, value: object) -> None:
     """Apply ONE live-classified field to the running context. Best-effort per field: a value
@@ -146,13 +142,11 @@ def _adopt(loop, field: str, value: object) -> None:
                 if hasattr(ctx.budgets, str(name)) and isinstance(limit, int):
                     setattr(ctx.budgets, str(name), limit)
         elif field == "grants" and isinstance(value, dict):
-            from ..policyload import load_policy
+            from .loopsetup import build_base_policy
+            from .requests import rebuild_policy
 
             ctx.routine.grants = value
-            loop.base_grants = load_policy(
-                ctx.server.permissions_home, ctx.routine.permissions, ctx.routine.capabilities,
-                current_run_ts=ctx.run_ts, grants_map=value)
-            from .requests import rebuild_policy
+            build_base_policy(loop, value)   # the SAME builder configure() used — see there
             rebuild_policy(loop)
     except (AttributeError, TypeError, ValueError, OSError) as exc:
         log.warning("config_change: could not adopt %r live (%s) — it lands at the next run",
@@ -186,8 +180,7 @@ def apply_rule_additions(loop) -> None:
         text = library_docs.doc_body(raw).strip()
         note = (f"the user bound the general rule {slug!r} to this routine — it applies from "
                 f"now on, and is one of your standing practices from the next run:\n\n{text}")
-        ctx.transcript.event("user_injection", {"text": f"[engine] {note}", "source": "engine"})
-        loop.messages.append({"role": "user", "content": f"ENGINE NOTE: {note}"})
+        enginenote.append(loop, note)
 
 
 # The two carriers of a rule's prose inside a live thread. A bound rule is NOT inlined in the
@@ -245,5 +238,4 @@ def apply_rule_drop(loop) -> None:
     if erased:
         note += (f" Their text has been withdrawn from the conversation above "
                  f"({erased} message(s) rewritten).")
-    ctx.transcript.event("user_injection", {"text": f"[engine] {note}", "source": "engine"})
-    loop.messages.append({"role": "user", "content": f"ENGINE NOTE: {note}"})
+    enginenote.append(loop, note)

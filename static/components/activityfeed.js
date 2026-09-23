@@ -4,9 +4,15 @@
 // it is now the Dashboard's activity section — mount it anywhere with activityFeed().
 //
 // The mount is LAZY: nothing loads or polls until start() is called (the Dashboard calls it when
-// its section is open), so a collapsed section costs nothing.
+// its section is open), so a collapsed section costs nothing — and it stays lazy AFTERWARDS.
+// `isOpen()` is the same predicate shape createTaskTree takes: start() arms the wiring once,
+// and every refresh the bus or the 4 s poll would make is skipped while the section is shut.
+// Without it, one click open and one click closed left four fetches (routines, 300 runs,
+// status, questions) firing every four seconds for content nobody could see, for the life of
+// the tab — the same "refetch nothing renders" class as any leaked poller.
 
 import { api } from "/static/api.js";
+import { summaryLine } from "/static/md.js";
 import { liveTail } from "/static/stream.js";
 import { createTranscript } from "/static/components/transcript.js";
 import { chip, el, emptyState, fmtDur, fmtNum, skeleton, storage, toDate, when } from "/static/util.js";
@@ -31,7 +37,7 @@ function runDuration(r) {
 
 // Returns { node, start, dispose }. `start()` is idempotent: first call loads and wires the
 // live plumbing (bus listener + poll while anything runs); later calls just refresh.
-export function activityFeed() {
+export function activityFeed({ isOpen = () => true } = {}) {
   const filters = { routine: "", status: "", window: storage.get(WINDOW_KEY) || "7d", search: "", live: true };
   const rows = new Map();          // run_id -> row controller (persists across refreshes)
   let allRuns = [], routineMeta = {}, statusData = { active_runs: {} }, questions = [];
@@ -176,9 +182,11 @@ export function activityFeed() {
       metaEl.replaceChildren(when(r.ts));
       const bits = [`${r.turn || 0} turns`, compactTokens(r.usage), runDuration(r)].filter(Boolean);
       if (bits.length) metaEl.append(`  ·  ${bits.join("  ·  ")}`);
-      const oneLine = (r.summary || "").split("\n").find((l) => l.trim())
-        || (isActive(r.state) ? "…in progress" : "(no summary)");
-      sumEl.textContent = oneLine;
+      // The summary is MODEL PROSE. Assigned to `textContent` it kept its markers, so the
+      // feed's one-line preview read "**Two applications w…" while the routine page and the
+      // dashboard rendered the same field. One helper reduces it for all three.
+      sumEl.replaceChildren(summaryLine(r.summary,
+        isActive(r.state) ? "…in progress" : "(no summary)"));
       sumEl.title = r.summary || "";
     }
 
@@ -222,7 +230,7 @@ export function activityFeed() {
 
   // ---- live wiring ---------------------------------------------------------
   const onBus = (e) => {
-    if (!filters.live) return;
+    if (!filters.live || !isOpen()) return;
     // llm_task / llm_process events fire several times a second during a busy run and change
     // nothing this feed shows (the LLM dock renders them); a reload per event was four
     // fetches — routines, 300 runs, status, questions — every 600 ms per open tab, which is
@@ -239,6 +247,7 @@ export function activityFeed() {
     window.addEventListener("rsched-bus", onBus);
     // poll while anything is active (bus fires on transitions, not every turn)
     poll = setInterval(() => {
+      if (!isOpen()) return;
       if (filters.live && (Object.keys(statusData.active_runs || {}).length || allRuns.some((r) => isActive(r.state))))
         load();
     }, 4000);

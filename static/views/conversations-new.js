@@ -19,9 +19,11 @@ import { rulePicker } from "/static/components/rulepicker.js";
 import { settingsSection } from "/static/components/settings-section.js";
 import { forgetField } from "/static/formpersist.js";
 import { navigate } from "/static/router.js";
-import { el, modelOption, skeleton, toast } from "/static/util.js";
+import { el, modelOption, skeleton, storage, toast, toastError } from "/static/util.js";
 
 export const PREFILL_KEY = "conv-new-prefill";
+//: whether the composer's pre-start settings block was left open, per browser
+const SETUP_OPEN_KEY = "conv-new-setup-open";
 
 export function mountComposerOnly(main) {
   const text = el("textarea", { rows: 5,
@@ -156,7 +158,7 @@ export function mountComposerOnly(main) {
       forgetField(text); forgetField(workdir);   // submitted — never refill the next composer
       clearFiles();
       navigate(`#/conversations/${r.slug}`);
-    } catch (err) { toast(err.message, 5000, { error: true }); send.disabled = false; }
+    } catch (err) { toastError(err, 5000); send.disabled = false; }
   };
 
   const budgetRow = el("div", { class: "row", style: "gap:12px;align-items:center;flex-wrap:wrap" },
@@ -169,16 +171,23 @@ export function mountComposerOnly(main) {
     el("label", { class: "faint small row", style: "gap:4px;align-items:center" },
       "whole conversation (turns)", totalTurnsIn));
 
-  main.replaceChildren(
-    el("div", { class: "page-head" }, el("div", {},
-      el("h1", {}, "New conversation"))),
-    // the primary action: the first message, an optional playbook, and start
-    el("div", { class: "panel conv-new" },
-      text,
-      el("div", { class: "row mt", style: "gap:8px;align-items:center;flex-wrap:wrap" },
-        el("span", { class: "faint small" }, "playbook"), pbSel),
-      pbHint,
-      el("div", { class: "row mt", style: "gap:8px;flex-wrap:wrap" }, picker, admin.node, send)),
+  // THE PRE-START SETTINGS ARE A DETOUR, not the page. Eight sections rendered flat under the
+  // task box made the landing screen 12 600px: MODEL, PROJECT DIRECTORY, FOLDER ACCESS,
+  // BUDGETS, DELIBERATION, GENERAL RULES (5 bound cards + 25 available), CONNECTIONS,
+  // PERMISSIONS (5 + 20) — thirty screens of configuration under a page whose one action is
+  // at the top. All of it is still here, unchanged, behind one disclosure that says what
+  // starting without opening it means. The choice is remembered per browser, so somebody who
+  // always tunes the model opens it once — and where there is room to read them all at a
+  // glance (a desktop column) they start open, the way they always have.
+  const remembered = storage.get(SETUP_OPEN_KEY);
+  const setup = el("details", { class: "panel conv-setup",
+    open: remembered ? remembered === "1" : window.matchMedia("(min-width: 861px)").matches },
+    el("summary", {},
+      el("strong", {}, "Before you start"), " ",
+      el("span", { class: "muted small" },
+        "model, project directory, folder access, budgets, deliberation, rules, connections, "
+        + "permissions — left closed, this conversation starts on the instance defaults; the "
+        + "model and the permissions stay changeable from its header afterwards")),
     // the pre-start settings — the same titled-section vocabulary the routine page uses
     ...settingsSection("Model",
       "Which model answers this conversation — pick one from the catalog or start on the "
@@ -227,5 +236,18 @@ export function mountComposerOnly(main) {
       + "govern the first reply, which fires as soon as you start, so set them here; you can "
       + "adjust them afterward from the conversation header.",
       permsHost));
+  setup.ontoggle = () => storage.set(SETUP_OPEN_KEY, setup.open ? "1" : "0");
+
+  main.replaceChildren(
+    el("div", { class: "page-head" }, el("div", {},
+      el("h1", {}, "New conversation"))),
+    // the primary action: the first message, an optional playbook, and start
+    el("div", { class: "panel conv-new" },
+      text,
+      el("div", { class: "row mt", style: "gap:8px;align-items:center;flex-wrap:wrap" },
+        el("span", { class: "faint small" }, "playbook"), pbSel),
+      pbHint,
+      el("div", { class: "row mt", style: "gap:8px;flex-wrap:wrap" }, picker, admin.node, send)),
+    setup);
   text.focus();
 }

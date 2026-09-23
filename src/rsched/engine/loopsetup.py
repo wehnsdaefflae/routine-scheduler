@@ -15,6 +15,34 @@ from .run_context import RunContext
 from .subruns import SubrunManager
 
 
+def build_base_policy(loop, grants_map: dict) -> None:
+    """Set `loop.base_grants` — the run's CONFIG-derived grant policy, before the one-time
+    overlay `requests.rebuild_policy` folds over it.
+
+    ONE builder, because a live `grants` config PATCH rebuilds the same policy mid-run
+    (`switches._adopt`). That seam used to carry its own copy of these arguments and carried
+    only two of them, so an operator clicking a grant on the Decisions page while a run had
+    its recipe UNLOCKED silently revoked the unlock (`recipe_unlocked` defaults False), an
+    admin conversation leg lost `admin`, and every child of that run — children read the
+    ROOT control.json, so they adopt the parent's patch — lost its subrun scope, gaining the
+    routine's denial wording and `run_history: last` in place of a child's own.
+    """
+    loop.base_grants = load_policy(loop.ctx.server.permissions_home,
+                                   loop.ctx.routine.permissions,
+                                   loop.ctx.routine.capabilities,
+                                   current_run_ts=loop.ctx.run_ts,
+                                   recipe_unlocked=bool(loop._recipe_unlocked),
+                                   admin=loop.admin_leg,
+                                   grants_map=grants_map)
+    if loop.ctx.depth > 0:
+        # A spawned/subtask child: capabilities are off by design (childrun), so a
+        # gated-kind denial must name the child scope, not claim the routine lacks it.
+        # run_history drops back to "none" here: D96's always-on 'last' floor is a
+        # ROUTINE baseline, and a child's brief — not the archive — is its context.
+        from dataclasses import replace
+        loop.base_grants = replace(loop.base_grants, is_subrun=True, run_history="none")
+
+
 def configure(loop, ctx: RunContext, workflow_body: str, instruction: str,
                  abort_event: threading.Event | None = None,
                  allowed_tools: list[str] | None = None, resume: bool = False) -> None:
@@ -94,24 +122,8 @@ def configure(loop, ctx: RunContext, workflow_body: str, instruction: str,
     # is the one reasoning with the user, and a child's proposal traces to nothing.
     if loop.allowed_tools is not None and ctx.depth == 0:
         loop.allowed_tools |= {"create_routine", "manage_lane"}
-    # base_grants is the CONFIG-derived policy; the live loop.grants folds the run's
-    # one-time grant overlay over it (requests.rebuild_policy) — always base+overlay,
-    # never stacked, so a decision can also be reasoned about from the base.
-    loop.base_grants = load_policy(ctx.server.permissions_home,
-                                   ctx.routine.permissions,
-                                   ctx.routine.capabilities,
-                                   current_run_ts=ctx.run_ts,
-                                   recipe_unlocked=unlocked or revising,
-                                   admin=loop.admin_leg,
-                                   grants_map=ctx.routine.grants)
-    if ctx.depth > 0:
-        # A spawned/subtask child: capabilities are off by design (childrun), so a
-        # gated-kind denial must name the child scope, not claim the routine lacks it.
-        # run_history drops back to "none" here: D96's always-on 'last' floor is a
-        # ROUTINE baseline, and a child's brief — not the archive — is its context.
-        from dataclasses import replace
-        loop.base_grants = replace(loop.base_grants, is_subrun=True,
-                                   run_history="none")
+    loop._recipe_unlocked = unlocked or revising
+    build_base_policy(loop, ctx.routine.grants)
     loop.grants = ctx.grants = loop.base_grants.with_overlay(ctx.granted_now,
                                                              ctx.denied_now)
     loop.util_reminder = loopnudge.build_util_reminder(loop)
@@ -164,9 +176,13 @@ def configure(loop, ctx: RunContext, workflow_body: str, instruction: str,
     # narrowed to finish — so the summary is ALWAYS authored. Only a second violation
     # (the reserve already spent) force-finishes. See _reserve_finish.
     loop._finish_reserved = False
+    loop._budget_spent = None    # which budget spent it: {resource, limit, message}
     loop._last_compact_after = 0   # post-compaction size; gates re-compaction (anti-thrash)
     loop._evict_warned = False   # the one-turn warning before the middle is elided
     loop._last_seen_phase = None   # the anticipatory-compaction edge (window.py)
+    # 1.0 until a completion reports what the provider actually counted; every window the
+    # compaction gates see is divided by it from then on (window.note_prompt_size).
+    loop._token_ratio = 1.0
     try:
         hist_rel = str((ctx.run_dir / "history").relative_to(ctx.routine.dir))
     except ValueError:

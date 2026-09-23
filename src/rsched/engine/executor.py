@@ -42,6 +42,30 @@ READ_DEFAULT_MAX_LINES = 200
 # usage errors count as plain errors, which is the honest fallback).
 
 
+def _note_if_killed(ctx: RunContext, kind: str, name: str, code: int) -> None:
+    """A child command the KERNEL stopped: emit `util_killed` (best-effort).
+
+    A negative exit status is a signal, and -9 inside this container is the cgroup OOM
+    killer. The engine survives it — only the child died — so the run reports an ordinary
+    failed command and the health stream held NOTHING: five python children were killed
+    that way on 2026-09-14 and 09-17 (anon-rss 1.86-2.05 GB, `/var/log/kern.log`) with no
+    event of any kind. `children_vm_hwm_kb` is this run's high-water mark across ALL its
+    finished children — an upper bound on the one that died, and the figure that says which
+    ceiling refused it.
+    """
+    if code >= 0:
+        return
+    import resource
+
+    from ..health_events import log_health_event
+    log_health_event(
+        ctx.server.routines_home, "util_killed",
+        routine=getattr(ctx.routine, "slug", "") or "", run_id=getattr(ctx, "run_id", "") or "",
+        detail=f"{kind} {name} was killed by signal {-code} (run turn {ctx.turn})",
+        kind=kind, util=name, signal=-code,
+        children_vm_hwm_kb=resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss or None)
+
+
 def do_util(action: dict, ctx: RunContext) -> dict:  # noqa: PLR0911 — list/show dispatch, many small exits
     name = action["name"]
     args = [str(a) for a in (action.get("args") or [])]
@@ -56,9 +80,11 @@ def do_util(action: dict, ctx: RunContext) -> dict:  # noqa: PLR0911 — list/sh
             if entry is None:
                 return {"kind": "util", "name": "list", "target": target, "missing": True,
                         "available": [u["name"] for u in utils_lib.list_utils(home)]}
-            lines = [f"- {entry['name']} — {entry['summary']}"]
-            if entry.get("usage"):
-                lines.append(f"    {entry['usage']}")
+            # the WHOLE usage block (F505): for a verb-dispatched util the first line is
+            # `gu <name> <verb> …` or just its first verb, and that is exactly what a caller
+            # asking for ONE util's entry needs in full. Interpolating the block into one
+            # indented line left its continuations reading as part of the table.
+            lines = utils_lib.entry_lines(entry, full_usage=True)
             if entry.get("tags"):
                 lines.append(f"    tags: {', '.join(entry['tags'])}")
             if entry.get("secrets"):
@@ -133,6 +159,7 @@ def do_util(action: dict, ctx: RunContext) -> dict:  # noqa: PLR0911 — list/sh
         policy=sandbox.policy_for_ctx(ctx),
         extra_secrets=_extra_secrets(ctx), withhold_secrets=set(withheld),
         cwd=ctx.routine.dir)
+    _note_if_killed(ctx, "util", name, code)
     # Per-util reliability telemetry (util_stats → the Stats tab).
     ctx.count_util(name, "ok" if code == 0
                    else ("usage_error" if code == USAGE_ERROR_EXIT else "error"))
@@ -218,6 +245,7 @@ def do_script(action: dict, ctx: RunContext) -> dict:
         timeout=int(action.get("timeout_s") or scripts.SCRIPT_TIMEOUT_S),
         policy=sandbox.policy_for_ctx(ctx), libraries_home=ctx.server.libraries_home,
         env_secrets=env_secrets)
+    _note_if_killed(ctx, "script", name, code)
     return {"kind": "script", "name": name, "args": args, "exit": code,
             **command_output(ctx, f"script-{name}", out, err, code)}
 
@@ -245,6 +273,7 @@ def do_shell(action: dict, ctx: RunContext) -> dict:
         command, policy=sandbox.policy_for_ctx(ctx),
         libraries_home=ctx.server.libraries_home, cwd=cwd,
         timeout=int(action.get("timeout_s") or shellrun.SHELL_DEFAULT_TIMEOUT_S))
+    _note_if_killed(ctx, "shell", command[:60], int(result["exit"]))
     obs = {"kind": "shell", "command": command, "exit": result["exit"],
            **command_output(ctx, "shell", result["stdout"], result["stderr"], result["exit"])}
     obs["truncated"] = obs["truncated"] or result["truncated"]

@@ -195,3 +195,73 @@ def test_refresh_hands_the_util_the_shapes_the_resolver_defines(tmp_path, monkey
     # keyed by the machine NAME, which is what the util looks the PEM up under
     assert json.loads(seen["RSCHED_MACHINE_KEYS"]) == {"predator": "PEM"}
     assert json.loads(seen["RSCHED_MACHINES"]) == [{"name": "predator"}]
+
+
+def _exclusive_server(tmp_path, monkeypatch, run_util):
+    from types import SimpleNamespace
+
+    mac = SimpleNamespace(exclusive=True, key_var="", name="predator", host="h", user="u",
+                          port=22, host_key="", workdir="", share="", description="", tags=[])
+    server = SimpleNamespace(routines_home=tmp_path, libraries_home=tmp_path / "lib",
+                             machines={"predator": mac})
+    monkeypatch.setattr("rsched.machines.resolve_machines",
+                        lambda names, catalog, secrets: ([{"name": n} for n in names], {}, []))
+    monkeypatch.setattr("rsched.sandbox.base_policy", lambda s: None)
+    monkeypatch.setattr("rsched.utils_run.run_util", run_util)
+    return server
+
+
+def _age_the_mirror(tmp_path, machine: str, seconds: float) -> None:
+    import json
+    path = mq.mirror_path(tmp_path, machine)
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    raw["fetched"] = (datetime.now(UTC) - timedelta(seconds=seconds)).isoformat()
+    path.write_text(json.dumps(raw), encoding="utf-8")
+
+
+def test_a_fresh_mirror_is_not_re_read(tmp_path, monkeypatch):
+    """The rate is set by what READERS tolerate, not by the 5s tick that notices.
+
+    Every read is an SSH session and a `uv run --script` interpreter boot on the box. Refreshed
+    per tick that was ~17k sessions a day for a mirror whose consumers accept 15 minutes of age —
+    and an unreachable box, whose attempt lives for its 20-60s connect timeout, started a new one
+    every 5s onto the loop's 8-worker default executor.
+    """
+    import json
+    calls: list[list[str]] = []
+
+    def fake_run(lib, util, args, **kw):
+        calls.append(args)
+        return 0, json.dumps({"tickets": []}), ""
+
+    server = _exclusive_server(tmp_path, monkeypatch, fake_run)
+    assert mq.refresh(server)["predator"]["tickets"] == []
+    assert mq.refresh(server) == {}      # the mirror is seconds old — nothing to ask the box
+    assert len(calls) == 1
+
+
+def test_a_mirror_past_its_ttl_is_read_again(tmp_path, monkeypatch):
+    import json
+    calls: list[list[str]] = []
+
+    def fake_run(lib, util, args, **kw):
+        calls.append(args)
+        return 0, json.dumps({"tickets": []}), ""
+
+    server = _exclusive_server(tmp_path, monkeypatch, fake_run)
+    mq.refresh(server)
+    _age_the_mirror(tmp_path, "predator", mq.REFRESH_AFTER_S + 5)
+    assert "predator" in mq.refresh(server)
+    assert len(calls) == 2
+
+
+def test_an_unreachable_box_is_logged_once_not_once_a_minute(tmp_path, monkeypatch, caplog):
+    """A box that is down stays down for hours. Only the TRANSITION is worth a daemon-log line —
+    the mirror itself carries the current reason for every reader."""
+    server = _exclusive_server(tmp_path, monkeypatch,
+                              lambda *a, **k: (1, "", "connect: timed out"))
+    with caplog.at_level("WARNING", logger="rsched.machine_queue"):
+        mq.refresh(server)
+        _age_the_mirror(tmp_path, "predator", mq.REFRESH_AFTER_S + 5)
+        mq.refresh(server)
+    assert sum("queue unreadable" in r.getMessage() for r in caplog.records) == 1

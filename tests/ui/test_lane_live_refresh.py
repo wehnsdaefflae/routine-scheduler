@@ -24,7 +24,7 @@ def test_lane_progress_tracks_run_transitions_without_domain_refetch(ui, ui_page
                if request.url.endswith("/api/domains") else None)
     ui_page.goto(f"{ui.url}/#/routines")
     row = ui_page.locator(f'tr[data-lane-row="{lane["id"]}"]')
-    expect(row).to_be_visible(timeout=10000)
+    expect(row).to_be_visible()
     expect(row.locator("[data-lane-run]")).to_be_enabled()
     domain_calls = calls.count("domains")
 
@@ -33,14 +33,14 @@ def test_lane_progress_tracks_run_transitions_without_domain_refetch(ui, ui_page
 
     flight[lane["id"]] = {"cursor": 0, "members": lane["members"]}
     transition("run_started")
-    expect(row.locator("[data-lane-progress]")).to_contain_text("1/2", timeout=10000)
+    expect(row.locator("[data-lane-progress]")).to_contain_text("1/2")
     expect(row.locator("[data-lane-run]")).to_be_disabled()
     flight[lane["id"]]["cursor"] = 1
     transition("run_state")
-    expect(row.locator("[data-lane-progress]")).to_contain_text("2/2", timeout=10000)
+    expect(row.locator("[data-lane-progress]")).to_contain_text("2/2")
     flight.clear()
     transition("run_finished")
-    expect(row.locator("[data-lane-progress]")).to_have_count(0, timeout=10000)
+    expect(row.locator("[data-lane-progress]")).to_have_count(0)
     expect(row.locator("[data-lane-run]")).to_be_enabled()
     assert calls.count("domains") == domain_calls
     assert calls.count("lanes") >= 4

@@ -1,15 +1,14 @@
 """Optional, one-shot compression of command stdout; never a conversation transform.
 
-Two engines, chosen by content kind. JSON is minified with the stdlib — provably faithful,
-sub-millisecond, no dependency. Logs use the pinned native Headroom log primitive, called
-directly to avoid its global learning/retrieval stores, provider routing and model
-downloads. Scheduler owns originals and transcript replay.
+ONE engine: JSON is minified with the stdlib — provably faithful, sub-millisecond, no
+dependency. Nothing else is compressed. Any other stdout keeps the existing capped head
+plus its spill pointer, which is what the log path produced anyway in 576 of its calls.
+Scheduler owns originals and transcript replay.
 """
 
 from __future__ import annotations
 
 import json
-import re
 import time
 
 from ..paths import atomic_write
@@ -18,16 +17,22 @@ from .observations import OBS_CAP_CHARS, truncate
 from .run_context import RunContext
 
 MIN_CHARS = 2_000
-_LOG_LINE = re.compile(r"(?im)^\s*(?:\d{4}-\d\d-\d\d[^\n]{0,45})?"
-                       r"\[?(?:INFO|DEBUG|WARN(?:ING)?|ERROR|FATAL|TRACE)\b")
 
 
 def _kind(text: str) -> str:
+    """"json" for a JSON object or array, "" for anything else — which is everything else.
+
+    There used to be a "logs" kind too, compressed by the native Headroom primitive. It
+    dragged 28 packages (litellm, boto3, tokenizers, tiktoken, opentelemetry …) into the
+    engine image for one branch that imported a PRIVATE module, on a box that has already
+    OOM-killed PID 1 — and it saved 30,923 tokens over five days against 111 M `tokens_in`,
+    0.03%. A log-shaped output now falls through to the capped head plus the spill pointer,
+    the same outcome its own `unchanged` result already produced 576 times.
+    """
     try:
         value = json.loads(text)
     except (ValueError, RecursionError):
-        lines = text.splitlines()
-        return "logs" if len(_LOG_LINE.findall(text)) >= max(10, len(lines) // 2) else ""
+        return ""
     return "json" if isinstance(value, (dict, list)) else ""
 
 
@@ -55,9 +60,8 @@ def _verified_json(text: str):
                       parse_constant=reject_constant)
 
 
-def _compress(text: str, kind: str) -> str:
-    """A smaller representation of one command's stdout — faithful for JSON by
-    construction, an explicit excerpt for logs.
+def _compress(text: str) -> str:
+    """A smaller representation of one command's stdout — faithful by construction.
 
     JSON is MINIFIED with the stdlib. Whitespace is the only thing JSON's grammar lets a
     compressor drop without changing a value, and dropping it is the whole of what the
@@ -68,17 +72,10 @@ def _compress(text: str, kind: str) -> str:
     flag is inert (headroomlabs-ai/headroom#3625) — 260 of its results in that week were
     rejected by the verification below, every recoverable one of them real data loss.
 
-    Logs keep the native Headroom excerpt: deliberately lossy, labelled as such, and the
-    path the same measurement showed earning its keep (ten applications, no rejections).
-    The import stays inside this branch so the JSON path needs no optional extra at all.
+    One kind only (see `_kind`): a second one would arrive here, with its own faithfulness
+    argument, or not at all.
     """
-    if kind == "json":
-        return json.dumps(json.loads(text), separators=(",", ":"), ensure_ascii=False)
-    # A deliberately small adapter over the native API of headroom-ai==0.37.0. No Python
-    # pipeline: that pipeline can persist content in a shared learning store.
-    from headroom._core import LogCompressor, LogCompressorConfig
-
-    return LogCompressor(LogCompressorConfig(enable_ccr=False)).compress(text, 1.0).compressed
+    return json.dumps(json.loads(text), separators=(",", ":"), ensure_ascii=False)
 
 
 def command_output(ctx: RunContext, name: str, out: str, err: str, code: int) -> dict:
@@ -122,15 +119,14 @@ def _observation(ctx: RunContext, name: str, out: str, err: str, code: int) -> d
         return obs
     started = time.monotonic()
     try:
-        candidate = _compress(out, kind)
+        candidate = _compress(out)
         if not isinstance(candidate, str) or not candidate.strip() or "<<ccr:" in candidate:
             raise ValueError("unusable compression result")
         if kind == "json" and _verified_json(out) != _verified_json(candidate):
             raise ValueError("JSON compression changed content")
-        # JSON is whitespace-only and says so; logs are excerpts, never complete evidence.
-        label = ("minified JSON; nothing removed" if kind == "json"
-                 else "Headroom log excerpt; lines omitted")
-        candidate = f"[{label}; read full output for original text]\n{candidate}"
+        # JSON is whitespace-only and says so.
+        candidate = ("[minified JSON; nothing removed; read full output for original "
+                     f"text]\n{candidate}")
         rel = (ctx.routine.dir / "runs" / ctx.run_ts / "outputs"
                / f"t{ctx.turn}-{name}.out").relative_to(ctx.routine.dir)
         pointer = {**obs.get("full_output", {}), "stdout": str(rel), "stdout_chars": len(out)}
@@ -146,11 +142,8 @@ def _observation(ctx: RunContext, name: str, out: str, err: str, code: int) -> d
         else:
             # Saving must succeed BEFORE replacing the evidence carried by the observation.
             atomic_write(ctx.routine.dir / rel, out)
-            obs.update(stdout=candidate, full_output=pointer, truncated=trunc_err or kind == "logs")
+            obs.update(stdout=candidate, full_output=pointer, truncated=trunc_err)
             metrics["status"] = "applied"
-    except ImportError:
-        metrics.update(status="unavailable",
-                       reason="log excerpts need the optional rsched[headroom] extra")
     except Exception as exc:
         # Do not expose exception text: a compressor may echo sensitive command output.
         metrics.update(status="fallback", reason=type(exc).__name__)

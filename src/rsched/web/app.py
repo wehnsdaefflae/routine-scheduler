@@ -91,13 +91,39 @@ def _is_browser_view_path(path: str) -> bool:
 # no run legitimately needs a mutation.
 ROUTINE_TOKEN_MUTATIONS: tuple[tuple[str, str], ...] = ()
 
+# The reads a run may NOT make either. "Read-only" is not the same as "may read anything":
+# a util subprocess runs inside a Landlock jail scoped to its routine's granted roots, and
+# these subtrees hand it exactly what that jail forbids — any directory listing on the
+# host (api_fs's own docstring: "names only is still reconnaissance"), every secret NAME with
+# the utils that declare it, the daemon's own stacks, and full-text search over EVERY
+# routine's transcripts, notes and ledgers (observations are not redacted, so a util that
+# printed a token once is queryable by every other routine forever). Nothing logs it as a
+# boundary crossing, because it is an authorized GET. The 2026-08-05 rsched-api usage survey
+# found runs reading items, questions, the routine cards, the runs index, status and stats —
+# none of these, and no live util or recipe targets one today.
+#
+# Cross-routine FILE reads (`/api/routines/{slug}/file`, `/api/runs/{id}/file`) are the same
+# class and are deliberately NOT here yet: at least one routine was granted another's
+# transcripts on purpose, and closing that door needs the grant re-expressed as an fs-read
+# root first, or a run loses a channel with no error it can act on.
+ROUTINE_TOKEN_DENIED_READS: tuple[str, ...] = ("/api/fs", "/api/debug", "/api/settings",
+                                               "/api/search")
+
+
+def _in_subtree(path: str, prefix: str) -> bool:
+    """The path itself or something genuinely under it — never a bare startswith, which
+    would let "/api/foo" swallow "/api/foo-bar" and silently catch (or open) any future
+    sibling route that shares the prefix.
+    """
+    return path == prefix or path.startswith(prefix + "/")
+
 
 def _routine_token_allowed(request: Request) -> bool:
-    # exact path or a real subtree — a bare startswith would let "/api/foo" swallow
-    # "/api/foo-bar", silently opening any future sibling route that shares the prefix
+    path = request.url.path
+    if any(_in_subtree(path, prefix) for prefix in ROUTINE_TOKEN_DENIED_READS):
+        return False
     return request.method in ("GET", "HEAD", "OPTIONS") or any(
-        request.method == method
-        and (request.url.path == prefix or request.url.path.startswith(prefix + "/"))
+        request.method == method and _in_subtree(path, prefix)
         for method, prefix in ROUTINE_TOKEN_MUTATIONS)
 
 
@@ -107,10 +133,13 @@ def require_auth(request: Request) -> None:
     if not token:
         return  # auth disabled (empty token in config)
     header = request.headers.get("authorization", "")
-    if header == f"Bearer {token}":
+    # constant-time, like the webhook token (api_hooks._match_webhook): one credential
+    # class, one standard — and the weaker half was guarding the PRIMARY token.
+    if secrets.compare_digest(header.encode(), f"Bearer {token}".encode()):
         return
     routine_token = server.routine_token
-    if routine_token and header == f"Bearer {routine_token}":
+    if routine_token and secrets.compare_digest(header.encode(),
+                                                f"Bearer {routine_token}".encode()):
         if _routine_token_allowed(request):
             return
         # RFC 6750 §3.1: the console tells a TIER refusal apart from an ordinary 403
@@ -119,9 +148,12 @@ def require_auth(request: Request) -> None:
         # browser holding the routine token is never stranded with an unactionable toast.
         raise HTTPException(
             status_code=403,
-            detail="the routine API token is read-only — config-mutating endpoints "
-                   "take the operator's primary token (R94). A run that needs a config "
-                   "change proposes it via ask_user with config_patch instead.",
+            detail="the routine API token is read-only and reads no wider than the "
+                   "sandbox (R94): config-mutating endpoints, the filesystem picker, the "
+                   "settings surface, cross-routine search and the daemon's stacks take the "
+                   "operator's primary token. A run that needs a config change proposes it "
+                   "via ask_user with config_patch; a file it may read is reached with "
+                   "read_file, and one outside its jail is an fs-read access request.",
             headers={"WWW-Authenticate": 'Bearer error="insufficient_scope"'})
     # EventSource cannot send headers, and the bearer token in a query string would leak
     # into access logs — a SHORT-LIVED ticket (POST /api/sse-ticket) rides there instead,

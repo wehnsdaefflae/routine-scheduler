@@ -35,9 +35,36 @@ def test_cooldown_mark_clear_expiry():
     assert not failover.is_cooling("ep", "m")   # expired marks self-clean
 
 
-def _ref(name, endpoint="ep", model=None):
+def test_a_provider_that_asked_for_longer_is_cooled_for_longer():
+    """`Retry-After` is the provider STATING when it will serve again; the 5-minute default
+    is a guess. Re-probing before the stated time is a guaranteed failure — three retries
+    and a model switch spent to learn what the header already said. (`with_retries` caps the
+    same hint at 30 s, but that bounds how long ONE attempt may sleep; nothing waits here.)"""
+    assert failover.cooldown_for(EndpointError("boom")) == failover.COOLDOWN_S
+    assert failover.cooldown_for(
+        EndpointError("429", retryable=True, retry_after=30)) == failover.COOLDOWN_S
+    assert failover.cooldown_for(
+        EndpointError("429", retryable=True, retry_after=3600)) == 3600
+
+    # and the instrumentation seam — the one place a transport failure is cooled — uses it
+    inner = ScriptedEndpoint([
+        EndpointError("rate limited", retryable=True, retry_after=0.05)])
+    inner.name = "epQ"
+    with pytest.raises(EndpointError):
+        InstrumentedEndpoint(inner).complete([{"role": "user", "content": "x"}], model="m-q")
+    assert failover.is_cooling("epQ", "m-q")
+    time.sleep(0.07)                      # the hint was shorter than the default…
+    assert failover.is_cooling("epQ", "m-q")   # …so the default still governs
+
+
+def _ref(name, endpoint="ep", model=None, **attrs):
     from rsched.config import ModelRef
-    return object(), ModelRef(endpoint=endpoint, model=model or f"id-{name}", name=name)
+    return object(), ModelRef(endpoint=endpoint, model=model or f"id-{name}", name=name,
+                              **attrs)
+
+
+#: every chain member takes anything — the capability filter is exercised on its own below
+ANY_REQUEST = {"has_media": False, "prompt_tokens": 0}
 
 
 def test_pick_and_next_after():
@@ -47,13 +74,65 @@ def test_pick_and_next_after():
     assert failover.pick(chain) is chain[1]
     failover.mark_failed("ep", "id-b")
     failover.mark_failed("ep", "id-c")
-    assert failover.pick(chain) is chain[0]        # all cooling → the primary, never a stall
+    assert failover.pick(chain) is chain[0]   # all cooling → the head, never a stall
     # next_after walks strictly forward, skipping cooling members
     failover.reset()
     failover.mark_failed("ep", "id-b")
-    assert failover.next_after(chain, chain[0][1]) is chain[2]
-    assert failover.next_after(chain, chain[2][1]) is None      # chain exhausted
-    assert failover.next_after(chain, _ref("ghost")[1]) is None  # unknown ref
+    assert failover.next_after(chain, chain[0][1], **ANY_REQUEST) is chain[2]
+    assert failover.next_after(chain, chain[2][1], **ANY_REQUEST) is None   # exhausted
+    assert failover.next_after(chain, _ref("ghost")[1], **ANY_REQUEST) is None  # unknown ref
+
+
+def test_pick_never_walks_back_up_a_chain_it_has_left():
+    """A cooldown expires; a weekly quota does not. Once the engine has ABANDONED a member,
+    `pick` starts from the one now serving — so a quota-exhausted primary cannot flap back
+    in five minutes later, taking a cold cache write on both models with it (123 such swings
+    across 28 live runs in ten days)."""
+    chain = [_ref("a"), _ref("b"), _ref("c")]
+    assert failover.pick(chain) is chain[0]
+    # the primary fails hard mid-turn and the chain advances
+    failover.mark_failed("ep", "id-a", cooldown_s=0.01)
+    assert failover.next_after(chain, chain[0][1], **ANY_REQUEST) is chain[1]
+    time.sleep(0.03)                                    # the cooldown lapses…
+    assert not failover.is_cooling("ep", "id-a")
+    assert failover.pick(chain) is chain[1]             # …and the run stays where it is
+    # a fresh process (a fresh run) probes the head again — that is what lifts an outage
+    failover.reset()
+    assert failover.pick(chain) is chain[0]
+
+
+def test_only_a_deliberate_abandonment_moves_the_serving_mark():
+    """`pick` READS the mark and never writes it, and that is the whole safety of the
+    scheme: the mark is keyed by chain HEAD and several roles resolve one head (a routine's
+    `main` and its `llm` role on the same model). A write from `pick` would let one
+    transient 5xx on a cheap subcall demote the MAIN turn loop for the rest of the run."""
+    chain = [_ref("a"), _ref("b"), _ref("c")]
+    failover.mark_failed("ep", "id-a", cooldown_s=0.01)
+    assert failover.pick(chain) is chain[1]             # a subcall steps around the outage
+    time.sleep(0.03)
+    assert failover.pick(chain) is chain[0]             # …and the head is picked up again
+
+
+def test_next_after_prefers_a_member_that_can_take_this_request():
+    """Images and prompt size travel WITH the request, so a rung that cannot hold them is
+    passed over while a capable one remains: trying it costs a round trip AND marks a
+    healthy model cooling for five minutes. A preference, never a veto — when nothing fits,
+    the next member is still taken so the engine can repair the request."""
+    chain = [_ref("head", multimodal=True, context_tokens=200_000),
+             _ref("text-only", multimodal=False, context_tokens=200_000),
+             _ref("small", multimodal=True, context_tokens=32_768),
+             _ref("roomy", multimodal=True, context_tokens=200_000)]
+    # an image turn skips the text-only rung
+    assert failover.next_after(chain, chain[0][1],
+                               has_media=True, prompt_tokens=0) is chain[2]
+    failover.reset()
+    # a 165k prompt skips the 32k rung (its own output cap is reserved first)
+    assert failover.next_after(chain, chain[1][1],
+                               has_media=False, prompt_tokens=165_078) is chain[3]
+    failover.reset()
+    # nothing after `small` fits → the first usable one is taken anyway, never "exhausted"
+    assert failover.next_after(chain[:3], chain[1][1],
+                               has_media=False, prompt_tokens=165_078) is chain[2]
 
 
 # ---- catalog chains + max_tokens through the real registry -----------------------------------
@@ -434,3 +513,34 @@ def test_chain_exhaustion_reaches_the_health_stream(make_routine, monkeypatch):
     assert ev["model"] == "prime"
     assert ev["last_model"] == "backup"
     assert "epB is down too" in ev["detail"]
+
+
+def test_every_failover_reaches_the_health_stream(make_routine, monkeypatch):
+    """A switch that the chain ABSORBS is the expensive-and-invisible case: the run finishes
+    `ok`, so `model_chain_exhausted` never fires and nothing fleet-level records that the
+    primary stopped serving. Ten days in September 2026 held 123 switches and one exhaustion
+    — a dead proxy refresh token and a weekly quota moved 28 runs onto metered models at
+    `effort: max`, and the operator found it by reading transcripts, days later.
+    """
+    import json as _json
+
+    d = make_routine("failover-health")
+    server = _catalog_server(d.parent)
+    _wire(monkeypatch, server, {
+        "epA": [EndpointError("epA: HTTP 429: usage_limit_reached")],
+        "epB": [write_file("state/probe.txt", say="grounding work"),
+                finish(summary="served by the backup model")]})
+    status, _run_dir = run_routine(d, server, run_ts=TS)
+    assert status == "ok"          # the chain absorbed it — nothing else would report this
+
+    stream = d.parent / ".control" / "health-events.jsonl"
+    lines = stream.read_text(encoding="utf-8").splitlines() if stream.exists() else []
+    events = [e for e in (_json.loads(ln) for ln in lines if ln.strip())
+              if e.get("event") == "model_failover"]
+    assert events, "a mid-run model switch emitted no health event"
+    ev = events[-1]
+    assert ev["routine"] == "failover-health"
+    # structured, so a sweep can ask "what is the fleet running on today" with a filter
+    assert ev["model"] == "prime"              # the chain HEAD is the grouping key
+    assert ev["from_model"] == "prime" and ev["to_model"] == "backup"
+    assert ev["reason"] == "rate_limit"        # a quota, not an outage — the classes differ

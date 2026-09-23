@@ -9,7 +9,12 @@ import rsched.endpoints.openai_compat as oai_mod
 from rsched.config import EndpointConfig
 from rsched.endpoints import EndpointRegistry, make_endpoint
 from rsched.endpoints.anthropic_api import AnthropicEndpoint, merge_consecutive
-from rsched.endpoints.base import EndpointError, split_system, with_retries
+from rsched.endpoints.base import (
+    EndpointError,
+    retry_base_delay,
+    split_system,
+    with_retries,
+)
 from rsched.endpoints.openai_compat import OpenAICompatEndpoint
 
 MESSAGES = [
@@ -42,6 +47,24 @@ def test_split_system():
     system, rest = split_system(MESSAGES)
     assert system == "be brief"
     assert [m["role"] for m in rest] == ["user", "assistant", "user"]
+
+
+def test_retry_base_delay_is_the_only_reader_of_the_knob(monkeypatch):
+    """Two backoff SCHEDULES (this wrapper's exponential wait, the engine's linear pause
+    between empty completions) over ONE knob. A second `os.environ` read is how a schedule
+    stops being zeroed in the suite and starts spending the gate's wall clock on real
+    sleeps.
+    """
+    from pathlib import Path
+
+    monkeypatch.setenv("RSCHED_RETRY_BASE_DELAY", "0.25")
+    assert retry_base_delay() == 0.25
+    monkeypatch.delenv("RSCHED_RETRY_BASE_DELAY")
+    assert retry_base_delay() == 1.0
+    src = Path(__file__).resolve().parents[1] / "src" / "rsched"
+    readers = [p.name for p in src.rglob("*.py")
+               if "RSCHED_RETRY_BASE_DELAY" in p.read_text(encoding="utf-8")]
+    assert readers == ["base.py"]
 
 
 def test_with_retries_backoff(monkeypatch):
@@ -750,3 +773,114 @@ def test_api_key_source_ladder(tmp_path, monkeypatch):
         "env_file_miss": True}
     assert api_key_source(api_key="sk-i", key_var="", key_env_file="") == {
         "source": "inline", "var": None, "shadowed_secret": False}
+
+
+# --- transport classification + caching through an aggregator ----------------------
+
+@pytest.mark.parametrize("status", [408, 409])
+def test_transient_statuses_are_retried_not_failed_over(status, monkeypatch):
+    """408/409 mean the request never got a verdict — the same set both provider SDKs
+    retry. Classifying them fatal skipped the one-second retry and spent a MODEL SWITCH on
+    a transient instead: `codex-proxy: HTTP 408 … stream disconnected before completion`
+    cooled a healthy provider for 300 s and took a cold cache write on both models."""
+    monkeypatch.setattr("time.sleep", lambda s: None)
+    calls = []
+
+    def fake_post(url, json=None, headers=None, timeout=None):
+        calls.append(1)
+        return FakeResponse(status_code=status, text="stream closed before completion")
+
+    monkeypatch.setattr(oai_mod.httpx, "post", fake_post)
+    with pytest.raises(EndpointError) as exc:
+        _oai().complete(MESSAGES, model="m")
+    assert exc.value.retryable and len(calls) == 3       # went through the retry wrapper
+
+
+def test_connect_timeout_is_far_tighter_than_the_answer_timeout(monkeypatch):
+    """httpx applies a scalar timeout to EVERY phase, so one 600 s value meant a provider
+    gone at the IP level held a turn for 600 s × 3 tries with no observation and no
+    cooldown. Reaching the host is bounded separately from waiting for the answer."""
+    seen = {}
+
+    def fake_post(url, json=None, headers=None, timeout=None):
+        seen["timeout"] = timeout
+        return FakeResponse(payload={"choices": [{"message": {"content": "x"}}]})
+
+    monkeypatch.setattr(oai_mod.httpx, "post", fake_post)
+    _oai().complete(MESSAGES, model="m", timeout=600)
+    assert seen["timeout"].connect == 10.0
+    assert seen["timeout"].read == 600
+
+
+def test_openrouter_marks_anthropic_models_for_caching(monkeypatch):
+    """Anthropic models cache ONLY where a breakpoint says to, and routing one through an
+    aggregator does not add implicit caching. Without the marker the metered Opus fallback
+    re-sent its whole ~100k prefix at full price every turn ($6.63 for twelve live turns,
+    `cached_in` 0). Every other model on this wire caches implicitly and gets nothing."""
+    seen = []
+
+    def fake_post(url, json=None, headers=None, timeout=None):
+        seen.append(json)
+        return FakeResponse(payload={
+            "choices": [{"message": {"content": "x"}}],
+            "usage": {"prompt_tokens": 10, "completion_tokens": 5}})
+
+    monkeypatch.setattr(oai_mod.httpx, "post", fake_post)
+    ep = OpenAICompatEndpoint(EndpointConfig(
+        name="OpenRouter", kind="openai", base_url="https://openrouter.ai/api/v1",
+        api_key="k", schema_mode="json_schema"))
+    ep.complete(MESSAGES, model="anthropic/claude-opus-5")
+    assert seen[-1]["cache_control"] == {"type": "ephemeral"}
+    ep.complete(MESSAGES, model="z-ai/glm-5.3")          # caches implicitly — no marker
+    assert "cache_control" not in seen[-1]
+    # a ONE-SHOT call's prefix is never sent again: the write would buy a read that never comes
+    ep.complete(MESSAGES, model="anthropic/claude-opus-5", cacheable=False)
+    assert "cache_control" not in seen[-1]
+
+
+def test_openrouter_cache_writes_are_folded_into_usage(monkeypatch):
+    """`cache_read_share` is reads ÷ (reads + writes). With writes dropped it returns None
+    for this whole endpoint and `cache_read_degraded` — the one signal separating a warm
+    prefix from one re-written every turn — can never fire on an aggregator path."""
+    from rsched.endpoints.base import cache_read_share
+
+    monkeypatch.setattr(oai_mod.httpx, "post", lambda *a, **k: FakeResponse(payload={
+        "choices": [{"message": {"content": "x"}}],
+        "usage": {"prompt_tokens": 1000, "completion_tokens": 5,
+                  "prompt_tokens_details": {"cached_tokens": 700,
+                                            "cache_write_tokens": 200}}}))
+    c = _oai().complete(MESSAGES, model="anthropic/claude-opus-5")
+    # on THIS wire prompt_tokens is the total, so writes come OUT of "in" exactly as reads
+    # already did — folding the key without subtracting would double-count every written
+    # token into the run's token budget.
+    assert c.usage == {"in": 100, "out": 5, "cached_in": 700, "cache_write": 200}
+    assert c.usage["in"] + c.usage["cached_in"] + c.usage["cache_write"] == 1000
+    assert cache_read_share(c.usage) == 700 / 900
+
+
+def test_anthropic_temperature_400_degrades_instead_of_failing_the_turn(monkeypatch, tmp_path):
+    """Current Claude models REMOVED the sampling parameters and answer 400 — non-retryable,
+    so one filled Settings box would fail a model over on every turn of every run. The field
+    is not simply dropped either: `kind: anthropic` is a WIRE, and the same wire serves
+    models that honour it (Haiku 4.5, a subscription proxy's `gpt-*` ids). So it is sent, and
+    the model that rejects it says so once — the same seam `output_config` already uses."""
+    keyfile = tmp_path / "anthropic.env"
+    keyfile.write_text('ANTHROPIC_API_KEY="sk-test"\n')
+    ep = AnthropicEndpoint(EndpointConfig(
+        name="anthropic", kind="anthropic", key_env_file=str(keyfile), context_tokens=100))
+    bodies = []
+
+    def fake_post(url, json=None, headers=None, timeout=None):
+        bodies.append(json)
+        if "temperature" in json:
+            return FakeResponse(status_code=400, text=(
+                '{"error":{"message":"temperature: Extra inputs are not permitted"}}'))
+        return FakeResponse(payload={"content": [{"type": "text", "text": "ok"}],
+                                     "usage": {"input_tokens": 7, "output_tokens": 3}})
+
+    monkeypatch.setattr(anth_mod.httpx, "post", fake_post)
+    c = ep.complete(MESSAGES, model="claude-opus-5", temperature=0.2, effort="high")
+    assert bodies[0]["temperature"] == 0.2            # sent, because the wire is not the model
+    assert "temperature" not in bodies[1]             # dropped on the model's own 400
+    assert bodies[1]["output_config"] == {"effort": "high"}   # and only temperature dropped
+    assert c.text == "ok" and len(bodies) == 2

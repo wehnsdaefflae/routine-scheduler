@@ -13,10 +13,14 @@ ownership:
   yours on the Library tab, and writable by a routine holding the **rule-authoring**
   permission.
 - **Capabilities** — the atomic, engine-enforced surface: gated action kinds
-  (`write_util`, `memory_read`, `memory_write`, `shell`), reserved utils held by name
-  (`remote`, `discord`, `darknet`, `usenet` / `usenet-nzb`) or by TAG CLASS (`util_tags:` —
-  every util carrying that docstring tag, including ones the library gains later), the
-  write_util approval level, and the previous-run read depth. Held via `routine.yaml`'s
+  (`grants.GATED_KINDS` — `write_util`, `revise_util`, `remove_util`, `write_rule`,
+  `write_recipe`, `memory_read`, `memory_write`, `detach`, `schedule_run`, `script`,
+  `shell`; `revise_util` and `write_recipe` are capability TOKENS rather than emittable
+  kinds), reserved utils held by name (every util a permission doc's `requires.utils:`
+  names — `remote`, `discord`, `signal`, `telegram`, `whatsapp`, `zulip`, `ntfy`,
+  `fau-mail-send`, `browser-session`, `darknet`, `usenet` / `usenet-nzb`) or by TAG CLASS
+  (`util_tags:` — every util carrying that docstring tag, including ones the library gains
+  later), the approval dials, and the previous-run read depth. Held via `routine.yaml`'s
   `capabilities:` mapping, changed **only by you** (the routine page's panel; the web
   layer blocks edits while a run is active), and enforced when every single action is
   interpreted. A routine can never grant itself anything.
@@ -112,6 +116,13 @@ and with the util HEADERS of every reserved util the routine holds, then reports
 unmet and what an unmet need will COST — `blocks` (the call is rejected or fails), `interrupts`
 (the run stops mid-way to ask you) or `note`.
 
+`surface.py` is the JOIN only. The row vocabulary — the severities, `_node`, the one-row-per-
+entity merge — is `readmodels/surface_nodes.py`, and the rows themselves come from three
+emitters speaking it: `surface_needs.py` (util secrets, util filesystem stores, `expects:`),
+`surface_schedule.py` (the suppressed cron, the started-by-nothing check, the phase key) and
+`surface_caps.py` (capability coverage and the drop site). "Where a `fix` kind is emitted" is
+therefore one of those four modules, never `surface.py` alone.
+
 Nothing is stored. The library MOVES — a run may revise the utils and rules its routine is made
 of, one copy each, reaching every holder at its next run — so a persisted resolution would be
 stale the first time somebody ran `write_util`. It is recomputed at every read, which is what
@@ -149,6 +160,12 @@ The two halves stay honest apart because the callers share nothing:
   is a link instead. That map has ONE copy — `FIX` in `static/components/surface-view.js` —
   which the setup-check strip imports; the strip is what an operator reads first, so a row that
   offers a way out on one surface and not the other abandons the reader at the top of the page.
+  The strip's BAND is weighted by its worst row, in the palette's own terms: `blocks` → err,
+  `interrupts` → SUMMONS (a run that will stop and ask a person is the one case coral is for),
+  and a note-only strip wears no band at all and folds into a `<details>` under a one-line
+  summary. One band for every severity taught the reader that the band meant nothing, which is
+  exactly the case it existed for. `surface.BOOT_SEVERITIES` weights the same two severities the
+  same way on the boot note.
 - **`rsched validate` and the boot note** have nothing to click, so `readmodels/remedies.py`
   spells each kind out in words: `REMEDIES` maps the kind to its sentence, `surface_lines` ends
   every unmet line ` — fix: <words>`. The phrasing sits in its own module because it reads
@@ -196,7 +213,8 @@ so the vocabulary cannot grow at one end alone:
   wrong — but silence is not a state a release may ship in: the operator would read the remedy on
   a terminal and find nothing on the page that owns the dial. The runtime is forgiving; the gate
   is not.
-- **its anchor** — the section `id` the owning panel carries (`views/routine-config.js`) or the
+- **its anchor** — the section `id` the owning panel carries (`views/routine-config*.js` — the
+  orchestrator plus its four `routine-config-{schedule,identity,models,access}.js` sections) or the
   `data-ability` / `data-drop` attribute an ability card stamps on the control
   (`components/abilities.js`). This is the ONE registration nothing static can see: a fix whose
   target is absent from the document disables itself, while a fix that travels to a panel where
@@ -301,7 +319,8 @@ per-routine setting.
 
 Every rule lives at `<libraries_home>/rules/<slug>.md` — a heading line
 `# rule: <name> — <summary>`, `tags:` frontmatter (three minimum), **no requires** (a rule
-carrying one is a lint error). One copy each; routines hold slugs. The shipped set:
+carrying one is a lint error). One copy each; routines hold slugs. The shipped set — 30 rules,
+one file each in `library-seed/rules/`, which is the authority this table is written from:
 
 | rule | what it states |
 |---|---|
@@ -325,6 +344,16 @@ carrying one is a lint error). One copy each; routines hold slugs. The shipped s
 | `test-design` | a test earns its place by failing: name the regression first, assert behaviour not internals, watch it fail once before accepting it |
 | `risk-first` | order work by what is least certain, prove it thin and end to end, and skip the quality bar only until it holds — then harden in the same run |
 | `failure-visibility` | error handling *written into code* — never catch without a reaction, enumerate what a broad catch would swallow, fallbacks are features not safety nets, stubs never ship |
+| `ponytail` | the implementation decision order — reuse what this codebase has, then the standard library, then a native platform feature, then an installed dependency, then the smallest clear implementation; no abstractions for imaginary callers |
+| `token-economy` | spend the fewest tokens the task honestly needs — look a thing up before opening it, read the range not the whole, reuse instead of re-deriving, delegate bulky reading to a focused worker |
+| `reference-decay` | prose keeps naming what has been deleted: settle every statement naming a thing you remove, and verify a named endpoint, helper, file or host still exists before relying on it |
+| `status-page` | publishing and tending a web UI on the shared steward host — one shell, one append-only feedback contract, the payload invariants (see [status pages](status-pages.md)) |
+| `outbound-followthrough` | a message you sent is an open thread until it is answered: index what you sent, read the index on a cadence, check the real surface before calling a thread silent, chase once or record that silence is the answer |
+| `email-thread-continuation` | a reply or forward continues the source message's thread — carry `In-Reply-To`/`References`, keep the subject, quote enough that the reply stands on its own |
+| `engagement-accountability` | confront the outcome gap: read the engagement the routine exists to produce, escalate ONCE on sustained emptiness, never present around the silence |
+| `feedback-implementation-gate` | act on collected feedback in the SAME run or hand it back to be prioritized in the routine's own UI — a LEDGER line alone is a drop, not a deferral |
+| `suggestion-discipline` | frontload suggestions in one considered batch; a later one needs genuinely new information, not a thought you only now got round to |
+| `ai-writing-tells` | edit prose against the known fingerprint of LLM writing — a cluster of signals, never one — instead of a gut "feels robotic" |
 
 `ask-policy`, `web-research`, `decision-record` and `intent-inference` are the routine
 `DEFAULT_RULES`. `git-checkpoint` is **not** a routine default — creation preselects it for
@@ -346,11 +375,12 @@ the seam between its two independent halves: the REPORTING discipline is now the
 `problem-routing` rule, while the instance's ownership table — which routines exist here and
 what each owns — is not general at all and lives in the `rules-review` routine's recipe.
 
-The eleven below `git-checkpoint` are the **curated set** — distilled from Anthropic's
+The **curated set** is the rules carrying a provenance row in
+[`docs/curated-rules.md`](curated-rules.md) — that table is the list, not a position in this
+one — distilled from Anthropic's
 prompt-engineering guidance, the Claude Code plugins (their skills and prompt-snippet references as
 well as the output-style hooks), OpenAI's agent prompting guide, and the self-correction and
-verification literature (see the reasoning notes in
-[`docs/curated-rules.md`](curated-rules.md)). None is a default: each is opt-in per routine, and
+verification literature. None is a default: each is opt-in per routine, and
 a rule that is not held contributes nothing at all — the whole point of a selectable set rather
 than one always-on block. Deliberately **not** included, because the
 evidence is against them or the harness already covers them: "double-check your own work" (unaided
@@ -424,12 +454,18 @@ being the model's job.
 ```yaml
 assists:
   - id: after-a-failed-call
-    moment: observation        # observation | boundary | pre-finish
+    moment: observation        # pre-action | observation | boundary | pre-finish
     predicate: observation-failed   # resolved by NAME from the engine's registry
-    payload: remind            # remind → scaffold → do → hold; only remind is built
+    payload: remind            # remind | hold — coupled to the moment
     line: >-
       Read this failure before reacting to it — the message, the exit code, the usage line.
 ```
+
+The moment and the payload are COUPLED (`assists.MOMENT_PAYLOADS`), not free to combine:
+`pre-action` can only HOLD — at the point an action is chosen but not executed, the only way to
+reach the model is to stop it — and the three free moments can only REMIND, because a hold needs
+an action to stop and none of them has one. `rule-assists.md` carries the table and the worked
+examples; this page does not restate it.
 
 The rule does not shrink, it FACTORS: the trigger moves off the model, the operative line
 becomes the surfaced payload, and the rationale stays in the body where `read_rule` reaches
@@ -457,18 +493,21 @@ capabilities:
   remind_confirm: always        # GLOBAL reminder approval: always | creations | never
   runs: none                    # previous-run read depth: none | last | all
   workflows: catalog            # subtask pattern sourcing: catalog | generate
-  reminders: none               # consequence-reminder stores: none | local | global
+  reminders: local              # consequence-reminder stores: none | local | global
 ```
 
-A new routine's default: `write_util` (confirm `always`) + the memory pair, no reserved utils,
-no run history, no rule authoring, no reminders — matching the default permission set below.
+A new routine's default (`config.base.DEFAULT_CAPABILITIES`): `write_util` (confirm `always`) +
+the memory pair, no reserved utils, no run history, no rule authoring, and `reminders: local` —
+matching the default permission set below, which carries `reminders` for the same reason.
 `read_rule` is not listed because it is not gated.
 
-`reminders` is the one dial with no baseline at all. Run history floors at `last` for every
-routine because reading the previous result costs nothing; a consequence reminder costs a TURN
-every time it fires, so the layer stays off until you switch it on. At `local` a run reads and
-writes its own store; at `global` it also reads the library's curated one (its own overriding it
-where the patterns match) and is the only level that may WRITE there, under `remind_confirm`.
+`reminders` is the one dial whose default is NOT off, which is why it has to be named at all:
+every key absent from that mapping falls to the all-off baseline. A caution a run leaves itself
+about its own actions is ordinary conduct rather than a privilege, and a layer nobody switches
+on never learns anything — so `local` is the floor, and it holds only while the `reminders`
+permission behind it is held. At `local` a run reads and writes its own store; at `global` it
+also reads the library's curated one (its own overriding it where the patterns match) and is the
+only level that may WRITE there, under `remind_confirm`. `global` is the opt-in.
 That second dial is separate from `confirm` and `rule_confirm` for the reason those two are
 separate from each other: a new global reminder starts interrupting routines that never asked for
 it. See [reminders](reminders.md).
@@ -578,6 +617,24 @@ gated tag is closed the moment it lands. Every util is required to declare at le
 The util catalog is read at policy load **only when some permission doc declares `util_tags`**;
 with none, the policy is identical to the name-only one and no catalog is touched.
 
+### The gate follows `calls:` too
+
+A util's docstring `calls:` line is a declaration with consequences: `utils_run.util_needs`
+unions every callee's `secrets:`, `net:` and `fs:` into the caller's ONE jail and ONE env, and
+the library root is on PATH for every util, so naming a sibling both receives that sibling's
+credentials and lets the caller exec it. Gating only the name the model typed left the edge as
+a second, unaudited door into a reserved channel — `captcha-fetch` (ungated, callable by every
+routine) names `browser-session`; `rephrase-as-human` and `voice-rewrite` name `remote`, whose
+engine-injected `RSCHED_MACHINE_KEYS` are the bound machines' private SSH keys.
+
+So the gate (`rsched/utilgate.py`, asked by `GrantPolicy.deny`) walks the tree and refuses a
+call whose `calls:` graph reaches a gated util the
+routine does not hold, naming the EDGE (`util 'captcha-fetch' declares \`calls:
+browser-session\`…`) and routing to the ordinary one-click request for the reserved util. A
+routine that legitimately needs the caller holds the callee, exactly as it would to call it
+directly. The walk costs a few header reads and only runs when the library has gated utils at
+all.
+
 ## Permissions (conduct docs)
 
 Library docs live in `<libraries_home>/permissions/*.md` — a heading line
@@ -603,26 +660,44 @@ expects:                       # the SOFT edge — presumed, never enforced (see
 
 (No `confirm` in `requires:` — the approval level is your policy, never a doc's demand.)
 
-The shipped set:
+The shipped set — 25 docs, one file each in `library-seed/permissions/`, which is what a fresh
+install seeds and the authority this table is written from:
 
 | permission | requires | default |
 |---|---|---|
 | `util-authoring` | `write_util` (the approval level is the capability's setting) | ✅ held by new routines |
+| `util-revision` | `revise_util` — change a util the library already has, under the same approval dial. A separate doc from `util-authoring` on purpose: creating and rewriting are different decisions | opt-in |
+| `util-removal` | `remove_util` — delete a global util (and the never-recreate-deleted guard that follows it) | opt-in |
 | `memory` | `memory_read` / `memory_write` — the `.memory/` notebook | ✅ |
-| `messaging-discord` | the reserved `discord` util — post as the user in their Discord | opt-in |
+| `global-utils` | nothing (`requires: {}`) — the `util` action is a base kind; this doc is pure conduct: discovery, composition, never silently routing around a broken util | ✅ |
+| `reminders` | `reminders: local` — the `remind` / `remind_feedback` fields: leave a `(regex → consequence)` caution that HOLDS a matching action before it runs (see [reminders](reminders.md); the shared store and its approval level are `reminders: global` + `remind_confirm`) | ✅ |
 | `run-history` | previous-run reads (the depth — last / all — is the capability's setting) | opt-in |
 | `shell` | the `shell` ACTION — one arbitrary host command per turn, in the run's own jail with no secret injected | opt-in |
+| `scripts` | the `script` action — run the routine's OWN persistent `scripts/<name>.py` helpers (tooling, not a second interpreter; declared secrets only, no model channel inside) | opt-in |
+| `scheduling` | the `schedule_run` action — arm/cancel a one-shot future run of a routine | opt-in |
+| `background-tasks` | the `detach` action — launch a long job that outlives a reply and reports back | ✅ conversations; opt-in for routines |
+| `rule-authoring` | the `write_rule` action — author or revise a general rule in the shared library (the approval level is `rule_confirm`) | opt-in |
+| `recipe-authoring` | the `write_recipe` capability — revise this routine's OWN `main.md` / `stages/` / `tuning.yaml`. Hold it where refining the recipe IS the job; `routine.yaml` stays sealed regardless | opt-in |
+| `workflow-generation` | `workflows: generate` — a subtask may DRAFT a new pattern when none fits | opt-in |
 | `remote-machines` | the reserved `remote` util — act on bound SSH hosts (see [remote-machines](remote-machines.md)) | opt-in |
+| `browser-sessions` | the reserved `browser-session` util — drive the shared browser that is already signed in (see [browser sessions](browser-sessions.md)) | opt-in |
 | `darknet` | the reserved `darknet` util — read Tor hidden services (see [darknet](darknet.md)) | opt-in |
 | `usenet` | the reserved `usenet` + `usenet-nzb` utils — read, search and post over NNTP (see [usenet](usenet.md)) | opt-in |
-| `workflow-generation` | `workflows: generate` — a subtask may DRAFT a new pattern when none fits | opt-in |
-| `background-tasks` | the `detach` action — launch a long job that outlives a reply and reports back | ✅ conversations; opt-in for routines |
-| `global-utils` | nothing (`requires: {}`) — the `util` action is a base kind; this doc is pure conduct: discovery, composition, never silently routing around a broken util | ✅ |
-| `rule-authoring` | the `write_rule` action — author or revise a general rule in the shared library (the approval level is `rule_confirm`) | opt-in |
-| `scheduling` | the `schedule_run` action — arm/cancel a one-shot future run of a routine | opt-in |
-| `recipe-authoring` | the `write_recipe` capability — revise this routine's OWN `main.md` / `stages/` / `tuning.yaml`. Hold it where refining the recipe IS the job; `routine.yaml` stays sealed regardless | opt-in |
-| `scripts` | the `script` action — run the routine's OWN persistent `scripts/<name>.py` helpers (tooling, not a second interpreter; declared secrets only, no util/model access inside) | opt-in |
-| `reminders` | `reminders: local` — the `remind` / `remind_feedback` fields: leave a `(regex → consequence)` caution that HOLDS a matching action before it runs (see [reminders](reminders.md); the shared store and its approval level are `reminders: global` + `remind_confirm`) | ✅ |
+| `messaging-discord` | the reserved `discord` util — post as the user in their Discord | opt-in |
+| `messaging-signal` | the reserved `signal` util — reach a person on Signal | opt-in |
+| `messaging-telegram` | the reserved `telegram` util — reach a person on Telegram | opt-in |
+| `messaging-whatsapp` | the reserved `whatsapp` util — reach a person on WhatsApp | opt-in |
+| `messaging-zulip` | the reserved `zulip` util — post in the user's Zulip | opt-in |
+| `outbound-mail` | the reserved `fau-mail-send` util — send email in the user's name | opt-in |
+| `notifications` | the reserved `ntfy` util — push a notice to the user's own devices | opt-in |
+
+The four marked ✅ are `config.base.DEFAULT_PERMISSIONS`; conversations add `background-tasks`
+(`conversations.CONVERSATION_PERMISSIONS`). `bootstrap.ADOPT_PERMISSIONS` is the narrower list a
+routine that already existed picks up once at boot when a default is added afterwards —
+`global-utils` and `reminders` today.
+
+The messenger docs are one per channel rather than one bundle: each names a different reserved
+util with a different credential, and holding one is a decision about a different audience.
 
 ### What enforcement looks like
 
@@ -750,6 +825,27 @@ deniable row: `routine.yaml` writes, `runs/` writes, `.memory/` via file actions
 own-recipe writes, base action kinds, which rules bind a routine (config, never a run's;
 the grantable thing near it is `action:write_rule`, the right to change rule TEXT), conduct
 docs (they ride the cascade; they grant nothing).
+
+"Impossible" is a claim about WHERE each one is enforced, so each names its enforcer:
+
+- **`routine.yaml` writes** — the action path, three times (`grantpolicy`,
+  `fileops._write_gate`, `grants`). NOT in the kernel, and it cannot be: the file sits in a
+  directory every callable kind must have read-write. A `shell` command, a script or an
+  `fs: roots` util can write it, and `utils_run.run_jailed` reports the change rather than
+  preventing it (docs/sandboxing.md § `routine.yaml` is sealed at the action layer).
+- **`.memory/` via file actions** — refused twice, and it needs both: `engine/actions.py`
+  tests the model's own string inside the schema-retry cycle (no turn spent), and
+  `fileops._memory_gate` tests the RESOLVED path, which is what makes
+  `state/../.memory/INDEX.md` and the absolute form refusals too.
+- **`runs/` writes** — `fileops._write_gate` on the resolved path, with `_runs_read_gate`
+  backstopping the relative form.
+
+The same question applies to the three fs paths that are never grantable at all
+(`entities.NEVER_GRANTABLE`: the instance config dir, `~/.credentials`, `~/.ssh`). They are
+refused at the runtime ask, refused at the config PATCH, and REPORTED by the loader for a
+file that already lists one — that last one deliberately does not drop the root, because a
+routine that has legitimately been reading it would otherwise fail its next run with nothing
+naming the cause.
 
 ## Working with them
 

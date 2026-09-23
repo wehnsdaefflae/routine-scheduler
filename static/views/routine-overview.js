@@ -9,7 +9,7 @@
 
 import { api } from "/static/api.js";
 import { heartbeat } from "/static/components/heartbeat.js";
-import { chip, el, fmtDur, fmtNum, fmtUsd, when } from "/static/util.js";
+import { chip, el, fmtDur, fmtNum, fmtUsd, storage, when } from "/static/util.js";
 
 function tile(label, ...body) {
   return el("div", { class: "hero-tile" },
@@ -105,6 +105,22 @@ export function routineHero(d, slug) {
   return el("div", { class: "routine-hero" }, ...tiles);
 }
 
+// Which groups this browser has open, remembered across routines and visits — one key, the
+// same shape the dashboard's lane list uses. Seven groups open at once put "Run now" and the
+// runs table below ten thousand pixels of forms, so the page ships with only the leading group
+// open and the reader's own choice replaces that from then on. `null` means "no choice yet",
+// which is NOT the same as "everything closed": an empty list is a legitimate answer.
+const GROUPS_KEY = "routine-groups-open";
+
+function rememberedOpen() {
+  const raw = storage.get(GROUPS_KEY);
+  if (raw === null) return null;
+  try {
+    const titles = JSON.parse(raw);
+    return Array.isArray(titles) ? new Set(titles) : null;
+  } catch { return null; }
+}
+
 // Slice a flat host (a sequence of <h2> followed by their panels) into sections keyed by
 // heading text, then emit one <details class="rgroup"> per group. Sections not named by any
 // group are kept in a trailing "More" group — nothing is dropped.
@@ -120,12 +136,23 @@ export function groupSections(host, groups) {
 
   const used = new Set();
   const out = el("div", { class: "rgroups" });
-  const groupEl = (title, hint, picked, open) => el("details",
-    { class: "rgroup", open: open ? true : null },
-    el("summary", { class: "rgroup-head" },
-      el("span", { class: "rgroup-title" }, title),
-      hint ? el("span", { class: "rgroup-hint" }, hint) : null),
-    el("div", { class: "rgroup-body" }, ...picked));
+  const remembered = rememberedOpen();
+  // One write per toggle, read back off the DOM so the stored list is always exactly what the
+  // page shows — a set maintained alongside the elements is a second source of the same truth.
+  const remember = () => storage.set(GROUPS_KEY, JSON.stringify(
+    [...out.querySelectorAll("details.rgroup[open]")].map((d) => d.dataset.group)));
+  const groupEl = (title, hint, picked, fallbackOpen) => {
+    const open = remembered ? remembered.has(title) : fallbackOpen;
+    const d = el("details", { class: "rgroup", "data-group": title, open: open ? true : null },
+      el("summary", { class: "rgroup-head" },
+        el("span", { class: "rgroup-title" }, title),
+        hint ? el("span", { class: "rgroup-hint" }, hint) : null),
+      el("div", { class: "rgroup-body" }, ...picked));
+    // `toggle` also fires when surface-view.js opens the group a fix link points into, which is
+    // right: following the offer IS choosing to have that group open.
+    d.addEventListener("toggle", remember);
+    return d;
+  };
 
   for (const g of groups) {
     const picked = [];

@@ -30,13 +30,14 @@ import os
 import subprocess
 from pathlib import Path
 
-from .. import libgit, utils_lib
+from .. import libgit
 from ..config import ServerConfig
 from ..engine.transcript import read_events
 from ..ids import now_iso
 from ..paths import atomic_write_json
 from ..utils_lib import USAGE_ERROR_EXIT
 from ..workflows.library import head_commit
+from . import library_reads
 from .memo import fingerprint
 
 log = logging.getLogger("rsched.util_stats")
@@ -205,7 +206,7 @@ def util_stats(server: ServerConfig) -> dict:
     first/last timestamps.
     """
     home = server.libraries_home
-    catalog = {u["name"]: u for u in utils_lib.list_utils(home)}
+    catalog = {u["name"]: u for u in library_reads.utils(home)}
     dates = _git_dates(home)
     stream_agg, covered, stream_runs = _stream_utils(server)
     backfill_agg, backfill_runs = _backfill(server, covered)

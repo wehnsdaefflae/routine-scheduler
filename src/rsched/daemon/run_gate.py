@@ -12,6 +12,7 @@ from pathlib import Path
 
 from .. import domains, sandbox, scripts, secrets, utils_header, utils_run
 from ..config import RoutineConfig, ServerConfig
+from ..health_events import log_health_event
 from ..ids import now_iso
 from ..paths import atomic_write, atomic_write_json, read_json
 from .runner_state import ActiveRun
@@ -24,8 +25,13 @@ class GateError(Exception):
 
 
 def pending_inbox(directory: Path) -> bool:
+    """Does freight wait for this routine? `msg-*.json` only — the stem the ONE writer
+    produces (engine/inbox.file_message). Counting ANY file made a queued question ANSWER,
+    and `paths.atomic_write`'s in-flight `.msg-….json.XXXX.tmp`, read as pending work the
+    gate must be told about.
+    """
     inbox = directory / "inbox"
-    return inbox.is_dir() and any(p.is_file() for p in inbox.iterdir())
+    return inbox.is_dir() and any(inbox.glob("msg-*.json"))
 
 
 def _prepare(cfg: RoutineConfig, server: ServerConfig) -> tuple[list[str], dict]:
@@ -231,6 +237,23 @@ async def _execute(
         run.proc = None
 
 
+def _log_gate_exit(run: ActiveRun, cfg: RoutineConfig, server: ServerConfig, event: str,
+                   detail: str, *, cause: str | None) -> None:
+    """Put a gate failure in the health stream, where every other dead run already is.
+
+    A gate that raises writes a `failed` run and starts no engine — so the engine's own
+    `run_failed` never fires, and the reap sees a state that is already terminal and emits
+    nothing either. The only durable trace was one line inside a lane chain's
+    `lane_chain_done` detail. A withdrawn secret or a kernel that dropped Landlock fails
+    every scheduled fire of a gated routine forever, in preparation, before turn 0 — and the
+    audit's one filter is exactly this event.
+    """
+    log_health_event(server.routines_home, event, routine=cfg.slug, run_id=run.run_id,
+                     detail=detail + " - the admission gate ended the run before turn 0, "
+                                     "so no engine ever started",
+                     cause=cause)
+
+
 def terminal(run: ActiveRun, state: str, outcome: str, detail: str) -> None:
     raw = read_json(run.run_dir / "status.json", {})
     status = raw if isinstance(raw, dict) else {"run_id": run.run_id}
@@ -290,11 +313,16 @@ async def admit(
     except asyncio.CancelledError:
         terminal(run, "aborted", "failed", "Run gate cancelled")
         meta.update(decision="error", reason="cancelled")
+        _log_gate_exit(run, cfg, server, "run_canceled", "Run gate cancelled",
+                       cause="user_abort" if run.user_cancel else "unknown")
         raise
     except Exception as exc:
         detail = "Run gate failed: " + str(exc)[:1000]
-        terminal(run, "aborted" if run.user_cancel or run.cancelled else "failed", "failed", detail)
+        aborted = bool(run.user_cancel or run.cancelled)
+        terminal(run, "aborted" if aborted else "failed", "failed", detail)
         meta.update(decision="error", reason=detail)
+        _log_gate_exit(run, cfg, server, "run_canceled" if aborted else "run_failed", detail,
+                       cause="user_abort" if aborted else None)
         return False
     finally:
         atomic_write_json(run.run_dir / "gate.json", meta)

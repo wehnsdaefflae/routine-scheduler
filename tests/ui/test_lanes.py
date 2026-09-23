@@ -28,7 +28,7 @@ from playwright.sync_api import expect
 from rsched import domains, lane_runs, lanes
 from rsched.config import MachineConfig
 
-from .conftest import TOKEN
+from .conftest import TOKEN, until
 
 # One block per control in the domain editor — TEN of them for the ELEVEN keys a domain may
 # share (`domains.CONFIG_KEYS`), because permissions and capabilities are one two-layer panel
@@ -56,6 +56,17 @@ DOMAIN_BLOCK_FOR = {
 DOMAIN_BLOCKS = tuple(dict.fromkeys(DOMAIN_BLOCK_FOR.values()))
 
 
+def _unfold(page) -> None:
+    """Open every routine-page config group.
+
+    The page ships with only its leading group open (views/routine.js SECTION_GROUPS): seven
+    open at once made it 11-12 000px tall. A control inside a folded group is not visible, so a
+    test that reads one unfolds first. What the DEFAULT is, and that the choice is remembered,
+    is pinned in test_routine_groups.py — not here.
+    """
+    page.wait_for_selector(".rgroup-head")
+    page.evaluate("() => { for (const d of document.querySelectorAll('details.rgroup')) d.open = true; }")
+
 def test_every_shareable_key_has_an_editor_block():
     """The binding, without a browser: a key a domain may share that no block writes is a key
     an operator can neither see nor change; the only way to find out was to look.
@@ -75,29 +86,53 @@ def _join_domain(ui, slug: str, domain_id: str) -> None:
     path.write_text(yaml.safe_dump(cfg), encoding="utf-8")
 
 
+def _open_domains_section(ui_page) -> None:
+    """Open the Routines page's DOMAINS section through its own disclosure.
+
+    The section ships COLLAPSED (views/dashboard.js): it is management rather than monitoring,
+    so the page opens on the routine list instead of on every domain's edit / rename / delete.
+    Everything inside it is hidden until someone asks for it, which is what a test addressing a
+    row does first — through the summary a user clicks rather than by setting `.open` from
+    script, so this still fails if the way in ever stops working. A section nobody can open is
+    a bug, not a decluttering.
+    """
+    panel = ui_page.locator("[data-domains]")
+    summary = ui_page.locator("[data-domains] > summary")
+    expect(summary).to_be_visible()
+    if panel.get_attribute("open") is None:
+        summary.click()
+    expect(panel).to_have_attribute("open", "")
+
+
+def _domain_row(ui, ui_page, domain_id: str):
+    """One domain's row on the Routines page, the section opened first. The only surface either
+    object has is this page (D80), so every domain assertion starts here."""
+    ui_page.goto(f"{ui.url}/#/routines")
+    _open_domains_section(ui_page)
+    row = ui_page.locator(f'[data-domain-row="{domain_id}"]')
+    row.wait_for()
+    return row
+
+
 def _open_domain_editor(ui, ui_page, domain_id: str):
     """The shared-config editor for one domain, reached the way an operator reaches it: from
     that domain's row in the Routines page's domains section, which is the only surface either
     object has (D80)."""
-    ui_page.goto(f"{ui.url}/#/routines")
-    row = ui_page.locator(f'[data-domain-row="{domain_id}"]')
-    row.wait_for(timeout=10_000)
-    row.locator("[data-domain-edit]").click()
+    _domain_row(ui, ui_page, domain_id).locator("[data-domain-edit]").click()
     panel = ui_page.locator(f'[data-domain-config="{domain_id}"]')
-    expect(panel).to_be_visible(timeout=10_000)
+    expect(panel).to_be_visible()
     return panel
 
 
-def _shared(ui, ui_page, domain_id: str, key: str):
+def _shared(ui, domain_id: str, key: str):
     """One key of the domain's STORED config, polled until the save lands. Every control in the
     panel writes through the API, so the store is where a save is confirmed — a toast reports
     only what the page believes."""
-    for _ in range(50):
-        value = (domains.get(ui.routines, domain_id) or {}).get("config", {}).get(key)
-        if value:
-            return value
-        ui_page.wait_for_timeout(100)
-    return None
+    def stored_key():
+        return (domains.get(ui.routines, domain_id) or {}).get("config", {}).get(key)
+
+    until(stored_key, what=f"the {key} save")
+    return stored_key()
 
 
 def _detail(ui, ui_page, slug: str) -> dict:
@@ -119,8 +154,8 @@ def test_routine_page_hero_reports_the_lane_without_offering_to_change_it(ui, ui
     lanes.create(ui.routines, name="Nightly", members=[])
     ui_page.goto(f"{ui.url}/#/routine/uir")
     tile = ui_page.locator("[data-hero-lane]")
-    expect(tile).to_be_visible(timeout=10_000)
-    expect(tile.locator(".hero-strong")).to_have_text("none", timeout=10_000)
+    expect(tile).to_be_visible()
+    expect(tile.locator(".hero-strong")).to_have_text("none")
     expect(tile.locator("select")).to_have_count(0)
     expect(tile.locator("a.hero-link")).to_have_attribute("href", "#/routines")
     assert lanes.load(ui.routines)["lanes"][0]["members"] == []   # reading it joined nothing
@@ -134,7 +169,7 @@ def test_hero_lane_tile_names_an_unscheduled_lane(ui, ui_page):
     lanes.create(ui.routines, name="Unscheduled", members=[{"slug": "uir"}])
     ui_page.goto(f"{ui.url}/#/routine/uir")
     tile = ui_page.locator("[data-hero-lane]")
-    expect(tile.locator(".hero-strong")).to_have_text("Unscheduled", timeout=10_000)
+    expect(tile.locator(".hero-strong")).to_have_text("Unscheduled")
     expect(tile.locator(".hero-sub")).to_contain_text("its own cron applies")
     expect(tile.locator("a.hero-link")).to_have_attribute("href", "#/routines")
 
@@ -145,13 +180,13 @@ def test_hero_lane_tile_says_a_scheduled_lane_drives_the_fires(ui, ui_page):
     lanes.create(ui.routines, name="Nightly", members=[{"slug": "uir"}], cron="0 3 * * *")
     ui_page.goto(f"{ui.url}/#/routine/uir")
     tile = ui_page.locator("[data-hero-lane]")
-    expect(tile.locator(".hero-strong")).to_have_text("Nightly", timeout=10_000)
+    expect(tile.locator(".hero-strong")).to_have_text("Nightly")
     expect(tile.locator(".hero-sub")).to_contain_text("fires via the lane's chain")
 
 
 def test_routines_page_lane_crud(ui, ui_page):
     ui_page.goto(f"{ui.url}/#/routines")
-    ui_page.wait_for_selector("[data-lane-new]", timeout=10_000)
+    ui_page.wait_for_selector("[data-lane-new]")
 
     # create: the toolbar's "+ new lane" opens the overlay form
     ui_page.locator("[data-lane-new]").click()
@@ -163,7 +198,7 @@ def test_routines_page_lane_crud(ui, ui_page):
     ui_page.get_by_role("button", name="add lane").click()
 
     row = ui_page.locator("tr[data-lane-row]")
-    row.wait_for(timeout=10_000)
+    row.wait_for()
     expect(row).to_contain_text("Morning")
 
     # it persisted to the store, as member RECORDS
@@ -179,7 +214,7 @@ def test_routines_page_lane_crud(ui, ui_page):
     # the editor opens and lists the member
     row.locator("[data-lane-edit]").click()
     editor = ui_page.locator(f'[data-lane="{lane_id}"]')
-    editor.wait_for(timeout=10_000)
+    editor.wait_for()
     expect(editor.locator('[data-member="uir"]')).to_contain_text("uir")
     ui_page.locator("[data-lane-editor-close]").click()
 
@@ -188,25 +223,26 @@ def test_routines_page_lane_crud(ui, ui_page):
     ui_page.locator("tr[data-lane-row]", has_text="Morning").get_by_text("⛓ Morning").click()
     ui_page.locator("[data-lane-run]").click()
     expect(ui_page.locator("[data-lane-progress]")).to_contain_text(
-        "1/1", timeout=10_000)
+        "1/1")
     flight = lane_runs.read(ui.routines, lane_id)
     assert flight is not None and flight["cursor"] == 0
     assert flight["members"] == [{"slug": "uir"}]
     # clear the armed chain so the delete-and-empty-store assertions below stay clean
     lane_runs.remove(ui.routines, lane_id)
 
-    # change the instance default → persists
+    # change the instance default → persists (it is set once and lives behind a fold, so the
+    # bar above the routine list is "＋ new lane" and nothing else at rest)
+    ui_page.locator("[data-lane-defaults] summary").click()
     ui_page.locator("[data-lanes-default]").select_option("continue")
     expect(ui_page.locator("#toast:not([hidden])")).to_contain_text("continue")
-    ui_page.wait_for_timeout(300)
-    assert stored()["default_on_failure"] == "continue"
+    until(lambda: stored().get("default_on_failure") == "continue", what="the default save")
 
     # delete (from the editor; confirm dialog → confirm)
     ui_page.locator("tr[data-lane-row] [data-lane-edit]").click()
-    ui_page.locator(f'[data-lane="{lane_id}"]').wait_for(timeout=10_000)
+    ui_page.locator(f'[data-lane="{lane_id}"]').wait_for()
     ui_page.get_by_role("button", name="delete lane").click()
     ui_page.get_by_role("button", name="delete", exact=True).last.click()
-    expect(ui_page.locator("tr[data-lane-row]")).to_have_count(0, timeout=10_000)
+    expect(ui_page.locator("tr[data-lane-row]")).to_have_count(0)
     assert stored()["lanes"] == []
 
     # the store file is valid JSON with the expected top-level shape
@@ -228,7 +264,7 @@ def test_routines_page_lane_pause_toggle(ui, ui_page, make_routine):
     plain = lanes.create(ui.routines, name="Plain", members=[{"slug": "uir2"}])
     ui_page.goto(f"{ui.url}/#/routines")
     sched_row = ui_page.locator(f'tr[data-lane-row="{rec["id"]}"]')
-    sched_row.wait_for(timeout=10_000)
+    sched_row.wait_for()
 
     # only the scheduled row offers the toggle
     expect(sched_row.locator("[data-lane-pause-toggle]")).to_have_text("⏸ pause")
@@ -239,16 +275,15 @@ def test_routines_page_lane_pause_toggle(ui, ui_page, make_routine):
     sched_row.locator("[data-lane-pause-toggle]").click()
     expect(ui_page.locator(
         f'tr[data-lane-row="{rec["id"]}"] [data-lane-paused]')).to_contain_text(
-        "paused", timeout=10_000)
+        "paused")
     assert lanes.get(ui.routines, rec["id"])["paused"] is True
 
     # resume → badge gone, store cleared (the row re-renders, so re-locate)
     ui_page.locator(f'tr[data-lane-row="{rec["id"]}"] [data-lane-pause-toggle]').click()
     expect(ui_page.locator(
         f'tr[data-lane-row="{rec["id"]}"] [data-lane-paused]')).to_have_count(
-        0, timeout=10_000)
-    ui_page.wait_for_timeout(300)   # give the PATCH a beat, as the CRUD test does
-    assert lanes.get(ui.routines, rec["id"])["paused"] is False
+        0)
+    until(lambda: lanes.get(ui.routines, rec["id"])["paused"] is False, what="the resume")
 
 
 def test_no_lane_or_group_subpage_exists(ui, ui_page):
@@ -259,7 +294,7 @@ def test_no_lane_or_group_subpage_exists(ui, ui_page):
     # a route that never existed, then the dead one a bookmark can still ask for
     for route in ("lanes", "groups"):
         ui_page.goto(f"{ui.url}/#/{route}")
-        ui_page.wait_for_url(f"{ui.url}/#/", timeout=10_000)
+        ui_page.wait_for_url(f"{ui.url}/#/")
 
 
 def test_domains_section_edits_the_shared_config(ui, ui_page):
@@ -275,25 +310,22 @@ def test_domains_section_edits_the_shared_config(ui, ui_page):
     dom = domains.create(ui.routines, name="FAU")
     _join_domain(ui, "uir", dom["id"])
 
-    ui_page.goto(f"{ui.url}/#/routines")
-    row = ui_page.locator(f'[data-domain-row="{dom["id"]}"]')
-    row.wait_for(timeout=10_000)
+    row = _domain_row(ui, ui_page, dom["id"])
     expect(row).to_contain_text("FAU")
     expect(row).to_contain_text("uir")          # membership, read back from the routines
 
     row.locator("[data-domain-edit]").click()
     panel = ui_page.locator(f'[data-domain-config="{dom["id"]}"]')
-    expect(panel).to_be_visible(timeout=10_000)
+    expect(panel).to_be_visible()
     expect(panel).to_contain_text("inherits")
 
     # a save writes the domain's config (a secret grant is the simplest control to drive
     # headlessly AND the one whose result is visible in the store)
     panel.locator('[data-domain-secret="FAU_TOKEN"]').check()
     expect(ui_page.locator("#toast:not([hidden])")).to_contain_text(
-        "FAU_TOKEN", timeout=10_000)
-    ui_page.wait_for_timeout(300)
-    assert domains.get(ui.routines, dom["id"])["config"]["grants"] == {
-        "secret:FAU_TOKEN": True}
+        "FAU_TOKEN")
+    until(lambda: domains.get(ui.routines, dom["id"])["config"].get("grants") == {
+        "secret:FAU_TOKEN": True}, what="the grant save")
 
 
 def test_domain_editor_covers_every_shareable_key(ui, ui_page):
@@ -340,27 +372,27 @@ def test_domain_shares_machines_models_budgets_and_tags(ui, ui_page):
     machines = panel.locator('[data-dcfg-block="Machines"]')
     machines.locator("label", has_text="gpu-box").locator("input[type=checkbox]").check()
     machines.get_by_role("button", name="save machines").click()
-    expect(toast).to_contain_text("machines saved", timeout=10_000)
-    assert _shared(ui, ui_page, dom["id"], "machines") == ["gpu-box"]
+    expect(toast).to_contain_text("machines saved")
+    assert _shared(ui, dom["id"], "machines") == ["gpu-box"]
 
     models = panel.locator('[data-dcfg-block="Models"]')
     models.locator('[data-domain-model="main"]').select_option("m")
     models.locator("[data-domain-models-save]").click()
-    expect(toast).to_contain_text("domain models saved", timeout=10_000)
-    assert _shared(ui, ui_page, dom["id"], "models") == {"main": "m"}
+    expect(toast).to_contain_text("domain models saved")
+    assert _shared(ui, dom["id"], "models") == {"main": "m"}
 
     budgets = panel.locator('[data-dcfg-block="Budgets"]')
     budgets.locator('[data-domain-budget="max_turns"]').fill("42")
     budgets.locator("[data-domain-budgets-save]").click()
-    expect(toast).to_contain_text("domain budgets saved", timeout=10_000)
-    assert _shared(ui, ui_page, dom["id"], "budgets") == {"max_turns": 42}
+    expect(toast).to_contain_text("domain budgets saved")
+    assert _shared(ui, dom["id"], "budgets") == {"max_turns": 42}
 
     # the tag editor has no button: every change saves, the chip appears once it landed
     tags = panel.locator('[data-dcfg-block="Tags"]')
     tags.locator(".tags input").fill("fau")
     tags.locator(".tags input").press("Enter")
-    expect(tags.locator(".tag", has_text="fau")).to_be_visible(timeout=10_000)
-    assert _shared(ui, ui_page, dom["id"], "tags") == ["fau"]
+    expect(tags.locator(".tag", has_text="fau")).to_be_visible()
+    assert _shared(ui, dom["id"], "tags") == ["fau"]
 
     detail = _detail(ui, ui_page, "uir")
     assert detail["machines"] == ["gpu-box"]
@@ -380,18 +412,16 @@ def test_routine_page_domain_picker_joins_a_domain(ui, ui_page):
     back."""
     dom = domains.create(ui.routines, name="FAU", config={"permissions": ["memory"]})
     ui_page.goto(f"{ui.url}/#/routine/uir")
+    _unfold(ui_page)
     sel = ui_page.locator("[data-domain-sel]")
-    expect(sel).to_be_visible(timeout=10_000)
+    expect(sel).to_be_visible()
     expect(sel.locator("option")).to_have_count(2)          # none + FAU
     sel.select_option(dom["id"])
-    expect(ui_page.locator("#toast:not([hidden])")).to_be_visible(timeout=10_000)
+    expect(ui_page.locator("#toast:not([hidden])")).to_be_visible()
 
     cfg_path = ui.routines / "uir" / "routine.yaml"
-    for _ in range(50):
-        if yaml.safe_load(cfg_path.read_text(encoding="utf-8")).get("domain") == dom["id"]:
-            break
-        ui_page.wait_for_timeout(100)
-    assert yaml.safe_load(cfg_path.read_text(encoding="utf-8"))["domain"] == dom["id"]
+    until(lambda: yaml.safe_load(cfg_path.read_text(encoding="utf-8")).get("domain")
+          == dom["id"], what="the domain assignment")
     assert domains.members(ui.routines, dom["id"]) == ["uir"]
     # and the shared block reaches the member from there
     assert _detail(ui, ui_page, "uir")["inherited_from"] == "FAU"
@@ -442,10 +472,10 @@ def test_lane_editor_offers_no_shared_config(ui, ui_page):
     shared-config block under any other name."""
     lane = lanes.create(ui.routines, name="Nightly", members=[{"slug": "uir"}])
     ui_page.goto(f"{ui.url}/#/routines")
-    ui_page.wait_for_selector("tr[data-lane-row]", timeout=10_000)
+    ui_page.wait_for_selector("tr[data-lane-row]")
     ui_page.locator("tr[data-lane-row] [data-lane-edit]").click()
     editor = ui_page.locator(f'[data-lane="{lane["id"]}"]')
-    editor.wait_for(timeout=10_000)
+    editor.wait_for()
 
     expect(editor).to_contain_text("on failure")          # the lane's own controls are here
     expect(editor).not_to_contain_text("Shared config")
@@ -458,10 +488,11 @@ def test_lane_editor_offers_no_shared_config(ui, ui_page):
 
 def test_routine_row_domain_chip_reveals_that_domain(ui, ui_page, make_routine):
     """The domain chip on a routine's row is the ONLY path from the routine to the domain it
-    shares a config block with: it opens the Domains section — collapsed here, as an operator
-    who closed it last time would find it — and scrolls that domain's row into view. The lane
-    chip beside it opens the lane's editor, so a domain chip that did nothing would be a dead
-    control sitting next to a live one that looks identical."""
+    shares a config block with: it opens the Domains section — collapsed, which is how the page
+    rests — and scrolls that domain's row into view. The lane chip beside it opens the lane's
+    editor, so a domain chip that did nothing would be a dead control sitting next to a live one
+    that looks identical. The stored state is pinned to `closed` so the assertion reads the
+    chip's work and not a default someone may move."""
     make_routine(slug="uir2")
     make_routine(slug="uir3")
     dom = domains.create(ui.routines, name="FAU")
@@ -470,7 +501,7 @@ def test_routine_row_domain_chip_reveals_that_domain(ui, ui_page, make_routine):
     ui_page.add_init_script("localStorage.setItem('rsched_dash_domains', 'closed')")
     ui_page.goto(f"{ui.url}/#/routines")
     chip = ui_page.locator("button.chip.domain-chip")
-    expect(chip).to_have_text("◈ FAU", timeout=10_000)
+    expect(chip).to_have_text("◈ FAU")
     # the chip is a button styled by base.css alone — an inline cursor here is how the design
     # system erodes, one control at a time
     assert chip.get_attribute("style") is None
@@ -482,8 +513,8 @@ def test_routine_row_domain_chip_reveals_that_domain(ui, ui_page, make_routine):
     expect(row).to_be_hidden()
 
     chip.click()
-    expect(panel).to_have_attribute("open", "", timeout=10_000)
-    expect(row).to_be_in_viewport(timeout=10_000)
+    expect(panel).to_have_attribute("open", "")
+    expect(row).to_be_in_viewport()
 
 
 def test_expanded_lane_rows_drag_to_reorder(ui, ui_page, make_routine):
@@ -499,11 +530,11 @@ def test_expanded_lane_rows_drag_to_reorder(ui, ui_page, make_routine):
                                  {"slug": "gm2"}])
     ui_page.goto(f"{ui.url}/#/routines")
     row = ui_page.locator(f'tr[data-lane-row="{lane["id"]}"]')
-    row.wait_for(timeout=10_000)
+    row.wait_for()
     row.get_by_text("⛓ Ordered").click()                     # expand → rows in fire order
     src = ui_page.locator('tr[data-drag-member="gm1"]')
     tgt = ui_page.locator('tr[data-drag-member="gm2"]')
-    expect(src).to_be_visible(timeout=10_000)
+    expect(src).to_be_visible()
     # Drive the HTML5 drag handlers with dispatched DragEvents + a real DataTransfer (the
     # documented Playwright pattern) — its mouse-gesture drag does not start Chromium's
     # native HTML5 drag reliably in headless, which is why weekgrid went pointer-based.
@@ -532,14 +563,13 @@ def test_routines_page_lane_editor_catchup_policy(ui, ui_page):
                        cron="0 7 * * *", tz="UTC")
     ui_page.goto(f"{ui.url}/#/routines")
     row = ui_page.locator(f'tr[data-lane-row="{rec["id"]}"]')
-    row.wait_for(timeout=10_000)
+    row.wait_for()
     row.locator("[data-lane-edit]").click()
-    ui_page.locator(f'[data-lane="{rec["id"]}"]').wait_for(timeout=10_000)
+    ui_page.locator(f'[data-lane="{rec["id"]}"]').wait_for()
     sel = ui_page.locator("[data-lane-catchup]")
     expect(sel).to_have_value("run_once")
     sel.select_option("skip")
-    ui_page.wait_for_timeout(300)   # give the PATCH a beat, as the pause test does
-    assert lanes.get(ui.routines, rec["id"])["catchup"] == "skip"
+    until(lambda: lanes.get(ui.routines, rec["id"])["catchup"] == "skip", what="the catchup save")
     expect(ui_page.locator("[data-lane-catchup]")).to_have_value("skip")   # re-rendered
 
 
@@ -565,18 +595,13 @@ def test_unticking_a_shared_setting_removes_it_and_keeps_the_rest(ui, ui_page):
     box = panel.locator('[data-domain-secret="FAU_TOKEN"]')
 
     box.check()
-    expect(ui_page.locator("#toast:not([hidden])")).to_contain_text("FAU_TOKEN", timeout=10_000)
-    for _ in range(50):
-        if domains.get(ui.routines, dom["id"])["config"].get("grants"):
-            break
-        ui_page.wait_for_timeout(100)
-    assert domains.get(ui.routines, dom["id"])["config"]["grants"] == {"secret:FAU_TOKEN": True}
+    expect(ui_page.locator("#toast:not([hidden])")).to_contain_text("FAU_TOKEN")
+    until(lambda: domains.get(ui.routines, dom["id"])["config"].get("grants")
+          == {"secret:FAU_TOKEN": True}, what="the grant save")
 
     box.uncheck()
-    for _ in range(50):
-        if not domains.get(ui.routines, dom["id"])["config"].get("grants"):
-            break
-        ui_page.wait_for_timeout(100)
+    until(lambda: not domains.get(ui.routines, dom["id"])["config"].get("grants"),
+          what="the grant removal")
 
     cfg = domains.get(ui.routines, dom["id"])["config"]
     assert "grants" not in cfg, "unticking must actually remove the shared grant"

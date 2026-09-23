@@ -116,6 +116,24 @@ function chartsSection(runs) {
   return box;
 }
 
+// Show the first `keep` rows and hide the rest behind ONE row that reveals them. Stats is a
+// page of KPI tiles and two charts followed, today, by 20 000px of rows nobody scans — 172
+// monthly rows, 196 util rows. Every row is still here and still one click away; the page just
+// stops spending its height on them before anyone asks. The reveal row goes LAST, because a
+// hidden <tr> takes no space and the button therefore sits under what is shown.
+function foldRows(rows, keep, label) {
+  if (rows.length <= keep) return rows;
+  const rest = rows.slice(keep);
+  for (const r of rest) r.hidden = true;
+  const btn = el("button", { class: "btn small ghost" }, `show all ${rows.length} ${label}`);
+  btn.onclick = () => {
+    const opening = rest[0].hidden;
+    for (const r of rest) r.hidden = !opening;
+    btn.textContent = opening ? `show fewer ${label}` : `show all ${rows.length} ${label}`;
+  };
+  return [...rows, el("tr", { class: "fold-row" }, el("td", { colspan: "99" }, btn))];
+}
+
 // The frame every stat table on this page shares: a titled section, an optional sub-line
 // explaining where the numbers come from, and one horizontally scrollable table. `sub` takes a
 // string, an array of strings (el flattens its children), or null when the title already says
@@ -123,7 +141,7 @@ function chartsSection(runs) {
 const statSection = (title, sub, head, body) => el("div", { class: "stat-section" },
   el("h2", {}, title),
   sub ? el("div", { class: "sub" }, sub) : null,
-  el("div", { class: "table-wrap" },
+  el("div", { class: "tablewrap boxed" },
     el("table", { class: "stat-table" },
       el("thead", {}, head), el("tbody", {}, ...body))));
 
@@ -204,7 +222,7 @@ function monthlySection(monthly, kinds) {
   const head = el("tr", {}, el("th", {}, "routine"),
     ...months.map((m) => el("th", { class: "num" }, m)),
     el("th", {}, "trend"));
-  const body = rows.map(([slug, cells]) => {
+  const rowFor = ([slug, cells]) => {
     const cur = cells[latest];
     const before = prev ? cells[prev] : null;
     const growing = cur && before && cur.tokens > before.tokens * 1.2;
@@ -216,7 +234,28 @@ function monthlySection(monthly, kinds) {
       el("td", {}, growing ? el("span", { class: "chip partial" }, "↑ growing")
         : shrinking ? el("span", { class: "chip ok" }, "↓ shrinking")
         : before && cur ? el("span", { class: "chip bare" }, "→ steady") : NBSP));
-  });
+  };
+  // A CONVERSATION is a one-off with a timestamp for a name, and the fleet has a hundred of
+  // them: as peers of the routines they made this table a list of `c-2026MMDD-HHMMSS` ids and
+  // buried the twenty rows a reader came for. They subtotal into one row that expands.
+  const isConv = ([slug]) => kinds?.[slug] === "conversation";
+  const convs = rows.filter(isConv);
+  const body = rows.filter((r) => !isConv(r)).map(rowFor);
+  if (convs.length) {
+    const totals = {};
+    for (const [, cells] of convs)
+      for (const m of months) {
+        const c = cells[m];
+        if (!c) continue;
+        totals[m] = totals[m] || { tokens: 0, cost: 0 };
+        totals[m].tokens += c.tokens || 0;
+        totals[m].cost += c.cost || 0;
+      }
+    body.push(...foldRows([el("tr", { class: "subtotal" },
+      el("td", {}, `conversations · ${convs.length}`),
+      ...months.map((m) => el("td", { class: "num" }, cell(totals[m]))),
+      el("td", {}, NBSP)), ...convs.map(rowFor)], 1, "conversations"));
+  }
   return statSection("Monthly spend by routine",
     "tokens · cost per calendar month, from the durable usage stream — unlike the tables above, this survives run retention",
     head, body);
@@ -245,11 +284,13 @@ function utilsSection(u) {
     el("th", { class: "num", title: "called by a name that doesn't exist in the library" }, "missing"),
     el("th", {}, "first executed"),
     el("th", {}, "last executed"));
-  const body = rows.map((r) => {
+  const rowFor = (r) => {
     const okPct = r.executed ? ` (${Math.round((r.ok / r.executed) * 100)}%)` : "";
     return el("tr", {},
+      // DELETED is a historical fact about a util, not a failure of one: 86 of the fleet's 196
+      // rows carried it, which is 86 err-toned chips at rest on one page. Colour is state.
       el("td", { title: r.summary || "" }, r.name,
-        r.in_library ? "" : el("span", { class: "chip failed", style: "margin-left:6px" }, "deleted")),
+        r.in_library ? "" : el("span", { class: "chip disabled", style: "margin-left:6px" }, "deleted")),
       el("td", { class: "muted" }, day(r.created)),
       el("td", { class: "muted" }, day(r.revised)),
       el("td", { class: "num" }, r.executed ? fmtInt(r.executed) : "never"),
@@ -261,7 +302,14 @@ function utilsSection(u) {
       el("td", { class: "num" }, num(r.missing)),
       el("td", { class: "muted" }, day(r.first_executed)),
       el("td", { class: "muted" }, day(r.last_executed)));
-  });
+  };
+  // Busiest first, and the utils the library no longer holds behind their own reveal — they are
+  // history, and the question this table answers ("which util is unreliable?") is about the
+  // ones that still exist.
+  const live = rows.filter((r) => r.in_library).sort((a, b) => (b.executed || 0) - (a.executed || 0));
+  const gone = rows.filter((r) => !r.in_library).sort((a, b) => (b.executed || 0) - (a.executed || 0));
+  const body = [...foldRows(live.map(rowFor), 25, "utils"),
+                ...foldRows(gone.map(rowFor), 0, "deleted utils")];
   return statSection("Global utils",
     ["per-util reliability: dates from the library's git history; counts from each run's usage record ",
      `(durable) plus ${fmtInt(u.backfill_runs || 0)} pre-stream runs backfilled from retained transcripts. `,

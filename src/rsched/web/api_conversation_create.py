@@ -78,7 +78,7 @@ def _parse_rules(server, raw: str) -> list[str] | None:
     """
     import json
 
-    from .. import library_docs
+    from ..readmodels import library_reads
 
     if not raw.strip():
         return None                        # keep CONVERSATION_RULES
@@ -88,7 +88,7 @@ def _parse_rules(server, raw: str) -> list[str] | None:
         raise HTTPException(400, "rules: expected a JSON array of rule slugs") from None
     if not isinstance(vals, list) or not all(isinstance(v, str) for v in vals):
         raise HTTPException(400, "rules: expected a JSON array of rule slugs")
-    known = set(library_docs.slugs(server.rules_home))
+    known = set(library_reads.doc_slugs(server.rules_home))
     picked: list[str] = []
     unknown: list[str] = []
     for v in vals:
@@ -289,14 +289,14 @@ def conversation_defaults(request: Request) -> dict:
     """
     from types import SimpleNamespace
 
-    from .. import library_docs
-    from ..grants import capabilities_for, floor_capabilities, read_library_requires
+    from ..grants import capabilities_for, floor_capabilities
+    from ..readmodels import library_reads
 
     server = request.app.state.server
-    available = set(library_docs.slugs(server.permissions_home))
+    available = set(library_reads.doc_slugs(server.permissions_home))
     active = [p for p in conv_mod.CONVERSATION_PERMISSIONS if p in available]
     # floored like the create path — the preview must show what will actually persist
-    lib = read_library_requires(server.permissions_home)
+    lib = library_reads.requires(server.permissions_home)
     caps = floor_capabilities(active, lib, capabilities_for(active, lib))
     permissions, capabilities = permission_layers_detail(
         server, SimpleNamespace(permissions=active, capabilities=caps),
@@ -307,7 +307,7 @@ def conversation_defaults(request: Request) -> dict:
     # for reply #1.
     from .. import rules as rules_mod
 
-    rule_slugs = library_docs.slugs(server.rules_home)
+    rule_slugs = library_reads.doc_slugs(server.rules_home)
     summaries = rules_mod.summaries(server.rules_home, rule_slugs)
     return {"permissions": permissions, "capabilities": capabilities,
             "budgets": dict(conv_mod.CONVERSATION_BUDGETS),

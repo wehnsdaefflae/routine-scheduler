@@ -44,6 +44,12 @@ class RunContext:
     transcript: Transcript
     budgets: Budgets
     depth: int = 0
+    # WHICH child this is (engine/child.py's n and label), for the surfaces a child reaches
+    # that belong to the whole routine — today the decision record a deferred ask files into
+    # the routine's own questions/pending, where a person has to be able to tell who asked.
+    # Zero/empty at depth 0.
+    sub_n: int = 0
+    sub_label: str = ""
     sub_counter: list[int] = field(default_factory=lambda: [0])  # shared across the whole tree
     # Guards sub_counter: parallel spawn threads allocate child numbers concurrently.
     # Shared tree-wide like the counter itself (childrun passes both to every child ctx).
@@ -122,6 +128,9 @@ class RunContext:
     question: dict | None = None
     main_model: str = ""              # "<endpoint>/<model>" resolved each turn (in status.json)
     budget_base_turn: int = 0         # turns before this count against a prior window (resume)
+    # Which budget warning LINES this run has already been given (budget_warning): a warning
+    # is an event, said once per line crossed, never a per-turn countdown.
+    _budget_warned: set = field(default_factory=set)
     schema_retries: int = 0           # cumulative schema-violation retries this run (telemetry)
     referrals: int = 0                # turns/llm-calls answered by the `uncensored` model (audit)
     schema_forcefails: int = 0        # turns that exhausted every schema attempt (telemetry)
@@ -154,6 +163,9 @@ class RunContext:
     # "nobody has seen the draft yet" INSIDE one reply, which a pid alone cannot (R1310).
     user_replies: int = 0
     _started_mono: float = field(default_factory=time.monotonic)
+    #: memo for `stage_coverage`, keyed on the stages entered so far (see there)
+    _stage_coverage: dict = field(default_factory=dict)
+    _stage_coverage_key: tuple = ("\0",)
     _suspended_s: float = 0.0
 
     def __post_init__(self) -> None:
@@ -204,6 +216,16 @@ class RunContext:
         while d.name.isdigit() and d.parent.name == "sub":
             d = d.parent.parent
         return d
+
+    @property
+    def root_routine_dir(self) -> Path:
+        """The ROUTINE's own dir — `questions/`, `inbox/` and every surface a person reads
+        live there and only there. A CHILD's `routine.dir` is its `runs/<ts>/sub/<n>/`
+        workspace, so a child filing a deferred question against `routine.dir` wrote a
+        decision record under runs/ that no surface scans: four such records exist on the
+        live instance and none was ever shown to anyone.
+        """
+        return self.root_run_dir.parent.parent
 
     def elapsed_s(self) -> float:
         """THIS window's active wall clock — what budgets meter (a resume gets a fresh
@@ -281,11 +303,27 @@ class RunContext:
     def budget_violation(self) -> str | None:
         return self.budgets.ledger().violation(self.meter())
 
+    def budget_spent(self) -> dict | None:
+        """The budget that stopped this run: `{resource, limit, message}`, or None."""
+        return self.budgets.ledger().spent(self.meter())
+
     def budget_warning(self) -> str | None:
-        """The 85% line on any budget — the run's cue to wind down DELIBERATELY (record, then
-        an authored finish) instead of being cut off mid-work by budget_violation.
+        """The next budget warning this run has not been given yet — its cue to wind down
+        DELIBERATELY (record, then an authored finish) instead of being cut off mid-work by
+        budget_violation. None once every crossed line has been said.
+
+        A budget warning is an EVENT, not a state. Repeating it on every turn past the line
+        turned the backstop into a countdown — a run read "converge DELIBERATELY now"
+        fifteen times over and wrapped up at the ceiling whether or not its stopping
+        conditions were met — while the harness contract tells the same run that budgets are
+        never a pace. So each line (85%, then 95%, per resource) is announced exactly once;
+        a second resource crossing later still gets its own notice.
         """
-        return self.budgets.ledger().warning(self.meter())
+        for line, text in self.budgets.ledger().warnings(self.meter()):
+            if line not in self._budget_warned:
+                self._budget_warned.add(line)
+                return text
+        return None
 
     def tokens_remaining(self) -> int | None:
         """Tokens left in the budget; None = unlimited."""
@@ -315,9 +353,19 @@ class RunContext:
     def stage_coverage(self) -> dict:
         """`{declared, entered, skipped}` for this run — the recipe's stages against the
         ones it actually entered (F521/R1681). Empty lists for a single-file recipe.
+
+        Memoized on the stages ACTUALLY ENTERED, because that is the only input that moves
+        within a run: `stage_states` re-reads main.md, globs `stages/` and opens every module
+        for its first heading, and `write_status` asks at least twice a turn — a 7-stage
+        recipe paid ~16 file reads per turn for a list that changes when the run enters a new
+        module, which on a 60-turn run is 7 derivations instead of 120.
         """
-        from ..readmodels.statemap import stage_coverage
-        return stage_coverage(self.routine.dir, self.phases_entered)
+        key = tuple(self.phases_entered)
+        if self._stage_coverage_key != key:
+            from ..readmodels.statemap import stage_coverage
+            self._stage_coverage = stage_coverage(self.routine.dir, self.phases_entered)
+            self._stage_coverage_key = key
+        return self._stage_coverage
 
     def write_status(self, state: str | None = None, question: dict | None = _UNSET) -> None:
         """Update status.json (root runs only — subruns report through the parent transcript)."""
@@ -366,5 +414,9 @@ class RunContext:
             "budgets": {
                 "turns_left": None if turns_left is None else int(turns_left),
                 "wall_clock_left_s": None if wall_left_min is None else int(wall_left_min * 60),
+                # WHICH budget stopped the run, in fields: turns and wall clock were the
+                # only two reconstructable from this block, so a token or cost cap — the
+                # majority — was unknowable after the fact.
+                "spent": self.budget_spent(),
             },
         })

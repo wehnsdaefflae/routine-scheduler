@@ -99,15 +99,20 @@ def grant_pass(request: Request) -> JSONResponse:
     COOKIE it returns is what the frame's own requests carry afterwards. Scoped to the
     relay's path (`/browser-view`) so the browser never attaches it to anything else, and
     marked HttpOnly + SameSite=Strict: it authenticates one embedded screen, not the console.
+
+    `secure` reads the FORWARDED scheme as well as the request's own: behind a
+    TLS-terminating proxy (tailscale serve --https, a reverse proxy) the app sees `http`, so
+    the flag came off exactly where the connection the user makes is the encrypted one.
     """
     if not request.app.state.server.browser_view_url:
         raise HTTPException(503, "no browser screen is configured — set browser_view_url "
                                  "in Settings → server process")
     token = _issue_pass(request)
     reply = JSONResponse({"ok": True, "ttl": PASS_TTL_S})
+    forwarded = request.headers.get("x-forwarded-proto", "").split(",")[0].strip().lower()
     reply.set_cookie(SCREEN_COOKIE, token, max_age=PASS_TTL_S, path=browser_proxy.PREFIX,
                      httponly=True, samesite="strict",
-                     secure=request.url.scheme == "https")
+                     secure=request.url.scheme == "https" or forwarded == "https")
     return reply
 
 
@@ -127,14 +132,27 @@ async def relay_asset(request: Request, path: str = "") -> Response:
     query = str(request.url.query or "")
     if query and "?" not in url:
         url = f"{url}?{query}"
+    # NO redirect following. The FIRST hop cannot be aimed (`upstream_for` takes scheme+netloc
+    # from the configured URL alone and `_safe_suffix` rejects absolute paths and both encoded
+    # and decoded `..`), but a followed redirect is a hop the UPSTREAM chooses — and the
+    # daemon's network position reaches cliproxy, the chrome CDP port, the LAN and the
+    # internet, so a hostile or spoofed noVNC had an SSRF proxy here answering to the
+    # browser-view pass alone. The upstream is a raw websockify serving static assets and
+    # emits no redirects, so refusing one costs nothing and stays legible — loud, with the
+    # target named, rather than a body fetched from somewhere nobody chose.
     try:
-        async with httpx.AsyncClient(timeout=ASSET_TIMEOUT_S, follow_redirects=True) as client:
+        async with httpx.AsyncClient(timeout=ASSET_TIMEOUT_S, follow_redirects=False) as client:
             up = await client.get(url)
     except httpx.HTTPError as exc:
         # loud, and with the upstream named: a blank frame with no explanation is the whole
         # defect this module exists to fix
         log.warning("browser-view: upstream %s unreachable: %s", url, exc)
         raise HTTPException(502, f"the browser screen upstream did not answer: {exc}") from exc
+    if up.is_redirect:
+        target = up.headers.get("location", "")
+        log.warning("browser-view: upstream %s redirected to %s — refused", url, target)
+        raise HTTPException(502, "the browser screen upstream redirected this asset to "
+                                 f"{target!r}; the relay does not follow redirects")
     return Response(content=up.content, status_code=up.status_code,
                     headers=browser_proxy.relay_headers(up.headers),
                     media_type=up.headers.get("content-type"))

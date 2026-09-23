@@ -5,8 +5,14 @@ slice: the ratio between them is the only reading that distinguishes a healthy
 append-only run from one re-writing its whole conversation every turn (see
 `endpoints.base.cache_read_share`), and a slice is where a single bad endpoint shows.
 
-The filesystem (each run's status.json) is the source of truth: no database, no cache — a
-routine dropped in appears on the next call, one deleted disappears.
+The filesystem (each run's status.json) is the source of truth: no database, and the
+roll-up itself is recomputed on every call — a routine dropped in appears on the next one,
+one deleted disappears. What IS cached is each input, behind a stat fingerprint of the file
+it comes from: the registry's per-run memo means 800 status files cost two stats each
+rather than a parse each (`registry.read_run`), and the two subprocess-backed slices beside
+this one cache their own halves (`recipe_size._baseline_chars` on the routine repo's
+reflog, `compression_stats._modes`). Nothing here is cached longer than its source is
+unchanged.
 
 Powers the Stats tab (/api/stats). Kept a pure function of a ServerConfig so it is fully
 unit-testable without a running server.

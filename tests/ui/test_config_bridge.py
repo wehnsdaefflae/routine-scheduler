@@ -15,6 +15,8 @@ from playwright.sync_api import expect
 from rsched import domains
 from rsched.paths import read_yaml
 
+from .conftest import until
+
 
 def test_domain_targeted_patch_applies_to_the_domain(ui, ui_page):
     """The button PATCHes /api/domains/{id} and the shared block actually changes."""
@@ -24,14 +26,15 @@ def test_domain_targeted_patch_applies_to_the_domain(ui, ui_page):
                             "config_target": rec["id"], "config_home": "domains"})
     ui_page.goto(f"{ui.url}/#/questions")
     card = ui_page.locator(".question-item").first
-    expect(card).to_be_visible(timeout=10_000)
+    expect(card).to_be_visible()
     # the copy names the domain it would change, and calls it a domain — an apply button that
     # does not say where it lands is the dead-button failure this bridge exists to end
     expect(card).to_contain_text(rec["id"])
     expect(card).to_contain_text("domain's behalf")
     card.get_by_role("button", name="approve & apply").click()
-    expect(card).to_contain_text("applied", timeout=10_000)
-    ui_page.wait_for_timeout(300)
+    expect(card).to_contain_text("applied")
+    until(lambda: (domains.get(ui.routines, rec["id"]) or {}).get("config")
+          == {"budgets": {"max_turns": 50}}, what="the domain patch")
     saved = domains.get(ui.routines, rec["id"])
     assert saved is not None and saved["config"] == {"budgets": {"max_turns": 50}}
 
@@ -44,9 +47,10 @@ def test_routine_targeted_patch_still_applies_to_the_routine(ui, ui_page):
                      extra={"config_patch": {"budgets": {"max_turns": 120}}})
     ui_page.goto(f"{ui.url}/#/questions")
     card = ui_page.locator(".question-item").first
-    expect(card).to_be_visible(timeout=10_000)
+    expect(card).to_be_visible()
     card.get_by_role("button", name="approve & apply").click()
-    expect(card).to_contain_text("applied", timeout=10_000)
-    ui_page.wait_for_timeout(300)
+    expect(card).to_contain_text("applied")
+    until(lambda: read_yaml(ui.routines / "uir" / "routine.yaml")
+          .get("budgets", {}).get("max_turns") == 120, what="the routine patch")
     raw = read_yaml(ui.routines / "uir" / "routine.yaml")
     assert raw["budgets"]["max_turns"] == 120

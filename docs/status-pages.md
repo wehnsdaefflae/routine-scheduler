@@ -34,10 +34,16 @@ one storage layout, so a fix lands on every page at once.
 
 ```
 /index.php                 hub — one card per project, sorted by what is waiting on the user
-/gate.php                  the front door: a session cookie for people, HTTP Basic for routines
+/gate.php                  the front door: a session for people, HTTP Basic for routines
+/sessions.php              what a session IS, and the editing lease built on it
+/invites.php               invitations: who a guest is, what their role lets them do
+/invites-page.php          where the owner hands one out
+/i.php                     following an invitation link: token in the URL → cookie
+/gate-file.php             a data file served to a reader the gate accepts, and nobody else
 /cgi-bin/gate.json.php     the one secret, self-guarding like the store
 /api.php                   THE interface. every read and every write, for every page
 /store.php                 what a project's data IS — layout, row shape, folds, floors
+/links.php                 what counts as a working link, for the write path to refuse
 /p.php                     the one page shell, built from a project's own state document
 /_store/<project>/         reached only through the API; every file refuses a direct GET
     state.json.php           the state document: phase, prose, deliverables, gate, question
@@ -45,7 +51,9 @@ one storage layout, so a fix lands on every page at once.
     model.json.php           what the item states mean: labels, help, views, legal transitions
     feedback.jsonl.php       append-only, everything the reader has said
     log.jsonl.php            append-only, every item write and every refusal
+    lease.json.php           who is editing this project right now, and until when
     snapshots/               the collection as it was before each replace
+/_store/_sessions/         one record per signed-in device; guarded like every stored file
 /_shared/steward.css       the design system and the type: it loads its own webfonts
 /_shared/steward.js        the shell: masthead, feedback rail, run trigger, the API client
 /_shared/modules/status.js the status body — gate, question, state, deliverables, documents
@@ -106,11 +114,20 @@ directions.
 **What makes that true is a mechanism, not a sentence.** For a while it was only the sentence and
 the two copies drifted: the feedback-cursor default in `api.php` and the 16 MiB `MAX_BODY` in
 `store.php` were fixed straight on the host and existed nowhere else, one re-bootstrap away from
-being silently reverted — because a routine uploads a shared asset only when the path is ABSENT,
-so nothing propagates in either direction on its own. That reconciliation — master ahead of host is deployed, host ahead of master is committed back —
-was a routine's standing job for a while. It is now an operator step, for the reason in
-"Nobody deploys for anybody" below: the kit is the hub's own code and there is no cadence at
-which it needs looking at. It changes when we change it.
+being silently reverted. Nothing propagates in either direction on its own — no publisher can
+write a shared asset at all now, because every publishing source is confined to its own project
+directory and refuses executable uploads outright. That reconciliation — master ahead of host is
+deployed, host ahead of master is committed back — was a routine's standing job for a while. It is
+now an operator step, for the reason in "Nobody deploys for anybody" below: the kit is the hub's
+own code and there is no cadence at which it needs looking at. It changes when we change it.
+
+**The price of that is a gap nothing closes by itself, and it is open now.** The master has run
+ahead of the host since 2026-09-02: the host serves an older `_shared/steward.js`, `steward.css`
+and `board.js`, has no `sessions.php` at all, and answers `gate.php?logout=json` with an empty
+body. Everything landed in the master since — the question panel, the publish-time key contracts,
+sessions and the editing lease, the item merge, `emptied`, this release — is invisible to every
+reader until somebody deploys it. A fix that reaches no host is not a fix, and a closure that
+claims one is wrong; until the deploy path is settled, say "in the master" and mean it.
 
 **Why every stored file ends in `.php` and opens with a guard line.** The store holds the
 reader's own words and the only copy of his decisions — and "the directory is denied to HTTP" was
@@ -128,7 +145,17 @@ GET  /api.php?project=<p>&what=state|items|model|feedback|log|all&token=<t>
 POST /api.php  {token, project, op, …}
        op=say | revise | retract | advance          the reader's, from the page
        op=put-state | put-items | put-model          the routine's
+       op=lease {want: acquire|release|status}       who is editing, for a person only
 ```
+
+`put-state` answers `{ok, rev, emptied[]}`. `emptied` names every section that had entries at the
+last publish and has none now — a top-level list, or one a declared journal view sources. It is
+INFORMATIONAL and never a refusal: removing a section is an ordinary thing to want, and a store
+that refused it is a store routines learn to publish around. It exists because the third failure
+mode of a publish is invisible to everything else — a misspelled key is refused, an unrenderable
+panel is refused, and a section that quietly went from seven rows to zero returns `{"ok":true}`
+with a field-by-field readback that agrees, while the page simply stops drawing it. The rule tells
+a publisher to read the key and treat an unintended one as a failed publish.
 
 `what=all` is what a project page calls: state, items, model and unconsumed feedback in one round
 trip. A page never fetches a file.
@@ -174,11 +201,48 @@ cross-site redirect (`SameSite=Lax` is sent on top-level navigations).
 
 So `gate.php` takes either form and checks both against the same secret:
 
-- **a person** signs in once per device and gets an HttpOnly, Secure, `SameSite=Lax` cookie whose
-  value is `hmac(secret)`, so the secret itself is never stored client-side.
-- **a routine** sends HTTP Basic exactly as it always did. Set the gate secret to the password
+- **a person** signs in once per device and gets an HttpOnly, Secure, `SameSite=Lax` cookie
+  carrying an opaque random id. The id names a RECORD in `_store/_sessions/` holding when it was
+  issued, when it was last seen and what kind of caller it is — so ten idle minutes can actually
+  end it. The cookie's value used to be `hmac(secret)`: a pure function of the passphrase, the
+  same string on every device for ever, with nothing in it to age and no identity to hold a lock.
+  "Log me out after ten idle minutes" and "let only one person edit at a time" were not hard
+  against that cookie, they were impossible.
+- **a routine** sends HTTP Basic exactly as it always did, is answered BEFORE any session logic
+  and never gets a session record. A publishing routine has no idle period and no business being
+  logged out between runs; arming the gate once locked out all ten publishers at once, and
+  nothing may make that reachable again by way of a timeout. Set the gate secret to the password
   already in `WEB_AUTH_SOURCES.steward` and the machine side needs no migration at all — same
   util, same source name, same credential.
+
+**An invited guest gets a session record too.** Their credential is still the year-long invitation
+cookie and the record is not one — it exists so the idle clock, the editing lease and sign-out are
+ONE mechanism rather than one for the owner and nothing for anybody else. Letting a guest's record
+lapse therefore costs them nothing: the next request starts another. The record's `kind` is what
+keeps that honest — a guest holding a session must never read as the owner, and `gate_identity()`
+checks the kind rather than the presence.
+
+### One editor at a time
+
+A project carries at most one **editing lease**, in `_store/<project>/lease.json.php`: which
+session holds it, under what label, since when, and until when. A page takes it on load and renews
+it while it is on screen; two minutes without a renewal and it lapses, so a tab left behind twelve
+others stops holding the project about as fast as anyone notices. Signing out releases every lease
+that session held, enumerated from the lease FILES rather than from the published-project list —
+those are two different sets, and the difference is a lease on an unpublished project that nothing
+ever visited on sign-out and that stayed locked with no holder left alive.
+
+**It is advisory, and that is the design.** Authorization is the invitation's role, checked
+independently on every write; a lease only answers "is somebody else in here right now", so the
+page can go quiet instead of letting two people overwrite each other unnoticed. It expires on its
+own, it can always be taken over once stale, and nothing already saved is ever withdrawn by it.
+The shell enforces it in `Page.prototype.write` — the one seam every write passes, panels, pending
+list and board alike — and FAILS OPEN: a lease question that cannot be answered leaves the page
+fully writable, because a courtesy between two readers must never be why one of them cannot answer
+the question in front of them. `seen` is not a leased op: marking a card read is not editing it.
+
+A routine has no session and is refused the lease by name. It publishes whole documents between
+runs, not keystrokes, so there is nothing for it to be holding.
 
 **A routine holding no `WEB_AUTH_SOURCES` grant cannot tell that apart from a broken host.** The
 grant is four-state and per-routine, so "publishes to the steward host" and "may read the
@@ -297,10 +361,12 @@ writes refused for it.
 ## Who may write what
 
 A routine owns its own project's data and nothing else — there is no shared file left for it to
-edit by hand. It does **not** own the shared assets: it carries a byte-identical copy and uploads one only if that path is ABSENT on
-the host. First routine to run bootstraps them, every other one no-ops, and no ordering between
-routines is needed. Overwriting an existing shared file is forbidden — a stale copy out of one
-repo would silently downgrade every sibling's page.
+edit by hand. It does **not** own the shared assets and cannot write them: every publishing FTP source is
+confined to the routine's own project directory and refuses executable uploads, so `_shared/`,
+`api.php`, `store.php` and the gate are unreachable from any run. Placing the kit is the
+operator's, through the unconfined source, from the library repo (see "Nobody deploys for
+anybody"). A stale copy out of one repo would silently downgrade every sibling's page, which is
+why this is a boundary in the tool rather than an instruction in a rule.
 
 That boundary is the whole reason the fragmentation cannot come back. A routine that needs the
 shell to do something new reports it; the change then lands for every page or for none.
@@ -313,6 +379,15 @@ One row per control click, appended:
 {"seq": 25, "project": "ards", "id": "ards · direction", "kind": "steer",
  "value": "...", "client_ts": "...", "server_ts": "...", "ip_hash": "..."}
 ```
+
+An `id` is a LABEL on the row, never an address. Which store a row lands in is decided by the
+project in the request, which is scope-checked before anything is appended; every row carries its
+own `project`, and nothing anywhere splits an id on a separator. The shell stamps the project slug
+onto every id it files — once, in `Page.prototype.post`, the one seam every control passes — so
+the `<slug> · …` form the ingest recipes filter on is guaranteed by the shell rather than
+remembered by each publisher. The endpoint used to REFUSE an id without that prefix, at both the
+publish and the click; it guarded nothing the scope check did not already guard, and its only
+effect was a red error on the reader's screen for a publisher's typo the publisher never saw.
 
 **Nothing is ever rewritten or removed.** An edit is a new row whose `kind` is `edit@<seq>`, a
 delete is `del@<seq>`, and the API folds the chain when it reads — so the user's
@@ -363,12 +438,12 @@ wrong and both look fine.
 | `phase`, `health{text,key}` | the chips under the masthead |
 | `phases[]`, `metrics[]` | the phase rail and the figure strip |
 | `gate{present,id,text,action,draft,attachment_*}` | the approval panel — **first on the page** |
-| `question{id,text,controls,options[]}` | the question panel, always with a free-text box |
+| `question{id,text,controls,options[]}` | the question panel, always with a free-text box. An option is `{label, value?, kind?, id?, reason?, recommended?}`, or a bare string standing for its own label; `recommended` puts one option first and pre-fills the box |
 | `state{summary,in_flight[]}` | the routine's own prose, on ruled paper |
 | `deliverables[]`, `decisions[]`, `mails[]` | margin-marked entry lists |
 | `documents[]` | the same, plus a "not ready" / "looks right" control per document |
 | `charts[]` | routine-rendered SVG, wrapped so it inherits the page's type and colours |
-| `direction_field{id}` | the id the free-text steer box posts to |
+| `direction_field{id,label,placeholder}` | the shell's free-text steer box: what it files under, what it is headed, and what stands in it while it is empty. The heading and placeholder exist so a body never builds a second steer box of its own above the shell's |
 | `hook_url` | the webhook a submission pings, so a run fires on real input |
 | `page{lang,title,standfirst,module,wide}` | how `p.php` presents this project — the facts that used to be hard-coded per project in `pages/generate.py`. All optional: a project that says nothing gets a narrow English status sheet titled with its `card.name` |
 
@@ -484,10 +559,10 @@ design rather than replacing it, which is the opposite of unifying.
 
 Two things were carried over on purpose, because neither is design:
 
-- **`config/pipeline.json` is now the entire pipeline UI.** The module hard-codes no stage, no
-  label, no button and no help text — it renders that file. Which makes the config more
-  load-bearing than it was: a stage's `help` is what the reader gets when he asks what happens
-  with a card.
+- **The model document IS the entire pipeline UI.** The module hard-codes no stage, no label,
+  no button and no help text — it renders what the routine published as its `model.json`.
+  Which makes that document more load-bearing than a config file ever was: a stage's `help` is
+  what the reader gets when he asks what happens with a card.
 - **The adaptive filter floors**, with the three measurements that produced them. "The first
   screen is the few best matches and it is never empty" is a tuned property of the data: the
   precision floor reads a robust low quantile of the fits actually pursued (a `Math.min` never
@@ -497,8 +572,9 @@ Two things were carried over on purpose, because neither is design:
   "910 to triage").
 
 Their `api.php`, `lib.php`, `stage_rules.php` and `stage_log.php` are gone too: the store is the
-shared one now and `config/pipeline.json` became `model.json`. A radar's self-audit rides on
-its state document as `state.self_audit`, like everything else a routine says about itself.
+shared one — and the pipeline's stage vocabulary is a routine's published model document like
+every other project's. A radar's self-audit rides on its state document as `state.self_audit`,
+like everything else a routine says about itself.
 
 ## A project can own its body
 
@@ -715,9 +791,11 @@ it places anything. That is the same move as the link check: an unconfined publi
 is that nothing stops it, so the run goes looking for the symptom.
 
 Twelve publishers now carry their own confinement and place their own files. `steward-hub-maintainer`
-is disabled, its directory kept for its ledger and memory. Deploying the kit itself stays operator
-work — the unconfined source, used from the library repo when the kit changes, `links.php` before
-`store.php` — because a hub cannot safely update through itself and a release is not a cadence.
+tends the MASTER — it owns the library copy in both directions and holds no way onto the host.
+Deploying the kit itself stays operator work — the unconfined source, used from the library repo
+when the kit changes, `links.php` before `store.php` — because a hub cannot safely update through
+itself and a release is not a cadence. The cost of that decision is stated under "A project
+registers itself" above: measure it before closing anything as deployed.
 
 ### And the host stopped taking the run's word for it
 

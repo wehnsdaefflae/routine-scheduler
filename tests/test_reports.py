@@ -18,8 +18,8 @@ import pytest
 
 from rsched.engine.actions import ALWAYS_KINDS, KIND_EXAMPLES, validate_action
 from rsched.engine.actionschema import KINDS
+from rsched.engine.admin_handlers import handle_report
 from rsched.engine.inbox import drain_messages
-from rsched.engine.interact import handle_report
 from rsched.engine.observations import format_observation
 from rsched.grantpolicy import GrantPolicy
 from rsched.grants import GATED_KINDS
@@ -196,7 +196,9 @@ def test_a_plain_user_message_carries_no_report_keys(tmp_path):
     (target / "inbox").mkdir(exist_ok=True)
     (target / "inbox" / "msg-1.json").write_text(json.dumps({"text": "hi"}), encoding="utf-8")
     msgs = drain_messages(target, tmp_path / "consumed")
-    assert msgs == [{"text": "hi", "attachments": []}]
+    # `via` rides every drained item — it is what tells the consumer whether a PERSON
+    # wrote it — but none of the report keys do
+    assert msgs == [{"text": "hi", "via": "", "attachments": []}]
     stamp_delivered(home, msgs, run_id="r:1")    # a no-op that must not create the ledger
     assert not reports_path(home).exists()
 

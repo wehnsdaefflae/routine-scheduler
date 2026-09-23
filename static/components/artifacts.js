@@ -8,8 +8,9 @@
 // refresh() re-lists. `base` picks the API family: "conversations" (default) | "routines".
 
 import { api, apiBlobUrl } from "/static/api.js";
+import { confirmDialog } from "/static/components/dialog.js";
 import { md } from "/static/md.js";
-import { el, emptyState, relTime } from "/static/util.js";
+import { el, emptyState, relTime, toast } from "/static/util.js";
 
 const IMG = new Set(["png", "jpg", "jpeg", "gif", "webp", "svg", "ico", "bmp"]);
 const AUDIO = new Set(["mp3", "wav", "ogg", "m4a", "flac"]);
@@ -102,13 +103,20 @@ export function createArtifacts(container, { slug, base = "conversations" }) {
         class: "art-del", title: `delete ${it.name}`, role: "button",
         onclick: async (ev) => {
           ev.stopPropagation();
-          if (!window.confirm(`Delete artifact ${it.name}? The file is removed for good.`)) return;
+          // dialog.js is the console's replacement for every native confirm()/prompt(), and
+          // toast for every alert(): a native alert blocks the main thread and its text never
+          // reaches trace.js's error telemetry, so a failed delete was invisible to the
+          // improve-ui lens that exists to notice exactly this.
+          if (!(await confirmDialog(`Delete artifact ${it.name}? The file is removed for good.`,
+                                    { confirmLabel: "delete" }))) return;
           try {
             await api(`/api/${base}/${slug}/artifacts?path=${encodeURIComponent(it.path)}`,
                       { method: "DELETE" });
             if (openPath === it.path) { viewer.hidden = true; openPath = null; }
             await refresh();
-          } catch (err) { window.alert(`could not delete: ${err.message}`); }
+          } catch (err) {
+            toast(`could not delete: ${err.message}`, 4000, { error: true });
+          }
         } }, "🗑");
       listBox.append(el("button",
         { class: `art-item${openPath === it.path ? " on" : ""}`, onclick: () => open(it),

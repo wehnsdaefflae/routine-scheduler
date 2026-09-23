@@ -636,10 +636,13 @@ def test_every_library_kind_the_api_returns_is_a_kind_the_page_shows():
               "reminders"}
     for kind in listed:
         assert f"data.{kind}" in view, f"the library page never reads data.{kind}"
-    # and the counts line names each one, so the page says what it holds before you scroll
-    head = view[view.index("workflows ${data.workflows.length}"):][:400]
+    # and the counts index names each one, so the page says what it holds before you scroll —
+    # and, since the declutter, each count is also the jump to that kind's own section, which is
+    # the only way into a catalogue eleven thousand pixels tall.
+    start = view.index("const COUNTS = [")
+    index_block = view[start:view.index("];", start)]
     for kind in listed:
-        assert kind in head, f"the counts line omits {kind}"
+        assert f'"{kind}"' in index_block, f"the counts index omits {kind}"
 
 
 # --- on by default ---------------------------------------------------------------------------

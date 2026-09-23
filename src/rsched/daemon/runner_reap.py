@@ -99,10 +99,25 @@ def reap(runner, run: ActiveRun, cfg: RoutineConfig, stderr: bytes) -> None:
     # state (config edits are independent of the run's success); a bad edit is logged,
     # not raised, and its file dropped so one can't wedge the queue.
     apply_pending_edits(runner, cfg, run.slug)
-    try:
-        registry.apply_retention(cfg.dir, cfg.slug, cfg.keep_runs)
-    except OSError as exc:
-        log.warning("retention failed for %s: %s", cfg.slug, exc)
+    prune_runs(runner, cfg)
+
+
+def prune_runs(runner, cfg: RoutineConfig) -> None:
+    """Apply the routine's run retention OFF the event loop.
+
+    The reap runs inside the supervisor task, on the loop thread, and retention re-indexes
+    every run dir, `rmtree`s the oldest and gzips transcripts that can reach 9 MB — so every
+    SSE stream, API request and scheduler tick waited on it. It never touches a live run (the
+    newest dirs are kept), so there is nothing to serialize it against: hand it to a thread
+    and let the reap return.
+    """
+    async def _prune() -> None:
+        try:
+            await asyncio.to_thread(registry.apply_retention, cfg.dir, cfg.slug, cfg.keep_runs)
+        except OSError as exc:
+            log.warning("retention failed for %s: %s", cfg.slug, exc)
+
+    runner.spawn(_prune())
 
 
 def retry_sigkilled(runner, run: ActiveRun, cfg: RoutineConfig, hwm: int | None) -> None:
@@ -134,9 +149,7 @@ def retry_sigkilled(runner, run: ActiveRun, cfg: RoutineConfig, hwm: int | None)
         else:
             log.warning("sigkill auto-resume refused for %s (active/draining/gone) — "
                         "the recovery note stays durable in the inbox", run.run_id)
-    task = asyncio.create_task(_wake())
-    runner._supervisors.add(task)
-    task.add_done_callback(runner._supervisors.discard)
+    runner.spawn(_wake())
 
 
 def resume_for_stranded(runner, cfg: RoutineConfig) -> None:
@@ -150,9 +163,7 @@ def resume_for_stranded(runner, cfg: RoutineConfig) -> None:
         if not rid:
             log.warning("post-finish inbox sweep could not resume %s — the message "
                         "stays durable for the next run", cfg.slug)
-    task = asyncio.create_task(_wake())
-    runner._supervisors.add(task)
-    task.add_done_callback(runner._supervisors.discard)
+    runner.spawn(_wake())
 
 
 def apply_pending_edits(runner, cfg: RoutineConfig, slug: str) -> None:

@@ -30,11 +30,10 @@ class StubEndpoint:
         self._boom = boom
 
     def complete(self, messages, *, model, schema=None, effort=None, max_tokens=None,
-                 timeout=600, session=None, temperature=None, cacheable=True):
+                 timeout=600, temperature=None, cacheable=True):
         self.calls.append({"messages": messages, "model": model, "schema": schema,
                            "effort": effort, "max_tokens": max_tokens, "timeout": timeout,
-                           "session": session, "temperature": temperature,
-                           "cacheable": cacheable})
+                           "temperature": temperature, "cacheable": cacheable})
         if self._boom is not None:
             raise self._boom
         return self._reply
@@ -59,14 +58,13 @@ def test_passthrough_when_no_sink():
     stub = StubEndpoint()
     ep = InstrumentedEndpoint(stub)
     out = ep.complete([{"role": "user", "content": "hi"}], model="m", schema={"x": 1},
-                      effort="high", max_tokens=42, timeout=90, session="sess")
+                      effort="high", max_tokens=42, timeout=90)
     assert out is stub._reply  # exact same object, unchanged
     # every standard kwarg forwarded verbatim; instrumentation kwargs never reach the adapter
     # — except `cacheable`, which is DERIVED from the kind here (see test_only_a_turn_is_cacheable)
     assert stub.calls == [{"messages": [{"role": "user", "content": "hi"}], "model": "m",
                            "schema": {"x": 1}, "effort": "high", "max_tokens": 42,
-                           "timeout": 90, "session": "sess", "temperature": None,
-                           "cacheable": False}]
+                           "timeout": 90, "temperature": None, "cacheable": False}]
 
 
 def test_proxies_name_context_and_adapter_attrs():
@@ -97,7 +95,7 @@ def test_purpose_and_kind_not_forwarded_to_adapter():
     InstrumentedEndpoint(stub).complete([], model="m", purpose="p", kind="k")
     assert "purpose" not in stub.calls[0] and "process" not in stub.calls[0]
     assert set(stub.calls[0]) == {"messages", "model", "schema", "effort", "max_tokens",
-                                  "timeout", "session", "temperature", "cacheable"}
+                                  "timeout", "temperature", "cacheable"}
 
 
 def test_only_a_turn_is_cacheable():

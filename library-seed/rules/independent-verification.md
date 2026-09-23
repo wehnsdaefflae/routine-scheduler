@@ -22,6 +22,11 @@ fixes. Useful verification comes from outside the context that did the work.
 - **Ask for a verdict, not a blessing.** Brief the child to look for what is wrong, to state
   specifically what it checked, and to report finding nothing as a real result rather than
   padding out an approval.
+- **A verdict is evidence, not a finding.** What comes back is read, not obeyed. An instrument
+  that returned nothing has not passed — it has failed to report, and silence is the one answer
+  a check never gives. And a verifier can be confidently wrong: when its claim would change
+  what you do, confirm that claim against the primary source before you act on it. Doubting a
+  clean result you asked for is not the point; carrying an unchecked one into the deliverable is.
 - **Verify the deliverable, not the process.** Check the artifact against what was asked —
   not whether the steps that produced it felt reasonable at the time.
 - **Spend it where it pays.** Verification earns its budget on work that is irreversible,

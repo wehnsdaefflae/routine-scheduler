@@ -5,9 +5,13 @@ off, a util whose private store no grant covers, a secret declined forever, a ru
 a write root. The point of the read model is that these stop being discoverable only by a run
 failing at 3am, so the tests are written as "what would the operator have been told".
 
-Two modules answer that: `surface.py` builds the nodes, `remedies.py` says one node's `fix` in
-words for the two callers with no panel to click. The bindings at the foot of this file cross
-that seam on purpose — a kind emitted with no words renders a gap with no remedy on the CLI.
+Two things answer that: the surface modules build the nodes — `surface.py` joins, and
+`surface_needs` / `surface_schedule` / `surface_caps` emit the rows, all speaking
+`surface_nodes`' vocabulary — while `remedies.py` says one node's `fix` in words for the two
+callers with no panel to click. The bindings at the foot of this file cross that seam on
+purpose — a kind emitted with no words renders a gap with no remedy on the CLI — and they
+read every emitter, because a kind that moved into a new file must not fall out of the
+vocabulary on the way.
 """
 from __future__ import annotations
 
@@ -22,6 +26,7 @@ import pytest
 
 from rsched.readmodels import remedies as remedies_mod
 from rsched.readmodels import surface as surface_mod
+from rsched.readmodels import surface_caps, surface_needs, surface_nodes, surface_schedule
 from rsched.readmodels.remedies import REMEDIES, surface_lines
 from rsched.readmodels.surface import (
     BLOCKS,
@@ -502,14 +507,14 @@ def test_the_deliberate_reading_of_an_entity_wins_whichever_check_ran_first():
     uncovered = {"id": "action:write_recipe", "severity": NOTE, "state": "uncovered",
                  "fix": {"kind": "cover_or_drop", "entity": "action:write_recipe"}}
     for order in ([deliberate, uncovered], [uncovered, deliberate]):
-        kept = surface_mod._one_row_per_entity(list(order))
+        kept = surface_nodes._one_row_per_entity(list(order))
         assert [n["state"] for n in kept] == ["on"]
 
     absent = {"id": "util:ghost", "severity": BLOCKS, "state": "absent",
               "fix": {"kind": "install_util", "name": "ghost"}}
     mild = {"id": "util:ghost", "severity": NOTE, "state": "uncovered", "fix": {}}
     for order in ([absent, mild], [mild, absent]):
-        assert surface_mod._one_row_per_entity(list(order))[0]["state"] == "absent"
+        assert surface_nodes._one_row_per_entity(list(order))[0]["state"] == "absent"
 
 
 # --- the schedule join: does the file say when this routine runs? ---------------------------
@@ -761,9 +766,15 @@ def test_a_gap_fixed_off_this_page_still_says_what_settles_it(tmp_path):
         "kind": "fix_phase", "expected": "phase"}
 
 
+#: Every module that may emit a surface row. The scans below read SOURCE, so a join moved
+#: into its own file has to be listed here or its `fix` kinds stop being held to the
+#: vocabulary — which is the failure the bindings exist to prevent, one split later.
+_EMITTERS = (surface_mod, surface_needs, surface_schedule, surface_caps)
+
+
 def _node_calls() -> list[ast.Call]:
-    tree = ast.parse(inspect.getsource(surface_mod))
-    return [c for c in ast.walk(tree)
+    return [c for mod in _EMITTERS
+            for c in ast.walk(ast.parse(inspect.getsource(mod)))
             if isinstance(c, ast.Call) and getattr(c.func, "id", "") == "_node"]
 
 

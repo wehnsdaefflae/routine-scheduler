@@ -19,7 +19,7 @@
 
 import { api } from "/static/api.js";
 import { confirmDialog } from "/static/components/dialog.js";
-import { el, toast, when } from "/static/util.js";
+import { el, groupHead, toast, toastError, when } from "/static/util.js";
 
 const DRIFT = "library-drift";
 const GOAL = "goal-reached";
@@ -45,7 +45,7 @@ function summarize(rec) {
 
 // The full proposal, collapsed — the instruction a routine would be BORN with is the thing
 // worth reading before approving, and it is far too long for a row.
-function details(rec) {
+function details(rec, openDrift = true) {
   const f = rec.fields || {};
   const body = el("div", { class: "small mt" });
   if (rec.kind === DRIFT) {
@@ -57,8 +57,10 @@ function details(rec) {
       node.effect ? el("div", { class: "faint mt" }, node.effect) : null,
       el("div", { class: "faint mt" }, `after library commit ${String(f.head || "").slice(0, 8)}`),
     ].filter(Boolean));
-    return el("details", { class: "small mt", open: true },
-      el("summary", { style: "cursor:pointer;color:var(--ink-2)" }, "what broke"), body);
+    return el("details", { class: "small mt", open: openDrift || null },
+      el("summary", { style: "cursor:pointer;color:var(--ink-2)" },
+        openDrift ? "what broke" : `what broke · ${String((rec.fields || {}).node?.id || "")}`),
+      body);
   }
   if (rec.kind === GOAL) {
     // The EVIDENCE is what to read before agreeing a job is over: which condition, in the user's
@@ -95,11 +97,8 @@ function details(rec) {
 export function pendingBand({ onChanged } = {}) {
   const host = el("div", { class: "mt", hidden: true });
 
-  function band(title, recs, make) {
-    const box = el("div", {},
-      el("div", { class: "q-group-head" },
-        el("span", {}, title),
-        el("span", { class: "q-group-count" }, String(recs.length))));
+  function band(noun, explain, recs, make) {
+    const box = el("div", {}, groupHead(noun, recs.length, explain));
     for (const rec of recs) box.append(make(rec));
     return box;
   }
@@ -116,19 +115,19 @@ export function pendingBand({ onChanged } = {}) {
     host.replaceChildren();
     // Finished routines first: this is the only band whose subject has ALREADY changed state.
     if (goals.length) {
-      host.append(band(
-        "finished — these routines report their final goal met and have stopped running",
+      host.append(band("Finished",
+        "these routines report their final goal met and have stopped running",
         goals, goalRow));
     }
     if (creations.length) {
-      host.append(band(
-        "queued creations — a run proposed these; nothing exists until you approve",
+      host.append(band("Queued creations",
+        "a run proposed these; nothing exists until you approve",
         creations, row));
     }
     if (drift.length) {
-      host.append(band(
-        "library drift — a library change broke a routine that holds it; the fix is on the routine",
-        drift, driftRow));
+      host.append(band("Library drift",
+        "a library change broke a routine that holds it; the fix is on the routine",
+        driftGroups(drift), driftCard));
     }
   }
 
@@ -140,7 +139,7 @@ export function pendingBand({ onChanged } = {}) {
     const act = async (fn) => {
       retire.disabled = back.disabled = true;
       try { await fn(); await load(); onChanged?.(); }
-      catch (err) { toast(err.message, 5000, { error: true });
+      catch (err) { toastError(err, 5000);
         retire.disabled = back.disabled = false; }
     };
     retire.onclick = () => act(async () => {
@@ -171,27 +170,55 @@ export function pendingBand({ onChanged } = {}) {
       details(rec));
   }
 
+  // ONE LIBRARY COMMIT IS ONE EVENT, however many permissions it took away. The watcher files
+  // one record per GAP, so a commit that cost a routine two capabilities produced two cards
+  // with the same routine, the same commit and the same "what broke" — and the reader had to
+  // notice they were one thing. Grouped by routine + commit, the card says "lost 2" and lists
+  // both; dismissing it settles every record it stands for, which is what the reader means.
+  function driftGroups(recs) {
+    const by = new Map();
+    for (const rec of recs) {
+      const key = `${rec.routine}\u0000${(rec.fields || {}).head || ""}`;
+      if (!by.has(key)) by.set(key, []);
+      by.get(key).push(rec);
+    }
+    return [...by.values()];
+  }
+
   // Nothing to materialize: a drift record is a NOTICE. It links to the routine whose setup the
   // change broke (where the surface panel shows the same row with its fix) and is dismissed
-  // once seen — the watcher files one record per gap, so a dismissal is not a re-notify loop.
-  function driftRow(rec) {
-    const seen = el("button", { class: "btn small" }, "dismiss");
+  // once seen — a dismissal is not a re-notify loop.
+  function driftCard(group) {
+    const first = group[0];
+    const seen = el("button", { class: "btn small" },
+      group.length > 1 ? `dismiss all ${group.length}` : "dismiss");
     seen.onclick = async () => {
       seen.disabled = true;
       try {
-        await api(`/api/pending-creations/${rec.id}/discard`,
-          { method: "POST", body: { reason: "drift acknowledged" } });
+        for (const rec of group) {
+          await api(`/api/pending-creations/${rec.id}/discard`,
+            { method: "POST", body: { reason: "drift acknowledged" } });
+        }
         await load(); onChanged?.();
-      } catch (err) { toast(err.message, 5000, { error: true }); seen.disabled = false; }
+      } catch (err) { toastError(err, 5000); seen.disabled = false; }
     };
-    return el("div", { class: "card mt", "data-drift": rec.id },
+    const lost = group.map((rec) => (rec.fields || {}).node?.id
+      || (rec.fields || {}).entity || "?");
+    const head = String((first.fields || {}).head || "").slice(0, 8);
+    return el("div", { class: "card mt", "data-drift": first.id,
+                       "data-drift-count": String(group.length) },
       el("div", { class: "row", style: "gap:10px;align-items:center" },
-        el("span", {}, ...summarize(rec)),
+        el("span", {}, el("strong", {}, first.routine || "?"),
+          ` lost ${lost.length} `, lost.length === 1 ? "permission" : "permissions",
+          head ? ` after ${head}` : ""),
         el("span", { style: "margin-left:auto" }),
-        el("a", { class: "btn small primary", href: `#/routine/${rec.routine}` }, "open the routine"),
+        el("a", { class: "btn small primary", href: `#/routine/${first.routine}` }, "open the routine"),
         seen),
-      el("div", { class: "faint small" }, "found by the library watcher · ", when(rec.created_at)),
-      details(rec));
+      el("div", { class: "row", style: "gap:6px;flex-wrap:wrap" },
+        ...lost.map((id) => el("code", { class: "small" }, id))),
+      el("div", { class: "faint small" }, "found by the library watcher · ", when(first.created_at)),
+      // One gap: the diagnosis is the card. Several: each is named and folded.
+      ...group.map((rec) => details(rec, group.length === 1)));
   }
 
   function row(rec) {
@@ -200,7 +227,7 @@ export function pendingBand({ onChanged } = {}) {
     const act = async (btn, fn) => {
       make.disabled = drop.disabled = true;
       try { await fn(); await load(); onChanged?.(); }
-      catch (err) { toast(err.message, 5000, { error: true });
+      catch (err) { toastError(err, 5000);
         make.disabled = drop.disabled = false; }
     };
     make.onclick = () => act(make, async () => {

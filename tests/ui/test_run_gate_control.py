@@ -21,6 +21,8 @@ from __future__ import annotations
 import yaml
 from playwright.sync_api import expect
 
+from .conftest import until
+
 
 def _stored(ui, slug="uir"):
     return yaml.safe_load(
@@ -57,7 +59,7 @@ def test_ticking_the_gate_and_saving_persists_it(ui, ui_page):
     section.locator("[data-run-gate]").check()
     expect(section.get_by_text("seconds to answer")).to_be_visible()
     section.get_by_role("button", name="save schedule").click()
-    ui_page.wait_for_timeout(800)
+    until(lambda: _stored(ui).get("run_gate", {}).get("enabled"), what="the gate save")
 
     assert _stored(ui)["run_gate"]["enabled"] is True, _stored(ui)
 
@@ -75,7 +77,8 @@ def test_the_gate_timeout_is_saved_with_it(ui, ui_page):
     section.locator("[data-run-gate]").check()
     section.locator("[data-run-gate-timeout]").fill("90")
     section.get_by_role("button", name="save schedule").click()
-    ui_page.wait_for_timeout(800)
+    until(lambda: _stored(ui).get("run_gate", {}).get("timeout_s") == 90,
+          what="the gate save")
 
     stored = _stored(ui)["run_gate"]
     assert stored == {"enabled": True, "timeout_s": 90}, stored

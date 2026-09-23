@@ -80,10 +80,10 @@ export function mountRibbon(host) {
     storage.set(COLLAPSE_KEY, collapsed ? "1" : "0");
     bar.classList.toggle("collapsed", collapsed);
     toggle.textContent = collapsed ? "show" : "hide";
-    if (!collapsed) refresh();
+    if (!collapsed) refreshWeek();
   };
 
-  function paint(runs, week) {
+  function paint(runs, fires) {
     const now = Date.now();
     const from = now - BACK_H * HOUR_MS, to = now + AHEAD_H * HOUR_MS;
     const width = Math.max(240, track.clientWidth || 240);
@@ -101,7 +101,7 @@ export function mountRibbon(host) {
       svg.append(tick);
     }
 
-    for (const f of fireTimes(week, now, to)) {
+    for (const f of fireTimes(fires, now, to)) {
       const m = svgEl("rect", { class: "rb-fire", x: x(f.t) - 1.5, y: LANE_Y, width: 3, height: LANE_H });
       m.append(svgEl("title", {}, `${f.label} · scheduled ${fmtTs(new Date(f.t).toISOString())}`));
       svg.append(m);
@@ -125,28 +125,50 @@ export function mountRibbon(host) {
     svg.append(svgEl("line", { class: "rb-now", x1: x(now), x2: x(now), y1: 1, y2: H - 8 }));
     track.replaceChildren(svg);
 
-    const failed = spans.filter((s) => s.kind === "failed").length;
-    const live = spans.filter((s) => s.kind === "live").length;
-    const parts = [`${spans.length} run${spans.length === 1 ? "" : "s"} in 24h`];
-    if (failed) parts.push(`${failed} failed`);
-    if (live) parts.push(`${live} running`);
-    summary.textContent = parts.join(" · ");
+    // "1 failed · 2 running" rides every page in the console and used to be dead text, so the
+    // only way to the run it counts was to find its 6px red tick in a 900px band. Each count
+    // that names runs is the NEWEST of them; the ticks stay for the others. The colour does not
+    // change with it — a failed run is not SUMMONS, it asks nothing of anybody.
+    const newest = (list) => list.reduce((a, b) => (b.t0 > a.t0 ? b : a));
+    const failed = spans.filter((s) => s.kind === "failed");
+    const live = spans.filter((s) => s.kind === "live");
+    const sep = () => el("span", { class: "faint" }, " · ");
+    const parts = [el("span", {}, `${spans.length} run${spans.length === 1 ? "" : "s"} in 24h`)];
+    if (failed.length) {
+      parts.push(sep(), el("a", { href: `#/run/${newest(failed).run.run_id}`,
+        title: "open the most recent failed run" }, `${failed.length} failed`));
+    }
+    if (live.length) {
+      parts.push(sep(), el("a", { href: `#/run/${newest(live).run.run_id}`,
+        title: "open the run that started most recently" }, `${live.length} running`));
+    }
+    summary.replaceChildren(...parts);
     label.title = `the last ${BACK_H} hours and the next ${AHEAD_H}`;
   }
 
-  async function refresh() {
+  // The two halves move on DIFFERENT clocks, and conflating them is what put a week-schedule
+  // computation (cron expansion over every routine and every lane) on the bus-event path —
+  // one of the endpoints CLAUDE.md names as never belonging there. Run rectangles change on
+  // run events; upcoming FIRES change when someone edits a schedule, which no bus event
+  // announces, so the week rides the slow timer and is repainted from cache in between.
+  let week = { routines: [], lanes: [] };
+
+  async function refreshRuns() {
     if (collapsed) return;
     last = Date.now();
     try {
-      const [runs, week] = await Promise.all([
-        api("/api/runs?limit=200"),
-        api("/api/schedule/week?days=1").catch(() => ({ routines: [], lanes: [] })),
-      ]);
-      paint(Array.isArray(runs) ? runs : [], week || {});
+      const runs = await api("/api/runs?limit=200");
+      paint(Array.isArray(runs) ? runs : [], week);
     } catch {
       // The daemon lamp already says the link is down; a broken ribbon says it twice and
       // steals the row. Leave whatever was last painted.
     }
+  }
+
+  async function refreshWeek() {
+    if (collapsed) return;
+    try { week = await api("/api/schedule/week?days=1"); } catch { /* keep the last fires */ }
+    await refreshRuns();
   }
 
   // Coalesce: the bus can storm during a busy run, and the ribbon is a glance, not a monitor.
@@ -154,19 +176,18 @@ export function mountRibbon(host) {
     if (pending) return;
     const wait = Math.max(0, REFRESH_MIN_MS - (Date.now() - last));
     pending = true;
-    setTimeout(() => { pending = false; refresh(); }, wait);
+    setTimeout(() => { pending = false; refreshRuns(); }, wait);
   }
 
-  const onBus = (ev) => {
-    const kind = ev.detail?.event;
-    if (kind === "llm_task") return;
-    schedule();
-  };
+  // Only the three run-lifecycle events move anything on this band. llm_task/llm_process fire
+  // several times a second while a run works; question_answered belongs to the badge.
+  const RUN_EVENTS = new Set(["run_started", "run_state", "run_finished", "reconnect"]);
+  const onBus = (ev) => { if (RUN_EVENTS.has(ev.detail?.event)) schedule(); };
   window.addEventListener("rsched-bus", onBus);
   const onResize = () => schedule();
   window.addEventListener("resize", onResize);
-  timer = setInterval(refresh, 120_000);
-  refresh();
+  timer = setInterval(refreshWeek, 120_000);
+  refreshWeek();
 
   return () => {
     window.removeEventListener("rsched-bus", onBus);

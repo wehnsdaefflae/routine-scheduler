@@ -197,6 +197,21 @@ def save(routine_dir: Path, doc: dict, *, now: str) -> dict:
 
 # ------------------------------------------------------------------------------- activity ----
 
+def current_stage(routine_dir: Path) -> str:
+    """The stage a `stage:`-scoped condition is judged against: `state/phase.json`'s `phase`.
+
+    ONE source, because there were two and they disagreed. The digest scoped by phase.json
+    (which the setup surface also treats as the contract — a routine recording its own key
+    there is reported as a gap), while the finish gate and the verifier scoped by `ctx.phase`,
+    the stem of the last `stages/<x>.md` the run happened to READ. Those differ whenever a
+    recipe writes its phase without re-reading the module, and `ctx.phase` is "" until a
+    module is read at all — so a condition shown ACTIVE in the digest was never demanded at
+    the finish, or a finish was deferred over one the digest called dormant.
+    """
+    phase = read_json(routine_dir / "state" / "phase.json")
+    return str(phase.get("phase") or "") if isinstance(phase, dict) else ""
+
+
 def blocked_reason(cond: dict, by_id: dict, *, phase: str = "") -> str:
     """Why this OPEN condition is not live yet — "" when it is active.
 

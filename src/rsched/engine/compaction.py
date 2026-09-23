@@ -66,10 +66,18 @@ def window_ceiling_tokens(context_tokens: int, max_output_tokens: int) -> int:
     """Available input tokens. Input estimates carry their own conservative packing margin."""
     return max(0, context_tokens - max_output_tokens)
 
-def maybe_compact(messages: list[dict], turn_records: list[dict], context_tokens: int
+def maybe_compact(messages: list[dict], turn_records: list[dict], cap_tokens: float
                   ) -> tuple[list[dict], dict | None]:
-    """Deterministic compaction. Returns (messages, compaction_info|None)."""
-    if estimate_input_tokens(messages) <= COMPACT_AT_FRACTION * context_tokens:
+    """Deterministic compaction against the cap the CALLER decided. Returns
+    (messages, compaction_info|None).
+
+    The cap is an argument, not a constant re-derived here. It used to re-test
+    `COMPACT_AT_FRACTION * context_tokens` — a second, stricter gate behind the caller's own —
+    so every pass the caller triggered below 60% of the window returned None: uncached
+    anticipation (0.51 × window at a stage boundary) and the ">10% of the remaining token
+    budget" gate both spent the eviction-warning turn and then archived nothing.
+    """
+    if estimate_input_tokens(messages) <= cap_tokens:
         return messages, None
     if len(messages) <= KEEP_HEAD_MSGS + KEEP_TAIL_MSGS:
         return messages, None
@@ -105,6 +113,16 @@ def clamp_to_cap(messages: list[dict], context_tokens: int, max_output_tokens: i
     marker; the full text is always on disk in the transcript, so nothing is lost, and the
     marker makes the truncation fail LOUD in the prompt rather than silently. Returns a
     clamp-info dict (for a transcript event) when it trimmed anything, else None.
+
+    Message 0 — the COMPOSED SYSTEM PROMPT — is never a candidate. It is the largest body in
+    every run (~90 KB against the 8 KB observation cap), so ordering by size cut it FIRST and
+    cut it EVERY pass: token-lab:20260910-073700 clamped one message 90,982 → 30,097 chars on
+    turn 1 and re-cut the same message 34 more times. That took the recipe's own contract,
+    CAPABILITIES and the STATE DIGEST out of the prompt while the marker pointed at a
+    transcript that never carried them (nothing writes the composed prompt to transcript.jsonl),
+    and it rewrote the cached prefix from byte zero on every single turn. The kickoff at index 1
+    stays clampable: a conversation's pasted document lives there and is legitimately the
+    biggest thing in the run.
     """
     ceiling = window_ceiling_tokens(context_tokens, max_output_tokens)
     if ceiling <= 0:
@@ -117,7 +135,7 @@ def clamp_to_cap(messages: list[dict], context_tokens: int, max_output_tokens: i
     if before <= ceiling:
         return None
     # Largest bodies first — each cut buys the most room, so we touch the fewest messages.
-    order = sorted(range(len(messages)),
+    order = sorted(range(1, len(messages)),
                    key=lambda i: len(messages[i]["content"].encode("utf-8")), reverse=True)
     trimmed = 0
     for i in order:

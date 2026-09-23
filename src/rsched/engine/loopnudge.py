@@ -39,7 +39,7 @@ def build_util_reminder(loop) -> str:
             f"if none fits, {create}.]")
 
 
-def reserve_finish(loop, violation: str) -> None:
+def reserve_finish(loop, spent: dict) -> None:
     """Spend the reserved finish turn: one more turn, schema narrowed to `finish`, so the
     run ends in ITS OWN words instead of an engine string. Before this, a budget violation
     returned an engine-authored `partial` and the model was never told — for a scheduled
@@ -47,20 +47,30 @@ def reserve_finish(loop, violation: str) -> None:
     product, so the user read "Run stopped by the engine: turn budget exhausted (10)".
     The reserve is spent at most once per run (the caller force-finishes on a second
     violation), so it can overrun a budget by exactly one turn.
+
+    `spent` (`ctx.budget_spent()`) is KEPT on the loop, because which budget ended the run is
+    the fact nothing recorded: the note went into the message list only, and the finish's
+    health event carried the model's summary. A fifth of the fleet's runs end here, and
+    config-optimizer could not tell a wall clock from a turn cap from a token cap.
     """
     from .kindsurface import schema_for_kinds
 
     loop._finish_reserved = True
+    loop._budget_spent = spent
     # ALWAYS_KINDS keeps `report` reachable here; using the reserve on one costs the run
     # its authored summary (the next violation force-finishes), which is the model's call.
     loop.action_schema = schema_for_kinds({"finish"})
     loop._schema_off = False   # the narrowed grammar is the point — re-arm it if shed
-    loop.messages.append({"role": "user", "content":
-        f"OBSERVATION (budget spent): {violation}. This is your LAST turn — the engine "
-        "executes nothing else. Reply with `finish`, status `partial` if work is "
-        "unfinished, and put everything that matters into the summary: what you "
-        "established, what changed on disk, and precisely where to pick up. That summary "
-        "is all that survives."})
+    # A repeat-streak may have shed the schema for the next turns; the reserved turn's whole
+    # point is the finish-only grammar, so the shed counter is cleared with the flag.
+    loop._shed_schema_turns = 0
+    text = (f"OBSERVATION (budget spent): {spent['message']}. This is your LAST turn — the "
+            "engine executes nothing else. Reply with `finish`, status `partial` if work is "
+            "unfinished, and put everything that matters into the summary: what you "
+            "established, what changed on disk, and precisely where to pick up. That summary "
+            "is all that survives.")
+    loop.ctx.transcript.event("user_injection", {"text": text, "source": "engine"})
+    loop.messages.append({"role": "user", "content": text})
 
 
 def repeat_streak(loop, action: dict) -> int:

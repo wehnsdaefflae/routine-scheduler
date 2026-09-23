@@ -117,7 +117,8 @@ class ScheduleOnceCreate(BaseModel):
 
 
 def _require_routine(request: Request, slug: str) -> None:
-    if slug not in registry.scan(request.app.state.server):
+    server = request.app.state.server
+    if registry.info(server, server.routines_home, slug) is None:
         raise HTTPException(404, f"no routine {slug!r}")
 
 

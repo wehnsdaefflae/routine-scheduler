@@ -29,6 +29,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+#: The SECOND and last warning line, as a fraction of the limit. A run that passed the first
+#: one and kept working gets one more notice near the ceiling — and NOTHING in between: the
+#: warning used to ride every turn past `warn_at`, so a run read "converge deliberately now"
+#: fifteen times and wound up at the ceiling whether or not its stopping conditions were met
+#: (nanogeofeld 8 of 10 runs at 94-100 turns of 100, freelance-radar 7 of 10 at 173-200 of
+#: 200, none of them forced). Budgets are a runaway BACKSTOP, never a pace.
+FINAL_WARN_AT = 0.95
+
 # Resources whose child allocation is a SHARE of the parent's remainder (halved by default);
 # the others (a conversation-life cap, structural counts) are copied or dropped by the caller.
 CONSUMABLE = ("turns", "wall_clock", "tokens", "cost")
@@ -76,7 +84,19 @@ class Budget:
         return not self.unlimited and current >= self.limit
 
     def warns(self, current: float) -> bool:
-        return not self.unlimited and current >= self.warn_at * self.limit
+        return self.warn_line(current) is not None
+
+    def warn_line(self, current: float) -> float | None:
+        """The HIGHEST warning line this reading has crossed (`warn_at`, then
+        FINAL_WARN_AT), or None below the first. It is the IDENTITY of the warning: a
+        caller says each line once instead of repeating one for every turn above it.
+        """
+        if self.unlimited:
+            return None
+        for line in (FINAL_WARN_AT, self.warn_at):
+            if current >= line * self.limit:
+                return line
+        return None
 
     def left(self, current: float) -> float | None:
         """Amount remaining before the limit; None when unlimited."""
@@ -94,19 +114,40 @@ class BudgetLedger:
 
     budgets: list[Budget]
 
-    def violation(self, meter: dict) -> str | None:
+    def spent(self, meter: dict) -> dict | None:
+        """The FIRST exceeded budget as `{resource, limit, message}`, or None.
+
+        `violation` says it in words, for the model. This says it in FIELDS, for the health
+        stream and status.json: a fifth of this fleet's runs end against a budget and the
+        cause was recorded nowhere, so reconstructing it afterwards worked for 22 of 90 — the
+        turn and wall-clock caps only, because those are the two status.json carried.
+        """
         for b in self.budgets:
             if b.exceeded(meter.get(b.resource, 0)):
-                return _fmt_exhausted(b.resource, b.limit)
+                return {"resource": b.resource, "limit": b.limit,
+                        "message": _fmt_exhausted(b.resource, b.limit)}
         return None
 
-    def warning(self, meter: dict) -> str | None:
+    def violation(self, meter: dict) -> str | None:
+        s = self.spent(meter)
+        return None if s is None else str(s["message"])
+
+    def warnings(self, meter: dict) -> list[tuple[str, str]]:
+        """Every budget past a warning line, in check order, as `(line-id, text)` — e.g.
+        `("turns@0.85", "~5 turns left")`.
+
+        The id names the resource AND the line, which is what lets a caller say each
+        crossing exactly once: the text moves with every turn ("~5 turns left", "~4 turns
+        left"), so nothing in it can serve as the identity of a warning already given.
+        """
+        out: list[tuple[str, str]] = []
         for b in self.budgets:
-            if b.warns(meter.get(b.resource, 0)):
-                left = b.left(meter.get(b.resource, 0))
-                if left is not None:    # warns() implies a finite limit, so left is never None
-                    return _fmt_left(b.resource, left)
-        return None
+            current = meter.get(b.resource, 0)
+            line = b.warn_line(current)
+            left = b.left(current)
+            if line is not None and left is not None:   # a warn line implies a finite limit
+                out.append((f"{b.resource}@{line:g}", _fmt_left(b.resource, left)))
+        return out
 
     def remaining(self, resource: str, meter: dict) -> float | None:
         for b in self.budgets:

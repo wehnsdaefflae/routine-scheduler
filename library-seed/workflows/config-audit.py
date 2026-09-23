@@ -41,7 +41,7 @@ META = {
                    "compile a recommendations report — with optional per-item gated application of "
                    "accepted changes. Use it when the deliverable is an audit whose locations must "
                    "be discovered once and remembered, and each run is a full re-audit.",
-    "version": 1,
+    "version": 2,
     "tags": ["audit", "config", "review", "recommendations", "survey"],
     "includes": ["ask-policy", "decision-record"],
     "tools": None,          # None = every action kind is allowed
@@ -157,7 +157,27 @@ def flagged(findings):
 def record(findings):
     """Update state/phase.json and the config map; append exactly one LEDGER entry: what was
     reviewed, how many values flagged, which proposals were filed — plus rejected candidates and
-    why."""
+    why.
+
+    ROTATE THE LEDGER IN THE RUN THE THRESHOLD TRIPS, and measure that threshold in
+    BYTES derived from this routine's own entries. A count of lines or entries cannot see
+    what a reader actually pays: entries grow from one-liners into narratives, so the same
+    count means a 20 KB file one month and a 130 KB file the next. Measured across a
+    33-routine instance on 2026-09-21, EVERY ledger over 100 KB was comfortably inside its
+    own count-based limit -- one was 112 KB at 30 entries against a 40-entry trigger, so a
+    fully compliant run correctly did nothing. The LEDGER tail is in every run's context,
+    so the cost is paid before any work starts.
+    THE CAP AND THE KEPT TAIL ARE ONE PAIR, AND A CROSSED PAIR IS WORSE THAN NO TRIGGER.
+    The cap is a byte CEILING; keeping the last N entries is a count FLOOR worth N x the
+    mean entry size, and the larger of the two is the one that actually binds. A cap set at
+    "about N entries" makes them equal by construction and the trigger is inert either way:
+    at or just above the floor it rotates one entry, lands just under, and re-trips on the
+    next append -- a rotation every run forever; below the floor it cannot be satisfied at
+    all while keeping N entries, so skipping it is a correct run's only option. Both were
+    live on that instance the same day. Set the cap ABOVE the floor with headroom, and if a
+    rotation leaves the file still over the cap -- or lands it within one entry's size of
+    the cap -- the numbers are wrong: fix them with the measurement that justifies it. A
+    threshold you trip by complying with it is one every run learns to ignore."""
     ledger.append("surfaces reviewed, flagged count, proposals filed, rejected + why")
 
 

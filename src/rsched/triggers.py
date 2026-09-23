@@ -31,8 +31,9 @@ from collections import Counter
 from pathlib import Path
 
 from . import spool
+from .engine import inbox
 from .ids import now_iso
-from .paths import atomic_write_json, read_json
+from .paths import read_json
 
 TRIGGER_TYPES = ("webhook", "report", "imap", "watch_path")
 # Minimum seconds between trigger-initiated fires of one routine — the budget backstop
@@ -148,10 +149,6 @@ def validate_triggers(raw: object) -> tuple[list[dict], list[str]]:
 # state.json. Lives under the .control dot-dir the registry scan ignores.
 
 
-def spool_dir(routines_home: Path, slug: str) -> Path:
-    return spool.spool_dir(routines_home, "triggers", slug)
-
-
 def write_event(routines_home: Path, slug: str, *, trigger_id: str, payload: str,
                 content_type: str = "", client: str = "") -> Path:
     """Record one trigger event durably (atomic). The chrono name (rsched.spool) keeps a
@@ -168,21 +165,17 @@ def pending_events(routines_home: Path, slug: str) -> list[Path]:
 
 
 def slugs_with_events(routines_home: Path) -> list[str]:
-    root = routines_home / ".control" / "triggers"
-    if not root.is_dir():
-        return []
-    return sorted(d.name for d in root.iterdir()
-                  if d.is_dir() and any(d.glob("evt-*.json")))
+    """Every routine with an unconsumed event, oldest-first per slug (rsched.spool)."""
+    return spool.slugs_with(routines_home, "triggers", "evt")
 
 
 def read_state(routines_home: Path, slug: str) -> dict:
     """The daemon-maintained fire ledger: {last_fired, fires, triggers: {id: {…}}}."""
-    st = read_json(spool_dir(routines_home, slug) / "state.json")
-    return st if isinstance(st, dict) else {}
+    return spool.read_state(routines_home, "triggers", slug)
 
 
 def write_state(routines_home: Path, slug: str, state: dict) -> None:
-    atomic_write_json(spool_dir(routines_home, slug) / "state.json", state)
+    spool.write_state(routines_home, "triggers", slug, state)
 
 
 def describe_triggers(routines_home: Path, slug: str, entries: list[dict]) -> list[dict]:
@@ -200,12 +193,10 @@ def describe_triggers(routines_home: Path, slug: str, entries: list[dict]) -> li
         ev = read_json(p)
         if isinstance(ev, dict):
             counts[str(ev.get("trigger"))] += 1
-    # a report trigger's "pending" is the routine's unconsumed inbox messages — its
-    # events live there, not in the spool
-    inbox_dir = routines_home / slug / "inbox"
-    inbox_pending = (sum(1 for p in inbox_dir.iterdir()
-                         if p.is_file() and not p.name.startswith("answer-"))
-                     if inbox_dir.is_dir() else 0)
+    # a report trigger's "pending" is the routine's unconsumed inbox messages — its events
+    # live there, not in the spool. The ONE inbox predicate answers it (engine/inbox), so the
+    # number on the page cannot disagree with what the daemon will actually fire on.
+    inbox_pending = inbox.count_pending(routines_home / slug, include_closures=False)
     rows = []
     for t in entries:
         tid = str(t.get("id"))

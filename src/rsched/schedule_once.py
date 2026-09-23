@@ -33,7 +33,7 @@ from pathlib import Path
 
 from . import spool
 from .ids import now_iso
-from .paths import atomic_write_json, read_json
+from .paths import read_json
 
 # A relative fire-at like "+3d" / "+2h" / "+30m" / "+45s" — the common "re-check in N" case.
 _REL = re.compile(r"^\+\s*(\d+)\s*([dhms])$", re.IGNORECASE)
@@ -134,21 +134,17 @@ def cancel(routines_home: Path, slug: str, req_id: str | None = None) -> int:
 
 
 def slugs_with_requests(routines_home: Path) -> list[str]:
-    root = routines_home / ".control" / "schedule-once"
-    if not root.is_dir():
-        return []
-    return sorted(d.name for d in root.iterdir()
-                  if d.is_dir() and any(d.glob("req-*.json")))
+    """Every routine with an armed one-shot waiting (rsched.spool)."""
+    return spool.slugs_with(routines_home, "schedule-once", "req")
 
 
 def read_state(routines_home: Path, slug: str) -> dict:
     """The daemon-maintained fire ledger: {last_fired, fires}."""
-    st = read_json(spool_dir(routines_home, slug) / "state.json")
-    return st if isinstance(st, dict) else {}
+    return spool.read_state(routines_home, "schedule-once", slug)
 
 
 def write_state(routines_home: Path, slug: str, state: dict) -> None:
-    atomic_write_json(spool_dir(routines_home, slug) / "state.json", state)
+    spool.write_state(routines_home, "schedule-once", slug, state)
 
 
 def describe(routines_home: Path, slug: str) -> dict:

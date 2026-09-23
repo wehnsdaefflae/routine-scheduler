@@ -29,8 +29,8 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
 
-from .. import domains
-from .routines_common import _state
+from .. import domains, registry
+from .routines_common import _state, signal_config_change
 
 router = APIRouter()
 
@@ -61,12 +61,13 @@ def _orphan_capabilities(server, config: dict) -> list[str]:
     floor cannot see and must not break. But it is nearly always a mistake — the domain grants
     the means without the conduct — so whoever saves it is told, by name.
     """
-    from ..grants import _DEFAULT_KIND_SOURCE, read_library_requires, split_util_verb
+    from ..grants import _DEFAULT_KIND_SOURCE, split_util_verb
+    from ..readmodels import library_reads
 
     caps = config.get("capabilities") or {}
     if not caps:
         return []
-    lib = read_library_requires(server.permissions_home)
+    lib = library_reads.requires(server.permissions_home)
     held = list(config.get("permissions") or [])
     req_utils = {u for slug in held for u in (lib.get(slug) or {}).get("utils") or []}
     req_names = {split_util_verb(u)[0] for u in req_utils}
@@ -98,13 +99,13 @@ def _validate_config(request: Request, config: dict | None) -> dict | None:
     """
     if config is None:
         return None
-    from .. import library_docs
     from ..grants import normalize_capabilities
+    from ..readmodels import library_reads
 
     server = _state(request).server
     unknown: list[str] = []
     for key, home in (("permissions", server.permissions_home), ("rules", server.rules_home)):
-        known = set(library_docs.slugs(home))
+        known = set(library_reads.doc_slugs(home))
         unknown += [f"{key[:-1]} {s!r}" for s in config.get(key) or [] if s not in known]
     catalog = server.machines
     unknown += [f"machine {m!r}" for m in config.get("machines") or [] if m not in catalog]
@@ -165,6 +166,38 @@ def list_domains(request: Request) -> dict:
                         for d in domains.list_domains(_routines_home(request))]}
 
 
+def _reaches_members(request: Request, domain_id: str, config: dict | None) -> list[str]:
+    """Tell the members what just changed under them, and the scheduler that it did.
+
+    A domain save is the only config write whose ONE click changes what N routines
+    effectively hold: `config.domainconfig.apply_shared_config` merges the shared block
+    UNDER each member's own keys at load, so `budgets` and `grants` — both LIVE in
+    `configflow.CLASSIFICATION` — reach a run already in flight through the same
+    control.json seam a routine's own PATCH uses. Without this, the one writer that can
+    re-budget eight routines at once was also the only one that told none of them.
+
+    The rescan is the other half: `domains.members` is exactly the list of routines whose
+    effective config just moved, and the scheduler's fire table would otherwise carry the
+    old one until the periodic pass.
+
+    Returns the members told, so the response says how far the save reached.
+    """
+    from ..configflow import CLASSIFICATION, LIVE
+
+    _state(request).scheduler.rescan()
+    fields = [k for k in (config or {}) if CLASSIFICATION.get(k, ("", ""))[0] == LIVE]
+    if not fields:
+        return []
+    home = _routines_home(request)
+    catalog = registry.scan(_state(request).server, home)
+    told = []
+    for slug in domains.members(home, domain_id):
+        info = catalog.get(slug)
+        if info is not None and signal_config_change(info, fields, dict(config or {})):
+            told.append(slug)
+    return told
+
+
 @router.post("/domains")
 def create_domain(request: Request, body: DomainCreate) -> dict:
     config = _validate_config(request, body.config)
@@ -199,7 +232,9 @@ def update_domain(request: Request, domain_id: str, body: DomainPatch) -> dict:
     if rec is None:
         raise HTTPException(404, f"no domain {domain_id!r}")
     applied = [k for k in ("name", "config", "remove") if getattr(body, k) is not None]
-    return {**_record(request, rec), "updated": applied}
+    told = _reaches_members(request, domain_id, config)
+    return {**_record(request, rec), "updated": applied,
+            **({"told_live_runs": told} if told else {})}
 
 
 @router.delete("/domains/{domain_id}")
@@ -220,4 +255,5 @@ def delete_domain(request: Request, domain_id: str) -> dict:
                             + " — clear `domain` on those routines first")
     if not domains.delete(home, domain_id):
         raise HTTPException(404, f"no domain {domain_id!r}")
+    _state(request).scheduler.rescan()
     return {"ok": True}

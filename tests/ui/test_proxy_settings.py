@@ -44,7 +44,7 @@ def test_dashboard_shows_proxy_quota(ui, ui_page, monkeypatch):
     # that broke the horizontal viewport on a phone (operator, 2026-09-18); the full
     # breakdown moved to the tooltip and to the endpoint's own Settings card, which is
     # where he asked for it.
-    expect(ui_page.get_by_text("7d 40% left", exact=True)).to_be_visible()
+    expect(ui_page.get_by_text("quota · 7d 40% left", exact=True)).to_be_visible()
     expect(ui_page.locator(".page-head .chip").first).to_have_attribute(
         "title", re.compile(r"5h 75% left"))
 

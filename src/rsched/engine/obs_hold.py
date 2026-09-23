@@ -11,16 +11,37 @@ the engine wants back. Only the middle two differ by source.
 
 from __future__ import annotations
 
-from ..reminders import LABEL_HELP
+from ..reminders import LABEL_HELP, looks_too_broad
 
 _PROCEED = ("To go ahead anyway, emit the SAME action again — it runs this time (one hold per "
             "action string per run). To avoid the consequence, do something else instead.")
 
 
+def _caution(r: dict) -> str:
+    """One reminder's line — plus, when its OWN tally indicts its pattern, the evidence and
+    the way out, in the hold the run is already paying for.
+
+    A reminder is only worth its turns while the consequence it names can actually happen. The
+    tally that answers that was written on every fire and read by nothing: 198 holds in 21 days,
+    67 of them labelled `could_not` by the run itself, and the only prune path was the model
+    spontaneously remembering to look. Surfacing it HERE — where the run is re-deciding the
+    action anyway and `remind` rides that same turn for free — makes pruning a thing it can do
+    in the moment rather than a thing it must remember to come back for.
+    """
+    line = f"- [{r['id']} · {r['scope']}] {r['description']}"
+    stats = r.get("stats") or {}
+    if not looks_too_broad(stats):
+        return line
+    return (line + f"\n  ↳ THIS REMINDER'S OWN RECORD: {stats.get('fires', 0)} fires, of which "
+            f"you labelled {stats.get('could_not', 0)} `could_not` — the consequence was "
+            "impossible for the action it held. If that is true again here, the pattern is too "
+            "broad: revise its regex or delete it with a `remind` op on this turn (it rides any "
+            "action and costs no turn of its own).")
+
+
 def reminder_hold(obs: dict) -> str:
     """A consequence reminder this routine wrote for itself."""
-    cautions = "\n".join(f"- [{r['id']} · {r['scope']}] {r['description']}"
-                         for r in obs.get("reminders") or [])
+    cautions = "\n".join(_caution(r) for r in obs.get("reminders") or [])
     return (f"ACTION HELD — it did NOT run. `{obs.get('action')}` matches a consequence "
             f"reminder left for exactly this moment:\n{cautions}\n"
             f"Decide again with that in front of you. {_PROCEED}\n"

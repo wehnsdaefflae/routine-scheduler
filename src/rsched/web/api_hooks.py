@@ -27,12 +27,11 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
 
 from .. import registry, triggers
-from ..paths import atomic_write_yaml, read_yaml
+from ..paths import read_yaml
 from .routines_common import (
-    _git_commit,
     _info,
-    _state,
     queue_or_apply,
+    write_routine_config,
 )
 
 log = logging.getLogger("rsched.hooks")
@@ -164,14 +163,13 @@ def create_trigger(request: Request, slug: str, body: TriggerCreate) -> dict:
             else body.cooldown_s)
 
     def _apply() -> dict:
-        path = info.cfg.dir / "routine.yaml"
-        raw = read_yaml(path, {})
+        raw = read_yaml(info.cfg.dir / "routine.yaml", {})
         entries = [t for t in raw.get("triggers") or [] if isinstance(t, dict)]
         entries.append(trigger)
         raw["triggers"] = entries
-        atomic_write_yaml(path, raw)
-        _git_commit(info.cfg.dir, f"add {body.type} trigger {trigger['id']}")
-        _state(request).scheduler.rescan()
+        write_routine_config(request, info, raw,
+                             message=f"add {body.type} trigger {trigger['id']}",
+                             fields=["triggers"])
         extra = ({"url_path": triggers.hook_path(slug, trigger)}
                  if body.type == "webhook" else {})
         return {"ok": True, "trigger": {**trigger, **extra}}
@@ -209,18 +207,18 @@ def patch_trigger(request: Request, slug: str, trigger_id: str, body: TriggerPat
         raise HTTPException(404, f"no trigger {trigger_id!r} on {slug!r}")
 
     def _apply() -> dict:
-        path = info.cfg.dir / "routine.yaml"
-        raw = read_yaml(path, {})
+        raw = read_yaml(info.cfg.dir / "routine.yaml", {})
         entries = [t for t in raw.get("triggers") or [] if isinstance(t, dict)]
         target = next((t for t in entries if str(t.get("id")) == trigger_id), None)
         if target is None:
             raise HTTPException(404, f"no trigger {trigger_id!r} on {slug!r}")
         target.update(fields)
         raw["triggers"] = entries
-        atomic_write_yaml(path, raw)
-        _git_commit(info.cfg.dir, f"retune trigger {trigger_id}: "
-                                  + ", ".join(f"{k}={v}" for k, v in sorted(fields.items())))
-        _state(request).scheduler.rescan()
+        write_routine_config(
+            request, info, raw,
+            message=f"retune trigger {trigger_id}: "
+                    + ", ".join(f"{k}={v}" for k, v in sorted(fields.items())),
+            fields=["triggers"])
         return {"ok": True, "trigger": target}
 
     # D78-A: queue while a run is active (apply at run end) instead of a 409 busy toast
@@ -239,16 +237,14 @@ def delete_trigger(request: Request, slug: str, trigger_id: str) -> dict:
         raise HTTPException(404, f"no trigger {trigger_id!r} on {slug!r}")
 
     def _apply() -> dict:
-        path = info.cfg.dir / "routine.yaml"
-        raw = read_yaml(path, {})
+        raw = read_yaml(info.cfg.dir / "routine.yaml", {})
         entries = [t for t in raw.get("triggers") or [] if isinstance(t, dict)]
         kept = [t for t in entries if str(t.get("id")) != trigger_id]
         if len(kept) == len(entries):
             raise HTTPException(404, f"no trigger {trigger_id!r} on {slug!r}")
         raw["triggers"] = kept
-        atomic_write_yaml(path, raw)
-        _git_commit(info.cfg.dir, f"remove trigger {trigger_id}")
-        _state(request).scheduler.rescan()
+        write_routine_config(request, info, raw,
+                             message=f"remove trigger {trigger_id}", fields=["triggers"])
         return {"ok": True}
 
     # D78-A: queue while a run is active (apply at run end) instead of a 409 busy toast

@@ -56,16 +56,27 @@ disk so it is restart-safe:
    going?" and knows to relay a newly-finished result.
 5. **gc** — removes a delivered task dir a grace window after the owner has drained its message.
 
-Because the engine child spawns with its own session, it **survives a daemon self-update restart**; the
-manager's disk-poll delivers it afterward, and detached runs are excluded from the restart drain gate so
-a long job never blocks a deploy. Detached tasks use **deferred asks only** (coerced in `handle_ask`) so
-one can never park in `waiting_user` and hold a restart.
+A detached task **holds the restart drain gate like any other run**: the daemon restarts once nothing
+has been active for ten seconds, and a running task counts as active. It has to. The child spawns with
+its own session, which was once read as surviving the daemon's SIGTERM — it does not, on either
+deployment. Under Docker the daemon's exit ends tini (PID 1) and the kernel SIGKILLs the whole PID
+namespace; under the systemd unit the default `KillMode=control-group` kills everything left in the
+cgroup. A new session is neither. An excluded task was therefore killed at rc=-9 by the very drain that
+exists to protect a run, closed `aborted` at the next boot and delivered to its owner as
+"[background task was cancelled]".
+
+The wait that costs a deploy is bounded twice: a task's own budget caps it at 60 minutes, and detached
+tasks use **deferred asks only** (coerced in `handle_ask`), so one can never park in `waiting_user` and
+hold a restart with no deadline. What survives a restart regardless is the WORK ALREADY DONE — delivery
+is idempotent and driven from disk, so a task that finished just before the exit is delivered after it.
 
 ## Monitor + cancel
 
 - The conversation rail (`static/views/conversations.js`) shows a **background** card: each task's label,
-  state, and a cancel button while it runs. It refreshes when the conversation wakes (a completion) and on
-  a light poll.
+  state, and a cancel button while it runs. It refreshes when the conversation wakes (a
+  completion) and — while there is a task to watch or a run that could start one — on a 15 s poll
+  that DISARMS itself when neither holds: `#/conversations` is the default route, so an idle tab
+  otherwise polled that endpoint forever about an empty list.
 - API (`web/api_background.py`): `GET /conversations/{slug}/background` lists them,
   `POST …/background` drops an intent (the human/test analog of the engine action),
   `POST …/background/{id}/cancel` aborts one (`runner.abort` + a pid fallback for a task that outlived a

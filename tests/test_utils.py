@@ -193,6 +193,73 @@ def test_catalog_text_includes_usage_and_call_shape(tmp_path):
     assert "usage: gu demo TARGET [--json]" in text
     assert '"args": ["<arg>", "--flag"]' in text          # the call shape
 
+VERB_UTIL = (
+    "# /// script\n# dependencies = []\n# ///\n"
+    '"""verbs — a verb-dispatched util.\n\n'
+    "usage: gu verbs <verb> [verb args] [--json]\n"
+    "  gu verbs read FILE [--pages SPEC] [--json]\n"
+    "      extract text from FILE\n"
+    "  gu verbs write FILE --text S [--json]\n"
+    "\n"
+    "A paragraph of prose that is NOT part of the usage block.\n"
+    "calls: (none)\n"
+    "secrets: (none)\n"
+    "tags: demo\n"
+    "net: none\n"
+    "fs: none\n"
+    '"""\nprint("ok")\n'
+)
+
+
+def test_usage_block_keeps_every_verb_and_stops_at_the_header(tmp_path):
+    """F505: `usage:` is a BLOCK. Keeping only its first line taught one verb of a
+    multi-verb util on every discovery surface — 65 of 111 live utils list continuation
+    lines, and the fleet paid ~1 100 usage errors for the guesses that followed."""
+    usage = utils_header.parse_header(VERB_UTIL)["usage"]
+    lines = usage.splitlines()
+    assert lines[0] == "usage: gu verbs <verb> [verb args] [--json]"
+    assert "gu verbs read FILE [--pages SPEC] [--json]" in usage    # the verb the caller needs
+    assert "gu verbs write FILE --text S [--json]" in usage
+    assert lines[1].startswith("  ")                                # the author's table survives
+    assert "NOT part of the usage block" not in usage               # stops at the blank line
+    assert "tags:" not in usage                                     # …and at the next header key
+    # a block that runs straight into the next key ends there, with no blank line between
+    tight = utils_header.parse_header(
+        '"""x — y.\n\nusage: gu x A\n  gu x B\ncalls: (none)\ntags: t\nnet: none\nfs: none\n"""\n')
+    assert tight["usage"] == "usage: gu x A\n  gu x B"
+    assert tight["tags"] == ["t"]
+
+
+def test_usage_label_with_no_invocation_is_a_header_problem():
+    """A bare `usage:` label is a defect ONLY when nothing follows it: nine live utils write
+    the label alone and list every verb underneath, and flagging those would turn `gu lint`
+    and write_util red for a header that is more complete than a single-line one."""
+    from rsched.utils_header import header_problems
+
+    listed = VERB_UTIL.replace("usage: gu verbs <verb> [verb args] [--json]\n", "usage:\n")
+    assert header_problems(listed) == []
+    empty = VERB_UTIL.replace("usage: gu verbs <verb> [verb args] [--json]\n"
+                              "  gu verbs read FILE [--pages SPEC] [--json]\n"
+                              "      extract text from FILE\n"
+                              "  gu verbs write FILE --text S [--json]\n", "usage:\n")
+    assert any("names no invocation" in p for p in header_problems(empty))
+
+
+def test_catalog_counts_the_forms_it_elides_and_search_shows_them(tmp_path):
+    """The whole-library listing stays a listing — first form plus a count of the rest — and
+    both the search hits and a single-util entry carry the block, indented under their entry
+    so a multi-verb table cannot run into the next util."""
+    utils_lib.ensure_library(tmp_path)
+    utils_lib.write_util_file(tmp_path, "verbs", VERB_UTIL)
+    catalog = utils_lib.catalog_text(tmp_path)
+    assert "usage: gu verbs <verb> [verb args] [--json]" in catalog
+    assert 'more form(s): list args=["verbs"]' in catalog
+    assert "gu verbs read FILE" not in catalog
+    listing = utils_lib.search_listing(tmp_path, "verbs")
+    assert "    usage: gu verbs <verb> [verb args] [--json]" in listing
+    assert "      gu verbs read FILE [--pages SPEC] [--json]" in listing
+
+
 def test_failed_util_observation_teaches_usage(tmp_path):
 
     from rsched.engine.observations import format_observation
@@ -458,16 +525,53 @@ def test_util_needs_transitive_closure(tmp_path):
     assert secrets == {"TOP_KEY", "LEAF_TOKEN"} and net is True and optional == set()
     secrets, net, optional, *_ = utils_run.util_needs(tmp_path, "loner")
     assert secrets == set() and net is False
-    # cycles terminate; a missing callee contributes nothing
+    # the TREE is the fifth thing a call declares (the reserved-util gate reads it: a
+    # `calls:` edge hands the caller that util's jail and credentials)
+    assert utils_run.util_needs(tmp_path, "top").tree == ("leaf", "middle", "top")
+    # cycles terminate; a missing callee contributes nothing — but IS walked, so it shows
     _write_header_util(tmp_path, "a", calls="b")
     _write_header_util(tmp_path, "b", calls="a, ghost")
-    assert utils_run.util_needs(tmp_path, "a") == (set(), False, set(), False, ())
+    assert utils_run.util_needs(tmp_path, "a") == (set(), False, set(), False, (),
+                                                   ("a", "b", "ghost"))
     # `?`-marked names resolve as OPTIONAL across the tree — unless ANY declarer
     # requires them (one required declaration wins, F290)
     _write_header_util(tmp_path, "opt-leaf", secrets="SHARED?, ONLY_OPT?")
     _write_header_util(tmp_path, "opt-top", calls="opt-leaf", secrets="SHARED")
     secrets, _net, optional, *_ = utils_run.util_needs(tmp_path, "opt-top")
     assert secrets == {"SHARED", "ONLY_OPT"} and optional == {"ONLY_OPT"}
+
+
+def test_root_optional_marker_wins_over_a_callee_required_one(tmp_path):
+    """R1818: a callee's `required` means "required WHEN I RUN". Only the util being called
+    knows whether the path reaching that callee is taken, so a `?` on the ROOT's own line
+    wins — three live utils (frame-fill, corpus-build, ngf-build-data) demanded a credential
+    on every call because a sibling they reach under one flag rightly requires its own key.
+    Between callees the strict rule is unchanged: one required declaration wins."""
+    utils_lib.ensure_library(tmp_path)
+    _write_header_util(tmp_path, "scorer", secrets="SCORE_KEY")          # rightly required
+    _write_header_util(tmp_path, "filler", calls="scorer", secrets="OWN_KEY, SCORE_KEY?")
+    secrets, _net, optional, *_ = utils_run.util_needs(tmp_path, "filler")
+    assert secrets == {"OWN_KEY", "SCORE_KEY"}
+    assert optional == {"SCORE_KEY"}, "the root's ? decides — no exposure prompt for a plain call"
+    # calling the scorer directly still requires its key
+    assert utils_run.util_needs(tmp_path, "scorer").optional == set()
+    # and a MIDDLE util's ? does not soften what its own callee requires
+    _write_header_util(tmp_path, "middle-opt", calls="scorer", secrets="SCORE_KEY?")
+    _write_header_util(tmp_path, "outer", calls="middle-opt")
+    assert utils_run.util_needs(tmp_path, "outer").optional == set()
+
+
+def test_calls_line_prose_is_a_header_problem():
+    """R1818: `calls: (none — standalone; sibling of page-fetch)` parsed as "calls nothing"
+    because the slug filter dropped the prose — right by accident until one of those words is
+    a util name. The gate names the junk instead of ignoring it."""
+    from rsched.utils_header import header_problems
+
+    prose = GOOD_UTIL.replace("calls: (none)\n",
+                              "calls: (none — standalone; sibling of page-fetch)\n")
+    assert any("not a slug" in p for p in header_problems(prose)), header_problems(prose)
+    assert header_problems(GOOD_UTIL.replace("calls: (none)\n", "calls: none\n")) == []
+    assert header_problems(GOOD_UTIL.replace("calls: (none)\n", "calls: adder, page-fetch\n")) == []
 
 
 def test_child_env_scopes_secrets(tmp_path, monkeypatch):
@@ -655,3 +759,30 @@ def test_run_util_cwd_routes_to_given_dir(tmp_path):
 
     code, out, _ = utils_run.run_util(home, "pwd-util", [], policy=OFF, cwd=routine_dir)
     assert code == 0 and Path(out.strip()) == routine_dir.resolve()
+
+
+DEADLINE_UTIL = '''# /// script
+# dependencies = []
+# ///
+"""deadline-util — print the deadline the runner gave this call. usage: gu deadline-util
+tags: test
+net: none
+fs: none
+"""
+import os, sys
+if "--selftest" in sys.argv:
+    print("selftest: ok", file=sys.stderr); sys.exit(0)
+print(os.environ.get("RSCHED_UTIL_TIMEOUT_S", "(unset)"))
+'''
+
+
+def test_run_util_exports_the_callers_deadline(tmp_path):
+    """R1813: a util that waits on something slow needs its own clock INSIDE the runner's.
+    Without the deadline in the env, `remote`'s 120s SSH read and the action's timeout_s: 120
+    expired together, the process group was killed, and an exec that had already printed its
+    job's PID returned nothing at all."""
+    home = tmp_path / "utils-home"
+    utils_lib.ensure_library(home)
+    utils_lib.write_util_file(home, "deadline-util", DEADLINE_UTIL)
+    code, out, _err = utils_run.run_util(home, "deadline-util", [], timeout=90, policy=OFF)
+    assert code == 0 and out.strip() == "90"

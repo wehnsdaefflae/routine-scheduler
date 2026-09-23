@@ -6,8 +6,9 @@ import { api, sse } from "/static/api.js";
 import { parseHash } from "/static/router.js";
 import { installTracing } from "/static/trace.js";
 import { installFormPersistence } from "/static/formpersist.js";
-import { el, fmtTs, skeleton, startTimeTicker, storage, toast } from "/static/util.js";
+import { el, fmtTs, skeleton, startTimeTicker, storage, toast, toastError } from "/static/util.js";
 import { initNotifications } from "/static/notify.js";
+import { loadQuestions, subscribeQuestions } from "/static/questions-store.js";
 import { initTaskManager } from "/static/components/taskmanager.js";
 import { initBrowserDock } from "/static/components/browserdock.js";
 import { initSearchBox } from "/static/components/searchbox.js";
@@ -110,6 +111,7 @@ function crumbsFor(path) {
     case "messages": return [{ label: "Messages" }];
     case "stats": return [{ label: "Stats" }];
     case "settings": return [{ label: "Settings" }];
+    case "browser": return [{ label: "Browser" }];
     case "help": {
       const c = [{ label: "Help", href: parts.length > 1 ? "#/help" : null }];
       if (parts[1]) c.push({ label: parts[1] });
@@ -133,7 +135,10 @@ function crumbsFor(path) {
         { label: slug || "run", href: slug ? `#/routine/${slug}` : null },
         { label: ts ? `run ${fmtTs(ts)}` : "run" }];
     }
-    default: return [{ label: "Conversations" }];
+    // A route with no case of its own names ITSELF, capitalised. The old default returned
+    // "Conversations", so #/browser — a route added later — announced the wrong page on every
+    // visit; a fallback that lies is worse than one that is merely plain.
+    default: return [{ label: top.charAt(0).toUpperCase() + top.slice(1) }];
   }
 }
 
@@ -170,7 +175,7 @@ function renderMetaBanner(metaRoutines) {
         toast(`${m.slug} enabled — it now runs on its schedule`);
         b.replaceWith(el("span", { class: "chip ok" }, "enabled"));
         refreshStatus();
-      } catch (err) { toast(err.message, 5000, { error: true }); b.disabled = false; }
+      } catch (err) { toastError(err, 5000); b.disabled = false; }
     };
     return b;
   };
@@ -226,30 +231,16 @@ async function refreshStatus() {
   }
 }
 
-async function refreshBadges() {
-  try {
-    const qs = await api("/api/questions");
-    // answered-but-unconsumed items are settled; snoozed ones wait silently by design
-    const open = qs.filter((q) => !q.answered && !q.snoozed);
-    const badge = document.getElementById("q-badge");
-    badge.textContent = open.length;
-    badge.hidden = open.length === 0;
-  } catch { /* daemon lamp covers connectivity */ }
-}
-
-// Coalesce badge refreshes: the bus can storm (llm_task lifecycle events fire sub-second
-// during a busy run) and every event used to cost a GET /api/questions. llm_task events
-// can't change decisions at all; everything else refreshes at most once per window,
-// with one trailing refresh so the final state always lands.
-const BADGE_REFRESH_MIN_MS = 3000;
-let badgeCooldown = 0, badgeTrailing = false;
-function scheduleBadgeRefresh() {
-  if (badgeCooldown) { badgeTrailing = true; return; }
-  refreshBadges();
-  badgeCooldown = setTimeout(() => {
-    badgeCooldown = 0;
-    if (badgeTrailing) { badgeTrailing = false; scheduleBadgeRefresh(); }
-  }, BADGE_REFRESH_MIN_MS);
+// The header badge is one READER of the shared questions store (questions-store.js), which
+// owns the bus listener, the cadence and the single in-flight fetch for every surface that
+// reads /api/questions.
+function paintBadge({ items }) {
+  // answered-but-unconsumed items are settled; snoozed ones wait silently by design
+  const open = items.filter((q) => !q.answered && !q.snoozed);
+  const badge = document.getElementById("q-badge");
+  if (!badge) return;
+  badge.textContent = open.length;
+  badge.hidden = open.length === 0;
 }
 
 function globalStream() {
@@ -260,25 +251,31 @@ function globalStream() {
   // freezes with stale routine states (the daemon lamp stuck off). So we own the
   // reconnect the way stream.js/liveTail does: on error, close the dead source and reopen
   // via a fresh sse() (which mints a NEW ticket) under capped exponential backoff.
-  let source = null, timer = null, retry = 0;
+  let source = null, timer = null, retry = 0, opened = false;
   const dot = () => document.getElementById("daemon-dot");
   const handlers = {
     bus: (ev) => {
       retry = 0;   // a delivered event proves the stream is healthy — reset the backoff
+      // The bus carries exactly six kinds (daemon/events.py + llm_tasks.py + api_questions.py):
+      // run_started, run_state, run_finished, llm_task, llm_process, question_answered. A
+      // handler for a kind nothing publishes reads as live wiring to the next person; the
+      // surface that creates a routine toasts its own result where the click happened.
       if (ev.event === "run_started") toast(`run started: ${ev.run_id}`);
       if (ev.event === "run_finished") toast(`run ${ev.state}: ${ev.run_id}`);
-      if (ev.event === "routine_created") toast(`routine ${ev.slug} is ready`, 5000);
-      if (ev.event === "routine_failed") toast(`routine ${ev.slug} build failed`, 7000, { error: true });
-      if (ev.event !== "llm_task") scheduleBadgeRefresh();
       window.dispatchEvent(new CustomEvent("rsched-bus", { detail: ev }));
     },
     onopen: () => {
       retry = 0;
       dot()?.classList.add("on");
       // A reconnect may have missed run start/state/finish events while the stream was down;
-      // fire one synthetic bus tick so every view re-fetches from REST and catches up (on the
-      // first open the views have just loaded, so this is a cheap no-op refresh).
-      window.dispatchEvent(new CustomEvent("rsched-bus", { detail: { event: "reconnect" } }));
+      // fire one synthetic bus tick so every view re-fetches from REST and catches up. NOT on
+      // the FIRST open: the views have just loaded their own data, and the dashboard treats
+      // `reconnect` as "anything may have moved" — so the first open used to re-run the two
+      // heaviest reads on the page (/api/domains, /api/schedule/week) seconds after render.
+      if (opened) {
+        window.dispatchEvent(new CustomEvent("rsched-bus", { detail: { event: "reconnect" } }));
+      }
+      opened = true;
     },
     onerror: () => {
       dot()?.classList.remove("on");
@@ -374,6 +371,9 @@ window.addEventListener("hashchange", route);
   }
   route();
 })();
-refreshBadges();
+subscribeQuestions(paintBadge);
+loadQuestions().catch(() => { /* the daemon lamp covers connectivity */ });
 globalStream();
-setInterval(() => { refreshBadges(); refreshStatus(); }, 30000);
+// The 30s floor under the bus: a dropped event (or a stream that never opened) must not
+// leave the badge or the lamp frozen. The store coalesces this with whatever the bus asked for.
+setInterval(() => { loadQuestions().catch(() => {}); refreshStatus(); }, 30000);

@@ -75,8 +75,14 @@ export function initSearchBox() {
     "aria-expanded": "false", "aria-controls": "gs-pop",
   });
   const pop = el("div", { class: "gs-pop", id: "gs-pop", role: "listbox", hidden: true });
+  // The key that opens the fastest route in the console was advertised only in a hover tooltip,
+  // so the one control that reaches any run, decision or note in a keystroke read as a box
+  // saying "search". The Decisions page already teaches its shortcuts this way (`.kbd-hint` +
+  // <kbd>, views/questions.js); this is the same <kbd>, parked in the box and out of the way
+  // the moment the box is in use. Hidden with the rest of the keyboard hints below 861px.
+  const key = el("kbd", { class: "gs-key", "aria-hidden": "true" }, "/");
   slot.classList.add("gsearch");
-  slot.append(input, pop);
+  slot.append(input, key, pop);
 
   let seq = 0;          // stale-response guard (no AbortController in api())
   let timer = null;
@@ -166,9 +172,13 @@ export function initSearchBox() {
   });
   input.addEventListener("focus", () => {
     input.placeholder = FOCUS_HINT;
+    key.hidden = true;
     if (input.value.trim().length >= MIN_CHARS) run();
   });
-  input.addEventListener("blur", () => { input.placeholder = REST_HINT; });
+  input.addEventListener("blur", () => {
+    input.placeholder = REST_HINT;
+    key.hidden = false;
+  });
 
   // "/" (outside inputs) or Ctrl/Cmd-K from anywhere jumps to search.
   document.addEventListener("keydown", (e) => {

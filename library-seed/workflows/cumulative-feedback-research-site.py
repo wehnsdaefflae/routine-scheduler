@@ -41,7 +41,7 @@ META = {
                    "before new work and stable ids must survive regeneration. Fits FTP-webroot "
                    "publishing with a guarded, never-clobber-the-feedback-file upload. Not for "
                    "one-off builds, no-server/static-only sites, or non-cumulative research.",
-    "version": 4,
+    "version": 6,
     "tags": ["cumulative-research", "feedback-loop", "publishing", "stateful-pipeline", "evaluation"],
     "includes": ["ask-policy", "web-research", "decision-record", "engagement-accountability", "feedback-implementation-gate"],
     "tools": None,          # None = every action kind is allowed
@@ -80,6 +80,7 @@ def main():
             return record("Nothing due: no new feedback, no candidate, no refresh; site unchanged.")
         # Feedback moved the model even though no research is due → the site must show it.
         publish_site()
+        prove_reader_side()
         return record("ingested feedback; nothing new to research; site republished")
 
     # 3. Per-item fan-out: evaluate (fit + acceptance probability) and render a stable-id subpage.
@@ -97,8 +98,9 @@ def main():
 
     # 4. GUARDED publish — regenerate the whole site, assets/subpages before the landing page.
     publish_site()
+    prove_reader_side()                         # the upload returning no error is not a published page
 
-    return record("feedback ingested, everything due evaluated, site republished, feedback file untouched")
+    return record("feedback ingested, everything due evaluated, site republished, reader side proven")
 
 
 def orient():
@@ -186,6 +188,43 @@ def publish_site():
     excluded from the upload set before pushing."""
 
 
+def prove_reader_side():
+    """Prove the page a READER gets, not the data a publisher sent. Every data-level check —
+    write accepted, field-by-field read-back, 401/403 access probes — can be fully GREEN while the
+    page is unusable, because those checks verify the store and the access rules and nothing else
+    verifies the rendered result or whether a reader's click can save. Two proofs, both required,
+    both after the push:
+
+    1. FETCH IT RENDERED AND LOOK AT IT. Pull the live page with a real browser (screenshot +
+       text) using a guest/invitation URL where one exists, because that renders without any
+       credential and shows exactly the reader's view — then actually VIEW the screenshot. Look
+       for what only rendering reveals: something shown twice, something expanded that should be
+       collapsed, an empty control that asks nothing, text inheriting a foreign transform or
+       family from a parent, a CSS class used by the body with no rule behind it. If a full-page
+       capture times out, reduce the wait and fall back to the text — never skip the fetch.
+
+    2. WRITE-TEST ONE CONTROL, in exactly the id form your own controls emit. Post a feedback
+       write with a real, correctly-namespaced id, then retract it and confirm the pending set is
+       empty again. A store that requires ids namespaced to the project slug rejects anything else
+       with a 400 that NO publisher-side check can see: it fires only when the reader clicks, and
+       by then his input is already lost. Sequence numbers the test created are YOURS — advance
+       the cursor over them honestly and record in the cursor note that they were your own test
+       rows, so the next run does not read them as reader feedback.
+
+    A failure here means the page is not published, whatever the upload returned. Fix and re-prove
+    in the same run."""
+
+
+def report_shared_kit_gap(requirement, workaround):
+    """When a reader's requirement can only be met by changing the SHARED kit — the page shell, a
+    stock module, the store, or the payload shape — do not fork the asset and do not work around it
+    silently. Report it to the kit's owner with the file, the function, the observed behaviour, the
+    requirement in the reader's own words, and the workaround you chose; then name that workaround
+    AND its cost in the closing summary. Many routines publish against one kit: unreported, each
+    invents a different private detour around the same gap, and none of them is visible to whoever
+    could fix it once."""
+
+
 def verify(path):
     """Read back what was persisted — confirm the record/evaluation exists and the stable-id
     convention holds. A claimed-but-unverified outcome is the worst failure this system knows."""
@@ -194,7 +233,27 @@ def verify(path):
 def record(summary):
     """Update state/phase.json and any state files; append exactly one LEDGER entry (feedback
     consumed + cursor moved, items added/refreshed, anything left due at the boundary, preference-
-    model shifts, publish result, decisions, candidates rejected + why)."""
+    model shifts, publish result, decisions, candidates rejected + why).
+
+    ROTATE THE LEDGER IN THE RUN THE THRESHOLD TRIPS, and measure that threshold in
+    BYTES derived from this routine's own entries. A count of lines or entries cannot see
+    what a reader actually pays: entries grow from one-liners into narratives, so the same
+    count means a 20 KB file one month and a 130 KB file the next. Measured across a
+    33-routine instance on 2026-09-21, EVERY ledger over 100 KB was comfortably inside its
+    own count-based limit -- one was 112 KB at 30 entries against a 40-entry trigger, so a
+    fully compliant run correctly did nothing. The LEDGER tail is in every run's context,
+    so the cost is paid before any work starts.
+    THE CAP AND THE KEPT TAIL ARE ONE PAIR, AND A CROSSED PAIR IS WORSE THAN NO TRIGGER.
+    The cap is a byte CEILING; keeping the last N entries is a count FLOOR worth N x the
+    mean entry size, and the larger of the two is the one that actually binds. A cap set at
+    "about N entries" makes them equal by construction and the trigger is inert either way:
+    at or just above the floor it rotates one entry, lands just under, and re-trips on the
+    next append -- a rotation every run forever; below the floor it cannot be satisfied at
+    all while keeping N entries, so skipping it is a correct run's only option. Both were
+    live on that instance the same day. Set the cap ABOVE the floor with headroom, and if a
+    rotation leaves the file still over the cap -- or lands it within one entry's size of
+    the cap -- the numbers are wrong: fix them with the measurement that justifies it. A
+    threshold you trip by complying with it is one every run learns to ignore."""
     ledger.append(summary)
     return finish("ok", summary)
 

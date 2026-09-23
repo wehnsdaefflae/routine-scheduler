@@ -15,11 +15,41 @@ from ..endpoints import failover
 from ..endpoints.base import EndpointError
 from ..health_events import log_health_event
 from . import refusal
-from .window import (
-    _recover_oversize_prompt,
-    _shrink_window_to_provider,
-    apply_media_fallback,
+from .compaction import estimate_input_tokens
+from .overflow import _recover_oversize_prompt, _shrink_window_to_provider
+from .window import apply_media_fallback
+
+#: What a `model_failover` health event says caused the switch, from the error text. The
+#: vocabulary is deliberately five words wide: a sweep asking "why is the fleet off its
+#: primary today" wants the CLASS (a quota, a dead credential, an outage), not 300
+#: characters of provider prose — that is what `detail` carries.
+_FAILOVER_REASONS = (
+    ("rate_limit", ("429", "rate limit", "usage_limit", "quota", "cooling down")),
+    ("auth", ("401", "403", "auth", "credential", "refresh token", "api key")),
+    ("refusal", ("refused the turn", "stop_reason=refusal", "content_filter")),
+    ("empty", ("empty completion",)),
+    ("server", ("500", "502", "503", "504", "529", "timeout", "overloaded")),
 )
+
+
+def _failover_reason(exc: EndpointError) -> str:
+    """Classify a hard failure for the health stream. `other` when nothing matches — an
+    honest bucket beats a guess that makes a new failure mode look like a known one.
+    """
+    low = str(exc).lower()
+    for reason, needles in _FAILOVER_REASONS:
+        if any(n in low for n in needles):
+            return reason
+    return "other"
+
+
+def _turn_needs(loop) -> dict:
+    """What THIS turn's request needs of any model that takes it over: whether it carries
+    images, and how big the prompt is. Both travel with the request, so a chain member
+    that cannot hold them is the worse choice (endpoints/failover.fits).
+    """
+    return {"has_media": any(m.get("media") for m in loop.messages),
+            "prompt_tokens": estimate_input_tokens(loop.messages)}
 
 
 def _recover_transport(loop, chain, endpoint, ref, exc: EndpointError) -> tuple:
@@ -102,20 +132,31 @@ def _handle_refusal(loop, completion, chain, ref, attempt: int, refstate: dict) 
         f"model to survive classifier refusals")
 
 def _intercept_refusal_finish(loop, candidate, ref, refstate: dict) -> bool:
-    """A finish(status=failed) whose summary reads as a CONTENT REFUSAL is not accepted
+    """A finish whose summary reads as a CONTENT REFUSAL is not accepted
     as the turn's action: flag + isolate the essence + deliver it to the honeypot, then
     tell the main model the essence is handled separately and re-drive the turn (True =
     the caller `continue`s). Anything else (an honest failure report, a non-finish
     action) returns False and is accepted normally. Latched via refstate so a model that
     keeps refusing eventually lands its finish honestly.
+
+    What `status` decides is how hard we LOOK, never whether we look at all. A refusal
+    also arrives as finish(status=ok) — "I'm not going to do this one", live specimen
+    c-20260822-091412, logged as a SUCCESS — so judging the summary is unconditional. But
+    only a DECLARED failure is worth a classification round trip: testing every finish
+    that way put each of the fleet's honest endings through a `refusal · classify reply`
+    subcall on its way out. An `ok`/`partial` finish is judged by the marker fast-path
+    alone, which is what caught that specimen in the first place.
     """
     ctx = loop.ctx
-    if not (isinstance(candidate, dict) and candidate.get("kind") == "finish"
-            and refusal.is_refusal(ctx, str(candidate.get("summary") or ""))):
+    if not (isinstance(candidate, dict) and candidate.get("kind") == "finish"):
+        return False
+    summary = str(candidate.get("summary") or "")
+    refused = (refusal.is_refusal(ctx, summary) if candidate.get("status") == "failed"
+               else refusal.looks_like_refusal(summary))
+    if not refused:
         return False
     refstate["referral_tried"] = True
-    rec = refusal.clarify_refusal(ctx, task=_turn_task_text(loop),
-                                  refusal=str(candidate.get("summary") or ""),
+    rec = refusal.clarify_refusal(ctx, task=_turn_task_text(loop), refusal=summary,
                                   where="loop", model=ref.name or ref.model)
     if rec.get("isolated"):
         note = (f"the fragment «{rec['isolated']}» is being handled separately by another "
@@ -215,8 +256,9 @@ def _switch_to_fallback(loop, chain, failed_ref, exc: EndpointError):
     a real turn. (InstrumentedEndpoint only cools retryable-class transport failures; a
     deterministic error or an empty-reply pattern is visible only at this seam.)
     """
-    failover.mark_failed(failed_ref.endpoint, failed_ref.model)
-    nxt = failover.next_after(chain, failed_ref)
+    failover.mark_failed(failed_ref.endpoint, failed_ref.model,
+                         cooldown_s=failover.cooldown_for(exc))
+    nxt = failover.next_after(chain, failed_ref, **_turn_needs(loop))
     if nxt is None:
         _log_chain_exhausted(loop, chain, failed_ref, exc)
         return None
@@ -227,4 +269,37 @@ def _switch_to_fallback(loop, chain, failed_ref, exc: EndpointError):
                     f"— failing over to {n_ref.name or n_ref.model}"),
         "failover": {"from": failed_ref.name, "to": n_ref.name,
                      "cooldown_s": failover.COOLDOWN_S}})
+    _log_failover(loop, chain, failed_ref, n_ref, exc)
     return nxt
+
+
+def _log_failover(loop, chain, failed_ref, new_ref, exc: EndpointError) -> None:
+    """A switch reached the FLEET stream, not only this run's transcript.
+
+    A run that fails over finishes `ok`: the chain absorbed it, so nothing downstream ever
+    said the primary stopped serving. Between 2026-09-12 and 09-22 that happened 123 times
+    across 28 runs — a weekly quota on `gpt-6-astra` and a dead proxy refresh token pushing
+    the fleet onto metered models at `effort: max` — and the operator found it by reading
+    transcripts, days later, because `model_chain_exhausted` only fires when the LAST rung
+    dies too (one event in the same window). The same argument as `cache_read_degraded`:
+    a cost nothing else reports must be emitted where it happens.
+
+    The chain HEAD is the grouping key (which model stopped serving the fleet, and since
+    when); `from_model`/`to_model`/`reason` ride as structured fields, per F422 — a
+    question answerable by a filter must not live in `detail`.
+
+    Best-effort by construction: health logging never blocks a run, and this seam is
+    already handling a failure.
+    """
+    head = chain[0][1] if chain else failed_ref
+    ctx = loop.ctx
+    log_health_event(
+        ctx.server.routines_home, "model_failover",
+        routine=getattr(ctx.routine, "slug", "") or "",
+        run_id=getattr(ctx, "run_id", "") or "",
+        detail=(f"{failed_ref.name or failed_ref.model} failed hard, serving from "
+                f"{new_ref.name or new_ref.model} instead: {str(exc)[:200]}"),
+        model=head.name or head.model,
+        from_model=failed_ref.name or failed_ref.model,
+        to_model=new_ref.name or new_ref.model,
+        reason=_failover_reason(exc))

@@ -151,6 +151,11 @@ services:
     networks:
       default:
       browser:
+        # PINNED for the same reason chrome's is: the sidecar has to reach back. The browser
+        # test suite serves its fixture console on this address (tests/ui/conftest.py) and puts
+        # it in the certificate's SAN, so it is a constant a test can name — not whatever
+        # Docker hands out next recreate.
+        ipv4_address: 172.30.7.2
     depends_on:
       - tor
 

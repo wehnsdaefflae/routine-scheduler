@@ -39,13 +39,13 @@ def test_each_turn_is_recorded(make_routine, scripted):
     finished = [r for r in cap.records if r["phase"] == "finished"]
     purposes = [r["purpose"] for r in started]
     assert "turn 1" in purposes and "turn 2" in purposes     # one call per turn, labeled
-    # the orchestrator turns are kind "turn" on the scripted endpoint; the finish turn
-    # also spawns a "refusal · classify reply" llm_action (detection is the harness's job
-    # now, run on the tool_call model for every finish summary — operator 2026-08-22), so
-    # the started stream carries both kinds.
+    # the orchestrator turns are kind "turn" on the scripted endpoint. A well-formed action
+    # buys NO refusal classification: a refusal is prose, while a reply carrying a JSON object
+    # is at worst a malformed action, and classifying those cost a serial model round-trip per
+    # malformed reply (`completion._is_prose_reply`). So this run's stream is turns only.
     turns = [r for r in started if r["kind"] == "turn"]
     assert len(turns) >= 2 and all(r["endpoint"] == "scripted" for r in turns)
-    assert any(r["kind"] == "llm_action" and "refusal" in r["purpose"] for r in started)
+    assert not any("refusal" in r["purpose"] for r in started)
     assert len(finished) == len(started) >= 2
     assert all("usage" in r for r in finished)                # finished carries the token usage
 

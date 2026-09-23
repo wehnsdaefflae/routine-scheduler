@@ -21,6 +21,14 @@ Two invariants this module exists to keep:
    the proposing routine's `inbox/`, drained by its next scheduled run. Nothing wakes anything: a
    creation is not urgent, and a queue that started runs would be a scheduler in disguise.
 
+And one the queue keeps for every kind: **one standing proposal per ask** (`identity`). A
+proposal outlives the run that made it by design — the operator may be away for days — so a
+scheduled routine re-proposing on its next fire is the NORMAL case, not a malfunction, and
+without this the operator comes back to three identical cards of which two can only 409. Two
+kinds dedupe by hand before they queued (a met goal is sticky; a drift gap is one record per
+gap, not one per commit) and two did not, which is the same rule written twice and forgotten
+twice. It lives at the write instead.
+
 Ungated on purpose, like `report`: writing a proposal no one has approved creates nothing and
 reaches no one but the operator's own Decisions page. The approval IS the gate, and it is a human.
 """
@@ -55,12 +63,48 @@ def new_id() -> str:
     return f"pc-{run_ts()}-{uuid.uuid4().hex[:6]}"
 
 
+def identity(kind: str, routine: str, fields: dict) -> tuple:
+    """What makes two proposals THE SAME ask — the key a second one is refused on.
+
+    Per kind, because what repeats differs: a `create_routine` repeats on its SLUG (the
+    instruction may be reworded on the second attempt and it is still the same routine), a
+    `manage_lane` on the verb and the lane it names, a `library-drift` on the gap it reports
+    (a later commit re-reports the same gap), and a `goal-reached` on the routine alone —
+    a met goal is sticky, so every later run would file an identical retirement.
+    """
+    if kind == "create_routine":
+        return (kind, str(fields.get("slug") or ""))
+    if kind == "manage_lane":
+        return (kind, routine, str(fields.get("verb") or ""),
+                str(fields.get("target") or fields.get("name") or ""))
+    if kind == "library-drift":
+        return (kind, routine, str(fields.get("entity") or ""))
+    return (kind, routine)
+
+
+def find_equivalent(routines_home: Path, *, kind: str, routine: str,
+                    fields: dict) -> dict | None:
+    """The standing proposal this one would duplicate, or None."""
+    key = identity(kind, routine, fields)
+    return next((rec for rec in load_all(routines_home)
+                 if identity(str(rec.get("kind") or ""), str(rec.get("routine") or ""),
+                             rec.get("fields") or {}) == key), None)
+
+
 def queue(routines_home: Path, *, kind: str, routine: str, run_id: str, fields: dict,
           summary: str) -> dict:
     """Write one pending creation and return the record. `fields` is the action's own fields,
     stored verbatim — the materializer reads exactly what the run proposed, so what the operator
     approves on the page and what gets built cannot drift apart.
+
+    A proposal equivalent to one already standing (`identity`) is NOT queued a second time: the
+    record that is already on the Decisions page is returned instead, so the caller still gets
+    an id that resolves there and the operator still has exactly one card to decide.
     """
+    if standing := find_equivalent(routines_home, kind=kind, routine=routine, fields=fields):
+        log.info("pending: %s already has a standing %s (%s) — not queued twice",
+                 routine, kind, standing["id"])
+        return standing
     rec = {"id": new_id(), "kind": kind, "routine": routine, "run_id": run_id,
            "created_at": now_iso(), "summary": summary, "fields": fields}
     d = pending_dir(routines_home)
@@ -109,11 +153,13 @@ def notify_proposer(server: ServerConfig, rec: dict, outcome: str) -> bool:
     routine_dir = server.routines_home / str(rec.get("routine") or "")
     if not (routine_dir / "routine.yaml").is_file():
         return False
-    inbox = routine_dir / "inbox"
-    inbox.mkdir(exist_ok=True)
-    atomic_write_json(inbox / f"msg-pending-{rec['id']}.json",
-                      {"text": f"[queued creation {outcome}] Your proposed "
-                               f"{rec.get('kind')} — {rec.get('summary')} — was {outcome} by the "
-                               "user on the Decisions page. Nothing else is pending from it.",
-                       "ts": now_iso(), "via": "pending"})
+    # Through the ONE writer of the msg-* shape (engine/inbox); the stem is the proposal id,
+    # so a second decision on one proposal cannot queue a second message about it.
+    from .engine import inbox
+
+    inbox.file_message(routine_dir,
+                       f"[queued creation {outcome}] Your proposed "
+                       f"{rec.get('kind')} — {rec.get('summary')} — was {outcome} by the "
+                       "user on the Decisions page. Nothing else is pending from it.",
+                       via="pending", name=f"pending-{rec['id']}")
     return True

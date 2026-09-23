@@ -10,6 +10,7 @@ from types import SimpleNamespace
 import pytest
 
 from rsched import landlock, sandbox, utils_run
+from rsched.captured_output import CapturedOutput
 
 CMD = ["uv", "run", "--script", "/x/utils/demo/main.py", "--json"]
 
@@ -85,15 +86,15 @@ def test_prewarm_opens_network_for_build_time_dep_install(tmp_path, monkeypatch)
     dependency install. prewarm_script_deps must resolve deps with the network OPEN
     (net=True) regardless — otherwise a net: none util can never install a third-party dep
     (its selftest fetch is denied) and authors are pushed to mis-declare net: outbound."""
-    from rsched import utils_lib
     _force_abi(monkeypatch, 4)
     captured = {}
 
-    def fake_run(cmd, **kwargs):
+    def fake_jailed(cmd, **kwargs):
         captured["cmd"] = cmd
-        return SimpleNamespace(returncode=1, stdout="", stderr="offline")  # install fails
+        # a failed install: the prewarm is best-effort and reports nothing to the caller
+        return utils_run.Jailed(1, CapturedOutput(""), CapturedOutput("offline"), False)
 
-    monkeypatch.setattr(utils_lib.subprocess, "run", fake_run)
+    monkeypatch.setattr(utils_run, "run_jailed", fake_jailed)
     policy = sandbox.SandboxPolicy(mode="permissive")
     # A prewarm failure must NOT raise — the real run reports the genuine error.
     utils_run.prewarm_script_deps("/x/utils/demo/main.py", policy, tmp_path)

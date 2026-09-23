@@ -115,3 +115,108 @@ async def test_scheduler_boot_catchup_arms_missed_lanes(make_routine, tmp_path):
     await sched.boot_catchup()
     rec = lane_runs.read(home, lane["id"])
     assert rec is not None and rec["armed_by"] == "catchup"
+
+
+async def test_a_pause_skipped_lane_fire_is_not_made_up_at_the_next_boot(make_routine, tmp_path,
+                                                                        monkeypatch):
+    """A deliberate skip is a HANDLED fire, so it moves the watermark.
+
+    Only an arm stamped it before, so a fire the operator's global pause skipped still read as
+    unarmed — and the daemon restarts nightly, so the next boot fired the whole chain and told
+    the health stream the daemon had been down. `pause` promises the opposite in as many words:
+    resuming does not backlog-fire what came due while paused.
+    """
+    import asyncio
+
+    import rsched.daemon.scheduler as sched_mod
+    from conftest import FakeRunner
+    from rsched.daemon import pause
+    from rsched.daemon.events import EventBus
+    from rsched.daemon.scheduler import Scheduler
+
+    make_routine(slug="member")
+    monkeypatch.setattr(sched_mod, "TICK_S", 0.02)
+    server = _server(tmp_path)
+    home = server.routines_home
+    lane = lanes.create(home, name="Daily", members=[{"slug": "member"}],
+                        cron="0 7 * * *", tz="UTC")
+    stale = datetime.now(UTC) - timedelta(days=3)
+    lane_fires.stamp(home, lane["id"], stale.isoformat())
+    pause.set_paused(server, True)
+    fr = FakeRunner()
+    sched = Scheduler(server, fr, EventBus())
+    task = asyncio.create_task(sched.run_forever())
+    await asyncio.sleep(0.05)
+    sched.lane_next_fires[lane["id"]] = datetime.now(UTC) - timedelta(seconds=1)
+    for _ in range(100):
+        await asyncio.sleep(0.02)
+        if (lane_fires.last_armed(home, lane["id"]) or stale) > stale:
+            break
+    task.cancel()
+
+    assert fr.fired == []                                    # paused: the chain never armed
+    assert lane_runs.read(home, lane["id"]) is None
+    pause.set_paused(server, False)
+    assert lane_catchup.boot_catchup(server, datetime.now(UTC)) == []
+    assert not [e for e in _events(server) if e["event"] == "lane_fire_catchup"]
+
+
+def test_concurrent_stamps_keep_both_watermarks(tmp_path, monkeypatch):
+    """One file holds every lane's watermark and is rewritten whole, and three contexts write
+    it: the scheduler on the loop thread, the web layer's sync handlers on FastAPI's
+    threadpool, and a root conversation's engine PROCESS through `manage_lane`. Unlocked, two
+    overlapping stamps each read, each write, and one is lost — which is exactly the
+    precondition for a spurious make-up chain at the next boot.
+
+    The read-modify-write window is widened deterministically, so this fails on the unlocked
+    version every time rather than when the scheduler happens to lose the coin toss.
+    """
+    import threading
+    import time
+    home = tmp_path
+    made = [lanes.create(home, name=f"L{i}", cron="0 7 * * *", tz="UTC") for i in range(6)]
+    real_load = lane_fires.load
+    monkeypatch.setattr(lane_fires, "load",
+                        lambda h: (real_load(h), time.sleep(0.02))[0])
+    start = threading.Barrier(len(made))
+
+    def stamp(lane):
+        start.wait()
+        lane_fires.stamp(home, lane["id"])
+
+    threads = [threading.Thread(target=stamp, args=(rec,)) for rec in made]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert sorted(real_load(home)) == sorted(rec["id"] for rec in made)
+
+
+def test_a_lane_is_armed_once_even_under_a_concurrent_arm(tmp_path, monkeypatch):
+    """'One in-flight chain per lane' is an exists-then-write, and its three writers sit in
+    three different contexts — so the check and the write have to be one critical section or a
+    lane fires two chains at once."""
+    import threading
+    import time
+    home = tmp_path
+    lane = lanes.create(home, name="Nightly", cron="0 7 * * *", tz="UTC")
+    real_new_id = lane_runs.new_id
+    monkeypatch.setattr(lane_runs, "new_id",
+                        lambda: (time.sleep(0.02), real_new_id())[1])
+    start = threading.Barrier(5)
+    armed: list[dict] = []
+    guard = threading.Lock()
+
+    def arm():
+        start.wait()
+        rec = lane_runs.arm(home, lane, default_on_failure="continue", armed_by="ui")
+        if rec is not None:
+            with guard:
+                armed.append(rec)
+
+    threads = [threading.Thread(target=arm) for _ in range(5)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert len(armed) == 1

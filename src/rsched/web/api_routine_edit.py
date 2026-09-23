@@ -1,6 +1,9 @@
-"""Routine config editing: general rules, permissions+capabilities, the PATCH endpoint,
-run-now, and archive — the write half of the old api_routines (which keeps the read
-surfaces: cards, detail, health, recipe, artifacts).
+"""Routine config editing: general rules, the two permission layers, run-now and archive —
+the write half of the old api_routines, which keeps the read surfaces (cards, detail,
+health, the state graph). The generic validated `PATCH /routines/{slug}` lives in
+api_routine_patch.py and routes its two authority keys back through
+`write_permission_layers` here; a routine's artifacts and recipe files are
+api_routine_files.py.
 """
 
 from __future__ import annotations
@@ -11,15 +14,17 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
+from .. import pending_edits
 from .. import rules as rules_mod
 from ..ids import now_iso, run_ts
-from ..paths import atomic_write_yaml, read_yaml
+from ..paths import read_yaml
 from .routines_common import (
     _git_commit,
     _info,
     _state,
     active_run_dir,
     guard_not_active,
+    write_routine_config,
 )
 
 router = APIRouter(tags=["routines"])
@@ -108,21 +113,16 @@ def resolve_permission_layers(server, body: PermissionsBody, current: dict,
     its domain supplies (`runs`/`workflows` back to none/catalog); the explicit "off" it
     writes then SHADOWS the domain's value, since a routine's own key always wins.
     """
-    from .. import library_docs
-    from ..grants import (
-        capabilities_for,
-        floor_capabilities,
-        normalize_capabilities,
-        read_library_requires,
-    )
+    from ..grants import capabilities_for, floor_capabilities, normalize_capabilities
+    from ..readmodels import library_reads
 
-    available = set(library_docs.slugs(server.permissions_home))
+    available = set(library_reads.doc_slugs(server.permissions_home))
     active = [p for p in body.active if p in available]
     base, problems = normalize_capabilities(
         body.capabilities if body.capabilities is not None else current)
     if body.capabilities is not None and problems:
         raise HTTPException(422, "; ".join(problems))
-    lib = read_library_requires(server.permissions_home)
+    lib = library_reads.requires(server.permissions_home)
     # Bind the two layers (D8): RAISE the mapping to cover every held doc's requires, then
     # FLOOR it back to them — a gated action / reserved util / run access survives only as
     # the means of a HELD permission. The permission is the switch; the confirm level and
@@ -131,6 +131,56 @@ def resolve_permission_layers(server, body: PermissionsBody, current: dict,
     caps = floor_capabilities([*active, *(inherited or [])], lib,
                               capabilities_for(active, lib, base))
     return active, caps
+
+
+def write_permission_layers(server, info, body: PermissionsBody, raw: dict) -> dict:
+    """Resolve both permission layers for one save and record in `raw` ONLY what this
+    routine owns — the whole of the two-layer write, for every endpoint that performs one.
+
+    Two things happen here and neither is optional. First the cascade
+    (`resolve_permission_layers`): unknown docs dropped, the mapping raised to cover every
+    held doc's requires and floored back to them, with the DOMAIN's docs counted for the
+    floor so a member never loses a capability its domain supplies.
+
+    Then the strip, which is what makes the write safe on a domained routine. The panel and
+    `info.cfg.permissions` are both the EFFECTIVE config, in which a doc the domain supplies
+    is indistinguishable from one this routine holds itself. Writing that back verbatim makes
+    the member's own file own every inherited doc, list entry and dial — and a member's own
+    key always wins, so the domain never reaches this routine again (F489: one save flattened
+    five inherited docs and three inherited actions into a member's file and widened `runs`
+    none → last on the way). `strip_shared_dials` + `strip_shared_list` leave the domain's
+    contributions to the domain while keeping every entry the member already had of its own.
+
+    The strip is why this is ONE function rather than a step each caller remembers: the PUT
+    performed it and the PATCH did not, so a config_patch that named only a confirm dial
+    un-inherited the whole domain block on its way through.
+
+    Returns the three layers for the response (R102: a client that sent a doc which is the
+    DOMAIN's must not be told it was saved here, because it was not).
+    """
+    from ..config.domainconfig import domain_config_for, strip_shared_dials, strip_shared_list
+
+    shared, _ = domain_config_for(info.cfg.dir, info.cfg.domain)
+    inherited_docs = list(shared.get("permissions") or [])
+    active, caps = resolve_permission_layers(server, body, info.cfg.capabilities or {},
+                                             inherited=inherited_docs)
+    caps = strip_shared_dials(caps, shared.get("capabilities") or {}, body.capabilities or {})
+    before_docs = raw.get("permissions")
+    own_active = strip_shared_list(active, inherited_docs,
+                                   before_docs if isinstance(before_docs, list) else [])
+    before_caps = raw.get("capabilities")
+    caps_before: dict = before_caps if isinstance(before_caps, dict) else {}
+    shared_caps = shared.get("capabilities") or {}
+    for key, val in list(caps.items()):
+        if isinstance(val, list) and isinstance(shared_caps.get(key), list):
+            before = caps_before.get(key)
+            caps[key] = strip_shared_list(val, shared_caps[key],
+                                          before if isinstance(before, list) else [])
+    raw["permissions"] = own_active
+    raw["capabilities"] = caps
+    return {"active": active, "own": own_active,
+            "inherited": [p for p in inherited_docs if p not in own_active],
+            "capabilities": caps}
 
 
 @router.put("/routines/{slug}/permissions")
@@ -143,49 +193,15 @@ def set_permissions(request: Request, slug: str, body: PermissionsBody) -> dict:
     info = _info(request, slug)
     # No busy-guard (D35): the engine reads routine.yaml exactly ONCE, at run boot
     # (runtime.run_routine); a save during a live run cleanly applies to the NEXT run.
-    server = _state(request).server
-    # D82: permissions this routine holds through its DOMAIN count for the floor, or saving
-    # here would strip every capability the domain supplies and write an explicit "off" that
-    # then shadows it (a routine's own key always wins over the domain's).
-    from ..config.domainconfig import domain_config_for, strip_shared_dials, strip_shared_list
-    shared, _ = domain_config_for(info.cfg.dir, info.cfg.domain)
-    inherited_docs = list(shared.get("permissions") or [])
-    active, caps = resolve_permission_layers(server, body, info.cfg.capabilities or {},
-                                             inherited=inherited_docs)
-    # …and record only what DIFFERS from the domain, or the concrete dial the floor always
-    # emits would shadow it and no later domain change could reach this routine.
-    caps = strip_shared_dials(caps, shared.get("capabilities") or {}, body.capabilities or {})
     path = info.cfg.dir / "routine.yaml"
     raw = read_yaml(path, {})
-    # The panel is built from the EFFECTIVE config, so what it sends back includes everything
-    # the DOMAIN supplies. Writing that verbatim would make this routine's own file own every
-    # inherited doc and list entry — and a member's own key always wins, so the domain would
-    # never reach it again (F489: one save on a domained routine flattened five inherited docs
-    # and three inherited actions into its file, and widened `runs` none → last on the way).
-    # So the file records only what the MEMBER decided: the domain's contributions are left to
-    # the domain, while an entry the member already had of its own survives the round trip.
-    own_before = raw.get("permissions") if isinstance(raw.get("permissions"), list) else []
-    own_active = strip_shared_list(active, inherited_docs, own_before)
-    caps_before = raw.get("capabilities") if isinstance(raw.get("capabilities"), dict) else {}
-    shared_caps = shared.get("capabilities") or {}
-    for key, val in list(caps.items()):
-        if isinstance(val, list) and isinstance(shared_caps.get(key), list):
-            before = caps_before.get(key)
-            caps[key] = strip_shared_list(val, shared_caps[key],
-                                          before if isinstance(before, list) else [])
-    raw["permissions"] = own_active
-    raw["capabilities"] = caps
-    atomic_write_yaml(path, raw)
-    _git_commit(info.cfg.dir, f"permissions: {', '.join(own_active) or '(none)'}")
-    # Report both halves rather than the merged list (R102): a client that sent a doc which is
-    # the DOMAIN's cannot be told it was saved here, because it was not — the effective state
-    # is `active`, but only `own` is what this file now holds.
-    return {"ok": True, "active": active, "own": own_active,
-            "inherited": [p for p in inherited_docs if p not in own_active],
-            "capabilities": caps}
-
-
-    #                                          dir unlocks recipe self-edit — the improver's lever)
+    layers = write_permission_layers(_state(request).server, info, body, raw)
+    write_routine_config(request, info, raw,
+                         message=f"permissions: {', '.join(layers['own']) or '(none)'}",
+                         fields=["permissions", "capabilities"],
+                         values={"permissions": layers["active"],
+                                 "capabilities": layers["capabilities"]})
+    return {"ok": True, **layers}
 
 
 @router.post("/routines/{slug}/run")
@@ -202,14 +218,20 @@ async def run_now(request: Request, slug: str) -> dict:
 
 # Places a routine publishes to that OUTLIVE it, keyed by a marker in its own config.
 # `root` is the kit/library path a publisher is granted; `owner` is who can actually remove
-# the residue, because residue nobody owns is residue nobody removes.
+# the residue, because residue nobody owns is residue nobody removes — and `owner` therefore
+# names whoever CAN act, never whoever sounds responsible. It said "steward-hub-maintainer"
+# and nobody could act on that: the kit's api.php has no delete-project op (say · revise ·
+# retract · advance · put-state · put-model · put-items · seen · put-progress · lease ·
+# invite-*), and no routine has a way onto that host to install one (FTP confinement, D128).
+# An owner who cannot perform the removal is the same silence this inventory exists to end.
 EXTERNAL_SURFACES = (
     {"marker": "libraries/web/steward",
      "surface": "steward hub",
-     "owner": "steward-hub-maintainer",
+     "owner": "the operator",
      "locator": "_store/{slug}/ on the steward host",
      "note": "the hub derives a card from the published store directory, so the card stands "
-             "until that directory goes"},
+             "until that directory goes — and removing it is a manual host operation: no "
+             "routine and no kit api.php operation can delete a project store"},
 )
 
 
@@ -235,6 +257,28 @@ def external_residue(cfg) -> list[dict]:
             if any(s["marker"] in r for r in roots)]
 
 
+def _leave_lanes(home: Path, slug: str) -> list[str]:
+    """Drop an archived routine from every lane that holds it, returning the lane ids touched.
+
+    CLAUDE.md justifies the missing cascade with "routines are deleted out of band" (F442) —
+    but archive IS the in-band deletion, and this is the one moment the web layer knows the
+    routine is gone. Left in place, the slug becomes a member with no catalog entry: the next
+    chain fire logs `lane member missing`, files a health event, and under `on_failure: stop`
+    halts the chain — so every member after it silently stops firing until someone edits the
+    lane by hand. F442's tolerance stays for the out-of-band case, which is the one nothing
+    can cascade.
+    """
+    from .. import lanes
+
+    touched = []
+    for lane in lanes.list_lanes(home):
+        members = [m for m in lane.get("members") or [] if m.get("slug") != slug]
+        if len(members) != len(lane.get("members") or []):
+            lanes.update(home, lane["id"], members=members)
+            touched.append(lane["id"])
+    return touched
+
+
 @router.post("/routines/{slug}/archive")
 def archive_routine(request: Request, slug: str) -> dict:
     info = _info(request, slug)
@@ -251,6 +295,9 @@ def archive_routine(request: Request, slug: str) -> dict:
     # and a later routine reusing the slug would silently inherit them.
     from ..secrets import drop_routine_secrets
     dropped = drop_routine_secrets(slug)
+    lanes_left = _leave_lanes(home, slug)
+    # A queued mid-run edit for a routine that no longer exists can only fail at replay.
+    shutil.rmtree(pending_edits.spool_dir(home, slug), ignore_errors=True)
     _state(request).scheduler.rescan()
     # R1658 / bina, 2026-09-21: archiving used to tidy what it could reach and say nothing
     # about the rest, so a routine's steward card outlived it three times in two weeks and
@@ -259,4 +306,5 @@ def archive_routine(request: Request, slug: str) -> dict:
     # routine cannot clean up after itself either: publishing needs the credentials the
     # line above has just dropped.
     return {"ok": True, "archived_to": str(target), "ts": now_iso(),
-            "secrets_dropped": dropped, "external_residue": residue}
+            "secrets_dropped": dropped, "lanes_left": lanes_left,
+            "external_residue": residue}

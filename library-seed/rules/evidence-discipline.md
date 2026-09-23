@@ -22,6 +22,12 @@ summary and neither can see the conversation that produced it.
 - **Never describe a file you have not opened.** If a conclusion turns on what a file
   contains, `read_file` it first. Inference from a filename, a directory layout, or an
   earlier run's summary is a guess wearing the clothes of a fact.
+- **Observe from the claim's own vantage.** A claim about what a person SEES is backed only
+  by a check made the way their client makes it — the page loaded in a real browser, a probe
+  that runs with an origin and a document. A server-side 200 proves reachability and nothing
+  about rendering: an embedded frame, a websocket upgrade, a cookie flag, a content-security
+  rule or a cross-origin fetch each pass it in exactly the case that fails. A regression test
+  for such a claim counts only once it has been shown red on the defect itself.
 - **Report failure as failure.** A util that exited nonzero, a step you skipped, a check
   that never ran — say so plainly, with the output. A `partial` finish that names what broke
   is worth far more than an `ok` that papers over it.

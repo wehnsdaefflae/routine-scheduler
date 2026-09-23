@@ -445,7 +445,8 @@ def test_two_asks_in_one_turn_get_two_decision_records(tmp_path):
     from rsched.engine.inbox import file_question, resolve_question
     from rsched.engine.interact import _free_qid
 
-    ctx = SimpleNamespace(routine=SimpleNamespace(dir=tmp_path), run_ts=TS, turn=5)
+    ctx = SimpleNamespace(routine=SimpleNamespace(dir=tmp_path), run_ts=TS, turn=5,
+                          root_routine_dir=tmp_path)
     first = _free_qid(ctx)
     assert first == f"q-{TS}-5"
     file_question(tmp_path, first, "Which venue?", [], TS)
@@ -539,4 +540,59 @@ def test_a_global_write_lands_in_the_library_when_the_dial_is_autonomous(
     rec = json.loads(written[0].read_text(encoding="utf-8"))
     assert rec["regex"] == "^util:fs-ops mv " and rec["id"].startswith("rem-")
     assert store.load_local(d)[0] == []            # a global reminder is NOT in the local store
+    assert status == "ok"
+
+
+# --- the tally's one consumer ------------------------------------------------------------
+
+@pytest.mark.parametrize(("stats", "expected"), [
+    ({"fires": 4, "could_not": 4}, False),                      # too few fires to be evidence
+    ({"fires": 6, "could_not": 4, "would_have": 1, "didnt": 1}, True),
+    ({"fires": 6, "could_not": 2, "would_have": 3, "didnt": 1}, False),   # it is working
+    ({"fires": 6, "could_not": 3, "would_have": 3}, False),      # a tie is not a plurality
+    ({"fires": 9}, False),                                       # unlabelled says nothing
+])
+def test_looks_too_broad_reads_could_not_as_the_indicting_label(stats, expected):
+    """`could_not` is the one label that indicts the PATTERN: the consequence was impossible
+    for the action that was held, so the turn bought nothing. `would_have` and `didnt` both
+    describe a reminder doing its job.
+    """
+    assert store.looks_too_broad({**store.blank_stats(), **stats}) is expected
+
+
+def test_a_hold_shows_the_reminder_its_own_record_when_the_pattern_looks_too_broad(
+        make_routine, scripted):
+    """The four-way tally was written on every fire and read by nothing — 198 holds in 21
+    days, 67 labelled `could_not`, and the only prune path was the model spontaneously
+    remembering to look. The hold the run is already paying for is where the evidence belongs:
+    `remind` rides that same turn for free.
+    """
+    _d, ep, status, _events = _run(
+        make_routine, scripted,
+        [util("danger"),
+         {**write_file("state/other.txt", content="x"),
+          "remind_feedback": {"id": "rem-broad", "label": "could_not"}},
+         finish()],
+        local=[_rem(rid="rem-broad", regex="^util:danger", desc="it wipes the workdir",
+                    fires=7, could_not=5, would_have=1)])
+    shown = _prompt_text(ep)
+    assert "THIS REMINDER'S OWN RECORD" in shown
+    # the fire this hold just recorded is included — the tally the model reads is current
+    assert "8 fires" in shown and "5 `could_not`" in shown
+    assert "revise its regex or delete it" in shown
+    assert status == "ok"
+
+
+def test_a_working_reminder_holds_without_the_prune_line(make_routine, scripted):
+    _d, ep, status, _events = _run(
+        make_routine, scripted,
+        [util("danger"),
+         {**write_file("state/other.txt", content="x"),
+          "remind_feedback": {"id": "rem-good", "label": "would_have"}},
+         finish()],
+        local=[_rem(rid="rem-good", regex="^util:danger", desc="it wipes the workdir",
+                    fires=7, would_have=5, could_not=1)])
+    shown = _prompt_text(ep)
+    assert "ACTION HELD" in shown
+    assert "THIS REMINDER'S OWN RECORD" not in shown
     assert status == "ok"

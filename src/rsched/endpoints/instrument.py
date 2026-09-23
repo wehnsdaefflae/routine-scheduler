@@ -144,12 +144,12 @@ class InstrumentedEndpoint:
     def complete(self, messages: list[Message], *,
                  model: str, schema: dict | None = None,
                  effort: str | None = None, max_tokens: int | None = None,
-                 timeout: int = DEFAULT_TIMEOUT, session: str | None = None,
+                 timeout: int = DEFAULT_TIMEOUT,
                  temperature: float | None = None,
                  purpose: str | None = None,
                  kind: str | None = None) -> Completion:
         inner_kwargs = {"model": model, "schema": schema, "effort": effort,
-                        "max_tokens": max_tokens, "timeout": timeout, "session": session,
+                        "max_tokens": max_tokens, "timeout": timeout,
                         "temperature": temperature, "cacheable": kind in CACHEABLE_KINDS}
         sink = _sink
         if sink is None:                       # fast path: nothing observing
@@ -180,12 +180,14 @@ class InstrumentedEndpoint:
         transport retries were exhausted on a retryable-class failure (outage, rate limit,
         network). A deterministic failure — bad key, malformed request, a Settings probe
         with a wrong credential — is a CONFIG error: cooling it would poison resolution
-        for 5 minutes after the user fixes the config. (The engine's turn completion still
-        cools a model it abandons MID-TURN, whatever the error class — that judgment lives
-        at the engine seam, engine/completion.py.)
+        for 5 minutes after the user fixes the config. A provider that sent a `Retry-After`
+        is cooled for at least that long — it has stated when it will serve again.
+        (The engine's turn completion still cools a model it abandons MID-TURN, whatever
+        the error class — that judgment lives at the engine seam, engine/degrade.py.)
         """
         if exc.retryable:
-            failover.mark_failed(self._inner.name, model)
+            failover.mark_failed(self._inner.name, model,
+                                 cooldown_s=failover.cooldown_for(exc))
 
 
 def _emit(sink, rec: dict) -> None:

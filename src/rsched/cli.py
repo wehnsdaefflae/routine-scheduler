@@ -135,6 +135,7 @@ def cmd_validate(args) -> int:
                if server.routines_home.is_dir() else [])
     from .readmodels.remedies import surface_lines
     from .readmodels.surface import routine_surface
+    from .workflows.recipelint import recipe_notes
 
     for d in targets:
         cfg, problems = load_routine(d)
@@ -148,6 +149,13 @@ def cmd_validate(args) -> int:
                 lines = surface_lines(routine_surface(server, cfg))
             except (OSError, ValueError) as exc:      # a broken library must not fail validate
                 lines = [f"NOTE  setup surface unavailable: {exc}"]
+        # And a third question: does the RECIPE still hold together (F516)? The config can be
+        # perfect and the setup complete while main.md routes to a stage somebody renamed. It
+        # is reported and never counted — a recipe is a hand-tuned document, and a check that
+        # turned a phrasing into a failed command would be switched off inside a week.
+        recipe: list[str] = []
+        if cfg:
+            recipe = recipe_notes(d, cfg.capabilities)
         blocking = [ln for ln in lines if ln.startswith("FAIL")]
         status = "ok" if cfg and not problems and not blocking else "PROBLEMS"
         print(f"{d.name}: {status}")
@@ -155,6 +163,8 @@ def cmd_validate(args) -> int:
             print(f"  - {pr}")
         for ln in lines:
             print(f"  {ln}")
+        for ln in recipe:
+            print(f"  NOTE  recipe · {ln}")
         total.extend(problems)
         total.extend(blocking)
     for line in _instance_problems(server):

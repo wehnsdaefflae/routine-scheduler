@@ -96,7 +96,9 @@ def test_mutating_routes_need_a_binding_and_the_operator_token(api_client, monke
     assert r.status_code == 400 and "Proxy management" in r.json()["detail"]
     assert c.post("/api/settings/endpoints/nope/proxy-login",
                   json={"provider": "anthropic"}).status_code == 404
-    # the routine token reads the account list but may not sign anything in
+    # the routine token reaches none of this: /api/settings is a denied READ subtree for it
+    # (web/app.ROUTINE_TOKEN_DENIED_READS), because the account list names the subscription
+    # credentials a run has no business enumerating — and it may not sign anything in either.
     _add_proxy_pair(c)
     monkeypatch.setattr(cliproxy_login, "accounts",
                         lambda bound, providers: {"supported": True, "ok": True,
@@ -105,7 +107,7 @@ def test_mutating_routes_need_a_binding_and_the_operator_token(api_client, monke
     server.routine_token = "routine-only"
     headers = {"Authorization": "Bearer routine-only"}
     assert c.get("/api/settings/endpoints/claude-proxy/proxy-accounts",
-                 headers=headers).json()["ok"]
+                 headers=headers).status_code == 403
     r = c.post("/api/settings/endpoints/claude-proxy/proxy-login",
                json={"provider": "anthropic"}, headers=headers)
     assert r.status_code == 403 and "read-only" in r.json()["detail"]

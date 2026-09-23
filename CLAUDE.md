@@ -9,12 +9,16 @@ git repo under `~/routines/<slug>`. Runs execute on a provider-agnostic engine w
 is the harness* — the orchestrator LLM follows the workflow document and acts only through one JSON
 action per turn. **A second AGENT LOOP in the path is banned**: it fights this harness and hides the
 conversation. Endpoints are model TRANSPORTS only (docs/architecture.md). Routines run code through a global util,
-plus — for the ONE-OFF only — the `shell` ACTION behind the `shell` capability (0.287.0; it was a
-reserved util until then, where `capabilities.utils` gated it as an exception rather than
-projecting it out of the schema). Every util subprocess runs inside a Landlock sandbox scoped to
+plus — for the ONE-OFF only — the `shell` ACTION behind the `shell` capability. Every util
+subprocess runs inside a Landlock sandbox scoped to
 the run's permissions INTERSECTED with the util's own `fs:` declaration, and a `shell` command
 runs in the same jail on the widest of those terms — the run's granted roots, no store secret
-(docs/sandboxing.md). The instruction contains only the task; cross-cutting conduct is
+(docs/sandboxing.md). All three callable kinds run through ONE process seam
+(`utils_run.run_jailed`): its own process group, tempfile capture read through a capped reader,
+and what was printed before a kill is kept. The jail cannot carve `routine.yaml` out of the
+routine's own directory — Landlock unmasks access UP the path — so the "a run never writes
+routine.yaml" seal is ACTION-LAYER only and the runner REPORTS a change it sees rather than
+preventing it. The instruction contains only the task; cross-cutting conduct is
 a set of GENERAL RULES with ONE library copy each (`rules:` in routine.yaml holds slugs — the run
 reads the prose with `read_rule` and applies the principle to its own case); schedule, PERMISSIONS,
 workdir, budgets, and model roles are routine config (`routine.yaml` / UI), started from a
@@ -36,29 +40,39 @@ one you are about to touch, not all of them.
   fails on drift
 - Compaction's archive is ENGINE-INDEXED (`compaction._build_index`): the model supplies each
   file's content and a one-line `about`, the engine supplies the filenames and therefore writes
-  `INDEX.md` — the `.memory/INDEX.md` split, for the reason the old design proved. A
-  model-authored index named files the engine then RENAMED, so 36% of live history reads
-  returned ENOENT. Every archived file has exactly one index line, carried forward by the
-  engine; the prior index is never re-fed to the model. `engine/recall.py` surfaces one
-  archived file when the action overlaps its topic, and `window._warn_before_eviction` gives
-  the run one turn to move what matters into a durable store first
+  `INDEX.md` — the same split that governs `.memory/INDEX.md`, because a model-authored index
+  named files the engine then renamed and 36% of live history reads returned ENOENT. Every
+  archived file has exactly one index line, carried forward by the engine; the prior index is
+  never re-fed to the model. `engine/recall.py` surfaces one archived file when the action
+  overlaps its topic, and `window._warn_before_eviction` gives the run one turn to move what
+  matters into a durable store first. Three invariants the gate depends on, narrated in
+  docs/architecture.md: it is sized in CALIBRATED tokens (`window.note_prompt_size` →
+  `_calibrated_window`, read through the one line in `compact_if_needed`), `maybe_compact` takes
+  the cap as an ARGUMENT so the caller's decision is the only one, and `clamp_to_cap` never
+  touches message 0 — the composed system prompt is the largest body in every run, so ordering by
+  size cut the recipe's own contract first and rewrote the cached prefix from byte zero
 - The reminder layer is ON by default at `local` (the `reminders` permission is in
-  DEFAULT_PERMISSIONS and ADOPT_PERMISSIONS): a caution a run leaves itself about its own
-  actions is ordinary conduct, and a layer nobody switches on never learns anything. `global`
-  is NOT — the shared store is a SEEDED library directory (`<library>/reminders/`), a write
-  there needs the dial raised AND the user's approval, and the Library tab is where one is
-  inspected or removed
+  DEFAULT_PERMISSIONS and ADOPT_PERMISSIONS, and `reminders: "local"` in DEFAULT_CAPABILITIES —
+  the one dial whose default is not off, which is why it has to be named there at all): a caution
+  a run leaves itself about its own actions is ordinary conduct, and a layer nobody switches on
+  never learns anything. `global` is NOT — the shared store is a SEEDED library directory
+  (`<library>/reminders/`), a write there needs the dial raised AND the user's approval, and the
+  Library tab is where one is inspected or removed. The four-way tally has exactly ONE automatic
+  reader (`reminders.looks_too_broad`); nothing demotes a reminder behind the run's back
 - `docs/reminders.md` — the consequence-reminder layer (the pre-execution hold, the two
   stores, the four-way tally that tunes a pattern); `docs/rule-assists.md` — its curated
   half: a rule's own `assists:` block surfacing its operative line at the moment it applies
-  (why timing is possible where compliance-checking is not, the three moments, and the
+  (why timing is possible where compliance-checking is not, the four moments — a pre-action
+  HOLD plus three reminder moments, coupled to their payloads — and the
   one-shot migration each batch needs to reach a live library)
 - `docs/rules-permissions.md`, `docs/curated-rules.md` — the general-rules layer (each doc's
   `effect:` line — what a routine holding it DOES differently — is what the page labels its
   on/off control with, and the linter requires it), the two-layer
-  permission set, the SETUP SURFACE (`readmodels/surface.py` forwards, `readmodels/remedies.py`
-  for the same rows in WORDS, `library_impact.py` backwards, `daemon/library_watch.py` for
-  changes with no writer), the ACCESS-REQUEST grant model (entities.py ids; allow/deny × now/forever, plus
+  permission set, the SETUP SURFACE (`readmodels/surface.py` is the JOIN; the rows come from
+  `surface_needs` / `surface_schedule` / `surface_caps` speaking `surface_nodes`' vocabulary,
+  `readmodels/remedies.py` says the same rows in WORDS, `library_impact.py` reads the join
+  backwards, `daemon/library_watch.py` catches changes with no writer), the ACCESS-REQUEST
+  grant model (entities.py ids; allow/deny × now/forever, plus
   allow-once for turn-action classes), and each curated rule's provenance
 - `docs/child-runs.md`, `docs/background-tasks.md`, `docs/triggers.md`, `docs/schedule-once.md`
   — the child-run and firing mechanisms
@@ -85,7 +99,15 @@ one you are about to touch, not all of them.
 - `docs/designs.md` — specs for work DECIDED BUT UNBUILT (one entry per queued finding, or
   per decision taken before a finding exists).
   Nothing there describes current behaviour, so never read it as a reference; an entry is
-  deleted when it ships and its narration moves to the subsystem doc it belongs to
+  deleted when it ships and its narration moves to the subsystem doc it belongs to. The
+  `self-audit` routine READS it at orient as one of the three sources of its decided-work queue
+  (`audit/report.json`, `docs/designs.md`, and a report delivered to it whose title begins
+  `DECIDED:`), gives each `## ` entry a decision row, and deletes the entry in the commit that
+  ships it. An entry there is an ORDER, not a note
+- `docs/admin.md`, `docs/run-gates.md`, `docs/revise-recipe.md`, `docs/output-compression.md`,
+  `docs/claude-proxy-cutover.md` — the admin conversation tier, the pre-engine admission gate,
+  in-place recipe revision, stdout compression (ONE engine: stdlib JSON minification, nothing
+  else — no optional dependency), and the subscription transport
 - `.codemap/` — the derived module/route/contract map `self-audit` works from
   (gitignored; regenerate with the `codemap` util, never hand-edit)
 
@@ -101,20 +123,28 @@ one you are about to touch, not all of them.
   or `-k <name>`. Live endpoint smoke tests run only with `RSCHED_LIVE_TESTS=1`.
 - **The BROWSER suite is opt-in.** `tests/ui/` drives the REAL console with Playwright over a
   stub runner (no scheduler, no engine, no LLM; see `tests/ui/conftest.py`). Its conftest marks
-  the whole directory `ui`, and addopts carry `-m "not ui"`, because ~135 browser tests against
-  ~2 150 fast ones is the difference between a four-minute gate and a twenty-minute one — and it
-  is the twenty that decides whether the inner loop gets used. Three ways to run:
-  `uv run pytest -q` (fast), `uv run pytest -q -m ui` (browsers), `uv run pytest -q -m ""`
-  (everything — **what ships a release**). One-time per machine:
-  `uv run playwright install chromium`. Serialize any browser run under
-  `flock /tmp/rsched-gates.lock`: several workers plus a second concurrent gate is the OOM this
-  box has already hit once.
+  the whole directory `ui` AND puts it in one `xdist_group`, and addopts carry `-m "not ui"`,
+  because ~276 browser tests against ~2 150 fast ones is the difference between a two-minute
+  gate and a thirty-minute one — and it
+  is the thirty that decides whether the inner loop gets used. Three selections:
+  `uv run pytest -q` (fast), `-m ui` (browsers), `-m ""`
+  (everything — **what ships a release**).
+  **No browser is installed or launched locally**: the suite attaches over CDP to the compose
+  `chrome` sidecar and serves its fixture console back at the engine container's own address on
+  that network, so the two selections that include it run INSIDE the container and must be given
+  both addresses — `docker compose exec -u 1000:1000 rsched env
+  RSCHED_TEST_CDP=http://172.30.7.10:9222 RSCHED_TEST_BIND=172.30.7.2 uv run pytest -q -m ui`
+  (both pinned in docker-compose.yml; the conftest refuses with this exact command when either
+  is missing). Whenever browser tests are in the selection, `tests/conftest.py::pytest_configure`
+  switches xdist to `--dist loadgroup`, so that one group runs on ONE worker while the fast suite
+  keeps spreading — three workers rendering into one headful Chrome is what the rerun shield had
+  been absorbing. Still serialize any browser run under
+  `flock /tmp/rsched-gates.lock`: two concurrent gates is the OOM this box has already hit once.
   EVERY UI change still gets exercised there — it is the safety net that lets the frontend be
   reworked boldly, and deselecting it by default only trades the safety for speed if the absence
   is LOUD. So every fast run ends by naming the suite it skipped, and says so pointedly when
   `static/` carries uncommitted changes (`tests/conftest.py::pytest_terminal_summary`). A suite
-  that silently does not run reads exactly like a suite that passes, which is how the console
-  shipped a stray `null`, a dock left in the page flow and a TOC nobody could see.
+  that silently does not run reads exactly like a suite that passes.
   `tests/production_guard.py` is the suite's SANDBOX FLOOR (session-scoped autouse): no test
   may write inside the live instance's data homes, and none may spawn this package's CLI —
   that child is a fresh interpreter that would load the production config. Never weaken it to
@@ -141,7 +171,7 @@ one you are about to touch, not all of them.
   subtask, detach, schedule_run, create_routine, manage_lane, list_models, subruns, kill, wait,
   ask_user, report, finish` (30, `actionschema.KINDS`). **`script` runs
   the routine's OWN `scripts/<name>.py`** — persistent helper TOOLING, deliberately NOT a co-equal
-  interpreter of the routine (the "procedure" symmetry doctrine was reversed 2026-08-12): the recipe
+  interpreter of the routine: the recipe
   stays the single interpreter of the task and delegates only judgment-free sub-steps. A repeating
   deterministic step (poll, parse, compute, render) is written ONCE via `write_file` and called
   thereafter — versioned by the routine repo, run in a persistent workdir venv (`<routine>/.venv`,
@@ -160,10 +190,18 @@ one you are about to touch, not all of them.
   the model could have ended itself**: the FIRST budget violation spends a one-time RESERVED FINISH TURN
   (schema narrowed to `finish`, one turn granted, `OBSERVATION (budget spent)` telling it so), and only a
   second violation force-finishes — so a run overruns a budget by at most one turn and the summary is
-  always authored. A finish emitted while an undrained user message waits is deferred so the message
+  always authored. The engine EXECUTES nothing else on that turn: a non-`finish` (non-`report`)
+  action is refused at the dispatch seam, so the promise the observation makes is kept even on a
+  provider with no constrained decoding. The violation is recorded as a transcript event and as
+  `resource`/`limit` fields on the `budget_exhausted` health event and in status.json's
+  `budgets.spent`, so which budget ended a run is answerable by a filter rather than by
+  reconstruction. A finish emitted while an undrained user message waits is deferred so the message
   becomes the next turn (a finish that must stand — the spent reserved turn, an abort — names the
   still-queued message in the summary instead). Budgets are a runaway BACKSTOP, never a pace; do not reintroduce prose that has a run
-  ration its work against the turn counter. Every action carries `say` (finding-first narration:
+  ration its work against the turn counter. The 85% warning is an EVENT, not a state: it is said
+  once at the warn line and once at 95%, per resource. Riding every observation past 85% made it
+  a countdown, and runs converged at the ceiling whether or not their stopping conditions were
+  met. Every action carries `say` (finding-first narration:
   what the last observation taught you + why this action; terse for routine steps, 2-3 sentences
   at decision points; worded per the routine's `deliberation` level) + `kind`, plus an optional
   **`note`** — 1-3 SELF-CONTAINED lines worth keeping beyond the context window, engine-filed to
@@ -181,7 +219,11 @@ one you are about to touch, not all of them.
   (docs/reminders.md). `read_file` batches
   related reads via `paths` (one turn, one
   observation section per file); `edit_file` anchor-replaces in place so revisions cost the diff, not
-  the document; `write_util` mirrors it — `anchor`/`replacement` instead of `content` patches an
+  the document — and a `.json`/`.yaml`/`.toml` file that PARSED before an edit or a string
+  overwrite may not stop parsing because of it (`engine/fileformat.check_after`): the write is
+  refused and the file untouched, so a degraded model's corrupted `replacement` is caught on the
+  turn it is made rather than by the next reader (`.jsonl` is excluded — a partial line is legal
+  there — and repairing an already-broken file is never refused); `write_util` mirrors it — `anchor`/`replacement` instead of `content` patches an
   existing util in place under the same approval + selftest + rollback gate (`util show <name>
   --full` returns the complete source). `write_file` is GROUNDED: overwriting an existing file OUTSIDE the routine's own dir
   is rejected unless this run has seen it (`ctx.seen_paths` — read/viewed/written this run, rebuilt
@@ -193,10 +235,9 @@ one you are about to touch, not all of them.
   `fileops.READ_MAX_BYTES` (8 MiB) is refused from a stat plus an 8 KiB NUL sniff BEFORE any
   decode — the refusal names the size. The listing and the refusal both GROUND the path (a stat
   is a look; `history.seen_paths` reads the refusal's `size` key back on resume), so the delete
-  gate never sends a run to read a media file: on 2026-09-14 a run `read_file`'d a 1.5 GB .mkv to
-  satisfy it, the whole file was decoded into a str twice, and the 3.4 GB host swap-thrashed for
-  five hours until a physical reset. A shell `ls` does not ground — the engine sees only what
-  read_file returned.
+  gate never sends a run to read a media file to satisfy it (one that did decoded a 1.5 GB .mkv
+  into a str twice and swap-thrashed the host for five hours). A shell `ls` does not ground — the
+  engine sees only what read_file returned.
   There is ONE **CHILD RUN** concept (`engine/child.py`) — an isolated run with its own dir, its
   own budget, its own recipe, and a declared relationship to its parent. `spawn` (parallel),
   `subtask` (sequential) and a conversation `branch` are three scheduling MODES of it, never three
@@ -205,8 +246,12 @@ one you are about to touch, not all of them.
   apart (that drift once had the prompt claim children share the parent's working directory).
   Every mode obeys the same contract: isolation, a budget sliced from the parent's remainder, and
   a HAND-BACK — summary always, FILES by the child writing into its own `artifacts/`, which the
-  engine copies to the parent's `artifacts/from-sub-<n>/` and NAMES in the one
-  `CHILD RUN FINISHED (<mode>)` notification. Collection lives in `subruns._collect`, the child's
+  engine copies to the parent's `artifacts/` and NAMES the landed PATHS in the one
+  `CHILD RUN FINISHED (<mode>)` notification. `spawn`, `subtask`, a conversation `branch` and a
+  detached task's delivery all hand back through ONE implementation (`engine/child.py`:
+  `handback_dirname` / `collect_handback` / `handback_text`) — three landing places
+  (`from-sub-<n>`, `from-branch-<slug>`, `from-bg-<id>`), one copy, one wording, and every one of
+  them names the paths rather than a count. Collection lives in `subruns._collect`, the child's
   single finalization point: two paths report an exit (`wait` and the turn boundary), so anything
   that must happen once per child belongs there and not in a reporter. One child-task executor,
   `engine/childrun.py`; a `subtask` with `workflow: "generate"` drafts a new pattern when the
@@ -217,14 +262,21 @@ one you are about to touch, not all of them.
   `inbox/`, which its NEXT SCHEDULED RUN drains — it starts no run and wakes nobody. The target
   closes it by reporting back with `answers: "<R id>"`, adding `closes: true` when the reply ends
   the exchange — a closure is born settled; without it the reply is itself a new open report.
+  An addressed report is also how an OPERATOR-ACCEPTED PROPOSAL reaches a builder: a `DECIDED:`
+  title marks the body as already-authorized work rather than a suggestion, so the receiving
+  routine's queue tells authorization from suggestion without re-surfacing the decision. It keeps
+  its `R` id and gets no second one — an accepted proposal is one piece of work, not two items.
   A report may also TAKE ROWS OVER (`supersedes`, beside `target`): each named row gets a
   `superseded` event, leaves triage at once and reads the CARRIER's status from then on,
   through a chain if the carrier is itself folded later (first fold wins — a row is in exactly
-  one thread). That one operation is what routing and consolidating both lacked. Routing used
-  to leave the original untargeted, so every triage pass re-routed work already handed off (six
-  rows twice in two days, F492); and the `problem-routing` rule has told every holder since
-  2026-08-31 to "add your evidence to the OLDEST open one" — an append the append-only ledger
-  could not perform, which is why live reports went 28 → 50 in the eleven days after it shipped.
+  one thread). A reply may also SETTLE rows it is not
+  answering (`settles`, up to `actionschema.SETTLES_MAX`): folding moves rows into this thread,
+  settling declares them finished, and with `settles` a reply needs no `answers` to carry
+  `closes` — the shape that ends a drained queue in one reply instead of leaving rows
+  settled-in-prose and open-in-the-ledger (F497). That pair is what routing and consolidating
+  both lacked; without it every triage pass re-routed work already handed off (F492), and
+  "add your evidence to the OLDEST open one" asks the append-only ledger for an append it
+  cannot perform.
   Paired with it, `file_report` REFUSES a fourth parallel thread from one sender to one owner
   (`report_threads.OPEN_THREAD_CAP`, D110) and names the open ids oldest-first; a reply and a
   fold are exempt, because both reduce the count and capping the way out is how a cap loses a
@@ -243,29 +295,34 @@ one you are about to touch, not all of them.
   page shows open → in_progress once drained → settled once answered. Triage is therefore
   FORWARDING, not absorbing.
   **`create_routine` / `manage_lane` are conversation-INITIATED, not conversation-only** (F328):
-  a root conversation materializes them, and a run with no user in the loop writes a PROPOSAL to
+  a root conversation materializes them; a run with no user in the loop writes a PROPOSAL to
   `.control/pending-creations/` that the Decisions page materializes with one click through the
-  same `workflows.scaffold` / `rsched.lanes` path. A queued proposal is rendered by ONE shared
-  branch checked before any kind's success wording (`obs_admin.QUEUEABLE_KINDS`): teaching the
-  handlers about the queue and not the renderers is how a proposal came back reading as a
-  completed action over an absent payload (R1200/R1183). `create_routine` carries an optional
+  SAME `workflows.scaffold` / `rsched.lanes` path. Teach the RENDERERS about the queue, not only
+  the handlers — one shared branch checked before any kind's success wording
+  (`obs_admin.QUEUEABLE_KINDS`), or a proposal reads as a completed action over an absent
+  payload (R1200/R1183). The two handlers live in `engine/admin_handlers.py` beside that
+  renderer; `interact.py` is the ASK protocol alone. `create_routine` carries an optional
   `stopping:` — the user's own words for what DONE looks like for one run — which seeds the new
-  routine's STOPPING CONDITIONS instead of evaporating into the instruction prose — so the engine still never writes
-  `routine.yaml`, and a scheduled run holding a finished design no longer has to hand it back to
-  the operator by hand (R353). `manage_lane list` still answers directly (naming each lane's MEMBERS in fire order, F424); every mutating verb
-  queues. A lane is the TEMPORAL axis only — no verb reaches a shared config block or a shared
-  store, because those follow the routine's own `domain:` key, which no run may write.
-  A within-reply CHILD (depth > 0) is still refused outright and never sees the kinds:
-  the queue is for a run that HAS a user, just not right now. Ungated like `report` — the
-  approval is the gate, and it is a human.
+  routine's STOPPING CONDITIONS rather than evaporating into the instruction prose, so the engine
+  still never writes `routine.yaml` (R353). `manage_lane list` answers directly (naming each
+  lane's MEMBERS in fire order, F424); every mutating verb queues. A lane is the TEMPORAL axis
+  only — no verb reaches a shared config block or a shared store, because those follow the
+  routine's own `domain:` key, which no run may write. A within-reply CHILD (depth > 0) is
+  refused outright and never sees the kinds: the queue is for a run that HAS a user, just not
+  right now. Ungated like `report` — the approval is the gate, and it is a human.
   `ask_user` carries an optional `default` — what the run DOES when a blocking ask times out —
   and an optional `request` ("<class>:<name>" entity id, entities.py): a typed ACCESS REQUEST the
   Decisions page settles with one of four decisions (allow/deny × now/forever). Forever-decisions
   are written to routine.yaml by the WEB at click time (`grants:` rows = deny tombstones + secret
   exposure; the engine NEVER writes config); now-decisions live in-memory on the run and reach all
   three enforcers (validate_action, the util sandbox's roots, declared-only env injection).
-  `memory_*` are the ONLY way into `.memory/` (generic file actions are rejected there); the engine
-  owns `.memory/INDEX.md` (built from each write's `about`) and the 100-line note cap.
+  `memory_*` are the ONLY way into `.memory/` for a RUN (generic file actions are rejected
+  there); the engine owns `.memory/INDEX.md` (built from each write's `about`) and the 100-line
+  note cap. The operator's file endpoint agrees about the files the engine owns:
+  `PUT /api/routines/{slug}/file` refuses `routine.yaml`, `state/stopping.json`,
+  `.memory/INDEX.md`, `.git/`, `runs/`, `inbox/` and `questions/` BY NAME
+  (`api_routine_files.NOT_EDITABLE_HERE`), each refusal naming the endpoint or owner that holds
+  it — the operator's own `.memory/` notes stay editable there.
   **`read_rule` / `write_rule` are the general-rules layer** — ONE library copy per rule
   (`<library>/rules/`), never a per-routine fork. A rule may also declare **`assists:`** —
   `(moment, predicate) → line` entries that surface its operative line when it becomes
@@ -300,9 +357,11 @@ one you are about to touch, not all of them.
 - **The prompt surface is documented** in `docs/prompt-anatomy.md` (rendered on the Help tab). Revise
   it with ANY change to composer/loop/actions/schema_guard wording — `tests/test_prompt_anatomy.py`
   pins the load-bearing strings and fails on drift.
-- **Transcript events** (`engine/transcript.py` — append-only JSONL, the engine is the only writer):
-  `header, assistant_action, observation, question, answer, user_injection, subrun_start, subrun_end,
-  compaction, error, stopping_update, finish`. This vocabulary is consumed by the web renderer AND the meta routine.
+- **Transcript events** (`engine/transcript.py` `EVENT_TYPES` — append-only JSONL, the engine is
+  the only writer): `header, assistant_action, observation, question, answer, user_injection,
+  subrun_start, subrun_end, compaction, error, refusal, stopping_update, stages_skipped, finish`
+  (14). This vocabulary is consumed by the web renderer AND the meta routine, so an unknown kind
+  reads as corruption: extend the tuple and both readers together, never one alone.
 
 ## Gotchas
 
@@ -318,7 +377,8 @@ by a test, by the engine, or by a past incident.
   date passes, and on migration-shaped code without a marker.
 - **Documentation is swept, not patched.** On any change, revise ALL affected doc surfaces
   (CLAUDE.md, `docs/`, `static/views/help.js`, README, docstrings) — not the one you were
-  asked about.
+  asked about. A module DOCSTRING is a doc surface: pdoc renders it on the Help tab beside the
+  `docs/` page that may now say the opposite.
 - **The quality gates run on the FULL repo**, not the changed files. `tests/test_quality.py`
   runs ruff, mypy AND vulture (dead code — what ruff cannot see is a symbol whose last caller
   went away; `src` and `tests` are scanned together so a src symbol used only by a test is not
@@ -353,8 +413,8 @@ by a test, by the engine, or by a past incident.
   proposal whose approval writes `enabled: false` through the ordinary PATCH and whose refusal
   REOPENS the goal. Nothing about retirement writes config: that is how a routine disables itself
   without breaking "a run never writes routine.yaml". Only the web (`api_stopping`) creates a goal
-  condition, so a routine can report against a finish line but never draw its own. Sticky + per-run
-  was the defect the scope split undid: 22 of 31 live routines were reading "the job is DONE.
+  condition, so a routine can report against a finish line but never draw its own. Never collapse
+  the two scopes back into one: sticky + per-run had most of the fleet reading "the job is DONE.
   Finish NOW" at the top of every run.
   Conditions are LOGICALLY CONNECTED — groups combine with `all`/`any`, the document combines the
   groups the same way (two levels: enough for "(A AND B) OR C", shallow enough for a UI and a weak
@@ -373,12 +433,25 @@ by a test, by the engine, or by a past incident.
   components mounted outside `#view` so they survive navigation — the side table-of-contents
   (`components/toc.js`) and the LLM activity dock (`components/taskmanager.js`) — set no
   `position` of their own. Delete their stylesheet block and nothing throws: the component still
-  builds, still fetches, still updates, and lands in the document flow at the foot of every page.
-  The 0.277.0 palette migration deleted both; the TOC was caught three releases later, the dock
-  twenty, each time by an operator reading a screenshot. `tests/ui/test_global_chrome.py` pins the
+  builds, still fetches, still updates, and lands in the document flow at the foot of every page —
+  a palette migration once deleted both blocks and only an operator reading a screenshot caught
+  it, releases later. `tests/ui/test_global_chrome.py` pins the
   pair to `position: fixed` — put any new out-of-view chrome in that list the same day.
-- **A run never writes its own config.** `routine.yaml` is never writable by any run — the
-  block is by FILENAME anywhere a run can write, external repos included.
+  Being fixed is not the same as being WELCOME: the browser dock is an OVERLAY, and the console's
+  reading column (`--rail-w` 212 + `--shell-max` 1240 = 1452px) reaches the right edge at every
+  width between 861 and 1900px, so an open dock lies on the Routines page's run-now column and on
+  an endpoint card's save-key row. It therefore rests open only at ≥1900px, where the side TOC
+  also lives and now ends above it; below that it starts collapsed and a click-open folds again
+  on the next route change (`components/browserdock.js`).
+- **A run never writes its own config through an ACTION.** `routine.yaml` is blocked by FILENAME
+  anywhere a run can write, external repos included, on the action path (`grantpolicy`,
+  `fileops._write_gate`, `grants`) — which is the only path that CAN block it: the file sits in
+  the routine's own directory, every callable kind must have that directory read-write, and a
+  narrower Landlock rule beneath an allowed directory subtracts nothing. So a `shell` heredoc, a
+  script, or any `fs: roots` util handed a payload CAN write it, and the change lands at the next
+  run's boot. `utils_run.run_jailed` reads the file either side of every jailed call and names a
+  change on the call's stderr — detection, not prevention, because the operator's own PATCH is a
+  legitimate concurrent writer (F337).
 - **The engine subprocess INHERITS NOTHING — the spawn names its config and its homes.**
   `engine-run` is a fresh interpreter, so it defaults NEITHER `--config` nor `--homes`
   (`daemon/runner_state.py` `engine_cmd` → `cli.cmd_engine_run`, F394): it loads exactly the
@@ -387,67 +460,85 @@ by a test, by the engine, or by a past incident.
   process exists. Never give either flag a default — the fallback is `~`, i.e. production,
   and a tmp-homed test once spent real money and real ledger rows there.
 - **The setup surface answers "what does this routine still need?" — including WHEN it runs.**
-  `readmodels/surface.py` joins the effective config against the library's `requires:`/`expects:`,
-  the util headers, the live stores AND the lane store: a member cron a lane's schedule
-  suppresses (D71) is a routine.yaml naming a time it will never fire at, and a routine in no
-  scheduled lane with no cron of its own is started by nothing on a clock. It also reads
-  `state/phase.json`: the composer looks the phase up as `.get("phase")` and that value is what
-  scopes a stopping condition to a stage, so a routine recording its own key (`lifecycle`,
-  `state`) or nothing at all wrote a file matching nothing. All of these are NOTE rows —
-  nothing is broken, the file is misleading — and the BOOT note carries only `blocks`/
-  `interrupts` (`surface.BOOT_SEVERITIES`): a NOTE is for the operator, and a run can neither
-  act on it nor be saved a turn by it. Every UNMET row also carries a `fix` — a machine-readable
-  remedy (`kind` + params) naming WHAT must happen and never where a control lives. The console
-  maps one kind to the panel owning that dial and lands the reader on it (ONE map, `FIX` in
-  `static/components/surface-view.js`, imported by the setup-check strip so the surface an
-  operator reads FIRST offers the same way out); `REMEDIES` in `readmodels/remedies.py` turns the
-  same kind into words, so a `validate` row and a boot-note row end ` — fix: <words>`. On the
-  boot note that clause is PROMPT TEXT the run buys, which is why the wording is terse by
-  contract — what it buys back is a run that can NAME what it needs when it asks instead of
-  reporting the symptom. UNMET is the whole test, not the severity: a NOTE reporting a GAP
-  carries a fix (the suppressed cron, the phase key, a capability no held doc covers), a NOTE
-  reporting a STATE carries none — and there are exactly two, `action:write_recipe` "on" plus
-  `schedule:goal` "retired", because the only undo for a deliberate act reads as a defect report
-  on a routine that is fine. A NEW kind is FOUR registrations — its words, the client `FIX` map,
-  the section anchor it lands on, its `CASES` row — listed in `docs/rules-permissions.md`. Three
-  of them are bound by equalities, so the vocabulary cannot grow at one end alone: emitted kinds ↔
-  `REMEDIES` over both ASTs (`tests/test_surface.py`), then `REMEDIES` ↔ the parsed `FIX` map ↔
-  the `CASES` table (`tests/ui/test_surface_fix.py`). The ANCHOR is the one nothing static can
-  see: a kind whose link travels somewhere the act cannot be performed is caught by that file's
-  per-kind journey, in a browser, or by nobody.
+  `readmodels/surface.py` JOINS the effective config against the library's `requires:`/`expects:`,
+  the util headers, the live stores and the lane store; the ROWS come from `surface_needs`,
+  `surface_schedule` and `surface_caps`, all speaking `surface_nodes`' vocabulary. Three checks
+  are easy to break and hard to notice: a member cron a lane's schedule suppresses (D71) names a
+  time the routine will never fire at, a routine in no scheduled lane with no cron of its own is
+  started by nothing on a clock, and `state/phase.json` must record its phase under the key
+  `phase` — the composer reads `.get("phase")` and that value is what scopes a stopping condition
+  to a stage, so any other key writes a file matching nothing. Those are NOTE rows: nothing is
+  broken, the file is misleading. The BOOT note carries only `blocks`/`interrupts`
+  (`surface.BOOT_SEVERITIES`) — a NOTE is for the operator, and a run can neither act on it nor
+  be saved a turn by it.
+  Every UNMET row carries a `fix`: a machine-readable remedy (`kind` + params) naming WHAT must
+  happen, never where a control lives. UNMET is the whole test, not the severity — a NOTE
+  reporting a GAP carries one, a NOTE reporting a STATE carries none, and there are exactly two
+  of those (`action:write_recipe` "on", `schedule:goal` "retired"), because the only undo for a
+  deliberate act reads as a defect report on a routine that is fine.
+  **A NEW kind is FOUR registrations** — its words (`REMEDIES` in `readmodels/remedies.py`), the
+  client `FIX` map (`static/components/surface-view.js`, imported by the setup-check strip), the
+  section anchor it lands on, and its `CASES` row — listed in `docs/rules-permissions.md`. Three
+  are bound by equalities so the vocabulary cannot grow at one end alone: emitted kinds ↔
+  `REMEDIES` over the four emitter modules' ASTs (`_EMITTERS` in `tests/test_surface.py` — a
+  join that moves into a new file joins that tuple or its kinds stop being checked), then
+  `REMEDIES` ↔ the parsed `FIX` map ↔ the `CASES` table (`tests/ui/test_surface_fix.py`). The
+  ANCHOR is the one nothing static can see: a kind whose link travels somewhere the act cannot be
+  performed is caught by that file's per-kind journey, in a browser, or by nobody.
   `rsched validate` adds the instance-level cases no routine's surface can see: a scheduled lane
-  with no members, a lane naming a slug that is NOT a routine — routines are deleted out of band,
-  so nothing cascades the membership away; the web refuses only the slugs a caller ADDS so one
-  stale member cannot lock a whole lane against every further edit (F442) — and a routine naming
-  a `domain:` no record answers to, which inherits an EMPTY block and so silently loses the
-  shared permissions it was given the domain for. An `expects:` row must be an
-  UNCONDITIONAL presumption: it fires on EVERY holder, and it has been wrong twice the same way
-  (`git-checkpoint`, then `status-page`'s write root — false for all seven holders, because a page
-  is published through an upload channel and a routine's own dir is always writable).
+  with no members; a lane naming a slug that is NOT a routine (routines are deleted out of band
+  and nothing cascades the membership away — ARCHIVING is the in-band delete and the one moment
+  the web layer knows, dropping the slug from every lane holding it as `lanes_left`; the web
+  refuses only the slugs a caller ADDS, so one stale member cannot lock a lane against every
+  further edit, F442); and a routine naming a `domain:` no record answers to, which inherits an
+  EMPTY block and silently loses the shared permissions it was given the domain for.
+  An `expects:` row must be an UNCONDITIONAL presumption — it fires on EVERY holder, and has
+  been wrong twice the same way by presuming a write root a holder never needs.
 - **A lane's fire table is process memory; the WATERMARK is what survives.** `lane_next_fires`
   is recomputed as the NEXT future fire at every boot, so a lane fire due during a restart,
-  a recreate or a drain used to vanish — and D71 has suppressed every member's own cron, so
-  nothing else fired them (a Tue/Thu lane lost a whole week, unnoticed). Every `lane_runs.arm`
-  stamps `.control/lane-fires.json` (`rsched/lane_fires.py`) and `daemon/lane_catchup.py`
+  a recreate or a drain would otherwise vanish — and D71 suppresses every member's own cron, so
+  nothing else fires them (a Tue/Thu lane once lost a whole week, unnoticed). Every
+  `lane_runs.arm` stamps `.control/lane-fires.json` (`rsched/lane_fires.py`), and so does the
+  scheduler when the operator's global pause skips a due fire on purpose: EVERY path that
+  handles a fire moves the watermark, so what boot finds unstamped is a fire nobody was there
+  for. `daemon/lane_catchup.py`
   makes up ONE missed fire per lane at boot (`catchup: run_once`, the lane default). Never
   write that file from the web layer and never let boot arm more than one chain per lane.
 - **Nothing starts a run but the schedule, a trigger the operator configured, or the
   operator's own click.** A routine reads its inbox when it next RUNS: a report from another
-  routine waits (0.329.0 gave every routine a report trigger and fired six at once — a message
+  routine waits (a fleet-wide report trigger fired six runs at once — a message
   is cheap, a run is a whole recipe, and routines answer each other, so it chains), and so does
-  a person's answer to a deferred question (0.330.0 fired a run per answer; three started in one
-  second when the operator cleared his inbox — reversed in 0.333.0). Urgency has explicit forms:
+  a person's answer to a deferred question (a run per answer started three in one second when
+  the operator cleared his inbox). Both were reversed; do not re-propose either. Urgency has
+  explicit forms:
   a BLOCKING question parks and resumes its run, and the Decisions page's "answer & run now"
   (`run_now: true` on the answer route) is ONE manual fire, the same as the routine page's Run
   now. The report trigger stays an explicit opt-in for a routine whose job IS its inbox. The
   health stream files a `partial` as `budget_exhausted` ONLY when a budget violation forced it;
   a partial the model chose is `run_partial`.
+- **An inbox message's `via` is not a label — it is the delivery POLICY.** It decides when the
+  message is consumed, whether the post-finish reap may resume a finished run for it, whether the
+  conversation surface offers it as the operator's own editable text, and whether it counts as the
+  user having spoken (`inbox.MACHINE_VIAS`, read by `ctx.user_replies`). It is a CLOSED set
+  (`engine/inbox.VIAS`) that the single writer `inbox.file_message` validates, seeded from what
+  the code actually writes — a branch hand-back filed on the USER channel was read by the parent
+  as the operator speaking.
 - **A live refresh on a bus event fetches only what that event can change.** The dashboard and
   the activity feed reload on `run_*` events, debounced; `llm_task`/`llm_process` fire several
-  times a second during a run and are ignored. Never put a config-shaped or expensive endpoint
-  (`/api/domains`, `/api/schedule/week`, `/api/stats`, 300 runs) on that path: on 2026-09-12 the
-  dashboard refetched `/api/domains` every 600 ms while five runs were active and every request
-  in the daemon queued for 20-50 s behind it. When the console is slow, `/api/debug/slow` and
+  times a second during a run and are ignored. ONE reader per endpoint, not one per view:
+  `static/questions-store.js` owns the single bus listener, the single 3 s cadence and the single
+  in-flight fetch for every surface showing open decisions (the header badge, the notifier, the
+  Decisions page, the run view's inline forms) — four of them had four throttles and the daemon's
+  load depended on which tab was open; a fifth consumer SUBSCRIBES, it does not fetch. The same
+  rule the other way: a component that POLLS takes a predicate for whether anybody can see it
+  (`createTaskTree`'s `isLive`, `activityFeed`'s `isOpen`) and its view's teardown stops it
+  (`tests/ui/test_view_teardown.py`, `tests/ui/test_bus_budget.py`).
+  Never put a config-shaped or expensive endpoint
+  (`/api/domains`, `/api/schedule/week`, `/api/stats`, 300 runs) on that path — one that
+  refetched `/api/domains` every 600 ms under five active runs queued every daemon request
+  behind it for 20-50 s. The watch ribbon splits its two halves for exactly this reason: run
+  events repaint its rectangles from `/api/runs`, while `/api/schedule/week` rides its own 120 s
+  timer and is repainted from cache in between. When the console is slow, `/api/debug/slow` and
   `docker logs rsched | grep "slow request"` say which path, before anyone guesses. The
   server-side half of the rule: a read model on a bus-event path is MEMOIZED on a stat
   fingerprint of its sources with SINGLE-FLIGHT misses (`readmodels/memo`) — `/api/items`
@@ -455,29 +546,32 @@ by a test, by the engine, or by a past incident.
   both starved the daemon before they were; a new read model joins them before it is fetched
   on an event.
 - **An exclusive machine's compute is QUEUED, not locked.** `MachineConfig.exclusive` makes
-  `remote submit` take a ticket instead of launching (`rsched/machine_queue.py`). The order is
-  FAIR SHARE — round-robin across ROUTINES by each one's oldest waiting ticket, FIFO within one —
-  so a routine that submits three jobs never starves one that submits one. The submitting run is
-  NEVER blocked: it gets a job id and a position back at once, reads that position in
-  CAPABILITIES, and spends the run on work that does not need the machine. The truth is ON THE BOX
-  (tickets under the job root, enforced by the util at the one place that opens an SSH
-  connection), so it survives a restart, a recreate and a migration; the daemon only MIRRORS it
-  into `.control/machine-queue/`. Every ticket carries a mandatory DEADLINE — a detached job has
-  no live process to heartbeat, so a wall clock is the only self-healing part. A machine that
-  cannot be read says UNKNOWN, never FREE: an unreachable box reading as free is the one failure
-  mode that would cause the collision this prevents. Cooperative, like every machine guard — a
-  human on the box or a `shell` action still bypasses it.
+  `remote submit` take a ticket instead of launching (`rsched/machine_queue.py`), ordered FAIR
+  SHARE — round-robin across ROUTINES by each one's oldest waiting ticket, FIFO within one. The
+  submitting run is NEVER blocked: it gets a job id and a position back at once, reads that
+  position in CAPABILITIES, and spends the run on work that does not need the machine. Three
+  properties are load-bearing and must survive any change: the truth is ON THE BOX (tickets under
+  the job root, enforced at the one place that opens an SSH connection), so it survives a restart,
+  a recreate and a migration — the daemon only MIRRORS it into `.control/machine-queue/`, at most
+  once a minute and one refresh at a time, because every read is an SSH session and an interpreter
+  boot; every ticket carries a mandatory DEADLINE, since a detached job has no live process to
+  heartbeat; and a machine that cannot be read says UNKNOWN, never FREE, because an unreachable
+  box reading as free is the one failure mode that would cause the collision this prevents.
+  Cooperative, like every machine guard — a human on the box or a `shell` action bypasses it.
+  See docs/remote-machines.md.
 - **Cache READS alone cannot tell a working prompt cache from a broken one.** A transport
   that stops resuming its session still serves the static system+tools prefix from cache,
   so `cached_in` stays large and the token count actually FALLS — while the whole
   conversation is re-WRITTEN every turn at 1.25x instead of re-read at 0.1x. Only reads ÷
   (reads + writes) shows it (`endpoints.base.cache_read_share`), which is why every Stats
-  slice carries both halves and a run finishing under 0.5 raises `cache_read_degraded`.
-  September 2026 ran four days that way and burned a weekly subscription limit; the slice
-  matters as much as the ratio, because it was ONE endpoint going bad beside healthy ones.
+  slice carries both halves and a run finishing under 0.5 raises `cache_read_degraded`. Read the
+  SLICE as well as the ratio: the four days that burned a weekly subscription limit were ONE
+  endpoint going bad beside healthy ones.
 - **A model's limits are DISCOVERED, not configured.** `endpoints/limits.py` asks each provider
   what its models' real context window and output maximum are (OpenRouter/Nano-GPT/Ollama have
-  metadata APIs; `anthropic` listings lack context-window metadata and use a built-in table), caches it under
+  metadata APIs; a listing that carries NO figures — every `anthropic` endpoint here is a
+  subscription proxy, whose `/v1/models` is ids only — falls back to a built-in Claude table),
+  caches it under
   `<routines>/.control/model-limits.json` — derived state, never config — and refreshes on a 24h
   TTL from the scheduler tick (new model keys refresh immediately). Context windows use
   `context_tokens` throughout; compaction occupancy is explicitly estimated in tokens, with
@@ -525,14 +619,13 @@ by a test, by the engine, or by a past incident.
   seed trees are excluded (`extend-exclude`): `library-seed/workflows` are never-executed
   ast-parsed pattern files gated by `workflows/lint.py`, `util-seed` are PEP 723 scripts
   gated by `utils_lib.header_problems` + their `--selftest`.
-- ONE outbound notification seam: any engine/daemon-implicit "reach the user" send goes through
-  `rsched/notify.py` (see docs/notifications.md); new channels become a permission + a notify
-  transport, never an inline util call. There is currently NO such transport and no
-  `notify.py`: 0.230.0 deleted every engine/daemon-implicit outbound send (the Discord
-  decision mirror, the OAuth-reauth ping, the background-task ping), so a message to a
-  person is always an explicit util call by the run, gated by a `messaging-*` permission.
-  Browser push (`web/push.py`) is the WEB channel's delivery arm — it renders the
-  open-decisions record and is the only away-from-console tier.
+- **No engine or daemon path reaches a person by itself.** A message to a person is an explicit
+  util call by the RUN, gated by a `messaging-*` permission, and a new channel becomes a
+  permission plus a util — never an implicit send. Browser push (`web/push.py`) is the WEB
+  channel's delivery arm: it renders the open-decisions record and is the only away-from-console
+  tier. If an implicit send is ever wanted it arrives the same way PLUS one seam module every
+  such send goes through; there is no such module today, so do not import one
+  (see docs/notifications.md).
 
 ## Versioning
 
@@ -572,16 +665,20 @@ exit comes only once `runner.active_states()` has been empty for `RESTART_IDLE_S
 which point it sets the `draining` gate against a fire racing the SIGTERM window, marks the exit
 (F480) and signals itself into `restart: unless-stopped`. It never kills a run, and it DEFERS
 with no deadline while any run is parked on the user (`waiting_user`/`paused`) — never restart
-out from under a dialogue. The price of that rule is that a busy instance can starve the gap:
-on 2026-09-20 a 06:11 request was still pending at 06:44 because two lane chains fired into the
-window back to back. Read `/api/status` (`restart_requested`, `active_runs`) to see what it is
+out from under a dialogue. A LANE CHAIN cannot starve the gap: the boundary between two members
+is 5s against a 10s window, so a back-to-back chain closed it for hours, and
+`LaneRunManager._fire_next` now HOLDS the next member while a restart is pending and nothing
+else is active — the member fires on the new code at the first tick after boot. A detached
+background task COUNTS as active: `start_new_session` does not survive the daemon's exit on
+either deployment, so excluding it had the drain SIGKILLing the one class of run it exists to
+protect. Read `/api/status` (`restart_requested`, `active_runs`) to see what it is
 waiting on; `restart_action` in `daemon/restart.py` is the whole state machine.
 **A relaunch is not guaranteed either.** Docker's restart manager gives up after ONE failed
 start, so anything that makes the container fail to start leaves it down with nothing retrying
-and nothing said — a bind source that vanished from the host is the one that has happened, and
-it cost two hours on 2026-09-20 while the tor and chrome sidecars stayed up and made the box
-look half-alive. Verify every bind source exists (`.HostConfig.Binds` AND `.HostConfig.Mounts`
-— they are separate lists) before dropping the sentinel.
+and nothing said — a vanished bind source is the one that has happened, and the tor and chrome
+sidecars stay up and make the box look half-alive. Verify every bind source exists
+(`.HostConfig.Binds` AND `.HostConfig.Mounts` — they are separate lists) before dropping the
+sentinel.
 This is the path self-audit uses after a `__version__` bump, and it is the right one for a
 hand-made change too; `docker compose restart rsched` is the blunt equivalent that bounces the
 process immediately and takes any running routine with it. The host's `/etc/localtime` + `/etc/timezone` ride along read-only
@@ -590,7 +687,12 @@ so the container keeps the host's zone; `schedule.server_tz()` honors TZ env / t
 `~/.config/routine-scheduler/config.yaml` (generated with a random token on
 first boot by `bootstrap.ensure_config`, so a fresh deploy is never an open API). Web UI on `:8321`,
 two-tier bearer auth (the operator token, plus a generated `routine_token` — what runs get injected
-as `RSCHED_API_TOKEN` — which is refused on config-mutating routes); `RSCHED_BIND` / `RSCHED_PORT`
+as `RSCHED_API_TOKEN` — which is refused on config-mutating routes AND on three read subtrees
+the sandbox forbids, `/api/fs`, `/api/settings`, `/api/debug` plus `/api/search`
+(`web/app.ROUTINE_TOKEN_DENIED_READS`): "read-only" is not "may read anything", since a util
+subprocess is handed that token inside a Landlock jail and those GETs list any directory on the
+host, name every secret with its declaring utils, dump the daemon's stacks and search every
+routine's transcripts); `RSCHED_BIND` / `RSCHED_PORT`
 override for containers. First launch redirects to
 Settings until setup (secrets, endpoints + system model, GitHub device-flow) is finished; the
 library repo has NO settings surface — the library-sync routine manages it exclusively.
