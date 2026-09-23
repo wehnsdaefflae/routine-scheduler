@@ -15,6 +15,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.366.3] — 2026-09-23
+
+### Fixed — the Help page lost a type, and the docs build said so on every boot
+
+`rsched.utils_run.Jailed` is the outcome of every jailed subprocess this system runs, and its
+two interesting fields are `CapturedOutput`, the bounded capture that knows whether it lost
+anything. The Help page rendered them as an unresolved name, and the build printed a warning
+about it at every startup.
+
+The cause is the shape of the type, not the annotation. A NamedTuple has no `__init__` of its
+own — it IS `object.__init__` — and the `__new__` that `typing.NamedTuple` generates carries a
+synthetic `namedtuple_Jailed` globals. Under `from __future__ import annotations` the fields
+are ForwardRefs, so they get resolved in a namespace holding none of the defining module's
+imports: `int` and `bool` survive because they are builtins, and `CapturedOutput` cannot.
+Measured directly rather than guessed: `get_type_hints` on the tuple form returns `{}`, and on
+a dataclass of the same fields it returns the real classes.
+
+So `Jailed` is a frozen, slotted dataclass. Its `__init__` is generated against the defining
+module, the annotation resolves, and the build is warning-free. Nothing else changes: no
+consumer ever unpacked or indexed it, all three construction sites are positional and stay
+so, and frozen keeps the immutability the tuple gave. It is the only NamedTuple in the
+package with a non-builtin field, so there is no second one waiting to do this again.
+
 ## [0.366.2] — 2026-09-23
 
 ### Fixed — a util that ran out of clock was filed as killed by a signal nobody sends

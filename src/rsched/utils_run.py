@@ -21,6 +21,7 @@ import shutil
 import signal
 import subprocess
 import tempfile
+from dataclasses import dataclass
 from pathlib import Path
 from typing import NamedTuple
 
@@ -157,9 +158,20 @@ def _child_env(home: Path, name: str, extra_secrets: dict[str, str] | None = Non
     return scoped_env(util_needs(home, name).secrets, extra_secrets, withhold)
 
 
-class Jailed(NamedTuple):
+@dataclass(frozen=True, slots=True)
+class Jailed:
     """One jailed subprocess's outcome. `stdout`/`stderr` are `CapturedOutput` — already
     bounded, and carrying whether the capture itself lost anything.
+
+    A dataclass and NOT a NamedTuple, which is what it was until 0.366.3. Nothing ever
+    unpacked or indexed it — every consumer reads the four fields by name — and the tuple
+    form cost the Help page a type: a NamedTuple has no `__init__` of its own (it IS
+    `object.__init__`) and its generated `__new__` carries a synthetic `namedtuple_Jailed`
+    globals, so under `from __future__ import annotations` the field annotations are
+    ForwardRefs that resolve in a namespace holding none of this module's imports.
+    `CapturedOutput` therefore could not be resolved and the docs build warned on every
+    boot. A dataclass's `__init__` is generated against the DEFINING module, so the same
+    annotation resolves. Frozen and slotted keeps the immutability the tuple gave.
     """
 
     returncode: int
