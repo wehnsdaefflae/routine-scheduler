@@ -82,6 +82,48 @@ def test_rejection_classifier():
     assert util_rejection_outcome({"kind": "write_file", "name": "x"}) is None
 
 
+def test_a_name_that_cannot_be_a_util_is_not_attributed_to_one():
+    """A malformed action's fields cannot be trusted, and the commonest malformation is a
+    FIELD SHIFT: values slide into the wrong keys, so `name` ends up holding prose, a
+    timeout number, a run id or a path. Attributing the rejection to that string invents a
+    util: it is written to status.json, carried by the DURABLE workflow-usage stream, and
+    rendered as a row on the Stats tab (readmodels/util_stats builds rows from
+    `set(catalog) | set(merged)`), where it never expires.
+
+    Live specimens, all from weightloss:20260923-220004 — a run served by a fallback model
+    after `Opus high` returned HTTP 503 and rung two returned HTTP 402:
+
+        kind='util' name='Your leaner days pack eating into a tighter span…' args=[]
+        kind='util' name='300'  args=['--source', 'steward', 'put']
+        kind='util' name='180'  args=['https://steward.markwernsdorfer.com/weightloss/', …]
+
+    Before this guard the Stats tab carried ~25 such phantoms — bare numbers, a run id,
+    workflow slugs, a darknet research summary — each with `executed: 0` and counts only in
+    `rejected`/`denied`, the signature of this seam.
+
+    The predicate is the util NAMING rule, not the slug rule, and the difference is the
+    point: `ids.is_slug` admits `300` (digits are legal slugs) and admits a bare run id,
+    while `GrantPolicy.known_utils` is populated only for a routine holding exactly one half
+    of the write/revise split — so neither separates a real name from a shifted value. What
+    every one of the 101 catalog utils has, and no shifted value here does, is kebab-case
+    WITH A LETTER. A name that merely resembles one (a bare run id) is out of scope on
+    purpose: no guard should risk refusing a real util to catch it.
+    """
+    permitted = GrantPolicy()
+    for impostor in ("300", "180", "120", "17", "scripts/foerder_score.py",
+                     "Your leaner days pack eating into a tighter span (window r +0.5).",
+                     '"edit_file",\n         "memory_read",', "Code_Search", "web_search"):
+        assert util_rejection_outcome({"kind": "util", "name": impostor},
+                                      grants=permitted) is None, impostor
+    # …while a real util name is still attributed, denial and rejection alike
+    assert util_rejection_outcome({"kind": "util", "name": "code-search", "path": "x"},
+                                  grants=permitted) == ("code-search", "rejected")
+    assert util_rejection_outcome({"kind": "util", "name": "discord"},
+                                  grants=GrantPolicy(
+                                      gated_utils={"discord": ("messaging-discord",)})
+                                  ) == ("discord", "denied")
+
+
 # ---- end to end through scripted runs ---------------------------------------------------
 
 

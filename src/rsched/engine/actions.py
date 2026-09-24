@@ -11,6 +11,8 @@ prose-outside-JSON failures.
 
 from __future__ import annotations
 
+import re
+
 from ..ids import is_slug
 from ..reports import REPORT_ID_RE
 from .actionschema import KINDS, READ_PATHS_MAX, SETTLES_MAX
@@ -400,6 +402,12 @@ def validate_action(obj: dict, allowed_kinds: set[str] | None = None,  # noqa: C
     return problems
 
 
+#: A name that could BE a util: the library's kebab-case rule, narrowed by the one thing
+#: `ids.is_slug` does not require — at least one LETTER. Every util in the catalog satisfies
+#: it; a bare timeout number, a path, a quoted JSON fragment and a paragraph of prose do not.
+_NAMEABLE_UTIL_RE = re.compile(r"^(?=[a-z0-9-]*[a-z])[a-z0-9][a-z0-9-]*$")
+
+
 def util_rejection_outcome(obj: dict, allowed_kinds: set[str] | None = None,
                            grants=None) -> tuple[str, str] | None:
     """Classify a REJECTED util action for per-util telemetry (RunContext.count_util):
@@ -413,6 +421,22 @@ def util_rejection_outcome(obj: dict, allowed_kinds: set[str] | None = None,
     """
     name = str(obj.get("name") or "").strip()
     if obj.get("kind") != "util" or not name or name in ("list", "show"):
+        return None
+    # …and the name must be able to BE a util. A malformed action is by definition one whose
+    # fields cannot be trusted, and the commonest malformation is a FIELD SHIFT — values
+    # sliding into the wrong keys, so `name` holds prose, a timeout number or a path. That
+    # string is not merely wrong here: count_util writes it to status.json, the DURABLE
+    # workflow-usage stream carries it, and readmodels/util_stats builds its rows from
+    # `set(catalog) | set(merged)` — so it becomes a permanent phantom util on the Stats tab
+    # (~25 by 2026-09-24, incl. a paragraph of prose and a bare `300`; the specimen is
+    # weightloss:20260923-220004, served by a fallback model after a 503 and a 402).
+    #
+    # The test is the util NAMING rule, not the slug rule: `ids.is_slug` admits `300` and
+    # `c-20260821-060305` (digits and run ids are legal slugs), and GrantPolicy.known_utils
+    # is loaded only for a routine holding exactly one half of the write/revise split, so
+    # neither separates a name from a shifted value. What every real util name has and no
+    # shifted value did: kebab-case with a LETTER in it. Unattributable IS what None means.
+    if not _NAMEABLE_UTIL_RE.match(name):
         return None
     denied = ((allowed_kinds is not None and "util" not in allowed_kinds)
               or (grants is not None and grants.deny(obj) is not None))

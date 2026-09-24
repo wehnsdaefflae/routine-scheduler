@@ -15,6 +15,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.366.5] — 2026-09-24
+
+### Fixed — a malformed action's field values became permanent utils on the Stats tab
+
+items: F546, weightloss:20260923-220004
+
+A rejected `kind: "util"` action is counted per-util at the validation seam, because a denied or
+malformed call never reaches the executor and would otherwise never be counted at all. The
+classifier asked two questions — is this a `util` action, and does it have a name — and then
+believed the name.
+
+But a malformed action is by definition one whose fields cannot be trusted, and the commonest
+malformation is a FIELD SHIFT: values sliding into the wrong keys. `weightloss:20260923-220004`,
+running on a fallback model after `Opus high` returned HTTP 503 and the second rung returned HTTP
+402, emitted `kind='util'` with `name='300'` (its args holding `--source steward put`), with
+`name='180'` (args holding a URL), and with `name` holding a whole sentence about weight trends.
+Each was written into `status.json`, carried by the DURABLE workflow-usage stream, and rendered by
+`readmodels/util_stats` — which builds its rows from `set(catalog) | set(merged)` with no name
+filter. By 2026-09-24 the Stats tab carried 200 rows of which ~25 were invented: bare numbers, a
+run id, workflow slugs, a path, a fragment of JSON and a paragraph of prose, every one with
+`executed: 0` and counts only in `rejected`/`denied` — the signature of this seam.
+
+The guard is the util NAMING rule, and the distinction turned out to matter: `ids.is_slug` admits
+`300` (digits are legal slugs) and `GrantPolicy.known_utils` is populated only for a routine
+holding exactly one half of the write/revise split, so neither separates a real name from a
+shifted value. What all 101 catalog utils have and no shifted value did is kebab-case **with a
+letter in it**. A name failing that is unattributable, which is precisely what this function's
+`None` already meant.
+
+Proven by failing first: the new test named `('300', 'rejected')` where `None` was owed, and it
+corrected two of the author's premises before the fix shipped — that a slug check would suffice,
+and that whitespace padding needed catching (the function already strips).
+
 ## [0.366.4] — 2026-09-23
 
 ### Fixed — the restart panel threw on the one path that means success
