@@ -15,6 +15,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.366.6] — 2026-09-24
+
+### Changed — `engine/inbox` split at the seam it always had: messages | questions
+
+items: D143, F393
+
+The module was 530 lines against the repo's ~350 one-responsibility budget, and it had been
+naming its own seam since the day it was written. Its docstring opens by describing two filename
+shapes that share a directory, an atomic-write discipline and a consume-by-rename rule — and
+nothing else:
+
+    msg-<stem>.json    freight for a run       -> engine/inbox            (341 lines)
+    answer-<qid>.json  a question's answer     -> engine/inbox_questions  (262 lines)
+
+Everything that knows what a QUESTION record is now lives on the far side of that line: filing
+one, taking its answer, archiving the pair for the Decisions page, and the open/resolved
+lifecycle.
+
+**Nobody moved.** Every caller in the tree reaches these as `inbox.<name>` rather than importing
+symbols directly, so `inbox` re-exports all seven public question names at the foot of the module
+— `inbox.file_question(...)` still resolves, and the split is an internal seam rather than a new
+interface. Verified by import rather than by inspection: 18 of 18 names resolve through the
+facade, `inbox.file_question` **is** `inbox_questions.file_question`, and `_consume` is one shared
+object. The re-export sits at the FOOT because `inbox_questions` imports `_consume` from here.
+
+The two single-writer policy tests shipped in 0.366.0 pass unchanged, which is exactly what the
+`msg-*` contract was written to guarantee: a structural change to the module that owns it does not
+move the contract.
+
 ## [0.366.5] — 2026-09-24
 
 ### Fixed — a malformed action's field values became permanent utils on the Stats tab
