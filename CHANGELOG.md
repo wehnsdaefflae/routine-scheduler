@@ -15,6 +15,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.366.7] — 2026-09-25
+
+### Fixed — the run-health read model counted usage LEGS where every one of its reasons says RUNS
+
+items: F554, D146
+
+A run the operator continues, or one that resumes after a restart, appends a further usage
+record under the same `run_id`. `fold_legs` exists precisely to collapse those into one record
+per run — and it was being called too late, *inside* windows that had already been cut from the
+raw per-leg list. Two consumers were affected, and on this instance depth-0 records ran at
+**2.02 legs per run** (2,543 records over 1,256 runs), so both were reading samples about half
+the size they reported.
+
+**`recent_trend` — the push alarm the nightly audit reads.** It sliced `records[-5:]` before
+folding, so the `window: 5` it reported was 5 *legs*. Measured before the fix: **46 of 53 actors'
+"5-run" windows were not 5 runs.** The error compounds with cost, because an expensive run
+finishes more often and therefore eats more of its own window — `weightloss` (173 legs / 67 runs)
+was compared **2-against-1** and so was never judged at all, and `llmsectest-weekday` (71 / 18)
+**1-against-2**. Those two produced the month's two most expensive single runs. Meanwhile three
+routines were being *flagged* on samples smaller than `MIN_RUNS`, whose stated reason is that
+below three runs a side "a comparison is a coin flip, not evidence". After the fix, windows that
+are a true 5-vs-5 went **7 → 33**; the 20 still short are genuinely short-history (19 single
+conversations and one 3-run routine).
+
+**`routine_health` — the routine page's per-version table.** The bucket loop tallied raw records,
+so `runs`, the status columns and both medians were per leg: a bucket reported **5 runs for 3
+runs** of 5 legs. Worst of them was `fail_rate`, where a run that finished `partial` and was then
+continued to `ok` was counted into **both** columns of its own bucket — one run moving the fail
+rate by a whole run in each direction at once.
+
+The fix is to fold at the seam where the records enter (`_stream_records`), once, since all three
+consumers below it — buckets, the version-keyed regression and the time-keyed trend — count runs.
+
+Four tests, each shown red first: the trend window's run count, the version bucket's run count,
+the continued-partial double-count, and a strengthening of
+`test_folding_legs_is_what_stops_a_steady_routine_flagging`, which had been passing for the wrong
+reason — its 10 runs produced 15 legs, so its window was ~3 runs, and a bare `flagged is False`
+cannot tell a working fold from a window too small to judge.
+
+Not changed, and surfaced as a decision instead (**D149**): whether a *deliberately chosen*
+`partial` should count toward `fail_rate` at all. `test_partial_counts_as_not_ok` asserts today's
+behaviour on purpose, and what the operator wants to be told about an intermediary finish is a
+judgment, not a defect.
+
 ## [0.366.6] — 2026-09-24
 
 ### Changed — `engine/inbox` split at the seam it always had: messages | questions

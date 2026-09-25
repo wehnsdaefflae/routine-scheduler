@@ -106,6 +106,46 @@ def test_recent_trend_needs_two_windows_of_runs():
     assert not recent_trend([_rec() for _ in range(REGRESSION_WINDOW)])["evaluated"]
 
 
+def test_recent_trend_window_counts_runs_not_legs():
+    """The window is REGRESSION_WINDOW *runs*, and a run that finishes several times must
+    not spend the window on its own bookkeeping.
+
+    Every constant in this module states its reason in RUNS — the window is "5 ≈ one week of
+    a daily routine … a single flaky run is only 20% of the sample", the fail-rate jump is
+    "2 extra failures in a 5-run window", MIN_RUNS is "below 3 runs on either side a
+    comparison is a coin flip". A run the operator continues, or one that resumes after a
+    restart, appends a further usage record under the SAME run_id, and on this instance
+    2,543 depth-0 records covered 1,256 runs — 2.02 legs per run. So slicing the tail before
+    folding those legs hands the heuristic a sample half the size it reports, and the error
+    runs the wrong way: the more a run costs, the more often it finishes, and the more of the
+    window it eats. Measured 2026-09-25, `weightloss` (173 legs / 67 runs) got a 2-vs-1
+    comparison and was never judged at all, while three routines were flagged on samples
+    below MIN_RUNS.
+
+    Ten runs of two legs each: a leg-sliced window sees 5 legs = 2 runs and cannot judge;
+    a run-sliced window sees 5 runs on each side and judges the token balloon.
+    """
+    records = []
+    for i in range(10):
+        tokens = 10_000 if i < 5 else 200_000
+        # two legs under ONE run_id: `turns` is cumulative, `tokens` per-leg (fold_legs)
+        records.append(_rec(run_id=f"r{i}", turns=40, tokens=tokens // 2))
+        records.append(_rec(run_id=f"r{i}", turns=80, tokens=tokens // 2))
+
+    verdict = recent_trend(records)
+    assert verdict["before"]["runs"] == REGRESSION_WINDOW, (
+        f"the 'before' side holds {verdict['before']['runs']} runs, not "
+        f"{REGRESSION_WINDOW} — the window was sliced in legs")
+    assert verdict["after"]["runs"] == REGRESSION_WINDOW, (
+        f"the 'after' side holds {verdict['after']['runs']} runs, not "
+        f"{REGRESSION_WINDOW} — the window was sliced in legs")
+    assert verdict["evaluated"], "a routine with 10 real runs of history must be judged"
+    assert verdict["flagged"] and any("tokens ballooned" in r for r in verdict["reasons"])
+    # the fold summed the per-leg tokens back into whole runs
+    assert verdict["before"]["tokens_median"] == 10_000
+    assert verdict["after"]["tokens_median"] == 200_000
+
+
 # ---- the read-model over stream + git -------------------------------------------------
 
 
@@ -287,3 +327,72 @@ def test_folding_legs_is_what_stops_a_steady_routine_flagging():
     assert recent_trend(steady)["flagged"] is False, (
         "a routine whose per-run cost is flat must not flag because its later runs were "
         "continued — that is the alarm everyone learns to ignore")
+    # and it must reach that verdict on a full window of RUNS, not be saved by a window too
+    # small to judge: a negative assertion alone cannot tell those two apart
+    verdict = recent_trend(steady)
+    assert verdict["evaluated"], "the verdict must be a judgment, not an abstention"
+    assert verdict["before"]["runs"] == verdict["after"]["runs"] == REGRESSION_WINDOW
+
+
+def test_version_buckets_count_runs_not_legs(tmp_path):
+    """The routine page's per-version table reports `runs`, `fail_rate` and both medians —
+    and every one of them must be per RUN.
+
+    A continued run appends a further usage record under the same run_id, so tallying raw
+    records inflates `runs` (2.02 legs per run on this instance, measured 2026-09-25) and
+    drags the medians toward whatever the short bookkeeping leg happened to carry. The
+    fail_rate is the worst of them: a partial first leg followed by an ok continuation was
+    counted as one failure AND one success in the same bucket.
+
+    Three runs, five legs, one recipe version: the bucket holds 3 runs.
+    """
+    from rsched.readmodels import memo
+
+    server, d = _setup(tmp_path)
+    _stream(server, [
+        {"routine": "gitr", "run_id": "gitr:a", "depth": 0, "status": "ok",
+         "turns": 10, "tokens": 30_000, "ts": "2026-07-01T07:00:00+00:00"},
+        {"routine": "gitr", "run_id": "gitr:a", "depth": 0, "status": "ok",
+         "turns": 14, "tokens": 2_000, "ts": "2026-07-01T08:00:00+00:00"},
+        {"routine": "gitr", "run_id": "gitr:b", "depth": 0, "status": "ok",
+         "turns": 10, "tokens": 30_000, "ts": "2026-07-02T07:00:00+00:00"},
+        {"routine": "gitr", "run_id": "gitr:b", "depth": 0, "status": "ok",
+         "turns": 12, "tokens": 2_000, "ts": "2026-07-02T08:00:00+00:00"},
+        {"routine": "gitr", "run_id": "gitr:c", "depth": 0, "status": "ok",
+         "turns": 10, "tokens": 30_000, "ts": "2026-07-03T07:00:00+00:00"},
+    ])
+    memo.reset()
+
+    h = routine_health(server, d, "gitr")
+    bucket = next(b for b in h["versions"] if b["runs"])
+    assert bucket["runs"] == 3, (
+        f"the bucket reports {bucket['runs']} runs for 3 runs of 5 legs — it counted legs")
+    assert bucket["ok"] == 3
+    # the per-leg tokens folded back into whole runs, so the median is a run's real cost
+    assert bucket["tokens_median"] == 32_000
+    # `turns` is cumulative across legs: the last leg's value is the run's total
+    assert bucket["turns_median"] == 12
+
+
+def test_a_continued_partial_is_not_one_failure_and_one_success(tmp_path):
+    """The fail_rate defect the fold closes: a run that finished `partial` and was then
+    continued to `ok` tallied into BOTH columns of its bucket, so one run moved the fail
+    rate by a whole run in each direction at once. Only the final leg's status is the run's
+    outcome."""
+    from rsched.readmodels import memo
+
+    server, d = _setup(tmp_path)
+    _stream(server, [
+        {"routine": "gitr", "run_id": "gitr:x", "depth": 0, "status": "partial",
+         "turns": 10, "tokens": 20_000, "ts": "2026-07-01T07:00:00+00:00"},
+        {"routine": "gitr", "run_id": "gitr:x", "depth": 0, "status": "ok",
+         "turns": 18, "tokens": 5_000, "ts": "2026-07-01T09:00:00+00:00"},
+    ])
+    memo.reset()
+
+    h = routine_health(server, d, "gitr")
+    bucket = next(b for b in h["versions"] if b["runs"])
+    assert bucket["runs"] == 1
+    assert (bucket["ok"], bucket["partial"]) == (1, 0), (
+        "the continued run ended ok; its earlier partial leg is not a second outcome")
+    assert bucket["fail_rate"] == 0.0

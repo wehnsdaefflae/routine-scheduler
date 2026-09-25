@@ -183,8 +183,19 @@ def recent_trend(records: list[dict], *, window: int = REGRESSION_WINDOW) -> dic
 
     Same thresholds as `regression_flag` deliberately — one heuristic, two keys — so a reader
     comparing the two reads a difference in WHAT changed, never in how it was judged.
+
+    The legs are folded BEFORE the tail is sliced, because `window` is a count of RUNS — that is
+    what every constant above states its reason in ("a single flaky run is only 20% of the
+    sample", "2 extra failures in a 5-run window"). Slicing first and letting `regression_flag`
+    fold inside the cut window silently halves the sample: 2,543 depth-0 records on this
+    instance covered 1,256 runs, and the error compounds with cost, because a heavy run finishes
+    more often and so eats more of its own window. Measured 2026-09-25, before this was fixed:
+    46 of 53 actors' "5-run" windows were not 5 runs, `weightloss` (173 legs / 67 runs) was
+    compared 2-against-1 and therefore never judged at all, while three routines were flagged on
+    samples smaller than MIN_RUNS.
     """
-    return {**regression_flag(records[:-window], records[-window:], window=window),
+    folded = fold_legs(records)
+    return {**regression_flag(folded[:-window], folded[-window:], window=window),
             "window": window}
 
 
@@ -201,7 +212,13 @@ def routine_health(server: ServerConfig, routine_dir: Path, slug: str) -> dict:
     versions = memo.memoized(f"recipe-log:{routine_dir}",
                              [routine_dir / ".git" / "logs" / "HEAD"],
                              lambda: recipe_log(routine_dir, limit=_LOG_LIMIT))
-    records = _stream_records(server, slug)
+    # Fold ONCE, here, because every consumer below counts RUNS: the per-version buckets
+    # (`runs`, the status tallies, both medians), the version-keyed regression, and the
+    # time-keyed trend. A continued run appends a further record under the same run_id, so
+    # tallying raw legs inflated every bucket's `runs` by the leg ratio — 2.02 legs per run
+    # on this instance, measured 2026-09-25 — and a run that finished `partial` and was then
+    # continued to `ok` was tallied into BOTH columns of its own bucket.
+    records = fold_legs(_stream_records(server, slug))
 
     buckets: dict[str, dict] = {}
     for i, v in enumerate(versions):
