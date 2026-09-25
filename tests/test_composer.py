@@ -760,6 +760,41 @@ def test_harness_contract_renders_unlimited_token_budget(make_routine, tmp_path)
     assert "-1" not in text.split("Budgets for this run")[1][:150]
 
 
+def test_the_subrun_allowance_is_what_this_node_has_left(make_routine, tmp_path):
+    """D147-A: `max_subruns` is a CUMULATIVE LIFETIME total for the whole run TREE, so the
+    prompt must render what THIS node has left, not the tree total.
+
+    `run_context.sub_counter` is one shared list across the tree, `childrun` increments it and
+    never decrements, and `subruns._cap_reason` gates on it — but the contract told every node
+    "at most 8 subruns", including a child that has started nothing and may have one left. The
+    reported specimen (R1870/F549) spawned three children numbered 5, 7 and 8; all three were
+    refused at their own first spawn and all three finished PARTIAL, each quoting the number it
+    had been promised.
+    """
+    ctx = _ctx(make_routine, tmp_path, slug="allowance")
+    ctx.budgets.max_subruns = 8
+
+    fresh = harness_contract(ctx)
+    assert "at most 8 child runs" in fresh, (
+        "a node that has started nothing has its full allowance, and the contract should say "
+        "the plain number")
+
+    # five children have already been started SOMEWHERE in this tree
+    ctx.sub_counter[0] = 5
+    used = harness_contract(ctx)
+    assert "3 more child runs" in used, (
+        "the node was told the tree TOTAL again — it cannot plan against a number that "
+        "five other nodes have already spent")
+    assert "8 shared across this run tree" in used, (
+        "the remaining number is only honest if the contract also says what it is a "
+        "remainder OF")
+
+    # and the exhausted case must not read as an allowance of zero-or-more
+    ctx.sub_counter[0] = 8
+    spent = harness_contract(ctx)
+    assert "no child runs left" in spent
+
+
 def test_replay_reconstitutes_child_announcements():
     """A child's exit announcement is a live message-list append with no 1:1 event — replay
     rebuilds it from `subrun_end`, placed where the live message sat (before the model's

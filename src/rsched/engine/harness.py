@@ -19,6 +19,30 @@ from .kindsurface import effective_kinds, kind_bullets
 from .run_context import RunContext
 
 
+def _subrun_allowance(ctx: RunContext) -> str:
+    """What THIS node may still start — not the tree total (D147-A).
+
+    `max_subruns` is a cumulative LIFETIME total for the whole run tree: `run_context.sub_counter`
+    is one shared list, `childrun` increments it and never decrements, and `subruns._cap_reason`
+    gates on it. But this contract used to render the raw ceiling into EVERY node's prompt, so a
+    child that had started nothing was told it had the full eight. The specimen (R1870/F549): a
+    run spawned three children numbered 5, 7 and 8; all three were refused at their own first
+    spawn and all three finished PARTIAL, each quoting the number it had been promised.
+
+    So a node with the whole budget in front of it reads the plain number, and a node whose
+    siblings have spent some of it reads what is LEFT plus what it is a remainder of — because a
+    remaining count with no total is as unplannable as a total with no remainder.
+    """
+    total = ctx.budgets.max_subruns
+    used = ctx.sub_counter[0]
+    left = max(0, total - used)
+    if not used:
+        return f"at most {total} child runs"
+    if not left:
+        return f"no child runs left (all {total} shared across this run tree are spent)"
+    return f"{left} more child runs ({total} shared across this run tree, {used} already started)"
+
+
 def _is_conversation(ctx: RunContext) -> bool:
     """True when this run is a conversation — a routine-shaped dir directly under the
     server's conversations_home. Run kind is discriminated by HOME everywhere (the yaml
@@ -193,8 +217,8 @@ engine on every action — the held permissions' notes below state the conduct f
 Budgets for this run: {b.max_turns if b.max_turns >= 0 else "unlimited"} turns, \
 {b.max_wall_clock_min if b.max_wall_clock_min >= 0 else "unlimited"} minutes, \
 {b.max_total_tokens if b.max_total_tokens >= 0 else "unlimited"} total tokens, \
-{f"a ${b.max_cost} cost cap, " if b.max_cost >= 0 else ""}at most \
-{b.max_subruns} subruns (depth ≤ {b.max_subrun_depth}). These are a CEILING and a runaway \
+{f"a ${b.max_cost} cost cap, " if b.max_cost >= 0 else ""}{_subrun_allowance(ctx)} \
+(depth ≤ {b.max_subrun_depth}). These are a CEILING and a runaway \
 BACKSTOP — never a pace, and never a ration. Two opposite failures live here and you must \
 avoid both: stopping SHORT because turns have been spent, and spreading a job THIN because \
 turns remain. Take the shortest sound route to this run's goal and `finish` the moment its \

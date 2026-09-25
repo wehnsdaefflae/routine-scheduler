@@ -62,7 +62,16 @@ class SubrunManager:
         """
         ctx = self.parent.ctx
         if ctx.sub_counter[0] >= ctx.budgets.max_subruns:
-            return f"{noun} budget ({ctx.budgets.max_subruns}) exhausted"
+            # Say that the budget is SHARED (D147-A). It is one cumulative lifetime total for
+            # the whole tree — `sub_counter` is shared and never decremented — so a child
+            # refused at its own FIRST spawn reads a ceiling its siblings spent. Without this,
+            # the refusal is indistinguishable from a fault in the child's own call: the
+            # specimen (R1870/F549) is three children numbered 5, 7 and 8, every one refused
+            # at its first attempt and every one finishing partial.
+            return (f"{noun} budget exhausted — all {ctx.budgets.max_subruns} are spent. That "
+                    f"budget is shared across this run tree (every node's children count "
+                    f"against one total, and it never refills), so this is not a fault in your "
+                    f"call: do the work here instead of decomposing it")
         if ctx.depth + 1 > ctx.budgets.max_subrun_depth:
             return f"max {noun} depth ({ctx.budgets.max_subrun_depth}) reached"
         running = sum(1 for s in self.subruns.values() if s.status == "running")

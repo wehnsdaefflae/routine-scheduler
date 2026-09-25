@@ -6,7 +6,9 @@ the mode vocabulary and the hand-back path have exactly ONE definition and every
 it from there.
 """
 
+from rsched.config import load_routine
 from rsched.engine import child, control
+from rsched.engine.run_context import RunContext
 
 
 def test_modes_are_the_vocabulary():
@@ -75,6 +77,43 @@ def test_one_finished_headline_for_every_mode():
     # only the follow-on instruction differs, because only that genuinely differs
     assert "Fold this result into your next child run's brief" in seq
     assert "Fold this result" not in par
+
+
+def test_the_cap_refusal_says_the_budget_is_shared_by_the_whole_tree(make_routine, tmp_path):
+    """D147-A: `max_subruns` is one cumulative total for the run TREE, and the refusal has to
+    say so.
+
+    A child that has started nothing, refused at its own first spawn, reads "child run budget
+    (8) exhausted" and has no way to tell that its siblings spent the 8 — so it cannot
+    distinguish a shared ceiling from a bug in its own call. The specimen (R1870/F549): three
+    children numbered 5, 7 and 8, all refused at their first spawn, all finishing PARTIAL.
+    """
+    from rsched.config import ServerConfig
+    from rsched.engine.budgets_config import Budgets
+    from rsched.engine.subruns import SubrunManager
+    from rsched.engine.transcript import Transcript
+
+    d = make_routine("cap-refusal")
+    cfg, _problems = load_routine(d)
+    assert cfg is not None
+    run_dir = d / "runs" / "20260708-070000"
+    run_dir.mkdir(parents=True)
+    ctx = RunContext(routine=cfg, server=ServerConfig(), registry=None,
+                     run_ts="20260708-070000", run_dir=run_dir,
+                     transcript=Transcript(run_dir / "transcript.jsonl"),
+                     budgets=Budgets.from_config(cfg.budgets))
+    ctx.budgets.max_subruns = 8
+    ctx.sub_counter[0] = 8
+
+    mgr = SubrunManager.__new__(SubrunManager)
+    mgr.parent = type("P", (), {"ctx": ctx})()
+    mgr.subruns = {}
+
+    reason = mgr._cap_reason(noun="child run")
+    assert reason and "exhausted" in reason
+    assert "shared" in reason and "tree" in reason, (
+        f"the refusal says only {reason!r} — a child that started nothing cannot tell that "
+        f"its siblings spent the budget, so it reads a shared ceiling as its own failure")
 
 
 def test_finished_headline_names_what_the_child_handed_back():

@@ -15,6 +15,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.366.9] — 2026-09-25
+
+### Fixed — every node was told it had 8 child runs, and the 8 belongs to the whole tree
+
+items: D147, F549
+
+`max_subruns` is a cumulative LIFETIME total for the entire run tree: `run_context.sub_counter` is
+one shared list, `childrun` increments it and never decrements, and `subruns._cap_reason` gates on
+it. `engine/subruns.py` documented that correctly — and the harness contract rendered the raw
+ceiling into **every** node's prompt, so a child that had started nothing was told it had eight.
+
+The reported specimen (R1870): a run spawned three children, numbered 5, 7 and 8. All three were
+refused at their own **first** spawn and all three finished `partial`, each naming the refusal —
+and the loss was silent precisely because the refusal quoted the number the child had been promised.
+
+Both halves now tell the truth, decided as D147 option A:
+
+- the budgets line renders what **this node** may still start — `at most 8 child runs` with the
+  whole budget in front of it, `3 more child runs (8 shared across this run tree, 5 already
+  started)` once siblings have spent some, `no child runs left (all 8 shared across this run tree
+  are spent)` when it is gone. A remaining count with no total is as unplannable as a total with no
+  remainder, so both numbers are there;
+- the refusal says the budget is shared across the tree and never refills, and that the call was
+  therefore not at fault — a child refused at its first spawn could not previously tell a shared
+  ceiling from a bug in its own call.
+
+Purely informational: nothing about what a run may DO changes, so a tree relying on today's ceiling
+behaves exactly as before. `docs/prompt-anatomy.md` carries the new wording and the reasoning, as
+the harness's own contract with that doc requires.
+
 ## [0.366.8] — 2026-09-25
 
 ### Fixed — a failed-over run told the operator to pick a stronger model, naming a model they never chose
