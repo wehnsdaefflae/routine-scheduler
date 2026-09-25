@@ -82,9 +82,21 @@ def parse_reply(text: str, schema: dict) -> dict:
 
 
 def retry_message(problems: list[str], *, example: dict | None = None,
-                  repeated: bool = False) -> str:
+                  repeated: bool = False, diagnosis: str = "") -> str:
+    """The correction the model reads after an invalid action.
+
+    `diagnosis` names what is wrong with the OBJECT when the schema's own problem lines
+    cannot. A degraded model's characteristic failure is a whole-object FIELD SHIFT — values
+    sliding one key over — and most of a shifted action is still schema-valid, so the listed
+    problems describe whichever field happened to carry a constraint. weightloss:20260923-220004
+    spent eight rejections being told `timeout_s: 0 is less than the minimum of 1` while the
+    real fault was `kind='util'` with `name='300'` and a URL in `args` (F547/D146-C). A
+    correction that names the symptom four times teaches nothing.
+    """
     lines = "\n".join(f"- {p}" for p in problems)
     parts = ["Your previous reply was not a valid action:", lines]
+    if diagnosis:
+        parts.append(diagnosis)
     if repeated:
         parts.append("You returned the SAME invalid action again — do not repeat it; "
                      "fix the problems listed above.")

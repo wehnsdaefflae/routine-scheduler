@@ -16,7 +16,13 @@ from ..endpoints.base import EndpointError, retry_base_delay
 from ..endpoints.base import fold_usage as base_fold
 from ..schema_guard import SchemaViolation, extract_json, retry_message, validate
 from . import refusal
-from .actions import KIND_EXAMPLES, normalize_action, util_rejection_outcome, validate_action
+from .actions import (
+    KIND_EXAMPLES,
+    field_shift_diagnosis,
+    normalize_action,
+    util_rejection_outcome,
+    validate_action,
+)
 from .actionschema import ACTION_SCHEMA
 from .degrade import (
     _handle_empty,
@@ -86,6 +92,12 @@ def _adopt_model(loop, pair) -> tuple:
 def next_action(loop) -> tuple[dict | None, dict]:
     ctx = loop.ctx
     chain = ctx.registry.for_model_chain("main", ctx.routine.models)
+    # The chain HEAD is what the routine was configured with, whatever is serving now. Recorded
+    # once so a failure verdict can name the model the operator chose as well as the one that
+    # failed (F547/D146) — `main_model` below cannot, because it follows every switch.
+    if not ctx.configured_model and chain:
+        head = chain[0][1]
+        ctx.configured_model = f"{head.endpoint}/{head.model}"
     endpoint, ref = failover.pick(chain)   # first chain member not in provider cooldown
     ref = _override_window(loop, ref)      # re-apply any run-local window correction (F278)
     ctx.main_model = f"{ref.endpoint}/{ref.model}"     # in status.json; updates on a switch
@@ -206,9 +218,12 @@ def next_action(loop) -> tuple[dict | None, dict]:
                         "task was flagged and is being handled separately by another "
                         "model — proceed with the REMAINDER of the task without it.")
             loop.messages.append({"role": "assistant", "content": raw[:4000]})
+            # D146-C: when the object itself is field-shifted, say so instead of letting the
+            # correction describe whichever field happened to carry a constraint.
             loop.messages.append({"role": "user", "content": retry_message(
                 exc.problems, example=KIND_EXAMPLES.get(kind_hint or ""),
-                repeated=repeated) + essence_note})
+                repeated=repeated,
+                diagnosis=field_shift_diagnosis(completion.parsed or {})) + essence_note})
             if attempt == MAX_SCHEMA_ATTEMPTS - 1:
                 # Persistent violations under a provider-enforced grammar are often the
                 # grammar's fault (empty-string debris fields are its signature) — give

@@ -263,6 +263,7 @@ def _switch_to_fallback(loop, chain, failed_ref, exc: EndpointError):
         _log_chain_exhausted(loop, chain, failed_ref, exc)
         return None
     _, n_ref = nxt
+    loop.ctx.failover_rungs += 1
     loop.ctx.transcript.event("error", {
         "where": "endpoint",
         "message": (f"{failed_ref.name or failed_ref.model} failed hard: {str(exc)[:300]} "
@@ -270,7 +271,46 @@ def _switch_to_fallback(loop, chain, failed_ref, exc: EndpointError):
         "failover": {"from": failed_ref.name, "to": n_ref.name,
                      "cooldown_s": failover.COOLDOWN_S}})
     _log_failover(loop, chain, failed_ref, n_ref, exc)
+    _tell_the_run(loop, failed_ref, n_ref, exc)
     return nxt
+
+
+def _tell_the_run(loop, failed_ref, new_ref, exc: EndpointError) -> None:
+    """Tell the MODEL that is now serving that it is the fallback (D146-B).
+
+    Everything else this function's callers write is for a reader AFTER the fact: a transcript
+    event and a fleet health event. The run itself was never told, and
+    completion.py deletes the failed-attempt debris from the live prompt on success — so the
+    new model inherited the turn with no trace of the switch and no way to know its own
+    situation.
+
+    weightloss:20260923-220004 is what that costs. Configured on Opus high, served two rungs
+    down after a 503 and a 402, it read its own schema-invalid output and concluded "the model
+    cannot reliably hold the action schema; pick a stronger model" — a diagnosis about itself
+    that was false, and which it had no information to correct. $1.01 over 193 turns.
+
+    One appended line, at the switch, never re-rendered per turn: the message list is
+    appended-to and never mutated (CLAUDE.md), and a failover has already invalidated the
+    provider cache by changing model, so the append costs nothing extra.
+    """
+    rungs = loop.ctx.failover_rungs
+    step = "one rung" if rungs == 1 else f"{rungs} rungs"
+    # One naming convention for all three models in the sentence. `ctx.configured_model` is
+    # "<endpoint>/<model>" while a ModelRef's `name` is its catalog alias, and mixing them put
+    # three spellings of the same kind of thing in one paragraph.
+    failed = f"{failed_ref.endpoint}/{failed_ref.model}"
+    serving = f"{new_ref.endpoint}/{new_ref.model}"
+    configured = loop.ctx.configured_model or failed
+    loop.messages.append({"role": "user", "content": (
+        f"[MODEL FAILOVER — you are no longer the model this routine was configured with]\n"
+        f"{failed} failed hard ({str(exc)[:200]}), so this turn "
+        f"and the rest of the run are served by {serving} — {step} down "
+        f"the fallback chain from {configured}.\n"
+        f"This is a transport failure, not a judgment about the work. Two things follow for "
+        f"you: hold the action schema exactly (a fallback model's most common failure is a "
+        f"field-shifted action that is schema-valid but wrong), and if you cannot carry the "
+        f"task at this rung, say so in a finish summary naming this switch — do not diagnose "
+        f"the routine's own model, which is not what failed.")})
 
 
 def _log_failover(loop, chain, failed_ref, new_ref, exc: EndpointError) -> None:

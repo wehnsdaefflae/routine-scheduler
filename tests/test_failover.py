@@ -315,6 +315,142 @@ def test_run_fails_over_to_fallback_model(make_routine, monkeypatch):
     assert failover.is_cooling("epA", "m-a")   # the failed provider is cooling
 
 
+def test_the_fallback_model_is_told_it_is_the_fallback(make_routine, monkeypatch):
+    """D146-B: the switch must reach the RUNNING model, not only its readers.
+
+    Everything the switch wrote before this was for a reader after the fact — a transcript
+    `error` event and a fleet health event — while `completion` deletes the failed-attempt
+    debris from the live prompt on success. So the new model inherited the turn with no trace
+    of the switch and no way to know its own situation.
+
+    weightloss:20260923-220004 is what that cost: configured on Opus high, served two rungs
+    down after a 503 and a 402, it read its own field-shifted output and concluded "the model
+    cannot reliably hold the action schema; pick a stronger model" — a false diagnosis about
+    itself, which it had no information to correct. $1.01 over 193 turns.
+    """
+    d = make_routine("failover-told")
+    server = _catalog_server(d.parent)
+    eps = _wire(monkeypatch, server, {
+        "epA": [EndpointError("epA is down")],
+        "epB": [write_file("state/probe.txt", say="grounding work"),
+                finish(summary="served by the backup model")]})
+    status, _run_dir = run_routine(d, server, run_ts=TS)
+    assert status == "ok"
+
+    # the backup's FIRST call is the turn it inherited: the notice must already be in it
+    inherited = eps["epB"].calls[0]["messages"]
+    notices = [m for m in inherited
+               if "MODEL FAILOVER" in str(m.get("content") or "")]
+    assert notices, (
+        "the fallback model was handed the turn with no notice that it is the fallback — "
+        "every record of the switch went to readers after the fact")
+    said = str(notices[-1]["content"])
+    # models are named as the engine names them everywhere else: <endpoint>/<model>
+    assert "m-a" in said and "m-b" in said, (
+        "the notice must name both models: the one that failed and the one now serving")
+    assert "one rung" in said, "the notice must say how far down the chain the run now is"
+    assert "not a judgment about the work" in said, (
+        "a model told only that it is the fallback may read the switch as a verdict on its "
+        "own output — which is the misdiagnosis this whole change exists to stop")
+
+    # appended ONCE at the switch, never re-rendered per turn. It does not survive into the
+    # NEXT turn's prompt, and that is correct rather than a loss: completion drops everything
+    # beyond the turn's base message list on success (the retry/notice debris earned its keep
+    # eliciting THIS reply), and the transcript's error event keeps the durable record.
+    assert sum(1 for m in inherited
+               if "MODEL FAILOVER" in str(m.get("content") or "")) == 1
+
+
+def test_a_verdict_after_failover_names_the_configured_model_too(make_routine, monkeypatch):
+    """D146-A: an engine-authored failure verdict must say WHICH model it is indicting.
+
+    `ctx.main_model` follows every switch, so a schema-storm verdict on a failed-over run
+    named the fallback while the routine's config, the dashboard row and the operator all said
+    the primary — and then advised picking a stronger model, which is the one thing that
+    cannot help when the configured model was simply unreachable (F547).
+    """
+    d = make_routine("verdict-names-both")
+    server = _catalog_server(d.parent)
+    # epA dies; epB then returns four turns that each need a schema retry, tripping the storm
+    bad = {"kind": "util", "name": "300", "args": [], "timeout_s": 0, "say": "shifted"}
+    eps = _wire(monkeypatch, server, {
+        "epA": [EndpointError("epA is down: HTTP 503 auth_unavailable")],
+        "epB": [dict(bad) for _ in range(40)]})
+    status, run_dir = run_routine(d, server, run_ts=TS)
+    assert status == "failed"
+    assert eps["epA"].calls, "the primary must have been tried"
+
+    summary = (run_dir / "result.md").read_text(encoding="utf-8")
+    # <endpoint>/<model>, the form the engine uses for a model everywhere else
+    assert "m-a" in summary, (
+        "the verdict never names the CONFIGURED model, so it reads as an indictment of the "
+        "model the operator chose")
+    assert "m-b" in summary, "the verdict must name the model that actually served and failed"
+    assert "rung" in summary, "the verdict must say how far down the chain the run got"
+    assert "pick a stronger model" not in summary, (
+        "after a failover, 'pick a stronger model' is false advice: the configured model IS "
+        "the strong one and it was unreachable")
+    assert "was unreachable" in summary, (
+        "the verdict must say WHY the advice does not apply, not merely withhold it")
+    # and the sentence has to read as a sentence: the advice clause is separated from the
+    # phrase before it (the first draft produced '…action schema The configured model…')
+    assert "schema The configured" not in summary
+
+
+def test_a_verdict_without_failover_keeps_its_short_form(make_routine, monkeypatch):
+    """The other half of D146-A, so the fix does not make every ordinary failure verbose:
+    when nothing failed over, the model that failed IS the configured one and the advice is
+    exactly right."""
+    d = make_routine("verdict-short-form")
+    server = _catalog_server(d.parent)
+    bad = {"kind": "util", "name": "300", "args": [], "timeout_s": 0, "say": "shifted"}
+    _wire(monkeypatch, server, {"epA": [dict(bad) for _ in range(40)],
+                                "epB": [finish(summary="unused")]})
+    status, run_dir = run_routine(d, server, run_ts=TS)
+    assert status == "failed"
+    summary = (run_dir / "result.md").read_text(encoding="utf-8")
+    assert "pick a stronger model" in summary
+    assert "rung" not in summary and "now serving" not in summary
+
+
+def test_a_field_shifted_util_action_is_told_it_is_field_shifted(make_routine, monkeypatch):
+    """D146-C: name the fault, not the one field that happened to carry a constraint.
+
+    All eight rejections in weightloss:20260923-220004 carried ONE message —
+    `timeout_s: 0 is less than the minimum of 1` — because `timeout_s` is the only field with
+    a numeric minimum. The actual candidates had `name='300'`, `name='180'` and a whole
+    sentence of prose in `name`: a whole-object field shift, schema-VALID in every other
+    respect. The correction described the symptom four times and the fault went unnamed.
+    """
+    d = make_routine("field-shift-named")
+    server = _catalog_server(d.parent)
+    bad = {"kind": "util", "name": "300",
+           "args": ["https://example.invalid/", "--source", "steward"],
+           "timeout_s": 0, "say": "shifted"}
+    # A rejected action consumes one schema ATTEMPT inside the turn, not a turn — so the
+    # first bad reply is followed by a correction and a second attempt on the SAME turn.
+    eps = _wire(monkeypatch, server, {
+        "epA": [dict(bad),
+                write_file("state/probe.txt", say="corrected on the second attempt"),
+                finish(summary="recovered after being told what was wrong")],
+        "epB": [finish(summary="unused")]})
+    run_routine(d, server, run_ts=TS)
+
+    # the SECOND attempt's prompt carries the correction written for the first
+    corrections = [str(m.get("content") or "")
+                   for m in eps["epA"].calls[1]["messages"]
+                   if m.get("role") == "user"
+                   and "was not a valid action" in str(m.get("content") or "")]
+    assert corrections, "no retry correction reached the model"
+    said = corrections[-1]
+    assert "FIELD SHIFT" in said, (
+        "the correction named only the schema problem; a field-shifted object needs to be "
+        "told that its values are one key out of place")
+    assert "'300'" in said or '"300"' in said, (
+        "the correction must quote the value that cannot be a util name")
+    assert "Rebuild the action" in said
+
+
 def test_run_fails_when_chain_exhausted(make_routine, monkeypatch):
     d = make_routine("exhausted")
     server = _catalog_server(d.parent)

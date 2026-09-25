@@ -72,6 +72,42 @@ RESERVED_TURN_KINDS = frozenset({"finish", "report", "list_models"})
 # c-20260806-150112 burned 12 retries / 477K input tokens before dying late).
 SCHEMA_STORM_TURNS = 4
 
+
+def _serving_model_phrase(ctx: RunContext) -> str:
+    """How a failure verdict should NAME the model it is talking about.
+
+    `ctx.main_model` follows every failover switch, so on a run that stepped down the chain
+    these verdicts were indicting a model the operator never chose — while the routine's
+    config page, the dashboard row and the operator's own memory all said the primary.
+    weightloss:20260923-220004 was configured on Opus high, was served two rungs down after a
+    503 and a 402, and reported that "the model cannot reliably hold the action schema"
+    naming the third rung (F547/D146).
+
+    So when the serving model is NOT the configured one, the sentence says both and how far
+    down the chain it got. When nothing failed over, it stays the short form it always was.
+    """
+    if ctx.failover_rungs and ctx.configured_model and ctx.main_model != ctx.configured_model:
+        rungs = "one rung" if ctx.failover_rungs == 1 else f"{ctx.failover_rungs} rungs"
+        return (f"the model now serving this run ({ctx.main_model}, {rungs} down the fallback "
+                f"chain from the configured {ctx.configured_model})")
+    return f"the model ({ctx.main_model})"
+
+
+def _model_advice(ctx: RunContext) -> str:
+    """The "pick a stronger model" clause — dropped when it would be false advice.
+
+    Telling the operator to choose a stronger model is actionable only when the model that
+    failed is the model they chose. After a failover it is the opposite of useful: the
+    configured model IS the strong one and it was unreachable, so the fix is the transport or
+    the chain, never the routine's config (F547/D146).
+    """
+    if ctx.failover_rungs and ctx.configured_model and ctx.main_model != ctx.configured_model:
+        return (f". The configured model was not the one that failed, so a stronger model is "
+                f"not the remedy — {ctx.configured_model} was unreachable. Check that "
+                f"transport and the fallback chain")
+    return " — pick a stronger model"
+
+
 __all__ = [
     "MAX_SCHEMA_ATTEMPTS",
     "POLL_S",
@@ -205,8 +241,8 @@ class EngineLoop:
                         f"No action was ACCEPTED in {MAX_SCHEMA_ATTEMPTS} attempts "
                         f"({ctx.schema_retries} rejections this run, {ctx.turn} completed "
                         f"turns). The last rejection in the transcript names the wall: "
-                        f"schema-invalid output means the model ({ctx.main_model}) cannot "
-                        "hold the action schema — pick a stronger model (D87); repeated "
+                        f"schema-invalid output means {_serving_model_phrase(ctx)} cannot "
+                        f"hold the action schema{_model_advice(ctx)}; repeated "
                         "capability/grant denials mean the run was boxed in by policy, "
                         "and no model change fixes that (R404/F351).")
                 ctx.turn += 1
@@ -227,10 +263,10 @@ class EngineLoop:
                             "failed",
                             f"Schema storm: every one of the last {SCHEMA_STORM_TURNS} "
                             f"turns needed schema-rejection retries ({ctx.schema_retries} "
-                            f"rejections so far from {ctx.main_model}) — the model cannot "
-                            "reliably hold the action schema; failing early instead of "
-                            "burning the budget on retries (D87). Pick a stronger model "
-                            "for schema-driven work.")
+                            f"rejections so far from {ctx.main_model}) — "
+                            f"{_serving_model_phrase(ctx)} cannot reliably hold the action "
+                            f"schema; failing early instead of burning the budget on "
+                            f"retries (D87).{_model_advice(ctx)}")
                 else:
                     self._schema_storm_streak = 0
                 repeat_streak = loopnudge.repeat_streak(self, action)

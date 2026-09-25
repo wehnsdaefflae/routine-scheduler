@@ -127,6 +127,14 @@ class RunContext:
     outcome: str | None = None
     question: dict | None = None
     main_model: str = ""              # "<endpoint>/<model>" resolved each turn (in status.json)
+    # The model the ROUTINE WAS GIVEN — the head of its own chain, set once and never
+    # re-pointed. `main_model` above follows every failover switch, which is right for
+    # status.json and wrong for any sentence that advises the operator: weightloss:20260923-220004
+    # was configured on Opus high, was served two rungs down after a 503 and a 402, and failed
+    # telling the operator to "pick a stronger model" while naming the fallback (F547/D146).
+    # A verdict that indicts a model must be able to say WHICH.
+    configured_model: str = ""
+    failover_rungs: int = 0           # how many hard switches down the chain this run took
     budget_base_turn: int = 0         # turns before this count against a prior window (resume)
     # Which budget warning LINES this run has already been given (budget_warning): a warning
     # is an event, said once per line crossed, never a per-turn countdown.

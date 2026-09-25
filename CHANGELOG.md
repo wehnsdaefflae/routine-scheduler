@@ -15,6 +15,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.366.8] — 2026-09-25
+
+### Fixed — a failed-over run told the operator to pick a stronger model, naming a model they never chose
+
+items: D146, F547, F460
+
+`weightloss:20260923-220004` was configured on **Opus high**. It failed after 193 turns and
+**$1.01** saying *"the model cannot reliably hold the action schema … Pick a stronger model for
+schema-driven work"* — and named `nano gpt/zai-org/glm-5.2`. What actually happened: Opus returned
+HTTP 503 `auth_unavailable`, the next rung returned HTTP 402, and the run finished **two rungs
+down without ever being told**. The advice was unactionable, because the configured model *is* the
+strong one; it was unreachable. Decided as D146, all three parts.
+
+**A — an engine-authored verdict now names its subject.** `ctx.main_model` follows every failover
+switch, so both failure verdicts in `engine/loop.py` were indicting whichever model happened to be
+serving while the routine's config page, the dashboard row and the operator all said the primary.
+A run that failed over now reads: *the model now serving this run (X, two rungs down the fallback
+chain from the configured Y)* — and the "pick a stronger model" clause is **replaced** by what is
+actually true, that Y was unreachable and the transport or the chain is where to look. A run that
+never failed over keeps the short sentence it always had, which is covered by its own test so the
+fix cannot make every ordinary failure verbose.
+
+**B — the switch now tells the model that is serving.** Everything `degrade._switch_to_fallback`
+wrote was for a reader *after the fact*: a transcript event and a fleet health event. Meanwhile
+`completion` drops the failed-attempt debris from the live prompt on success, so the new model
+inherited the turn with no trace of the switch and no way to know its own situation — which is how
+a run came to diagnose itself, wrongly, as incapable of holding a schema. One line is now appended
+to the live message list at the switch, naming the model that failed, the model now serving, how
+far down the chain that is, and that a transport failure is not a verdict on the work.
+
+**C — a field-shifted action is told it is field-shifted.** All eight rejections in that run
+carried the *same* message, `timeout_s: 0 is less than the minimum of 1`, because `timeout_s` is
+the only field with a numeric minimum. The real candidates were `kind='util'` with `name='300'`,
+`name='180'` and a whole sentence of prose in `name`: a whole-object field shift, schema-valid in
+every other respect. `retry_message` takes a `diagnosis`, and a rejected `kind: "util"` whose name
+could not be a util name at all now gets told that its values are one key out of place, with
+instructions to rebuild the object rather than patch the field it was asked about. The detector
+reuses `_NAMEABLE_UTIL_RE` — the same naming rule 0.366.5's telemetry guard uses — so the two
+cannot drift apart.
+
+Two new `RunContext` fields carry it: `configured_model` (the chain head, set once and never
+re-pointed) and `failover_rungs`. `main_model` keeps its meaning exactly — the model *serving*.
+
+Four tests, each red first, and the reds earned their place twice over by finding two defects in
+the first draft: the advice clause ran into the phrase before it (*"…action schema The configured
+model…"*), and the notice named models three different ways in one paragraph — catalog alias for
+two of them and `endpoint/model` for the third. Both are now asserted against.
+
 ## [0.366.7] — 2026-09-25
 
 ### Fixed — the run-health read model counted usage LEGS where every one of its reasons says RUNS
