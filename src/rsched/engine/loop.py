@@ -374,7 +374,17 @@ class EngineLoop:
             self.ctx.transcript.event("error", {"where": "endpoint", "message": str(exc)})
             hint = (" Check the endpoint's key file under ~/.credentials/ (see config.yaml)."
                     if exc.auth else "")
-            return self._finish_run("failed", f"Endpoint failure: {exc}.{hint}")
+            # F566: when the run walked down a chain to get here, the error in hand is the LAST
+            # rung's — and the first rung's is the one a reader can act on. Name both, with the
+            # rung count, so the line says what started the collapse and what ended it.
+            if first := self.ctx.first_failover_cause:
+                rungs = self.ctx.failover_rungs
+                step = "1 rung" if rungs == 1 else f"{rungs} rungs"
+                said = (f"Endpoint failure: the model chain was exhausted after {step}. "
+                        f"First: {first}. Last: {exc}.{hint}")
+            else:
+                said = f"Endpoint failure: {exc}.{hint}"
+            return self._finish_run("failed", said)
         finally:
             if self.ctx.depth == 0:
                 self.ctx.transcript.close()

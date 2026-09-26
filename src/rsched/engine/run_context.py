@@ -143,6 +143,13 @@ class RunContext:
     # A verdict that indicts a model must be able to say WHICH.
     configured_model: str = ""
     failover_rungs: int = 0           # how many hard switches down the chain this run took
+    # The FIRST rung's failure — "<endpoint>/<model>: <error>", recorded at the first switch and
+    # never overwritten. A run whose whole chain dies reports only the LAST rung's error, which is
+    # the least informative one: on 2026-09-26, seven runs across five routines all failed with
+    # `Endpoint failure: nano gpt: timed out.` while what actually started every one of them was
+    # `claude-proxy: HTTP 503 auth_unavailable` on the configured model — an auth fault the
+    # operator could act on, hidden behind a timeout at a provider they never chose (F566).
+    first_failover_cause: str = ""
     budget_base_turn: int = 0         # turns before this count against a prior window (resume)
     # Which budget warning LINES this run has already been given (budget_warning): a warning
     # is an event, said once per line crossed, never a per-turn countdown.

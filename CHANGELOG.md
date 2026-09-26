@@ -15,6 +15,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.366.11] — 2026-09-26
+
+### Fixed — a dead fallback chain reported the LAST rung's error, which is the least actionable one
+
+items: [F566]
+
+Seven runs across five routines died between 01:43 and 04:08 and every one of them reported the
+same cause: `Endpoint failure: nano gpt: timed out.` — the fourth rung of a chain whose *first*
+rung had failed with `claude-proxy: HTTP 503 auth_unavailable: no auth available`. The operator
+reading that saw a timeout at a provider they never chose, while the auth fault they could act on
+appeared nowhere outside the health stream.
+
+`RunContext.first_failover_cause` now records the first rung's `<endpoint>/<model>: <error>` at the
+switch seam (`degrade._switch_to_fallback`, which sees it before anything else) and never
+overwrites it, so a later rung cannot bury the cause. When the chain is exhausted the failure line
+names both ends and the distance between them: *"the model chain was exhausted after 3 rungs.
+First: claude-proxy/opus-…: HTTP 503 auth_unavailable…. Last: nano gpt: timed out."*
+
+### Fixed — every SIGKILL was diagnosed as an out-of-memory kill, including one that peaked at 60 MB
+
+items: [F569]
+
+F348 sampled the dying engine's peak resident memory precisely because "a peak near the host's RAM
+is the kernel-OOM signature" — but nothing ever compared the two, so `classify_cause` returned
+`oom_kill` for *any* rc=-9 and the number rode along as decoration. On 2026-09-26 a conversation
+was reaped twice at `VmHWM=61716 kB` and `=64492 kB`: ~60 MB, on a host with orders of magnitude
+more, called an OOM both times.
+
+`classify_cause` now takes the sample and downgrades to `signal_kill` when the peak is below a
+tenth of the host's RAM (`/proc/meminfo`) — generous on purpose, since the kernel kills the biggest
+consumer, so a true victim sits near the ceiling. An absent sample changes nothing: without a
+ceiling to compare against, the previous reading stands. The automatic-recovery note the resumed
+leg reads stops asserting "likely out-of-memory" when the evidence contradicts it, and says what
+was ruled out instead — that note is read as established fact by the leg that acts on it.
+
 ## [0.366.10] — 2026-09-26
 
 ### Fixed — the skipped-stage detector counted module RE-READS, so experienced runs reported skipping everything

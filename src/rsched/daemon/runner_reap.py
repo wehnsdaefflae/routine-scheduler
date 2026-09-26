@@ -57,7 +57,8 @@ def reap(runner, run: ActiveRun, cfg: RoutineConfig, stderr: bytes) -> None:
                         f"{hwm_note})",
                         event="run_canceled" if run.user_cancel else "orphaned_run",
                         rc=rc, vm_hwm_kb=hwm,
-                        cause=classify_cause(rc, user_cancel=run.user_cancel))
+                        cause=classify_cause(rc, user_cancel=run.user_cancel,
+                                             vm_hwm_kb=hwm))
         info = registry.read_run(run.run_dir, run.slug)
         if rc == -9 and not run.user_cancel:
             retry_sigkilled(runner, run, cfg, hwm)
@@ -134,13 +135,23 @@ def retry_sigkilled(runner, run: ActiveRun, cfg: RoutineConfig, hwm: int | None)
         return
     atomic_write_json(marker, {"ts": now_iso(), "rc": -9, "vm_hwm_kb": hwm})
     hwm_note = f", peak memory {hwm} kB" if hwm else ""
+    # F569: the leg that reads this note treats it as established fact, so it must not name a
+    # cause the evidence contradicts. When the peak is far below the host's RAM the kill did not
+    # come from memory pressure, and telling the resumed leg to "avoid whatever ballooned memory"
+    # sends it hunting a cause that never existed.
+    memory_ruled_out = classify_cause(-9, vm_hwm_kb=hwm) != "oom_kill"
+    if memory_ruled_out:
+        diagnosis = (f" Peak memory was only {hwm} kB, far below this host's RAM, so this was "
+                     "NOT an out-of-memory kill — something else sent the signal (a supervisor "
+                     "stop, a deploy, a manual kill). Do not spend this leg avoiding memory use")
+    else:
+        diagnosis = (f"{hwm_note} — likely out-of-memory. Avoid repeating whatever ballooned "
+                     "memory (huge file reads, giant observations)")
     file_message(cfg.dir,
-                 f"AUTOMATIC RECOVERY: this run's previous leg was killed by the kernel "
-                 f"(rc=-9, no authored finish{hwm_note} — likely out-of-memory). This is "
-                 "the single automatic retry. Reassess from the transcript where the work "
-                 "stood, avoid repeating whatever ballooned memory (huge file reads, giant "
-                 "observations), and end with an honest authored finish even if that means "
-                 "partial.", source="daemon", via="background")
+                 f"AUTOMATIC RECOVERY: this run's previous leg was killed (rc=-9, no authored "
+                 f"finish).{diagnosis}. This is the single automatic retry. Reassess from the "
+                 "transcript where the work stood, and end with an honest authored finish even "
+                 "if that means partial.", source="daemon", via="background")
 
     async def _wake() -> None:
         rid = await runner.resume(cfg, run.run_ts, reason="sigkill-retry")
@@ -190,7 +201,35 @@ def apply_pending_edits(runner, cfg: RoutineConfig, slug: str) -> None:
                         r.get("kind"), slug, r.get("error"))
 
 
-def classify_cause(rc: int | None, *, user_cancel: bool = False) -> str:
+#: A SIGKILL whose peak resident memory is BELOW this fraction of the host's RAM did not run out
+#: of memory, whatever rc=-9 suggests on its own. F348 sampled the peak precisely because "a peak
+#: near the host's RAM is the kernel-OOM signature" — but nothing ever compared the two, so every
+#: SIGKILL wore the OOM verdict. Measured 2026-09-26 (F569): a conversation reaped twice at
+#: VmHWM 61,716 kB and 64,492 kB — ~60 MB — was called `oom_kill` and its resumed leg was told
+#: "likely out-of-memory" as established fact. A tenth is deliberately generous: the kernel kills
+#: the biggest consumer under pressure, so a true victim sits near the ceiling, not a rounding
+#: error below it.
+_OOM_PLAUSIBLE_FRACTION = 0.10
+
+
+def _host_ram_kb() -> int | None:
+    """Total host RAM in kB from /proc/meminfo, or None where it cannot be read.
+
+    None is not evidence: without a ceiling to compare against, a peak proves nothing either
+    way and the caller keeps its pre-existing verdict.
+    """
+    try:
+        with Path("/proc/meminfo").open(encoding="utf-8") as fh:
+            for line in fh:
+                if line.startswith("MemTotal:"):
+                    return int(line.split()[1])
+    except (OSError, ValueError, IndexError):
+        return None
+    return None
+
+
+def classify_cause(rc: int | None, *, user_cancel: bool = False,
+                   vm_hwm_kb: int | None = None) -> str:
     """Name WHY a run's process is gone, from the exit status the reap already has (F480).
 
     The live reap reads `rc` and then threw the distinction away: every death became
@@ -199,17 +238,25 @@ def classify_cause(rc: int | None, *, user_cancel: bool = False) -> str:
     and each member is a different investigation:
 
       user_abort     — a person asked for it; nothing to diagnose.
-      oom_kill       — SIGKILL (rc=-9), the kernel-OOM signature (D99/F348).
-      signal_kill    — died on some other signal: a supervisor stop, a deploy, a manual kill.
+      oom_kill       — SIGKILL (rc=-9) with a peak that supports it (D99/F348/F569).
+      signal_kill    — died on some other signal, or on SIGKILL with a peak far below the
+                       host's RAM: a supervisor stop, a deploy, a manual kill.
       engine_crash   — exited non-zero on its own; the traceback is the lead.
       no_finish      — exited CLEANLY yet wrote no finish, which is an engine defect.
       unknown        — rc was never observed (the boot path); honest, and filterable.
+
+    `vm_hwm_kb` is the dead engine's peak resident memory when a status write captured one.
+    It only ever moves a verdict AWAY from `oom_kill`, and only when it is low enough to
+    contradict it — an absent sample leaves the rc=-9 reading exactly as it was (F569).
     """
     if user_cancel:
         return "user_abort"
     if rc is None:
         return "unknown"
     if rc == -9:
+        ram = _host_ram_kb()
+        if vm_hwm_kb and ram and vm_hwm_kb < ram * _OOM_PLAUSIBLE_FRACTION:
+            return "signal_kill"
         return "oom_kill"
     if rc < 0:
         return "signal_kill"

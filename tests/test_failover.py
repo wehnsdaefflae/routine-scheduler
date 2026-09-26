@@ -464,6 +464,32 @@ def test_run_fails_when_chain_exhausted(make_routine, monkeypatch):
     assert "Endpoint failure" in fin["payload"]["summary"]
 
 
+def test_exhausted_chain_names_the_first_rung_not_only_the_last(make_routine, monkeypatch):
+    """F566: the failure line must name what STARTED the collapse, not just what ended it.
+
+    On 2026-09-26 seven runs across five routines all reported `Endpoint failure: nano gpt:
+    timed out.` — the fourth rung — while every one of them began with a 503
+    `auth_unavailable` on its configured model. The operator reading that sees a timeout at a
+    provider they never chose, and the auth fault they could actually fix appears nowhere.
+    The engine has the fact: `_switch_to_fallback` sees the first failure before any other.
+    """
+    d = make_routine("firstrung")
+    server = _catalog_server(d.parent)
+    _wire(monkeypatch, server, {
+        "epA": [EndpointError("HTTP 503: auth_unavailable: no auth available")],
+        "epB": [EndpointError("timed out")]})
+    status, run_dir = run_routine(d, server, run_ts=TS)
+    assert status == "failed"
+    events, _ = read_events(run_dir / "transcript.jsonl")
+    summary = next(e for e in events if e["type"] == "finish")["payload"]["summary"]
+    assert "auth_unavailable" in summary, (
+        f"the failure named only the last rung; the 503 that started it is missing: {summary!r}")
+    assert "epA/m-a" in summary, (
+        f"the failure must name WHICH model failed first, by endpoint/model: {summary!r}")
+    assert "timed out" in summary, (
+        f"the last rung's error must survive too — it is what finally ended the run: {summary!r}")
+
+
 def test_resolve_time_avoidance_skips_cooling_primary(make_routine, monkeypatch):
     d = make_routine("avoid")
     server = _catalog_server(d.parent)

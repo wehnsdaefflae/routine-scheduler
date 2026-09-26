@@ -617,6 +617,30 @@ def test_classify_cause_separates_the_deaths_that_need_different_investigations(
     assert runner_reap.classify_cause(-9, user_cancel=True) == "user_abort"
 
 
+def test_a_sigkill_at_sixty_megabytes_is_not_diagnosed_as_an_oom(make_routine, tmp_path):
+    """F569: `oom_kill` is a DIAGNOSIS, and rc=-9 alone does not support it.
+
+    F348 added the peak-memory sample precisely because "a peak near the host's RAM is the
+    kernel-OOM signature" — but the peak was never compared to anything, so every SIGKILL got
+    the OOM verdict and the number rode along as decoration. On 2026-09-26 a conversation was
+    reaped twice with `peak memory VmHWM=61716 kB` and `=64492 kB` beside `rc=-9`: 60 MB on a
+    12-core host, which is emphatically not memory pressure. The resumed leg is then TOLD
+    "likely out-of-memory" as fact and spends its opening avoiding a cause that never happened.
+
+    A peak this small means the signal came from somewhere else (a supervisor stop, a deploy, a
+    manual kill) — which is `signal_kill`, an investigation that looks at who sent it.
+    """
+    assert runner_reap.classify_cause(-9, vm_hwm_kb=61716) == "signal_kill"
+    assert runner_reap.classify_cause(-9, vm_hwm_kb=64492) == "signal_kill"
+    # a genuine OOM signature survives: a peak in the gigabytes keeps the memory verdict
+    assert runner_reap.classify_cause(-9, vm_hwm_kb=7_500_000) == "oom_kill"
+    # no sample at all is not evidence against an OOM — the old verdict stands, unqualified
+    assert runner_reap.classify_cause(-9) == "oom_kill"
+    assert runner_reap.classify_cause(-9, vm_hwm_kb=None) == "oom_kill"
+    # and a user abort still outranks every memory reading
+    assert runner_reap.classify_cause(-9, vm_hwm_kb=61716, user_cancel=True) == "user_abort"
+
+
 def _health_causes(tmp_path):
     lines = (tmp_path / "routines" / ".control" / "health-events.jsonl").read_text().splitlines()
     return [json.loads(ln)["cause"] for ln in lines if ln.strip()]

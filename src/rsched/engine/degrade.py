@@ -258,6 +258,13 @@ def _switch_to_fallback(loop, chain, failed_ref, exc: EndpointError):
     """
     failover.mark_failed(failed_ref.endpoint, failed_ref.model,
                          cooldown_s=failover.cooldown_for(exc))
+    # F566: remember what started the collapse. This seam sees the FIRST failure before any
+    # other, and if the whole chain dies the run otherwise reports only the last rung's error —
+    # the least actionable one. Recorded once and never overwritten, so later rungs cannot
+    # bury the cause.
+    if not loop.ctx.first_failover_cause:
+        loop.ctx.first_failover_cause = (
+            f"{failed_ref.endpoint}/{failed_ref.model}: {str(exc)[:200]}")
     nxt = failover.next_after(chain, failed_ref, **_turn_needs(loop))
     if nxt is None:
         _log_chain_exhausted(loop, chain, failed_ref, exc)
