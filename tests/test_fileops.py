@@ -94,3 +94,46 @@ def test_ordinary_paths_are_untouched(make_routine, tmp_path):
     ok = do_write_file({"kind": "write_file", "path": ".memory-notes/x.md", "content": "hi"},
                        ctx)
     assert "error" not in ok
+
+
+def test_writing_state_phase_json_records_the_stage_as_entered(make_routine, tmp_path):
+    """A run that works a stage WITHOUT re-reading its module is not a run that skipped it.
+
+    The read stamp only fires on a `read_file` of `stages/<name>.md`, so coverage measured
+    module RE-READS and the experienced routines — the ones whose recipe the model already
+    holds — reported every stage skipped (F563: 24 of 73 fleet runs on 2026-09-26). The run's
+    own cursor is the second, stronger source: it wrote the phase down deliberately.
+    """
+    ctx = _ctx(make_routine, tmp_path)
+    d = ctx.routine.dir
+    (d / "stages").mkdir(exist_ok=True)
+    for stem in ("orient", "act"):
+        (d / "stages" / f"{stem}.md").write_text(f"# Step: {stem}\n", encoding="utf-8")
+    (d / "main.md").write_text("## Run flow\n1. `stages/orient.md`\n2. `stages/act.md`\n",
+                               encoding="utf-8")
+
+    # Never opens either module — it routes by writing its own cursor, as a stage-driven
+    # recipe does once the model knows the flow.
+    assert do_write_file({"kind": "write_file", "path": "state/phase.json",
+                          "content": {"phase": "orient"}}, ctx).get("error") is None
+    assert ctx.phases_recorded == ["orient"]
+    assert ctx.phases_entered == []            # nothing was re-read, and that is the point
+    assert ctx.stage_coverage()["skipped"] == ["act"]   # NOT ["orient", "act"]
+
+    # An in-place patch of the cursor counts the same way, and never double-counts.
+    do_edit_file({"kind": "edit_file", "path": "state/phase.json",
+                  "anchor": '"orient"', "replacement": '"act"'}, ctx)
+    assert ctx.phases_recorded == ["orient", "act"]
+    assert ctx.stage_coverage()["entered"] == ["orient", "act"]
+    assert ctx.stage_coverage()["skipped"] == []
+
+    # A cursor carrying no usable phase is not evidence, and must never break the write.
+    # (Prose cannot get in: F460's format check refuses to turn a valid JSON file into
+    # non-JSON, so the only shapes that reach the hook are JSON ones.)
+    assert do_write_file({"kind": "write_file", "path": "state/phase.json",
+                          "content": {"phase": ""}}, ctx).get("error") is None
+    assert do_write_file({"kind": "write_file", "path": "state/phase.json",
+                          "content": {"note": "no phase key at all"}}, ctx).get("error") is None
+    assert do_write_file({"kind": "write_file", "path": "state/phase.json",
+                          "content": ["not an object"]}, ctx).get("error") is None
+    assert ctx.phases_recorded == ["orient", "act"]   # unchanged by all three

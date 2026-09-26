@@ -66,6 +66,14 @@ class RunContext:
     # worked through its recipe from one that read one module and finished. Stamped beside
     # `phase` at the same seam (engine/fileops.py), so it costs the recipe nothing.
     phases_entered: list[str] = field(default_factory=list)
+    # The phases the run RECORDED for itself — its own cursor, read from the routine's
+    # state/phase.json at each write of it. The second evidence source `stage_coverage`
+    # needs (F563): `phases_entered` only sees a stage the run RE-READ the module for, so a
+    # routine whose recipe the model already holds looked like one that skipped everything —
+    # 24 of 73 fleet runs on 2026-09-26, `llmsectest-weekday` reporting 0 of 7 across three
+    # runs of 404-423 turns. A phase the run wrote down is the stronger claim of the two,
+    # and it was already on disk.
+    phases_recorded: list[str] = field(default_factory=list)
     # The recipe version (last recipe-touching commit — recipes.current_recipe_commit)
     # that produced this run, stamped at run start; None for unversioned dirs
     # (conversations, clarify workspaces). Lands in status.json and the run's
@@ -368,10 +376,11 @@ class RunContext:
         recipe paid ~16 file reads per turn for a list that changes when the run enters a new
         module, which on a 60-turn run is 7 derivations instead of 120.
         """
-        key = tuple(self.phases_entered)
+        key = (tuple(self.phases_entered), tuple(self.phases_recorded))
         if self._stage_coverage_key != key:
             from ..readmodels.statemap import stage_coverage
-            self._stage_coverage = stage_coverage(self.routine.dir, self.phases_entered)
+            self._stage_coverage = stage_coverage(self.routine.dir, self.phases_entered,
+                                                 recorded=self.phases_recorded)
             self._stage_coverage_key = key
         return self._stage_coverage
 

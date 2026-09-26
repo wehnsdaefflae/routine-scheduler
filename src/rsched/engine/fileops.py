@@ -197,6 +197,30 @@ def _read_one(rel_path: str, action: dict, ctx: RunContext) -> dict:
         obs["directory"] = True
     return obs
 
+def _note_recorded_phase(ctx: RunContext, path) -> None:
+    """Record a phase the run WROTE for itself — the second half of stage coverage (F563).
+
+    The read stamp below sees a stage only when the run RE-READS `stages/<name>.md`, so it
+    measures module re-reads rather than stage work: a routine whose recipe the model already
+    holds routes by writing `state/phase.json` and read as one that skipped everything (24 of
+    73 fleet runs on 2026-09-26; `llmsectest-weekday` 0 of 7 entered across three runs of
+    404-423 turns). A phase the run wrote down is the stronger claim of the two, and it is
+    already on disk — this only notices it.
+
+    Deliberately quiet: a cursor that is missing, malformed or not a stage name is simply not
+    evidence, and a write must never fail because of what it happened to contain. Validating
+    the name against the declared set is `stage_coverage`'s job, not this seam's.
+    """
+    if path.name != "phase.json" or path.parent != ctx.routine.dir / "state":
+        return
+    try:
+        phase = json.loads(path.read_text(encoding="utf-8")).get("phase")
+    except (OSError, ValueError, AttributeError):
+        return
+    if isinstance(phase, str) and phase and phase not in ctx.phases_recorded:
+        ctx.phases_recorded.append(phase)
+
+
 def do_read_file(action: dict, ctx: RunContext) -> dict:
     paths = action.get("paths")
     if paths:  # batched read: several files in ONE action, one entry each
@@ -303,6 +327,7 @@ def do_write_file(action: dict, ctx: RunContext) -> dict:
             keep = path.stat().st_mode & 0o7777 if path.exists() else None
             atomic_write(path, data, mode=keep)
         ctx.seen_paths.add(str(path))   # written = seen: a rewrite of own output is grounded
+        _note_recorded_phase(ctx, path)   # the run's own cursor is stage-coverage evidence (F563)
         size = path.stat().st_size      # TOTAL bytes on disk after the write
     except (OSError, PermissionError) as exc:
         return {"kind": "write_file", "path": action["path"], "error": str(exc)}
@@ -369,6 +394,7 @@ def do_edit_file(action: dict, ctx: RunContext) -> dict:
         # do_write_file: no torn read/commit for a concurrent reader of this routine's dir.
         atomic_write(path, new_text, mode=path.stat().st_mode & 0o7777)
         ctx.seen_paths.add(str(path))   # an anchored edit is grounded by its verbatim anchor
+        _note_recorded_phase(ctx, path)   # a cursor patched in place counts too (F563)
     except (OSError, PermissionError) as exc:
         return {"kind": "edit_file", "path": action["path"], "error": str(exc)}
     return {"kind": "edit_file", "path": action["path"],

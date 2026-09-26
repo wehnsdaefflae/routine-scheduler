@@ -688,7 +688,7 @@ install seeds and the authority this table is written from:
 | `messaging-telegram` | the reserved `telegram` util — reach a person on Telegram | opt-in |
 | `messaging-whatsapp` | the reserved `whatsapp` util — reach a person on WhatsApp | opt-in |
 | `messaging-zulip` | the reserved `zulip` util — post in the user's Zulip | opt-in |
-| `outbound-mail` | the reserved `fau-mail-send` util — send email in the user's name | opt-in |
+| `outbound-mail` | the reserved `smtp`-tagged utils — send email in the user's name | opt-in |
 | `notifications` | the reserved `ntfy` util — push a notice to the user's own devices | opt-in |
 
 The four marked ✅ are `config.base.DEFAULT_PERMISSIONS`; conversations add `background-tasks`

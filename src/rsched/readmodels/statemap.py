@@ -79,7 +79,8 @@ def stage_states(routine_dir: Path) -> list[dict]:
     return [{"name": p.stem, "desc": _first_heading(p)} for p in files[:MAX_STATES]]
 
 
-def stage_coverage(routine_dir: Path, entered: list[str]) -> dict:
+def stage_coverage(routine_dir: Path, entered: list[str],
+                   recorded: list[str] | None = None) -> dict:
     """What a run DECLARED against what it actually entered (F521/R1681).
 
     `{"declared": [...], "entered": [...], "skipped": [...]}`, every list in the
@@ -91,9 +92,24 @@ def stage_coverage(routine_dir: Path, entered: list[str]) -> dict:
     declared set: a run that read a module which is no longer declared (a recipe edited
     mid-run) is not evidence about the current recipe, and counting it would make
     `entered` longer than `declared`.
+
+    TWO sources of evidence, because one of them is not enough (F563). `entered` comes
+    from `fileops`, which appends a stage the turn a run READS `stages/<name>.md` — so on
+    its own it measures module RE-READS, not stage work, and the runs that stop re-reading
+    are the ones whose recipe the model already holds. Measured on 2026-09-26: 24 of 73
+    fleet runs reported >=60% of their declared stages skipped, `llmsectest-weekday`
+    reporting 0 of 7 entered on three consecutive runs of 404-423 turns. Those runs did
+    the work; the signal was wrong.
+
+    So `recorded` — the phases the run WROTE for itself, its own cursor — counts as
+    entering too. It is the stronger of the two signals (a deliberate declaration rather
+    than an incidental read) and it costs the recipe nothing it was not already doing.
+    This does NOT make that cursor drive the diagram's live `current`, which stays the
+    executor-stamped phase: this function answers "was this stage worked", not "where is
+    the run now".
     """
     declared = [s["name"] for s in stage_states(routine_dir)]
-    seen = set(entered)
+    seen = set(entered) | set(recorded or ())
     visited = [name for name in declared if name in seen]
     return {"declared": declared, "entered": visited,
             "skipped": [name for name in declared if name not in seen]}

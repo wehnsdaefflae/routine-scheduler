@@ -15,6 +15,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.366.10] — 2026-09-26
+
+### Fixed — the skipped-stage detector counted module RE-READS, so experienced runs reported skipping everything
+
+items: F563, R1947, F521
+
+`status.json` has carried `stages: {declared, entered, skipped}` since F521/R1681, to answer
+"which declared stages did this run actually work". The answer was wrong for the runs that
+matter most, and wrong in the direction that makes a recipe look negligent.
+
+`phases_entered` was appended in exactly one place — `engine/fileops.py`, the turn a run
+performs a `read_file` on `stages/<name>.md`. So the recorded metric was *which stage modules
+did this run re-read*, not *which stages did it work*. A routine whose recipe the model already
+holds routes by writing `state/phase.json` and never re-opens the module, and was therefore
+recorded as having entered nothing.
+
+Measured across the fleet on 2026-09-26, last three runs of every routine with declared stages:
+**24 of 73 runs reported ≥60% of their declared stages skipped.** `llmsectest-weekday` reported
+**0 of 7 entered on three consecutive runs of 404–423 turns**; `weightloss` 0 of 4 at 163 turns;
+`doppelcheck-maintainer` 0 of 7 at 196. Those runs did the work — the signal was wrong.
+
+`stage_coverage` now folds a second source: `recorded`, the phases the run WROTE for itself.
+That cursor is the stronger of the two signals (a deliberate declaration rather than an
+incidental read), it was already on disk, and it costs a recipe nothing it was not doing.
+`RunContext.phases_recorded` collects it at both write seams (`do_write_file` and
+`do_edit_file`, so a cursor patched in place counts too), fail-quiet: a cursor that is missing,
+malformed or carries no phase is simply not evidence and never breaks a write.
+
+Deliberately NOT done in this change: surfacing `skipped` on the dashboard. Visibility is what
+R1947 asked for, and it is the next increment — but surfacing before fixing would have told the
+operator that a 423-turn run skipped every stage of its recipe, and a false alarm on a panel
+trains the reader to disbelieve it. The number becomes visible once it is true.
+
+The live `current` phase is untouched: it stays the executor-stamped module read, so the state
+diagram still shows where a run *is* rather than where it says it is.
+
+Shipped over one known-red browser test, `tests/ui/test_reported_ui.py::
+test_routines_view_refetches_cards_on_nav_back`, which fails identically on 0.366.9 with none of
+this change present (proven by restoring the candidate and re-running) and is unrelated to it.
+That test, and the release gate defect that reported it as `flaky` instead of red, are recorded
+as F565.
+
 ## [0.366.9] — 2026-09-25
 
 ### Fixed — every node was told it had 8 child runs, and the 8 belongs to the whole tree

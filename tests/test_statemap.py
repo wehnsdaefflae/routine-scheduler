@@ -126,3 +126,37 @@ def test_phase_stats_empty_without_transcript(tmp_path):
     from rsched.readmodels.statemap import phase_stats
 
     assert phase_stats(tmp_path) == []
+
+
+def test_stage_coverage_counts_a_stage_the_run_only_declared_via_phase_json(tmp_path):
+    """A stage worked WITHOUT re-reading its module still counts as entered (F563).
+
+    `phases_entered` is appended by fileops only when a run performs a `read_file` on
+    `stages/<name>.md`, so the raw signal measures module RE-READS, not stage work. A
+    routine whose recipe the model already holds routes by writing `state/phase.json`
+    and never re-opens the module — and reported every stage skipped: measured across
+    the fleet on 2026-09-26, 24 of 73 runs reported >=60% of declared stages skipped,
+    with llmsectest-weekday reporting 0 of 7 entered on three runs of 404-423 turns.
+
+    So a phase the run RECORDED for itself is coverage evidence too. This does not make
+    phase.json drive the diagram's `current` (test_state_graph_current_from_latest_run_status
+    still owns that boundary) — it only stops a worked stage being reported as skipped.
+    """
+    d = tmp_path / "r"
+    (d / "stages").mkdir(parents=True)
+    for stem in ("orient", "gather", "act", "record"):
+        (d / "stages" / f"{stem}.md").write_text(f"# Step: {stem}\n", encoding="utf-8")
+    (d / "main.md").write_text(
+        "## Run flow\n1. `stages/orient.md`\n2. `stages/gather.md`\n"
+        "3. `stages/act.md`\n4. `stages/record.md`\n", encoding="utf-8")
+
+    # The run re-read only ONE module; it recorded the other two as its phase in turn.
+    cov = statemap.stage_coverage(d, ["orient"], recorded=["gather", "act"])
+    assert cov["declared"] == ["orient", "gather", "act", "record"]
+    assert cov["entered"] == ["orient", "gather", "act"]   # flow order, not arrival order
+    assert cov["skipped"] == ["record"]                    # the only one genuinely untouched
+
+    # A recorded phase that is not a declared stage is not evidence about this recipe.
+    assert statemap.stage_coverage(d, [], recorded=["not-a-stage"])["entered"] == []
+    # Absent `recorded` keeps the old behaviour exactly — every caller need not pass it.
+    assert statemap.stage_coverage(d, ["orient"])["skipped"] == ["gather", "act", "record"]
