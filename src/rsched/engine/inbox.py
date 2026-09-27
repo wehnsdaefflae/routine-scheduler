@@ -58,7 +58,12 @@ USER_MESSAGE_VIAS = ("conversation", "web", "web-converse")
 #: messages, trigger/one-shot texts — is addressed to the routine's NEXT FRESH run and is
 #: consumed only by that run's boot, never mid-flight. Mid-run injection into a running run
 #: is the live run view's channel, by design.
-LIVE_MESSAGE_VIAS = (*USER_MESSAGE_VIAS, "background", "branch")
+#: `oversight` is here for the reason the whole ladder exists: a directive that only reached the
+#: routine's next fresh run would arrive after the drift it was written to correct. It is the one
+#: MACHINE channel that must reach a run mid-flight, and it may do so only at a turn boundary —
+#: never as a prefix rewrite, because the message list is a prompt-caching contract with exactly
+#: three sanctioned rewriters and a supervisor must not become a fourth.
+LIVE_MESSAGE_VIAS = (*USER_MESSAGE_VIAS, "background", "branch", "oversight")
 
 #: The CLOSED set of delivery channels. `via` is not a label: it is the switch that decides
 #: when a message is consumed (the two tuples above), whether the reap counts it as a user
@@ -82,6 +87,7 @@ VIAS = frozenset({
     "trigger",        # daemon/triggers — a configured event's text
     "schedule_once",  # daemon/schedule_once — a one-shot fire's provenance
     "pending",        # pending.notify_proposer — the outcome of a queued proposal
+    "oversight",      # engine/control — an escalation rung's directive, binding the run below
 })
 
 #: The channels whose freight a MACHINE authored. `ctx.user_replies` — read by the
@@ -89,7 +95,7 @@ VIAS = frozenset({
 #: assist predicate — counts the user talking, so a report, a background result or a branch
 #: hand-back must not advance it. Everything else on VIAS is a person at a console.
 MACHINE_VIAS = frozenset({"report", "background", "branch", "trigger", "schedule_once",
-                          "pending"})
+                          "pending", "oversight"})
 
 
 def user_authored(via: str) -> bool:
