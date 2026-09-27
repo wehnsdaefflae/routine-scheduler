@@ -244,12 +244,40 @@ services:
       - tor-data:/var/lib/tor
 
 networks:
+  # IPv6 IS ON for both networks, and it is not a nicety. Docker hands a container IPv4 only by
+  # default, so when this line lost IPv4 for three nights running — modem link up, WAN IPv4
+  # disconnected, IPv6 untouched — the host went on working while every container was cut off
+  # from every model endpoint and the whole fleet stopped. Measured from an IPv6-only vantage on
+  # this network: api.anthropic.com and openrouter.ai both answer in 0.03s, so the primary
+  # transport and its first failover rung both survive an IPv4 outage once the containers can
+  # reach them. (nano-gpt and github publish no AAAA, so the last rung and git pushes still need
+  # IPv4 — a run does its work regardless.)
+  #
+  # ULA subnets with Docker's NAT66, not a routed prefix: the ISP's delegation is dynamic, and a
+  # container addressing scheme that changes when the prefix does is one that breaks on a lease
+  # renewal. The IPv4 subnets are pinned to what they already were, so no address moves.
+  #
+  # CHANGING ANYTHING HERE NEEDS `--profile claude-proxy`. A network can only be recreated once
+  # every container is off it, and `cliproxy` sits behind that profile, so a plain
+  # `docker compose up -d` stops the other three, fails to drop the network cliproxy still holds,
+  # and leaves the fleet down with the model transport still on the old network:
+  #   docker compose --profile claude-proxy up -d --force-recreate
+  # `--force-recreate` matters for cliproxy specifically — compose will otherwise try to START
+  # the existing container, which still references the deleted network by id and cannot boot.
+  default:
+    enable_ipv6: true
+    ipam:
+      config:
+        - subnet: 172.18.0.0/16
+        - subnet: fd00:5ced:1::/64
   # A dedicated network with a pinned subnet, so the browser's address is a constant the routines
-  # can name. The default project network keeps its generated addressing.
+  # can name.
   browser:
+    enable_ipv6: true
     ipam:
       config:
         - subnet: 172.30.7.0/24
+        - subnet: fd00:5ced:7::/64
 
 volumes:
   tor-data:
