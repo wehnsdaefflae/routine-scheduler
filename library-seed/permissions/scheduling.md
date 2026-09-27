@@ -24,6 +24,13 @@ one-shot with `cancel: true` (plus `id` to cancel one, or without an id to clear
 one-shot on the target) — arming is durable, so a cancel before `fire_at` is the way to call
 it off.
 
+**Not to be confused with run ADMISSION.** This permission decides when a run is *armed*; a
+routine's optional `scripts/gate.py` decides whether a scheduled fire becomes a run at all,
+and it is a separate mechanism with a stricter contract — a gate may declare no `calls:`, no
+`secrets:` and no PEP 723 `dependencies`, and violating that produces a **failed run** rather
+than a skip. A one-shot armed here is one of the fire reasons a gate does NOT evaluate. The
+whole gate contract lives in the scheduler's `docs/run-gates.md`; read it before writing one.
+
 Arm deliberately: a one-shot spends a real run slot when it fires (subject to the same
 one-run-per-routine, `max_concurrent_runs`, and restart-drain rules as a cron fire). Don't arm
 a flurry of near-future one-shots where a single run would do, and always give a `reason` the

@@ -39,7 +39,17 @@ filesystem roots as the recipe's file actions (recipe and script read and write 
 files), ONLY the granted secrets its header declares, and the library utils its `calls:`
 line names — whose own secrets and network fold into that same sandbox, so a declared
 util needs no second grant. An UNDECLARED util the code shells out to is refused, not
-quietly run without its access. There is no model access: a judgment call belongs in the
+quietly run without its access.
+
+**`scripts/gate.py` is the ONE exception, and it is stricter than everything above.** A
+run-admission gate is a script by file layout only: it runs BEFORE any engine, so it gets
+none of the latitude a script has. `calls:`, `secrets:` and non-empty PEP 723
+`dependencies` are each REJECTED there, and the fire becomes a **failed run** — not a
+skip, not a run without the access. A routine that carries a gate header over from this
+section will fail every scheduled fire, silently and nightly, before turn 0. The gate's
+own contract — its one-JSON-object output, what counts as a failed attempt, which fire
+reasons bypass it, and that a skip costs zero turns and zero tokens — is stated in full in
+the scheduler's `docs/run-gates.md`, and that is the document to read before writing one. There is no model access: a judgment call belongs in the
 recipe, and so does a capability the routine itself does not hold. A script
 NEVER routes around a rule: behavior a rule gates — asking before an irreversible
 outward act, evidencing a claim, recording a decision — stays under the recipe's
