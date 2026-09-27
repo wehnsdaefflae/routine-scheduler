@@ -15,6 +15,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.366.14] — 2026-09-27
+
+### Fixed — the run-gate control told you to write a file the daemon never reads
+
+items: q-20260927 (operator), R1988
+
+> *"where's the ui surface for the script gating routine runs? i cannot find it. it should be
+> independent from whether the routine runs in a lane or not or how it is scheduled in general."*
+
+The surface exists — D141 put it in the routine page's **Schedule** section, riding that section's
+own save button. Two things made it unfindable and, once found, misleading:
+
+1. **It named the wrong file.** The label said `scripts/run_gate.py`. The daemon looks for
+   `scripts/gate.py` (`daemon/run_gate.py:41`), which is also what `docs/run-gates.md` and
+   `tests/test_run_gate.py` say. `run_gate.py` is the *module that runs* the gate, not the gate.
+   Anyone following the label would have written a file nothing reads — and a gate that is never
+   found is indistinguishable from no gate at all, since both admit every run. That is the one
+   failure mode a gate must not have.
+2. **It did not answer the operator's actual question.** The help text described what happens when
+   a gate errors but never said which fires it applies to. It now does: every scheduled fire — the
+   routine's own cadence, a lane's clock, or a boot catch-up — and never Run now, a trigger, a
+   one-shot or a resume. That is exactly the lane-independence he asked about, and it was already
+   true; it was simply not written anywhere he was looking.
+
+A paired-literal test now pins the console's label to the daemon's own path and the doc's, the way
+`test_push.py::test_worker_auth_cache_literals_stay_paired` pins the service-worker cache keys —
+proven red on the old label first. This class of drift is silent by construction, so it needs a test
+rather than care.
+
 ## [0.366.13] — 2026-09-27
 
 ### Fixed — the one way a lane can lose a fire that wrote no event at all

@@ -69,12 +69,14 @@ export function scheduleSections(view, d, { slug, chipHost, runChip, refreshSurf
   paintGate();
   const gateRow = el("div", { class: "mt" },
     el("label", { class: "row", style: "gap:8px" }, gateBox,
-      el("span", {}, "run gate — only start a run when ", el("code", {}, "scripts/run_gate.py"),
+      el("span", {}, "run gate — only start a run when ", el("code", {}, "scripts/gate.py"),
         " says there is work")),
     el("div", { class: "faint small", style: "margin:2px 0 0 26px" },
       "the daemon runs that script before the engine starts, so a skipped run costs nothing. ",
       "If the gate errors or misses its deadline the run does not start either — it is recorded ",
-      "as failed, so a broken gate stops the routine until you fix it."),
+      "as failed, so a broken gate stops the routine until you fix it. It applies to every ",
+      "scheduled fire — its own cadence, a lane's clock, or a boot catch-up — and never to ",
+      "Run now, a trigger, a one-shot or a resume."),
     el("div", { style: "margin:6px 0 0 26px" }, gateTimeoutRow));
   view.append(...settingsSection({ title: "Schedule", id: "schedule" },
     "when this routine runs on its own — a cron-like cadence in the server's timezone, plus the "

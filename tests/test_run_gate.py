@@ -1,6 +1,7 @@
 """Admission uses real bounded subprocesses, isolated routine homes, and no model boot."""
 import asyncio
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -71,6 +72,31 @@ async def test_errors_never_skip_or_boot(setup_gate, monkeypatch, body):
     _, run, st = await finish(runner, cfg)
     assert st["state"] == "failed" and st["outcome"] == "failed"
     assert read_json(run.run_dir / "gate.json")["decision"] == "error"
+
+
+def test_the_console_names_the_script_the_daemon_actually_runs():
+    """The routine page's run-gate control tells the operator which file to write. If that
+    label and `daemon/run_gate.py` disagree, the operator writes a file the daemon never reads
+    and gets a gate that silently never gates — the one failure mode a gate must not have,
+    because "no gate" and "a gate that admits everything" look identical from outside.
+
+    Found 2026-09-27: the operator asked where the run-gate surface was. It existed (D141, in
+    the Schedule section) but its label said `scripts/run_gate.py`, while the daemon, this
+    suite and `docs/run-gates.md` all use `scripts/gate.py`.
+    """
+    root = Path(__file__).resolve().parent.parent
+    label = (root / "static/views/routine-config-schedule.js").read_text(encoding="utf-8")
+    enforcer = (root / "src/rsched/daemon/run_gate.py").read_text(encoding="utf-8")
+    doc = (root / "docs/run-gates.md").read_text(encoding="utf-8")
+
+    assert "scripts/gate.py" in enforcer, "the daemon's own path literal moved"
+    assert "scripts/gate.py" in doc, "the doc's path literal moved"
+    assert "scripts/gate.py" in label, (
+        "the console must name the gate script the daemon runs; it currently names something "
+        "else, so anyone following the UI writes a file nothing reads")
+    assert "scripts/run_gate.py" not in label, (
+        "`scripts/run_gate.py` is the MODULE that runs the gate, not the gate itself — naming "
+        "it in the console is what sent an operator looking for the wrong file")
 
 
 def fake_engine(monkeypatch, cfg):
