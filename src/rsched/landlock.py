@@ -67,8 +67,25 @@ class _RulesetAttr(ctypes.Structure):
 
 
 class _PathBeneathAttr(ctypes.Structure):
+    # The kernel declares landlock_path_beneath_attr `__attribute__((packed))`: a u64 then an
+    # s32, twelve bytes with no tail padding. `_pack_ = 1` is what reproduces that, and from
+    # Python 3.14 ctypes refuses to infer which packed layout is meant — it warns, this project
+    # turns warnings into errors, and the whole suite then fails to COLLECT on this import.
+    # "ms" is the layout `_pack_` has always selected and the only one ctypes accepts with it;
+    # for these two fields it is byte-identical to the GCC packing the header asks for, which
+    # the sizeof assertion below pins. Ignored by 3.12, which has no `_layout_`.
     _pack_ = 1
+    _layout_ = "ms"
     _fields_ = (("allowed_access", ctypes.c_uint64), ("parent_fd", ctypes.c_int32))
+
+
+# Twelve is the ABI's own number, checked at import because the alternative is silent: a layout
+# that grew tail padding would hand the kernel a 16-byte struct for a 12-byte call, every rule
+# would be refused, and the jail would read as applied. Not an `assert` — this must survive -O.
+if ctypes.sizeof(_PathBeneathAttr) != 12:
+    raise RuntimeError(
+        f"landlock_path_beneath_attr must be 12 bytes, this interpreter lays it out as "
+        f"{ctypes.sizeof(_PathBeneathAttr)}; the sandbox would be accepted and not enforced")
 
 
 class SandboxApplyError(OSError):

@@ -15,6 +15,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.366.12] — 2026-09-27
+
+### Fixed — the sandbox struct would have been laid out by a rule nobody chose
+
+`landlock_path_beneath_attr` is a packed Linux ABI struct: a u64 then an s32, twelve bytes with
+no tail padding. `_pack_ = 1` reproduced that, and from Python 3.14 ctypes refuses to infer which
+packed layout is meant. It warns, this project turns warnings into errors, and the entire suite
+then failed to COLLECT on that one import. The host had just moved to 3.14, so every gate run
+outside the container stopped before it started.
+
+The layout is now named rather than inferred, and the size is checked at import. That second half
+is the part worth having: a layout that quietly grew tail padding would hand the kernel a 16-byte
+struct for a 12-byte call, every rule would be refused, and `landlock.apply` would return as
+though the jail had closed. A sandbox that reports success and enforces nothing is the one failure
+here that nothing downstream would catch, so it raises on import instead, and not through an
+`assert`, which `-O` removes.
+
+Verified on both interpreters this instance now runs: clean import under `-W error`, twelve bytes,
+and a real jail that still denies `/` while serving its granted root, on 3.12 in the container and
+3.14 on the host. The fast suite on 3.14 goes from not collecting at all to 2,745 passing.
+
 ## [0.366.11] — 2026-09-26
 
 ### Fixed — a dead fallback chain reported the LAST rung's error, which is the least actionable one
