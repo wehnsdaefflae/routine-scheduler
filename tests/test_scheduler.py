@@ -547,6 +547,69 @@ async def test_due_lane_fire_while_in_flight_emits_refused_event(make_routine, t
     assert "still in flight" in ev["detail"]
 
 
+async def test_a_paused_lane_skip_says_so_in_the_health_stream(make_routine, tmp_path,
+                                                              monkeypatch):
+    """F573: a global pause SKIPS a due lane fire and deliberately moves the watermark, so
+    boot catch-up will not make it up — and until this event existed, the only witness was a
+    `log.info` line in a journal the audit cannot read.
+
+    Measured cost of the silence: a 65-minute pause on 2026-09-26 (04:05-05:10 local) spanned
+    the 05:00 fire of a WEEKLY lane, `grp-3235d2ee` "Instance · Weekly · Research". Its two
+    members went dark for eight days with no event of any kind, and the run that finally
+    noticed had to prove it from the absence of a lock file. A pause sized in minutes cost a
+    week, which is the part no reader could have seen.
+
+    This test fails if the skip goes unrecorded, and it asserts on the DETAIL rather than on
+    the event name alone: the reader has to learn which lane lost a fire, or the event is a
+    notification that something unspecified happened.
+    """
+    import json
+
+    from rsched import lanes
+    from rsched.daemon import pause
+
+    make_routine(slug="researcher")
+    monkeypatch.setattr(sched_mod, "TICK_S", 0.02)
+    server = _server(tmp_path)
+    lane = lanes.create(server.routines_home, name="Weekly Research",
+                        members=[{"slug": "researcher"}],
+                        cron="0 5 * * 6", tz="UTC")
+    pause.set_paused(server, True)
+    fr = FakeRunner()
+    sched = Scheduler(server, fr, EventBus())
+    task = asyncio.create_task(sched.run_forever())
+    await asyncio.sleep(0.05)
+    sched.lane_next_fires[lane["id"]] = datetime.now(UTC) - timedelta(seconds=1)
+
+    p = server.routines_home / ".control" / "health-events.jsonl"
+    assert await _wait_for(lambda: p.exists() and "lane_fire_paused" in p.read_text())
+    task.cancel()
+
+    # nothing was armed: a paused skip is a skip, not a deferred fire
+    assert ("researcher", "lane") not in fr.fired
+
+    ev = [json.loads(x) for x in p.read_text(encoding="utf-8").splitlines()
+          if "lane_fire_paused" in x][-1]
+    assert ev["event"] == "lane_fire_paused"
+    # keyed by the LANE id, like every other lane event — a lane fires no routine of its own
+    assert ev["routine"] == lane["id"] and ev["run_id"] == ""
+    # the detail must name the lane and say the fire is GONE rather than postponed
+    assert lane["name"] in ev["detail"]
+    assert "paused" in ev["detail"]
+
+
+def test_the_blocked_fleet_fold_can_see_a_paused_lane_skip():
+    """A health event nobody reads is the failure mode `health_stream.py`'s own docstring
+    describes ("six of those events say the same thing … and nothing a person clicks showed a
+    line of it"). A paused skip means WORK THAT WAS DUE DID NOT HAPPEN, so it belongs in the
+    blocked-fleet fold; this fails if the event is added to the writer's vocabulary but not to
+    the reader's."""
+    from rsched.readmodels.health_stream import BLOCKED_EVENTS
+
+    assert "lane_fire_paused" in BLOCKED_EVENTS
+    assert BLOCKED_EVENTS["lane_fire_paused"].strip()
+
+
 async def test_abort_while_queued_releases_the_slug(make_routine, tmp_path, monkeypatch):
     """Aborting a run that is still QUEUED must leave nothing behind in `runner.active`.
 

@@ -15,6 +15,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.366.13] — 2026-09-27
+
+### Fixed — the one way a lane can lose a fire that wrote no event at all
+
+items: F573
+
+A global pause SKIPS a due lane fire and moves the lane's watermark with it. Both halves are
+deliberate: pause promises that resuming does not backlog-fire, and moving the watermark is what
+keeps boot catch-up from making the fire up. What nothing said out loud is the consequence — the
+fire is **gone rather than deferred**, and its cost is a whole cron interval, not the length of
+the pause.
+
+Measured: a 65-minute pause on 2026-09-26 (04:05–05:10 local) spanned the 05:00 Saturday fire of
+the WEEKLY lane `grp-3235d2ee` "Instance · Weekly · Research". Its two members,
+`scheduler-improvement-research` and `token-lab`, then went **eight days** without running, and the
+audit that noticed had to prove it from the *absence of a lock file* — `lane_runs.arm()` takes its
+lane lock before it can return, so a watermark with no lock is a stamp from a path that never
+armed. A second lane, `grp-d686314e` (`0 12 * * 1`), lost its 09-21 fire the same way.
+
+Every other way a lane fails to run already wrote a health event — `lane_fire_refused`,
+`lane_chain_stopped`, `lane_chain_member_skipped`. The costliest one wrote a `log.info` line, in a
+journal the nightly audit cannot read. So `lane_fire_paused` now joins the vocabulary, keyed by the
+lane id like its siblings, carrying `cron` and `next_fire`, with a detail that says the fire is
+gone rather than postponed — and it is registered in the reader's `BLOCKED_EVENTS` fold in the same
+change, because an event only the writer knows about is the exact failure that left six events
+unread for weeks.
+
+Two red-first tests: one drives a paused Scheduler and asserts the event, its lane keying and its
+detail (and that nothing was armed); one asserts the reader's fold knows the name. The repo's two
+standing vocabulary guards — writer-emits-only-documented, reader-only-reads-documented — both pass.
+
 ## [0.366.12] — 2026-09-27
 
 ### Fixed — the sandbox struct would have been laid out by a rule nobody chose

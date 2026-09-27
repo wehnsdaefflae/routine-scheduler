@@ -248,6 +248,23 @@ class Scheduler:
                         # it up as a whole chain and blamed the daemon for being down. Pause's
                         # own promise is that resuming does not backlog-fire (daemon/pause.py).
                         lane_fires.stamp(self.server.routines_home, lane_id)
+                        # …and because that watermark move is what STOPS catch-up making it up,
+                        # the skip is permanent: this fire is gone, not postponed. On a daily
+                        # lane that costs hours; on a WEEKLY one a pause measured in minutes
+                        # costs seven days (F573: a 65-minute pause on 2026-09-26 spanned the
+                        # 05:00 fire of a weekly lane, whose two members then went dark for
+                        # eight days with nothing but a log.info line as witness — and this
+                        # routine's audit cannot read the journal). Every OTHER way a lane
+                        # fails to run writes an event; the costliest one wrote none.
+                        log_health_event(
+                            self.server.routines_home, "lane_fire_paused",
+                            routine=lane_id, run_id="",
+                            detail=f"{lane.get('name') or lane_id}: due lane fire skipped "
+                                   f"because scheduling is paused - the watermark moves with "
+                                   f"it, so this fire is GONE rather than deferred and the "
+                                   f"next one is a whole cron interval away",
+                            cron=str(lane.get("cron") or ""),
+                            next_fire=self.lane_next_fires[lane_id].isoformat())
                         continue
                     rec = lane_runs_store.arm(
                         self.server.routines_home, lane,
