@@ -25,15 +25,19 @@ def _ctx(make_routine, slug: str) -> RunContext:
 def test_modes_are_the_vocabulary():
     """The mode constants and MODE_NOUN's keys are the same set — a mode added to one and not
     the other is exactly the drift this module exists to prevent."""
-    assert set(child.MODE_NOUN) == {child.PARALLEL, child.SEQUENTIAL, child.BRANCH}
-    assert (child.PARALLEL, child.SEQUENTIAL, child.BRANCH) == (
-        "parallel", "sequential", "branch")
+    assert set(child.MODE_NOUN) == {child.PARALLEL, child.SEQUENTIAL, child.BRANCH,
+                                    child.OVERSIGHT}
+    assert (child.PARALLEL, child.SEQUENTIAL, child.BRANCH, child.OVERSIGHT) == (
+        "parallel", "sequential", "branch", "oversight")
 
 
 def test_mode_noun_never_leaks_a_raw_enum():
     assert child.mode_noun(child.PARALLEL) == "parallel child run"
     assert child.mode_noun(child.SEQUENTIAL) == "sequential child run"
     assert child.mode_noun(child.BRANCH) == "branched child conversation"
+    # The inverted-authority mode must not read like the three delegating ones: a worker is
+    # told it is SUPERVISED, not that it acquired a sub-workflow.
+    assert child.mode_noun(child.OVERSIGHT) == "oversight run supervising the run below it"
     assert child.mode_noun("nonsense") == "child run"      # never the raw value
 
 

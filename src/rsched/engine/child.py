@@ -48,6 +48,12 @@ log = logging.getLogger("rsched.engine.child")
 PARALLEL = "parallel"        # `spawn` — runs concurrently; the parent keeps working
 SEQUENTIAL = "sequential"    # `subtask` — the parent waits for this one before moving on
 BRANCH = "branch"            # F325 — a conversation forked at a message; the USER drives it
+# The escalation ladder. The one mode whose AUTHORITY IS INVERTED: the three above are a parent
+# delegating downward, while an oversight child is started by the ENGINE on the worker's behalf
+# and its directive BINDS the run below it. It obeys the same three-part contract as the others
+# (own directory, own budget, declared hand-back), which is why it is a mode and not a new kind
+# of child — the only thing it changes is who is serving whom.
+OVERSIGHT = "oversight"
 
 # How each mode reads in prose the model sees — and, by its keys, the mode vocabulary itself.
 # Kept here rather than inline at each call site so the three surfaces (kind copy, observations,
@@ -56,6 +62,9 @@ MODE_NOUN = {
     PARALLEL: "parallel child run",
     SEQUENTIAL: "sequential child run",
     BRANCH: "branched child conversation",
+    # Named for what it does to the run, not for where it sits in the tree: a worker is told it
+    # is being SUPERVISED, and a supervisor is told what it is supervising.
+    OVERSIGHT: "oversight run supervising the run below it",
 }
 
 # Where a child writes what it is handing back. Its OWN artifacts/ — not a special channel.
@@ -67,8 +76,10 @@ HANDBACK_SUBDIR = "artifacts"
 #: `"SUBTASK" if mode == "sequential" else "SUB-WORKFLOW"`, which is the drift this module
 #: exists to prevent: a fourth mode would have read as a sub-workflow in one place, a subrun in
 #: another, and by its real name only here.
-MODE_SHOUT = {PARALLEL: "SUB-WORKFLOW", SEQUENTIAL: "SUBTASK", BRANCH: "BRANCH"}
-MODE_SHORT = {PARALLEL: "subrun", SEQUENTIAL: "subtask", BRANCH: "branch"}
+MODE_SHOUT = {PARALLEL: "SUB-WORKFLOW", SEQUENTIAL: "SUBTASK", BRANCH: "BRANCH",
+              OVERSIGHT: "OVERSIGHT"}
+MODE_SHORT = {PARALLEL: "subrun", SEQUENTIAL: "subtask", BRANCH: "branch",
+              OVERSIGHT: "oversight"}
 
 
 def mode_noun(mode: str) -> str:
