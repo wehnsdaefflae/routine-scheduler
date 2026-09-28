@@ -45,7 +45,11 @@ def test_the_gate_is_off_and_visible_in_the_schedule_section(ui, ui_page):
     ui_page.goto(f"{ui.url}/#/routine/uir")
     section = _schedule_section(ui_page)
     expect(section).to_contain_text("run gate")
-    expect(section).to_contain_text("scripts/run_gate.py")
+    # `scripts/gate.py` is the file the DAEMON looks for (daemon/run_gate.py:41), and naming it
+    # is the whole point of 0.366.14: `run_gate.py` is the module that RUNS a gate, not the gate,
+    # so the old label sent gate authors to write a file nothing reads. That commit fixed the view
+    # and left this assertion on the old string, which is why main has been red since 2026-09-27.
+    expect(section).to_contain_text("scripts/gate.py")
     expect(section.locator("[data-run-gate]")).not_to_be_checked()
     # the timeout only matters once the gate is on, so it stays out of the way until then
     expect(section.get_by_text("seconds to answer")).to_be_hidden()

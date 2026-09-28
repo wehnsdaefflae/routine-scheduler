@@ -22,6 +22,15 @@ from .ids import now_iso
 LINGER_S = 12.0          # keep a terminal task / closed process this long (shows "done" briefly)
 MAX_TASKS = 1000         # hard cap on retained tasks (drop oldest terminal first)
 
+#: How long a task may stay `running` before it is treated as abandoned rather than in flight.
+#: A task prunes only once `done_at` is set, and only a finished/failed record or `close_process`
+#: sets it — so a call whose owning process never closes was retained for the DAEMON'S LIFETIME
+#: (F572: six abandoned `Compaction · archival` tasks visible in one conversation's panel, with
+#: the group row rendering them as `0/24`). The ceiling is the backstop for every path that does
+#: not, or cannot, report back: well above the slowest real call — archival itself waits 180-600s
+#: — so it never reaps live work, and far below "forever".
+MAX_RUNNING_S = 3600.0
+
 _STATUS = {"started": "running", "finished": "done", "failed": "error"}
 
 
@@ -67,6 +76,7 @@ class TaskCenter:
         if not tid:
             return
         entry = self.tasks.get(tid, {})
+        entry.setdefault("started_at", time.monotonic())   # the age backstop's clock (F572)
         entry.update(rec)
         entry["status"] = _STATUS.get(str(rec.get("phase") or ""),
                                       entry.get("status", "running"))
@@ -76,15 +86,37 @@ class TaskCenter:
         self._prune()
         self.bus.publish({"event": "llm_task", "status": entry["status"], **rec})
 
+    def abandon_task(self, tid: str, *, reason: str) -> None:
+        """Record that an in-flight call was GIVEN UP ON, by the caller that gave up on it.
+
+        The age backstop in `_prune` catches a stuck task eventually, but a caller that abandons
+        a call on purpose already knows the cause, and the cause is what a reader needs: the
+        difference between "this timed out" and "the run ended before its archive finished" is
+        invisible once both have merely aged out. `engine/archival.py` abandons an in-flight
+        archival thread by design at run end, and until this existed the task it left behind
+        stayed `running` forever (F572).
+
+        A no-op for an unknown or already-terminal task: abandoning must never invent a task
+        nor overwrite an outcome the call itself reported.
+        """
+        entry = self.tasks.get(tid)
+        if entry is None or entry.get("status") in ("done", "error"):
+            return
+        entry.update(status="error", error=reason, done_at=time.monotonic())
+        self._prune()
+        self.bus.publish({"event": "llm_task", "status": "error", "id": tid, "error": reason})
+
     # --- reconcile snapshot --------------------------------------------------
     def snapshot(self) -> dict:
         self._prune()
         return {"processes": [self._pub_process(p) for p in self.processes.values()],
                 "tasks": [self._pub_task(t) for t in self.tasks.values()]}
 
-    @staticmethod
-    def _pub_task(t: dict) -> dict:
-        return {k: v for k, v in t.items() if k != "done_at"}
+    _INTERNAL = ("done_at", "started_at")   # monotonic bookkeeping, meaningless to a client
+
+    @classmethod
+    def _pub_task(cls, t: dict) -> dict:
+        return {k: v for k, v in t.items() if k not in cls._INTERNAL}
 
     @staticmethod
     def _pub_process(p: dict) -> dict:
@@ -93,6 +125,20 @@ class TaskCenter:
     # --- housekeeping --------------------------------------------------------
     def _prune(self) -> None:
         now = time.monotonic()
+        # A task `running` past the ceiling is not in flight — it is the residue of a process
+        # that never reported back, and nothing else would ever set its `done_at` (F572). Mark it
+        # terminal rather than deleting it, so it prunes by the ordinary linger below and the
+        # panel can show for one linger WHY the row went away.
+        for entry in self.tasks.values():
+            if entry.get("status") != "running":
+                continue
+            started = entry.get("started_at")
+            if started is None:
+                entry["started_at"] = started = now
+            if now - started > MAX_RUNNING_S:
+                entry.update(status="error", done_at=now,
+                             error=entry.get("error")
+                             or f"abandoned: no result after {int(MAX_RUNNING_S)}s")
         # drop terminal tasks past the linger (done_at may legitimately be 0.0 → test `is not None`)
         for tid in [t for t, e in self.tasks.items()
                     if e.get("done_at") is not None and now - e["done_at"] > LINGER_S]:

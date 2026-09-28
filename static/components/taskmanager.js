@@ -105,8 +105,19 @@ export function initTaskManager() {
           t.error ? el("span", { class: "lt-err" }, t.error) : null)));
   }
 
+  // The group row SAYS what is happening rather than encoding it (D157-C). `${done}/${total}`
+  // rendered 24 in-flight calls as `0/24` — beside a panel header reading `24 running`, i.e. the
+  // same number counted the opposite way, both correct and neither informative (F572). A reader
+  // wants the state, and only wants a ratio while there is progress to measure.
+  function procCount(children) {
+    const run = children.filter((c) => c.status === "running").length;
+    const err = children.filter((c) => c.status === "error").length;
+    if (run) return `${run} running`;
+    if (err) return err === children.length ? `${err} failed` : `${err} of ${children.length} failed`;
+    return children.length ? `${children.length} done` : "no calls";
+  }
+
   function processRow(p, children) {
-    const done = children.filter((c) => c.status !== "running").length;
     const anyErr = p.error || children.some((c) => c.status === "error");
     const state = !p.closed ? "running" : anyErr ? "error" : "done";
     const isOpen = expanded.has(p.id);
@@ -115,7 +126,7 @@ export function initTaskManager() {
       el("span", { class: "lt-caret" }, isOpen ? "▾" : "▸"),
       statusDot(state),
       el("span", { class: "lt-proc-label" }, p.label || p.id),
-      el("span", { class: "lt-proc-count" }, `${done}/${children.length}`));
+      el("span", { class: "lt-proc-count" }, procCount(children)));
     const rows = [head];
     if (isOpen) rows.push(el("div", { class: "lt-proc-children" }, children.map(taskRow)));
     return el("div", { class: "lt-proc" }, rows);

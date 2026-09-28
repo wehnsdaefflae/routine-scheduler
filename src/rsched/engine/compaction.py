@@ -303,6 +303,13 @@ def _swap_in_history(hist_dir: Path, files: list[dict], turn: int) -> list[str]:
     shutil.rmtree(displaced, ignore_errors=True)
     return written
 
+#: The `purpose` every archival completion carries. Named here, once, because TWO parties must
+#: agree on it: `archive_middle` stamps it on the call, and `archival.settle()` terminates open
+#: calls BY it when it abandons the thread (F572). A literal in both places is a drift waiting
+#: to happen, and the failure mode is silent — the abandon would simply match nothing.
+ARCHIVAL_PURPOSE = "Compaction · archival"
+
+
 def archival_messages(middle: list[dict]) -> list[dict]:
     """The exact archival input, shared by selection fit checks and the completion."""
     convo = "\n\n".join(f"[{m['role']}]\n{m['content']}" for m in middle)
@@ -338,7 +345,7 @@ def archive_middle(middle: list[dict], endpoint, ref,
                              model=ref.model, schema=_HISTORY_SCHEMA, effort=ref.effort,
                              temperature=ref.temperature, max_tokens=ref.max_tokens,
                              timeout=timeout,
-                             purpose="Compaction · archival", kind="compaction")
+                             purpose=ARCHIVAL_PURPOSE, kind="compaction")
     if comp.parsed is not None:
         data = comp.parsed
     else:

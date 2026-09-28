@@ -33,7 +33,9 @@ import threading
 from dataclasses import dataclass, field
 from typing import Any
 
+from ..endpoints import instrument
 from . import enginenote
+from .compaction import ARCHIVAL_PURPOSE
 
 
 @dataclass
@@ -101,9 +103,19 @@ def settle(loop) -> None:
     pending.thread.join(timeout=SETTLE_SECONDS)
     if not pending.done:
         loop._archival = None
+        # The thread is a daemon, so the interpreter kills it at exit WITHOUT unwinding its
+        # stack — the instrumentation wrapper's `except BaseException` never runs and the call's
+        # `finished`/`failed` record is never written. The task centre marks a task terminal only
+        # from such a record, so each abandoned archive left a permanently-`running` task
+        # (F572: 17 of the 23 leaked tasks in conversation c-20260915-074755's sidecar were
+        # `Compaction · archival`). We are the party that knows, and we are still alive: say so.
+        abandoned = instrument.abandon_open_calls(
+            purpose=ARCHIVAL_PURPOSE,
+            error="the run ended before the archive finished")
         loop.ctx.transcript.event("compaction", {
             "background": True, "archival_abandoned": True,
             "elided_messages": pending.elided,
+            "llm_calls_abandoned": abandoned,
             "note": "the run ended before the archive finished; the digest and the full "
                     "transcript stand"})
         return

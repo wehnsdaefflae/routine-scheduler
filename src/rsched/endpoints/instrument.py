@@ -105,15 +105,71 @@ class FileSink:
 
 _sink = None  # None = no bookkeeping configured (pure passthrough)
 
+#: The calls this process has STARTED and not yet terminated, by id → its `started` record.
+#: Tracked because a call can die without unwinding: `engine/archival.py` runs its completion in
+#: a DAEMON thread, so at process exit the interpreter kills it mid-`complete()` and the
+#: `except BaseException` below never runs. Measured in conversation c-20260915-074755's sidecar
+#: (884 ids): 23 had a `started` record and no terminal one, 17 of them `Compaction · archival`.
+#: The task centre sets `done_at` only from a terminal record, so each of those leaked a
+#: permanently-`running` task (F572). A caller that KNOWS it is giving up — `archival.settle()`
+#: does, and it is still alive when it decides — terminates them through `abandon_open_calls`.
+_open: dict[str, dict] = {}
+_open_lock = threading.Lock()
+
 
 def set_sink(sink) -> None:
     """Install the process-global sink (a `.record(rec)` object). Call once at boot."""
     global _sink  # noqa: PLW0603 — the one process-global seam, set once at boot by design
     _sink = sink
+    with _open_lock:
+        _open.clear()      # a new sink observes a new process's calls, never the old one's
 
 
 def get_sink():
     return _sink
+
+
+def note_started(rec: dict) -> None:
+    """Register a `started` record as an OPEN call. Called by the wrapper; exposed because a
+    sidecar replayer (and the tests) need to describe a call that started outside this process.
+    """
+    cid = rec.get("id")
+    if cid:
+        with _open_lock:
+            _open[cid] = dict(rec)
+
+
+def _note_terminal(cid: str | None) -> None:
+    if cid:
+        with _open_lock:
+            _open.pop(cid, None)
+
+
+def abandon_open_calls(*, error: str, purpose: str | None = None) -> int:
+    """Write a `failed` record for every call still open, and return how many.
+
+    This is how a caller that abandons work on purpose keeps the books honest without knowing
+    the call id — the id is minted inside `complete()` and never returned, which is exactly why
+    `archival.settle()` had no way to say what it already knew. Idempotent: a call terminated
+    here leaves the open set, so abandoning twice writes one record.
+
+    `purpose` narrows it to one kind of work (the abandoning caller's own), because a run that
+    gives up on its archive has said nothing about the turn call still in flight beside it.
+    """
+    sink = _sink
+    if sink is None:
+        return 0
+    with _open_lock:
+        victims = [rec for rec in _open.values()
+                   if purpose is None or rec.get("purpose") == purpose]
+        for rec in victims:
+            _open.pop(rec["id"], None)
+    for rec in victims:
+        _emit(sink, make_record("failed", id=rec["id"], endpoint=rec.get("endpoint", ""),
+                                model=rec.get("model", ""), purpose=rec.get("purpose", ""),
+                                kind=rec.get("kind"), process_id=rec.get("process_id"),
+                                error=error[:300]))
+    return len(victims)
 
 
 # --- the wrapper -------------------------------------------------------------
@@ -163,14 +219,18 @@ class InstrumentedEndpoint:
         # (daemon/runner.py). `make_record` omits falsy keys, so nothing downstream changes.
         common = {"id": uuid.uuid4().hex[:12], "endpoint": self._inner.name, "model": model,
                   "purpose": purpose or "LLM call", "kind": kind}
-        _emit(sink, make_record("started", **common))
+        started = make_record("started", **common)
+        note_started(started)          # so an abandoning caller can terminate it (F572)
+        _emit(sink, started)
         try:
             comp = self._inner.complete(messages, **inner_kwargs)
         except BaseException as exc:
             if isinstance(exc, EndpointError):
                 self._mark_health(exc, model)
+            _note_terminal(common["id"])
             _emit(sink, make_record("failed", **common, error=str(exc)[:300]))
             raise
+        _note_terminal(common["id"])
         _emit(sink, make_record("finished", **common, usage=comp.usage,
                                 provider=comp.provider or None))
         return comp

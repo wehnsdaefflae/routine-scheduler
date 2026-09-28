@@ -111,3 +111,33 @@ def test_the_ribbon_summary_counts_are_ways_in(ui, ui_page):
     expect(link).to_have_text("1 failed")
     link.click()
     ui_page.wait_for_url(f"{ui.url}/#/run/uir:{ts}")
+
+
+def test_the_group_row_says_what_is_happening_not_a_ratio(ui, ui_page):
+    """D157-C: the group row SAYS the state instead of encoding it.
+
+    `${done}/${children.length}` rendered a group of in-flight calls as `0/24` beside a panel
+    header reading `24 running` — the same number counted the opposite way, both correct and
+    neither informative (F572, from the operator's own screenshot). The operator chose: "the
+    group row says what is happening ('24 running') instead of encoding it ('0/24')".
+
+    Driven through the `rsched-bus` events the dock already listens on, so this asserts what the
+    user SEES. Two details of the component the test has to respect: rendering is debounced 80ms,
+    and a periodic `reconcile()` refetches /api/llm-tasks every 10s and would clear injected
+    state — so the assertion uses the auto-retrying `expect`, which settles well inside that.
+    """
+    ui_page.set_viewport_size({"width": 1400, "height": 900})
+    ui_page.goto(f"{ui.url}/#/routines")
+    expect(ui_page.locator(".lt-pill")).to_be_visible()
+    ui_page.locator(".lt-pill").click()            # open the panel (the pill hides itself)
+    ui_page.evaluate("""() => {
+      const fire = (d) => window.dispatchEvent(new CustomEvent("rsched-bus", { detail: d }));
+      fire({ event: "llm_process", phase: "opened", id: "p9", kind: "wizard", label: "Group" });
+      for (const id of ["c1", "c2"]) {
+        fire({ event: "llm_task", status: "running", id, phase: "started", process_id: "p9",
+               endpoint: "e", model: "m", purpose: "Compaction \u00b7 archival" });
+      }
+    }""")
+    row = ui_page.locator(".lt-proc-count").first
+    expect(row).to_have_text("2 running")
+    assert "/" not in row.inner_text(), "the row still encodes the state as a ratio"

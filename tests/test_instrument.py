@@ -13,7 +13,9 @@ from rsched.endpoints.base import Completion, EndpointError
 from rsched.endpoints.instrument import (
     FileSink,
     InstrumentedEndpoint,
+    abandon_open_calls,
     make_record,
+    note_started,
     set_sink,
 )
 
@@ -162,3 +164,62 @@ def test_filesink_thread_safe_appends(tmp_path):
     lines = (tmp_path / "llm-tasks.jsonl").read_text().splitlines()
     assert len(lines) == 100
     assert all(json.loads(x)["id"] for x in lines)  # every line is complete, parseable JSON
+
+
+# --- D157-C part B: an abandoned call must terminate its OWN record ---------------------------
+# F572, measured from the real sidecar of conversation c-20260915-074755 (884 call ids): 23 ids
+# carry a `started` record and no terminal one, and 17 of those 23 are `Compaction · archival`.
+# The wrapper's `except BaseException` does not cover them because archival runs in a DAEMON
+# thread (engine/archival.py:start) that the interpreter kills at process exit without unwinding
+# its stack — so the `failed` record is never written, the task center never sets `done_at`, and
+# `_prune` can never drop the task. `settle()` already KNOWS it is abandoning the archive; it
+# just had no way to say so, because the call id is minted inside complete() and never returned.
+
+def test_abandon_open_calls_terminates_only_unfinished_records():
+    sink = CapturingSink()
+    set_sink(sink)
+    ep = InstrumentedEndpoint(StubEndpoint())
+    ep.complete([{"role": "user", "content": "x"}], model="m", purpose="Compaction · archival",
+                kind="compaction")
+    assert [r["phase"] for r in sink.records] == ["started", "finished"]
+    n = abandon_open_calls(purpose="Compaction · archival", error="the run ended")
+    assert n == 0, "a call that already reported back must not be re-terminated"
+    assert [r["phase"] for r in sink.records] == ["started", "finished"]
+
+
+def test_abandon_open_calls_writes_failed_for_a_started_call():
+    """The archival case: a `started` record whose call never returns."""
+    sink = CapturingSink()
+    set_sink(sink)
+    # emit a `started` with no terminal phase, exactly as a killed daemon thread leaves behind
+    rec = make_record("started", id="abc123", endpoint="e", model="m",
+                      purpose="Compaction · archival", kind="compaction")
+    sink.record(rec)
+    note_started(rec)
+    n = abandon_open_calls(purpose="Compaction · archival",
+                          error="the run ended before the archive finished")
+    assert n == 1
+    last = sink.records[-1]
+    assert last["phase"] == "failed" and last["id"] == "abc123"
+    assert last["error"] == "the run ended before the archive finished"
+    assert last["purpose"] == "Compaction · archival", "the record stays self-describing"
+    # idempotent: abandoning twice must not write a second failed record
+    assert abandon_open_calls(purpose="Compaction · archival", error="again") == 0
+
+
+def test_abandon_open_calls_filters_by_purpose():
+    sink = CapturingSink()
+    set_sink(sink)
+    for cid, purpose in (("a1", "Compaction · archival"), ("b2", "turn 42")):
+        rec = make_record("started", id=cid, endpoint="e", model="m", purpose=purpose)
+        sink.record(rec)
+        note_started(rec)
+    assert abandon_open_calls(purpose="Compaction · archival", error="gone") == 1
+    assert sink.records[-1]["id"] == "a1"
+    assert abandon_open_calls(error="everything") == 1, "no purpose = every open call"
+    assert sink.records[-1]["id"] == "b2"
+
+
+def test_abandon_open_calls_is_safe_with_no_sink():
+    set_sink(None)
+    assert abandon_open_calls(purpose="anything", error="e") == 0

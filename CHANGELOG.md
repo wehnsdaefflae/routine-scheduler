@@ -15,6 +15,68 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.367.0] — 2026-09-28
+
+### Fixed — an LLM task stuck `running` was unprunable for the daemon's lifetime (D157, F572)
+
+The operator's screenshot showed an LLM activity panel headed **`24 running`** next to a group
+row reading **`0/24`** — the same number counted the opposite way, both correct and neither
+informative. Underneath it was a real leak, and the cause was not the pruning.
+
+`TaskCenter._prune` drops a task only once `done_at` is set, and only a `finished`/`failed`
+record or `close_process()` sets it. Measured in the sidecar of the conversation from that
+screenshot (`runs/…/llm-tasks.jsonl`, 884 call ids): **23 ids carry a `started` record and no
+terminal one, and 17 of those 23 are `Compaction · archival`.** The reason the wrapper's
+`except BaseException` never caught them is that `engine/archival.py` runs its completion in a
+**daemon thread**, which the interpreter kills at process exit *without unwinding its stack* —
+so no terminal record is ever written and the task stays `running` forever.
+
+The operator chose all three parts:
+
+- **The cause.** `endpoints/instrument.py` now tracks the calls this process has started and not
+  terminated, and `abandon_open_calls(purpose=…, error=…)` writes the `failed` record for them.
+  `archival.settle()` calls it the moment it decides to abandon the thread — it is the party that
+  knows, and it is still alive when it decides. The transcript's `compaction` event gains
+  `llm_calls_abandoned`. The call id is minted inside `complete()` and never returned, which is
+  exactly why the abandoning caller could not say so before; it still needs no id.
+- **The backstop, for every other path.** `TaskCenter.MAX_RUNNING_S` (3600 s — well above the
+  slowest real call, since archival itself waits 180–600 s) marks a task terminal once it has
+  been `running` longer than any call can take, so it then prunes by the ordinary linger instead
+  of being deleted outright.
+- **The counter.** The group row now says what is happening — `2 running`, `1 of 3 failed`,
+  `4 done` — instead of encoding it as a ratio that reads `0/24` at the exact moment 24 calls
+  are in flight.
+
+`"Compaction · archival"` also stops being a literal in two files: `compaction.ARCHIVAL_PURPOSE`
+is its one home, because the abandon matches **by** purpose and a drift between the two would
+fail silently by matching nothing.
+
+### Fixed — a shell write is an ungated write, and the record now says so (D158, R1980)
+
+Every write protection the engine has lives in the FILE-action gate (`engine/fileops.py`
+`_write_gate`): the `.memory/` seal, the engine-ownership of `runs/` and `.util_outputs/`, the
+`routine.yaml` config refusal, and the recipe-authoring boundary. A `bash -c` redirect calls none
+of them, so any routine holding `shell` can walk past all four — which is what an escape hatch
+IS, and why the capability is granted sparingly rather than gated per path.
+
+Deciding *which* writes a shell line performs is undecidable in general (a command can write
+through a script, a heredoc, an editor, a compiler), so nothing tries to refuse one. Instead the
+observation now carries **`ungated_write: true`** whenever the command's shape suggests a write,
+so someone auditing the run afterwards can find the writes no gate saw. The marker is
+conservative in one direction only: it claims *this may have written*, never *this did not*.
+Stream plumbing (`2>/dev/null`, `2>&1`) is stripped before the test, or nearly every defensive
+command would flag and the marker would stop being worth reading. `do_shell`'s docstring states
+the hole and names all four bypassed protections.
+
+### Fixed — `main` was red on a test the previous release's own fix outdated
+
+0.366.14 changed the schedule panel's label from `scripts/run_gate.py` to `scripts/gate.py` —
+correctly, because `scripts/gate.py` is the file the daemon looks for (`daemon/run_gate.py:41`)
+and `run_gate.py` is the module that RUNS a gate, not the gate. It updated the view and left
+`tests/ui/test_run_gate_control.py:48` asserting the old string, so the browser suite has been
+red on `main` since 2026-09-27. The assertion now names the file the daemon reads, which is the
+behaviour that shipped.
+
 ## [0.366.14] — 2026-09-27
 
 ### Fixed — the run-gate control told you to write a file the daemon never reads

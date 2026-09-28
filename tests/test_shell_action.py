@@ -260,3 +260,40 @@ def test_one_deadline_is_defined_in_exactly_one_place():
                        and isinstance(n.ctx, ast.Store)
                        for n in ast.walk(ast.parse(p.read_text(encoding="utf-8"))))]
     assert definers == ["utils_run.py"], definers
+
+
+# --- D158-C: a shell write is an UNGATED write, and the transcript must say so ----------------
+# R1980/D158: the engine's write protections live in the file-action gate (`engine/fileops.py`
+# `_write_gate`) — the `.memory/` seal, the engine-ownership of `runs/` and `.util_outputs/`, the
+# `routine.yaml` config refusal and the recipe-authoring boundary. Only the FILE actions call it,
+# so a `shell` redirect walks past all four. The operator chose option C: document it as a
+# deliberate hole AND add a transcript marker, "so a shell write is visible as an ungated write
+# when someone audits the run afterwards". Parsing writes out of a shell line is undecidable in
+# general, so the marker is deliberately a CONSERVATIVE flag on the command's shape — it claims
+# "this command may have written" and never "this command did not".
+
+def test_a_write_shaped_command_is_marked_as_an_ungated_write(shell_ctx):
+    obs = dispatch({"kind": "shell", "command": "echo hi > state/via-shell.txt"}, shell_ctx)
+    assert obs["exit"] == 0
+    assert obs["ungated_write"] is True, (
+        "a shell redirect bypasses every file-action protection; the observation must say so")
+
+
+def test_the_marker_fires_on_the_paths_the_file_gate_would_have_refused(shell_ctx):
+    """The cases that matter most: the four things `_write_gate` exists to refuse."""
+    for command in ("cat x >> .memory/INDEX.md",
+                    "echo y > runs/20260101-000000/transcript.jsonl",
+                    "printf z > routine.yaml",
+                    "tee main.md < /dev/null",
+                    "sed -i s/a/b/ stages/orient.md",
+                    "rm -rf state/old"):
+        obs = dispatch({"kind": "shell", "command": command}, shell_ctx)
+        assert obs.get("ungated_write") is True, f"not marked: {command!r}"
+
+
+def test_a_read_only_command_is_not_marked(shell_ctx):
+    """The marker has to be worth reading, so it must not fire on every command."""
+    for command in ("ls state", "cat state/x 2>/dev/null; true", "grep -c . main.md || true",
+                    "git status --short", "wc -l main.md"):
+        obs = dispatch({"kind": "shell", "command": command}, shell_ctx)
+        assert "ungated_write" not in obs, f"falsely marked: {command!r}"
