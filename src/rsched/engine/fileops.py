@@ -13,7 +13,7 @@ import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from ..paths import atomic_write, resolve_rel
+from ..paths import atomic_write, read_json, resolve_rel
 from ..readmodels.statemap import STAGES_DIR
 from . import fileformat
 from .observations import OBS_CAP_CHARS
@@ -213,10 +213,10 @@ def _note_recorded_phase(ctx: RunContext, path) -> None:
     """
     if path.name != "phase.json" or path.parent != ctx.routine.dir / "state":
         return
-    try:
-        phase = json.loads(path.read_text(encoding="utf-8")).get("phase")
-    except (OSError, ValueError, AttributeError):
-        return
+    data = read_json(path)
+    if not isinstance(data, dict):
+        return          # a cursor that is not an object carries no phase — see the docstring
+    phase = data.get("phase")
     if isinstance(phase, str) and phase and phase not in ctx.phases_recorded:
         ctx.phases_recorded.append(phase)
 

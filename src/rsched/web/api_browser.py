@@ -13,7 +13,6 @@ same shape as api_background.
 
 from __future__ import annotations
 
-import json
 import os
 import signal
 import socket
@@ -22,6 +21,8 @@ from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse
+
+from .. import paths
 
 router = APIRouter(tags=["browser"])
 
@@ -37,10 +38,7 @@ def _handle_files(conv_dir: Path) -> list[Path]:
 
 
 def _load_handle(path: Path) -> dict | None:
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return None
+    data = paths.read_json(path)
     return data if isinstance(data, dict) else None
 
 

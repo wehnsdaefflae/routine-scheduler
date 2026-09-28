@@ -15,6 +15,95 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.368.0] — 2026-09-29
+
+### Fixed — a 65-minute pause cost a WEEKLY lane its whole week, and nothing made the fire up (D156, F573)
+
+The global pause skips a due lane fire and moves the lane's watermark with it, deliberately: the
+watermark is what stops the next boot's catch-up from backlog-firing everything that came due, and
+`daemon/pause.py` promises exactly that. For a daily lane the promise is right. For a long-cadence
+one it was the whole cost — a pause of 65 minutes on 2026-09-26 spanned the 05:00 Saturday fire of a
+weekly lane, whose two members then went dark for eight days.
+
+The watermark could say the fire was *handled*; nothing could say it was handled by being
+**dropped**. So:
+
+- `rsched/lane_fires.py` gains `stamp_paused_skip` / `last_paused_skip` / `clear_paused_skip`,
+  riding the same locked file as the watermark — the two facts are written in the same breath by the
+  same skip and must not be able to disagree.
+- `daemon/scheduler.py`'s paused-lane branch now records what its stamp handled.
+- `daemon/lane_catchup.resume_catchup()`, called by `DELETE /api/settings/pause`, makes up a dropped
+  fire **only while it is still early in that lane's own period** — `owed × 4 < the interval
+  bracketing the dropped fire`. A daily lane tolerates six hours late, a weekly one forty-two, a
+  fortnightly one three and a half days. It is a ratio rather than a cadence threshold on purpose: a
+  rule phrased "weekly lanes are made up" is a rule a fortnightly lane falls through.
+- The endpoint returns `lanes_made_up` and the dashboard's resume toast names it. A chain the
+  operator's own click started must not be a surprise he finds later in the run list.
+
+Two rules that look right were rejected by test and are recorded so they are not re-derived:
+distance-to-the-**next**-fire as the denominator (it shrinks as the period wears on, so an hour after
+a daily fire the next is 23 h away and an hour is under half of that), and **half** the interval as
+the threshold (10 h owed against a 24 h cadence is under half, so a daily lane paused for most of a
+working day fired at 15:00 and again at 05:00 — two runs 14 h apart).
+
+items: [D156, F573]
+
+### Added — an action row now says what it MEANS, and a HELD row is the loudest thing in a transcript (F583, F586)
+
+Requested twice by the operator: *"different util exit codes should change the color of the response
+in the ui. also if tool calls are held because of a reminder, this also needs some visual sprucing
+up."* `obsState()` in `static/components/transcript.js` classifies every observation by meaning —
+`held`, `refused`, `usage` (exit 2), `timeout` (exit 124), `error`, `ok` — and the class rides the
+summary line, the part visible while the body is collapsed.
+
+- **`held`** gets the attention colour, bold, and its own marker: it is the one row that is not
+  history — the action did not run and the run is deciding again.
+- **`usage`** has its own hue because exit 2 means the *call* was malformed, so the repair is in the
+  arguments and not in the work.
+- **`timeout`** is dashed, like the existing refusal row, because it is the absence of a verdict
+  rather than a verdict.
+- **An ordinary nonzero exit is deliberately left unstyled.** `grep -q`, `test -f` and `diff` all
+  answer with exit 1, and `shell` documents a nonzero exit as often being the answer — colouring
+  those red is the F506/F523 mistake, and this is the third time that lesson has had to be written
+  down.
+
+`tests/ui/test_observation_states.py` loads the real renderer in the real browser and asserts the
+*computed* style differs, not just the class — a class-only assertion would pass over a stylesheet
+that never shipped the rule — plus the negative case that `shell` exit 1 stays quiet.
+
+items: [F583, F586]
+
+### Fixed — a refused util write named the failing line but never the failing PHASE (F585, F584)
+
+Three reports described six consecutive refusals of large util folds, each answered with a line
+number. Every one of those tracebacks ended `File ".../main.py", line 175x, in <module>` — the file
+did not import and no selftest assertion ever ran — and roughly twenty turns went into debugging
+test logic against a file that never loaded.
+
+`engine/obs_library._selftest_phase()` now names the phase: a deepest frame at module level says the
+script failed **at import** ("fix the load, not the test logic"), a frame inside a function says the
+failure was **inside a check**. Derived entirely from text the observation already carried.
+
+The same investigation refuted both reported mechanisms from the reporting run's own transcript: the
+diagnostic was never empty (six failures, 620–935 chars each, and `utils_run.selftest` always emits
+at least `exit {code}`), and no write reported FAILED had committed (the library commit in question
+is timestamped two seconds before an observation reading `selftest_ok: true` — it was that turn's
+success). What the investigation did find is filed as **F584**: the gate installs a candidate into
+the live shared library *before* testing it, so every util revision the fleet makes opens a window in
+which the library all 35 routines read holds a script that fails its own test.
+
+items: [F585, F584]
+
+### Changed — four modules now use the canonical `paths.read_json` (F581)
+
+`bootstrap.py`, `readmodels/statemap.py`, `web/api_browser.py` and `engine/fileops.py` each
+open-coded `json.loads(path.read_text())` with their own `except`, so a change to the house
+JSON-read policy missed four readers. Behaviour-preserving: `json.JSONDecodeError` is a `ValueError`
+subclass, so no coverage is lost, and `fileops.py` gained the explicit `isinstance(dict)` guard its
+old `except AttributeError` was silently providing. Two files no longer import `json` at all.
+
+items: [F581]
+
 ## [0.367.0] — 2026-09-28
 
 ### Fixed — an LLM task stuck `running` was unprunable for the daemon's lifetime (D157, F572)

@@ -16,7 +16,14 @@ from pathlib import Path
 import yaml
 
 from . import libgit
-from .paths import atomic_write, atomic_write_yaml, config_file, read_yaml, repo_root
+from .paths import (
+    atomic_write,
+    atomic_write_yaml,
+    config_file,
+    read_json,
+    read_yaml,
+    repo_root,
+)
 
 log = logging.getLogger("rsched.bootstrap")
 
@@ -91,10 +98,9 @@ def adopt_permissions(routines_home: Path, permissions_home: Path) -> int:
     if not ADOPT_PERMISSIONS or not routines_home.is_dir():
         return 0   # nothing pending adoption — skip the marker read and routine walk entirely
     marker = routines_home / _ADOPTED_MARKER
-    try:
-        done = set(json.loads(marker.read_text(encoding="utf-8")))
-    except (OSError, ValueError):
-        done = set()
+    raw = read_json(marker, default=[])
+    # The marker is a list of slugs; anything else is not evidence of an adoption.
+    done = set(raw) if isinstance(raw, list) else set()
     touched, newly_done = 0, set()
     for slug in ADOPT_PERMISSIONS:
         if slug in done:

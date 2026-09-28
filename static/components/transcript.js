@@ -264,10 +264,48 @@ export function createTranscript(container, opts = {}) {
   // Tool/observation return values are collapsed by default (expandable). The summary carries the
   // first line, so short one-line results stay fully readable without expanding. `rich` renders
   // the body as simple markdown (model-authored prose — llm replies); program output stays literal.
-  function obsBody(text, rich = false) {
+  // What an observation MEANS, as one word, for the row's appearance. Operator, 2026-09-28:
+  // "different util exit codes should change the color of the response in the ui. also if tool
+  // calls are held because of a reminder, this also needs some visual sprucing up."
+  //
+  // The vocabulary is by MEANING, not by exit code, and the distinction is the whole point:
+  //   held    — the action did NOT run and is waiting for the run to decide again. A decision
+  //             point rendered as history, and the one row a reader must not scroll past.
+  //   refused — the engine declined it (no such util, a declined approval, a rejected finish).
+  //   usage   — exit 2: the CALL was malformed. The util never did its job and the repair is in
+  //             the arguments. 3.8% of fleet util calls, and the reason `usage` is its own state.
+  //   timeout — exit 124: the deadline killed it. Nothing is known about what it would have
+  //             done, which is different from knowing it failed.
+  //   error   — it ran and reported failure.
+  //   ok      — it ran and reported success.
+  //
+  // A NONZERO EXIT IS NOT AUTOMATICALLY AN ERROR, and this is the F506/F523 lesson twice
+  // learned: `grep -q`, `test -f` and `diff` all answer with exit 1, and a shell action
+  // documents a nonzero exit as often being the answer. So `shell` gets no error state from its
+  // code alone — only the two codes that mean something specific.
+  const TIMEOUT_EXIT = 124, USAGE_EXIT = 2;
+
+  function obsState(o) {
+    if (!o) return "";
+    if (o.kind === "reminder_hold" || o.kind === "assist_hold") return "held";
+    if (o.missing || o.declined || o.rejected || o.callers) return "refused";
+    if (o.kind === "util" || o.kind === "script" || o.kind === "shell") {
+      if (o.exit == null) return "";
+      if (o.exit === TIMEOUT_EXIT) return "timeout";
+      if (o.exit === USAGE_EXIT) return "usage";
+      if (o.exit === 0) return "ok";
+      // A nonzero that is neither: an error for the two kinds whose contract says so, and
+      // merely a result for `shell`, whose own documentation says a nonzero is often the answer.
+      return o.kind === "shell" ? "" : "error";
+    }
+    if (o.selftest_ok === false || o.lint_ok === false || o.error || o.edit_failed) return "error";
+    return "";
+  }
+
+  function obsBody(text, rich = false, state = "") {
     const firstLine = (text.split("\n")[0] || "").slice(0, 120);
     const more = text.length > firstLine.length;
-    return el("details", { class: "obs-collapse" },
+    return el("details", { class: `obs-collapse${state ? ` obs-${state}` : ""}` },
       el("summary", {}, `result — ${firstLine}${more ? " …" : ""}`),
       rich ? md(text, "obs md") : el("div", { class: "obs" }, text));
   }
@@ -357,7 +395,7 @@ export function createTranscript(container, opts = {}) {
       text = JSON.stringify(o, null, 1);
     }
     const obs = obsBody(text, (o.kind === "llm" && !o.error)
-      || (o.kind === "memory_read" && !o.missing));
+      || (o.kind === "memory_read" && !o.missing), obsState(o));
     openClock?.stop(ev.ts);
     openClock = null;
     if (openTurn) { openTurn.append(obs); openTurn = null; }

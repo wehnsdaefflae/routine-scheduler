@@ -2593,7 +2593,12 @@ def test_pause_toggle_endpoints(client):
     assert c.post("/api/settings/pause").json() == {"ok": True, "paused": True}
     assert pause.paused(server) is True
     assert c.post("/api/settings/pause").status_code == 200       # idempotent re-pause
-    assert c.delete("/api/settings/pause").json() == {"ok": True, "paused": False}
+    # The resume also REPORTS what it made up (D156): lifting the pause makes up the fires it
+    # dropped for lanes whose cadence is long enough that waiting costs more than firing late,
+    # and it says which — a resume that silently armed a chain is as hard to audit as one that
+    # silently dropped a fire. Empty here: no lane in this fixture lost one.
+    assert c.delete("/api/settings/pause").json() == {"ok": True, "paused": False,
+                                                      "lanes_made_up": []}
     assert pause.paused(server) is False
     assert c.delete("/api/settings/pause").status_code == 200     # idempotent re-resume
 

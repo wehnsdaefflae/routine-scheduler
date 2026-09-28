@@ -13,9 +13,10 @@ UI contract.
 
 from __future__ import annotations
 
-import json
 import re
 from pathlib import Path
+
+from .. import paths
 
 # Diagram cap: the rail's SVG renders one column of nodes — beyond ~16 the graph is
 # unreadable and a recipe with more stages is itself the smell (decompose produces 3-8).
@@ -128,10 +129,7 @@ def current_phase(routine_dir: Path) -> str:
         return ""
     if latest is None:
         return ""
-    try:
-        data = json.loads((latest / "status.json").read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return ""
+    data = paths.read_json(latest / "status.json")
     return str(data.get("phase") or "") if isinstance(data, dict) else ""
 
 

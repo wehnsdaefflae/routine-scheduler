@@ -1011,3 +1011,38 @@ def test_harness_contract_recipe_line_follows_unlock(make_routine, tmp_path):
     text = harness_contract(ctx)
     assert "IS WRITABLE" in text
     assert "READ-ONLY to you" not in text
+
+
+def test_a_refused_util_write_names_the_phase_it_failed_in():
+    """A selftest failure means two opposite things and the author needs to know which.
+
+    Three reports from one run (R2036, R2037, R2042) describe six consecutive refusals of large
+    util folds. Every one of them broke at MODULE level — the file did not import — and every
+    observation answered with a line number and nothing about the phase, so that run spent ~20
+    turns debugging its test logic against a file that never loaded. The line number was never
+    the missing information; the phase was.
+    """
+    at_import = format_observation({
+        "kind": "write_util", "name": "doc", "selftest_ok": False, "output":
+        'exit 1\nstderr:\nTraceback (most recent call last):\n'
+        '  File "/lib/utils/doc/main.py", line 1751, in <module>\n'
+        "    sys.exit(main())\nNameError: name 'to_main' is not defined"})
+    assert "failed AT IMPORT" in at_import
+    assert "no selftest check ran" in at_import
+    assert "Fix the load, not the test logic" in at_import
+
+    in_check = format_observation({
+        "kind": "write_util", "name": "doc", "selftest_ok": False, "output":
+        'exit 1\nstderr:\nTraceback (most recent call last):\n'
+        '  File "/lib/utils/doc/main.py", line 1751, in <module>\n'
+        "    sys.exit(main())\n"
+        '  File "/lib/utils/doc/main.py", line 900, in selftest\n'
+        "    assert pages == 2\nAssertionError"})
+    assert "failed INSIDE a check" in in_check
+    assert "AT IMPORT" not in in_check
+
+    # no traceback at all (a util that printed a plain message and exited) adds no sentence
+    plain = format_observation({"kind": "write_util", "name": "u", "selftest_ok": False,
+                               "output": "exit 2\nstderr:\nusage: gu u [--selftest]"})
+    assert "AT IMPORT" not in plain and "INSIDE a check" not in plain
+    assert "selftest FAILED" in plain            # the verdict itself is unchanged

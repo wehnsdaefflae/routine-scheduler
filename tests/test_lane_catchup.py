@@ -12,7 +12,7 @@ import json
 from datetime import UTC, datetime, timedelta
 
 from conftest import FakeRunner
-from rsched import lane_fires, lane_runs, lanes
+from rsched import lane_fires, lane_runs, lanes, registry
 from rsched.config import ServerConfig
 from rsched.daemon import lane_catchup
 from rsched.daemon.events import EventBus
@@ -220,3 +220,157 @@ def test_a_lane_is_armed_once_even_under_a_concurrent_arm(tmp_path, monkeypatch)
     for t in threads:
         t.join()
     assert len(armed) == 1
+
+
+# ---------------------------------------------------------------------------
+# D156 option C — a pause makes up the fire it DROPPED, when lifting it.
+#
+# The pause's promise (daemon/pause.py) is that resuming does not backlog-fire, and for a
+# daily lane that promise is right. F573 measured what it costs a WEEKLY one: a 65-minute
+# pause spanning the 05:00 Saturday fire of lane grp-3235d2ee sent both members dark for
+# eight days. These pin the judgement that tells those two cases apart.
+# ---------------------------------------------------------------------------
+
+
+def test_a_paused_skip_is_recorded_beside_the_watermark(tmp_path):
+    """The watermark says the fire was HANDLED, which is what stops boot catch-up making it up.
+    Only the skip record can also say it was handled by being dropped — without it, the two
+    catch-up paths cannot tell a deliberate drop from an arm, which is F573's blind spot."""
+    home = tmp_path
+    lane = lanes.create(home, name="W", cron="0 5 * * 6", tz="UTC")
+    due = datetime(2026, 9, 26, 5, 0, tzinfo=UTC)
+    assert lane_fires.last_paused_skip(home, lane["id"]) is None
+    lane_fires.stamp_paused_skip(home, lane["id"], due.isoformat())
+    assert lane_fires.last_paused_skip(home, lane["id"]) == due
+    # …and it does not masquerade as the lane's own watermark
+    assert lane_fires.last_armed(home, lane["id"]) is None
+    lane_fires.clear_paused_skip(home, lane["id"])
+    assert lane_fires.last_paused_skip(home, lane["id"]) is None
+
+
+def test_resume_makes_up_a_weekly_lane_and_leaves_a_daily_one_alone(tmp_path):
+    """The one judgement, on the two cases that motivated it.
+
+    Both lanes lose a fire to the same TEN-HOUR pause. The weekly lane would otherwise wait
+    seven days, so ten hours late is still close to on time; the daily lane's whole cadence is
+    24 hours, so firing it ten hours late means running it twice inside one period.
+
+    The due moment is taken from each lane's own cron rather than written by hand: an earlier
+    version of this test asserted against `2026-09-26T05:00Z` for a lane whose tz resolves to
+    +02:00, i.e. a moment the lane was never due, and the judgement it was testing could not
+    have held for any threshold.
+    """
+    server = _server(tmp_path)
+    home = server.routines_home
+    weekly = lanes.create(home, name="Weekly Research", cron="0 5 * * 6", tz="UTC")
+    daily = lanes.create(home, name="Nightly", cron="0 5 * * *", tz="UTC")
+    anchor = datetime(2026, 9, 26, 12, 0, tzinfo=UTC)
+    due = {rec["id"]: registry.last_due_fire(lanes.schedulable(rec), anchor)
+           for rec in (weekly, daily)}
+    for rec in (weekly, daily):
+        stamp = due[rec["id"]].isoformat()
+        lane_fires.stamp(home, rec["id"], stamp)
+        lane_fires.stamp_paused_skip(home, rec["id"], stamp)
+    # ten hours after the LATER of the two due fires, so both are owed by >= 10 h
+    now = max(due.values()) + timedelta(hours=10)
+
+    assert lane_catchup.resume_catchup(server, now) == [weekly["id"]]
+
+    made = lane_runs.read(home, weekly["id"])
+    assert made is not None and made["armed_by"] == "catchup"
+    assert lane_runs.read(home, daily["id"]) is None
+    evs = [e for e in _events(server) if e["event"] == "lane_fire_catchup"]
+    assert len(evs) == 1 and evs[0]["routine"] == weekly["id"]
+    assert "Weekly Research" in evs[0]["detail"]
+    # the owed record is spent for BOTH — including the one that was declined, or the next
+    # resume would make up a fire nobody skipped at that point
+    assert lane_fires.last_paused_skip(home, weekly["id"]) is None
+    assert lane_fires.last_paused_skip(home, daily["id"]) is None
+    assert lane_catchup.resume_catchup(server, now + timedelta(minutes=5)) == []
+
+
+def test_resume_never_makes_up_a_skip_or_paused_or_in_flight_lane(tmp_path):
+    """The same four exclusions boot catch-up honours — a lane the operator paused, a lane whose
+    policy is `skip`, an unscheduled lane, and one whose chain is already running."""
+    server = _server(tmp_path)
+    home = server.routines_home
+    due = datetime(2026, 9, 26, 5, 0, tzinfo=UTC)
+    skipper = lanes.create(home, name="S", cron="0 5 * * 6", tz="UTC")
+    lanes.update(home, skipper["id"], catchup="skip")
+    paused = lanes.create(home, name="P", cron="0 5 * * 6", tz="UTC")
+    lanes.update(home, paused["id"], paused=True)
+    busy = lanes.create(home, name="B", cron="0 5 * * 6", tz="UTC")
+    unscheduled = lanes.create(home, name="U")
+    for rec in (skipper, paused, busy, unscheduled):
+        lane_fires.stamp_paused_skip(home, rec["id"], due.isoformat())
+    lane_runs.arm(home, busy, default_on_failure="continue")       # a chain already in flight
+
+    assert lane_catchup.resume_catchup(server, due + timedelta(hours=1)) == []
+    assert lane_runs.read(home, skipper["id"]) is None
+    assert lane_runs.read(home, paused["id"]) is None
+    assert lane_runs.read(home, busy["id"])["armed_by"] == "ui"    # untouched
+    assert not [e for e in _events(server) if e["event"] == "lane_fire_catchup"]
+
+
+def test_a_lane_that_lost_no_fire_is_untouched_by_a_resume(tmp_path):
+    """No owed record = nothing to make up. A resume is not a reason to fire anything."""
+    server = _server(tmp_path)
+    home = server.routines_home
+    lane = lanes.create(home, name="W", cron="0 5 * * 6", tz="UTC")
+    lane_fires.stamp(home, lane["id"], datetime(2026, 9, 19, 5, 0, tzinfo=UTC).isoformat())
+    assert lane_catchup.resume_catchup(server, datetime(2026, 9, 26, 6, 0, tzinfo=UTC)) == []
+    assert lane_runs.read(home, lane["id"]) is None
+
+
+async def test_the_scheduler_records_what_its_paused_skip_dropped(make_routine, tmp_path,
+                                                                  monkeypatch):
+    """End to end on the producing side: the scheduler's pause branch must leave BOTH marks —
+    the watermark (so the next boot does not make it up) and the owed record (so the resume
+    can). Before D156 it left only the first, and the fire was simply gone."""
+    import asyncio
+
+    import rsched.daemon.scheduler as sched_mod
+    from rsched.daemon import pause
+
+    make_routine(slug="member")
+    monkeypatch.setattr(sched_mod, "TICK_S", 0.02)
+    server = _server(tmp_path)
+    home = server.routines_home
+    lane = lanes.create(home, name="Weekly", members=[{"slug": "member"}],
+                        cron="0 5 * * 6", tz="UTC")
+    stale = datetime.now(UTC) - timedelta(days=3)
+    lane_fires.stamp(home, lane["id"], stale.isoformat())
+    pause.set_paused(server, True)
+    fr = FakeRunner()
+    sched = Scheduler(server, fr, EventBus())
+    task = asyncio.create_task(sched.run_forever())
+    await asyncio.sleep(0.05)
+    sched.lane_next_fires[lane["id"]] = datetime.now(UTC) - timedelta(seconds=1)
+    for _ in range(100):
+        await asyncio.sleep(0.02)
+        if lane_fires.last_paused_skip(home, lane["id"]) is not None:
+            break
+    task.cancel()
+
+    assert fr.fired == []                                     # paused: nothing armed
+    assert lane_runs.read(home, lane["id"]) is None
+    assert lane_fires.last_paused_skip(home, lane["id"]) is not None
+    assert (lane_fires.last_armed(home, lane["id"]) or stale) > stale
+
+
+def test_the_resume_endpoint_makes_up_the_dropped_fire(api_client):
+    """The control the operator actually uses. DELETE /api/settings/pause lifts the pause AND
+    reports which lanes it made up — the acknowledgement half: a resume that silently made up
+    a chain is as hard to audit as one that silently dropped it."""
+    client, tmp_path = api_client
+    home = tmp_path / "routines"
+    lane = lanes.create(home, name="Weekly Research", cron="0 5 * * 6", tz="UTC")
+    due = datetime.now(UTC) - timedelta(hours=1)
+    lane_fires.stamp(home, lane["id"], due.isoformat())
+    lane_fires.stamp_paused_skip(home, lane["id"], due.isoformat())
+
+    assert client.post("/api/settings/pause").json()["paused"] is True
+    body = client.delete("/api/settings/pause").json()
+    assert body["paused"] is False
+    assert body["lanes_made_up"] == [lane["id"]]
+    assert lane_runs.read(home, lane["id"])["armed_by"] == "catchup"

@@ -378,7 +378,18 @@ export async function render(view) {
         "active routines pause after their current turn; no scheduled, triggered or one-shot runs fire. Resume releases this global hold, not individual pauses. “▶ run now” still works. "),
       el("button", { class: "btn small primary", onclick: async (e) => {
         e.target.disabled = true;
-        try { await api("/api/settings/pause", { method: "DELETE" }); toast("scheduling resumed"); await load(); }
+        // The resume may ARM something (D156): a lane whose due fire the pause dropped is made
+        // up here when its cadence is long enough that waiting costs more than firing late. Say
+        // so in the toast — a chain the operator's own click started must not be a surprise he
+        // finds later in the run list.
+        try {
+          const r = await api("/api/settings/pause", { method: "DELETE" });
+          const made = (r && r.lanes_made_up) || [];
+          toast(made.length
+            ? `scheduling resumed — ${made.length} lane${made.length > 1 ? "s" : ""} made up the fire the pause dropped`
+            : "scheduling resumed");
+          await load();
+        }
         catch (err) { toastError(err); e.target.disabled = false; }
       } }, "▶ resume scheduling")));
     // F229: build the filter bar ONCE. It holds the search <input> and sort <select>;

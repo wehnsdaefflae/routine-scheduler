@@ -248,6 +248,12 @@ class Scheduler:
                         # it up as a whole chain and blamed the daemon for being down. Pause's
                         # own promise is that resuming does not backlog-fire (daemon/pause.py).
                         lane_fires.stamp(self.server.routines_home, lane_id)
+                        # …and record WHAT the stamp handled, so lifting the pause can make it
+                        # up (D156 option C). The watermark alone says "handled" and cannot say
+                        # "handled by dropping it", which is why the weekly lane's lost fire was
+                        # invisible to both catch-up paths.
+                        lane_fires.stamp_paused_skip(self.server.routines_home, lane_id,
+                                                     due.isoformat())
                         # …and because that watermark move is what STOPS catch-up making it up,
                         # the skip is permanent: this fire is gone, not postponed. On a daily
                         # lane that costs hours; on a WEEKLY one a pause measured in minutes

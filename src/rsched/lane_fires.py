@@ -61,6 +61,50 @@ def stamp(routines_home: Path, lane_id: str, when: str | None = None) -> None:
         atomic_write_json(path(routines_home), data)
 
 
+#: Key prefix for the SECOND thing this file remembers: the fire a global pause skipped and
+#: therefore owes (D156). It rides the watermark file rather than a store of its own because the
+#: two are written in the same breath by the same skip and must not be able to disagree — a
+#: watermark that moved with no record of what moved it is exactly the state F573 measured.
+_SKIP_PREFIX = "paused-skip:"
+
+
+def stamp_paused_skip(routines_home: Path, lane_id: str, when: str | None = None) -> None:
+    """Record that a GLOBAL PAUSE skipped `lane_id`'s due fire (and when it was due).
+
+    The watermark says the fire was handled, which is what keeps the next boot from making it
+    up. This says it was handled by being DROPPED, which is what lets `resume_catchup` make it
+    up when the pause is lifted — the operator's D156 choice C. One entry per lane: a pause that
+    swallows two fires of one lane owes the lane one chain, not two.
+    """
+    with file_lock(lock_path(routines_home)):
+        data = load(routines_home)
+        data[_SKIP_PREFIX + str(lane_id)] = when or now_iso()
+        atomic_write_json(path(routines_home), data)
+
+
+def last_paused_skip(routines_home: Path, lane_id: str) -> datetime | None:
+    """When a global pause last dropped this lane's due fire, or None when it owes nothing."""
+    raw = load(routines_home).get(_SKIP_PREFIX + str(lane_id))
+    if not raw:
+        return None
+    try:
+        return datetime.fromisoformat(raw)
+    except ValueError:
+        return None
+
+
+def clear_paused_skip(routines_home: Path, lane_id: str) -> None:
+    """Forget the owed fire — called once the resume has DECIDED about it, made up or not.
+
+    Cleared on a decline as well as on an arm: an owed fire that survives the resume that
+    declined it would be made up by the next resume, at a time nobody skipped anything.
+    """
+    with file_lock(lock_path(routines_home)):
+        data = load(routines_home)
+        if data.pop(_SKIP_PREFIX + str(lane_id), None) is not None:
+            atomic_write_json(path(routines_home), data)
+
+
 def last_armed(routines_home: Path, lane_id: str) -> datetime | None:
     """The last recorded arm as an aware datetime, or None when nothing was recorded."""
     raw = load(routines_home).get(str(lane_id))

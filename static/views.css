@@ -217,6 +217,51 @@ table.list tr.disabled-row td { opacity: 0.55; }
 .obs-collapse > summary::before { content: "▸ "; color: var(--signal); }
 .obs-collapse[open] > summary::before { content: "▾ "; }
 .obs-collapse > summary:hover { color: var(--ink); }
+
+/* An action row's OUTCOME, read at a glance (operator, 2026-09-28: "different util exit codes
+   should change the color of the response in the ui. also if tool calls are held because of a
+   reminder, this also needs some visual sprucing up").
+
+   The states are distinguished by MEANING, not by exit code, and the tint is carried on the
+   summary line — the part that is visible while the body is collapsed, which is where a reader
+   actually scans. A left edge marks the row; the palette is the one the `.ev.*` rows above
+   already use, so a transcript reads as one surface.
+
+   Deliberately NOT styled: an ordinary nonzero exit. `grep -q`, `test -f` and `diff` answer
+   with exit 1, and colouring those red would make the common case look like a fault — the
+   F506/F523 lesson, twice learned. `ok` is likewise left quiet: the unremarkable case must not
+   compete with the two rows that need the reader. */
+.obs-collapse > summary { border-left: 3px solid transparent; }
+.obs-ok > summary { border-left-color: color-mix(in srgb, var(--ok) 45%, transparent); }
+.obs-error > summary {
+  border-left-color: var(--err); color: var(--err);
+  background: color-mix(in srgb, var(--err-dim) 60%, var(--deck));
+}
+/* exit 2 — the CALL was wrong, so the util never ran: not a failure of the work, a failure to
+   ask for it. Same weight as an error, different hue, because the repair is in the arguments. */
+.obs-usage > summary {
+  border-left-color: var(--summons); color: var(--summons);
+  background: color-mix(in srgb, var(--summons-dim) 60%, var(--deck));
+}
+/* exit 124 — the deadline killed it, so NOTHING is known about the work. Dashed, like the
+   refusal row above: an absence of a verdict, not a verdict. */
+.obs-timeout > summary {
+  border-left: 3px dashed var(--summons); color: var(--summons);
+  background: color-mix(in srgb, var(--summons-dim) 40%, var(--deck));
+}
+.obs-refused > summary {
+  border-left: 3px dashed var(--err); color: var(--err);
+  background: color-mix(in srgb, var(--err-dim) 40%, var(--deck));
+}
+/* HELD — the loudest row in the transcript, and the only one that is not history: the action
+   did not run and the run is deciding again. It gets the attention colour, full weight, and the
+   marker that says a decision sits here. */
+.obs-held > summary {
+  border-left-color: var(--signal); color: var(--signal); font-weight: 600;
+  background: color-mix(in srgb, var(--signal-dim) 75%, var(--deck));
+}
+.obs-held > summary::before { content: "⦿ "; color: var(--signal); }
+.obs-held[open] > summary::before { content: "⦿ "; }
 .ev { padding: 9px 13px; border-radius: var(--r2); font-size: 12px; overflow-wrap: anywhere; }
 .ev.injection { background: var(--signal-dim); color: var(--signal); border: 1px solid color-mix(in srgb, var(--signal) 38%, transparent); }
 .ev.question { background: var(--summons-dim); color: var(--summons); border: 1px solid color-mix(in srgb, var(--summons) 38%, transparent); }
