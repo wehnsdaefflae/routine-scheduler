@@ -1058,8 +1058,13 @@ whose TEXT must change on a live instance is converted by a one-shot migration i
     SUPPRESSED from the fire table and boot catch-up (one fire path, no double-firing); its
     Schedule dropdown renders a locked "lane managed" state linking to the lane, the routines
     overview shows the LANE's schedule on the member's row instead of the suppressed cron
-    (R313 — `/api/lanes` ships each lane's `schedule_desc` for it). Clearing the lane's
-    schedule (or leaving the lane) restores the member's own cron at the next rescan.
+    (R313 — `/api/lanes` ships each lane's `schedule_desc` for it). The routine card says the
+    same to every other reader: `/api/routines` and the detail payload report a member's
+    `schedule_desc` as `Lane “<name>” — <the lane's schedule>` and its `next_fire` as the
+    lane's (`lanes.scheduled_lane_by_member`), none while the lane is paused or the member is
+    switched off — the routine page's status tile and a routine reading the API both see when
+    it actually runs. Clearing the lane's schedule (or leaving the lane) restores the member's
+    own cron at the next rescan.
     A lane fire due while its chain is still in flight is REFUSED (`lane_fire_refused`, the chain
     analog of `overrun_skipped`). Manual "Run now" on a member is unaffected.
     **Lane catch-up (0.329.0).** The fire table is process memory, so a fire that came due while
@@ -1176,7 +1181,13 @@ whose TEXT must change on a live instance is converted by a one-shot migration i
   `deliberation`, `grants`) or **NEXT_RUN**, each with the reason the operator is shown.
   `tests/test_configflow.py` fails on a patch field the table does not declare, so a new config
   field cannot be added without deciding which half it is in — that guard IS the anti-drift
-  mechanism. Both PATCH handlers call `routines_common.signal_config_change`, which writes a
+  mechanism. The table is the UNION of both models, so it is not what a decision's
+  `config_patch` is checked against: `configflow.ROUTINE_PATCH_FIELDS` and
+  `CONVERSATION_PATCH_FIELDS` are each model's exact field set (pinned one-to-one by the same
+  test file); `engine/interact._config_patch_shape` refuses, on the turn the ask is filed,
+  any key outside the surface the apply will PATCH — a conversation's own proposal (the record
+  lands in a conversation) against `ConversationPatch`, everything else against `RoutinePatch`.
+  Both PATCH handlers call `routines_common.signal_config_change`, which writes a
   `config_change` signal into the live run's `control.json` (the seam that already exists for
   reaching a running run); `engine/switches.apply_config_change` adopts the live half at the next
   turn boundary and appends ONE `ENGINE NOTE` naming EVERY changed field and which half it is in,

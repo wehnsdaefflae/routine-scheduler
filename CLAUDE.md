@@ -585,7 +585,10 @@ by a test, by the engine, or by a past incident.
 - **A config field must declare whether it reaches a LIVE run.** `configflow.CLASSIFICATION`
   (F337) maps every `RoutinePatch`/`ConversationPatch` field to LIVE (adopted at a turn boundary
   — budgets, deliberation, grants) or NEXT_RUN, with the reason the operator is shown;
-  `tests/test_configflow.py` fails on an undeclared field. Both PATCH handlers signal a live run
+  `tests/test_configflow.py` fails on an undeclared field. The same file pins
+  `ROUTINE_PATCH_FIELDS`/`CONVERSATION_PATCH_FIELDS` to the two models one-to-one — the
+  vocabulary a filed `config_patch` is checked in, per the surface its apply will PATCH — so a
+  new PATCH field is two declarations, not one. Both PATCH handlers signal a live run
   through `control.json` and the engine appends ONE ENGINE NOTE naming EVERY changed field and
   which half it is in — a change that silently does or does not reach a run is the bug.
 

@@ -107,6 +107,11 @@ the **one-click buttons** right there, so you can approve without scrolling to t
 switching to the Decisions page — all three surfaces settle each other the moment any one of
 them answers.
 
+A proposed CONFIG change rides a decision the same way (`ask_user` with `config_patch`), and
+**approve & apply** on the Decisions page lands it where the engine resolved it: on this
+conversation when the patch names no target, on a routine when it names one
+(`"routine": "<slug>"`, checked against the installed routines when the agent asks).
+
 ## The working plan
 
 A scheduled routine gets its structure from a workflow compiled when you create it. A conversation

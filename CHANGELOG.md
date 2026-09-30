@@ -15,6 +15,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.368.1] — 2026-09-30
+
+### Fixed — a lane member's own page said it runs only when clicked; a config proposal could carry a key its apply refuses, or never reach the routine a conversation named
+
+items: operator (2026-09-30), found while correcting stale lane references in routine memory
+
+**The routine card was lane-blind.** `schedule_desc` and `next_fire` on every `/api/routines`
+card — and the detail payload built on it — were read from the routine's OWN cron. A member of a
+scheduled lane has that cron suppressed (D71), usually empty, so its page's status tile said
+"Manual — runs only when you click Run now" right beside a lane tile saying the lane fires it. A
+member that kept an old cron showed a daily time the scheduler never uses (freelance-radar's
+`0 7 * * *`). A routine reading `/api/routines` inherited the same misreading. The card now
+reports what actually starts the routine: for a member of a scheduled lane,
+`Lane “<name>” — <the lane's schedule>` and the lane's next fire — none while the lane is paused,
+none for a member that is switched off or retired, since the chain skips it. A member of a lane
+without a cron keeps its own schedule, because such a lane suppresses nothing. The map comes from
+the new `lanes.scheduled_lane_by_member`, which `scheduled_member_slugs` now derives from, so which
+routines a scheduled lane fires is written once. The dashboard had compensated client-side and is
+unchanged; the routine page's hero and schedule section now read true.
+
+**The config_patch filing check spoke two surfaces at once.** Since 0.366.0 a `config_patch` whose
+keys the apply would refuse is refused on the turn that files it. It checked against
+`configflow.CLASSIFICATION`, the union of `RoutinePatch` and `ConversationPatch`: a routine
+proposal naming `title`, `workdir` or `workflow` passed, as did a conversation's naming `schedule`,
+`permissions` or `rules`. Each was a 422 on the operator's click. The keys are now judged in the
+vocabulary of the surface the apply will PATCH — a conversation's own proposal (the record lands
+in a conversation; a child's lands in its root) against `ConversationPatch`, everything else
+against `RoutinePatch`. The engine may not import the web layer, so
+`configflow.ROUTINE_PATCH_FIELDS` / `CONVERSATION_PATCH_FIELDS` spell the two out;
+`tests/test_configflow.py` pins each to its model.
+
+**A conversation's proposal for a routine could not land.** A `config_patch` target (`routine`,
+`domain`) was resolved under the ASKER's own home. A conversation's is the conversations home, so
+every routine a conversation named was refused at ask time. A slug that matched another
+conversation got through; the Decisions page then forced the asker as the target — posting the
+patch to `/api/routines/<the conversation>`, a 404 — while calling the routine a conversation.
+Targets now resolve against the routines home whoever asks: a child run through its root, a
+routine naming its own slug still meaning itself. The page posts to the resolved target and names
+its kind from the surface it posts to.
+
+`tests/test_search.py` closes every search index it opens. Under Python 3.14 an unclosed sqlite
+connection is a ResourceWarning, which `filterwarnings = error` turned into a failure in whichever
+test the garbage collector happened to interrupt — the fast suite failed at HEAD on it alone.
+
 ## [0.368.0] — 2026-09-29
 
 ### Fixed — a 65-minute pause cost a WEEKLY lane its whole week, and nothing made the fire up (D156, F573)

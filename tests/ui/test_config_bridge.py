@@ -13,7 +13,7 @@ from __future__ import annotations
 from playwright.sync_api import expect
 
 from rsched import domains
-from rsched.paths import read_yaml
+from rsched.paths import atomic_write_json, read_yaml
 
 from .conftest import until
 
@@ -54,3 +54,31 @@ def test_routine_targeted_patch_still_applies_to_the_routine(ui, ui_page):
           .get("budgets", {}).get("max_turns") == 120, what="the routine patch")
     raw = read_yaml(ui.routines / "uir" / "routine.yaml")
     assert raw["budgets"]["max_turns"] == 120
+
+
+def test_a_conversations_patch_for_a_routine_applies_to_that_routine(ui, ui_page):
+    """A conversation names a routine as its proposal's target: the engine resolves it against
+    the ROUTINES home and records `config_home: "routines"`; the button PATCHes that routine.
+    Forcing the asker as the target posted it to /api/routines/<the conversation> — a 404 —
+    while the copy called the routine a conversation."""
+    ui_page.goto(f"{ui.url}/#/conversations")
+    ui_page.locator(".conv-new textarea").fill("Tidy the uir routine's budget.")
+    ui_page.get_by_role("button", name="start conversation").click()
+    ui_page.wait_for_url("**/conversations/**")
+    conv = ui_page.url.rsplit("/", 1)[-1]
+    pending = ui.conversations / conv / "questions" / "pending"
+    pending.mkdir(parents=True, exist_ok=True)
+    atomic_write_json(pending / "q-20260930-070000-1.json", {
+        "qid": "q-20260930-070000-1", "question": "Raise uir's turn budget to 77?",
+        "mode": "deferred", "type": "text", "options": [], "default": "",
+        "asked": "20260930-070000", "config_patch": {"budgets": {"max_turns": 77}},
+        "config_target": "uir", "config_home": "routines"})
+    ui_page.goto(f"{ui.url}/#/questions")
+    card = ui_page.locator(".question-item", has_text="Raise uir's turn budget").first
+    expect(card).to_be_visible()
+    expect(card).to_contain_text("proposed config change for uir")
+    expect(card).to_contain_text("routine's behalf")
+    card.get_by_role("button", name="approve & apply").click()
+    expect(card).to_contain_text("applied")
+    until(lambda: read_yaml(ui.routines / "uir" / "routine.yaml")
+          .get("budgets", {}).get("max_turns") == 77, what="the routine patch")

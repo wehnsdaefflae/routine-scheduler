@@ -195,13 +195,22 @@ def _check_cron(cron: str) -> str:
     return cron
 
 
+def scheduled_lane_by_member(routines_home: Path) -> dict[str, dict]:
+    """Map each member slug to the lane WITH a schedule that fires it (D71). A lane without a
+    cron changes nothing about when its members fire, so its members are not keys. The routine
+    card reads its schedule from here, because a member's own cron names no time it runs at.
+    """
+    return {m: lane for lane in list_lanes(routines_home) if lane["cron"]
+            for m in member_slugs(lane)}
+
+
 def scheduled_member_slugs(routines_home: Path) -> set[str]:
     """Every routine slug whose OWN cron is suppressed because it belongs to a lane WITH a
     schedule (D71) — the daemon's cron-fire loop and boot catch-up skip these, the week
     endpoint (api_schedule) withholds their fires, and the routine page renders their
     Schedule dropdown as "lane managed".
     """
-    return {m for lane in list_lanes(routines_home) if lane["cron"] for m in member_slugs(lane)}
+    return set(scheduled_lane_by_member(routines_home))
 
 
 def lane_of(routines_home: Path, slug: str) -> dict | None:

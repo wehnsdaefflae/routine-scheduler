@@ -15,7 +15,9 @@ The fix is not more live paths. It is **one classification, in one place**, plus
 Every field of `RoutinePatch` and `ConversationPatch` must appear in `CLASSIFICATION` below;
 `tests/test_configflow.py` fails on a field that does not. That is the whole anti-drift
 mechanism: a new config field cannot be added without declaring which half it is in, so the
-silent divergence this module exists to end cannot quietly come back.
+silent divergence this module exists to end cannot quietly come back. The same test file pins
+`ROUTINE_PATCH_FIELDS` / `CONVERSATION_PATCH_FIELDS` to those two models one-to-one — the
+vocabulary a decision's `config_patch` is checked against when it is filed.
 
 The delivery seam is the one that already exists for reaching a running run — a signal in the
 run's `control.json`, applied at the next turn boundary by `engine/switches.apply_config_change`,
@@ -74,6 +76,24 @@ CLASSIFICATION: dict[str, tuple[str, str]] = {
 
 #: Only these carry a VALUE the engine adopts; the rest of LIVE would be meaningless to ship.
 ADOPTABLE = tuple(f for f, (half, _) in CLASSIFICATION.items() if half == LIVE)
+
+#: The PATCH vocabulary of each surface a decision's `config_patch` is applied to — exactly the
+#: fields of `RoutinePatch` (`PATCH /api/routines/…`) and of `ConversationPatch`
+#: (`PATCH /api/conversations/…`). `engine/interact.py` refuses a key outside the surface the
+#: apply will PATCH, on the turn that files the ask. CLASSIFICATION is no substitute: it is the
+#: union of both surfaces, so a routine proposal naming `title` passed the filing check and 422d
+#: on the operator's click. The engine may not import the web layer, which is why the two sets
+#: are spelled out here; `tests/test_configflow.py` pins each one to its model.
+ROUTINE_PATCH_FIELDS = frozenset({
+    "enabled", "run_gate", "schedule", "budgets", "models", "connections", "grants",
+    "machines", "name", "description", "tags", "domain", "permissions", "capabilities",
+    "rules", "improve", "output_compression", "deliberation", "keep_runs",
+    "fs_read_roots", "fs_write_roots",
+})
+CONVERSATION_PATCH_FIELDS = frozenset({
+    "title", "tags", "workdir", "budgets", "models", "machines", "connections",
+    "output_compression", "deliberation", "fs_read_roots", "fs_write_roots",
+})
 
 
 def classify(fields: list[str]) -> tuple[list[str], list[str], list[str]]:

@@ -29,6 +29,15 @@ def test_every_patch_field_declares_its_half():
             "NEXT_RUN, with the reason the run is shown")
 
 
+def test_each_surface_vocabulary_is_exactly_its_patch_model():
+    """`engine/interact.py` judges a filed `config_patch` in the vocabulary of the surface its
+    apply will PATCH. The engine may not import the web layer, so `configflow` spells the two
+    sets out; this pins each to its model, so a field added to either model cannot be refused
+    at filing (nor a dropped one keep passing) without this failing first."""
+    assert set(RoutinePatch.model_fields) == configflow.ROUTINE_PATCH_FIELDS
+    assert set(ConversationPatch.model_fields) == configflow.CONVERSATION_PATCH_FIELDS
+
+
 def test_every_classification_names_a_half_and_a_reason():
     for field, (half, why) in configflow.CLASSIFICATION.items():
         assert half in (configflow.LIVE, configflow.NEXT_RUN), field

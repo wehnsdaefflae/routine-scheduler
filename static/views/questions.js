@@ -376,12 +376,17 @@ export async function render(view, query = {}) {
       // explicit `config_home` is authoritative here and the button posts where it says.
       const home = q.config_home ? q.config_home
         : q.conversation ? "conversations" : (q.background || q.wizard) ? "" : "routines";
-      const noun = home === "domains" ? "domain" : q.conversation ? "conversation" : "routine";
+      // what the button patches is named by the surface it posts to, never by who asked: a
+      // conversation's proposal for a routine patches a ROUTINE
+      const noun = home === "domains" ? "domain" : home === "conversations" ? "conversation"
+        : "routine";
       // D123/F458: a config_patch may be FOR another routine (config-optimizer's whole job).
       // The engine resolved and validated that slug at ask time (engine/interact.py), so the
       // patch goes to the TARGET, not to whoever asked — the old hardwiring to q.routine
-      // silently rewrote the asker's own config and reported success (R1343).
-      const target = (!q.conversation && q.config_target) ? q.config_target : q.routine;
+      // silently rewrote the asker's own config and reported success (R1343). That holds for
+      // a conversation too: the engine resolves the target against the ROUTINES home whoever
+      // asks; forcing q.routine here posted the patch to /api/routines/<the conversation>.
+      const target = q.config_target || q.routine;
       const elsewhere = home === "domains" || target !== q.routine;
       const btn = home ? el("button", { class: "btn small primary" }, "approve & apply") : null;
       if (btn) btn.onclick = async () => {

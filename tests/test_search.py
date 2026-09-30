@@ -101,10 +101,11 @@ def server(tmp_path, make_routine) -> ServerConfig:
 
 
 @pytest.fixture
-def index(server) -> SearchIndex:
+def index(server):
     idx = SearchIndex(server)
     idx.refresh()
-    return idx
+    yield idx
+    idx.close()
 
 
 def _one(index, q, **expect):
@@ -170,6 +171,7 @@ def test_pure_cache_rebuilds(server, index):
     fresh = SearchIndex(server)
     fresh.refresh()
     assert fresh.search("zeppelin")
+    fresh.close()
 
 
 def test_corrupt_index_self_heals_at_query_time(server, index):
@@ -208,6 +210,7 @@ def test_budget_bounds_work(server):
     assert stats["pending"] == stats["files"] - 1 > 0
     idx.refresh()   # a later unbounded pass finishes the backlog
     assert idx.refresh()["pending"] == 0
+    idx.close()
 
 
 def test_newest_runs_index_first(server):
@@ -215,6 +218,7 @@ def test_newest_runs_index_first(server):
     idx.refresh(budget_s=0)   # exactly one file: the newest run's transcript wins the sort
     assert idx.search("seventeen")        # conversation run 20260702-100000 (the newest)
     assert idx.search("zeppelin") == []   # routine-level backlog still pending
+    idx.close()
 
 
 def test_query_injection_safe(index):

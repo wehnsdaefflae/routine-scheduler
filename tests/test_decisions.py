@@ -659,11 +659,108 @@ def test_a_config_patch_the_apply_would_refuse_is_refused_at_filing():
     assert "routine config" in _config_patch_shape({"config": {}})
 
 
-def test_the_config_patch_gate_tracks_the_classification_table():
-    """It checks against `configflow.CLASSIFICATION`, which `test_configflow` already keeps in
-    step with the patch models — so the gate cannot drift behind the thing it stands in for."""
-    from rsched.configflow import CLASSIFICATION
+def test_the_config_patch_gate_speaks_the_surface_it_applies_to():
+    """A routine's proposal is applied by `PATCH /api/routines/…`, a conversation's own by
+    `PATCH /api/conversations/…`: two models, two vocabularies. Judged against their union,
+    `title` passed on a routine proposal and `schedule` on a conversation's — each a 422 on the
+    operator's click, the dead button this gate exists to prevent."""
     from rsched.engine.interact import _config_patch_shape
+    from rsched.web.api_conversation_config import ConversationPatch
+    from rsched.web.api_routine_patch import RoutinePatch
 
-    for field in CLASSIFICATION:
-        assert _config_patch_shape({field: "whatever"}) == "", f"{field} should be accepted"
+    for field in RoutinePatch.model_fields:
+        assert _config_patch_shape({field: "whatever"}) == "", f"{field} is routine config"
+    for field in ConversationPatch.model_fields:
+        assert _config_patch_shape({field: "x"}, conversation=True) == "", f"{field} (conv)"
+    for field in ("title", "workdir", "workflow"):
+        assert "routine config" in _config_patch_shape({field: "x"}), field
+    for field in ("schedule", "permissions", "rules", "enabled"):
+        assert "conversation config" in _config_patch_shape({field: "x"}, conversation=True)
+    # a resolved ROUTINE target is proposing that routine's config, whoever asked
+    assert _config_patch_shape({"schedule": {}}, "routines", conversation=True) == ""
+
+
+def test_a_decision_filed_into_a_conversation_is_judged_as_conversation_config(tmp_path):
+    """Where the record LANDS decides the surface: the Decisions page applies an untargeted
+    patch from a conversation's pending dir through `PATCH /api/conversations/…`. A child files
+    into its ROOT's dir, so a child of a conversation is judged as the conversation."""
+    from types import SimpleNamespace
+
+    from rsched.engine.interact import _lands_in_conversation
+
+    convs, routines = tmp_path / "conversations", tmp_path / "routines"
+    (convs / "c1").mkdir(parents=True)
+    (routines / "r1").mkdir(parents=True)
+    server = SimpleNamespace(conversations_home=convs)
+    assert _lands_in_conversation(SimpleNamespace(root_routine_dir=convs / "c1", server=server))
+    assert not _lands_in_conversation(
+        SimpleNamespace(root_routine_dir=routines / "r1", server=server))
+
+
+def test_a_routine_proposal_naming_a_conversation_field_is_refused_at_filing(
+        make_routine, scripted):
+    """End to end through `ask_user`: no record is filed, so no button promises a field the
+    routine endpoint answers with 422."""
+    d = make_routine(slug="titler")
+    scripted([
+        {"say": "rename myself", "kind": "ask_user", "mode": "deferred",
+         "question": "Rename?", "config_patch": {"title": "Nicer name"}},
+        finish(),
+    ])
+    status, run_dir = run_routine(d, _server(d), run_ts=TS)
+    assert status == "ok"
+    assert not list((d / "questions" / "pending").glob("*.json"))
+    obs = next(e for e in _events(run_dir)
+               if e["type"] == "observation" and e["payload"].get("error"))
+    assert "'title'" in obs["payload"]["error"]
+    assert "routine config" in obs["payload"]["error"]
+
+
+def _asker(tmp_path, home: str, slug: str, *extra_routines: str):
+    """A minimal ctx for the target resolver: the asker's dir under `home` (routines or
+    conversations), both homes real, and `extra_routines` installed as routines."""
+    from types import SimpleNamespace
+
+    homes = {h: tmp_path / h for h in ("routines", "conversations")}
+    for name in extra_routines:
+        (homes["routines"] / name).mkdir(parents=True, exist_ok=True)
+        (homes["routines"] / name / "routine.yaml").write_text("name: x\n", encoding="utf-8")
+    d = homes[home] / slug
+    d.mkdir(parents=True, exist_ok=True)
+    server = SimpleNamespace(routines_home=homes["routines"],
+                             conversations_home=homes["conversations"])
+    return SimpleNamespace(routine=SimpleNamespace(dir=d, slug=slug), root_routine_dir=d,
+                           server=server)
+
+
+def test_a_conversation_names_a_routine_by_the_routines_home(tmp_path):
+    """Resolved under the asker's own home, a conversation's proposal for a routine was refused
+    — or, when the slug matched another conversation, it reached the Decisions page, which
+    posted it to /api/routines/<the asking conversation>: a 404."""
+    from rsched.engine.interact import _config_target
+
+    ctx = _asker(tmp_path, "conversations", "c1", "target")
+    _asker(tmp_path, "conversations", "c2")          # a conversation is not a routine target
+    assert _config_target(ctx, {"routine": "target"}, conversation=True) == (
+        "target", "routines", "")
+    err = _config_target(ctx, {"routine": "c2"}, conversation=True)[2]
+    assert "no such routine" in err
+    assert str(tmp_path / "routines") in err
+
+
+def test_naming_yourself_is_yourself_only_for_a_routine(tmp_path):
+    """A routine naming its own slug proposes for itself; a conversation that happens to share
+    that slug is proposing for the ROUTINE of that name. A child run files into its root's
+    dir, so its root decides — and its targets resolve like any other asker's."""
+    from types import SimpleNamespace
+
+    from rsched.engine.interact import _config_target
+
+    routine = _asker(tmp_path, "routines", "shared", "shared", "target")
+    assert _config_target(routine, {"routine": "shared"}) == ("", "", "")
+    conv = _asker(tmp_path, "conversations", "shared")
+    assert _config_target(conv, {"routine": "shared"}, conversation=True) == (
+        "shared", "routines", "")
+    routine.routine = SimpleNamespace(dir=routine.root_routine_dir / "runs" / "t" / "sub" / "1",
+                                      slug="shared-1")
+    assert _config_target(routine, {"routine": "target"}) == ("target", "routines", "")

@@ -65,8 +65,32 @@ def _awaiting_questions(info: registry.RoutineInfo) -> list[dict]:
             if not q.get("answered") and not _snooze_active(q.get("snoozed_until"), now)]
 
 
-def _card(request: Request, info: registry.RoutineInfo, *, monthly: dict | None = None) -> dict:
+def _schedule_fields(info: registry.RoutineInfo, lane: dict | None, *,
+                     own_fires: dict[str, datetime], lane_fires: dict[str, datetime]) -> dict:
+    """The card's `schedule_desc` + `next_fire`: when the scheduler actually STARTS this routine.
+
+    A member of a scheduled lane is fired by the lane (D71), so its own cron, empty or
+    suppressed, names no time it runs at. Read from that cron, every lane member's page said
+    "Manual — runs only when you click Run now" beside a lane tile saying the lane fires it;
+    a member that kept an old cron showed a daily time the scheduler never uses. `next_fire` is
+    the lane's: the moment its chain starts, which a later member follows. A paused lane has
+    none; neither has a member that is switched off or retired, which the chain skips.
+    """
+    if lane is None:
+        own = own_fires.get(info.slug)
+        return {"schedule_desc": schedule.describe(info.cfg.cron),
+                "next_fire": own.isoformat() if own else None}
+    when = "lane paused" if lane.get("paused") else schedule.describe(lane["cron"])
+    nxt = lane_fires.get(lane["id"]) if info.fireable else None
+    return {"schedule_desc": f"Lane “{lane['name']}” — {when}",
+            "next_fire": nxt.isoformat() if nxt else None}
+
+
+def _card(request: Request, info: registry.RoutineInfo, *, monthly: dict | None = None,
+          lane_of: dict[str, dict] | None = None) -> dict:
     sched = _state(request).scheduler
+    if lane_of is None:
+        lane_of = lanes.scheduled_lane_by_member(_state(request).server.routines_home)
     last = info.last_run
     return {
         "slug": info.slug,
@@ -81,9 +105,8 @@ def _card(request: Request, info: registry.RoutineInfo, *, monthly: dict | None 
         "tags": info.cfg.tags,
         "cron": info.cfg.cron,
         "tz": info.cfg.tz,
-        "schedule_desc": schedule.describe(info.cfg.cron),
-        "next_fire": (sched.next_fires.get(info.slug).isoformat()
-                      if sched.next_fires.get(info.slug) else None),
+        **_schedule_fields(info, lane_of.get(info.slug), own_fires=sched.next_fires,
+                           lane_fires=sched.lane_next_fires),
         "active_run": info.active_run.run_id if info.active_run else None,
         "active_state": info.active_run.state if info.active_run else None,
         "last_run": ({"run_id": last.run_id, "ts": last.ts, "state": last.state,
@@ -113,7 +136,9 @@ def _card(request: Request, info: registry.RoutineInfo, *, monthly: dict | None 
 @router.get("/routines")
 def list_routines(request: Request) -> list[dict]:
     monthly = monthly_spend(_state(request).server)   # one read serves every card
-    return [_card(request, info, monthly=monthly) for info in _catalog(request).values()]
+    lane_of = lanes.scheduled_lane_by_member(_state(request).server.routines_home)
+    return [_card(request, info, monthly=monthly, lane_of=lane_of)
+            for info in _catalog(request).values()]
 
 
 @router.get("/routines/{slug}/surface")
