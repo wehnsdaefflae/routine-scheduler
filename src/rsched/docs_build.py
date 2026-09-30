@@ -168,6 +168,14 @@ def render_guide(text: str, title: str) -> str:
             f"</head><body>{body}</body></html>")
 
 
+#: The run gate's JAIL-side modules. `gatekit/run.py` puts its own directory on the import path
+#: and the kit modules import each other by bare name, because the jail mounts nothing else; as
+#: members of the package they cannot load, and one module that cannot load fails the whole API
+#: build. pdoc applies a `!<regex>` spec to the modules walked before it (docs/run-gates.md
+#: describes the kit).
+API_EXCLUDE = r"!rsched\.gatekit\.(kit_\w+|run)$"
+
+
 def build_docs(source_repo: Path, out: Path, *, modules: tuple[str, ...] = ("rsched",),
                force: bool = False) -> bool:
     """Generate guides + API reference into `out`. Returns False when the stamp says the
@@ -197,7 +205,7 @@ def build_docs(source_repo: Path, out: Path, *, modules: tuple[str, ...] = ("rsc
     atomic_write(template_dir / "theme.css", PDOC_THEME_CSS)
     pdoc.render.configure(favicon=FAVICON, template_directory=template_dir,
                           footer_text="rsched — generated from source by pdoc")
-    pdoc.pdoc(*modules, output_directory=out / "api")
+    pdoc.pdoc(*modules, API_EXCLUDE, output_directory=out / "api")
 
     from . import __version__
 

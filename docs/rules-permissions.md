@@ -249,7 +249,10 @@ Three writers, and each gets what it can carry:
   `library-drift` record per newly-broken routine. A break is a DECISION (expose the secret,
   withhold it, unbind the rule), which is what the Decisions page already settles on entity ids
   — so it rides `pending.py` and inherits the page, the audit trail and browser push without
-  inventing an outbound send.
+  inventing an outbound send. A record lives exactly as long as its gap: every re-resolve
+  withdraws the records whose gap has closed — on a library change, at a daemon process's first
+  check, and every ten minutes while any is open — since a secret added to the store or a
+  settings accept closes a gap without the library moving.
 
 #### The gap it also closes: a capability no held doc asks for
 

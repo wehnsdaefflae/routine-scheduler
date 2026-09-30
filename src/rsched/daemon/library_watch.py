@@ -18,6 +18,11 @@ page already settles on entity ids from the existing vocabulary; and `pending.py
 records for that page with no live run behind them. So a break becomes a pending record, and
 inherits the page, the audit trail and browser push without inventing an outbound send — which
 the 0.230.0 decision forbids anyway.
+
+A record lives exactly as long as its gap. Every re-resolve withdraws the records whose gap has
+closed — on a library change, at a process's first check, and every SWEEP_EVERY_S while any is
+open — because a gap closes without the library moving too: a secret added to the store, a
+settings accept on the routine page, a routine archived.
 """
 
 from __future__ import annotations
@@ -42,6 +47,12 @@ _MARKER = ".control/library-head.json"
 #: hand edit, a restore — and what this produces is a Decisions-page record a person reads later,
 #: so a minute of latency costs nothing and 11 of every 12 forks were pure tax.
 CHECK_EVERY_S = 60.0
+
+#: How often the OPEN drift records are re-resolved while the library stands still. A gap can
+#: close with no library change at all (a secret added to the store, a routine's own settings
+#: accepted), and a record whose gap is closed asks for a decision nobody needs to make. Only
+#: while records are open, and never more than this often: each pass resolves every routine.
+SWEEP_EVERY_S = 600.0
 
 
 def _read(repo, *args: str) -> str:
@@ -75,6 +86,7 @@ class LibraryWatch:
         self.server = server
         self._seen: str | None = None
         self._last_check: float | None = None   # monotonic stamp of the last HEAD read
+        self._last_sweep: float | None = None   # ... and of the last re-check of open records
 
     async def tick(self) -> None:
         now = time.monotonic()
@@ -98,6 +110,7 @@ class LibraryWatch:
             saved = read_json(marker)
             self._seen = str(saved.get("head") or "") if isinstance(saved, dict) else ""
         if head == self._seen:
+            self._sweep()
             return
         first_boot = not self._seen
         self._seen = head
@@ -107,21 +120,60 @@ class LibraryWatch:
         self._report(head)
 
     def _report(self, head: str) -> None:
-        """Re-resolve every routine and queue a decision for each one that is now broken.
+        """Re-resolve every routine: withdraw the records whose gap closed, and queue a decision
+        for each routine that is now broken.
 
         Only BLOCKING rows queue. An interrupt already asks the user at the moment it matters,
         and queueing those too would turn a genuine signal into a list nobody reads.
         """
         from .. import pending
-        from ..config import load_routine
-        from ..readmodels.surface import routine_surface
 
         home = self.server.routines_home
         if not home.is_dir():
             return
+        gaps, resolved = self._resolve()
+        self._withdraw_closed(gaps, resolved)
         already = {rec.get("fields", {}).get("entity")
                    for rec in pending.load_all(home) if rec.get("kind") == "library-drift"}
         subject = _subject(self.server.libraries_home, head)
+        for key, (slug, node) in gaps.items():
+            if key in already:
+                continue                            # one record per gap, not one per commit
+            pending.queue(
+                home, kind="library-drift", routine=slug, run_id="",
+                fields={"entity": key, "node": node, "head": head},
+                summary=(f"{slug}: {node['id']} — {node['why']}. "
+                         f"After library change {head[:8]} ({subject})"))
+            log.info("library drift: %s broke %s", head[:8], key)
+
+    def _sweep(self) -> None:
+        """Re-check the open drift records while the library stands still: at a process's first
+        check (a record the previous process left may be closed by now), then every
+        SWEEP_EVERY_S. Queueing stays with a library change.
+        """
+        from .. import pending
+
+        now = time.monotonic()
+        if self._last_sweep is not None and now - self._last_sweep < SWEEP_EVERY_S:
+            return
+        self._last_sweep = now
+        home = self.server.routines_home
+        if not home.is_dir() or not any(r.get("kind") == "library-drift"
+                                        for r in pending.load_all(home)):
+            return
+        self._withdraw_closed(*self._resolve())
+
+    def _resolve(self) -> tuple[dict[str, tuple[str, dict]], set[str]]:
+        """Every blocking gap on every routine, keyed `<slug>:<node id>`, and the slugs that
+        resolved — a routine that did not load or resolve says nothing about its records.
+        """
+        from ..config import load_routine
+        from ..readmodels.surface import routine_surface
+
+        self._last_sweep = time.monotonic()
+        gaps: dict[str, tuple[str, dict]] = {}
+        resolved: set[str] = set()
+        home = self.server.routines_home
         for d in sorted(p for p in home.iterdir() if p.is_dir() and not p.name.startswith(".")):
             cfg, _ = load_routine(d)
             if cfg is None:
@@ -130,15 +182,26 @@ class LibraryWatch:
                 surface = routine_surface(self.server, cfg)
             except (OSError, ValueError):
                 continue
+            resolved.add(cfg.slug)
             for node in surface["nodes"]:
-                if node["severity"] != "blocks":
-                    continue
-                key = f"{cfg.slug}:{node['id']}"
-                if key in already:
-                    continue                        # one record per gap, not one per commit
-                pending.queue(
-                    home, kind="library-drift", routine=cfg.slug, run_id="",
-                    fields={"entity": key, "node": node, "head": head},
-                    summary=(f"{cfg.slug}: {node['id']} — {node['why']}. "
-                             f"After library change {head[:8]} ({subject})"))
-                log.info("library drift: %s broke %s", head[:8], key)
+                if node["severity"] == "blocks":
+                    gaps[f"{cfg.slug}:{node['id']}"] = (cfg.slug, node)
+        return gaps, resolved
+
+    def _withdraw_closed(self, gaps: dict[str, tuple[str, dict]], resolved: set[str]) -> None:
+        """Drop every drift record whose gap is closed — the secret was added, the rule unbound,
+        a library change retired what the record named. A routine that no longer exists takes
+        its records with it; one that did not resolve keeps them.
+        """
+        from .. import pending
+
+        home = self.server.routines_home
+        for rec in pending.load_all(home):
+            if rec.get("kind") != "library-drift":
+                continue
+            slug = str(rec.get("routine") or "")
+            entity = str((rec.get("fields") or {}).get("entity") or "")
+            gone = not (home / slug / "routine.yaml").is_file()
+            if gone or (slug in resolved and entity not in gaps):
+                pending.drop(home, str(rec["id"]))
+                log.info("library drift closed: %s", entity)

@@ -49,6 +49,24 @@ def test_build_skip_and_force(tmp_path):
     assert source_stamp(repo) != (out / ".stamp").read_text(encoding="utf-8")
 
 
+def test_every_module_the_api_reference_documents_imports():
+    """pdoc imports every module it walked and did not exclude; one that cannot import fails the
+    whole Help-tab build, which is what the jail-side gate kit did on 0.369.0's first boot."""
+    import importlib
+    import pkgutil
+    import re
+
+    import rsched
+    from rsched.docs_build import API_EXCLUDE
+
+    skip = re.compile(API_EXCLUDE[1:])
+    walked = [m.name for m in pkgutil.walk_packages(rsched.__path__, "rsched.")]
+    assert any(skip.match(name) for name in walked)     # the exclusion still names a module
+    for name in walked:
+        if not skip.match(name):
+            importlib.import_module(name)
+
+
 def test_ensure_docs_never_raises(tmp_path, monkeypatch):
     # a failing build (import error, unreadable repo, …) must not take the daemon down
     import rsched.docs_build as db

@@ -97,6 +97,55 @@ def test_the_same_gap_is_queued_once_not_once_per_commit(world):
     assert len(pending.load_all(routines)) == 1
 
 
+def _break_sig(lib) -> None:
+    (lib / "utils" / "sig" / "main.py").write_text(_util_src("sig", "NEW_PIN"), encoding="utf-8")
+    _git(lib, "add", "-A")
+    _git(lib, "commit", "-qm", "sig: require a PIN")
+
+
+def test_a_library_change_that_closes_the_gap_withdraws_its_record(world):
+    """A record whose gap is closed asks for a decision nobody needs to make any more."""
+    server, lib, routines = world
+    watch = LibraryWatch(server)
+    watch._check()
+    _break_sig(lib)
+    watch._check()
+    assert len(pending.load_all(routines)) == 1
+    (lib / "utils" / "sig" / "main.py").write_text(_util_src("sig"), encoding="utf-8")
+    _git(lib, "add", "-A")
+    _git(lib, "commit", "-qm", "sig: the PIN is optional again")
+    watch._check()
+    assert pending.load_all(routines) == []
+
+
+def test_a_gap_closed_with_the_library_standing_still_is_withdrawn_at_the_next_start(
+        world, monkeypatch):
+    """The secret is added to the store: nothing in the library moved, so only the sweep a
+    new process makes at its first check can see the record is moot."""
+    server, lib, routines = world
+    watch = LibraryWatch(server)
+    watch._check()
+    _break_sig(lib)
+    watch._check()
+    (routines / "archived").mkdir()                   # a record for a routine that is gone…
+    pending.queue(routines, kind="library-drift", routine="archived", run_id="",
+                  fields={"entity": "archived:secret:X", "node": {}, "head": ""}, summary="s")
+    assert len(pending.load_all(routines)) == 2
+    monkeypatch.setattr("rsched.secrets.load_secrets", lambda *a, **k: {"NEW_PIN": "1234"})
+    LibraryWatch(server)._check()                     # a new process, the same HEAD
+    assert pending.load_all(routines) == []           # …goes with it
+
+
+def test_a_gap_that_is_still_open_keeps_its_record_through_the_sweep(world):
+    server, lib, routines = world
+    watch = LibraryWatch(server)
+    watch._check()
+    _break_sig(lib)
+    watch._check()
+    LibraryWatch(server)._check()
+    assert [r["fields"]["entity"] for r in pending.load_all(routines)] == ["holder:secret:NEW_PIN"]
+
+
 def test_an_unchanged_head_does_no_work(world):
     server, _lib, routines = world
     watch = LibraryWatch(server)

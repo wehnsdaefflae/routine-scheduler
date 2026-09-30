@@ -15,6 +15,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.369.1] — 2026-09-30
+
+### Fixed — the Help tab rebuilds again; a drift record leaves when its gap closes
+
+items: operator (2026-09-30), found on 0.369.0's first boot
+
+**The Help tab served the pre-0.369.0 build.** pdoc imports every module of the package. The run
+gate's jail-side kit (`gatekit/kit_*.py`, `gatekit/run.py`) imports its siblings by bare name
+because the jail mounts nothing else, so the first boot's API build failed on it and the tab kept
+its last good build: guides that still described domains, templates and stopping conditions. The
+build now excludes the jail-side modules (`docs_build.API_EXCLUDE`). `tests/test_docs_build.py`
+imports every module the reference documents; the old test built one module and could not see it.
+
+**A library-drift record outlived its gap.** The library watcher queued a Decisions record per
+broken routine and never withdrew one, so 14 records named what 0.369.0 retired (a reserved util's
+old name, two retired permissions). Every re-resolve now withdraws the records whose gap has
+closed — on a library change, at a daemon process's first check, and every ten minutes while any
+is open, because a secret added to the store closes a gap with the library standing still. A
+routine that no longer exists takes its records with it.
+
 ## [0.369.0] — 2026-09-30
 
 ### Changed — routine settings are SETTINGS PATTERNS: one library document per kind of work, read against, never layered
