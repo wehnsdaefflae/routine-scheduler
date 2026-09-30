@@ -49,6 +49,38 @@ function highlightPython(src) {
   return frag;
 }
 
+// JSON highlighting, for DISPLAY of a value the console already holds as an object — the action
+// json fold on every message element (transcript.js). Same idiom as the Python one above: a
+// tokenizer appending DOM spans via `el`, so util.js's "no HTML pathway" invariant holds and the
+// source text survives character-for-character (a reader copies the fold to reproduce a call).
+//
+// A KEY is a string followed by a colon, which a regex alone cannot see, so strings are classed
+// on the lookahead rather than in the token set. Order: strings win over everything (a brace or a
+// digit inside one is not punctuation or a number), then numbers, then the three literals.
+const JSON_TOK = new RegExp([
+  "(\"(?:\\\\.|[^\"\\\\])*\"(?=\\s*:))",                       // 1 key
+  "(\"(?:\\\\.|[^\"\\\\])*\")",                                // 2 string
+  "(-?\\d+(?:\\.\\d+)?(?:[eE][+-]?\\d+)?)",                    // 3 number
+  "(\\btrue\\b|\\bfalse\\b|\\bnull\\b)",                       // 4 literal
+  "([{}\\[\\],:])",                                            // 5 punctuation
+].join("|"), "g");
+
+export function highlightJson(src) {
+  const frag = document.createDocumentFragment();
+  const text = String(src ?? "");
+  let last = 0;
+  for (const m of text.matchAll(JSON_TOK)) {
+    if (m.index > last) frag.append(text.slice(last, m.index));
+    last = m.index + m[0].length;
+    const [full, key, str, num, lit, punc] = m;
+    const cls = key ? "tok-key" : str ? "tok-str" : num ? "tok-num"
+      : lit ? "tok-const" : punc ? "tok-punc" : null;
+    frag.append(cls ? el("span", { class: cls }, full) : full);
+  }
+  if (last < text.length) frag.append(text.slice(last));
+  return frag;
+}
+
 // A drop-in editor: same `.value` contract as a textarea. lang "python" gets the highlight
 // overlay; anything else stays a plain textarea (rules/permissions are markdown — no highlighter).
 export function codeEditor(content, { lang = null, minHeight = 360 } = {}) {

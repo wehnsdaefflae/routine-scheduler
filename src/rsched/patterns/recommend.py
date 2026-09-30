@@ -93,15 +93,25 @@ def recommend(server, *, slug: str, saved: dict, pattern: dict | None,
             value = json.loads(str(row.get("value_json") or "null"))
         except ValueError:
             continue
-        if fields.equal(key, saved.get(key), value) or not valid(key, value):
+        if fields.equal(key, saved.get(key), value) or not valid(key, value, server):
             continue
         out[key] = {"value": fields.canonical(key, value),
                     "reason": str(row.get("reason") or "").strip()[:400]}
     return out
 
 
-def valid(key: str, value: object) -> bool:
-    """Would the page's own accept take this value? Checked with the validators it uses."""
+def valid(key: str, value: object, server: object | None = None) -> bool:
+    """Would the page's own accept take this value? Checked with the validators it uses.
+
+    The patch model checks a field's SHAPE; three fields are then checked for MEANING by the
+    accept route itself (`web/config_fields.py`, called at `api_routine_patch.py:300-311`), and
+    a value that clears the shape and fails the meaning is the worst kind to offer: the accept
+    is whole-draft, so one refused field 400s every other change the person kept. That is how
+    `connections: {"fau-mail": {"scopes": [...]}}` — a util's name where an OAuth provider
+    belongs — cost ewsan-bohrdaten-steward all nine of its proposed settings. So run those
+    validators here too. `models` and `machines` need the instance catalogs; without a server
+    their semantic half is skipped rather than guessed.
+    """
     from pydantic import ValidationError
 
     if key == "finish_line":
@@ -119,13 +129,36 @@ def valid(key: str, value: object) -> bool:
         RoutinePatch.model_validate({pkey: pvalue})
     except (ValidationError, ValueError, TypeError):
         return False
-    return True
+    return not _semantic_problem(key, value, server)
+
+
+def _semantic_problem(key: str, value: object, server: object | None) -> bool:
+    """True when the accept route's own validator would refuse this shaped-correct value."""
+    from fastapi import HTTPException
+
+    from ..web import config_fields
+
+    try:
+        if key == "connections":
+            config_fields.validate_connections(value if isinstance(value, dict) else {})
+        elif key == "machines" and server is not None:
+            config_fields.validate_machines(server, value if isinstance(value, list) else [])
+        elif key == "models" and server is not None:
+            config_fields.validate_models(server, value if isinstance(value, dict) else {})
+    except HTTPException as exc:
+        log.info("recommend: dropping %s — the accept would refuse it (%s)", key, exc.detail)
+        return True
+    except Exception:  # a validator that cannot run is not evidence the value is bad
+        log.warning("recommend: could not semantically check %s", key, exc_info=True)
+    return False
 
 
 def _prompt(server, slug: str, saved: dict, pattern: dict | None, context: str,
             allowed: list[str]) -> str:
     from .. import gatekit, library_docs
+    from ..oauth.providers import PROVIDERS
 
+    providers = ", ".join(sorted(PROVIDERS)) or "none configured"
     perms = "\n".join(f"- {d['slug']}: {d['summary']}"
                       for d in library_docs.list_docs(server.permissions_home))
     rules = "\n".join(f"- {d['slug']}: {d['summary']}"
@@ -151,7 +184,10 @@ def _prompt(server, slug: str, saved: dict, pattern: dict | None, context: str,
         'run_gate is {"enabled", "timeout_s", "checks": [{"id", "kind", …params}]}. '
         'schedule is {"friendly": {"frequency": "hourly"|"daily"|"weekly"|'
         '"monthly"|"manual", "time": "HH:MM", "weekdays": [0-6, 0=Sunday]}, '
-        '"catchup": "skip"|"run_once"}.\n\n'
+        '"catchup": "skip"|"run_once"}.\n'
+        f'connections is {{provider: "account-label"}} and names an OAUTH provider only — '
+        f'one of {providers}. A mailbox or an API the routine reaches through a UTIL is not a '
+        'connection: that access is a permission or a secret, never a connections entry.\n\n'
         f"GATE CHECK KINDS:\n{kinds}\n\nPERMISSIONS:\n{perms}\n\nGENERAL RULES:\n{rules}")
 
 

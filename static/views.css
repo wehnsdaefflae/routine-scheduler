@@ -410,6 +410,11 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
 .tok-num, .tok-const { color: var(--iris); }
 .tok-dec { color: var(--warn); }
 .tok-def { color: var(--signal); }
+/* JSON display (the action json fold on every message element): a key must read as the label
+   it is, and the structural punctuation must recede so a 40-line action is scannable. The rest
+   of the classes are shared with the Python highlighter above. */
+.tok-key { color: var(--signal); }
+.tok-punc { color: var(--ink-3); }
 
 .save-errors {
   margin-top: 10px; padding: 10px 13px; border-radius: var(--r2); font-size: var(--t-s);
@@ -436,6 +441,12 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
 
 /* ---------- audit reference links (reflinks.js: F63/D14 -> the card they name) ---------- */
 .ref-link { text-decoration: underline dotted; text-underline-offset: 2px; }
+/* A concept an action NAMES (a util, a rule, a permission, a reminder) links to the page that
+   holds it. Same dotted underline as an item ref so the two read as one kind of affordance,
+   and it inherits the row's colour: inside a dense `.act` line a coloured link would shout
+   louder than the action kind beside it. */
+.concept-link { color: inherit; text-decoration: underline dotted; text-underline-offset: 2px; }
+.concept-link:hover { color: var(--signal); }
 .ref-flash { animation: ref-flash 2.4s ease-out; }
 @keyframes ref-flash {
   0%, 40% { outline: 2px solid var(--warn); outline-offset: 2px; }

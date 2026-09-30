@@ -23,6 +23,8 @@ import { apiBlobUrl } from "/static/api.js";
 import { actionTime } from "/static/components/actiontime.js";
 import { md, mdInline } from "/static/md.js";
 import { answerForm } from "/static/components/answerform.js";
+import { highlightJson } from "/static/components/code.js";
+import { ruleLink, utilLink } from "/static/components/conceptlinks.js";
 import { el, fmtTime, fmtTokens, fullOutput, compressionInfo, toast } from "/static/util.js";
 
 // Mirror of engine/actions.py BRIEF_FIELD (the source of truth) — a kind missing here
@@ -269,12 +271,29 @@ export function createTranscript(container, opts = {}) {
         : null,
       el("div", { class: "act" },
         el("span", {}, a.kind),
-        el("span", { class: "muted" }, brief),
+        // A util's NAME is a concept with a page of its own, so it links there (operator,
+        // 2026-09-30). Only the name is linked, never the args beside it, and only from the
+        // structured `a.name` field — a util called `job` or `git` would match ordinary
+        // English everywhere if this were done by scanning prose (see conceptlinks.js).
+        a.kind === "util" && a.name
+          ? el("span", { class: "muted" }, utilLink(a.name),
+              Array.isArray(a.args) && a.args.length
+                ? " " + a.args.join(" ").slice(0, 200) : "  (no args)")
+          // `read_rule` / `write_rule` carry a rule SLUG in the same field, and "list" is the
+          // catalog rather than a rule, so it stays plain.
+          : (a.kind === "read_rule" || a.kind === "write_rule") && a.name && a.name !== "list"
+          ? el("span", { class: "muted" }, ruleLink(a.name))
+          : el("span", { class: "muted" }, brief),
         ev.usage ? el("span", { class: "muted", style: "margin-left:auto",
                               title: ev.usage.provider ? `served by ${ev.usage.provider}` : "" },
                     fmtTokens(ev.usage)) : null),
+      // Syntax-highlighted, because this fold is where a reader goes to reproduce a call and
+      // an unlit blob of 40 lines hides the one field they came for (operator, 2026-09-30:
+      // "i want the action JSON in a message element to be syntax highlighted"). Display only
+      // — highlightJson builds spans via textContent and preserves the source exactly, so the
+      // fold still copies back as valid JSON.
       el("details", { class: "raw" }, el("summary", {}, "action json"),
-        el("pre", {}, JSON.stringify(a, null, 1))),
+        el("pre", { class: "hl-json" }, highlightJson(JSON.stringify(a, null, 1)))),
       referBtn(`turn ${ev.turn ?? "?"} (${a.kind}${a.kind === "util" && a.name ? ` ${a.name}` : ""})`,
         a.say || brief));
     const clock = actionTime(ev, opts.isLive);

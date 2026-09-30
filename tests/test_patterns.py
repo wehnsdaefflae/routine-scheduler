@@ -236,3 +236,56 @@ def test_a_shipped_pattern_carries_every_budget():
 
     for p in _seed_patterns():
         assert set(p["settings"]["budgets"]) == set(DEFAULT_BUDGETS), p["slug"]
+
+
+def test_a_proposal_the_accept_button_would_refuse_is_not_offered():
+    """recommend.py's own contract: "a proposal the accept button would refuse is not a
+    proposal". The accept route validates `connections` / `machines` / `models` SEMANTICALLY
+    (web/config_fields.py) after the patch model has checked their shape, so a value that is
+    shaped right and meaningless — the operator's live case, `connections: {"fau-mail":
+    {"scopes": [...]}}` on ewsan-bohrdaten-steward, where `fau-mail` is a util and not an OAuth
+    provider — must be dropped here rather than offered. One refused field 400s the WHOLE
+    accept, so offering it costs the person every other change in the draft.
+    """
+    from rsched.patterns.recommend import valid
+
+    # connections is the OAuth-provider map: an unknown provider, and a non-string account.
+    assert not valid("connections", {"fau-mail": {"scopes": ["read", "draft", "send"]}})
+    assert not valid("connections", {"fau-mail": "mark"})
+    assert not valid("connections", {"google": {"scopes": ["read"]}})
+    assert valid("connections", {"google": "mark@gmail.com"})
+    assert valid("connections", {})
+
+    # `machines` and `models` are catalog-checked, and the catalog lives on the server: with
+    # one, an off-catalog name is refused; without one the semantic half is SKIPPED rather
+    # than guessed, because a missing catalog is not evidence the value is wrong.
+    class _Server:
+        machines = {"real-box": {}}
+        models = {"real-model": {}}
+
+    srv = _Server()
+    assert not valid("machines", ["no-such-box"], srv)
+    assert valid("machines", ["real-box"], srv)
+    assert valid("machines", ["no-such-box"])
+    assert not valid("models", {"main": "no-such-model"}, srv)
+
+
+def test_a_refused_connection_names_the_field_and_the_way_out():
+    """The accept is whole-draft, so this 400 refuses every OTHER change the person kept. A
+    message naming only the provider (the operator's 2026-09-30 report: "i get 'unknown
+    connection provider 'fau-mail''") leaves them guessing which of nine proposed blocks to
+    revert, so it must name the field, the known providers and the way forward.
+    """
+    from fastapi import HTTPException
+
+    from rsched.web.config_fields import validate_connections
+
+    with pytest.raises(HTTPException) as exc:
+        validate_connections({"fau-mail": {"scopes": ["read"]}})
+    detail = str(exc.value.detail)
+    assert detail.startswith("connections:")
+    assert "fau-mail" in detail and "revert" in detail
+
+    with pytest.raises(HTTPException) as exc:
+        validate_connections({"google": {"scopes": ["read"]}})
+    assert "account label" in str(exc.value.detail)

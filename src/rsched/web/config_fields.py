@@ -74,9 +74,16 @@ def validate_connections(mapping: dict | None) -> dict:
 
     for provider, account in (mapping or {}).items():
         if provider not in PROVIDERS:
-            raise HTTPException(400, f"unknown connection provider {provider!r}")
+            # Name the FIELD and the way out: the accept is whole-draft, so this 400 refuses
+            # every other change the person kept, and a message naming only the provider
+            # leaves them guessing which of the proposed blocks to revert.
+            raise HTTPException(400, f"connections: unknown provider {provider!r} — the known "
+                                     f"providers are {', '.join(sorted(PROVIDERS))}. A mailbox "
+                                     "or API reached through a util is not a connection; revert "
+                                     "the Connections field to accept the rest.")
         if not isinstance(account, str) or not account:
-            raise HTTPException(400, f"connections.{provider}: must be an account label")
+            raise HTTPException(400, f"connections.{provider}: must be an account label "
+                                     "(a string), not a scope list or an object")
     return dict(mapping or {})
 
 
