@@ -9,7 +9,7 @@
 //
 // All four move a routine in TIME only: a lane carries no config and no shared store, so
 // joining or leaving one changes nothing about what the routine may do — that is the whole
-// point of keeping the lane apart from the domain (docs/lanes-domains.md).
+// point of keeping the lane apart from the routine's own config (docs/lanes-tags.md).
 //
 // One-shot bars are not draggable (re-arming is the Schedule-once card's job). The controller
 // owns only the gesture: geometry, ghost, tip, target resolution. The semantic ops arrive as

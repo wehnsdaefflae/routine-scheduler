@@ -35,25 +35,31 @@ def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,  #
              fs_write_roots: list[str] | None = None,
              stages: dict[str, str] | None = None, enabled: bool = True,
              tags: list[str] | None = None, deliberation: str = "",
-             template: str | None = None, stopping: list[str] | None = None,
-             goal: list[str] | None = None) -> Path:
-    """Create ~/routines/<slug>. The workflow is REFERENCED (edited only in the library);
-    `stopping` and `goal` both seed `state/stopping.json`, and they answer DIFFERENT questions:
-    `stopping` is what DONE means for ONE run (re-asked every run), `goal` is the state after
-    which the ROUTINE is finished (sticky, and it retires the routine when met). In the USER's
-    words;
-    the routine holds general-rule SLUGS in routine.yaml (`rules:`, indexed by main.md's
-    Standing practices tail — the prose stays in the library) + stages/ modules. The clarified
-    `instruction` is the compile SEED: it is decomposed into the stages and NOT persisted (the
-    stages are the routine's sole source of truth from here on). `permissions` (engine-enforced,
-    user-changeable) go into routine.yaml. A one-line `description` (for the UI) is always
-    written, falling back to the name; `models` maps a role to a catalog model NAME (else the
-    role falls back to the server system_model).
+             pattern: str = "", done_when: list[str] | None = None,
+             finish_line: list[str] | None = None,
+             setup: list[str] | None = None, never: list[str] | None = None) -> Path:
+    """Create ~/routines/<slug>, FOLLOWING a settings pattern (docs/patterns.md).
+
+    The routine is saved with its pattern's values — `pattern` names it, or the recommender
+    picks the one built on `workflow_slug` — and everything specific to THIS routine becomes
+    PENDING changes on its page, under "check the changes i recommend.": what the person
+    settled while designing it (`setup`, their answers to the pattern's questions), the
+    `finish_line` they described (`run: …`, `you: …`, `YYYY-MM-DD: …`, `until YYYY-MM-DD`), and
+    whatever else the recommender finds. The caller's own values (cron, roots, models, …) are
+    applied — they are decisions made in code, not proposals.
+
+    The workflow is REFERENCED (edited only in the library). The clarified `instruction` is
+    the compile SEED: it is decomposed into main.md + stages/ and NOT persisted.
+    `done_when` — what the person said one finished run delivers — becomes the recipe's
+    `## Done when`; `never` — what they said a run must never do — its `## Never` (and
+    context for the settings recommended to stop it before the action). A one-line
+    `description` (for the UI) is always written, falling back to the name; `models` maps a
+    role to a catalog model NAME.
     """
     from .. import library_docs
-    from .. import rules as rules_mod
     from ..config import DEFAULT_RULES
-    from ..rules import with_practices_tail
+    from ..patterns import apply as pattern_apply
+    from ..patterns import recommend, store
     from . import library
 
     if not is_slug(slug):
@@ -62,18 +68,16 @@ def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,  #
     if routine_dir.exists():
         raise ValueError(f"routine dir {routine_dir} already exists")
 
-    # rules default to the workflow's `includes` (its suggested set), else the standard
-    # set; validate against the library. Permissions validate against theirs.
     try:
         meta, _ = library.read_workflow(server.libraries_home, workflow_slug)
     except FileNotFoundError as exc:
         raise ValueError(f"workflow {workflow_slug!r} not found in the library") from exc
-    # The rules a new routine holds come from the PATTERN it was built on, and the permissions
-    # from the defaults — never from a judgement made at creation. Judging a routine's setup is
-    # `recommend_setup`'s job, which runs on the routine PAGE, after the routine exists and has
-    # a recipe to judge, and puts advice beside every toggle rather than flipping one (D108).
+    # The values a routine holds before its pattern's are laid over them: the default rules
+    # plus the workflow's own kind rules, the default permissions — what a routine whose
+    # library has no pattern at all holds. Validated against the library.
     available_rules = set(library_docs.slugs(server.rules_home))
-    active_rules = [r for r in (meta.get("includes") or DEFAULT_RULES) if r in available_rules]
+    active_rules = [r for r in dict.fromkeys([*DEFAULT_RULES, *(meta.get("includes") or [])])
+                    if r in available_rules]
     available_perms = set(library_docs.slugs(server.permissions_home))
     active_perms = [p for p in DEFAULT_PERMISSIONS if p in available_perms]
     # the activation cascade: the capabilities the chosen conduct docs require, switched
@@ -84,50 +88,9 @@ def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,  #
     # used to raise only, so a floor violation surfaced on first edit instead of at birth
     lib = read_library_requires(server.permissions_home)
     capabilities = floor_capabilities(active_perms, lib, capabilities_for(active_perms, lib))
-    # A settings template is a PRESELECTION, not a layer (operator decision 2026-08-30,
-    # reversing 0.262.0): the template's values are copied into this file once, here, and the
-    # routine owns them from that moment. `template=""` opts out explicitly; None means "fit
-    # one", a deterministic best fit over what creation already decided — an LLM guess here
-    # would write a wrong DEFAULT into a config file, which is worse than a slightly-narrow one
-    # the user widens on the routine page.
-    #
-    # Copying rather than layering is what makes routine.yaml say what the routine IS. Under the
-    # layer, a routine's own file recorded only its DIFFERENCES from a template, so reading it
-    # told you almost nothing and the page had to explain a second inheritance chain on top of
-    # the DOMAIN's. The cost is the leverage: editing a template no longer reaches its adopters.
-    from ..templates import config_for as _template_config
-    from ..templates import suggest as _suggest_template
-
-    chosen = _suggest_template(server.libraries_home, active_perms,
-                               active_rules) if template is None else template
-    tpl_conf = _template_config(server.libraries_home, chosen) if chosen else {}
-    own_perms = list(dict.fromkeys([*(tpl_conf.get("permissions") or []), *active_perms]))
-    own_rules = list(dict.fromkeys([*(tpl_conf.get("rules") or []), *active_rules]))
-    tpl_caps = tpl_conf.get("capabilities") or {}
-    own_caps: dict = {}
-    for key in ("actions", "utils", "util_tags"):
-        merged = list(dict.fromkeys([*(tpl_caps.get(key) or []), *(capabilities.get(key) or [])]))
-        if merged:
-            own_caps[key] = merged
-    for key in ("confirm", "rule_confirm", "remind_confirm", "runs", "workflows",
-                "reminders"):
-        # the routine's own dial wins over the template's; either is written in full
-        if capabilities.get(key) or tpl_caps.get(key):
-            own_caps[key] = capabilities.get(key) or tpl_caps[key]
-    # The remaining shared keys a template may carry, merged into what the caller passed:
-    # lists union (template first, so the caller's additions read after), maps fill only what
-    # the caller left unset. `grants` is deliberately absent — a grant is a settled DECISION a
-    # person made about one routine, and a template pre-answering one would be a template
-    # granting a secret.
-    tags = list(dict.fromkeys([*(tpl_conf.get("tags") or []), *(tags or [])])) or None
-    machines = list(dict.fromkeys(tpl_conf.get("machines") or [])) or None
-    fs_read_roots = list(dict.fromkeys([*(tpl_conf.get("fs_read_roots") or []),
-                                        *(fs_read_roots or [])])) or None
-    fs_write_roots = list(dict.fromkeys([*(tpl_conf.get("fs_write_roots") or []),
-                                         *(fs_write_roots or [])])) or None
-    models = {**(tpl_conf.get("models") or {}), **(models or {})} or None
-    connections = dict(tpl_conf.get("connections") or {}) or None
-    budgets = {**(tpl_conf.get("budgets") or {}), **(budgets or {})} or None
+    # Written in full minus the empty lists: every setting a new routine holds is in its own
+    # file from the first save, so routine.yaml says what the routine IS.
+    own_caps = {k: v for k, v in capabilities.items() if v}
     commit = library.head_commit(server.libraries_home)
 
     from .adapt import decompose, dump_markdown
@@ -141,7 +104,11 @@ def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,  #
     # routine dir must not exist until every file's content is in hand — a half-made skeleton
     # sitting in the routines home for minutes reads as a broken build (R478: the user watched
     # empty dirs, deleted them mid-flight, and the writes that followed crashed the run).
-    result = decompose(server, workflow_slug, instruction, rules=active_rules)
+    result = decompose(server, workflow_slug, instruction, done_when=list(done_when or []),
+                       never=list(never or []))
+    pattern = pattern or recommend.choose(server, workflow=workflow_slug, name=name,
+                                          task=instruction)
+    settings = (store.read(server.libraries_home, pattern) or {}).get("settings") or {}
     for sub in ("state", "stages", "inbox"):
         (routine_dir / sub).mkdir(parents=True)
     main_meta = {
@@ -151,7 +118,6 @@ def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,  #
         # the workflow's `tools:` allowlist rides along — the engine enforces it per turn
         **({"tools": list(meta["tools"])} if meta.get("tools") is not None else {}),
     }
-    rule_summaries = rules_mod.summaries(server.rules_home, active_rules)
     for stage_name, stage_body in result["stages"].items():
         (routine_dir / "stages" / f"{stage_name}.md").write_text(stage_body.rstrip() + "\n",
                                                                  encoding="utf-8")
@@ -160,8 +126,8 @@ def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,  #
         safe = fname if fname.endswith(".md") else f"{fname}.md"
         (routine_dir / "stages" / Path(safe).name).write_text(fcontent, encoding="utf-8")
     # main.md last, over the now-complete stages/ — the stages are the sole source of truth
-    main_body = with_practices_tail(result["main"], rule_summaries)
-    (routine_dir / "main.md").write_text(dump_markdown(main_meta, main_body), encoding="utf-8")
+    (routine_dir / "main.md").write_text(dump_markdown(main_meta, result["main"]),
+                                         encoding="utf-8")
     ledger = (f"# LEDGER — {name}\n\n"
               f"### seed — scaffolded from workflow '{workflow_slug}' @ {commit}\n")
     if result.get("degraded"):
@@ -189,48 +155,56 @@ def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,  #
         "schedule": {"cron": cron, "tz": tz, "catchup": "skip"},
         "workflow": {"library_slug": workflow_slug, "library_commit": commit},
         **({"models": models} if models else {}),
-        **({"connections": connections} if connections else {}),
-        **({"machines": machines} if machines else {}),
-        "permissions": own_perms,
-        "rules": own_rules,
+        "permissions": active_perms,
+        "rules": active_rules,
         **({"capabilities": own_caps} if own_caps else {}),
         # unknown keys are dropped, not persisted — a caller typo must not seed junk
         # config that the strict loader then flags on every read
         "budgets": {**DEFAULT_BUDGETS,
                     **{k: v for k, v in (budgets or {}).items() if k in DEFAULT_BUDGETS}},
         "retention": {"keep_runs": 30},
+        # the pattern's values over the defaults — the routine is saved following it
+        **({"pattern": pattern} if settings else {}),
+        **pattern_apply.routine_yaml(settings, tz=tz),
     }
+    # values the CALLER decided stand over the pattern's (a cron the CLI was given, roots the
+    # API was sent); an unset one leaves the pattern's
+    if cron:
+        cfg["schedule"] = {"cron": cron, "tz": tz, "catchup": "skip"}
+    if not enabled:
+        cfg["enabled"] = False
+    if models:
+        cfg["models"] = models
+    if budgets:
+        cfg["budgets"] = {**cfg["budgets"], **{k: v for k, v in budgets.items()
+                                                if k in DEFAULT_BUDGETS}}
+    if tags:
+        cfg["tags"] = list(tags)
     if fs_read_roots:
         cfg["fs_read_roots"] = [_tilde(p) for p in fs_read_roots]
     if fs_write_roots:
         cfg["fs_write_roots"] = [_tilde(p) for p in fs_write_roots]
     atomic_write_yaml(routine_dir / "routine.yaml", cfg)
-    # STOPPING CONDITIONS (F334/D98) — what DONE means for one run, seeded from the answer the
-    # creation flow already collected. The flow has always asked ("what DONE looks like for one
-    # run, in the user's own words"; F383) and the answer went nowhere but the recipe prose, so
-    # every routine ever created started with an empty goal document and was bounded only by its
-    # budgets — the exact state D98 was taken to end. Written here rather than by a run, because
-    # `state/stopping.json` is the USER's list; this IS their words, collected at the one moment
-    # they were in the loop. Absent or empty seeds nothing: an invented condition is worse than
-    # none, since every later run has to account for it.
-    if stopping or goal:
-        from ..engine import stopping as stopping_mod
-        rows = [{"text": t, "status": "open", "group": "g1", "scope": "run"}
-                for t in (stopping or []) if str(t).strip()]
-        rows += [{"text": t, "status": "open", "group": "g1", "scope": "goal"}
-                 for t in (goal or []) if str(t).strip()]
-        stopping_mod.save(routine_dir,
-                          {"mode": "all",
-                           "groups": [{"id": "g1", "name": "", "mode": "all"}],
-                           "conditions": rows},
-                          now=now_iso())
-    # tuning.yaml (recipe-classed, improver-editable): the deliberation level, creation-
-    # suggested per task. Always written, so the file exists for later tuning edits.
-    write_tuning(routine_dir, {"deliberation": deliberation
-                               if deliberation in DELIBERATION_LEVELS
+    # The pattern's own finish line, if it carries one; the finish line the PERSON described
+    # is specific to this routine, so it is proposed below rather than written here.
+    pattern_apply.write_finish_line(routine_dir, settings, now=now_iso())
+    # tuning.yaml (recipe-classed, improver-editable): the deliberation level — the caller's,
+    # else the pattern's. Always written, so the file exists for later tuning edits.
+    level = deliberation or pattern_apply.deliberation(settings)
+    write_tuning(routine_dir, {"deliberation": level if level in DELIBERATION_LEVELS
                                else DEFAULT_DELIBERATION})
 
     init_repo(routine_dir, f"scaffold {slug} from workflow {workflow_slug}")
+    # What is specific to THIS routine waits for the person's accept, highlighted on its page.
+    from ..engine import finishline
+
+    context = "\n".join([instruction, *(f"Settled while designing it: {line}"
+                                        for line in setup or []),
+                         *(f"A finished run delivers: {line}" for line in done_when or []),
+                         *(f"A run must never: {line}" for line in never or [])])
+    recommend.at_creation(server, slug=slug, pattern_slug=pattern if settings else "",
+                          context=context,
+                          finish_line=finishline.from_words(list(finish_line or [])))
     return routine_dir
 
 

@@ -15,8 +15,8 @@ what that module is the authority on.
 Two shape decisions worth keeping:
 
 - **The id is the RUN id** (`<slug>:<ts>`), not a new `S<n>` namespace. There is no counter, no
-  ledger and no writer to own one — and `S1` would collide visually with the stopping-condition
-  accounting `[s1] met — …` that appears verbatim inside summary prose.
+  ledger and no writer to own one — and an `S1` would read like the ids a finish's accounting
+  carries (`d1 met: …`, `g1 distance: …`).
 - **Latest per routine, not every run.** The read-marker is a WATERMARK (`{slug: newest run
   seen}`), which only works while one row per routine is shown; 31 rows of 1.6–4.6 KB is also the
   difference between a page and 1.7 MB of scrollback.

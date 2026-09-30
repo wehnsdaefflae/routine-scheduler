@@ -40,7 +40,7 @@ def _ensure_decomposed(routine_dir: Path, cfg, server) -> None:
 
     instruction = (routine_dir / "instruction.md").read_text(encoding="utf-8") \
         if (routine_dir / "instruction.md").exists() else ""
-    result = decompose(server, cfg.workflow_slug, instruction, rules=list(cfg.rules))
+    result = decompose(server, cfg.workflow_slug, instruction)
     try:
         meta, _ = library.read_workflow(server.libraries_home, cfg.workflow_slug)
     except FileNotFoundError:
@@ -160,8 +160,6 @@ def run_routine(routine_dir: Path, server: ServerConfig, *, run_ts: str | None =
     resume_from is a prior run's ts, that run dir is reused and its transcript is rehydrated
     into the prompt so the run continues where it left off (with a fresh budget window).
     """
-    # the server is right here: pass its library so the template resolves against THIS
-    # instance, never whichever config the process happened to load last
     cfg, problems = load_routine(routine_dir)
     if cfg is None:
         raise RuntimeError("; ".join(problems))
@@ -181,22 +179,9 @@ def run_routine(routine_dir: Path, server: ServerConfig, *, run_ts: str | None =
     ctx = RunContext(routine=cfg, server=server, registry=registry, run_ts=ts,
                      run_dir=run_dir, transcript=transcript,
                      budgets=Budgets.from_config(cfg.budgets))
-    # D67: a DOMAIN member's runs share <home>/.control/group-stores/<domain-id>/ as an
-    # injected fs read+write root (created lazily here — run data, not config). Zero or one,
-    # because a routine names at most one domain in its own routine.yaml; a routine that names
-    # none — and every conversation — gets nothing. Read fresh per run.
-    #
-    # The home is the routine dir's PARENT — the SAME source config/domainconfig.py resolves
-    # the shared config BLOCK against, deliberately not server.routines_home. For a routine
-    # living in that home the two are one directory; they diverge for a run started from a
-    # directory outside it (`rsched run-once <dir path>`, a conversation, a background task),
-    # where the parent holds no domains.json and nothing is inherited. Asking a different home
-    # for the STORE would hand such a run the shared root while it inherited none of the shared
-    # config — the trust boundary without the config that argues for it, which is exactly the
-    # pairing a domain exists to keep as one object.
-    from ..domains import member_store_roots
+    from . import brief as brief_mod
 
-    ctx.domain_store_roots = member_store_roots(routine_dir.parent, cfg.domain, create=True)
+    ctx.brief = brief_mod.read(run_dir)          # written by the runner for a hand-started run
     # Stamp the recipe version that produces this run (recipes.current_recipe_commit —
     # snapshots any uncommitted recipe edits first, e.g. the routine-improver's). None
     # for unversioned dirs (conversations). Lands in status.json + the usage record.
@@ -213,7 +198,8 @@ def run_routine(routine_dir: Path, server: ServerConfig, *, run_ts: str | None =
                    if (routine_dir / "instruction.md").exists() else "")
     if not resume_from:            # a resumed run keeps the original header (append-only)
         transcript.header(run_id=ctx.run_id, routine=cfg.slug, workflow=prov,
-                          orchestrator={"endpoint": orch_ref.endpoint, "model": orch_ref.model})
+                          orchestrator={"endpoint": orch_ref.endpoint, "model": orch_ref.model},
+                          brief=ctx.brief)
     # Mount every bound machine's `share` (sshfs) at <routine>/mnt/<name>/ for the run's
     # lifetime, so local filesystem utils act on remote files (compute goes via `remote exec`;
     # this is the filesystem half). Best-effort; unmounted in the finally on EVERY exit path.

@@ -317,9 +317,9 @@ function utilsSection(u) {
     head, body);
 }
 
-// Output compression by routine (docs/output-compression.md): what the optional compressor
-// actually bought. `candidates` is every successful command output the mode let through,
-// `attempts` the ones the compressor ran on, `applied` the previews that actually replaced
+// Output compression by routine (docs/output-compression.md): what the engine's lossless output
+// compression actually bought — a measurement, not a setting. `candidates` is every successful
+// command output, `attempts` the ones the compressor ran on, `applied` the previews that replaced
 // an observation — and `rejected` is the half that has no upside at all: a result the
 // engine's own verification refused, paid for in compressor time and thrown away. Savings
 // are the recorded ESTIMATE (preview chars ÷ 4), never a billing reading.
@@ -336,9 +336,8 @@ function compressionSection(c) {
   const num = (n) => (n ? fmtInt(n) : "—");
   const head = el("tr", {},
     el("th", {}, "routine"),
-    el("th", { title: "the routine's setting now — an empty row on 'off' is switched off, not ineligible" }, "mode"),
     el("th", { class: "num" }, "runs"),
-    el("th", { class: "num", title: "successful command outputs the mode let through; most are too small or are neither JSON nor logs" }, "candidates"),
+    el("th", { class: "num", title: "successful command outputs; most are too small or are neither JSON nor logs" }, "candidates"),
     el("th", { class: "num", title: "candidates the compressor actually ran on" }, "attempts"),
     el("th", { class: "num", title: "previews that replaced the observation the model read" }, "applied"),
     el("th", { class: "num", title: "estimated tokens saved by applied previews (preview chars ÷ 4) — an estimate, not billing" }, "~tokens saved"),
@@ -347,7 +346,6 @@ function compressionSection(c) {
     el("th", { class: "num", title: "wall clock spent inside the compressor, whatever the outcome" }, "time"));
   const body = rows.map((r) => el("tr", {},
     el("td", {}, el("a", { href: `#/routine/${r.routine}` }, r.routine)),
-    el("td", { class: "muted" }, r.mode || "—"),
     el("td", { class: "num" }, fmtInt(r.runs)),
     el("td", { class: "num" }, num(r.candidates)),
     el("td", { class: "num" }, num(r.attempts)),

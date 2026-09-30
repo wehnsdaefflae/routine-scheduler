@@ -4,17 +4,17 @@ Library workflows (Python patterns): META completeness, slug↔filename, resolva
 a main() entry, PHASES, and an action-import line that agrees with the `tools:` allowlist.
 Materialized copies: provenance + no unresolved placeholders. Rules: titled principle prose,
 no capabilities. Permissions: titled, with a well-formed `requires:` key (the capabilities
-their instructions presume — see grants.py). Templates: a settings PRESELECTION whose config
-block is complete and adoptable. Global reminders: a well-formed `(regex -> consequence)`.
+their instructions presume — see grants.py). Global reminders: a well-formed
+`(regex -> consequence)`. Playbooks: a titled MAIN.md.
 
 Everything the library HOLDS is linted, because `lint_all` is what `rsched lint` reports and a
-directory it skips is a directory nobody checks. Two arrived after the first four and were not
-added here — the templates a routine is created from, and the shared reminder store — so a
-malformed one of either was found by whatever read it next.
+directory it skips is a directory nobody checks — a malformed document of a kind added here
+late was otherwise found by whatever read it next.
 """
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import frontmatter
@@ -55,8 +55,31 @@ def lint_workflow_py(source: str, *, filename: str, rule_slugs: list[str]) -> li
         problems.append(f"{filename}: no top-level main() function (the per-run control flow)")
     if not meta.get("phases"):
         problems.append(f"{filename}: missing PHASES (the cross-run progression)")
+    problems += _done_when_problems(meta, filename)
     problems += _tools_problems(meta, filename)
     return problems
+
+
+_DONE_LINE_RE = re.compile(r"^d(\d+) · [a-z_][a-z0-9_]* — \S")
+
+
+def _done_when_problems(meta: dict, filename: str) -> list[str]:
+    """A task pattern names what one finished run leaves behind — the skeleton of every recipe
+    decomposed from it, accounted line by line at each finish. A harness (`meta`) is exempt:
+    it serves a person in the loop, not a recipe.
+    """
+    if "meta" in (meta.get("tags") or []):
+        return []
+    lines = meta.get("done_when") or []
+    if not lines:
+        return [f"{filename}: missing DONE_WHEN (what one finished run leaves behind)"]
+    bad = [str(x)[:50] for x in lines if not _DONE_LINE_RE.match(str(x))]
+    ids = [int(m[1]) for x in lines if (m := _DONE_LINE_RE.match(str(x)))]
+    out = [f'{filename}: DONE_WHEN line {b!r} is not "d<n> · <step> — <outcome>"'
+           for b in bad]
+    if ids != list(range(1, len(ids) + 1)):
+        out.append(f"{filename}: DONE_WHEN ids run d1, d2, … in order")
+    return out
 
 
 def _tools_problems(meta: dict, filename: str) -> list[str]:
@@ -164,42 +187,6 @@ def _effect_problems(meta: dict, filename: str, subject: str) -> list[str]:
     return problems
 
 
-def lint_template_text(raw: str, *, filename: str) -> list[str]:
-    """A settings template: titled, tagged, and carrying a `config:` block restricted to the
-    keys a DOMAIN may share — one vocabulary for both layers, so "where do I set this?" has one
-    answer. The named permissions and rules must exist; a template pointing at a doc the
-    library lost would silently give its adopters nothing.
-    """
-    from ..domains import CONFIG_KEYS
-    from ..grants import normalize_capabilities
-
-    problems: list[str] = []
-    try:
-        meta, body = frontmatter.parse(raw)
-    except yaml.YAMLError as exc:
-        return [f"{filename}: invalid YAML frontmatter: {exc}"]
-    if not body.strip().startswith("# template:"):
-        problems.append(f"{filename}: body must start with '# template: <name> — <summary>'")
-    tags = meta.get("tags")
-    if len([t for t in (tags if isinstance(tags, list) else []) if str(t).strip()]) < 3:
-        problems.append(f"{filename}: needs at least 3 tags")
-    config = meta.get("config")
-    if not isinstance(config, dict) or not config:
-        problems.append(f"{filename}: needs a non-empty config: block — a template that "
-                        "carries nothing is a name with no meaning")
-        return problems
-    problems += [f"{filename}: config.{k}: not a shareable key "
-                 f"(expected one of {', '.join(CONFIG_KEYS)})"
-                 for k in config if k not in CONFIG_KEYS]
-    if "capabilities" in config:
-        problems += [f"{filename}: {p}" for p in
-                     normalize_capabilities(config["capabilities"],
-                                            label="config.capabilities")[1]]
-    if "template" in config:
-        problems.append(f"{filename}: a template cannot name another template")
-    return problems
-
-
 def lint_permission_text(raw: str, *, filename: str) -> list[str]:
     """A permission is a conduct doc: titled, with a well-formed `requires:` key naming
     the capabilities its instructions presume, and a SHORT body (it doubles as the
@@ -225,7 +212,7 @@ def lint_permission_text(raw: str, *, filename: str) -> list[str]:
                         "themselves are per-routine config now")
     # The key must be PRESENT — declaring "this presumes nothing" is a decision, forgetting
     # it is a bug. An explicitly EMPTY `requires: {}` is legitimate: a conduct doc may teach
-    # an UNGATED mechanism (global-utils covers the `util` base kind). Principle prose that
+    # an ungated mechanism, or presume a resource through `expects:` alone. Principle prose that
     # names no mechanism at all belongs in a rule, not here.
     if "requires" not in meta:
         problems.append(f"{filename}: a permission must carry a requires: key naming the "
@@ -267,14 +254,16 @@ def lint_playbook_text(raw: str, *, filename: str = "MAIN.md") -> list[str]:
 
 def lint_global_reminder(raw: str, *, filename: str) -> list[str]:
     """A curated reminder in the shared store: parseable JSON with an id matching its
-    filename, a compilable non-empty-matching regex, and a consequence to state.
+    filename, a compilable non-empty-matching regex over a form an action renders as, a
+    consequence to state, and the reach that says which routines it holds.
 
     The same validators the `remind` action runs, applied to what is already on disk — a
     reminder is written through an approval, and an approval is not a syntax check.
     """
     import json
 
-    from ..reminders import ID_RE, description_problem, regex_problem
+    from ..reminder_checks import description_problem, reach_problem, regex_problem
+    from ..reminders import ID_RE
 
     try:
         rec = json.loads(raw)
@@ -291,6 +280,8 @@ def lint_global_reminder(raw: str, *, filename: str) -> list[str]:
     if problem := regex_problem(rec.get("regex")):
         problems.append(f"{filename}: {problem}")
     if problem := description_problem(rec.get("description")):
+        problems.append(f"{filename}: {problem}")
+    if problem := reach_problem(rec.get("reach")):
         problems.append(f"{filename}: {problem}")
     return problems
 
@@ -317,18 +308,13 @@ def lint_all(home: Path) -> dict[str, list[str]]:
         for path in sorted(pdir.glob("*.md")):
             results[f"permissions/{path.name}"] = lint_permission_text(
                 path.read_text(encoding="utf-8"), filename=path.name)
-    from .. import templates
-    tdir = templates.templates_home(home)
-    if tdir.is_dir():
-        for path in sorted(tdir.glob("*.md")):
-            results[f"templates/{path.name}"] = lint_template_text(
-                path.read_text(encoding="utf-8"), filename=path.name)
     from .. import reminders
     remdir = reminders.reminders_home(home)
     if remdir.is_dir():
         for path in sorted(remdir.glob("*.json")):
             results[f"reminders/{path.name}"] = lint_global_reminder(
                 path.read_text(encoding="utf-8"), filename=path.name)
+    results.update(lint_patterns(home, rules, library_docs.slugs(pdir)))
     from .. import playbooks
     pbdir = playbooks.playbooks_dir(home)
     if pbdir.is_dir():
@@ -338,3 +324,27 @@ def lint_all(home: Path) -> dict[str, list[str]]:
                 results[f"playbooks/{sub.name}/MAIN.md"] = lint_playbook_text(
                     main.read_text(encoding="utf-8"), filename=f"{sub.name}/MAIN.md")
     return results
+
+
+def lint_patterns(home: Path, rules: list[str], permissions: list[str]) -> dict[str, list[str]]:
+    """Every settings pattern (`patterns/*.yaml`): sound as a document and naming only rules,
+    permissions and a workflow the library holds — a pattern that points at a deleted rule
+    would hand every routine that follows it a binding to nothing.
+    """
+    from ..patterns import store
+
+    workflows = {p.stem for p in workflows_dir(home).glob("*.py")} if workflows_dir(
+        home).is_dir() else set()
+    out: dict[str, list[str]] = {}
+    for p in store.list_all(home):
+        name = f"patterns/{p['slug']}.yaml"
+        found = list(p["problems"])
+        s = p["settings"]
+        found += [f"rule {r!r} is not in the library" for r in s.get("rules") or []
+                  if r not in rules]
+        found += [f"permission {d!r} is not in the library" for d in s.get("permissions") or []
+                  if d not in permissions]
+        if p["workflow"] not in workflows:
+            found.append(f"workflow {p['workflow']!r} is not in the library")
+        out[name] = [f"{name}: {f}" for f in found]
+    return out

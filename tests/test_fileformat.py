@@ -15,6 +15,7 @@ from rsched.engine.fileops import do_edit_file, do_write_file
 def _ctx(tmp_path):
     """The narrowest RunContext stand-in do_edit_file / do_write_file actually touch."""
     return SimpleNamespace(routine=SimpleNamespace(dir=tmp_path, slug="fmt"),
+                           server=SimpleNamespace(routines_home=tmp_path / "routines"),
                            write_roots=lambda: [tmp_path], grants=None,
                            run_dir=tmp_path / "runs" / "20260101-000000",
                            root_run_dir=tmp_path / "runs" / "20260101-000000",

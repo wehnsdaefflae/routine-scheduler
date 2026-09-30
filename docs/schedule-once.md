@@ -1,7 +1,7 @@
 # Schedule-once — one-shot time trigger (DESIGN)
 
 > **Status: IMPLEMENTED in 0.71.0** (audit decision **D27 → A**, scope (a): any
-> `scheduling`-holder may target any routine; self-target always allowed). This document is
+> `scheduling`-holder may target any routine, itself included). This document is
 > both the design rationale and the shipped design. Code: `src/rsched/schedule_once.py`
 > (spool), `src/rsched/daemon/schedule_once.py` (`OneShotManager`), the `schedule_run` action
 > (`engine/actions.py` + `engine/admin_handlers.py`), the `scheduling` permission
@@ -81,7 +81,7 @@ the `Scheduler` after the cron loop and beside `triggers.tick` (`daemon/schedule
    record the fire in `state.json` (`last_fired`, `fires++`). The armed file is gone, so
    **nothing can re-fire it** — this IS the non-repeating guarantee (no `routine.yaml`
    rewrite, no self-disabling cron).
-4. A req whose routine is missing, switched off or RETIRED (its own final goal met) is dropped
+4. A req whose routine is missing, switched off or RETIRED (its finish line reached) is dropped
    with a log line (like `TriggerManager._drop`).
 
 **Missed while the daemon was down:** a `fire_at` already past at boot is still on disk →
@@ -128,10 +128,11 @@ is a **new engine action** the engine executes un-sandboxed, exactly like `write
   - `GET /api/routines/<slug>/schedule-once` → armed one-shots + fire ledger (a
     `describe_*` like `describe_triggers`).
   - `DELETE /api/routines/<slug>/schedule-once/<id>` → cancel.
-- **UI** — a *Schedule once* card on the routine page beside the Triggers card: a local-time
-  datetime picker (converted to an absolute UTC instant on write, reusing `schedule.py`'s
-  server-tz conventions), a reason field, and the list of armed one-shots with a Cancel
-  button + last-fired ledger.
+- **UI** — a *Schedule once* section on the routine page, behind the *Schedule & gate* group's
+  *more* beside Triggers: a local-time datetime picker (converted to an absolute UTC instant on
+  write, reusing `schedule.py`'s server-tz conventions), a reason field, and the list of armed
+  one-shots with a Cancel button + last-fired ledger. Arming is an action, not a setting: it
+  lands at once rather than waiting for the page's accept.
 - **Dashboard** — armed one-shots surface as single future points in the week strip
   (`api_schedule.schedule_week`), so the operator sees them alongside cron fires.
 

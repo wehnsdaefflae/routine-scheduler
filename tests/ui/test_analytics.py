@@ -10,15 +10,16 @@ from playwright.sync_api import expect
 
 
 def _unfold(page) -> None:
-    """Open every routine-page config group.
+    """Open every routine-page settings group and each group's "more" menu.
 
-    The page ships with only its leading group open (views/routine.js SECTION_GROUPS): seven
-    open at once made it 11-12 000px tall. A control inside a folded group is not visible, so a
-    test that reads one unfolds first. What the DEFAULT is, and that the choice is remembered,
-    is pinned in test_routine_groups.py — not here.
+    The page ships with only its two leading groups open (views/routine-config.js): seven open at
+    once made it 11-12 000px tall. The rarely needed sections fold once more behind each group's
+    "more". A control inside a fold is not visible, so a test that reads one unfolds first. What
+    the DEFAULT is — and that the choice is remembered — is pinned in test_routine_groups.py, not
+    here.
     """
     page.wait_for_selector(".rgroup-head")
-    page.evaluate("() => { for (const d of document.querySelectorAll('details.rgroup')) d.open = true; }")
+    page.evaluate("() => { for (const d of document.querySelectorAll('details.rgroup, details.rmore')) d.open = true; }")
 
 def _toast(page):
     return page.locator("#toast:not([hidden])")
@@ -118,10 +119,11 @@ def test_stats_utils_table(ui, ui_page):
 
 
 def test_stats_compression_table(ui, ui_page):
-    """The Stats tab answers what the optional output compressor actually bought this
+    """The Stats tab answers what the engine's output compression actually bought this
     routine — applied previews against attempts, the estimated saving, and the REJECTIONS,
     marked when they outnumber the applications: a refused result costs the run the same
-    compressor time as a kept one and buys nothing."""
+    compressor time as a kept one and buys nothing. A measurement, not a setting: there is no
+    per-routine mode column."""
     ui.seed_run("uir", "20260715-100000", "finished", summary="ok")
     _stream(ui, [
         {"routine": "uir", "run_id": "uir:20260715-100000", "depth": 0, "status": "ok",
@@ -134,12 +136,12 @@ def test_stats_compression_table(ui, ui_page):
         "heading", name="Output compression by routine"))
     expect(section).to_be_visible()
     cells = section.locator("tr", has_text="uir").locator("td")
-    expect(cells.nth(1)).to_have_text("compress")     # the setting that produced the row
-    expect(cells.nth(3)).to_have_text("26")           # candidates: every outcome
-    expect(cells.nth(4)).to_have_text("6")            # attempts: the compressor ran
-    expect(cells.nth(5)).to_contain_text("1 (17%)")   # applied, with the hit rate
-    expect(cells.nth(6)).to_have_text("410")          # the estimated saving
-    expect(cells.nth(7)).to_have_class("num warn")    # 3 rejected vs 1 applied
+    expect(section.locator("th", has_text="mode")).to_have_count(0)
+    expect(cells.nth(2)).to_have_text("26")           # candidates: every outcome
+    expect(cells.nth(3)).to_have_text("6")            # attempts: the compressor ran
+    expect(cells.nth(4)).to_contain_text("1 (17%)")   # applied, with the hit rate
+    expect(cells.nth(5)).to_have_text("410")          # the estimated saving
+    expect(cells.nth(6)).to_have_class("num warn")    # 3 rejected vs 1 applied
     expect(section).to_contain_text("not a billing reading")
 
 

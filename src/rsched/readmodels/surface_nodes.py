@@ -21,16 +21,6 @@ NOTE = "note"               # worth knowing; nothing is broken
 OK = "ok"
 _ORDER = {BLOCKS: 0, INTERRUPTS: 1, NOTE: 2, OK: 3}
 
-# WHERE a drop is performed, which is not one place for every row. A routine's own save FLOORS
-# its mapping, so a capability it holds itself is dropped on its own page. A domain's shared
-# block is deliberately not floored — a member may hold the covering doc — and a member's list
-# UNIONS with the domain's at every load, so a capability the domain supplies is restored the
-# moment the member drops it: the only surface that can drop that one is the domain's editor.
-# The `fix` carries which, because an offer that travels to a control unable to perform it
-# spends the reader's trust as well as their time.
-OWNER_ROUTINE = "routine"
-OWNER_DOMAIN = "domain"
-
 
 def _covered(path: Path, roots: list[Path]) -> bool:
     """Is `path` inside (or equal to) one of `roots`? The same containment the sandbox uses."""

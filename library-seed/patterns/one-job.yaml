@@ -1,0 +1,63 @@
+title: One job
+summary: Does one dated piece of work — researched and delivered — and is done.
+workflow: do-one-job
+when: 'The job happens once, or once per occasion you start it: a trip to book, a document to produce,
+  a question to settle.'
+asks:
+- field: finish_line
+  question: When is the job done — an outcome the run can check, one only you can judge, or a date?
+- field: schedule
+  question: When should it run — once at a date, or only when you start it?
+settings:
+  schedule:
+    catchup: skip
+    friendly:
+      frequency: manual
+  run_gate:
+    checks: []
+    enabled: false
+    timeout_s: 30
+  triggers: []
+  improve: true
+  permissions:
+  - util-authoring
+  capabilities:
+    actions:
+    - revise_util
+    - write_util
+    utils: []
+    confirm: creations
+    remind_confirm: always
+    reminders: local
+    rule_confirm: always
+    runs: last
+  rules:
+  - ask-policy
+  - decision-record
+  - evidence-discipline
+  - fix-the-cause
+  - problem-routing
+  - verify-independently
+  - web-research
+  reminders: []
+  grants: {}
+  finish_line:
+    outcomes: []
+    until: ''
+  budgets:
+    ask_timeout_min: 480
+    max_cost: -1
+    max_subrun_depth: 2
+    max_subruns: 8
+    max_total_tokens: -1
+    max_total_turns: -1
+    max_turns: 60
+    max_wall_clock_min: 45
+  keep_runs: 30
+  fs_read_roots: []
+  fs_write_roots: []
+  connections: {}
+  machines: []
+  models: {}
+  deliberation: standard
+  tags: []

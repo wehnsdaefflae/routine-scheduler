@@ -57,7 +57,7 @@ Two design rules explain most of the system's shape:
   models), otherwise through the `vision` util.
 - **The library** (Library tab) is one git repo holding the shared building blocks:
   workflow **patterns**, **rules**, **permissions**, **utils**, **playbooks** (reusable
-  one-shot briefs for Conversations), **settings templates**, the global **reminders** store,
+  one-shot briefs for Conversations), **settings patterns**, the global **reminders** store,
   and the shared **web kit** status pages are built on. Routines are built FROM it, and a rule
   or util revised there reaches every holder at its next run.
 - **Decisions** (Decisions tab) is the one inbox for everything routines need from you:
@@ -91,23 +91,26 @@ nobody to design with. Example opening message:
 instruction and marries it to a workflow pattern from the library, asking only what it cannot
 infer — scope, deliverable shape, hard constraints. Each open point arrives as its own
 question carrying OPTIONS, which the console renders as numbered picks, so you answer with a
-number rather than composing a paragraph. Three things must be SETTLED before it drafts: what
-the routine PRODUCES each run, what DONE looks like for ONE run, and which pattern it is built
-on. The conversation is resumed in place, so you can leave and come back; its questions also
+number rather than composing a paragraph. It must SETTLE what the routine PRODUCES each run,
+what one finished run leaves behind, whether the routine ever finishes for good (and who judges
+that), anything a run must never do, which workflow pattern it is built on and which SETTINGS
+pattern it follows — plus every question that settings pattern asks the task does not answer
+(which folders, which mailbox, what cadence). The conversation is resumed in place, so you can leave and come back; its questions also
 appear on the Decisions page.
 
 **4 · Confirm the draft in the chat.** There is no create page: the conversation shows you a
 DRAFT — slug, name, workflow pattern (or `generate` when nothing in the catalog fits), the
-instruction it compiled, and what DONE looks like for one run in your own words — and creates
-nothing until you answer. Every point still open comes back as its own numbered question.
+settings pattern, the instruction it compiled and your answers — and creates nothing until you
+answer. Every point still open comes back as its own numbered question.
 
 **5 · Create.** On your confirmation the agent emits `create_routine` and the system decomposes
-the pattern against your instruction into the routine's own `main.md` + `stages/`, records the
-pattern's rules and the default permissions in `routine.yaml`, seeds the stopping conditions
-from your own words, writes the config, and git-inits the directory; the daemon's registry
-rescan picks the new dir up shortly after. Setup is tuned AFTERWARDS on the
-routine page, where the *Recommend* button reads the finished recipe and puts advice beside every
-rule and permission toggle — you flip the switches. The instruction was only the compile seed — from here
+the pattern against your instruction into the routine's own `main.md` + `stages/` — its `## Done
+when` carrying your words about a finished run — saves `routine.yaml` with the settings
+pattern's values and git-inits the directory; the daemon's registry rescan picks the new dir up
+shortly after. Everything specific to this routine — the folders and mailbox you named, its run
+gate, the finish line you described — waits on the routine page under "check the changes i
+recommend.", each change highlighted: keep or drop each and press accept once
+([patterns](patterns.md)). The instruction was only the compile seed — from here
 on the stage modules are the routine's recipe, edited directly. Optionally the first run
 fires immediately.
 
@@ -119,10 +122,25 @@ inject a message mid-run, or switch the model mid-flight.
 shows it. Blocking questions pause their run and show when the run will continue without
 you; deferred ones feed the next run. Everything is answerable inline.
 
-**8 · Tune.** On the routine's page: schedule, permissions, budgets, models, the **Recipe**
-file-tree (its `main.md` and every stage file), the LEDGER, all runs with their
+**8 · Tune.** The routine's page holds its settings as ONE form, led by the settings pattern it
+follows ([patterns](patterns.md)). The pattern bar names that pattern and how many values differ
+from it; *Recommend for this routine*, *Follow another pattern* and *Save as new pattern* each lay
+a proposal over the form rather than writing anything. Seven groups follow — *Schedule & gate* and
+*Goal* open on arrival, the rest folded, each keeping its rarely needed sections behind a **more**
+whose summary says what it holds. Every control edits a draft. A change is marked where it sits
+(with the value it replaces); a saved value that departs from the pattern is marked as an override
+(with the pattern's value and one click back to it). One **accept changes** bar at the foot of the
+page saves every kept change at once — or discards them all.
+
+*Goal* holds the routine's **finish line** — the outcomes after which it is finished for good,
+each judged by a run, by you or by a date, with the distance the latest run reported — and,
+read-only, what one finished run delivers: the recipe's `## Done when` lines with the verdicts of
+the last ten runs, changed through *Revise recipe*. What acts at once are the controls that are
+actions rather than settings: *Run now* (with an optional one-line brief that tells that run what
+it is for), arming a one-shot run, the **Recipe** file-tree (its `main.md` and every stage file)
+and the routine's own secrets. The page also carries the LEDGER and all runs with their
 cost/turns/tokens/duration. The overview sorts and filters on those run stats — card grid or
-detail table, and both carry a **heartbeat strip**: the last ~15 runs as colored bars
+detail table, both carrying a **heartbeat strip**: the last ~15 runs as colored bars
 (green ok · amber partial · red failed · grey aborted, bar height tracking token spend) —
 hover for a run's stats, click to open it. A routine that failed four of its last ten runs
 no longer looks identical to one that's been green for a month.
@@ -136,8 +154,7 @@ no longer looks identical to one that's been green for a month.
   one-word go on the Decisions page. See *Grants radar*'s application pipeline.
 - **Standing projects** — a long-running goal advanced as far as each run can take it, with
   state, worklog, and self-improvement between runs. A project with a real END (a submission, a
-  migration, an event) declares it as a GOAL-scoped stopping condition and RETIRES itself once
-  it is met. See *Project steward* in Examples.
+  migration, an event) has a FINISH LINE and RETIRES itself once it is reached. See *Project steward* in Examples.
 - **Event planning / iterative convergence** — propose, collect your feedback, learn,
   propose better. See *Birthday planner* in Examples.
 

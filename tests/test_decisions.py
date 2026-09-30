@@ -92,8 +92,6 @@ def test_deferred_ask_carries_config_patch_for_the_bridge(make_routine, scripted
     assert len(recs) == 1 and recs[0]["config_patch"] == patch
     # a patch for the asker itself carries no target — absence IS "apply to me" (D123/F458)
     assert "config_target" not in recs[0]
-    # and no home either: the page falls back to the asker's own surface, as it always did
-    assert "config_home" not in recs[0]
 
 
 def test_config_patch_names_another_routine_as_its_target(make_routine, scripted):
@@ -120,75 +118,6 @@ def test_config_patch_names_another_routine_as_its_target(make_routine, scripted
     # `routine` was consumed as the target — the body left for PATCH is the config alone,
     # which the endpoint's extra="forbid" would otherwise 422 on.
     assert recs[0]["config_patch"] == {"budgets": {"max_turns": 120}}
-    # R1488: the surface the apply must PATCH rides with the target, so the page never has
-    # to infer the URL from the ASKER's kind (which is why a domain could never be a target)
-    assert recs[0]["config_home"] == "routines"
-
-
-def test_config_patch_names_a_domain_as_its_target(make_routine, scripted):
-    """R1488: a domain's shared block is config too, and the daemon has always exposed
-    `PATCH /api/domains/{id}` — but the decision bridge could only ever address a ROUTINE, so
-    every domain-level finding config-optimizer produced ended as prose telling the operator to
-    go and click it on the Domains page (its D122 narrowing, q-20260911-032048-115).
-
-    The id rides inside the patch as `domain`, is validated against the domain store at ask
-    time, and is popped off so what remains is a clean DomainPatch body.
-    """
-    from rsched import domains
-
-    d = make_routine(slug="optimizer3")
-    rec = domains.create(d.parent, name="FAU", config={"budgets": {"max_turns": 99}})
-    scripted([
-        {"say": "propose it for the FAU domain", "kind": "ask_user", "mode": "deferred",
-         "question": "Narrow the FAU domain's shared budget?",
-         "config_patch": {"domain": rec["id"], "config": {"budgets": {"max_turns": 50}}}},
-        finish(),
-    ])
-    status, _ = run_routine(d, _server(d), run_ts=TS)
-    assert status == "ok"
-    recs = [read_json(p) for p in (d / "questions" / "pending").glob("*.json")]
-    assert len(recs) == 1
-    assert recs[0]["config_target"] == rec["id"]
-    assert recs[0]["config_home"] == "domains"
-    # `domain` was consumed as the target — what is left is a clean DomainPatch body
-    assert recs[0]["config_patch"] == {"config": {"budgets": {"max_turns": 50}}}
-
-
-def test_config_patch_domain_that_names_no_domain_is_refused(make_routine, scripted):
-    """An unresolvable domain is refused on the asking turn, exactly as an unresolvable routine
-    is — a dead apply button is the failure this seam exists to prevent."""
-    d = make_routine(slug="optimizer4")
-    scripted([
-        {"say": "propose it for a domain that does not exist", "kind": "ask_user",
-         "mode": "deferred", "question": "Narrow it?",
-         "config_patch": {"domain": "grp-nope", "config": {"budgets": {"max_turns": 50}}}},
-        finish(),
-    ])
-    status, run_dir = run_routine(d, _server(d), run_ts=TS)
-    assert status == "ok"
-    assert not list((d / "questions" / "pending").glob("*.json"))
-    obs = next(e for e in _events(run_dir)
-               if e["type"] == "observation" and e["payload"].get("error"))
-    assert "grp-nope" in obs["payload"]["error"]
-
-
-def test_config_patch_naming_both_a_routine_and_a_domain_is_refused(make_routine, scripted):
-    """Two different config surfaces; a body valid for one is not valid for the other. Guessing
-    which was meant would land half a proposal somewhere the run never named."""
-    d = make_routine(slug="optimizer5")
-    make_routine(slug="member")
-    scripted([
-        {"say": "propose it for both at once", "kind": "ask_user", "mode": "deferred",
-         "question": "Narrow them?",
-         "config_patch": {"routine": "member", "domain": "grp-x", "budgets": {"max_turns": 9}}},
-        finish(),
-    ])
-    status, run_dir = run_routine(d, _server(d), run_ts=TS)
-    assert status == "ok"
-    assert not list((d / "questions" / "pending").glob("*.json"))
-    obs = next(e for e in _events(run_dir)
-               if e["type"] == "observation" and e["payload"].get("error"))
-    assert "member" in obs["payload"]["error"] and "grp-x" in obs["payload"]["error"]
 
 
 def test_config_patch_target_that_names_no_routine_is_refused(make_routine, scripted):
@@ -647,15 +576,7 @@ def test_a_config_patch_the_apply_would_refuse_is_refused_at_filing():
     assert _config_patch_shape({"fs_read_roots": ["/srv/x"]}) == ""
     assert _config_patch_shape({}) == ""
     assert _config_patch_shape(None) == ""
-
-    # A DOMAIN patch is its own surface (D140) and must not be judged by the routine's keys
-    # A DOMAIN patch is its own surface (D140). By the time the gate runs, `_config_target`
-    # has popped the routing key — so the surface comes from the RESOLVED target, and a gate
-    # that sniffed the body would reject every domain proposal ever filed.
-    assert _config_patch_shape({"config": {"budgets": {"max_turns": 50}}}, "domains") == ""
-    assert _config_patch_shape({"remove": ["rules"]}, "domains") == ""
-    assert "domain config" in _config_patch_shape({"budgets": {}}, "domains")
-    # ...and the same body without a domain target is judged as a routine patch
+    # a key no routine PATCH takes is named as such
     assert "routine config" in _config_patch_shape({"config": {}})
 
 
@@ -677,7 +598,7 @@ def test_the_config_patch_gate_speaks_the_surface_it_applies_to():
     for field in ("schedule", "permissions", "rules", "enabled"):
         assert "conversation config" in _config_patch_shape({field: "x"}, conversation=True)
     # a resolved ROUTINE target is proposing that routine's config, whoever asked
-    assert _config_patch_shape({"schedule": {}}, "routines", conversation=True) == ""
+    assert _config_patch_shape({"schedule": {}}, "suedlink-wlf", conversation=True) == ""
 
 
 def test_a_decision_filed_into_a_conversation_is_judged_as_conversation_config(tmp_path):
@@ -741,9 +662,8 @@ def test_a_conversation_names_a_routine_by_the_routines_home(tmp_path):
 
     ctx = _asker(tmp_path, "conversations", "c1", "target")
     _asker(tmp_path, "conversations", "c2")          # a conversation is not a routine target
-    assert _config_target(ctx, {"routine": "target"}, conversation=True) == (
-        "target", "routines", "")
-    err = _config_target(ctx, {"routine": "c2"}, conversation=True)[2]
+    assert _config_target(ctx, {"routine": "target"}, conversation=True) == ("target", "")
+    err = _config_target(ctx, {"routine": "c2"}, conversation=True)[1]
     assert "no such routine" in err
     assert str(tmp_path / "routines") in err
 
@@ -757,10 +677,9 @@ def test_naming_yourself_is_yourself_only_for_a_routine(tmp_path):
     from rsched.engine.interact import _config_target
 
     routine = _asker(tmp_path, "routines", "shared", "shared", "target")
-    assert _config_target(routine, {"routine": "shared"}) == ("", "", "")
+    assert _config_target(routine, {"routine": "shared"}) == ("", "")
     conv = _asker(tmp_path, "conversations", "shared")
-    assert _config_target(conv, {"routine": "shared"}, conversation=True) == (
-        "shared", "routines", "")
+    assert _config_target(conv, {"routine": "shared"}, conversation=True) == ("shared", "")
     routine.routine = SimpleNamespace(dir=routine.root_routine_dir / "runs" / "t" / "sub" / "1",
                                       slug="shared-1")
-    assert _config_target(routine, {"routine": "target"}) == ("target", "routines", "")
+    assert _config_target(routine, {"routine": "target"}) == ("target", "")

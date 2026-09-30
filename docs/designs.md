@@ -30,12 +30,10 @@ sends instructions back down — recursively, up to `m` levels. This entry is th
 onto what exists. It precedes its finding rather than answering one.
 
 **Problem.** Nothing in the engine watches a run for DRIFT or STALLING. The three mechanisms
-that come closest each stop short of it by design. Semantic stopping conditions
-(`engine/stopping.py`) are an ACCOUNTING the model writes about itself, reported and recorded
-but never enforced within a run — and that module's own docstring names the gap and why it was
-left: *"that is v2 (a verifier subcall that blocks with evidence), a separate decision, and
-forcing on an accounting the model itself wrote would just be the model stopping itself with
-extra steps."* Budgets are a runaway backstop, deliberately not a pace. Compaction manages
+that come closest each stop short of it by design. The finish accounting
+(`engine/accounting.py`, against the recipe's `## Done when` and the finish line) is something
+the model writes about itself AT THE END — checked once for its `met` claims, never during the
+run. Budgets are a runaway backstop, deliberately not a pace. Compaction manages
 context size and is indifferent to whether the work is going anywhere. So a run that quietly
 redefines its goal, or loops on a failing call for fifteen turns, is caught by nothing but a
 person reading the transcript afterwards. Self-assessment inside one context cannot close this:
@@ -63,7 +61,8 @@ travels up, a **directive** comes down, `n` is the rung height (turns between es
 - **Up — the DISPATCH**, assembled by the engine and completed by the worker. Engine half, all
   of it already in the transcript or the meters: the goal verbatim, the `say` line of every
   action since the last rung (`assistant_action` events), an action-kind histogram, the
-  stopping-condition accounting as it stands, the budget meter, and repetition signals (the same
+  recipe's Done-when lines and the finish line with its last distances, the budget meter, and
+  repetition signals (the same
   action string emitted more than twice, a failed call retried unchanged). Worker half, three
   questions only it can answer: what I believe I have achieved, what I intend next and why,
   what I am stuck on. The raw `say` lines are deliberately NOT summarized at rung 1 — the party
@@ -112,7 +111,7 @@ travels up, a **directive** comes down, `n` is the rung height (turns between es
   ladder of readable runs does the opposite. The worker may CONTEST once, in its next dispatch,
   when a directive contradicts something the supervisor could not see; otherwise the supervisor's
   advantage in perspective becomes a disadvantage in information. The top rung has no supervisor
-  because it answers to the stopping-condition document (which only the user writes) and escalates
+  because it answers to the finish line (which only the user writes) and escalates
   to a PERSON, not to a fourth rung — and since a child cannot block a run on a person
   (`interact.handle_ask` forces `mode: deferred` at depth > 0), that surfaces as a durable decision
   record rather than freezing the ladder.
@@ -125,8 +124,8 @@ travels up, a **directive** comes down, `n` is the rung height (turns between es
   one already answered.
 
 - **`n` is a ceiling on the interval, not a metronome.** Three events pull an escalation forward:
-  the same action failing identically twice, a stopping condition transitioning to `met`, and the
-  worker asking to escalate. The only downward counterpart is `next_rung_in` above — a supervisor
+  the same action failing identically twice, the worker claiming a finish-line outcome `met`, and
+  the worker asking to escalate. The only downward counterpart is `next_rung_in` above — a supervisor
   may shorten its OWN next interval but may never speak inside one, because a supervisor that can
   interrupt at will stops supervising and becomes a second voice inside the worker's reasoning.
 
@@ -134,8 +133,8 @@ travels up, a **directive** comes down, `n` is the rung height (turns between es
 Neither is a reason to defer; both are reasons the code has to be shaped a particular way.
 
 1. **A `continue` verdict must inject NOTHING.** Budget warnings once rode every observation past
-   85%, which *"made it a countdown, and runs converged at the ceiling whether or not their
-   stopping conditions were met"* (CLAUDE.md § Core contracts); the tally behind that line is in
+   85%, which made it a countdown. Runs converged at the ceiling whether or not their
+   job was done (CLAUDE.md § Core contracts); the tally behind that line is in
    `budget.FINAL_WARN_AT`'s comment — nanogeofeld 8 of 10 runs at 94–100 turns of 100,
    freelance-radar 7 of 10 at 173–200 of 200, none of them forced. A repeated signal in the prompt
    does not merely inform a run; it becomes the thing the run optimizes against. So `continue`
@@ -152,7 +151,8 @@ green; the feature is dark until step 5 flips a default nobody has set.
 1. **`engine/oversight.py` — the new module** (the dispatch/directive shapes and nothing else).
    `build_dispatch(ctx, since_turn) -> dict` reads the run's own transcript for
    `assistant_action` events since the last rung and returns the goal, the `say` lines, the
-   action-kind histogram, the repetition signals, the stopping accounting and the budget meter —
+   action-kind histogram, the repetition signals, the Done-when lines, the finish line and the
+   budget meter —
    pure extraction, no model call, so it is unit-testable against a recorded transcript.
    `DIRECTIVE_SCHEMA` (verdict / disposition / instruction ≤5 lines / next_look / `next_rung_in`)
    and `validate_directive()` live here too. Red-first tests: a transcript fixture in, an expected
@@ -167,8 +167,8 @@ green; the feature is dark until step 5 flips a default nobody has set.
    `user_authored("oversight")` is False so `ctx.user_replies` does not advance.
 4. **`engine/control.py` — the trigger.** At the existing turn boundary, after the pause gate and
    before the injection drain: if the ladder is enabled and `turns_since_last_rung >= next_rung_in`
-   (or one of the three pull-forward events fired — identical failed action twice, a stopping
-   condition transitioning to `met`, the worker requesting escalation), build the dispatch, start
+   (or one of the three pull-forward events fired — identical failed action twice, a
+   finish-line outcome claimed `met`, the worker requesting escalation), build the dispatch, start
    the oversight child with `ledger.allocate(overrides={"turns": n, "tokens": …, "wall_clock": …})`
    on the routine's `main` model, hold the worker at the pause gate, then file the returned
    directive on the `oversight` channel — unless the verdict is `continue`, per constraint 1. The
@@ -180,7 +180,11 @@ green; the feature is dark until step 5 flips a default nobody has set.
    `oversight_turns` (default `= n`, floor 4) in `tuning.yaml`, because they are machine-tunable
    and therefore learnable by a meta-routine. Depth is enforced against the existing
    `max_subrun_depth`, and rung `m` escalates to a PERSON — its `ask_user` becomes a durable
-   decision record, never a fourth rung.
+   decision record, never a fourth rung. A supervisor rung runs on the routine's `supervisor`
+   MODEL ROLE — a fourth entry beside main, tool_call and uncensored in `models:`, carried by
+   settings patterns like the others (docs/patterns.md) — and, unset, on its main model: an
+   overseer on a weaker model than the worker it reads is the one configuration the role
+   exists to prevent, so the page says which model each rung will use.
 6. **The surfaces.** `static/components/tasktree.js` gains the `↑` glyph for the oversight
    relationship; `static/components/transcript.js` renders an `oversight` injection distinctly from
    a user message, or a transcript reader cannot tell who redirected the run; the run view's rail
@@ -189,11 +193,11 @@ green; the feature is dark until step 5 flips a default nobody has set.
    mode table; `docs/prompt-anatomy.md` gains the directive's rendering (the `tests/test_prompt_anatomy.py`
    drift test requires it); this entry is deleted.
 
-**One dependency to resolve before step 4.** D152 asks whether `remind` grows the missing triggers
-or becomes a general HOOKS concept. A turn counter that fires an escalation is exactly such a
-trigger. If D152 lands first and produces a general hook, step 4 registers a hook instead of adding
-a private counter to `control.py` — same behaviour, one mechanism rather than two. If the ladder
-ships first, D152 should treat this counter as one of the triggers it is generalizing.
+**The hooks campaign is a prerequisite (operator, 2026-09-29).** D152 settled on C: `remind`'s
+missing triggers become a general HOOKS concept. A turn counter that fires an escalation is exactly
+such a trigger, so step 4 registers a hook rather than adding a private counter to `control.py` —
+one mechanism, not two. The hooks campaign therefore ships BEFORE step 4; steps 1-3 (the module,
+the mode, the channel) are independent of it and may land earlier, dark.
 
 
 ---
@@ -346,7 +350,7 @@ Building them together is what makes the unifications true rather than mostly tr
 - **Two of the five "is something waiting in the inbox" predicates** are in daemon files the
   unification lane did not own. One of them is fail-open by contract and one fail-closed, so
   the shared predicate already carries the flag they need.
-- **The domain-notes drain is a side effect inside `composer.state_digest`**, whose only
+- **The shared-store notes drain is a side effect inside `composer.state_digest`**, whose only
   production caller is boot. Moving the drain to boot leaves the digest builder pure.
 - **The proposal-and-question merge is half done**: one standing proposal per ask now holds for
   every kind, but the badge and the browser push still count no proposals, so two records have

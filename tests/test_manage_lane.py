@@ -4,8 +4,9 @@ set-default/run/list) against the real rsched.lanes store — including the flat
 the handler folds into member records, `paused` (D77/D80 parity with the routines page's lane
 surface), and the members a `list` names in fire order (F424).
 
-The kind covers the TEMPORAL axis alone. A DOMAIN is a per-routine setting living in that
-routine's own routine.yaml, which no run writes, so there is no domain verb here to test.
+The kind covers the TEMPORAL axis alone. What a routine may reach — its settings, its roots,
+the stores it shares — lives in its own routine.yaml, which no run writes, so there is no verb
+here for any of it to test.
 
 Where a change LANDS depends on who is in the loop (F328). A root conversation applies it
 outright; any other depth-0 run queues a mutating verb as a proposal for the Decisions page,

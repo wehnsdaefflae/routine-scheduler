@@ -15,6 +15,7 @@ from pydantic import (
     ValidationError,
     ValidationInfo,
     field_validator,
+    model_validator,
 )
 
 from ..ids import is_slug
@@ -33,15 +34,46 @@ from .base import (
     _known_tz,
     _validate_lenient,
 )
-from .domainconfig import apply_shared_config, domain_config_for
 
 
 class RunGateConfig(BaseModel):
-    """Explicit, strict opt-in to pre-engine automatic admission."""
+    """Explicit, strict opt-in to pre-engine automatic admission: whether a scheduled fire
+    first asks its CHECKS if there is work (docs/run-gates.md). `checks` is the vocabulary in
+    `rsched/gatekit/`; the `script` kind is the routine's own `scripts/admit.py`.
+    """
 
     model_config = ConfigDict(extra="forbid", strict=True)
     enabled: bool = False
     timeout_s: int = Field(default=30, ge=1, le=300)
+    checks: list[dict] = Field(default_factory=list)
+
+    @field_validator("checks")
+    @classmethod
+    def _known_checks(cls, v: list[dict]) -> list[dict]:
+        from ..gatekit import validate
+
+        if problems := validate(v):
+            raise ValueError("; ".join(problems))
+        return v
+
+    @model_validator(mode="after")
+    def _enabled_needs_a_check(self) -> RunGateConfig:
+        # An enabled gate with nothing to ask would have to invent an answer; either one is a
+        # lie — "skip" silently loses every fire, "run" is no gate at all.
+        if self.enabled and not self.checks:
+            raise ValueError("an enabled gate needs at least one check")
+        return self
+
+
+class RunGatePatch(BaseModel):
+    """A PARTIAL run gate for the PATCH edge: each field optional, the merge validated whole
+    by `RunGateConfig` (web/api_routine_patch._apply_run_gate).
+    """
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+    enabled: bool | None = None
+    timeout_s: int | None = Field(default=None, ge=1, le=300)
+    checks: list[dict] | None = None
 
 
 class RoutineConfig(_Config):
@@ -74,6 +106,9 @@ class RoutineConfig(_Config):
     # normal routine/conversation (a declared field, so it survives the extra="ignore" drop).
     owner: dict | None = None
     description: BlankableStr = ""  # one-line human summary shown in the UI (always present)
+    # The heading this routine's card sits under on the Steward hub (docs/status-pages.md):
+    # identity like `name`, named to the run in its harness contract. Empty = none named.
+    hub_tab: BlankableStr = ""
     # What this dir IS, when it is not an ordinary scheduled routine: "conversation" (an
     # interactive session under conversations_home). Empty for a normal routine.
     kind: BlankableStr = ""
@@ -108,16 +143,19 @@ class RoutineConfig(_Config):
     # lives once under <libraries_home>/rules/ and the run reads it on demand (`read_rule`),
     # so a library revision reaches every holder at once. User-only, like everything here.
     rules: list[str] = Field(default_factory=lambda: list(DEFAULT_RULES))
-    # The DOMAIN this routine shares a surface with: one id, or "" for none. Naming it HERE
-    # rather than listing members on the domain is what makes at-most-one a fact of the file —
-    # a routine cannot be in two, because there is one key. It also puts the choice where every
-    # other per-routine setting is: user-only, writable by no run. What the domain contributes
-    # is merged UNDER this file's own keys (config/domainconfig.py); its shared store is
-    # injected into the run's fs roots at boot.
-    domain: str = ""
+    # The library SETTINGS PATTERN this routine follows (docs/patterns.md) — a reference the page
+    # reads this file's values against, never a layer: nothing here is resolved from it at load,
+    # so a deleted pattern leaves every value in this file exactly as it was.
+    pattern: str = ""
+    # The library's SHARED reminders (`<library>/reminders/`) this routine reads, by id. Its own
+    # local reminders need no list; reading a shared one does — a caution another routine learned
+    # is taken on by choice, the pattern proposing the ones that fit its kind of work.
+    shared_reminders: list[str] = Field(default_factory=list)
     capabilities: dict = Field(default_factory=lambda: {
         k: list(v) if isinstance(v, list) else v for k, v in DEFAULT_CAPABILITIES.items()})
     fs_read_roots: list[HomePath] = Field(default_factory=list)
+    # A write root that is a directory directly under `.control/group-stores/` is a SHARED
+    # STORE this routine shares with every other routine naming it (rsched/sharedstores.py).
     fs_write_roots: list[HomePath] = Field(default_factory=list)
     # Event triggers — fire the routine on an external event, alongside cron. One
     # canonical list of {id, type, …} entries (webhook implemented; imap/watch_path
@@ -129,16 +167,6 @@ class RoutineConfig(_Config):
     # Whether the routine-improver meta routine visits this routine (default: yes; the
     # toggle on the routine page opts out with `improve: false`).
     improve: bool = True
-    output_compression: Literal["off", "measure", "compress"] = "compress"
-    # What this routine INHERITED from its DOMAIN's shared config (D82): {field: "<n> from the
-    # domain"} plus the domain's name. A settings template is NOT here — it is copied in at
-    # adoption, so its values are the routine's own from that moment (see the loader below).
-    # Runtime handles like `deliberation` — computed at load,
-    # never written to routine.yaml (the file stays the routine's OWN authority, so removing
-    # it from a domain cleanly returns it to what its file says). The routine page reads these
-    # to mark a value as coming from a shared layer rather than from this routine.
-    inherited: dict[str, str] = Field(default_factory=dict)
-    inherited_from: str = ""
     # How much thinking lands on paper (see DELIBERATION_LEVELS). The runtime handle
     # only: load_routine fills it from TUNING (tuning.yaml) — routine.yaml never carries
     # it (config = authority, tuning = machine-tunable behavior).
@@ -158,7 +186,7 @@ class RoutineConfig(_Config):
 
     _tz_known = field_validator("tz")(_known_tz)
 
-    @field_validator("description")
+    @field_validator("description", "hub_tab")
     @classmethod
     def _stripped(cls, v: str) -> str:
         return v.strip()
@@ -274,10 +302,10 @@ def record_grants(routine_dir: Path, updates: dict[str, bool]) -> None:
 
 
 def load_routine(routine_dir: Path) -> tuple[RoutineConfig | None, list[str]]:
-    """Parse <dir>/routine.yaml, then layer the shared config of the DOMAIN this routine names
-    underneath it (D82 — the domain is a default, the routine's own keys win). Returns
-    (config, problems); invalid admission policy or exhausted recovery with an enabled
-    gate also returns None. Other problems use best-effort recovery.
+    """Parse <dir>/routine.yaml — the whole of the routine's config: nothing is layered under
+    it, so what the file says is what the routine is. Returns (config, problems); invalid
+    admission policy or exhausted recovery with an enabled gate also returns None. Other
+    problems use best-effort recovery.
     """
     path = routine_dir / "routine.yaml"
     problems: list[str] = []
@@ -307,19 +335,6 @@ def load_routine(routine_dir: Path) -> tuple[RoutineConfig | None, list[str]]:
                                                            "playbook", "retention"}
     problems.extend(f"{key}: unknown routine.yaml key — check the spelling (ignored)"
                     for key in sorted(set(raw) - known))
-    # The domain's shared config goes UNDER the routine's own (D82) — after the unknown-key
-    # check, which must judge the file the user actually wrote, not the merge result.
-    domain_config, domain_name = domain_config_for(routine_dir, raw.get("domain") or "")
-    inherited: dict[str, str] = {}
-    if domain_config:
-        raw, inherited = apply_shared_config(raw, domain_config, source="the domain")
-    # A settings TEMPLATE does not appear here. It is a PRESELECTION, not a layer (operator
-    # decision 2026-08-30, reversing 0.262.0): adopting one COPIES its values into this file,
-    # once, and the routine owns them from then on. Under the layer, a routine's own file
-    # recorded only its DIFFERENCES from a template, so reading routine.yaml told you almost
-    # nothing about the routine and the page had to explain a second inheritance chain on top
-    # of the domain's. The DOMAIN layer above stays: a domain is a live shared config a member
-    # belongs to, which is a different claim from "this is where I started".
     try:
         gate = RunGateConfig.model_validate(raw.get("run_gate", {}))
     except ValidationError as exc:
@@ -333,7 +348,6 @@ def load_routine(routine_dir: Path) -> tuple[RoutineConfig | None, list[str]]:
     schedule_state = raw.get("schedule") or {}
     if isinstance(schedule_state, dict) and schedule_state.get("disabled") is True:
         cfg.enabled = False
-    cfg.inherited, cfg.inherited_from = inherited, (domain_name if domain_config else "")
     cfg.name = cfg.name or slug
     if not cfg.description:
         problems.append("description is empty — every routine needs a one-line "

@@ -89,7 +89,7 @@ def _make_lifespan(server: ServerConfig, bus: EventBus, task_center: TaskCenter,
         search_task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await search_task
-        app.state.search.close()
+        app.state.search.shutdown()
         docs_task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await docs_task
@@ -114,8 +114,9 @@ def _include_api_routers(app: FastAPI, deps: list) -> None:
         api_conversation_playbooks,
         api_conversations,
         api_debug,
-        api_domains,
+        api_finishline,
         api_fs,
+        api_gate,
         api_health,
         api_hooks,
         api_items,
@@ -135,27 +136,28 @@ def _include_api_routers(app: FastAPI, deps: list) -> None:
         api_runs,
         api_schedule,
         api_search,
+        api_settings,
         api_stats,
-        api_stopping,
         api_traces,
         api_workflows,
         settings,
     )
 
     for module in (api_push, api_routines, api_routine_edit, api_routine_patch,
-                   api_routine_files, api_routine_secrets,
+                   api_routine_files, api_routine_secrets, api_settings, api_gate,
                    api_conversation_create,   # before api_conversations: its
                    # /conversations/defaults must be matched before /{slug}
                    api_conversations,
                    api_conversation_config,
                    api_conversation_playbooks,
                    api_background, api_branches, api_browser, api_runs, api_run_control,
-                   api_schedule, api_stats, api_health, api_stopping, api_questions, api_audit,
+                   api_schedule, api_stats, api_health, api_finishline, api_questions,
+                   api_audit,
                    api_items, api_messages, api_pending,
                    api_traces,
                    settings,
                    api_workflows, api_playbooks, api_llm_tasks, api_hooks,
-                   api_lanes, api_domains, api_search, api_fs, api_debug):
+                   api_lanes, api_search, api_fs, api_debug):
         app.include_router(module.router, prefix="/api", dependencies=deps)
     # The ONE deliberately unauthenticated API route: webhook trigger ingest. Third
     # parties call it, so the per-trigger URL token is the auth (constant-time compare,

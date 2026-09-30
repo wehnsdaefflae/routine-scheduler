@@ -7,11 +7,11 @@ seed) arrives as a multipart form field and has to become config before
 `conversations.create_conversation` ever runs.
 
 That parsing sits apart because of what it has to get right: these choices are PRE-START on
-purpose (F339). A rule reaches the prompt through main.md's Standing-practices tail, which is
-materialized at creation — so a rule added afterwards never governs reply #1, which has already
-fired. Same for the fs roots: they must land in routine.yaml before the engine boots, or reply
-#1 runs without the access. A field silently mis-parsed here is not a save bug, it is a reply
-that ran with the wrong capabilities.
+purpose (F339). The rules reply #1 boots with are the ones in routine.yaml when it starts — a
+rule added afterwards never governs reply #1, which has already fired. Same for the fs roots:
+they must land in routine.yaml before the engine boots, or reply #1 runs without the access.
+A field silently mis-parsed here is not a save bug, it is a reply that ran with the wrong
+capabilities.
 """
 
 from __future__ import annotations
@@ -222,9 +222,8 @@ async def create_conversation(request: Request, text: Annotated[str, Form()] = "
     # boots — reply #1 already runs with it (the mid-run grant path stays for later changes).
     read_roots = _parse_roots(fs_read_roots, "fs_read_roots")
     write_roots = _parse_roots(fs_write_roots, "fs_write_roots")
-    # F339: rules and connections are pre-start choices too. A RULE especially — it reaches
-    # the prompt through main.md's Standing-practices tail, materialized at create time, so
-    # one bound afterwards never governs reply #1, which has already fired.
+    # F339: rules and connections are pre-start choices too: reply #1 boots with the rules
+    # routine.yaml holds when it starts, so one bound afterwards never governs it.
     rule_slugs = _parse_rules(server, rules)
     conn_map = _parse_connections(connections)
     models_cfg = _resolve_create_models(server, model, models)
@@ -302,9 +301,8 @@ def conversation_defaults(request: Request) -> dict:
         server, SimpleNamespace(permissions=active, capabilities=caps),
         routine_only=conv_mod.ROUTINE_ONLY_PERMISSIONS)
     # F339: the RULES surface too — which library rules exist (slug + summary, for the
-    # picker) and which a new conversation holds by default. A rule is woven into main.md's
-    # Standing-practices tail at CREATE time, so this is the only moment it can be chosen
-    # for reply #1.
+    # picker) and which a new conversation holds by default: reply #1 boots with what is
+    # chosen here.
     from .. import rules as rules_mod
 
     rule_slugs = library_reads.doc_slugs(server.rules_home)

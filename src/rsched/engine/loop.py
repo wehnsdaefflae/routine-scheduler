@@ -36,6 +36,7 @@ from . import (
     requests,
 )
 from .actionschema import brief_value
+from .assist_predicates import failure_key
 from .autocommit import autocommit as _autocommit
 from .boot import boot
 from .completion import MAX_SCHEMA_ATTEMPTS, next_action
@@ -50,7 +51,7 @@ from .control import (
 from .finish_guard import normalize_escaped_newlines
 from .loopconst import POLL_S
 from .loopnudge import REPEAT_FAIL
-from .observations import format_observation
+from .observations import format_observation, is_failure
 from .run_context import RunContext
 from .switches import (
     apply_config_change,
@@ -180,6 +181,7 @@ class EngineLoop:
     resume: Any
     subruns: Any
     turn_records: list[dict]
+    failures: dict[str, int]
     util_reminder: Any
     workflow_body: Any
 
@@ -311,6 +313,9 @@ class EngineLoop:
                 held = hold.is_hold(obs)
                 if not held:
                     self.executed_actions += 1   # a HELD action executed nothing
+                    if is_failure(obs):
+                        key = failure_key(action)
+                        self.failures[key] = self.failures.get(key, 0) + 1
                 if self.admin_leg:
                     # D62: the capability bypass is never silent — one audit line per action.
                     from .admin import log_admin_action

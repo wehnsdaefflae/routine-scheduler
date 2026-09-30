@@ -10,7 +10,7 @@
  *                      is what you do with a machine that is running.
  *   SUMMONS (coral)  — this is waiting on a PERSON: an open decision, a gate, a blocking ask,
  *                      the badge that says how many. Nothing that is merely alive wears it.
- *   IRIS    (violet) — structure: lanes and domains, the library, meta routines. Organisation,
+ *   IRIS    (violet) — structure: lanes, the library, meta routines. Organisation,
  *                      not urgency.
  * A single accent used to carry the brand, every heading, every link AND every warning, so "this
  * is a heading" and "answer me" were the same colour and neither could shout.
@@ -446,16 +446,14 @@ main { max-width: var(--shell-max); width: 100%; margin: 0 auto; padding: var(--
 .chip.sev-info { color: var(--ink-2); }
 .chip.bare::before { display: none; }
 
-/* The two structures a routine sits in — its LANE (when it fires, with whom) and its DOMAIN
-   (what it shares) — are structure, not a run state: iris, with no state dot. They are separate
-   axes and so carry separate classes, but they read as ONE band of structure beside the run
-   chips, so the look is deliberately shared and the pair moves together. */
+/* The LANE a routine sits in (when it fires, with whom) is structure, not a run state: iris,
+   with no state dot, one band of structure beside the run chips. */
 .lanes-row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: var(--s1); }
 .lanes-row .lbl { color: var(--ink-3); }
-.chip.lane-chip, .chip.domain-chip { color: var(--iris); border-color: color-mix(in srgb, var(--iris) 42%, transparent); background: var(--iris-dim); }
-.chip.lane-chip::before, .chip.domain-chip::before { display: none; }
-.chip.lane-chip:hover, .chip.domain-chip:hover { border-color: var(--iris); text-decoration: none; }
-button.chip.lane-chip, button.chip.domain-chip { cursor: pointer; }
+.chip.lane-chip { color: var(--iris); border-color: color-mix(in srgb, var(--iris) 42%, transparent); background: var(--iris-dim); }
+.chip.lane-chip::before { display: none; }
+.chip.lane-chip:hover { border-color: var(--iris); text-decoration: none; }
+button.chip.lane-chip { cursor: pointer; }
 
 .tags { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
 .tag {
@@ -624,7 +622,7 @@ pre.doc {
 .btn.primary { background: var(--signal); border-color: var(--signal); color: var(--on-accent); font-weight: 600; }
 .btn.primary:hover { background: var(--signal-2); border-color: var(--signal-2); }
 /* DESTRUCTIVE IS A REACHED STATE, NOT A RESTING ONE. Every `delete` on every row used to wear
-   the err tone at rest: 28 model cards, ~50 secret rows, 6 domains, the endpoints, the machines
+   the err tone at rest: 28 model cards, ~50 secret rows, the endpoints, the machines
    — about a hundred red buttons on three pages, so the eye landed on `delete` before the row's
    own name and the palette's loudest colour meant "a list exists". Colour is state, and the
    state here is "nothing is being deleted". The tone arrives on hover/focus, where the pointer

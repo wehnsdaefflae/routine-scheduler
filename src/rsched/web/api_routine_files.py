@@ -64,12 +64,12 @@ class RoutineFileBody(BaseModel):
 #: Files under a routine dir that this endpoint may NOT write, and who owns each. The
 #: recipe is a routine's own (materialized in) and editable here; everything below has a
 #: validated owner, and a raw text PUT is a second writer around it. `routine.yaml` is the
-#: sharp one: it would bypass `RoutinePatch`'s `extra="forbid"`, the permission floor, the
-#: domain strip, `scheduler.rescan()` and the F337 live-run signal — a typo'd `permisions:`
+#: sharp one: it would bypass `RoutinePatch`'s `extra="forbid"`, the permission floor,
+#: `scheduler.rescan()` and the F337 live-run signal — a typo'd `permisions:`
 #: key written verbatim while the fire table stays stale and the live run is told nothing.
 NOT_EDITABLE_HERE: tuple[tuple[str, str], ...] = (
     ("routine.yaml", "PATCH /api/routines/{slug}"),
-    ("state/stopping.json", "PUT /api/routines/{slug}/stopping"),
+    ("state/finish-line.json", "PUT /api/routines/{slug}/finish-line"),
     # The engine owns `.memory/INDEX.md` (compaction._build_index) and nothing else under
     # `.memory/` — so INDEX.md is the line, not the tree. Refusing the whole tree would take
     # away the operator's only surface for a memory note and offer nothing in its place.

@@ -1,14 +1,24 @@
-"""Routine-page Triggers card: rows render (URL, ledger line), create writes routine.yaml
-through the authed CRUD, delete removes the entry — DOM and disk both asserted."""
+"""Routine-page Triggers: rows render (URL, fire ledger); the list is a SETTING — added,
+edited and removed in the draft, saved by the page's one accept. DOM and disk both asserted.
+
+What the server mints is identity — a trigger's id and a webhook's token — so a trigger new in
+the draft has no URL until it is accepted. Its row says so.
+"""
 
 import yaml
 from playwright.sync_api import expect
+
+from .conftest import until
 
 SEED_TOKEN = "tok-ui-" + "b" * 24
 
 
 def _toast(page):
     return page.locator("#toast:not([hidden])")
+
+
+def _stored(ui, slug="uir"):
+    return yaml.safe_load((ui.routine_dir(slug) / "routine.yaml").read_text(encoding="utf-8"))
 
 
 def _seed_trigger(ui, slug="uir"):
@@ -19,10 +29,22 @@ def _seed_trigger(ui, slug="uir"):
     path.write_text(yaml.safe_dump(raw), encoding="utf-8")
 
 
-def test_triggers_card_renders_and_creates(ui, ui_page):
-    _seed_trigger(ui)
+def _open(ui, ui_page):
+    """The routine page with the Triggers section — in Schedule & gate's "more" — unfolded."""
     ui_page.goto(f"{ui.url}/#/routine/uir")
-    row = ui_page.locator(".trigger-row")
+    ui_page.wait_for_selector("#sec-triggers", state="attached")
+    ui_page.evaluate("() => document.getElementById('sec-triggers').closest('details').open = true")
+    return ui_page.locator("#sec-triggers + .panel")
+
+
+def _accept(page):
+    page.locator(".accept-bar [data-accept]").click()
+
+
+def test_triggers_render_and_a_new_one_is_created_on_accept(ui, ui_page):
+    _seed_trigger(ui)
+    panel = _open(ui, ui_page)
+    row = panel.locator(".trigger-row")
     expect(row).to_have_count(1)
     expect(row).to_contain_text("webhook")
     expect(row).to_contain_text("t-uiseed01")
@@ -31,44 +53,54 @@ def test_triggers_card_renders_and_creates(ui, ui_page):
     expect(row.locator('input[type="text"]')).to_have_value(f"{ui.url}/api/hooks/uir/{SEED_TOKEN}")
     expect(row.get_by_role("button", name="copy")).to_be_visible()
 
-    ui_page.get_by_role("button", name="+ add webhook trigger").click()
-    expect(_toast(ui_page)).to_contain_text("webhook trigger created")
-    expect(ui_page.locator(".trigger-row")).to_have_count(2)
-    raw = yaml.safe_load((ui.routine_dir("uir") / "routine.yaml").read_text(encoding="utf-8"))
-    assert len(raw["triggers"]) == 2
-    created = raw["triggers"][1]
+    panel.get_by_role("button", name="+ add webhook trigger").click()
+    fresh = panel.locator('.trigger-row[data-trigger="new"]')
+    expect(fresh).to_contain_text("its hook URL is minted when you accept")
+    assert len(_stored(ui)["triggers"]) == 1                    # a draft until accepted
+
+    _accept(ui_page)
+    expect(_toast(ui_page)).to_contain_text("accepted")
+    until(lambda: len(_stored(ui)["triggers"]) == 2, what="the accepted trigger")
+    triggers = _stored(ui)["triggers"]
+    assert triggers[0]["token"] == SEED_TOKEN                   # the existing hook is untouched
+    created = triggers[1]
     assert created["type"] == "webhook" and len(created["token"]) >= 24
+    # …and once accepted, the new trigger has its own URL on the page
+    expect(panel.locator(".trigger-row")).to_have_count(2)
+    expect(panel.locator('.trigger-row[data-trigger="new"]')).to_have_count(0)
 
 
-def test_trigger_delete_flow(ui, ui_page):
+def test_removing_a_trigger_takes_effect_on_accept(ui, ui_page):
     _seed_trigger(ui)
-    ui_page.goto(f"{ui.url}/#/routine/uir")
-    ui_page.locator(".trigger-row").get_by_role("button", name="delete").click()
-    ui_page.locator(".modal-overlay").get_by_role("button", name="delete").click()
-    # the row vanishing + the yaml entry going are the durable assertions (a toast expires)
-    expect(ui_page.locator(".trigger-row")).to_have_count(0)
-    expect(ui_page.locator(".triggers-body")).to_contain_text("no triggers")
-    raw = yaml.safe_load((ui.routine_dir("uir") / "routine.yaml").read_text(encoding="utf-8"))
-    assert raw["triggers"] == []
+    panel = _open(ui, ui_page)
+    panel.locator(".trigger-row").get_by_role("button", name="remove").click()
+    expect(panel.locator(".trigger-row")).to_have_count(0)
+    expect(panel.locator(".triggers-body")).to_contain_text("no triggers")
+    assert len(_stored(ui)["triggers"]) == 1                    # still there until accepted
+    _accept(ui_page)
+    until(lambda: _stored(ui).get("triggers") == [], what="the removed trigger")
 
 
-def test_routine_page_trigger_cooldown_edits_in_place(ui, ui_page):
-    """The cooldown on a listed trigger IS an editor (it used to be static text next to a
-    create-form input, which read as an editor and had no save path), and each add-button
-    carries its own cooldown box."""
-    ui_page.goto(f"{ui.url}/#/routine/uir")
-    panel = ui_page.locator(".panel", has=ui_page.get_by_role("button", name="+ add report trigger"))
+def test_a_report_triggers_bounds_edit_in_place_and_one_is_the_limit(ui, ui_page):
+    """The cooldown on a listed trigger IS an editor. Each add-button makes a trigger with its
+    type's own defaults; a second report trigger stays refused."""
+    panel = _open(ui, ui_page)
     panel.get_by_role("button", name="+ add report trigger").click()
-    expect(_toast(ui_page)).to_contain_text("report trigger created")
-
     row = panel.locator(".trigger-row").first
     cooldown = row.locator("input.cooldown-in")
     expect(cooldown).to_have_value("900")            # the type's own default
+    expect(row.locator("input.cap-in")).to_have_value("24")
     cooldown.fill("120")
-    cooldown.press("Enter")                          # change fires on commit — no save button
-    expect(_toast(ui_page)).to_contain_text("cooldown saved — 120s")
-    ui_page.reload()
+    cooldown.press("Tab")
     expect(panel.locator(".trigger-row").first.locator("input.cooldown-in")).to_have_value("120")
+    expect(panel.get_by_role("button", name="+ add report trigger")).to_be_disabled()
 
-    # a second report trigger stays refused, and its add-box is disabled with the reason
+    _accept(ui_page)
+    until(lambda: (_stored(ui).get("triggers") or [{}])[0].get("cooldown_s") == 120,
+          what="the accepted report trigger")
+    stored = _stored(ui)["triggers"][0]
+    assert stored["type"] == "report" and stored["max_fires_per_day"] == 24
+    ui_page.reload()
+    panel = _open(ui, ui_page)
+    expect(panel.locator(".trigger-row").first.locator("input.cooldown-in")).to_have_value("120")
     expect(panel.get_by_role("button", name="+ add report trigger")).to_be_disabled()

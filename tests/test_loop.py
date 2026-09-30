@@ -6,7 +6,16 @@ import time
 
 import pytest
 
-from conftest import ScriptedRegistry, finish, spawn, subtask, util, wait_, write_file
+from conftest import (
+    WORKFLOW_MD,
+    ScriptedRegistry,
+    finish,
+    spawn,
+    subtask,
+    util,
+    wait_,
+    write_file,
+)
 from rsched.config import ServerConfig
 from rsched.endpoints.base import EndpointError
 from rsched.engine.runtime import run_routine
@@ -617,7 +626,9 @@ def test_write_util_autonomous_revisions(make_routine, scripted, monkeypatch):
     import rsched.utils_run as ur
 
     monkeypatch.setattr(ul, "ensure_library", lambda home, remote="": None)
-    monkeypatch.setattr(ul, "exists", lambda home, name: True)          # a revision
+    monkeypatch.setattr(ul, "exists", lambda home, name: True)          # a revision…
+    # …that reaches nothing new: a widening revision is asked about at every level
+    monkeypatch.setattr(ul, "read_util", lambda home, name: util_src("adder"))
     monkeypatch.setattr(ul, "write_util_file", lambda home, name, content: None)
     monkeypatch.setattr(ur, "selftest", lambda home, name, **k: (True, "selftest: ok"))
     monkeypatch.setattr(ul, "git_commit", lambda home, msg, **kw: True)
@@ -770,114 +781,111 @@ def test_finish_reply_to_reaches_the_finish_event(make_routine, scripted):
     assert "reply_to" not in next(e for e in ev2 if e["type"] == "finish")["payload"]
 
 
-def test_finish_gate_rejects_an_unmet_verdict_with_no_residual(make_routine, scripted,
-                                                               monkeypatch):
-    """F334/D98 v1b: a summary that ACCOUNTS for its conditions but reports one `unmet` with
-    nothing after the verdict is set aside for one turn — the same deferral shape as the rung
-    above it. A run bound never transitions, so that note is the whole of what the next run
-    inherits about it; a bare `[s1] unmet` clears v1 and hands the next run nothing.
+DONE_WHEN_MD = WORKFLOW_MD.rstrip() + """
 
-    v2's verifier is stubbed for the reason the accounting test stubs it: this is the RESIDUAL
-    rung's test, and a live judge would consume a scripted reply for a verdict it says nothing
-    about.
+## Done when
+
+- d1 — the PDF is verified byte-identical to the source
+- d2 — the digest is published and its link resolves
+"""
+
+
+def _accounted(summary, *entries):
+    return {**finish(summary=summary), "accounting": list(entries)}
+
+
+def test_finish_gate_rejects_an_incomplete_accounting(make_routine, scripted, monkeypatch):
+    """A depth-0 finish owes one `accounting` entry per Done-when line of its recipe; a finish
+    that skips one, or gives a verdict with nothing after it, is set aside for one turn (the
+    R108 deferral shape). The engine checks presence and shape, never the semantics.
+
+    The verifier is stubbed: this is the ACCOUNTING rung's test; a live judge would consume
+    a scripted reply for a verdict it says nothing about.
     """
-    from rsched.engine import stopping as stopping_mod
     from rsched.engine import verifier
 
-    monkeypatch.setattr(verifier, "refuted", lambda loop, summary: [])
-
-    d = make_routine(slug="residual")
-    stopping_mod.save(d, {"conditions": [{"text": "the digest is published"}]}, now="t")
+    monkeypatch.setattr(verifier, "refuted", lambda loop, claims, summary: [])
+    d = make_routine(slug="stopper", workflow_md=DONE_WHEN_MD)
     scripted([
         probe(),
-        finish(summary="[s1] unmet"),                       # accounted, but empty → deferred
-        {"say": "With the residual.", "kind": "finish", "status": "ok",
-         "summary": "[s1] unmet — three of five feeds parsed; Reuters returns 403"},
+        finish(summary="all done, PDF looks fine"),                    # no accounting → deferred
+        _accounted("Done.", "d1 met: checksums match", "d2 unmet:"),   # bare unmet → deferred
+        _accounted("Verified; the feed host was down.", "d1 met: checksums match",
+                   "d2 unmet: Reuters returns 403, three of five feeds parsed"),
     ])
     status, run_dir = run_routine(d, _server(d), run_ts=TS)
     events, _ = read_events(run_dir / "transcript.jsonl")
     assert status == "ok"
-    rejected = [e for e in events if e["type"] == "observation"
-                and e["payload"].get("stopping_without_residual")]
-    assert len(rejected) == 1
-    assert rejected[0]["payload"]["stopping_without_residual"] == ["s1"]
-    # the residual was stamped back, so the NEXT run opens with the work rather than a verdict
-    assert stopping_mod.load(d)["conditions"][0]["note"].startswith("three of five feeds")
-    from rsched.engine.stopping_digest import digest_section
-    assert "last run left: three of five feeds parsed" in digest_section(d)
-
-
-def test_finish_gate_rejects_unaccounted_stopping_conditions(make_routine, scripted,
-                                                             monkeypatch):
-    """F334/D98 v1: a depth-0 finish whose summary ignores an OPEN stopping condition is
-    set aside (the R108 deferral shape — one extra turn); a summary carrying the
-    `[s<n>]` accounting passes. The engine checks the accounting, never the semantics.
-
-    v2's verifier is stubbed out: this is the ACCOUNTING gate's test, and leaving v2 live
-    would have it consume a scripted reply for a judgement this test says nothing about.
-    """
-    from rsched.engine import stopping as stopping_mod
-    from rsched.engine import verifier
-
-    monkeypatch.setattr(verifier, "refuted", lambda loop, summary: [])
-
-    d = make_routine(slug="stopper")
-    stopping_mod.save(d, {"conditions": [{"text": "stop once the PDF is verified"},
-                                         {"text": "only diagnose — never fix"}]}, now="t")
-    scripted([
-        probe(),
-        finish(summary="all done, PDF looks fine"),                     # no accounting → deferred
-        {"say": "Accounting.", "kind": "finish", "status": "ok",
-         "summary": "[s1] met — PDF verified byte-identical; [s2] met — no fix attempted"},
-    ])
-    status, run_dir = run_routine(d, _server(d), run_ts=TS)
-    events, _ = read_events(run_dir / "transcript.jsonl")
-    assert status == "ok"
-    rejected = [e for e in events if e["type"] == "observation"
-                and e["payload"].get("stopping_unaccounted")]
-    assert len(rejected) == 1
-    assert rejected[0]["payload"]["stopping_unaccounted"] == ["s1", "s2"]
-    fin = next(e for e in events if e["type"] == "finish")
-    assert fin["payload"]["summary"].startswith("[s1] met")             # the second finish landed
-    # …and the digest section reaches the system prompt (composer wiring)
-    from rsched.engine.composer import state_digest
-    digest = state_digest(d, [], [])
-    assert "STOPPING CONDITIONS" in digest and "[s1] stop once the PDF is verified" in digest
-    # ...and the model's own verdict was STAMPED BACK, so the panel and the next run see it.
-    # These are RUN bounds, so they record the verdict and stay OPEN — they are re-asked next
-    # run, and only a GOAL condition ever transitions (engine/stopping.py).
-    rows = {c["id"]: c for c in stopping_mod.load(d)["conditions"]}
-    assert rows["s1"]["status"] == "open" and rows["s2"]["status"] == "open"
-    assert rows["s1"]["last_verdict"] == "met" and rows["s2"]["last_verdict"] == "met"
-    assert rows["s1"]["note"].startswith("PDF verified")
-    assert rows["s1"]["resolved_run"] == f"stopper:{TS}"
+    rejected = [e["payload"]["accounting"] for e in events if e["type"] == "observation"
+                and e["payload"].get("accounting")]
+    assert rejected == [{"missing": ["d1", "d2"], "bare": [], "refused": []},
+                        {"missing": [], "bare": ["d2"], "refused": []}]
+    # the accounting lands in the run's status, where the next run's digest reads it
+    status_doc = json.loads((run_dir / "status.json").read_text(encoding="utf-8"))
+    assert status_doc["accounting"][1].startswith("d2 unmet: Reuters returns 403")
     upd = next(e for e in events if e["type"] == "stopping_update")
-    # run bounds do not transition, so `met` (what can retire a routine) is empty while
-    # `judged` still carries the whole accounting this run wrote
-    assert upd["payload"]["met"] == []
-    assert upd["payload"]["judged"] == {"s1": "met", "s2": "met"}
+    assert upd["payload"]["judged"] == {"d1": "met", "d2": "unmet"}
+    assert upd["payload"]["met"] == []                  # a Done-when line never retires anything
+    # …and the next run opens with the residual rather than a verdict
+    from rsched.engine.finish_digest import digest_section
+    assert "d2 — Reuters returns 403" in digest_section(d)
+
+
+def test_a_briefed_run_answers_for_its_brief_not_the_recipe(make_routine, scripted,
+                                                            monkeypatch):
+    """A run the operator started for one job accounts for that job — `b1` — instead of every
+    line of its recipe's Done when."""
+    from rsched.engine import brief, verifier
+
+    monkeypatch.setattr(verifier, "refuted", lambda loop, claims, summary: [])
+    d = make_routine(slug="briefrun", workflow_md=DONE_WHEN_MD)
+    (d / "runs" / TS).mkdir(parents=True)          # the runner writes it before the engine
+    brief.write(d / "runs" / TS, "re-check the Q3 figures")
+    scripted([probe(),
+              _accounted("Done.", "d1 met: checksums match", "d2 not due: not asked"),
+              _accounted("Q3 re-checked.", "b1 met: the Q3 table matches the ledger")])
+    status, run_dir = run_routine(d, _server(d), run_ts=TS)
+    events, _ = read_events(run_dir / "transcript.jsonl")
+    assert status == "ok"
+    rejected = [e["payload"]["accounting"] for e in events if e["type"] == "observation"
+                and e["payload"].get("accounting")]
+    assert rejected == [{"missing": ["b1"], "bare": [], "refused": []}]
+    header = next(e for e in events if e["type"] == "header")
+    assert header["brief"] == "re-check the Q3 figures"
+    assert json.loads((run_dir / "status.json").read_text())["brief"] == \
+        "re-check the Q3 figures"
+
+
+def test_a_routine_that_owes_nothing_is_not_asked_for_an_accounting(make_routine, scripted):
+    d = make_routine(slug="owesnothing")
+    scripted([probe(), finish(summary="done")])
+    status, run_dir = run_routine(d, _server(d), run_ts=TS)
+    events, _ = read_events(run_dir / "transcript.jsonl")
+    assert status == "ok"
+    assert not [e for e in events if e["type"] == "observation"
+                and e["payload"].get("rejected")]
 
 
 def test_verifier_challenges_once_then_the_run_keeps_the_last_word(make_routine, scripted,
                                                                    monkeypatch):
-    """F334/D98 v2, the safety-critical half. A refuted claim sets the finish aside ONCE; if
-    the model re-asserts it, the verdict STANDS and the disagreement is recorded. Without the
-    once-only rule a stubborn model and a stubborn judge trade refutations until the budget
-    dies — and a dead budget is precisely the outcome stopping conditions exist to replace.
+    """The safety-critical half of claim verification. A refuted claim sets the finish aside
+    ONCE; if the model re-asserts it, the verdict STANDS and the disagreement is recorded.
+    Without the once-only rule a stubborn model and a stubborn judge trade refutations until
+    the budget dies.
     """
-    from rsched.engine import stopping as stopping_mod
-    from rsched.engine import verifier
+    from rsched.engine import finishline, verifier
 
     d = make_routine(slug="verif")
-    stopping_mod.save(d, {"conditions": [{"text": "the PDF is verified", "scope": "goal"}]}, now="t")
+    finishline.save(d, {"outcomes": [{"text": "the PDF is verified", "judge": "run"}]},
+                    now="t")
     seen = []
-    monkeypatch.setattr(verifier, "refuted", lambda loop, summary: (
-        seen.append(summary), [{"id": "s1", "text": "the PDF is verified",
-                                "evidence": "no action opened it"}])[1])
+    monkeypatch.setattr(verifier, "refuted", lambda loop, claims, summary: (
+        seen.append([c["id"] for c in claims]),
+        [{"id": "g1", "text": "the PDF is verified", "evidence": "no action opened it"}])[1])
     scripted([
         probe(),
-        finish(summary="[s1] met — I verified it"),          # challenged
-        finish(summary="[s1] met — I verified it, honestly"),  # re-asserted → stands
+        _accounted("Verified.", "g1 met: I verified it"),              # challenged
+        _accounted("Verified, honestly.", "g1 met: I verified it, honestly"),  # stands
     ])
     status, run_dir = run_routine(d, _server(d), run_ts=TS)
     events, _ = read_events(run_dir / "transcript.jsonl")
@@ -885,35 +893,67 @@ def test_verifier_challenges_once_then_the_run_keeps_the_last_word(make_routine,
 
     # exactly ONE objection, however many times the judge would refuse
     challenged = [e for e in events if e["type"] == "observation"
-                  and e["payload"].get("stopping_unsupported")]
-    assert len(challenged) == 1 and challenged[0]["payload"]["stopping_unsupported"] == ["s1"]
-    assert len(seen) == 2                                  # it DID run again on the second finish
+                  and e["payload"].get("claims_unsupported")]
+    assert len(challenged) == 1 and challenged[0]["payload"]["claims_unsupported"] == ["g1"]
+    assert seen == [["g1"], ["g1"]]                         # it DID run again on the second finish
 
     # the model's verdict stands, with the objection kept beside it
-    row = stopping_mod.load(d)["conditions"][0]
-    assert row["status"] == "met"                          # a GOAL condition: it transitions
-    assert row["disputed"] == "no action opened it"
+    row = finishline.load(d)["outcomes"][0]
+    assert row["status"] == "met" and row["disputed"] == "no action opened it"
     upd = next(e for e in events if e["type"] == "stopping_update")
-    assert upd["payload"]["met"] == ["s1"] and upd["payload"]["disputed"] == ["s1"]
+    assert upd["payload"]["met"] == ["g1"] and upd["payload"]["disputed"] == ["g1"]
+
+
+def test_a_line_whose_stage_was_never_entered_is_challenged_without_a_judge(make_routine,
+                                                                           scripted,
+                                                                           monkeypatch):
+    """The deterministic objection comes first and costs no model call; the run can overrule
+    it, because skip detection is imperfect."""
+    from rsched.engine import verifier
+
+    asked = []
+    monkeypatch.setattr(verifier, "refuted",
+                        lambda loop, claims, summary: (asked.append(claims), [])[1])
+    d = make_routine(slug="stagecheck", workflow_md=WORKFLOW_MD.rstrip() + """
+
+## Done when
+
+- d1 · publish — the page is published and read back
+""")
+    (d / "stages").mkdir()
+    (d / "stages" / "publish.md").write_text("# publish\n\nPublish it.\n", encoding="utf-8")
+    scripted([
+        probe(),
+        _accounted("Published.", "d1 met: published"),                # challenged, no judge
+        _accounted("Published.", "d1 met: the page reads back — see turn 1"),   # stands
+    ])
+    status, run_dir = run_routine(d, _server(d), run_ts=TS)
+    events, _ = read_events(run_dir / "transcript.jsonl")
+    assert status == "ok"
+    challenged = [e["payload"]["claims_unsupported"] for e in events
+                  if e["type"] == "observation" and e["payload"].get("claims_unsupported")]
+    assert challenged == [["d1"]]
+    assert asked == [[], []]                    # the judge is never asked about a blamed line
+    upd = next(e for e in events if e["type"] == "stopping_update")
+    assert upd["payload"]["disputed"] == ["d1"]
 
 
 def test_a_verifier_that_accepts_never_touches_the_finish(make_routine, scripted, monkeypatch):
-    """The common path: nothing refuted, so the finish lands on the first try and the store
-    records no dispute."""
-    from rsched.engine import stopping as stopping_mod
-    from rsched.engine import verifier
+    """The common path: nothing refuted, so the finish lands on the first try and the finish
+    line records no dispute."""
+    from rsched.engine import finishline, verifier
 
     d = make_routine(slug="verif2")
-    stopping_mod.save(d, {"conditions": [{"text": "the PDF is verified", "scope": "goal"}]},
-                      now="t")
-    monkeypatch.setattr(verifier, "refuted", lambda loop, summary: [])
-    scripted([probe(), finish(summary="[s1] met — verified byte-identical")])
+    finishline.save(d, {"outcomes": [{"text": "the PDF is verified", "judge": "run"}]},
+                    now="t")
+    monkeypatch.setattr(verifier, "refuted", lambda loop, claims, summary: [])
+    scripted([probe(), _accounted("Verified.", "g1 met: verified byte-identical")])
     status, run_dir = run_routine(d, _server(d), run_ts=TS)
     events, _ = read_events(run_dir / "transcript.jsonl")
     assert status == "ok"
     assert not [e for e in events if e["type"] == "observation"
-                and e["payload"].get("stopping_unsupported")]
-    row = stopping_mod.load(d)["conditions"][0]
+                and e["payload"].get("claims_unsupported")]
+    row = finishline.load(d)["outcomes"][0]
     assert row["status"] == "met" and row["disputed"] == ""
 
 
@@ -1461,68 +1501,6 @@ def test_wait_yields_to_a_pending_user_message(make_routine, scripted):
     # the user message was then drained into the conversation (the parent got to respond)
     assert any(e["type"] == "user_injection" and "quick question" in (e["payload"].get("text") or "")
                for e in events)
-
-
-def test_subtask_generate_gate(monkeypatch):
-    """`workflow: "generate"` drafts a new pattern only when the routine holds the
-    `workflows: generate` capability AND the budget allows; otherwise it falls back to the
-    default pattern with an explanatory note. The generation call's spend folds into the run."""
-    import rsched.workflows.generate as gen_mod
-    from rsched.engine.subruns import SubrunManager
-    from rsched.grantpolicy import GrantPolicy
-
-    seen = []
-
-    def fake_generate(server, instruction, hint="", on_usage=None):
-        seen.append(instruction)
-        if on_usage:
-            on_usage({"in": 100, "out": 50})
-        return "drafted-x", ""
-
-    monkeypatch.setattr(gen_mod, "generate", fake_generate)
-
-    class Ctx:
-        server = "SRV"
-
-        def __init__(self, tokens):
-            self._t = tokens
-            self.added = []
-
-        def tokens_remaining(self):
-            return self._t
-
-        def add_usage(self, u):
-            self.added.append(u)
-
-    class Parent:
-        def __init__(self, grants, ctx):
-            self.grants, self.ctx = grants, ctx
-
-    on = GrantPolicy(workflows="generate")
-    off = GrantPolicy(workflows="catalog")
-
-    # capability ON, budget fine → generates, spend folded into the run
-    ctx = Ctx(100_000)
-    action, note = SubrunManager(Parent(on, ctx))._maybe_generate(
-        {"kind": "subtask", "prompt": "P", "workflow": "generate"})
-    assert action["workflow"] == "drafted-x" and "generated a new pattern 'drafted-x'" in note
-    assert seen == ["P"] and ctx.added == [{"in": 100, "out": 50}]
-
-    # capability OFF → falls back to default, no generate call
-    seen.clear()
-    action2, note2 = SubrunManager(Parent(off, Ctx(100_000)))._maybe_generate(
-        {"kind": "subtask", "prompt": "P", "workflow": "generate"})
-    assert action2["workflow"] is None and "generation is off" in note2 and seen == []
-
-    # capability ON but budget nearly spent → skip generation
-    action3, note3 = SubrunManager(Parent(on, Ctx(5_000)))._maybe_generate(
-        {"kind": "subtask", "prompt": "P", "workflow": "generate"})
-    assert action3["workflow"] is None and "budget nearly spent" in note3
-
-    # a named workflow is left untouched (pick-from-catalog is always on)
-    action4, note4 = SubrunManager(Parent(on, ctx))._maybe_generate(
-        {"kind": "subtask", "prompt": "P", "workflow": "general-task"})
-    assert action4["workflow"] == "general-task" and note4 == ""
 
 
 def test_llm_subcall(make_routine, scripted):
@@ -2868,9 +2846,10 @@ def test_write_util_selftest_failure_restores_revision(make_routine, scripted, m
     import rsched.utils_run as ur
 
     writes = []
+    old_source = util_src("adder") + "# the old working body\n"      # same header: no widening
     monkeypatch.setattr(ul, "ensure_library", lambda home, remote="": None)
     monkeypatch.setattr(ul, "exists", lambda home, name: True)
-    monkeypatch.setattr(ul, "read_util", lambda home, name: "OLD WORKING SOURCE")
+    monkeypatch.setattr(ul, "read_util", lambda home, name: old_source)
     monkeypatch.setattr(ul, "write_util_file",
                         lambda home, name, content: writes.append(content))
     monkeypatch.setattr(ur, "selftest", lambda home, name, **k: (False, "boom"))
@@ -2881,7 +2860,7 @@ def test_write_util_selftest_failure_restores_revision(make_routine, scripted, m
     ])
     status, _run_dir = run_routine(d, _server(d, util_authoring="creations"), run_ts=TS)
     assert status == "partial"
-    assert len(writes) == 2 and writes[1] == "OLD WORKING SOURCE"
+    assert len(writes) == 2 and writes[1] == old_source
 
 
 def test_write_util_path_name_rejected_in_schema_cycle(make_routine, scripted):

@@ -1,11 +1,11 @@
 // How ONE routine is drawn on the Routines page — as a card in the grid, and as a row in the
 // detail table (lane rows and their member reordering included). Same data, two registers.
 //
-// Split out of dashboard.js, which carried this, the domains section, the week-strip drag ops
-// and the page's own state in one 850-line closure. The two renderers share five small
-// controls — run-now, the enable toggle, the identity swatch, the real schedule text, and the
-// lane/domain chips — which is exactly why they belong in one module and not two: a card and
-// a row that disagreed about what "the schedule" means is the bug R313 was.
+// Split out of dashboard.js, which carried this, the week-strip drag ops and the page's own
+// state in one 850-line closure. The two renderers share five small controls — run-now, the
+// enable toggle, the identity swatch, the real schedule text, and the lane chip — which is
+// exactly why they belong in one module and not two: a card and a row that disagreed about
+// what "the schedule" means is the bug R313 was.
 //
 // `ctx` is the page's live state, read through getters rather than captured: this module is
 // rebuilt on every repaint while the page's maps are replaced by each load(), so a captured
@@ -47,8 +47,8 @@ function statsLine(run) {
   return parts.join(" · ");
 }
 
-/** ctx: llmReady() · laneFor(slug) · domainFor(slug) · laneRecord(id) · lanesOrdered() ·
- *  laneData() · sortArrow(key) · onSort(key) · reload() · repaint() · revealDomain(id) */
+/** ctx: llmReady() · laneFor(slug) · laneRecord(id) · lanesOrdered() · laneData() ·
+ *  sortArrow(key) · onSort(key) · reload() · repaint() */
 export function routineRows(ctx) {
   // Table rows run ICON-ONLY controls (horizontal space, D72 follow-up); cards keep the
   // labelled versions. The resume glyph is the HOLLOW ▷ so it can never be mistaken for
@@ -108,27 +108,16 @@ export function routineRows(ctx) {
     return `⛓ ${lane.name} — ${lane.paused ? "lane paused" : (lane.schedule_desc || "scheduled")}`;
   }
 
-  // The two structures a routine sits in, as one chip row: its LANE (when it fires and with
-  // whom) and its DOMAIN (what it shares). They are independent, so the row shows whichever a
-  // routine has — side by side when it has both. Each chip goes where that structure is
-  // edited: the lane chip opens the lane's editor (D80: this page is the lane-management
-  // surface), the domain chip reveals its row in the section below. Both LOOK clickable, so
-  // both must be — a chip beside a working one that does nothing teaches the wrong thing.
-  // Membership itself is not on either: joining a domain is a save on the routine's own page.
-  function structureChips(slug) {
+  // The LANE a routine fires in (when and with whom), as a chip that opens the lane's editor
+  // (D80: this page is the lane-management surface). It LOOKS clickable, so it must be.
+  function laneChip(slug) {
     const lane = ctx.laneFor(slug);
-    const dom = ctx.domainFor(slug);
-    if (!lane && !dom) return null;
+    if (!lane) return null;
     return el("div", { class: "lanes-row" },
-      lane ? el("button", { class: "chip lane-chip",
+      el("button", { class: "chip lane-chip",
         title: `runs in lane “${lane.name}” — edit the lane`,
         onclick: (e) => { e.stopPropagation(); openLaneEditor(lane, ctx.laneData(), { reload: ctx.reload }); },
-      }, `⛓ ${lane.name}`) : null,
-      dom ? el("button", { class: "chip domain-chip",
-        title: `shares config, secrets and a store with the “${dom.name}” domain — open it in `
-             + "the Domains section; this routine's own page is where it joined",
-        onclick: (e) => { e.stopPropagation(); ctx.revealDomain(dom.id); },
-      }, `◈ ${dom.name}`) : null);
+      }, `⛓ ${lane.name}`));
   }
 
   function card(c) {
@@ -146,7 +135,7 @@ export function routineRows(ctx) {
         el("a", { href: `#/routine/${c.slug}` }, c.name || c.slug),
         stateChip),
       (c.tags || []).length ? el("div", { class: "tags" }, c.tags.map((t) => tagChip(t))) : null,
-      structureChips(c.slug),
+      laneChip(c.slug),
       c.description ? el("div", { class: "desc" }, c.description) : null,
       blocked ? el("div", { class: "qflag" },
         el("span", {}, "waiting on your answer"),
@@ -211,7 +200,7 @@ export function routineRows(ctx) {
           c.open_questions ? el("a", { href: "#/questions", class: "chip blocking",
             title: "open questions waiting for you" }, `${c.open_questions} open ?`) : null,
           c.description ? el("div", { class: "faint small", style: "max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" }, c.description) : null,
-          structureChips(c.slug)),
+          laneChip(c.slug)),
         el("td", { class: "hb-cell" }, c.recent_runs?.length
           ? heartbeat(c.recent_runs) : el("span", { class: "faint" }, "—")),
         el("td", { class: "muted small" },
@@ -222,8 +211,9 @@ export function routineRows(ctx) {
             // different answers to "why is nothing happening" — one is the job being over.
             c.retired
               ? el("span", { class: "chip finished", style: "margin-right:6px",
-                  title: "every final-goal condition is met — this routine is done and no "
-                       + "longer fires. Reopen a goal condition to bring it back." }, "done")
+                  title: "its finish line is reached — this routine is done and no longer "
+                       + "fires. Change its finish line (its Goal settings) to bring it back." },
+                "done")
               : c.enabled ? null : el("span", { class: "chip disabled", style: "margin-right:6px",
                   title: "paused — nothing fires until resumed" }, "off"),
             schedText(c) || c.schedule_desc || "manual"),

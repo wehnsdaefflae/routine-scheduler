@@ -133,22 +133,24 @@ Rules of the form:
 - **`PHASES`** is a literal naming the cross-run progression (the UI's state graph
   itself comes from the materialized routine's stage modules — the engine tracks the run's
   live position from its stage-module reads). Record it under the `phase` key of
-  `state/phase.json`: that is what the composer reads and what scopes a stopping condition
-  to a stage, and a routine that invents its own key writes a file matching nothing.
-- There is deliberately **no `COMPLETION`** literal. What DONE means is the USER's, and it
-  lives in the routine's `state/stopping.json` where they can edit it and where the finish
-  gate makes it impossible to ignore. A completion text frozen into main.md is not editable
-  from there and could only ever disagree with it. That store answers two questions, and a
-  pattern should be clear which one it is about: a `run`-scoped condition bounds ONE run, a
-  `goal`-scoped one is the state after which the ROUTINE is finished — and meeting every goal
-  condition RETIRES the routine (it stops firing, and the operator is asked to confirm). A
-  pattern for a job with an end should say so in its `when_to_use`, since that is what the
-  clarify flow ranks on.
+  `state/phase.json`: that is what the composer reads; a routine that invents its own key
+  writes a file matching nothing.
+- **`DONE_WHEN`** is a literal naming what ONE finished run of this kind leaves behind, one
+  `"d<n> · <step> — <outcome>"` line each. It is the skeleton decomposition turns into the
+  routine's own `## Done when`, filled with THIS task's words (and the person's own, when
+  creation collected them); every main finish accounts for each line (`engine/donewhen.py`,
+  `engine/accounting.py`). Write outcomes the run's transcript can show, never "at least N",
+  never a cap phrased as a quota, never a prohibition, and so that each line can honestly be
+  "not due" on a run where it does not apply. A harness (`meta` tag) carries none.
+- There is deliberately **no end-of-routine literal**. Whether a ROUTINE ever finishes for good
+  is its operator's FINISH LINE (`state/finish-line.json`, `engine/finishline.py`), set on the
+  routine page or proposed at creation — never a pattern's claim. A pattern for a job with an
+  end says so in its `when_to_use`, since that is what the creation flow ranks on.
 - One top-level `main()` whose body is the per-run control flow; one function per step.
 
-`workflows/lint.py` gates every save (the Library editor shows the findings inline). A
-routine may also *generate* a pattern mid-run when it holds the `workflows: generate`
-capability — drafts land in the same library, subject to the same lint.
+`workflows/lint.py` gates every save (the Library editor shows the findings inline). A new
+pattern is also drafted when the person picks `generate` while creating a routine — it lands in
+the same library, subject to the same lint; no run drafts one on its own initiative.
 
 ## No named utils — a recipe says WHAT, never which tool
 
@@ -251,6 +253,6 @@ guide.
 
 See also: [Getting started](getting-started.md) · [Rules & permissions](rules-permissions.md) · [Playbooks](playbooks.md)
 
-## Settings templates
+## A new routine's settings
 
-A new routine starts from one at creation: the fitted template's values are COPIED into its own `routine.yaml` in full, so the file says what the routine is from its first line. See [rules-permissions](rules-permissions.md#settings-templates--the-named-starting-point) for why a template is a preselection rather than a layer, and for the six shipped templates.
+A new routine's settings are written into its own `routine.yaml` in full, so the file says what the routine is from its first line; settings patterns ([patterns](patterns.md)) replace templates and domains' shared config as the library's named starting points.

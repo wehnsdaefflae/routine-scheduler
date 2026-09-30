@@ -34,6 +34,13 @@ def build_base_policy(loop, grants_map: dict) -> None:
                                    recipe_unlocked=bool(loop._recipe_unlocked),
                                    admin=loop.admin_leg,
                                    grants_map=grants_map)
+    if loop.ctx.depth == 0 and detach._is_root_conversation(loop.ctx):
+        # `detach` is STRUCTURAL: a job that outlives the reply can only be delivered back
+        # into a conversation, so a root conversation holds it and nothing else does. It was
+        # a permission (background-tasks) held by 32 routines that could never use it.
+        from dataclasses import replace
+        loop.base_grants = replace(loop.base_grants,
+                                   actions=loop.base_grants.actions | {"detach"})
     if loop.ctx.depth > 0:
         # A spawned/subtask child: capabilities are off by design (childrun), so a
         # gated-kind denial must name the child scope, not claim the routine lacks it.
@@ -67,6 +74,7 @@ def configure(loop, ctx: RunContext, workflow_body: str, instruction: str,
     loop.subruns = SubrunManager(loop)
     loop.messages = []
     loop.turn_records = []
+    loop.failures = {}       # failure_key → how often that call failed this run
     loop.repeat_hashes = deque(maxlen=REPEAT_FAIL)
     loop.consumed_dir = ctx.root_run_dir / "consumed"
     loop.final_summary = ""

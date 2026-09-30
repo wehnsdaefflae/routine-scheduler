@@ -15,6 +15,101 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.369.0] — 2026-09-30
+
+### Changed — routine settings are SETTINGS PATTERNS: one library document per kind of work, read against, never layered
+
+Operator order 2026-09-29: rebuild routine settings around patterns designed on the abstract
+workflows the fleet actually runs, replacing settings templates and domains. Fourteen patterns
+ship in `library-seed/patterns/` (`watcher`, `radar`, `project-steward`, `personal-steward`,
+`mailbox-service`, `daily-operator`, `code-maintainer`, `instance-builder`, `instance-auditor`,
+`library-curator`, `model-trainer`, `queue-worker`, `mirror-sync`, `one-job`), each built on one of
+twelve abstract workflows and carrying the questions creation must ask (`docs/patterns.md`).
+
+- A routine NAMES its pattern (`pattern:`) and holds every value itself; an override is a field
+  that differs. A pattern is immutable; "save as new pattern" is offered exactly when the
+  routine's values match no existing one; deleting a pattern leaves its followers' values intact.
+- Nothing proposes a change by writing it: creation, "recommend for this routine", following
+  another pattern and the migration all write PENDING changes (`.control/settings-drafts/`) the
+  page highlights under "check the changes i recommend." — kept or dropped, then ONE accept.
+- Creation ends with that: the new routine is saved with its pattern's values and what is
+  specific to it waits for the accept. `create_routine` carries `pattern`, `setup`, `done_when`,
+  `finish_line` and `never`, each in the user's own words.
+- Templates, domains, `domains.json`, `/api/domains` and the domain-note channel are gone; shared
+  STORES stay, as ordinary write roots with their notes channel; the card heading is each
+  routine's own `hub_tab`.
+
+### Changed — the routine page is ONE settings form, read against its pattern
+
+The pattern bar names the pattern the routine follows and how many values differ from it;
+*Recommend for this routine*, *Follow another pattern* and *Save as new pattern* each lay a proposal
+over the form instead of writing. Seven groups follow — *Schedule & gate* and *Goal* open on arrival
+— each keeping its rarely needed sections behind a **more**. Every control edits a draft: a pending
+change is marked where it sits with the value it replaces; an override is marked with the pattern's
+value and one click back to it. One **accept changes** bar saves every kept change at once. The run
+gate has its own editor (a check added from the menu of kinds, the `script` kind opening
+`scripts/admit.py`, *Test the gate now*); *Goal* edits the finish line; a run's page shows its
+accounting line by line; the filesystem-roots picker keeps one height whatever the folder holds.
+The Library tab lists the patterns with their followers. The Decisions page's *Finished* card shows
+each outcome's evidence — for a line the calendar reached it offers *change its date* instead of
+declining.
+
+### Changed — run gates are declarative CHECKS — a gate may skip only when it KNOWS
+
+`run_gate.checks` (`rsched/gatekit/`): `mail`, `hub_feedback`, `url_changed`, `files_changed`,
+`unpaired_files`, `repo_changed`, `runs_since`, `state`, `dates`, `weekdays`, `max_quiet`, and
+`script` (`scripts/admit.py`). Anything a check cannot establish is WORK; a fire is skipped only
+when every check said no work. Built-in reasons run first: inbox freight, a waiting answer, a note
+in a shared store, a last run that did not finish ok, a changed config or recipe. The migration
+writes gates for the routines whose runs show idle fires (`docs/run-gates.md`).
+
+### Changed — the goal: a FINISH LINE, the recipe's `## Done when`, and an ACCOUNTING field
+
+Stopping conditions are retired (reports/goal.md). What one finished run leaves behind is the
+recipe's `## Done when` (`engine/donewhen.py`); when the routine is done for good is the operator's
+FINISH LINE (`state/finish-line.json`, `engine/finishline.py`) — outcomes with a judge (`date`,
+`run`, `you`) plus an optional `until`. The finish carries an `accounting` field
+(`engine/accounting.py`); a `met` is checked once against the run's transcript
+(`engine/verifier.py`). Reaching the finish line retires the routine through one Decisions card;
+a line the calendar reached is re-dated rather than declined. "Run now" takes a one-line BRIEF the
+run answers for instead (`engine/brief.py`). Finish statuses are defined in the schema.
+
+### Changed — sixteen general rules and seventeen permissions — what every routine does needs neither
+
+The rule set is rewritten from the evidence (`docs/curated-rules.md`): six defaults and ten kind
+rules, named in the digest with the moment each applies instead of a derived recipe tail. The
+permission set shrinks to decisions: memory, scripts and run history are base or settings, a
+reserved util can be reserved per VERB (`signal:send`), and a capability action must be a gated
+kind (`detach` is structural). New assists: `repeated-failure`, `capability-denied`,
+`rendered-output-unseen`.
+
+### Changed — consequence reminders get a curator
+
+A curated reminder declares its reach (`universal` or `listed` for the routines whose
+`shared_reminders` — carried by a pattern — name it); the dial governs authoring only. A label is
+recorded against one hold, once. The write gate refuses a lead no action renders. rules-review holds
+`reminders: global` and runs a census-driven `reminders` stage (`util-seed/utils/reminder-census`).
+
+### Changed — output compression is engine behaviour, not a setting
+
+Lossless and used only when smaller; the per-routine switch was never changed by any routine and
+bought ~0.07% of input tokens. `output_compression` leaves routine.yaml and the APIs.
+
+### Changed — the host runs the tests on the engine's Python
+
+The host venv ran Python 3.14 while the engine image runs 3.12, so every host test run exercised
+an interpreter production does not use; three browser tests failed only there. `.python-version`
+now pins the host to 3.12, `tests/test_policy.py` keeps the pin equal to the Dockerfile's
+`FROM python:` tag, and the suite refuses to start on another minor version.
+
+### Migration — MIGRATION(expires=2026-10-20)
+
+`migrate_settings_patterns` runs once at boot: the library (rules, permissions, workflows,
+patterns, the kit contract), every routine onto its pattern with its own values kept and its
+judgement calls drafted, finish lines and `## Done when` blocks from the stopping conditions,
+recipe prose and scripts that relied on the retired concepts edited in place, conversations
+translated, domains ended. It records what it did in `.control/migrations/settings-patterns.json`.
+
 ## [0.368.1] — 2026-09-30
 
 ### Fixed — a lane member's own page said it runs only when clicked; a config proposal could carry a key its apply refuses, or never reach the routine a conversation named

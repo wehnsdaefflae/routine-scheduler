@@ -83,6 +83,20 @@ def hook_path(slug: str, trigger: dict) -> str:
     return f"/api/hooks/{slug}/{trigger.get('token', '')}"
 
 
+def default_cap(ttype: str) -> int:
+    """A trigger type's own per-day cap when its entry names none: report 24, others uncapped."""
+    return DEFAULT_REPORT_MAX_FIRES_PER_DAY if ttype == "report" else UNCAPPED_FIRES
+
+
+def with_defaults(entry: dict) -> dict:
+    """`entry` with its type's defaults spelled out (`cooldown_s`, `max_fires_per_day`) — what
+    `validate_triggers` makes of it — so a row that names a default and one that leaves it out
+    compare equal.
+    """
+    return {"cooldown_s": DEFAULT_COOLDOWN_S,
+            "max_fires_per_day": default_cap(str(entry.get("type") or "")), **entry}
+
+
 def validate_triggers(raw: object) -> tuple[list[dict], list[str]]:
     """Canonicalize a routine.yaml `triggers:` value. Returns (entries, problems):
     invalid entries are reported and DROPPED (fail closed — a malformed webhook must
@@ -124,13 +138,12 @@ def validate_triggers(raw: object) -> tuple[list[dict], list[str]]:
         # Absent = the type's own default (report 24/day, everything else uncapped), the
         # same convention cooldown_s follows — so a trigger written before the cap existed
         # is capped without a migration.
-        default_cap = (DEFAULT_REPORT_MAX_FIRES_PER_DAY if ttype == "report"
-                       else UNCAPPED_FIRES)
-        cap = entry.get("max_fires_per_day", default_cap)
+        fallback = default_cap(ttype)
+        cap = entry.get("max_fires_per_day", fallback)
         if isinstance(cap, bool) or not isinstance(cap, int) or cap < 0:
             problems.append(f"{where}: max_fires_per_day must be a non-negative integer "
-                            f"(got {cap!r}; using {default_cap})")
-            cap = default_cap
+                            f"(got {cap!r}; using {fallback})")
+            cap = fallback
         entry["max_fires_per_day"] = cap
         if ttype == "webhook" and not str(entry.get("token") or "").strip():
             problems.append(f"{where}: webhook trigger without a token — dropped "

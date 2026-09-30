@@ -1,26 +1,27 @@
-"""A routine that reaches its FINAL GOAL retires itself — without anything writing config.
+"""A routine that reaches its FINISH LINE retires itself — without anything writing config.
 
 The operator asked for routines that "disable themselves once they think they reached it". The
 invariant it runs into is absolute: a run never writes `routine.yaml`, and the engine never writes
 config. Retirement satisfies both because it is DERIVED — the scheduler simply builds no fire
-table entry for a routine whose goal-scoped stopping conditions are all met, and clearing one puts
-it straight back. The `enabled: false` half is a click on the Decisions page, through the ordinary
-config writer.
+table entry for a routine whose finish line is reached (`engine/finishline.py`); reopening it
+puts the routine straight back. The `enabled: false` half is a click on the Decisions page,
+through the ordinary config writer.
 
-Covered here: the derived skip (scheduler + lane chains), the proposal the finish files, the two
-decisions that settle it, and the one-shot migration that converted the live stores.
+Three parties complete a finish line, each covered here: a RUN whose accounting proves an
+outcome it judges, the CALENDAR (a date outcome or the `until` date — no run involved), and the
+OPERATOR ticking an outcome only they judge.
 """
 
 from __future__ import annotations
 
 import yaml
 
-from conftest import FakeRunner
+from conftest import FakeRunner, finish
 from rsched import pending, registry
 from rsched.config import ServerConfig
 from rsched.daemon.events import EventBus
 from rsched.daemon.scheduler import Scheduler
-from rsched.engine import stopping
+from rsched.engine import finishline
 
 NOW = "2026-09-05T09:00:00+02:00"
 
@@ -33,13 +34,14 @@ def _server(tmp_path) -> ServerConfig:
 
 
 def _goal_met(routine_dir, text="the application is submitted"):
-    stopping.save(routine_dir, {"conditions": [{"text": text, "scope": "goal"}]}, now=NOW)
-    stopping.record_accounting(routine_dir, f"[s1] met — {text}", run_id="r:1", now=NOW)
+    """The operator's own tick on the one outcome only they judge."""
+    finishline.save(routine_dir, {"outcomes": [{"text": text, "judge": "you",
+                                                "status": "met"}]}, now=NOW)
 
 
 # ---- the derived half: nothing is written, and the routine stops firing -------------------------
 
-def test_a_routine_whose_goal_is_met_gets_no_fire_table_entry(make_routine, tmp_path):
+def test_a_routine_whose_finish_line_is_reached_gets_no_fire_table_entry(make_routine, tmp_path):
     d = make_routine(slug="finisher")
     sched = Scheduler(_server(tmp_path), FakeRunner(), EventBus())
     sched.rescan()
@@ -53,24 +55,26 @@ def test_a_routine_whose_goal_is_met_gets_no_fire_table_entry(make_routine, tmp_
         "enabled", True) is not False
 
 
-def test_clearing_the_goal_puts_the_routine_straight_back(make_routine, tmp_path):
+def test_reopening_the_finish_line_puts_the_routine_straight_back(make_routine, tmp_path):
     d = make_routine(slug="reopened")
     _goal_met(d)
     sched = Scheduler(_server(tmp_path), FakeRunner(), EventBus())
     sched.rescan()
     assert "reopened" not in sched.next_fires
 
-    stopping.reopen_goal(d, now=NOW)
+    finishline.reopen(d)
     sched.rescan()
     assert "reopened" in sched.next_fires
 
 
-def test_a_run_bound_never_retires_anything(make_routine, tmp_path):
-    """The whole point of the scope split: a per-run bound reported met is history. If it could
-    retire a routine, 22 of the live 31 would have switched themselves off."""
+def test_a_done_when_line_never_retires_anything(make_routine, tmp_path):
+    """What one run delivers is re-asked every run; only the finish line ends a routine."""
     d = make_routine(slug="perrun")
-    stopping.save(d, {"conditions": [{"text": "one increment landed"}]}, now=NOW)
-    stopping.record_accounting(d, "[s1] met — landed", run_id="r:1", now=NOW)
+    (d / "main.md").write_text("# R\n\n## Done when\n\n- d1 — one increment landed\n",
+                               encoding="utf-8")
+    run = d / "runs" / "2026-09-04T09-00-00"
+    run.mkdir(parents=True)
+    (run / "status.json").write_text('{"accounting": ["d1 met: landed"]}', encoding="utf-8")
     sched = Scheduler(_server(tmp_path), FakeRunner(), EventBus())
     sched.rescan()
     assert "perrun" in sched.next_fires
@@ -97,6 +101,39 @@ def test_the_registry_reports_retired_separately_from_disabled(make_routine, tmp
     catalog = registry.scan(_server(tmp_path))
     assert catalog["done"].retired is True and catalog["done"].cfg.enabled is True
     assert catalog["off"].retired is False and catalog["off"].cfg.enabled is False
+
+
+# ---- the calendar: no run is involved ------------------------------------------------------------
+
+def test_a_passed_until_date_retires_the_routine_and_the_tick_queues_the_card(make_routine,
+                                                                             tmp_path):
+    d = make_routine(slug="deadline")
+    finishline.save(d, {"outcomes": [{"text": "submitted", "judge": "run"}],
+                        "until": "2026-01-31"}, now=NOW)
+    server = _server(tmp_path)
+    sched = Scheduler(server, FakeRunner(), EventBus())
+    sched.rescan()
+    assert "deadline" not in sched.next_fires
+    queued = pending.load_all(server.routines_home)
+    assert [(q["kind"], q["routine"]) for q in queued] == [("goal-reached", "deadline")]
+    assert queued[0]["fields"]["why"] == "its end date 2026-01-31 has passed"
+    sched.rescan()                                   # queue-once: the next tick files nothing
+    assert len(pending.load_all(server.routines_home)) == 1
+
+
+def test_a_date_outcome_whose_day_has_come_is_reached(make_routine, tmp_path):
+    d = make_routine(slug="closes")
+    finishline.save(d, {"outcomes": [{"text": "the call closes", "judge": "date",
+                                      "date": "2026-02-01"}]}, now=NOW)
+    assert registry.scan(_server(tmp_path))["closes"].retired is True
+
+
+def test_a_future_until_leaves_the_routine_running(make_routine, tmp_path):
+    d = make_routine(slug="later")
+    finishline.save(d, {"outcomes": [], "until": "2999-01-01"}, now=NOW)
+    sched = Scheduler(_server(tmp_path), FakeRunner(), EventBus())
+    sched.rescan()
+    assert "later" in sched.next_fires
 
 
 # ---- lane chains: deliberately off is not a broken chain ----------------------------------------
@@ -133,34 +170,57 @@ async def test_a_retired_lane_member_is_skipped_without_counting_as_a_failure(tm
     assert fr.fired == [("second", "lane")]                         # under on_failure=stop
 
 
-# ---- the proposal, and the two decisions that settle it -----------------------------------------
+# ---- a run proves it: the proposal and the two decisions that settle it -------------------------
 
-def test_the_finish_that_meets_the_goal_files_one_proposal(make_routine, scripted,
-                                                          monkeypatch):
+def test_the_finish_that_proves_the_last_outcome_files_one_proposal(make_routine, scripted,
+                                                                   monkeypatch):
     from rsched.engine import verifier
     from rsched.engine.runtime import run_routine
-    from test_loop import TS, finish, probe
+    from test_loop import TS, probe
     from test_loop import _server as loop_server
 
     d = make_routine(slug="goalrun")
     server = loop_server(d)
-    # the v2 verifier makes its own subcall; this test is about the PROPOSAL, not the judge
-    monkeypatch.setattr(verifier, "refuted", lambda loop, summary: [])
-    stopping.save(d, {"conditions": [{"text": "the report is published", "scope": "goal"}]},
-                  now=NOW)
-    scripted([probe(), finish(summary="[s1] met — published and verified")])
+    # the verifier makes its own subcall; this test is about the PROPOSAL, not the judge
+    monkeypatch.setattr(verifier, "refuted", lambda loop, claims, summary: [])
+    finishline.save(d, {"outcomes": [{"text": "the report is published", "judge": "run"}]},
+                    now=NOW)
+    scripted([probe(), {**finish(summary="Published and verified."),
+                        "accounting": ["g1 met: published and the page reads back"]}])
     status, _run_dir = run_routine(d, server, run_ts=TS)
     assert status == "ok"
 
+    row = finishline.load(d)["outcomes"][0]
+    assert row["status"] == "met" and row["evidence"] == "published and the page reads back"
     queued = pending.load_all(server.routines_home)
     assert [r["kind"] for r in queued] == ["goal-reached"]
     assert queued[0]["routine"] == "goalrun"
-    assert queued[0]["fields"]["conditions"][0]["id"] == "s1"
-    assert "final goal met" in queued[0]["summary"]
+    assert queued[0]["fields"]["outcomes"][0]["id"] == "g1"
+    assert "reached its finish line" in queued[0]["summary"]
+
+
+def test_a_distance_does_not_retire_and_is_kept_for_the_next_run(make_routine, scripted,
+                                                                 monkeypatch):
+    from rsched.engine import verifier
+    from rsched.engine.runtime import run_routine
+    from test_loop import TS, probe
+    from test_loop import _server as loop_server
+
+    d = make_routine(slug="notyet")
+    server = loop_server(d)
+    monkeypatch.setattr(verifier, "refuted", lambda loop, claims, summary: [])
+    finishline.save(d, {"outcomes": [{"text": "Mark signs it off", "judge": "you"}]}, now=NOW)
+    scripted([probe(), {**finish(summary="Drafted."),
+                        "accounting": ["g1 distance: the budget table is still open"]}])
+    status, _run_dir = run_routine(d, server, run_ts=TS)
+    assert status == "ok"
+    row = finishline.load(d)["outcomes"][0]
+    assert row["status"] == "open" and row["distance"] == "the budget table is still open"
+    assert pending.load_all(server.routines_home) == []
 
 
 def test_only_one_proposal_however_many_runs_follow(make_routine, tmp_path):
-    """A met goal is STICKY, so without queue-once every later run files an identical row."""
+    """A reached finish line stays reached, so without queue-once every later run files one."""
     from types import SimpleNamespace
 
     from rsched.engine import goalreached
@@ -181,114 +241,98 @@ def test_approving_writes_enabled_false_through_the_one_config_writer(api_client
     d = make_routine(slug="retire-me")
     _goal_met(d)
     rec = pending.queue(d.parent, kind="goal-reached", routine="retire-me", run_id="retire-me:1",
-                        fields={"conditions": []}, summary="goal met")
+                        fields={"outcomes": []}, summary="finish line reached")
 
     r = c.post(f"/api/pending-creations/{rec['id']}/materialize")
     assert r.status_code == 200, r.text
     assert r.json()["retired"] == "retire-me"
-    # F448: retirement still goes through the one config writer; what changed is WHERE the
-    # off switch lands. The writer translates `enabled` at the edge into the schedule gate
-    # the firing path actually reads, instead of a top-level key nothing consults — so a
-    # retired routine is now switched off in fact, not only on paper.
+    # F448: retirement goes through the one config writer, which translates `enabled` at the
+    # edge into the schedule gate the firing path actually reads
     raw = yaml.safe_load((d / "routine.yaml").read_text(encoding="utf-8"))
     assert raw["schedule"]["disabled"] is True
     assert "enabled" not in raw
     assert pending.load_all(d.parent) == []
 
 
-def test_declining_reopens_the_goal_so_the_routine_runs_again(api_client, make_routine):
-    """Discarding a retirement means "not yet". It HAS to change the goal document — dropping the
+def test_declining_reopens_the_finish_line_so_the_routine_runs_again(api_client, make_routine):
+    """Discarding a retirement means "not yet". It HAS to change the finish line — dropping the
     record alone would leave the routine unscheduled with nothing on the page left to act on."""
     c, _tmp = api_client
     d = make_routine(slug="not-yet")
-    _goal_met(d)
-    assert stopping.goal_reached(d) is True
+    finishline.save(d, {"outcomes": [{"text": "published", "judge": "run"}]}, now=NOW)
+    finishline.record(d, {"g1": ("met", "the page reads back")}, run_id="not-yet:1", now=NOW)
+    assert finishline.goal_reached(d) is True
     rec = pending.queue(d.parent, kind="goal-reached", routine="not-yet", run_id="not-yet:1",
-                        fields={"conditions": []}, summary="goal met")
+                        fields={"outcomes": []}, summary="finish line reached")
 
     r = c.post(f"/api/pending-creations/{rec['id']}/discard", json={"reason": "not really"})
     assert r.status_code == 200, r.text
-    assert r.json()["reopened"] == ["s1"]
-    assert stopping.goal_reached(d) is False
+    assert r.json()["reopened"] == ["g1"]
+    assert finishline.goal_reached(d) is False
     # the evidence the run recorded survives being overruled
-    assert stopping.load(d)["conditions"][0]["last_verdict"] == "met"
+    assert finishline.load(d)["outcomes"][0]["evidence"] == "the page reads back"
 
 
-# ---- the one-shot migration ----------------------------------------------------------------------
+def test_a_card_the_calendar_raised_cannot_be_declined(api_client, make_routine):
+    """Reopening changes nothing a date decides — declining would drop a card the next tick
+    queues again. The date is changed instead; that save withdraws the card."""
+    c, tmp = api_client
+    d = make_routine(slug="dated")
+    c.put("/api/routines/dated/finish-line", json={"outcomes": [], "until": "2026-01-31"})
+    queued = pending.load_all(tmp / "routines")
+    assert [q["routine"] for q in queued] == ["dated"]
 
-def test_migration_makes_every_live_condition_a_run_bound_again(make_routine, tmp_path):
-    """22 of 31 live routines were reading "the job is DONE. Finish NOW" every run, because the
-    0.286.x backfill wrote per-run bounds into a store whose `met` was sticky."""
-    from rsched.migrate_stopping_scope import migrate_stopping_scope
-    from rsched.paths import atomic_write_json, read_json
+    r = c.post(f"/api/pending-creations/{queued[0]['id']}/discard", json={"reason": ""})
+    assert r.status_code == 409 and "reached by the calendar" in r.json()["detail"]
+    assert len(pending.load_all(tmp / "routines")) == 1
 
-    server = _server(tmp_path)
-    server.conversations_home = tmp_path / "conv"
-    server.background_home = tmp_path / "bg"
-    d = make_routine(slug="legacy")
-    (d / "state").mkdir(exist_ok=True)
-    atomic_write_json(d / "state" / "stopping.json", {
-        "mode": "all", "groups": [{"id": "g1", "mode": "all"}],
-        "conditions": [
-            {"id": "s1", "text": "one increment landed", "status": "met", "group": "g1",
-             "note": "shipped", "resolved_run": "legacy:20260904-000000"},
-            {"id": "s2", "text": "nothing new was found", "status": "open", "group": "g1"},
-            {"id": "s3", "text": "abandoned", "status": "dropped", "group": "g1"}]})
-
-    assert migrate_stopping_scope(server) == 1
-    rows = {c["id"]: c for c in read_json(d / "state" / "stopping.json")["conditions"]}
-    assert rows["s1"]["scope"] == "run" and rows["s1"]["status"] == "open"
-    assert rows["s1"]["last_verdict"] == "met"          # the verdict is kept, as history
-    assert rows["s1"]["note"] == "shipped"              # and so is its evidence
-    assert rows["s2"]["status"] == "open"
-    assert rows["s3"]["status"] == "dropped"            # a user-retired condition is left alone
-    assert stopping.goal_reached(d) is False            # nothing retires as a side effect
-    assert migrate_stopping_scope(server) == 0          # idempotent
+    c.put("/api/routines/dated/finish-line", json={"outcomes": [], "until": "2999-01-31"})
+    assert pending.load_all(tmp / "routines") == []
+    assert finishline.goal_reached(d) is False
 
 
-# ---- creation asks BOTH questions ----------------------------------------------------------------
+# ---- creation: the person's finish line is a pending change -------------------------------------
 
-def test_creation_seeds_run_bounds_and_the_final_goal_apart(tmp_path, make_routine):
-    """Two different questions, one document. `stopping` is what one run must achieve; `goal` is
-    the state after which the routine is finished — and only the second can retire it."""
-    from rsched.config import ServerConfig
-    from rsched.workflows.scaffold import scaffold
+def _creation_server(tmp_path):
+    from rsched.bootstrap import seed_libraries
 
     server = ServerConfig()
     server.routines_home = tmp_path / "routines"
     server.routines_home.mkdir(parents=True, exist_ok=True)
     server.libraries_home = tmp_path / "lib"
-    from rsched.bootstrap import seed_libraries
     seed_libraries(server.libraries_home)
+    return server
 
+
+def test_the_finish_line_described_at_creation_is_proposed_not_applied(tmp_path):
+    """Pattern values are saved; what is specific to this routine waits under "check the changes
+    i recommend." — the finish line the person described included."""
+    from rsched.patterns import drafts
+    from rsched.workflows.scaffold import scaffold
+
+    server = _creation_server(tmp_path)
     d = scaffold(server, slug="applier", name="Applier",
                  instruction="Prepare and submit the grant application.",
                  workflow_slug="general-task",
-                 stopping=["one section was drafted and reviewed"],
-                 goal=["the application is submitted before 27 Sep 2026"])
-    rows = {c["scope"]: c for c in stopping.load(d)["conditions"]}
-    assert rows["run"]["text"] == "one section was drafted and reviewed"
-    assert rows["goal"]["text"] == "the application is submitted before 27 Sep 2026"
-    # a fresh routine is NOT retired: its goal is open
-    assert stopping.goal_reached(d) is False
+                 finish_line=["run: the application is submitted", "until 2026-12-31"])
+    assert finishline.load(d) == {"outcomes": [], "until": ""}
+    draft = drafts.read(server.routines_home, "applier")
+    assert draft is not None and draft["message"] == "check the changes i recommend."
+    proposed = draft["changes"]["finish_line"]["value"]
+    assert proposed["until"] == "2026-12-31"
+    assert [(o["judge"], o["text"]) for o in proposed["outcomes"]] == [
+        ("run", "the application is submitted")]
+    assert finishline.goal_reached(d) is False
 
 
-def test_a_routine_created_without_a_goal_is_perpetual(tmp_path, make_routine):
-    """The common case, and it must stay silent: a monitor with no declared end has no verdict
-    to report and nothing that could ever switch it off."""
-    from rsched.bootstrap import seed_libraries
-    from rsched.config import ServerConfig
+def test_a_routine_created_without_a_finish_line_runs_until_switched_off(tmp_path):
+    from rsched.patterns import drafts
     from rsched.workflows.scaffold import scaffold
 
-    server = ServerConfig()
-    server.routines_home = tmp_path / "routines"
-    server.routines_home.mkdir(parents=True, exist_ok=True)
-    server.libraries_home = tmp_path / "lib"
-    seed_libraries(server.libraries_home)
-
+    server = _creation_server(tmp_path)
     d = scaffold(server, slug="watcher", name="Watcher", instruction="Watch the feed.",
-                 workflow_slug="general-task", stopping=["the feed was checked"])
-    doc = stopping.load(d)
-    assert {c["scope"] for c in doc["conditions"]} == {"run"}
-    assert stopping.evaluate(doc)["goal_satisfied"] is None
-    assert stopping.goal_reached(d) is False
+                 workflow_slug="general-task")
+    assert finishline.load(d) == {"outcomes": [], "until": ""}
+    draft = drafts.read(server.routines_home, "watcher") or {"changes": {}}
+    assert "finish_line" not in draft["changes"]
+    assert finishline.goal_reached(d) is False

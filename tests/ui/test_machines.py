@@ -7,17 +7,20 @@ from playwright.sync_api import expect
 
 from rsched.config import MachineConfig
 
+from .conftest import until
+
 
 def _unfold(page) -> None:
-    """Open every routine-page config group.
+    """Open every routine-page settings group and each group's "more" menu.
 
-    The page ships with only its leading group open (views/routine.js SECTION_GROUPS): seven
-    open at once made it 11-12 000px tall. A control inside a folded group is not visible, so a
-    test that reads one unfolds first. What the DEFAULT is, and that the choice is remembered,
-    is pinned in test_routine_groups.py — not here.
+    The page ships with only its two leading groups open (views/routine-config.js): seven open at
+    once made it 11-12 000px tall. The rarely needed sections fold once more behind each group's
+    "more". A control inside a fold is not visible, so a test that reads one unfolds first. What
+    the DEFAULT is — and that the choice is remembered — is pinned in test_routine_groups.py, not
+    here.
     """
     page.wait_for_selector(".rgroup-head")
-    page.evaluate("() => { for (const d of document.querySelectorAll('details.rgroup')) d.open = true; }")
+    page.evaluate("() => { for (const d of document.querySelectorAll('details.rgroup, details.rmore')) d.open = true; }")
 
 def test_machines_card_add(ui, ui_page):
     ui_page.goto(f"{ui.url}/#/settings?section=machines")
@@ -54,7 +57,8 @@ def test_machines_card_add(ui, ui_page):
 
 
 def test_routine_machine_binding(ui, ui_page):
-    """Binding a catalog machine on the routine page writes routine.yaml `machines:`."""
+    """Binding a catalog machine on the routine page is a change in its settings draft; the one
+    accept writes routine.yaml `machines:`."""
     mac = MachineConfig(host="10.0.0.9", user="rsched", description="RTX 4090", tags=["gpu"])
     mac.name = "gpu-box"
     ui.server_cfg.machines = {"gpu-box": mac}   # the live server the API reads
@@ -62,14 +66,16 @@ def test_routine_machine_binding(ui, ui_page):
     ui_page.goto(f"{ui.url}/#/routine/uir")
     _unfold(ui_page)
     # the machine's checkbox is inside its label row
-    row = ui_page.locator("label", has_text="gpu-box")
+    row = ui_page.locator("#sec-machines + .panel label", has_text="gpu-box")
     row.wait_for()
     row.locator("input[type=checkbox]").check()
-    ui_page.get_by_role("button", name="save machines").click()
-    expect(ui_page.locator("#toast:not([hidden])")).to_contain_text("machines saved")
+    expect(ui_page.locator("#sec-machines + .panel button", has_text="save")).to_have_count(0)
+    ui_page.locator(".accept-bar [data-accept]").click()
+    expect(ui_page.locator("#toast:not([hidden])")).to_contain_text("accepted")
 
-    raw = yaml.safe_load((ui.routine_dir("uir") / "routine.yaml").read_text(encoding="utf-8"))
-    assert raw["machines"] == ["gpu-box"]
+    path = ui.routine_dir("uir") / "routine.yaml"
+    until(lambda: yaml.safe_load(path.read_text(encoding="utf-8")).get("machines")
+          == ["gpu-box"], what="the accepted machine")
 
 
 def test_conversation_machine_binding(ui, ui_page):

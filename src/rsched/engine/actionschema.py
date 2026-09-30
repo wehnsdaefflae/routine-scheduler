@@ -71,11 +71,13 @@ ACTION_SCHEMA: dict = {
                 "regex": {"type": "string",
                           "description": "the pattern, matched against the CANONICAL "
                                          "one-line rendering of an action: "
-                                         "'util:<name> <args…>', 'shell: <command>', "
-                                         "'write_file path=<path>', 'read_file "
-                                         "paths=<a,b>', '<kind> <field>=<value>'. Anchor it "
-                                         "to the class of calls that can cause the "
-                                         'consequence, e.g. "^util:fs-ops mv "'},
+                                         "'util:<name> <args…>', 'script:<name> <args…>', "
+                                         "'shell: <command>', 'write_file path=<path>', "
+                                         "'read_file paths=<a,b>', '<kind> <field>=<value>' — "
+                                         "and nothing else: a file's content or an edit's "
+                                         "anchor is never part of it. Anchor it to the class "
+                                         "of calls that can cause the consequence, e.g. "
+                                         '"^util:fs-ops mv "'},
                 "description": {"type": "string",
                                 "description": "the caution shown when it fires — what the "
                                                "CONSEQUENCE is and what to check, not that "
@@ -84,6 +86,11 @@ ACTION_SCHEMA: dict = {
                           "description": "local (default) = yours alone; global = the shared "
                                          "library store, for a consequence that would follow "
                                          "for ANY routine making that call"},
+                "reach": {"type": "string", "enum": ["universal", "listed"],
+                          "description": "global only: universal = held for every routine "
+                                         "whose action matches (a consequence any caller "
+                                         "meets); listed = held only for routines whose "
+                                         "settings list it (a caution for one kind of work)"},
             },
             "description": "OPTIONAL, on any action: leave yourself a CONSEQUENCE REMINDER "
                            "the same turn you notice an action had an unintended effect. "
@@ -212,7 +219,7 @@ ACTION_SCHEMA: dict = {
         # schedule_run — arm/cancel a one-shot time trigger on a routine (gated: scheduling)
         "target": {"type": "string",
                    "description": "schedule_run: the routine slug to arm/cancel a one-shot on "
-                                  "(self-target always allowed) · "
+                                  "(this routine or another) · "
                                   "create_routine: the NEW routine's kebab-case slug · "
                                   "manage_lane: the lane id to update/delete/run — take it "
                                   "from a `list`; ids are opaque handles · "
@@ -319,26 +326,42 @@ ACTION_SCHEMA: dict = {
                                     "(default general-task) — pick the pattern matching its "
                                     "purpose · create_routine: the library workflow pattern the "
                                     "new routine is materialized from (default general-task)"},
-        "stopping": {"type": "array", "items": {"type": "string"}, "maxItems": 6,
-                     "description": "create_routine: what DONE looks like for ONE run of the "
-                                    "new routine, in the USER's own words — one condition per "
-                                    'entry ("the digest is published and the link works"). '
-                                    "These become its RUN-scoped stopping conditions: every "
-                                    "run must account for each one in its finish summary. "
-                                    "Carry the user's answer here verbatim; omit it rather "
-                                    "than inventing conditions they did not state"},
-        "goal": {"type": "array", "items": {"type": "string"}, "maxItems": 4,
-                 "description": "create_routine: the state after which this ROUTINE is "
-                                "FINISHED and should stop running altogether, in the USER's "
-                                'own words ("the application is submitted", "the folder '
-                                'reorganisation is live"). A different question from '
-                                "`stopping`, and it has teeth: when every goal condition is "
-                                "met the scheduler stops firing the routine and asks the user "
-                                "to confirm its retirement. Name a literal DATE where the task "
-                                "has one. A routine that genuinely never ends — a monitor, a "
-                                "digest — takes NO goal, and that is the common case: omit it "
-                                "rather than inventing an ending, because a wrong goal "
-                                "switches a working routine off"},
+        "pattern": {"type": "string",
+                    "description": "create_routine: the SETTINGS pattern the new routine "
+                                   "follows — one the preview lists for its workflow (default: "
+                                   "the one that fits)"},
+        "setup": {"type": "array", "items": {"type": "string"}, "maxItems": 12,
+                  "description": "create_routine: the user's answers to the settings "
+                                 "pattern's questions — which folders, which mailbox and "
+                                 "senders, which cadence — one per entry, in their words. They "
+                                 "become the new routine's proposed settings, which the user "
+                                 "accepts on its page; they never go into the instruction"},
+        "done_when": {"type": "array", "items": {"type": "string"}, "maxItems": 8,
+                      "description": "create_routine: what ONE finished run of the new routine "
+                                     "leaves behind, in the USER's own words — one outcome per "
+                                     'entry ("the digest is published and the link works"). '
+                                     "They become lines of its recipe's `## Done when`, which "
+                                     "every run accounts for at its finish. Carry the user's "
+                                     "answer verbatim; omit it rather than inventing outcomes "
+                                     "they did not state"},
+        "finish_line": {"type": "array", "items": {"type": "string"}, "maxItems": 6,
+                        "description": "create_routine: when the ROUTINE is done for good, one "
+                                       "outcome per entry, each led by its judge — `run: "
+                                       "<an outcome a run can prove>`, `you: <an outcome only "
+                                       "the user decides>`, `YYYY-MM-DD: <reached on that "
+                                       "date>` — plus `until YYYY-MM-DD` to stop after a date "
+                                       "either way. Reaching it stops the routine and asks the "
+                                       "user to confirm. A routine that never ends (a monitor, "
+                                       "a digest) takes none, which is the common case: omit it "
+                                       "rather than inventing an ending"},
+        "never": {"type": "array", "items": {"type": "string"}, "maxItems": 8,
+                  "description": "create_routine: what a run of the new routine must NEVER "
+                                 "do, in the USER's own words — one prohibition per entry "
+                                 '("never mail the funder", "never touch the Drafts folder"). '
+                                 "Each becomes a line of its recipe's `## Never`; its "
+                                 "proposed settings leave off the permission, or add the rule "
+                                 "or reminder, that stops the action before it happens. Omit "
+                                 "it when they named none"},
         "label": {"type": "string",
                   "description": "spawn/subtask/detach: short name shown in the run tree"},
         "turns": {"type": "integer", "minimum": 1,
@@ -405,7 +428,11 @@ ACTION_SCHEMA: dict = {
         },
         # finish
         "status": {"type": "string", "enum": ["ok", "partial", "failed"],
-                   "description": "finish: run outcome"},
+                   "description": "finish: ok = everything this run could do is done (a "
+                                  "decision now waiting on the user does not make it partial); "
+                                  "partial = something outside your reach stopped feasible "
+                                  "work, named in the summary; failed = the job could not be "
+                                  "done"},
         "summary": {
             "type": "string",
             "description": "finish: a DETAILED 8-20 line result summary — concrete outcomes "
@@ -414,6 +441,15 @@ ACTION_SCHEMA: dict = {
                            "the dashboard's last-outcome, and the next run's context; Markdown "
                            "— bold, lists, `code`, links, pipe tables, > quotes — renders in "
                            "the UI)",
+        },
+        "accounting": {
+            "type": "array", "items": {"type": "string"},
+            "description": "finish: your verdict on each thing this run answers for — one "
+                           "entry per line of your recipe's `## Done when` (`d1 met: "
+                           "<evidence>`, `d2 unmet: <what remains>`, `d3 not due: <how that "
+                           "was established>`) and per open outcome of the routine's finish "
+                           "line (`g1 distance: <what remains>`, or `g1 met: <evidence>` for "
+                           "one the run proves). Omit when your digest names neither",
         },
         "reply_to": {
             "type": "string",
@@ -469,6 +505,8 @@ def canon(action: dict) -> str:
 
         util:codemap --json           a util call is identified by its name AND its arguments —
                                       `util:fs-ops` alone cannot tell `mv` from `rm`
+        script:store stage --note x   the routine's own script, the same way and for the same
+                                      reason: `script name=store` cannot tell `stage` from `drop`
         shell: rm -rf build/          the command IS the action; a `command=` label adds nothing
         read_file paths=a.md,b.md     `read_file` carries a LIST (`paths`), not the singular field
         write_file path=state/x.json  every other kind names its field, so the string says what
@@ -478,10 +516,10 @@ def canon(action: dict) -> str:
     string would silently change what a regex can see as an action's arguments grow.
     """
     kind = str(action.get("kind") or "?")
-    if kind == "util":
+    if kind in ("util", "script"):
         args = action.get("args")
         tail = " ".join(str(a) for a in args) if isinstance(args, list) else ""
-        return f"util:{action.get('name') or '?'}{f' {tail}' if tail else ''}"
+        return f"{kind}:{action.get('name') or '?'}{f' {tail}' if tail else ''}"
     if kind == "shell":
         return f"shell: {action.get('command') or ''}".rstrip()
     if kind == "read_file" and isinstance(action.get("paths"), list) and action["paths"]:

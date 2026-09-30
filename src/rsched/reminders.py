@@ -15,9 +15,20 @@ Two stores, by BLAST RADIUS:
   `state/notes.md`). A bad local reminder taxes one routine's turns, so authoring it is
   autonomous.
 - **global** — `<libraries_home>/reminders/<id>.json`, one file per reminder beside `rules/`
-  and `permissions/`, riding the same git sync. A bad global reminder taxes EVERY capable
-  routine at its next run, silently — so a global write is approval-gated
+  and `permissions/`, riding the same git sync. A bad global reminder taxes every routine it
+  reaches at its next run, silently — so a global write is approval-gated
   (`capabilities.remind_confirm`), exactly as a rule revision is.
+
+A global reminder declares its REACH. `universal`: a consequence any caller of that util or
+action meets, held for every routine whose action matches — its anchor limits it, since a
+routine that never makes the call never pays. `listed`: a caution that belongs to a kind of
+work (a git push in a published repo, a job on a shared GPU), held only for the routines whose
+settings list it (`shared_reminders`, which a settings pattern carries for its kind of work).
+
+The dial (`capabilities.reminders`) governs AUTHORING and nothing else: `none` switches the
+layer off; `local` applies this routine's own reminders plus every curated one that reaches it —
+and lets it write its own; `global` also lets it write the shared store — the curator's setting.
+Reading a curated reminder needs no dial of its own: the operator approved every one of them.
 
 The STATS are per-routine on purpose and live only in the local file — for a global reminder
 too, under `global_stats`. A global reminder's DEFINITION is curated and shared; the evidence
@@ -42,9 +53,11 @@ from .paths import atomic_write_json, read_json
 LOCAL_FILE = "reminders.json"       # under <routine>/state/
 GLOBAL_DIR = "reminders"            # under libraries_home
 SCOPES = ("local", "global")
-#: The capability dial, least → most reach. `global` means BOTH stores (the union), not the
-#: library store alone: a routine curating shared cautions still keeps its own.
+#: The authoring dial, least → most reach (see the module docstring): `global` adds writing the
+#: shared store; a routine curating shared cautions still keeps its own.
 LEVELS = ("none", "local", "global")
+#: How far a curated reminder reaches (see the module docstring).
+REACHES = ("universal", "listed")
 LEVEL_RANK = {level: n for n, level in enumerate(LEVELS)}
 #: The four-way outcome label (the confusion matrix that tunes a regex). `fires` is the
 #: denominator; `fires - Σlabels` is how many holds the model left unlabelled.
@@ -67,8 +80,6 @@ LABEL_HELP = ("The labels: could_not (the consequence was impossible for THIS ac
 #: only writer" is not a defence here.
 ID_RE = re.compile(r"^rem-[A-Za-z0-9][A-Za-z0-9-]{0,63}$")
 
-MAX_REGEX_CHARS = 200
-MAX_DESCRIPTION_CHARS = 400
 #: A runaway backstop on the local store, not a quota: every live reminder is tested against
 #: every action, so an unbounded store would tax every turn of every run forever.
 MAX_LOCAL = 40
@@ -124,6 +135,7 @@ class Reminder:
     scope: str
     created_run: str
     stats: dict
+    reach: str = ""          # a global reminder's REACHES entry; "" for a local one
 
     def matches(self, canon: str) -> bool:
         """Does this reminder's pattern fire on that canonical action string?
@@ -139,38 +151,8 @@ class Reminder:
 
     def as_record(self) -> dict:
         return {"id": self.id, "regex": self.regex, "description": self.description,
-                "scope": self.scope, "created_run": self.created_run, "stats": dict(self.stats)}
-
-
-def regex_problem(pattern: object) -> str | None:
-    """Why this pattern may not be stored — or None when it is usable.
-
-    Checked at the WRITE gate (inside the schema-retry cycle) so a malformed pattern is
-    corrected before it becomes a turn, never silently dropped afterwards.
-    """
-    if not isinstance(pattern, str) or not pattern.strip():
-        return "remind.regex must be a non-empty pattern over the canonical action string"
-    if len(pattern) > MAX_REGEX_CHARS:
-        return (f"remind.regex is {len(pattern)} characters — at most {MAX_REGEX_CHARS}; "
-                "a pattern that long is matching a whole command, not a class of them")
-    try:
-        compiled = re.compile(pattern)
-    except re.error as exc:
-        return f"remind.regex is not a valid regular expression ({exc})"
-    if compiled.search(""):
-        return ("remind.regex matches the EMPTY string, so it would hold every action you "
-                'take — anchor it to the action class you mean (e.g. "^util:fs-ops mv ")')
-    return None
-
-
-def description_problem(text: object) -> str | None:
-    if not isinstance(text, str) or not text.strip():
-        return ("remind.description must say what the consequence IS — the caution is what "
-                "the hold shows you")
-    if len(text) > MAX_DESCRIPTION_CHARS:
-        return (f"remind.description is {len(text)} characters — at most "
-                f"{MAX_DESCRIPTION_CHARS}; one or two sentences")
-    return None
+                "scope": self.scope, "created_run": self.created_run, "stats": dict(self.stats),
+                "reach": self.reach}
 
 
 def new_id(run_ts: str, taken: set[str]) -> str:
@@ -252,15 +234,32 @@ def load_global(reminders_home: Path, stats: dict[str, dict] | None = None) -> l
     out = []
     for path in sorted(home.glob("*.json")):
         rec = read_json(path, {})
-        if not isinstance(rec, dict) or not rec.get("regex"):
-            continue
+        if not isinstance(rec, dict) or not rec.get("regex") or rec.get("reach") not in REACHES:
+            continue        # a record that cannot say whom it reaches reaches nobody
         rid = str(rec.get("id") or path.stem)
         if not is_reminder_id(rid):
             continue        # a record whose id could not be written back is not usable
         out.append(Reminder(id=rid, regex=str(rec["regex"]),
                             description=str(rec.get("description") or ""), scope="global",
                             created_run=str(rec.get("created_run") or ""),
-                            stats=_stats(tally.get(rid))))
+                            stats=_stats(tally.get(rid)), reach=str(rec["reach"])))
+    return out
+
+
+def records(reminders_home: Path) -> list[dict]:
+    """EVERY file in the curated store as it stands — a record the engine would skip (no reach,
+    an unusable id, unreadable JSON) included, because the Library tab is the one surface that
+    can take a bad one out; a record it cannot see it cannot remove.
+    """
+    home = Path(reminders_home)
+    out = []
+    for path in sorted(home.glob("*.json")) if home.is_dir() else []:
+        rec = read_json(path, {})
+        rec = rec if isinstance(rec, dict) else {}
+        out.append({"id": path.stem, "regex": str(rec.get("regex") or ""),
+                    "description": str(rec.get("description") or ""),
+                    "reach": str(rec.get("reach") or ""),
+                    "created_run": str(rec.get("created_run") or "")})
     return out
 
 
@@ -270,7 +269,8 @@ def write_global(reminders_home: Path, reminder: Reminder) -> Path:
     """
     path = global_path(reminders_home, reminder.id)
     rec = reminder.as_record()
-    atomic_write_json(path, {k: rec[k] for k in ("id", "regex", "description", "created_run")})
+    atomic_write_json(path, {k: rec[k] for k in ("id", "regex", "description", "reach",
+                                                  "created_run")})
     return path
 
 
@@ -291,8 +291,11 @@ def global_rel(rid: str) -> str:
 
 # --- the union the engine matches against -------------------------------------------------
 
-def active(routine_dir: Path, reminders_home: Path, level: str) -> list[Reminder]:
-    """The live set for one run: local, global, or the union with LOCAL OVERRIDING GLOBAL.
+def active(routine_dir: Path, reminders_home: Path, level: str,
+           listed: list[str] | tuple[str, ...] = ()) -> list[Reminder]:
+    """The live set for one run: this routine's own reminders plus every curated one that
+    reaches it (universal, or named in `listed`), with LOCAL OVERRIDING GLOBAL. Empty when the
+    layer is off.
 
     Dedupe is by regex — the only "same consequence class" test available to a machine, and
     the same one the authoring heuristic implies (the match target signals the scope).
@@ -300,10 +303,9 @@ def active(routine_dir: Path, reminders_home: Path, level: str) -> list[Reminder
     if LEVEL_RANK.get(level, 0) < LEVEL_RANK["local"]:
         return []
     local, gstats = load_local(routine_dir)
-    if LEVEL_RANK.get(level, 0) < LEVEL_RANK["global"]:
-        return local
     seen = {r.regex for r in local}
-    return local + [g for g in load_global(reminders_home, gstats) if g.regex not in seen]
+    return local + [g for g in load_global(reminders_home, gstats)
+                    if g.regex not in seen and (g.reach == "universal" or g.id in listed)]
 
 
 def matching(reminders: list[Reminder], canon: str) -> list[Reminder]:

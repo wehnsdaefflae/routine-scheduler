@@ -4,9 +4,9 @@
 it is safe. The DOM methods do not: `node.append(null)` stringifies it and renders the literal
 text **null** on the page. The two look identical at the call site, which is exactly why this
 kept happening — a settings panel showed a stray "null" beside its Public URL, a queued message
-row showed one where its timestamp would be, and the settings-template panel shipped with a
-"null" after "read it" and a "nullnull" between its two layer lists (reported from the live
-console, 2026-08-30).
+row showed one where its timestamp would be, and a routine-page panel shipped with a "null"
+after "read it" and a "nullnull" between two of its lists (reported from the live console,
+2026-08-30).
 
 The console is no-build vanilla ES modules, so nothing but the browser would ever catch it, and
 a stray word of text throws no error for the UI suite's `js_errors` collector to see. This is

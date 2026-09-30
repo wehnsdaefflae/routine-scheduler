@@ -327,5 +327,5 @@ export function compressionInfo(c) {
   if (!c) return "";
   const size = c.baseline_chars == null ? "" :
     ` · preview ${c.baseline_chars} → ${c.candidate_chars} chars · ~${c.estimated_tokens_saved} tokens potentially saved (estimate)`;
-  return `\n[compression ${c.mode}: ${c.status}${c.kind ? ` ${c.kind}` : ""}]${size}${c.elapsed_ms == null ? "" : ` · ${c.elapsed_ms} ms`}${c.reason ? ` · ${c.reason}` : ""}`;
+  return `\n[compression: ${c.status}${c.kind ? ` ${c.kind}` : ""}]${size}${c.elapsed_ms == null ? "" : ` · ${c.elapsed_ms} ms`}${c.reason ? ` · ${c.reason}` : ""}`;
 }

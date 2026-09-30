@@ -5,7 +5,7 @@ import time
 
 import pytest
 
-from rsched.daemon import run_gate, runner_reap, runner_state
+from rsched.daemon import gate_prepare, run_gate, runner_reap, runner_state
 from rsched.paths import atomic_write_json, read_json
 from test_run_gate import finish, script, skip_body
 from test_run_gate import setup_gate as gate_fixture
@@ -143,6 +143,6 @@ def test_gate_never_silently_widens_sandbox(setup_gate, monkeypatch, mode):
     def wrap(cmd, **kwargs):
         captured.update(kwargs)
         return cmd
-    monkeypatch.setattr(run_gate.sandbox, "wrap", wrap)
-    run_gate._prepare(cfg, server)
+    monkeypatch.setattr(gate_prepare.sandbox, "wrap", wrap)
+    gate_prepare.prepare_script(cfg, server)
     assert captured["policy"].mode == "strict"

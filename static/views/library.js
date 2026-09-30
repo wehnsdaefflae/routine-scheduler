@@ -1,5 +1,6 @@
-// Library: workflows (control-flow patterns), rules (general principle prose), permissions (grants), global utils.
-// A tag filter narrows all three sections; deep-link #/library/workflow/<slug> opens an
+// Library: workflows (control-flow patterns), rules (general principle prose), permissions
+// (grants), settings patterns, playbooks, curated reminders, global utils.
+// A tag filter narrows the tagged sections; deep-link #/library/workflow/<slug> opens an
 // editor directly. Save failures (lint / selftest) render inline under the editor;
 // decisions update in place — no page reloads.
 
@@ -7,6 +8,7 @@ import { api } from "/static/api.js";
 import { confirmDialog } from "/static/components/dialog.js";
 import { impactPanel } from "/static/components/impact.js";
 import { codeEditor } from "/static/components/code.js";
+import { describeFull } from "/static/components/settings-digest.js";
 import { replaceHash, remount } from "/static/router.js";
 import { el, emptyState, requiresSummary, skeleton, tagChip, toast, toastError, when } from "/static/util.js";
 
@@ -32,9 +34,11 @@ export async function render(view, sub, query = {}) {
   sections.append(skeleton());
   view.append(countLine, filterBar, sections, editor);
 
-  let data;
-  try { data = await api("/api/library"); }
-  catch (err) { sections.replaceChildren(emptyState("✕", "Couldn't load the library", err.message)); return; }
+  let data, patterns;
+  try {
+    [data, patterns] = await Promise.all([api("/api/library"),
+      api("/api/patterns").catch((err) => ({ error: err.message, patterns: [], meta: [] }))]);
+  } catch (err) { sections.replaceChildren(emptyState("✕", "Couldn't load the library", err.message)); return; }
   data.playbooks = data.playbooks || [];
   // The counts ARE this page's index. They used to be dead text over eleven thousand pixels of
   // catalogue, with `utils` some nine thousand of them below the word — so each one jumps to its
@@ -43,7 +47,7 @@ export async function render(view, sub, query = {}) {
     ["workflows", data.workflows.length, "Workflows"],
     ["rules", data.rules.length, "Rules"],
     ["permissions", data.permissions.length, "Permissions"],
-    ["templates", (data.templates || []).length, "Settings templates"],
+    ["patterns", patterns.patterns.length, "Settings patterns"],
     ["playbooks", data.playbooks.length, "Playbooks"],
     ["reminders", (data.reminders || []).length, "Consequence reminders"],
     ["utils", data.utils.length, "Global utils"],
@@ -59,12 +63,12 @@ export async function render(view, sub, query = {}) {
   // so the view is shareable and restores on reload — without tearing itself down on each change.
   let openSub = sub || null;
   // With a doc open, the catalogue narrows to that doc's OWN kind. The whole library is 11
-  // workflows, 30 rules, 25 permissions, 6 templates, a playbook and 110 utils — 12 000px of
-  // list above an editor nobody asked to arrive under. Reading one rule is not browsing six
-  // catalogues, and the rest is one chip away.
+  // workflows, 30 rules, 25 permissions, a playbook and 110 utils — 12 000px of list above an
+  // editor nobody asked to arrive under. Reading one rule is not browsing every catalogue; the
+  // rest is one chip away.
   let expandAll = false;
   const KIND_SECTION = { workflow: "Workflows", rule: "Rules", permission: "Permissions",
-                         playbook: "Playbooks", template: "Settings templates",
+                         pattern: "Settings patterns", playbook: "Playbooks",
                          util: "Global utils" };
   const active = new Set((query.tags || "").split(",").filter(Boolean));
   const updateURL = () => replaceHash(openSub ? `#/library/${openSub}` : "#/library",
@@ -148,16 +152,11 @@ export async function render(view, sub, query = {}) {
                     `#/library/permission/${f.slug}`);
       }),
       el("button", { class: "btn ghost small", onclick: () => newDoc("permissions") }, "+ new permission"));
+    patternSection();
     section("Playbooks", "one-shot recipes — saved from a conversation (Save as playbook) and reused to seed a new one; MAIN.md is the always-loaded brief",
       data.playbooks.filter((p) => matches(p.tags)).map((p) =>
         item(p.title || p.slug, p.problems, p.tags, () => openPlaybook(p.slug), p.summary,
              `#/library/playbook/${p.slug}`)));
-    section("Settings templates", "the named starting points a routine adopts — permissions, rules, capabilities and budgets COPIED IN once at creation (a preselection, never a layer: every value is then edited where it lives)",
-      (data.templates || []).filter((t) => matches(t.tags)).map((t) =>
-        item(t.slug, t.problems || [], t.tags, () => openDoc("templates", t.slug),
-             t.summary, `#/library/template/${t.slug}`)),
-      el("button", { class: "btn ghost small", onclick: () => newDoc("templates") },
-         "+ new template"));
     // The curated half of the consequence-reminder layer. The ONE lever that has to exist
     // here is removal: an approval decides what gets IN, and without this nothing could take
     // an entry out again short of editing the library repo by hand.
@@ -213,6 +212,83 @@ export async function render(view, sub, query = {}) {
       el("td", { class: "muted prose", style: "max-width:460px" }, summary || null),
       el("td", {}, (problems && problems.length)
         ? el("span", { class: "chip failed", title: problems.join("\n") }, `${problems.length} lint`) : null));
+  }
+
+  // SETTINGS PATTERNS: named settings documents a routine FOLLOWS. A pattern is read, never
+  // edited here — a different set of values is saved as a NEW pattern from a routine page — so
+  // each row unfolds to what it carries — read as words rather than as its JSON — and offers
+  // the one lever the Library owns: delete. Its followers keep every value they hold.
+  function patternSection() {
+    const title = "Settings patterns";
+    if (onlySection() && title !== onlySection()) return;
+    // patterns carry no tags, so a tag filter leaves none of them standing
+    const rows = active.size ? [] : patterns.patterns;
+    sections.append(el("h2", {}, title));
+    sections.append(el("div", { class: "panel", style: "padding:0", "data-patterns": "" },
+      el("div", { class: "muted small lib-desc" },
+        "the named settings a routine FOLLOWS — its page reads the routine's own values against "
+        + "one, marks every value that departs from it, and proposes its values for one accept. "
+        + "A pattern is saved from a routine page (Save as new pattern) and never edited: a "
+        + "different set of values is saved as a new one."),
+      patterns.error ? el("div", { class: "muted small lib-desc" },
+        `could not read the patterns: ${patterns.error}`) : null,
+      rows.length ? el("div", { class: "pat-list" }, ...rows.map(patternRow))
+        : el("div", { class: "muted small lib-desc" },
+            active.size ? "none match this filter — patterns carry no tags"
+              : "none yet — save one from a routine page")));
+  }
+
+  function patternRow(p) {
+    const followers = p.followers || [];
+    const row = el("details", { class: "pat", "data-pattern": p.slug,
+      open: openSub === `pattern/${p.slug}` ? true : null },
+      el("summary", { class: "pat-head" },
+        el("span", { class: "pat-title" }, p.title),
+        el("span", { class: "pat-summary prose" }, p.summary),
+        el("span", { class: "pat-meta" }, el("code", {}, p.workflow || "—"),
+          ` · ${followers.length} routine${followers.length === 1 ? "" : "s"}`),
+        (p.problems || []).length
+          ? el("span", { class: "chip failed", title: p.problems.join("\n") }, `${p.problems.length} lint`)
+          : null),
+      el("div", { class: "pat-body" },
+        p.when ? el("div", { class: "pat-when small" }, el("b", {}, "pick it when "), p.when) : null,
+        (p.asks || []).length ? el("div", { class: "pat-when small" }, el("b", {}, "creation asks "),
+          p.asks.map((a) => a.question).join(" · ")) : null,
+        el("div", { class: "tablewrap" }, el("table", { class: "list stack pat-settings" },
+          el("tbody", {}, ...patterns.meta.filter((f) => f.key in (p.settings || {}))
+            .map((f) => el("tr", { "data-setting": f.key },
+              el("td", { class: "pat-key" }, f.label),
+              el("td", { class: "muted" }, describeFull(f.key, p.settings[f.key], f.shape))))))),
+        el("div", { class: "pat-foot small" },
+          followers.length ? ["followed by ", ...followers.flatMap((s, i) =>
+            [i ? ", " : "", el("a", { href: `#/routine/${s}` }, s)])] : "no routine follows it",
+          p.from_routine ? ` · saved from ${p.from_routine}` : "",
+          p.created ? " · " : "", p.created ? when(p.created) : null),
+        el("div", { class: "row mt" }, el("button", { type: "button", class: "btn danger small",
+          "data-delete-pattern": p.slug, onclick: () => deletePattern(p) }, "delete"))));
+    row.addEventListener("toggle", () => {
+      if (row.open) { openSub = `pattern/${p.slug}`; updateURL(); }
+      else if (openSub === `pattern/${p.slug}`) { openSub = null; updateURL(); }
+    });
+    return row;
+  }
+
+  async function deletePattern(p) {
+    const followers = p.followers || [];
+    const message = `Delete the settings pattern "${p.title}"?\n\n` + (followers.length
+      ? `The ${followers.length} routine${followers.length === 1 ? "" : "s"} that follow it `
+        + `(${followers.join(", ")}) keep every value they hold and simply follow no pattern `
+        + "afterwards."
+      : "No routine follows it.") + " It is git-versioned in the library — recoverable from history.";
+    if (!(await confirmDialog(message, { confirmLabel: "delete" }))) return;
+    try {
+      const r = await api(`/api/patterns/${p.slug}`, { method: "DELETE" });
+      const n = (r.released || []).length;
+      toast(`deleted ${p.title}${n ? ` — ${n} routine${n === 1 ? "" : "s"} follow no pattern now` : ""}`);
+      openSub = null;
+      updateURL();
+      remount();
+    } catch (err) { toastError(err); }
   }
 
   // The same confirm-then-DELETE protocol the doc editors use. Its own warning, because what
@@ -448,6 +524,12 @@ export async function render(view, sub, query = {}) {
   // deep-link: #/library/workflow/<slug>
   if (sub) {
     const [kind, id] = sub.split("/");
+    // a pattern unfolds in place (patternRow opens the one the URL names) — bring it into view
+    if (kind === "pattern" && id) {
+      sections.querySelector(`[data-pattern="${CSS.escape(id)}"]`)
+        ?.scrollIntoView({ block: "start" });
+      return;
+    }
     const opener = { workflow: openWorkflow,
                      rule: (id) => openDoc("rules", id),
                      permission: (id) => openDoc("permissions", id),

@@ -1,103 +1,70 @@
-// Routine config — MODELS & RESOURCES: which catalog model runs each role, how much
-// deliberation lands on paper, output compression, the OAuth connections its util calls act
-// as, and the machines it may reach.
-//
-// Split out of routine-config.js along routine.js's SECTION_GROUPS; this module is the
-// "Models & resources" group. Connections and machines are RESOURCE bindings, not
-// permissions — which is why they sit beside the model roles rather than in the abilities
-// panel: they say what is in reach, the ability says what may be done with it.
+// Routine settings — MODELS: which catalog model runs each role. Behind "more": how much of the
+// model's thinking lands on paper (deliberation).
 
-import { api } from "/static/api.js";
-import { act, el, toast, toastError } from "/static/util.js";
+import { el } from "/static/util.js";
 import { settingsSection } from "/static/components/settings-section.js";
-import { connectionsCard } from "/static/components/connections.js";
+import { fieldBlock, settingsGroup } from "/static/components/settings-field.js";
+import { describe } from "/static/components/settings-digest.js";
 import { deliberationControl } from "/static/components/deliberation.js";
-import { machinesCard } from "/static/components/machines.js";
-import { outputCompression } from "/static/components/output-compression.js";
 
-export function modelSections(view, d, { slug, refreshSurface }) {
-  // -- models (per routine: main / tool_call / uncensored; children run main by default,
-  //    a spawn/subtask call may override per child) ------------------------------
-  const MODEL_KINDS = [["main", "the orchestrator loop (children inherit it by default)"],
-                       ["tool_call", "the llm action"],
-                       ["uncensored", "a refused llm call is referred here (opt-in)"]];
-  const catalog = d.catalog || [];      // catalog model names (see Settings → Models)
-  const sysM = d.system_model;          // the system model's catalog name (or null)
-  const modelSelects = {};
-  const modelRows = MODEL_KINDS.map(([kind, desc]) => {
-    const cur = (d.models && d.models[kind]) || "";   // a catalog model NAME, or "" = fallback
-    const sel = el("select", {}, [
-      el("option", { value: "" }, sysM ? `— system default (${sysM}) —` : "— system default —"),
-      ...catalog.map((n) => el("option", { value: n }, n))]);
-    sel.value = cur || "";
-    modelSelects[kind] = sel;
-    return el("div", { class: "row", style: "margin:5px 0" },
-      el("span", { class: "ref-tag", style: "min-width:92px;text-align:center" }, kind),
-      el("span", { class: "muted small", style: "min-width:150px" }, desc),
-      sel);
-  });
-  const refMonth = d.spend?.current?.referrals || 0;
-  // Deliberation: how much thinking lands on paper (the say/notes contract). Saved on
-  // release — the next run composes with the new level (a LIVE run is re-leveled from
-  // the run view, control.json-scoped).
-  const delib = deliberationControl(d.deliberation || "standard", {
-    onCommit: async (level) => {
-      try { await api(`/api/routines/${slug}`, { method: "PATCH", body: { deliberation: level } });
-        toast(`deliberation: ${level} — applies from the next run`); }
-      catch (err) { toastError(err); }
-    },
-  });
-  view.append(...settingsSection({ title: "Models", id: "models" },
-    catalog.length
-      ? "which catalog model this routine uses for each role — leave on system default to fall back to the system model"
-      : "add a model in Settings first",
-      ...modelRows,
-      outputCompression(d.output_compression, `/api/routines/${slug}`),
-      el("div", { class: "row mt", style: "align-items:flex-start" },
-        el("span", { class: "ref-tag", style: "min-width:92px;text-align:center" }, "deliberation"),
-        el("span", { class: "muted small", style: "min-width:150px" },
-          "how much thinking lands on paper"),
-        delib.node),
+// per routine: main / tool_call / uncensored; children run main by default, a spawn/subtask
+// call may override per child
+const MODEL_KINDS = [["main", "the orchestrator loop (children inherit it by default)"],
+                     ["tool_call", "the llm action"],
+                     ["uncensored", "a refused llm call is referred here (opt-in)"]];
+
+export function modelsGroup(ctx) {
+  const { d, form } = ctx;
+  const catalog = d.catalog || [];          // catalog model names (see Settings → Models)
+  const sysM = d.system_model;              // the system model's catalog name (or null)
+
+  const models = fieldBlock(form, "models", (value, set) => {
+    const current = { ...(value || {}) };
+    const rows = MODEL_KINDS.map(([kind, desc]) => {
+      const sel = el("select", { "data-model-role": kind, "data-nopersist": true,
+        onchange: () => {
+          if (sel.value) current[kind] = sel.value; else delete current[kind];
+          set({ ...current });
+        } },
+        el("option", { value: "" }, sysM ? `— system default (${sysM}) —` : "— system default —"),
+        ...catalog.map((n) => el("option", { value: n }, n)),
+        // a name the catalog no longer has stays visible, so it can be seen and changed
+        ...(current[kind] && !catalog.includes(current[kind])
+          ? [el("option", { value: current[kind] }, `${current[kind]} — not in the catalog`)] : []));
+      sel.value = current[kind] || "";
+      return el("div", { class: "row", style: "margin:5px 0" },
+        el("span", { class: "ref-tag", style: "min-width:92px;text-align:center" }, kind),
+        el("span", { class: "muted small", style: "min-width:150px" }, desc), sel);
+    });
+    const refMonth = d.spend?.current?.referrals || 0;
+    return el("div", {}, ...rows,
       d.referrals_total
         ? el("div", { class: "muted small mt",
             title: "turns or llm calls the main/tool model refused and the uncensored model answered instead (from the durable usage stream)" },
             `↪ uncensored referrals: ${d.referrals_total} total` + (refMonth ? ` · ${refMonth} this month` : ""))
-        : null,
-      el("div", { class: "row mt" }, el("button", { class: "btn primary",
-        onclick: (e) => {
-          const models = {};
-          for (const [kind, sel] of Object.entries(modelSelects))
-            if (sel.value) models[kind] = sel.value;
-          act(e.currentTarget,
-              () => api(`/api/routines/${slug}`, { method: "PATCH", body: { models } }),
-              "models saved");
-        } }, "save models"))));
+        : null);
+  });
 
-  // -- connections: bind an OAuth account per provider (Settings → Connections) --------
-  // Shared card (components/connections.js) — the conversation header uses the same one.
-  // ONE intro per section: the mounted card owns it, because it renders wherever the card is
-  // mounted (this page and the conversation composer both show these two). The section-level
-  // copy said the same thing in different words directly above it.
-  view.append(...settingsSection({ title: "Connections", id: "connections" }, null,
-    connectionsCard(d.connections || {}, {
-      onSave: async (connections) => {
-        await api(`/api/routines/${slug}`, { method: "PATCH", body: { connections } });
-        refreshSurface();   // a `connection:` row a held rule expects is bound or unbound here
-      },
-    })));
+  const deliberation = fieldBlock(form, "deliberation", (value, set) =>
+    deliberationControl(value || "standard", { onCommit: set }).node);
 
-
-  // -- machines: the shared binding card (components/machines.js) — D102: the conversation
-  // header mounts the same card, so both surfaces bind catalog machines identically --------
-  // ONE intro per section: the mounted card owns it, because it renders wherever the card is
-  // mounted (this page and the conversation composer both show these two). The section-level
-  // copy said the same thing in different words directly above it.
-  view.append(...settingsSection({ title: "Machines", id: "machines" }, null,
-    machinesCard(d.machine_catalog || [], d.machines || [], {
-      onSave: async (machines) => {
-        await api(`/api/routines/${slug}`, { method: "PATCH", body: { machines } });
-        refreshSurface();   // a `machine:` row a held doc expects is bound or unbound here
-      },
-    })));
-
+  return settingsGroup({
+    form, title: "Models", hint: "which model runs each role",
+    keys: ["models", "deliberation"],
+    moreKeys: ["deliberation"],
+    digest: () => `deliberation ${describe("deliberation", form.get("deliberation"))}`,
+    sections: [
+      ...settingsSection({ title: "Models", id: "models" },
+        catalog.length
+          ? "which catalog model this routine uses for each role — leave on system default to fall back to the system model"
+          : "add a model in Settings first",
+        models.node),
+    ],
+    more: [
+      ...settingsSection({ title: "Deliberation", id: "deliberation" },
+        "how much of the model's thinking lands on paper — the say and notes every action "
+        + "carries. A live run is re-levelled from its own page.",
+        deliberation.node),
+    ],
+  });
 }

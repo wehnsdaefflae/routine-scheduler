@@ -19,15 +19,16 @@ from playwright.sync_api import expect
 
 
 def _unfold(page) -> None:
-    """Open every routine-page config group.
+    """Open every routine-page settings group and each group's "more" menu.
 
-    The page ships with only its leading group open (views/routine.js SECTION_GROUPS): seven
-    open at once made it 11-12 000px tall. A control inside a folded group is not visible, so a
-    test that reads one unfolds first. What the DEFAULT is, and that the choice is remembered,
-    is pinned in test_routine_groups.py — not here.
+    The page ships with only its two leading groups open (views/routine-config.js): seven open at
+    once made it 11-12 000px tall. The rarely needed sections fold once more behind each group's
+    "more". A control inside a fold is not visible, so a test that reads one unfolds first. What
+    the DEFAULT is — and that the choice is remembered — is pinned in test_routine_groups.py, not
+    here.
     """
     page.wait_for_selector(".rgroup-head")
-    page.evaluate("() => { for (const d of document.querySelectorAll('details.rgroup')) d.open = true; }")
+    page.evaluate("() => { for (const d of document.querySelectorAll('details.rgroup, details.rmore')) d.open = true; }")
 
 def _rail_var(ui_page, name: str) -> str:
     return ui_page.evaluate(

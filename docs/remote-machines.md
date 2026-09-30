@@ -3,13 +3,12 @@
 A **machine** lets a routine run commands and move files on a remote host over SSH — for work
 that needs specific hardware the daemon box doesn't have (a GPU for training/inference, a big
 build server). The operator registers a host once in the web UI; a routine BINDS it by name; the
-run acts on it through the reserved `remote` util, never touching credentials directly.
+run acts on it through the `remote` util, never touching credentials directly.
 
 Machines are a **resource binding**, like `models:`, `connections:`, and `fs_roots` — not a
 capability. The `config.yaml` `machines:` catalog is operator-only; the routine.yaml `machines:`
-list *is* the grant. No run creates or changes either (routine.yaml stays sealed). The `remote`
-util also has to be switched on (the `remote-machines` permission), and a key only ever reaches a
-util the routine explicitly binds.
+list *is* the grant. No run creates or changes either (routine.yaml stays sealed). A key only ever
+reaches a util the routine explicitly binds.
 
 ## The split that makes it work
 
@@ -63,8 +62,8 @@ sandboxed:
    an optional **`share`** (a remote dir to mount, e.g. `/srv/shared`), an optional workdir, a
    description (shown to the model), tags. Click **scan host key** to read and pin the server's host
    key, review it, then save. Click **test** to confirm reachability.
-4. **Bind it**: on a routine's page, *Machines* → check `gpu-box` → save. Also switch on the
-   **`remote-machines`** permission (which enables the `remote` util).
+4. **Bind it**: on a routine's page, *Limits & reach* → *more* → *Machines* → check `gpu-box` →
+   *accept changes*. The binding is the whole grant: the `remote` util acts on bound machines only.
 
 ## Creating the restricted remote user
 
@@ -197,7 +196,7 @@ How it works, and why it is safe:
 - The routine dir is already a sandbox **write root**, and a Landlock rule on it covers the sshfs
   sub-mount (verified) — so a util reads/writes the mounted files under the exact same jail as any
   local file, with no extra grant. Reaching the *filesystem* of a machine needs only the binding +
-  a `share`; it does not need the `remote-machines` permission (that gates the compute util).
+  a `share`.
 - `mnt/` is gitignored, so the engine's autocommit never pulls the remote filesystem into the
   routine's repo.
 - Mounting is **best-effort**: an unreachable host, a missing key, or no `sshfs` on the host logs a

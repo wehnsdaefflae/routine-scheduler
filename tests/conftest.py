@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import threading
 from pathlib import Path
 
@@ -110,6 +111,25 @@ def pytest_xdist_auto_num_workers(config) -> int:
     return max(2, (os.cpu_count() or 4) - 1)
 
 
+#: The interpreter the engine image runs (`FROM python:3.12-…` in the Dockerfile), pinned for
+#: the host by `.python-version`; tests/test_policy.py keeps the two in step.
+PINNED_PYTHON = (Path(__file__).resolve().parents[1] / ".python-version").read_text(
+    encoding="utf-8").strip()
+
+
+def _refuse_a_foreign_interpreter() -> None:
+    """A run on another minor version is no evidence about the engine, so it does not start.
+
+    The host venv once ran 3.14 while the engine ran 3.12: three browser tests failed only
+    there, and every host run tested an interpreter production does not use.
+    """
+    running = f"{sys.version_info.major}.{sys.version_info.minor}"
+    if running != PINNED_PYTHON:
+        pytest.exit(f"the tests run on Python {running}, the engine on {PINNED_PYTHON} "
+                    "(.python-version): `uv sync` rebuilds the venv on the pinned version",
+                    returncode=4)
+
+
 def pytest_configure(config) -> None:
     """Distribute by GROUP whenever the browser tests are in the selection.
 
@@ -130,6 +150,7 @@ def pytest_configure(config) -> None:
     `loadgroup` for the hook that writes the group into the nodeid. Setting only the
     controller's leaves every nodeid unsuffixed and the grouping is silently a no-op.
     """
+    _refuse_a_foreign_interpreter()
     markexpr = (getattr(config.option, "markexpr", "") or "").replace("  ", " ")
     if "not ui" in markexpr:
         return
@@ -445,6 +466,7 @@ class FakeRunner:
 
     def __init__(self, *, ts: str = "20260717-120000"):
         self.fired: list[tuple[str, str]] = []
+        self.briefs: list[str] = []
         self.resumed: list[tuple[str, str, str]] = []
         self.active: dict[str, str] = {}
         self.draining = False
@@ -459,8 +481,9 @@ class FakeRunner:
     def recover_orphans(self, catalog):
         return 0
 
-    async def fire(self, cfg, *, reason="schedule") -> str:
+    async def fire(self, cfg, *, reason="schedule", brief="") -> str:
         self.fired.append((cfg.slug, reason))
+        self.briefs.append(brief)
         self.active[cfg.slug] = self.ts
         return f"{cfg.slug}:{self.ts}"
 

@@ -119,7 +119,7 @@ def test_suggest_prints_ranking_and_none_fit(cli_server, capsys, monkeypatch):
 
 def test_scaffold_creates_a_runnable_routine(cli_server, capsys):
     """No endpoints configured → decompose falls back to the verbatim pattern; the routine
-    still lands complete: recipe, rules, config, tuning."""
+    still lands complete: recipe with its Done when, rules, config, tuning."""
     rc = cli.cmd_scaffold(_args(slug="scaffed", name="", workflow="general-task",
                                 instruction_file=None, cron="0 7 * * *", tz="Europe/Berlin",
                                 description="a scaffold test", tag=["t1", "t2"],
@@ -128,7 +128,7 @@ def test_scaffold_creates_a_runnable_routine(cli_server, capsys):
     d = cli_server.routines_home / "scaffed"
     assert (d / "main.md").exists() and (d / "routine.yaml").exists()
     assert (d / "tuning.yaml").exists()                     # deliberation rides every scaffold
-    assert "Standing practices" in (d / "main.md").read_text(encoding="utf-8")
+    assert "## Done when" in (d / "main.md").read_text(encoding="utf-8")
 
     rc = cli.cmd_scaffold(_args(slug="scaffed2", name="", workflow="no-such-pattern",
                                 instruction_file=None, cron="", tz="Europe/Berlin",

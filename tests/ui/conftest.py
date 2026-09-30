@@ -181,7 +181,7 @@ class StubRunner:
         self.active: dict[str, object] = {}
         self.draining = False
 
-    async def fire(self, cfg, reason: str = "") -> str:
+    async def fire(self, cfg, reason: str = "", brief: str = "") -> str:
         self.fired.append((cfg.slug, reason))
         return f"{cfg.slug}:20260715-120000"
 
@@ -221,7 +221,7 @@ class UiHarness:
         """Drop a durable decision record the way the engine files one.
 
         `extra` carries the optional keys the engine writes alongside the question —
-        config_patch / config_target / config_home for the Decisions page's apply bridge.
+        config_patch / config_target for the Decisions page's apply bridge.
         """
         pending = self.routines / slug / "questions" / "pending"
         pending.mkdir(parents=True, exist_ok=True)

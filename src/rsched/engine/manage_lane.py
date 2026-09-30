@@ -14,13 +14,12 @@ uses:
     verb=run      target=<lane id>               → arm a sequential fire (Phase B)
 
 **This kind covers the TEMPORAL axis and nothing else.** A lane decides when its members fire
-and in what order (`rsched.lanes`). A DOMAIN — the shared config block, the shared store, the
-notes boundary — is an ordinary per-routine setting living in that routine's own routine.yaml
-(`domain:`), which no run writes. So there is deliberately no `manage_domain` verb and no
-domain field here: a conversation that wants to move a routine between domains proposes it as
-a config patch (`ask_user` with `config_patch`), which the user approves and the WEB writes.
-The split is the point: reordering when routines fire must never be able to change what a
-routine can reach (docs/lanes-domains.md).
+and in what order (`rsched.lanes`). What a routine may reach — its settings, its fs roots, the
+shared stores among them — lives in that routine's own routine.yaml, which no run writes. So
+there is deliberately no verb here that touches any of it: a conversation that wants a routine
+to share a store (or stop sharing one) proposes it as a config patch (`ask_user` with
+`config_patch`), which the user approves and the WEB writes. The split is the point: reordering
+when routines fire must never be able to change what a routine can reach (docs/lanes-tags.md).
 
 `cron` is the LANE schedule (D71, R312): the chain fires on it, member crons are
 suppressed while it is set. The server tz is recorded beside it, exactly as the web layer

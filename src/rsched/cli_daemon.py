@@ -30,78 +30,17 @@ def cmd_daemon(_args) -> int:
     )
     ensure_config()   # fresh deploy: generate config+token so the API isn't open
     server, problems = load_server_config()
+    # MIGRATION(expires=2026-10-20): routines onto settings patterns, BEFORE the seed sync and
+    # before anything loads a routine.yaml that still names a domain
+    from .migrate_settings_patterns import run_migration
+    run_migration(server)
     # new default permissions reach existing routines once, at boot
     adopt_permissions(server.routines_home, server.permissions_home)
     sync_seed_utils(server.libraries_home)    # utils added to util-seed since bootstrap
     sync_seed_library_docs(server.libraries_home)  # workflows/rules/permissions added since, too
     adopt_library_edits(server.libraries_home)  # out-of-band writes (user/conversation) get history
-    from .migrate_shell_action import migrate_shell_action
-
-    # MIGRATION(expires=2026-10-03): the shell escape hatch is an ACTION KIND now, so a holder
-    # still naming it under capabilities.utils would lose it silently. Runs AFTER the seed
-    # syncs, so the library it rewrites is the one this boot will actually serve.
-    migrate_shell_action(server)
-    from .migrate_stopping_scope import migrate_stopping_scope
-
-    # MIGRATION(expires=2026-11-05): stopping conditions gain a SCOPE. Every existing condition
-    # is a per-RUN bound and must stop being sticky — 22 of 31 routines were being told "the job
-    # is DONE. Finish NOW" at the top of every run. Nothing here promotes a condition to `goal`:
-    # which routines have a terminal state is the user's call, made in the panel.
-    migrate_stopping_scope(server)
-    from .migrate_rule_assists import run as migrate_rule_assists
-    from .paths import repo_root
-
-    # MIGRATION(expires=2026-12-01): the first rule ASSISTS. The seed sync is add-only, so a
-    # frontmatter block added to a rule that already exists live reaches nobody — this carries
-    # the three declared in 0.305.0 across, skipping any rule an operator has since edited.
-    # Runs after the seed syncs, so it rewrites the library this boot will serve.
-    migrate_rule_assists(server.rules_home, repo_root() / "library-seed" / "rules")
-    from .migrate_status_page_rule import run as migrate_status_page_rule
-
-    # MIGRATION(expires=2026-12-01): the status-page rule told every holder its card tab was
-    # "the name of the ROUTINE GROUP you belong to". Nothing in the prompt spells a group, a
-    # lane or a domain, so the instruction became one no run could carry out. The seed sync is
-    # add-only, so the rewritten section reaches a live library only from here.
-    migrate_status_page_rule(server.rules_home, repo_root() / "library-seed" / "rules")
-    from .migrate_problem_routing_rule import run as migrate_problem_routing_rule
-
-    # MIGRATION(expires=2026-12-15): `problem-routing` told every holder to "add your evidence
-    # to the OLDEST open one rather than opening another" — an operation the append-only ledger
-    # could not perform, so the rule could not be obeyed and thread concentration kept growing.
-    # 0.345.0 gives it one (`supersedes`); this carries the prose that names it, and the
-    # pre-finish assist that catches a run finishing while it owes a sender a reply (D131).
-    migrate_problem_routing_rule(server.rules_home, repo_root() / "library-seed" / "rules")
-    from .migrate_routed_reports import run as migrate_routed_reports
-
-    # MIGRATION(expires=2026-12-15): F492 — routing a report left the original untargeted, so
-    # every triage pass re-routed work already handed off (six rows twice in two days). Routing
-    # records a fold now; this carries the four hand-offs already made across, so the first
-    # triage pass after the upgrade does not make a third copy of them.
-    migrate_routed_reports(server.routines_home)
-    from .migrate_group_split import run as migrate_group_split
-
-    # MIGRATION(expires=2026-12-01): one `group` record was a fire lane, a shared config layer,
-    # a trust boundary and a semantic bundle at once — and the temporal axis, which demands
-    # exclusivity, quantized the other three. Split into `.control/lanes.json` +
-    # `.control/domains.json` + a `domain:` key in each member's routine.yaml. Before the pass
-    # below, which re-raises capabilities from the permissions this one may have just changed.
-    migrate_group_split(server.routines_home)
-    from .migrate_reminders_rollout import run as migrate_reminders_rollout
-
-    # MIGRATION(expires=2026-12-01): the adopt cascade carried a private copy of the capability
-    # raise that knew four of nine keys, so a permission whose requires: names any other DIAL
-    # was adopted with its capability left off — the doc held, the engine behaving as if it
-    # were not. Re-raise every routine's capabilities from the permissions it holds, and give
-    # the live settings templates the two dials the seed now names. After adopt_permissions,
-    # so this boot's adoptions are converged too.
-    migrate_reminders_rollout(server.routines_home, server.permissions_home,
-                              server.libraries_home)
     for pr in problems:
         logging.getLogger("rsched").warning("config: %s", pr)
-    from .migrate_disabled_schedule import run as migrate_disabled_schedule
-
-    # MIGRATION(expires=2026-12-01): one routine scheduling control replaces enabled.
-    migrate_disabled_schedule(server.routines_home)
     app = create_app(server)
     # env overrides so a container can bind the LAN (RSCHED_BIND=0.0.0.0) and remap the port
     # without editing the mounted config; unset → the config's bind/port as before.

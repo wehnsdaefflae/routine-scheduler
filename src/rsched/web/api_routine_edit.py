@@ -12,7 +12,7 @@ import shutil
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 
 from .. import pending_edits
 from .. import rules as rules_mod
@@ -98,20 +98,13 @@ class PermissionsBody(BaseModel):
     capabilities: dict | None = None   # omitted → keep the routine's current mapping as base
 
 
-def resolve_permission_layers(server, body: PermissionsBody, current: dict,
-                              inherited: list[str] | None = None) -> tuple[list, dict]:
+def resolve_permission_layers(server, body: PermissionsBody,
+                              current: dict) -> tuple[list, dict]:
     """Validate + cascade one permissions update (shared with conversations): unknown doc
     slugs are dropped, the capabilities mapping is normalized (422 on junk), then RAISED
     until every active doc's requires are covered — so the invariant 'held docs' needs
     are on' holds regardless of what the client sent. Deactivation cascades live in the
     UI (dropping a capability there also unticks the docs requiring it).
-
-    `inherited` names permissions the routine holds through its DOMAIN (D82). They RAISE
-    nothing — a domain permission must not silently add a capability to this routine's own
-    file — but they DO count for the floor, because a capability they legitimately cover is
-    not an orphan. Without this, saving a routine's permissions floors away every capability
-    its domain supplies (`runs`/`workflows` back to none/catalog); the explicit "off" it
-    writes then SHADOWS the domain's value, since a routine's own key always wins.
     """
     from ..grants import capabilities_for, floor_capabilities, normalize_capabilities
     from ..readmodels import library_reads
@@ -128,59 +121,23 @@ def resolve_permission_layers(server, body: PermissionsBody, current: dict,
     # the means of a HELD permission. The permission is the switch; the confirm level and
     # run depth stay as user policy under it. So the saved mapping can never contradict the
     # held permissions (a write_util capability with util-authoring off, etc.).
-    caps = floor_capabilities([*active, *(inherited or [])], lib,
-                              capabilities_for(active, lib, base))
+    caps = floor_capabilities(active, lib, capabilities_for(active, lib, base))
     return active, caps
 
 
 def write_permission_layers(server, info, body: PermissionsBody, raw: dict) -> dict:
-    """Resolve both permission layers for one save and record in `raw` ONLY what this
-    routine owns — the whole of the two-layer write, for every endpoint that performs one.
+    """Resolve both permission layers for one save and record them in `raw` — the whole of
+    the two-layer write, for every endpoint that performs one (the editor's PUT and a PATCH
+    carrying `permissions`/`capabilities`), so both doors write exactly the same thing:
+    unknown docs dropped, the mapping raised to cover every held doc's requires and floored
+    back to them (`resolve_permission_layers`).
 
-    Two things happen here and neither is optional. First the cascade
-    (`resolve_permission_layers`): unknown docs dropped, the mapping raised to cover every
-    held doc's requires and floored back to them, with the DOMAIN's docs counted for the
-    floor so a member never loses a capability its domain supplies.
-
-    Then the strip, which is what makes the write safe on a domained routine. The panel and
-    `info.cfg.permissions` are both the EFFECTIVE config, in which a doc the domain supplies
-    is indistinguishable from one this routine holds itself. Writing that back verbatim makes
-    the member's own file own every inherited doc, list entry and dial — and a member's own
-    key always wins, so the domain never reaches this routine again (F489: one save flattened
-    five inherited docs and three inherited actions into a member's file and widened `runs`
-    none → last on the way). `strip_shared_dials` + `strip_shared_list` leave the domain's
-    contributions to the domain while keeping every entry the member already had of its own.
-
-    The strip is why this is ONE function rather than a step each caller remembers: the PUT
-    performed it and the PATCH did not, so a config_patch that named only a confirm dial
-    un-inherited the whole domain block on its way through.
-
-    Returns the three layers for the response (R102: a client that sent a doc which is the
-    DOMAIN's must not be told it was saved here, because it was not).
+    Returns the two layers for the response.
     """
-    from ..config.domainconfig import domain_config_for, strip_shared_dials, strip_shared_list
-
-    shared, _ = domain_config_for(info.cfg.dir, info.cfg.domain)
-    inherited_docs = list(shared.get("permissions") or [])
-    active, caps = resolve_permission_layers(server, body, info.cfg.capabilities or {},
-                                             inherited=inherited_docs)
-    caps = strip_shared_dials(caps, shared.get("capabilities") or {}, body.capabilities or {})
-    before_docs = raw.get("permissions")
-    own_active = strip_shared_list(active, inherited_docs,
-                                   before_docs if isinstance(before_docs, list) else [])
-    before_caps = raw.get("capabilities")
-    caps_before: dict = before_caps if isinstance(before_caps, dict) else {}
-    shared_caps = shared.get("capabilities") or {}
-    for key, val in list(caps.items()):
-        if isinstance(val, list) and isinstance(shared_caps.get(key), list):
-            before = caps_before.get(key)
-            caps[key] = strip_shared_list(val, shared_caps[key],
-                                          before if isinstance(before, list) else [])
-    raw["permissions"] = own_active
+    active, caps = resolve_permission_layers(server, body, info.cfg.capabilities or {})
+    raw["permissions"] = active
     raw["capabilities"] = caps
-    return {"active": active, "own": own_active,
-            "inherited": [p for p in inherited_docs if p not in own_active],
-            "capabilities": caps}
+    return {"active": active, "capabilities": caps}
 
 
 @router.put("/routines/{slug}/permissions")
@@ -197,20 +154,30 @@ def set_permissions(request: Request, slug: str, body: PermissionsBody) -> dict:
     raw = read_yaml(path, {})
     layers = write_permission_layers(_state(request).server, info, body, raw)
     write_routine_config(request, info, raw,
-                         message=f"permissions: {', '.join(layers['own']) or '(none)'}",
+                         message=f"permissions: {', '.join(layers['active']) or '(none)'}",
                          fields=["permissions", "capabilities"],
                          values={"permissions": layers["active"],
                                  "capabilities": layers["capabilities"]})
     return {"ok": True, **layers}
 
 
+class RunNow(BaseModel):
+    """What the operator hands a run they start by hand: optionally, the one job it is for
+    (engine/brief.py) — which it then answers for instead of its recipe's Done when.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+    brief: str = Field(default="", max_length=300)
+
+
 @router.post("/routines/{slug}/run")
-async def run_now(request: Request, slug: str) -> dict:
+async def run_now(request: Request, slug: str, body: RunNow | None = None) -> dict:
     info = _info(request, slug)
     if not info.cfg.enabled:
         raise HTTPException(409, f"routine {slug!r} is disabled — "
                             "choose a schedule before starting it")
-    run_id = await _state(request).runner.fire(info.cfg, reason="manual")
+    run_id = await _state(request).runner.fire(info.cfg, reason="manual",
+                                               brief=(body or RunNow()).brief)
     if run_id is None:
         raise HTTPException(409, f"routine {slug!r} already has an active run")
     return {"run_id": run_id}

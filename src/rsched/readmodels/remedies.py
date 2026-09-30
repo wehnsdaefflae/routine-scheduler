@@ -33,18 +33,13 @@ from .surface_nodes import BLOCKS, INTERRUPTS, NOTE, OK
 #:
 #: A `kind:variant` entry is a SECOND wording of one kind, for a fix whose payload changes what
 #: can honestly be said. `:any` is the need "one of this class" (`"*"`), which no sentence can
-#: name. An OWNER variant is the same need read by somebody who cannot act on it where they are
-#: standing: a capability the DOMAIN hands down survives the routine's own save, so telling
-#: that reader to drop it here is the console's broken link written out in prose. A `:doc`
-#: variant is the case where the obvious act is not merely elsewhere but SELF-UNDOING — a save
-#: raises the mapping to cover every held doc, so a util one of them requires comes straight
-#: back; the only remedy left is to stop holding the doc.
+#: name. A `:doc` variant is the case where the obvious act is SELF-UNDOING — a save raises the
+#: mapping to cover every held doc, so a util one of them requires comes straight back; the
+#: only remedy left is to stop holding the doc.
 REMEDIES: dict[str, str] = {
     "switch_on": "switch on {missing} in this routine's capabilities",
     "cover_or_drop": "hold a conduct doc that requires it, or drop it from this routine's "
                      "capabilities",
-    "cover_or_drop:domain": "hold a conduct doc that requires it, or drop it from the "
-                            "{domain} domain that supplies it",
     "grant": "record an exposure decision in this routine's grants",
     "clear_grant": "clear the refusal recorded in this routine's grants",
     "add_secret": "add {name} to the secrets store",
@@ -55,8 +50,6 @@ REMEDIES: dict[str, str] = {
     "bind_connection": "bind an account for {provider}",
     "bind_connection:any": "bind an account for the connection it presumes",
     "install_util": "drop {name} from this routine's capabilities; only a run writes a util",
-    "install_util:domain": "drop {name} from the {domain} domain that supplies it; only a run "
-                           "writes a util",
     "install_util:doc": "stop holding {doc}, which requires it and puts any drop straight back; "
                         "only a run writes a util",
     "set_schedule": "give it a cron of its own, or put it in a scheduled lane",
@@ -75,7 +68,7 @@ _ANY_PARAM = {"add_root": "path", "bind_machine": "name", "bind_connection": "pr
 #: directions, so neither the words nor the params can grow past the other unnoticed.
 #:
 #: A list param joins with commas (`missing`); everything else is said as it stands.
-_PARAMS = ("missing", "name", "mode", "path", "domain", "provider", "expected", "doc")
+_PARAMS = ("missing", "name", "mode", "path", "provider", "expected", "doc")
 
 
 def _params(fix: dict) -> defaultdict[str, str]:
@@ -99,19 +92,16 @@ def _params(fix: dict) -> defaultdict[str, str]:
 def _wording(fix: dict) -> str:
     """Which REMEDIES entry this payload selects — the kind, or one of its variants.
 
-    Variants are asked most specific first. A covering DOC comes before an OWNER because they
-    differ in kind rather than in degree: an owner says the same act is performed somewhere
-    this reader is not standing, a doc says the obvious act undoes itself and the remedy is a
-    different one. A payload carrying neither falls to the kind's base sentence, which is also
-    what an `owner` or a `doc` with no wording of its own does.
+    A payload naming a covering DOC selects the kind's `:doc` wording where it has one: the
+    obvious act undoes itself there and the remedy is a different one. Anything else falls to
+    the kind's base sentence, which is also what a `doc` with no wording of its own does.
     """
     kind = str(fix.get("kind") or "")
     vague = _ANY_PARAM.get(kind)
     if vague and str(fix.get(vague) or "*") == "*":
         kind += ":any"
-    for variant in ("doc" if fix.get("doc") else "", str(fix.get("owner") or "")):
-        if variant and f"{kind}:{variant}" in REMEDIES:
-            return f"{kind}:{variant}"
+    if fix.get("doc") and f"{kind}:doc" in REMEDIES:
+        return f"{kind}:doc"
     return kind
 
 

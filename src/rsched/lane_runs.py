@@ -35,8 +35,8 @@ it. Shape (single document, atomic-written):
 
 These records are EPHEMERAL — one exists only while its chain is in flight and the daemon
 drains every run before it restarts — so the directory holds nothing worth carrying across a
-release. The domain STORE directory is the opposite case: routines address those paths in
-their own memory, so it must never move (`domains.STORES_DIRNAME`).
+release. The shared STORE directory is the opposite case: routines address those paths in
+their own memory, so it must never move (`sharedstores.STORES_DIRNAME`).
 
 This module owns the file IO and shape, the DAEMON manager (`daemon/lane_runs.py`) the
 advance logic, and the API layer the validation of members against the live registry.

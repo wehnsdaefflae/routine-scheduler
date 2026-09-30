@@ -140,6 +140,26 @@ def parse_header(src: str) -> dict:
             "fs": fs, "fs_roots": fs_roots, "fs_paths": fs_paths, "doc": doc}
 
 
+def widening(old_src: str, new_src: str) -> list[str]:
+    """What a revision lets the util reach that it could not before — new secrets, network
+    where there was none, new callees, new filesystem reach — as short phrases; empty when the
+    revision reaches nothing new. A revision that widens is a new grant in the shape of a bug
+    fix, so it is asked about whatever the routine's approval setting says.
+    """
+    old, new = parse_header(old_src), parse_header(new_src)
+    out = [f"the secret {s}" for s in new["secrets"] if s not in old["secrets"]]
+    if new["net"] == "outbound" and old["net"] != "outbound":
+        out.append("the network")
+    out += [f"the util {c}" for c in new["calls"] if c not in old["calls"]]
+    if new["fs_roots"] and not old["fs_roots"]:
+        out.append("the routine's folders")
+    had = set(old["fs_paths"])
+    for mode, path in new["fs_paths"]:
+        if (mode, path) not in had and ("rw", path) not in had:
+            out.append(f"{'writing' if mode == 'rw' else 'reading'} {path}")
+    return out
+
+
 # env-var names that smell like credentials — used by header_problems to catch a util that
 # reads a secret it never declared (the Settings page can only prompt for DECLARED secrets,
 # and the sandbox injects only declared ones). Three read shapes are detected:

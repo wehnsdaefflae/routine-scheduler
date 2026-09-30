@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING
 from ..paths import atomic_write, read_json, resolve_rel
 from ..readmodels.statemap import STAGES_DIR
 from . import fileformat
+from .finishline import FILE as FINISH_LINE
 from .observations import OBS_CAP_CHARS
 from .outputs import OUTPUTS_DIR
 from .run_context import RunContext
@@ -67,8 +68,9 @@ def _runs_read_gate(ctx: RunContext, resolved) -> str | None:
         last = prior[-1] if prior else None
         if not rel.parts or rel.parts[0] != last:
             return (f"previous runs are readable at the default 'last' depth only "
-                    f"({'runs/' + last if last else 'none exists yet'}); the run-history "
-                    f"permission raises the depth to 'all' for longitudinal work")
+                    f"({'runs/' + last if last else 'none exists yet'}); the routine's "
+                    f"run-history setting at 'all' opens them for longitudinal work — the "
+                    f"operator's choice")
     return None
 
 
@@ -245,12 +247,35 @@ def _memory_gate(ctx: RunContext, resolved) -> str | None:
     return MEMORY_REFUSAL if resolved.is_relative_to(ctx.routine.dir / ".memory") else None
 
 
-def _write_gate(ctx: RunContext, resolved) -> str | None:
+def _finish_line_gate(ctx: RunContext, resolved) -> str | None:
+    """The finish line decides when the routine RETIRES, so it is the operator's alone: a run
+    answers for it through its finish accounting and never edits it (six runs once rewrote the
+    document that decided their own end).
+    """
+    if resolved != (ctx.routine.dir / FINISH_LINE).resolve():
+        return None
+    return ("the finish line is the operator's — a run reports against it in its finish "
+            "`accounting` (a distance, or met for an outcome the run proves) and never edits "
+            "it; if you believe it is wrong, file a report saying why")
+
+
+def _write_gate(ctx: RunContext, resolved, *, creates: bool = True) -> str | None:
     """Backstop for engine-owned and permission-gated writes (grants.deny handles the
     relative-path form; this catches absolute paths into the routine's own dir).
+
+    `creates` is False for a path the action only REMOVES (delete, a move's source): a note
+    left in a shared store for a routine that does not share it is refused when it is written;
+    clearing one that is already stranded there is the repair, not the defect.
     """
-    if err := _memory_gate(ctx, resolved):
-        return err          # structural, not a grant: it holds with no policy loaded
+    # All structural, not grants: they hold with no policy loaded — the memory seal, the finish
+    # line, and a note nobody would read, which is unread whatever the policy says.
+    err = _memory_gate(ctx, resolved) or _finish_line_gate(ctx, resolved)
+    if err is None and creates:
+        from ..sharedstores import note_refusal
+
+        err = note_refusal(ctx.server.routines_home, resolved)
+    if err:
+        return err
     g = ctx.grants
     if g is None:
         return None
@@ -440,7 +465,7 @@ def _unseen_destruction(ctx: RunContext, resolved, what: str) -> str | None:
 def do_delete(action: dict, ctx: RunContext) -> dict:
     try:
         path = resolve_rel(ctx.routine.dir, action["path"], ctx.write_roots())
-        if err := _write_gate(ctx, path):
+        if err := _write_gate(ctx, path, creates=False):
             return {"kind": "delete", "path": action["path"], "error": err}
         if not path.exists() and not path.is_symlink():
             return {"kind": "delete", "path": action["path"],
@@ -474,7 +499,7 @@ def do_move(action: dict, ctx: RunContext) -> dict:
         src = resolve_rel(ctx.routine.dir, action["src"], ctx.write_roots())
         dst = resolve_rel(ctx.routine.dir, action["dst"], ctx.write_roots())
         for p, field in ((src, "src"), (dst, "dst")):
-            if err := _write_gate(ctx, p):
+            if err := _write_gate(ctx, p, creates=field == "dst"):
                 return {"kind": "move", "src": action["src"], "dst": action["dst"],
                         "error": f"{field}: {err}"}
         if not src.exists() and not src.is_symlink():

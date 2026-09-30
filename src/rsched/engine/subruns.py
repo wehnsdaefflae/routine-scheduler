@@ -163,44 +163,13 @@ class SubrunManager:
         if reason := self._model_reason(action):
             return {"kind": "subtask", "rejected": True,
                     "label": action.get("label") or default_label, "reason": reason}
-        action, gen_note = self._maybe_generate(dict(action))
         turns = action.get("turns")
         overrides = {"turns": int(turns)} if isinstance(turns, int) and turns > 0 else None
         sub = build_child(ctx, action, mode="sequential", default_label=default_label,
                           alloc_overrides=overrides, emit=ctx.transcript.event)
         self._start(sub)
         return {"kind": "subtask", "n": sub.n, "label": sub.label, "workflow": sub.workflow,
-                "note": gen_note, "started": True}
-
-    def _maybe_generate(self, action: dict) -> tuple[dict, str]:
-        """Resolve a `workflow: "generate"` request into a concrete library slug. When the
-        routine holds the `workflows: generate` capability and the budget allows, DRAFT a new
-        pattern for the subtask's brief (folding the generation call's spend into the run via
-        ctx.add_usage); otherwise fall back to the default pattern with a note. Returns
-        (action, note).
-        """
-        if action.get("workflow") != "generate":
-            return action, ""
-        ctx = self.parent.ctx
-        grants = self.parent.grants
-        if grants is None or not grants.may_generate_workflow():
-            action["workflow"] = None
-            return action, ("workflow generation is off for this routine (capability "
-                            "'workflows: generate') — used the default pattern")
-        remaining = ctx.tokens_remaining()
-        if remaining is not None and remaining < GEN_FLOOR_TOKENS:
-            action["workflow"] = None
-            return action, ("skipped workflow generation — token budget nearly spent; "
-                            "used the default pattern")
-        try:
-            from ..workflows.generate import generate
-
-            slug, _ = generate(ctx.server, action["prompt"], on_usage=ctx.add_usage)
-            action["workflow"] = slug
-            return action, f"generated a new pattern '{slug}' for this subtask"
-        except Exception as exc:
-            action["workflow"] = None
-            return action, f"workflow generation failed ({exc}) — used the default pattern"
+                "note": "", "started": True}
 
     # -- lifecycle (shared) ---------------------------------------------------------
 

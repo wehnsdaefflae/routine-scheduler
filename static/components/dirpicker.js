@@ -23,15 +23,21 @@ export function pickDirectory({ title = "Select a directory", start = "" } = {})
         el("span", { class: "dp-ic" }, icon), el("span", { class: "dp-name" }, name));
     }
 
+    // Only the NEWEST listing may paint: the opening listing still in flight when the reader
+    // types a path and presses go would otherwise land second and put the old folder back.
+    let latest = 0;
     async function load(path) {
+      const mine = ++latest;
       listBox.replaceChildren(el("div", { class: "muted small", style: "padding:8px" }, "loading…"));
       note.textContent = "";
       let data;
       try { data = await api(`/api/fs/list?path=${encodeURIComponent(path || "")}`); }
       catch (err) {
+        if (mine !== latest) return;
         listBox.replaceChildren(el("div", { class: "small", style: "padding:8px;color:var(--err)" }, err.message));
         return;
       }
+      if (mine !== latest) return;
       cur = data.path;
       pathInput.value = data.path;
       const rows = [];

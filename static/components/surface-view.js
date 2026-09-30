@@ -54,10 +54,6 @@ const plain = (eid) => String(eid ?? "").split(":").slice(1).join(":") || String
 // term, never a name: "bind *" is not an instruction to anybody.
 const named = (v) => (String(v ?? "") && String(v) !== "*" ? String(v) : null);
 
-// PROVENANCE, for the fixes whose act belongs to whoever switched the thing on: `domain` names
-// the domain a capability was inherited from, absent when the routine owns it outright.
-const fromDomain = (f) => named(f.domain);
-
 // A selector for the ONE control a fix names, addressed by the attribute the owning panel
 // stamps it with. Absent params yield null, which lands on the panel instead.
 const byAttr = (attr, value) => (value ? `[${attr}=${JSON.stringify(String(value))}]` : null);
@@ -84,20 +80,12 @@ const FIX = {
     where: "Permissions & capabilities", section: "sec-permissions",
     focus: byAttr("data-ability", plain(f.entity)) }),
   // The entity keeps its CLASS: `util:spawn` and `action:spawn` are two different things to
-  // hold. An uncovered capability has two ways out; only the covering half is always this
-  // routine's. DROPPING it belongs to whoever switched it on — a capability the routine owns
-  // goes off in the orphan card of the permissions panel, one a DOMAIN hands down survives this
-  // routine's save (the floor counts inherited permissions, because that capability is the
-  // domain's to drop) and goes off in the domain editor. `domain` on the fix carries that, so
-  // an inherited row names the domain rather than offering a switch that is not on this page.
-  cover_or_drop: (f) => (fromDomain(f)
-    ? { act: `hold a doc that requires ${f.entity}`,
-        where: "Permissions & capabilities", section: "sec-permissions",
-        alt: { act: `drop it from the ${fromDomain(f)} domain`,
-               where: "the Routines page", href: "#/routines" } }
-    : { act: `drop ${f.entity}, or hold a doc that requires it`,
-        where: "Permissions & capabilities", section: "sec-permissions",
-        focus: byAttr("data-drop", f.entity) }),
+  // hold. An uncovered capability has two ways out, both in the permissions panel: hold a doc
+  // that requires it, or drop it in that panel's orphan card, which is where this lands.
+  cover_or_drop: (f) => ({
+    act: `drop ${f.entity}, or hold a doc that requires it`,
+    where: "Permissions & capabilities", section: "sec-permissions",
+    focus: byAttr("data-drop", f.entity) }),
   grant: (f) => ({
     act: `expose or withhold ${plain(f.entity)}`,
     where: "Secret exposure", section: "sec-secret-exposure",
@@ -123,14 +111,12 @@ const FIX = {
   bind_connection: (f) => ({
     act: named(f.provider) ? `connect ${f.provider}` : "connect an account",
     where: "Connections", section: "sec-connections" }),
-  // A util is written by a RUN through write_util. The Library page offers "+ new" for rules,
-  // permissions and templates; for utils it offers none, because nothing authors one by hand.
-  // So the half a person performs is the other one — stop holding the name — and WHICH act
-  // that is depends on what holds it, exactly as `cover_or_drop` splits. A held doc that
-  // requires the util raises the name back at the next save, so the drop is not performable at
-  // all: the offer names that doc (`doc` on the fix) and lands on ITS card, the one control
-  // that settles the row. A capability the DOMAIN supplies survives this routine's save and
-  // comes off in the domain's editor. Only what this routine owns outright is dropped in the
+  // A util is written by a RUN through write_util. The Library page offers "+ new" for rules
+  // and permissions; for utils it offers none, because nothing authors one by hand. So the
+  // half a person performs is the other one — stop holding the name — and WHICH act that is
+  // depends on what holds it. A held doc that requires the util raises the name back at the next
+  // save, so the drop is not performable at all: the offer names that doc (`doc` on the fix) and
+  // lands on ITS card, the one control that settles the row. Otherwise the name is dropped in the
   // orphan card here. The half nobody can press rides along as words with no control behind
   // them, which is what a spec carrying neither a section nor an href renders as.
   install_util: (f) => {
@@ -139,10 +125,6 @@ const FIX = {
       return { act: `untick ${f.doc}, the doc that requires ${f.name}`,
                where: "Permissions & capabilities", section: "sec-permissions",
                focus: byAttr("data-ability", f.doc), alt };
-    }
-    if (fromDomain(f)) {
-      return { act: `drop ${f.name} from the ${fromDomain(f)} domain`,
-               where: "the Routines page", href: "#/routines", alt };
     }
     return { act: `drop ${f.name}`,
              where: "Permissions & capabilities", section: "sec-permissions",
@@ -155,7 +137,7 @@ const FIX = {
   // out and it is instance state every member fires on — rescheduling the lane to repair one
   // stale line here moves when the other members run — so it is the second offer, in the order
   // the CLI remedy words the pair. A lane carries a human name beside its id; the name is what
-  // the Routines page, which owns the lane, lists it by (docs/lanes-domains.md).
+  // the Routines page, which owns the lane, lists it by (docs/lanes-tags.md).
   //
   // The frequency select is locked in the lane-managed state this row is emitted under, so the
   // landing is the panel's own clear-cron control (`data-clear-cron`) — the one thing in there
@@ -305,7 +287,7 @@ export function surfaceView(host, slug, surface = null) {
     // a doc or a util; the rows with no source are the ones they already know about.
     for (const [key, rows] of [...groups].sort((a, b) => (a[0] ? 0 : 1) - (b[0] ? 0 : 1))) {
       body.append(
-        el("div", { class: "tpl-head" }, ...sourceLabel(key)),
+        el("div", { class: "surface-group-head" }, ...sourceLabel(key)),
         el("div", { class: "tablewrap" },
           el("table", { class: "list stack surface-table" }, el("tbody", {}, ...rows.map(row)))));
     }

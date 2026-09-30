@@ -9,8 +9,8 @@ surfaced only when a run burned a turn on an empty host list.
 
 This module is the forward reading of the dependency graph. It joins, per routine:
 
-- the EFFECTIVE config (domain inheritance already merged by the registry): held permissions,
-  bound rules, the capability mapping, grants, fs roots, machines, connections;
+- the routine's config: held permissions, bound rules, the capability mapping, grants, fs
+  roots, machines, connections;
 - the library's declarations: a permission's `requires:` (necessary, enforced by the cascade)
   and `expects:` (optional, presumed — legal on rules too, where `requires:` is a lint error);
 - the UTIL HEADERS of every reserved util the routine holds, walked transitively over `calls:`
@@ -36,7 +36,7 @@ The JOIN is here; the four things it joins are four modules, because a file that
 it touched. `surface_nodes` is the row vocabulary (severities, `_node`, the merge rule),
 `surface_needs` the declared needs (util secrets, util stores, `expects:`),
 `surface_schedule` the "what starts this routine" checks, `surface_caps` the capability
-coverage and where a drop can be performed. Each emits rows; this file decides what to ask
+coverage and the act that settles each gap. Each emits rows; this file decides what to ask
 and counts the verdict.
 """
 
@@ -44,7 +44,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from .surface_caps import _absent_util_node, _domain_capabilities, _uncovered_nodes
+from .surface_caps import _absent_util_node, _uncovered_nodes
 from .surface_needs import _expects_nodes, _fs_nodes, _secret_nodes
 from .surface_nodes import _ORDER, BLOCKS, INTERRUPTS, NOTE, _node, _one_row_per_entity
 from .surface_schedule import _phase_nodes, _schedule_nodes
@@ -53,17 +53,23 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
     from ..config.routine import RoutineConfig
 
 
-def _held_utils(cfg: RoutineConfig, catalog: list[dict]) -> list[str]:
-    """Every reserved util this routine may call: the names it holds, plus every util carrying
-    a gated TAG. Tag gating covers utils the library gains later, so it is read from the live
-    catalog rather than from the mapping.
+def _held_utils(cfg: RoutineConfig) -> list[str]:
+    """Every reserved util this routine may call — the names (and `name:verb` entries) it
+    holds.
     """
-    caps = cfg.capabilities or {}
-    names = set(caps.get("utils") or [])
-    tags = set(caps.get("util_tags") or [])
-    if tags:
-        names |= {u["name"] for u in catalog if tags & set(u.get("tags") or [])}
-    return sorted(names)
+    return sorted(set((cfg.capabilities or {}).get("utils") or []))
+
+
+def _util_held(held: set[str], entry: str) -> bool:
+    """Does a routine holding `held` honour a doc reserving `entry`? A bare grant covers
+    every verb; a verb grant under a doc reserving the whole util is a deliberate narrowing
+    (read-only access to a channel), which is still a grant and not a shortfall.
+    """
+    from ..grants import split_util_verb
+
+    bare, verb = split_util_verb(entry)
+    return (entry in held or bare in held
+            or (not verb and any(split_util_verb(h)[0] == bare for h in held)))
 
 
 def routine_surface(server: Any, cfg: RoutineConfig) -> dict:
@@ -98,20 +104,20 @@ def routine_surface(server: Any, cfg: RoutineConfig) -> dict:
     nodes += _schedule_nodes(server, cfg)
     nodes += _phase_nodes(server, cfg)
 
-    # The library's `requires:` and the DOMAIN's shared capability block, both read once. The
-    # util join below asks both — between them they decide where an absent util's drop can be
-    # performed at all — as do the checks after it.
+    # The library's `requires:`, read once: the util join below asks it (a covering doc decides
+    # an absent util's remedy), as do the checks after it.
     lib_requires = library_reads.requires(server.permissions_home)
-    domain = _domain_capabilities(server, cfg)
 
     # -- the util-header join: what the RESERVED utils this routine holds actually need ------
     # Utils already declare their secrets and their private filesystem stores; this is the
     # first thing that reads those declarations on behalf of the routine holding the util.
     secret_needs: dict[str, list[str]] = {}
     fs_needs: list[tuple[str, str, str, str]] = []
-    for name in _held_utils(cfg, catalog):
+    from ..grants import split_util_verb
+
+    for name in sorted({split_util_verb(u)[0] for u in _held_utils(cfg)}):
         if name not in by_name:
-            nodes.append(_absent_util_node(cfg, lib_requires, name, domain))
+            nodes.append(_absent_util_node(cfg, lib_requires, name))
             continue
         needs = utils_run.util_needs(lib_home, name)
         for secret in sorted(needs.secrets - needs.optional):
@@ -139,32 +145,14 @@ def routine_surface(server: Any, cfg: RoutineConfig) -> dict:
                            "main.md / stages/ / tuning.yaml are writable by its runs; "
                            "routine.yaml stays sealed", source={"doc": "recipe-authoring"}))
 
-    covered_utils = set(_held_utils(cfg, catalog))    # names AND everything a gated tag covers
-    from ..grants import capabilities_for
-    # The same mapping with NO doc applied — `capabilities_for` normalizes its base, so this is
-    # what the live config means once the absent keys have their defaults. Comparing the raise
-    # against it (rather than against the raw dict) is what keeps an unset key from reading as
-    # a shortfall.
-    normalized = capabilities_for([], lib_requires, base=dict(caps))
+    held_utils = set(_held_utils(cfg))
     for slug in cfg.permissions or []:
         req = lib_requires.get(slug) or {}
         missing = [a for a in req.get("actions") or [] if a not in (caps.get("actions") or [])]
-        missing += [f"util:{u}" for u in req.get("utils") or [] if u not in covered_utils]
-        # ...and every DIAL the doc requires. Asked by RAISING the live mapping through the one
-        # cascade instead of key by key: this check was written when `requires:` named actions
-        # and utils only, so every dial added since — `runs`, `workflows`, `util_tags`,
-        # `reminders` — fell straight through the guard whose whole job was to catch a held doc
-        # the capabilities do not honor. The adopt path had the identical blindness and shipped
-        # `reminders` "on by default" to zero of 32 routines with nothing anywhere to say so.
-        # A key the raise CHANGES is a key the live value sits below; a key it leaves alone is
-        # satisfied, including by a value above what the doc asks for. A dial added tomorrow
-        # lands here on its own, because the cascade returns it.
-        raised = capabilities_for([slug], lib_requires, base=dict(caps))
-        missing += [f"{k}={raised[k]}" for k in raised
-                    if k not in ("actions", "utils") and raised[k] != normalized[k]]
+        missing += [f"util:{u}" for u in req.get("utils") or [] if not _util_held(held_utils, u)]
         if missing:
             # The same list twice, once for each audience: `effect` says what it costs, `fix`
-            # hands the exact switches over so the offer can read "switch on runs=last"
+            # hands the exact switches over so the offer can read "switch on shell"
             # rather than "go and look".
             nodes.append(_node(f"permission:{slug}", "unsatisfied", BLOCKS,
                                "held, but its requires: are not switched on",
@@ -173,7 +161,7 @@ def routine_surface(server: Any, cfg: RoutineConfig) -> dict:
                                {"kind": "switch_on", "entity": slug, "missing": missing},
                                {"doc": slug}))
 
-    nodes += _uncovered_nodes(cfg, lib_requires, domain)
+    nodes += _uncovered_nodes(cfg, lib_requires)
     nodes = _one_row_per_entity(nodes)
 
     counts = {BLOCKS: 0, INTERRUPTS: 0, NOTE: 0}

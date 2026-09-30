@@ -49,10 +49,11 @@ class Transcript:
             self.on_event(obj)
 
     def header(self, *, run_id: str, routine: str, workflow: dict, orchestrator: dict,
-               depth: int = 0, parent: str | None = None) -> None:
+               depth: int = 0, parent: str | None = None, brief: str = "") -> None:
         self.write({"type": "header", "run_id": run_id, "routine": routine,
                     "workflow": workflow, "orchestrator": orchestrator,
-                    "started": now_iso(), "depth": depth, "parent": parent})
+                    "started": now_iso(), "depth": depth, "parent": parent,
+                    **({"brief": brief} if brief else {})})
 
     def event(self, type_: str, payload: dict, *, turn: int | None = None,
               usage: dict | None = None, **extra) -> dict:

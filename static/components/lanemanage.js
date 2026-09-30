@@ -10,11 +10,11 @@
 // RECORD {slug}. A flow with an inbound and an outbound end brackets the lane (D90):
 // an inbound-router member placed first in the order, an outbound-sender member placed last.
 //
-// A lane decides WHEN and IN WHAT ORDER — nothing else. The shared config block, the
-// shared store and the boundary domain notes rest on are a DOMAIN (docs/lanes-domains.md) —
-// named by each routine's own routine.yaml and edited in the Domains section of this page.
-// That is why there is no config control in this editor; it is also what makes deleting a
-// lane safe: its members go back to their own crons and nothing else about them changes.
+// A lane decides WHEN and IN WHAT ORDER — nothing else (docs/lanes-tags.md). What a member may
+// do and reach — its settings, its roots, the shared stores among them — is its own
+// routine.yaml, edited on its own page. That is why there is no config control in this editor;
+// it is also what makes deleting a lane safe: its members go back to their own crons and
+// nothing else about them changes.
 //
 // A routine belongs to at most ONE lane and the store enforces it, so the member pickers here
 // offer only unclaimed routines — a choice whose only possible outcome is a 400 is not one.
@@ -270,13 +270,12 @@ export function openLaneEditor(lane, data, { reload }) {
       sched.node,
       el("div", { class: "row mt" }, schedBtn)));
 
-    // A lane is timing; what members SHARE is a domain, named per routine — so this editor
-    // points at that surface rather than carrying a control that would have to write several
-    // routines' config from here.
-    body.append(el("div", { class: "muted small mt", "data-lane-domain-note": "" },
-      "Permissions, rules, secrets, roots and the shared store are a DOMAIN, not a lane. "
-      + "A routine names its domain in its own config; the Domains section of the Routines "
-      + "page edits what that domain shares."));
+    // A lane is timing; what a member may do and reach is its own config — so this editor
+    // points there rather than carrying a control that would have to write several routines'
+    // config from here.
+    body.append(el("div", { class: "muted small mt", "data-lane-config-note": "" },
+      "Permissions, rules, secrets, roots and shared stores are each member's own settings, "
+      + "not the lane's — change them on the member's own page."));
 
     // delete — closes the editor; the dashboard reloads via onClose
     const del = el("button", { class: "btn small danger" }, "delete lane");

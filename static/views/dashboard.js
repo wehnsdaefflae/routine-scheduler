@@ -3,14 +3,12 @@
 // question is visually loud. Meta routines are tucked away by default; tags, states and
 // free text filter; every stat sorts; a table view sits one toggle away.
 //
-// It is also the surface for the two structures a routine sits in (docs/lanes-domains.md):
-// LANES are rows in the table, because a lane is a firing order over routines and belongs
-// beside them; DOMAINS get their own section, because a domain is a config surface with no
-// place in a schedule. A routine has at most one of each.
+// It is also the lane-management surface (docs/lanes-tags.md): LANES are rows in the table,
+// because a lane is a firing order over routines and belongs beside them. A routine is in at
+// most one.
 
 import { api } from "/static/api.js";
 import { activityFeed } from "/static/components/activityfeed.js";
-import { domainsSection } from "/static/views/dashboard-domains.js";
 import { routineRows } from "/static/views/dashboard-rows.js";
 import { loadQuota } from "/static/components/quota.js";
 import { lanesToolbar } from "/static/components/lanemanage.js";
@@ -24,7 +22,6 @@ const SORT_KEY = "rsched_dash_sort";
 const DIR_KEY = "rsched_dash_dir";
 const WEEK_KEY = "rsched_dash_week";
 const ACTIVITY_KEY = "rsched_dash_activity";
-const DOMAINS_KEY = "rsched_dash_domains";
 
 // ---- sort keys: [label, value-fn, descending?] -------------------------------------------------
 const tokensOf = (c) => (c.last_run?.usage?.in || 0) + (c.last_run?.usage?.out || 0);
@@ -45,9 +42,9 @@ const STATE_BUCKETS = {
   waiting: (c) => c.active_state === "waiting_user" || (c.open_questions || 0) > 0,
   ok: (c) => !c.active_state && c.last_run?.state === "finished",
   failed: (c) => !c.active_state && ["failed", "aborted"].includes(c.last_run?.state),
-  // FINISHED before DISABLED, never both: a routine that reached its final goal is a different
+  // FINISHED before DISABLED, never both: a routine that reached its finish line is a different
   // thing from one you switched off — lumping them lost the only state that says "this job is
-  // over". `retired` is derived from the goal document; `enabled` is your switch.
+  // over". `retired` is derived from the finish line; `enabled` is your switch.
   finished: (c) => c.retired,
   disabled: (c) => !c.enabled && !c.retired,
 };
@@ -81,9 +78,9 @@ export async function render(view) {
   // redraws from truth. Lane-membership PATCHes always carry the FULL member record list —
   // the API replaces it wholesale — and reschedules ride the same schedule.friendly PATCH
   // the editors use; a custom cron has no draggable shape and is refused with a pointer to
-  // its editor. A drop moves only TIMING: a routine's domain — and therefore what it shares —
-  // is untouched by every one of these. `cards`/`serverTz` bind lazily — drops only happen
-  // after load() filled them.
+  // its editor. A drop moves only TIMING: what a routine may do and reach is untouched by
+  // every one of these. `cards`/`serverTz` bind lazily — drops only happen after load()
+  // filled them.
   const fmtFireAt = new Intl.DateTimeFormat(undefined, { weekday: "short", hour: "2-digit", minute: "2-digit" });
   const nameOf = (slug) => cards.find((c) => c.slug === slug)?.name || slug;
   const memberRecords = (order) => order.map((s) => ({ slug: s }));
@@ -136,22 +133,6 @@ export async function render(view) {
   // editors are overlays for the same reason.
   const lanesBar = el("div", { class: "panel mt", style: "padding:8px 12px" });
   const body = el("div", { class: "mt" });
-  // The other axis (docs/lanes-domains.md): what a set of routines SHARES — one config block,
-  // one store, one notes boundary. Its own section rather than a column on the table, because
-  // a domain has nothing to do with when anything fires. OPEN by default: config nobody ever
-  // looks at is config that drifts, where holding ONE copy of what its members would otherwise
-  // each carry is the domain's whole job. Each domain's editor is heavy (it mounts the routine
-  // page's own controls), so it builds only when someone asks for that one.
-  // CLOSED by default, like the activity feed below it: six domains' worth of edit / rename /
-  // delete sat above the routine list, so the page opened on an administration surface for a
-  // thing most visits never touch. Its own head still names it, and the choice is remembered.
-  const domainsPanel = el("details", { class: "panel weekpanel mt", "data-domains": "",
-    ...(storage.get(DOMAINS_KEY) === "open" ? { open: true } : {}) },
-    el("summary", {}, "domains — the config, secrets and store a set of routines shares"));
-  const domainsView = domainsSection(domainsPanel, { reload: () => load() });
-  domainsPanel.append(domainsView.body);
-  domainsPanel.addEventListener("toggle",
-    () => storage.set(DOMAINS_KEY, domainsPanel.open ? "open" : "closed"));
   // The cross-routine activity feed (the former Log page): every run, filterable, with the
   // transcript tailing inline. Collapsed by default and lazily started — a closed section
   // neither fetches nor polls.
@@ -166,7 +147,7 @@ export async function render(view) {
     if (activityPanel.open) feed.start();
   });
   if (activityPanel.open) feed.start();
-  view.append(banner, weekPanel, filterBar, lanesBar, body, domainsPanel, activityPanel);
+  view.append(banner, weekPanel, filterBar, lanesBar, body, activityPanel);
   body.append(skeleton(), skeleton(), skeleton());
 
   let cards = [], llmReady = true, firesBySlug = new Map(), oneShotsBySlug = new Map();
@@ -178,11 +159,8 @@ export async function render(view) {
   let laneBySlug = new Map();
   let lanesById = new Map();   // id -> the raw record (the lane rows' editor input)
   let lanesOrdered = [];   // [{id, name, members(slugs), …}] in fire order (F271)
-  let domains = [];   // the /api/domains records, each already carrying its resolved members
-  let domainBySlug = new Map();   // slug -> its domain record (at most one, by the same rule)
   let lastTagSig = null;   // F229: only rebuild the filter bar when the tag set changes
   let lastLaneSig = null;  // same rule for the lanes bar: its select must survive refreshes
-  let domainsSeen = false;   // the domains payload has arrived at least once
   const states = new Set();
   // D72: the table IS the default (operator, 2026-08-05) — denser, sortable, and where the
   // lane rows live. The card grid stays one toggle away and a user's choice persists.
@@ -252,13 +230,11 @@ export async function render(view) {
   const rows = routineRows({
     llmReady: () => llmReady,
     laneFor: (slug) => laneBySlug.get(slug),
-    domainFor: (slug) => domainBySlug.get(slug),
     laneRecord: (id) => lanesById.get(id),
     lanesOrdered: () => lanesOrdered,
     laneData: () => laneData,
     reload: () => load(),
     repaint: () => renderBody(),
-    revealDomain: (id) => domainsView.reveal(id),
     // F208: re-clicking the active column reverses it; a new column starts at its natural
     // direction. The rule lives with the sort STATE, which is this page's, not a renderer's.
     sortArrow: (key) => (key === sortKey
@@ -297,32 +273,28 @@ export async function render(view) {
   }
 
   // Run events change routine cards, daemon status and live lane progress.
-  // Domains and the week strip remain cached on light refreshes; /api/lanes also
-  // carries the chain cursor and must refresh on run transitions. Refetching domains per bus tick
-  // was the storm: /api/domains alone cost the daemon 4 s of parsing per request and was
-  // requested every 600 ms while runs were active (2026-09-12, 249 calls averaging 67 s).
-  let lastSched, lastDomainData, lastFullLoadAt = 0;
+  // The week strip remains cached on light refreshes; /api/lanes also carries the chain cursor
+  // and must refresh on run transitions. A config-shaped read refetched per bus tick is a storm:
+  // one such endpoint cost the daemon 4 s of parsing per request and was requested every 600 ms
+  // while runs were active (2026-09-12, 249 calls averaging 67 s).
+  let lastSched, lastFullLoadAt = 0;
   async function load({ light = false } = {}) {
-    let routines, status, sched, domainData;
+    let routines, status, sched;
     try {
-      if (light && lastSched !== undefined && lastDomainData !== undefined && laneData) {
+      if (light && lastSched !== undefined && laneData) {
         [routines, status, laneData] = await Promise.all([
           api("/api/routines"), api("/api/status").catch(() => ({})),
           api("/api/lanes").catch(() => null)]);
         sched = lastSched;
-        domainData = lastDomainData;
       } else {
-        [routines, status, sched, laneData, domainData] = await Promise.all([
+        [routines, status, sched, laneData] = await Promise.all([
           api("/api/routines"), api("/api/status").catch(() => ({})),
           api("/api/schedule/week").catch(() => null),
-          // Lane and domain membership are a nicety on this page — a hiccup on either fetch
-          // must never blank the routines list, so each degrades to "none" rather than
-          // throwing (R107, F269).
+          // Lane membership is a nicety on this page — a hiccup on that fetch must never blank
+          // the routines list, so it degrades to "none" rather than throwing (R107, F269).
           api("/api/lanes").catch(() => null),
-          api("/api/domains").catch(() => null),
         ]);
         lastSched = sched;
-        lastDomainData = domainData;
         lastFullLoadAt = Date.now();
       }
     } catch (err) {
@@ -350,18 +322,6 @@ export async function render(view) {
     for (const l of laneData?.lanes || []) {
       for (const m of l.members || []) laneBySlug.set(m.slug, l);
     }
-    // The domain list arrives with its members already resolved from the routines that name
-    // it, so nothing here has to join two payloads to know who is in one.
-    if (domainData) {
-      domains = domainData.domains || [];
-      domainBySlug = new Map();
-      for (const d of domains) for (const slug of d.members || []) domainBySlug.set(slug, d);
-      // Same only-on-change rule as the bars, for a stronger reason: this section can hold an
-      // OPEN config editor; a rebuild on every bus tick would close it under the operator.
-      if (domainsView.changed(domains)) domainsView.render(domains);
-      domainsSeen = true;
-    }
-    domainsPanel.hidden = !domainsSeen;   // nothing fetched yet — claim nothing
     firesBySlug = new Map((sched?.routines || []).map((r) => [r.slug, r.fires.map((t) => +new Date(t))]));
     oneShotsBySlug = new Map((sched?.routines || []).map((r) => [r.slug, (r.one_shots || []).map((t) => +new Date(t))]));
     llmReady = status.llm_ready !== false;
@@ -424,7 +384,7 @@ export async function render(view) {
   const LIGHT = new Set(["run_started", "run_finished", "run_state"]);
   // A reconnect means "anything may have moved while the stream was down" — but during a
   // daemon restart the bus reconnects on capped backoff, and a FULL load re-runs this page's
-  // two heaviest reads (/api/schedule/week, /api/domains) exactly while the daemon is
+  // heaviest read (/api/schedule/week) exactly while the daemon is
   // coldest. Config-shaped state does not move minute to minute, so a reconnect reloads in
   // full only when the last full read is genuinely old; otherwise it catches up on run state
   // like any other run event.

@@ -66,9 +66,9 @@ class RoutineInfo:
     problems: list[str]
     runs: list[RunInfo]                  # newest first
     open_questions: list[dict]
-    # RETIRED: every goal-scoped stopping condition is met, so this routine is finished for good
-    # (engine/stopping.py). Derived, never written — the scheduler builds no fire table entry for
-    # it and lane chains skip it; clearing a goal condition brings it straight back. Distinct
+    # RETIRED: the routine reached its finish line, so it is finished for good
+    # (engine/finishline.py). Derived, never written — the scheduler builds no fire table entry
+    # for it and lane chains skip it; editing the finish line brings it straight back. Distinct
     # from `cfg.enabled`, which stays the user's switch: a retired routine is DONE, a disabled one
     # was switched off. See engine/goalreached.py.
     retired: bool = False
@@ -83,7 +83,7 @@ class RoutineInfo:
         path — schedule, boot catch-up, lane chain, event trigger, one-shot.
 
         Two different "no"s: `enabled` is the user's switch, `retired` is the routine's own
-        final goal being met. `retired` used to be honoured by the schedule and the lane chain
+        finish line being reached. `retired` used to be honoured by the schedule and the lane chain
         alone, so a routine the system calls DONE still fired on a report trigger or an earlier
         run's `schedule_run` — spending a run re-asserting a met goal and re-filing the
         retirement proposal that is already waiting on the Decisions page.
@@ -243,17 +243,10 @@ def info(server: ServerConfig, home: Path, slug: str) -> RoutineInfo | None:
 
 
 def _load_routine_memo(d: Path) -> tuple[RoutineConfig | None, list[str]]:
-    # Config, tuning AND the domain store all feed the parsed RoutineConfig, so an edit to any
-    # of the three must miss the memo. Tuning, because a slider move (or the improver
-    # re-levelling deliberation) changes the config without touching routine.yaml. The domain
-    # store, because `load_routine` merges the shared block UNDER the routine's own keys: a
-    # domain edit changes what every member effectively holds while no member's own file moves,
-    # so a memo keyed on the member alone answers with the pre-edit config — the console showing
-    # a routine's permissions, machines and provenance as they were before the save, with
-    # nothing to say the answer is stale. A RUN never saw this (engine/runtime calls
-    # load_routine directly), which is exactly why only the reader lied.
-    fp = fingerprint([d / "routine.yaml", d / "tuning.yaml",
-                      d.parent / ".control" / "domains.json"])
+    # Config AND tuning both feed the parsed RoutineConfig, so an edit to either must miss the
+    # memo — tuning because a slider move (or the improver re-levelling deliberation) changes
+    # the config without touching routine.yaml.
+    fp = fingerprint([d / "routine.yaml", d / "tuning.yaml"])
     hit = _cfg_memo.get(str(d))
     if hit is None or hit[0] != fp:
         hit = (fp, load_routine(d))
@@ -263,13 +256,16 @@ def _load_routine_memo(d: Path) -> tuple[RoutineConfig | None, list[str]]:
 
 
 def _retired_from_goal(d: Path) -> bool:
-    # keyed on the goal document alone — the ONLY thing that can change the answer, and it is
-    # written by the web (a user edit) and the engine's accounting (a finish), never elsewhere
-    fp = fingerprint([d / "state" / "stopping.json"])
+    # keyed on the finish line AND the date: the document is written by the web (an edit) and
+    # the engine's accounting (a finish); a date outcome or the `until` date is reached by
+    # the calendar with no write at all
+    from .engine import finishline
+
+    today = finishline.today()
+    fp = (fingerprint([finishline.path(d)]), today)
     hit = _retired_memo.get(str(d))
     if hit is None or hit[0] != fp:
-        from .engine.stopping import goal_reached
-        hit = (fp, goal_reached(d))
+        hit = (fp, finishline.goal_reached(d, today))
         _retired_memo[str(d)] = hit
     return hit[1]
 

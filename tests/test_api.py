@@ -214,9 +214,9 @@ def test_routine_cards_and_detail(client):
     assert detail["workflow_ref"]["slug"] == "test-flow"   # workflow is REFERENCED, not a routine file
     assert isinstance(detail["permissions"], list)   # hermetic test library → may be empty
     assert all("requires" in p and "active" in p for p in detail["permissions"])
-    assert set(detail["capabilities"]["active"]) == {"actions", "utils", "util_tags", "confirm",
+    assert set(detail["capabilities"]["active"]) == {"actions", "utils", "confirm",
                                                      "rule_confirm", "remind_confirm", "runs",
-                                                     "workflows", "reminders"}
+                                                     "reminders"}
     assert detail["runs"][0]["state"] == "finished"
     assert c.get("/api/routines/nope").status_code == 404
 
@@ -961,7 +961,7 @@ def test_answer_run_now_fires_one_manual_run_and_a_plain_answer_fires_nothing(cl
     fired: list[tuple[str, str]] = []
     runner = c.app.state.runner
 
-    async def fake_fire(cfg, *, reason="schedule"):
+    async def fake_fire(cfg, *, reason="schedule", brief=""):
         fired.append((cfg.slug, reason))
         return f"{cfg.slug}:20260912-120000"
 
@@ -1057,38 +1057,29 @@ def test_routine_detail_reports_lane_managed_state(client):
     assert managed == {"id": lane["id"], "name": "Morning"}
 
 
-def test_domain_joins_and_leaves_through_the_ordinary_config_patch(client):
-    """The routine page's Domain picker saves through the SAME PATCH as every other setting,
-    because membership lives in the routine's own routine.yaml — that is what makes "at most
-    one domain" a fact of the file; `GET /api/domains` reads its members back from there
-    (docs/lanes-domains.md). `""` leaves by REMOVING the key, so "in no domain" keeps its one
-    spelling. An id no domain has is a 400: saving it would leave the routine inheriting
-    nothing while reading everywhere as being in a domain.
+def test_hub_tab_is_identity_saved_through_the_ordinary_config_patch(client):
+    """The Steward-hub heading is identity like the name: the routine page's Hub tab input
+    saves through the SAME PATCH as every other setting, trimmed and capped — a heading, not a
+    sentence. `""` removes the key, so "no heading" keeps its one spelling.
 
-    This is also the field-behind-a-classification guard from the endpoint's side.
-    `tests/test_configflow.py` checks only that every PATCH field declares a half, so a half
-    declared for a field the model never grew is invisible there — and `domain` was exactly
-    that: classified NEXT_RUN, forbidden by `extra="forbid"`, 422 on every save.
+    This is also the field-behind-a-classification guard from the endpoint's side:
+    `tests/test_configflow.py` checks that every PATCH field declares a half; this checks
+    the field the half is declared for is one the model and the detail payload actually carry.
     """
-    from rsched import domains
     c, tmp = client
-    home = tmp / "routines"
-    dom = domains.create(home, name="FAU", config={"permissions": ["memory"]})
-    assert c.get("/api/routines/apir").json()["domain"] == ""
+    path = tmp / "routines" / "apir" / "routine.yaml"
+    assert c.get("/api/routines/apir").json()["hub_tab"] == ""
 
-    r = c.patch("/api/routines/apir", json={"domain": dom["id"]})
-    assert r.status_code == 200 and r.json()["updated"] == ["domain"]
-    assert c.get("/api/routines/apir").json()["domain"] == dom["id"]
-    assert domains.members(home, dom["id"]) == ["apir"]
+    r = c.patch("/api/routines/apir", json={"hub_tab": "  FAU  "})
+    assert r.status_code == 200 and r.json()["updated"] == ["hub_tab"]
+    assert c.get("/api/routines/apir").json()["hub_tab"] == "FAU"
+    assert yaml.safe_load(path.read_text(encoding="utf-8"))["hub_tab"] == "FAU"
 
-    bad = c.patch("/api/routines/apir", json={"domain": "dom-nosuch"})
-    assert bad.status_code == 400 and "dom-nosuch" in str(bad.json()["detail"])
-    assert c.get("/api/routines/apir").json()["domain"] == dom["id"]   # nothing was saved
+    assert c.patch("/api/routines/apir", json={"hub_tab": "x" * 61}).status_code == 422
+    assert c.get("/api/routines/apir").json()["hub_tab"] == "FAU"      # nothing was saved
 
-    assert c.patch("/api/routines/apir", json={"domain": ""}).status_code == 200
-    raw = yaml.safe_load((home / "apir" / "routine.yaml").read_text(encoding="utf-8"))
-    assert "domain" not in raw
-    assert domains.members(home, dom["id"]) == []
+    assert c.patch("/api/routines/apir", json={"hub_tab": ""}).status_code == 200
+    assert "hub_tab" not in yaml.safe_load(path.read_text(encoding="utf-8"))
 
 
 def test_allow_once_gates_on_once_grantable_classes_at_the_endpoint(client):
@@ -1134,16 +1125,15 @@ def test_allow_once_gates_on_once_grantable_classes_at_the_endpoint(client):
 
 def test_allow_forever_on_a_capability_entity_rides_the_cascade(client):
     """D97=B (F360): allow_forever for a reserved util activates its covering conduct doc
-    but floors capabilities to the NAMED util only — the doc's sibling utils and tag
-    classes stay OFF (one `util:signal` click used to hand a routine every messenger).
+    but floors capabilities to the NAMED util only — the doc's sibling utils stay OFF (one
+    `util:signal` click used to hand a routine every messenger).
     The permissions editor's full save keeps the raise; this click-path must not."""
     c, tmp = client
     routines = tmp / "routines"
     perms = tmp / "library" / "permissions"
     perms.mkdir(parents=True, exist_ok=True)
     (perms / "messaging-discord.md").write_text(
-        "---\ntags: [a, b, c]\nrequires:\n  utils: [discord, signal]\n"
-        "  util_tags: [messaging]\n---\n"
+        "---\ntags: [a, b, c]\nrequires:\n  utils: [discord, signal]\n---\n"
         "# permission: discord messaging\nbody\n", encoding="utf-8")
     pending = routines / "apir" / "questions" / "pending"
     pending.mkdir(parents=True, exist_ok=True)
@@ -1157,7 +1147,6 @@ def test_allow_forever_on_a_capability_entity_rides_the_cascade(client):
     assert "messaging-discord" in raw["permissions"]
     assert "discord" in raw["capabilities"]["utils"]
     assert "signal" not in raw["capabilities"]["utils"]           # sibling stays off
-    assert "messaging" not in (raw["capabilities"].get("util_tags") or [])  # class too
 
 
 def test_permissions_put_persists_remove_util_under_its_canonical_source(client):
@@ -2011,8 +2000,8 @@ def test_items_page_reflects_answered_decision_after_consumption(client):
 
 
 def test_post_rules_binds_and_unbinds_general_rules(client):
-    """The user's post-creation rule switch: routine.yaml's `rules:` is the state, main.md's
-    Standing-practices tail is derived from it, NOTHING is copied into the routine dir, and an
+    """The user's post-creation rule switch: routine.yaml's `rules:` is the state, NOTHING is
+    copied into the routine dir or its recipe (the prompt names each held rule at boot), and an
     unknown slug is a 400 rather than a silent skip (the picker offers only real ones, so an
     unknown slug means a stale client).
     """
@@ -2027,14 +2016,13 @@ def test_post_rules_binds_and_unbinds_general_rules(client):
     assert r.status_code == 200, r.text
     assert r.json()["added"] == ["alpha"] and "alpha" in r.json()["rules"]
     assert not (rdir / "rules").exists()          # one copy only, and it is the library's
-    assert "- `alpha` — the first principle" in (rdir / "main.md").read_text(encoding="utf-8")
+    assert "alpha" not in (rdir / "main.md").read_text(encoding="utf-8")
     assert c.get("/api/routines/apir").json()["rules"] == ["alpha"]
     # re-binding is a no-op, not a duplicate or an error
     assert c.post("/api/routines/apir/rules", json={"add": ["alpha"]}).json()["added"] == []
-    # unbinding prunes the derived tail with it
     out = c.post("/api/routines/apir/rules", json={"remove": ["alpha"]})
     assert out.json()["removed"] == ["alpha"]
-    assert "`alpha`" not in (rdir / "main.md").read_text(encoding="utf-8")
+    assert c.get("/api/routines/apir").json()["rules"] == []
     bad = c.post("/api/routines/apir/rules", json={"add": ["ghost"]})
     assert bad.status_code == 400 and "ghost" in bad.text
 
@@ -2044,8 +2032,8 @@ def test_patch_binds_rules_via_config_patch(client):
     decision carrying `config_patch: {"rules": [...]}`) reaches routine.yaml through the
     generic PATCH, not only the dedicated /rules picker. Before F392 the `rules` key hit
     RoutinePatch's extra=forbid and 422'd — the Decisions page rendered `[object Object]`
-    and the operator-approved binding silently never landed. Rules REPLACE wholesale here,
-    the derived main.md tail resyncs, and an unknown slug is a legible 400.
+    and the operator-approved binding silently never landed. Rules REPLACE wholesale here and
+    an unknown slug is a legible 400.
     """
     c, tmp = client
     rules_home = tmp / "library" / "rules"
@@ -2060,16 +2048,13 @@ def test_patch_binds_rules_via_config_patch(client):
     assert "rules" in r.json()["updated"]
     assert c.get("/api/routines/apir").json()["rules"] == ["alpha"]
     assert not (rdir / "rules").exists()          # slugs only, no library copy into the routine
-    assert "- `alpha` — the first principle" in (rdir / "main.md").read_text(encoding="utf-8")
+    assert "alpha" not in (rdir / "main.md").read_text(encoding="utf-8")
     # REPLACE wholesale: sending both sets both, in order
     assert c.patch("/api/routines/apir", json={"rules": ["alpha", "beta"]}).status_code == 200
     assert c.get("/api/routines/apir").json()["rules"] == ["alpha", "beta"]
-    main = (rdir / "main.md").read_text(encoding="utf-8")
-    assert "`alpha`" in main and "`beta`" in main
-    # an empty list unbinds all and prunes the derived tail
+    # an empty list unbinds all
     assert c.patch("/api/routines/apir", json={"rules": []}).status_code == 200
     assert c.get("/api/routines/apir").json()["rules"] == []
-    assert "`alpha`" not in (rdir / "main.md").read_text(encoding="utf-8")
     # an unknown slug is a legible 400, never the opaque extra=forbid 422
     bad = c.patch("/api/routines/apir", json={"rules": ["ghost"]})
     assert bad.status_code == 400 and "ghost" in bad.text
@@ -2086,90 +2071,33 @@ def test_put_permissions_cascades_capabilities(client):
     (perms_home / "messaging-discord.md").write_text(
         "---\ntags: [a, b, c]\nrequires:\n  utils: [discord]\n---\n"
         "# permission: discord messaging\nbody\n", encoding="utf-8")
-    (perms_home / "memory.md").write_text(
-        "---\ntags: [a, b, c]\nrequires:\n  actions: [memory_read, memory_write]\n---\n"
-        "# permission: memory — notebook\nbody\n", encoding="utf-8")
-    # ask for memory_read WITHOUT holding the memory permission → floored away (D8)
+    (perms_home / "scheduling.md").write_text(
+        "---\ntags: [a, b, c]\nrequires:\n  actions: [schedule_run]\n---\n"
+        "# permission: scheduling — one-shot runs\nbody\n", encoding="utf-8")
+    # ask for schedule_run WITHOUT holding the scheduling permission → floored away (D8)
     r = c.put("/api/routines/apir/permissions",
               json={"active": ["messaging-discord", "ghost"],
-                    "capabilities": {"actions": ["memory_read"], "confirm": "creations"}})
+                    "capabilities": {"actions": ["schedule_run"], "confirm": "creations"}})
     assert r.status_code == 200
     body = r.json()
     assert body["active"] == ["messaging-discord"]           # unknown doc slugs dropped
     assert body["capabilities"]["utils"] == ["discord"]  # activation cascade (raise)
-    assert body["capabilities"]["actions"] == []         # orphan action floored (no memory perm)
+    assert body["capabilities"]["actions"] == []         # orphan action floored (no permission)
     assert body["capabilities"]["confirm"] == "creations"  # user policy dial preserved
     raw = yaml.safe_load((tmp / "routines" / "apir" / "routine.yaml").read_text())
     assert raw["permissions"] == ["messaging-discord"]
     assert raw["capabilities"] == body["capabilities"]
-    # holding the memory permission grants its actions (the means of that permission)
+    # holding the scheduling permission grants its action (the means of that permission)
     r2 = c.put("/api/routines/apir/permissions",
-               json={"active": ["messaging-discord", "memory"],
+               json={"active": ["messaging-discord", "scheduling"],
                      "capabilities": {"confirm": "creations"}})
     assert r2.status_code == 200
     caps2 = r2.json()["capabilities"]
-    assert set(caps2["actions"]) == {"memory_read", "memory_write"} and caps2["utils"] == ["discord"]
+    assert caps2["actions"] == ["schedule_run"] and caps2["utils"] == ["discord"]
     # junk capabilities from the client are a 422, not a silent drop
     bad = c.put("/api/routines/apir/permissions",
                 json={"active": [], "capabilities": {"actions": "write_util"}})
     assert bad.status_code == 422
-
-
-def test_saving_permissions_does_not_flatten_the_domain_into_the_member(client):
-    """F489, reported by the operator 2026-09-15: he unticked `workflow-generation` on a
-    domained routine, pressed save, and the checkbox came back.
-
-    The panel is built from the EFFECTIVE config, so it posts back the docs the DOMAIN
-    supplies too. Writing that verbatim made the member's own file own every inherited doc —
-    and a member's own key always wins, so the domain could never reach it again. Worse, the
-    same save copied the domain's capability lists down and the member's explicit dials went
-    with them (measured: effective `runs` none → last, a WIDENING from a save meant to narrow).
-
-    So the save records only what the MEMBER decided, and the response says which half is
-    which — the untick of an inherited doc is a no-op here, and the payload marks that row
-    inherited so the UI can send the user to the domain's editor instead.
-    """
-    from rsched import domains
-
-    c, tmp = client
-    perms_home = tmp / "library" / "permissions"
-    perms_home.mkdir(parents=True, exist_ok=True)
-    for slug in ("workflow-generation", "memory"):
-        (perms_home / f"{slug}.md").write_text(
-            f"---\ntags: [a, b, c]\n---\n# permission: {slug} — doc\nbody\n", encoding="utf-8")
-    # a domain that supplies one doc and one capability list entry …
-    home = tmp / "routines"
-    did = domains.create(home, name="FAU",
-                         config={"permissions": ["workflow-generation"],
-                                 "capabilities": {"actions": ["detach"]}})["id"]
-    cfg_path = home / "apir" / "routine.yaml"
-    raw = yaml.safe_load(cfg_path.read_text())
-    raw["domain"] = did
-    cfg_path.write_text(yaml.safe_dump(raw), encoding="utf-8")
-
-    # … and a member whose panel therefore shows the inherited doc as held
-    detail = c.get("/api/routines/apir").json()
-    rows = {p["slug"]: p for p in detail["permissions"]}
-    assert rows["workflow-generation"]["active"] is True
-    assert rows["workflow-generation"]["inherited"] == "FAU"      # the row says WHERE from
-    assert "inherited" not in rows["memory"]
-
-    # the client posts back everything it saw held, inherited doc included
-    r = c.put("/api/routines/apir/permissions",
-              json={"active": ["memory", "workflow-generation"], "capabilities": {}})
-    assert r.status_code == 200, r.text
-    body = r.json()
-    assert body["own"] == ["memory"]                     # only what the member decided
-    assert body["inherited"] == ["workflow-generation"]  # …and what it did not (R102 honesty)
-    assert body["active"] == ["memory", "workflow-generation"]   # the EFFECTIVE state, unchanged
-    saved = yaml.safe_load(cfg_path.read_text())
-    assert saved["permissions"] == ["memory"]            # the domain stayed the domain's
-    assert "detach" not in (saved["capabilities"].get("actions") or [])
-
-    # and the untick of an inherited doc changes nothing here — it is the domain's to remove
-    r2 = c.put("/api/routines/apir/permissions", json={"active": ["memory"], "capabilities": {}})
-    assert r2.status_code == 200
-    assert yaml.safe_load(cfg_path.read_text())["permissions"] == ["memory"]
 
 
 def test_patch_routine_applies_permissions_through_the_canonical_resolve(client):
@@ -2187,75 +2115,30 @@ def test_patch_routine_applies_permissions_through_the_canonical_resolve(client)
     (perms_home / "messaging-discord.md").write_text(
         "---\ntags: [a, b, c]\nrequires:\n  utils: [discord]\n---\n"
         "# permission: discord messaging\nbody\n", encoding="utf-8")
-    (perms_home / "memory.md").write_text(
-        "---\ntags: [a, b, c]\nrequires:\n  actions: [memory_read, memory_write]\n---\n"
-        "# permission: memory — notebook\nbody\n", encoding="utf-8")
+    (perms_home / "scheduling.md").write_text(
+        "---\ntags: [a, b, c]\nrequires:\n  actions: [schedule_run]\n---\n"
+        "# permission: scheduling — one-shot runs\nbody\n", encoding="utf-8")
     # the key used to be refused outright — that is what made the decision unappliable
     r = c.patch("/api/routines/apir",
-                json={"permissions": ["memory", "ghost"],
+                json={"permissions": ["scheduling", "ghost"],
                       "capabilities": {"confirm": "creations"}})
     assert r.status_code == 200, r.text
     # honesty gate: the apply button verifies every key it sent against `updated`
     assert set(r.json()["updated"]) >= {"permissions", "capabilities"}
     raw = yaml.safe_load((tmp / "routines" / "apir" / "routine.yaml").read_text())
-    assert raw["permissions"] == ["memory"]                      # unknown doc slug dropped
-    assert set(raw["capabilities"]["actions"]) == {"memory_read", "memory_write"}  # raised
+    assert raw["permissions"] == ["scheduling"]                  # unknown doc slug dropped
+    assert raw["capabilities"]["actions"] == ["schedule_run"]    # raised
     assert raw["capabilities"]["utils"] == []                    # no discord perm → floored (D8)
     assert raw["capabilities"]["confirm"] == "creations"         # user policy dial preserved
     # capabilities alone keeps the held docs and re-floors against them
     r2 = c.patch("/api/routines/apir", json={"capabilities": {"utils": ["discord"]}})
     assert r2.status_code == 200, r2.text
     raw2 = yaml.safe_load((tmp / "routines" / "apir" / "routine.yaml").read_text())
-    assert raw2["permissions"] == ["memory"]
+    assert raw2["permissions"] == ["scheduling"]
     assert raw2["capabilities"]["utils"] == []                   # orphan util floored away
     # junk is a legible refusal, not a silent unvalidated write
     bad = c.patch("/api/routines/apir", json={"capabilities": {"actions": "write_util"}})
     assert bad.status_code == 422
-
-
-def test_patch_permissions_does_not_flatten_the_domain_into_the_member(client):
-    """F489 through the SECOND door. `PUT /permissions` learned not to write a domain's
-    inherited docs into the member's own file; the generic PATCH, which routes the same two
-    authority keys to the same resolver, ran the cascade and skipped the strip.
-
-    So a config_patch whose visible intent was a confirm dial — `{"capabilities":
-    {"confirm": "creations"}}`, with `permissions` defaulted to the EFFECTIVE list — wrote
-    the domain's docs and list entries into the member outright. A member's own key always
-    wins, so the next domain edit could never reach that routine again: authority silently
-    un-inherited by a save about something else.
-    """
-    from rsched import domains
-
-    c, tmp = client
-    perms_home = tmp / "library" / "permissions"
-    perms_home.mkdir(parents=True, exist_ok=True)
-    (perms_home / "workflow-generation.md").write_text(
-        "---\ntags: [a, b, c]\nrequires:\n  actions: [detach]\n---\n"
-        "# permission: workflow-generation — doc\nbody\n", encoding="utf-8")
-    (perms_home / "memory.md").write_text(
-        "---\ntags: [a, b, c]\nrequires:\n  actions: [memory_read]\n---\n"
-        "# permission: memory — doc\nbody\n", encoding="utf-8")
-    home = tmp / "routines"
-    did = domains.create(home, name="FAU",
-                         config={"permissions": ["workflow-generation"],
-                                 "capabilities": {"actions": ["detach"]}})["id"]
-    cfg_path = home / "apir" / "routine.yaml"
-    raw = yaml.safe_load(cfg_path.read_text())
-    raw["domain"] = did
-    raw["permissions"] = ["memory"]
-    cfg_path.write_text(yaml.safe_dump(raw), encoding="utf-8")
-
-    # a patch that names ONLY a dial — `permissions` defaults to the effective (unioned) list
-    r = c.patch("/api/routines/apir", json={"capabilities": {"confirm": "creations"}})
-    assert r.status_code == 200, r.text
-    saved = yaml.safe_load(cfg_path.read_text())
-    assert saved["permissions"] == ["memory"]                 # the domain stayed the domain's
-    assert "detach" not in (saved["capabilities"].get("actions") or [])
-    assert saved["capabilities"]["confirm"] == "creations"
-    # the effective state still carries both, so nothing was actually taken away
-    rows = {p["slug"]: p for p in c.get("/api/routines/apir").json()["permissions"]}
-    assert rows["workflow-generation"]["active"] is True
-    assert rows["workflow-generation"]["inherited"] == "FAU"
 
 
 def test_patch_budgets_refuses_a_key_the_loader_would_drop(client):
@@ -2294,50 +2177,42 @@ def test_patch_models_refuses_a_model_that_cannot_run_a_turn(client):
     assert "cannot run a single turn" in bad.text
 
 
-def test_library_overview_carries_template_and_reminder_problems(client):
-    """`lint_all` lints templates and global reminders, and the overview dropped both —
-    so a template with a bad `config:` key or a global reminder with an invalid regex passed
-    server-side and read CLEAN on the Library tab, which is the only surface that can remove
-    a global reminder.
+def test_library_overview_carries_reminder_problems(client):
+    """`lint_all` lints global reminders; the overview once dropped them — so a global
+    reminder with an invalid regex passed server-side and read CLEAN on the Library tab, which
+    is the only surface that can remove a global reminder.
     """
     c, tmp = client
     lib = tmp / "library"
-    (lib / "templates").mkdir(parents=True, exist_ok=True)
-    (lib / "templates" / "broken.md").write_text(
-        "---\nsummary: a template\nconfig:\n  nonsense_key: 1\n---\nbody\n",
-        encoding="utf-8")
     (lib / "reminders").mkdir(parents=True, exist_ok=True)
     (lib / "reminders" / "rem-mute.json").write_text(
         '{"id": "rem-mute", "regex": "^util:", "description": ""}', encoding="utf-8")
     body = c.get("/api/library").json()
-    tpl = {t["slug"]: t for t in body["templates"]}
-    assert tpl["broken"]["problems"], "a template's lint problems must reach the page"
     rem = {r["id"]: r for r in body["reminders"]}
     assert rem["rem-mute"]["problems"], "a global reminder's lint problems must reach the page"
 
 
 def test_a_permissions_save_tells_a_live_run_and_the_scheduler(client, monkeypatch):
     """Seven web writers of routine.yaml each chose their own commit/rescan/signal steps, and
-    two of them told a live run nothing: `PUT /permissions` committed and stopped, so unticking
+    one of them told a live run nothing: `PUT /permissions` committed and stopped, so unticking
     a conduct doc mid-run finished under the old docs in silence — on a page where every other
-    save reports `told_live_run` — and adopting a template changed `budgets` and `grants`
-    (both LIVE-classified) with nothing said. One writer, four steps, no site choosing.
+    save reports `told_live_run`. One writer, four steps, no site choosing.
     """
     c, tmp = client
     perms_home = tmp / "library" / "permissions"
     perms_home.mkdir(parents=True, exist_ok=True)
-    (perms_home / "memory.md").write_text(
-        "---\ntags: [a, b, c]\nrequires:\n  actions: [memory_read]\n---\n"
-        "# permission: memory — doc\nbody\n", encoding="utf-8")
+    (perms_home / "scheduling.md").write_text(
+        "---\ntags: [a, b, c]\nrequires:\n  actions: [schedule_run]\n---\n"
+        "# permission: scheduling — doc\nbody\n", encoding="utf-8")
     run_dir = tmp / "routines" / "apir" / "runs" / "20260922-100000"
     mk_run(tmp / "routines" / "apir", "20260922-100000", "running", turn=1, pid=4242)
     rescans = []
     monkeypatch.setattr(c.app.state.scheduler, "rescan", lambda: rescans.append(1))
 
     r = c.put("/api/routines/apir/permissions",
-              json={"active": ["memory"], "capabilities": {}})
+              json={"active": ["scheduling"], "capabilities": {}})
     assert r.status_code == 200, r.text
-    assert r.json()["own"] == ["memory"]
+    assert r.json()["active"] == ["scheduling"]
     assert rescans, "the fire table must see the save now, not at the next periodic rescan"
     signal = read_json(run_dir / "control.json")["config_change"]
     assert set(signal["fields"]) == {"permissions", "capabilities"}
@@ -2366,7 +2241,7 @@ def test_the_file_endpoint_edits_the_recipe_and_nothing_that_has_an_owner(client
     """`PUT /routines/{slug}/file` bounded its path to the routine dir and wrote whatever it
     was handed — a second, unvalidated, non-atomic config writer beside the one PATCH. A
     `routine.yaml` through this door bypasses RoutinePatch's extra="forbid", the permission
-    floor, the domain strip, the rescan and the live-run signal; `state/stopping.json` has an
+    floor, the rescan and the live-run signal; `state/finish-line.json` has an
     endpoint documented as its only writer, and the engine owns `.memory/INDEX.md`.
 
     The recipe stays editable — that is what this endpoint is for, `.memory/` notes included.
@@ -2379,7 +2254,7 @@ def test_the_file_endpoint_edits_the_recipe_and_nothing_that_has_an_owner(client
     assert c.put("/api/routines/apir/file",
                  json={"path": ".memory/note.md", "content": "a note\n"}).status_code == 200
     for path, owner in (("routine.yaml", "PATCH"),
-                        ("state/stopping.json", "stopping"),
+                        ("state/finish-line.json", "finish-line"),
                         (".memory/INDEX.md", "engine"),
                         ("runs/2026-01-01T000000/status.json", "engine"),
                         ("inbox/msg-x.json", "message")):
@@ -2389,36 +2264,6 @@ def test_the_file_endpoint_edits_the_recipe_and_nothing_that_has_an_owner(client
     # …and the config it refused is untouched
     assert yaml.safe_load((tmp / "routines" / "apir" / "routine.yaml").read_text())["slug"] \
         == "apir"
-
-
-def test_a_domain_save_reaches_its_members(client, monkeypatch):
-    """The only config write whose ONE click changes what N routines effectively hold — the
-    shared block is merged under each member's own keys at load, and `budgets`/`grants` are
-    LIVE in configflow.CLASSIFICATION. It was also the only writer that told nobody: no
-    signal to a member's live run, and no rescan, though `domains.members` is exactly the
-    list of routines whose effective config just moved.
-    """
-    from rsched import domains
-
-    c, tmp = client
-    home = tmp / "routines"
-    did = domains.create(home, name="FAU", config={})["id"]
-    cfg_path = home / "apir" / "routine.yaml"
-    raw = yaml.safe_load(cfg_path.read_text())
-    raw["domain"] = did
-    cfg_path.write_text(yaml.safe_dump(raw), encoding="utf-8")
-    run_dir = home / "apir" / "runs" / "20260922-110000"
-    mk_run(home / "apir", "20260922-110000", "running", turn=1, pid=4242)
-    rescans = []
-    monkeypatch.setattr(c.app.state.scheduler, "rescan", lambda: rescans.append(1))
-
-    r = c.patch(f"/api/domains/{did}", json={"config": {"budgets": {"max_turns": 5}}})
-    assert r.status_code == 200, r.text
-    assert r.json()["told_live_runs"] == ["apir"]
-    assert rescans
-    signal = read_json(run_dir / "control.json")["config_change"]
-    assert signal["fields"] == ["budgets"]
-    assert signal["values"]["budgets"] == {"max_turns": 5}
 
 
 def test_library_permission_doc_requires_roundtrip(client):
@@ -2645,11 +2490,20 @@ def test_run_detail_model_falls_back_to_config(client):
     assert d["model"] == "Fable"
 
 
-@pytest.mark.parametrize("mode", ["off", "measure", "compress"])
-def test_output_compression_setting_roundtrip(client, mode):
-    c, _ = client
-    r = c.patch("/api/routines/apir", json={"output_compression": mode})
-    assert r.status_code == 200
-    assert "output_compression" in r.json()["updated"]
-    assert c.get("/api/routines/apir").json()["output_compression"] == mode
-    assert c.patch("/api/routines/apir", json={"output_compression": "bad"}).status_code == 422
+def test_run_detail_carries_the_runs_own_accounting_and_brief(client):
+    """The run page shows what THIS run answered for, at its end — read from its status, never
+    from the routine's live files, which a later run or an edit may have changed since."""
+    c, tmp = client
+    _mk_run(tmp / "routines", "apir", "20260709-090000", "finished")
+    status = tmp / "routines" / "apir" / "runs" / "20260709-090000" / "status.json"
+    doc = json.loads(status.read_text())
+    doc.update(accounting=["d1 met: published", "g1 distance: the review"], brief="only Q3")
+    status.write_text(json.dumps(doc))
+    d = c.get("/api/runs/apir:20260709-090000").json()
+    assert d["accounting"] == ["d1 met: published", "g1 distance: the review"]
+    assert d["brief"] == "only Q3"
+    _mk_run(tmp / "routines", "apir", "20260709-100000", "queued")
+    bare = c.get("/api/runs/apir:20260709-100000").json()
+    assert bare["accounting"] == [] and bare["brief"] == ""
+
+

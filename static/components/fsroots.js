@@ -4,26 +4,29 @@
 //   const rd = rootsEditor(d.fs_read_roots, { pickTitle: "read root" });
 //   … rd.node …            // mount it
 //   rd.value()             // -> ["/abs/path", …] at save time
+// Pass `onChange(paths)` to hear every add and remove as it happens (the routine page's
+// settings draft). Pass `emptyText` for what an empty list means where it is mounted.
 
 import { pickDirectory } from "/static/components/dirpicker.js";
 import { el, toast } from "/static/util.js";
 
-export function rootsEditor(initial, { pickTitle = "Select a directory" } = {}) {
+export function rootsEditor(initial, { pickTitle = "Select a directory", onChange,
+                                       emptyText = "none — the run only sees its own directory" } = {}) {
   let paths = [...(initial || [])];
   const list = el("div", { class: "roots-list" });
+  const changed = () => { render(); onChange?.([...paths]); };
 
   function render() {
     list.replaceChildren();
     if (!paths.length) {
-      list.append(el("div", { class: "muted small", style: "padding:2px 0" },
-        "none — the run only sees its own directory"));
+      list.append(el("div", { class: "muted small", style: "padding:2px 0" }, emptyText));
       return;
     }
     for (const p of paths) {
       list.append(el("div", { class: "root-row" },
         el("span", { class: "root-path", title: p }, p),
         el("button", { class: "btn ghost small", title: "remove this root",
-          onclick: () => { paths = paths.filter((x) => x !== p); render(); } }, "×")));
+          onclick: () => { paths = paths.filter((x) => x !== p); changed(); } }, "×")));
     }
   }
   render();
@@ -33,7 +36,7 @@ export function rootsEditor(initial, { pickTitle = "Select a directory" } = {}) 
     if (picked == null) return;
     if (paths.includes(picked)) { toast("already a root"); return; }
     paths.push(picked);
-    render();
+    changed();
   } }, "+ add directory…");
 
   return {

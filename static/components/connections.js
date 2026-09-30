@@ -10,7 +10,7 @@ import { api } from "/static/api.js";
 import { el, skeleton, toast, toastError } from "/static/util.js";
 
 export function connectionsCard(bound, { onSave, onChange } = {}) {
-  // Two modes. With `onSave` it is the routine/domain editor: a save button PATCHes the
+  // Two modes. With `onSave` it is the routine editor: a save button PATCHes the
   // binding. With `onChange` it is a PRE-START picker (F339, the conversation composer):
   // no save button — every change reports the whole {provider: account} map to the caller,
   // which submits it with the rest of the form.
@@ -34,7 +34,7 @@ export function connectionsCard(bound, { onSave, onChange } = {}) {
     for (const c of (oauth.connections || [])) (byProvider[c.provider] ||= []).push(c.account);
     for (const p of (oauth.providers || [])) {
       const accounts = byProvider[p.id] || [];
-      const sel = el("select", {}, [el("option", { value: "" }, "— none —"),
+      const sel = el("select", { "data-nopersist": true }, [el("option", { value: "" }, "— none —"),
         ...accounts.map((a) => el("option", { value: a }, a))]);
       sel.value = (bound || {})[p.id] || "";
       selects[p.id] = sel;

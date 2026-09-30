@@ -9,28 +9,23 @@ schedules.
 
 **A routine belongs to AT MOST ONE lane and that is enforced.** This is the whole reason the
 axis exists on its own. Cron exclusivity is a hard fact — a routine in two scheduled lanes
-would fire twice — so the temporal axis is the strictest of the three, which is why it may not
-share a record with them. One record carrying timing AND config AND a trust boundary AND a
-semantic label quantizes the other three to this cardinality: nobody can say "these five
-routines share a permission surface" without also saying "and they fire together", so the
-shared surface gets copied once per cadence instead. That cost is measured, not hypothetical:
-this instance carried four `Instance ·` copies of one byte-identical 294-char config block and
-two `Professional ·` copies of another, the missing dimensions hand-encoded in the NAMES.
+would fire twice — so the temporal axis is the strictest grouping there is, which is why it may
+not share a record with any other: a record carrying timing AND a shared surface AND a label
+quantizes the rest to this cardinality, so nobody could say "these five routines share a store"
+without also saying "and they fire together".
 
-The three axes are separate objects with different cardinalities:
+Three groupings, three objects, three cardinalities:
 
 - **lane** (here) — WHEN and IN WHAT ORDER. At most one per routine. Daemon-owned,
   `<routines_home>/.control/lanes.json`.
-- **[domain](domains.py)** — WHAT THEY SHARE: the inherited config block, the shared store,
-  and the notes boundary. At most one per routine, named in its OWN routine.yaml.
+- **[shared store](sharedstores.py)** — WHAT THEY SHARE: a directory under
+  `.control/group-stores/` that every routine naming it among its own `fs_write_roots` reads
+  and writes, plus the notes channel between them. Any number per routine.
 - **tags** — WHAT IT IS ABOUT. Any number, already on the routine, already "a label, not
   behaviour" (`configflow.py`).
 
-Config clustering and the trust boundary are ONE object rather than two on purpose: they answer
-the same question ("which routines are close enough to share?") and have the same cardinality.
-Splitting them would dissolve the argument that makes `domainnotes` approval-free — a note
-cannot leave the domain because the domain's store is in its members' fs roots and nobody
-else's.
+What a routine may DO is none of the three: its settings are its own routine.yaml, read against
+the library settings pattern it follows (docs/patterns.md).
 
 A membership record carries the member's slug (a record, not a bare string, so a future
 per-member field has a home). A chain fires ONCE: every member in order. A flow with an inbound
@@ -40,10 +35,9 @@ single-purpose members instead of one member running twice.
 
 Ownership mirrors rsched.triggers / rsched.schedule_once: a lane is instance-level operator
 state that the WEB layer writes and the daemon reads (web RECORDS, daemon FIRES), so it CANNOT
-live in a routine's routine.yaml. A DOMAIN is the opposite and lives exactly there: which
-routines share a surface is an ordinary per-routine setting, so putting it in the routine's own
-file is what makes "at most one" a fact of the file rather than a rule someone has to enforce
-across a list.
+live in a routine's routine.yaml. A shared store is the opposite and lives exactly there:
+which stores a routine shares is an ordinary per-routine setting — a write root — so no list
+anywhere has to agree with the routines.
 
     <routines_home>/.control/lanes.json
 
@@ -97,7 +91,7 @@ def new_id() -> str:
     """A stable lane handle — server-generated, never client-supplied.
 
     The prefix is cosmetic — an id is an OPAQUE handle nothing parses. A lane may carry any
-    prefix; one id naming both a lane and a domain names two unrelated records.
+    prefix.
     """
     return f"lane-{uuid.uuid4().hex[:8]}"
 
@@ -352,8 +346,8 @@ def update(routines_home: Path, lane_id: str, *, name: str | None = None,
     Returns the updated record, or None if no lane has that id. Raises ValueError on a bad
     value.
 
-    A shared config block is a DOMAIN's, named in the routine's own routine.yaml: patching a
-    lane moves timing and order, never what a member may do.
+    What a member may do is its own routine.yaml: patching a lane moves timing and order,
+    never that.
     """
     with _exclusive(routines_home):
         return _update_locked(routines_home, lane_id, name=name, members=members,

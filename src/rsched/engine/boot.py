@@ -6,7 +6,7 @@ composed in composer.py.
 
 from __future__ import annotations
 
-from .. import reports
+from .. import reports, rules
 from ..paths import read_json, resolve_rel
 from . import enginenote, inbox, mediaops
 from .composer import build_system_prompt, kickoff_message, state_digest
@@ -53,7 +53,11 @@ def boot(loop) -> None:
             ctx.server.routines_home, msgs, run_id=ctx.run_id)
         digest = state_digest(ctx.routine.dir, deferred_qa, open_qs,
                               routines_home=ctx.server.routines_home,
-                              slug=ctx.routine.slug, held_rules=list(ctx.routine.rules))
+                              slug=ctx.routine.slug,
+                              held_rules=rules.when_lines(ctx.server.rules_home,
+                                                          list(ctx.routine.rules)),
+                              write_roots=list(ctx.routine.fs_write_roots),
+                              brief=ctx.brief)
     else:
         msgs = []
         digest = "(subrun — no routine state digest; everything you need is in the instruction)"

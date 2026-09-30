@@ -17,11 +17,6 @@ export const RUNS_OPTIONS = [
   ["all", "all previous runs"],
 ];
 export const RUNS_RANK = { none: 0, last: 1, all: 2 };
-export const WF_OPTIONS = [
-  ["catalog", "catalog — pick existing patterns only"],
-  ["generate", "generate — also draft a new pattern when none fits"],
-];
-export const WF_RANK = { catalog: 0, generate: 1 };
 // ONE control for the reminder layer, because the two dials behind it are one decision: which
 // stores the routine reads, and — only once it reaches the shared one — who approves a write
 // there. A `local` routine has nothing to approve: its own store is autonomous by design.

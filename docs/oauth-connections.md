@@ -69,8 +69,9 @@ OAuth has two halves that live in different places, because a routine run is hea
    integration's redirect URI. This base is persisted as `public_url` in config.yaml.
 4. **Connect**: enter an account label (e.g. `personal`), click *connect*, consent in the new tab.
    The connection appears under "Connected accounts".
-5. **Bind it**: on a routine's page, *Connections* → pick the account for the provider → save. The
-   routine's utils that declare `NOTION_ACCESS_TOKEN` (the `notion` util does) now receive the token.
+5. **Bind it**: on a routine's page, *Limits & reach* → *more* → *Connections* → pick the account
+   for the provider → *accept changes*. The routine's utils that declare `NOTION_ACCESS_TOKEN` (the
+   `notion` util does) now receive the token.
 
 ## Security
 

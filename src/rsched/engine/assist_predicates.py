@@ -41,22 +41,63 @@ class Predicate:
     describes: str      # what fired, shown to the model beside the rule's line
 
 
-def _failed_call(s: Situation) -> bool:
-    """The observation that just returned is a failure.
+def failure_key(action: dict) -> str:
+    """What makes two failures "the same call": the kind and the thing it acted on. A util
+    or script is identified by its name, not its arguments — a second attempt with different
+    flags at the same util that failed is the retry the rule is about.
+    """
+    from .actionschema import brief_value
 
-    error-recovery's moment: the run has just been told something did not work, and the next
-    action is where it either reads the failure or repeats it.
+    kind = str(action.get("kind") or "")
+    name = action.get("name") if kind in ("util", "script") else brief_value(action)
+    return f"{kind}:{name or ''}"
+
+
+def _repeated_failure(s: Situation) -> bool:
+    """The same call has now failed twice in this run.
+
+    fix-the-cause's moment. The first failure is information and the run reads it; the
+    SECOND of the same call is where a run either changes route or starts engineering around
+    a wall — and it was the moment the old first-failure reminder missed: it fired 472 times
+    for an identical retry that happened after 0.3% of failures. `loop.failures` is tallied
+    by the loop from the same `is_failure` classifier, so this asks only whether the count
+    for this call has just reached two.
     """
     from .observations import is_failure
 
-    return s.obs is not None and is_failure(s.obs)
+    if s.obs is None or s.action is None or not is_failure(s.obs):
+        return False
+    return int((getattr(s.loop, "failures", None) or {}).get(failure_key(s.action), 0)) == 2
+
+
+def _capability_denied(s: Situation) -> bool:
+    """A permission refused this run something it wanted; the run moved on without
+    asking for it.
+
+    ask-policy's moment. A refusal either happens at the validation seam — the action never
+    runs, the retry cycle corrects it (`ctx.last_denial_turn` marks the turn it cost) — or
+    comes back as the observation itself, as an fs or secret gate does. Both end in the ONE
+    wording `GrantPolicy.request_route` renders for an undecided entity, which is what makes
+    the observation half checkable without guessing. A run whose very next action files the
+    request has already done what the line says, so it is left alone.
+    """
+    from ..grantpolicy import REQUEST_ROUTE_MARK
+
+    action = s.action or {}
+    if action.get("kind") == "ask_user" and action.get("request"):
+        return False
+    if int(getattr(s.ctx, "last_denial_turn", 0) or 0) == int(s.ctx.turn or 0):
+        return True
+    error = str((s.obs or {}).get("error") or "")
+    return REQUEST_ROUTE_MARK in error
 
 
 def _user_corrected(s: Situation) -> bool:
     """A user message reached this run since the last boundary.
 
-    intent-inference's moment: an intervention has just landed, and the question the rule
-    asks — what standing preference does this imply? — is answerable now and stale later.
+    fix-the-cause's moment: an intervention has just landed; the question the rule asks
+    — what standing preference does this correction imply? — is answerable now and stale
+    later.
     `ctx.user_replies` counts the user's own utterances (a delivered report is a routine's
     message and does not count), so this is the arrival edge without new bookkeeping.
     """
@@ -91,17 +132,35 @@ def _ledger_untouched(s: Situation) -> bool:
     Never in a conversation. A conversation's product is the reply, its reasoning is in the
     thread where the user can already see it, and its spine is `state/plan.md` rather than a
     ledger — so holding one's reply for a ledger entry costs the user a turn for nothing.
+
+    Whether the ledger was written is read off the FILE — its mtime against the run's start
+    — never off the actions: an append through a shell heredoc, a script or a util is
+    invisible to `turn_records`; reading the actions made 48 of 75 of this assist's
+    deferrals false.
     """
     from .harness import _is_conversation
 
-    if not (s.ctx.routine.dir / "LEDGER.md").is_file():
+    ledger = s.ctx.routine.dir / "LEDGER.md"
+    if not ledger.is_file():
         return False        # a routine that keeps no ledger is not being asked to start one
     if _is_conversation(s.ctx):
         return False
-    wrote = _file_writes(s)
-    if any("LEDGER.md" in path for path in wrote):
-        return False        # the reasoning was recorded
-    return any(not path.startswith("state/") for path in wrote)
+    try:
+        if ledger.stat().st_mtime >= _run_started(s.ctx):
+            return False    # the reasoning was recorded, by whatever means
+    except OSError:
+        return False
+    return any(not path.startswith("state/") for path in _file_writes(s))
+
+
+def _run_started(ctx) -> float:
+    """The run's start as an epoch — `run_ts` is its local wall-clock stamp and survives a
+    resume, where the engine's own monotonic clock restarts.
+    """
+    import datetime as _dt
+
+    stamp = _dt.datetime.strptime(str(ctx.run_ts), "%Y%m%d-%H%M%S").astimezone()
+    return stamp.timestamp()
 
 
 def _uncheckpointed_repo_write(s: Situation) -> bool:
@@ -130,7 +189,24 @@ def _uncheckpointed_repo_write(s: Situation) -> bool:
     routine_dir = s.ctx.routine.dir
     if within(routine_dir, path) or path == routine_dir:
         return False        # the engine commits this tree itself at run end
-    return any((parent / ".git").exists() for parent in [path, *path.parents])
+    repo = next((p for p in [path, *path.parents] if (p / ".git").exists()), None)
+    return repo is not None and _dirty(repo)
+
+
+def _dirty(repo) -> bool:
+    """Does this working tree hold changes its HEAD cannot restore? A clean tree IS an undo
+    point — 54 of the old hold's 102 fires were repos clean at HEAD, each overridden, so the
+    run had learned to click past the one hold that guards an irreversible write. A tree git
+    cannot read is treated as dirty: this is the hold that must not miss.
+    """
+    import subprocess
+
+    try:
+        out = subprocess.run(["git", "-C", str(repo), "status", "--porcelain"],
+                             capture_output=True, text=True, timeout=10, check=False)
+    except (OSError, subprocess.SubprocessError):
+        return True
+    return out.returncode != 0 or bool(out.stdout.strip())
 
 
 def _asks_piling_up(s: Situation) -> bool:
@@ -142,22 +218,6 @@ def _asks_piling_up(s: Situation) -> bool:
     not a lookup.
     """
     return int(getattr(s.ctx, "asks_deferred", 0) or 0) >= _ASK_PILEUP
-
-
-def _clean_claim_without_a_denominator(s: Situation) -> bool:
-    """A finish summary reports all-clear without saying what was examined.
-
-    unexamined-is-not-clean's moment. A review that found nothing is only meaningful beside
-    the size of what it looked at, and the two readings — "I examined 40 files and found
-    nothing" and "I looked at one and found nothing" — are the same sentence without it.
-    Deliberately crude: it asks whether the summary claims cleanliness and carries no number
-    at all, so a summary that quantifies ANYTHING passes. A predicate that tried to judge
-    whether the denominator was the RIGHT one would be grading the reasoning again.
-    """
-    summary = str((s.action or {}).get("summary") or "").lower()
-    if not any(claim in summary for claim in _CLEAN_CLAIMS):
-        return False
-    return not any(ch.isdigit() for ch in summary)
 
 
 def _unclosed_delivered_report(s: Situation) -> bool:
@@ -176,44 +236,78 @@ def _unclosed_delivered_report(s: Situation) -> bool:
 
     The finish is the only moment this can be said at — after it, the run that did the work is
     gone and the only thing left that could close the row is a person reading the ledger.
+
+    What is still owed is re-read from the LEDGER at the moment of asking (R2086): the run's
+    own list only learns of the replies it files through `report`, so a thread closed any
+    other way — settled by another routine or by the operator, folded into a later thread,
+    answered through a util — kept this assist asking a run for work it had already done.
     """
-    return bool(getattr(s.ctx, "reports_open", None))
+    owed = list(getattr(s.ctx, "reports_open", None) or [])
+    if not owed:
+        return False
+    from .. import reports
+    from ..report_threads import still_owed
+
+    rows = reports.read_reports(reports.reports_path(s.ctx.server.routines_home))
+    return bool(still_owed(rows, owed))
+
+
+def _rendered_output_unseen(s: Situation) -> bool:
+    """This run wrote something people LOOK at and never looked at it.
+
+    interface-craft's moment. A page, a stylesheet, a figure or a typeset document is judged
+    by how it renders; a run that only read its own source has judged none of it. The
+    look is any `view_image`, or a call to a util that renders or sees a page; the
+    deliverable is a file this run wrote or edited with a rendered extension.
+    """
+    records = getattr(s.loop, "turn_records", []) or []
+    looked = any(r.get("kind") == "view_image"
+                 or (r.get("kind") == "util"
+                     and str(r.get("brief") or "").strip('"') in _LOOK_UTILS)
+                 for r in records)
+    if looked:
+        return False
+    return any(path.lower().endswith(_RENDERED) for path in _file_writes(s))
 
 
 #: How many unanswered deferred asks make a run's ask policy worth surfacing. Low, because the
 #: rule is about the FIRST reflex to defer rather than about a specific count.
 _ASK_PILEUP = 3
 
-#: The phrasings a run reaches for when it found nothing. Substrings on purpose — "no issues"
-#: catches "no issues found" and "there were no issues".
-_CLEAN_CLAIMS = ("all clear", "no issues", "no problems", "nothing to report", "clean bill",
-                 "everything checks out", "no defects", "found nothing", "nothing wrong")
+#: The files a person judges by LOOKING at them rendered.
+_RENDERED = (".html", ".htm", ".css", ".js", ".svg", ".pdf", ".tex")
+
+#: The utils through which a run sees a rendered page or image.
+_LOOK_UTILS = frozenset({"browser-session", "vision"})
 
 
 #: name -> Predicate. The linter validates a rule's `predicate:` against these keys, so a
 #: name removed here turns every rule that declares it into a lint error rather than a
 #: silently dead assist.
 PREDICATES: dict[str, Predicate] = {
-    "observation-failed": Predicate(
-        moment="observation", check=_failed_call,
-        describes="the call you just made failed"),
+    "repeated-failure": Predicate(
+        moment="observation", check=_repeated_failure,
+        describes="the same call has now failed twice this run"),
+    "capability-denied": Predicate(
+        moment="observation", check=_capability_denied,
+        describes="a permission refused something this run wanted"),
     "user-corrected": Predicate(
         moment="boundary", check=_user_corrected,
         describes="the user just said something to this run"),
     "ledger-untouched": Predicate(
         moment="pre-finish", check=_ledger_untouched,
-        describes="this run has not written to LEDGER.md"),
+        describes="this run changed things and has not written to LEDGER.md"),
     "uncheckpointed-repo-write": Predicate(
         moment="pre-action", check=_uncheckpointed_repo_write,
-        describes="this edits a git repo the engine does not version, and no undo point "
-                  "exists"),
+        describes="this edits a git repo the engine does not version; its working tree "
+                  "holds changes no commit can restore"),
     "asks-piling-up": Predicate(
         moment="boundary", check=_asks_piling_up,
         describes="several decisions are waiting on the user"),
-    "clean-claim-without-a-denominator": Predicate(
-        moment="pre-finish", check=_clean_claim_without_a_denominator,
-        describes="the summary reports all-clear and names no number"),
     "unclosed-delivered-report": Predicate(
         moment="pre-finish", check=_unclosed_delivered_report,
-        describes="another routine handed you work this run and you have not answered it"),
+        describes="another routine handed you work this run and nobody has answered it"),
+    "rendered-output-unseen": Predicate(
+        moment="pre-finish", check=_rendered_output_unseen,
+        describes="this run wrote pages or documents and never looked at them rendered"),
 }

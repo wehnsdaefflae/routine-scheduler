@@ -200,37 +200,16 @@ reply, or a completed routine) with a command, it executes and the turn stays wi
 does **not** apply to a routine's own scheduled execution — that is the routine's turn, not
 yours, so its workflow always runs (a command you inject there is context for that run).
 
-## The goal — what DONE means
+## What DONE means
 
-A conversation's budgets are a **runaway backstop**, not a definition of done. What actually
-bounds the job is the **goal**: meaning-level conditions you write, in the rail's `goal` panel.
+A conversation's budgets are a **runaway backstop**, not a definition of done. What bounds the job
+is what you asked for: the working plan (above) opens with the goal in a line; the agent works
+toward it until the reply is complete. Redirect it in the chat — "only diagnose, do not start
+fixing", "stop once the PDF is verified" — and the plan changes with it.
 
-- A condition is prose — "the PDF is verified", "only diagnose, do not start fixing".
-- Conditions live in **groups**, and a group is satisfied by **ALL** of its conditions or by
-  **ANY** one of them — click the ALL/ANY chip to switch. With more than one group, the same
-  chip appears at the top for how the groups combine. That is how you say "either the work is
-  published *or* I call it off", which a flat checklist cannot express.
-- **`after s<n>`** on a condition holds it dormant until that one is met — the sequencing case.
-  A dormant condition is greyed and says what it waits for; the agent is shown it but is not
-  asked to judge it yet.
-- On a routine, a condition can also name a **stage**, so it is live only during that stage.
-
-The agent sees the whole structure in its prompt and **must account for every active condition
-when it finishes** — a line per condition saying met or unmet and why. A finish that skips one is
-rejected and costs it a turn. Its verdict is written back, so the panel's marks (`✓` met, `○`
-open, `–` dropped) are the run's own conclusions, not a list you maintain by hand. You can always
-overrule one: click the mark to cycle it, then **save goal**.
-
-When every condition the goal needs is met the panel says **goal met**, and the agent is told the
-job is done and to finish now. The engine does not force it to stop — it cannot judge your
-conditions, only make them impossible to ignore.
-
-**Claims are checked.** Marking a condition met is a claim, and a second model reads the agent's
-own transcript to see whether it holds up. If it does not, the finish is set aside once with the
-objection, and the agent either does the missing work or restates its case. It is asked only
-once: a repeated verdict stands, because a check that could veto forever would hang the job
-rather than bound it. When the two disagreed, the condition carries an amber **disputed** mark —
-hover it for the objection — and the call is yours.
+Recorded, checked verdicts belong to routines, whose runs repeat. A routine's recipe names what one
+finished run leaves behind (its `## Done when`); its finish line says when the routine is done for
+good. Every run's finish accounts for both — see the **Goal** group on the routine page.
 
 ## Artifacts — deliverables in the side panel
 
@@ -258,9 +237,9 @@ running conversation, where changes apply from the next reply:
   (and flags tight ones); a model whose window minus its max output tokens leaves no room for
   input cannot complete a single turn, so the picker disables it and the server refuses it.
 - **General rules** — the shared practices the conversation holds — are **picked on the composer**
-  (F339). They have to be: a rule reaches the prompt through `main.md`'s Standing-practices tail,
-  which is woven when the conversation is created, so one bound afterwards never governs reply #1.
-  On a running conversation the picker still edits them, from the next reply onward.
+  (F339), because reply #1 boots the moment you send: the state digest names each held rule with
+  the moment it applies, read from `routine.yaml` at every boot. On a running conversation the
+  picker still edits them, from the next reply onward.
 - **Connections** (an OAuth account per provider) are pickable on the composer too, so the first
   reply can already act as that account instead of hitting an unbound connection and having to
   ask. Connect the accounts themselves in Settings → Connections.

@@ -61,15 +61,16 @@ CLASSIFICATION: dict[str, tuple[str, str]] = {
                                  "handed to every util subprocess; widening it mid-run would "
                                  "not reach the jails already created"),
     "keep_runs": (NEXT_RUN, "retention is applied after a run, never during one"),
-    "output_compression": (NEXT_RUN, "output handling is selected when the run starts"),
     "improve": (NEXT_RUN, "it is read by the improver, not by the run"),
     "workflow": (NEXT_RUN, "the recipe was decomposed into the prompt at boot"),
+    "pattern": (NEXT_RUN, "a reference: which library pattern this routine's settings are read "
+                          "against — the settings themselves are this routine's own"),
+    "shared_reminders": (NEXT_RUN, "the live reminder set is read once (at boot) and kept in "
+                                   "step with the run's own reminder ops"),
     "name": (NEXT_RUN, "a label, not behaviour"),
     "description": (NEXT_RUN, "a label, not behaviour"),
     "tags": (NEXT_RUN, "a label, not behaviour"),
-    "domain": (NEXT_RUN, "the shared config is merged when the routine is loaded and the "
-                         "domain's store is injected into the fs roots at boot — both happen "
-                         "once, before the first turn"),
+    "hub_tab": (NEXT_RUN, "the harness contract names the hub heading once, at boot"),
     "title": (NEXT_RUN, "a label, not behaviour"),
     "workdir": (NEXT_RUN, "it is the first write root, computed at boot with the other roots"),
 }
@@ -86,13 +87,13 @@ ADOPTABLE = tuple(f for f, (half, _) in CLASSIFICATION.items() if half == LIVE)
 #: are spelled out here; `tests/test_configflow.py` pins each one to its model.
 ROUTINE_PATCH_FIELDS = frozenset({
     "enabled", "run_gate", "schedule", "budgets", "models", "connections", "grants",
-    "machines", "name", "description", "tags", "domain", "permissions", "capabilities",
-    "rules", "improve", "output_compression", "deliberation", "keep_runs",
+    "machines", "name", "description", "tags", "pattern", "hub_tab", "permissions",
+    "capabilities", "rules", "shared_reminders", "improve", "deliberation", "keep_runs",
     "fs_read_roots", "fs_write_roots",
 })
 CONVERSATION_PATCH_FIELDS = frozenset({
     "title", "tags", "workdir", "budgets", "models", "machines", "connections",
-    "output_compression", "deliberation", "fs_read_roots", "fs_write_roots",
+    "deliberation", "fs_read_roots", "fs_write_roots",
 })
 
 

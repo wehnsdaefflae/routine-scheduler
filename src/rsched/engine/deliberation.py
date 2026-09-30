@@ -17,9 +17,7 @@ from rsched.config import DEFAULT_DELIBERATION, DELIBERATION_LEVELS
 # The say-contract sentence per stop. `standard` is the baseline finding-first contract;
 # the two upper stops explicitly license knowledge BEYOND the run (subject conventions,
 # base rates, prior art) — the teleological/contextualizing prose that makes narration
-# cognitive work, not just status reporting. "subject", not "domain" and not "field": a
-# DOMAIN is a first-class object this same prompt page names (the shared config block,
-# store and notes boundary a routine's `domain:` binds it to) and "field" would collide
+# cognitive work, not just status reporting. "subject", not "field": "field" would collide
 # with the JSON field this very sentence is about. One word, one sense per page.
 _SAY_CONTRACT = {
     "terse": ('The "say" field is ONE terse clause — why this action; spend a full '

@@ -56,8 +56,11 @@ KIND_EXAMPLES: dict[str, dict] = {
     "create_routine": {"say": "<why create this routine now>", "kind": "create_routine",
                        "target": "arxiv-reading-list", "name": "Arxiv reading list",
                        "prompt": "<the clarified task, decomposed into the routine's stages>",
-                       "workflow": "general-task",
-                       "stopping": ["<what DONE looks like for one run, in the user's words>"]},
+                       "workflow": "general-task", "pattern": "watcher",
+                       "setup": ["<the user's answer to one of the pattern's questions>"],
+                       "done_when": ["<what one finished run leaves behind, in the user's "
+                                     "words>"],
+                       "never": ["<what a run must never do, in the user's words>"]},
     "manage_lane": {"say": "<why this lane change now>", "kind": "manage_lane",
                      "verb": "create", "name": "Morning jobs",
                      "members": ["weight-coach", "news-digest"]},
@@ -117,7 +120,8 @@ KIND_FIELDS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "write_util": (("name",), ("content", "path", "anchor", "replacement", "all")),
     "remove_util": (("name",), ()),
     "schedule_run": (("target",), ("fire_at", "reason", "cancel", "id")),
-    "create_routine": (("target", "name", "prompt"), ("workflow", "stopping")),
+    "create_routine": (("target", "name", "prompt"),
+                       ("workflow", "pattern", "setup", "done_when", "finish_line", "never")),
     "manage_lane": (("verb",), ("target", "name", "members", "on_failure", "cron",
                                  "paused")),
     "read_file": ((), ("path", "paths", "start_line", "max_lines")),
@@ -141,7 +145,7 @@ KIND_FIELDS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "wait": ((), ("n", "all", "timeout_s")),
     "ask_user": (("question",), ("mode", "options", "default", "config_patch", "request")),
     "report": (("title",), ("detail", "target", "answers", "closes", "supersedes", "settles")),
-    "finish": (("status", "summary"), ("reply_to",)),
+    "finish": (("status", "summary"), ("accounting", "reply_to")),
 }
 
 

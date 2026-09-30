@@ -119,7 +119,7 @@ _UNDISPATCHED_KEYS = ("declined", "declined_secrets", "pending_secrets",
                       "unknown_target", "self_target", "bad_fire_at", "error", "missing")
 
 
-def _once_match(eid: str, action: dict, ctx) -> bool:  # noqa: PLR0911 — one exit per grant class
+def _once_match(eid: str, action: dict, ctx) -> bool:
     """Does this successfully-dispatched action USE the once-granted entity? One clause
     per entities.ONCE_CLASSES member. Turn-action classes match exactly (their use IS
     the turn); secret:/fs-*: match the action that RECEIVES the entity — the coarser
@@ -153,8 +153,6 @@ def _once_match(eid: str, action: dict, ctx) -> bool:  # noqa: PLR0911 — one e
                  *(str(p) for p in action.get("paths") or [])]
         return any(p and is_runs_path(p) and not p.removeprefix("./").startswith(own)
                    for p in paths)
-    if cls == "workflows":
-        return kind == "subtask" and str(action.get("workflow") or "") == name
     return False
 
 

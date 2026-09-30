@@ -104,10 +104,9 @@ def _availability(loop, cls: str, name: str, eid: str) -> list[str]:  # noqa: C9
             broad = f"util:{bare}"
             if verb and g.entity_state(broad) in ("denied_forever", "denied_now"):
                 return [g.request_route(broad)]
-            if (name in g.utils or bare in g.utils
-                    or (set(g.util_tag_index.get(bare, ())) & g.util_tags)):
+            if name in g.utils or bare in g.utils:
                 return [f"{eid} is already enabled — call the util directly"]
-        if g is None or bare not in g.gated_utils:
+        if g is None or not (bare in g.gated_utils or bare in g.gated_verbs):
             if utils_lib.exists(ctx.server.libraries_home, bare):
                 return [f"util {name!r} is not reserved — every routine may call it; no "
                         "request needed"]
@@ -174,10 +173,6 @@ def _availability(loop, cls: str, name: str, eid: str) -> list[str]:  # noqa: C9
         if order.index(current) >= order.index(name):
             return [f"previous-run access at depth {current!r} already covers "
                     f"{eid} — read runs/ directly"]
-        return []
-    if cls == "workflows":
-        if g is not None and g.workflows == "generate":
-            return [f"{eid} is already enabled — set a subtask's workflow to 'generate'"]
         return []
     if cls == "reminders":
         current = g.reminders if g is not None else "none"

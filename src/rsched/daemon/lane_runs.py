@@ -38,8 +38,8 @@ active) is recorded as a failure too, so a broken member never hangs the chain f
 
 A member that is deliberately OFF is not: `outcome: "skipped"`, the cursor advances, the chain
 continues under either policy and nothing is logged as a health event. That covers both the
-user switching a routine off and a routine RETIRING itself (every goal-scoped stopping condition
-met — registry.RoutineInfo.retired). The two used to share the missing-member branch, which put
+user switching a routine off and a routine RETIRING itself (its finish line reached —
+registry.RoutineInfo.retired). The two used to share the missing-member branch, which put
 28 `lane_chain_member_skipped` events on the live instance and would have turned a retirement
 into a daily outage of every later member under `on_failure: stop`.
 
@@ -104,7 +104,7 @@ class LaneRunManager:
         rec["status"] = status
         rec["ended"] = now_iso()
         entries = rec.get("log") or []
-        # A member the user switched off (or that retired on its final goal) is logged
+        # A member the user switched off (or that retired at its finish line) is logged
         # `outcome: "skipped"` — a deliberate non-fire, not a failure. Counting it as not-ok
         # put "1 not-ok (aisafety-grant-steward)" on a lane's heartbeat every single day for
         # a routine that was simply disabled, which is the one reading an audit must not get.
@@ -170,13 +170,13 @@ class LaneRunManager:
         slug = fire_list[cursor]
         info = catalog.get(slug)
         # A member that is DELIBERATELY off — switched off by the user, or retired because it
-        # reached its final goal — is not a broken chain. It used to share one branch with a
+        # reached its finish line — is not a broken chain. It used to share one branch with a
         # MISSING member and be logged `outcome: "failed"`, which put 28 health events on the
         # live instance (all four FAU members among them) and would have stopped the chain
         # outright under `on_failure: stop`. Absent is still a failure: the chain names a
         # routine that is not there.
         if info is not None and (not info.cfg.enabled or info.retired):
-            why = "retired (final goal met)" if info.retired else "switched off"
+            why = "retired (finish line reached)" if info.retired else "switched off"
             rec["log"].append({"slug": slug, "run_id": None, "state": "skipped",
                                "outcome": "skipped"})
             rec["cursor"] = cursor + 1

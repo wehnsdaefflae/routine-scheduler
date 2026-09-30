@@ -311,21 +311,21 @@ def test_snake_case_script_name_is_reachable(tmp_path):
     assert not scripts.exists(d, "a.b")
 
 
-def test_script_kind_is_gated_and_validated():
-    assert "script" in GATED_KINDS
-    assert not GrantPolicy().allows_kind("script")          # default OFF
-    assert GrantPolicy(actions=frozenset({"script"})).allows_kind("script")
+def test_script_kind_is_base_and_validated():
+    """Every routine may run its own scripts: their blast radius is the routine's own jail,
+    the same as a util's, so a switch nobody turned off was ceremony."""
+    assert "script" not in GATED_KINDS
+    assert GrantPolicy().allows_kind("script")
     assert validate_action({"say": "s", "kind": "script", "name": "probe"}) == []
     assert validate_action({"say": "s", "kind": "script"})  # name required
 
 
 def test_script_action_end_to_end(make_routine, scripted, monkeypatch):
-    """The engine path: capability on → run_script gets the routine dir, args, and an
-    env filtered to the script's DECLARED names — granted in, undecided/denied/undeclared
-    absent — and the observation carries the script kind + output."""
+    """The engine path: run_script gets the routine dir, args, and an env filtered to the
+    script's DECLARED names — granted in, undecided/denied/undeclared absent — and the
+    observation carries the script kind + output."""
     d = make_routine(slug="scriptr")
     cfg = yaml.safe_load((d / "routine.yaml").read_text(encoding="utf-8"))
-    cfg["capabilities"] = {"actions": ["script"]}
     cfg["grants"] = {"secret:PROC_TOKEN": True, "secret:OPT_TOKEN": False,
                      "secret:GRANTED_UNDECLARED": True}
     (d / "routine.yaml").write_text(yaml.safe_dump(cfg), encoding="utf-8")

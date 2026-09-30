@@ -66,7 +66,8 @@ def _plan_text(routine_dir: Path) -> str:
 
 def state_digest(routine_dir: Path, deferred_qa: list[dict], open_qs: list[dict], *,
                  routines_home: Path | None = None, slug: str = "",
-                 held_rules: list[str] | None = None) -> str:
+                 held_rules: list[str] | None = None,
+                 write_roots: list[Path] | None = None, brief: str = "") -> str:
     from ..paths import read_json
 
     parts: list[str] = []
@@ -78,11 +79,12 @@ def state_digest(routine_dir: Path, deferred_qa: list[dict], open_qs: list[dict]
         from ..priorities import digest_section
         if prio := digest_section(routines_home, slug):
             parts.append(prio)
-        # F335: notes teammates left for this routine. DRAINS — this digest is built once per
-        # run, at boot, and a note is delivered exactly once (mirroring how inbox/ drains).
-        from ..domainnotes import digest_section as notes_section
-        if domain_notes := notes_section(routines_home, slug):
-            parts.append(domain_notes)
+        # F335: notes the routines sharing a store with this one left for it, from every store
+        # among its `write_roots`. DRAINS — this digest is built once per run, at boot; a
+        # note is delivered exactly once (mirroring how inbox/ drains).
+        from ..sharedstores import digest_section as notes_section
+        if store_notes := notes_section(routines_home, slug, write_roots or []):
+            parts.append(store_notes)
     phase = read_json(routine_dir / "state" / "phase.json")
     parts.append(f"Current phase: {json.dumps(phase, ensure_ascii=False)}" if phase
                  else "Current phase: (none recorded — likely the first run)")
@@ -98,15 +100,11 @@ def state_digest(routine_dir: Path, deferred_qa: list[dict], open_qs: list[dict]
                      "you: tick off what is done, re-order, add what you discovered, drop what "
                      "turned out unnecessary. Delete the file once the job is finished):\n"
                      + plan)
-    # F334/D98: the user's meaning-level bounds ride beside the plan — always visible, so
-    # a finish can never claim it did not know them (the finish gate enforces the accounting).
-    # the phase drives stage-scoped conditions (the per-stage half of the original order).
-    # ONE source for it — `stopping.current_stage`, the recipe's own state/phase.json — shared
-    # with the finish gate and the verifier, which used to scope by a different value.
-    from . import stopping, stopping_digest
-    if stop_sec := stopping_digest.digest_section(
-            routine_dir, phase=stopping.current_stage(routine_dir)):
-        parts.append(stop_sec)
+    # Where the routine stands against its FINISH LINE, what its finish owes in `accounting`,
+    # and what the last run left unmet — said once, here, at boot (engine/finish_digest.py).
+    from . import finish_digest
+    if finish_sec := finish_digest.digest_section(routine_dir, brief=brief):
+        parts.append(finish_sec)
     state_dir = routine_dir / "state"
     if state_dir.is_dir():
         parts.append("state/ (newest first): " + (_dir_listing(state_dir) or "(empty)"))
@@ -138,9 +136,9 @@ def state_digest(routine_dir: Path, deferred_qa: list[dict], open_qs: list[dict]
                      "the side panel; re-writing a filename UPDATES that artifact in place — "
                      "extend what is there instead of making report-2.md): " + arts)
     if held_rules:
-        parts.append("General rules binding this routine (read one with read_rule before the "
-                     "situation it governs; the workflow's Standing practices section says "
-                     "when): " + ", ".join(held_rules))
+        parts.append("GENERAL RULES you practise — read one with read_rule when its moment "
+                     "comes and apply the principle to your own case:\n"
+                     + "\n".join(f"- {line}" for line in held_rules))
     runs_dir = routine_dir / "runs"
     runs = sorted(runs_dir.glob("*/result.md")) if runs_dir.is_dir() else []
     if runs:

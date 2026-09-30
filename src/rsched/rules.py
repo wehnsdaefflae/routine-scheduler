@@ -1,4 +1,4 @@
-"""The general RULES a routine practises: the held set, and main.md's derived index.
+"""The general RULES a routine practises: the held set and when each one applies.
 
 A rule lives in exactly ONE place — `<libraries_home>/rules/<slug>.md`. A routine holds
 SLUGS (routine.yaml `rules:`), never copies, so a library revision reaches every holder at
@@ -11,9 +11,9 @@ The two halves are owned separately. The SET is config: no run writes routine.ya
 binding and unbinding is the user's, and this module is the web layer's arm for it. The PROSE
 is the library's, editable on the Library tab and — for a routine holding the rule-authoring
 capability — with the `write_rule` action, under its own approval level (grants.rule_confirm)
-because a revision lands on every holder. `main.md`'s `## Standing practices` tail is a derived
-index rebuilt from the config on every change (`sync_practices_tail`), so bind and unbind need
-no special-casing and a hand-edited tail converges back.
+because a revision lands on every holder. The prompt names each held rule beside the one line
+saying WHEN it applies (`when_lines`), read from the rule itself at every boot, so a routine's
+picture of its rules is never a copy that drifted.
 """
 
 from __future__ import annotations
@@ -24,39 +24,9 @@ import yaml
 
 from . import library_docs
 from .ids import is_slug
-from .paths import atomic_write, atomic_write_yaml, read_yaml
+from .paths import atomic_write_yaml, read_yaml
 
 CONFIG_FILE = "routine.yaml"
-
-PRACTICES_HEADING = "## Standing practices"
-TAIL_LEAD = ("These general rules bind this routine. Each states a principle, not a "
-             "procedure — read one with read_rule before the situation it governs and apply "
-             "it to the case in front of you:")
-
-
-def render_practices_tail(rule_lines: list[str]) -> str:
-    """The Standing-practices section body — heading, lead, one line per rule. The ONE
-    place the tail's shape lives: scaffold/conversation creation appends it, rules.py's
-    post-change resync rebuilds it (two drifted copies of the lead once disagreed).
-    """
-    return "\n".join([PRACTICES_HEADING, "", TAIL_LEAD, *rule_lines])
-
-
-def rule_line(slug: str, summary: str) -> str:
-    return f"- `{slug}` — {summary or slug.replace('-', ' ')}"
-
-
-def with_practices_tail(main_body: str, rule_summaries: dict[str, str]) -> str:
-    """Guarantee main.md ends with a Standing practices section naming every held rule —
-    the generator is asked to write one, but the reference must survive a forgetful LLM (and
-    the no-LLM fallback).
-    """
-    if not rule_summaries:
-        return main_body
-    if PRACTICES_HEADING.lower() in main_body.lower():
-        return main_body
-    lines = [rule_line(slug, summary) for slug, summary in rule_summaries.items()]
-    return main_body.rstrip() + "\n\n" + render_practices_tail(lines) + "\n"
 
 
 def current_rules(routine_dir: Path) -> list[str]:
@@ -90,32 +60,24 @@ def summaries(rules_home: Path, slugs: list[str]) -> dict[str, str]:
     return {slug: known.get(slug) or slug.replace("-", " ") for slug in slugs}
 
 
-def sync_practices_tail(routine_dir: Path, rules_home: Path) -> None:
-    """Rewrite main.md's Standing practices tail to match routine.yaml's `rules:`.
-
-    Everything from the heading to the end of the file is the derived index, so it is
-    replaced wholesale; a routine holding no rules loses the section entirely.
+def when_lines(rules_home: Path, slugs: list[str]) -> list[str]:
+    """`<slug> — <when it applies>` per held rule, in the held order — what the prompt shows
+    so a run knows which rule to read before which moment. A rule the library no longer carries
+    says so; `read_rule` names what is there.
     """
-    main = routine_dir / "main.md"
-    if not main.is_file():
-        return
-    body = main.read_text(encoding="utf-8")
-    head = body
-    for line in body.splitlines():
-        if line.strip().lower() == PRACTICES_HEADING.lower():
-            head = body[:body.index(line)]
-            break
-    held = summaries(rules_home, current_rules(routine_dir))
-    if not held:
-        atomic_write(main, head.rstrip() + "\n")
-        return
-    lines = [rule_line(slug, summary) for slug, summary in held.items()]
-    atomic_write(main, head.rstrip() + "\n\n" + render_practices_tail(lines) + "\n")
+    docs = {d["slug"]: d for d in library_docs.list_docs(rules_home)}
+    out = []
+    for slug in slugs:
+        doc = docs.get(slug)
+        when = ((doc.get("effect") or {}).get("when") or doc.get("summary") or "") if doc \
+            else "not in the library any more"
+        out.append(f"{slug} — {when}")
+    return out
 
 
 def apply_changes(rules_home: Path, routine_dir: Path, add: list[str],
                   remove: list[str]) -> tuple[list[str], list[str]]:
-    """One picker submission: add then remove, config and tail written once. Returns
+    """One picker submission: add then remove, config written once. Returns
     (added, removed) — the slugs that actually changed, so the caller can report honestly
     and skip the git commit when nothing did. An add naming no library rule raises KeyError,
     which the caller turns into a 400.
@@ -133,5 +95,4 @@ def apply_changes(rules_home: Path, routine_dir: Path, add: list[str],
     held = [slug for slug in held if slug not in set(removed)]
     if added or removed:
         _write_rules(routine_dir, held)
-        sync_practices_tail(routine_dir, rules_home)
     return added, removed

@@ -10,8 +10,8 @@ phantom member, a scheduled lane with nobody in it — because nothing cascades 
 deletion out of the store. Arming a chain appears only as far as the API reaches; the
 sequential advance itself is tests/test_lane_runs.py.
 
-The shared config block and the shared store are NOT here: they are a DOMAIN with their own
-file (tests/test_domains.py), for the same reason they have their own module.
+Shared stores are NOT here: a store is shared by naming it among a routine's own write roots
+(tests/test_sharedstores.py), for the same reason it has its own module.
 """
 
 from __future__ import annotations
@@ -210,11 +210,10 @@ def test_api_lane_lifecycle(api_client):
 
 
 def test_the_lane_api_carries_no_config_field(api_client):
-    """A lane carries timing and nothing else: the shared surface belongs to the DOMAIN a
-    routine names in its own routine.yaml, so `config` on a lane PATCH is an unknown key —
-    refused, never quietly applied. One record carrying both axes makes moving a member
-    between lanes a silent permissions change — a scheduling decision doing the work of a
-    permissions one.
+    """A lane carries timing and nothing else: what a member may do is its own routine.yaml,
+    so `config` on a lane PATCH is an unknown key — refused, never quietly applied. A lane that
+    carried config would make moving a member between lanes a silent permissions change — a
+    scheduling decision doing the work of a permissions one.
     """
     client, tmp_path = api_client
     _mk(tmp_path, "alpha")

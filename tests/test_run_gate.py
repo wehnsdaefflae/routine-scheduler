@@ -28,13 +28,14 @@ def setup_gate(tmp_path, monkeypatch):
     # The two tests that DO exercise the deadline set their own (1s, 2s), so nothing here
     # weakens them; a genuinely hung gate still trips this.
     cfg = RoutineConfig(slug=root.name, dir=root,
-                        run_gate=RunGateConfig(enabled=True, timeout_s=60))
+                        run_gate=RunGateConfig(enabled=True, timeout_s=60,
+                                               checks=[{"kind": "script"}]))
     monkeypatch.setenv("RSCHED_CONFIG", str(tmp_path / "config.yaml"))
     return cfg, server, Runner(server, EventBus())
 
 
 def script(cfg, body):
-    (cfg.dir / "scripts/gate.py").write_text(body)
+    (cfg.dir / "scripts/admit.py").write_text(body)
 
 
 async def finish(runner, cfg, reason="schedule"):
@@ -75,28 +76,24 @@ async def test_errors_never_skip_or_boot(setup_gate, monkeypatch, body):
 
 
 def test_the_console_names_the_script_the_daemon_actually_runs():
-    """The routine page's run-gate control tells the operator which file to write. If that
-    label and `daemon/run_gate.py` disagree, the operator writes a file the daemon never reads
-    and gets a gate that silently never gates — the one failure mode a gate must not have,
-    because "no gate" and "a gate that admits everything" look identical from outside.
+    """The gate editor tells the operator which file a custom predicate lives in. If that label
+    and the daemon disagree, the operator writes a file the daemon never reads and gets a gate
+    that silently never gates — the one failure mode a gate must not have, because "no gate"
+    and "a gate that admits everything" look identical from outside.
 
-    Found 2026-09-27: the operator asked where the run-gate surface was. It existed (D141, in
-    the Schedule section) but its label said `scripts/run_gate.py`, while the daemon, this
-    suite and `docs/run-gates.md` all use `scripts/gate.py`.
+    The name is `admit.py`, not `gate.py`: three routines already run a `scripts/gate.py` as an
+    IN-RUN check runner; ticking the gate over those would have failed every fire.
     """
     root = Path(__file__).resolve().parent.parent
-    label = (root / "static/views/routine-config-schedule.js").read_text(encoding="utf-8")
-    enforcer = (root / "src/rsched/daemon/run_gate.py").read_text(encoding="utf-8")
+    label = (root / "static/components/gate-editor.js").read_text(encoding="utf-8")
+    enforcer = (root / "src/rsched/daemon/gate_prepare.py").read_text(encoding="utf-8")
     doc = (root / "docs/run-gates.md").read_text(encoding="utf-8")
 
-    assert "scripts/gate.py" in enforcer, "the daemon's own path literal moved"
-    assert "scripts/gate.py" in doc, "the doc's path literal moved"
-    assert "scripts/gate.py" in label, (
-        "the console must name the gate script the daemon runs; it currently names something "
-        "else, so anyone following the UI writes a file nothing reads")
-    assert "scripts/run_gate.py" not in label, (
-        "`scripts/run_gate.py` is the MODULE that runs the gate, not the gate itself — naming "
-        "it in the console is what sent an operator looking for the wrong file")
+    assert "scripts/admit.py" in enforcer, "the daemon's own path literal moved"
+    assert "scripts/admit.py" in doc, "the doc's path literal moved"
+    assert "scripts/admit.py" in label, (
+        "the console must name the predicate file the daemon runs; it currently names "
+        "something else, so anyone following the UI writes a file nothing reads")
 
 
 def fake_engine(monkeypatch, cfg):
@@ -234,7 +231,7 @@ async def test_symlink_escape_fails_closed(setup_gate, tmp_path):
     cfg, _, runner = setup_gate
     external = tmp_path / "external.py"
     external.write_text(skip_body())
-    (cfg.dir / "scripts/gate.py").symlink_to(external)
+    (cfg.dir / "scripts/admit.py").symlink_to(external)
     _, _, st = await finish(runner, cfg)
     assert st["state"] == "failed"
 

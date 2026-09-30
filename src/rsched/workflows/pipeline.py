@@ -16,6 +16,7 @@ from __future__ import annotations
 import contextlib
 import json
 import logging
+import re
 
 from ..ids import is_slug
 
@@ -123,24 +124,24 @@ follow the current stage's module with read_file, working through the stages in 
 engine derives the run's live position from those reads: reading `stages/<name>.md` marks the
 run as IN that stage — no progress bookkeeping is needed). Durable state a FUTURE run needs (a
 lifecycle marker, a cursor) lives in its own `state/` file the stages define. It keeps a
-`## Run flow` section and a `## Completion criteria` section. `## Run flow` is a NUMBERED list;
+`## Run flow` section and a `## Done when` section. `## Run flow` is a NUMBERED list;
 every item LEADS with a **bold** stage name matching the stage filename and names its file as
 `stages/<name>.md` — reference EVERY stage of the outline, in its order. Turn the pattern's
 control flow into concrete prose for THIS task — never leave Python in the output.
 
-`## Completion criteria` has EXACTLY TWO labelled halves, and both are mandatory:
-
-- `**Per run:**` — what one run must have achieved to finish honestly.
-- `**Overall:**` — the state after which this ROUTINE is finished and has nothing left to do,
-  in ONE sentence naming a concrete terminal artefact or event. Where the task has a real DATE
-  (a submission deadline, an event, a contract end), name it literally — a deadline the recipe
-  does not state is a deadline the run cannot steer by. If the task genuinely has no end, write
-  `**Overall:** PERPETUAL — ` and then say what makes it never end (a stream that keeps
-  arriving, a state that keeps drifting). Do not write a vague overall to fill the slot: a
-  routine whose end nobody can recognise runs forever by default.
-
-State the `**Overall:**` sentence a SECOND time in the recipe's OPENING paragraph. A goal in a
-trailing section is read last, and a run decides its scope in its first turns.
+`## Done when` lists what ONE finished run leaves behind — one line per outcome, exactly
+`- d1 · <stage-name> — <outcome>`, where `<stage-name>` is the outline stage that produces it,
+or `- d1 — <outcome>` when the outcome spans the whole run; ids d1, d2, … in order. Take the
+pattern's DONE_WHEN as the skeleton and THIS task's words as the content. Each line is an
+OUTCOME of the job that the run's own transcript can show; never "at least N"; never a cap
+phrased as a quota ("at most one open question and only a real one", not "one open
+question"); never a prohibition — what a run must never do belongs to its permissions and
+rules, not here; and every line can honestly be answered "not due, because <how that was
+established>" on a run where it does not apply. At its finish the run accounts for every
+line; a `met` is checked against its transcript — so write what can be checked.
+Whether the ROUTINE ever finishes for good is not the recipe's business: that is the
+operator's finish line, kept outside the recipe. A `## Never` section is written only when the
+user named prohibitions (they are listed below when they did): one line each, in their words.
 
 PACE. Say how much one run attempts, and let it be as much as it can finish well: the turn
 budget is a runaway BACKSTOP, never a ration, and a run that leaves work it could have finished
@@ -177,7 +178,7 @@ def _is_stub(body: str) -> bool:
     return len([ln for ln in body.strip().splitlines() if ln.strip()]) < 2
 
 def _pipeline(resolve, raw: str, instruction: str, *, pins: list[str],
-              rule_lines: str, slug: str) -> dict:
+              done_when: list[str], never: list[str], slug: str) -> dict:
     """Outline → main → one call per stage. Raises on any hard failure (the caller falls
     back to materialize).
 
@@ -237,12 +238,12 @@ def _pipeline(resolve, raw: str, instruction: str, *, pins: list[str],
                        OUTLINE_SCHEMA, OUTLINE_MAX_TOKENS, "outline", check=check_outline)
     outline_txt = _render_outline(outline)
 
-    standing = ""
-    if rule_lines:
-        standing = ("\n\nEnd main with a `## Standing practices` section: one line per rule — "
-                    "`- <slug> — <when to read it during a run>` — for the general rules this "
-                    "routine holds. They live in the shared library and the run reads one with "
-                    "read_rule; do NOT restate or tailor their prose here:\n" + rule_lines)
+    users_done = ("\n\nWhat the USER said a finished run delivers — carry each into `## Done "
+                  "when` in their words, merged with the pattern's skeleton:\n"
+                  + "\n".join(f"- {line}" for line in done_when)) if done_when else ""
+    users_never = ("\n\nWhat the USER said a run must NEVER do — end main with a `## Never` "
+                   "section after `## Done when`, one `- <prohibition>` line per item, in "
+                   "their words:\n" + "\n".join(f"- {line}" for line in never)) if never else ""
 
     def check_main(data: dict) -> str:
         main = str(data.get("main") or "").strip()
@@ -251,20 +252,23 @@ def _pipeline(resolve, raw: str, instruction: str, *, pins: list[str],
         missing = [s["name"] for s in outline if f"stages/{s['name']}.md" not in main]
         if missing:
             raise ValueError(f"main.md does not route to stage(s): {missing}")
-        # The two halves of `## Completion criteria` are checked because their ABSENCE is what
-        # produced 12 goalless recipes on the live instance: the section was mandated and its
-        # content was not, so whether a routine knew its own end was luck of the source pattern.
-        # A machine check is right here (unlike a util-name check over dynamic prose) — these
-        # are two fixed literals the generator is told to emit.
-        for half in ("**Per run:**", "**Overall:**"):
-            if half not in main:
-                raise ValueError(f"main.md's Completion criteria is missing its {half} half — "
-                                 "a routine that cannot state its own end runs forever")
+        # `## Done when` is checked because the run is held to it line by line at every
+        # finish: a malformed line is a line no finish can account for. A machine check is
+        # right here (unlike a util-name check over dynamic prose) — the format is fixed and
+        # the generator is told to emit exactly it.
+        from ..engine import donewhen
+
+        if not donewhen.parse(main):
+            raise ValueError("main.md has no `## Done when` section with a d1 line")
+        if found := donewhen.problems(main, {s["name"] for s in outline}):
+            raise ValueError("; ".join(found))
+        if never and not re.search(r"^## Never\s*$", main, re.MULTILINE):
+            raise ValueError("main.md has no `## Never` section for what the user prohibited")
         return main
 
     main = complete(context + "The routine's stages are already planned — the OUTLINE (each "
                     "stage is generated as its own module):\n" + outline_txt + "\n\n"
-                    + _MAIN_RULES + standing + _SELF_CONTAINED + pin_note,
+                    + _MAIN_RULES + users_done + users_never + _SELF_CONTAINED + pin_note,
                     MAIN_SCHEMA, MAIN_MAX_TOKENS, "main", check=check_main)
 
     def check_stage(data: dict) -> str:

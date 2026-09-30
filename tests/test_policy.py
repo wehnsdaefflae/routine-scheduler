@@ -42,6 +42,17 @@ def test_migration_code_declares_expiry_and_expires():
     assert not problems, "\n".join(problems)
 
 
+def test_the_host_pin_is_the_engine_images_python():
+    """`.python-version` pins the host venv to the interpreter the engine image runs; bumping
+    either alone would test one Python and ship another."""
+    pinned = (REPO / ".python-version").read_text(encoding="utf-8").strip()
+    image = re.search(r"^FROM python:(\d+\.\d+)", (REPO / "Dockerfile").read_text(encoding="utf-8"),
+                      re.MULTILINE)
+    assert image, "the Dockerfile no longer builds FROM python:<major.minor>"
+    assert image.group(1) == pinned, (f"the engine image runs {image.group(1)}, the host pin is "
+                                      f"{pinned}: move both together")
+
+
 def test_version_bump_has_changelog_entry():
     changelog = (REPO / "CHANGELOG.md").read_text(encoding="utf-8")
     headers = re.findall(r"^## \[(\d+\.\d+\.\d+)\] — (\d{4}-\d{2}-\d{2})$",

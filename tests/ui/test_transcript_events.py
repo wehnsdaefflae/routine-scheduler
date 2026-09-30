@@ -6,8 +6,8 @@ why none of them was caught by the js_errors collector or by anyone reading code
 - a HELD action fell through to `JSON.stringify` and read as a wall of raw payload, so the one
   observation whose whole job is to be re-read by a person was the least readable on the page;
 - all SIX finish-gate rungs rendered as the fabrication guard, the only one that existed when
-  the branch was written — so a run deferred for an open stopping condition was labelled a
-  hallucinated completion, which is the opposite diagnosis;
+  the branch was written — so a run deferred for its accounting was labelled a hallucinated
+  completion, which is the opposite diagnosis;
 - the background archive (0.308.0) carries no before/after chars, because the digest already
   did the shrinking — it reached the branch that prints a span and said "undefined → undefined
   chars"; abandoned, it said "nothing elided this pass", which is the line for a no-op pass.
@@ -35,12 +35,21 @@ EVENTS = [
      "payload": {"kind": "assist_hold", "action": "write_file path=/repo/x",
                  "lines": ["commit a checkpoint before the first edit"]}},
     {"type": "observation", "turn": 3,
-     "payload": {"kind": "finish", "rejected": True, "stopping_unaccounted": ["s1", "s2"]}},
-    {"type": "compaction", "turn": 4,
+     "payload": {"kind": "finish", "rejected": True,
+                 "accounting": {"missing": ["d2", "g1"], "bare": ["d1"],
+                                "refused": ["g2: an outcome only the operator judges"]}}},
+    {"type": "observation", "turn": 4,
+     "payload": {"kind": "finish", "rejected": True, "claims_unsupported": ["d3"]}},
+    {"type": "compaction", "turn": 5,
      "payload": {"background": True, "mode": "llm-history", "elided_messages": 30,
                  "history_files": 7}},
-    {"type": "compaction", "turn": 5,
+    {"type": "compaction", "turn": 6,
      "payload": {"background": True, "archival_abandoned": True, "elided_messages": 12}},
+    {"type": "stopping_update",
+     "payload": {"met": ["g1"], "judged": {"d1": "met", "g1": "met"},
+                 "run_id": "uir:20260905-120000", "disputed": ["g1"]}},
+    {"type": "stopping_update",
+     "payload": {"goal_reached": True, "run_id": "uir:20260905-120000", "proposal": "p1"}},
 ]
 
 
@@ -67,9 +76,16 @@ def test_the_transcript_renders_every_event_shape_in_words(ui, ui_page):
     assert "commit a checkpoint before the first edit" in body
     assert '{"kind": "reminder_hold"' not in body        # not the raw payload
 
-    # the finish rung is named for what it actually was
-    assert "does not account for open stopping conditions: s1, s2" in body
+    # each finish rung is named for what it actually was
+    assert "the accounting is incomplete: no verdict for d2, g1 · no note behind d1" in body
+    assert "g2: an outcome only the operator judges" in body
+    assert 'does not support the "met" claim on d3' in body
     assert "fabrication guard" not in body
+
+    # what the finish recorded and the finish line reached — in words
+    assert "accounting: d1 met · g1 met · proved g1" in body
+    assert "a check of the transcript disagreed on g1" in body
+    assert "the finish line is reached" in body
 
     # the background archive, landed and abandoned — neither prints a span it does not have
     assert "background archive landed: 30 messages" in body

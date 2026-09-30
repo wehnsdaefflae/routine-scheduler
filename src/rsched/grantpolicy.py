@@ -24,14 +24,15 @@ from pathlib import Path
 from . import utilgate
 from .grants import (
     _DEFAULT_KIND_SOURCE,
-    _DEFAULT_REMINDERS_SOURCE,
-    _DEFAULT_RUNS_SOURCE,
-    _REMINDER_RANK,
-    _RUNS_RANK,
     CONFIG_FILE,
     GATED_KINDS,
     RECIPE_PREFIXES,
+    RUN_HISTORY_LEVELS,
 )
+from .reminders import LEVELS as REMINDER_LEVELS
+
+_RUNS_RANK = {level: n for n, level in enumerate(RUN_HISTORY_LEVELS)}
+_REMINDER_RANK = {level: n for n, level in enumerate(REMINDER_LEVELS)}
 
 
 def _norm_rel(path: str) -> str:
@@ -50,6 +51,13 @@ def is_runs_path(path: str) -> bool:
 
 
 
+
+#: The words every denial of an UNDECIDED entity ends with (`GrantPolicy.request_route`).
+#: One constant because two readers depend on it: the prompt-anatomy pin and the
+#: `capability-denied` assist predicate, which recognises a refusal the run could still ask
+#: for by exactly this phrase.
+REQUEST_ROUTE_MARK = "request it: ask_user with request:"
+
 @dataclass(frozen=True)
 class GrantPolicy:
     """One run's enforcement view: the routine's enabled capabilities, plus (from the
@@ -59,15 +67,12 @@ class GrantPolicy:
 
     active: tuple[str, ...] = ()               # held conduct-permission slugs (prompt prose)
     actions: frozenset = frozenset()           # enabled gated action kinds
-    utils: frozenset = frozenset()             # enabled reserved utils
-    # Enabled util TAG CLASSES. A permission doc gates a whole class with `util_tags:`, so a
-    # NEWLY ADDED util carrying a gated tag is closed by default instead of silently open —
-    # the name list alone was fail-open, and every util the library gains is a new hole.
-    util_tags: frozenset = frozenset()
-    gated_utils: dict = field(default_factory=dict)   # util → library docs requiring it
-    # Gated util → its declared tags, for the tag-class check in deny(). Only gated utils are
-    # indexed; the catalog is read at policy load ONLY when some doc declares `util_tags`.
-    util_tag_index: dict = field(default_factory=dict)
+    utils: frozenset = frozenset()             # enabled reserved utils (`name` or `name:verb`)
+    gated_utils: dict = field(default_factory=dict)   # util → library docs reserving ALL of it
+    # util → {verb: docs} for utils a doc reserves only VERB BY VERB (`gmail:send`): every other
+    # verb of that util stays open, which is how reading a mailbox stays behind nothing but its
+    # credential while sending needs the permission.
+    gated_verbs: dict = field(default_factory=dict)
     # Util names the library already has, for the create-vs-revise split. Loaded ONLY when
     # the routine holds exactly one half (holding both, or neither, settles the call without
     # knowing) — so the common policies cost no catalog read.
@@ -77,7 +82,6 @@ class GrantPolicy:
     rule_confirm: str = "always"               # write_rule approval policy (own blast radius)
     remind_confirm: str = "always"             # GLOBAL-reminder approval (its own blast radius)
     run_history: str = "none"                  # previous-runs read access: none | last | all
-    workflows: str = "catalog"                 # child-pattern sourcing: catalog | generate
     # Consequence reminders: none | local | global. `local` reads and writes the routine's own
     # store; `global` additionally reads the library's curated one (local overriding it) and is
     # the only level that may WRITE there. See rsched/reminders.py.
@@ -101,8 +105,6 @@ class GrantPolicy:
     # seal, and the root-conversation-only handler gates. Never persisted, never inherited by
     # a subrun (see engine/admin.py). Enforced in allows_kind() and deny() below.
     admin: bool = False
-    runs_sources: tuple = _DEFAULT_RUNS_SOURCE            # docs covering runs access
-    reminders_sources: tuple = _DEFAULT_REMINDERS_SOURCE  # docs covering the reminder layer
     # The live run's ts: paths under runs/<current_run_ts>/ are the run's OWN tree (status,
     # archived history) and stay readable regardless of run_history — the engine itself
     # points the model there after compaction.
@@ -138,7 +140,7 @@ class GrantPolicy:
         from dataclasses import replace
 
         actions, utils = set(self.actions), set(self.utils)
-        run_history, workflows, reminders = self.run_history, self.workflows, self.reminders
+        run_history, reminders = self.run_history, self.reminders
         for eid in granted_now:
             cls, _, name = eid.partition(":")
             if cls == "action":
@@ -147,8 +149,6 @@ class GrantPolicy:
                 utils.add(name)
             elif cls == "runs" and _RUNS_RANK.get(name, 0) > _RUNS_RANK.get(run_history, 0):
                 run_history = name
-            elif cls == "workflows":
-                workflows = name
             elif cls == "reminders" and (_REMINDER_RANK.get(name, 0)
                                          > _REMINDER_RANK.get(reminders, 0)):
                 reminders = name
@@ -158,7 +158,7 @@ class GrantPolicy:
         # actually unlocks the recipe — the observation already tells the run it is usable now
         # (D135/F498, from R1617). Never lowers it: a routine that holds the capability keeps it.
         return replace(self, actions=frozenset(actions), utils=frozenset(utils),
-                       run_history=run_history, workflows=workflows, reminders=reminders,
+                       run_history=run_history, reminders=reminders,
                        recipe_unlocked=self.recipe_unlocked or "write_recipe" in actions,
                        granted_now=frozenset(granted_now), denied_now=frozenset(denied_now))
 
@@ -196,7 +196,7 @@ class GrantPolicy:
                     "in your finish summary so the top-level run can request it.")
         hint = (' with mode "blocking" if you cannot proceed without it (deferred '
                 "otherwise)" if blocking_hint else "")
-        return (f'If it is essential, request it: ask_user with request: "{eid}" and a '
+        return (f'If it is essential, {REQUEST_ROUTE_MARK} "{eid}" and a '
                 f"question saying what you need it for{hint}. The user decides: allow/deny, "
                 f"once or forever.")
 
@@ -216,22 +216,15 @@ class GrantPolicy:
         """
         if self.admin or _REMINDER_RANK.get(self.reminders, 0) >= _REMINDER_RANK.get(scope, 9):
             return None
-        srcs = ", ".join(self.reminders_sources)
         if self.reminders == "none":
-            return (f"`remind` is switched OFF in this routine's capabilities — only the user "
-                    f"can switch it on (the {srcs} permission covers its conduct). Record what "
-                    f"you learned with `note` or memory_write instead. "
-                    f"{self.request_route('reminders:local')}")
-        return (f"a GLOBAL reminder holds matching actions in EVERY routine at global scope, "
-                f"and this routine's reminders capability is 'local' — leave it local (the "
-                f"honest default until its own tally proves the consequence is universal), or "
+            return (f"`remind` is switched OFF in this routine's settings — only the user "
+                    f"can switch it on. Record what you learned with `note` or memory_write "
+                    f"instead. {self.request_route('reminders:local')}")
+        return (f"a GLOBAL reminder holds matching actions in other routines too; "
+                f"writing the shared store is the curator's setting — leave it local (the "
+                f"honest default until its own tally proves the consequence is general; the "
+                f"reviewer of the shared store promotes what earns it), or "
                 f"{self.request_route('reminders:global')}")
-
-    def may_generate_workflow(self) -> bool:
-        """May a subtask DRAFT a new library pattern when none fits (vs pick from the catalog)?
-        Off by default — a user-set capability, covered by the workflow-generation permission.
-        """
-        return self.workflows == "generate"
 
     def needs_confirm(self, creating: bool) -> bool:
         """Must the user approve this write_util? (creating=False → revising an existing util)"""
@@ -256,6 +249,31 @@ class GrantPolicy:
         return (self.remind_confirm == "always"
                 or (self.remind_confirm == "creations" and creating))
 
+    def _kind_denial(self, kind: str, mode: str) -> str:
+        """Why a gated kind this run does not hold is refused and the way out."""
+        if kind == "detach":
+            # STRUCTURAL, not a setting: added to a root conversation's policy at setup and to
+            # nothing else, so a denial pointing at a permission would send the run after a
+            # switch that does not exist
+            return ("kind=detach starts a job that outlives a conversation's REPLY, so it exists "
+                    "only in a root conversation — no setting switches it on here. Use spawn or "
+                    "subtask for work inside this run.")
+        srcs = ", ".join(self.kind_sources.get(kind)
+                         or [_DEFAULT_KIND_SOURCE.get(kind, "util-authoring")])
+        if self.is_subrun:
+            # A spawned/subtask child runs with capabilities OFF by design, regardless
+            # of what the parent routine holds — so the limit is the CHILD's scope, not
+            # the routine's. Route the work back to the parent, which may hold the kind.
+            return (f"kind={kind} is not available to this child sub-workflow — spawned "
+                    f"and subtask children run with capabilities switched off (the "
+                    f"{srcs} permission is enforced on the parent run, not inherited). "
+                    f"Do the work that needs {kind} in the PARENT run, or return the "
+                    f"material it needs in your finish summary so the parent can.")
+        return (f"{mode}kind={kind} is switched OFF in this routine's capabilities — "
+                f"only the user can switch it on (the {srcs} permission covers its "
+                f"conduct). Work with what you have. "
+                f"{self.request_route(f'action:{kind}')}")
+
     def deny(self, action: dict) -> str | None:
         """A precise, actionable rejection for a gated call — or None when permitted. Worded
         for the model inside the schema-retry cycle: capabilities are switched by the USER
@@ -275,22 +293,7 @@ class GrantPolicy:
             mode = (f"util {name!r} {'already exists' if revising else 'does not exist yet'}, "
                     f"so this is a {'REVISION' if revising else 'CREATION'}. ")
         if need in GATED_KINDS and need not in self.actions and not self.admin:
-            srcs = ", ".join(self.kind_sources.get(need)
-                             or [_DEFAULT_KIND_SOURCE.get(need, "util-authoring")])
-            kind = need
-            if self.is_subrun:
-                # A spawned/subtask child runs with capabilities OFF by design, regardless
-                # of what the parent routine holds — so the limit is the CHILD's scope, not
-                # the routine's. Route the work back to the parent, which may hold the kind.
-                return (f"kind={kind} is not available to this child sub-workflow — spawned "
-                        f"and subtask children run with capabilities switched off (the "
-                        f"{srcs} permission is enforced on the parent run, not inherited). "
-                        f"Do the work that needs {kind} in the PARENT run, or return the "
-                        f"material it needs in your finish summary so the parent can.")
-            return (f"{mode}kind={kind} is switched OFF in this routine's capabilities — "
-                    f"only the user can switch it on (the {srcs} permission covers its "
-                    f"conduct). Work with what you have. "
-                    f"{self.request_route(f'action:{kind}')}")
+            return self._kind_denial(need, mode)
         if kind == "util":
             refusal = utilgate.deny_util(self, action)
             if refusal is not None:

@@ -1,9 +1,9 @@
 // The shared "settings section" primitive — a titled block (heading + panel + an optional
 // one-line description) used by BOTH the routine config page and the new-conversation
 // composer, so a setting reads and looks the same wherever it appears (D57). Emitting an
-// <h2> keeps the routine page's section grouping (routine-overview.groupSections) and the
-// side table-of-contents working; the description is the per-control copy the operator
-// reads before touching the section — one job per element (a label labels, this explains).
+// <h2> keeps the side table-of-contents and every jump to a section working; the description
+// is the per-control copy the operator reads before touching the section — one job per
+// element (a label labels, this explains).
 //
 // Returns the [<h2>, <div.panel>] pair so a caller spreads it into a parent:
 //   view.append(...settingsSection("Budgets", "hard per-run ceilings…", ...rows));
@@ -44,7 +44,7 @@ const LEAD_MAX = 160;
  * now, capped by one rule.
  *
  * On a PHONE it is also not in the reading path. A routine page opened with 13 lines on
- * SCHEDULE, 22 on DOMAIN, 20 on PERMISSIONS before their first control — correct, wanted, and
+ * SCHEDULE, 20 on PERMISSIONS before their first control — correct, wanted, and
  * read again every time a dial is changed; at 390px that is four screens of prose per group,
  * where at 1440px the same copy is a paragraph beside the controls it explains. Below 861px the
  * first sentence leads and the rest is one tap away. Nothing is shortened at either width.

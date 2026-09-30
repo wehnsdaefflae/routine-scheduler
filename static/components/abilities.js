@@ -27,7 +27,7 @@
 //   [data-ability="(uncovered)"]  the card holding every capability no held doc requires.
 //   [data-orphan="<class:name>"]  one such capability's row. On EVERY row of that card, the
 //                                 ones this panel cannot act on included, so a reader who
-//                                 arrives lands on a sentence saying where the act does live.
+//                                 arrives lands on a sentence saying what settles it instead.
 //   [data-drop="<class:name>"]    the button that settles that capability here — where the
 //                                 surface's `cover_or_drop` and `install_util` offers aim. It
 //                                 reads "drop" while the capability is on, "keep" once a drop
@@ -39,16 +39,22 @@
 //                                 impossible, so it is on the button, never on the row.
 //
 // Drop-in for permissionsPanel: same (permissions, capabilities, opts) in, same {node, value} out,
-// so the routine page, the conversation rail, the composer and the domain editor all keep working.
-// `opts.surface` is optional — a domain's shared config and an unsaved conversation have no
-// routine to resolve, and the cards degrade to the two-layer view those cases can support.
+// so the routine page, the conversation rail and the composer all keep working.
+// `opts.surface` is optional — an unsaved conversation has no routine to resolve, so the cards
+// degrade to the two-layer view that case can support.
+//
+// Two ways to commit. With `opts.onSave` the panel carries its own save button (a conversation's
+// header). With `opts.onChange` it carries none: every staged change is reported as `value()` the
+// moment it is made, to a caller that keeps a DRAFT (the routine page's settings form, saved by the
+// page's one accept). There `opts.saved` names what the routine HOLDS — `{permissions, capabilities}`
+// — which is what a staged row is marked against, while `permissions`/`capabilities` are the draft.
 
 import { effectLine } from "/static/components/effectline.js";
 import { el, toast } from "/static/util.js";
 import { docExpander } from "/static/components/docexpand.js";
 
 import {
-  CONFIRM_OPTIONS, RULE_CONFIRM_OPTIONS, RUNS_OPTIONS, RUNS_RANK, WF_OPTIONS, WF_RANK, REMINDERS_OPTIONS, REM_RANK, ACTION_HELP, UTIL_HELP, ABSENT_UTIL, KIND_LABEL
+  CONFIRM_OPTIONS, RULE_CONFIRM_OPTIONS, RUNS_OPTIONS, RUNS_RANK, REMINDERS_OPTIONS, REM_RANK, ACTION_HELP, UTIL_HELP, ABSENT_UTIL, KIND_LABEL
 } from "/static/components/abilities-data.js";
 import { createOrphanCard } from "/static/components/abilities-orphans.js";
 
@@ -61,7 +67,6 @@ export function abilitiesPanel(permissions, capabilities, opts = {}) {
     confirm: capabilities?.active?.confirm || "always",
     rule_confirm: capabilities?.active?.rule_confirm || "always",
     runs: capabilities?.active?.runs || "none",
-    workflows: capabilities?.active?.workflows || "catalog",
     reminders: capabilities?.active?.reminders || "none",
     remind_confirm: capabilities?.active?.remind_confirm || "always",
   };
@@ -70,21 +75,27 @@ export function abilitiesPanel(permissions, capabilities, opts = {}) {
   // the committed truth each time, while the surface beside it is the snapshot the page loaded
   // with — one in which a capability the last save dropped still has a row. That row is
   // dropped rather than offered again; a row whose capability is still saved is staged.
-  const savedCaps = { util: new Set(caps.utils), action: new Set(caps.actions) };
-  const committed = new Set(held);          // what the sections are built from
+  const savedActive = opts.saved?.capabilities || capabilities?.active || {};
+  const savedCaps = opts.saved
+    ? { util: new Set(savedActive.utils || []), action: new Set(savedActive.actions || []) }
+    : { util: new Set(caps.utils), action: new Set(caps.actions) };
+  // what the sections are built from: the SAVED set, so a doc the draft switches on reads as a
+  // staged row in the catalogue until it is accepted, exactly as an unsaved tick does
+  const committed = new Set(opts.saved ? opts.saved.permissions || [] : held);
   const marks = [];                         // [{slug, node}] — repainted on every toggle
+  let ready = false;                        // the first render reports nothing: building is not editing
 
   const needs = (p) => p.requires || {};
   const baseName = (u) => String(u).split(":")[0];
 
-  // The three RANKED dials in one table — the `requires:` key each answers, against the ladder
+  // The RANKED dials in one table — the `requires:` key each answers, against the ladder
   // it is ranked on. A doc names a FLOOR, so a live value at or above it satisfies the doc; a
   // value the ladder does not know is not one this can call satisfied. Every reading of a dial
   // goes through it: the raise, the deactivation cascade and the state the card's dial row
   // wears. The server builds the `switch_on` fix's `missing` list by raising the mapping through
   // its own cascade and reporting every key the raise CHANGED, which is this comparison — so the
   // dot the reader sees and the shortfall the fix names can only agree.
-  const RANKED = { runs: RUNS_RANK, workflows: WF_RANK, reminders: REM_RANK };
+  const RANKED = { runs: RUNS_RANK, reminders: REM_RANK };
   const dialMet = (key, need) => !need || RANKED[key][caps[key]] >= RANKED[key][need];
   // the activation cascade: raise the mapping to cover one doc's requires
   const raiseFor = (r) => {
@@ -164,11 +175,6 @@ export function abilitiesPanel(permissions, capabilities, opts = {}) {
                control: selectDial(RUNS_OPTIONS, caps.runs, (v) => { caps.runs = v; },
                                    opts.disableRuns) };
     }
-    if (r.workflows) {
-      return { kind: "sourcing", state: state("workflows"),
-               control: selectDial(WF_OPTIONS, caps.workflows,
-                                   (v) => { caps.workflows = v; }) };
-    }
     if (r.reminders) {
       // One control over two keys, so its value is a pair. `none` is a real place for the
       // mapping to stand — a file edited by hand holds this doc with the layer switched off —
@@ -233,9 +239,6 @@ export function abilitiesPanel(permissions, capabilities, opts = {}) {
       rows.push({ state: absent || !caps.utils.has(u) ? "blocks" : "ok", kind: "util", entity: u,
                   note: absent ? ABSENT_UTIL : UTIL_HELP[baseName(u)] || "" });
     }
-    for (const t of r.util_tags || []) {
-      rows.push({ state: "ok", kind: "util class", entity: t });
-    }
     const derived = resourceRows(doc);   // a card is built only for what the routine holds
     for (const n of derived) {
       const [cls, ...rest] = n.id.split(":");
@@ -247,14 +250,8 @@ export function abilitiesPanel(permissions, capabilities, opts = {}) {
       rows.push({ state: dial.state, kind: dial.kind, entity: "policy", control: dial.control });
     }
 
-    // A doc the DOMAIN supplies is held, but not here: this panel saves this routine's own
-    // file, and the domain is unioned back in on the next read — so an ordinary checkbox would
-    // untick, save, and come straight back (F489/F490, the operator's 2026-09-15 report). It
-    // wears the same shape `routine_only` already uses for "held, but not yours to change",
-    // and the head says where it IS changed.
-    const fromDomain = !doc.routine_only && !!doc.inherited;
     const box = el("input", { type: "checkbox", checked: "",
-                              disabled: (doc.routine_only || fromDomain) ? "" : null });
+                              disabled: doc.routine_only ? "" : null });
     box.onchange = () => {
       if (box.checked) { held.add(doc.slug); raiseFor(r); }
       else { held.delete(doc.slug); dropUnsatisfied(); }
@@ -268,17 +265,25 @@ export function abilitiesPanel(permissions, capabilities, opts = {}) {
       : bad === "interrupts" ? el("span", { class: "pill warn" }, "needs a decision")
       : el("span", { class: "pill ok" }, "ready");
     const doc_ = docExpander("permissions", doc.slug);
+    // A HELD doc whose requirements are not all switched on fails closed — and the switch that
+    // closes it is here, in the card that names the gap: one press raises the mapping to cover
+    // what this doc requires (a util the library does not have stays out of reach; only a run
+    // writes one). It is the landing site of the surface's `switch_on` offer.
+    const missing = [...(r.actions || []).filter((a) => !caps.actions.has(a)),
+      ...(r.utils || []).filter((u) => !caps.utils.has(u) && !absentUtils.has(baseName(u)))];
+    const switchOn = missing.length
+      ? el("button", { type: "button", class: "btn small", "data-switch-on": doc.slug,
+          title: `switch on what ${doc.slug} requires — ${missing.join(", ")}`,
+          onclick: () => { raiseFor(r); render(); } }, `switch on ${missing.join(", ")}`)
+      : null;
     const node = el("div", { class: `ability${bad ? ` ${bad}` : ""}`,
                              "data-ability": doc.slug },
       el("label", { class: "ability-head",
-                    title: doc.routine_only ? "only meaningful for scheduled routines"
-                      : fromDomain ? `held through the domain “${doc.inherited}” — `
-                        + "change it in that domain's editor on the Routines page" : "" },
+                    title: doc.routine_only ? "only meaningful for scheduled routines" : "" },
         box,
         el("div", {},
           el("div", { class: "ability-name" }, doc.slug,
-             doc.routine_only ? " (routines only)" : "",
-             fromDomain ? el("span", { class: "muted" }, ` from domain “${doc.inherited}”`) : ""),
+             doc.routine_only ? " (routines only)" : ""),
           effectLine(doc, true)),
         badge),
       // A READY card's stack is confirmation of what its badge already said, and eleven of them
@@ -292,7 +297,7 @@ export function abilitiesPanel(permissions, capabilities, opts = {}) {
         : el("details", { class: "ability-more" },
             el("summary", {}, `${rows.length} requirement${rows.length === 1 ? "" : "s"} · all met`),
             el("ul", { class: "ability-stack" }, ...rows.map(stackRow))),
-      el("div", { class: "ability-foot" }, doc_.btn), doc_.body);
+      el("div", { class: "ability-foot row", style: "gap:10px" }, switchOn, doc_.btn), doc_.body);
     marks.push({ slug: doc.slug, node, box });
     return node;
   }
@@ -313,6 +318,7 @@ export function abilitiesPanel(permissions, capabilities, opts = {}) {
       if (box) box.checked = held.has(slug);
     }
     orphanSlot.replaceChildren(...[orphanCard()].filter(Boolean));
+    if (ready) opts.onChange?.(value());
   }
 
   function render() {
@@ -355,16 +361,17 @@ export function abilitiesPanel(permissions, capabilities, opts = {}) {
     repaint();
   }
   render();
+  ready = true;
 
-  const value = () => ({
-    active: docs.filter((p) => (p.routine_only ? p.active : held.has(p.slug))).map((p) => p.slug),
-    capabilities: { actions: [...caps.actions], utils: [...caps.utils],
-                    util_tags: capabilities?.active?.util_tags || [],
-                    confirm: caps.confirm, rule_confirm: caps.rule_confirm,
-                    remind_confirm: caps.remind_confirm,
-                    runs: caps.runs, workflows: caps.workflows,
-                    reminders: caps.reminders },
-  });
+  function value() {
+    return {
+      active: docs.filter((p) => (p.routine_only ? p.active : held.has(p.slug))).map((p) => p.slug),
+      capabilities: { actions: [...caps.actions], utils: [...caps.utils],
+                      confirm: caps.confirm, rule_confirm: caps.rule_confirm,
+                      remind_confirm: caps.remind_confirm,
+                      runs: caps.runs, reminders: caps.reminders },
+    };
+  }
 
   let footer = null;
   if (opts.onSave) {

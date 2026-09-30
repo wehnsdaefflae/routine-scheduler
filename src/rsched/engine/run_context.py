@@ -105,12 +105,6 @@ class RunContext:
     # successfully-dispatched matching action lands (requests.consume_once_grants). Only
     # entities.TURN_ACTION_CLASSES ever appear here. In-memory like its parent overlay.
     granted_once: set[str] = field(default_factory=set)
-    # D67: the DOMAIN's shared store — <routines_home>/.control/group-stores/<domain-id>/
-    # for the one domain this routine names, injected into the effective fs read+write
-    # roots (read_roots/write_roots below). Seeded at boot (engine/runtime, dirs created
-    # lazily there) and inherited by children like every resource; empty for a routine that
-    # names no domain and for conversations.
-    domain_store_roots: list = field(default_factory=list)
     # R514: which bound machine SHARES this run actually has under mnt/<name>/, proven live
     # at provisioning (machine_mounts.mount_routine_shares), and why each missing one is missing.
     # The CAPABILITIES block reads these so the run is told the truth about its mounts — a
@@ -163,10 +157,10 @@ class RunContext:
     # action). Counted at the executor and validation seams (count_util), folded into
     # the run's workflow-usage record — the Stats tab's per-util reliability source.
     util_stats: dict = field(default_factory=dict)
-    # Output-compression telemetry: what the optional compressor did to this run's command
-    # stdout — a count per outcome (applied / measured / unchanged / fallback / skipped /
-    # unavailable), plus `tokens_saved` (the estimate only an APPLIED preview earns — a
-    # measured or rejected one changed nothing the model read) and `ms` (compressor wall
+    # Output-compression telemetry: what the lossless compressor did to this run's command
+    # stdout — a count per outcome (applied / unchanged / fallback / skipped), plus
+    # `tokens_saved` (the estimate only an APPLIED preview earns — a rejected one changed
+    # nothing the model read) and `ms` (compressor wall
     # clock, paid whatever the outcome). Ticked at the one compression seam
     # (note_compression), folded into the run's workflow-usage record — the Stats tab's
     # per-routine savings roll-up.
@@ -180,6 +174,15 @@ class RunContext:
     # a resume like the counters, because a run that is held at its finish and comes back must
     # still know what it owes. The `unclosed-delivered-report` assist is the only reader.
     reports_open: list[str] = field(default_factory=list)
+    # The turn a permission refusal cost at the validation seam (completion.action_candidate)
+    # — a refused action never becomes a turn, so without this the `capability-denied` assist
+    # could not tell that the action it sees was the run's SECOND choice.
+    last_denial_turn: int = 0
+    # The accounting the run's finish carried, set by the finish gate once it stands.
+    accounting: list[str] = field(default_factory=list)
+    # The operator's one-line JOB BRIEF for a run started by hand (engine/brief.py); "" for
+    # every other run. A briefed run answers for it instead of its recipe's Done when.
+    brief: str = ""
     # User UTTERANCES this leg: a settled blocking answer, a held reply, a dialog turn, an
     # injected message, a slash command. Not telemetry, and deliberately NOT carried across
     # legs — `create_routine` reads it to tell "the user has spoken since I drafted" from
@@ -219,18 +222,17 @@ class RunContext:
         fs-read grants plus every WRITABLE root — a write grant implies read
         (R244/F294: the util sandbox always gave write roots full rw access, so an
         engine read gate refusing them was friction posing as a boundary — a run could
-        write a file it was not allowed to read back). write_roots() already carries
-        the domain's shared store. Every consumer (file actions, the util sandbox, the
-        vision fallback) resolves against this, so a granted root behaves exactly like
-        a configured one — for this run.
+        write a file it was not allowed to read back). A shared store is an ordinary
+        write root (rsched/sharedstores.py), so it arrives here like any other. Every
+        consumer (file actions, the util sandbox, the vision fallback) resolves against
+        this, so a granted root behaves exactly like a configured one — for this run.
         """
         return [*self.routine.fs_read_roots, *self._granted_paths("fs-read"),
                 *self.write_roots()]
 
     def write_roots(self) -> list[Path]:
         """The effective writable roots — write_roots' counterpart of read_roots()."""
-        return [*self.routine.fs_write_roots, *self._granted_paths("fs-write"),
-                *self.domain_store_roots]
+        return [*self.routine.fs_write_roots, *self._granted_paths("fs-write")]
 
     @property
     def root_run_dir(self) -> Path:
@@ -337,8 +339,8 @@ class RunContext:
 
         A budget warning is an EVENT, not a state. Repeating it on every turn past the line
         turned the backstop into a countdown — a run read "converge DELIBERATELY now"
-        fifteen times over and wrapped up at the ceiling whether or not its stopping
-        conditions were met — while the harness contract tells the same run that budgets are
+        fifteen times over and wrapped up at the ceiling whether or not its work was
+        done — while the harness contract tells the same run that budgets are
         never a pace. So each line (85%, then 95%, per resource) is announced exactly once;
         a second resource crossing later still gets its own notice.
         """
@@ -432,6 +434,10 @@ class RunContext:
             "utils": self.util_stats,
             "asks_deferred": self.asks_deferred,
             "reports_open": self.reports_open,
+            # the finish's own accounting (engine/accounting.py) — what the runs table, the
+            # dashboard and the next run's digest read about how this run went
+            "accounting": self.accounting,
+            **({"brief": self.brief} if self.brief else {}),
             # peak resident memory of the engine process (kB) — the rc=-9 post-mortem's
             # key datum (F348); the daemon reads the last write's value at close-out
             "vm_hwm_kb": _vm_hwm_kb(),

@@ -49,7 +49,7 @@ def do_read_rule(action: dict, ctx: RunContext) -> dict:
 
     Rules live in ONE place and are read-only to every run: this action never writes, and the
     held set is routine.yaml config the user owns. The prose is deliberately NOT in the
-    composed prompt — main.md's Standing practices tail names the held slugs and the run
+    composed prompt — the digest names each held rule beside when it applies; the run
     fetches the one it needs, so an unread rule costs nothing every turn. `name: "list"`
     returns the catalog (mirroring `util name=list`), which is how a run reaches a rule it
     does not hold: it applies for this run only, and asking the user to make it permanent is

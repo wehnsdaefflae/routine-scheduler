@@ -9,10 +9,12 @@ drift from it.
 
 Three kinds ride this queue. Two are creations (`create_routine`, `manage_lane`). The third,
 `goal-reached`, is the opposite: a routine reporting that it is FINISHED. It is queued by
-`engine/goalreached.py` the run its final goal is met; by then the routine has already stopped
-running — that half is derived from its goal document and needs no click. Approving writes
-`enabled: false` through the ordinary PATCH; discarding reopens the goal, which puts the routine
-back on the schedule. Doing nothing leaves it paused with the proposal standing.
+`engine/goalreached.py` when its finish line is reached — by a run, by the calendar, or by the
+operator's own tick; by then the routine has already stopped running — that half is derived
+from its finish line and needs no click. Approving writes `enabled: false` through the ordinary
+PATCH; discarding reopens the finish line, which puts the routine back on the schedule (a line
+the calendar reached is changed on the routine page instead). Doing nothing leaves it paused
+with the card standing.
 """
 
 from __future__ import annotations
@@ -23,8 +25,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from .. import lanes, pending
-from ..engine import stopping
-from ..ids import now_iso
+from ..engine import finishline
 
 router = APIRouter(tags=["pending"])
 
@@ -47,10 +48,14 @@ def _materialize_routine(server, fields: dict) -> dict:
         raise HTTPException(409, f"a routine {slug!r} already exists — discard this proposal or "
                                  "rename it before creating")
     name = str(fields.get("name") or "").strip()
-    raw_stopping = fields.get("stopping")
-    raw_goal = fields.get("goal")
     instruction = str(fields.get("instruction") or "")
     workflow_slug = str(fields.get("workflow") or "")
+
+    def lines(key: str) -> list[str]:
+        raw = fields.get(key)
+        return [t for t in raw if isinstance(t, str) and t.strip()] \
+            if isinstance(raw, list) else []
+
     from ..workflows.suggest import generate_description
     routine_dir = scaffold(server, slug=slug, name=name,
                            instruction=instruction, workflow_slug=workflow_slug,
@@ -60,12 +65,11 @@ def _materialize_routine(server, fields: dict) -> dict:
                            description=generate_description(server, name=name,
                                                             instruction=instruction,
                                                             workflow_slug=workflow_slug),
-                           # the queued proposal carries the DONE answer the same way a
+                           # the queued proposal carries what the run settled the same way a
                            # conversation's confirmed call does — one materializer, one path
-                           stopping=[t for t in raw_stopping if isinstance(t, str) and t.strip()]
-                           if isinstance(raw_stopping, list) else None,
-                           goal=[t for t in raw_goal if isinstance(t, str) and t.strip()]
-                           if isinstance(raw_goal, list) else None)
+                           pattern=str(fields.get("pattern") or ""), setup=lines("setup"),
+                           done_when=lines("done_when"), finish_line=lines("finish_line"),
+                           never=lines("never"))
     return {"created": "routine", "slug": slug, "dir": str(routine_dir)}
 
 
@@ -120,17 +124,17 @@ def _materialize_goal_reached(request: Request, rec: dict) -> dict:
     """Confirm a retirement: write `enabled: false` through the ONE config writer.
 
     The routine has ALREADY stopped running — the scheduler builds no fire table entry for a
-    routine whose goal is satisfied (registry.RoutineInfo.retired), which is what lets it retire
-    itself without anything writing config. This click is what makes that permanent and legible:
-    after it, the routine reads as switched off in every surface that has ever meant it, so it
-    survives someone clearing a goal condition later.
+    routine that reached its finish line (registry.RoutineInfo.retired), which is what lets it
+    retire itself without anything writing config. This click is what makes that permanent and
+    legible: after it, the routine reads as switched off in every surface that has ever meant
+    it, so it survives someone editing the finish line later.
 
-    Neither membership is touched — not the LANE it fires in, not the DOMAIN it shares a
-    surface with. A retired member is skipped by its chains without counting as a failure
-    (daemon/lane_runs.py), so dropping it from a lane would buy nothing; and its `domain:` is a
-    key in its own routine.yaml, so clearing that would strip the shared config, permissions and
-    store it would need back the moment someone reopens the goal. Retirement answers "does this
-    still run?", which is neither of those questions.
+    Nothing else is touched — not the LANE it fires in, not the shared stores among its roots.
+    A retired member is skipped by its chains without counting as a failure
+    (daemon/lane_runs.py), so dropping it from a lane would buy nothing; and its roots are keys
+    in its own routine.yaml, so clearing them would strip what it would need back the moment
+    someone reopens the finish line. Retirement answers "does this still run?", which is neither of
+    those questions.
     """
     from .api_routine_patch import RoutinePatch, patch_routine
 
@@ -179,17 +183,24 @@ def discard(request: Request, pid: str, body: Discard) -> dict:
         raise HTTPException(404, f"no pending creation {pid!r}")
     reopened: list[str] = []
     if rec.get("kind") == "goal-reached":
-        # Discarding a retirement means "not yet — keep going", so that has to change the goal
-        # document, because retirement is DERIVED from it. Dropping the record alone would leave
-        # the routine unscheduled with nothing left on the page to act on.
+        # Discarding a retirement means "not yet — keep going", so that has to change the finish
+        # line, because retirement is DERIVED from it. Dropping the record alone would leave the
+        # routine unscheduled with nothing left on the page to act on. A finish line the CALENDAR
+        # reached is refused here: reopening changes nothing a date decides, so the next tick
+        # would queue the same card again — its date is changed on the routine page; that
+        # save withdraws the card (engine/goalreached.withdraw).
         routine_dir = server.routines_home / str(rec.get("routine") or "")
         if (routine_dir / "routine.yaml").is_file():
-            reopened = stopping.reopen_goal(routine_dir, now=now_iso())
+            if why := finishline.reached_by_calendar(finishline.load(routine_dir)):
+                raise HTTPException(409, f"this finish line was reached by the calendar ({why}) "
+                                         "— change its date in the routine's Goal settings, or "
+                                         "retire it")
+            reopened = finishline.reopen(routine_dir)
             request.app.state.scheduler.rescan()
     pending.drop(server.routines_home, pid)
     outcome = f"discarded ({body.reason.strip()})" if body.reason.strip() else "discarded"
     if reopened:
-        outcome = (f"declined — the goal is not reached, so {', '.join(reopened)} "
+        outcome = (f"declined — the finish line is not reached, so {', '.join(reopened)} "
                    "were reopened and the routine is scheduled again")
     return {"ok": True, "id": pid, "reopened": reopened,
             "notified": pending.notify_proposer(server, rec, outcome)}

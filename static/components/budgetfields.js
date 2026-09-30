@@ -1,5 +1,5 @@
-// The budget vocabulary — ONE list feeding every budgets editor (the routine page, the domain
-// editor, the creation flow's setup panel). key → short label → full help line;
+// The budget vocabulary — ONE list feeding every budgets editor (the routine page, the
+// creation flow's setup panel). key → short label → full help line;
 // UNLIMITED_BUDGETS marks
 // the -1-means-unlimited ones (their inputs allow -1). Two drifting copies of this
 // list once disagreed on the labels; keep it here only.

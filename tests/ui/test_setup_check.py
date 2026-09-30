@@ -1,20 +1,28 @@
 """The setup check on the routine page — the surface, rendered where somebody will see it."""
 from __future__ import annotations
 
+import frontmatter
 import yaml
 from playwright.sync_api import expect
 
 
-def _unfold(page) -> None:
-    """Open every routine-page config group.
+def _effect(home, slug: str) -> dict:
+    """A library doc's `effect:` block — what its toggle must say — read from the doc itself,
+    so these tests pin the RENDERING of whatever the library says, not one wording of it."""
+    return frontmatter.load(str(home / f"{slug}.md")).metadata["effect"]
 
-    The page ships with only its leading group open (views/routine.js SECTION_GROUPS): seven
-    open at once made it 11-12 000px tall. A control inside a folded group is not visible, so a
-    test that reads one unfolds first. What the DEFAULT is, and that the choice is remembered,
-    is pinned in test_routine_groups.py — not here.
+
+def _unfold(page) -> None:
+    """Open every routine-page settings group and each group's "more" menu.
+
+    The page ships with only its two leading groups open (views/routine-config.js): seven open at
+    once made it 11-12 000px tall. The rarely needed sections fold once more behind each group's
+    "more". A control inside a fold is not visible, so a test that reads one unfolds first. What
+    the DEFAULT is — and that the choice is remembered — is pinned in test_routine_groups.py, not
+    here.
     """
     page.wait_for_selector(".rgroup-head")
-    page.evaluate("() => { for (const d of document.querySelectorAll('details.rgroup')) d.open = true; }")
+    page.evaluate("() => { for (const d of document.querySelectorAll('details.rgroup, details.rmore')) d.open = true; }")
 
 def _hold_util(ui, slug: str, name: str, *, secrets: str = "(none)", fs: str = "none") -> None:
     """Give the fixture routine a reserved util whose header declares something it lacks."""
@@ -26,8 +34,8 @@ def _hold_util(ui, slug: str, name: str, *, secrets: str = "(none)", fs: str = "
     path = ui.routines / slug / "routine.yaml"
     cfg = yaml.safe_load(path.read_text(encoding="utf-8"))
     # Hold NOTHING else: writing an explicit capabilities mapping replaces the model's default
-    # (write_util + the memory pair), which would orphan the default permissions and add rows
-    # this test is not about. One util, one gap, one row to assert.
+    # (write_util and the doc that covers it), which would orphan the default permission and
+    # add rows this test is not about. One util, one gap, one row to assert.
     cfg["permissions"] = []
     cfg["capabilities"] = {"actions": [], "utils": [name], "util_tags": []}
     path.write_text(yaml.safe_dump(cfg), encoding="utf-8")
@@ -110,7 +118,7 @@ def test_a_resolved_need_appears_inside_the_ability_that_owns_it(ui_page, ui):
     path = ui.routines / "uir" / "routine.yaml"
     cfg = yaml.safe_load(path.read_text(encoding="utf-8"))
     cfg["permissions"] = ["messaging-discord"]
-    cfg["capabilities"] = {"actions": [], "utils": ["discord"], "util_tags": []}
+    cfg["capabilities"] = {"actions": [], "utils": ["discord:send"], "util_tags": []}
     path.write_text(yaml.safe_dump(cfg), encoding="utf-8")
 
     ui_page.goto(f"{ui.url}/#/routine/uir")
@@ -118,7 +126,7 @@ def test_a_resolved_need_appears_inside_the_ability_that_owns_it(ui_page, ui):
     card = ui_page.locator('.ability[data-ability="messaging-discord"]')
     card.wait_for(state="visible")
     # the capability it requires AND the store that capability turned out to need, together
-    assert card.locator('.ab-row[data-entity="discord"]').count() >= 1
+    assert card.locator('.ab-row[data-entity="discord:send"]').count() >= 1
     store = card.locator('.ab-row[data-entity="/srv/discord-state"]')
     assert store.count() == 1
     assert "blocks" in (store.get_attribute("class") or "")
@@ -153,21 +161,24 @@ def test_a_toggle_states_both_sides_and_when_to_hold_it(ui, ui_page):
     _unfold(ui_page)
     ui_page.wait_for_selector("h2:has-text('Permissions & capabilities')")
 
-    held = ui_page.locator('.ability[data-ability="memory"] [data-effect="memory"]')
+    # util-authoring is held by default (config.base.DEFAULT_PERMISSIONS)
+    effect = _effect(ui.server_cfg.permissions_home, "util-authoring")
+    held = ui_page.locator('.ability[data-ability="util-authoring"] [data-effect="util-authoring"]')
     expect(held).to_be_visible()
     # both sides are present, and the one the routine is actually in is the emphasised one
     expect(held.locator('[data-effect-side="with"]')).to_have_class("effect-side active")
     expect(held.locator('[data-effect-side="without"]')).not_to_have_class("effect-side active")
-    expect(held).to_contain_text("notebook")
-    expect(held).to_contain_text("starts every run knowing only its recipe")
+    expect(held).to_contain_text(effect["with"])
+    expect(held).to_contain_text(effect["without"])
     # …and the third field, which answers whether this one is for THIS routine
-    expect(held.locator(".effect-side.advice")).to_contain_text("keeps hitting the same surprises")
+    expect(held.locator(".effect-side.advice")).to_contain_text(effect["when"])
 
     # …and an ability it does NOT hold emphasises the other side, from the same three fields
+    shell = _effect(ui.server_cfg.permissions_home, "shell")
     avail = ui_page.locator('.avail-row[data-ability="shell"] [data-effect="shell"]')
     expect(avail.locator('[data-effect-side="without"]')).to_have_class("effect-side active")
-    expect(avail).to_contain_text("run arbitrary shell commands")
-    expect(avail).to_contain_text("escape hatch")
+    expect(avail).to_contain_text(shell["with"])
+    expect(avail).to_contain_text(shell["without"])
     # nothing anywhere falls back to the placeholder, which is what a missing effect: renders
     expect(ui_page.locator(".effect-text.missing")).to_have_count(0)
 
@@ -178,11 +189,12 @@ def test_a_rule_toggle_states_both_sides_too(ui, ui_page):
     ui_page.goto(f"{ui.url}/#/routine/uir")
     _unfold(ui_page)
     ui_page.wait_for_selector("h2:has-text('General rules')")
+    effect = _effect(ui.server_cfg.rules_home, "ask-policy")
     bound = ui_page.locator('.rule-bound[data-rule="ask-policy"] [data-effect="ask-policy"]')
     expect(bound).to_be_visible()
-    expect(bound).to_contain_text("interrupts you only for a decision that is genuinely yours")
-    expect(bound).to_contain_text("asks you whenever it is unsure")
-    expect(bound).to_contain_text("runs unattended")
+    expect(bound).to_contain_text(effect["with"])
+    expect(bound).to_contain_text(effect["without"])
+    expect(bound).to_contain_text(effect["when"])
     expect(bound.locator('[data-effect-side="with"]')).to_have_class("effect-side active")
 
 
@@ -267,7 +279,7 @@ def test_cards_keep_real_columns_on_a_phone_viewport(ui, ui_page):
     ui_page.evaluate(
         "() => { for (const d of document.querySelectorAll("
         "'details.ability-more, details.avail-fold')) d.open = true; }")
-    ent = ui_page.locator('.ability[data-ability="memory"] .ab-row .ent').first
+    ent = ui_page.locator('.ability[data-ability="util-authoring"] .ab-row .ent').first
     ent.wait_for(state="visible")
     ent_w = (ent.bounding_box() or {}).get("width", 0)
     assert ent_w > 150, f"stack-row entity is crushed into the dot column ({ent_w}px wide)"

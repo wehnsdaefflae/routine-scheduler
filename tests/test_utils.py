@@ -275,14 +275,15 @@ def _ctx(home, grants=None):
     from types import SimpleNamespace
     return SimpleNamespace(server=SimpleNamespace(libraries_home=home, sandbox="off",
                                                  routine_token=""),
-                           routine=SimpleNamespace(slug="demo", dir=home, output_compression="off",
+                           routine=SimpleNamespace(slug="demo", dir=home,
                                                    fs_read_roots=[],
                                                    fs_write_roots=[], connections={},
                                                    machines=[]),
                            grants=grants,
                            read_roots=list, write_roots=list,
                            granted_now=frozenset(), grant_args={},
-                           count_util=lambda *a, **k: None)
+                           count_util=lambda *a, **k: None,
+                           note_compression=lambda metrics: None)
 
 
 def test_util_show_returns_source(tmp_path):
@@ -380,7 +381,7 @@ def test_a_bound_connection_produces_no_request_route(tmp_path):
     utils_lib.ensure_library(tmp_path)
     utils_lib.write_util_file(tmp_path, "gapi", ALWAYS_FAILS_NEEDING_GOOGLE)
     ctx = _ctx(tmp_path)
-    ctx.routine = SimpleNamespace(slug="demo", dir=tmp_path, output_compression="off",
+    ctx.routine = SimpleNamespace(slug="demo", dir=tmp_path,
                                   fs_read_roots=[],
                                   fs_write_roots=[], connections={"google": "personal"},
                                   machines=[])

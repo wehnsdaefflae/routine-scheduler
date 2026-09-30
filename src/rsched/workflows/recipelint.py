@@ -74,9 +74,21 @@ def recipe_notes(routine_dir: Path, capabilities: dict | None = None) -> list[st
     if "main.md" not in files:
         return []
     return [*_stage_routing(files),
+            *_done_when(files),
             *_missing_scripts(routine_dir, files),
             *_ungranted_kinds(files, capabilities),
             *_restated_blocks(files)]
+
+
+def _done_when(files: dict[str, str]) -> list[str]:
+    """`main.md`'s `## Done when` in the one shape every finish is held to: a malformed line is
+    a line no finish can account for; a stage it names must be a module of this recipe.
+    """
+    from ..engine.donewhen import problems
+
+    stems = {rel.removeprefix(f"{STAGES_DIR}/").removesuffix(".md")
+             for rel in files if rel != "main.md"}
+    return [f"main.md: {p} — fix the line in place" for p in problems(files["main.md"], stems)]
 
 
 def _stage_routing(files: dict[str, str]) -> list[str]:

@@ -15,7 +15,7 @@ Two rules keep the layer from eating the run:
 
 - **one hold per action string per run.** A held canonical string is remembered, so re-emitting
   the SAME action IS the confirmation to proceed and cannot be held again. The same shape the
-  stopping VERIFIER uses (at most one challenge per condition per run) and for the same reason:
+  claim VERIFIER uses (at most one challenge per claimed line per run) and for the same reason:
   a model and a gate that both refuse to yield would otherwise livelock a run into a dead budget.
 - **one hold per action, however many reminders match.** Precedence never multiplies turns.
 
@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import json
 
+from .. import reminder_checks as checks
 from .. import reminders as store
 from ..reminders import LABEL_HELP, Reminder
 from . import hold as hold_seam
@@ -45,7 +46,8 @@ def configure(loop) -> None:
     loop.reminders = load(loop)
     loop.reminders_level = level_of(loop.ctx.grants)   # what `refresh` compares against
     loop.reminder_replayed = set()   # payloads a re-driven finish already applied
-    loop.reminder_pending = []       # fires still owed a label
+    loop.reminder_pending = []       # fires still owed a label — what the nudge names
+    loop.reminder_owed = {}          # id → holds this run not yet labelled; one label per hold
     loop.reminder_nudge = 0
 
 
@@ -63,7 +65,8 @@ def load(loop) -> list[Reminder]:
     """
     ctx = loop.ctx
     try:
-        return store.active(ctx.routine.dir, ctx.server.reminders_home, level_of(ctx.grants))
+        return store.active(ctx.routine.dir, ctx.server.reminders_home, level_of(ctx.grants),
+                            listed=list(getattr(ctx.routine, "shared_reminders", None) or []))
     except OSError:
         return []
 
@@ -109,6 +112,7 @@ def hold(loop, action: dict, rendered: str) -> dict | None:  # noqa: ARG001 — 
         # the tally is disk-owned (store.record); mirror it back so the in-memory set — which
         # is what a later definition write is built from — never carries a stale count
         _replace(loop, hit, stats=store.record(loop.ctx.routine.dir, hit, "fires"))
+        loop.reminder_owed[hit.id] = loop.reminder_owed.get(hit.id, 0) + 1
     # the label this hold is owed, and how long the model has to volunteer it before the
     # engine asks once (a `did`/`didnt` can only be known a turn AFTER the action ran)
     loop.reminder_pending = [h.id for h in hits]
@@ -155,19 +159,27 @@ def _remind_problems(op: object, grants) -> list[str]:
     if grants is not None and (denial := grants.reminder_denial(scope)):
         return [denial]
     if verb == "add":
-        problems += [p for p in (store.regex_problem(op.get("regex")),
-                                 store.description_problem(op.get("description"))) if p]
+        problems += [p for p in (checks.regex_problem(op.get("regex")),
+                                 checks.description_problem(op.get("description"))) if p]
+        if scope == "global" and (p := checks.reach_problem(op.get("reach"))):
+            problems.append(p)
     else:
         if not str(op.get("id") or "").strip():
             problems.append(f"`remind.op={verb}` needs the `id` of the reminder it changes")
-        if op.get("regex") is not None and (p := store.regex_problem(op["regex"])):
+        if op.get("regex") is not None and (p := checks.regex_problem(op["regex"])):
             problems.append(p)
         if op.get("description") is not None and (
-                p := store.description_problem(op["description"])):
+                p := checks.description_problem(op["description"])):
             problems.append(p)
-        if verb == "revise" and op.get("regex") is None and op.get("description") is None:
-            problems.append("`remind.op=revise` needs a new `regex`, a new `description`, "
-                            "or both")
+        if op.get("reach") is not None and (p := checks.reach_problem(op["reach"])):
+            problems.append(p)
+        if verb == "revise" and all(op.get(k) is None for k in ("regex", "description",
+                                                                  "reach")):
+            problems.append("`remind.op=revise` needs what changes: a new `regex`, "
+                            "`description` or `reach`")
+    if scope == "local" and op.get("reach") is not None:
+        problems.append("`remind.reach` belongs to a GLOBAL reminder — a local one reaches only "
+                        "this routine")
     return problems
 
 
@@ -197,7 +209,7 @@ def apply_ops(loop, action: dict, poll_s: float, *, replayable: bool = False) ->
     and the model re-emits it with its side fields intact. The payload is then applied at most
     once per run, which is the rule this codebase already applies to its own re-emissions
     (`reminder_held`: re-emitting a held action is the confirmation, not a second hold; the
-    stopping verifier's one challenge per condition). Without it a finish deferred three times
+    claim verifier's one challenge per claimed line). Without it a finish deferred three times
     records one hold's label three times, and the tally the whole layer is justified by —
     `fires` minus the labels — goes negative.
     """
@@ -243,12 +255,20 @@ def _label_nudge(loop, action: dict) -> str:
 
 
 def _apply_feedback(loop, fb: dict) -> str:
+    """Record one label — for a hold of this reminder, in this run, not labelled yet. A label
+    with no hold behind it is evidence about nothing: before this, one run labelled a single
+    reminder 75 times and its tally read 5 fires and 77 `would_have`.
+    """
     rid = str(fb.get("id") or "")
     label = str(fb.get("label") or "")
     target = store.find(loop.reminders, rid)
     if target is None:
         return (f"no reminder {rid!r} is live for this run, so the {label!r} label was not "
                 "recorded — the ids are in the hold you are answering")
+    if loop.reminder_owed.get(rid, 0) < 1:
+        return (f"no hold of {rid} in this run is waiting for a label, so the {label!r} label "
+                "was not recorded — a label answers one hold, once")
+    loop.reminder_owed[rid] -= 1
     tally = store.record(loop.ctx.routine.dir, target, label)
     _replace(loop, target, stats=tally)
     counts = " / ".join(f"{n} {f}" for f in store.LABELS if (n := tally.get(f)))
@@ -279,8 +299,10 @@ def _apply_op(loop, op: dict, poll_s: float) -> str:
     revised = Reminder(id=target.id, scope=target.scope, created_run=target.created_run,
                        stats=target.stats,
                        regex=str(op.get("regex") or target.regex),
-                       description=str(op.get("description") or target.description))
-    _replace(loop, target, regex=revised.regex, description=revised.description)
+                       description=str(op.get("description") or target.description),
+                       reach=str(op.get("reach") or target.reach))
+    _replace(loop, target, regex=revised.regex, description=revised.description,
+             reach=revised.reach)
     _persist(loop, revised, f"revise reminder {rid}")
     return f"{rid} revised ({target.scope}) — now /{revised.regex}/ {revised.description}"
 
@@ -300,7 +322,8 @@ def _add(loop, op: dict, scope: str, poll_s: float) -> str:
                 "instead of adding a second one that would hold the same actions")
     rid = store.new_id(ctx.run_ts, {r.id for r in loop.reminders})
     reminder = Reminder(id=rid, regex=str(op["regex"]), description=str(op["description"]),
-                        scope=scope, created_run=ctx.run_id, stats=store.blank_stats())
+                        scope=scope, created_run=ctx.run_id, stats=store.blank_stats(),
+                        reach=str(op.get("reach") or "") if scope == "global" else "")
     if scope == "global" and (gate := _approve_global(loop, "add", reminder, op, poll_s)):
         return gate
     loop.reminders.append(reminder)
@@ -329,10 +352,13 @@ def _approve_global(loop, verb: str, target: Reminder, op: dict, poll_s: float) 
         return ""
     regex = str(op.get("regex") or target.regex)
     description = str(op.get("description") or target.description)
+    reach = str(op.get("reach") or target.reach)
+    whom = ("every routine whose action matches" if reach == "universal"
+            else "every routine whose settings list it")
     ask = handle_ask(loop, {
         "question": f"Approve {verb} of the GLOBAL consequence reminder '{target.id}'? It holds "
-                    f"every matching action in every routine holding the reminders capability "
-                    f"at global.\npattern: {regex}\ncaution: {description}",
+                    f"a matching action in {whom} ({reach}).\npattern: {regex}\n"
+                    f"caution: {description}",
         "mode": "blocking", "options": ["approve", "decline"],
         "default": "the global reminder store is NOT changed"}, poll_s,
         qtype="reminder-approval")

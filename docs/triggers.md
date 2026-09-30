@@ -1,7 +1,7 @@
 # Event triggers
 
 Routines fire on cron (their own — or their LANE's, which suppresses the member crons
-while it is set: docs/lanes-domains.md, D71), manually — or on an
+while it is set: docs/lanes-tags.md, D71), manually — or on an
 **external event**. A trigger is a routine.yaml
 config entry that lets the outside world start a run: today that means an authenticated
 **webhook** URL a third party POSTs to (CI finished, a form was submitted, a monitor
@@ -14,8 +14,9 @@ something actually happened.
 ## Config shape (`triggers:` in routine.yaml)
 
 One canonical list — every trigger type uses the same envelope (`id`, `type`, `cooldown_s`)
-plus its own keys. This is user config like everything else in routine.yaml: created and
-deleted on the routine page (or by editing the file), never writable by a run.
+plus its own keys. This is user config like everything else in routine.yaml: added, edited and
+removed on the routine page and saved by its one accept (or by editing the file), never writable
+by a run.
 
 ```yaml
 triggers:
@@ -40,8 +41,11 @@ kept verbatim and flagged as inert.
 
 ## The webhook
 
-Create one on the routine page (Triggers card → *add webhook trigger*). The server
-generates the id and the URL token; the card shows the full hook URL with a copy button.
+Create one on the routine page (*Schedule & gate* → *more* → *Triggers* → *+ add webhook
+trigger*, then *accept changes*). The server generates the id and the URL token when the change is
+accepted; the row then shows the full hook URL with a copy button. A trigger keeps its id and its
+token for as long as its bounds stay the same. Changing a webhook's cooldown or daily cap replaces
+it with a new one under a NEW URL — the row says so before you accept.
 
 ```
 POST /api/hooks/<slug>/<token>
@@ -180,8 +184,8 @@ These are the trigger analog of the schedule's catchup/overrun rules:
   a later tick) or already injected into the routine's inbox (drained by the routine's
   next run, whoever starts it). Injection uses deterministic filenames, so a crash between
   steps can't duplicate or lose a message.
-- **Dropped events.** Events for a routine that was deleted, switched off or retired (its own
-  final goal met, so nothing later will drain the spool), or whose trigger was deleted after
+- **Dropped events.** Events for a routine that was deleted, switched off or retired (its
+  finish line reached, so nothing later will drain the spool), or whose trigger was deleted after
   arrival, are dropped with a log line — the hook itself already rejects new ones in those
   states.
 - **Interplay with cron.** A trigger fire is an ordinary run (`reason: "trigger"` in the

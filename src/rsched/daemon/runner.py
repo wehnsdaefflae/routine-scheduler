@@ -120,9 +120,12 @@ class Runner:
             detail=f"scheduled fire refused ({cause}) — no run started this fire; "
                    f"a routine refused across several fires is going dark")
 
-    async def fire(self, cfg: RoutineConfig, *, reason: str = "schedule") -> str | None:
+    async def fire(self, cfg: RoutineConfig, *, reason: str = "schedule",
+                   brief: str = "") -> str | None:
         """Queue a run unless one is already active for this routine. The subprocess is
-        spawned only once a concurrency slot is held. Returns the run_id.
+        spawned only once a concurrency slot is held. Returns the run_id. `brief` is the
+        operator's one line for a run they start by hand (engine/brief.py), written into the
+        run dir before the engine exists so it reads it at boot.
         """
         if not cfg.enabled:
             log.info("fire_refused_disabled routine=%s reason=%s", cfg.slug, reason)
@@ -138,6 +141,10 @@ class Runner:
         ts = make_run_ts()
         run_dir = cfg.dir / "runs" / ts
         run_dir.mkdir(parents=True, exist_ok=True)
+        if brief.strip():
+            from ..engine import brief as brief_mod
+
+            brief_mod.write(run_dir, brief)
         run = ActiveRun(slug=cfg.slug, run_id=f"{cfg.slug}:{ts}", run_ts=ts, run_dir=run_dir,
                         sem=self._sem_for(cfg), background=self.is_background(cfg))
         atomic_write_json(run_dir / "status.json", _queued_status(run.run_id, ts))

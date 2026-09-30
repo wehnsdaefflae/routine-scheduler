@@ -42,6 +42,7 @@ def client(tmp_path, make_routine):
 
 
 AUTH = {"Authorization": "Bearer tok"}
+QUIET = [{"kind": "max_quiet", "days": 7}]
 
 
 def test_the_detail_payload_carries_the_gate_so_the_page_can_render_it(client):
@@ -50,18 +51,18 @@ def test_the_detail_payload_carries_the_gate_so_the_page_can_render_it(client):
     c, _cfg = client
     d = c.get("/api/routines/gated", headers=AUTH).json()
     assert "run_gate" in d, "the config page cannot render a field the API never returns"
-    assert d["run_gate"] == {"enabled": False, "timeout_s": 30}   # the documented default
+    assert d["run_gate"] == {"enabled": False, "timeout_s": 30, "checks": []}   # the default
 
 
 def test_enabling_the_gate_from_the_page_persists_it(client):
     c, cfg = client
     r = c.patch("/api/routines/gated", headers=AUTH,
-                json={"run_gate": {"enabled": True, "timeout_s": 45}})
+                json={"run_gate": {"enabled": True, "timeout_s": 45, "checks": QUIET}})
     assert r.status_code == 200, r.text
     assert "run_gate" in r.json()["updated"], r.json()
 
     stored = read_yaml(cfg.routines_home / "gated" / "routine.yaml", {})
-    assert stored["run_gate"] == {"enabled": True, "timeout_s": 45}
+    assert stored["run_gate"] == {"enabled": True, "timeout_s": 45, "checks": QUIET}
     assert c.get("/api/routines/gated", headers=AUTH).json()["run_gate"]["enabled"] is True
 
 
@@ -72,13 +73,13 @@ def test_one_save_carries_the_schedule_and_the_gate_without_clobbering_either(cl
     c, _cfg = client
     r = c.patch("/api/routines/gated", headers=AUTH,
                 json={"schedule": {"friendly": {"frequency": "daily", "hour": 6, "minute": 30}},
-                      "run_gate": {"enabled": True, "timeout_s": 20}})
+                      "run_gate": {"enabled": True, "timeout_s": 20, "checks": QUIET}})
     assert r.status_code == 200, r.text
     updated = r.json()["updated"]
     assert "run_gate" in updated and "schedule" in updated, updated
 
     d = c.get("/api/routines/gated", headers=AUTH).json()
-    assert d["run_gate"] == {"enabled": True, "timeout_s": 20}
+    assert d["run_gate"] == {"enabled": True, "timeout_s": 20, "checks": QUIET}
     assert d["schedule_friendly"]["frequency"] == "daily"
 
 

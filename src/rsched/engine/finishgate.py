@@ -3,9 +3,32 @@
 from __future__ import annotations
 
 from ..ids import now_iso
-from . import inbox
+from . import accounting, brief, donewhen, finishline, inbox
 from .control import drain_injections
 from .finish_guard import unbacked_action_claims
+
+
+def _owed(loop, ctx) -> tuple[list[dict], list[dict]] | None:
+    """`(done_when_lines, open_outcomes)` a finish must account for — None when it owes
+    nothing: a child, a follow-up after the run already ended, or a routine with neither a
+    Done-when list nor an open finish-line outcome. A briefed run owes its brief in place of
+    the Done-when list (engine/brief.py).
+    """
+    if ctx.depth > 0 or getattr(loop, "leg_after_authored", False):
+        return None
+    done = brief.owed(ctx.brief) if ctx.brief else donewhen.read(ctx.routine.dir)
+    outcomes = finishline.open_outcomes(finishline.load(ctx.routine.dir))
+    return (done, outcomes) if done or outcomes else None
+
+
+def _claims(verdicts: dict, done: list[dict], outcomes: list[dict]) -> list[dict]:
+    """The lines the accounting marks `met`, with what each one says — what the verifier reads.
+    An outcome's `met` counts only where the run is its judge; the accounting refused the
+    others already.
+    """
+    lines = [*done, *(o for o in outcomes if o["judge"] == "run")]
+    return [{"id": x["id"], "text": x["text"], "stage": x.get("stage", "")}
+            for x in lines if verdicts.get(x["id"], ("",))[0] == "met"]
 
 
 def check_finish(loop, action: dict, ctx) -> str | None:
@@ -15,13 +38,12 @@ def check_finish(loop, action: dict, ctx) -> str | None:
     """May this run END? Returns the run status when the finish stands, None when it is
     set aside for one turn (the R108 deferral shape) and the loop should go round again.
 
-    Split out of `EngineLoop.run` (F393). Seven guards, one question: an undrained user
-    message, unaccounted stopping conditions, an `unmet` verdict with no residual, a rule
-    whose moment is the ending itself (`assist.at_finish`), a fabricated first-action
-    finish, an unbacked action claim, and (F334 v2) a claim the run's own transcript does
-    not support. Each costs one turn and says exactly why — the
-    engine never ends a run the model could have ended itself, so every rung hands the
-    turn back rather than force-finishing.
+    Split out of `EngineLoop.run` (F393). Six guards, one question: an undrained user
+    message, an incomplete accounting, a rule whose moment is the ending itself
+    (`assist.at_finish`), a fabricated first-action finish, an unbacked action claim, and a
+    `met` claim the run's own transcript does not support. Each costs one turn and says
+    exactly why — the engine never ends a run the model could have ended itself, so every
+    rung hands the turn back rather than force-finishing.
     """
     # R108/F268: a user message that landed in the window between this
     # turn's inbox drain and the finish is DELIVERED, never silently
@@ -44,47 +66,19 @@ def check_finish(loop, action: dict, ctx) -> str | None:
         drain_injections(loop)
         ctx.write_status()
         return None   # deferred — the loop goes round again
-    # F334/D98 v1: a finish that ignores the user's OPEN stopping
-    # conditions is set aside (same one-extra-turn shape as R108 above).
-    # The engine checks only the ACCOUNTING — a `[s<n>]` mention per open
-    # condition — never the semantics; the reserved-finish turn is exempt
-    # (deferring it would force-finish with an engine string).
-    if ctx.depth == 0 and not loop._finish_reserved:
-        from . import stopping
-        if missing := stopping.unaccounted(
-                str(action.get("summary") or ""), ctx.routine.dir,
-                phase=stopping.current_stage(ctx.routine.dir)):
-            obs = {"kind": "finish", "rejected": True,
-                   "stopping_unaccounted": missing}
+    # THE ACCOUNTING: one entry per Done-when line of the recipe and per open outcome of the
+    # finish line, as a FIELD — checked for presence and shape only (semantics stay the
+    # model's; the verifier below reads the `met` claims). The main finish only: a follow-up
+    # after the run ended answers the person, not the recipe. The reserved-finish turn is
+    # exempt (deferring it would force-finish with an engine string).
+    owed = _owed(loop, ctx)
+    verdicts = accounting.parse(action.get("accounting"))
+    if owed is not None and not loop._finish_reserved:
+        found = accounting.problems(verdicts, *owed)
+        if any(found.values()):
+            obs = {"kind": "finish", "rejected": True, "accounting": found}
             ctx.transcript.event("observation", obs, turn=ctx.turn)
-            loop.messages.append({"role": "user", "content":
-                "OBSERVATION (finish deferred): your summary does not "
-                "account for the open STOPPING CONDITIONS "
-                f"{', '.join(missing)} (see the STOPPING CONDITIONS "
-                "section). Add a line `[s<n>] met — <evidence>` or "
-                "`[s<n>] unmet — <why>` for each, then finish again."})
-            ctx.write_status()
-            return None   # deferred — the loop goes round again
-    # F334/D98 v1b: v1 proves the condition was ADDRESSED. This proves an `unmet` verdict
-    # carries its RESIDUAL. A run bound never transitions, so that note is the ONLY thing the
-    # next run inherits about it — a bare `[s1] unmet` clears v1, stores an empty note and
-    # hands the next run a verdict with no content. Deterministic like the rung above:
-    # emptiness is checkable, adequacy is the model's business.
-    if ctx.depth == 0 and not loop._finish_reserved:
-        from . import stopping
-        if bare := stopping.without_residual(
-                str(action.get("summary") or ""), ctx.routine.dir,
-                phase=stopping.current_stage(ctx.routine.dir)):
-            obs = {"kind": "finish", "rejected": True,
-                   "stopping_without_residual": bare}
-            ctx.transcript.event("observation", obs, turn=ctx.turn)
-            loop.messages.append({"role": "user", "content":
-                "OBSERVATION (finish deferred): you reported "
-                f"{', '.join(bare)} unmet without saying what REMAINS. "
-                "The residual is the point of an `unmet` verdict — it is "
-                "what the next run opens with. Write `[s<n>] unmet — "
-                "<what is still to do, and what it is waiting on>` for "
-                "each, then finish again."})
+            loop.messages.append({"role": "user", "content": accounting.deferral(found)})
             ctx.write_status()
             return None   # deferred — the loop goes round again
     # A general rule the routine PRACTISES whose moment is the ending itself (a ledger
@@ -148,21 +142,26 @@ def check_finish(loop, action: dict, ctx) -> str | None:
                 f"from your summary, then finish again."})
             ctx.write_status()
             return None   # deferred — the loop goes round again
-    # F334/D98 v2: v1 proves the run ACCOUNTED for its conditions, not that
-    # the account is true. A second model checks each `met` claim against the
-    # run's own transcript. Fail-open at every level, and at most ONE objection
-    # per condition per run: the model keeps the last word (a judge that could
-    # veto forever would hang the run, which is the outcome conditions exist to
-    # replace) and the disagreement is recorded instead.
+    # The accounting proves each line was ANSWERED, not that the answer is true. Each `met`
+    # claim is checked once: deterministically first (a Done-when line whose producing stage
+    # this run never entered), then by a second model against the run's own transcript.
+    # Fail-open at every level and at most ONE objection per line per run: the model keeps
+    # the last word and the disagreement is recorded instead (engine/verifier.py).
     disputes: dict[str, str] = {}
-    if ctx.depth == 0 and not loop._finish_reserved:
+    if owed is not None and not loop._finish_reserved:
         from . import verifier
-        objections = verifier.refuted(loop, str(action.get("summary") or ""))
+        claims = _claims(verdicts, *owed)
+        cov = ctx.stage_coverage()
+        early = (verifier.unentered(claims, set(cov["entered"])) if cov["declared"] else [])
+        blamed = {o["id"] for o in early}
+        objections = early + verifier.refuted(
+            loop, [c for c in claims if c["id"] not in blamed],
+            str(action.get("summary") or ""))
         fresh = [o for o in objections if o["id"] not in loop._challenged]
         if fresh:
             loop._challenged.update(o["id"] for o in fresh)
             obs = {"kind": "finish", "rejected": True,
-                   "stopping_unsupported": [o["id"] for o in fresh]}
+                   "claims_unsupported": [o["id"] for o in fresh]}
             ctx.transcript.event("observation", obs, turn=ctx.turn)
             loop.messages.append({"role": "user",
                                   "content": verifier.challenge_message(fresh)})
@@ -179,35 +178,23 @@ def check_finish(loop, action: dict, ctx) -> str | None:
         coverage = ctx.stage_coverage()
         if coverage["skipped"]:
             ctx.transcript.event("stages_skipped", {**coverage, "run_id": ctx.run_id})
-    # F334/D98: stamp the model's own [s<n>] met/unmet accounting back into
-    # the store. Without this a condition sat at `open` however often a run
-    # reported it met, so every reader — the panel, the next run, the user —
-    # saw a stale list. Depth 0 only (a child accounts for nothing) and
-    # best-effort: a store write must never turn a finished run into a
-    # failed one.
-    if ctx.depth == 0:
-        from . import stopping
+    # The accounting lands where every reader finds it: the run's status (the runs table, the
+    # dashboard, the next run's digest), the finish line's distances and `met` outcomes, and
+    # one `stopping_update` event. Depth 0 only and best-effort: a store write must never turn
+    # a finished run into a failed one.
+    if ctx.depth == 0 and verdicts:
+        ctx.accounting = [str(e) for e in action.get("accounting") or []]
         try:
-            newly = stopping.record_accounting(
-                ctx.routine.dir, action["summary"],
+            newly = finishline.record(
+                ctx.routine.dir, {i: v for i, v in verdicts.items() if i.startswith("g")},
                 run_id=ctx.run_id, now=now_iso(), disputes=disputes)
         except OSError as exc:
-            ctx.transcript.event(
-                "error", {"where": "stopping.record_accounting",
-                          "error": str(exc)})
+            ctx.transcript.event("error", {"where": "finishline.record", "error": str(exc)})
             newly = []
-        # `met` is the GOAL ids that newly transitioned — the ones that can retire a routine.
-        # `judged` is every verdict this run wrote, goal and run bound alike: a run bound never
-        # transitions, so without this the whole per-run accounting would leave no event at all.
-        judged = {cid: state for cid, (state, _note)
-                  in stopping.read_accounting(action["summary"]).items()}
-        if newly or disputes or judged:
-            ctx.transcript.event("stopping_update",
-                                 {"met": newly, "judged": judged, "run_id": ctx.run_id,
-                                  **({"disputed": sorted(disputes)}
-                                     if disputes else {})})
-        # A newly-met GOAL condition may be the one that finishes the ROUTINE. Only worth asking
-        # when something goal-shaped just landed — `record_accounting` returns goal ids only.
+        ctx.transcript.event("stopping_update",
+                             {"met": newly, "judged": {i: v for i, (v, _n) in verdicts.items()},
+                              "run_id": ctx.run_id,
+                              **({"disputed": sorted(disputes)} if disputes else {})})
         if newly:
             from . import goalreached
             goalreached.maybe_propose_retirement(ctx)

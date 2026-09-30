@@ -17,9 +17,15 @@ DATA = json.dumps([{"id": i, "status": "ok", "service": "scheduler"} for i in ra
 
 @pytest.fixture
 def ctx(make_routine):
-    ctx = _ctx(make_routine)
-    ctx.routine.output_compression = "compress"
-    return ctx
+    return _ctx(make_routine)
+
+
+def _baseline(ctx, monkeypatch, text: str, err: str) -> dict:
+    """The observation with no encoding applied — the existing capped output and pointer."""
+    with monkeypatch.context() as m:
+        m.setattr(compression, "_compress", lambda *_: None)
+        obs = compression.command_output(ctx, "sample", text, err, 0)
+    return {k: v for k, v in obs.items() if k != "compression"}
 
 
 @pytest.mark.parametrize(("original", "candidate"), [
@@ -40,36 +46,18 @@ def ctx(make_routine):
 ], ids=["middle-omission", "non-json", "invalid-json", "int-to-float", "int-to-bool",
         "large-int", "precise-decimal", "signed-zero", "duplicate-original",
         "duplicate-candidate", "nan", "infinity", "negative-infinity", "overflow"])
-@pytest.mark.parametrize("mode", ["compress", "measure"])
-def test_rejects_unverified_json_without_changing_baseline(ctx, monkeypatch, original, candidate, mode):
+def test_rejects_unverified_json_without_changing_baseline(ctx, monkeypatch, original, candidate):
     # Padding makes each synthetic JSON eligible without obscuring the changed value.
     original = original + " " * 2500
-    ctx.routine.output_compression = "off"
-    baseline = compression.command_output(ctx, "sample", original, "warning", 0)
-    ctx.routine.output_compression = mode
-    monkeypatch.setattr(compression, "_compress", lambda *_: candidate)
+    baseline = _baseline(ctx, monkeypatch, original, "warning")
+    monkeypatch.setattr(compression.lossless, "encode_json", lambda *_: (candidate, False))
     obs = compression.command_output(ctx, "sample", original, "warning", 0)
     assert obs["compression"]["status"] == "fallback"
     assert {k: v for k, v in obs.items() if k != "compression"} == baseline
 
 
-def test_measure_preserves_model_input_and_replay(ctx, monkeypatch):
-    monkeypatch.setattr(compression, "_compress", lambda *_: json.dumps(json.loads(DATA), separators=(",", ":")))
-    ctx.routine.output_compression = "off"
-    baseline = compression.command_output(ctx, "sample", DATA, "warning", 0)
-    ctx.routine.output_compression = "measure"
-    measured = compression.command_output(ctx, "sample", DATA, "warning", 0)
-    assert {k: v for k, v in measured.items() if k != "compression"} == baseline
-    assert measured["compression"]["status"] == "measured"
-    assert not (ctx.run_dir / "outputs").exists()
-    obs = {"kind": "util", "name": "sample", "exit": 0, **measured}
-    messages, _, _ = replay_messages([{"type": "observation", "payload": obs}])
-    assert messages[0]["content"] == format_observation(obs)
-    assert "estimated_tokens_saved" not in messages[0]["content"]
-
-
 def test_original_recovery_survives_other_runs_and_replay(ctx, monkeypatch):
-    monkeypatch.setattr(compression, "_compress", lambda *_: json.dumps(json.loads(DATA), separators=(",", ":")))
+    monkeypatch.setattr(compression, "_compress", lambda *_: ("json", json.dumps(json.loads(DATA), separators=(",", ":"))))
     obs = {"kind": "util", "name": "sample", "exit": 0,
            **compression.command_output(ctx, "sample", DATA, "unchanged stderr", 0)}
     assert obs["compression"]["status"] == "applied"
@@ -90,9 +78,9 @@ def test_original_recovery_survives_other_runs_and_replay(ctx, monkeypatch):
     assert messages[0]["content"] == format_observation(obs)
 
 
-@pytest.mark.parametrize("result", [DATA, "", "<<ccr:missing>>", "x" * 9_000])
+@pytest.mark.parametrize("result", [DATA, "x" * 9_000])
 def test_unusable_or_larger_result_falls_back(ctx, monkeypatch, result):
-    monkeypatch.setattr(compression, "_compress", lambda *_: result)
+    monkeypatch.setattr(compression, "_compress", lambda *_: ("json", result))
     obs = compression.command_output(ctx, "sample", DATA, "", 0)
     assert obs["compression"]["status"] in {"fallback", "unchanged"}
     assert obs["stdout"] == compression.truncate(DATA, keep="head")[0]
@@ -109,7 +97,7 @@ def test_a_failed_compressor_is_visible_without_leaking(ctx, monkeypatch, error)
 
 
 def test_original_save_failure_never_replaces_output(ctx, monkeypatch):
-    monkeypatch.setattr(compression, "_compress", lambda *_: json.dumps(json.loads(DATA), separators=(",", ":")))
+    monkeypatch.setattr(compression, "_compress", lambda *_: ("json", json.dumps(json.loads(DATA), separators=(",", ":"))))
     def fail(*_):
         raise OSError("no disk space")
     monkeypatch.setattr(compression, "atomic_write", fail)
@@ -128,33 +116,41 @@ HETEROGENEOUS = json.dumps(["first", {"critical": "middle", "n": 1.0}, None, Tru
 
 
 @pytest.mark.parametrize("text", [DATA, HETEROGENEOUS], ids=["uniform", "heterogeneous"])
-def test_json_is_minified_whole_with_the_stdlib_alone(ctx, text):
-    """The only compression there is: stdlib minification, whose preview must parse back
-    to the ORIGINAL — the middle included.
+def test_json_is_encoded_losslessly(ctx, text):
+    """JSON is minified and a uniform array of flat objects is written as a table — the
+    preview must decode back to the ORIGINAL value, the middle included.
     """
+    from rsched.engine import lossless
     obs = compression.command_output(ctx, "sample", text, "", 0)
     assert obs["compression"]["status"] == "applied"
-    assert "minified JSON; nothing removed" in obs["stdout"]
-    assert json.loads(obs["stdout"].split("\n", 1)[1]) == json.loads(text)
+    assert "minified JSON" in obs["stdout"] and "nothing removed" in obs["stdout"]
+    encoded = obs["stdout"].split("\n", 1)[1]
+    tabulated = obs["compression"]["kind"] == "json-table"
+    assert lossless.decode_json(encoded, tabulated) == json.loads(text)
+    assert tabulated == (text == DATA)
 
 
 def test_minified_json_keeps_the_verification_gate(ctx, monkeypatch):
     """Minification is faithful by construction, so the verifier is now an assertion
     rather than a safety net — it must still refuse a candidate that is not.
     """
-    monkeypatch.setattr(compression, "_compress", lambda *_: '{"value": 1.0}')
+    monkeypatch.setattr(compression.lossless, "encode_json",
+                        lambda *_: ('{"value": 1.0}', False))
     obs = compression.command_output(ctx, "sample", '{"value": 1}' + " " * 2500, "", 0)
     assert obs["compression"]["status"] == "fallback"
 
 
-@pytest.mark.parametrize(("mode", "text", "code"), [
-    ("off", DATA, 0), ("compress", DATA, 1), ("compress", "short", 0),
-    ("measure", "ordinary prose " * 300, 0),
-])
-def test_ineligible_output_is_never_compressed(ctx, monkeypatch, mode, text, code):
-    ctx.routine.output_compression = mode
+@pytest.mark.parametrize(("text", "code"), [(DATA, 1), ("short", 0)])
+def test_ineligible_output_is_never_compressed(ctx, monkeypatch, text, code):
     monkeypatch.setattr(compression, "_compress", lambda *_: pytest.fail("must bypass"))
     compression.command_output(ctx, "sample", text, "exact", code)
+
+
+def test_prose_is_never_re_encoded(ctx):
+    prose = "ordinary prose " * 300
+    obs = compression.command_output(ctx, "sample", prose, "", 0)
+    assert obs["compression"]["status"] == "skipped"
+    assert obs["stdout"] == compression.truncate(prose, keep="head")[0]
 
 
 def test_every_outcome_is_tallied_on_the_run(ctx, monkeypatch):
@@ -163,10 +159,11 @@ def test_every_outcome_is_tallied_on_the_run(ctx, monkeypatch):
     every outcome, because a rejected compression cost the run exactly what a kept one did.
     """
     monkeypatch.setattr(compression, "_compress",
-                        lambda *_: json.dumps(json.loads(DATA), separators=(",", ":")))
+                        lambda *_: ("json", json.dumps(json.loads(DATA), separators=(",", ":"))))
     applied = compression.command_output(ctx, "sample", DATA, "", 0)
     assert applied["compression"]["status"] == "applied"
-    monkeypatch.setattr(compression, "_compress", lambda *_: '["cut"]')
+    monkeypatch.undo()
+    monkeypatch.setattr(compression.lossless, "encode_json", lambda *_: ('["cut"]', False))
     assert compression.command_output(ctx, "sample", DATA, "", 0)["compression"]["status"] == "fallback"
     compression.command_output(ctx, "sample", "short", "", 0)              # ineligible
     tally = ctx.compression_stats
@@ -177,33 +174,50 @@ def test_every_outcome_is_tallied_on_the_run(ctx, monkeypatch):
     assert tally["ms"] > 0
 
 
-def test_off_tallies_nothing(ctx):
-    """Off is not an outcome: nothing was considered, so nothing is counted."""
-    ctx.routine.output_compression = "off"
-    compression.command_output(ctx, "sample", DATA, "", 0)
-    assert ctx.compression_stats == {}
-
-
-def test_config_rejects_invalid_mode_and_defaults_compress(make_routine):
-    path = make_routine()
-    cfg, _ = load_routine(path)
-    assert cfg.output_compression == "compress"
-    with (path / "routine.yaml").open("a") as f:
-        f.write("\noutput_compression: invalid\n")
-    cfg, problems = load_routine(path)
-    assert cfg.output_compression == "compress"
-    assert any("output_compression" in p for p in problems)
+def test_compression_is_engine_behaviour_not_a_setting(make_routine):
+    """No routine chooses it: an encoding is used only when its exact inverse gives back the
+    output and the result is smaller, so there is nothing to decide per routine."""
+    cfg, _ = load_routine(make_routine())
+    assert not hasattr(cfg, "output_compression")
 
 
 def test_log_shaped_output_keeps_the_capped_head_and_its_pointer(ctx):
-    """The log path is GONE (it pulled 28 packages into the engine image for 0.03% of the
-    fleet's input tokens). A log-shaped stdout is simply not a compression candidate any
-    more: the observation keeps the capped head, the spill pointer still carries the rest.
+    """No lossless encoding fits a log (it pulled 28 packages into the engine image once, for
+    0.03% of the fleet's input tokens): the observation keeps the capped head, the spill
+    pointer still carries the rest.
     """
     logs = "\n".join(f"INFO heartbeat healthy worker {i % 3}" for i in range(500))
     obs = compression.command_output(ctx, "logs", logs, "", 0)
     assert obs["compression"]["status"] == "skipped"
     assert obs["stdout"] == compression.truncate(logs, keep="head")[0]
+
+
+GREP = "\n".join(f"src/rsched/{f}.py:{n}:    value = compute({n})"
+                 for f in ("alpha", "beta") for n in range(40))
+
+
+def test_grep_hits_are_grouped_under_their_file_and_decode_exactly(ctx):
+    from rsched.engine import lossless
+    obs = compression.command_output(ctx, "code-search", GREP, "", 0)
+    assert obs["compression"]["status"] == "applied" and obs["compression"]["kind"] == "grep"
+    body = obs["stdout"].split("\n", 1)[1]
+    assert body.count("src/rsched/alpha.py") == 1
+    assert lossless.decode_grep(body) == GREP
+
+
+@pytest.mark.parametrize("text", [
+    GREP + "\n--\nnot a hit",
+    "a.py:1:x\n" * 3,
+    "\n".join(f"dir/sub/{i}.txt" for i in range(30)),
+    "\n".join(f"/abs/path/{i % 3}/file {i}" for i in range(30)),
+])
+def test_every_encoding_round_trips(text):
+    from rsched.engine import lossless
+    for encode, decode in ((lossless.encode_grep, lossless.decode_grep),
+                           (lossless.encode_paths, lossless.decode_paths)):
+        encoded = encode(text)
+        if encoded is not None:
+            assert decode(encoded) == text
 
 
 def test_child_original_is_engine_owned(ctx, monkeypatch):
@@ -214,7 +228,7 @@ def test_child_original_is_engine_owned(ctx, monkeypatch):
     ctx.routine = ctx.routine.model_copy(update={"dir": ctx.run_dir})
     ctx.depth = 1
     ctx.grants = GrantPolicy()
-    monkeypatch.setattr(compression, "_compress", lambda *_: json.dumps(json.loads(DATA), separators=(",", ":")))
+    monkeypatch.setattr(compression, "_compress", lambda *_: ("json", json.dumps(json.loads(DATA), separators=(",", ":"))))
     obs = compression.command_output(ctx, "sample", DATA, "", 0)
     path = obs["full_output"]["stdout"]
     result = dispatch({"kind": "write_file", "path": path, "content": "forged"}, ctx)

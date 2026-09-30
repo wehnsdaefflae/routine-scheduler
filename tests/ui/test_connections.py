@@ -9,17 +9,20 @@ from rsched import secrets
 from rsched.oauth import store
 from rsched.oauth.store import Connection
 
+from .conftest import until
+
 
 def _unfold(page) -> None:
-    """Open every routine-page config group.
+    """Open every routine-page settings group and each group's "more" menu.
 
-    The page ships with only its leading group open (views/routine.js SECTION_GROUPS): seven
-    open at once made it 11-12 000px tall. A control inside a folded group is not visible, so a
-    test that reads one unfolds first. What the DEFAULT is, and that the choice is remembered,
-    is pinned in test_routine_groups.py — not here.
+    The page ships with only its two leading groups open (views/routine-config.js): seven open at
+    once made it 11-12 000px tall. The rarely needed sections fold once more behind each group's
+    "more". A control inside a fold is not visible, so a test that reads one unfolds first. What
+    the DEFAULT is — and that the choice is remembered — is pinned in test_routine_groups.py, not
+    here.
     """
     page.wait_for_selector(".rgroup-head")
-    page.evaluate("() => { for (const d of document.querySelectorAll('details.rgroup')) d.open = true; }")
+    page.evaluate("() => { for (const d of document.querySelectorAll('details.rgroup, details.rmore')) d.open = true; }")
 
 def test_connections_card(ui, ui_page, monkeypatch):
     monkeypatch.setattr(store, "connections_path", lambda: ui.tmp / "connections.json")
@@ -54,7 +57,8 @@ def test_connections_card(ui, ui_page, monkeypatch):
 
 
 def test_routine_connection_binding(ui, ui_page, monkeypatch):
-    """The routine page binds a connected account; the PATCH writes routine.yaml `connections:`."""
+    """The routine page binds a connected account in its settings draft; the one accept writes
+    routine.yaml `connections:`."""
     monkeypatch.setattr(store, "connections_path", lambda: ui.tmp / "connections.json")
     store.set_connection(Connection(provider="notion", account="acme", access_token="AT"))
 
@@ -63,11 +67,12 @@ def test_routine_connection_binding(ui, ui_page, monkeypatch):
     row = ui_page.locator('[data-conn-row="notion"]')
     row.wait_for()
     row.locator("select").select_option("acme")
-    ui_page.get_by_role("button", name="save connections").click()
-    expect(ui_page.locator("#toast:not([hidden])")).to_contain_text("connections saved")
+    ui_page.locator(".accept-bar [data-accept]").click()
+    expect(ui_page.locator("#toast:not([hidden])")).to_contain_text("accepted")
 
-    raw = yaml.safe_load((ui.routine_dir("uir") / "routine.yaml").read_text(encoding="utf-8"))
-    assert raw["connections"] == {"notion": "acme"}
+    path = ui.routine_dir("uir") / "routine.yaml"
+    until(lambda: yaml.safe_load(path.read_text(encoding="utf-8")).get("connections")
+          == {"notion": "acme"}, what="the accepted connection")
 
 
 def test_conversation_connection_binding(ui, ui_page, monkeypatch):

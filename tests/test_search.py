@@ -221,6 +221,17 @@ def test_newest_runs_index_first(server):
     idx.close()
 
 
+def test_a_shut_down_index_opens_no_connection_behind_the_close(server):
+    """The lifespan cancels the maintainer, but a refresh already running in its worker thread
+    keeps going; opening a connection after the close would leave one nobody ever closes."""
+    idx = SearchIndex(server)
+    idx.refresh(budget_s=0)
+    idx.shutdown()
+    with pytest.raises(RuntimeError, match="shut down"):
+        idx.refresh()
+    assert idx._conn is None
+
+
 def test_query_injection_safe(index):
     for q in ("foo-bar", '"unbalanced', "NEAR(", "a AND", "(((broken", 'quote"in"middle'):
         assert isinstance(index.search(q), list)   # never a 500-shaped exception

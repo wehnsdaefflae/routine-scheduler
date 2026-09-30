@@ -40,6 +40,7 @@ suggests>],
 "finish"]
 }
 PHASES = [<cross-run phases>]       # or ["steady"] when there are no cross-run milestones
+DONE_WHEN = ["d1 · <step> — <outcome>", ...]   # what one finished run leaves behind
 
 def main():
     """The per-run control flow. Use real Python — if/elif/else, for/while, try/except, match — and
@@ -52,10 +53,14 @@ def main():
 if __name__ == "__main__":
     main()
 
-META / PHASES must be plain literals (they are parsed statically with ast, never run).
-Do NOT write a COMPLETION literal: what DONE means is the user's, and it lives in the
-routine's state/stopping.json where they can edit it — a completion text frozen into the
-pattern could only ever disagree with it.
+META / PHASES / DONE_WHEN must be plain literals (they are parsed statically with ast, never
+run).
+Write a DONE_WHEN list literal: what ONE finished run of this kind leaves behind, one string
+per outcome, `"d1 · <step> — <outcome>"` where <step> is the step function that produces it.
+Each is an outcome a run's own transcript can show; never "at least N"; never a cap phrased as
+a quota; never a prohibition (what a run must never do belongs to permissions and rules); and
+each must be answerable "not due, because …" on a run where it does not apply. Whether a
+routine ever finishes for good is NOT the pattern's to say — that is the operator's finish line.
 Use the full range of Python control flow wherever it makes the process clearer.
 
 STEP SIZE — how much one run attempts. `main()` must SAY this, and the answer is: as much as

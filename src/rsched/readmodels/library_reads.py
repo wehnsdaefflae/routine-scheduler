@@ -6,13 +6,12 @@ memo is the whole of what this module adds, and the functions below are the ONE 
 web layer reaches those parsers.
 
 What it costs to read them per request was measured on the live instance (2026-09-22
-slow-request ring): `GET /api/domains` parsed the permission library twice PER DOMAIN —
-12 walks and ~300 frontmatter parses for six domains, 3.7-4.3 s a call — and
-`GET /api/library` re-linted every workflow, rule, permission, template, reminder and
-playbook and re-parsed 110 util headers on every call, 3.7-4.3 s. Both are fetched when
-any routine page opens, where a dozen CPU-bound handlers then serialize under the GIL and
-a one-file read beside them takes 3.2 s. CLAUDE.md's 2026-09-12 rule removed those two
-from the bus-event refetch path; this makes them cheap wherever they are still called.
+slow-request ring): `GET /api/library` re-linted every workflow, rule, permission, reminder
+and playbook and re-parsed 110 util headers on every call, 3.7-4.3 s; a sibling endpoint
+parsed the permission library a dozen times over at the same cost. Both were fetched when
+any routine page opened, where a dozen CPU-bound handlers then serialize under the GIL and
+a one-file read beside them takes 3.2 s. CLAUDE.md's 2026-09-12 rule removed them from the
+bus-event refetch path; this makes the parses cheap wherever they are still called.
 
 Results are `memoized_shared` — the record lists are large and a deep copy per request
 would cost what the memo saves — so every caller treats what it gets back as IMMUTABLE
@@ -80,15 +79,14 @@ def lint(libraries_home: Path) -> dict[str, list[str]]:
 
 
 def _lint_sources(home: Path) -> list[Path]:
-    """Every file `lint_all` reads — the six kinds it walks, each with its own dir, so a
+    """Every file `lint_all` reads — the five kinds it walks, each with its own dir, so a
     doc added to any of them invalidates the verdict for all of them.
     """
-    from .. import playbooks, reminders, templates
+    from .. import playbooks, reminders
     from ..workflows import library
 
     return [*memo.tree_paths(library.workflows_dir(home), "*.py"),
             *memo.tree_paths(library.rules_dir(home), "*.md"),
             *memo.tree_paths(library.permissions_dir(home), "*.md"),
-            *memo.tree_paths(templates.templates_home(home), "*.md"),
             *memo.tree_paths(reminders.reminders_home(home), "*.json"),
             *memo.tree_paths(playbooks.playbooks_dir(home), "*/MAIN.md")]

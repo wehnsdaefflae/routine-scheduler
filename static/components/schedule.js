@@ -9,6 +9,10 @@
 // reader clears a cron the lane already suppresses. It appears ONLY where the stored spec still
 // names one, because it is the single schedule edit a lane-managed routine has left: the lane
 // goes on deciding when the routine fires; the file stops recording a time of its own.
+// Pass opts.onChange to hear every edit as it happens — `{friendly: value(), catchup:
+// catchup()}` — for a caller that keeps a draft (the routine page's settings form) rather than
+// saving on a button of its own. A CUSTOM cron (one the friendly vocabulary cannot express)
+// shows as its own read-only choice, so building the editor never rewrites it.
 //
 // Also home to the client half of the friendly vocabulary: cronToFriendly mirrors the
 // server's rsched.schedule.cron_to_friendly (same shapes, same custom fallback), and
@@ -24,14 +28,18 @@ export function scheduleEditor(initial = { frequency: "manual" }, serverTz = "",
   const lm = opts.laneManaged || null;
   const frequencies = lm ? [] : ["manual", "hourly", "daily", "weekly", "monthly"];
   if (opts.allowDisabled) frequencies.unshift("disabled");
-  const freq = el("select", { ...(lm && !opts.allowDisabled ? { disabled: true } : {}) },
+  const custom = !lm && spec.frequency === "custom";
+  const freq = el("select", { "data-nopersist": true,
+    ...(lm && !opts.allowDisabled ? { disabled: true } : {}) },
     ...frequencies.map((f) =>
       el("option", { value: f, ...(spec.frequency === f ? { selected: true } : {}) },
         f[0].toUpperCase() + f.slice(1))),
+    ...(custom ? [el("option", { value: "custom", selected: true }, "Custom cron")] : []),
     ...(lm ? [el("option", { value: "lane-managed",
       selected: spec.frequency !== "disabled" }, "Lane managed")] : []));
-  const time = el("input", { type: "time", value: spec.time });
-  const minute = el("input", { type: "number", min: 0, max: 59, value: spec.minute, style: "width:70px" });
+  const time = el("input", { type: "time", value: spec.time, "data-nopersist": true });
+  const minute = el("input", { type: "number", min: 0, max: 59, value: spec.minute,
+    style: "width:70px", "data-nopersist": true });
   // weekly is a SET of days (F347, user order 2026-08-15 — GCal's "repeat on: S M T W T
   // F S"): seven toggles instead of one select, so "not on weekends" is four clicks.
   const dayBoxes = WEEKDAYS.map((d, i) => {
@@ -42,14 +50,15 @@ export function scheduleEditor(initial = { frequency: "manual" }, serverTz = "",
   });
   const weekdayRow = el("span", { class: "row", style: "gap:4px;flex-wrap:wrap" },
     dayBoxes.map((c) => c.node));
-  const day = el("input", { type: "number", min: 1, max: 31, value: spec.day, style: "width:70px" });
+  const day = el("input", { type: "number", min: 1, max: 31, value: spec.day,
+    style: "width:70px", "data-nopersist": true });
   const detail = el("span", { class: "row", style: "gap:6px" });
 
   // catchup: what to do when a scheduled fire was missed (daemon down / overrun). Only offered
   // when the caller opts in, and only meaningful for a real schedule — hidden for "manual".
   const hasCatchup = opts.catchup !== undefined;
   const catchupSel = hasCatchup
-    ? el("select", {}, ["skip", "run_once"].map((c) =>
+    ? el("select", { "data-nopersist": true }, ["skip", "run_once"].map((c) =>
         el("option", { value: c, ...(opts.catchup === c ? { selected: true } : {}) },
           c === "skip" ? "skip a missed run" : "run once if missed")))
     : null;
@@ -101,11 +110,19 @@ export function scheduleEditor(initial = { frequency: "manual" }, serverTz = "",
     else if (f === "daily") detail.append(document.createTextNode("at"), time);
     else if (f === "weekly") detail.append(document.createTextNode("on"), weekdayRow, document.createTextNode("at"), time);
     else if (f === "monthly") detail.append(document.createTextNode("on day"), day, document.createTextNode("at"), time);
+    else if (f === "custom") detail.append(el("code", {}, spec.cron || ""),
+      el("span", { class: "muted" }, " — a cron the choices here cannot express; pick one to replace it"));
     else detail.append(el("span", { class: "muted" }, "runs only when you click Run now"));
     if (catchupRow) catchupRow.style.display = (f === "manual" || f === "disabled" || lm) ? "none" : "";
   }
   freq.addEventListener("change", sync);
   sync();
+  // every control that moves the value reports it — only a change the reader made, never the
+  // build, so an untouched editor never reads as an edit
+  const notify = () => opts.onChange?.({ friendly: api.value(), catchup: api.catchup() });
+  for (const input of [freq, time, minute, day, catchupSel, ...dayBoxes.map((c) => c.box)]) {
+    input?.addEventListener("change", notify);
+  }
 
   const node = el("div", {},
     el("div", { class: "row", style: "gap:8px" }, freq, detail),
@@ -114,7 +131,7 @@ export function scheduleEditor(initial = { frequency: "manual" }, serverTz = "",
     serverTz ? el("div", { class: "muted small", style: "margin-top:4px" },
       `times are in the server's timezone (${serverTz})`) : null);
 
-  return {
+  const api = {
     node,
     value() {
       // lane-managed: the stored spec rides back UNCHANGED — the suppression lives in
@@ -122,6 +139,7 @@ export function scheduleEditor(initial = { frequency: "manual" }, serverTz = "",
       const f = freq.value;
       if (f === "disabled") return { frequency: "disabled" };
       if (lm) return initial.frequency === "disabled" ? { frequency: "manual" } : initial;
+      if (f === "custom") return initial;
       if (f === "manual") return { frequency: "manual" };
       if (f === "hourly") return { frequency: "hourly", minute: Number(minute.value) };
       if (f === "daily") return { frequency: "daily", time: time.value };
@@ -133,6 +151,7 @@ export function scheduleEditor(initial = { frequency: "manual" }, serverTz = "",
       return catchupSel ? catchupSel.value : "skip";
     },
   };
+  return api;
 }
 
 // Cron string → friendly spec, mirroring rsched.schedule.cron_to_friendly: the four simple

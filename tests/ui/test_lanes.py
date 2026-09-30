@@ -1,21 +1,13 @@
-"""Lane and domain management on the Routines page — neither has a subpage of its own (D80).
+"""Lane management on the Routines page — a lane has no subpage of its own (D80).
 
-When routines fire and what config they share are two objects (docs/lanes-domains.md); this
-page manages both:
+A LANE is the temporal axis (docs/lanes-tags.md). The toolbar creates one, the lane row
+runs/pauses it, the overlay editor edits members, order, schedule and on-failure; the lot
+persists to `.control/lanes.json`. A lane carries no config and no store at all — which is what
+`test_moving_a_routine_between_lanes_leaves_its_config_alone` pins, because a record holding
+both would make a timing decision silently a permissions decision.
 
-- a LANE is the temporal axis. The toolbar creates one, the lane row runs/pauses it, the overlay
-  editor edits members, order, schedule and on-failure; the lot persists to
-  `.control/lanes.json`. A lane carries no config and no store at all — which is what
-  `test_moving_a_routine_between_lanes_leaves_its_config_alone` pins, because one record holding
-  both axes makes a timing decision silently a permissions decision.
-- a DOMAIN is the shared config block every member inherits, edited in the DOMAINS section.
-  MEMBERSHIP is deliberately not edited there: a routine names its domain in its own
-  routine.yaml, so joining one is the routine page's ordinary config save and the section only
-  reads the membership back. The chip on a routine's row is the way into that section.
-
-The ROUTINE page's own two halves are here as well: the hero tile that READS this routine's
-lane without offering to change it, plus the domain picker that joins one through the ordinary
-config save.
+The ROUTINE page's half is here as well: the hero tile that READS this routine's lane without
+offering to change it.
 
 Driven against the REAL console JS — the ui_page fixture also asserts the page threw no JS
 error."""
@@ -25,120 +17,13 @@ import json
 import yaml
 from playwright.sync_api import expect
 
-from rsched import domains, lane_runs, lanes
-from rsched.config import MachineConfig
+from rsched import lane_runs, lanes
 
 from .conftest import TOKEN, until
 
-# One block per control in the domain editor — TEN of them for the ELEVEN keys a domain may
-# share (`domains.CONFIG_KEYS`), because permissions and capabilities are one two-layer panel
-# and the fs roots take a block each.
-#: Every key a domain may share → the editor block that writes it. Keyed on the KEY, not on the
-#: block, so the assertion below binds the panel to `domains.CONFIG_KEYS` itself: a twelfth
-#: shareable key fails here, in Python, the moment it is declared — no browser, no waiting for
-#: someone to notice. That binding is the point. The panel shipped a whole release rendering
-#: seven of eleven keys with nothing red, because the only thing that knew the full set was
-#: a tuple in another module. Two keys share one block (the two permission layers are one
-#: control, so the map is many-to-one).
-DOMAIN_BLOCK_FOR = {
-    "permissions": "Permissions & capabilities",
-    "capabilities": "Permissions & capabilities",
-    "rules": "General rules",
-    "grants": "Secrets",
-    "connections": "Connections",
-    "machines": "Machines",
-    "fs_read_roots": "Filesystem — readable",
-    "fs_write_roots": "Filesystem — writable",
-    "models": "Models",
-    "budgets": "Budgets",
-    "tags": "Tags",
-}
-DOMAIN_BLOCKS = tuple(dict.fromkeys(DOMAIN_BLOCK_FOR.values()))
-
-
-def _unfold(page) -> None:
-    """Open every routine-page config group.
-
-    The page ships with only its leading group open (views/routine.js SECTION_GROUPS): seven
-    open at once made it 11-12 000px tall. A control inside a folded group is not visible, so a
-    test that reads one unfolds first. What the DEFAULT is, and that the choice is remembered,
-    is pinned in test_routine_groups.py — not here.
-    """
-    page.wait_for_selector(".rgroup-head")
-    page.evaluate("() => { for (const d of document.querySelectorAll('details.rgroup')) d.open = true; }")
-
-def test_every_shareable_key_has_an_editor_block():
-    """The binding, without a browser: a key a domain may share that no block writes is a key
-    an operator can neither see nor change; the only way to find out was to look.
-    """
-    from rsched.domains import CONFIG_KEYS
-
-    assert set(DOMAIN_BLOCK_FOR) == set(CONFIG_KEYS)
-
-
-def _join_domain(ui, slug: str, domain_id: str) -> None:
-    """Put a routine in a domain the way the routine page's picker does — by writing `domain:`
-    into the routine's OWN routine.yaml, which is the only place membership lives.
-    """
-    path = ui.routines / slug / "routine.yaml"
-    cfg = yaml.safe_load(path.read_text(encoding="utf-8"))
-    cfg["domain"] = domain_id
-    path.write_text(yaml.safe_dump(cfg), encoding="utf-8")
-
-
-def _open_domains_section(ui_page) -> None:
-    """Open the Routines page's DOMAINS section through its own disclosure.
-
-    The section ships COLLAPSED (views/dashboard.js): it is management rather than monitoring,
-    so the page opens on the routine list instead of on every domain's edit / rename / delete.
-    Everything inside it is hidden until someone asks for it, which is what a test addressing a
-    row does first — through the summary a user clicks rather than by setting `.open` from
-    script, so this still fails if the way in ever stops working. A section nobody can open is
-    a bug, not a decluttering.
-    """
-    panel = ui_page.locator("[data-domains]")
-    summary = ui_page.locator("[data-domains] > summary")
-    expect(summary).to_be_visible()
-    if panel.get_attribute("open") is None:
-        summary.click()
-    expect(panel).to_have_attribute("open", "")
-
-
-def _domain_row(ui, ui_page, domain_id: str):
-    """One domain's row on the Routines page, the section opened first. The only surface either
-    object has is this page (D80), so every domain assertion starts here."""
-    ui_page.goto(f"{ui.url}/#/routines")
-    _open_domains_section(ui_page)
-    row = ui_page.locator(f'[data-domain-row="{domain_id}"]')
-    row.wait_for()
-    return row
-
-
-def _open_domain_editor(ui, ui_page, domain_id: str):
-    """The shared-config editor for one domain, reached the way an operator reaches it: from
-    that domain's row in the Routines page's domains section, which is the only surface either
-    object has (D80)."""
-    _domain_row(ui, ui_page, domain_id).locator("[data-domain-edit]").click()
-    panel = ui_page.locator(f'[data-domain-config="{domain_id}"]')
-    expect(panel).to_be_visible()
-    return panel
-
-
-def _shared(ui, domain_id: str, key: str):
-    """One key of the domain's STORED config, polled until the save lands. Every control in the
-    panel writes through the API, so the store is where a save is confirmed — a toast reports
-    only what the page believes."""
-    def stored_key():
-        return (domains.get(ui.routines, domain_id) or {}).get("config", {}).get(key)
-
-    until(stored_key, what=f"the {key} save")
-    return stored_key()
-
 
 def _detail(ui, ui_page, slug: str) -> dict:
-    """The routine's EFFECTIVE config as the console reads it — its own routine.yaml with its
-    domain's shared block merged in.
-    """
+    """The routine's config as the console reads it."""
     r = ui_page.request.get(f"{ui.url}/api/routines/{slug}",
                             headers={"Authorization": f"Bearer {TOKEN}"})
     assert r.ok, r.status
@@ -149,8 +34,7 @@ def test_routine_page_hero_reports_the_lane_without_offering_to_change_it(ui, ui
     """The hero READS this routine's lane and links to where lanes are edited. A lane orders
     several routines and belongs to no single one of them, so it is instance state the Routines
     page owns; a picker here would sit among controls that are otherwise all this routine's own
-    config, which is how a timing decision turns into a permissions change by side effect. What
-    the routine page DOES own is the domain picker, further down."""
+    config, which is how a timing decision turns into a permissions change by side effect."""
     lanes.create(ui.routines, name="Nightly", members=[])
     ui_page.goto(f"{ui.url}/#/routine/uir")
     tile = ui_page.locator("[data-hero-lane]")
@@ -287,163 +171,32 @@ def test_routines_page_lane_pause_toggle(ui, ui_page, make_routine):
 
 
 def test_no_lane_or_group_subpage_exists(ui, ui_page):
-    """Lanes and domains are managed on the Routines page, so neither has a subpage: #/lanes
-    hits the router's fallback (the Conversations landing) rather than a broken view. `groups`
-    is named here ON PURPOSE: it is a DEAD route operators still hold bookmarks to (D80), so it
-    has to land somewhere real rather than on a view that throws."""
+    """Lanes are managed on the Routines page, so they have no subpage: #/lanes hits the
+    router's fallback (the Conversations landing) rather than a broken view. `groups` is named
+    here ON PURPOSE: it is a DEAD route operators still hold bookmarks to (D80), so it has to
+    land somewhere real rather than on a view that throws."""
     # a route that never existed, then the dead one a bookmark can still ask for
     for route in ("lanes", "groups"):
         ui_page.goto(f"{ui.url}/#/{route}")
         ui_page.wait_for_url(f"{ui.url}/#/")
 
 
-def test_domains_section_edits_the_shared_config(ui, ui_page):
-    """D82 on the shared-surface axis: the DOMAINS section is where the block every member
-    inherits is edited. Exercises the real panel end to end — it mounts the ROUTINE page's own
-    permissions control; a save lands in .control/domains.json as the domain's config.
-
-    Membership rides along read-only: it is read from the routines that NAME this domain, so
-    the section can show who is in it without owning the list."""
-    from rsched import secrets
-
-    secrets.set_secret("FAU_TOKEN", "s3cret")
-    dom = domains.create(ui.routines, name="FAU")
-    _join_domain(ui, "uir", dom["id"])
-
-    row = _domain_row(ui, ui_page, dom["id"])
-    expect(row).to_contain_text("FAU")
-    expect(row).to_contain_text("uir")          # membership, read back from the routines
-
-    row.locator("[data-domain-edit]").click()
-    panel = ui_page.locator(f'[data-domain-config="{dom["id"]}"]')
-    expect(panel).to_be_visible()
-    expect(panel).to_contain_text("inherits")
-
-    # a save writes the domain's config (a secret grant is the simplest control to drive
-    # headlessly AND the one whose result is visible in the store)
-    panel.locator('[data-domain-secret="FAU_TOKEN"]').check()
-    expect(ui_page.locator("#toast:not([hidden])")).to_contain_text(
-        "FAU_TOKEN")
-    until(lambda: domains.get(ui.routines, dom["id"])["config"].get("grants") == {
-        "secret:FAU_TOKEN": True}, what="the grant save")
-
-
-def test_domain_editor_covers_every_shareable_key(ui, ui_page):
-    """A domain may share ELEVEN routine.yaml keys (`domains.CONFIG_KEYS`) and each one is
-    editable here. A key with no control is a key a migrated domain carries invisibly: the save
-    path spreads the whole block, so nothing is destroyed — nothing can be changed either, which
-    leaves the config a member inherits answering to a surface that does not exist.
-
-    `deliberation` is the one control the routine page's neighbouring sections would bring
-    along that must NOT be here. It is a tuning.yaml handle rather than routine.yaml config, so
-    it is not among the shareable keys — a slider here would look exactly like the ones beside
-    it and write nothing at all."""
-    dom = domains.create(ui.routines, name="FAU")
-    panel = _open_domain_editor(ui, ui_page, dom["id"])
-    for title in DOMAIN_BLOCKS:
-        expect(panel.locator(f'[data-dcfg-block="{title}"]')).to_be_visible()
-    # exactly these: a count pins the absent control too, whatever a later copy-paste names it
-    expect(panel.locator("[data-dcfg-block]")).to_have_count(len(DOMAIN_BLOCKS))
-    expect(panel.locator(".delib")).to_have_count(0)
-    expect(panel).not_to_contain_text("deliberation")
-
-
-def test_domain_shares_machines_models_budgets_and_tags(ui, ui_page):
-    """The four controls round-trip to the store. What the member reads back then shows the two
-    merge halves at once: machines and tags are LIST keys that union onto the member's own,
-    while models and budgets are MAPPINGS merged per key with the member's value winning — the
-    shared `main` model reaches a routine that binds no model, the shared ceiling loses to the
-    `max_turns` that routine sets itself.
-
-    Each ceiling is shared on its OWN: one filled budget row saves while the rest stay blank,
-    because a layer that had to fill all eight would impose seven values nobody chose."""
-    mac = MachineConfig(host="10.0.0.9", user="rsched", description="RTX 4090", tags=["gpu"])
-    mac.name = "gpu-box"
-    ui.server_cfg.machines = {"gpu-box": mac}   # the live catalog the API reads
-    dom = domains.create(ui.routines, name="FAU")
-    _join_domain(ui, "uir", dom["id"])
-    panel = _open_domain_editor(ui, ui_page, dom["id"])
-
-    # Each save is awaited to its acknowledgement before the next one starts: every control
-    # PATCHes the WHOLE block built from the record the last answer returned, so a click that
-    # overtakes the answer before it would write a block missing the key just stored.
-    toast = ui_page.locator("#toast:not([hidden])")
-
-    machines = panel.locator('[data-dcfg-block="Machines"]')
-    machines.locator("label", has_text="gpu-box").locator("input[type=checkbox]").check()
-    machines.get_by_role("button", name="save machines").click()
-    expect(toast).to_contain_text("machines saved")
-    assert _shared(ui, dom["id"], "machines") == ["gpu-box"]
-
-    models = panel.locator('[data-dcfg-block="Models"]')
-    models.locator('[data-domain-model="main"]').select_option("m")
-    models.locator("[data-domain-models-save]").click()
-    expect(toast).to_contain_text("domain models saved")
-    assert _shared(ui, dom["id"], "models") == {"main": "m"}
-
-    budgets = panel.locator('[data-dcfg-block="Budgets"]')
-    budgets.locator('[data-domain-budget="max_turns"]').fill("42")
-    budgets.locator("[data-domain-budgets-save]").click()
-    expect(toast).to_contain_text("domain budgets saved")
-    assert _shared(ui, dom["id"], "budgets") == {"max_turns": 42}
-
-    # the tag editor has no button: every change saves, the chip appears once it landed
-    tags = panel.locator('[data-dcfg-block="Tags"]')
-    tags.locator(".tags input").fill("fau")
-    tags.locator(".tags input").press("Enter")
-    expect(tags.locator(".tag", has_text="fau")).to_be_visible()
-    assert _shared(ui, dom["id"], "tags") == ["fau"]
-
-    detail = _detail(ui, ui_page, "uir")
-    assert detail["machines"] == ["gpu-box"]
-    assert detail["models"]["main"] == "m"
-    assert detail["tags"] == ["fau"]
-    assert detail["budgets"]["max_turns"] == 10        # the member's own ceiling stands
-    assert set(detail["inherited"]) >= {"machines", "models", "tags"}
-    # budgets is absent from the provenance: the one ceiling the domain sets is one the member
-    # sets too, so the domain contributed nothing to report
-    assert "budgets" not in detail["inherited"]
-
-
-def test_routine_page_domain_picker_joins_a_domain(ui, ui_page):
-    """The other axis, from the routine's own page: the domain picker saves through the ORDINARY
-    routine config PATCH (`domain`), so at-most-one is a fact of the file rather than a rule
-    someone has to enforce across a list — and the domain's membership is that file, read
-    back."""
-    dom = domains.create(ui.routines, name="FAU", config={"permissions": ["memory"]})
-    ui_page.goto(f"{ui.url}/#/routine/uir")
-    _unfold(ui_page)
-    sel = ui_page.locator("[data-domain-sel]")
-    expect(sel).to_be_visible()
-    expect(sel.locator("option")).to_have_count(2)          # none + FAU
-    sel.select_option(dom["id"])
-    expect(ui_page.locator("#toast:not([hidden])")).to_be_visible()
-
-    cfg_path = ui.routines / "uir" / "routine.yaml"
-    until(lambda: yaml.safe_load(cfg_path.read_text(encoding="utf-8")).get("domain")
-          == dom["id"], what="the domain assignment")
-    assert domains.members(ui.routines, dom["id"]) == ["uir"]
-    # and the shared block reaches the member from there
-    assert _detail(ui, ui_page, "uir")["inherited_from"] == "FAU"
-
-
 def test_moving_a_routine_between_lanes_leaves_its_config_alone(ui, ui_page):
-    """The clearest behavioural consequence of the two axes being two objects
-    (docs/lanes-domains.md). A lane owns no config and no store: the shared block belongs to the
-    DOMAIN the routine names in its own routine.yaml, so no lane edit can reach it. With one
-    record holding both axes, moving a member from one lane to another silently changes its
-    effective permissions — a timing decision doing the work of a permissions decision, with
-    nothing on the page to say so.
+    """The clearest behavioural consequence of the lane owning nothing but timing
+    (docs/lanes-tags.md). What a routine may do and reach is its own routine.yaml, so no lane
+    edit can reach it. A lane that carried config would make moving a member from one lane to
+    another silently change its effective permissions — a timing decision doing the work of a
+    permissions decision, with nothing on the page to say so.
     """
-    dom = domains.create(ui.routines, name="FAU",
-                         config={"permissions": ["memory"], "fs_read_roots": ["/srv/fau"]})
-    _join_domain(ui, "uir", dom["id"])
+    path = ui.routines / "uir" / "routine.yaml"
+    cfg = yaml.safe_load(path.read_text(encoding="utf-8"))
+    cfg.update({"fs_read_roots": ["/srv/fau"], "rules": []})
+    path.write_text(yaml.safe_dump(cfg), encoding="utf-8")
     nightly = lanes.create(ui.routines, name="Nightly", members=[{"slug": "uir"}])
     weekly = lanes.create(ui.routines, name="Weekly", members=[])
 
     before = _detail(ui, ui_page, "uir")
-    assert before["inherited_from"] == "FAU"
-    assert "permissions" in before["inherited"] and "fs_read_roots" in before["inherited"]
+    assert before["fs_read_roots"]
 
     # The move the lane editor's member rows make — a members PATCH per lane and nothing else.
     # Membership is exclusive, so it leaves the one lane before it joins the other.
@@ -456,20 +209,20 @@ def test_moving_a_routine_between_lanes_leaves_its_config_alone(ui, ui_page):
     assert moved is not None and moved["name"] == "Weekly"
 
     after = _detail(ui, ui_page, "uir")
-    for key in ("inherited", "inherited_from", "permissions", "capabilities",
-                "fs_read_roots", "fs_write_roots", "rules", "grants"):
+    for key in ("permissions", "capabilities", "fs_read_roots", "fs_write_roots", "rules",
+                "grants"):
         assert after[key] == before[key], f"the lane move changed {key}"
 
 
 def test_lane_editor_offers_no_shared_config(ui, ui_page):
     """The same invariant from the other side: there is nothing IN a lane editor that could
-    change a member's config. Shared config belongs to the DOMAIN, so the editor offers members,
-    order, schedule and on-failure and nothing else.
+    change a member's config. What a member may do is its own config, so the editor offers
+    members, order, schedule and on-failure and nothing else.
 
     The pin is the editor's POSITIVE statement about the half it does not hold: the note that
-    sends the reader to the domain surface instead. Asserting the absence of a selector nothing
-    emits proves nothing — it passes today and would go on passing over an editor that grew a
-    shared-config block under any other name."""
+    sends the reader to each member's own page instead. Asserting the absence of a selector
+    nothing emits proves nothing — it passes today and would go on passing over an editor that
+    grew a config block under any other name."""
     lane = lanes.create(ui.routines, name="Nightly", members=[{"slug": "uir"}])
     ui_page.goto(f"{ui.url}/#/routines")
     ui_page.wait_for_selector("tr[data-lane-row]")
@@ -479,42 +232,10 @@ def test_lane_editor_offers_no_shared_config(ui, ui_page):
 
     expect(editor).to_contain_text("on failure")          # the lane's own controls are here
     expect(editor).not_to_contain_text("Shared config")
-    note = editor.locator("[data-lane-domain-note]")
+    note = editor.locator("[data-lane-config-note]")
     expect(note).to_be_visible()
-    expect(note).to_contain_text("a DOMAIN, not a lane")
-    expect(note).to_contain_text("names its domain in its own config")
-    expect(editor.locator("[data-domain-config]")).to_have_count(0)
-
-
-def test_routine_row_domain_chip_reveals_that_domain(ui, ui_page, make_routine):
-    """The domain chip on a routine's row is the ONLY path from the routine to the domain it
-    shares a config block with: it opens the Domains section — collapsed, which is how the page
-    rests — and scrolls that domain's row into view. The lane chip beside it opens the lane's
-    editor, so a domain chip that did nothing would be a dead control sitting next to a live one
-    that looks identical. The stored state is pinned to `closed` so the assertion reads the
-    chip's work and not a default someone may move."""
-    make_routine(slug="uir2")
-    make_routine(slug="uir3")
-    dom = domains.create(ui.routines, name="FAU")
-    _join_domain(ui, "uir", dom["id"])
-
-    ui_page.add_init_script("localStorage.setItem('rsched_dash_domains', 'closed')")
-    ui_page.goto(f"{ui.url}/#/routines")
-    chip = ui_page.locator("button.chip.domain-chip")
-    expect(chip).to_have_text("◈ FAU")
-    # the chip is a button styled by base.css alone — an inline cursor here is how the design
-    # system erodes, one control at a time
-    assert chip.get_attribute("style") is None
-    assert chip.evaluate("(n) => getComputedStyle(n).cursor") == "pointer"
-
-    panel = ui_page.locator("[data-domains]")
-    expect(panel).not_to_have_attribute("open", "")
-    row = ui_page.locator(f'[data-domain-row="{dom["id"]}"]')
-    expect(row).to_be_hidden()
-
-    chip.click()
-    expect(panel).to_have_attribute("open", "")
-    expect(row).to_be_in_viewport()
+    expect(note).to_contain_text("each member's own settings")
+    expect(note).to_contain_text("on the member's own page")
 
 
 def test_expanded_lane_rows_drag_to_reorder(ui, ui_page, make_routine):
@@ -571,39 +292,3 @@ def test_routines_page_lane_editor_catchup_policy(ui, ui_page):
     sel.select_option("skip")
     until(lambda: lanes.get(ui.routines, rec["id"])["catchup"] == "skip", what="the catchup save")
     expect(ui_page.locator("[data-lane-catchup]")).to_have_value("skip")   # re-rendered
-
-
-
-def test_unticking_a_shared_setting_removes_it_and_keeps_the_rest(ui, ui_page):
-    """D140, both halves at once. The PATCH now MERGES, so a partial payload can no longer
-    delete what it fails to mention (R1745: one such patch cost a domain its 12 rules, 4 secret
-    grants, 8 budget dials and 3 fs_read_roots). But this editor removed BY omission — it sent
-    the whole block and relied on wholesale replacement — so merge alone would have turned
-    every untick into a silent no-op, failing in the opposite direction.
-
-    The editor therefore SAYS what it removes. Ticking then unticking a grant is the smallest
-    control that proves it end to end: the grant really goes, and the keys nobody touched stay.
-    """
-    from rsched import secrets
-
-    secrets.set_secret("FAU_TOKEN", "s3cret")
-    dom = domains.create(ui.routines, name="FAU",
-                         config={"tags": ["fau"], "budgets": {"max_turns": 40}})
-    _join_domain(ui, "uir", dom["id"])
-
-    panel = _open_domain_editor(ui, ui_page, dom["id"])
-    box = panel.locator('[data-domain-secret="FAU_TOKEN"]')
-
-    box.check()
-    expect(ui_page.locator("#toast:not([hidden])")).to_contain_text("FAU_TOKEN")
-    until(lambda: domains.get(ui.routines, dom["id"])["config"].get("grants")
-          == {"secret:FAU_TOKEN": True}, what="the grant save")
-
-    box.uncheck()
-    until(lambda: not domains.get(ui.routines, dom["id"])["config"].get("grants"),
-          what="the grant removal")
-
-    cfg = domains.get(ui.routines, dom["id"])["config"]
-    assert "grants" not in cfg, "unticking must actually remove the shared grant"
-    assert cfg["tags"] == ["fau"], "and must not disturb a key nobody touched"
-    assert cfg["budgets"] == {"max_turns": 40}

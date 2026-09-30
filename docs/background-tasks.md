@@ -22,8 +22,9 @@ That is the `detach` action. Naming: the *concept* is a "detached background tas
 
 `detach` is only valid from a **root conversation** (depth 0, under `conversations_home`): a scheduled
 routine has no waiting user to relay a result to, and a within-reply child (or a detached task itself)
-must not spawn further detaches — so the engine rejects it elsewhere. It is gated by the
-**`background-tasks`** permission (default-ON for conversations, `requires: {actions: [detach]}`).
+must not spawn further detaches — so the engine rejects it elsewhere. No permission grants it:
+it is STRUCTURAL, added to a root conversation's policy at setup (`engine/loopsetup`) and to
+nothing else, so a routine's schema never shows it.
 
 The handler does almost nothing in-process: it writes an intent file to `background_home/.requests/`
 and returns. The assistant then `finish`es the reply ("started it — I'll report back") and the

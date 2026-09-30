@@ -1,0 +1,77 @@
+title: Instance builder
+summary: 'Works the scheduler''s own decided backlog: builds, tests and ships changes to this instance,
+  then closes the items it finished.'
+workflow: maintain-a-codebase
+when: The job is changing this scheduler itself — its code, its console, its shared web kit — from a standing
+  queue of decided work.
+asks:
+- field: fs_write_roots
+  question: Which checkout may it change?
+settings:
+  schedule:
+    catchup: skip
+    friendly:
+      frequency: daily
+      time: 00:00
+  run_gate:
+    checks: []
+    enabled: false
+    timeout_s: 30
+  triggers: []
+  improve: true
+  permissions:
+  - recipe-authoring
+  - rule-authoring
+  - shell
+  - util-authoring
+  - util-removal
+  capabilities:
+    actions:
+    - remove_util
+    - revise_util
+    - shell
+    - write_recipe
+    - write_rule
+    - write_util
+    utils: []
+    confirm: creations
+    remind_confirm: always
+    reminders: local
+    rule_confirm: always
+    runs: all
+  rules:
+  - ask-policy
+  - audit-coverage
+  - change-scope
+  - decision-record
+  - evidence-discipline
+  - fix-the-cause
+  - git-checkpoint
+  - interface-craft
+  - make-failure-visible
+  - problem-routing
+  - verify-independently
+  - web-research
+  - work-order
+  reminders: []
+  grants: {}
+  finish_line:
+    outcomes: []
+    until: ''
+  budgets:
+    ask_timeout_min: 480
+    max_cost: -1
+    max_subrun_depth: 2
+    max_subruns: 12
+    max_total_tokens: -1
+    max_total_turns: -1
+    max_turns: 300
+    max_wall_clock_min: 240
+  keep_runs: 30
+  fs_read_roots: []
+  fs_write_roots: []
+  connections: {}
+  machines: []
+  models: {}
+  deliberation: standard
+  tags: []

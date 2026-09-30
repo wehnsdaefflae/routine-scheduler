@@ -1,25 +1,30 @@
 """Routine detail page: the four MESSAGE folders (D74), the routine's OWN secrets (D103),
-the sections side-TOC (like Settings) and the filesystem-root directory picker (browse the
-server FS, pick a real path — no more free-text textarea)."""
+the sections side-TOC (like Settings), the settings groups and their one accept, and the
+filesystem-root directory picker (browse the server FS, pick a real path — no more free-text
+textarea)."""
 
 import json
+import re
 
 import yaml
 from playwright.sync_api import expect
 
 from rsched import reports
 
+from .conftest import until
+
 
 def _unfold(page) -> None:
-    """Open every routine-page config group.
+    """Open every routine-page settings group and each group's "more" menu.
 
-    The page ships with only its leading group open (views/routine.js SECTION_GROUPS): seven
-    open at once made it 11-12 000px tall. A control inside a folded group is not visible, so a
-    test that reads one unfolds first. What the DEFAULT is, and that the choice is remembered,
-    is pinned in test_routine_groups.py — not here.
+    The page ships with only its two leading groups open (views/routine-config.js): seven open at
+    once made it 11-12 000px tall. The rarely needed sections fold once more behind each group's
+    "more". A control inside a fold is not visible, so a test that reads one unfolds first. What
+    the DEFAULT is — and that the choice is remembered — is pinned in test_routine_groups.py, not
+    here.
     """
     page.wait_for_selector(".rgroup-head")
-    page.evaluate("() => { for (const d of document.querySelectorAll('details.rgroup')) d.open = true; }")
+    page.evaluate("() => { for (const d of document.querySelectorAll('details.rgroup, details.rmore')) d.open = true; }")
 
 def test_messages_inbox_compose_edit_withdraw(ui, ui_page):
     """The Messages section's inbox folder is the routine-bound home for a note the next
@@ -185,14 +190,17 @@ def test_description_editor_is_multiline(ui, ui_page):
 
 def test_fs_root_directory_picker(ui, ui_page):
     """The fs-roots editor is a real directory picker: the old textarea is gone, and browsing
-    to a server directory and selecting it adds it as a root."""
+    to a server directory and selecting it adds it as a root — to the draft, saved by the
+    page's one accept. The write list is named for what it grants: read-write roots."""
     ui_page.goto(f"{ui.url}#/routine/uir")
     _unfold(ui_page)
     ui_page.wait_for_selector("h2:has-text('Filesystem roots')")
     # the free-text "one path per line" textarea is gone
     assert ui_page.locator("textarea[placeholder*='one path per line']").count() == 0
+    roots = ui_page.locator("#sec-fs-roots + .panel")
+    expect(roots.locator(".field > span")).to_have_text(["read-only roots", "read-write roots"])
 
-    ui_page.locator("button:has-text('add directory')").first.click()
+    roots.locator("button:has-text('add directory')").first.click()
     picker = ui_page.locator(".dirpicker")
     expect(picker).to_be_visible(timeout=5_000)
     # jump to the fixture home and descend into its routines/ dir, then select it
@@ -205,6 +213,35 @@ def test_fs_root_directory_picker(ui, ui_page):
     row = ui_page.locator(".root-path")
     expect(row).to_have_count(1)
     expect(row).to_contain_text("routines")
+    ui_page.locator(".accept-bar [data-accept]").click()
+    path = ui.routine_dir("uir") / "routine.yaml"
+    until(lambda: any(str(p).endswith("/routines")
+                      for p in yaml.safe_load(path.read_text(encoding="utf-8"))
+                      .get("fs_read_roots") or []), what="the accepted read root")
+
+
+def test_the_folder_picker_keeps_its_height_whatever_the_folder_holds(ui, ui_page):
+    """A dialog that grows and shrinks with every folder moves its own buttons out from under
+    the pointer. The list scrolls instead; the dialog stays where it opened."""
+    for i in range(40):
+        (ui.tmp / "many" / f"folder-{i:02d}").mkdir(parents=True)
+    (ui.tmp / "few").mkdir()
+    ui_page.goto(f"{ui.url}#/routine/uir")
+    _unfold(ui_page)
+    ui_page.locator("#sec-fs-roots + .panel button:has-text('add directory')").first.click()
+    picker = ui_page.locator(".dirpicker")
+    listing = picker.locator(".dirpicker-list")
+    heights = []
+    for folder, rows in (("few", 1), ("many", 41)):
+        picker.locator("input.code").fill(str(ui.tmp / folder))
+        picker.locator("button:has-text('go')").click()
+        # the daemon answers with the RESOLVED path, which may sit behind a symlinked /tmp
+        expect(picker.locator("input.code")).to_have_value(re.compile(f"/{folder}$"))
+        expect(listing.locator(".dp-row")).to_have_count(rows)    # ".." and its folders
+        heights.append((round(listing.bounding_box()["height"]),
+                        round(picker.bounding_box()["height"])))
+    assert heights[0] == heights[1], f"the picker changed size with its folder: {heights}"
+    picker.get_by_role("button", name="cancel").click()
 
 
 def test_runs_table_caps_at_ten_with_show_all(ui, ui_page):
@@ -237,8 +274,8 @@ def test_weekly_schedule_day_set_roundtrips(ui, ui_page, make_routine):
     expect(chips.nth(1)).to_be_checked()          # Monday is the default set
     chips.nth(3).check()                          # Wednesday
     chips.nth(5).check()                          # Friday
-    ui_page.get_by_role("button", name="save schedule").click()
-    expect(_toast(ui_page)).to_contain_text("schedule saved")
+    ui_page.locator(".accept-bar [data-accept]").click()
+    expect(_toast(ui_page)).to_contain_text("accepted")
 
     ui_page.goto(f"{ui.url}#/routine/wkly")
     ui_page.wait_for_selector(".day-chip input")
@@ -250,93 +287,75 @@ def test_weekly_schedule_day_set_roundtrips(ui, ui_page, make_routine):
             expect(chips.nth(i)).not_to_be_checked()
 
 
-def test_the_template_panel_applies_a_template_as_a_one_shot_copy(ui, ui_page):
-    """A settings template is a PRESELECTION (0.269.0, reversing 0.262.0's layer): applying one
-    WRITES its values into this routine's own routine.yaml and the link is gone. So the panel is
-    an action — it previews what would be ADDED, applies it, and afterwards those values are
-    ordinary entries in the panels that own them.
-
-    The heading also has to be CLAIMED by a named section group: unclaimed, `groupSections`
-    drops it into the trailing "More" fold, which is how the control was unreachable for two
-    releases while it existed.
-    """
-    cfg = yaml.safe_load((ui.routine_dir("uir") / "routine.yaml").read_text(encoding="utf-8"))
-    cfg["permissions"] = ["scheduling"]          # already here — the preview must grey it out
-    (ui.routine_dir("uir") / "routine.yaml").write_text(yaml.safe_dump(cfg), encoding="utf-8")
-
+def test_the_hub_tab_saves_as_identity(ui, ui_page):
+    """The Steward-hub heading lives in the identity group beside the name: the accept writes
+    it through the ordinary PATCH, trimmed. An empty field removes the key again."""
     ui_page.goto(f"{ui.url}#/routine/uir")
     _unfold(ui_page)
-    ui_page.wait_for_selector("h2:has-text('Start from a template')")
-
     group = ui_page.locator(".rgroup", has=ui_page.locator(
-        ".rgroup-title", has_text="Permissions & practices"))
-    expect(group.locator("h2").first).to_have_text("Start from a template")
+        ".rgroup-title", has_text="Identity & recipe"))
+    expect(group.locator("h2", has_text="Hub tab")).to_have_count(1)
 
-    ui_page.locator("[data-tpl-select]").select_option("basic")
-    preview = ui_page.locator("[data-tpl-preview]")
-    expect(preview.locator('[data-tpl-adds="memory"]')).to_be_visible()
-    expect(preview).not_to_contain_text("null")
+    field = ui_page.locator("[data-hub-tab]")
+    field.fill("  FAU ")
+    ui_page.locator(".accept-bar [data-accept]").click()
+    expect(_toast(ui_page)).to_contain_text("accepted")
+    path = ui.routine_dir("uir") / "routine.yaml"
+    until(lambda: yaml.safe_load(path.read_text(encoding="utf-8")).get("hub_tab") == "FAU",
+          what="the hub tab save")
 
-    ui_page.get_by_role("button", name="apply to this routine").click()
-    expect(_toast(ui_page)).to_contain_text("applied basic")
-
-    # the write lands in the routine's OWN file, in full — no `template:` key resolves it later
-    saved = yaml.safe_load((ui.routine_dir("uir") / "routine.yaml").read_text(encoding="utf-8"))
-    assert "memory" in saved["permissions"] and "scheduling" in saved["permissions"]
-    assert "template" not in saved and "template_except" not in saved
-    # …and applying again adds nothing, because the merge is a union that never overwrites
-    ui_page.get_by_role("button", name="apply to this routine").click()
-    expect(_toast(ui_page)).to_contain_text("already has everything")
+    ui_page.locator("[data-hub-tab]").fill("")
+    ui_page.locator(".accept-bar [data-accept]").click()
+    until(lambda: "hub_tab" not in yaml.safe_load(path.read_text(encoding="utf-8")),
+          what="the hub tab removal")
 
 
-def test_every_config_section_is_claimed_by_a_named_group(ui, ui_page):
-    """`groupSections` drops any heading `SECTION_GROUPS` does not claim into a trailing "More"
-    fold. Nothing errors, nothing is lost — the control just stops being where anyone looks for
-    it, which is how BOTH "Settings template" (never added) and "General rules" (added as
-    "Practice modules", then renamed) became unreachable without a single failing test.
-
-    So the guard is the ABSENCE of the fold: every section routine-config.js emits must be
-    claimed; a new one that is not fails here rather than after a user cannot find it.
-    """
+def test_every_settings_section_sits_in_a_named_group(ui, ui_page):
+    """Every section the settings emit belongs to one of the seven groups — a heading outside
+    them is a control nobody looks for. The rarely needed ones sit in a group's "more" menu,
+    which is still inside the group."""
     ui_page.goto(f"{ui.url}#/routine/uir")
     ui_page.wait_for_selector(".rgroup")
-    expect(ui_page.locator(".rgroup-title", has_text="More")).to_have_count(0)
-    # …and the groups really did claim them: a section that vanished entirely would also
-    # produce no "More" fold.
-    for heading in ("Start from a template", "Permissions & capabilities", "General rules",
-                    "Effective surface", "Goal", "Budgets", "Own secrets", "Models",
-                    "Machines", "Recipe", "State & memory", "Origin"):
+    titles = ui_page.locator(".rgroup-title").all_inner_texts()
+    assert [t.strip().lower() for t in titles] == [
+        "schedule & gate", "goal", "abilities", "secrets & access", "limits & reach", "models",
+        "identity & recipe"]
+    stray = ui_page.evaluate("""() => [...document.querySelectorAll('h2[id^="sec-"]')]
+      .filter((h) => h.id !== 'sec-settings' && !h.closest('.rgroup')).map((h) => h.id)""")
+    assert stray == [], f"sections outside every group: {stray}"
+    for heading in ("Run gate", "Permissions & capabilities", "General rules",
+                    "Shared reminders", "Effective surface", "Finish line",
+                    "What a finished run delivers", "Budgets", "Own secrets", "Models",
+                    "Machines", "Recipe", "State & memory", "Hub tab", "Origin"):
         expect(ui_page.locator(".rgroup-body h2", has_text=heading).first).to_have_count(1)
 
 
-def test_output_compression_control_persists(ui, ui_page):
+def test_output_compression_is_not_a_setting(ui, ui_page):
+    """Lossless output compression is engine behaviour, not a per-routine decision — the page
+    offers no control for it."""
     ui_page.goto(f"{ui.url}#/routine/uir")
     _unfold(ui_page)
-    control = ui_page.get_by_label("Output compression", exact=True)
-    expect(control).to_have_value("compress")
-    control.select_option("measure")
-    expect(_toast(ui_page)).to_contain_text("Output compression saved")
-    raw = yaml.safe_load((ui.routine_dir("uir") / "routine.yaml").read_text())
-    assert raw["output_compression"] == "measure"
-    ui_page.reload()
-    expect(ui_page.get_by_label("Output compression", exact=True)).to_have_value("measure")
+    ui_page.wait_for_selector("#sec-models")
+    expect(ui_page.get_by_label("Output compression", exact=True)).to_have_count(0)
 
 
 def test_compression_measurement_in_transcript(ui, ui_page):
+    """The engine's lossless output compression reports on the observation it shaped — what it
+    did, with which engine, and the estimated saving — for the operator, never the model."""
     run = ui.seed_run("uir", "20260910-120000", "finished")
     events = [
         {"type": "assistant_action", "turn": 1,
          "payload": {"kind": "script", "name": "sample", "say": "Read the logs"}},
         {"type": "observation", "turn": 1,
          "payload": {"kind": "script", "name": "sample", "exit": 0, "stdout": "sample output",
-                     "compression": {"mode": "measure", "status": "measured",
+                     "compression": {"status": "applied", "kind": "json",
                                      "baseline_chars": 8000, "candidate_chars": 2000,
                                      "estimated_tokens_saved": 1500, "elapsed_ms": 1.5}}},
     ]
     with (run / "transcript.jsonl").open("a") as f:
         f.writelines(json.dumps(e) + "\n" for e in events)
     ui_page.goto(f"{ui.url}#/run/uir:20260910-120000")
-    expect(ui_page.locator(".transcript")).to_contain_text("compression measure: measured")
+    expect(ui_page.locator(".transcript")).to_contain_text("compression: applied json")
     expect(ui_page.locator(".transcript")).to_contain_text("1500 tokens potentially saved (estimate)")
 
 

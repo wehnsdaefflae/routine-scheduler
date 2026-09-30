@@ -23,7 +23,7 @@ a consolation prize.
 
 **A mechanical check is a function of the trace a run leaves behind.** It can separate
 compliance from violation only when the two leave DIFFERENT traces. For most rules they do
-not. Take `root-cause-fix` — "repair the cause, never the symptom". Two runs face the same
+not. Take `fix-the-cause` — "a correction or a failure names a cause to remove". Two runs face the same
 failing test: one traces the cause and installs a general prevention, the other patches the
 symptom. Both produce the same observable trace — a diff that turns the check green, a passing
 test, a plausible ledger entry. Whether the fix addressed the cause is a fact about the space
@@ -65,13 +65,13 @@ In a rule's frontmatter, beside `effect:` and `tags:`:
 
 ```yaml
 assists:
-  - id: after-a-failed-call
+  - id: on-a-second-failure
     moment: observation
-    predicate: observation-failed
+    predicate: repeated-failure
     payload: remind
     line: >-
-      Read this failure before reacting to it — the message, the exit code, the usage line.
-      The same call with the same arguments returns the same outcome.
+      This step has now failed twice. Stop tuning it: say what both failures actually report,
+      then change route.
 ```
 
 Named `assists:` and not `triggers:` because `routine.yaml` already has a `triggers:` key —
@@ -144,7 +144,7 @@ three modules, one of them negatively — exactly the check a second hold kind w
 ## Guards
 
 An assist fires **at most once per run**. That is the rule `reminder_held` (one hold per
-action string) and the stopping verifier's `_challenged` set (one challenge per condition)
+action string) and the claim verifier's `_challenged` set (one challenge per claimed line)
 already apply to their own interventions, and it exists for the same reason: a trigger that
 can fire twice on one situation livelocks a stubborn model into a dead budget.
 
@@ -189,16 +189,17 @@ is still byte-identical to the seed it supersedes). It is idempotent, it skips a
 edit outranks the seed there too), and it names everything it skips rather than passing over
 it quietly.
 
-## The seven
+## The eight
 
 | rule | moment | predicate | why this moment |
 |---|---|---|---|
 | `git-checkpoint` | pre-action | `uncheckpointed-repo-write` | the first edit into a git repo the ENGINE does not version — it commits its own working directory at run end, a granted project repo has no undo point unless the run makes one |
-| `error-recovery` | observation | `observation-failed` | the run has just been told something did not work, and the next action either reads the failure or repeats it |
-| `intent-inference` | boundary | `user-corrected` | an intervention has just landed, and "what standing preference does this imply" is answerable now and stale later |
+| `fix-the-cause` | observation | `repeated-failure` | the same step has now failed twice; a third attempt at the same route would be tuning rather than diagnosing |
+| `fix-the-cause` | boundary | `user-corrected` | a correction has just landed; "what standing preference does this imply" is answerable now and stale later |
+| `ask-policy` | observation | `capability-denied` | a call was just refused for a missing grant; the access request is the next step — never a reason to finish partial |
 | `ask-policy` | boundary | `asks-piling-up` | several decisions are waiting on the user, which is the shape the rule is about |
 | `decision-record` | pre-finish | `ledger-untouched` | the reasoning behind the artefacts is lost at exactly this moment, and only here can the run still write it down |
-| `unexamined-is-not-clean` | pre-finish | `clean-claim-without-a-denominator` | an all-clear is only meaningful beside what was examined, and the summary is where it is claimed |
+| `interface-craft` | pre-finish | `rendered-output-unseen` | the run wrote a page, a picture or a document people will look at and never looked at the rendered result |
 | `problem-routing` | pre-finish | `unclosed-delivered-report` | the run was handed work by another routine and is ending without answering it — after the finish nothing is left that can close the row but a person reading the ledger |
 
 `git-checkpoint` is the rung the design note reserves for HOLD: a crisp pre-action predicate
@@ -209,19 +210,15 @@ nothing more. It is overridable like every payload: re-emit the action and it ru
 
 Three predicates read signals the engine already keeps, which is why they are cheap:
 `asks-piling-up` reads `ctx.asks_deferred` (the churn telemetry for a decision thrown over the
-wall), `ledger-untouched` reads `turn_records`, the run history that SURVIVES compaction —
-a predicate that greps the message list silently stops working on exactly the long runs that
-need it most — and `unclosed-delivered-report` reads `ctx.reports_open`, which the inbox drain
+wall), `ledger-untouched` reads the LEDGER FILE — its mtime against the run's start — because an
+append through a shell heredoc, a script or a util never shows in the action records (reading
+the actions made 48 of 75 of its deferrals false), and `unclosed-delivered-report` reads
+`ctx.reports_open`, which the inbox drain
 fills and the `report` handler empties as each `answers` lands. That last one is bookkeeping
 the engine was already doing either side of the question, so the predicate is a truth test
 rather than a search: it cannot fire on a run that has already replied, and it cannot miss one
 that has not. It is carried across a resume like the counters, because a run held at its own
 finish and handed one more turn must still know what it owes.
-
-`clean-claim-without-a-denominator` is deliberately crude: it asks whether the summary claims
-cleanliness and carries no number at all, so a summary that quantifies ANYTHING passes. One
-that tried to judge whether the denominator was the RIGHT one would be grading the reasoning
-again, which is the thing that cannot be done.
 
 ## What is still deferred
 
@@ -243,6 +240,5 @@ its table gaining the four columns, and the `assist_hold` observation asking for
 way `reminder_hold` does. Until all four land the label has nowhere to go: the tally file is an
 int, and `_apply_feedback` answers an assist key with "no reminder … is live for this run".
 
-`ledger-untouched` reads `turn_records`, the run history that SURVIVES compaction — a
-predicate that greps the message list silently stops working on exactly the long runs that
-need it most.
+`ledger-untouched` reads the file itself rather than the conversation — a predicate that greps
+the message list silently stops working on exactly the long runs that need it most.

@@ -55,7 +55,9 @@ def _ctx(tmp_path, endpoint):
     return SimpleNamespace(routine=routine, grants=None, root_run_dir=tmp_path / "runs" / "x",
                            read_roots=lambda: list(routine.fs_read_roots),
                            write_roots=lambda: list(routine.fs_write_roots),
-                           server=SimpleNamespace(libraries_home=tmp_path / "utils"), registry=registry,
+                           server=SimpleNamespace(libraries_home=tmp_path / "utils",
+                                                  routines_home=tmp_path / "routines"),
+                           registry=registry,
                            seen_paths=set())
 
 

@@ -10,15 +10,14 @@ LIVE run what changed and which half of it reaches it now.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Request
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from .. import domains, entities, schedule
+from .. import entities, schedule
 from .. import rules as rules_mod
 from ..config import DELIBERATION_LEVELS, write_tuning
-from ..config.routine import RunGateConfig
+from ..config.routine import RunGateConfig, RunGatePatch
 from ..paths import read_yaml
 from .config_fields import (
     BudgetsPatch,
@@ -38,6 +37,9 @@ from .routines_common import (
 
 router = APIRouter(tags=["routine-patch"])
 
+#: The longest Steward-hub heading a routine may name — a heading, not a sentence.
+HUB_TAB_MAX = 60
+
 
 class RoutinePatch(BaseModel):
     # forbid unknown keys: this is the validated single-writer save path — a misspelled
@@ -47,7 +49,7 @@ class RoutinePatch(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     enabled: bool | None = None
-    run_gate: RunGateConfig | None = None
+    run_gate: RunGatePatch | None = None    # partial — validated MERGED, see _apply_run_gate
     schedule: dict | None = None            # {"friendly":…, "catchup":…} (cron built server-side)
     budgets: BudgetsPatch | None = None     # the runaway backstops, by name — a misspelled
     #                                          key is a 422 here, never a silent revert at load
@@ -59,26 +61,81 @@ class RoutinePatch(BaseModel):
     name: str | None = None
     description: str | None = None
     tags: list[str] | None = None           # freeform filter tags (e.g. ["meta"])
-    domain: str | None = None               # the shared surface this routine is part of — at
-    #                                          most one, `""` leaves (docs/lanes-domains.md)
+    hub_tab: str | None = Field(default=None, max_length=HUB_TAB_MAX)  # Steward-hub heading —
+    #                                          trimmed; `""` names none (docs/status-pages.md)
     permissions: list[str] | None = None    # held conduct-doc slugs — REPLACE wholesale, routed
     #                                          to the canonical two-layer resolve (D132/F482)
     capabilities: dict | None = None        # the capabilities mapping under those permissions —
     #                                          raised to cover held docs' requires, floored back
     rules: list[str] | None = None          # general-rule slugs this routine practises — REPLACE
-    #                                          wholesale, validated against the library, main.md's
-    #                                          derived practices tail resynced (rules.apply_changes)
+    #                                          wholesale, validated against the library
+    #                                          (rules.apply_changes)
     improve: bool | None = None             # include in the routine-improver's passes (default on)
-    output_compression: Literal["off", "measure", "compress"] | None = None
+    pattern: str | None = None              # the library settings pattern it follows — a
+    #                                          reference only; `""` follows none (docs/patterns.md)
+    shared_reminders: list[str] | None = None  # the library's shared reminders this routine
+    #                                          reads (ids) — REPLACE wholesale
     deliberation: str | None = None         # DELIBERATION_LEVELS — how much thinking lands on paper
     keep_runs: int | None = None            # retention.keep_runs — how many run dirs to keep
     fs_read_roots: list[str] | None = None  # dirs the run may READ beyond its own
     fs_write_roots: list[str] | None = None  # dirs the run may WRITE (one covering the routine
 
+    @field_validator("hub_tab", mode="before")
+    @classmethod
+    def _trim_hub_tab(cls, v: object) -> object:
+        # trimmed BEFORE the length check, so surrounding whitespace never costs a 422
+        return v.strip() if isinstance(v, str) else v
+
+
+def _apply_run_gate(raw: dict, updates: dict) -> None:
+    """Merge a partial `run_gate` into the stored one and validate the RESULT.
+
+    A partial patch is the normal case — the console toggles `enabled` without resending the
+    checks — so the body alone cannot be judged: `{enabled: true}` is sound over a stored check
+    list and unsound over none. The merge is validated as a whole and written as a whole; `checks`
+    REPLACES the stored list, like every list this endpoint takes. Pops the key, so the generic
+    merge below never sees it.
+    """
+    stored = raw.get("run_gate")
+    merged = {**(stored if isinstance(stored, dict) else {}), **updates.pop("run_gate")}
+    try:
+        raw["run_gate"] = RunGateConfig.model_validate(merged).model_dump()
+    except ValueError as exc:
+        raise HTTPException(422, f"run_gate: {exc}") from exc
+
+
+def _apply_pattern_fields(server, raw: dict, updates: dict) -> None:
+    """`pattern` names the library settings pattern this routine follows — a REFERENCE: the
+    routine's values stay its own, the pattern is what the page reads them against. An unknown
+    slug is a 400; `""` follows none and removes the key, so "no pattern" has one spelling.
+    `shared_reminders` are the library's shared reminders it reads, each an id the store holds.
+    Pops both keys.
+    """
+    from .. import reminders as rem
+    from ..patterns import store
+
+    if "pattern" in updates:
+        want = (updates.pop("pattern") or "").strip()
+        if not want:
+            raw.pop("pattern", None)
+        elif store.read(server.libraries_home, want) is None:
+            raise HTTPException(400, f"no settings pattern {want!r} in the library")
+        else:
+            raw["pattern"] = want
+    if "shared_reminders" in updates:
+        want_ids = [str(r) for r in updates.pop("shared_reminders") or []]
+        known = {r.id for r in rem.load_global(server.reminders_home)}
+        if unknown := [r for r in want_ids if r not in known]:
+            raise HTTPException(400, f"no shared reminder {', '.join(unknown)} in the library")
+        if want_ids:
+            raw["shared_reminders"] = sorted(set(want_ids))
+        else:
+            raw.pop("shared_reminders", None)
+
+
 def _apply_rules_field(rules_home: Path, routine_dir: Path, raw: dict, updates: dict) -> None:
     """Bind/unbind the routine's general rules from a PATCH `rules` list — REPLACE wholesale,
-    validated against the library, with main.md's derived `## Standing practices` tail
-    resynced. Shares the ONE canonical path (rules.apply_changes) with the
+    validated against the library. Shares the ONE canonical path (rules.apply_changes) with the
     /routines/{slug}/rules picker so a config_patch carrying `rules` (a Decisions-page
     `approve & apply` for a rule-binding decision) applies through the generic PATCH too —
     before F392 the key hit RoutinePatch's extra=forbid and 422'd invisibly. Pops `rules`;
@@ -98,30 +155,6 @@ def _apply_rules_field(rules_home: Path, routine_dir: Path, raw: dict, updates: 
         raise HTTPException(400, f"unknown rule: {exc.args[0]!r}") from exc
     raw["rules"] = rules_mod.current_rules(routine_dir)
 
-def _apply_domain_field(routines_home: Path, raw: dict, updates: dict) -> None:
-    """Join or leave the shared surface this routine names in its OWN routine.yaml (`domain:`).
-
-    Membership lives here and nowhere else, which is what makes "at most one domain" a fact of
-    the file rather than a rule someone has to enforce across a list — `GET /api/domains` reads
-    its members back out of the routines (docs/lanes-domains.md). An unknown id is a 400, not a
-    save: the picker only offers ids that exist; a routine pointing at a domain that does not
-    would inherit nothing while reading everywhere as "in a domain". Leaving is `""`, which
-    REMOVES the key, so "in no domain" keeps its single spelling — absence.
-
-    Next-run semantics (`configflow.CLASSIFICATION`): the shared block is merged when the
-    routine is loaded and the store is injected into the fs roots at boot, so a live run keeps
-    the surface it booted with and is told the field changed.
-    """
-    if "domain" not in updates:
-        return
-    want = (updates.pop("domain") or "").strip()
-    if not want:
-        raw.pop("domain", None)
-        return
-    if domains.get(routines_home, want) is None:
-        raise HTTPException(400, f"unknown domain {want!r} (create it on the Routines page)")
-    raw["domain"] = want
-
 def _apply_permissions_fields(request: Request, info, raw: dict, updates: dict) -> None:
     """Apply a PATCH's `permissions` / `capabilities` through the ONE canonical path — the
     same two-layer resolve the dedicated `PUT /routines/{slug}/permissions` editor uses
@@ -135,15 +168,11 @@ def _apply_permissions_fields(request: Request, info, raw: dict, updates: dict) 
 
     Routing, not merging, is the whole point. These two keys are the authority surface, and
     `write_permission_layers` is what makes them safe: unknown doc slugs are dropped, a junk
-    capabilities mapping is a 422, the mapping is RAISED to cover every held doc's requires and
-    FLOORED back to them (D8), and what lands in the file is only what this routine OWNS —
-    its DOMAIN's docs, list entries and dials are left to the domain (D82). Letting these fall
-    through to the generic top-level merge instead would write an unvalidated `permissions:`
-    list and a capabilities mapping that could contradict it — authority granted by a key
-    nobody cascaded. Sharing the writer with the editor is what makes that true of BOTH doors:
-    this path used to run the resolve and skip the strip, so a patch naming only a confirm
-    dial wrote the whole domain-unioned set into the member's file, where a member's own key
-    always wins — the domain never reached that routine again (F489 through the second door).
+    capabilities mapping is a 422, and the mapping is RAISED to cover every held doc's requires
+    and FLOORED back to them (D8). Letting these fall through to the generic top-level merge
+    instead would write an unvalidated `permissions:` list and a capabilities mapping that
+    could contradict it — authority granted by a key nobody cascaded. Sharing the writer with
+    the editor is what makes that true of BOTH doors.
 
     REPLACE wholesale, exactly like the editor: `permissions` is the held-doc set, not an
     addition to it, because that is what the one canonical resolver means by `active`. A patch
@@ -229,13 +258,21 @@ def _apply_resource_fields(raw: dict, updates: dict) -> None:
 @router.patch("/routines/{slug}")
 def patch_routine(request: Request, slug: str, patch: RoutinePatch) -> dict:
     info = _info(request, slug)
+    updates = patch.model_dump(exclude_none=True)
+    if patch.run_gate is not None:
+        updates["run_gate"] = patch.run_gate.model_dump(exclude_unset=True)
+    return apply_updates(request, info, updates)
+
+
+def apply_updates(request: Request, info, updates: dict, *, message: str = "") -> dict:
+    """Apply already-validated PATCH fields to a routine's `routine.yaml` — the one writer the
+    PATCH route and the settings page's single "accept changes" both go through, so a value
+    lands the same way whichever door it came in by. `updates` has RoutinePatch's shape.
+    """
     # No busy-guard (D35): pure routine.yaml config, read at run START only — saving
     # mid-run applies at the next run. Destructive ops (archive) keep their guard.
     path = info.cfg.dir / "routine.yaml"
     raw = read_yaml(path, {})
-    updates = patch.model_dump(exclude_none=True)
-    if patch.run_gate is not None:
-        updates["run_gate"] = patch.run_gate.model_dump(exclude_unset=True)
     signal_values = dict(updates)
     # `updated` reports every field this PATCH applied. Captured BEFORE the appliers pop
     # what they consume (models/connections/machines/grants/keep_runs/schedule) — the
@@ -289,10 +326,15 @@ def patch_routine(request: Request, slug: str, patch: RoutinePatch) -> dict:
     # than the generic merge below — a decision may now propose them, and what lands is what the
     # editor would have written.
     _apply_permissions_fields(request, info, raw, updates)
-    _apply_domain_field(_state(request).server.routines_home, raw, updates)
+    _apply_pattern_fields(_state(request).server, raw, updates)
+    if "run_gate" in updates:
+        _apply_run_gate(raw, updates)
     _apply_resource_fields(raw, updates)
     if "tags" in updates:
         raw["tags"] = clean_tags(updates.pop("tags"))
+    if "hub_tab" in updates and not updates["hub_tab"]:
+        updates.pop("hub_tab")
+        raw.pop("hub_tab", None)    # `""` names no heading; absence is its one spelling
     for key, val in updates.items():
         if isinstance(val, dict) and isinstance(raw.get(key), dict):
             raw[key].update(val)
@@ -300,45 +342,8 @@ def patch_routine(request: Request, slug: str, patch: RoutinePatch) -> dict:
             raw[key] = val
     # F337 rides in the shared writer: a run already in flight booted its policy, schema and
     # prompt from the OLD config, and is told what changed and which half reaches it now.
-    live = write_routine_config(request, info, raw,
-                                message=f"routine.yaml edit via web ({', '.join(requested)})",
-                                fields=requested, values=signal_values)
+    live = write_routine_config(
+        request, info, raw,
+        message=message or f"routine.yaml edit via web ({', '.join(requested)})",
+        fields=requested, values=signal_values)
     return {"ok": True, "updated": requested, **({"told_live_run": True} if live else {})}
-
-
-class AdoptTemplate(BaseModel):
-    template: str          # the library template slug to copy in ("" is rejected — say what)
-
-
-@router.post("/routines/{slug}/adopt-template")
-def adopt_template(request: Request, slug: str, body: AdoptTemplate) -> dict:
-    """Copy a settings template's values into this routine's `routine.yaml`, once.
-
-    A template is a PRESELECTION, not a layer (2026-08-30). Nothing about this write is
-    remembered: afterwards the routine's file says what the routine IS, every value is editable
-    in the panel that owns it, and removing one is removing it — there is no `template_except:`
-    because there is nothing left to subtract from. Adopting twice is harmless (the merge is a
-    union that never overwrites), and adopting a second template ADDS to the first.
-
-    Returns what the write contributed, so an adoption that changed nine things says so.
-    """
-    from ..templates import adopt_into, read_template
-
-    info = _info(request, slug)
-    server = _state(request).server
-    tpl = read_template(server.libraries_home, body.template.strip())
-    if tpl is None:
-        raise HTTPException(404, f"no settings template {body.template!r} in the library")
-    raw = read_yaml(info.cfg.dir / "routine.yaml", {})
-    merged, added = adopt_into(raw, tpl["config"])
-    if not added:
-        return {"ok": True, "template": tpl["slug"], "added": [],
-                "note": "this routine already has everything the template supplies"}
-    # An adoption can change nine fields at once, `budgets` and `grants` among them — both
-    # LIVE-classified — so it goes through the same writer as every other save and a live run
-    # is told, instead of quietly running the rest of its turn under the old values.
-    live = write_routine_config(request, info, merged,
-                                message=f"adopt settings template {tpl['slug']} via web",
-                                fields=added, values=tpl["config"])
-    return {"ok": True, "template": tpl["slug"], "added": added,
-            **({"told_live_run": True} if live else {})}

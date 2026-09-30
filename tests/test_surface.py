@@ -53,10 +53,9 @@ def _cfg(tmp_path: Path, **over) -> SimpleNamespace:
     # a scheduled, enabled routine by default: the schedule join has something coherent to
     # read, so a "ready" fixture keeps reporting nothing
     base = {"slug": "r", "dir": tmp_path / "r", "permissions": [], "rules": [],
-            "capabilities": {"actions": [], "utils": [], "util_tags": []}, "grants": {},
+            "capabilities": {"actions": [], "utils": []}, "grants": {},
             "fs_read_roots": [], "fs_write_roots": [], "machines": [], "connections": {},
-            "domain": "", "inherited": {}, "inherited_from": "", "enabled": True,
-            "cron": "0 7 * * 1", "triggers": []}
+            "enabled": True, "cron": "0 7 * * 1", "triggers": []}
     base.update(over)
     return SimpleNamespace(**base)
 
@@ -185,20 +184,23 @@ def test_a_held_doc_whose_capability_is_off_fails_closed(tmp_path):
 
 
 @pytest.mark.usefixtures("empty_store")
-def test_a_tag_gate_satisfies_a_docs_named_requirement(tmp_path):
-    """`util_tags` covers a whole class, including utils the library gains later — a doc naming
-    one of them is satisfied; reporting it as missing would be a false alarm."""
+def test_a_verb_grant_honours_a_doc_reserving_the_util(tmp_path):
+    """A verb grant under a doc reserving the whole util is a deliberate narrowing — read-only
+    access to a channel — and a bare grant covers every verb a doc reserves. Neither is a
+    shortfall; reporting one would tell the operator to widen what they narrowed on purpose."""
     server = _server(tmp_path)
-    d = server.libraries_home / "utils" / "mailer"
-    d.mkdir(parents=True)
-    (d / "main.py").write_text('"""mailer — t.\n\nusage: gu mailer\ncalls: (none)\n'
-                               'tags: smtp\nsecrets: (none)\nnet: none\nfs: none\n"""\n',
-                               encoding="utf-8")
+    _doc(server, "permissions", "messaging-signal",
+         "---\ntags: [a]\nrequires:\n  utils: [signal]\n---\n# permission: x — y\n")
     _doc(server, "permissions", "outbound-mail",
-         "---\ntags: [a]\nrequires:\n  utils: [mailer]\n---\n# permission: x — y\n")
-    surface = routine_surface(server, _cfg(tmp_path, permissions=["outbound-mail"],
-                                           capabilities={"util_tags": ["smtp"]}))
+         "---\ntags: [a]\nrequires:\n  utils: [mailer:send]\n---\n# permission: x — y\n")
+    surface = routine_surface(server, _cfg(
+        tmp_path, permissions=["messaging-signal", "outbound-mail"],
+        capabilities={"actions": [], "utils": ["signal:read", "mailer"]}))
+    assert _by_id(surface, "permission:messaging-signal") is None
     assert _by_id(surface, "permission:outbound-mail") is None
+    short = routine_surface(server, _cfg(tmp_path, permissions=["outbound-mail"],
+                                         capabilities={"actions": [], "utils": []}))
+    assert "util:mailer:send" in _by_id(short, "permission:outbound-mail")["effect"]
 
 
 @pytest.mark.usefixtures("empty_store")
@@ -316,10 +318,10 @@ def test_boot_note_never_stops_a_run_when_the_library_is_broken(tmp_path, monkey
 
 @pytest.mark.usefixtures("empty_store")
 def test_a_capability_no_held_doc_requires_is_reported(tmp_path):
-    """Three deliberate designs each correctly decline to catch this one: the floor binds a
-    routine's OWN mapping at save; a domain's block is not floored (a member may hold the doc);
-    and enforcement is capabilities-only so prose can never widen anything. So a domain can hand
-    a member a reserved util with no conduct doc behind it and every layer stays silent."""
+    """Two deliberate designs each correctly decline to catch this one: the floor binds a
+    routine's mapping at the web layer's save, never a file that reached disk another way; and
+    enforcement is capabilities-only so prose can never widen anything. So a hand-edited file
+    can carry a reserved util with no conduct doc behind it and every layer stays silent."""
     server = _server(tmp_path)
     _util(server, "discord")
     _doc(server, "permissions", "messaging-discord",
@@ -331,68 +333,17 @@ def test_a_capability_no_held_doc_requires_is_reported(tmp_path):
     # nothing is BROKEN — the routine really can call it, which is the point of reporting
     assert routine_surface(server, orphan)["verdict"]["ready"] is True
     # the routine's own mapping holds it, so its own page is where it is dropped
-    assert node["fix"] == {"kind": "cover_or_drop", "entity": "util:discord",
-                           "owner": "routine"}
+    assert node["fix"] == {"kind": "cover_or_drop", "entity": "util:discord"}
 
     covered = _cfg(tmp_path, permissions=["messaging-discord"],
                    capabilities={"utils": ["discord"]})
     assert _by_id(routine_surface(server, covered), "util:discord") is None
 
 
-def _domain(server, name: str, **caps) -> str:
-    """A domain whose shared config hands its members `caps`. Returns its id."""
-    from rsched import domains
-
-    return domains.create(server.routines_home, name=name,
-                          config={"capabilities": caps})["id"]
-
-
 @pytest.mark.usefixtures("empty_store")
-def test_an_orphan_capability_the_domain_supplies_is_dropped_at_the_domain(tmp_path):
-    """Provenance is most of the value of this row in prose — 'you did not set this, your
-    domain did' — and all of it in the payload. A routine's own save FLOORS its mapping, which
-    is what makes a drop on its own page work at all. A domain's block is deliberately not
-    floored: the member's list UNIONS with it at every load, so the same drop applied to a
-    domain-supplied util is undone before the next run reads it. The fix says where the act
-    belongs, because an offer landing on a control that cannot perform it is worse than none."""
-    server = _server(tmp_path)
-    _util(server, "discord")
-    domain_id = _domain(server, "Morning Brief", utils=["discord"])
-    cfg = _cfg(tmp_path, capabilities={"utils": ["discord"]}, domain=domain_id,
-               inherited={"capabilities": "1 from the domain"}, inherited_from="Morning Brief")
-    node = _by_id(routine_surface(server, cfg), "util:discord")
-    assert "Morning Brief" in node["why"]
-    # the NAME goes where both renderings put it — in a sentence; the id is provenance
-    assert node["fix"] == {"kind": "cover_or_drop", "entity": "util:discord",
-                           "owner": "domain", "domain": "Morning Brief"}
-    assert node["source"] == {"domain": domain_id}
-
-
-@pytest.mark.usefixtures("empty_store")
-def test_a_capability_the_member_lists_too_still_belongs_to_the_domain(tmp_path):
-    """The reading `cfg.inherited` cannot give, in the direction that hurts. That mapping
-    counts what the merge CONTRIBUTED; a member naming the same util itself contributes
-    nothing — so the row would read as the routine's own while the union quietly restores the
-    domain's copy after every drop. One fact settles the site: does the domain's block name it."""
-    server = _server(tmp_path)
-    _util(server, "discord")
-    domain_id = _domain(server, "Morning Brief", utils=["discord"])
-    cfg = _cfg(tmp_path, capabilities={"utils": ["discord"]}, domain=domain_id)
-    assert cfg.inherited == {}          # what the loader records here: the union added nothing
-    assert _by_id(routine_surface(server, cfg), "util:discord")["fix"]["owner"] == "domain"
-
-    # ...and a domain supplying some OTHER capability leaves this one the routine's own
-    other = _cfg(tmp_path, capabilities={"utils": ["discord"]},
-                 domain=_domain(server, "Evening", actions=["write_util"]),
-                 inherited={"capabilities": "1 from the domain"}, inherited_from="Evening")
-    node = _by_id(routine_surface(server, other), "util:discord")
-    assert node["fix"]["owner"] == "routine" and "Evening" not in node["why"]
-
-
-@pytest.mark.usefixtures("empty_store")
-def test_the_words_for_a_drop_say_where_it_can_be_performed(tmp_path):
-    """The terminal reader is handed the same distinction the console routes on. "Switch it
-    off" addressed to somebody who cannot is the broken link written out in prose."""
+def test_the_words_for_a_drop_name_both_ways_out(tmp_path):
+    """The terminal reader is handed the same two ways out the console offers: hold a doc that
+    requires the capability, or drop it from the routine's own mapping."""
     server = _server(tmp_path)
     _util(server, "discord")
     own = surface_lines(routine_surface(server, _cfg(tmp_path,
@@ -400,42 +351,18 @@ def test_the_words_for_a_drop_say_where_it_can_be_performed(tmp_path):
     assert ("fix: hold a conduct doc that requires it, or drop it from this routine's "
             "capabilities") in own[0]
 
-    domain_id = _domain(server, "Morning Brief", utils=["discord"])
-    shared = surface_lines(routine_surface(server, _cfg(
-        tmp_path, capabilities={"utils": ["discord"]}, domain=domain_id)))
-    assert "drop it from the Morning Brief domain that supplies it" in shared[0]
-
 
 @pytest.mark.usefixtures("empty_store")
 def test_a_missing_util_leads_with_the_half_that_can_be_performed(tmp_path):
     """A util is authored by a RUN through write_util. The Library page offers "+ new" for
-    rules, permissions and templates and none for utils, so "write the ghost util" sent its
-    reader to a page with no control for it. The drop is the half a person performs — on the
-    routine's own page — so the remedy leads with that one."""
+    rules and permissions and none for utils, so "write the ghost util" sent its reader to a
+    page with no control for it. The drop is the half a person performs — on the routine's own
+    page — so the remedy leads with that one."""
     server = _server(tmp_path)
     line = surface_lines(routine_surface(server, _cfg(tmp_path,
                                                       capabilities={"utils": ["ghost"]})))[0]
     assert "fix: drop ghost from this routine's capabilities" in line
     assert "only a run writes a util" in line
-
-
-@pytest.mark.usefixtures("empty_store")
-def test_an_absent_util_the_domain_supplies_is_dropped_at_the_domain(tmp_path):
-    """The provenance every other capability row carries, on the one row that had none. Without
-    it the offer lands on this routine's own drop control, whose save the domain's block unions
-    straight back at the next load — an act that succeeds while changing nothing, which is the
-    one outcome worse than no offer at all."""
-    server = _server(tmp_path)
-    domain_id = _domain(server, "Morning Brief", utils=["ghost"])
-    cfg = _cfg(tmp_path, capabilities={"utils": ["ghost"]}, domain=domain_id)
-    surface = routine_surface(server, cfg)
-    node = _by_id(surface, "util:ghost")
-    assert node["fix"] == {"kind": "install_util", "name": "ghost",
-                           "owner": "domain", "domain": "Morning Brief"}
-    assert node["source"] == {"domain": domain_id}
-    assert "Morning Brief" in node["why"]
-    assert ("fix: drop ghost from the Morning Brief domain that supplies it"
-            in surface_lines(surface)[0])
 
 
 @pytest.mark.usefixtures("empty_store")
@@ -458,13 +385,6 @@ def test_an_absent_util_a_held_doc_requires_names_the_doc_rather_than_a_drop(tmp
     line = surface_lines(surface)[0]
     assert "fix: stop holding messaging-discord" in line
     assert "drop ghost" not in line
-
-    # the doc beats every drop site, because no site can outlive the raise the doc performs
-    inherited = _cfg(tmp_path, permissions=["messaging-discord"],
-                     capabilities={"utils": ["ghost"]},
-                     domain=_domain(server, "Morning Brief", utils=["ghost"]))
-    assert _by_id(routine_surface(server, inherited), "util:ghost")["fix"] == {
-        "kind": "install_util", "name": "ghost", "doc": "messaging-discord"}
 
 
 @pytest.mark.usefixtures("empty_store")
@@ -623,43 +543,6 @@ def test_the_boot_note_carries_only_what_the_run_can_act_on():
     assert [ln.split()[1] for ln in boot] == ["a:", "b:"]       # boot: no NOTE
 
 
-@pytest.mark.usefixtures("empty_store")
-def test_a_held_doc_whose_dial_is_not_switched_on_blocks(tmp_path):
-    """The guard that should have caught the reminders rollout — and could not.
-
-    "held, but its requires: are not switched on" was written when `requires:` named actions
-    and utils only. Every DIAL added since — `runs`, `workflows`, `util_tags`, `reminders` —
-    fell straight through it, so a routine could hold a doc, have its dial at the default, and
-    read as READY. It asks the one cascade now, so a dial added tomorrow lands here on its own.
-    """
-    server = _server(tmp_path)
-    _doc(server, "permissions", "reminders",
-         "---\ntags: [a, b, c]\nrequires:\n  reminders: local\n---\n"
-         "# permission: reminders — t\nb\n")
-    cfg = _cfg(tmp_path, permissions=["reminders"],
-               capabilities={"actions": [], "utils": [], "util_tags": [],
-                             "reminders": "none"})
-    node = _by_id(routine_surface(server, cfg), "permission:reminders")
-    assert node and node["severity"] == BLOCKS
-    assert "reminders=local" in node["effect"]
-
-
-@pytest.mark.usefixtures("empty_store")
-def test_a_dial_above_what_the_doc_asks_for_is_satisfied(tmp_path):
-    """The dials are RANKED, so "different" is not "short". A routine at `reminders: global`
-    honours a doc that requires `local` — reporting that as unsatisfied would tell the operator
-    to turn something DOWN to make a warning go away.
-    """
-    server = _server(tmp_path)
-    _doc(server, "permissions", "reminders",
-         "---\ntags: [a, b, c]\nrequires:\n  reminders: local\n---\n"
-         "# permission: reminders — t\nb\n")
-    cfg = _cfg(tmp_path, permissions=["reminders"],
-               capabilities={"actions": [], "utils": [], "util_tags": [],
-                             "reminders": "global"})
-    assert _by_id(routine_surface(server, cfg), "permission:reminders") is None
-
-
 # --- the remedy: the panel diagnoses and says what settles it -------------------------------
 
 
@@ -668,20 +551,19 @@ def test_an_unsatisfied_permission_names_the_switch_that_settles_it(tmp_path):
     """The operator's question at a failed row is "where do I fix this?". The check that raises
     this one already knows the answer to the letter — it computed the shortfall to say what the
     failure costs. The row hands that same list over as its remedy, so the offer can read
-    "switch on runs=last" rather than "go and look"."""
+    "switch on shell" rather than "go and look"."""
     server = _server(tmp_path)
-    _doc(server, "permissions", "run-history",
-         "---\ntags: [a, b, c]\nrequires:\n  runs: last\n---\n"
-         "# permission: run history — t\nb\n")
-    cfg = _cfg(tmp_path, permissions=["run-history"],
-               capabilities={"actions": [], "utils": [], "util_tags": [], "runs": "none"})
+    _doc(server, "permissions", "shell",
+         "---\ntags: [a, b, c]\nrequires:\n  actions: [shell]\n---\n"
+         "# permission: shell — t\nb\n")
+    cfg = _cfg(tmp_path, permissions=["shell"],
+               capabilities={"actions": [], "utils": []})
     surface = routine_surface(server, cfg)
-    node = _by_id(surface, "permission:run-history")
+    node = _by_id(surface, "permission:shell")
     assert node["severity"] == BLOCKS
-    assert node["fix"] == {"kind": "switch_on", "entity": "run-history",
-                           "missing": ["runs=last"]}
+    assert node["fix"] == {"kind": "switch_on", "entity": "shell", "missing": ["shell"]}
     # ...and the CLI half answers it too: `rsched validate` has no panel to click
-    assert "fix: switch on runs=last" in surface_lines(surface)[0]
+    assert "fix: switch on shell" in surface_lines(surface)[0]
 
 
 @pytest.mark.usefixtures("empty_store")
@@ -704,11 +586,11 @@ def test_a_row_that_is_not_unmet_offers_no_remedy(tmp_path):
     """What an absent fix MEANS, settled once so the next node type has a rule instead of a
     precedent to guess from. SEVERITY does not decide it — a NOTE about a cron the lane
     overrides is unmet and carries one. Being UNMET decides it — and neither of these is. A
-    routine that may rewrite its own recipe is set up exactly as intended; a retired one has MET
-    every goal condition it was given. An offer on either is an offer to undo it, which
+    routine that may rewrite its own recipe is set up exactly as intended; a retired one has
+    reached its finish line. An offer on either is an offer to undo it, which
     reads as a defect report on a routine that is right — the retired row worst of all, since
     what it would undo is a finished job."""
-    from rsched.engine import stopping
+    from rsched.engine import finishline
 
     server = _server(tmp_path)
     deliberate = routine_surface(server, _cfg(tmp_path,
@@ -716,9 +598,9 @@ def test_a_row_that_is_not_unmet_offers_no_remedy(tmp_path):
     assert _by_id(deliberate, "action:write_recipe")["fix"] == {}
 
     cfg = _cfg(tmp_path)
-    stopping.save(cfg.dir, {"mode": "all", "groups": [], "conditions": [
-        {"id": "s1", "text": "the application is submitted", "scope": "goal",
-         "status": "met"}]}, now="2026-09-05T00:00:00+02:00")
+    finishline.save(cfg.dir, {"outcomes": [{"text": "the application is submitted",
+                                            "judge": "you", "status": "met"}]},
+                    now="2026-09-05T00:00:00+02:00")
     surface = routine_surface(server, cfg)
     retired = _by_id(surface, "schedule:goal")
     assert retired and retired["severity"] == NOTE and retired["fix"] == {}
@@ -738,8 +620,7 @@ def test_each_kind_of_gap_names_what_would_settle_it(tmp_path):
          "---\ntags: [a, b, c]\nexpects:\n  connection: [google]\n---\n# rule: x — y\n")
     surface = routine_surface(server, _cfg(tmp_path, rules=["publishes"],
                                            capabilities={"utils": ["reader", "ghost"]}))
-    assert _by_id(surface, "util:ghost")["fix"] == {"kind": "install_util", "name": "ghost",
-                                                    "owner": "routine"}
+    assert _by_id(surface, "util:ghost")["fix"] == {"kind": "install_util", "name": "ghost"}
     assert _by_id(surface, "fs-read:/srv/data")["fix"] == {
         "kind": "add_root", "mode": "read", "path": "/srv/data"}
     assert _by_id(surface, "connection:google")["fix"] == {
@@ -807,9 +688,9 @@ def test_every_remedy_can_be_said_in_words():
     the binding that keeps them one answer has to be read from both sides at once.
 
     A `kind:variant` entry is a second WORDING of one kind, never a second kind — `:any` for a
-    need no sentence can name, `:domain` for a need said to somebody who cannot act on it where
-    they stand — so the two sides are compared on the kind each variant belongs to. Which
-    payload selects which wording is behaviour, pinned by the tests that render both."""
+    need no sentence can name, `:doc` for a drop a held doc would put straight back — so the two
+    sides are compared on the kind each variant belongs to. Which payload selects which wording
+    is behaviour, pinned by the tests that render both."""
     kinds = {value.value
              for call in _node_calls() for arg in _fix_args(call)
              for d in ast.walk(arg) if isinstance(d, ast.Dict)

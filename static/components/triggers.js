@@ -1,164 +1,147 @@
-// Triggers card (routine page): event-driven fires alongside cron. Create/delete webhook
-// triggers (copy the hook URL) and REPORT triggers (fire when a report/inbox message
-// lands for this routine — the daemon watches the inbox, bursts coalesce into one run per
-// cooldown window). The server generates id + token; the URL's token IS the hook's auth,
-// so the card treats it like a secret worth copying, never re-asking. See Help → triggers.
+// Triggers (routine page): event-driven fires alongside the schedule — WEBHOOK triggers (a third
+// party POSTs to a hook URL) and REPORT triggers (fire when a report or message from another
+// routine lands in this routine's inbox; bursts coalesce into one run per cooldown window).
+//
+// The list is a SETTING like every other on the page: it is edited in the draft and saved by the
+// page's one accept, which adds the triggers the list gained and removes the ones it lost. What
+// the server mints is IDENTITY — a trigger's id and, for a webhook, the token that is the hook's
+// only auth — so a trigger that is new in the draft has no URL yet: it gets one when it is
+// accepted. A row is matched to the trigger it stands for by what it configures (type, cooldown,
+// daily cap), the way the accept itself matches them, so a row whose bounds are edited stands for
+// a NEW trigger: accepting it replaces the old one (a webhook's URL with it), as the row says.
 
-import { api } from "/static/api.js";
-import { confirmDialog } from "/static/components/dialog.js";
-import { el, queuedToast, toast, toastError, when } from "/static/util.js";
+import { el, toast, when } from "/static/util.js";
 
 const COOLDOWN_HINT = "minimum seconds between trigger-initiated fires — events arriving "
   + "inside the window coalesce into one run";
 const CAP_HINT = "most trigger-initiated fires this routine may spend in one day (0 = "
   + "uncapped) — the backstop the cooldown cannot be: it bounds the rate, not the total. "
   + "Work that arrives past the cap waits for the next scheduled run.";
-const LABEL = { cooldown_s: "cooldown", max_fires_per_day: "daily cap" };
+const DEFAULTS = { webhook: { cooldown_s: 60, max_fires_per_day: 0 },
+                   report: { cooldown_s: 900, max_fires_per_day: 24 } };
 
-export function triggersCard(slug, initial) {
+const capOf = (t) => Number(t.max_fires_per_day ?? DEFAULTS[t.type]?.max_fires_per_day ?? 0);
+const same = (row, t) => row.type === t.type
+  && Number(row.cooldown_s ?? 0) === Number(t.cooldown_s ?? 0) && capOf(row) === capOf(t);
+
+/**
+ * triggersEditor({ value, described, set }) → node
+ * `value` is the draft `triggers` list (type + bounds); `described` the routine detail's
+ * `triggers` (the saved ones, with id, hook path and fire ledger); `set(rows)` reports an edit.
+ */
+export function triggersEditor({ value, described = [], set }) {
+  const rows = (value || []).map((r) => ({ ...r }));
   const body = el("div", { class: "triggers-body" });
-  const host = el("div", { class: "panel" },
+  // which saved trigger each row stood for when the editor opened — so a row edited away from
+  // it can say what accepting it costs
+  const origin = pair(rows);
+  render();
+  return el("div", {},
     el("div", { class: "muted small", style: "margin-bottom:8px" },
       "fire this routine on an external EVENT, alongside the schedule: POST anything to a ",
-      "trigger's hook URL and the daemon queues one run — bursts and hits during an active ",
-      "run coalesce into a single fire whose run receives every payload as a message. ",
+      "webhook trigger's hook URL and the daemon queues one run — bursts and hits during an ",
+      "active run coalesce into a single fire whose run receives every payload as a message. ",
       "The URL's token is the only auth on the hook: share it like a secret."),
     body);
-  render(initial || []);
-  return host;
 
-  async function refresh() {
-    try { const d = await api(`/api/routines/${slug}`); render(d.triggers || []); }
-    catch (err) { toastError(err); }
+  function pair(list) {
+    const pool = [...described];
+    return list.map((row) => {
+      const i = pool.findIndex((t) => same(row, t));
+      return i < 0 ? null : pool.splice(i, 1)[0];
+    });
   }
 
-  function render(rows) {
+  function report() { set(rows.map((r) => ({ ...r }))); }
+
+  function render() {
+    const paired = pair(rows);
     const hasReport = rows.some((t) => t.type === "report");
-    // One cooldown input per add-button, adjacent to the button it feeds: a single shared
-    // box reads as an editor for the triggers listed above it, which it never was.
-    const webhookCooldown = el("input", { type: "number", min: "0", value: "60",
-      style: "width:80px", title: COOLDOWN_HINT });
-    const reportCooldown = el("input", { type: "number", min: "0", value: "900",
-      style: "width:80px", title: COOLDOWN_HINT, ...(hasReport ? { disabled: "" } : {}) });
     body.replaceChildren(
-      rows.length ? el("div", {}, ...rows.map(row))
-        : el("div", { class: "muted small" }, "no triggers — this routine fires on schedule or manually, and when you answer a question it asked; a report from another routine waits for its next run"),
+      rows.length ? el("div", {}, ...rows.map((r, i) => row(r, i, paired[i])))
+        : el("div", { class: "muted small" }, "no triggers — this routine fires on schedule, "
+            + "manually or when you answer a question it asked; a report from another routine "
+            + "waits for its next run"),
       el("div", { class: "row mt", style: "gap:8px;flex-wrap:wrap" },
-        el("span", { class: "muted small" }, "cooldown (s)"), webhookCooldown,
-        el("button", { class: "btn primary", onclick: () => create(webhookCooldown) },
-          "+ add webhook trigger")),
-      el("div", { class: "row", style: "gap:8px;flex-wrap:wrap;margin-top:6px" },
-        el("span", { class: "muted small" }, "cooldown (s)"), reportCooldown,
-        el("button", { class: "btn", ...(hasReport ? { disabled: "" } : {}),
+        el("button", { type: "button", class: "btn", onclick: () => add("webhook") },
+          "+ add webhook trigger"),
+        el("button", { type: "button", class: "btn", disabled: hasReport ? "" : null,
           title: hasReport
             ? "one inbox, one watcher — this routine already has a report trigger (edit its cooldown above)"
-            : "fire this routine when a report or message from ANOTHER ROUTINE lands in its inbox — for a routine whose job is its inbox; bursts within the cooldown become one run, and a reply to it can wake the sender back (a person's answer to this routine's own question wakes it with or without this)",
-          onclick: () => createReport(reportCooldown) }, "+ add report trigger")));
+            : "fire this routine when a report or message from ANOTHER ROUTINE lands in its inbox — "
+              + "for a routine whose job is its inbox; bursts within the cooldown become one run",
+          onclick: () => add("report") }, "+ add report trigger")));
   }
 
-  function row(t) {
-    const meta = el("div", { class: "row muted small", style: "gap:14px;flex-wrap:wrap" },
-      el("span", {}, "last fired · ", t.last_fired ? when(t.last_fired) : "never"),
-      el("span", {}, `fired events · ${t.events || 0}`),
+  function add(type) {
+    rows.push({ type, ...DEFAULTS[type] });
+    origin.push(null);
+    render();
+    report();
+  }
+
+  function row(t, i, live) {
+    const was = origin[i];
+    const replaced = !live && was && t.type === "webhook";
+    const meta = live ? el("div", { class: "row muted small", style: "gap:14px;flex-wrap:wrap" },
+      el("span", {}, "last fired · ", live.last_fired ? when(live.last_fired) : "never"),
+      el("span", {}, `fired events · ${live.events || 0}`),
       el("span", { title: "events recorded but not yet turned into a run (coalescing)" },
-        `pending · ${t.pending || 0}`),
-      cooldownCell(t),
-      capCell(t));
-    const urlLine = t.type === "webhook" ? webhookUrl(t)
+        `pending · ${live.pending || 0}`),
+      el("span", { title: CAP_HINT }, `fires today · ${live.fires_today || 0}`)) : null;
+    const urlLine = t.type === "webhook"
+      ? (live ? webhookUrl(live)
+        : el("div", { class: replaced ? "tr-warn small" : "muted small" }, replaced
+            ? "accepting this change mints a NEW hook URL — the current one stops working"
+            : "its hook URL is minted when you accept"))
       : t.type === "report"
         ? el("div", { class: "muted small" },
-            "fires when a report or message lands in this routine's inbox — deliveries within the cooldown coalesce into one run")
+            "fires when a report or message lands in this routine's inbox — deliveries within "
+            + "the cooldown coalesce into one run")
         : el("div", { class: "muted small" }, "reserved trigger type — nothing fires it yet");
-    return el("div", { class: "trigger-row", style: "padding:8px 0;border-bottom:1px solid var(--rule)" },
+    return el("div", { class: "trigger-row", "data-trigger": live?.id || "new" },
       el("div", { class: "row spread", style: "margin-bottom:6px" },
         el("div", { class: "row", style: "gap:10px" },
           el("span", { class: "ref-tag" }, t.type),
-          el("span", { class: "muted small" }, t.id)),
-        el("button", { class: "btn small danger", onclick: () => remove(t) }, "delete")),
-      urlLine, meta);
+          el("span", { class: "muted small" }, live ? live.id : "new — created when you accept")),
+        el("button", { type: "button", class: "btn small danger", title: "remove this trigger — "
+          + "on accept it stops firing; a webhook's URL stops working",
+          onclick: () => { rows.splice(i, 1); origin.splice(i, 1); render(); report(); } },
+          "remove")),
+      urlLine,
+      el("div", { class: "row small", style: "gap:14px;flex-wrap:wrap;margin-top:4px" },
+        numberCell(t, i, "cooldown_s", "cooldown", "s", COOLDOWN_HINT, "cooldown-in"),
+        numberCell(t, i, "max_fires_per_day", "daily cap", "per day", CAP_HINT, "cap-in")),
+      meta);
   }
 
-  // The row's cooldown is the LIVE value and edits in place — the stored number is the
-  // truth, so a rejected or malformed edit snaps the field back to it.
-  function cooldownCell(t) {
-    const input = el("input", { type: "number", min: "0", value: String(t.cooldown_s),
-      class: "cooldown-in", style: "width:70px", title: COOLDOWN_HINT,
-      onchange: () => retune(t, input) });
-    return el("span", { class: "row", style: "gap:5px;align-items:center" },
-      "cooldown ·", input, "s");
-  }
-
-  // The day's cap is the loop backstop the cooldown can't be (it bounds rate, not total).
-  // 0 = uncapped; the count resets on the server's date.
-  function capCell(t) {
-    const input = el("input", { type: "number", min: "0", value: String(t.max_fires_per_day),
-      class: "cap-in", style: "width:70px", title: CAP_HINT,
-      onchange: () => retune(t, input, "max_fires_per_day") });
-    return el("span", { class: "row", style: "gap:5px;align-items:center", title: CAP_HINT },
-      `fires today · ${t.fires_today} / max`, input, "per day");
-  }
-
-  async function retune(t, input, field = "cooldown_s") {
-    const next = parseInt(input.value, 10);
-    const current = t[field];
-    if (!Number.isFinite(next) || next < 0) {
-      input.value = String(current);
-      toast(`${LABEL[field]} is a whole number, 0 or more`, 4000, { error: true });
-      return;
-    }
-    if (next === current) return;
-    try {
-      const res = await api(`/api/routines/${slug}/triggers/${t.id}`,
-        { method: "PATCH", body: { [field]: next } });
-      queuedToast(res,
-        `${LABEL[field]} saved — ${next}${field === "cooldown_s" ? "s" : " per day"}`);
-      refresh();
-    } catch (err) {
-      input.value = String(current);
-      toastError(err);
-    }
+  // A bound is edited in place; a value that is not a whole number snaps back to what it was.
+  function numberCell(t, i, key, label, unit, hint, cls) {
+    const input = el("input", { type: "number", min: "0", value: String(t[key] ?? 0), class: cls,
+      style: "width:78px", title: hint, "data-nopersist": true,
+      onchange: () => {
+        const next = parseInt(input.value, 10);
+        if (!Number.isFinite(next) || next < 0) {
+          input.value = String(t[key] ?? 0);
+          toast(`${label} is a whole number, 0 or more`, 4000, { error: true });
+          return;
+        }
+        rows[i] = { ...t, [key]: next };
+        render();
+        report();
+      } });
+    return el("label", { class: "row", style: "gap:5px;align-items:center", title: hint },
+      label, input, unit);
   }
 
   function webhookUrl(t) {
     const url = `${location.origin}${t.url_path}`;
     const input = el("input", { type: "text", readonly: true, value: url,
       class: "code", style: "flex:1;min-width:240px", onclick: (e) => e.target.select() });
-    const copy = el("button", { class: "btn small", onclick: async () => {
+    const copy = el("button", { type: "button", class: "btn small", onclick: async () => {
       try { await navigator.clipboard.writeText(url); toast("hook URL copied"); }
       catch { input.select(); toast("clipboard blocked — URL selected, press Ctrl-C"); }
     } }, "copy");
     return el("div", { class: "row", style: "gap:8px;margin-bottom:6px" }, input, copy);
-  }
-
-  async function create(cooldownIn) {
-    const cooldown = parseInt(cooldownIn?.value, 10);
-    try {
-      const res = await api(`/api/routines/${slug}/triggers`, { method: "POST",
-        body: { type: "webhook",
-                ...(Number.isFinite(cooldown) && cooldown >= 0 ? { cooldown_s: cooldown } : {}) } });
-      queuedToast(res, "webhook trigger created");
-      refresh();
-    } catch (err) { toastError(err); }
-  }
-
-  async function createReport(cooldownIn) {
-    const cooldown = parseInt(cooldownIn?.value, 10);
-    try {
-      const res = await api(`/api/routines/${slug}/triggers`, { method: "POST",
-        body: { type: "report",
-                ...(Number.isFinite(cooldown) && cooldown >= 0 ? { cooldown_s: cooldown } : {}) } });
-      queuedToast(res, "report trigger created — a delivered report now wakes this routine");
-      refresh();
-    } catch (err) { toastError(err); }
-  }
-
-  async function remove(t) {
-    if (!(await confirmDialog(`Delete trigger ${t.id}? Its hook URL stops working immediately.`,
-                              { confirmLabel: "delete" }))) return;
-    try {
-      const res = await api(`/api/routines/${slug}/triggers/${t.id}`, { method: "DELETE" });
-      queuedToast(res, "trigger deleted");
-      refresh();
-    } catch (err) { toastError(err); }
   }
 }

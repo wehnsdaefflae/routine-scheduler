@@ -6,6 +6,7 @@ import pytest
 import yaml
 
 from conftest import finish, util, write_file
+from rsched import reminder_checks as checks
 from rsched import reminders as store
 from rsched.config import ServerConfig
 from rsched.engine.actions import validate_action
@@ -19,27 +20,50 @@ TS = "20260905-090000"
 
 
 def _rem(rid="rem-1", regex="^util:danger", desc="it deletes the target", scope="local",
-         **stats):
+         reach="", **stats):
     return Reminder(id=rid, regex=regex, description=desc, scope=scope,
-                    created_run="r:1", stats={**store.blank_stats(), **stats})
+                    created_run="r:1", stats={**store.blank_stats(), **stats},
+                    reach=reach or ("universal" if scope == "global" else ""))
 
 
 # --- the store --------------------------------------------------------------------------
 
 @pytest.mark.parametrize(("pattern", "fragment"), [
     ("", "non-empty"),
-    ("x" * (store.MAX_REGEX_CHARS + 1), "at most"),
+    ("x" * (checks.MAX_REGEX_CHARS + 1), "at most"),
     ("^util:(", "not a valid regular expression"),
     (".*", "matches the EMPTY string"),          # would hold every action ever taken
     ("(a?)*", "matches the EMPTY string"),
 ])
 def test_regex_problems_are_caught_at_the_write_gate(pattern, fragment):
-    problem = store.regex_problem(pattern)
+    problem = checks.regex_problem(pattern)
     assert problem and fragment in problem
 
 
+@pytest.mark.parametrize(("pattern", "fragment"), [
+    ("^script name=store", "renders as 'script:<name> <args…>'"),
+    ("^shell rm -rf", "renders as 'shell: <command>'"),
+    ("^edit_file anchor=x", "renders as 'edit_file path=<value>'"),
+    ("^subruns all", "renders as just 'subruns'"),
+    ("^utl:fs-ops", "no action renders that way"),
+])
+def test_a_form_no_action_renders_as_is_refused(pattern, fragment):
+    """41 of 131 live reminders could never fire: anchored on a rendering the canon never
+    produces. The write gate is where that is caught — never by a replay months later."""
+    problem = checks.regex_problem(pattern)
+    assert problem and fragment in problem
+
+
+@pytest.mark.parametrize("pattern", [
+    "^util:fs-ops mv ", "^script:store stage", "^shell: git push", "^write_file path=state/",
+    "^read_file paths=a", "^read_file path=a", "^write", "^(util:x|shell: y)", "^finish",
+])
+def test_every_rendered_form_passes(pattern):
+    assert checks.regex_problem(pattern) is None
+
+
 def test_a_usable_pattern_passes_and_matches_the_canonical_string():
-    assert store.regex_problem("^util:fs-ops mv ") is None
+    assert checks.regex_problem("^util:fs-ops mv ") is None
     assert _rem(regex="^util:fs-ops mv ").matches("util:fs-ops mv a b")
     assert not _rem(regex="^util:fs-ops mv ").matches("util:fs-ops cp a b")
 
@@ -94,15 +118,34 @@ def test_the_union_is_local_over_global_by_regex(tmp_path):
     store.save_local(tmp_path, [_rem(rid="rem-l", regex="^util:a", desc="mine wins")], {})
 
     assert store.active(tmp_path, lib, "none") == []
-    assert [r.id for r in store.active(tmp_path, lib, "local")] == ["rem-l"]
-    union = store.active(tmp_path, lib, "global")
+    # the curated set reaches a routine at `local`: the dial governs authoring, not reading
+    union = store.active(tmp_path, lib, "local")
     # same regex = the same match class, so the local one shadows the library's; a different
     # regex is a different class and both stay live
     assert [r.id for r in union] == ["rem-l", "rem-g2"]
     assert union[0].description == "mine wins"
+    assert [r.id for r in store.active(tmp_path, lib, "global")] == ["rem-l", "rem-g2"]
     # the library copy carries the definition only — the evidence about it is per-routine
     rec = json.loads((lib / "rem-g1.json").read_text(encoding="utf-8"))
-    assert set(rec) == {"id", "regex", "description", "created_run"}
+    assert set(rec) == {"id", "regex", "description", "reach", "created_run"}
+
+
+def test_a_listed_reminder_reaches_only_the_routines_that_list_it(tmp_path):
+    lib = tmp_path / "library" / "reminders"
+    store.write_global(lib, _rem(rid="rem-git", regex="^shell: git push", scope="global",
+                                 reach="listed"))
+    store.write_global(lib, _rem(rid="rem-any", regex="^util:x", scope="global"))
+    assert [r.id for r in store.active(tmp_path, lib, "local")] == ["rem-any"]
+    assert [r.id for r in store.active(tmp_path, lib, "local", listed=["rem-git"])] == [
+        "rem-any", "rem-git"]
+
+
+def test_a_curated_record_that_cannot_say_whom_it_reaches_reaches_nobody(tmp_path):
+    lib = tmp_path / "reminders"
+    lib.mkdir()
+    (lib / "rem-x.json").write_text(
+        '{"id": "rem-x", "regex": "^util:x", "description": "d"}', encoding="utf-8")
+    assert store.load_global(lib) == []
 
 
 def test_record_bumps_the_tally_for_both_scopes_in_the_local_file(tmp_path):
@@ -128,17 +171,15 @@ def _lib_doc(home, slug, requires):
         encoding="utf-8")
 
 
-def test_a_doc_raises_the_dial_and_the_floor_drops_it_without_the_doc(tmp_path):
+def test_the_reminders_setting_needs_no_permission(tmp_path):
+    """A caution a run leaves itself about its own actions is ordinary conduct: the dial is a
+    SETTING the person chooses per routine, kept by the floor with no permission behind it —
+    and no permission doc can switch it on."""
     _lib_doc(tmp_path, "reminders", "  reminders: local")
     lib = read_library_requires(tmp_path / "permissions")
-    assert capabilities_for(["reminders"], lib)["reminders"] == "local"
-    # the user's own deeper choice survives the raise (it only ever rises)
-    deeper = capabilities_for(["reminders"], lib, {"reminders": "global"})
-    assert deeper["reminders"] == "global"
-    # …and is floored away entirely when the doc is not held
-    assert floor_capabilities([], lib, {"reminders": "global"})["reminders"] == "none"
-    assert floor_capabilities(["reminders"], lib,
-                              {"reminders": "global"})["reminders"] == "global"
+    assert "reminders" not in (lib.get("reminders") or {})
+    assert capabilities_for([], lib, {"reminders": "global"})["reminders"] == "global"
+    assert floor_capabilities([], lib, {"reminders": "global"})["reminders"] == "global"
 
 
 @pytest.mark.parametrize(("level", "scope", "denied"), [
@@ -187,7 +228,7 @@ def test_malformed_ops_are_corrected_inside_the_schema_retry_cycle(tmp_path):
     assert "non-empty pattern" in problems(remind={"op": "add", "description": "d"})[0]
     assert "consequence IS" in problems(remind={"op": "add", "regex": "^util:x"})[0]
     assert "needs the `id`" in problems(remind={"op": "delete"})[0]
-    assert "needs a new `regex`" in problems(remind={"op": "revise", "id": "rem-1"})[0]
+    assert "needs what changes" in problems(remind={"op": "revise", "id": "rem-1"})[0]
     assert "must be one of" in problems(remind_feedback={"id": "rem-1", "label": "nope"})[0]
     # …and a well-formed pair passes
     assert not problems(remind={"op": "add", "regex": "^util:x", "description": "d"},
@@ -403,6 +444,7 @@ def test_a_local_reminder_may_be_promoted_to_the_shared_store(make_routine, scri
         make_routine, scripted,
         [{**write_file("state/a.txt"),
           "remind": {"op": "add", "scope": "global", "regex": "^util:fs-ops mv ",
+                     "reach": "universal",
                      "description": "mv over an existing destination overwrites it silently"}},
          {**write_file("state/b.txt"), "remind": {"op": "delete", "id": "rem-p"}},
          finish()],
@@ -531,6 +573,7 @@ def test_a_global_write_lands_in_the_library_when_the_dial_is_autonomous(
         make_routine, scripted,
         [{**write_file("state/a.txt"),
           "remind": {"op": "add", "scope": "global", "regex": "^util:fs-ops mv ",
+                     "reach": "universal",
                      "description": "mv over an existing destination overwrites it silently"}},
          finish()],
         reminders="global", remind_confirm="never")
@@ -539,6 +582,7 @@ def test_a_global_write_lands_in_the_library_when_the_dial_is_autonomous(
     assert len(written) == 1
     rec = json.loads(written[0].read_text(encoding="utf-8"))
     assert rec["regex"] == "^util:fs-ops mv " and rec["id"].startswith("rem-")
+    assert rec["reach"] == "universal"
     assert store.load_local(d)[0] == []            # a global reminder is NOT in the local store
     assert status == "ok"
 
@@ -596,3 +640,56 @@ def test_a_working_reminder_holds_without_the_prune_line(make_routine, scripted)
     assert "ACTION HELD" in shown
     assert "THIS REMINDER'S OWN RECORD" not in shown
     assert status == "ok"
+
+
+# --- one label per hold ------------------------------------------------------------------
+
+def test_a_label_with_no_hold_behind_it_is_not_recorded(make_routine, scripted):
+    """565 labels had landed on 437 fires, one run labelling a single reminder 75 times — and
+    the inflation fell on exactly the label promotion reads. A label answers one hold, once."""
+    d, ep, status, _events = _run(
+        make_routine, scripted,
+        [util("danger"),                                              # held: one label owed
+         {**write_file("state/a.txt"),
+          "remind_feedback": {"id": "rem-h", "label": "would_have"}},  # recorded
+         {**write_file("state/b.txt"),
+          "remind_feedback": {"id": "rem-h", "label": "would_have"}},  # nothing owed any more
+         finish()],
+        local=[_rem(rid="rem-h", regex="^util:danger", desc="it wipes the workdir")])
+    tally = store.load_local(d)[0][0].stats
+    assert (tally["fires"], tally["would_have"]) == (1, 1)
+    assert "a label answers one hold, once" in _prompt_text(ep)
+    assert status == "ok"
+
+
+def test_a_global_add_says_whom_it_reaches(tmp_path):
+    policy = load_policy(tmp_path, [], {"reminders": "global"})
+    base = {"say": "s", "kind": "read_file", "path": "a.md",
+            "remind": {"op": "add", "scope": "global", "regex": "^util:x",
+                       "description": "d"}}
+    problems = validate_action(base, grants=policy)
+    assert problems and "remind.reach" in problems[0]
+    base["remind"]["reach"] = "listed"
+    assert validate_action(base, grants=policy) == []
+    local = {**base, "remind": {**base["remind"], "scope": "local"}}
+    assert any("belongs to a GLOBAL" in p for p in validate_action(local, grants=policy))
+
+
+def test_a_listed_reminder_holds_for_a_routine_whose_settings_list_it(make_routine, scripted):
+    d = make_routine(slug="lister")
+    _capabilities(d, reminders="local")
+    raw = yaml.safe_load((d / "routine.yaml").read_text(encoding="utf-8"))
+    raw["shared_reminders"] = ["rem-kind"]
+    (d / "routine.yaml").write_text(yaml.safe_dump(raw), encoding="utf-8")
+    server = _server(d)
+    store.write_global(server.reminders_home, _rem(
+        rid="rem-kind", regex="^util:danger", desc="a caution for this kind of work",
+        scope="global", reach="listed"))
+    scripted([util("danger"), write_file("state/x.txt"), finish()])
+    status, run_dir = run_routine(d, server, run_ts=TS)
+    events, _ = read_events(run_dir / "transcript.jsonl")
+    holds = [e for e in events if e["type"] == "observation"
+             and e["payload"].get("kind") == "reminder_hold"]
+    assert [h["payload"]["reminders"][0]["id"] for h in holds] == ["rem-kind"]
+    assert status == "ok"
+

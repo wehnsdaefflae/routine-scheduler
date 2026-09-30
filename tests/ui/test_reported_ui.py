@@ -46,4 +46,6 @@ def test_routines_view_refetches_cards_on_nav_back(ui, ui_page):
     ui_page.locator('.topbar nav a[data-nav="messages"]').click()
     ui_page.wait_for_timeout(200)
     ui_page.locator('.topbar nav a[data-nav="dashboard"]').click()
-    until(lambda: len(calls) > before, what="the re-fetch on nav-back")
+    # the counter moves in a Playwright request handler, which only runs inside a Playwright
+    # call: without `page` the wait spins on time.sleep and never sees it
+    until(lambda: len(calls) > before, what="the re-fetch on nav-back", page=ui_page)

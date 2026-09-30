@@ -86,9 +86,8 @@ export function mountComposerOnly(main) {
   const delib = deliberationControl("deliberate");
   const permsHost = el("div", {});   // the permissions panel appends here once defaults load
   let permPanel = null;
-  // F339: rules and connections are PRE-START choices too. A rule especially — it reaches the
-  // prompt through main.md's Standing-practices tail, materialized at create time, so one
-  // bound afterwards never governs reply #1, which fires the moment you send.
+  // F339: rules and connections are PRE-START choices too. A rule especially — reply #1 fires
+  // the moment you send; its digest names only the rules routine.yaml held at that boot.
   const rulesHost = el("div", {}, skeleton(["60%"]));
   let rulePick = null;
   let pickedConnections = {};

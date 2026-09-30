@@ -15,7 +15,6 @@ def test_parse_entity_accepts_every_class():
     assert entities.parse_entity("machine:omen-laptop") == ("machine", "omen-laptop")
     assert entities.parse_entity("runs:last") == ("runs", "last")
     assert entities.parse_entity("runs:all") == ("runs", "all")
-    assert entities.parse_entity("workflows:generate") == ("workflows", "generate")
     assert entities.parse_entity("recreate:doomed-util") == ("recreate", "doomed-util")
 
 
@@ -27,7 +26,7 @@ def test_parse_entity_rejects_malformed_ids():
     assert entities.parse_entity("util:Not A Slug") is None
     assert entities.parse_entity("secret:not-a-var!") is None
     assert entities.parse_entity("runs:sometimes") is None        # not a depth level
-    assert entities.parse_entity("workflows:catalog") is None     # the baseline needs no grant
+    assert entities.parse_entity("workflows:generate") is None    # no such class any more
     assert entities.parse_entity("util:") is None
     assert entities.parse_entity(42) is None
     assert entities.parse_entity(None) is None

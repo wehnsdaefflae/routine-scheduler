@@ -12,9 +12,9 @@
 // Times are in the browser's timezone; fires already behind us render dimmed; a live cursor
 // marks now. Rows follow the dashboard's own filters, ordered by next upcoming fire.
 //
-// Lanes (rsched/lanes.py) are the only one of the three axes this strip draws: a lane decides
-// WHEN its members fire and in what ORDER — nothing else; which config block and which shared
-// store they have is their DOMAIN's, invisible here. An UNSCHEDULED lane merges its members'
+// Lanes (rsched/lanes.py) are the only grouping this strip draws: a lane decides WHEN its
+// members fire and in what ORDER — nothing else; what they may do and which stores they share
+// is each routine's own config, invisible here. An UNSCHEDULED lane merges its members'
 // own fires onto one shared row (F271). A SCHEDULED lane (one with a cron, D71) goes further —
 // its members' own crons are daemon-suppressed (the server sends them no fires, R313), so the
 // row draws the LANE's fires: at each one the visible members chain END-TO-END in fire order,
@@ -32,7 +32,7 @@
 // draggable — onto a sibling bar to reorder the lane, onto another lane's row to join it,
 // onto the remove strip to leave the lane, or along their own row to reschedule. Every one of
 // those is a TIMING change and nothing else: moving a member between lanes leaves its config,
-// its store and its permissions alone — those belong to its DOMAIN.
+// its stores and its permissions alone — those are its own.
 
 import { el, fmtDur, svgEl } from "/static/util.js";
 import { slugColor } from "/static/components/charts.js";

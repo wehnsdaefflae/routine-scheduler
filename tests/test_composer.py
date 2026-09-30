@@ -4,7 +4,6 @@ history / transcript replay (history.py)."""
 import json
 import os
 
-from rsched import domains
 from rsched.config import ServerConfig, load_routine
 from rsched.engine.budgets_config import Budgets
 from rsched.engine.compaction import estimate_input_tokens, maybe_compact
@@ -64,13 +63,13 @@ def test_harness_contract_reflects_grants(make_routine, tmp_path):
     assert "needs the user's approval" in harness_contract(ctx)
 
 
-def test_harness_contract_memory_line_follows_grant(make_routine, tmp_path):
+def test_harness_contract_memory_line_is_every_routines(make_routine, tmp_path):
+    """Memory is BASE — every routine keeps its notebook — so the gloss is there with nothing
+    granted at all."""
     from rsched.grantpolicy import GrantPolicy
 
     ctx = _ctx(make_routine, tmp_path, slug="memg")
-    ctx.grants = GrantPolicy()                       # memory not granted → no gloss
-    assert "memory_read / memory_write:" not in harness_contract(ctx)
-    ctx.grants = GrantPolicy(actions=frozenset({"memory_read", "memory_write"}))
+    ctx.grants = GrantPolicy()
     text = harness_contract(ctx)
     assert "memory_read / memory_write:" in text and "INDEX.md" in text
 
@@ -192,11 +191,13 @@ def test_state_digest_inlines_background_tasks(make_routine):
 
 def test_state_digest_lists_held_rules(make_routine):
     # The rules a routine holds come from its CONFIG, not from any directory — the digest
-    # names them so the run knows what to read and carries no improve-* lens block.
+    # names each with the moment it applies (so the run knows what to read before which
+    # moment) and carries no improve-* lens block.
     d = make_routine(slug="lens")
-    digest = state_digest(d, [], [], held_rules=["ask-policy", "decision-record"])
-    assert "General rules binding this routine" in digest
-    assert "ask-policy, decision-record" in digest
+    digest = state_digest(d, [], [], held_rules=["ask-policy — before any question",
+                                                 "decision-record — at a decision"])
+    assert "GENERAL RULES you practise" in digest
+    assert "- ask-policy — before any question\n- decision-record — at a decision" in digest
     assert "Active improve-* lenses" not in digest
     assert "report-only" not in digest
     # no held rules → no section at all, rather than an empty heading
@@ -325,45 +326,63 @@ def test_capabilities_digest_utils_kinds_and_grants(make_routine, tmp_path):
     assert "spawn" not in kinds2 and "ask_user" in kinds2
 
 
-def test_domain_notes_reach_the_prompt_and_drain_once(make_routine, tmp_path):
-    """F335 end to end through the composer: the harness contract NAMES the light channel (a
-    channel a run does not know about is a channel that does not exist) and the state digest
-    carries what teammates left — once, then it is gone.
+def test_shared_store_notes_reach_the_prompt_and_drain_once(make_routine, tmp_path):
+    """F335 end to end through the composer: the harness contract NAMES each shared store, who
+    else shares it and the light channel between them (a channel a run does not know about is a
+    channel that does not exist); the state digest carries what a sharer left — once, then
+    it is gone.
 
-    Membership is set the way the system sets it — `domain:` in each member's OWN routine.yaml,
-    which is what makes "at most one domain" a fact of the file. There is no membership list to
-    join: `domains.members()` reads the routines back.
+    Sharing is set the way the system sets it — the store among each routine's OWN
+    `fs_write_roots`. There is no membership list: `sharedstores.sharers()` reads the routines
+    back.
     """
     from rsched.engine.composer import state_digest
     from rsched.engine.harness import harness_contract
     from rsched.paths import atomic_write_yaml, read_yaml
+    from rsched.sharedstores import stores_home
 
     ctx = _ctx(make_routine, tmp_path, slug="steward")
     ctx.server.routines_home = tmp_path / "routines"
-    did = domains.create(ctx.server.routines_home, name="FAU")["id"]
-    make_routine(slug="ingest")                     # the teammate the note comes from
+    store = stores_home(ctx.server.routines_home) / "grp-fau"
+    store.mkdir(parents=True)
+    make_routine(slug="ingest")                     # the sharer the note comes from
     for slug in ("steward", "ingest"):
         cfg_path = ctx.server.routines_home / slug / "routine.yaml"
-        atomic_write_yaml(cfg_path, {**read_yaml(cfg_path, {}), "domain": did})
-    ctx.domain_store_roots = domains.member_store_roots(
-        ctx.server.routines_home, did, create=True)
+        atomic_write_yaml(cfg_path, {**read_yaml(cfg_path, {}), "fs_write_roots": [str(store)]})
+    ctx.routine.fs_write_roots = [store]
 
     contract = harness_contract(ctx)
-    assert "write a note for them" in contract and "ingest" in contract
+    assert "SHARED STORES" in contract and str(store.resolve()) in contract
+    assert "shared with ingest" in contract
+    assert "write a note for it" in contract
     assert "`report` when someone must ACT" in contract      # and when NOT to use it
 
-    # written the way a routine writes one: an ordinary file into the domain's shared store,
-    # which is the only writer this channel has (`domainnotes` exposes none by design)
-    store = domains.store_dir(ctx.server.routines_home, did) / "notes" / "steward"
-    store.mkdir(parents=True, exist_ok=True)
-    (store / "note-20260902-120000-aaaaaa.json").write_text(
+    # written the way a routine writes one: an ordinary file into the shared store, which is
+    # the only writer this channel has (`sharedstores` exposes none by design)
+    inbox = store / "notes" / "steward"
+    inbox.mkdir(parents=True, exist_ok=True)
+    (inbox / "note-20260902-120000-aaaaaa.json").write_text(
         json.dumps({"from": "ingest", "ts": "2026-09-02T12:00:00+02:00",
                     "text": "staged the batch for you"}), encoding="utf-8")
-    kw = {"routines_home": ctx.server.routines_home, "slug": "steward"}
+    kw = {"routines_home": ctx.server.routines_home, "slug": "steward",
+          "write_roots": [store]}
     digest = state_digest(ctx.routine.dir, [], [], **kw)
-    assert "NOTES FROM YOUR DOMAIN" in digest and "staged the batch for you" in digest
+    assert "NOTES FROM ROUTINES YOU SHARE A STORE WITH" in digest
+    assert "staged the batch for you" in digest
     # the digest is built once per run and the note is delivered exactly once
-    assert "NOTES FROM YOUR DOMAIN" not in state_digest(ctx.routine.dir, [], [], **kw)
+    assert "NOTES FROM ROUTINES" not in state_digest(ctx.routine.dir, [], [], **kw)
+
+
+def test_harness_contract_names_the_hub_tab_only_when_set(make_routine, tmp_path):
+    """The Steward hub heading is identity config, so the run learns it from the contract —
+    and a routine without one reads no line about a hub it has no card on."""
+    from rsched.engine.harness import harness_contract
+
+    ctx = _ctx(make_routine, tmp_path, slug="hubbed")
+    assert "HUB TAB" not in harness_contract(ctx)
+    ctx.routine.hub_tab = "FAU"
+    assert ("HUB TAB: FAU — the heading your card sits under on the Steward hub; publish it "
+            "as your card's `tab`.") in harness_contract(ctx)
 
 
 def test_capabilities_digest_reports_actual_share_state_not_config(make_routine, tmp_path):

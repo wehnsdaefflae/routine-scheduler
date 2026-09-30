@@ -8,7 +8,7 @@ error that points at the endpoint rather than at the caller.
 
 122 call sites pass a body. The convention is right in all of them today; it is the NEXT one
 that pays. A wrong answer the caller cannot detect is exactly what must be made loud
-(`failure-visibility`), so `api()` now throws on a body that is already serialized JSON,
+(`make-failure-visible`), so `api()` now throws on a body that is already serialized JSON,
 naming the mistake and the fix.
 
 Evaluated as a pure function in the browser ESM context — deterministic, no network.

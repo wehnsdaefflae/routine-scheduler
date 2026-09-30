@@ -29,7 +29,13 @@ export function mountToc(box) {
       h.id = `toc-${base}-${i}`;
     }
     const a = el("a", { class: "toc-link", title: h.textContent.trim(),
-      onclick: (e) => { e.preventDefault(); h.scrollIntoView({ behavior: "smooth", block: "start" }); } },
+      onclick: (e) => {
+        e.preventDefault();
+        // a section folded inside a closed group (or its "more" menu) has no box to scroll to:
+        // open every fold on the way, as a fix link does
+        for (let d = h.closest("details"); d; d = d.parentElement?.closest("details")) d.open = true;
+        h.scrollIntoView({ behavior: "smooth", block: "start" });
+      } },
       h.textContent.trim());
     a.dataset.tocFor = h.id;
     return a;

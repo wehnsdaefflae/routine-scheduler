@@ -7,7 +7,8 @@ The rule lived only in prose, and three views broke it in three different ways: 
 page refetched its whole question set on EVERY event with no filter and no timer; the watch
 ribbon dragged a week-schedule computation along at 20 s; the dashboard's own guard was the
 only one that had it right. The cost lands on the daemon, which is answering for the runs the
-console is watching (2026-09-12: /api/domains every 600 ms, every request queued 20-50 s).
+console is watching (2026-09-12: one config-shaped read every 600 ms, every request queued
+20-50 s).
 
 So: mount a view, dispatch a storm of those two kinds at it, and assert the console asks the
 daemon for NOTHING. That is the rule exactly — not "no path more than once", which would fight
@@ -69,9 +70,9 @@ def test_llm_events_cost_the_daemon_nothing(ui, ui_page, route, ready):
 def test_a_reconnect_does_not_reread_the_heaviest_endpoints(ui, ui_page):
     """A `reconnect` tick means "anything may have moved while the stream was down" — but the
     bus reconnects on capped backoff during a daemon restart, and a FULL dashboard load re-runs
-    its two heaviest reads (/api/schedule/week, /api/domains) exactly while the daemon is
-    coldest. Config-shaped state does not move minute to minute, so a reconnect that arrives
-    moments after a full load catches up on run state like any other run event."""
+    its heaviest read (/api/schedule/week) exactly while the daemon is coldest. Config-shaped
+    state does not move minute to minute, so a reconnect that arrives moments after a full load
+    catches up on run state like any other run event."""
     ui_page.goto(f"{ui.url}/#/routines")
     ui_page.wait_for_selector("table.list, .grid, .empty")
     ui_page.wait_for_timeout(800)
@@ -83,7 +84,7 @@ def test_a_reconnect_does_not_reread_the_heaviest_endpoints(ui, ui_page):
     """)
     ui_page.wait_for_timeout(3000)          # the dashboard's 2 s debounce, with room
 
-    heavy = [u for u in seen if "/schedule/week" in u or "/api/domains" in u]
+    heavy = [u for u in seen if "/schedule/week" in u]
     assert not heavy, f"a fresh reconnect re-read the config-shaped endpoints: {heavy}"
     assert any("/api/routines" in u for u in seen), (
         "the run states still have to catch up — this test must not pass by the dashboard "

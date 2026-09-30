@@ -1,0 +1,70 @@
+title: Instance auditor
+summary: Measures, tests or researches one side of this instance and hands the decisions to you or to
+  the routine that owns them.
+workflow: audit-and-propose
+when: The job is finding out what could be better — configuration, cost, research — and proposing it,
+  not changing it.
+asks:
+- field: schedule
+  question: How often should it audit?
+settings:
+  schedule:
+    catchup: skip
+    friendly:
+      frequency: weekly
+      time: 04:00
+      weekdays:
+      - 3
+  run_gate:
+    checks: []
+    enabled: false
+    timeout_s: 30
+  triggers: []
+  improve: true
+  permissions:
+  - shell
+  - util-authoring
+  capabilities:
+    actions:
+    - revise_util
+    - shell
+    - write_util
+    utils: []
+    confirm: creations
+    remind_confirm: always
+    reminders: local
+    rule_confirm: always
+    runs: last
+  rules:
+  - ask-policy
+  - audit-coverage
+  - decision-record
+  - evidence-discipline
+  - fix-the-cause
+  - problem-routing
+  - verify-independently
+  - web-research
+  reminders: []
+  grants: {}
+  finish_line:
+    outcomes: []
+    until: ''
+  budgets:
+    ask_timeout_min: 480
+    max_cost: -1
+    max_subrun_depth: 2
+    max_subruns: 12
+    max_total_tokens: -1
+    max_total_turns: -1
+    max_turns: 100
+    max_wall_clock_min: 60
+  keep_runs: 30
+  fs_read_roots:
+  - ~/.config/routine-scheduler
+  - ~/routines
+  fs_write_roots: []
+  connections: {}
+  machines: []
+  models: {}
+  deliberation: standard
+  tags: []

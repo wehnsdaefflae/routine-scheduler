@@ -69,7 +69,7 @@ def ensure_config() -> bool:
 # DEFAULT_PERMISSIONS entries introduced AFTER routines already existed never reach them via
 # scaffold. Slugs listed here are added ONCE to every existing routine at daemon boot —
 # tracked in a marker file, so a user who later revokes one is never overridden.
-ADOPT_PERMISSIONS: list[str] = ["global-utils", "reminders"]
+ADOPT_PERMISSIONS: list[str] = []
 _ADOPTED_MARKER = ".permissions-adopted.json"
 
 
@@ -150,9 +150,9 @@ def _merge_caps(caps: dict, slug: str, lib: dict) -> None:
     DIAL outside that set fell through it silently, so adopting a permission whose `requires:`
     names one wrote the doc into `permissions:` and left the capability at its default — the
     doc held, the capability off, and the engine (which enforces from capabilities alone)
-    behaving as though the permission had never been adopted at all. `workflows` and
-    `util_tags` were already falling through; `reminders` made it visible by being the first
-    dial adopted this way (0.309.0 shipped "on by default" to zero routines).
+    behaving as though the permission had never been adopted at all. `reminders` made it
+    visible by being the first dial adopted this way (0.309.0 shipped "on by default" to zero
+    routines).
     """
     from .grants import capabilities_for
 
@@ -160,7 +160,7 @@ def _merge_caps(caps: dict, slug: str, lib: dict) -> None:
 
 
 def seed_libraries(home: Path) -> None:
-    """Populate an empty library repo (workflows/ + rules/ + permissions/ + templates/ +
+    """Populate an empty library repo (workflows/ + rules/ + permissions/ + patterns/ +
     reminders/ + utils/) from the built-in seeds + git-init it (matches deploy/install.sh).
     The `gu` dispatcher is installed by utils_lib.ensure_library on first use.
     """
@@ -168,10 +168,11 @@ def seed_libraries(home: Path) -> None:
     home.mkdir(parents=True, exist_ok=True)
     if (root / "library-seed" / "workflows").is_dir():
         shutil.copytree(root / "library-seed" / "workflows", home / "workflows", dirs_exist_ok=True)
-    for kind in ("rules", "permissions", "templates", "reminders"):
+    for kind, pattern in (("rules", "*.md"), ("permissions", "*.md"), ("patterns", "*.yaml"),
+                          ("reminders", "*.md")):
         (home / kind).mkdir(exist_ok=True)
         if (root / "library-seed" / kind).is_dir():
-            for f in sorted((root / "library-seed" / kind).glob("*.md")):
+            for f in sorted((root / "library-seed" / kind).glob(pattern)):
                 shutil.copy(f, home / kind / f.name)
     # playbooks are subfolders (MAIN.md + detail files), so copy the whole tree
     if (root / "library-seed" / "playbooks").is_dir():
@@ -186,19 +187,19 @@ def seed_libraries(home: Path) -> None:
         libgit.install_push_hook(home)
 
 
-#: The four flat library doc kinds the boot sync tops up, with the glob that finds them.
-#: `templates` is here because a settings TEMPLATE is read LIVE at creation and by the routine
-#: page's adopt action (templates.config_for) — a template that only ever lands when the repo is
-#: first created means a template added to the seed later reaches no existing instance at all.
+#: The flat library doc kinds the boot sync tops up, with the glob that finds them.
+#: `patterns` is here because a settings PATTERN is read LIVE — by creation, the routine page
+#: and the recommender (docs/patterns.md) — so one that only ever landed when the repo was first
+#: created would mean a pattern added to the seed later reaches no existing instance at all.
 #: `reminders` carries only its README — the curated cautions themselves are written by
 #: runs, under approval — but the DIRECTORY has to exist and be tracked, or the store is
 #: invisible in the repo until the first write and the Library tab has nothing to list.
 SEED_DOC_KINDS = (("workflows", "*.py"), ("rules", "*.md"), ("permissions", "*.md"),
-                  ("templates", "*.md"), ("reminders", "*.md"))
+                  ("patterns", "*.yaml"), ("reminders", "*.md"))
 
 
 def sync_seed_library_docs(libraries_home: Path) -> int:
-    """Install seed workflows/rules/permissions/templates MISSING from the live library (runs at
+    """Install seed workflows/rules/permissions/patterns MISSING from the live library (runs at
     every daemon boot, like sync_seed_utils). seed_libraries only runs at repo creation, so a
     pattern or rule added to library-seed/ later — e.g. the `converse` workflow the
     Conversations tab materializes — would never reach an existing instance. Copies each

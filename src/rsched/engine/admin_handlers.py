@@ -132,10 +132,11 @@ def handle_report(loop, action: dict) -> dict:
         out["supersedes"] = filed[2]        # what the LEDGER folded, under its own lock
     if settles and filed:
         out["settles"] = settles
-    if filed and (answers or settles):
+    if filed and (answers or settles or filed[2]):
         # This run has now disposed of those threads — the pre-finish assist reads what is
-        # LEFT. `answers` ends one exchange, `settles` ends every row it names, and both have
-        # to leave the open set or the assist keeps asking for work that is already done.
-        done = {answers.upper(), *settles} - {""}
-        ctx.reports_open = [r for r in ctx.reports_open if r not in done]
+        # LEFT. `answers` ends one exchange, `settles` ends every row it names, a fold hands
+        # a row to the thread that carries it now — all three have to leave the open set
+        # or the assist keeps asking for work that is already done.
+        done = {str(i).strip().upper() for i in (answers, *settles, *filed[2])} - {""}
+        ctx.reports_open = [r for r in ctx.reports_open if str(r).upper() not in done]
     return out

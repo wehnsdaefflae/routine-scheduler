@@ -163,8 +163,8 @@ nothing — it narrows what this util sees, and keeps a store like that out of e
 util's jail.{util_confirm}"""),
     (("remove_util",), """- remove_util: delete a global util the library no longer needs — \
 name (kebab-case). The \
-curation counterpart to write_util, gated by the same util-authoring capability (and, unless \
-that capability is fully autonomous, the same approval step). The engine REFUSES if any other \
+curation counterpart to write_util, gated by the util-removal permission (and, unless \
+util approval is set to never, the same approval step). The engine REFUSES if any other \
 util still declares it on a `calls:` line — remove or update those callers first; the deletion \
 is committed to the library and stays recoverable from git history. Check the catalog before \
 removing something another routine relies on."""),
@@ -199,10 +199,10 @@ before re-discovering anything; revise notes that turned out wrong instead of ap
 contradictions. read_file / write_file are rejected on .memory/ paths."""),
     (("read_rule",), """- read_rule: read a GENERAL RULE from the shared library — \
 `name: "list"` for the catalog, `name: "<slug>"` for one rule's prose. The rules that bind you are \
-named in Standing practices; read one before the situation it governs and apply it to the case in \
-front of you. Reading one you do NOT hold applies it for the rest of this run only; which rules \
-bind you is the user's call, so if one keeps proving necessary, name it in your finish \
-summary."""),
+named in your digest beside when each applies; read one when its moment comes and apply it to \
+the case in front of you. Reading one you do NOT hold applies it for the rest of this run \
+only; which rules bind you is the user's call, so if one keeps proving necessary, name it in \
+your finish summary."""),
     (("write_rule",), """- write_rule: author a NEW general rule, or revise an existing one, in \
 the shared library — `content` (the complete rule markdown) to create, `anchor` + `replacement` \
 to revise in place. What you write binds EVERY routine holding that rule from its next run, so \
@@ -233,8 +233,8 @@ artifacts/ into your artifacts/from-sub-<n>/), differing ONLY in how you schedul
 decompose a large task into ordered steps. It does NOT block you: to keep the order, `wait` for \
 it (n=N) before starting the next one and fold its result into that brief — the wait YIELDS if \
 the user writes (so the conversation stays live) and you are notified when it finishes; or do \
-other work meanwhile. Pick its "workflow" for that step's purpose (or omit for the default, or \
-"generate" to DRAFT one when none fits — only if that capability is enabled); give a \
+other work meanwhile. Pick its "workflow" for that step's purpose from the catalog (or omit \
+for the default); give a \
 self-contained "prompt"; "turns" bounds it (default: half your remaining). It runs on the \
 routine's MAIN model unless `model` picks a role or a catalog model for it."""),
     (("detach",), """- detach: start a LONG background task that OUTLIVES this reply — for a \
@@ -247,10 +247,10 @@ questions) and pick its "workflow"; then `finish` the reply ("started it — I'l
 do NOT wait. Its status is in state/background.json. Only from a conversation, only for jobs too \
 long to finish in this reply — otherwise do the work directly or use subtask."""),
     (("schedule_run",), """- schedule_run: arm a ONE-SHOT future run of a routine — `target` \
-(the routine slug, \
-self-target always allowed), `fire_at` (an absolute ISO-8601 UTC instant or a relative offset \
-like "+3d" / "+2h" / "+30m"), `reason` (a provenance line injected into the target's inbox just \
-before it fires). The daemon fires the one-shot ONCE at fire_at, then CONSUMES it (it never \
+(the routine slug — this routine or another), `fire_at` (an absolute ISO-8601 UTC instant or a \
+relative offset like "+3d" / "+2h" / "+30m"), `reason` (a provenance line injected into the \
+target's inbox just before it fires). The daemon fires the one-shot ONCE at fire_at, then \
+CONSUMES it (it never \
 repeats — no cron to clean up). Cancel with `cancel: true` (+ `id` for one, or without to clear \
 all armed on the target). For a run to schedule its own follow-up ("re-check in 3 days") or arm \
 a milestone run on a sibling routine — gated by the scheduling permission."""),
@@ -258,10 +258,15 @@ a milestone run on a sibling routine — gated by the scheduling permission.""")
 THIS conversation into a real \
 scheduled routine — `target` (its new kebab-case slug), `name` (its display name), `prompt` (the \
 clarified task, decomposed into the routine's stages — say WHAT it does, not when), and optional \
-`workflow` (the library pattern to build from, default general-task). PRECONDITION — settle the \
-clarification WITH the user BEFORE the first call: what the routine PRODUCES each run (the \
-artefact, named, and where it lands), what "done" looks like for ONE run, and which pattern it \
-is built on. ASK THESE AS DECISIONS, NOT AS PROSE: one `ask_user` per open point, each carrying \
+`workflow` (the library pattern to build from, default general-task), `pattern` (the settings \
+pattern it follows), `setup` (the user's answers to that pattern's questions), `done_when` (what \
+one finished run leaves behind, in their words), `finish_line` (when the routine is done for \
+good, each outcome led by its judge) and `never` (what a run must never do, in their words). \
+PRECONDITION — settle the clarification WITH the user BEFORE the first call: what the routine \
+PRODUCES each run (the artefact by name and where it lands), what one finished run leaves \
+behind, whether it ever finishes for good, anything a run must never do, which workflow it is \
+built on, and every question its settings pattern asks that the task does not already \
+answer. ASK THESE AS DECISIONS, NOT AS PROSE: one `ask_user` per open point, each carrying \
 `options`, which the console renders as numbered picks — an option-less question is a blank box \
 that makes the user compose an answer you already knew how to offer. The test is whether you \
 could QUOTE the user's own answer for each; if you would be inferring one, it is still open, so \
@@ -275,8 +280,9 @@ points to the user as those decisions and finish your reply, or put the go-ahead
 BLOCKING ask_user whose answer reaches you without ending the reply; after the user answers, \
 either way, call it again with the SAME fields to materialize (its own dir, its held rules, git \
 repo). A changed field updates the draft instead. \
-The daemon picks the new routine up on its next registry rescan; tell the user it exists and \
-what to set next (its schedule). This is the ONLY way a routine is created. WITHOUT a user in \
+The daemon picks the new routine up on its next registry rescan; tell the user it exists \
+(saved with its pattern's settings) and that its page shows what is specific to it as changes \
+waiting for their accept. This is the ONLY way a routine is created. WITHOUT a user in \
 the loop (a scheduled run) the same call QUEUES a proposal on the Decisions page instead of \
 creating anything — one call, then carry on with the work that does not depend on the routine \
 existing; your next run learns from your inbox whether the user approved it."""),
@@ -290,9 +296,9 @@ name a real routine; the chain fires ONCE, every member in order; a routine belo
 one lane. A flow with an inbound and an outbound end BRACKETS the lane: a dedicated \
 inbound-router member placed first and a dedicated outbound-sender member placed last — two \
 single-purpose members, never one member run twice. A lane decides only WHEN routines run: what \
-they SHARE (config block, shared store, notes boundary) is their DOMAIN, a per-routine setting \
-in the routine's own config — propose a domain change with ask_user + `config_patch`, never \
-here. The routines page manages the same store — this is it, reachable from chat. WITHOUT a \
+a routine may reach (its settings, its roots, the stores it shares) is its own config — propose \
+such a change with ask_user + `config_patch`, never here. The routines page manages the same \
+store — this is it, reachable from chat. WITHOUT a \
 user in the loop (a scheduled run) `list` still answers directly, but every CHANGING verb \
 queues a proposal on the Decisions page instead of applying — one call, then carry on with the \
 work that does not depend on it; your next run learns from your inbox whether the user \
@@ -333,8 +339,10 @@ next pass) and how you add to a thread you already have open instead of opening 
 Past a few open threads to one owner a new report is REFUSED and the open ids are named — fold \
 them. Use this for problems you notice in passing, not for your own task's outcome (that \
 belongs in your finish summary)."""),
-    (("finish",), """- finish: end the run with status ok|partial|failed and a DETAILED 8-20 \
-line summary: concrete \
+    (("finish",), """- finish: end the run with status ok (everything this run could do is \
+done — a decision now waiting on the user does not make it partial), partial (something outside \
+your reach stopped feasible work; name it) or failed (the job could not be done), plus a \
+DETAILED 8-20 line summary: concrete \
 outcomes (numbers, names, links), decisions taken and why, what changed on disk, open ends and \
 what the next run should pick up. That summary is what the user and the next run see — it is \
 the ONLY part of this conversation that survives, so err on the side of detail. It renders as \

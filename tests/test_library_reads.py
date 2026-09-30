@@ -1,10 +1,9 @@
 """The library's parsed documents, read once per change — and the bound that decides whether
 that memo survives a busy boot.
 
-`GET /api/domains` parsed the permission library twice PER DOMAIN (11 walks, ~275 frontmatter
-parses for six domains) and `GET /api/library` re-linted every workflow, rule, permission,
-template, reminder and playbook plus 110 util headers, on EVERY call — 3.7-4.3 s each on the
-live instance, and both are fetched when any routine page opens.
+`GET /api/library` re-linted every workflow, rule, permission, reminder and playbook plus 110
+util headers on EVERY call — 3.7-4.3 s on the live instance, fetched whenever a routine page
+opens.
 """
 from __future__ import annotations
 
@@ -16,7 +15,7 @@ from rsched.readmodels import library_reads, memo
 
 def _library(tmp_path: Path) -> Path:
     lib = tmp_path / "lib"
-    for sub in ("permissions", "rules", "workflows", "templates", "reminders", "playbooks"):
+    for sub in ("permissions", "rules", "workflows", "reminders", "playbooks"):
         (lib / sub).mkdir(parents=True)
     (lib / "permissions" / "memory.md").write_text(
         "---\ntags: [a, b, c]\nrequires:\n  actions: [memory_read]\n---\n"
@@ -55,8 +54,8 @@ def test_the_library_is_parsed_once_per_change_not_once_per_request(tmp_path, mo
 
 
 def test_the_whole_library_lint_invalidates_on_any_kind_it_walks(tmp_path):
-    """`lint_all` reads six directories; the fingerprint has to name all six, or a bad
-    template lands on a page still showing the pre-edit verdict.
+    """`lint_all` reads five directories; the fingerprint has to name all five, or a bad
+    document lands on a page still showing the pre-edit verdict.
     """
     lib = _library(tmp_path)
     memo.reset()

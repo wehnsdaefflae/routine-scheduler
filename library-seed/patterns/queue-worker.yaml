@@ -1,0 +1,70 @@
+title: Queue worker
+summary: Finds the items still waiting, runs or monitors the worker on them and verifies each output —
+  and is not started while nothing waits.
+workflow: drain-a-work-queue
+when: The job is processing a queue of files or items until none is left — each producing an output you
+  can check, or a migration ending in a cut-over you approve.
+asks:
+- field: fs_write_roots
+  question: Which folder holds the queue — and where do finished outputs go?
+- field: run_gate
+  question: How does a finished item look — what output sits beside its source?
+settings:
+  schedule:
+    catchup: skip
+    friendly:
+      frequency: daily
+      time: 03:00
+  run_gate:
+    checks: []
+    enabled: false
+    timeout_s: 30
+  triggers: []
+  improve: true
+  permissions:
+  - shell
+  - util-authoring
+  capabilities:
+    actions:
+    - revise_util
+    - shell
+    - write_util
+    utils: []
+    confirm: creations
+    remind_confirm: always
+    reminders: local
+    rule_confirm: always
+    runs: last
+  rules:
+  - ask-policy
+  - change-scope
+  - decision-record
+  - evidence-discipline
+  - fix-the-cause
+  - make-failure-visible
+  - problem-routing
+  - verify-independently
+  - web-research
+  - work-order
+  reminders: []
+  grants: {}
+  finish_line:
+    outcomes: []
+    until: ''
+  budgets:
+    ask_timeout_min: 480
+    max_cost: -1
+    max_subrun_depth: 2
+    max_subruns: 8
+    max_total_tokens: -1
+    max_total_turns: -1
+    max_turns: 100
+    max_wall_clock_min: 60
+  keep_runs: 30
+  fs_read_roots: []
+  fs_write_roots: []
+  connections: {}
+  machines: []
+  models: {}
+  deliberation: standard
+  tags: []

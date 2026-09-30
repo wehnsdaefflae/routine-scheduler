@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from rsched.daemon import run_gate, runner_reap, runner_state
+from rsched.daemon import gate_prepare, run_gate, runner_reap, runner_state
 from rsched.paths import read_json
 from test_run_gate import script, skip_body
 from test_run_gate import setup_gate as gate_fixture
@@ -105,9 +105,9 @@ def test_filesystem_declarations_intersect_grants(setup_gate, monkeypatch, decla
     text = {None: "", "none": "fs: none", "ro": f"fs: ro {first}",
             "unauthorized": f"fs: rw {forbidden}", "roots": "fs: roots"}[declaration]
     script(cfg, f'"""gate\n{text}\n"""\n' + skip_body())
-    monkeypatch.setattr(run_gate.sandbox, "available", lambda: True)
-    monkeypatch.setattr(run_gate.sandbox.landlock, "abi_version", lambda: 6)
-    cmd, _ = run_gate._prepare(cfg, server)
+    monkeypatch.setattr(gate_prepare.sandbox, "available", lambda: True)
+    monkeypatch.setattr(gate_prepare.sandbox.landlock, "abi_version", lambda: 6)
+    cmd, _ = gate_prepare.prepare_script(cfg, server)
     spec = json.loads(cmd[2])
     assert (str(first) in spec["ro"]) == (declaration == "ro")
     assert (str(first) in spec["rw"]) == (declaration == "roots")
@@ -121,7 +121,7 @@ def test_malformed_filesystem_fails_closed(setup_gate, declaration):
     cfg, server, _ = setup_gate
     script(cfg, f'"""gate\nfs: {declaration}\n"""\n' + skip_body())
     with pytest.raises(run_gate.GateError, match="declaration"):
-        run_gate._prepare(cfg, server)
+        gate_prepare.prepare_script(cfg, server)
 
 
 @pytest.mark.parametrize("mode", ["strict", "permissive", "off"])

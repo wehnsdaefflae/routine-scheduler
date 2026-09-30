@@ -90,7 +90,7 @@ def test_create_conversation_disk_shape(server):
     assert raw["kind"] == "conversation"
     main = (d / "main.md").read_text()
     assert "materialized_from" in main and "converse" in main
-    assert "## Standing practices" in main and "`git-checkpoint`" in main
+    assert "## Standing practices" not in main     # the prompt names held rules at boot
     assert "git-checkpoint" in raw["rules"]
     assert not (d / "rules").exists()          # the prose lives in the library, nowhere else
     assert (d / "instruction.md").read_text().startswith("Fix the flaky test")
@@ -132,7 +132,7 @@ def test_create_list_detail_message_delete(client):
     assert detail["title"] and detail["budgets"]["max_turns"] == 40
     perm = {p["slug"]: p for p in detail["permissions"]}
     assert perm["shell"]["active"] is False                  # off by default, one-click grant
-    assert perm["run-history"]["routine_only"] is True       # greyed in the panel
+    assert perm["scheduling"]["routine_only"] is True        # greyed in the panel
     assert "git-checkpoint" in detail["rules"]
 
     # message to the LIVE run → inbox only (mid-run injection)
@@ -385,9 +385,9 @@ def test_conversation_defaults_endpoint(client):
     c, _server = client
     d = c.get("/api/conversations/defaults").json()
     perm = {p["slug"]: p for p in d["permissions"]}
-    assert perm["background-tasks"]["active"] is True        # a conversation default
+    assert perm["util-authoring"]["active"] is True          # a conversation default
     assert perm["shell"]["active"] is False                  # off by default, one-click grant
-    assert perm["run-history"]["routine_only"] is True       # greyed in the composer too
+    assert perm["scheduling"]["routine_only"] is True        # greyed in the composer too
     assert d["budgets"]["max_turns"] == 40
     assert d["deliberation"] == "deliberate"
     assert "actions" in d["capabilities"]["active"]
@@ -687,8 +687,8 @@ def test_patch_and_permissions(client):
     assert raw["name"] == "My repo work" and raw["tags"] == ["repo", "ci"]
     assert raw["fs_write_roots"] == ["~/projects/x"] and raw["budgets"]["max_turns"] == 20
     r = c.put(f"/api/conversations/{slug}/permissions",
-              json={"active": ["memory", "shell", "not-a-permission"]})
-    assert r.json()["active"] == ["memory", "shell"]
+              json={"active": ["darknet", "shell", "not-a-permission"]})
+    assert r.json()["active"] == ["darknet", "shell"]
 
 
 def test_delete_guarded_while_active(client):
@@ -707,8 +707,8 @@ def test_settings_editable_while_active(client):
     # fake fire leaves the run 'running' → the conversation counts as active
     assert c.patch(f"/api/conversations/{slug}",
                    json={"budgets": {"max_turns": -1}}).status_code == 200
-    r = c.put(f"/api/conversations/{slug}/permissions", json={"active": ["memory"]})
-    assert r.status_code == 200 and r.json()["active"] == ["memory"]
+    r = c.put(f"/api/conversations/{slug}/permissions", json={"active": ["shell"]})
+    assert r.status_code == 200 and r.json()["active"] == ["shell"]
 
 
 def test_capabilities_floored_to_held_permissions(client):
@@ -896,6 +896,7 @@ def test_registry_scan_conversations_home(server):
 
 def test_sync_seed_library_docs(tmp_path):
     from rsched.bootstrap import sync_seed_library_docs
+    from rsched.paths import repo_root
 
     lib = tmp_path / "lib"
     (lib / "workflows").mkdir(parents=True)
@@ -906,8 +907,25 @@ def test_sync_seed_library_docs(tmp_path):
     assert (lib / "workflows" / "converse.py").exists()
     assert (lib / "rules" / "git-checkpoint.md").exists()
     assert (lib / "rules" / "ask-policy.md").read_text() == "local edit — must survive"
-    assert (lib / "templates" / "maintainer.md").exists()            # templates top up too
+    for seed in sorted((repo_root() / "library-seed" / "patterns").glob("*.yaml")):
+        assert (lib / "patterns" / seed.name).exists()               # patterns top up too
     assert sync_seed_library_docs(lib) == 0                          # idempotent
+
+
+def test_sync_seed_library_docs_tolerates_a_seed_kind_with_no_directory(tmp_path, monkeypatch):
+    """A doc kind the seed tree does not carry yet is skipped, never a boot failure: the sync
+    runs at every daemon start, before anything could repair the tree."""
+    import rsched.bootstrap as bootstrap_mod
+
+    seed = tmp_path / "repo"
+    (seed / "library-seed" / "rules").mkdir(parents=True)
+    (seed / "library-seed" / "rules" / "only.md").write_text("# rule: only — x\n")
+    monkeypatch.setattr(bootstrap_mod, "repo_root", lambda: seed)
+    lib = tmp_path / "lib"
+    lib.mkdir()
+    assert bootstrap_mod.sync_seed_library_docs(lib) == 1
+    assert (lib / "rules" / "only.md").exists()
+    assert not (lib / "patterns").exists()
 
 
 def test_sync_seed_library_docs_never_resurrects_a_deleted_doc(tmp_path):
@@ -1106,14 +1124,3 @@ def test_conversation_machines_bind_and_validate(client):
     assert r.status_code == 400 and "Settings" in r.json()["detail"]
 
 
-def test_conversation_output_compression_roundtrip(client):
-    c, _ = client
-    slug = c.post("/api/conversations", data={"text": "Inspect the project"}).json()["slug"]
-    url = f"/api/conversations/{slug}"
-    assert c.get(url).json()["output_compression"] == "compress"
-    for mode in ("measure", "compress", "off"):
-        response = c.patch(url, json={"output_compression": mode})
-        assert response.status_code == 200
-        assert "output_compression" in response.json()["updated"]
-        assert c.get(url).json()["output_compression"] == mode
-    assert c.patch(url, json={"output_compression": "bad"}).status_code == 422

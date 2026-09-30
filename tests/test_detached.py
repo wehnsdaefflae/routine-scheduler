@@ -33,7 +33,7 @@ class DetachedFakeRunner(FakeRunner):
     status.json (the manager polls disk), resume refuses while draining or already active
     (the manager's wake path relies on that)."""
 
-    async def fire(self, cfg, *, reason="schedule") -> str:
+    async def fire(self, cfg, *, reason="schedule", brief="") -> str:
         ts = "20260715-120000"
         run_dir = cfg.dir / "runs" / ts
         run_dir.mkdir(parents=True, exist_ok=True)

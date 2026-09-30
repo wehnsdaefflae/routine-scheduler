@@ -204,7 +204,7 @@ table.list tr.disabled-row td { opacity: 0.55; }
 }
 /* the action brief is a 200-char slice of model-chosen text — a path, an id, a hash. `min-width: 0`
    goes with `anywhere` here because this is a flex row: without it the item cannot shrink at all,
-   with it alone the text still can't break. See the .goal-meta note below for the other failure. */
+   with it alone the text still can't break. */
 .turn .act .muted { min-width: 0; overflow-wrap: anywhere; }
 .turn .obs {
   padding: 10px 14px; color: var(--ink-2); font-size: var(--t-s); white-space: pre-wrap;
@@ -789,101 +789,28 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
 .sg-link { width: 1px; height: 10px; background: var(--rule-2); margin-left: 10px; }
 .sg-link.done { background: var(--signal); opacity: 0.5; }
 
-/* the GOAL panel (F334/D98): the user's meaning-level bounds and how far through them the
-   run is. Deliberately the same visual language as the state graph above it — a met
-   condition reads like a done phase (signal mark, dimmed text) so the two rails answer
-   "what is finished" the same way. */
-.goals { display: flex; flex-direction: column; gap: 6px; font-family: var(--f-display); }
-.goal-head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-.goal-verdict {
-  margin-left: auto; font-size: 10px; letter-spacing: .04em; text-transform: uppercase;
-  padding: 1px 6px; border-radius: 999px; border: 1px solid var(--rule-2); color: var(--ink-2);
+/* the run page's GOAL rail (components/run-accounting.js): what THIS run reported at its end —
+   one verdict per line it answered for. Deliberately the state graph's language: a met line
+   reads like a done phase. A verdict is the run's own report, not a state that waits on anyone,
+   so nothing here wears summons. A line still open is plain ink; `distance` — work the
+   routine is still doing — is the machine working. The note is the run's own words: prose. */
+.acct { display: flex; flex-direction: column; gap: 6px; font-family: var(--f-display); }
+.acct-cap {
+  font-family: var(--f-mono); font-size: var(--t-xs); text-transform: uppercase;
+  letter-spacing: 0.14em; color: var(--ink-3); margin-top: 4px;
 }
-.goal-verdict.met { color: var(--signal); border-color: var(--signal); }
-.goal-group { border: 1px solid var(--rule); border-radius: 8px; padding: 5px 6px; }
-.goal-group.sat { border-color: var(--signal); }
-.goal-ghead { display: flex; align-items: center; gap: 6px; margin-bottom: 3px; }
-/* the ALL/ANY toggle is the connective made visible — a flat tick list cannot say "either
-   of these ends the job", which is the whole point of connecting the conditions */
-.goal-mode {
-  flex: none; border: 1px solid var(--rule-2); background: var(--plate-2); cursor: pointer;
-  color: var(--ink-2); font-size: 9.5px; letter-spacing: .06em; font-weight: 700;
-  border-radius: 5px; padding: 1px 5px; font-family: var(--f-display);
+.acct-row { display: grid; grid-template-columns: 14px minmax(0, 1fr); gap: 6px; align-items: baseline; }
+.acct-mark { text-align: center; color: var(--ink-3); font-size: 12px; }
+.acct-row.v-met .acct-mark { color: var(--ok); }
+.acct-row.v-unmet .acct-mark { color: var(--err); }
+.acct-row.v-distance .acct-mark { color: var(--signal); }
+.acct-line { display: flex; flex-wrap: wrap; gap: 2px 6px; align-items: baseline; font-size: 12.5px; }
+.acct-id { font-family: var(--f-mono); font-size: var(--t-xs); color: var(--ink-3); }
+.acct-text { color: var(--ink); min-width: 0; overflow-wrap: anywhere; }
+.acct-verdict { font-family: var(--f-mono); font-size: var(--t-xs); color: var(--ink-3); }
+.acct-note {
+  font-size: 13px; line-height: 1.5; color: var(--ink-2); overflow-wrap: anywhere; margin-top: 1px;
 }
-.goal-mode.any { color: var(--signal); border-color: var(--signal); }
-.goal-mode:hover { color: var(--ink); }
-/* max-width, not flex:1 — the name shared the head with ALL/ANY, the count and two buttons, and
-   at run-rail width `flex:1; min-width:0` collapsed a named group to three letters ("gro"). It
-   is hidden entirely when it is empty and there is only one group (stopping.js): an unnamed
-   sole group has no name to show and an empty input beside "empty" reads as a bug. */
-.goal-gname {
-  flex: 0 1 22ch; min-width: 6ch; background: none; border: none; color: var(--ink);
-  font-size: 12px; padding: 1px 2px; font-family: var(--f-display);
-}
-.goal-gname:focus { outline: 1px solid var(--rule-2); border-radius: var(--r1); }
-.goal-row {
-  display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; font-size: 12.5px;
-  color: var(--ink-2); padding: 2px 2px; min-width: 0;
-}
-.goal-row .goal-mark {
-  flex: none; width: 14px; text-align: center; border: none; background: none; cursor: pointer;
-  color: var(--ink-3); font-size: 12px; padding: 0; line-height: 1.4;
-}
-.goal-row.met { color: var(--ink-3); }
-.goal-row.met .goal-mark { color: var(--signal); }
-.goal-row.met .goal-text { text-decoration: line-through; text-decoration-color: var(--ink-3); }
-.goal-row.dropped { color: var(--ink-3); opacity: .55; }
-.goal-row.dropped .goal-text { text-decoration: line-through; }
-/* a condition waiting on another is visibly NOT yours to act on yet, and says what it waits
-   for — "dormant" alone would leave the reader guessing */
-.goal-row.blocked { opacity: .6; font-style: italic; }
-/* The condition is what the row is FOR, so it keeps a readable width no matter what else the
-   row carries. `min-width: 0` alone let a long note win the flex negotiation and squeeze the
-   condition to one word per line — a run that writes a paragraph of accounting destroyed the
-   panel it was reporting into. */
-.goal-text { flex: 1 1 auto; min-width: 22ch; }
-.goal-text:focus { outline: 1px solid var(--rule-2); border-radius: var(--r1); }
-/* F421 let the note WRAP so it stopped running off the sidebar — necessary, and not sufficient:
-   wrapping says how the note breaks, not how much of the row it may claim, so a paragraph-long
-   note still won the flex negotiation and starved the condition. A shrinkable basis bounds it. */
-/* F421 v3 (mobile, 2026-09-04): min-width:0 made the meta the ONLY child that could shrink, so on
-   a NARROW row where the min-width:22ch text and the fixed requires/stage controls already filled
-   the line it collapsed to ~0 and overflow-wrap:anywhere broke it one letter per line. .goal-row
-   now wraps so the meta drops to its own line; the min-width floor keeps it readable even when it
-   shares a wrapped line, while flex:0 1 34ch still lets it yield width to the condition text. */
-/* F421 v4 (2026-09-22): the meta takes a LINE OF ITS OWN. Sharing the row made each condition
-   negotiate a different settlement — one row's meta in a narrow right column, the next's wrapped
-   under the text with the scope controls floating between — so three conditions read as three
-   different widgets. A full basis keeps every wrap fix above (it still wraps, it still yields
-   the whole width to the condition text) and gives the accounting one predictable place. */
-.goal-meta { font-size: 10px; flex: 1 0 100%; overflow-wrap: anywhere; }
-.goal-note { color: var(--ink-3); }
-/* The SCOPE toggle. A per-run bound is ordinary machinery and stays quiet; a FINAL GOAL is
-   structure — it is what the routine is FOR, and meeting it stops the routine — so it takes
-   IRIS, the palette's structural colour, rather than SIGNAL (the machine working) or SUMMONS
-   (something waiting on a person). */
-.goal-scope {
-  flex: none; border: 1px solid var(--rule-2); background: var(--plate-2); cursor: pointer;
-  color: var(--ink-3); font-size: 9.5px; letter-spacing: .06em; font-weight: 700;
-  text-transform: uppercase; border-radius: 5px; padding: 1px 5px;
-  font-family: var(--f-display);
-}
-.goal-scope:hover { color: var(--ink); }
-.goal-scope.goal { color: var(--iris); border-color: var(--iris); }
-.goal-row.scope-goal .goal-text { color: var(--ink); }
-/* v2: a verdict the verifier objected to and the run re-asserted. Amber, not red — the run
-   is not wrong, the two disagreed, and the operator decides. */
-.goal-disputed { color: var(--warn); font-weight: 700; cursor: help; }
-.goal-req, .goal-stage {
-  flex: none; background: var(--plate-2); border: 1px solid var(--rule); border-radius: 5px;
-  color: var(--ink-2); font-size: 10px; padding: 0 3px; max-width: 90px;
-}
-.goal-del {
-  flex: none; border: none; background: none; color: var(--ink-3); cursor: pointer;
-  font-size: 11px; padding: 0 2px; line-height: 1; opacity: 0;
-}
-.goal-row:hover .goal-del, .goal-ghead:hover .goal-del { opacity: 1; }
-.goal-del:hover { color: var(--err); }
 
 /* file activity (run rail + conversation artifact rail): which files the run read/wrote —
    paths truncate LEFT (rtl trick) so the filename end stays visible */
@@ -1116,8 +1043,11 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
 
 /* filesystem-root picker (components/dirpicker.js) + the root list (components/fsroots.js) */
 .modal-overlay .panel.dirpicker { width: 560px; display: flex; flex-direction: column; gap: 10px; }
-.dirpicker-list { border: 1px solid var(--rule); border-radius: 8px; min-height: 180px;
-  max-height: 46vh; overflow-y: auto; background: var(--deck-2); }
+/* A FIXED height, not a range: the list is the one part of the dialog whose length depends on
+   the folder. A dialog that grows and shrinks with every click moves its own buttons out from
+   under the pointer. The list scrolls instead; the dialog stays where it opened. */
+.dirpicker-list { border: 1px solid var(--rule); border-radius: 8px;
+  height: min(46vh, 420px); overflow-y: auto; background: var(--deck-2); }
 .dp-row { display: flex; align-items: center; gap: 8px; padding: 5px 10px; cursor: pointer;
   font-size: 12.5px; color: var(--ink); border-bottom: 1px solid var(--rule); }
 .dp-row:last-child { border-bottom: 0; }
@@ -1187,6 +1117,44 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
 /* the section h2s are now secondary labels inside their group's summary */
 .rgroup-body h2 { font-size: 10px; letter-spacing: 0.18em; margin: 22px 0 10px; opacity: 0.9; }
 .rgroup-body h2:first-child { margin-top: 16px; }
+
+/* A group's "more" menu: the rarely needed sections, folded under a one-line digest of what is
+   inside — the digest IS the reason to open it or not. Dashed, because it is a fold within a
+   fold rather than a group of its own. */
+.rmore { margin-top: 20px; border: 1px dashed var(--rule-2); border-radius: 8px; }
+.rmore-head {
+  display: flex; align-items: baseline; gap: 10px; padding: 9px 12px; cursor: pointer;
+  list-style: none; user-select: none; min-width: 0;
+}
+.rmore-head::-webkit-details-marker { display: none; }
+.rmore-head::before { content: "▸"; color: var(--signal); font-size: 10px; align-self: center; }
+.rmore[open] > .rmore-head::before { content: "▾"; }
+.rmore-head:hover { background: var(--hover); }
+.rmore-word {
+  font-family: var(--f-mono); font-size: var(--t-xs); text-transform: uppercase;
+  letter-spacing: 0.16em; color: var(--signal); flex: none;
+}
+.rmore-digest {
+  font-size: var(--t-s); color: var(--ink-3); min-width: 0; flex: 1 1 auto;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.rmore-body { padding: 0 12px 12px; border-top: 1px dashed var(--rule-2); }
+
+/* A group head says what it hides: a change waiting to be accepted is SUMMONS, a value that
+   departs from the pattern is IRIS. Both ride the head, so a closed fold still says it. */
+.sf-counts { display: inline-flex; gap: 6px; margin-left: auto; flex: none; align-self: center; }
+.sf-count {
+  font-family: var(--f-mono); font-size: var(--t-xs); letter-spacing: 0.06em; padding: 1px 8px;
+  border-radius: 20px; border: 1px solid; white-space: nowrap;
+}
+.sf-count.change {
+  color: var(--summons); background: var(--summons-dim);
+  border-color: color-mix(in srgb, var(--summons) 45%, transparent);
+}
+.sf-count.override {
+  color: var(--iris); background: var(--iris-dim);
+  border-color: color-mix(in srgb, var(--iris) 42%, transparent);
+}
 
 /* ---- library-doc expander (permissions & practice-module rows, F178) ------------------ */
 .doc-expand-btn {
@@ -1423,17 +1391,18 @@ summary.setup-head::-webkit-details-marker { display: none; }
 
 /* Staged, not yet saved. A toggle marks its row and leaves the layout alone — restructuring
    under the pointer both destroyed the control being clicked and threw away the diff these
-   panels exist to show. */
+   panels exist to show. SUMMONS: a staged change waits on the person who accepts it — the
+   same colour the settings page marks every changed value with. */
 .avail-row.pending, .rule-bound.pending, .ability.pending {
-  background: var(--signal-dim); border-left: 2px solid var(--signal);
+  background: var(--summons-dim); border-left: 2px solid var(--summons);
 }
 .avail-row.pending-drop, .rule-bound.pending-drop, .ability.pending-drop {
   background: var(--hover); border-left-color: var(--ink-3); opacity: 0.72;
 }
-.ability.pending { border-color: color-mix(in srgb, var(--signal) 38%, transparent); }
+.ability.pending { border-color: color-mix(in srgb, var(--summons) 38%, transparent); }
 
 /* what a staged rule change will actually DO — the two directions are not symmetric */
-.rule-why { display: block; color: var(--signal); padding: 0 12px 7px 34px; }
+.rule-why { display: block; color: var(--summons); padding: 0 12px 7px 34px; }
 .rule-why:empty { display: none; }
 .avail-row .rule-why { grid-column: 2 / -1; padding: 2px 0 0; }
 .rule-bound.pending-drop .rule-why { color: var(--ink-3); }
@@ -1444,21 +1413,11 @@ summary.setup-head::-webkit-details-marker { display: none; }
 }
 .rule-erase[hidden] { display: none; }
 
-/* --- settings-template panel: what the template supplies, what this routine sets ------- */
-.tpl-head {
+/* --- effective surface: one heading per provenance group (the doc or util behind the rows) --- */
+.surface-group-head {
   font-size: 11px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--ink-3);
   margin: 16px 0 6px; font-weight: 600;
 }
-.tpl-row { display: flex; gap: 10px; align-items: baseline; padding: 3px 0; flex-wrap: wrap; }
-.tpl-row-label {
-  flex: 0 0 150px; font-size: 11px; color: var(--ink-2); text-align: right;
-}
-.tpl-row-body { flex: 1 1 260px; display: flex; gap: 5px; flex-wrap: wrap; }
-.tpl-chip {
-  display: inline-flex; align-items: center; gap: 5px; font-size: 11px; padding: 2px 4px 2px 9px;
-  border-radius: 20px; border: 1px solid var(--rule-2); background: var(--plate-2);
-}
-.tpl-chip.own { padding-right: 9px; color: var(--ink-2); }
 
 /* --- library blast radius: who holds this doc; what a change costs them -------------- */
 .impact-panel { padding: 11px 14px; }
@@ -1488,3 +1447,286 @@ summary.setup-head::-webkit-details-marker { display: none; }
 .effect-side.advice { color: var(--ink-2); font-style: italic; }
 .effect-text { overflow-wrap: anywhere; }
 .effect-text.missing { font-style: italic; color: var(--ink-3); }
+
+/* ── routine SETTINGS: one draft, one accept (views/routine-config.js) ────────────────────────
+   Two facts about a value that must never look alike. A CHANGE — the draft differs from
+   what the routine holds — waits on the person who accepts it: SUMMONS. An OVERRIDE — the saved
+   value departs from the routine's pattern — is structure and waits on nobody: IRIS. Each is
+   marked where the value sits, by a rule down the field's edge and a line above its control. */
+.sf-field { border-left: 3px solid transparent; padding-left: 11px; margin-left: -14px; min-width: 0; }
+.sf-field.sf-override { border-left-color: color-mix(in srgb, var(--iris) 60%, transparent); }
+.sf-field.sf-changed { border-left-color: var(--summons); }
+.sf-notes { display: flex; flex-direction: column; gap: 5px; margin-bottom: 9px; }
+.sf-notes:empty { display: none; }
+.sf-note {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px;
+  font-size: var(--t-s); color: var(--ink-2); min-width: 0;
+}
+.sf-mark {
+  font-family: var(--f-mono); font-size: var(--t-xs); text-transform: uppercase;
+  letter-spacing: 0.1em; padding: 1px 7px; border-radius: 20px; border: 1px solid; flex: none;
+}
+.sf-note-change .sf-mark {
+  color: var(--summons); background: var(--summons-dim);
+  border-color: color-mix(in srgb, var(--summons) 45%, transparent);
+}
+.sf-note-override .sf-mark {
+  color: var(--iris); background: var(--iris-dim);
+  border-color: color-mix(in srgb, var(--iris) 42%, transparent);
+}
+.sf-was, .sf-patval {
+  color: var(--ink-3); min-width: 0; max-width: 62ch; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sf-pat { display: flex; flex-wrap: wrap; gap: 2px 10px; min-width: 0; }
+/* the reason a proposal gives is words a mind wrote — prose — beside the mark it explains */
+.sf-why { font-size: 13.5px; color: var(--ink); line-height: 1.45; flex: 1 1 260px; min-width: 0; }
+.sf-back, .sf-note-depart { color: var(--iris); font-size: var(--t-s); }
+.sf-act {
+  background: none; border: none; padding: 0; cursor: pointer; font: inherit;
+  font-size: var(--t-s); color: var(--signal); text-decoration: underline dotted;
+  text-underline-offset: 2px; flex: none;
+}
+.sf-act:hover { color: var(--signal-2); }
+
+/* the PATTERN leads the settings. Structure, so iris: the pattern is what the page reads the
+   routine's values against, not something anyone is waiting on. */
+.pattern-bar {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 20px; align-items: start;
+  margin: var(--s3) 0 var(--s4); padding: var(--s4) var(--s5);
+  background: var(--plate); border: 1px solid color-mix(in srgb, var(--iris) 34%, var(--rule));
+  border-left: 3px solid var(--iris); border-radius: var(--r3); box-shadow: var(--lift-1), var(--lift-2);
+}
+.pb-head { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.pb-kicker {
+  font-family: var(--f-mono); font-size: var(--t-xs); text-transform: uppercase;
+  letter-spacing: 0.18em; color: var(--iris);
+}
+.pb-title { font-size: var(--t-xl); font-weight: 620; letter-spacing: -0.01em; color: var(--ink); }
+.pb-summary { max-width: 72ch; }
+.pb-summary.muted { font-size: var(--t-m); color: var(--ink-2); }
+.pb-meta { font-size: var(--t-s); color: var(--ink-3); }
+.pb-meta code { color: var(--ink-2); }
+.pb-diff { margin-top: 2px; }
+.pb-overrides {
+  background: var(--iris-dim); border: 1px solid color-mix(in srgb, var(--iris) 42%, transparent);
+  color: var(--iris); border-radius: 20px; padding: 2px 10px; cursor: pointer;
+  font: inherit; font-size: var(--t-s);
+}
+.pb-overrides:hover { border-color: var(--iris); }
+.pb-acts { display: flex; flex-direction: column; gap: 6px; align-items: stretch; }
+.pb-status, .pb-tray { grid-column: 1 / -1; }
+.pb-status:empty, .pb-tray:empty { display: none; }
+.pb-switch { color: var(--summons); font-size: var(--t-s); font-weight: 600; }
+.pb-busy {
+  display: flex; align-items: center; gap: var(--s3); font-size: var(--t-s); color: var(--signal);
+  padding: var(--s2) var(--s3); background: var(--signal-dim); border-radius: var(--r2);
+  border: 1px solid color-mix(in srgb, var(--signal) 32%, transparent);
+}
+.pb-error { color: var(--err); max-width: 72ch; }
+.pb-form, .pb-picker {
+  display: flex; flex-direction: column; gap: var(--s2); padding: var(--s3); margin-top: 2px;
+  background: var(--plate-2); border: 1px solid var(--rule); border-radius: var(--r2);
+}
+.pb-form .field { margin-bottom: 0; max-width: 560px; }
+.pb-fields > summary { cursor: pointer; color: var(--ink-2); }
+.pb-field-list { display: flex; flex-direction: column; gap: 3px; margin-top: 6px; }
+.pb-field-list .faint { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.pb-choice {
+  display: flex; align-items: flex-start; gap: var(--s3); padding: var(--s2) 0;
+  border-top: 1px solid var(--rule);
+}
+.pb-choice-main { flex: 1; min-width: 0; }
+.pb-choice-title { font-weight: 600; }
+.pb-choice.current .pb-choice-title { color: var(--iris); }
+@media (max-width: 720px) {
+  .pattern-bar { grid-template-columns: 1fr; }
+  .pb-acts { flex-direction: row; flex-wrap: wrap; }
+}
+
+/* a PENDING proposal — creation's "check the changes i recommend.", a recommendation, a
+   pattern switch — waits on a person, so it leads the settings in summons */
+.draft-banner {
+  display: flex; flex-direction: column; gap: 6px; margin: var(--s3) 0;
+  padding: var(--s3) var(--s4); border-radius: var(--r3);
+  background: var(--summons-dim); border: 1px solid color-mix(in srgb, var(--summons) 40%, transparent);
+  border-left: 3px solid var(--summons);
+}
+.db-message { font-size: var(--t-l); font-weight: 650; color: var(--summons); }
+.db-reason { font-size: 14.5px; }
+.db-meta { font-family: var(--f-mono); font-size: var(--t-xs); color: var(--ink-3); }
+.db-how { color: var(--ink-2); max-width: 72ch; }
+
+/* The ONE accept, at the foot of the viewport while the draft holds changes. It clears the LLM
+   dock's corner on the right (base.css `#llm-tasks`) and, on a phone, the bottom navigation. */
+.accept-bar {
+  position: fixed; z-index: 70; bottom: var(--s4);
+  left: calc(var(--rail-w) + var(--s5)); right: calc(var(--s4) + 116px);
+  display: flex; justify-content: center; pointer-events: none;
+}
+.ab-inner {
+  pointer-events: auto; width: min(780px, 100%);
+  display: flex; align-items: center; justify-content: space-between; gap: var(--s3);
+  flex-wrap: wrap; padding: 9px 12px 9px 16px;
+  background: var(--plate); border: 1px solid color-mix(in srgb, var(--summons) 55%, transparent);
+  border-left: 3px solid var(--summons); border-radius: var(--r3);
+  box-shadow: 0 0 0 1px var(--summons-dim), 0 0 34px -12px var(--summons), var(--lift-2);
+}
+.ab-text { font-size: var(--t-m); color: var(--ink-2); min-width: 0; }
+.ab-count { color: var(--summons); font-weight: 700; font-family: var(--f-mono); }
+.ab-acts { display: flex; gap: var(--s2); align-items: center; flex-wrap: wrap; }
+@media (max-width: 860px) {
+  .accept-bar {
+    left: var(--s3); right: calc(var(--s3) + 44px);
+    bottom: calc(58px + max(4px, env(safe-area-inset-bottom)));
+  }
+}
+
+/* ── the GOAL group: the finish line (a setting) and what a finished run delivers (the recipe's) */
+.fl { display: flex; flex-direction: column; gap: var(--s3); }
+.fl-empty { color: var(--ink-2); max-width: 70ch; font-size: 14.5px; }
+.fl-rows { display: flex; flex-direction: column; gap: var(--s2); }
+.fl-row {
+  display: flex; flex-direction: column; gap: 6px; padding: 10px 12px;
+  background: var(--plate-2); border: 1px solid var(--rule); border-radius: var(--r2);
+}
+.fl-row.met { border-color: color-mix(in srgb, var(--ok) 40%, transparent); }
+.fl-line { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); }
+.fl-line .fl-text { flex: 1 1 260px; width: auto; min-width: 0; }
+.fl-judge { flex: none; }
+.fl-date { width: auto; flex: none; }
+.fl-status { display: inline-flex; align-items: center; gap: 6px; }
+.fl-reached {
+  font-family: var(--f-mono); font-size: var(--t-xs); text-transform: uppercase;
+  letter-spacing: 0.08em; color: var(--ok); background: var(--ok-dim); padding: 2px 8px;
+  border-radius: 20px; border: 1px solid color-mix(in srgb, var(--ok) 35%, transparent);
+}
+.fl-remove { margin-left: auto; }
+.fl-then { font-size: var(--t-s); color: var(--ink-3); line-height: 1.5; max-width: 90ch; }
+.fl-then b { color: var(--ink-2); font-weight: 600; }
+.fl-report { font-size: var(--t-s); color: var(--ink-2); }
+.fl-report .prose { font-size: 13.5px; }
+.fl-disputed { color: var(--warn); cursor: help; }
+.fl-problem { color: var(--err); font-size: var(--t-s); }
+.fl-until { padding-top: var(--s2); border-top: 1px dashed var(--rule-2); display: flex; flex-direction: column; gap: 6px; }
+.fl-done {
+  padding: var(--s2) var(--s3); border-radius: var(--r2); font-size: var(--t-s); color: var(--ok);
+  background: var(--ok-dim); border: 1px solid color-mix(in srgb, var(--ok) 35%, transparent);
+}
+
+.dw { display: flex; flex-direction: column; gap: var(--s2); }
+.dw-rows { display: flex; flex-direction: column; }
+.dw-row {
+  display: grid; grid-template-columns: 30px minmax(0, 1fr) auto; gap: var(--s3);
+  align-items: center; padding: 8px 0; border-bottom: 1px solid var(--rule);
+}
+.dw-row:last-child { border-bottom: none; }
+.dw-id { font-family: var(--f-mono); font-size: var(--t-s); color: var(--signal); }
+.dw-text { font-size: 14.5px; }
+.dw-stage { font-family: var(--f-mono); font-size: var(--t-xs); color: var(--ink-3); }
+.dw-strip { display: flex; gap: 3px; flex-wrap: wrap; justify-content: flex-end; }
+.dw-cell {
+  width: 20px; height: 20px; display: inline-grid; place-items: center; border-radius: 4px;
+  font-family: var(--f-mono); font-size: 11px; color: var(--ink-3);
+  border: 1px solid var(--rule-2); background: var(--plate-2);
+}
+.dw-cell:hover { text-decoration: none; border-color: var(--ink-3); }
+.dw-cell.met { color: var(--ok); background: var(--ok-dim); border-color: color-mix(in srgb, var(--ok) 35%, transparent); }
+.dw-cell.unmet { color: var(--err); background: var(--err-dim); border-color: color-mix(in srgb, var(--err) 40%, transparent); }
+.dw-cell.none { opacity: 0.5; }
+.dw-legend { margin-top: 2px; }
+.dw-pointer { color: var(--ink-2); border-top: 1px dashed var(--rule-2); padding-top: var(--s2); }
+@media (max-width: 620px) {
+  .dw-row { grid-template-columns: 30px minmax(0, 1fr); }
+  .dw-strip { grid-column: 2; justify-content: flex-start; }
+}
+
+/* ── the RUN GATE editor (components/gate-editor.js) ───────────────────────────────────────── */
+.gate-editor { display: flex; flex-direction: column; gap: var(--s2); }
+.gate-explain { max-width: 72ch; line-height: 1.5; }
+.gate-checks { display: flex; flex-direction: column; gap: var(--s2); margin-top: 4px; }
+.gate-check.panel { padding: 10px 12px; box-shadow: none; background: var(--plate-2); }
+.gate-params {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 10px 14px; margin-top: 10px;
+}
+.gate-param { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.gate-param > span:first-child {
+  font-family: var(--f-mono); font-size: var(--t-xs); text-transform: uppercase;
+  letter-spacing: 0.12em; color: var(--ink-3);
+}
+.gate-param > .faint { line-height: 1.4; }
+.gate-param input[type="checkbox"] { align-self: flex-start; }
+.gate-required { color: var(--ink-2); }
+.gate-script { margin-top: 10px; }
+.gate-script textarea { margin-bottom: 4px; }
+.gate-result { border-top: 1px dashed var(--rule-2); padding-top: var(--s2); display: flex; flex-direction: column; gap: 4px; }
+.gate-verdict { font-weight: 650; font-size: var(--t-m); }
+.gate-verdict.gate-run { color: var(--signal); }
+.gate-verdict.gate-skip { color: var(--ink-2); }
+.gate-verdict.gate-error { color: var(--err); }
+.gate-check-result { color: var(--ink-2); }
+.gate-stderr { max-height: 180px; overflow: auto; background: var(--deck-2); padding: var(--s2); border-radius: var(--r1); }
+
+/* ── shared reminders (components/reminders-picker.js) and triggers ────────────────────────── */
+.rem-list { border: 1px solid var(--rule); border-radius: 3px; overflow: hidden; }
+.rem-row {
+  display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px; align-items: baseline;
+  padding: 8px 12px; border-top: 1px solid var(--rule); cursor: pointer;
+}
+.rem-row:first-child { border-top: 0; }
+.rem-row:hover { background: var(--plate-2); }
+.rem-id { font-size: var(--t-s); color: var(--ink); }
+.rem-when { color: var(--ink-3); overflow-wrap: anywhere; }
+.rem-why { font-size: 13.5px; color: var(--ink-2); }
+.tr-warn { color: var(--warn); }
+.trigger-row { padding: 8px 0; border-bottom: 1px solid var(--rule); }
+.trigger-row:last-child { border-bottom: none; }
+
+/* ── the Library's settings patterns ─────────────────────────────────────────────────────── */
+.lib-desc { padding: 11px 16px; border-bottom: 1px solid var(--rule); }
+.pat { border-top: 1px solid var(--rule); }
+.pat:first-child { border-top: 0; }
+.pat-head {
+  display: grid; grid-template-columns: minmax(130px, 210px) minmax(0, 1fr) auto auto;
+  gap: 6px 14px; align-items: baseline; padding: 10px 16px; cursor: pointer; list-style: none;
+}
+.pat-head::-webkit-details-marker { display: none; }
+.pat-head:hover { background: var(--hover); }
+.pat[open] > .pat-head { background: var(--iris-dim); }
+.pat-title { font-weight: 600; color: var(--ink); }
+.pat-title::before { content: "▸ "; color: var(--iris); font-size: 10px; }
+.pat[open] .pat-title::before { content: "▾ "; }
+.pat-summary { font-size: 13.5px; color: var(--ink-2); min-width: 0; }
+.pat-meta { font-size: var(--t-s); color: var(--ink-3); white-space: nowrap; }
+.pat-body { padding: 4px 16px 14px; display: flex; flex-direction: column; gap: 6px; }
+.pat-when { color: var(--ink-2); max-width: 90ch; }
+.pat-settings td { font-size: var(--t-s); vertical-align: top; }
+.pat-key { width: 220px; color: var(--ink); white-space: nowrap; }
+.pat-foot { color: var(--ink-3); }
+@media (max-width: 860px) {
+  .pat-head { grid-template-columns: 1fr; }
+  .pat-meta { white-space: normal; }
+  .pat-key { width: auto; }
+}
+
+/* a time or date field inside a settings row is sized by its value, not by the row */
+.sf-body input[type="time"], .sf-body input[type="date"] { width: auto; }
+.gate-editor select[data-gate-add] { flex: 1 1 280px; max-width: 520px; }
+
+/* Run now's optional BRIEF — one line the run started by hand answers for instead of its
+   recipe's Done when. A person's words, so the run page sets it in the prose face. */
+input.run-brief { width: 260px; max-width: 100%; }
+.run-brief-line {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin: 2px 0 var(--s3);
+  padding: var(--s2) var(--s3); border-left: 3px solid var(--signal); background: var(--plate-2);
+  border-radius: var(--r2);
+}
+.run-brief-line .rb-label {
+  font-family: var(--f-mono); font-size: var(--t-xs); text-transform: uppercase;
+  letter-spacing: 0.14em; color: var(--ink-3);
+}
+.run-brief-line .rb-text { font-size: 15px; color: var(--ink); }
+@media (max-width: 860px) {
+  input.run-brief { width: 100%; flex: 1 1 100%; }
+}

@@ -1,16 +1,20 @@
-# Optional output compression
+# Output compression
 
-Routines and conversations offer **Off**, **Measure only**, and **Compress (experimental)**
-under their configuration controls. The persisted `routine.yaml` key is `output_compression`:
-`off`, `measure`, or `compress` (default). The mode is deliberately not called `on`: YAML 1.1
-reads a bare `on` as a boolean, and a hand-edited config must not silently become `True`. Changes apply at the next run/reply; children inherit
-that run's setting. Ponytail is independently available in the General rules picker, unbound
-by default. Existing installations receive the new rule through the ordinary add-only seed sync.
+Large command output is re-encoded LOSSLESSLY before the model reads it (`engine/lossless.py`,
+applied at the one seam `engine/output_compression.command_output`). Every encoding is a
+transform plus its exact inverse; a candidate is kept only when the inverse gives back the
+captured output — byte for byte for text, value for value for JSON — and the result is smaller:
 
-ONE engine: **JSON is minified with the standard library**
-(`json.dumps(..., separators=(",", ":"))`) — whitespace is the only thing JSON's grammar lets a
-compressor drop without changing a value, so this needs no package at all and cannot lose data.
-Nothing else is a candidate. No proxy, provider reconfiguration or second agent loop is involved.
+- `grep` — `path:line:text` search hits, each path written ONCE as a heading over its hits;
+- `paths` — one-path-per-line listings, each folder written once over the names inside it;
+- `json` — minified with the standard library, every array of same-keyed flat objects written
+  as one `{"$table": {"cols": […], "rows": […]}}` (column names once, not once per row).
+
+It is plain engine behaviour, not a setting. There is nothing to decide per routine — an
+encoding that loses anything or saves nothing is never shown — and the per-routine switch it
+once had was changed by no routine ever. What it buys is small and real: 508 applications
+saving ~82k tokens across the fleet in its last twelve days as a setting (2026-09-17 → 09-29).
+No proxy, provider reconfiguration or second agent loop is involved — and no package: stdlib only.
 
 Only successful util/script/shell calls with stdout of at least 2,000 characters are candidates.
 JSON is still accepted only after independent equivalence validation — minification is faithful by
@@ -26,9 +30,9 @@ unlimited output.
 
 The complete compressed preview, its label and recovery pointer must be smaller than the existing
 capped preview and its pointer. Otherwise the current representation wins. The compressed preview
-must fit the observation cap without further truncation. Measure mode records the comparison but
-keeps the model-visible observation unchanged. This measures preview character counts and estimates
-tokens as characters / 4; it does not measure billing or guarantee savings on a particular model.
+must fit the observation cap without further truncation. This measures preview character counts
+and estimates tokens as characters / 4; it does not measure billing or guarantee savings on a
+particular model.
 Measurements and fallback reasons appear in command output details and the observation's
 `compression` transcript field. Compare total usage, cache hits, correctness, recovery reads and
 elapsed run time when deciding whether to enable it.
@@ -64,14 +68,14 @@ removing whitespace — which is what minification does, provably.
 Two surfaces, for two different questions.
 
 **What happened to ONE command's output**: the transcript and the conversation chat print an
-operator-only line under that output — mode, outcome, preview characters before and after, the
+operator-only line under that output — outcome, preview characters before and after, the
 estimated saving, elapsed time, and the reason behind a fallback. The model never sees it.
 
 **What the feature buys ONE ROUTINE over time**: the Stats tab's *Output compression by routine*
 table (`/api/stats` → `compression`, built by `rsched/readmodels/compression_stats.py`). Each run
 tallies its own outcomes (`RunContext.compression_stats`, ticked at the single compression seam)
 into its durable workflow-usage record, so the roll-up outlives run retention exactly as per-util
-stats and monthly spend do. The columns are `candidates` (successful command outputs the mode let
+stats and monthly spend do. The columns are `candidates` (successful command outputs the engine let
 through at all), `attempts` (the compressor ran), `applied` with its hit rate, the estimated
 tokens saved, `rejected`, `no gain`, and the wall clock spent inside the compressor.
 
@@ -81,14 +85,3 @@ routine accumulating rejections means a compressor is producing something the va
 accept — the table marks a row whose rejections outrun its applications. Runs that
 finished before the tally existed carry no counters and are outside the window rather than
 counted as zeros — the table names the date its window starts.
-
-Ponytail's rule is an adaptation of revision `356918eba965ee1eac64bd3a7f0dd02108350de5`:
-https://github.com/DietrichGebert/ponytail/tree/356918eba965ee1eac64bd3a7f0dd02108350de5
-It retains the implementation decision order and defers to existing scheduler reporting and project
-testing conventions. The upstream MIT notice is preserved in [the license copy](licenses/ponytail-MIT.txt).
-It overlaps with `change-restraint`; bind it deliberately for a coding trial, not globally.
-
-For an evaluation, compare baseline and Ponytail on equivalent tasks using the same model and
-budgets. Start with measure mode, then use isolated copies for coding trials. Keep a short
-conversational task as a control. These evaluation steps do not change live routine settings; the
-default described above still applies to missing settings.

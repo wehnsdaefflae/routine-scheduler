@@ -1,4 +1,4 @@
-"""Run transitions refresh live lane state without reloading domain configuration."""
+"""Run transitions refresh live lane state without re-reading the config-shaped week schedule."""
 import json
 
 from playwright.sync_api import expect
@@ -6,7 +6,8 @@ from playwright.sync_api import expect
 from rsched import lanes
 
 
-def test_lane_progress_tracks_run_transitions_without_domain_refetch(ui, ui_page, make_routine):
+def test_lane_progress_tracks_run_transitions_without_schedule_refetch(ui, ui_page,
+                                                                      make_routine):
     make_routine(slug="uir2")
     lane = lanes.create(ui.routines, name="Live chain", members=[{"slug": "uir"}, {"slug": "uir2"}])
     flight = {}
@@ -20,13 +21,13 @@ def test_lane_progress_tracks_run_transitions_without_domain_refetch(ui, ui_page
         route.fulfill(response=response, body=json.dumps(body))
 
     ui_page.route("**/api/lanes", lane_response)
-    ui_page.on("request", lambda request: calls.append("domains")
-               if request.url.endswith("/api/domains") else None)
+    ui_page.on("request", lambda request: calls.append("week")
+               if "/api/schedule/week" in request.url else None)
     ui_page.goto(f"{ui.url}/#/routines")
     row = ui_page.locator(f'tr[data-lane-row="{lane["id"]}"]')
     expect(row).to_be_visible()
     expect(row.locator("[data-lane-run]")).to_be_enabled()
-    domain_calls = calls.count("domains")
+    week_calls = calls.count("week")
 
     def transition(event):
         ui_page.evaluate("event => window.dispatchEvent(new CustomEvent('rsched-bus', {detail:{event}}))", event)
@@ -42,5 +43,5 @@ def test_lane_progress_tracks_run_transitions_without_domain_refetch(ui, ui_page
     transition("run_finished")
     expect(row.locator("[data-lane-progress]")).to_have_count(0)
     expect(row.locator("[data-lane-run]")).to_be_enabled()
-    assert calls.count("domains") == domain_calls
+    assert calls.count("week") == week_calls
     assert calls.count("lanes") >= 4

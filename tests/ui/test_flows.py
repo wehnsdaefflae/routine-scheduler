@@ -15,15 +15,16 @@ from .conftest import until
 
 
 def _unfold(page) -> None:
-    """Open every routine-page config group.
+    """Open every routine-page settings group and each group's "more" menu.
 
-    The page ships with only its leading group open (views/routine.js SECTION_GROUPS): seven
-    open at once made it 11-12 000px tall. A control inside a folded group is not visible, so a
-    test that reads one unfolds first. What the DEFAULT is, and that the choice is remembered,
-    is pinned in test_routine_groups.py — not here.
+    The page ships with only its two leading groups open (views/routine-config.js): seven open at
+    once made it 11-12 000px tall. The rarely needed sections fold once more behind each group's
+    "more". A control inside a fold is not visible, so a test that reads one unfolds first. What
+    the DEFAULT is — and that the choice is remembered — is pinned in test_routine_groups.py, not
+    here.
     """
     page.wait_for_selector(".rgroup-head")
-    page.evaluate("() => { for (const d of document.querySelectorAll('details.rgroup')) d.open = true; }")
+    page.evaluate("() => { for (const d of document.querySelectorAll('details.rgroup, details.rmore')) d.open = true; }")
 
 def _toast(page):
     return page.locator("#toast:not([hidden])")
@@ -565,10 +566,10 @@ def test_artifact_row_shows_time_and_deletes(ui, ui_page):
 
 
 def test_composer_picks_rules_pre_start(ui, ui_page):
-    """F339: the composer carries a general-rules picker. A rule is woven into main.md's
-    Standing-practices tail when the conversation is CREATED, and the first reply fires on
-    create — so a rule chosen after the fact never governs it. Unticking one here must
-    actually change what the created conversation holds."""
+    """F339: the composer carries a general-rules picker. The rules are recorded when the
+    conversation is CREATED; the first reply fires on create, so a rule chosen after the fact
+    never governs it. Unticking one here must actually change what the created conversation
+    holds."""
     import yaml
 
     ui_page.goto(f"{ui.url}/#/conversations")
@@ -594,13 +595,6 @@ def test_composer_picks_rules_pre_start(ui, ui_page):
     raw = yaml.safe_load((ui.conversations / slug / "routine.yaml").read_text(encoding="utf-8"))
     assert dropped not in raw["rules"]
     assert len(raw["rules"]) == before - 1
-    # …and the Standing-practices tail — the part of the recipe that actually names the
-    # bound rules to the model — no longer carries it. (The pattern's own `includes:`
-    # frontmatter lists the workflow's rules and is not the binding, so assert on the tail.)
-    main = (ui.conversations / slug / "main.md").read_text(encoding="utf-8")
-    tail = main[main.index("## Standing practices"):]
-    assert dropped not in tail
-    assert raw["rules"][0] in tail          # the ones it kept ARE named
 
 
 def test_run_rail_sections_collapse_and_list_a_reports_deliverable(ui, ui_page):
@@ -888,50 +882,55 @@ def test_conversation_refer_to_message(ui, ui_page):
 
 
 def test_routine_page_saves(ui, ui_page):
+    """Every control on the routine page edits ONE draft; the accept bar's one button sends it
+    all. The page never reloads to show what landed."""
     ui_page.goto(f"{ui.url}/#/routine/uir")
     _unfold(ui_page)
+    ui_page.evaluate("window.__no_reload = true")
     desc = ui_page.locator('textarea[placeholder^="what this routine does"]')
     expect(desc).to_have_value("A test routine.")
     desc.fill("A sharper description.\nnow spanning two lines.")
-    ui_page.get_by_role("button", name="save description").click()
-    expect(_toast(ui_page)).to_contain_text("description saved")
 
-    budgets_panel = ui_page.locator(
-        ".panel", has=ui_page.get_by_role("button", name="save budgets"))
-    budgets_panel.locator('input[type="number"]').first.fill("42")   # max_turns leads the list
-    ui_page.get_by_role("button", name="save budgets").click()
-    expect(_toast(ui_page)).to_contain_text("budgets saved")
+    ui_page.locator("#sec-budgets + .panel input[data-budget=max_turns]").fill("42")
+    ui_page.locator("#sec-budgets + .panel input[data-budget=max_turns]").press("Tab")
 
-    # tags: the shared editor saves each change immediately — no save button
+    # tags: the shared editor reports each change to the draft
     tag_input = ui_page.locator(".tags input")
     tag_input.fill("nightly")
     tag_input.press("Enter")
-    expect(_toast(ui_page)).to_contain_text("tags saved")
     expect(ui_page.locator(".tags .tag", has_text="nightly")).to_be_visible()
 
-    # deliberation slider (Models panel): one arrow key saves the level immediately
+    # deliberation slider (Models → more): one arrow key moves the level in the draft
     delib_slider = ui_page.locator('.delib input[type="range"]')
     delib_slider.focus()
     delib_slider.press("ArrowRight")   # standard → deliberate
-    expect(_toast(ui_page)).to_contain_text("deliberation: deliberate")
 
-    # schedule: saves in place — the page must NOT reload (marker survives)
-    ui_page.evaluate("window.__no_reload = true")
     # F448: switching a routine off is a SCHEDULE state, not a separate checkbox beside the
     # cadence — the select's leading "Disabled" choice is the off switch, and it is what the
-    # save must write to schedule.disabled.
-    ui_page.locator(".panel", has=ui_page.get_by_role("button", name="save schedule")) \
-        .locator("div.row > select").first.select_option("disabled")   # off
-    ui_page.get_by_role("button", name="save schedule").click()
-    expect(_toast(ui_page)).to_contain_text("schedule saved")
-    ui_page.wait_for_timeout(600)   # the old reload fired at 400ms — outlive it
+    # accept must write to schedule.disabled.
+    ui_page.locator("#sec-schedule + .panel div.row > select").first.select_option("disabled")
+
+    # permissions: tick a doc on — it rides the same accept, cascade and all
+    ui_page.locator('#sec-permissions + .panel .avail-row[data-ability="shell"] input').check()
+
+    bar = ui_page.locator(".accept-bar")
+    expect(bar.locator("[data-accept-count]")).to_have_text("7 changes")
+    assert "tags" not in yaml.safe_load(
+        (ui.routine_dir("uir") / "routine.yaml").read_text(encoding="utf-8"))
+    bar.locator("[data-accept]").click()
+    expect(_toast(ui_page)).to_contain_text("accepted")
+    until(lambda: yaml.safe_load((ui.routine_dir("uir") / "routine.yaml")
+                                 .read_text(encoding="utf-8")).get("tags") == ["nightly"],
+          what="the accepted draft")
+    ui_page.wait_for_timeout(600)
     assert ui_page.evaluate("window.__no_reload") is True
+    expect(bar).to_be_hidden()
 
     raw = yaml.safe_load(
         (ui.routine_dir("uir") / "routine.yaml").read_text(encoding="utf-8"))
     assert raw["description"] == "A sharper description.\nnow spanning two lines."
     assert raw["budgets"]["max_turns"] == 42
-    assert raw["tags"] == ["nightly"]
+    assert "shell" in raw["permissions"]
     # F448: the off switch lands in the schedule the firing gate actually reads, and the dead
     # top-level `enabled` key is gone rather than written beside it.
     assert raw["schedule"]["disabled"] is True
@@ -940,24 +939,13 @@ def test_routine_page_saves(ui, ui_page):
     tuning = yaml.safe_load(
         (ui.routine_dir("uir") / "tuning.yaml").read_text(encoding="utf-8"))
     assert tuning["deliberation"] == "deliberate"
-    # removing the tag also saves immediately — wait on the DISK state, not a fixed sleep
-    # (the removal has no distinct toast to sync on; a 200ms nap flaked under xdist load)
+
+    # removing the tag is a change too, saved by the next accept
     ui_page.locator(".tags .tag", has_text="nightly").locator(".x").click()
     expect(ui_page.locator(".tags .tag", has_text="nightly")).to_have_count(0)
-    until(lambda: yaml.safe_load(
-        (ui.routine_dir("uir") / "routine.yaml").read_text(encoding="utf-8"))["tags"] == [])
-
-    # permissions: the panel re-renders in place from the server's post-cascade state
-    perm_panel = ui_page.locator(
-        ".panel", has=ui_page.get_by_role("button", name="save permissions"))
-    perm_panel.locator(".ability-head input").first.check()
-    ui_page.get_by_role("button", name="save permissions").click()
-    expect(_toast(ui_page)).to_contain_text("permissions saved")
-    ui_page.wait_for_timeout(600)
-    assert ui_page.evaluate("window.__no_reload") is True
-    raw = yaml.safe_load(
-        (ui.routine_dir("uir") / "routine.yaml").read_text(encoding="utf-8"))
-    assert raw["permissions"]   # the toggled doc landed in config without a reload
+    bar.locator("[data-accept]").click()
+    until(lambda: not yaml.safe_load(
+        (ui.routine_dir("uir") / "routine.yaml").read_text(encoding="utf-8")).get("tags"))
 
 
 def test_routine_page_permission_help_and_doc_expand(ui, ui_page):
@@ -966,29 +954,27 @@ def test_routine_page_permission_help_and_doc_expand(ui, ui_page):
     library doc (the same prose the run's prompt receives)."""
     ui_page.goto(f"{ui.url}/#/routine/uir")
     _unfold(ui_page)
-    perm_panel = ui_page.locator(
-        ".panel", has=ui_page.get_by_role("button", name="save permissions"))
+    perm_panel = ui_page.locator("#sec-permissions + .panel")
     # capability rows explain themselves with examples (bare kind/util names told nothing).
     # The help rides the card of the doc that REQUIRES the capability, so it is asserted on
-    # what this routine holds — util-authoring and memory (config.base.DEFAULT_PERMISSIONS).
+    # what this routine holds — util-authoring (config.base.DEFAULT_PERMISSIONS).
     # A card whose requirements are ALL MET folds its stack (the badge already said "ready"),
     # so this opens them; a card that will fail or needs a decision never folds.
     perm_panel.evaluate(
         "n => { for (const d of n.querySelectorAll('details.ability-more')) d.open = true; }")
     expect(perm_panel.get_by_text("pdf-stamp", exact=False)).to_be_visible()
-    expect(perm_panel.get_by_text("facts earlier runs paid to learn", exact=False)).to_be_visible()
     # an ability the routine does NOT hold is a catalogue row: no stack, no state, no alarm
     shell = perm_panel.locator('.avail-row[data-ability="shell"]')
     expect(shell).to_be_visible()
     expect(shell.locator(".dot")).to_have_count(0)
 
     # an ability card expands to the full library doc without flipping its checkbox
-    row = perm_panel.locator('.ability[data-ability="memory"]').first
+    row = perm_panel.locator('.ability[data-ability="util-authoring"]').first
     box = row.locator('input[type="checkbox"]')
     checked_before = box.is_checked()
     row.get_by_role("button", name="full description").click()
     expect(row.locator(".doc-expand-body")).to_be_visible()
-    expect(row.locator(".doc-expand-body")).to_contain_text("notebook")
+    expect(row.locator(".doc-expand-body")).to_contain_text("one subject, one util")
     assert box.is_checked() == checked_before
 
     # a practised rule expands the same way
@@ -1080,7 +1066,7 @@ def test_library_delete_flows(ui, ui_page):
     assert not (ui.tmp / "library" / "utils" / "dir-tree").exists()
 
     # a permission opens WITHOUT any delete affordance
-    ui_page.get_by_role("link", name="memory", exact=True).click()
+    ui_page.get_by_role("link", name="scheduling", exact=True).click()
     expect(editor_panel.get_by_role("button", name="save + commit")).to_be_visible()
     expect(editor_panel.get_by_role("button", name="delete")).to_have_count(0)
 
@@ -1731,27 +1717,35 @@ def test_global_stream_remints_ticket_on_reconnect(ui, ui_page):
 
 
 def test_routine_page_rule_picker_binds_a_general_rule(ui, ui_page):
-    """The post-creation rule picker: ticking a library rule and applying records the SLUG in
-    routine.yaml and rebuilds main.md's derived Standing-practices tail. Nothing is copied —
-    the prose stays in the library. This is the user's switch; a run never changes its set."""
+    """The post-creation rule picker: ticking a library rule stages it in the draft. The page's
+    one accept records the SLUG in routine.yaml. Nothing is copied — the prose stays in the
+    library; the prompt names each held rule at boot. This is the user's switch; a run never
+    changes its set."""
     import yaml
     rdir = ui.routines / "uir"
+    path = rdir / "routine.yaml"
+    cfg = yaml.safe_load(path.read_text(encoding="utf-8"))
+    cfg["rules"] = ["ask-policy"]
+    path.write_text(yaml.safe_dump(cfg), encoding="utf-8")
     ui_page.goto(f"{ui.url}/#/routine/uir")
     _unfold(ui_page)
-    panel = ui_page.locator(".panel", has=ui_page.locator(".rulepicker"))
-    expect(panel).to_be_visible()
+    panel = ui_page.locator("#sec-general-rules + .panel")
+    expect(panel.locator(".rulepicker")).to_be_visible()
     row = panel.locator('.avail-row[data-rule="evidence-discipline"]')
     expect(row).to_be_visible()
     row.locator('input[type="checkbox"]').check()
-    panel.get_by_role("button", name="apply").click()
-    expect(_toast(ui_page)).to_contain_text("rules updated")
-    held = yaml.safe_load((rdir / "routine.yaml").read_text(encoding="utf-8"))["rules"]
-    assert "evidence-discipline" in held
-    assert not (rdir / "rules").exists()               # one copy only, and it is the library's
-    assert "`evidence-discipline`" in (rdir / "main.md").read_text(encoding="utf-8")
+    expect(row).to_have_class(re.compile(r"\bpending\b"))       # staged, marked where it sits
+    expect(panel.get_by_role("button", name="apply")).to_have_count(0)   # the page accepts
+    ui_page.locator(".accept-bar [data-accept]").click()
+    expect(_toast(ui_page)).to_contain_text("accepted")
+    until(lambda: "evidence-discipline" in yaml.safe_load(
+        path.read_text(encoding="utf-8"))["rules"], what="the accepted rule")
+    assert not (rdir / "rules").exists()               # one copy only: the library's
+    assert "evidence-discipline" not in (rdir / "main.md").read_text(encoding="utf-8")
 
-    ui_page.reload()                                   # the tick survives a fresh detail read
-    reloaded = ui_page.locator(".panel", has=ui_page.locator(".rulepicker"))
+    ui_page.reload()                                   # the tick survives a fresh settings read
+    _unfold(ui_page)
+    reloaded = ui_page.locator("#sec-general-rules + .panel")
     # a bound rule leaves the catalogue and reads as something the routine practises
     expect(reloaded.locator('.rule-bound[data-rule="evidence-discipline"]')).to_be_visible()
     expect(reloaded.locator('.avail-row[data-rule="evidence-discipline"]')).to_have_count(0)
@@ -1775,13 +1769,13 @@ def test_conversation_header_rule_picker(ui, ui_page):
     expect(picker).to_be_visible()
     # conversations start with their default set already ticked
     expect(picker.locator('.rule-bound[data-rule="ask-policy"]')).to_be_visible()
-    row = picker.locator('.avail-row[data-rule="interface-design"]')
+    row = picker.locator('.avail-row[data-rule="interface-craft"]')
     expect(row).to_be_visible()
     row.locator('input[type="checkbox"]').check()
     picker.get_by_role("button", name="apply").click()
     expect(_toast(ui_page)).to_contain_text("rules updated")
     held = yaml.safe_load((conv_dir / "routine.yaml").read_text(encoding="utf-8"))["rules"]
-    assert "interface-design" in held
+    assert "interface-craft" in held
 
 
 def test_run_waiting_line_names_the_executing_action(ui, ui_page):

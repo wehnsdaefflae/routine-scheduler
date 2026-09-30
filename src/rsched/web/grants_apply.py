@@ -42,34 +42,29 @@ def _covering_docs(server, cls: str, name: str) -> list[str]:
     from ..readmodels import library_reads
 
     lib = library_reads.requires(server.permissions_home)
+    bare, verb = split_util_verb(name)
+
+    def covers(entry: str) -> bool:
+        # A bare request is covered by any reservation of the util; a verb request only by
+        # one reserving the whole util or exactly that verb — a verb nobody reserves is open
+        # already; granting a sibling verb in its place would widen what was asked for.
+        e_bare, e_verb = split_util_verb(entry)
+        return e_bare == bare and (not verb or not e_verb or e_verb == verb)
+
     docs = []
     for slug, req in lib.items():
         if ((cls == "action" and name in (req.get("actions") or []))
-                or (cls == "util" and any(
-                    entry == name or entry == split_util_verb(name)[0]
-                    for entry in (req.get("utils") or [])))
-                or (cls == "runs" and req.get("runs"))
-                or (cls == "workflows" and req.get("workflows"))
-                or (cls == "reminders" and req.get("reminders"))):
+                or (cls == "util" and any(covers(e) for e in req.get("utils") or []))):
             docs.append(slug)
     if not docs and cls == "action":
         docs = [_DEFAULT_KIND_SOURCE.get(name, "util-authoring")]
     return sorted(docs)[:1]
 
 
-def _apply_capability(server, raw: dict, cls: str, name: str,
-                      inherited: list[str]) -> None:
+def _apply_capability(server, raw: dict, cls: str, name: str) -> None:
     """Fold one capability entity into the two permission layers, exactly as the routine
     page's save does: activate a covering conduct doc, raise the capabilities mapping,
     then floor it — so the saved mapping can never contradict the held permissions.
-
-    `inherited` is what this routine holds through its DOMAIN (D82). Those docs RAISE
-    nothing here either, but they count for the FLOOR, for the reason
-    `resolve_permission_layers` states: a capability a domain's doc legitimately covers is
-    not an orphan, and flooring it away writes an explicit "off" that then shadows the
-    domain forever. Without it, answering one access request could drop a capability the
-    click never mentioned — the member's `signal:read`, covered only by the domain's
-    `messaging-signal`, disappearing behind an `action:memory_write` allow-forever.
     """
     from ..grants import (
         REMINDER_LEVELS,
@@ -77,9 +72,20 @@ def _apply_capability(server, raw: dict, cls: str, name: str,
         capabilities_for,
         floor_capabilities,
         normalize_capabilities,
+        split_util_verb,
     )
     from ..readmodels import library_reads
 
+    base, _ = normalize_capabilities(raw.get("capabilities"))
+    # Run-history depth and the reminder stores are SETTINGS: no doc covers them and none is
+    # needed, so a forever-decision writes the setting itself.
+    if cls in ("runs", "reminders"):
+        levels = RUN_HISTORY_LEVELS if cls == "runs" else REMINDER_LEVELS
+        current = base.get(cls) or "none"
+        if levels.index(name) > levels.index(current):
+            base[cls] = name
+        raw["capabilities"] = base
+        return
     docs = _covering_docs(server, cls, name)
     if not docs:
         raise HTTPException(409, f"no permission doc in the library covers {cls}:{name} "
@@ -87,41 +93,34 @@ def _apply_capability(server, raw: dict, cls: str, name: str,
                                  "(Library → Permissions)")
     active = [str(p) for p in raw.get("permissions") or []]
     active += [d for d in docs if d not in active]
-    base, _ = normalize_capabilities(raw.get("capabilities"))
+    lib = library_reads.requires(server.permissions_home)
     if cls == "action":
         base["actions"] = [*base.get("actions", []), name]
     elif cls == "util":
-        base["utils"] = [*base.get("utils", []), name]
-    elif cls == "runs":
-        current = base.get("runs") or "none"
-        if RUN_HISTORY_LEVELS.index(name) > RUN_HISTORY_LEVELS.index(current):
-            base["runs"] = name
-    elif cls == "workflows":
-        base["workflows"] = "generate"
-    elif cls == "reminders":
-        current = base.get("reminders") or "none"
-        if REMINDER_LEVELS.index(name) > REMINDER_LEVELS.index(current):
-            base["reminders"] = name
-    lib = library_reads.requires(server.permissions_home)
-    floor_docs = [*active, *inherited]
+        # Grant at the grain the covering doc reserves: a doc that reserves only `gmail:send`
+        # is satisfied by that verb entry — a bare `gmail` would not survive its floor.
+        bare = split_util_verb(name)[0]
+        reserved = [u for u in lib.get(docs[0], {}).get("utils") or []
+                    if split_util_verb(u)[0] == bare]
+        wanted = [name] if name in reserved or bare in reserved else reserved
+        base["utils"] = [*base.get("utils", []), *wanted]
     raw["permissions"] = active
     if cls == "util":
         # D97=B (user decision 2026-08-20, F360): a forever-grant for ONE util activates
         # the covering conduct doc but floors capabilities to base + the NAMED util only —
-        # the doc's sibling utils and tag classes stay OFF, each requestable separately.
+        # the doc's sibling utils stay OFF, each requestable separately.
         # The capabilities_for raise cascade would grant the whole class: one
         # `allow_forever util:signal` click handed sprind AND uncensored-model-radar all
         # four personal messengers + chat/messaging tags (commits 30e1894, df2b944).
         # The routine page's full permission save keeps the raise — that surface SHOWS
         # the whole class before writing it.
-        raw["capabilities"] = floor_capabilities(floor_docs, lib, base)
+        raw["capabilities"] = floor_capabilities(active, lib, base)
     else:
         raised = capabilities_for(active, lib, base)
         # Access decisions are not full permission-editor saves. Previously activated
         # conduct docs may cover only a narrowly granted util, not their whole class.
         raised["utils"] = base.get("utils", [])
-        raised["util_tags"] = base.get("util_tags", [])
-        raw["capabilities"] = floor_capabilities(floor_docs, lib, raised)
+        raw["capabilities"] = floor_capabilities(active, lib, raised)
 
 
 def apply_forever(server, routine_dir: Path, ids: list[str],
@@ -135,14 +134,10 @@ def apply_forever(server, routine_dir: Path, ids: list[str],
     if decision == "deny_forever":
         record_grants(routine_dir, dict.fromkeys(ids, False))
         return {}
-    from ..config.domainconfig import domain_config_for
-
     path = routine_dir / "routine.yaml"
     raw = read_yaml(path, {})
     if not isinstance(raw, dict):
         raise HTTPException(500, f"{path}: expected a mapping at top level")
-    shared, _ = domain_config_for(routine_dir, str(raw.get("domain") or ""))
-    inherited = [str(p) for p in shared.get("permissions") or []]
     extra: dict[str, str] = {}
     grant_rows: dict[str, bool] = {}
     for eid in ids:
@@ -166,8 +161,8 @@ def apply_forever(server, routine_dir: Path, ids: list[str],
             roots = [str(r) for r in raw.get(key) or []]
             if name not in roots:
                 raw[key] = [*roots, name]
-        else:   # action / util / runs / workflows — the two-layer cascade
-            _apply_capability(server, raw, cls, name, inherited)
+        else:   # action / util — the two-layer cascade; runs / reminders — a setting
+            _apply_capability(server, raw, cls, name)
     atomic_write_yaml(path, raw)
     if grant_rows:
         record_grants(routine_dir, grant_rows)   # the ONE writer for grants: rows

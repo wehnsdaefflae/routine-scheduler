@@ -79,3 +79,27 @@ def supersedable(rows: list[dict], ids: list[str]) -> tuple[list[str], list[str]
     return ok, bad
 
 
+
+
+def still_owed(rows: list[dict], ids: list[str]) -> list[str]:
+    """Which of `ids` nobody has disposed of yet, in the caller's order: not retracted, not
+    folded into another thread, not a closure, and not answered or settled by any report.
+
+    The pre-finish routing assist asks this at the moment a run ends (R2086). The run's own
+    list of what it owes only learns of the replies it files itself, so a thread closed any
+    other way — by another routine, by the operator, through a fold — would otherwise keep a
+    finished run answering for work that is already done.
+    """
+    disposed = {str(i).strip().upper()
+                for r in rows if not r.get("retracted")
+                for i in (str(r.get("answers") or ""), *(r.get("settles") or []))}
+    by_id = {str(r.get("id") or "").upper(): r for r in rows}
+    out = []
+    for raw in ids:
+        rid = str(raw).strip().upper()
+        row = by_id.get(rid)
+        if row is None or rid in disposed or row.get("retracted") or row.get("superseded") \
+                or row.get("closes"):
+            continue
+        out.append(str(raw))
+    return out

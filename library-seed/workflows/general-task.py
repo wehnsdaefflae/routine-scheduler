@@ -39,6 +39,16 @@ META = {
 
 PHASES = ["bootstrap", "steady", "wrap-up"]     # tracked in state/phase.json
 
+# What one finished run leaves behind — accounted line by line at every finish.
+DONE_WHEN = [
+    "d1 · pick_work — everything due this run is taken on, or recorded with why it waits",
+    "d2 · verify — every piece delivered was read back or checked and says what the check "
+    "showed",
+    "d3 · recheck — the sources were asked once more before finishing and what they showed is "
+    "recorded",
+    "d4 · record — state/ and the LEDGER say what changed, why, and what the next run picks up",
+]
+
 
 class NeedsDecision(Exception):
     """A choice only the user can make — raised to file a deferred question and carry on."""
@@ -104,11 +114,10 @@ def pick_work():
     delivers. Prefer finishing in-progress work; guard standing obligations first. Draw new items
     from SOURCES since SINCE_MARKER.
 
-    Take everything that is genuinely due — this is a work LIST, not a token gesture. What bounds
-    a run is the stopping conditions in `state/stopping.json` (the user's own words for what DONE
-    means, inlined above and accounted for in your finish summary). The turn budget is a runaway
-    BACKSTOP, not a ration: do not stop early because turns are being spent, and do not stretch a
-    finished job to fill them."""
+    Take everything that is genuinely due — this is a work LIST, not a token gesture. What a
+    finished run delivers is the recipe's `## Done when`, accounted line by line at the finish.
+    The turn budget is a runaway BACKSTOP, not a ration: do not stop early because turns are
+    being spent; do not stretch a finished job to fill them."""
 
 
 def recheck():
@@ -164,9 +173,9 @@ def collect_children():
 def record():
     """Update state/phase.json and any state files; append exactly one LEDGER entry for the run
     (what changed, why, decisions, and candidates rejected + why). Advance phase.json to
-    'wrap-up' once the GOAL-scoped stopping conditions in `state/stopping.json` are met — the
-    user's own words for the state after which this ROUTINE is finished — so the next fire closes
-    the job out instead of looking for more. Then sweep the run once for
+    'wrap-up' once the routine's FINISH LINE is reached — the operator's own terms for when this
+    ROUTINE is finished, shown in the digest — so the next fire closes the job out instead of
+    looking for more. Then sweep the run once for
     machinery friction you merely worked around — an action or tool that failed or misled you, a
     consent flow that asked for too much or too little — and file each real hitch with the
     `report` action before finishing (leave `target` unset if you cannot name the owner; triage
@@ -212,11 +221,11 @@ def record():
 
 
 def wrap_up():
-    """Terminal phase — the GOAL-scoped stopping conditions are met and this is the closing run.
+    """Terminal phase — the routine's finish line is reached and this is the closing run.
     Do three things and nothing else: VERIFY the DELIVERABLE one final time against the primary
     source (never against your own state files), TELL the user in plain words where it lives and
-    how to reach it, and FINISH accounting those conditions as met. Start no new work, draw
-    nothing new from SOURCES, and open no new question."""
+    how to reach it, and FINISH with the outcomes you prove accounted as met. Start no new work,
+    draw nothing new from SOURCES, and open no new question."""
     return finish("ok", "Goal reached: deliverable verified, and where it lives.")
 
 

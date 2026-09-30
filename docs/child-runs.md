@@ -141,15 +141,12 @@ one of:
 Decompose only when it earns the coordination cost; a few steps you can verify inline should stay
 inline.
 
-## Pattern sourcing: catalog vs generate
+## Pattern sourcing
 
-Each subtask is matched to a workflow pattern. The baseline (always on) is **pick from the
-catalog** — you name any library pattern in `workflow` (the CAPABILITIES section lists them). When
-none fits and the routine holds the `workflows: generate` capability, set `workflow` to
-`"generate"` and the engine **drafts a new pattern** for the child's brief (lint-gated, committed
-to the library, its system-model spend folded into your run's budget). Generation is off by
-default (a user-set capability, covered by the `workflow-generation` permission) and is skipped
-when the token budget is nearly spent.
+Each child is matched to a workflow pattern from the catalog — you name any library pattern in
+`workflow` (the CAPABILITIES section lists them), or omit it for the default. A child never
+drafts a new pattern: a pattern is drafted only when a person picks `generate` while creating a
+routine, where somebody chose it.
 
 ## Budgets
 
@@ -157,7 +154,7 @@ Every budget in the system — the whole run, a conversation reply window, a sub
 is the same primitive: a **stop condition** (a limit, and whether tripping it is hard) over a
 **resource** (turns, tokens, wall-clock, cost), with a warning at 85% and again at 95% — each
 said ONCE, because a warning repeated on every turn above the line reads as a countdown and
-makes a run wrap up at the ceiling whatever its stopping conditions say. A subtask gets its own
+makes a run wrap up at the ceiling whatever its recipe's Done when says. A subtask gets its own
 ledger, sliced from the parent's remainder (or pinned by `turns`). Enforcement is **soft at the
 parent**: a subtask that overruns its own turn cap force-finishes `partial` (like a subrun), its
 85% warning fires inside the child so its model wraps up first, and the parent gets the partial

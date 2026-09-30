@@ -5,8 +5,8 @@ ownership:
 
 - **Rules** — *general rules*: principle prose (when to ask the user, research discipline,
   what to record) that a run applies to its own particular case. A rule has exactly ONE copy,
-  in the shared library; a routine holds SLUGS (`rules:` in routine.yaml), named at the end
-  of its `main.md` (the *Standing practices* section) and read on demand with `read_rule`.
+  in the shared library; a routine holds SLUGS (`rules:` in routine.yaml), named in every run's
+  state digest with the moment each applies and read on demand with `read_rule`.
   Revising the library text therefore reaches every routine holding that rule at its next
   run, with no migration and no per-routine fork to drift. The two halves are owned apart:
   the SET is yours (the routine page's *General rules* panel), the TEXT is the library's —
@@ -14,16 +14,16 @@ ownership:
   permission.
 - **Capabilities** — the atomic, engine-enforced surface: gated action kinds
   (`grants.GATED_KINDS` — `write_util`, `revise_util`, `remove_util`, `write_rule`,
-  `write_recipe`, `memory_read`, `memory_write`, `detach`, `schedule_run`, `script`,
-  `shell`; `revise_util` and `write_recipe` are capability TOKENS rather than emittable
-  kinds), reserved utils held by name (every util a permission doc's `requires.utils:`
-  names — `remote`, `discord`, `signal`, `telegram`, `whatsapp`, `zulip`, `ntfy`,
-  `fau-mail-send`, `browser-session`, `darknet`, `usenet` / `usenet-nzb`) or by TAG CLASS
-  (`util_tags:` — every util carrying that docstring tag, including ones the library gains
-  later), the approval dials, and the previous-run read depth. Held via `routine.yaml`'s
-  `capabilities:` mapping, changed **only by you** (the routine page's panel; the web
-  layer blocks edits while a run is active), and enforced when every single action is
-  interpreted. A routine can never grant itself anything.
+  `write_recipe`, `schedule_run`, `shell`, plus `detach`, which is structural: a root
+  conversation gets it at setup and no config names it; `revise_util` and `write_recipe` are
+  capability TOKENS rather than emittable kinds), reserved utils or single VERBS of them (every
+  entry a permission doc's `requires.utils:` names — `signal:send`, `gmail:send`,
+  `fau-mail:send`, `usenet:post`, `ntfy`, `browser-session`, `darknet`), and the settings: the
+  approval dials, the previous-run read depth, the reminder layer. What every routine does —
+  the `util` action, its memory, its own `scripts/` — is no capability at all. Held via
+  `routine.yaml`'s `capabilities:` mapping, changed **only by you** (the routine page), and
+  enforced when every single action is interpreted. A routine can never grant itself
+  anything.
 - **Permissions** — *conduct docs*: library prose stating HOW to use a capability well.
   Held via `routine.yaml`'s `permissions:` list; a held doc's short body reaches the
   prompt's CAPABILITIES section. A permission's frontmatter `requires:` names the
@@ -70,17 +70,15 @@ is the author's job — so it also refuses one short enough to be a restatement 
 floor keeps them on. `expects:` is the optional counterpart — entities the instructions
 *presume* but nothing enforces. It grants nothing, blocks nothing, and never fails a save.
 
-It exists because the necessary edge was the only one the system could see. `remote-machines`
-requires the `remote` util — and is useless without a bound MACHINE, which no declaration named,
-so the gap only ever surfaced as a run burning a turn on an empty host list. Now the doc says
-`expects: {machine: ["*"]}` and the setup surface can show the gap before the run.
+It exists because the necessary edge was the only one the system could see. Publishing to the
+Steward hub presumes READ access to the shared kit — the contract lives there; `read_file`
+is confined to granted roots — which no capability can express. So `steward-publishing` says
+`expects: {fs-read: ["…/web/steward"]}` and the setup surface shows the gap before the run.
 
 Two rules keep it from turning into a second `requires:`:
 
 - **It is legal on a RULE**, where `requires:` stays a lint error. A rule must never switch a
-  capability on; it must be able to say what it presumes. `status-page` tells a run to build its
-  page to a shared contract it can only learn by READING the shared kit, and the engine confines
-  `read_file` to granted roots — that is an `expects:`, not a grant.
+  capability on; it must be able to say what it presumes.
 - **It stays advisory forever.** The moment it blocks a save it is a worse `requires:`, and the
   value of naming a soft dependency is precisely that it stays soft.
 - **Declare it only for an UNCONDITIONAL presumption** — one where a holder without the entity
@@ -88,18 +86,15 @@ Two rules keep it from turning into a second `requires:`:
   a doc whose prose applies only sometimes turns that row into noise on every routine that holds
   it, and the bar has now been missed twice in the same way. `git-checkpoint` presumed a
   git-tracked project dir most of its holders never touch, so its `expects: {fs-write: ["*"]}`
-  was added and removed within a day (library `512ef3a`, "noise on every holder"). `status-page`
-  then carried the same declaration on the same reasoning — "a page has to be published from
-  somewhere" — and it was wrong for all seven holders it warned: a status page is published
-  through an UPLOAD channel (the file-transfer capability plus a `FTP_SOURCES` entry), and the
-  documents a routine generates land in its own routine directory, which the sandbox always
-  permits. Nothing any of the seven does needs a write root, so every one of those rows was
-  false. Checked and dropped 2026-09-02.
+  was added and removed within a day (library `512ef3a`, "noise on every holder"). The hub's
+  publishing doc then carried the same declaration on the same reasoning — "a page has to be
+  published from somewhere" — and it was wrong for all seven holders it warned: a page is
+  published through an UPLOAD channel; the documents a routine generates land in its own
+  directory, which the sandbox always permits. Checked and dropped 2026-09-02.
 
-  What survives the bar states a need the holder cannot route around: `remote-machines` expects a
-  bound MACHINE, because every call returns nothing without one, and `status-page` expects READ
-  access to the shared kit, because `read_file` is confined to granted roots and a routine that
-  cannot read the contract cannot build to it. The test is not "would this be useful" — it is
+  What survives the bar states a need the holder cannot route around: `steward-publishing`
+  expects READ access to the shared kit, because `read_file` is confined to granted roots and a
+  routine that cannot read the contract cannot build to it. The test is not "would this be useful" — it is
   "can a holder without it do anything this doc describes".
 
 Values are entity CLASS → names from the `entities.py` vocabulary, with `"*"` for "at least one
@@ -111,16 +106,16 @@ transitively over `calls:`. Duplicating them here would be a second copy that ca
 ### The setup surface — what reads all of this
 
 `readmodels/surface.py` is the forward reading of the whole dependency graph: it joins the
-routine's EFFECTIVE config (domain inheritance merged) with the library's `requires:`/`expects:`
-and with the util HEADERS of every reserved util the routine holds, then reports what is still
-unmet and what an unmet need will COST — `blocks` (the call is rejected or fails), `interrupts`
-(the run stops mid-way to ask you) or `note`.
+routine's config with the library's `requires:`/`expects:` and with the util HEADERS of every
+reserved util the routine holds, then reports what is still unmet and what an unmet need will
+COST — `blocks` (the call is rejected or fails), `interrupts` (the run stops mid-way to ask you)
+or `note`.
 
 `surface.py` is the JOIN only. The row vocabulary — the severities, `_node`, the one-row-per-
 entity merge — is `readmodels/surface_nodes.py`, and the rows themselves come from three
 emitters speaking it: `surface_needs.py` (util secrets, util filesystem stores, `expects:`),
 `surface_schedule.py` (the suppressed cron, the started-by-nothing check, the phase key) and
-`surface_caps.py` (capability coverage and the drop site). "Where a `fix` kind is emitted" is
+`surface_caps.py` (capability coverage and the act that settles it). "Where a `fix` kind is emitted" is
 therefore one of those four modules, never `surface.py` alone.
 
 Nothing is stored. The library MOVES — a run may revise the utils and rules its routine is made
@@ -155,8 +150,8 @@ as `"*"` ("at least one machine"), which no sentence can name by name.
 
 The two halves stay honest apart because the callers share nothing:
 
-- **the routine page** maps one kind to the one panel that owns that dial, scrolls the reader
-  onto the control and flashes it; a fix living off the page (Settings → Secrets, the Library)
+- **the routine page** maps one kind to the one panel that owns that dial, opens any fold on the
+  way, scrolls the reader onto the control and flashes it; a fix living off the page (Settings → Secrets, the Library)
   is a link instead. That map has ONE copy — `FIX` in `static/components/surface-view.js` —
   which the setup-check strip imports; the strip is what an operator reads first, so a row that
   offers a way out on one surface and not the other abandons the reader at the top of the page.
@@ -258,40 +253,21 @@ Three writers, and each gets what it can carry:
 
 #### The gap it also closes: a capability no held doc asks for
 
-Three deliberate designs meet at one blind spot, and each correctly declines to catch it:
+Two deliberate designs meet at one blind spot; each correctly declines to catch it:
 
-1. the **floor** binds a routine's OWN mapping, at save;
-2. a **domain's** shared config block is deliberately not floored at its own save — a member may
-   hold the covering doc itself, so flooring the domain in isolation would delete a capability
-   that is legitimately covered;
-3. **enforcement reads capabilities only**, precisely so the doc layer can never widen what a
+1. the **floor** binds a routine's mapping at the web layer's save — never a file that reached
+   disk another way (a hand edit, a restored backup, a migration);
+2. **enforcement reads capabilities only**, precisely so the doc layer can never widen what a
    run may do.
 
-So a domain can hand its members a reserved util or a gated kind with no conduct doc behind it —
-and every layer stays silent. Nothing is broken when it happens — the routine really can do the
-thing — which is why it is REPORTED rather than corrected: the surface shows it per routine
-however it got there (naming the domain when the domain supplied it), while the domain PATCH
-returns a warning naming it at the moment somebody saves (`orphan_capabilities` on the
-`/api/domains` record). Neither refuses, because refusing would break the legitimate
-member-holds-the-doc arrangement.
-
-The row's `cover_or_drop` therefore splits on PROVENANCE, because the two cases are dropped in
-different places. A capability the routine holds in its OWN file is dropped on the routine page,
-in the orphan card that reports it — the save's floor is what makes the drop stick. One the
-DOMAIN handed down is not the member's to drop: that same save counts inherited permissions for
-the floor, so the capability survives it — correctly — and the act belongs to the domain editor.
-The fix carries which case it is, because a remedy that lands its reader on a control unable to
-perform the act is the one failure this layer exists to prevent. It is read off the DOMAIN
-RECORD: `surface._domain_capabilities` loads the domain's own shared capability block and
-`_drop_site` asks it one question — does that block name this entry. Never `cfg.inherited` /
-`cfg.inherited_from`, which record what the merge CONTRIBUTED and so answer a different question,
-wrongly in both directions: the lists UNION, so an entry the member's file also names contributes
-nothing to the merge while still surviving every drop the member makes; an entry the member alone
-set reads as inherited whenever the domain happened to supply some other one. The fix then
-states `owner` positively for both cases (`routine` / `domain`), carrying the domain's NAME for
-the sentence both renderings put it in, while the domain's ID rides `source` as provenance.
-`test_a_capability_the_member_lists_too_still_belongs_to_the_domain` pins the direction that
-hurts.
+So a routine.yaml can carry a reserved util or a gated kind with no conduct doc behind it — and
+every layer stays silent. Nothing is broken when it happens — the routine really can do the
+thing — which is why it is REPORTED rather than corrected: the surface shows it per routine as a
+`cover_or_drop` row with its two ways out, both in the permissions panel — hold a doc that
+requires the capability, or drop it in that panel's orphan card, where the save's floor makes the
+drop stick. A reserved util the library no longer has is the same row with one more reading
+(`install_util`): while a held doc requires it, the drop would be undone by the save's raise, so
+the fix names that doc instead (`doc` on the fix, the `:doc` wording in `remedies.py`).
 
 Enforcement reads **capabilities only** (`grants.py` builds the run policy from the
 routine's own mapping); a doc-without-capability misconfiguration therefore fails
@@ -319,75 +295,39 @@ per-routine setting.
 
 Every rule lives at `<libraries_home>/rules/<slug>.md` — a heading line
 `# rule: <name> — <summary>`, `tags:` frontmatter (three minimum), **no requires** (a rule
-carrying one is a lint error). One copy each; routines hold slugs. The shipped set — 30 rules,
-one file each in `library-seed/rules/`, which is the authority this table is written from:
+carrying one is a lint error). One copy each; routines hold slugs. The shipped set — 16 rules, one file each in
+`library-seed/rules/`, the authority this table is written from ([curated rules](curated-rules.md)
+records where each came from):
 
 | rule | what it states |
 |---|---|
-| `ask-policy` | when and how to involve the user: self-sufficiency by default, deferred asks, batching, self-contained questions |
-| `web-research` | verify external facts by searching instead of recalling; provenance discipline |
-| `decision-record` | keep the reasoning the artefacts cannot carry: read the record before exploring, append what changed and what you rejected, keep it bounded |
-| `intent-inference` | read every user intervention as a standing preference — name the intention behind it, record it as a hypothesis, act on it, correct it in the open |
-| `root-cause-fix` | repair the cause, never the symptom: trace it back until the answer names something changeable, install a GENERAL prevention at the level the cause lives at, in the run that found it |
-| `problem-routing` | send a problem to whoever owns it, not upward — the artefact that must change names the owner; write a work order, not a hint; close what you receive |
-| `git-checkpoint` | undo points for external project repos (and conversation dirs) the run edits — a checkpoint commit before risky edits and one after, named in the reply; never pushes unless asked |
-| `evidence-discipline` | every reported claim traced to an observation from this run; verified-or-not as a binary, never a confidence score; failure reported as failure |
-| `unexamined-is-not-clean` | a check reports on what it read, never on what it skipped: give every result its denominator, declare each exclusion with a reason, surface anything dropped that no reason covers, and count the denominator with something you did not write |
-| `decision-commitment` | choose an approach and stop re-deciding: act when further lookup wouldn't change the action, revisit only on contradicting evidence, narrate the choice not the survey |
-| `error-recovery` | read a failed observation before reacting to it: state the error, change something material before retrying, treat two failures at one step as "the approach is wrong" |
-| `change-restraint` | the smallest change that does the job: no speculative structure, no compatibility shims, never hardcode past a check, say when the task itself is wrong |
-| `independent-verification` | check work from outside the context that produced it — a mechanical check first, else a `subtask` verifier briefed without your reasoning; self-review is the weakest option |
-| `review-recall` | for review/audit tasks: find first and filter second, label uncertainty instead of omitting, name what you did not cover |
-| `teaching-insights` | explain the reasoning where a human is reading (conversations, reports) — short insights at real decision points, specific to this work; costs output length |
-| `interface-design` | build UI that looks chosen rather than generated: pin the subject first, know the current default looks well enough to avoid them, plan a token system and critique it before coding, spend boldness in one place |
-| `interface-copy` | words as design material — name things by what the reader controls, active voice with a stable vocabulary, errors that explain and direct, one job per element |
-| `test-design` | a test earns its place by failing: name the regression first, assert behaviour not internals, watch it fail once before accepting it |
-| `risk-first` | order work by what is least certain, prove it thin and end to end, and skip the quality bar only until it holds — then harden in the same run |
-| `failure-visibility` | error handling *written into code* — never catch without a reaction, enumerate what a broad catch would swallow, fallbacks are features not safety nets, stubs never ship |
-| `ponytail` | the implementation decision order — reuse what this codebase has, then the standard library, then a native platform feature, then an installed dependency, then the smallest clear implementation; no abstractions for imaginary callers |
-| `token-economy` | spend the fewest tokens the task honestly needs — look a thing up before opening it, read the range not the whole, reuse instead of re-deriving, delegate bulky reading to a focused worker |
-| `reference-decay` | prose keeps naming what has been deleted: settle every statement naming a thing you remove, and verify a named endpoint, helper, file or host still exists before relying on it |
-| `status-page` | publishing and tending a web UI on the shared steward host — one shell, one append-only feedback contract, the payload invariants (see [status pages](status-pages.md)) |
-| `outbound-followthrough` | a message you sent is an open thread until it is answered: index what you sent, read the index on a cadence, check the real surface before calling a thread silent, chase once or record that silence is the answer |
-| `email-thread-continuation` | a reply or forward continues the source message's thread — carry `In-Reply-To`/`References`, keep the subject, quote enough that the reply stands on its own |
-| `engagement-accountability` | confront the outcome gap: read the engagement the routine exists to produce, escalate ONCE on sustained emptiness, never present around the silence |
-| `feedback-implementation-gate` | act on collected feedback in the SAME run or hand it back to be prioritized in the routine's own UI — a LEDGER line alone is a drop, not a deferral |
-| `suggestion-discipline` | frontload suggestions in one considered batch; a later one needs genuinely new information, not a thought you only now got round to |
-| `ai-writing-tells` | edit prose against the known fingerprint of LLM writing — a cluster of signals, never one — instead of a gut "feels robotic" |
+| `evidence-discipline` | every claim traced to an observation in this run; a blocked or unreadable step is reported as a gap |
+| `ask-policy` | do what you can reach, request what you lack, bring the user only their decisions — batched, with options and one recommendation |
+| `fix-the-cause` | a correction or a failure names a cause to remove, in this run, where the next run will read the fix |
+| `problem-routing` | a problem goes to its owner as a diagnosis; a hand-off is answered in the run that gets it |
+| `decision-record` | keep the reasoning the artefacts cannot carry, where the next run reads it first |
+| `web-research` | look it up — facts and existing solutions — before relying on memory or building from scratch |
+| `verify-independently` | check an outward-facing deliverable from outside the reasoning that made it |
+| `audit-coverage` | report everything found and everything not examined; a narrowed scan must not read like a clean one |
+| `change-scope` | change exactly what the task needs, then finish the change — every reference to a removed thing settled |
+| `make-failure-visible` | code and tests you write must fail loudly; a test fails once on the regression it names |
+| `work-order` | prove the uncertain part first, commit to it, then harden |
+| `write-as-the-principal` | text that goes out as the user's reads as theirs and learns from their edits |
+| `correspondence` | a message you sent is an open thread until it is answered, on every channel the counterpart uses |
+| `feedback-loop` | act on what readers say in the run that reads it; notice when nobody responds |
+| `interface-craft` | design for this brief and reader, then look at what you built |
+| `git-checkpoint` | an undo point before you edit a project repo |
 
-`ask-policy`, `web-research`, `decision-record` and `intent-inference` are the routine
-`DEFAULT_RULES`. `git-checkpoint` is **not** a routine default — creation preselects it for
-repo-editing tasks, and it is a standing default for **conversations** (see the Conversations
-guide).
+`evidence-discipline`, `ask-policy`, `fix-the-cause`, `problem-routing`, `decision-record` and
+`web-research` are the routine `DEFAULT_RULES`: the conduct every kind of work meets.
+Conversations take all but `decision-record` (their spine is the plan file) and add
+`git-checkpoint`. The rest are the rules of a KIND of work, bound by the settings pattern for
+that kind ([patterns](patterns.md)) — a steward's `feedback-loop` and `correspondence`, a
+maintainer's `change-scope` and `make-failure-visible`.
 
-`root-cause-fix` pairs with `intent-inference` and the two are deliberately separate: one asks
-what the user WANTED (a standing preference to predict), the other asks why they had to say it
-at all (a defect with a cause to remove). Routines that had both folded into one local module
-now hold both.
-
-Three former modules are deliberately gone from this layer. `global-utils` became a
-**permission**: it is mechanism prose (how to discover a util's flags, what to do when one
-errors), and mechanism is what a conduct doc is for — a rule names no tool. `ledger-discipline`
-became `decision-record`: the same purpose (a run must not re-buy a lesson a previous run
-already paid for) stated as a principle, with the filename, entry format and rotation threshold
-left to the workflow patterns that actually own the mechanism. `maintenance-routing` split along
-the seam between its two independent halves: the REPORTING discipline is now the general
-`problem-routing` rule, while the instance's ownership table — which routines exist here and
-what each owns — is not general at all and lives in the `rules-review` routine's recipe.
-
-The **curated set** is the rules carrying a provenance row in
-[`docs/curated-rules.md`](curated-rules.md) — that table is the list, not a position in this
-one — distilled from Anthropic's
-prompt-engineering guidance, the Claude Code plugins (their skills and prompt-snippet references as
-well as the output-style hooks), OpenAI's agent prompting guide, and the self-correction and
-verification literature. None is a default: each is opt-in per routine, and
-a rule that is not held contributes nothing at all — the whole point of a selectable set rather
-than one always-on block. Deliberately **not** included, because the
-evidence is against them or the harness already covers them: "double-check your own work" (unaided
-self-correction breaks about as many correct answers as it fixes — hence `independent-verification`
-instead), "don't be sycophantic" (measured as the least effective mitigation tested), numeric
-confidence scores (verbalized confidence is systematically overconfident), and parallel tool calls
-(architecturally impossible under one action per turn).
+Each rule's `effect:` states WHEN it applies; that line is what the state digest shows
+beside the held slug (`rules.when_lines`), so a run knows which rule to read before which
+moment without carrying the prose.
 
 Improvement passes are deliberately NOT rules: the bundled **routine-improver**
 meta routine sweeps every routine that doesn't set `improve: false` in its
@@ -396,9 +336,8 @@ features, UI, efficiency — plus a fresh-eyes de-clutter pass on each, itself i
 
 ### Which rules bind a routine (the SET)
 
-`routine.yaml` `rules:` IS the state; main.md's Standing practices tail is a derived index
-rebuilt from it on every change (`rsched/rules.py` — the one place that convergence lives).
-The **user** binds or unbinds at any time from the routine page's *General rules* panel or the
+`routine.yaml` `rules:` IS the state; nothing derives a copy of it — the state digest reads
+it at every boot. The **user** binds or unbinds at any time from the routine page's *General rules* panel or the
 conversation header (`POST /routines/{slug}/rules`, `POST /conversations/{slug}/rules` — one
 shared implementation). Nothing is copied anywhere: binding records a slug.
 
@@ -415,12 +354,10 @@ effect. Reading one it does not hold applies it for that run only; `name: "list"
 catalog with each entry flagged when it binds. A rule that keeps proving necessary belongs in
 the run's finish summary or a deferred `ask_user`.
 
-A new routine starts with the rules its PATTERN names (`META.includes`), and `main.md` ends with
-a *Standing practices* section naming each ("read it before the situation it governs"). The prompt
-never inlines the prose — the state digest lists the held slugs and the run reads what it needs,
-which keeps every turn lean. Nothing judges the set at creation, because there is nothing to judge
-yet: the recipe is what creation writes. That judgement is `recommend_setup` on the routine page,
-against the finished recipe, as advice beside each toggle (D108).
+A new routine starts with the rules of its settings pattern. The prompt never inlines the prose
+— the state digest names each held rule with its moment and the run reads what it needs, which
+keeps every turn lean. "Recommend for this routine" on the routine page proposes a different set
+when the finished recipe calls for one, as a pending change ([patterns](patterns.md)).
 
 ### Who may change the TEXT
 
@@ -485,137 +422,41 @@ exists live, so each batch needs a one-shot migration. Full narration in
 
 ```yaml
 capabilities:
-  actions: [write_util, memory_read, memory_write]  # gated action kinds switched on
-  utils: [discord]              # reserved utils switched on, BY NAME
-  util_tags: [messaging]        # reserved util CLASSES switched on, by tag
-  confirm: always               # write_util approval: always | creations | never
+  actions: [write_util, revise_util]  # gated action kinds switched on
+  utils: [signal:send]          # reserved utils — or one VERB of one — switched on, by name
+  confirm: creations            # write_util approval: always | creations | never
   rule_confirm: always          # write_rule approval: always | creations | never
-  remind_confirm: always        # GLOBAL reminder approval: always | creations | never
-  runs: none                    # previous-run read depth: none | last | all
-  workflows: catalog            # subtask pattern sourcing: catalog | generate
-  reminders: local              # consequence-reminder stores: none | local | global
+  remind_confirm: always        # curated-reminder approval: always | creations | never
+  runs: last                    # previous-run read depth: none | last | all
+  reminders: local              # consequence reminders: none | local | global
 ```
 
-A new routine's default (`config.base.DEFAULT_CAPABILITIES`): `write_util` (confirm `always`) +
-the memory pair, no reserved utils, no run history, no rule authoring, and `reminders: local` —
-matching the default permission set below, which carries `reminders` for the same reason.
-`read_rule` is not listed because it is not gated.
+A new routine's default is its settings pattern's; with no pattern at all it is
+`config.base.DEFAULT_CAPABILITIES`: `write_util` + `revise_util` (confirm `creations`), no
+reserved utils, the last run readable, and `reminders: local`. `read_rule`, the `util` action,
+memory and the routine's own scripts are not listed because they are not gated.
 
-`reminders` is the one dial whose default is NOT off, which is why it has to be named at all:
-every key absent from that mapping falls to the all-off baseline. A caution a run leaves itself
-about its own actions is ordinary conduct rather than a privilege, and a layer nobody switches
-on never learns anything — so `local` is the floor, and it holds only while the `reminders`
-permission behind it is held. At `local` a run reads and writes its own store; at `global` it
-also reads the library's curated one (its own overriding it where the patterns match) and is the
-only level that may WRITE there, under `remind_confirm`. `global` is the opt-in.
-That second dial is separate from `confirm` and `rule_confirm` for the reason those two are
-separate from each other: a new global reminder starts interrupting routines that never asked for
-it. See [reminders](reminders.md).
+`runs`, `reminders` and the three approval dials are SETTINGS: yours per routine, never switched
+on by a permission and kept by the floor with none behind them. `reminders: local` is the
+default because a caution a run leaves itself about its own actions is ordinary conduct; at
+`local` a run writes its own reminders and applies them beside every curated one that reaches
+it; `global` also lets it write the curated store — the curator's setting, every write approved
+under `remind_confirm`. See [reminders](reminders.md).
 
-### Settings templates — the named starting point
+### Where a routine's settings come from
 
-Reading the 28 live routines, the five setup layers are almost never chosen independently:
-eight rules are held by two thirds of them, `memory` + `util-authoring` + `util-revision` by
-nearly all, and the differences fall into a handful of recognisable JOBS. A **template**
-(`<libraries_home>/templates/<slug>.md`) bundles that: the same keys a domain's shared config
-carries.
+Settings patterns ([patterns](patterns.md)) are where a routine's settings start: a routine's
+settings are its own `routine.yaml`, read against the pattern it follows; nothing is layered
+under that file.
 
-**A template is a PRESELECTION, not a layer.** Adopting one COPIES its values into the routine's
-own `routine.yaml` — once, at creation or from the routine page's *Start from a template* action
-(`POST /api/routines/{slug}/adopt-template`) — and the link is then gone. Lists union, maps fill
-only what the routine left unset, the routine's own value always winning: the domain merge's
-rules applied as a WRITE. `grants` is the one shared key adoption never copies; a grant is a settled
-decision a person made about one routine, and a template pre-answering one would be a template
-exposing a secret.
+### Names and verbs gate a util
 
-Layering was tried first (0.262.0) and reversed on the operator's order (2026-08-30). It read
-badly for a reason worth keeping written down: a routine's own file recorded only its
-DIFFERENCES from its template, so opening `routine.yaml` told you almost nothing about what the
-routine could do; the routine page had to explain a second inheritance chain stacked on the
-domain's; and `template_except:` existed purely to subtract from a layer nobody could see. The
-cost of copying is the leverage — editing a template no longer reaches its adopters — which is
-the correct trade for a *starting point*. A live shared config is what a DOMAIN is — the only
-live layer there is.
-
-Consequently nothing resolves a template at config load, `RoutineConfig` has no field naming
-one, and adopting twice is harmless: the write is a union that never overwrites, so a second
-press changes nothing and a second template ADDS to the first.
-
-The shipped six, inferred from what the live routines actually hold rather than invented:
-
-| template | for |
-|---|---|
-| `basic` | thinks, reads and reports — nothing outside its own directory |
-| `watcher` | checks the world on a schedule and records what changed |
-| `correspondent` | drafts and sends things to people in your name |
-| `steward` | tends one project over weeks and publishes a page you can check |
-| `operator` | acts on files, folders and machines you own |
-| `maintainer` | maintains this instance — its library, its routines, itself |
-
-Two capabilities are deliberately NOT template defaults, because their blast radius is the
-instance itself and they deserve a per-routine decision: `recipe-authoring` (rewriting a
-routine's own instructions) and `shell`. Filesystem roots and machine bindings are absent for a
-different reason — they name paths and hosts specific to this instance, so they stay per routine.
-
-A template is an ordinary library document: versioned, linted (`lint_template_text`) and
-editable on the Library tab. A revision reaches nobody retroactively — adopters copied their
-values — so editing one only changes what the NEXT adoption writes.
-
-**A new routine starts from one.** `workflows/scaffold` fits a template to what the creation
-flow already decided — `templates.suggest`, a deterministic score over the requested permissions
-and rules, not a model call: a wrong guess here writes a wrong DEFAULT into a config file, which
-is worse than a slightly-narrow one you widen on the page. The fitted template's values are
-written into the new `routine.yaml` in FULL, so the file says what the routine is from its first
-line.
-
-### A domain holds the shared half (D82)
-
-A routine that names a **domain** (`domain:` in its own routine.yaml) inherits that domain's
-`config:` block — permissions, capabilities, rules, machines, tags, models, connections, secret
-grants, budgets and the two fs roots: eleven keys set once for all its members
-(`domains.CONFIG_KEYS`). The domain is a **default, not an override** — the halves of that set
-answer differently:
-
-- the LIST keys — permissions, rules, machines, tags, the read and write roots — **union** with
-  the member's own. The domain is a floor a routine adds to; a member cannot subtract an entry.
-- the MAPPING keys — models, connections, grants, budgets — merge **per key**, the member's own
-  value winning. A shared budget fills in only what a member leaves unset; a shared model binds
-  only a role the member has not bound itself.
-- `capabilities` is both at once: its list members (actions, utils, util tags) union, while its
-  dials — the three approval levels plus `runs`, `workflows`, `reminders` — take the member's
-  value wherever it sets one.
-
-A key the domain does not set is left entirely to each member.
-
-A routine has **at most one** domain, so there is exactly zero or one shared layer — which is
-what makes the merge answerable at all. Two layers would have to be merged with each other,
-which has no answerable rule: combining whatever a membership list turns up under "first
-record's value wins the whole key" while unioning within one makes what a routine inherits
-depend on the order rows sit in a JSON file. With one layer there is no order to depend on
-(docs/lanes-domains.md).
-
-Nothing is copied into routine.yaml — the merge happens at load — so clearing `domain:` returns
-the routine to exactly what its own file says. The routine page marks each inherited value with
-the domain it came from; edit the shared half once on the domain, then a routine's own file
-wherever it must override. Joining or leaving is an ordinary routine config save, user-only like
-every other key in that file: no run may write it, so membership lives in exactly one place and
-cannot disagree with itself.
-
-### Names gate one util; TAGS gate a class
-
-`utils:` names individual utils. `util_tags:` switches on a whole class — every util whose
-docstring `tags:` line carries one of them, including utils the library gains **later**. Both
-sides read the same way: a doc's `requires:` declares what its conduct presumes, and the
-routine's `capabilities:` is the user's switch.
-
-The distinction is the difference between fail-open and fail-closed. A name list only gates
-utils someone remembered to list, so every util the library gains is open by default — as of
-2026-08-13 that was 108 of 114. A tag gate closes the class once, and a new util carrying a
-gated tag is closed the moment it lands. Every util is required to declare at least one tag
-(`utils_lib.header_problems`), so there is no way to slip past by omission.
-
-The util catalog is read at policy load **only when some permission doc declares `util_tags`**;
-with none, the policy is identical to the name-only one and no catalog is touched.
+`utils:` names what is reserved: a whole util (`browser-session`) or ONE verb of one
+(`signal:send` — the util's first positional argument). Verb reservation is how a routine reads a
+channel freely while sending through it stays a decision: every other verb of `signal` stays open.
+A permission doc's `requires.utils:` declares what its conduct presumes; the routine's
+`capabilities.utils:` is the user's switch. A util nobody's permission names is open to every
+routine — the catalog is fail-open, so a new channel becomes a permission naming its sending verb.
 
 ### The gate follows `calls:` too
 
@@ -624,8 +465,7 @@ unions every callee's `secrets:`, `net:` and `fs:` into the caller's ONE jail an
 the library root is on PATH for every util, so naming a sibling both receives that sibling's
 credentials and lets the caller exec it. Gating only the name the model typed left the edge as
 a second, unaudited door into a reserved channel — `captcha-fetch` (ungated, callable by every
-routine) names `browser-session`; `rephrase-as-human` and `voice-rewrite` name `remote`, whose
-engine-injected `RSCHED_MACHINE_KEYS` are the bound machines' private SSH keys.
+routine) names `browser-session`.
 
 So the gate (`rsched/utilgate.py`, asked by `GrantPolicy.deny`) walks the tree and refuses a
 call whose `calls:` graph reaches a gated util the
@@ -646,58 +486,55 @@ frontmatter and authoritative for that key on save.
 ```yaml
 ---
 tags: [tool-use, utils, authoring]
+effect:                        # what holding it changes and when it applies
+  with: …
+  without: …
+  when: …
 requires:
   actions: [write_util]        # gated action kinds these instructions presume
-  utils: [discord]             # reserved utils these instructions presume, BY NAME
-  util_tags: [messaging]       # reserved util CLASSES presumed, by docstring tag
-  runs: last                   # minimum previous-run depth presumed: last | all
-expects:                       # the SOFT edge — presumed, never enforced (see below)
-  machine: ["*"]               # entity CLASS → names; "*" = at least one of the class
+  utils: [signal:send]         # reserved utils (or one verb of one) presumed, BY NAME
+expects:                       # the SOFT edge — presumed, never enforced (see above)
+  fs-read: ["/path"]           # entity CLASS → names; "*" = at least one of the class
 ---
 # permission: <name> — <summary>
 <a SHORT body: shown in the UI, and appended to the prompt's CAPABILITIES section when held>
 ```
 
-(No `confirm` in `requires:` — the approval level is your policy, never a doc's demand.)
+(No setting in `requires:` — an approval level, a history depth or the reminder layer is your
+choice per routine, never a doc's demand; the linter refuses one.)
 
-The shipped set — 25 docs, one file each in `library-seed/permissions/`, which is what a fresh
-install seeds and the authority this table is written from:
+The shipped set — 17 docs, one file each in `library-seed/permissions/`, which is what a fresh
+install seeds and the authority this table is written from. A permission exists only where
+holding it is a DECISION: a channel that reaches a person, an act that changes what every
+routine shares, a reach outside the routine's own world.
 
 | permission | requires | default |
 |---|---|---|
-| `util-authoring` | `write_util` (the approval level is the capability's setting) | ✅ held by new routines |
-| `util-revision` | `revise_util` — change a util the library already has, under the same approval dial. A separate doc from `util-authoring` on purpose: creating and rewriting are different decisions | opt-in |
+| `util-authoring` | `write_util` + `revise_util` — create a util, or change one the library already has (the approval level is `confirm`) | ✅ held by new routines |
 | `util-removal` | `remove_util` — delete a global util (and the never-recreate-deleted guard that follows it) | opt-in |
-| `memory` | `memory_read` / `memory_write` — the `.memory/` notebook | ✅ |
-| `global-utils` | nothing (`requires: {}`) — the `util` action is a base kind; this doc is pure conduct: discovery, composition, never silently routing around a broken util | ✅ |
-| `reminders` | `reminders: local` — the `remind` / `remind_feedback` fields: leave a `(regex → consequence)` caution that HOLDS a matching action before it runs (see [reminders](reminders.md); the shared store and its approval level are `reminders: global` + `remind_confirm`) | ✅ |
-| `run-history` | previous-run reads (the depth — last / all — is the capability's setting) | opt-in |
-| `shell` | the `shell` ACTION — one arbitrary host command per turn, in the run's own jail with no secret injected | opt-in |
-| `scripts` | the `script` action — run the routine's OWN persistent `scripts/<name>.py` helpers (tooling, not a second interpreter; declared secrets only, no model channel inside) | opt-in |
-| `scheduling` | the `schedule_run` action — arm/cancel a one-shot future run of a routine | opt-in |
-| `background-tasks` | the `detach` action — launch a long job that outlives a reply and reports back | ✅ conversations; opt-in for routines |
-| `rule-authoring` | the `write_rule` action — author or revise a general rule in the shared library (the approval level is `rule_confirm`) | opt-in |
-| `recipe-authoring` | the `write_recipe` capability — revise this routine's OWN `main.md` / `stages/` / `tuning.yaml`. Hold it where refining the recipe IS the job; `routine.yaml` stays sealed regardless | opt-in |
-| `workflow-generation` | `workflows: generate` — a subtask may DRAFT a new pattern when none fits | opt-in |
-| `remote-machines` | the reserved `remote` util — act on bound SSH hosts (see [remote-machines](remote-machines.md)) | opt-in |
-| `browser-sessions` | the reserved `browser-session` util — drive the shared browser that is already signed in (see [browser sessions](browser-sessions.md)) | opt-in |
-| `darknet` | the reserved `darknet` util — read Tor hidden services (see [darknet](darknet.md)) | opt-in |
-| `usenet` | the reserved `usenet` + `usenet-nzb` utils — read, search and post over NNTP (see [usenet](usenet.md)) | opt-in |
-| `messaging-discord` | the reserved `discord` util — post as the user in their Discord | opt-in |
-| `messaging-signal` | the reserved `signal` util — reach a person on Signal | opt-in |
-| `messaging-telegram` | the reserved `telegram` util — reach a person on Telegram | opt-in |
-| `messaging-whatsapp` | the reserved `whatsapp` util — reach a person on WhatsApp | opt-in |
-| `messaging-zulip` | the reserved `zulip` util — post in the user's Zulip | opt-in |
-| `outbound-mail` | the reserved `smtp`-tagged utils — send email in the user's name | opt-in |
-| `notifications` | the reserved `ntfy` util — push a notice to the user's own devices | opt-in |
+| `rule-authoring` | `write_rule` — author or revise a general rule in the shared library (the approval level is `rule_confirm`) | opt-in |
+| `recipe-authoring` | the `write_recipe` capability — revise this routine's OWN `main.md` / `stages/` / `tuning.yaml`; `routine.yaml` stays sealed regardless | opt-in |
+| `scheduling` | `schedule_run` — arm or cancel a one-shot future run of a routine | opt-in |
+| `shell` | the `shell` action — one host command per turn, in the run's own jail with no secret injected | opt-in |
+| `outbound-mail` | `gmail:send`, `fau-mail:send` — send email from the user's own mailboxes | opt-in |
+| `steward-publishing` | nothing; expects READ access to the shared kit — publish this routine's page on the Steward hub (see [status pages](status-pages.md)) | opt-in |
+| `browser-sessions` | `browser-session` — drive the shared browser that is already signed in (see [browser sessions](browser-sessions.md)) | opt-in |
+| `darknet` | `darknet` — read Tor hidden services (see [darknet](darknet.md)) | opt-in |
+| `usenet` | `usenet:post` — post articles over NNTP (see [usenet](usenet.md)) | opt-in |
+| `notifications` | `ntfy` — push a notice to the user's own devices | opt-in |
+| `messaging-discord` | `discord:send` — post through the bot | opt-in |
+| `messaging-signal` | `signal:send` — send Signal messages as the user | opt-in |
+| `messaging-telegram` | `telegram:send` — send Telegram messages as the user | opt-in |
+| `messaging-whatsapp` | `whatsapp:send` — send WhatsApp messages as the user | opt-in |
+| `messaging-zulip` | `zulip:send` — post to Zulip as the user | opt-in |
 
-The four marked ✅ are `config.base.DEFAULT_PERMISSIONS`; conversations add `background-tasks`
-(`conversations.CONVERSATION_PERMISSIONS`). `bootstrap.ADOPT_PERMISSIONS` is the narrower list a
-routine that already existed picks up once at boot when a default is added afterwards —
-`global-utils` and `reminders` today.
+`util-authoring` is `config.base.DEFAULT_PERMISSIONS` and `conversations.CONVERSATION_PERMISSIONS`;
+everything else arrives with a settings pattern or a click. `bootstrap.ADOPT_PERMISSIONS` is the
+list a routine that already existed picks up once at boot when a default is added afterwards —
+empty today.
 
 The messenger docs are one per channel rather than one bundle: each names a different reserved
-util with a different credential, and holding one is a decision about a different audience.
+verb with a different credential; holding one is a decision about a different audience.
 
 ### What enforcement looks like
 
@@ -737,9 +574,9 @@ they stay plain `routine.yaml` config.
 ## Access requests — the grant model
 
 Every grantable thing has ONE id in the entity vocabulary (`entities.py`):
-`action:<gated-kind>`, `util:<reserved-name>`, `secret:<STORE_NAME>`,
+`action:<gated-kind>`, `util:<reserved-name>` (or `util:<name>:<verb>`), `secret:<STORE_NAME>`,
 `connection:<provider>`, `machine:<name>`, `fs-read:<path>` / `fs-write:<path>`,
-`runs:last|all`, `workflows:generate`, `recreate:<deleted-util-slug>`. A run that hits a
+`runs:last|all`, `reminders:local|global`, `recreate:<deleted-util-slug>`. A run that hits a
 gate files an `ask_user` carrying `request: "<entity-id>"` (the question stays its prose —
 WHY it needs the entity); the Decisions page renders the typed decision buttons — four
 (allow/deny × now/forever) for every class, plus a fifth, **allow once (this action
@@ -795,8 +632,8 @@ separate feature; this request grammar does not implement it.
   (`fs-read`/`fs-write` paths expand to one absolute form), so the record, the config
   write and the overlay always name the same root.
 
-- **allowed once** (D65, turn-action classes only: `action:` / `util:` / `runs:` /
-  `workflows:`) — an allow-now that the engine REVOKES after exactly one use. The grant
+- **allowed once** (D65, turn-action classes only: `action:` / `util:` / `runs:`) — an
+  allow-now that the engine REVOKES after exactly one use. The grant
   seeds the same run overlay (so it reaches the same enforcers, and the CAPABILITIES
   line marks it "(one action only)"); the first successfully-DISPATCHED matching action
   spends it — the engine drops it from the overlay and rebuilds the policy at that same

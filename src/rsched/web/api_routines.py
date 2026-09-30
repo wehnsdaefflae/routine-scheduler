@@ -97,9 +97,9 @@ def _card(request: Request, info: registry.RoutineInfo, *, monthly: dict | None 
         "name": info.cfg.name,
         "description": info.cfg.description,
         "enabled": info.cfg.enabled,
-        # FINISHED, not switched off. Every goal-scoped stopping condition is met, so the
-        # scheduler stops firing this routine (registry.RoutineInfo.retired) — derived from its
-        # own goal document, nothing written. The two must read differently everywhere: one
+        # FINISHED, not switched off. It reached its finish line, so the scheduler stops
+        # firing this routine (registry.RoutineInfo.retired) — derived from its own finish
+        # line, nothing written. The two must read differently everywhere: one
         # routine is DONE, the other was turned off, and a single "disabled" chip said neither.
         "retired": info.retired,
         "tags": info.cfg.tags,
@@ -154,18 +154,6 @@ def routine_setup_surface(request: Request, slug: str) -> dict:
     return routine_surface(_state(request).server, _info(request, slug).cfg)
 
 
-@router.get("/routines/{slug}/recommendations")
-def routine_recommendations(request: Request, slug: str) -> dict:
-    """Which general rules and permissions this routine SHOULD hold, each with a one-line
-    why/why-not — the INVERSE of /surface (which reads forward from what is held). One system-model
-    pass over the routine's recipe and the two catalogs, computed live and never stored; degrades
-    to advice-less rows (available=false) when no endpoint answers, so the page never 500s.
-    """
-    from ..workflows.suggest import recommend_setup
-
-    return recommend_setup(_state(request).server, _info(request, slug).cfg)
-
-
 @router.get("/routines/{slug}")
 def routine_detail(request: Request, slug: str) -> dict:
     info = _info(request, slug)
@@ -197,17 +185,9 @@ def routine_detail(request: Request, slug: str) -> dict:
     return {
         **_card(request, info, monthly=monthly),
         "referrals_total": referrals_total,
-        # D82: which config fields this routine got from its DOMAIN's shared config, plus
-        # which domain. The page marks them so an inherited value never reads as one set here.
-        # A settings template is NOT among them: it is copied in at adoption, so its values ARE
-        # this routine's own from that moment. Its LANE contributes nothing here — a lane owns
-        # timing and no config at all (docs/lanes-domains.md).
-        "inherited": dict(info.cfg.inherited),
-        "inherited_from": info.cfg.inherited_from,
-        # …and the domain itself, straight out of this routine's own `domain:` key — the id
-        # only: the page's picker already holds the catalog from GET /api/domains, which is
-        # also where a domain's name, members and store come from.
-        "domain": info.cfg.domain,
+        # the heading this routine's card sits under on the Steward hub — identity, edited in
+        # the page's identity section and named to the run in its harness contract
+        "hub_tab": info.cfg.hub_tab,
         "schedule_friendly": (schedule.cron_to_friendly(info.cfg.cron) if info.cfg.enabled
                               else {"frequency": "disabled"}),
         "server_tz": schedule.server_tz(),
@@ -216,8 +196,7 @@ def routine_detail(request: Request, slug: str) -> dict:
         # pre-engine admission gate. It belongs to the schedule payload because it decides
         # WHETHER a scheduled fire becomes a run at all — the config page renders it inside
         # the Schedule section, saved by that section's one save button.
-        "run_gate": {"enabled": info.cfg.run_gate.enabled,
-                     "timeout_s": info.cfg.run_gate.timeout_s},
+        "run_gate": info.cfg.run_gate.model_dump(),
         # D71: set when a SCHEDULED lane contains this routine — its own cron is
         # suppressed and the Schedule dropdown renders the "lane managed" state, linking to
         # the lane. At most one lane can match: membership is exclusive (rsched.lanes).
@@ -250,7 +229,6 @@ def routine_detail(request: Request, slug: str) -> dict:
                              "host": m.host, "user": m.user, "tags": list(m.tags)}
                             for m in server.machines.values()],
         "deliberation": info.cfg.deliberation,
-        "output_compression": info.cfg.output_compression,
         # The general rules binding this routine — routine.yaml's `rules:` IS the state
         # (see rules.py); the picker's options come from GET /api/library (`rules`).
         "rules": list(info.cfg.rules),

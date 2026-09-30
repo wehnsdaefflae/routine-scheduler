@@ -8,14 +8,13 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
-from .. import templates, utils_header, utils_run
+from .. import utils_header, utils_run
 from ..paths import atomic_write
 from ..readmodels import library_reads
 from ..workflows import library
 from ..workflows.lint import (
     lint_permission_text,
     lint_rule_text,
-    lint_template_text,
     lint_workflow_py,
 )
 
@@ -51,23 +50,15 @@ def library_overview(request: Request) -> dict:
                   for r in library_reads.docs(server.rules_home)],
         "permissions": [{**p, "problems": lint.get(f"permissions/{p['slug']}.md", [])}
                         for p in library_reads.docs(server.permissions_home)],
-        # Settings TEMPLATES: the named starting points a ROUTINE adopts (a copy, never a
-        # layer — the live shared layer is a DOMAIN's config block, which is a different
-        # claim: "this is what I share" rather than "this is where I started"). Carried
-        # in the same payload as the docs they bundle, because the routine page's picker and
-        # the Library tab's editor read the one call.
-        "templates": [{**t, "problems": lint.get(f"templates/{t['slug']}.md", [])}
-                      for t in templates.list_templates(server.libraries_home)],
         "playbooks": [{**p, "problems": lint.get(f"playbooks/{p['slug']}/MAIN.md", [])}
                       for p in playbooks.list_playbooks(home)],
         "utils": library_reads.utils(server.libraries_home),
-        # The CURATED consequence reminders (rsched/reminders.py). A global reminder holds a
-        # matching action in every routine at `reminders: global`, so the one surface that
-        # must exist is the one that shows what is in there and can take one out again — the
-        # approval gate decides what gets IN, and nothing else could revoke it.
-        "reminders": [{**r.as_record(),
-                       "problems": lint.get(f"reminders/{r.id}.json", [])}
-                      for r in reminders.load_global(server.reminders_home)],
+        # The CURATED consequence reminders (rsched/reminders.py). A curated reminder holds a
+        # matching action in every routine it reaches, so the one surface that must exist is
+        # the one that shows what is in there — a record the engine skips included — and can
+        # take one out again: the approval gate decides what gets IN, nothing else revokes it.
+        "reminders": [{**r, "problems": lint.get(f"reminders/{r['id']}.json", [])}
+                      for r in reminders.records(server.reminders_home)],
         "default_rules": list(DEFAULT_RULES),
         "default_permissions": list(DEFAULT_PERMISSIONS),
         "default_budgets": dict(DEFAULT_BUDGETS),
@@ -82,8 +73,6 @@ def _docs_home(request: Request, kind: str):
         return server.rules_home
     if kind == "permissions":
         return server.permissions_home
-    if kind == "templates":
-        return templates.templates_home(server.libraries_home)
     raise HTTPException(404, f"unknown library doc kind {kind!r}")
 
 
@@ -129,8 +118,7 @@ class DocBody(BaseModel):
 # that closes it: the client previews, the preview returns a digest, and the save carries it
 # back. A library that MOVED in between yields a different digest and the save is refused —
 # which is the point, since the whole hazard is a change nobody saw the consequences of.
-_IMPACT_KIND = {"utils": "util", "rules": "rule", "permissions": "permission",
-                "templates": "template"}
+_IMPACT_KIND = {"utils": "util", "rules": "rule", "permissions": "permission"}
 
 
 def _impact_for(request: Request, kind: str, slug: str, content: str | None) -> dict:
@@ -205,8 +193,7 @@ def put_library_doc(request: Request, kind: str, slug: str, body: DocBody) -> di
             raise HTTPException(422, f"invalid frontmatter: {exc}") from exc
         post.metadata["requires"] = req
         content = fm.dumps(post, sort_keys=False)
-    linter = {"rules": lint_rule_text, "templates": lint_template_text}.get(
-        kind, lint_permission_text)
+    linter = lint_rule_text if kind == "rules" else lint_permission_text
     problems = linter(content, filename=f"{slug}.md")
     if problems:
         raise HTTPException(422, "; ".join(problems))

@@ -1,64 +1,40 @@
 ---
 effect:
-  with: sends a problem it finds to whoever owns that class of problem
-  without: escalates everything it notices straight to you
-  when: other routines or people own parts of what this one touches
+  with: fixes what is in its remit, sends the rest to its owner as a diagnosis, answers what it was handed in the same run
+  without: escalates everything to you or drops what it noticed
+  when: always — every run notices problems that are not its own task
 assists:
   - id: work-handed-to-you-this-run
     moment: pre-finish
     predicate: unclosed-delivered-report
     payload: remind
     line: >-
-      Another routine handed you work this run and you are ending without answering it.
-      Reply to it before you finish — what you did, or why you will not. A hand-off nobody
-      replied to is not settled, it is lost, and nothing after this run can close it for you.
+      Another routine handed you work this run and you are ending without answering it. Reply
+      before you finish — what you did, or why you will not — and mark the reply as closing the
+      exchange when it needs no answer back. A closure you received is owed nothing.
 tags: [maintenance, escalation, routing]
 ---
-# rule: problem routing — send a problem to whoever owns it, not upward
+# rule: problem-routing — a problem goes to its owner; a hand-off is answered in the run that gets it
 
-You will find problems that are not your task. Each one goes FIRST to whoever owns that class
-of problem, and reaches the operator only when nobody else can act. Escalating straight to a
-human looks diligent and is not: it parks the work behind the person you were supposed to save,
-who then has to route it by hand. Items have sat for days that way.
+You will find problems that are not your task. Each goes first to whoever owns that class of
+problem and reaches the user only when nobody else can act. Escalating straight to a person
+looks diligent; it parks the work behind the one you were meant to save.
 
-- **Do it yourself when it is inside your remit and you can reach it.** Check what you actually
-  hold before concluding you cannot — "I don't have access" is a claim to verify, not an excuse.
-- **Otherwise let the ARTEFACT name the owner.** Not who noticed it, not who is nearest: the
-  thing that has to be different afterwards has exactly one owner, and that is where the work
-  belongs. When two owners could plausibly take it, the artefact decides.
-- **When you cannot name an owner, say so rather than guess.** Unrouted work gets routed by
-  someone who can see the whole map; a wrong guess bounces back, having cost you both and
-  taught nobody anything.
-- **Hand off diagnoses, not hunches.** The reader has none of your context. If they have to
-  re-do the work that convinced you, they will not do it at all.
-- **Receiving is half of it, and the reply ships with the fix.** A problem handed to you was
-  diagnosed by someone else, inside your own remit — that is a gift, not noise. Act on it or
-  say plainly why you will not, and answer either way, in the SAME run that does the work: a
-  hand-off nobody replied to is not settled, it is lost, and once your run ends there is
-  nothing left that can close it but a person reading the ledger. Mark the reply as ending the
-  exchange whenever it needs no answer back, or every "thanks, done" earns a "thanks" of its
-  own forever.
-- **Work the operator owns is FILED, not narrated.** When a problem does reach the person —
-  a grant only they can give, a credential only they can set, a choice only they can make —
-  raise it as a decision they can answer. Writing it into a ledger, a report body or a run
-  summary does not reach them: those are records of what you did, and nothing renders them as
-  something awaiting an answer. An item described beautifully in prose and never filed is
-  indistinguishable, from the outside, from an item you never found. State the ask, what it
-  unblocks, and what happens if it goes unanswered.
-- **Reply to the open thread; do not refile the same problem.** Before filing a new report,
-  look at what you already have open to that owner. If a report of the same class is already
-  sitting there unanswered, reply to it, or take it over in the one report that carries both —
-  a report can absorb the rows it supersedes, and the rows it absorbs settle when it does. A
-  second and third report of one defect does not raise its priority; it makes the owner
-  re-triage the same thing and buries the single thread that matters. Keep one live thread per
-  problem-class per owner: reply or absorb, don't refile. Past a few open threads to one owner
-  the engine stops you and names them — that is not an obstacle, it is the list to fold.
-- **Routing a problem means taking it over, not copying it.** When you hand someone else's row
-  to its owner, say that the new report SUPERSEDES it. A row you merely mention stays exactly
-  where it was: still unrouted, still in the queue, waiting for the next pass to route it
-  again. Routing that leaves the original behind is not routing, it is duplication with extra
-  steps.
-- **Record both directions.** A problem bouncing between two owners stays invisible until
-  someone writes the hand-offs down. And if the same class keeps arriving at you, that is not a
-  queue to work through — it is evidence the ownership map is wrong, and saying so is the more
-  valuable finding.
+- **Do it yourself when it is in your remit and in reach.** "I don't have access" is a claim to
+  check, not an excuse.
+- **Let the artefact name the owner.** Whatever has to be different afterwards has one owner.
+  When you cannot name it, say so rather than guess: a wrong guess bounces back having cost
+  both sides.
+- **Hand off a diagnosis, not a hunch.** An owner who has to redo the work that convinced you
+  will not do it.
+- **Answer what you were handed, in the run that does the work.** Act on it or say why you will
+  not; reply either way before you finish, because a hand-off nobody answered is lost. A reply
+  that ends the exchange says so. A closure you receive needs nothing back.
+- **File what the user owns; never narrate it.** A grant, a credential or a choice only they can
+  make reaches them as a decision they can answer, saying what it unblocks and what happens if
+  it goes unanswered. A ledger line or a summary paragraph reaches nobody.
+- **One live thread per problem per owner.** Before filing, look at what you already have open
+  to that owner: reply to it or fold into it rather than filing again. Routing someone else's
+  row means taking it over, not mentioning it.
+- **Recurrence is a finding about ownership.** A problem bouncing between owners, or the same
+  class arriving at you again and again, says the ownership map is wrong. Say so.

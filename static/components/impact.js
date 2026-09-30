@@ -1,6 +1,6 @@
 // The BLAST RADIUS of a library edit, on the Library tab.
 //
-// There is exactly one copy of every rule, permission, template and util, so a save here
+// There is exactly one copy of every rule, permission and util, so a save here
 // reaches every routine that holds it at that routine's next run, with no migration and
 // nothing to review. `library_impact.py` computes what that costs — each holder's setup
 // surface against the current library and against the proposed one — and the API has served
@@ -35,7 +35,7 @@ function breakRows(breaks) {
 }
 
 /** A live "who holds this" line under the editor, plus the gate both save and delete run
- *  through. `kind` is the API path segment (utils | rules | permissions | templates). */
+ *  through. `kind` is the API path segment (utils | rules | permissions). */
 export function impactPanel(kind, slug) {
   const node = el("div", { class: "impact-panel", "data-impact": `${kind}/${slug}` },
     el("span", { class: "faint small" }, "checking who holds this…"));

@@ -19,9 +19,18 @@ def _seed(ui, slug="uir", *, reason="seeded check"):
                              requested_by="ui")
 
 
+def _open(ui, ui_page):
+    """The routine page with Schedule once — in Schedule & gate's "more" — unfolded. Arming a
+    one-shot is an ACTION rather than a setting, so it takes effect on its own button."""
+    ui_page.goto(f"{ui.url}/#/routine/uir")
+    ui_page.wait_for_selector("#sec-schedule-once", state="attached")
+    ui_page.evaluate(
+        "() => document.getElementById('sec-schedule-once').closest('details').open = true")
+
+
 def test_schedule_once_card_renders_and_cancels(ui, ui_page):
     _seed(ui)
-    ui_page.goto(f"{ui.url}/#/routine/uir")
+    _open(ui, ui_page)
     row = ui_page.locator(".oneshot-row")
     expect(row).to_have_count(1)
     expect(row).to_contain_text("one-shot")
@@ -38,7 +47,7 @@ def test_schedule_once_card_renders_and_cancels(ui, ui_page):
 
 
 def test_schedule_once_arm_from_ui(ui, ui_page):
-    ui_page.goto(f"{ui.url}/#/routine/uir")
+    _open(ui, ui_page)
     expect(ui_page.locator(".oneshot-body")).to_contain_text("no one-shot armed")
     when_local = (datetime.now(UTC).astimezone() + timedelta(days=3)).strftime("%Y-%m-%dT%H:%M")
     ui_page.locator("input.oneshot-at").fill(when_local)

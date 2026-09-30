@@ -89,12 +89,11 @@ def test_rail_sections_collapse_and_persist(ui, ui_page):
     assert ui_page.evaluate("localStorage.getItem('rail:state')") == "open"
 
 
-def test_conversation_output_compression_control(ui, ui_page):
+def test_a_conversation_has_no_goal_panel_and_no_compression_dial(ui, ui_page):
+    """A conversation's spine is the plan it writes itself — no finish line, no Done when — so
+    its rail carries no goal section; and lossless output compression is engine behaviour, not
+    a dial on its header."""
     _start_conversation(ui, ui_page)
-    control = ui_page.get_by_label("Output compression", exact=True)
-    control.evaluate("e => { let p=e.parentElement; while(p) { if(p.tagName==='DETAILS') p.open=true; p=p.parentElement; } }")
-    expect(control).to_have_value("compress")
-    control.select_option("measure")
-    expect(ui_page.locator("#toast:not([hidden])")).to_contain_text("Output compression saved")
-    ui_page.reload()
-    expect(ui_page.get_by_label("Output compression", exact=True)).to_have_value("measure")
+    expect(ui_page.locator(".conv-view .rail-cap", has_text="state").first).to_be_visible()
+    expect(ui_page.locator('.conv-view .rail-cap[data-rail="goal"]')).to_have_count(0)
+    expect(ui_page.get_by_label("Output compression", exact=True)).to_have_count(0)

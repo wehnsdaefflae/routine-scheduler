@@ -93,12 +93,17 @@ class SearchIndex:
         self.path = server.routines_home / ".control" / DB_NAME
         self._lock = threading.Lock()
         self._conn: sqlite3.Connection | None = None
+        self._shut = False
 
     # ---- connection & schema ------------------------------------------------------------
 
     def _db(self) -> sqlite3.Connection:
         if self._conn is not None:
             return self._conn
+        if self._shut:
+            # a refresh the lifespan cancelled is still running in its worker thread; opening
+            # a connection now would leave one nobody ever closes
+            raise RuntimeError("the search index is shut down")
         self.path.parent.mkdir(parents=True, exist_ok=True)
         try:
             conn = self._open()
@@ -144,6 +149,13 @@ class SearchIndex:
                 with contextlib.suppress(sqlite3.Error):
                     self._conn.close()
                 self._conn = None
+
+    def shutdown(self) -> None:
+        """Close for good: the process is ending; a refresh still running in a worker thread
+        must not open a fresh connection behind this close.
+        """
+        self._shut = True
+        self.close()
 
     # ---- indexing -------------------------------------------------------------------------
 

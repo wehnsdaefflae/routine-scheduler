@@ -73,3 +73,20 @@ def test_answer_run_now_does_not_claim_a_refused_start(ui, ui_page, monkeypatch)
     ui_page.reload()
     expect(ui_page.locator(".question-item").first).to_contain_text("answered · queued")
 
+
+
+def test_answer_and_run_now_carries_an_optional_brief(ui, ui_page):
+    """The run started by hand may take a one-line brief it answers for instead of its recipe's
+    Done when — offered beside the button, sent only when it is filled in."""
+    _seed(ui, "q-20260912-120000-3")
+    ui_page.goto(f"{ui.url}/#/questions")
+    card = ui_page.locator(".question-item").first
+    card.locator("textarea.answer-input").fill("Do it")
+    card.locator("[data-answer-brief]").fill("only draft the reply to the grant office")
+    with ui_page.expect_request(lambda r: r.url.endswith("/api/questions/q-20260912-120000-3/answer")
+                                ) as sent:
+        card.locator("[data-answer-run-now]").click()
+    body = sent.value.post_data_json
+    assert body["run_now"] is True
+    assert body["brief"] == "only draft the reply to the grant office"
+    expect(card).to_contain_text("answered · run started")

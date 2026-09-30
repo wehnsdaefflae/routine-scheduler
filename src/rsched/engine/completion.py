@@ -238,6 +238,7 @@ def action_candidate(loop, completion) -> tuple[dict, list]:
     (schema first, then per-kind/permission checks). Raises on unparseable text —
     callers decide whether that is a retry or a silent fallback.
     """
+    from ..grantpolicy import REQUEST_ROUTE_MARK
     from .authoring import recreate_denial  # function-level: authoring pulls in the ask stack
     from .availability import request_denial
 
@@ -249,6 +250,8 @@ def action_candidate(loop, completion) -> tuple[dict, list]:
                                    grants=loop.grants)
                 or recreate_denial(loop, candidate)
                 or request_denial(loop, candidate))
+    if problems and any(REQUEST_ROUTE_MARK in str(p) for p in problems):
+        loop.ctx.last_denial_turn = loop.ctx.turn + 1   # the turn this refusal is costing
     if problems and isinstance(candidate, dict):
         # per-util telemetry: a denied/malformed util call never reaches the executor —
         # this validation seam is the only place it can be counted (util_stats)

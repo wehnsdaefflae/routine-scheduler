@@ -179,7 +179,7 @@ def apply_rule_additions(loop) -> None:
         ctx.consulted_rules.add(slug)
         text = library_docs.doc_body(raw).strip()
         note = (f"the user bound the general rule {slug!r} to this routine — it applies from "
-                f"now on, and is one of your standing practices from the next run:\n\n{text}")
+                f"now on; every later run holds it too:\n\n{text}")
         enginenote.append(loop, note)
 
 
@@ -234,7 +234,7 @@ def apply_rule_drop(loop) -> None:
         ctx.consulted_rules.discard(slug)
     named = ", ".join(repr(s) for s in slugs)
     note = (f"the user UNBOUND the general rule(s) {named} — they no longer bind this routine. "
-            f"Stop applying them from now on; they are not standing practices any more.")
+            f"Stop applying them from now on; no later run holds them.")
     if erased:
         note += (f" Their text has been withdrawn from the conversation above "
                  f"({erased} message(s) rewritten).")

@@ -1,40 +1,30 @@
 ---
 effect:
-  with: looks a fact about the world up before it uses it
-  without: answers from what the model already knows, which is stale and sometimes silently wrong
-  when: the task turns on outside facts — prices, availability, news, anything dated
+  with: looks up outside facts and existing solutions before relying on memory or building from scratch, source beside the fact
+  without: answers from stale training; reinvents what exists
+  when: always — any run can meet an outside fact it only half knows
 tags: [tool-use, research, web]
 ---
-# rule: web-research — verify external facts by searching, don't guess from memory
+# rule: web-research — look it up before relying on memory or building from scratch
 
-When a step turns on a fact about the outside world you are not certain of, **look it up
-instead of recalling it**. Your training is stale and lossy; a wrong fact quietly poisons
-everything downstream of it. Your CAPABILITIES catalog lists a web-search tool returning ranked
-title/url/snippet results, and deeper retrieval ones (page fetch, scrapers).
+When a step turns on a fact about the outside world you are not certain of, look it up
+instead of recalling it. Your training is stale and lossy; a wrong fact quietly poisons
+everything built on it. Your catalog carries search and page-fetch capabilities.
 
-**When to search (default to yes for these):**
-- Anything time-sensitive or that changes: prices, availability, versions, schedules, who
-  currently holds a role, "latest"/"current"/"today".
-- Specifics you'd otherwise approximate: exact names, dates, figures, identifiers, URLs.
-- A domain the instruction cares about but you only half-know — confirm before you build on it.
-- Any claim you're about to write into a deliverable as if it were established fact.
-
-**When not to:** settled general knowledge, this routine's own state, or arithmetic — searching
-those is just latency.
-
-**How to use it well:**
-- Make the query specific (add the year, the place, the exact term). Read snippets; open the
-  page only when the snippet isn't enough.
-- Corroborate anything load-bearing with a second independent result before you rely on it;
-  prefer primary/official sources over aggregators.
-- **A lookup that did not land has not landed.** When the search comes back empty or the page
-  will not open, that fact is still unverified — do not fill the gap by constructing what the
-  answer probably is. An address you assembled from a pattern is a guess wearing a URL's
-  clothes; never write one down as a source without fetching it. And an official document can
-  still be the wrong one: check that the edition you are reading is the one currently in force
-  before you build on its figures.
-- **Record provenance** — put the source URL next to the fact in your output or record so the
-  claim is traceable and the next run needn't re-verify it.
-- Keep verified facts distinct from your own inferences; never present an inference as a lookup.
-
-Searching costs a turn and some tokens — cheap next to shipping a confident wrong answer.
+- **Search by default** for anything that changes (prices, availability, versions, schedules,
+  who holds a role, "latest"), for specifics you would otherwise approximate (names, dates,
+  figures, identifiers, addresses) and for any claim you are about to write into a deliverable
+  as fact. Skip it for settled general knowledge, your own state and arithmetic.
+- **Look for what exists before you build.** Before designing a method, a tool or a pipeline,
+  search for an existing library, service or published solution to the same problem. Building
+  what already exists is the costliest way to find out it did.
+- **Query precisely.** Add the year, the place, the exact term. Read the snippets; open the
+  page when they are not enough.
+- **Corroborate what carries weight.** Confirm a load-bearing fact with a second independent
+  source; prefer primary and official sources to aggregators. Check that the edition you read
+  is the one in force.
+- **Cite only what you fetched.** An address assembled from a pattern is a guess, not a
+  source.
+- **Keep the source beside the fact** in your output or record, so the claim is traceable and
+  the next run need not verify it again. Keep what you looked up distinct from what you
+  inferred.

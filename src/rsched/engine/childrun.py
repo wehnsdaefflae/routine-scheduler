@@ -145,13 +145,12 @@ def build_child(parent_ctx: RunContext, action: dict, *, mode: str,
         # Children inherit their parent's RESOURCES, one-time grants included (fs roots,
         # secrets, connections, machines) — but never its capability-class grants: sub-
         # workflows run with capabilities off, and entities.is_resource is that line.
-        # The DOMAIN's shared store (D67) is a resource root, so it flows down too — a
-        # child of a domain member sees the same shared surface its parent does.
+        # A shared store is an ordinary fs write root (rsched/sharedstores.py), so it flows
+        # down with the parent's roots — a child sees the same stores its parent does.
         granted_now=inheritable_resources(parent_ctx.granted_now,
                                           parent_ctx.granted_once),
         grant_args={e: v for e, v in parent_ctx.grant_args.items()
                     if entities.is_resource(e)},
-        domain_store_roots=list(parent_ctx.domain_store_roots),
         # The share mounts are the PARENT's, provisioned once for the whole run tree
         # under <routine>/mnt/ — a child inherits the fs roots that reach them, so it
         # must inherit the truth about which ones are live too (R514).

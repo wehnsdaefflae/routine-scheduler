@@ -1,9 +1,9 @@
 """Fix links on the effective surface — the panel that diagnoses a dependency handing the
 reader the panel that owns it.
 
-The surface states a gap exactly (`permission:run-history` held with `runs=last` not switched
-on) and then stops, because the dial that closes it belongs to another panel and a read-only
-diagnosis must never become a second place to edit one value. What a row CAN carry is the
+The surface states a gap exactly (a held conduct doc whose required `shell` action is not
+switched on) and then stops, because the switch that closes it belongs to another panel and a
+read-only diagnosis must never become a second place to edit one value. What a row CAN carry is the
 address: the missing switch named in words, plus a jump that lands on the control and flashes
 it. A satisfied row carries nothing — an affordance there invites a click to find out whether
 what the row already says is true, which is the reading this panel exists to spare.
@@ -42,7 +42,7 @@ import pytest
 import yaml
 from playwright.sync_api import expect
 
-from rsched import domains, lanes, secrets
+from rsched import lanes, secrets
 from rsched.config import MachineConfig
 from rsched.oauth import store as oauth_store
 from rsched.oauth.store import Connection
@@ -71,19 +71,17 @@ SCHEDULE = "#sec-schedule"
 MACHINES = "#sec-machines"
 FS_ROOTS = "#sec-fs-roots"
 CONNECTIONS = "#sec-connections"
-PERMISSIONS = "#sec-permissions"
 SECRETS_SECTION = "#sec-secrets"         # Settings' own secrets section — where a journey lands
-ABILITY = '.ability[data-ability="run-history"]'
+ABILITY = '.ability[data-ability="needs-shell"]'
 
 # The CONTROLS those panels own, each addressed as the one thing that performs one act rather
 # than as "a control in the right region": a card holds several — `.ability select` counted
 # every one of them — so the day a second dial lands in that card, the assertion reds with a
 # message about the wrong control.
-PERM_PANEL = f"{PERMISSIONS} + .panel"
-DIAL = f'{ABILITY} .ab-row[data-entity="policy"] select'      # abilities.js: dialFor's row
+SWITCH = f"{ABILITY} [data-switch-on]"      # abilities.js: the card's own switch
 SCHED_FREQ = f"{SCHEDULE} + .panel div.row > select"          # the cadence; catchup is in a label
 SCHED_CLEAR = f"{SCHEDULE} + .panel [data-clear-cron]"
-PERM_SAVE = f'{PERM_PANEL} button:has-text("save permissions")'
+ACCEPT = ".accept-bar [data-accept]"           # the settings page's ONE save
 
 _STATIC = Path(__file__).resolve().parents[2] / "static"
 
@@ -152,15 +150,44 @@ def _rule(ui, slug: str, expects: dict) -> None:
         encoding="utf-8")
 
 
+def _permission(ui, slug: str, *, requires: dict | None = None,
+                expects: dict | None = None) -> None:
+    """A library CONDUCT DOC of the shape a case needs, written into the fixture library rather
+    than borrowed from the seed: the seed's catalogue changes with the product; what these
+    tests pin is how the surface and the page treat a doc of this SHAPE — one whose required
+    action is not switched on, one that expects a machine it names no instance of.
+    """
+    meta = {"effect": {"with": "does the thing this fixture stands for",
+                       "without": "does not", "when": "a test needs a doc of this shape"},
+            "tags": ["test"], "requires": requires or {},
+            **({"expects": expects} if expects else {})}
+    (ui.server_cfg.permissions_home / f"{slug}.md").write_text(
+        f"---\n{yaml.safe_dump(meta, allow_unicode=True)}---\n"
+        f"# permission: {slug} — a fixture doc\n\nFixture conduct.\n", encoding="utf-8")
+
+
+def _hold_needs_shell(ui) -> None:
+    """Held: a doc requiring the `shell` action, with the action switched off — a file edited by
+    hand, since every save raises the mapping to cover what a held doc requires."""
+    _permission(ui, "needs-shell", requires={"actions": ["shell"]})
+    _configure(ui, permissions=["needs-shell"])
+
+
+def _hold_remote_machines(ui) -> None:
+    """Held: a doc that expects "a machine" — any one — and none bound."""
+    _permission(ui, "remote-machines", expects={"machine": ["*"]})
+    _configure(ui, permissions=["remote-machines"])
+
+
 def _configure(ui, *, permissions=(), capabilities=None, **over) -> None:
     """Rewrite the fixture routine's config. Both layers are written EXPLICITLY every time:
-    leaving either implicit means the model's defaults apply (write_util plus the memory pair,
-    plus the docs that cover them), which adds rows these tests are not about — one gap, one row.
+    leaving either implicit means the model's defaults apply (write_util plus the doc that
+    covers it), which adds rows these tests are not about — one gap, one row.
     """
     path = ui.routines / "uir" / "routine.yaml"
     cfg = yaml.safe_load(path.read_text(encoding="utf-8"))
     cfg["permissions"] = list(permissions)
-    cfg["capabilities"] = {"actions": [], "utils": [], "util_tags": [], **(capabilities or {})}
+    cfg["capabilities"] = {"actions": [], "utils": [], **(capabilities or {})}
     cfg.update(over)
     path.write_text(yaml.safe_dump(cfg), encoding="utf-8")
 
@@ -171,15 +198,16 @@ def _stored(ui) -> dict:
 
 
 def _unfold(page) -> None:
-    """Open every routine-page config group.
+    """Open every routine-page settings group and each group's "more" menu.
 
-    The page ships with only its leading group open (views/routine.js SECTION_GROUPS): seven
-    open at once made it 11-12 000px tall. A control inside a folded group is not visible, so a
-    test that reads one unfolds first. What the DEFAULT is, and that the choice is remembered,
-    is pinned in test_routine_groups.py — not here.
+    The page ships with only its two leading groups open (views/routine-config.js): seven open at
+    once made it 11-12 000px tall. The rarely needed sections fold once more behind each group's
+    "more". A control inside a fold is not visible, so a test that reads one unfolds first. What
+    the DEFAULT is — and that the choice is remembered — is pinned in test_routine_groups.py, not
+    here.
     """
     page.wait_for_selector(".rgroup-head")
-    page.evaluate("() => { for (const d of document.querySelectorAll('details.rgroup')) d.open = true; }")
+    page.evaluate("() => { for (const d of document.querySelectorAll('details.rgroup, details.rmore')) d.open = true; }")
 
 
 def _open(ui_page, ui):
@@ -272,8 +300,8 @@ def _drop_control(page, entity: str):
     return page.locator(f'[data-drop="{entity}"]')
 
 
-def _perm_put(request) -> bool:
-    return request.method == "PUT" and request.url.endswith("/routines/uir/permissions")
+def _settings_post(request) -> bool:
+    return request.method == "POST" and request.url.endswith("/routines/uir/settings")
 
 
 # ---- the binding: every kind the console renders lands on a control that performs it --------
@@ -297,7 +325,7 @@ class Case:
 
 
 def _seed_switch_on(ui, mp) -> None:
-    _configure(ui, permissions=["run-history"], capabilities={"runs": "none"})
+    _hold_needs_shell(ui)
 
 
 def _seed_cover_or_drop(ui, mp) -> None:
@@ -333,7 +361,7 @@ def _seed_bind_machine(ui, mp) -> None:
     # A catalog with a box in it: an EMPTY catalog is the one state where the Machines panel
     # honestly has nothing to bind, which the row's own effect line says out loud.
     ui.server_cfg.machines = {"gpu-box": mac}
-    _configure(ui, permissions=["remote-machines"])
+    _hold_remote_machines(ui)
 
 
 def _seed_bind_connection(ui, mp) -> None:
@@ -376,8 +404,8 @@ def _needed_secret_set(page):
 
 
 CASES = (
-    Case("switch_on", "permission:run-history", _seed_switch_on,
-         landing=ABILITY, control=lambda p: p.locator(DIAL)),
+    Case("switch_on", "permission:needs-shell", _seed_switch_on,
+         landing=ABILITY, control=lambda p: p.locator(SWITCH)),
     Case("cover_or_drop", "util:poster", _seed_cover_or_drop,
          landing=_orphan_row("util:poster"),
          control=lambda p: _drop_control(p, "util:poster")),
@@ -492,10 +520,10 @@ def test_every_fix_kind_lands_on_a_control_that_can_perform_it(ui, ui_page, monk
 def test_a_capability_this_routine_owns_can_be_switched_off_where_the_row_says(ui, ui_page):
     """`cover_or_drop` offers "switch it off". Until now nothing switched a capability off: the
     orphan card listed uncovered capabilities read-only; dropping one happened as an
-    invisible side effect of pressing "save permissions" — the server's floor strips a capability
-    no held doc requires. The act was reachable, by a control that did not say so.
+    invisible side effect of a save — the server's floor strips a capability no held doc
+    requires. The act was reachable, by a control that did not say so.
 
-    So the offer lands on a real drop; the PAYLOAD is what proves it: a save alone would
+    So the offer lands on a real drop; the PAYLOAD is what proves it: an accept alone could
     have stripped this capability anyway, so only the request the CLIENT sends can tell the
     control apart from the floor doing its job.
     """
@@ -510,20 +538,20 @@ def test_a_capability_this_routine_owns_can_be_switched_off_where_the_row_says(u
     drop = _drop_control(ui_page, "util:poster")
     _operable(drop, "drop a capability no held doc requires")
     drop.click()
-    with ui_page.expect_request(_perm_put) as sent:
-        ui_page.locator(PERM_SAVE).click()
-    payload = sent.value.post_data_json
-    assert "poster" not in (payload["capabilities"]["utils"] or []), (
-        f"the press changed nothing the save carried: {payload['capabilities']}")
-    expect(ui_page.locator("#toast:not([hidden])")).to_contain_text("permissions saved")
-    assert "poster" not in (_stored(ui)["capabilities"]["utils"] or [])
+    with ui_page.expect_request(_settings_post) as sent:
+        ui_page.locator(ACCEPT).click()
+    caps = sent.value.post_data_json["changes"]["capabilities"]
+    assert "poster" not in (caps.get("utils") or []), (
+        f"the press changed nothing the accept carried: {caps}")
+    expect(ui_page.locator("#toast:not([hidden])")).to_contain_text("accepted")
+    assert "poster" not in (_stored(ui)["capabilities"].get("utils") or [])
 
 
 def test_a_missing_util_offers_the_half_a_person_can_perform(ui, ui_page):
     """A util the library does not have is written by a RUN through write_util. The Library page
-    offers "+ new" for rules, permissions and templates and none for utils, so an offer to go
-    there and write one is the third repetition of this file's whole subject: a link to a place
-    where the act cannot be performed.
+    offers "+ new" for rules and permissions and none for utils, so an offer to go there and
+    write one is the third repetition of this file's whole subject: a link to a place where the
+    act cannot be performed.
 
     So the row LEADS with the half that is performable — stop holding the name — and states the
     other half without a control behind it, which is what an offer carrying no destination
@@ -543,40 +571,6 @@ def test_a_missing_util_offers_the_half_a_person_can_perform(ui, ui_page):
 
     _lands_on(ui_page, row.locator(CONTROL), _orphan_row("util:ghost-util"))
     _operable(_drop_control(ui_page, "util:ghost-util"), "stop holding a util nothing can write")
-
-
-def test_a_capability_the_domain_supplies_says_whose_it_is(ui, ui_page):
-    """The other half of the same row, which is why the fix has to carry PROVENANCE. A routine's
-    permissions save counts inherited permissions for the floor, so a capability its DOMAIN hands
-    down survives it — correctly, because it is the domain's to drop. A drop control here would
-    press cleanly and change nothing.
-
-    The row therefore names the domain and travels to the editor that owns it.
-    """
-    _util(ui, "poster")
-    dom = domains.create(ui.routines, name="Shared setup",
-                         config={"capabilities": {"utils": ["poster"]}})
-    _configure(ui, domain=dom["id"])
-
-    row = _row(ui_page, ui, "util:poster")
-    offer = row.locator(FIX)
-    expect(offer).to_have_attribute("data-fix", "cover_or_drop")
-    expect(row).to_contain_text("Shared setup")          # whose it is, on the row itself
-    assert "Shared setup" in offer.inner_text(), (
-        f"the offer does not say whose capability this is: {offer.inner_text()!r}")
-
-    # …and the panel it points into pretends nothing: the drop is stamped only where pressing
-    # it does something, so its ABSENCE here is the claim. What the row carries instead is the
-    # journey to the editor that can.
-    expect(ui_page.locator(f'{_orphan_row("util:poster")} a[href="#/routines"]')).to_have_count(1)
-    expect(_drop_control(ui_page, "util:poster")).to_have_count(0)
-
-    away = row.locator('.fix-link[href^="#/routines"]')
-    expect(away).to_have_count(1)
-    away.click()
-    ui_page.wait_for_function("() => location.hash.startsWith('#/routines')")
-    _operable(ui_page.locator(f'[data-domain-row="{dom["id"]}"] [data-domain-edit]'),
-              "edit the domain that supplies the capability")
 
 
 def test_a_lane_suppressed_cron_can_actually_be_cleared(ui, ui_page):
@@ -613,20 +607,20 @@ def test_a_lane_suppressed_cron_can_actually_be_cleared(ui, ui_page):
 
 
 def test_a_failing_row_offers_the_switch_it_named(ui, ui_page):
-    """The case the affordance was asked for: a held conduct doc whose dial is off. The row
-    diagnoses it precisely and the dial is a card further down the same page, which the reader
-    had to know unaided.
+    """The case the affordance was asked for: a held conduct doc whose required action is off.
+    The row diagnoses it precisely and the switch is in a card further down the same page, which
+    the reader had to know unaided.
     """
-    _configure(ui, permissions=["run-history"], capabilities={"runs": "none"})
-    row = _row(ui_page, ui, "permission:run-history")
+    _hold_needs_shell(ui)
+    row = _row(ui_page, ui, "permission:needs-shell")
     expect(row.locator(".setup-sev")).to_have_text("fails")
-    expect(row).to_contain_text("runs=last")          # the diagnosis names the missing switch
+    expect(row).to_contain_text("shell")              # the diagnosis names the missing switch
     offer = row.locator(FIX)
     expect(offer).to_have_count(1)
     expect(offer).to_have_attribute("data-fix", "switch_on")
-    # …and so does the offer: "switch it on" over an unnamed dial sends the reader hunting
-    # through a panel of toggles for the one the row was talking about.
-    assert "runs=last" in _wording(offer), (
+    # …and so does the offer: "switch it on" over an unnamed capability sends the reader
+    # hunting through a panel of toggles for the one the row was talking about.
+    assert "switch on shell" in _wording(offer), (
         f"the fix does not name the missing capability: {_wording(offer)!r}")
 
 
@@ -634,23 +628,29 @@ def test_the_offer_lands_on_the_control_not_the_top_of_the_panel(ui, ui_page):
     """Clicking is the whole point; WHERE it puts you is the difference between an answer and
     another search. The permissions panel is a column of ability cards; flashing the lot of them
     hands back the hunt the row had just ended. The failing card carries its own badge and the
-    dial inside it, so that is where the press lands.
+    switch inside it, so that is where the press lands — and pressing it stages exactly the
+    capability the row named, for the page's one accept.
 
     The route is unchanged — this fix lives here, so leaving the page would lose the diagnosis
     that sent them.
     """
-    _configure(ui, permissions=["run-history"], capabilities={"runs": "none"})
-    row = _row(ui_page, ui, "permission:run-history")
+    _hold_needs_shell(ui)
+    row = _row(ui_page, ui, "permission:needs-shell")
     ui_page.wait_for_selector(ABILITY)
 
     flash = _lands_on(ui_page, row.locator(CONTROL), ABILITY)
     assert flash["on"], (
         "the flash lit a region around the failing ability rather than the ability itself: "
         f"{flash['classes']}")
-    # the control really is what you arrived at: the depth dial in that card, asked for by the
-    # row it sits in rather than as "a select somewhere inside the card"
-    _operable(ui_page.locator(DIAL), "set the previous-runs depth")
+    # the control really is what you arrived at: the switch in that card, asked for by the row
+    # it sits in rather than as "a button somewhere inside the card"
+    switch = ui_page.locator(SWITCH)
+    _operable(switch, "switch on what the held doc requires")
     assert ui_page.evaluate("() => location.hash").startswith("#/routine/uir")
+    switch.click()
+    with ui_page.expect_request(_settings_post) as sent:
+        ui_page.locator(ACCEPT).click()
+    assert "shell" in sent.value.post_data_json["changes"]["capabilities"]["actions"]
 
 
 def test_a_satisfied_row_offers_nothing_to_click(ui, ui_page):
@@ -703,7 +703,7 @@ def test_an_offer_for_one_of_a_class_never_prints_the_asterisk(ui, ui_page):
     The CLI half has said this properly all along (`bind a machine to this routine`); the console
     meets it. The wildcard is an ABSENCE of a name, so the offer says the class instead.
     """
-    _configure(ui, permissions=["remote-machines"])
+    _hold_remote_machines(ui)
     row = _row(ui_page, ui, "machine:*")
     expect(row.locator(".setup-sev")).to_have_text("interrupts")
     offer = row.locator(FIX)
@@ -809,11 +809,11 @@ def test_the_strip_offers_the_same_act_as_the_panel(ui, ui_page):
     Both are fed by one renderer, which is the point: this asserts the offer is THERE, that it
     WORKS, and that the two readings of one row do not put different words on one act.
     """
-    _configure(ui, permissions=["run-history"], capabilities={"runs": "none"})
+    _hold_needs_shell(ui)
     _open(ui_page, ui)
 
-    strip = _strip_row(ui_page, "permission:run-history")
-    panel = ui_page.locator(f'{PANEL} [data-surface-row="permission:run-history"]')
+    strip = _strip_row(ui_page, "permission:needs-shell")
+    panel = ui_page.locator(f'{PANEL} [data-surface-row="permission:needs-shell"]')
     panel.wait_for(state="visible")
 
     up = strip.locator(FIX)
@@ -865,8 +865,8 @@ def test_a_fix_with_nowhere_to_land_disables_itself(ui, ui_page):
     reader unsure whether they missed the movement or the page did; a control that greys out and
     says where the destination is not tells them what happened.
     """
-    _configure(ui, permissions=["run-history"], capabilities={"runs": "none"})
-    row = _row(ui_page, ui, "permission:run-history")
+    _hold_needs_shell(ui)
+    row = _row(ui_page, ui, "permission:needs-shell")
     ui_page.wait_for_selector(ABILITY)
 
     # take the whole destination away — heading and panel, so nothing the fix could name remains

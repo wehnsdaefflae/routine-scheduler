@@ -1,29 +1,19 @@
 ---
 effect:
-  with: write a new util into the shared library, which every routine can then call
-  without: uses only the utils that already exist
-  when: it keeps needing a tool nobody has written yet
+  with: writes new shared utils and repairs or extends existing ones, for every routine that calls them
+  without: uses the utils that exist and reports a missing or broken one instead of fixing it
+  when: it keeps needing a tool nobody has written yet, or keeps running into bugs in the ones it uses
 tags: [tool-use, utils, authoring]
 requires:
-  actions: [write_util]
+  actions: [write_util, revise_util]
 ---
-# permission: util authoring — create a new global util
+# permission: util-authoring — create and revise the shared utils
 
-Unlocks CREATING a util: when no existing util fits, write one (single-purpose, reusable — never
-a one-off); when a util is broken, repair it (read its source first: `util` name `show`, args
-`["<name>"]`). **Placement test — util or script?** A util is GLOBAL, for every routine; a
-script is for one routine only. Would another routine plausibly call this capability? NO —
-it is your own pipeline work (your polling, your parsing, your artifact) → it belongs in
-your own `scripts/` dir (the scripts permission), never in the shared library where it
-clutters every routine's catalog. YES → it belongs here. Whether a change needs approval is the routine's write_util approval level
-(user-set; a required approval files a blocking question automatically — batch other work
-while it waits). Check the catalog first (`util name=list`) so you never duplicate a
-capability; report every util you created or changed in the finish summary. The engine
-selftests every script before committing, and rejects an incomplete docstring header:
-`tags:`, every credential env var read on `secrets:` (only declared secrets reach the util's
-env), siblings exec'd via `gu` on `calls:`, and `net: outbound` or `net: none` — utils run in
-a filesystem/network sandbox; undeclared network = no TCP. NEVER recreate a util the user
-deleted (a slug with a deletion in the library's history is rejected): ask_user first, mode
-blocking, naming the util and why — only an explicit yes in the same run unblocks it.
-
-Revising an existing util (`util-revision`) and deleting one (`util-removal`) are SEPARATE permissions. You emit the same action for create and revise — the engine decides which it is from whether the name already exists in the library, and refuses the half you do not hold. Holding this doc alone lets you add new utils, never touch the ones other routines already depend on.
+Before creating, find the util whose subject this is and add a verb to it: one subject, one util.
+A revision lands on every caller at its next run, untested by them. Keep every documented
+invocation working: new verbs and optional flags are safe; a renamed flag, a changed default or
+narrower input breaks a pipeline you cannot see, so name what may break in your summary.
+Reservation follows a verb's name (`<util>:<verb>` in a permission's `requires:`). Keep a
+reserved verb's name and keep its act in that verb alone; a verb folded into a util reserved
+whole becomes gated for every caller.
+Name every util you created or revised in your finish summary.

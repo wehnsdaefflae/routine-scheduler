@@ -270,8 +270,8 @@ function globalStream() {
       // A reconnect may have missed run start/state/finish events while the stream was down;
       // fire one synthetic bus tick so every view re-fetches from REST and catches up. NOT on
       // the FIRST open: the views have just loaded their own data, and the dashboard treats
-      // `reconnect` as "anything may have moved" — so the first open used to re-run the two
-      // heaviest reads on the page (/api/domains, /api/schedule/week) seconds after render.
+      // `reconnect` as "anything may have moved" — so the first open used to re-run the
+      // heaviest read on the page (/api/schedule/week) seconds after render.
       if (opened) {
         window.dispatchEvent(new CustomEvent("rsched-bus", { detail: { event: "reconnect" } }));
       }

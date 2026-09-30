@@ -1,8 +1,14 @@
-"""Optional, one-shot compression of command stdout; never a conversation transform.
+"""One-shot LOSSLESS compression of command stdout; never a conversation transform.
 
-ONE engine: JSON is minified with the stdlib — provably faithful, sub-millisecond, no
-dependency. Nothing else is compressed. Any other stdout keeps the existing capped head
-plus its spill pointer, which is what the log path produced anyway in 576 of its calls.
+Plain engine behaviour, not a setting: an encoding is used only when its exact inverse gives back
+the captured output and the result is smaller, so there is nothing to decide per routine — the
+evidence that retired the per-routine switch was a fleet that never changed it.
+
+LOSSLESS encodings only (`engine/lossless.py`), each kept only when its exact inverse gives
+back the captured output — byte for byte for text, value for value for JSON — so nothing a
+run could need is ever dropped: grep-shaped hits grouped under their file, path listings
+grouped under their folder, JSON minified with uniform arrays written as tables. Anything
+else keeps the existing capped head plus its spill pointer. Stdlib only, no dependency.
 Scheduler owns originals and transcript replay.
 """
 
@@ -12,28 +18,11 @@ import json
 import time
 
 from ..paths import atomic_write
-from . import outputs
+from . import lossless, outputs
 from .observations import OBS_CAP_CHARS, truncate
 from .run_context import RunContext
 
 MIN_CHARS = 2_000
-
-
-def _kind(text: str) -> str:
-    """"json" for a JSON object or array, "" for anything else — which is everything else.
-
-    There used to be a "logs" kind too, compressed by the native Headroom primitive. It
-    dragged 28 packages (litellm, boto3, tokenizers, tiktoken, opentelemetry …) into the
-    engine image for one branch that imported a PRIVATE module, on a box that has already
-    OOM-killed PID 1 — and it saved 30,923 tokens over five days against 111 M `tokens_in`,
-    0.03%. A log-shaped output now falls through to the capped head plus the spill pointer,
-    the same outcome its own `unchanged` result already produced 576 times.
-    """
-    try:
-        value = json.loads(text)
-    except (ValueError, RecursionError):
-        return ""
-    return "json" if isinstance(value, (dict, list)) else ""
 
 
 def _verified_json(text: str):
@@ -60,28 +49,33 @@ def _verified_json(text: str):
                       parse_constant=reject_constant)
 
 
-def _compress(text: str) -> str:
-    """A smaller representation of one command's stdout — faithful by construction.
-
-    JSON is MINIFIED with the stdlib. Whitespace is the only thing JSON's grammar lets a
-    compressor drop without changing a value, and dropping it is the whole of what the
-    native crusher's accepted results were ever doing: measured over a week of fleet
-    traffic, minification is faithful on 335 of 335 payloads and saves ~5x the tokens the
-    crusher's accepted results saved, in ~0.5 ms against its ~250 ms. The crusher itself
-    truncates arrays to `max_items_after_crush` with no marker and its `lossless_only`
-    flag is inert (headroomlabs-ai/headroom#3625) — 260 of its results in that week were
-    rejected by the verification below, every recoverable one of them real data loss.
-
-    One kind only (see `_kind`): a second one would arrive here, with its own faithfulness
-    argument, or not at all.
+def _compress(text: str) -> tuple[str, str] | None:
+    """`(kind, encoded)` for the first encoding that recognises this output and survives its
+    own inverse, or None. The inverse is the proof: a candidate that does not decode back to
+    exactly `text` is never shown to the model.
     """
-    return json.dumps(json.loads(text), separators=(",", ":"), ensure_ascii=False)
+    js = lossless.encode_json(text)
+    if js is not None:
+        encoded, tabulated = js
+        _verified_json(encoded)   # the text the model reads must itself be unambiguous JSON
+        back = json.dumps(lossless.decode_json(encoded, tabulated), ensure_ascii=False)
+        if _verified_json(back) != _verified_json(text):
+            raise ValueError("JSON encoding changed content")
+        return ("json-table" if tabulated else "json"), encoded
+    for kind, encode, decode in (("grep", lossless.encode_grep, lossless.decode_grep),
+                                 ("paths", lossless.encode_paths, lossless.decode_paths)):
+        candidate = encode(text)
+        if candidate is not None:
+            if decode(candidate) != text:
+                raise ValueError(f"{kind} encoding is not exact")
+            return kind, candidate
+    return None
 
 
 def command_output(ctx: RunContext, name: str, out: str, err: str, code: int) -> dict:
-    """Build the existing capped output, then optionally replace only eligible stdout.
+    """Build the existing capped output, then replace only eligible stdout.
 
-    Measure mode emits metadata only. Compression is used only if its complete preview,
+    Compression is used only if its complete preview,
     label and recovery pointer beat the existing capped observation. Originals belong to
     this run's retention, not the five-run spill cache, so another run cannot prune them.
 
@@ -97,7 +91,7 @@ def command_output(ctx: RunContext, name: str, out: str, err: str, code: int) ->
 
 def _observation(ctx: RunContext, name: str, out: str, err: str, code: int) -> dict:
     """The observation itself: the existing capped output, with eligible stdout replaced
-    by a verified smaller preview when the mode and the comparison both allow it.
+    by a verified smaller preview when the comparison allows it.
     """
     stdout, trunc_out = truncate(out, keep="head")
     stderr, trunc_err = truncate(err, cap=8000 if code != 0 else 2000)
@@ -109,24 +103,22 @@ def _observation(ctx: RunContext, name: str, out: str, err: str, code: int) -> d
     if pointer := outputs.spill(ctx, name, out, err,
                                 out_truncated=trunc_out, err_truncated=trunc_err):
         obs["full_output"] = pointer
-    mode = ctx.routine.output_compression
-    if mode == "off" or capture:
+    if capture:
         return obs
-    metrics: dict = {"mode": mode, "status": "skipped", "input_chars": len(out)}
+    metrics: dict = {"status": "skipped", "input_chars": len(out)}
     obs["compression"] = metrics
-    if code != 0 or len(out) < MIN_CHARS or not (kind := _kind(out)):
-        metrics["reason"] = "failed command, small output, or unsupported content"
+    if code != 0 or len(out) < MIN_CHARS:
+        metrics["reason"] = "failed command or small output"
         return obs
     started = time.monotonic()
     try:
-        candidate = _compress(out)
-        if not isinstance(candidate, str) or not candidate.strip() or "<<ccr:" in candidate:
-            raise ValueError("unusable compression result")
-        if kind == "json" and _verified_json(out) != _verified_json(candidate):
-            raise ValueError("JSON compression changed content")
-        # JSON is whitespace-only and says so.
-        candidate = ("[minified JSON; nothing removed; read full output for original "
-                     f"text]\n{candidate}")
+        found = _compress(out)
+        if found is None:
+            metrics.update(reason="no lossless encoding fits this output")
+            metrics["elapsed_ms"] = round((time.monotonic() - started) * 1000, 2)
+            return obs
+        kind, encoded = found
+        candidate = f"{lossless.LABELS[kind]}\n{encoded}"
         rel = (ctx.routine.dir / "runs" / ctx.run_ts / "outputs"
                / f"t{ctx.turn}-{name}.out").relative_to(ctx.routine.dir)
         pointer = {**obs.get("full_output", {}), "stdout": str(rel), "stdout_chars": len(out)}
@@ -137,8 +129,6 @@ def _observation(ctx: RunContext, name: str, out: str, err: str, code: int) -> d
                        estimated_tokens_saved=max(0, (baseline_size - candidate_size) // 4))
         if len(candidate) > OBS_CAP_CHARS or candidate_size >= baseline_size:
             metrics.update(status="unchanged", reason="no smaller complete preview")
-        elif mode == "measure":
-            metrics["status"] = "measured"
         else:
             # Saving must succeed BEFORE replacing the evidence carried by the observation.
             atomic_write(ctx.routine.dir / rel, out)

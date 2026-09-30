@@ -1,48 +1,43 @@
-"""The Decisions page's `approve & apply`: the patch lands on the surface the engine resolved,
-not on the one the page infers from whoever asked.
+"""The Decisions page's `approve & apply`: the patch lands on the routine the engine resolved,
+not on whoever asked.
 
-R1488/R1489: the home used to be derived from the ASKER's kind alone ("routines" unless the
-asker was a conversation), so a proposal about a DOMAIN's shared block — which the daemon has
-always been able to apply via `PATCH /api/domains/{id}` — had nowhere to say so, and every
-domain-level finding ended as prose telling the operator to go and click it themselves. The
-engine now resolves target AND home together at ask time and the record carries `config_home`.
+D123/F458: a config_patch may be FOR another routine (config-optimizer's whole job). The engine
+resolves and validates that slug at ask time and the record carries it as `config_target`; a
+record without one is a proposal for the asking routine itself.
 """
 
 from __future__ import annotations
 
 from playwright.sync_api import expect
 
-from rsched import domains
 from rsched.paths import atomic_write_json, read_yaml
 
 from .conftest import until
 
 
-def test_domain_targeted_patch_applies_to_the_domain(ui, ui_page):
-    """The button PATCHes /api/domains/{id} and the shared block actually changes."""
-    rec = domains.create(ui.routines, name="FAU", config={"budgets": {"max_turns": 99}})
-    ui.seed_question("uir", "q-20260914-070000-1", "Narrow the FAU domain's shared budget?",
-                     extra={"config_patch": {"config": {"budgets": {"max_turns": 50}}},
-                            "config_target": rec["id"], "config_home": "domains"})
+def test_a_patch_for_another_routine_applies_to_that_routine(ui, ui_page, make_routine):
+    """The button PATCHes /api/routines/{target} and says whose config it changed — the old
+    hardwiring to the asker silently rewrote the asker's own config and reported success."""
+    make_routine(slug="target")
+    ui.seed_question("uir", "q-20260914-070000-1", "Raise target's turn budget to 90?",
+                     extra={"config_patch": {"budgets": {"max_turns": 90}},
+                            "config_target": "target"})
     ui_page.goto(f"{ui.url}/#/questions")
     card = ui_page.locator(".question-item").first
     expect(card).to_be_visible()
-    # the copy names the domain it would change, and calls it a domain — an apply button that
-    # does not say where it lands is the dead-button failure this bridge exists to end
-    expect(card).to_contain_text(rec["id"])
-    expect(card).to_contain_text("domain's behalf")
+    # the copy names the routine it would change — an apply button that does not say where it
+    # lands is the dead-button failure this bridge exists to end
+    expect(card).to_contain_text("proposed config change for target")
     card.get_by_role("button", name="approve & apply").click()
     expect(card).to_contain_text("applied")
-    until(lambda: (domains.get(ui.routines, rec["id"]) or {}).get("config")
-          == {"budgets": {"max_turns": 50}}, what="the domain patch")
-    saved = domains.get(ui.routines, rec["id"])
-    assert saved is not None and saved["config"] == {"budgets": {"max_turns": 50}}
+    until(lambda: read_yaml(ui.routines / "target" / "routine.yaml")
+          .get("budgets", {}).get("max_turns") == 90, what="the target's patch")
+    asker = read_yaml(ui.routines / "uir" / "routine.yaml")
+    assert asker.get("budgets", {}).get("max_turns") != 90
 
 
-def test_routine_targeted_patch_still_applies_to_the_routine(ui, ui_page):
-    """The routine path (D123/F458) is unchanged by the domain one — a record with no
-    `config_home` still reaches /api/routines/{slug}, which every existing config_patch
-    decision relies on."""
+def test_a_patch_for_the_asker_applies_to_the_asker(ui, ui_page):
+    """A record with no `config_target` reaches /api/routines/{asker}."""
     ui.seed_question("uir", "q-20260914-070000-2", "Raise the turn budget to 120?",
                      extra={"config_patch": {"budgets": {"max_turns": 120}}})
     ui_page.goto(f"{ui.url}/#/questions")
@@ -58,7 +53,7 @@ def test_routine_targeted_patch_still_applies_to_the_routine(ui, ui_page):
 
 def test_a_conversations_patch_for_a_routine_applies_to_that_routine(ui, ui_page):
     """A conversation names a routine as its proposal's target: the engine resolves it against
-    the ROUTINES home and records `config_home: "routines"`; the button PATCHes that routine.
+    the ROUTINES home and records it as `config_target`; the button PATCHes that routine.
     Forcing the asker as the target posted it to /api/routines/<the conversation> — a 404 —
     while the copy called the routine a conversation."""
     ui_page.goto(f"{ui.url}/#/conversations")
@@ -72,7 +67,7 @@ def test_a_conversations_patch_for_a_routine_applies_to_that_routine(ui, ui_page
         "qid": "q-20260930-070000-1", "question": "Raise uir's turn budget to 77?",
         "mode": "deferred", "type": "text", "options": [], "default": "",
         "asked": "20260930-070000", "config_patch": {"budgets": {"max_turns": 77}},
-        "config_target": "uir", "config_home": "routines"})
+        "config_target": "uir"})
     ui_page.goto(f"{ui.url}/#/questions")
     card = ui_page.locator(".question-item", has_text="Raise uir's turn budget").first
     expect(card).to_be_visible()

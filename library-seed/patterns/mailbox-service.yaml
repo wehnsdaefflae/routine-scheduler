@@ -1,0 +1,71 @@
+title: Mailbox service
+summary: Classifies new mail in one mailbox, acts on it and answers in your voice — and is not started
+  while nothing new has arrived.
+workflow: answer-a-mailbox
+when: 'The job is a mailbox: triage what arrives, answer or file it, and keep threads going.'
+asks:
+- field: run_gate
+  question: Which mailbox and folders does it answer — and whose mail is none of its business?
+- field: grants
+  question: Which mail account's credentials may it use?
+settings:
+  schedule:
+    catchup: skip
+    friendly:
+      frequency: daily
+      time: 09:00
+  run_gate:
+    checks: []
+    enabled: false
+    timeout_s: 30
+  triggers: []
+  improve: true
+  permissions:
+  - outbound-mail
+  - util-authoring
+  capabilities:
+    actions:
+    - revise_util
+    - write_util
+    utils:
+    - fau-mail:send
+    - gmail:send
+    confirm: creations
+    remind_confirm: always
+    reminders: local
+    rule_confirm: always
+    runs: last
+  rules:
+  - ask-policy
+  - audit-coverage
+  - change-scope
+  - correspondence
+  - decision-record
+  - evidence-discipline
+  - fix-the-cause
+  - problem-routing
+  - verify-independently
+  - web-research
+  - write-as-the-principal
+  reminders: []
+  grants: {}
+  finish_line:
+    outcomes: []
+    until: ''
+  budgets:
+    ask_timeout_min: 480
+    max_cost: -1
+    max_subrun_depth: 2
+    max_subruns: 8
+    max_total_tokens: -1
+    max_total_turns: -1
+    max_turns: 100
+    max_wall_clock_min: 60
+  keep_runs: 30
+  fs_read_roots: []
+  fs_write_roots: []
+  connections: {}
+  machines: []
+  models: {}
+  deliberation: standard
+  tags: []

@@ -96,6 +96,10 @@ def run_detail(request: Request, run_id: str) -> dict:
         cfg, _ = load_routine(run_dir.parent.parent)
         model = (cfg.models.get("main") or "") if cfg is not None else ""
     deliberation = st.get("deliberation") if isinstance(st, dict) else ""
+    # the finish's own accounting and the operator's brief, from the run's status — what the run
+    # page's goal section shows for THIS run, never the live routine files
+    accounting = st.get("accounting") if isinstance(st, dict) else None
+    brief = st.get("brief") if isinstance(st, dict) else ""
     server = request.app.state.server
     owner = run_dir.parent.parent.parent  # run_dir = <home>/<slug>/runs/<ts>
     home = ("conversation" if owner == server.conversations_home
@@ -104,7 +108,8 @@ def run_detail(request: Request, run_id: str) -> dict:
             "turn": info.turn, "usage": info.usage, "elapsed_s": info.elapsed_s,
             "question": info.question, "model": model, "deliberation": deliberation or "",
             "summary": info.summary, "updated": info.updated, "subruns": subs,
-            "home": home}
+            "home": home, "accounting": accounting if isinstance(accounting, list) else [],
+            "brief": brief or ""}
 
 
 @router.get("/runs/{run_id}/transcript")

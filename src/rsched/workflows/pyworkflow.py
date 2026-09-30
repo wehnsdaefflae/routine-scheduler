@@ -7,9 +7,10 @@ routine's parameters and the action kinds it uses. We read all of it statically 
 (`literal_eval` on the literals — no import, no code runs), and render the pattern into the
 markdown the routine's orchestrator actually reads (materialize / decompose fallback).
 
-There is deliberately no COMPLETION literal: what DONE means is the USER's, and it lives in the
-routine's `state/stopping.json` where they can edit it. A second completion text frozen into
-main.md could only ever disagree with it.
+A `DONE_WHEN` list literal names what one finished run of this kind leaves behind, one
+`"dN · <step> — <outcome>"` line each: the skeleton decomposition turns into the routine's own
+`## Done when` (engine/donewhen.py), where every finish accounts for it. Whether a ROUTINE ever
+finishes for good is not the pattern's to say — that is the operator's finish line.
 """
 
 from __future__ import annotations
@@ -32,6 +33,7 @@ def parse_py(source: str) -> dict:
     tree = ast.parse(source)                      # SyntaxError on malformed Python
     meta: dict | None = None
     phases = None
+    done_when = None
     funcs: list[str] = []
     action_imports: list[str] = []
     for node in tree.body:
@@ -46,12 +48,15 @@ def parse_py(source: str) -> dict:
                     meta = ast.literal_eval(node.value)      # ValueError if not a pure literal
                 elif name == "PHASES":
                     phases = ast.literal_eval(node.value)
+                elif name == "DONE_WHEN":
+                    done_when = ast.literal_eval(node.value)
     if not isinstance(meta, dict):
         # ValueError on purpose (not TypeError): callers (lint, generate) catch ValueError
         # as "not a valid pattern file" — changing the type would break that contract.
         raise ValueError("no `META = {...}` dict literal found")  # noqa: TRY004
     out = dict(meta)
     out["phases"] = phases
+    out["done_when"] = [str(x) for x in done_when] if isinstance(done_when, list) else []
     out["action_imports"] = action_imports
     out["has_main"] = "main" in funcs
     return out
@@ -97,10 +102,14 @@ def _docstrings(tree: ast.Module) -> dict[str, str]:
     return out
 
 
-def render_markdown(source: str, meta: dict) -> str:
+def render_markdown(source: str, meta: dict, *, done_when: list[str] | None = None,
+                    never: list[str] | None = None) -> str:
     """Deterministic Python-pattern → routine main.md BODY (no LLM). The orchestrator reads the
-    pattern and acts it out. Produces the `## Run flow` / `## Phases` sections a materialized
-    routine must have. Used by `materialize` and `decompose`'s fallback.
+    pattern and acts it out. Produces the `## Run flow` / `## Phases` / `## Done when` sections
+    a materialized routine must have. Used by `materialize` and `decompose`'s fallback, where no
+    stage modules exist — so a DONE_WHEN line keeps its outcome and drops its step. The
+    person's own `done_when` lines follow the pattern's; their `never` lines become the
+    `## Never` section, so a degraded build loses none of their words.
     """
     phases = meta.get("phases") or []
     phase_lines = ("\n".join(f"- {p}" for p in phases) if phases
@@ -139,4 +148,18 @@ def render_markdown(source: str, meta: dict) -> str:
         "## Phases\n"
         'Track the current phase in `state/phase.json` as `{"phase": "...", "note": "..."}`.\n'
         f"{phase_lines}\n"
+        + _done_when_section([*(meta.get("done_when") or []), *(done_when or [])])
+        + ("\n## Never\n\n" + "\n".join(f"- {line}" for line in never) + "\n"
+           if never else "")
     )
+
+
+def _done_when_section(lines: list[str]) -> str:
+    """`## Done when` from a pattern's DONE_WHEN, renumbered d1… and without steps — a
+    rendered pattern has no stage modules for a step to name.
+    """
+    outcomes = [str(x).split(" — ", 1)[-1].strip() for x in lines if str(x).strip()]
+    if not outcomes:
+        return ""
+    return "\n## Done when\n\n" + "\n".join(f"- d{i} — {o}"
+                                           for i, o in enumerate(outcomes, 1)) + "\n"

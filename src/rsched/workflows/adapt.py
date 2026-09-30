@@ -64,7 +64,7 @@ log = logging.getLogger("rsched.adapt")
 
 
 def decompose(server, slug: str, instruction: str, *,
-              rules: list[str] | None = None) -> dict:
+              done_when: list[str] | None = None, never: list[str] | None = None) -> dict:
     """Generator LLM: apply a single-file workflow to `instruction` and split it into the
     routine's main.md body + stage/state modules. Returns {'main': <body>,
     'stages': {name: body}, 'degraded': bool}.
@@ -74,9 +74,12 @@ def decompose(server, slug: str, instruction: str, *,
     design shipped stub routines whenever its single huge completion truncated (D41,
     2026-07-24). Any hard failure degrades to the whole workflow rendered as main.md with
     `degraded` True so callers can SAY so.
-    """
-    from .. import rules as rules_mod
 
+    `done_when` is what the user said a finished run delivers, in their words: the generator
+    merges it with the pattern's DONE_WHEN into the recipe's `## Done when`. `never` is what
+    they said a run must never do: it becomes the recipe's `## Never`, verbatim. The fallback
+    keeps both — the person's words are never lost to a degraded build.
+    """
     meta, raw = read_workflow(server.libraries_home, slug)
     # A pattern may PIN deliverable paths (META["pin"]: str | list) that MUST survive
     # decomposition — the tailored files must still name them. The observed failure mode:
@@ -86,20 +89,18 @@ def decompose(server, slug: str, instruction: str, *,
     # path today; the mechanism stays because the failure it guards is generator behaviour,
     # not one pattern's quirk.
     pins = [meta["pin"]] if isinstance(meta.get("pin"), str) else list(meta.get("pin") or [])
-    # rules reach the generator as an INDEX only (slug + summary): main.md must route to
-    # them, and must not paraphrase prose that lives in the library.
-    rule_lines = "\n".join(f"- {slug_}: {summary}" for slug_, summary
-                           in rules_mod.summaries(server.rules_home, list(rules or [])).items())
     try:
         from ..endpoints import EndpointRegistry
 
         return _pipeline(EndpointRegistry(server).for_system, raw, instruction,
-                         pins=pins, rule_lines=rule_lines, slug=slug)
+                         pins=pins, done_when=list(done_when or []), never=list(never or []),
+                         slug=slug)
     except Exception as exc:
         # a stageless recipe is a real quality drop — the fallback must never be silent
         log.warning("decompose(%s) pipeline failed — materializing the whole pattern as "
                     "main.md", slug, exc_info=exc)
         from .pyworkflow import render_markdown
-        return {"main": render_markdown(raw, meta),
+        return {"main": render_markdown(raw, meta, done_when=list(done_when or []),
+                                        never=list(never or [])),
                 "stages": {},
                 "degraded": True, "reason": f"{type(exc).__name__}: {exc}"}

@@ -3,9 +3,9 @@ advance passes — fire → wait for terminal → apply on_failure → fire the 
 chain health events an audit reads (F316). A chain fires each member exactly ONCE, in the
 lane's order (D90).
 
-Only the TEMPORAL axis is here. What a lane's members share — the inherited config block and
-the shared store — is a DOMAIN and has nothing to do with the order they fire in; the chain
-neither reads it nor changes it (tests/test_domains.py).
+Only the TEMPORAL axis is here. What a lane's members may do and which stores they share is
+each member's own config and has nothing to do with the order they fire in; the chain neither
+reads it nor changes it.
 
 FakeRunner + mk_run mirror tests/test_schedule_once.py; on-disk fixtures, asyncio_mode=auto."""
 

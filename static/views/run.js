@@ -17,7 +17,7 @@ import { wireRunRail } from "/static/resizable.js";
 import { createFileActivity } from "/static/components/fileactivity.js";
 import { createPlanStrip } from "/static/components/planstrip.js";
 import { createStateGraph } from "/static/components/stategraph.js";
-import { createStopping } from "/static/components/stopping.js";
+import { createRunAccounting } from "/static/components/run-accounting.js";
 import { createTaskTree } from "/static/components/tasktree.js";
 import { createTranscript } from "/static/components/transcript.js";
 import { busy, chip, el, emptyState, fmtDur, fmtTokens, fmtTs, skeleton, streamStatus,
@@ -56,6 +56,10 @@ export async function render(view, runId, query = {}) {
       el("h1", {}, titleLink, ` · run ${fmtTs(ts)}`)),
     controls));
   col.append(el("div", { class: "runbar" }, stateChip, stream.node, usageSpan, durSpan, modelSpan));
+  // A run started by hand with a BRIEF answers for that one line instead of its recipe's Done
+  // when — so the brief is what this run was FOR; it leads the page. Filled at boot.
+  const briefLine = el("div", { class: "run-brief-line", "data-run-brief": "", hidden: true });
+  col.append(briefLine);
 
   // The WORKING PLAN strip (D54): the run's own living decomposition (state/plan.md), shown
   // at the top so "where is this run in its own plan" is answerable at a glance. Home-agnostic
@@ -90,12 +94,9 @@ export async function render(view, runId, query = {}) {
   view.append(railHost);
   wireRunRail(railHost, "right");
   const rail = createRail(railHost);
-  // WHAT THE RUN PRODUCED leads. The rail opened on the goal, whose per-condition accounting is
-  // the same text the summary in the serif column beside it already carries — two thirds of the
-  // visible rail was a second copy of what the reader had just read, in 11px mono at a
-  // 34-character measure, while the artifacts sat below the fold of a nested scroller. Each
-  // section's collapsed state is remembered per browser, so a reader who wants the goal first
-  // keeps it open and everything else shut.
+  // WHAT THE RUN PRODUCED leads; the goal — this run's own accounting of what it answered for —
+  // comes last. Each section's collapsed state is remembered per browser, so a reader who wants
+  // the goal first keeps it open and everything else shut.
   const artBody = rail.add("artifacts", el("div", {}));
   const filesBody = rail.add("files", el("div", {}));
   const graphBody = rail.add("state", el("div", {}));
@@ -456,6 +457,10 @@ export async function render(view, runId, query = {}) {
     return;
   }
   const home = detail.home || "routine";
+  // the goal section is THIS run's accounting: what it reported, at its end, for each line it
+  // answered for — a routine's Done when and the open outcomes of its finish line. A
+  // conversation has neither (its spine is the plan it writes itself), so it has no goal section.
+  let accounting = null;
   if (home === "conversation") {
     kickerEl.textContent = `conversation / ${slug}`;
     titleLink.href = `#/conversations/${slug}`;
@@ -463,23 +468,30 @@ export async function render(view, runId, query = {}) {
       graphUrl: `/api/conversations/${slug}/stategraph`,
       statsUrl: `/api/runs/${runId}/phases` });
     artifacts = createArtifacts(artBody, { slug, base: "conversations" });
-    createStopping(goalBody, { url: `/api/conversations/${slug}/stopping`, ownRun: runId });
+    rail.toggle("goal", false);
   } else if (home === "background") {
     // a detached task has no page/routes of its own — results deliver to the owner
     kickerEl.textContent = `background task / ${slug}`;
     titleLink.removeAttribute("href");
     graphBody.append(el("div", { class: "faint small" },
       "detached background task — its result is delivered to the owning conversation"));
-    // a detached task's bounds are its OWNER's; it has no goal surface of its own
+    // a detached task answers to its OWNER; it has no goal of its own
     rail.toggle("goal", false);
   } else {
     stateGraph = createStateGraph(graphBody, {
       graphUrl: `/api/routines/${slug}/stategraph`,
       statsUrl: `/api/runs/${runId}/phases` });
     artifacts = createArtifacts(artBody, { slug, base: "routines" });
-    // showStage: a per-stage condition is a ROUTINE concept — a conversation has no stages
-    createStopping(goalBody, { url: `/api/routines/${slug}/stopping`, showStage: true,
-                               ownRun: runId });
+    accounting = createRunAccounting(goalBody, { slug });
+  }
+  accounting?.set(detail);
+  let accountingRead = TERMINAL.has(detail.state);   // a finished run's read already carries it
+  if (detail.brief) {
+    briefLine.hidden = false;
+    briefLine.replaceChildren(el("span", { class: "rb-label" }, "brief"),
+      el("span", { class: "rb-text prose" }, detail.brief),
+      el("span", { class: "faint small" }, "— started by hand; this run answers for it instead "
+        + "of its recipe's Done when"));
   }
   mainBox.replaceChildren();
   const transcript = createTranscript(mainBox, {
@@ -515,6 +527,15 @@ export async function render(view, runId, query = {}) {
   setTimeout(syncQuestions, 1500);   // after the initial transcript page has rendered
 
   setState(detail.state);
+  // `?revise=1` is where a routine page's "Change through Revise recipe" lands: the message box
+  // of a finished run, with its recipe made editable — the one place a recipe change is asked
+  // for in words, by the run that knows what happened
+  if (query.revise === "1" && home === "routine" && TERMINAL.has(detail.state)) {
+    recipeChk.checked = true;
+    syncPlaceholder();
+    msgInput.scrollIntoView({ block: "center" });
+    msgInput.focus();
+  }
   usageSpan.textContent = fmtTokens(detail.usage);
   lastUpdated = detail.updated || "";
   tickDur();
@@ -565,7 +586,14 @@ export async function render(view, runId, query = {}) {
       if (s.usage) usageSpan.textContent = fmtTokens(s.usage);
       if (s.model) setModel(s.model);
       showQuestion(s.question);
-      if (TERMINAL.has(s.state)) { artifacts?.refresh(); taskTree.refresh(); fileActivity.refresh(); }
+      if (TERMINAL.has(s.state)) {
+        artifacts?.refresh(); taskTree.refresh(); fileActivity.refresh();
+        // the accounting is written with the finish: read it once the run has ended
+        if (accounting && !accountingRead) {
+          accountingRead = true;
+          api(`/api/runs/${runId}`).then((d) => accounting.set(d)).catch(() => {});
+        }
+      }
     },
     onStatus: (s) => stream.set(s),
     onGone: () => stream.set("ended"),

@@ -192,8 +192,7 @@ def revise_answer(routine_dir: Path, qid: str, text: str) -> Path:
 def file_question(routine_dir: Path, qid: str, question: str, options: list[str],  # noqa: PLR0913 — the ONE record shape: every field is a documented key of it, keyword-only
                   asked_ts: str, *, mode: str = "deferred", qtype: str = "question",
                   default: str = "", expires: str = "", config_patch: dict | None = None,
-                  config_target: str = "", config_home: str = "",
-                  request: list[str] | None = None) -> Path:
+                  config_target: str = "", request: list[str] | None = None) -> Path:
     """The ONE decision record every kind of required user feedback funnels into —
     plain asks, util approvals and access requests, deferred and blocking alike. Blocking
     records carry `expires` (when the run continues without an answer) and are rewritten
@@ -218,14 +217,8 @@ def file_question(routine_dir: Path, qid: str, question: str, options: list[str]
     if config_target:
         # D123/F458: the patch is for ANOTHER routine. Resolved and validated in
         # engine/interact.py at ask time, so the Decisions page can PATCH this slug
-        # directly; absent means the patch is for the asking routine, as before.
+        # directly; absent means the patch is for the asking routine.
         record["config_target"] = config_target
-    if config_home:
-        # R1488: WHICH config surface that target lives on — "routines" or "domains". The
-        # page used to derive the home from the ASKER's kind alone, which is why a domain
-        # could never be a target: there was nowhere to say so. Resolved at ask time with
-        # the target, so the apply button never has to guess the URL it posts to.
-        record["config_home"] = config_home
     if request:
         record["request"] = list(request)
     atomic_write_json(path, record)

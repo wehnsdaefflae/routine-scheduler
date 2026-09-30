@@ -5,7 +5,7 @@ configuration it was started with, plus the one process fact worth sampling next
 
 `Budgets` holds the numbers exactly as `routine.yaml` writes them and turns them into the
 unified stop-condition primitive on demand (`ledger()` -> `BudgetLedger`). Budgets are a runaway
-BACKSTOP, never a pace — what a job is FOR is `engine/stopping.py`.
+BACKSTOP, never a pace — what a run is FOR is its recipe's `## Done when` (`engine/donewhen.py`).
 
 `_vm_hwm_kb` exists because an OOM kill used to leave no trace: rc=-9 with nothing to say how
 close to host RAM the engine got (F348). Every status write samples it, so the last one before

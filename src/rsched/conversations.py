@@ -31,15 +31,15 @@ from .schedule import server_tz
 log = logging.getLogger("rsched.conversations")
 
 CONVERSE_WORKFLOW = "converse"
-# Stock rule set for a conversation: the routine defaults plus git-checkpoint (undo points
-# in external project repos the conversation edits — the conversation dir itself is
-# unversioned). intent-inference earns its place most here: a conversation is where the
-# user intervenes constantly, so every reply is evidence about what they actually want.
-CONVERSATION_RULES = [*DEFAULT_RULES, "git-checkpoint"]
-# Same default permission surface as routines, plus background-tasks (the `detach` action):
-# launching long fire-and-forget jobs that outlive a reply is a conversation-shaped capability
-# (the finished task reports back into the chat). Shell stays a one-click opt-in.
-CONVERSATION_PERMISSIONS = [*DEFAULT_PERMISSIONS, "background-tasks"]
+# Stock rule set for a conversation: the routine defaults without decision-record — a
+# conversation's spine is its own `state/plan.md` and its reasoning is in the thread — plus
+# git-checkpoint (undo points in external project repos the conversation edits; the
+# conversation dir itself is unversioned).
+CONVERSATION_RULES = [*(r for r in DEFAULT_RULES if r != "decision-record"), "git-checkpoint"]
+# Same default permission surface as routines. `detach` (long jobs that outlive a reply) is
+# structural for a root conversation, not a permission (engine/loopsetup.build_base_policy).
+# Shell stays a one-click opt-in.
+CONVERSATION_PERMISSIONS = [*DEFAULT_PERMISSIONS]
 # Per-REPLY ceilings (each user message resumes the run with a fresh window — turns, wall
 # clock, tokens and subruns all reset), and deliberately a BACKSTOP rather than a pace. The
 # old 10-turn cap was the pace: the model read it at turn 1 and never attempted anything
@@ -50,7 +50,7 @@ CONVERSATION_PERMISSIONS = [*DEFAULT_PERMISSIONS, "background-tasks"]
 # rides the default too — decomposing a heavy step is a normal move, not a rationed one.
 CONVERSATION_BUDGETS = {**DEFAULT_BUDGETS, "max_turns": 40, "max_wall_clock_min": 60}
 # Permissions that only make sense for scheduled routines — the UI greys them out.
-ROUTINE_ONLY_PERMISSIONS = ["run-history"]
+ROUTINE_ONLY_PERMISSIONS = ["scheduling"]
 
 # The conversation "state diagram" the Conversations tab shows. A conversation is a LOOP,
 # not a one-pass workflow, so its meaningful state is the live reply cycle — not the single
@@ -142,8 +142,8 @@ def create_conversation(server: ServerConfig, *, slug: str, first_message: str, 
                         fs_write_roots: list[str] | None = None,
                         rules: list[str] | None = None,
                         connections: dict[str, str] | None = None) -> Path:
-    """Create <conversations_home>/<slug> ready to run: materialized converse main.md with
-    a Standing-practices tail naming the rules it holds, instruction.md = the first message,
+    """Create <conversations_home>/<slug> ready to run: materialized converse main.md,
+    routine.yaml naming the rules it holds, instruction.md = the first message,
     and a schedule-less routine.yaml marked `kind: conversation`. NO git init — a
     conversation is deliberately unversioned (the engine's autocommit no-ops without .git).
 
@@ -152,9 +152,9 @@ def create_conversation(server: ServerConfig, *, slug: str, first_message: str, 
     later revises that source playbook from this conversation's deltas.
 
     `rules` (slugs) and `connections` ({provider: account}) are likewise chosen PRE-START
-    (F339). Rules must be: a rule reaches the prompt through main.md's Standing-practices
-    tail, materialized here — one added afterwards never governs reply #1, which has already
-    fired. `rules=None` keeps the CONVERSATION_RULES default; an explicit list replaces it.
+    (F339): the state digest names each held rule with the moment it applies, read from
+    routine.yaml at every boot, so a rule reply #1 needs must be here before it fires.
+    `rules=None` keeps the CONVERSATION_RULES default; an explicit list replaces it.
 
     `fs_read_roots` / `fs_write_roots` are extra folder grants applied at CREATE time (D70):
     they land in routine.yaml's native root lists — the same keys an allow-forever fs grant
@@ -162,8 +162,6 @@ def create_conversation(server: ServerConfig, *, slug: str, first_message: str, 
     with the access (the workdir stays the first root: the project directory).
     """
     from . import library_docs, playbooks
-    from . import rules as rules_mod
-    from .rules import with_practices_tail
     from .workflows.adapt import dump_markdown
     from .workflows.library import head_commit, read_workflow
     from .workflows.pyworkflow import render_markdown
@@ -179,19 +177,17 @@ def create_conversation(server: ServerConfig, *, slug: str, first_message: str, 
     for sub in ("state", "inbox", "attachments", "artifacts"):
         (conv_dir / sub).mkdir(parents=True)
     # the general rules a conversation holds: slugs only — the prose stays in the library.
-    # F339: the composer may choose them PRE-START, because a rule reaches the prompt through
-    # main.md's Standing-practices tail, which is materialized right here — a rule added after
-    # creation does not govern reply #1, which has already fired.
+    # F339: the composer may choose them PRE-START, so the rules reply #1 boots with — named in
+    # its digest beside when each applies — are the ones the person picked.
     wanted = CONVERSATION_RULES if rules is None else rules
     active_rules = [r for r in wanted if r in set(library_docs.slugs(server.rules_home))]
-    rule_summaries = rules_mod.summaries(server.rules_home, active_rules)
     commit = head_commit(server.libraries_home)
     main_meta = {"name": title, "slug": slug,
                  "materialized_from": {"slug": CONVERSE_WORKFLOW, "commit": commit,
                                        "version": meta.get("version", 0)},
                  **({"tools": list(meta["tools"])} if meta.get("tools") is not None else {})}
-    body = with_practices_tail(render_markdown(raw, meta), rule_summaries)
-    (conv_dir / "main.md").write_text(dump_markdown(main_meta, body), encoding="utf-8")
+    (conv_dir / "main.md").write_text(dump_markdown(main_meta, render_markdown(raw, meta)),
+                                      encoding="utf-8")
     (conv_dir / "instruction.md").write_text(
         _seed_instruction(pb, first_message, conv_dir) + "\n", encoding="utf-8")
     (conv_dir / "LEDGER.md").write_text(_LEDGER_SEED, encoding="utf-8")

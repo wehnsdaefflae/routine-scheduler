@@ -43,33 +43,16 @@ requires:
 body
 """
 
-RUN_HISTORY = """---
-tags: [history, record-keeping, self-management]
-requires:
-  runs: last
----
-# permission: run history — read previous runs
-body
-"""
-
-WORKFLOW_GEN = """---
-tags: [decomposition, workflows, self-management]
-requires:
-  workflows: generate
----
-# permission: workflow generation — draft a new pattern when none fits
-body
-"""
 
 
 # ------------------------------------------------------------- normalize_capabilities
 
 
 def test_normalize_capabilities_accepts_the_schema():
-    c, problems = normalize_capabilities({"actions": ["util", "write_util"],
+    c, problems = normalize_capabilities({"actions": ["shell", "write_util"],
                                           "utils": ["discord"], "confirm": "always"})
     assert problems == []
-    assert c == {"actions": ["util", "write_util"], "utils": ["discord"], "confirm": "always"}
+    assert c == {"actions": ["shell", "write_util"], "utils": ["discord"], "confirm": "always"}
     # only the canonical vocabulary is accepted — legacy true/false/revisions-only is gone
     for legacy in (True, False, "revisions-only"):
         got, probs = normalize_capabilities({"confirm": legacy})
@@ -81,31 +64,37 @@ def test_normalize_capabilities_accepts_the_schema():
 
 
 def test_normalize_capabilities_reports_and_drops_invalid_parts():
-    c, problems = normalize_capabilities({"actions": ["util", "dance"], "utils": ["Not A Slug"],
+    c, problems = normalize_capabilities({"actions": ["shell", "util", "dance", "detach"],
+                                          "utils": ["Not A Slug"],
                                           "confirm": "sometimes", "shell": True,
                                           "runs": "some", "self_modify": True})
     text = " | ".join(problems)
-    assert "'dance' is not an action kind" in text
+    assert "'dance' is not a capability" in text
+    # a kind every routine may use needs no switch — naming one is config that says nothing
+    assert "'util' is not a capability — every routine may use it" in text
+    # …and detach is structural: no config names it
+    assert "'detach' is not a capability" in text
     assert "'Not A Slug' is not a kebab-case util name" in text
     assert "confirm must be always, creations or never" in text
     assert "capabilities.shell: unknown key" in text
     assert "runs must be none or last or all" in text
     assert "capabilities.self_modify: unknown key" in text
-    assert c == {"actions": ["util"], "utils": []}      # invalid entries dropped, valid kept
+    assert c == {"actions": ["shell"], "utils": []}     # invalid entries dropped, valid kept
     assert normalize_capabilities("write_util")[1]      # non-mapping → problem
     bad_list, problems2 = normalize_capabilities({"actions": "util"})
     assert bad_list == {} and any("must be a list" in p for p in problems2)
 
 
-def test_requires_mode_rejects_confirm_and_runs_none():
-    """A doc may not demand an approval level (user policy) nor 'runs: none' (that is
-    the absence of a requirement)."""
+def test_requires_mode_takes_only_actions_and_utils():
+    """A doc may not demand a SETTING — an approval level, run-history depth or the reminder
+    stores are the user's choice per routine, so a doc naming one is a lint problem."""
     req, problems = normalize_capabilities({"actions": ["write_util"], "confirm": True},
                                            label="requires", requires=True)
     assert req == {"actions": ["write_util"]}
     assert any("requires.confirm: unknown key" in p for p in problems)
-    _, p2 = normalize_capabilities({"runs": "none"}, label="requires", requires=True)
-    assert any("runs must be last or all" in p for p in p2)
+    for setting in ({"runs": "all"}, {"reminders": "local"}):
+        got, p2 = normalize_capabilities(setting, label="requires", requires=True)
+        assert got == {} and any("a setting the user chooses" in p for p in p2)
 
 
 # ------------------------------------------------------------------ library requires
@@ -128,71 +117,65 @@ def test_broken_frontmatter_degrades_to_no_requires(tmp_path):
 # ------------------------------------------------------------------------- cascades
 
 
-def test_a_forever_grant_on_a_reminders_request_finds_its_covering_doc(tmp_path):
-    """The four-state model needs all four states. `_covering_docs` gates allow_forever, and
-    a class it does not know 409s — so the request route the engine hands the model could
-    only ever be answered "allow now", and the routine re-asked every run."""
+def test_a_forever_grant_on_a_setting_writes_the_setting_itself(tmp_path):
+    """The four-state model needs all four states. Run-history depth and the reminder stores
+    are SETTINGS no doc covers, so allow_forever on such a request writes the level granted
+    — without activating any permission — and never lowers one already set."""
     from types import SimpleNamespace
 
-    from rsched.web.grants_apply import _apply_capability, _covering_docs
+    from rsched.web.grants_apply import _apply_capability
 
     perms = tmp_path / "permissions"
     perms.mkdir(parents=True)
-    (perms / "reminders.md").write_text(
-        "---\ntags: [a, b, c]\nrequires:\n  reminders: local\n---\n"
-        "# permission: reminders — doc\nbody\n", encoding="utf-8")
     server = SimpleNamespace(permissions_home=perms)
-    assert _covering_docs(server, "reminders", "local") == ["reminders"]
     raw: dict = {"permissions": [], "capabilities": {}}
-    _apply_capability(server, raw, "reminders", "global", [])
-    assert raw["permissions"] == ["reminders"]
-    assert raw["capabilities"]["reminders"] == "global"   # the LEVEL granted, not the floor
+    _apply_capability(server, raw, "reminders", "global")
+    assert raw["permissions"] == []
+    assert raw["capabilities"]["reminders"] == "global"   # the LEVEL granted
+    _apply_capability(server, raw, "runs", "all")
+    assert raw["capabilities"]["runs"] == "all"
+    _apply_capability(server, raw, "runs", "last")
+    assert raw["capabilities"]["runs"] == "all"           # a grant never lowers a setting
 
 
 def test_capabilities_for_raises_the_base_to_cover_active_docs(tmp_path):
-    home = _lib(tmp_path, {"util-authoring": AUTHORING, "messaging-discord": COMMUNICATION,
-                           "run-history": RUN_HISTORY})
+    home = _lib(tmp_path, {"util-authoring": AUTHORING, "messaging-discord": COMMUNICATION})
     lib = read_library_requires(home)
-    caps = capabilities_for(["util-authoring", "messaging-discord", "run-history"], lib)
-    assert caps == {"actions": ["write_util"], "utils": ["discord"], "util_tags": [],
+    caps = capabilities_for(["util-authoring", "messaging-discord"], lib)
+    assert caps == {"actions": ["write_util"], "utils": ["discord"],
                     "confirm": "always", "rule_confirm": "always",
-                    "remind_confirm": "always", "runs": "last",
-                    "workflows": "catalog", "reminders": "none"}
-    # base values survive and only rise: runs stays at the deeper level, confirm untouched
-    base = {"actions": ["memory_read"], "utils": [], "confirm": "never", "runs": "all"}
-    caps2 = capabilities_for(["run-history"], lib, base)
+                    "remind_confirm": "always", "runs": "none", "reminders": "none"}
+    # the settings pass through untouched: the raise only ever adds means
+    base = {"actions": ["shell"], "utils": [], "confirm": "never", "runs": "all"}
+    caps2 = capabilities_for(["util-authoring"], lib, base)
     assert caps2["runs"] == "all" and caps2["confirm"] == "never"
-    assert caps2["actions"] == ["memory_read"]
+    assert caps2["actions"] == ["shell", "write_util"]
     assert capabilities_for([], lib) == EMPTY_CAPABILITIES
 
 
 def test_floor_capabilities_binds_gated_capabilities_to_held_permissions(tmp_path):
-    """D8: a gated action / reserved util / run access survives only as the MEANS of a HELD
-    permission; the confirm level and run depth remain user policy under it. raise+floor
-    together == exactly the union of the held docs' requires (plus those policy dials)."""
-    home = _lib(tmp_path, {"util-authoring": AUTHORING, "messaging-discord": COMMUNICATION,
-                           "run-history": RUN_HISTORY})
+    """D8: a gated action / reserved util survives only as the MEANS of a HELD permission;
+    the settings (approval dials, run depth, reminder stores) remain user policy under it.
+    raise+floor together == exactly the union of the held docs' requires (plus settings)."""
+    home = _lib(tmp_path, {"util-authoring": AUTHORING, "messaging-discord": COMMUNICATION})
     lib = read_library_requires(home)
     orphan = {"actions": ["write_util"], "utils": ["discord"], "confirm": "never", "runs": "all"}
-    # nothing held → every gated capability is floored away (confirm dial preserved)
+    # nothing held → every gated capability is floored away; the settings are preserved
     assert floor_capabilities([], lib, orphan) == {
-        "actions": [], "utils": [], "util_tags": [], "confirm": "never",
-        "rule_confirm": "always", "remind_confirm": "always", "runs": "none",
-        "workflows": "catalog", "reminders": "none"}
-    # util-authoring held → write_util survives (with its policy); discord + runs still floored
+        "actions": [], "utils": [], "confirm": "never",
+        "rule_confirm": "always", "remind_confirm": "always", "runs": "all",
+        "reminders": "none"}
+    # util-authoring held → write_util survives; discord is still floored
     assert floor_capabilities(["util-authoring"], lib, orphan) == {
-        "actions": ["write_util"], "utils": [], "util_tags": [], "confirm": "never",
-        "rule_confirm": "always", "remind_confirm": "always", "runs": "none",
-        "workflows": "catalog", "reminders": "none"}
-    # run-history held → run DEPTH (a user dial) is kept above none; actions/utils floored
-    kept = floor_capabilities(["run-history"], lib, orphan)
-    assert kept["runs"] == "all" and kept["actions"] == [] and kept["utils"] == []
-    # raise THEN floor == exactly the held docs' requires + policy dials, no contradiction
-    active = ["util-authoring", "messaging-discord", "run-history"]
+        "actions": ["write_util"], "utils": [], "confirm": "never",
+        "rule_confirm": "always", "remind_confirm": "always", "runs": "all",
+        "reminders": "none"}
+    # raise THEN floor == exactly the held docs' requires + settings, no contradiction
+    active = ["util-authoring", "messaging-discord"]
     assert floor_capabilities(active, lib, capabilities_for(active, lib)) == {
-        "actions": ["write_util"], "utils": ["discord"], "util_tags": [], "confirm": "always",
-        "rule_confirm": "always", "remind_confirm": "always", "runs": "last",
-        "workflows": "catalog", "reminders": "none"}
+        "actions": ["write_util"], "utils": ["discord"], "confirm": "always",
+        "rule_confirm": "always", "remind_confirm": "always", "runs": "none",
+        "reminders": "none"}
 
 
 def test_floor_keeps_gated_kind_via_default_source_when_doc_predates_it(tmp_path):
@@ -223,27 +206,6 @@ def test_util_authoring_no_longer_carries_deletion(tmp_path):
     lib = read_library_requires(home)
     opt_in = {"actions": ["write_util", "remove_util"]}
     assert floor_capabilities(["util-authoring"], lib, opt_in)["actions"] == ["write_util"]
-
-
-def test_workflows_generate_capability_binds_to_its_permission(tmp_path):
-    """`workflows: generate` (draft a pattern for a subtask when none fits) rides the same
-    cascade as `runs`: off by default, raised by its doc, floored away without it, and
-    surfaced as GrantPolicy.may_generate_workflow()."""
-    home = _lib(tmp_path, {"workflow-generation": WORKFLOW_GEN})
-    lib = read_library_requires(home)
-    assert lib["workflow-generation"] == {"workflows": "generate"}
-    # raise: holding the doc lifts workflows to generate
-    assert capabilities_for(["workflow-generation"], lib)["workflows"] == "generate"
-    # floor: an orphan generate capability with no held doc falls back to catalog
-    orphan = {"workflows": "generate"}
-    assert floor_capabilities([], lib, orphan)["workflows"] == "catalog"
-    assert floor_capabilities(["workflow-generation"], lib, orphan)["workflows"] == "generate"
-    # policy: the run-facing switch
-    assert load_policy(home, [], {"workflows": "generate"}).may_generate_workflow() is True
-    assert load_policy(home, [], {}).may_generate_workflow() is False
-    # requires-mode rejects the no-op level (catalog is the absence of a requirement)
-    _, probs = normalize_capabilities({"workflows": "catalog"}, label="requires", requires=True)
-    assert any("workflows must be generate" in p for p in probs)
 
 
 def test_policy_enforces_capabilities_not_docs(tmp_path):
@@ -280,8 +242,8 @@ def test_run_history_floors_at_last_for_every_routine(tmp_path):
 
 def test_policy_ignores_ungated_kinds_in_capabilities(tmp_path):
     home = _lib(tmp_path, {})
-    policy = load_policy(home, [], {"actions": ["util", "read_file", "memory_read"]})
-    assert policy.actions == frozenset({"memory_read"})   # base kinds are never gated
+    policy = load_policy(home, [], {"actions": ["util", "read_file", "memory_read", "shell"]})
+    assert policy.actions == frozenset({"shell"})          # base kinds are never gated
     assert policy.allows_kind("util") and policy.allows_kind("read_file")
 
 
@@ -297,23 +259,14 @@ def test_needs_confirm_semantics():
 # ------------------------------------------------------------------ denial messages
 
 
-BACKGROUND_TASKS = """---
-tags: [conversation, background, delegation]
-requires:
-  actions: [detach]
----
-# permission: background tasks — launch long jobs that outlive a reply
-body
-"""
 
 
-def test_detach_is_gated_and_denial_names_background_tasks(tmp_path):
-    home = _lib(tmp_path, {"background-tasks": BACKGROUND_TASKS})
-    none = load_policy(home, [], {})
+def test_detach_is_structural_and_its_denial_says_so(tmp_path):
+    """No permission grants detach; a root conversation gets it at setup. A denial that named a
+    permission would send the run after a switch that does not exist."""
+    none = load_policy(tmp_path, [], {})
     denial = none.deny({"kind": "detach", "prompt": "scrape"})
-    assert denial and "background-tasks" in denial
-    granted = load_policy(home, ["background-tasks"], {"actions": ["detach"]})
-    assert granted.deny({"kind": "detach", "prompt": "scrape"}) is None
+    assert denial and "only in a root conversation" in denial and "permission" not in denial
 
 
 def test_deny_names_the_covering_permission(tmp_path):
@@ -406,7 +359,7 @@ def test_validate_action_carries_capability_denials():
     always permitted and grants=None means unrestricted."""
     from rsched.engine.actions import validate_action
 
-    policy = GrantPolicy(active=("run-history",),
+    policy = GrantPolicy(active=("messaging-discord",),
                          gated_utils={"discord": ("messaging-discord",)},
                          kind_sources={"write_util": ("util-authoring",)})
     wu = {"say": "s", "kind": "write_util", "name": "x", "content": "# script"}
@@ -425,11 +378,11 @@ def test_validate_action_carries_capability_denials():
 def test_lint_flags_bad_requires():
     from rsched.workflows.lint import lint_permission_text, lint_rule_text
 
-    bad = ("---\ntags: [a, b, c]\nrequires:\n  actions: [dance]\n  runs: maybe\n---\n"
+    bad = ("---\ntags: [a, b, c]\nrequires:\n  actions: [dance]\n  runs: all\n---\n"
            "# permission: x — y\n\nlong enough body\nmore\n")
     problems = lint_permission_text(bad, filename="x.md")
     text = " | ".join(problems)
-    assert "not an action kind" in text and "runs must be" in text
+    assert "not a capability" in text and "requires.runs: unknown key" in text
     good = ("---\ntags: [a, b, c]\n"
             "effect:\n  with: write a util every routine can then call\n"
             "  without: uses only the utils that already exist\n"
@@ -450,22 +403,21 @@ def test_lint_flags_bad_requires():
                for p in lint_rule_text(trait_with_req, filename="x.md"))
 
 
-def test_memory_kinds_are_gated_and_denials_name_the_permission():
+def test_memory_and_script_kinds_are_base_kinds():
+    """Every routine held the notebook and its own scripts; none could work without
+    them, so they are no longer switches: an empty policy allows all three kinds."""
     none = GrantPolicy()
-    denial = none.deny({"kind": "memory_write", "name": "x"})
-    assert denial and "memory" in denial            # names the canonical covering doc
-    assert none.deny({"kind": "memory_read", "name": "x"})
-    granted = GrantPolicy(actions=frozenset({"memory_read", "memory_write"}))
-    assert granted.deny({"kind": "memory_write", "name": "x"}) is None
-    assert granted.deny({"kind": "memory_read", "name": "x"}) is None
+    assert none.deny({"kind": "memory_write", "name": "x"}) is None
+    assert none.deny({"kind": "memory_read", "name": "x"}) is None
+    assert none.allows_kind("script")
+    assert not none.allows_kind("shell")               # …while a real switch stays off
 
 
 def test_admin_lifts_capability_gating_only(tmp_path):
     """D62: an admin conversation leg lifts CAPABILITY gating (gated kinds, reserved utils,
     previous-run read depth) but leaves every STRUCTURAL / ownership gate in force."""
     # A stock (no-capability) policy denies gated kinds + reserved utils; its admin twin allows.
-    lib = _lib(tmp_path, {"util-authoring": AUTHORING, "messaging-discord": COMMUNICATION,
-                          "run-history": RUN_HISTORY})
+    lib = _lib(tmp_path, {"util-authoring": AUTHORING, "messaging-discord": COMMUNICATION})
     base = load_policy(lib, [], None, current_run_ts="20260712-090000")
     admin = load_policy(lib, [], None, current_run_ts="20260712-090000", admin=True)
 
@@ -494,90 +446,6 @@ def test_admin_lifts_capability_gating_only(tmp_path):
     #  - routine.yaml config is the user's, denied for everyone including admin
     c = admin.deny({"kind": "write_file", "path": "routine.yaml", "content": "x"})
     assert c is not None
-
-
-# ------------------------------------------------------- util TAG classes (fail-closed)
-
-MESSAGING = """---
-tags: [communication, policy]
-requires:
-  utils: [discord]
-  util_tags: [messaging]
----
-# permission: discord messaging — chat channels
-body
-"""
-
-
-def _util(lib_home: Path, name: str, tags: str) -> None:
-    """A minimal catalog entry beside the permissions dir (list_utils reads <home>/utils)."""
-    d = lib_home.parent / "utils" / name
-    d.mkdir(parents=True, exist_ok=True)
-    (d / "main.py").write_text(
-        f'"""{name} — a test util.\n\nusage: gu {name}\ncalls: (none)\ntags: {tags}\n"""\n',
-        encoding="utf-8")
-
-
-def test_util_tags_accepted_in_requires_and_capabilities():
-    req, problems = normalize_capabilities({"util_tags": ["messaging"]}, requires=True)
-    assert req == {"util_tags": ["messaging"]} and not problems
-    caps, problems = normalize_capabilities({"util_tags": ["messaging"]})
-    assert caps == {"util_tags": ["messaging"]} and not problems
-    # a tag must be a lowercase non-empty string; junk is dropped AND reported
-    caps, problems = normalize_capabilities({"util_tags": ["Messaging", "", 3]})
-    assert caps == {"util_tags": []} and len(problems) == 3
-
-
-def test_a_tag_gate_closes_every_util_carrying_that_tag(tmp_path):
-    home = _lib(tmp_path, {"messaging-discord": MESSAGING})
-    _util(home, "signal", "signal, messaging, send")
-    _util(home, "page-fetch", "web, fetch")          # untagged by the gate → stays open
-
-    ungranted = load_policy(home, [], {})
-    denial = ungranted.deny({"kind": "util", "name": "signal", "args": ["send"]})
-    assert denial and "messaging-discord" in denial and "util:signal" in denial
-    # an ungated util is untouched by the tag gate
-    assert ungranted.deny({"kind": "util", "name": "page-fetch", "args": ["x"]}) is None
-
-    # holding the CLASS covers the util without naming it
-    granted = load_policy(home, ["messaging-discord"], {"util_tags": ["messaging"]})
-    assert granted.deny({"kind": "util", "name": "signal", "args": ["send"]}) is None
-    # so does the by-name grant, unchanged
-    by_name = load_policy(home, ["messaging-discord"], {"utils": ["signal"]})
-    assert by_name.deny({"kind": "util", "name": "signal", "args": ["send"]}) is None
-
-
-def test_a_new_util_carrying_a_gated_tag_is_closed_by_default(tmp_path):
-    """The point of the tag gate: the library gaining a util must not open a hole."""
-    home = _lib(tmp_path, {"messaging-discord": MESSAGING})
-    _util(home, "signal", "signal, messaging, send")
-    granted = load_policy(home, ["messaging-discord"], {"utils": ["signal"]})  # named, not classed
-    _util(home, "matrix", "matrix, messaging, send")                      # library gains one
-    fresh = load_policy(home, ["messaging-discord"], {"utils": ["signal"]})
-    assert fresh.deny({"kind": "util", "name": "matrix", "args": ["send"]})
-    assert granted.deny({"kind": "util", "name": "signal", "args": ["send"]}) is None
-    # the class grant covers the newcomer with no config change
-    classed = load_policy(home, ["messaging-discord"], {"util_tags": ["messaging"]})
-    assert classed.deny({"kind": "util", "name": "matrix", "args": ["send"]}) is None
-
-
-def test_no_tag_gate_in_the_library_means_no_catalog_read(tmp_path):
-    """With no doc declaring util_tags the policy is byte-identical to the name-only one."""
-    home = _lib(tmp_path, {"messaging-discord": COMMUNICATION})
-    _util(home, "signal", "signal, messaging, send")
-    policy = load_policy(home, [], {})
-    assert policy.util_tag_index == {}
-    assert policy.deny({"kind": "util", "name": "signal", "args": ["send"]}) is None
-
-
-def test_tag_class_survives_the_raise_then_floor_round_trip(tmp_path):
-    home = _lib(tmp_path, {"messaging-discord": MESSAGING})
-    lib = read_library_requires(home)
-    raised = capabilities_for(["messaging-discord"], lib)
-    assert raised["util_tags"] == ["messaging"]
-    assert floor_capabilities(["messaging-discord"], lib, raised)["util_tags"] == ["messaging"]
-    # dropping the permission floors the class away — no orphan capability
-    assert floor_capabilities([], lib, raised)["util_tags"] == []
 
 
 REVISION = """---
@@ -664,12 +532,18 @@ def test_verb_scoped_grant_survives_the_floor_and_stays_gated(tmp_path):
     # unheld doc → the scoped entry is floored away like any other
     assert floor_capabilities([], lib, {**EMPTY_CAPABILITIES,
                                         "utils": ["signal:read"]})["utils"] == []
-    # a doc that reserves ONLY `signal:read` still gates the `signal` util by bare name
-    verb_only = _lib(tmp_path / "v", {"ro": SIGNAL_DOC.replace("utils: [signal]",
-                                                              "utils: [signal:read]")})
+    # a doc that reserves ONLY `signal:send` gates that verb and nothing else: reading a
+    # channel needs its credential, sending needs the permission
+    verb_only = _lib(tmp_path / "v", {"send": SIGNAL_DOC.replace("utils: [signal]",
+                                                                "utils: [signal:send]")})
     pol = load_policy(verb_only, [], {})
-    assert "signal" in pol.gated_utils
-    assert pol.deny({"kind": "util", "name": "signal", "args": ["send"]})
+    assert "signal" not in pol.gated_utils and pol.gated_verbs == {"signal": {"send": ("send",)}}
+    denial = pol.deny({"kind": "util", "name": "signal", "args": ["send", "hi"]})
+    assert denial and "signal send" in denial and "send" in denial
+    assert pol.deny({"kind": "util", "name": "signal", "args": ["read"]}) is None
+    # the verb grant opens exactly the reserved verb
+    granted = load_policy(verb_only, ["send"], {"utils": ["signal:send"]})
+    assert granted.deny({"kind": "util", "name": "signal", "args": ["send", "hi"]}) is None
 
 
 # --- expects: the SOFT dependency edge ---------------------------------------------------

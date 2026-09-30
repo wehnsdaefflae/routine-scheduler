@@ -12,12 +12,11 @@ shape only), so a lane can never be given a routine that does not exist. A slug 
 holds is exempt: routines are deleted out of band, so a stale member must not lock the whole
 lane against every further edit (F442). `rsched validate` names the stale ones.
 
-**This surface carries no shared config** and nothing in this file validates one. A lane
-decides WHEN routines fire and owns nothing else; the shared config block, the shared store and
-the notes boundary belong to the DOMAIN (web/api_domains.py), which a routine names in its own
-routine.yaml — and so do the helpers that validate that block. Keeping them apart is what makes
+**This surface carries no config** and nothing in this file validates any. A lane decides WHEN
+routines fire and owns nothing else; what a routine may do and reach — its settings, its roots,
+the shared stores among them — is in its own routine.yaml. Keeping them apart is what makes
 deleting a lane a pure timing change: its members return to their own crons and nothing about
-their permissions moves (docs/lanes-domains.md).
+their permissions moves (docs/lanes-tags.md).
 
 `router` rides the normal authed include in app.py like every other api_* module.
 """

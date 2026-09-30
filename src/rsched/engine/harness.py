@@ -4,10 +4,10 @@ Split out of `composer.py` (F393): assembling the prompt from parts is one job, 
 part that states the contract is another — this one is almost entirely prose the model obeys.
 
 Identity, one JSON action per turn, the `say` contract at the routine's deliberation level, the
-working directory and every extra root, shared store and domain notes, how code runs, the concrete
-budgets, a gloss of each action kind THIS run can use. Every sentence is load-bearing and
-`docs/prompt-anatomy.md` pins the wording — a change here without a change there fails
-`tests/test_prompt_anatomy.py`, deliberately.
+working directory and every extra root, the shared stores and their notes channel, the hub tab,
+how code runs, the concrete budgets, a gloss of each action kind THIS run can use. Every
+sentence is load-bearing and `docs/prompt-anatomy.md` pins the wording — a change here without a
+change there fails `tests/test_prompt_anatomy.py`, deliberately.
 """
 
 from __future__ import annotations
@@ -61,20 +61,15 @@ def harness_contract(ctx: RunContext, kinds: list[str] | None = None) -> str:
     if r.fs_read_roots or r.fs_write_roots:
         extra = (f"\nAdditional readable roots: {[str(p) for p in r.fs_read_roots]}; "
                  f"writable roots: {[str(p) for p in r.fs_write_roots]}.")
-    if ctx.domain_store_roots:
-        # D67: the injected shared store — the run must know the root EXISTS and what it
-        # is for, or it never looks there. Collision semantics stated honestly: whole-file
-        # atomic writes, last write wins per file.
-        extra += ("\nShared store (read+write, shared with the other routines in your "
-                  f"DOMAIN): {[str(p) for p in ctx.domain_store_roots]} — exchange "
-                  "files with them there. Writes are whole-file and last "
-                  "write wins per file, so prefer per-routine filenames "
-                  "(<your-slug>-<topic>.md) and treat shared files as read-mostly.")
-        # F335: the light channel between teammates. Named HERE because a channel a run does
-        # not know about is a channel that does not exist — and because it belongs beside the
-        # store root it lives in, not in a section about reporting problems.
-        from ..domainnotes import contract_line
-        extra += contract_line(ctx.server.routines_home, r.slug)
+    # The stores this routine SHARES, each with the routines on the other end, plus the notes
+    # channel between them (F335) — named beside the roots because a store a run does not know
+    # it shares is one it never looks in; a channel it does not know about does not exist.
+    from ..sharedstores import contract_section
+
+    extra += contract_section(ctx.server.routines_home, r.slug, r.fs_write_roots)
+    if r.hub_tab:
+        extra += (f"\nHUB TAB: {r.hub_tab} — the heading your card sits under on the Steward "
+                  "hub; publish it as your card's `tab`.")
     # write_util is a user-set capability; the confirm level is its approval policy.
     # ctx.grants None (direct construction) = ungated.
     g = ctx.grants
@@ -120,8 +115,8 @@ def harness_contract(ctx: RunContext, kinds: list[str] | None = None) -> str:
     else:
         ownership = ("Ownership of prose: your recipe is self-contained — the WORKFLOW below (its "
                      "main.md entry and the stages/<name>.md modules it routes to) fully defines "
-                     "your task: goal, deliverable, constraints, completion criteria. It is the "
-                     "single source of truth for what to do. ")
+                     "your task: goal, deliverable, constraints, and what a finished run leaves "
+                     "behind (its Done when). It is the single source of truth for what to do. ")
     # Recipe ownership must match what the ENGINE enforces: since 0.261.0 own-recipe writes are
     # the `write_recipe` CAPABILITY (the recipe-authoring conduct doc), derived in loopsetup —
     # not, as before, a side effect of a write root covering the routine's own dir.
@@ -203,16 +198,16 @@ Working directory: {r.dir}. All relative paths resolve there.{extra}
 You never run git yourself: the engine commits your working directory automatically at run end.
 
 {ownership}Cross-cutting conduct (when to ask the user, research discipline, what to \
-record) is set by the GENERAL RULES that bind you — named at the end of the workflow below \
-and read with read_rule before the situation each one governs. A rule states a principle, \
+record) is set by the GENERAL RULES you practise — each named in the state digest below with \
+the moment it applies and read with read_rule when that moment comes. A rule states a principle, \
 not a procedure: apply it to the case in front of you. The prose lives once in the shared \
 library, so a revision reaches every routine holding that rule; WHICH rules bind you is the \
-user's config, and rewriting one needs the rule-authoring capability. {recipe_line}; \
+user's config. Rewriting one needs the rule-authoring capability. {recipe_line}; \
 routine.yaml config is \
 the user's — file a deferred ask_user for changes you believe are needed. What you are ALLOWED \
-to do (util authoring, reserved channels, memory, \
-previous runs) is a separate matter: CAPABILITIES, set only by the user and enforced by the \
-engine on every action — the held permissions' notes below state the conduct for each.
+to do (util authoring, reserved channels, outward acts) is a separate matter: CAPABILITIES, \
+set only by the user and enforced by the engine on every action — the held permissions' notes \
+below state the conduct for each.
 
 Budgets for this run: {b.max_turns if b.max_turns >= 0 else "unlimited"} turns, \
 {b.max_wall_clock_min if b.max_wall_clock_min >= 0 else "unlimited"} minutes, \

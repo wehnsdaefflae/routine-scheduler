@@ -37,19 +37,19 @@ def _capabilities(routine_dir, **updates):
 
 
 def _assist(**over):
-    base = {"id": "a1", "moment": "observation", "predicate": "observation-failed",
-            "payload": "remind", "line": "read the failure before reacting to it"}
+    base = {"id": "a1", "moment": "observation", "predicate": "repeated-failure",
+            "payload": "remind", "line": "change route after the second failure"}
     return [{**base, **over}]
 
 
 # --- the declaration ----------------------------------------------------------------------
 
 def test_a_well_formed_block_normalizes():
-    got, problems = normalize_assists(_assist(), rule="error-recovery")
+    got, problems = normalize_assists(_assist(), rule="fix-the-cause")
     assert problems == []
     assert len(got) == 1
     a = got[0]
-    assert a.rule == "error-recovery" and a.id == "a1" and a.key == "error-recovery/a1"
+    assert a.rule == "fix-the-cause" and a.id == "a1" and a.key == "fix-the-cause/a1"
     assert a.moment == "observation" and a.payload == "remind"
 
 
@@ -97,12 +97,12 @@ def test_the_rule_linter_rejects_a_bad_block(tmp_path):
             "  without: does not do the thing it is asked to do\n"
             "  when: the situation the rule governs comes up\n")
     body = "---\n# rule: x — y\n\nbody line one\nbody line two\n"
-    bad = head + "assists:\n  - id: a1\n    moment: nowhere\n    predicate: observation-failed\n"
+    bad = head + "assists:\n  - id: a1\n    moment: nowhere\n    predicate: repeated-failure\n"
     problems = lint_rule_text(bad + body, filename="x.md")
     assert any("'moment' must be one of" in p for p in problems)
     good = head + ("assists:\n  - id: a1\n    moment: observation\n"
-                   "    predicate: observation-failed\n    payload: remind\n"
-                   "    line: read the failure before reacting to it\n")
+                   "    predicate: repeated-failure\n    payload: remind\n"
+                   "    line: change route after the second failure\n")
     assert lint_rule_text(good + body, filename="x.md") == []
 
 
@@ -115,25 +115,22 @@ def test_the_seed_rules_that_declare_assists_are_valid():
         assert problems == [], (path.stem, problems)
         if got:
             declared[path.stem] = got
-    assert set(declared) == {"error-recovery", "intent-inference", "decision-record",
-                             "git-checkpoint", "ask-policy", "unexamined-is-not-clean",
-                             "problem-routing"}
+    assert set(declared) == {"ask-policy", "fix-the-cause", "problem-routing",
+                             "decision-record", "interface-craft", "git-checkpoint"}
+    # every registered predicate is used by a shipped rule — a predicate nothing declares is
+    # engine code with no reader
+    used = {a.predicate for rule in declared.values() for a in rule}
+    assert used == set(PREDICATES)
     # every moment is exercised by a real rule, and both built payloads with it
     assert {a.moment for rule in declared.values() for a in rule} == set(lib.MOMENTS)
     assert {a.payload for rule in declared.values() for a in rule} == set(lib.PAYLOADS)
-    # …and SOME one-shot carries every declaring rule to a live library, or that library
-    # silently keeps the old text (the seed sync is add-only). Two carry them today: the
-    # frontmatter-only batch, and problem-routing's, whose assist shipped beside a prose
-    # revision and so replaces the whole file.
-    from rsched.migrate_problem_routing_rule import SLUG as PROBLEM_ROUTING
-    from rsched.migrate_rule_assists import RULES
-    assert set(RULES) | {PROBLEM_ROUTING} == set(declared)
+
 
 
 def test_only_the_rules_a_routine_holds_contribute(tmp_path):
     rules = tmp_path / "rules"
     rules.mkdir()
-    for slug, moment, pred in (("held", "observation", "observation-failed"),
+    for slug, moment, pred in (("held", "observation", "repeated-failure"),
                                ("unheld", "boundary", "user-corrected")):
         (rules / f"{slug}.md").write_text(
             f"---\ntags: [a, b, c]\nassists:\n  - id: x\n    moment: {moment}\n"
@@ -202,12 +199,23 @@ def _hold_rule(routine_dir, slugs: list[str]) -> None:
     path.write_text(yaml.safe_dump(raw), encoding="utf-8")
 
 
+def _age_ledger(routine_dir) -> None:
+    """Date the fixture's LEDGER.md before the run's start. The ledger predicate compares the
+    file's mtime with the run's stamp; the fixture writes it at test time — after TS."""
+    import datetime as dt
+    import os
+
+    before = dt.datetime.strptime(TS, "%Y%m%d-%H%M%S").astimezone().timestamp() - 3600
+    os.utime(routine_dir / "LEDGER.md", (before, before))
+
+
 def _run(make_routine, scripted, replies, *, slug, moment, predicate,
          line="the operative line"):
     d = make_routine(slug="assistr")
     server = _server(d)
     _rule(server, slug, moment, predicate, line)
     _hold_rule(d, [slug])
+    _age_ledger(d)
     ep = scripted(replies)
     status, run_dir = run_routine(d, server, run_ts=TS)
     events, _ = read_events(run_dir / "transcript.jsonl")
@@ -218,33 +226,37 @@ def _shown(ep) -> str:
     return json.dumps(ep.calls[-1]["messages"], ensure_ascii=False)
 
 
-def test_an_observation_assist_rides_the_tail_of_the_failure(make_routine, scripted):
-    """error-recovery's moment. Costs no turn: it appends to the observation the run was
-    getting anyway."""
-    d, ep, status, _events = _run(
+def test_an_observation_assist_rides_the_tail_of_the_second_failure(make_routine, scripted):
+    """fix-the-cause's moment. Costs no turn: it appends to the observation the run was
+    getting anyway — and only on the SECOND failure of the same call, where a run either
+    changes route or starts engineering around a wall."""
+    d, ep, status, events = _run(
         make_routine, scripted,
-        [util("nonexistent-util"), write_file("state/a.txt"), finish()],
-        slug="error-recovery", moment="observation", predicate="observation-failed",
-        line="read the failure before you react to it")
+        [util("nonexistent-util"), util("nonexistent-util"), util("nonexistent-util"),
+         write_file("state/a.txt"), finish()],
+        slug="fix-the-cause", moment="observation", predicate="repeated-failure",
+        line="change route after the second failure")
     shown = _shown(ep)
-    assert "[RULE error-recovery — the call you just made failed]" in shown
-    assert "read the failure before you react to it" in shown
-    assert "read_rule name=error-recovery" in shown          # the rest of the rule stays put
-    assert shown.count("[RULE error-recovery") == 1          # once per run, not per failure
-    assert json.loads(lib.state_path(d).read_text())["error-recovery/m"] == 1
+    assert "[RULE fix-the-cause — the same call has now failed twice this run]" in shown
+    assert "change route after the second failure" in shown
+    assert "read_rule name=fix-the-cause" in shown           # the rest of the rule stays put
+    assert shown.count("[RULE fix-the-cause") == 1           # once per run, not per failure
+    observations = [e for e in events if e["type"] == "observation"]
+    assert "[RULE" not in json.dumps(observations[0])        # the FIRST failure is information
+    assert json.loads(lib.state_path(d).read_text())["fix-the-cause/m"] == 1
     assert status == "ok"
 
 
 def test_a_boundary_assist_arrives_as_an_engine_note(make_routine, scripted):
-    """intent-inference's moment. The user speaking to a run IN FLIGHT is the edge — a
+    """fix-the-cause's correction moment. The user speaking to a run IN FLIGHT is the edge — a
     message waiting before the run is its task, not an intervention in it — and the note is
     appended at the turn boundary, the same carrier a mid-run rule binding uses."""
     from rsched.engine.inbox import file_message
 
     d = make_routine(slug="assistr")
     server = _server(d)
-    _rule(server, "intent-inference", "boundary", "user-corrected", "name the intention")
-    _hold_rule(d, ["intent-inference"])
+    _rule(server, "fix-the-cause", "boundary", "user-corrected", "name the intention")
+    _hold_rule(d, ["fix-the-cause"])
 
     def correcting():
         # lands AFTER this turn's drain, so the NEXT boundary is where it is delivered
@@ -257,7 +269,7 @@ def test_a_boundary_assist_arrives_as_an_engine_note(make_routine, scripted):
     notes = [e["payload"]["text"] for e in events if e["type"] == "user_injection"
              and e["payload"].get("source") == "engine"]
     assert notes, "the boundary assist never fired"
-    assert "[RULE intent-inference — the user just said something to this run]" in notes[0]
+    assert "[RULE fix-the-cause — the user just said something to this run]" in notes[0]
     assert "name the intention" in _shown(ep)
     assert len(notes) == 1, "one fire per run, however often the user speaks"
     assert status == "ok"
@@ -279,8 +291,7 @@ def test_a_pre_finish_assist_defers_the_finish_exactly_once(make_routine, script
 
 
 def test_a_satisfied_pre_finish_assist_never_fires(make_routine, scripted):
-    """The predicate reads turn_records, which survives compaction — a run that DID write
-    its ledger is not asked to."""
+    """A run that DID write its ledger is not asked to."""
     _d, _ep, status, events = _run(
         make_routine, scripted,
         [write_file("artifacts/report.md"), write_file("LEDGER.md", content="### run — x"),
@@ -321,6 +332,7 @@ def test_a_conversation_reply_is_never_held_for_a_ledger_entry(make_routine, scr
     server.routines_home = convs
     _rule(server, "decision-record", "pre-finish", "ledger-untouched", "append one entry")
     _hold_rule(moved, ["decision-record"])
+    _age_ledger(moved)
     ep = scripted([write_file("artifacts/reply.md"), finish()])
     status, run_dir = run_routine(moved, server, run_ts=TS)
     events, _ = read_events(run_dir / "transcript.jsonl")
@@ -333,9 +345,10 @@ def test_a_conversation_reply_is_never_held_for_a_ledger_entry(make_routine, scr
 def test_a_routine_that_does_not_hold_the_rule_is_untouched(make_routine, scripted):
     d = make_routine(slug="assistr")
     server = _server(d)
-    _rule(server, "error-recovery", "observation", "observation-failed", "a line")
+    _rule(server, "fix-the-cause", "observation", "repeated-failure", "a line")
     _hold_rule(d, [])                       # the rule exists in the library, unheld here
-    ep = scripted([util("nonexistent-util"), write_file("state/a.txt"), finish()])
+    ep = scripted([util("nonexistent-util"), util("nonexistent-util"),
+                   write_file("state/a.txt"), finish()])
     status, _run_dir = run_routine(d, server, run_ts=TS)
     assert "[RULE" not in _shown(ep)
     assert not lib.state_path(d).exists()
@@ -350,13 +363,14 @@ def test_a_predicate_that_raises_can_never_fail_a_turn(make_routine, scripted, m
     def boom(_situation):
         raise RuntimeError("predicate exploded")
 
-    monkeypatch.setitem(assist_predicates.PREDICATES, "observation-failed",
+    monkeypatch.setitem(assist_predicates.PREDICATES, "repeated-failure",
                         assist_predicates.Predicate(moment="observation", check=boom,
                                                     describes="d"))
     _d, ep, status, _events = _run(
         make_routine, scripted,
-        [util("nonexistent-util"), write_file("state/a.txt"), finish()],
-        slug="error-recovery", moment="observation", predicate="observation-failed")
+        [util("nonexistent-util"), util("nonexistent-util"), write_file("state/a.txt"),
+         finish()],
+        slug="fix-the-cause", moment="observation", predicate="repeated-failure")
     assert "[RULE" not in _shown(ep)
     assert status == "ok"
 
@@ -367,77 +381,122 @@ def test_every_registered_predicate_declares_a_reachable_moment():
         assert predicate.moment in lib.MOMENTS, (name, predicate.moment)
         assert predicate.describes.strip(), name
 
-# --- the one-shot migration ----------------------------------------------------------------
+# --- the predicates that read the world rather than the actions ------------------------------
 
-def _live_copy(tmp_path) -> tuple[Path, Path]:
-    """A stand-in live library: the seed rules with their assists: blocks stripped, which is
-    exactly what a pre-0.305.0 instance holds."""
-    import shutil
+def test_a_ledger_appended_outside_the_actions_still_counts(make_routine, scripted):
+    """An append through a shell heredoc, a script or a util is invisible to the actions; the
+    file's own mtime is not. Reading the actions made 48 of 75 of this assist's deferrals
+    false."""
+    d = make_routine(slug="assistr")
+    server = _server(d)
+    _rule(server, "decision-record", "pre-finish", "ledger-untouched", "append one entry")
+    _hold_rule(d, ["decision-record"])
+    ledger = d / "LEDGER.md"
+    _age_ledger(d)
 
-    from rsched.migrate_rule_assists import _strip_assists
+    def append_by_other_means():
+        with ledger.open("a", encoding="utf-8") as fh:     # what a shell append looks like
+            fh.write("### run — kept X because Y\n")
+        return finish()
 
-    live = tmp_path / "live-rules"
-    live.mkdir()
-    for path in SEED.glob("*.md"):
-        shutil.copy(path, live / path.name)
-        text = (live / path.name).read_text(encoding="utf-8")
-        (live / path.name).write_text(_strip_assists(text), encoding="utf-8")
-    return live, SEED
-
-
-def test_the_migration_carries_the_blocks_into_live_rules(tmp_path):
-    from rsched.migrate_rule_assists import RULES, migrate
-
-    live, seed = _live_copy(tmp_path)
-    assert not any("assists:" in (live / f"{r}.md").read_text(encoding="utf-8") for r in RULES)
-    notes = migrate(live, seed)
-    assert all(n.endswith("installed") for n in notes), notes
-    for slug in RULES:
-        text = (live / f"{slug}.md").read_text(encoding="utf-8")
-        assert "\nassists:\n" in text
-        # the block landed in the FRONTMATTER, above the closing fence, and still parses
-        meta = yaml.safe_load(text.split("---")[1])
-        got, problems = normalize_assists(meta.get("assists"), rule=slug)
-        assert problems == [] and len(got) == 1
-        # …and it is now byte-identical to the seed
-        assert text == (seed / f"{slug}.md").read_text(encoding="utf-8")
+    scripted([write_file("artifacts/report.md"), append_by_other_means])
+    status, run_dir = run_routine(d, server, run_ts=TS)
+    events, _ = read_events(run_dir / "transcript.jsonl")
+    assert not [e for e in events if e["type"] == "observation"
+                and e["payload"].get("assist")]
+    assert status == "ok"
 
 
-def test_the_migration_is_idempotent(tmp_path):
-    from rsched.migrate_rule_assists import RULES, migrate
+def test_a_denied_call_the_run_routed_around_is_named(make_routine, scripted):
+    """ask-policy's moment: a refusal costs a turn at the validation seam; the action the
+    run chose INSTEAD is where the line belongs — a request to make, not a wall to engineer
+    around."""
+    from types import SimpleNamespace
 
-    live, seed = _live_copy(tmp_path)
-    migrate(live, seed)
-    before = {r: (live / f"{r}.md").read_text(encoding="utf-8") for r in RULES}
-    notes = migrate(live, seed)
-    assert all("already carries" in n for n in notes), notes
-    assert {r: (live / f"{r}.md").read_text(encoding="utf-8") for r in RULES} == before
+    from rsched.engine.assist_predicates import Situation, _capability_denied
+
+    ctx = SimpleNamespace(turn=4, last_denial_turn=4)
+    loop = SimpleNamespace(ctx=ctx)
+    routed = Situation(loop=loop, action={"kind": "shell", "command": "curl x"}, obs={})
+    assert _capability_denied(routed)
+    asked = Situation(loop=loop, action={"kind": "ask_user", "request": "util:x",
+                                         "question": "q"}, obs={})
+    assert not _capability_denied(asked)                   # the line was already followed
+    later = Situation(loop=SimpleNamespace(ctx=SimpleNamespace(turn=5, last_denial_turn=4)),
+                      action={"kind": "shell", "command": "ls"}, obs={})
+    assert not _capability_denied(later)
+    from rsched.grantpolicy import REQUEST_ROUTE_MARK
+    fs = Situation(loop=later.loop, action={"kind": "write_file", "path": "/x"},
+                   obs={"error": f"outside the roots. If it is essential, {REQUEST_ROUTE_MARK} "
+                                 '"fs-write:/x"'})
+    assert _capability_denied(fs)                          # a gate that refuses AT execution
 
 
-def test_the_migration_leaves_an_edited_rule_alone(tmp_path):
-    """A local edit outranks the seed — the same rule the add-only seed sync follows. This
-    copies a frontmatter block, so it must never become a content sync by accident."""
-    from rsched.migrate_rule_assists import migrate
+def test_the_validation_seam_marks_the_turn_a_denial_cost(make_routine, scripted):
+    d = make_routine(slug="assistr")
+    server = _server(d)
+    perms = server.libraries_home / "permissions"
+    perms.mkdir(parents=True, exist_ok=True)
+    (perms / "shell.md").write_text("---\ntags: [a, b, c]\nrequires:\n  actions: [shell]\n"
+                                    "---\n# permission: shell — x\nbody\n", encoding="utf-8")
+    _rule(server, "ask-policy", "observation", "capability-denied", "file the request now")
+    _hold_rule(d, ["ask-policy"])
+    ep = scripted([{"say": "s", "kind": "shell", "command": "ls"},
+                   write_file("state/a.txt"), finish()])
+    status, _run_dir = run_routine(d, server, run_ts=TS)
+    assert "file the request now" in _shown(ep)
+    assert status == "ok"
 
-    live, seed = _live_copy(tmp_path)
-    edited = live / "error-recovery.md"
-    edited.write_text(edited.read_text(encoding="utf-8")
-                      + "\n\nAn operator added this paragraph.\n", encoding="utf-8")
-    notes = {n.split(":")[0]: n for n in migrate(live, seed)}
-    assert "diverged from the seed" in notes["error-recovery"]
-    assert "assists:" not in edited.read_text(encoding="utf-8")
-    assert "installed" in notes["decision-record"]      # the untouched ones still land
+
+def test_rendered_output_counts_as_seen_only_when_looked_at():
+    from types import SimpleNamespace
+
+    from rsched.engine.assist_predicates import Situation, _rendered_output_unseen
+
+    def situation(*records):
+        return Situation(loop=SimpleNamespace(ctx=None, turn_records=list(records)))
+
+    page = {"kind": "write_file", "brief": json.dumps("site/index.html")}
+    assert _rendered_output_unseen(situation(page))
+    assert not _rendered_output_unseen(situation(page, {"kind": "view_image",
+                                                        "brief": '"shot.png"'}))
+    assert not _rendered_output_unseen(situation(page, {"kind": "util",
+                                                        "brief": '"browser-session"'}))
+    assert not _rendered_output_unseen(situation({"kind": "write_file",
+                                                  "brief": '"notes.md"'}))
 
 
-def test_the_migration_survives_a_missing_rule(tmp_path):
-    from rsched.migrate_rule_assists import migrate, run
+def test_a_report_answered_elsewhere_is_no_longer_owed(tmp_path):
+    """R2086: the run's own list only learns of the replies it files through `report`; the
+    ledger knows about every other way a thread closes."""
+    from rsched.report_threads import still_owed
 
-    live, seed = _live_copy(tmp_path)
-    (live / "intent-inference.md").unlink()
-    notes = {n.split(":")[0]: n for n in migrate(live, seed)}
-    assert "skipped" in notes["intent-inference"]
-    assert "installed" in notes["error-recovery"]
-    assert run(live, seed) == 0                        # already applied by migrate() above
+    rows = [{"id": "R1"}, {"id": "R2"}, {"id": "R3"}, {"id": "R4", "closes": True},
+            {"id": "R5", "superseded": {"by": "R9"}},
+            {"id": "R6", "answers": "R1", "closes": True},
+            {"id": "R7", "settles": ["r2"]}]
+    assert still_owed(rows, ["R1", "R2", "R3", "R4", "R5", "R404"]) == ["R3"]
+
+
+def test_a_clean_repo_is_its_own_undo_point(tmp_path):
+    """54 of the old hold's 102 fires were repos clean at HEAD, each clicked past — which
+    trains a run to override the one hold guarding an irreversible write."""
+    import subprocess
+
+    from rsched.engine.assist_predicates import _dirty
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    git = ["git", "-C", str(repo), "-c", "user.email=t@t", "-c", "user.name=t"]
+    subprocess.run([*git, "init", "-q"], check=True)
+    (repo / "a.txt").write_text("a", encoding="utf-8")
+    subprocess.run([*git, "add", "a.txt"], check=True)
+    subprocess.run([*git, "commit", "-qm", "a"], check=True)
+    assert not _dirty(repo)
+    (repo / "a.txt").write_text("b", encoding="utf-8")
+    assert _dirty(repo)
+    assert _dirty(tmp_path / "not-a-repo")                  # unreadable reads as dirty
+
 
 # --- the shared hold seam ------------------------------------------------------------------
 
@@ -550,8 +609,8 @@ def test_a_held_action_grounds_no_finish_whichever_source_held_it(make_routine, 
     assert status == "ok"
 
 
-def test_the_new_predicates_read_the_signals_the_engine_already_keeps():
-    """asks-piling-up and the all-clear check, at the unit level — both are cheap because the
+def test_the_new_predicates_read_the_signals_the_engine_already_keeps(tmp_path):
+    """asks-piling-up and the routing check, at the unit level — both are cheap because the
     engine already counts what they ask about."""
     from types import SimpleNamespace
 
@@ -563,21 +622,24 @@ def test_the_new_predicates_read_the_signals_the_engine_already_keeps():
     loop.ctx.asks_deferred = 3
     assert asks(Situation(loop=loop)) is True
 
-    clean = PREDICATES["clean-claim-without-a-denominator"].check
-    def sit(summary):
-        return Situation(loop=loop, action={"kind": "finish", "summary": summary})
-    assert clean(sit("Reviewed the module. All clear.")) is True
-    assert clean(sit("Checked 40 of 46 files — all clear on those.")) is False
-    assert clean(sit("Found three defects and fixed them.")) is False
-
     # D131: the receiving half of problem-routing. `ctx.reports_open` is engine bookkeeping —
-    # the drain fills it, the report handler empties it as each `answers` lands — so this is a
-    # truth test rather than a search: it cannot fire on a run that has already replied.
+    # the drain fills it, the report handler empties it as each `answers` lands — and the
+    # ledger is asked whether anything ELSE closed the thread since (R2086).
+    from rsched import reports
+
     owes = PREDICATES["unclosed-delivered-report"].check
+    loop.ctx.server = SimpleNamespace(routines_home=tmp_path)
+    ledger = reports.reports_path(tmp_path)
+    ledger.parent.mkdir(parents=True, exist_ok=True)
+    ledger.write_text(json.dumps({"id": "R42", "routine": "a", "target": "b"}) + "\n",
+                      encoding="utf-8")
     loop.ctx.reports_open = []
     assert owes(Situation(loop=loop)) is False
     loop.ctx.reports_open = ["R42"]
     assert owes(Situation(loop=loop)) is True
+    with ledger.open("a", encoding="utf-8") as fh:        # settled by someone else
+        fh.write(json.dumps({"id": "R43", "routine": "c", "settles": ["R42"]}) + "\n")
+    assert owes(Situation(loop=loop)) is False
 
 # --- the library surface --------------------------------------------------------------------
 
@@ -602,7 +664,7 @@ def test_a_rules_row_carries_its_assists(tmp_path):
 
 
 def test_the_library_page_lists_the_curated_reminder_store(api_client):
-    """It is written by runs under approval and reaches every routine at `global` — so the
+    """It is written by the curator under approval and reaches every routine it names — so the
     surface that shows what is in there, and can take one out again, has to exist."""
     from rsched import reminders as store
 
@@ -610,10 +672,12 @@ def test_the_library_page_lists_the_curated_reminder_store(api_client):
     home = tmp_path / "library" / "reminders"
     store.write_global(home, Reminder(id="rem-20260905-1", regex="^util:fs-ops mv ",
                                       description="mv overwrites silently", scope="global",
-                                      created_run="r:1", stats=store.blank_stats()))
+                                      created_run="r:1", stats=store.blank_stats(),
+                                      reach="universal"))
     body = client.get("/api/library").json()
     assert [r["id"] for r in body["reminders"]] == ["rem-20260905-1"]
     assert body["reminders"][0]["regex"] == "^util:fs-ops mv "
+    assert body["reminders"][0]["reach"] == "universal"
     # …and removal is the one lever the page must have: an approval decides what gets IN
     assert client.delete("/api/library/reminders/rem-20260905-1").status_code == 200
     assert client.get("/api/library").json()["reminders"] == []
@@ -628,12 +692,11 @@ def test_removing_a_reminder_refuses_a_bad_id_and_a_missing_one(api_client):
 
 
 def test_every_library_kind_the_api_returns_is_a_kind_the_page_shows():
-    """The Library page is the whole library or it is misleading. Templates sat in the payload
-    with no section for months; reminders would have been the second."""
+    """The Library page is the whole library or it is misleading: a kind that rides the payload
+    with no section of its own is a kind nobody sees."""
     view = (Path(__file__).resolve().parents[1] / "static/views/library.js").read_text(
         encoding="utf-8")
-    listed = {"workflows", "rules", "permissions", "templates", "playbooks", "utils",
-              "reminders"}
+    listed = {"workflows", "rules", "permissions", "playbooks", "utils", "reminders"}
     for kind in listed:
         assert f"data.{kind}" in view, f"the library page never reads data.{kind}"
     # and the counts index names each one, so the page says what it holds before you scroll —
@@ -647,23 +710,19 @@ def test_every_library_kind_the_api_returns_is_a_kind_the_page_shows():
 
 # --- on by default ---------------------------------------------------------------------------
 
-def test_the_reminder_layer_is_held_by_default(tmp_path):
+def test_the_reminder_layer_is_on_by_default(tmp_path):
     """A caution a run leaves itself is ordinary conduct, not an opt-in capability — and a
-    layer nobody switches on is a layer that never learns anything."""
-    from rsched.bootstrap import ADOPT_PERMISSIONS
-    from rsched.config.base import DEFAULT_PERMISSIONS
+    layer nobody switches on is a layer that never learns anything. It is a SETTING, so no
+    permission carries it and the floor cannot take it away."""
+    from rsched.config.base import DEFAULT_CAPABILITIES, DEFAULT_PERMISSIONS
     from rsched.grants import capabilities_for, floor_capabilities, read_library_requires
-
-    assert "reminders" in DEFAULT_PERMISSIONS
-    assert "reminders" in ADOPT_PERMISSIONS      # …and existing routines get it once, at boot
 
     perms = tmp_path / "permissions"
     perms.mkdir(parents=True)
-    seed = Path(__file__).resolve().parents[1] / "library-seed/permissions/reminders.md"
-    (perms / "reminders.md").write_text(seed.read_text(encoding="utf-8"), encoding="utf-8")
     lib = read_library_requires(perms)
     caps = floor_capabilities(list(DEFAULT_PERMISSIONS), lib,
-                              capabilities_for(list(DEFAULT_PERMISSIONS), lib))
+                              capabilities_for(list(DEFAULT_PERMISSIONS), lib,
+                                               dict(DEFAULT_CAPABILITIES)))
     # LOCAL, not global: born local, global is earned — the shared store still needs the dial
     # raised deliberately, and a write there still needs the user's approval
     assert caps["reminders"] == "local"

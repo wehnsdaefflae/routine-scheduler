@@ -40,7 +40,7 @@ def _routine(server, slug, **cfg) -> None:
     d = server.routines_home / slug
     d.mkdir(parents=True, exist_ok=True)
     base = {"description": "t", "permissions": [], "rules": [],
-            "capabilities": {"actions": [], "utils": [], "util_tags": []}}
+            "capabilities": {"actions": [], "utils": []}}
     (d / "routine.yaml").write_text(yaml.safe_dump({**base, **cfg}), encoding="utf-8")
 
 

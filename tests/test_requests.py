@@ -309,8 +309,8 @@ def test_once_match_covers_each_turn_action_class():
     from rsched.engine.requests import _once_match
 
     ctx = _once_loop(set()).ctx
-    assert _once_match("action:memory_read", {"kind": "memory_read", "name": "x"}, ctx)
-    assert not _once_match("action:memory_read", {"kind": "memory_write", "name": "x"}, ctx)
+    assert _once_match("action:shell", {"kind": "shell", "command": "ls"}, ctx)
+    assert not _once_match("action:shell", {"kind": "write_util", "name": "x"}, ctx)
     assert _once_match("util:discord", {"kind": "util", "name": "discord"}, ctx)
     assert not _once_match("util:discord", {"kind": "util", "name": "other"}, ctx)
     # runs: spent by reading ANOTHER run's tree — never by the run's own
@@ -319,10 +319,6 @@ def test_once_match_covers_each_turn_action_class():
     assert not _once_match("runs:last",
                            {"kind": "read_file", "path": f"runs/{TS}/state.json"}, ctx)
     assert not _once_match("runs:last", {"kind": "read_file", "path": "state/notes.md"}, ctx)
-    assert _once_match("workflows:generate",
-                       {"kind": "subtask", "workflow": "generate", "prompt": "p"}, ctx)
-    assert not _once_match("workflows:generate",
-                           {"kind": "subtask", "workflow": "general-task", "prompt": "p"}, ctx)
 
 
 def test_apply_decision_allow_once_arms_once_classes_only():
@@ -617,11 +613,10 @@ def test_run_context_effective_roots_carry_fs_grants(tmp_path):
 
 def test_with_overlay_folds_capability_entities():
     g = GrantPolicy().with_overlay(
-        {"action:memory_read", "util:discord", "runs:last", "workflows:generate",
-         "secret:FOO_KEY"}, {"util:usenet"})
-    assert g.allows_kind("memory_read")
+        {"action:shell", "util:discord", "runs:last", "secret:FOO_KEY"}, {"util:usenet"})
+    assert g.allows_kind("shell")
     assert "discord" in g.utils
-    assert g.run_history == "last" and g.workflows == "generate"
+    assert g.run_history == "last"
     assert g.entity_state("secret:FOO_KEY") == "granted_now"
     assert g.entity_state("util:usenet") == "denied_now"
     # base+overlay, never stacked: re-applying over the ORIGINAL base drops old grants

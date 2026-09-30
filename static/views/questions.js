@@ -325,6 +325,13 @@ export async function render(view, query = {}) {
     const runNow = canRunNow ? el("button", { class: "btn small", "data-answer-run-now": "",
       title: "file this answer AND start one run of the routine now (a manual run) — "
         + "otherwise the answer waits for its next scheduled run" }, "answer & run now") : null;
+    // the run started by hand may take a one-line BRIEF, which it answers for instead of its
+    // recipe's Done when — the same optional line the routine page's Run now offers
+    const briefIn = canRunNow ? el("input", { type: "text", class: "run-brief tight",
+      maxlength: "300", placeholder: "brief for that run (optional)", "data-answer-brief": "",
+      "data-nopersist": true,
+      title: "one job for the run \"answer & run now\" starts — leave it empty for an ordinary run" })
+      : null;
     const form = answerForm(q, {
       control: "input",
       placeholder: "your answer…  (↵ to send)",
@@ -333,9 +340,11 @@ export async function render(view, query = {}) {
       onArrow: (d) => focusAt(index + d),
       submitText: async (text, _intermediate, decision) => {
         firedRunId = null;
+        const brief = wantRun ? (briefIn?.value || "").trim() : "";
         const result = await api(`/api/questions/${q.qid}/answer`,
           { method: "POST", body: { ...(decision ? { decision } : { text }),
-                                    ...(wantRun ? { run_now: true } : {}) } });
+                                    ...(wantRun ? { run_now: true } : {}),
+                                    ...(brief ? { brief } : {}) } });
         firedRunId = result.run_id || null;
         return result;
       },
@@ -357,7 +366,7 @@ export async function render(view, query = {}) {
         inputs.splice(inputs.indexOf(form.input), 1);
         focusAt(index);          // move on to the next open question
       },
-      extraControls: runNow && lifecycle ? [runNow, lifecycle] : (runNow || lifecycle),
+      extraControls: [briefIn, runNow, lifecycle].filter(Boolean),
     });
     if (runNow) runNow.onclick = () => { wantRun = true; form.submit(false); };
     inputs.push(form.input);
@@ -369,25 +378,21 @@ export async function render(view, query = {}) {
     // patch silently never landed); a detached task / clarify workspace has none — its
     // proposal renders read-only rather than pretending a button would work.
     const configBar = (q.config_patch && !q.meta) ? (() => {
-      // R1488: a domain's shared block is config too, and `PATCH /api/domains/{id}` has always
-      // existed — but with the home derived from the ASKER's kind alone, a domain could never
-      // be the target, so every domain-level proposal came out as prose asking the operator to
-      // go and click it. The engine now resolves target AND home together at ask time, so an
-      // explicit `config_home` is authoritative here and the button posts where it says.
-      const home = q.config_home ? q.config_home
+      // The engine resolved and validated the target at ask time (engine/interact.py) against
+      // the ROUTINES home whoever asked, so a named target is always a routine; without one the
+      // proposal is the asker's own and patches the asker's own surface.
+      const home = q.config_target ? "routines"
         : q.conversation ? "conversations" : (q.background || q.wizard) ? "" : "routines";
       // what the button patches is named by the surface it posts to, never by who asked: a
       // conversation's proposal for a routine patches a ROUTINE
-      const noun = home === "domains" ? "domain" : home === "conversations" ? "conversation"
-        : "routine";
-      // D123/F458: a config_patch may be FOR another routine (config-optimizer's whole job).
-      // The engine resolved and validated that slug at ask time (engine/interact.py), so the
-      // patch goes to the TARGET, not to whoever asked — the old hardwiring to q.routine
+      const noun = home === "conversations" ? "conversation" : "routine";
+      // D123/F458: a config_patch may be FOR another routine (config-optimizer's whole job), so
+      // the patch goes to the TARGET, not to whoever asked — the old hardwiring to q.routine
       // silently rewrote the asker's own config and reported success (R1343). That holds for
-      // a conversation too: the engine resolves the target against the ROUTINES home whoever
-      // asks; forcing q.routine here posted the patch to /api/routines/<the conversation>.
+      // a conversation too: forcing q.routine here posted the patch to /api/routines/<the
+      // conversation>.
       const target = q.config_target || q.routine;
-      const elsewhere = home === "domains" || target !== q.routine;
+      const elsewhere = target !== q.routine;
       const btn = home ? el("button", { class: "btn small primary" }, "approve & apply") : null;
       if (btn) btn.onclick = async () => {
         btn.disabled = true;

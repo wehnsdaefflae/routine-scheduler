@@ -1,7 +1,6 @@
 """Per-routine output-compression roll-up (rsched.readmodels.compression_stats): the
-stream is the source, records without the tally are OUTSIDE the window (never a zero),
-children count as themselves, and the current mode is joined in so an empty row is
-readable.
+stream is the source, records without the tally are OUTSIDE the window (never a zero) and
+children count as themselves.
 """
 
 import json
@@ -21,12 +20,11 @@ def _server(tmp_path) -> ServerConfig:
     return s
 
 
-def _routine(server, slug, mode="compress"):
+def _routine(server, slug):
     d = server.routines_home / slug
     d.mkdir(parents=True, exist_ok=True)
     (d / "routine.yaml").write_text(yaml.safe_dump(
-        {"name": slug, "slug": slug, "enabled": True, "description": "t",
-         "output_compression": mode}), encoding="utf-8")
+        {"name": slug, "slug": slug, "enabled": True, "description": "t"}), encoding="utf-8")
 
 
 def _stream(server, records):
@@ -42,7 +40,7 @@ def _rec(slug, ts, compression, *, depth=0):
 def test_rolls_up_per_routine_and_orders_by_saving(tmp_path):
     server = _server(tmp_path)
     _routine(server, "alpha")
-    _routine(server, "beta", mode="measure")
+    _routine(server, "beta")
     _stream(server, [
         _rec("alpha", "2026-09-11T07:00:00+00:00",
              {"applied": 2, "skipped": 40, "fallback": 1, "tokens_saved": 500, "ms": 120.5}),
@@ -50,7 +48,7 @@ def test_rolls_up_per_routine_and_orders_by_saving(tmp_path):
         _rec("alpha", "2026-09-11T07:05:00+00:00",
              {"applied": 1, "unchanged": 2, "tokens_saved": 100, "ms": 80.0}, depth=1),
         _rec("beta", "2026-09-12T07:00:00+00:00",
-             {"measured": 3, "skipped": 7, "tokens_saved": 0, "ms": 40.0}),
+             {"unchanged": 3, "skipped": 7, "tokens_saved": 0, "ms": 40.0}),
     ])
 
     out = compression_stats(server)
@@ -65,12 +63,9 @@ def test_rolls_up_per_routine_and_orders_by_saving(tmp_path):
     assert alpha["candidates"] == 46     # every status
     assert alpha["attempts"] == 6        # the compressor actually ran
     assert alpha["seconds"] == 0.2
-    assert alpha["mode"] == "compress"
     assert alpha["first"] == "2026-09-11T07:00:00+00:00"
     assert alpha["last"] == "2026-09-11T07:05:00+00:00"
-    # the mode is the routine's CURRENT setting — why a measured-only row saved nothing
-    assert out["rows"][1]["mode"] == "measure"
-    assert out["rows"][1]["measured"] == 3
+    assert out["rows"][1]["unchanged"] == 3
     assert out["totals"]["tokens_saved"] == 600
     assert out["totals"]["applied"] == 3
     assert out["totals"]["candidates"] == 56
@@ -95,35 +90,12 @@ def test_records_without_the_tally_are_outside_the_window(tmp_path):
     assert out["rows"][0]["runs"] == 1
 
 
-def test_off_and_deleted_routines_stay_readable(tmp_path):
-    """`off` is why a row is empty; a slug with no directory any more has no mode at all
-    rather than a guessed one.
-    """
+def test_a_deleted_routine_stays_readable(tmp_path):
+    """A slug with no directory any more keeps its row: the history is still true."""
     server = _server(tmp_path)
-    _routine(server, "quiet", mode="off")
-    _stream(server, [
-        _rec("quiet", "2026-09-11T07:00:00+00:00", {}),
-        _rec("gone", "2026-09-11T08:00:00+00:00", {"skipped": 3, "ms": 0.0}),
-    ])
+    _stream(server, [_rec("gone", "2026-09-11T08:00:00+00:00", {"skipped": 3, "ms": 0.0})])
     rows = {r["routine"]: r for r in compression_stats(server)["rows"]}
-    assert rows["quiet"]["mode"] == "off"
-    assert rows["quiet"]["candidates"] == 0
-    assert rows["gone"]["mode"] is None
     assert rows["gone"]["skipped"] == 3
-
-
-def test_a_mode_change_is_not_served_from_the_memo(tmp_path):
-    """The mode join is memoized on the config files themselves (it is the second catalog
-    walk of an /api/stats call). An edited setting must reach the next call, or the table
-    reports a dial nobody holds any more.
-    """
-    server = _server(tmp_path)
-    _routine(server, "alpha", mode="compress")
-    _stream(server, [_rec("alpha", "2026-09-11T07:00:00+00:00",
-                          {"applied": 1, "tokens_saved": 5})])
-    assert compression_stats(server)["rows"][0]["mode"] == "compress"
-    _routine(server, "alpha", mode="off")
-    assert compression_stats(server)["rows"][0]["mode"] == "off"
 
 
 def test_malformed_counts_never_raise(tmp_path):

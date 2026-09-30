@@ -32,7 +32,7 @@ from dataclasses import dataclass
 #: The SECOND and last warning line, as a fraction of the limit. A run that passed the first
 #: one and kept working gets one more notice near the ceiling — and NOTHING in between: the
 #: warning used to ride every turn past `warn_at`, so a run read "converge deliberately now"
-#: fifteen times and wound up at the ceiling whether or not its stopping conditions were met
+#: fifteen times and wound up at the ceiling whether or not its work was done
 #: (nanogeofeld 8 of 10 runs at 94-100 turns of 100, freelance-radar 7 of 10 at 173-200 of
 #: 200, none of them forced). Budgets are a runaway BACKSTOP, never a pace.
 FINAL_WARN_AT = 0.95

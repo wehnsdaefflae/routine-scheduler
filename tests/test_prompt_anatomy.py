@@ -40,10 +40,7 @@ ENGINE_SRC = _package_source()
 
 #: Needles the engine BUILDS rather than spells, so no source scan can find them. Keep this
 #: list at zero-plus-a-reason: an entry is an unchecked needle.
-COMPOSED_NEEDLES = frozenset({
-    # `stopping_digest._group_block` renders f"{mode.upper()} of:" from the group's own mode.
-    "ANY of:",
-})
+COMPOSED_NEEDLES: frozenset[str] = frozenset()
 
 
 def _system_prompt(make_routine, tmp_path, depth=0) -> str:
@@ -146,23 +143,29 @@ def test_doc_pins_the_canonical_engine_strings(make_routine, tmp_path):
         "allowed for ONE action only",
         "ONCE-GRANT SPENT",
         "(one action only)",
-        # the DOMAIN shared store (D67): the harness contract of a run whose routine names a
-        # domain carries the injected root and its collision contract
-        "Shared store (read+write",
-        # F334/D98: the stopping-conditions block renders the STRUCTURE — the joiner, each
-        # group's connective, and the satisfied announcement. A run that cannot see two
-        # conditions are an OR treats them as an AND. The two SCOPES render apart, and only
-        # the GOAL one announces that the routine itself is over.
-        "STOPPING CONDITIONS",
-        "FINAL GOAL",
-        "EVERY final-goal condition is met",
-        "ANY of:",
+        # SHARED STORES: the harness contract of a run whose write roots include a shared store
+        # names each store, who else shares it and its collision contract — and the hub line
+        "SHARED STORES (read+write roots you share with other routines",
+        "the heading your card sits under on the Steward hub",
+        # The goal model: the FINISH block the digest says once at boot (finish_digest), the
+        # brief that stands in for a recipe's Done when (engine/brief.py), the accounting rung
+        # and the claim check (accounting.deferral, verifier.challenge_message), and the rules
+        # named with their moments (composer, rules.when_lines)
+        "FINISH LINE (the operator's",
+        "THIS RUN'S BRIEF",
+        "At your finish, the `accounting` field carries",
+        "THE LAST RUN LEFT UNMET",
+        "your `accounting` is incomplete",
+        "a check of your own transcript does not support",
+        "GENERAL RULES you practise",
         # F337: the one wording a live run gets for a config change — naming the fields that
         # WAIT is as load-bearing as naming the ones that land
         "IN EFFECT NOW, from this turn on",
         "Saved, but it takes effect at your NEXT RUN",
-        # F335: the light channel between teammates, named beside the store root it lives in
-        "NOTES FROM YOUR DOMAIN",
+        # F335: the light channel between routines sharing a store — the digest block the
+        # notes arrive in and the write-gate refusal of a note nobody would ever read
+        "NOTES FROM ROUTINES YOU SHARE A STORE WITH",
+        "a routine reads notes only from the stores among its own read-write roots",
         # Rule ASSISTS: the one shape a curated rule takes when its moment arrives, at all
         # three moments. The route back to the full rule is part of the wording — a surfaced
         # line is deliberately terse, and terseness is only honest if the rest is reachable.

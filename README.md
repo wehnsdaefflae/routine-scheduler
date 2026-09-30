@@ -109,7 +109,7 @@ endpoints, the central Secrets store, GitHub, the library repo.
 - **Stats** — spend and token flow per routine, model and util, with the prompt-cache
   read share beside every slice.
 - **Library** — browse and edit the shared workflows, rules, permissions, playbooks,
-  settings templates, global reminders and global utils; every save is lint/selftest-gated.
+  settings patterns, global reminders and global utils; every save is lint/selftest-gated.
 - **Settings** — LLM endpoints (live test call + a credential-source indicator: which of
   inline key / secret / env file is in use, warning when an inline key shadows a set
   secret) and the model catalog (per-model window, output `max_tokens` with an audit flag
@@ -138,13 +138,15 @@ endpoints, the central Secrets store, GitHub, the library repo.
 
 **From a conversation** — there is no create page and no wizard. Open a conversation, say
 what you want the routine to do, and the agent walks the intake as numbered questions (each
-one an `ask_user` carrying options, answered with a number rather than a paragraph). Three
-things must be SETTLED before it drafts: what the routine produces each run, what DONE looks
-like for one run, and which library pattern it is built on — that last from a catalog that
-always ends in `generate`, drafting a new pattern fitted to the task. It then shows you the
-DRAFT and materializes it on your confirmation (`create_routine`): its own git repo, the
-workflow decomposed into `main.md` + `stages/`, the chosen rules bound, the stopping
-conditions seeded from your own words. A run with no user in the loop cannot create anything
+one an `ask_user` carrying options, answered with a number rather than a paragraph). It must
+SETTLE what the routine produces each run, what one finished run leaves behind, whether it ever
+finishes for good, anything a run must never do, the library pattern it is built on — from a
+catalog that always ends in `generate`, drafting a new pattern fitted to the task — and the
+SETTINGS pattern it follows, with that pattern's questions. It then shows you the DRAFT and
+materializes it on your confirmation (`create_routine`): its own git repo, the workflow
+decomposed into `main.md` + `stages/` with your words in its `## Done when`, saved with its
+settings pattern's values — and what is specific to it waiting on its page as changes you
+accept. A run with no user in the loop cannot create anything
 — it queues a proposal to the Decisions page instead, which you materialize with one click.
 Or from the shell:
 
@@ -264,7 +266,7 @@ user-facing here.
   the Help tab next to the pdoc-generated API reference (`docs_build.py`, at boot, from the
   checkout named by Settings → Source)
 - `library-seed/` + `util-seed/` — seeded to `~/.local/share/routine-scheduler-libraries`,
-  ONE git repo holding `workflows/`, `rules/`, `permissions/`, `playbooks/`, `templates/`,
+  ONE git repo holding `workflows/`, `rules/`, `permissions/`, `playbooks/`, `patterns/`,
   `reminders/`, `web/` (the shared steward kit status pages are built on) and `utils/` (with
   the `gu` dispatcher at the root). Routines are never seeded from the repo — they are authored
   on the instance

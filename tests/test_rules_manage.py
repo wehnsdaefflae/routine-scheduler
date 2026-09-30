@@ -1,6 +1,6 @@
-"""The general-rules layer: routine.yaml's `rules:` as the state, the derived Standing-practices
-tail, the library-global `read_rule`, authoring via `write_rule`, and the mid-run control.json
-hand-off.
+"""The general-rules layer: routine.yaml's `rules:` as the state, the when-lines the prompt shows
+for them, the library-global `read_rule`, authoring via `write_rule`, and the mid-run
+control.json hand-off.
 
 The invariants under test: a rule has exactly ONE copy (the library — nothing is ever written
 into a routine dir), the held SET is config only the user changes, and the PROSE is changeable
@@ -18,9 +18,12 @@ from rsched.engine.actionschema import KINDS
 from rsched.engine.memops import do_read_rule
 from rsched.engine.observations import format_observation
 from rsched.grants import GATED_KINDS
-from rsched.rules import PRACTICES_HEADING
 
 RULE_A = """---
+effect:
+  with: does the thing
+  without: skips it
+  when: before any change that ships
 tags: [a, b, c]
 ---
 # rule: alpha — the first principle
@@ -65,30 +68,17 @@ def test_binding_records_a_slug_and_copies_nothing(lib, routine):
     # the whole point of the layer: no per-routine copy exists to drift from the library
     assert not (routine / "rules").exists()
     assert not list(routine.glob("**/alpha.md"))
-    main = (routine / "main.md").read_text(encoding="utf-8")
-    assert PRACTICES_HEADING in main
-    assert "- `alpha` — the first principle" in main
+    # and the recipe is not touched — the prompt reads the held set from config at boot
+    assert (routine / "main.md").read_text(encoding="utf-8") == "# Run flow\n\nDo the work.\n"
 
 
-def test_tail_is_derived_so_unbinding_prunes_it(lib, routine):
-    rules_mod.apply_changes(lib, routine, ["alpha", "beta"], [])
-    assert rules_mod.current_rules(routine) == ["alpha", "beta"]
-    rules_mod.apply_changes(lib, routine, [], ["alpha"])
-    main = (routine / "main.md").read_text(encoding="utf-8")
-    assert "`alpha`" not in main
-    assert "`beta`" in main
-    assert "Do the work." in main          # the body above the tail is never touched
-    # last one out removes the section entirely rather than leaving an empty heading
-    rules_mod.apply_changes(lib, routine, [], ["beta"])
-    assert PRACTICES_HEADING not in (routine / "main.md").read_text(encoding="utf-8")
-
-
-def test_tail_rebuild_is_idempotent_and_converges(lib, routine):
-    rules_mod.apply_changes(lib, routine, ["alpha"], [])
-    first = (routine / "main.md").read_text(encoding="utf-8")
-    rules_mod.sync_practices_tail(routine, lib)
-    rules_mod.sync_practices_tail(routine, lib)
-    assert (routine / "main.md").read_text(encoding="utf-8") == first
+def test_when_lines_say_when_each_held_rule_applies(lib):
+    """The prompt names a held rule beside its moment, read from the rule itself at every boot;
+    a rule without an effect falls back to its summary and a vanished one says so."""
+    assert rules_mod.when_lines(lib, ["alpha", "beta", "gone"]) == [
+        "alpha — before any change that ships",
+        "beta — the second principle",
+        "gone — not in the library any more"]
 
 
 def test_a_library_edit_reaches_every_holder_with_no_migration(lib, routine):
@@ -130,7 +120,6 @@ def test_read_rule_returns_prose_without_writing_anything(lib, routine):
     assert obs["held"] is False
     # reading a rule you do not hold must not bind it — that is the user's call alone
     assert rules_mod.current_rules(routine) == []
-    assert PRACTICES_HEADING not in (routine / "main.md").read_text(encoding="utf-8")
     assert "applies for the rest of this run only" in format_observation(obs)
 
 
@@ -152,8 +141,8 @@ def test_read_rule_list_and_missing(lib, routine):
 
 
 def test_read_rule_is_ungated_so_a_routine_can_read_what_binds_it():
-    """Deliberately NOT a capability: a routine unable to read its own standing practices
-    would hold rules it cannot follow, and library prose has no side effect to gate.
+    """Deliberately NOT a capability: a routine unable to read the rules it practises would
+    hold rules it cannot follow; library prose has no side effect to gate.
     """
     assert "read_rule" in KINDS
     assert "read_rule" not in GATED_KINDS

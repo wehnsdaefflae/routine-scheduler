@@ -1,0 +1,79 @@
+title: Project steward
+summary: 'Carries one project over weeks: your feedback first, then the backlog or the people and dates
+  it waits on; publishes a page and reads it back.'
+workflow: steward-a-project
+when: The job is a project with a finish line — an application, a report, a deliverable — that moves through
+  correspondence, documents and your feedback.
+asks:
+- field: fs_read_roots
+  question: Which folders hold the project's material?
+- field: finish_line
+  question: What finishes this project — an outcome the run can check (submitted, delivered), one only
+    you can judge, or a date after which it stops either way?
+- field: run_gate
+  question: Where do the project's messages arrive — which mailbox, which senders?
+settings:
+  schedule:
+    catchup: skip
+    friendly:
+      frequency: daily
+      time: 08:00
+  run_gate:
+    checks: []
+    enabled: false
+    timeout_s: 30
+  triggers: []
+  improve: true
+  permissions:
+  - outbound-mail
+  - steward-publishing
+  - util-authoring
+  capabilities:
+    actions:
+    - revise_util
+    - write_util
+    utils:
+    - fau-mail:send
+    - gmail:send
+    confirm: creations
+    remind_confirm: always
+    reminders: local
+    rule_confirm: always
+    runs: last
+  rules:
+  - ask-policy
+  - change-scope
+  - correspondence
+  - decision-record
+  - evidence-discipline
+  - feedback-loop
+  - fix-the-cause
+  - interface-craft
+  - problem-routing
+  - verify-independently
+  - web-research
+  - work-order
+  - write-as-the-principal
+  reminders: []
+  grants: {}
+  finish_line:
+    outcomes: []
+    until: ''
+  budgets:
+    ask_timeout_min: 480
+    max_cost: -1
+    max_subrun_depth: 2
+    max_subruns: 8
+    max_total_tokens: -1
+    max_total_turns: -1
+    max_turns: 150
+    max_wall_clock_min: 90
+  keep_runs: 30
+  fs_read_roots:
+  - ~/.local/share/routine-scheduler-libraries/web/steward
+  fs_write_roots: []
+  connections: {}
+  machines: []
+  models: {}
+  deliberation: standard
+  tags: []

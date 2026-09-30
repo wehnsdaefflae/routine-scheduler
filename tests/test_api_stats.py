@@ -86,7 +86,7 @@ def test_stats_route_carries_the_compression_rollup(api_client, make_routine):
     row = next(r_ for r_ in comp["rows"] if r_["routine"] == "alpha")
     assert row["applied"] == 2 and row["fallback"] == 1 and row["tokens_saved"] == 640
     assert row["candidates"] == 12 and row["attempts"] == 3 and row["seconds"] == 0.2
-    assert row["mode"] == "compress"                  # the default a routine is created with
+    assert "mode" not in row          # engine behaviour, not a per-routine setting
     assert comp["records"] == 1 and comp["since"] == "2026-07-15T10:00:00+00:00"
     assert comp["totals"]["tokens_saved"] == 640
 

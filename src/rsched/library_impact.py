@@ -87,8 +87,9 @@ def _unmet(surface: dict) -> set[str]:
             if n["severity"] in ("blocks", "interrupts")}
 
 
-def _holds(server: Any, cfg: Any, kind: str, name: str, catalog: list[dict]) -> bool:
+def _holds(server: Any, cfg: Any, kind: str, name: str) -> bool:
     """Does this routine hold the named document?"""
+    from .grants import split_util_verb
     from .readmodels.surface import _held_utils
 
     if kind == "rule":
@@ -97,7 +98,7 @@ def _holds(server: Any, cfg: Any, kind: str, name: str, catalog: list[dict]) -> 
         return name in (cfg.permissions or [])
     # the calls closure includes the held util itself, so the direct case is covered by it
     return any(name in _calls_closure(server.libraries_home, h)
-               for h in _held_utils(cfg, catalog))
+               for h in {split_util_verb(e)[0] for e in _held_utils(cfg)})
 
 
 def holders(server: Any, kind: str, name: str) -> list[str]:
@@ -108,15 +109,13 @@ def holders(server: Any, kind: str, name: str) -> list[str]:
     a routine never names can still change what the util it DOES name requires.
     """
     from .config import load_routine
-    from .utils_lib import list_utils
 
     out: list[str] = []
-    catalog = list_utils(server.libraries_home) if kind == "util" else []
     for d in _routine_dirs(server):
         cfg, _ = load_routine(d)
         if cfg is None:
             continue
-        if _holds(server, cfg, kind, name, catalog):
+        if _holds(server, cfg, kind, name):
             out.append(cfg.slug)
     return out
 

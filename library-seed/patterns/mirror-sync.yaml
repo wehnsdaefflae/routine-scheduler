@@ -1,0 +1,68 @@
+title: Mirror sync
+summary: Exports, diffs, pushes and verifies a mirror of something that changes elsewhere.
+workflow: sync-a-mirror
+when: The job is keeping a copy in step with its source — a repository mirror, an export — with nothing
+  to decide.
+asks:
+- field: fs_write_roots
+  question: Which mirror does it keep in sync?
+settings:
+  schedule:
+    catchup: skip
+    friendly:
+      frequency: daily
+      time: 00:00
+  run_gate:
+    checks: []
+    enabled: false
+    timeout_s: 30
+  triggers: []
+  improve: true
+  permissions:
+  - shell
+  - util-authoring
+  capabilities:
+    actions:
+    - revise_util
+    - shell
+    - write_util
+    utils: []
+    confirm: creations
+    remind_confirm: always
+    reminders: local
+    rule_confirm: always
+    runs: last
+  rules:
+  - ask-policy
+  - audit-coverage
+  - change-scope
+  - decision-record
+  - evidence-discipline
+  - fix-the-cause
+  - git-checkpoint
+  - make-failure-visible
+  - problem-routing
+  - verify-independently
+  - web-research
+  reminders: []
+  grants: {}
+  finish_line:
+    outcomes: []
+    until: ''
+  budgets:
+    ask_timeout_min: 480
+    max_cost: -1
+    max_subrun_depth: 0
+    max_subruns: 0
+    max_total_tokens: -1
+    max_total_turns: -1
+    max_turns: 30
+    max_wall_clock_min: 20
+  keep_runs: 30
+  fs_read_roots: []
+  fs_write_roots: []
+  connections: {}
+  machines: []
+  models: {}
+  deliberation: standard
+  tags: []

@@ -14,7 +14,7 @@ eye-stabilize-folder is in a different lane entirely and cannot see either of th
 the RUNS was never going to sequence the JOBS, which is the whole finding.
 
 Facing that vacuum the routines invented their own protocol: a `gpu_lease.py` inside
-funscript-trainer's `scripts/`, lease JSONs in the Labs domain's shared store, and a
+funscript-trainer's `scripts/`, lease JSONs in the store the Labs routines share, and a
 hand-reimplemented copy in voice-model-trainer that once had to reclaim an 18-hour-stale lease.
 Three incompatible protocols, owned by one routine, invisible to the daemon and to the console.
 

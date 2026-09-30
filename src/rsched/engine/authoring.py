@@ -112,15 +112,23 @@ def handle_write_util(loop, action: dict, poll_s: float) -> dict:  # noqa: PLR09
                 "problems": problems}
     creating = not utils_lib.exists(home, name)
     # Approval policy is the routine's write_util capability level (always: every change;
-    # creations: new utils only; never). No grants on the ctx = confirm everything.
-    approved_for_run = "approval:write_util" in getattr(ctx, "granted_now", set())
-    if not approved_for_run and (ctx.grants is None or ctx.grants.needs_confirm(creating)):
+    # creations: new utils only; never). No grants on the ctx = confirm everything. A revision
+    # that WIDENS what the util reaches is asked about at every level and every time: it is a
+    # new grant for every routine that calls the util, in the shape of a fix.
+    widened = ([] if creating
+               else utils_header.widening(utils_lib.read_util(home, name) or "", content))
+    approved_for_run = ("approval:write_util" in getattr(ctx, "granted_now", set())
+                        and not widened)
+    if widened or (not approved_for_run
+                   and (ctx.grants is None or ctx.grants.needs_confirm(creating))):
         verb = "create" if creating else "revise"
         excerpt = (f"anchor:\n{str(action.get('anchor'))[:180]}\nreplacement:\n"
                    f"{str(action.get('replacement') or '')[:180]}" if edit_mode
                    else f"First lines:\n{content.strip()[:400]}")
+        reach = (f" This revision lets it reach {', '.join(widened)} — which every routine "
+                 "calling it then reaches too." if widened else "")
         ask = handle_ask(loop, {
-            "question": f"Approve {verb} of global util '{name}'?"
+            "question": f"Approve {verb} of global util '{name}'?{reach}"
                         f"{_impact_note(ctx, 'util', name, content)} "
                         f"{'In-place patch — ' if edit_mode else ''}{excerpt}",
             "mode": "blocking", "options": ["approve", "decline",

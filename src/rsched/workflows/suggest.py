@@ -124,115 +124,6 @@ def suggest(server: ServerConfig, instruction: str) -> dict:
     return obj
 
 
-# ---------------------------------------------------- recommend_setup() ------------------------
-# The INVERSE of the setup surface. readmodels/surface.py reads FORWARD from what a routine holds
-# ("what does this still need?"); this reads from what the routine DOES and judges, for every rule
-# and permission in the catalogs, whether THIS routine should hold it — with a one-line why/why-not
-# a person can act on. It powers the routine page's "Recommend" button: advice beside every toggle,
-# never an automatic change (the user stays the one who flips the switch).
-
-RECOMMEND_SCHEMA = {
-    "type": "object", "additionalProperties": False,
-    "required": ["items"],
-    "properties": {
-        "items": {"type": "array", "items": {
-            "type": "object", "additionalProperties": False,
-            "required": ["slug", "recommend", "reason"],
-            "properties": {"slug": {"type": "string"},
-                           "recommend": {"type": "boolean"},
-                           "reason": {"type": "string"}}}},
-    },
-}
-
-
-def _recipe_text(cfg) -> str:
-    """The routine's task as prose for the recommender: its one-line description plus its
-    recipe entry (main.md). Bounded so a long recipe never blows the prompt.
-    """
-    parts: list[str] = []
-    if cfg.description:
-        parts.append(str(cfg.description))
-    try:
-        main = cfg.dir / "main.md"
-        if main.is_file():
-            parts.append(main.read_text(encoding="utf-8"))
-    except OSError:
-        pass
-    return "\n\n".join(parts)[:12000]
-
-
-def recommend_setup(server: ServerConfig, cfg) -> dict:
-    """Recommend, for an EXISTING routine, which general RULES and PERMISSIONS it should hold,
-    each with a one-line reason judged against its recipe. Returns
-    ``{'available': bool, 'items': [{slug, kind, held, recommend, reason}, ...]}`` — one row per
-    catalog item, `held` its current state, `recommend` whether the task needs it. Degrades to
-    ``available=False`` (rows carry their held state, no advice) when no endpoint answers, so the
-    page shows the toggles without advice rather than 500ing — the same discipline as the sibling
-    suggesters.
-    """
-    from .. import library_docs
-
-    rules = library_docs.list_docs(server.rules_home)
-    perms = library_docs.list_docs(server.permissions_home)
-    held_rules = set(cfg.rules or [])
-    held_perms = set(cfg.permissions or [])
-    kind_of = {d["slug"]: "rule" for d in rules}
-    kind_of.update({d["slug"]: "permission" for d in perms})
-    held_of = {d["slug"]: (d["slug"] in held_rules) for d in rules}
-    held_of.update({d["slug"]: (d["slug"] in held_perms) for d in perms})
-
-    def _rows(recommend_of: dict[str, bool], reason_of: dict[str, str], available: bool) -> dict:
-        return {"available": available,
-                "items": [{"slug": s, "kind": kind_of[s], "held": held_of[s],
-                           "recommend": recommend_of.get(s, held_of[s]),
-                           "reason": reason_of.get(s, "")} for s in kind_of]}
-
-    if not rules and not perms:
-        return {"available": False, "items": []}
-    # graceful default: every row keeps its current state, no advice
-    fallback = _rows({}, {}, available=False)
-
-    def _fmt(docs: list[dict], held: set[str]) -> str:
-        out = []
-        for d in docs:
-            when = (d.get("effect") or {}).get("when")
-            line = f"- {d['slug']}: {d['summary']}"
-            if when:
-                line += f" | hold it when: {when}"
-            if d["slug"] in held:
-                line += " | CURRENTLY HELD"
-            out.append(line)
-        return "\n".join(out)
-
-    prompt = (
-        "An EXISTING recurring LLM-agent routine holds a set of general RULES (shared library "
-        "principle prose the run applies to its own case) and PERMISSIONS (conduct docs whose "
-        "capabilities the engine then enforces). For EVERY item in both catalogs below, judge "
-        "whether THIS routine should hold it: set recommend=true when its task genuinely "
-        "exercises the item, false when it does not — and give a ONE-LINE reason grounded in what "
-        "this routine actually does. Use each item's 'hold it when' clause as the test. Be "
-        "conservative with permissions (a messaging-* channel only if the routine must reach a "
-        "person outside the web UI; run-history only if runs build on each other beyond the last "
-        "summary; shell almost never) and take a rule only where the task exercises it — every "
-        "held rule is one more thing each run must read and honour.\n\n"
-        f"ROUTINE: {cfg.name or cfg.slug}\nWHAT IT DOES:\n{_recipe_text(cfg)}\n\n"
-        f"RULES:\n{_fmt(rules, held_rules)}\n\nPERMISSIONS:\n{_fmt(perms, held_perms)}\n\n"
-        "Reply with ONLY one JSON object matching this schema (no prose):\n"
-        + json.dumps(RECOMMEND_SCHEMA)
-    )
-    obj, _why = _ask_json(server, prompt, RECOMMEND_SCHEMA, purpose="Recommend routine setup")
-    if obj is None:
-        return fallback
-    recommend_of: dict[str, bool] = {}
-    reason_of: dict[str, str] = {}
-    for it in obj.get("items", []):
-        slug = it.get("slug")
-        if slug in kind_of:                           # drop hallucinated slugs
-            recommend_of[slug] = bool(it.get("recommend"))
-            reason_of[slug] = (it.get("reason") or "").strip()
-    return _rows(recommend_of, reason_of, available=True)
-
-
 # ---------------------------------------------------- generate_description() -------------------
 # Routine descriptions used to be the routine's NAME (scaffold wrote `description = name`). This
 # generates a COMPREHENSIVE one — purpose, requirements, side effects, and dependencies with other
@@ -273,7 +164,7 @@ def generate_description(server: ServerConfig, *, name: str, instruction: str,
     """A COMPREHENSIVE routine description generated from its task: what one run PRODUCES and why
     (purpose), what it REQUIRES (permissions / secrets / inputs / external services), its SIDE
     EFFECTS (what it writes, publishes or sends outside itself), and its DEPENDENCIES with other
-    routines (which it feeds, consumes from, or shares a domain and its store with). Replaces
+    routines (which it feeds, consumes from, or shares a store with). Replaces
     the old `description = name`. Returns a dense multi-sentence string; falls back to `name`
     whenever the task is empty, no endpoint answers, or the reply is blank — the creation flow
     never fails on this. `recipe_text` (an existing routine's main.md) is used in place of
@@ -300,7 +191,7 @@ def generate_description(server: ServerConfig, *, name: str, instruction: str,
         "2. REQUIREMENTS — the permissions, secrets, inputs or external services it depends on.\n"
         "3. SIDE EFFECTS — what it writes, publishes, sends or changes OUTSIDE itself each run.\n"
         "4. DEPENDENCIES WITH OTHER ROUTINES — which existing routines it feeds, consumes from, "
-        "or shares a domain and its shared store with.\n\n"
+        "or shares a store with.\n\n"
         f"ROUTINE NAME: {name}{wf_note}\n\nTASK:\n{task[:8000]}{sib_note}\n\n"
         "Keep it factual and specific — 3 to 6 sentences, at most ~700 characters. Reply with "
         "ONLY one JSON object matching this schema (no prose):\n" + json.dumps(DESCRIBE_SCHEMA)

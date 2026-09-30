@@ -6,7 +6,7 @@ needs before touching anything; everything below is here to be looked up when th
 actually reaches a subsystem.
 
 Deeper single-topic guides live beside this one: getting started, examples, child runs,
-background tasks, triggers, schedule-once, run gates, lanes & domains, conversations,
+background tasks, triggers, schedule-once, run gates, lanes & tags, conversations,
 playbooks, rules & permissions, curated rules, rule assists, reminders, items, messages,
 status pages, sandboxing, admin, OAuth connections, remote machines, browser sessions,
 darknet, usenet, notifications, search, run analytics, output compression, revise recipe,
@@ -60,8 +60,8 @@ the limits (single-writer status.json preserved).
 - **The system prompt is composed once at boot** (`engine/composer.py`; the CAPABILITIES
   section in `engine/capabilities.py`, observation rendering in `engine/observations.py`):
   harness contract → action schema
-  + example → workflow body (the routine's own `main.md`, ending in a `## Standing practices` tail that
-  names the general rules it holds — their prose is NEVER inlined; a SUBRUN inserts its INSTRUCTION brief
+  + example → workflow body (the routine's own `main.md`, with its `## Done when` — the general rules it
+  holds are named in the state digest, their prose NEVER inlined; a SUBRUN inserts its INSTRUCTION brief
   here, a top-level routine does NOT — its task is baked into the recipe) → **capabilities** (model +
   context window, the action kinds usable this run, enabled capabilities + held permissions' short
   conduct notes,
@@ -205,8 +205,10 @@ the limits (single-writer status.json preserved).
   local winning). Every fire is tallied and labelled four ways (`remind_feedback`:
   could_not / would_have / did / didnt), which is what makes a pattern tunable and the layer
   measurable. One hold per action string per run, so re-emitting the held action is the
-  confirmation to proceed — the same anti-livelock shape the stopping verifier uses. Full
-  narration in [reminders](reminders.md).
+  confirmation to proceed — the same anti-livelock shape the claim verifier uses. A curated
+  reminder declares its reach (`universal`, or `listed` for the routines whose settings list it);
+  rules-review curates the store from a census of every routine's own. Full narration in
+  [reminders](reminders.md).
 - **A curated rule surfaces itself at the moment it applies** (`rsched/assists.py` +
   `engine/assist.py`, `engine/assist_predicates.py`). A rule declares `assists:` in its own
   frontmatter — a deterministic predicate over the SITUATION plus the operative line to surface
@@ -408,8 +410,9 @@ and the capabilities digest's catalog listing):
   out of the routine-improver's passes (default: included); `triggers:` — event-driven fires
   alongside cron (docs/triggers.md): one canonical list of `{id, type, cooldown_s, …}` entries
   (`webhook` implemented — server-generated URL token IS the auth; `imap`/`watch_path` reserved
-  in the same shape), validated in `rsched/triggers.py`, created/deleted on the routine page's
-  Triggers card (never by a run; the library-sync routine's export REDACTS trigger tokens).
+  in the same shape), validated in `rsched/triggers.py`, added, edited and removed in the routine
+  page's Triggers section and saved by its one accept (never by a run; the library-sync
+  routine's export REDACTS trigger tokens).
 - `tuning.yaml` — the routine's machine-tunable BEHAVIOR parameters, classed with the RECIPE
   (editable by a routine holding `write_recipe`; config stays sealed — the file boundary IS the
   permission boundary). Today: `deliberation:` (terse|standard|deliberate|think-on-paper — how
@@ -418,8 +421,8 @@ and the capabilities digest's catalog listing):
   `set_deliberation` from the run view). Absent file = defaults; `config.load_tuning`/`write_tuning`
   are the one reader/writer pair; future machine-tunable knobs land here, never in routine.yaml.
 - `main.md` — the workflow **decomposed and materialized into this routine** (an entry state-machine that
-  routes to `stages/<name>.md` modules, read on demand, and ends with a Standing practices tail
-  naming the general rules it holds). The clarified instruction is only a transient compile SEED —
+  routes to `stages/<name>.md` modules, read on demand) with its `## Done when` — what one finished run
+  leaves behind, accounted at every main finish — and, where the operator named prohibitions, `## Never`. The clarified instruction is only a transient compile SEED —
   decomposed into the stages at creation and NOT persisted (a routine carries no `instruction.md`);
   the stages are the sole source of truth. The rules themselves are NOT here: they live once in the
   library and the run reads them with `read_rule`.
@@ -570,8 +573,8 @@ and the capabilities digest's catalog listing):
   neither deployment (Docker ends tini and the kernel SIGKILLs the PID namespace; the systemd
   unit's default `KillMode=control-group` kills the cgroup). The wait it costs is bounded by the
   task's own 60-minute budget, and a background task uses deferred asks only, so it can never park
-  on a user and the gap always comes. Gated by the
-  `background-tasks` permission (default-ON for conversations); action = `detach` (never call it
+  on a user and the gap always comes. Structural, not a permission: a root conversation gets it at
+  setup and nothing else does; action = `detach` (never call it
   "background" — that means the within-reply subtask). Monitor/cancel via `web/api_background.py`
   (`GET/POST …/background`, `…/background/{id}/cancel`); the rail renders the tasks. See
   docs/background-tasks.md.
@@ -713,14 +716,14 @@ deliverable, a decision for the user, a blocker). A conversation's spine is its 
   picker (`GET /api/playbooks`); the composer carries **Save as playbook** (`POST …/playbook` →
   distil a new one) and, when the conversation was seeded from a playbook, **Update playbook**
   (`PUT …/playbook` → revise that one) — both distil from the transcript via the `system_model`.
-- Defaults: routine default permissions+capabilities PLUS **`background-tasks`** (the `detach` action —
-  conversation-shaped, since a finished task reports back into the chat), tuning.yaml
+- Defaults: routine default permissions+capabilities, the `detach` action (structural for a root
+  conversation, since a finished task reports back into the chat), tuning.yaml
   `deliberation: deliberate` (chat is judgment-heavy; slider in the header panel), the `shell` action OFF (one-click grant;
-  run-history + the previous-runs depth greyed — routine-only); rules = ask-policy/web-research/decision-record/intent-inference/**git-checkpoint**
+  `scheduling` greyed — routine-only); rules = the routine defaults minus decision-record, plus **git-checkpoint**
   (checkpoint commits in external project repos — the conversation dir itself is unversioned).
   Conversations feed workflow-usage + health events; they are EXCLUDED from the dashboard,
   scheduler, and instance-export. `bootstrap.sync_seed_library_docs` (every boot) lands new seed
-  workflows/rules/permissions/templates + playbooks (subfolder-aware), skipping anything the
+  workflows/rules/permissions/patterns + playbooks (subfolder-aware), skipping anything the
   library's git history shows was deleted — how `converse`/`git-checkpoint` and seed playbooks
   reach existing instances without un-deleting what an operator removed.
 
@@ -762,8 +765,8 @@ A deletion STICKS, for every kind. The boot sync (`sync_seed_library_docs`, and 
 before it) tops the live library up with anything the seed carries and it lacks — but it asks
 `libgit.path_was_deleted` first, so a doc the operator removed in the Library tab is not brought
 back at the next restart and pushed. (It used to be: only utils had that guard, so a deleted seed
-workflow or rule returned at every boot.) The sync covers the four flat kinds — workflows, rules,
-permissions and TEMPLATES — plus whole playbook folders. It is ADD-ONLY and stays that way: these
+workflow or rule returned at every boot.) The sync covers the flat kinds — workflows, rules,
+permissions, settings PATTERNS and the reminder store's README — plus whole playbook folders. It is ADD-ONLY and stays that way: these
 files are user-editable, so overwriting one would discard an operator's edit silently. A seed doc
 whose TEXT must change on a live instance is converted by a one-shot migration instead.
 - **Workflows** are self-contained **Python pattern files** (`.py`) that DEPICT a routine's control flow —
@@ -776,23 +779,24 @@ whose TEXT must change on a live instance is converted by a one-shot migration i
   turns a Python pattern into that markdown at scaffold; `materialize` renders it whole (sub-routines/fallback).
   A `tools:` list restricts action kinds (`finish` always allowed), and must COVER the pattern's
   action-import line — the schema is narrowed to `tools:`, so an imported-but-excluded kind is prose
-  for a channel the run cannot emit. No pattern carries a COMPLETION literal: what DONE means is the
-  user's and lives in `state/stopping.json`. `workflows/lint.py` gates every change; `suggest`/`generate` rank/draft via the
-  `system_model`. Routine creation is initiated from a CONVERSATION ONLY (D58/D59) — there is no standalone new-routine
+  for a channel the run cannot emit. A pattern's `DONE_WHEN` literal is the skeleton of what one finished
+  run leaves behind, which decomposition turns into the routine's own `## Done when`; whether a ROUTINE
+  ever finishes is its operator's finish line, never a pattern's. `workflows/lint.py` gates every change;
+  `suggest`/`generate` rank/draft via the `system_model`. Routine creation is initiated from a CONVERSATION ONLY (D58/D59) — there is no standalone new-routine
   wizard page. The conversation agent clarifies the task WITH the user in normal chat, then emits the **`create_routine`**
   action (`engine/create_routine.py`) — valid ONLY from a root conversation — which materializes the routine
   SYNCHRONOUSLY through the SAME `workflows.scaffold` path the retired wizard build once called (decompose the chosen
   workflow into main.md + stages/, record its held rules, write routine.yaml, init the auto-push git repo; the
   daemon's `registry_rescan_s` timer picks the new dir up). There is no clarification ROUTINE behind
-  any of this: the standalone wizard that copied a template's budgets/models/rules into a session was
-  retired with D59, and the clarifying now happens in the conversation's own chat.
+  any of this: the standalone clarification wizard was retired with D59; the clarifying now
+  happens in the conversation's own chat.
   The intake is held to a WALKED clarification, and the walking is done in DECISIONS (F383): every point
   still open goes to the user as its own `ask_user` carrying `options`, which the console renders as
   numbered picks — prose in the reply makes the user compose an answer the agent already knew how to
   offer. What cannot be a gate is whether the answers are REAL: a machine check cannot tell a settled
   answer from a plausible one, and the cause of a thin intake is the generation copy, not a missing
   validator. Three answers must be SETTLED before a draft is presented as decided: what the routine
-  PRODUCES each run (the artefact, named, and where it lands), what DONE looks like for ONE run, and which
+  PRODUCES each run (the artefact by name and where it lands), what DONE looks like for ONE run, and which
   pattern it is built on — that last one chosen from a catalog that always ends in `generate`, drafting a
   NEW pattern fitted to this task, so the workflow question is never a closed list — and that catalog
   EXCLUDES harness patterns (`meta`, e.g. `converse`), which assume a present reader a scheduled routine
@@ -836,17 +840,17 @@ whose TEXT must change on a live instance is converted by a one-shot migration i
   back to nothing the user reasoned about. The queue is for a run that HAS a user, just not now.
 - **Rules** (`library-seed/rules/`, `# rule:` heading, NO requires — lint-enforced): GENERAL
   rules — principle prose a run applies to its own case. ONE copy each, in the library: a routine
-  holds SLUGS (`routine.yaml` `rules:`), named in main.md's Standing practices tail
-  (`rules.with_practices_tail` guarantees it) and read on demand with `read_rule`, so revising the
+  holds SLUGS (`routine.yaml` `rules:`), named in the state digest with the moment each applies
+  (`rules.when_lines`, from each rule's own `effect:`) and read on demand with `read_rule`, so revising the
   library text reaches every holder at its next run with no migration and no fork to drift. Nothing
   is copied into a routine dir and no LLM adapts anything at creation — a rule is general by
   construction, so the decompose pipeline only receives the held slugs as an index.
   The SET a new routine starts with comes from its PATTERN (`META.includes`, falling back to
   `DEFAULT_RULES`), not from a judgement made at creation: nothing has read the recipe yet,
-  because the recipe is what creation is about to write. Judging a routine's setup is
-  `recommend_setup`'s job, on the routine page, once there is a recipe to judge — and it puts
-  advice beside every toggle rather than flipping one, so the user stays the one who decides
-  (D108). The set is changed afterwards ONLY by the user (`rules.py`, `POST /{routines,conversations}/{slug}/rules` — one
+  because the recipe is what creation is about to write. Judging a routine's setup is the
+  recommender's job (`patterns/recommend.py`, *Recommend for this routine* on the routine page),
+  once there is a recipe to judge — and it proposes rather than flips: its answer is a set of
+  pending changes, each with its reason, that the user keeps or drops before one accept (D108). The set is changed afterwards ONLY by the user (`rules.py`, `POST /{routines,conversations}/{slug}/rules` — one
   shared impl): the config list is the state, the tail is DERIVED and rebuilt from it. Deliberately
   not 409-guarded — no run writes routine.yaml, so the web layer is the sole writer; a newly bound
   rule even reaches a LIVE run via control.json `add_rules` → `engine/switches.apply_rule_additions` (an
@@ -857,14 +861,12 @@ whose TEXT must change on a live instance is converted by a one-shot migration i
   dial `rule_confirm` — a revision lands on every holder, which is not the decision write_util's
   `confirm` governs. There is deliberately no `remove_rule`: deleting a rule silently un-binds every
   holder with nothing to catch it, so a run reports it and the user deletes it.
-  The routine defaults (`DEFAULT_RULES`): `ask-policy / web-research / decision-record /
-  intent-inference`; plus `git-checkpoint` (external-repo undo points — a conversations default,
-  scaffold-preselected for repo-editing routines, NOT a routine default). Beside them the **curated
-  set** — whose membership is the provenance table in docs/curated-rules.md and is kept in ONE
-  place, there; the full shipped inventory of 30 rules is the table in docs/rules-permissions.md.
-  The curated ones are distilled from external
-  prompt-engineering guidance and the self-correction literature; NONE is a default, each is opt-in
-  per routine (holding it IS the on/off switch — an unheld rule contributes nothing), and
+  The routine defaults (`DEFAULT_RULES`): `evidence-discipline / ask-policy / fix-the-cause /
+  problem-routing / decision-record / web-research` — the conduct every kind of work meets;
+  conversations drop decision-record and add `git-checkpoint` (external-repo undo points). The
+  rules of a KIND of work are bound by its settings pattern. The shipped inventory of 16 rules is
+  the table in docs/rules-permissions.md; where each came from is docs/curated-rules.md.
+  Holding a rule IS its on/off switch — an unheld rule contributes nothing — and
   docs/curated-rules.md records each one's provenance, its evidence strength, and the candidates
   REJECTED on evidence (self-critique, anti-sycophancy prose, numeric confidence) so the set grows
   on observed failures rather than folklore. The **rules-review** meta routine owns the layer: it
@@ -875,22 +877,21 @@ whose TEXT must change on a live instance is converted by a one-shot migration i
 - **Permissions** (`library-seed/permissions/`, `# permission:` heading + machine-read
   `requires:` — the capability keys a doc may presume, no approval dial among them): CONDUCT docs
   of the two-layer permission set. The routine's enforced surface is its own routine.yaml
-  `capabilities:` — `actions`, `utils`, `util_tags`, the dials `confirm` / `rule_confirm` /
-  `remind_confirm`, and the levels `runs` / `workflows` / `reminders`
-  (`config.domainconfig.CAPABILITY_DIALS` holds the single-valued half; the full key list with
-  each one's meaning is docs/rules-permissions.md, not restated here) —
+  `capabilities:` — `actions`, `utils` (an entry is `name` or `name:verb`), the dials
+  `confirm` / `rule_confirm` / `remind_confirm`, and the levels `runs` / `reminders` (the full
+  key list with each one's meaning is docs/rules-permissions.md, not restated here) —
   grants.py builds the run policy from it alone, so a doc-without-capability config fails closed;
   a doc's `requires:` names what its instructions presume and drives the UI cascades (activating a
   doc switches its requirements on; switching a capability off deactivates the docs requiring it —
   and the server runs the SAME raise-then-floor on every path that persists a mapping: save AND
   creation (scaffold, conversation create, the composer's ⚙ payload, the /defaults preview), so a
   mapping never expresses a capability its held docs don't require — from birth, not first edit).
-  Both layers user-changeable ONLY; routines can't self-grant. The shipped doc set is 25 files
+  Both layers user-changeable ONLY; routines can't self-grant. The shipped doc set is 17 files
   in `library-seed/permissions/`, tabled with what each requires in docs/rules-permissions.md —
-  ONE list, there. Four are defaults (`util-authoring`, `memory`, `global-utils`, `reminders`)
-  and conversations add `background-tasks`. Reservable utils =
-  the union of all docs' `requires.utils` (library-defined); gateable kinds = GATED_KINDS
-  (engine-defined); `runs`, `workflows` and `reminders` are level capabilities. Permission bodies are SHORT (≤14 lines reach the prompt's CAPABILITIES section
+  ONE list, there. `util-authoring` is the default; the rest arrive with a settings pattern or a
+  click. Reservable utils and verbs = the union of all docs' `requires.utils` (library-defined);
+  gateable kinds = GATED_KINDS (engine-defined); `runs`, `reminders` and the approval dials are
+  SETTINGS, never required by a doc. Permission bodies are SHORT (≤14 lines reach the prompt's CAPABILITIES section
   when held); the Library tab's permission editor has a prefilled, authoritative `requires:` panel.
   Any future permission-ish lever becomes a capability + a `requires:` entry, not a new yaml key.
   See docs/rules-permissions.md. `DEFAULT_PERMISSIONS`/`DEFAULT_CAPABILITIES` (config) are the
@@ -959,7 +960,7 @@ whose TEXT must change on a live instance is converted by a one-shot migration i
 - The **engine subprocess** owns `runs/<ts>/*`, `status.json` (atomic, single writer), and git commits in
   its routine dir. The web's own routine-file editor (`web/api_routine_files.py`,
   `PUT /api/routines/{slug}/file`) edits the RECIPE and the routine's own notes and REFUSES
-  `routine.yaml`, `state/stopping.json`, `.memory/INDEX.md`, `.git/`, `runs/`, `inbox/` and
+  `routine.yaml`, `state/finish-line.json`, `.memory/INDEX.md`, `.git/`, `runs/`, `inbox/` and
   `questions/` by name, each refusal naming the endpoint or
   owner that holds the file (`api_routine_files.NOT_EDITABLE_HERE`); the shared config-field validators (budgets, models with the
   window-fit refusal, connections, machines, folder roots, tags) are `web/config_fields.py`,
@@ -1013,19 +1014,18 @@ whose TEXT must change on a live instance is converted by a one-shot migration i
   ONCE then CONSUMES the file (auto-deactivate = deletion). A conversation's self-armed one-shot
   is namespaced `conv--<slug>` and wakes the conversation by RESUMING its run ("remind me in 3
   days"). Cooldowns/expiry per request; corrupt requests are dropped, not rescanned.
-- **How routines relate to each other — three axes** (docs/lanes-domains.md has the full
-  argument). A **LANE** decides WHEN a set of routines fires and in what order; a **DOMAIN**
-  decides WHAT THEY SHARE (the inherited config block, the shared store, the notes boundary);
-  **`tags:`** says what a routine is about and carries no behaviour. They are three objects
-  rather than one because they have different cardinalities and different owners. The temporal
-  axis is the strictest — cron exclusivity is a hard fact, since a routine in two scheduled
-  lanes fires twice — so anything sharing a record with it inherits that cardinality: "these
-  five routines share a permission surface" could not be said without also saying "and they fire
-  together", the shared surface would be copied once per cadence, the copies would drift, and
-  moving a routine to another clock would silently change what it may do. A timing decision
-  would be a permissions decision, with nothing to say so. None of that is hypothetical: four
-  `Instance ·` copies of one byte-identical 294-char config block, two `Professional ·` copies
-  of another, with the missing dimensions hand-encoded in the NAMES.
+- **How routines relate to each other — three axes** (docs/lanes-tags.md has the full
+  argument). A **LANE** decides WHEN a set of routines fires and in what order; a **SHARED
+  STORE** is which files a set of routines reads and writes together, plus the notes channel
+  between them; **`tags:`** says what a routine is about and carries no behaviour. They are three
+  objects rather than one because they have different cardinalities and different owners. The
+  temporal axis is the strictest — cron exclusivity is a hard fact, since a routine in two
+  scheduled lanes fires twice — so anything sharing a record with it inherits that cardinality:
+  "these five routines share a store" could not be said without also saying "and they fire
+  together"; moving a routine to another clock would silently change what it may reach. A
+  timing decision would be a permissions decision, with nothing to say so. What a routine may DO
+  is none of the three: it is the routine's own routine.yaml, read against the settings pattern
+  it follows (docs/patterns.md).
 - **Lanes — the temporal axis (D53/D61/D71/D80/D90)**: a lane is an ORDERED list of member
   records — `{"slug"}` — plus a mid-chain-failure policy and, optionally, a cron of its own,
   stored instance-level in `.control/lanes.json` (`rsched/lanes.py`). Ownership mirrors
@@ -1092,84 +1092,42 @@ whose TEXT must change on a live instance is converted by a one-shot migration i
     own row to re-time the schedule — the lane's cron on a scheduled-lane row, the
     routine's own otherwise, both through the same `schedule.friendly` PATCH the editors use
     (custom crons have no draggable shape and are refused with a pointer to their editor).
-- **Domains — the shared-surface axis (D67/D82/F335)**: a domain is a NAME, a `config:` block its
-  members inherit, and a shared directory their runs read and write. Those three are ONE object
-  on purpose — they answer the same question (which routines are close enough to share?) and have
-  the same cardinality; splitting them would dissolve the argument that makes a domain note
-  approval-free. The record lives in `.control/domains.json` (`rsched/domains.py`, web CRUD via
-  `web/api_domains.py`, the shared-config editor in `static/components/domainconfig.js`), but
-  MEMBERSHIP does not: **a routine names its domain in its own routine.yaml** (`domain:`, an
-  ordinary per-routine setting, user-only like every other key there and written by no run). That
-  is what makes "at most one domain" a fact of the file rather than a rule someone has to enforce
-  across a list — `domains.members()` reads the routines themselves, so membership cannot
-  disagree with itself and a routine deleted from disk is out of the domain by construction.
-  Deleting a domain is REFUSED (409) while routines still name it: pulling it out from under its
-  members would silently narrow what every one of them may do, discovered at 3am by a run that
-  can no longer reach a root. Empty it first, one routine config save at a time. The STORE is
-  left on disk either way — a config record disappearing is not consent to delete the files
-  members wrote — and `rsched validate` names a routine whose `domain:` answers to nothing,
-  because that routine inherits an EMPTY block rather than failing.
-  - **Shared routine config (D82)**: the `config:` block is the ELEVEN routine.yaml keys its
-    members INHERIT. Related routines share a policy surface (the same permissions, capabilities,
-    rules, machines, tags, models, connections, secret grants, budgets and the two fs roots);
-    keeping N copies of it in step is how they drift apart, so the domain holds one copy. The
-    domain is a **default, never an override**: `config/domainconfig.apply_shared_config` merges
-    it into the member's RAW routine.yaml *before validation*; the halves of the set combine
-    differently. The LIST keys — permissions, rules, machines, tags, the read and write roots —
-    UNION: the domain is a floor a member adds to and no member can subtract an entry. The
-    MAPPING keys — models, connections, grants, budgets — merge PER KEY with the member's own
-    value winning, so a shared budget fills in only what a member leaves unset and a shared model
-    binds only a role the member has not bound itself. `capabilities` is both at once: its lists
-    union, its dials take the member's value when it sets one. Merging pre-validation is what
-    makes "the member set it" mean *the key is in its file* rather than *the model has a
-    default* — every field here has a non-empty default, so a post-validation merge could never
-    tell the two apart. `domains.CONFIG_KEYS` also fixes what may NOT be
-    shared: slug/name/description/enabled/schedule/workflow/retention/triggers/improve say which
-    routine this is and when it runs. There is exactly ZERO OR ONE layer, so
-    `domainconfig.domain_config_for` looks the block up BY ID out of the routine's own key and
-    merges nothing across records. That is what a second layer would cost: combining whatever a
-    membership list turns up, under "first record's value wins the whole key" while unioning
-    WITHIN one, makes what a routine inherits depend on the order rows happen to sit in a JSON
-    file — an order no caller could name. Nothing is written back to routine.yaml, so
-    clearing `domain:` returns the routine to exactly what its own file says; `load_routine`
-    records `inherited`/`inherited_from` so the routine page marks an inherited value instead of
-    letting it read as one set there.
-  - **The shared domain store (D67)**: every run of a routine in a domain gets
-    `.control/group-stores/<domain-id>/` injected into its effective fs read+write roots at boot
-    (`RunContext.domain_store_roots`, created lazily engine-side — run data, not config; children
-    inherit it like every resource). The harness contract names the root and its collision
-    semantics: writes are whole-file atomic and LAST WRITE WINS PER FILE, so members exchange
-    files under per-routine names (`<slug>-<topic>.md`) and treat shared files as read-mostly.
-    It is also the natural home for what an inbound-end member stages for the outbound-end member
-    that follows it in a lane chain (its own `state/` works too). The directory name and the
-    `grp-` ids most domains carry are DELIBERATE: routines address these paths in their own
-    memory — one live routine holds `READ /control/group-stores/grp-8bfd2aa6/…` as a standing
-    prevention rule it wrote for itself after an incident; several more name a store id in a
-    ledger — so moving the store would silently falsify agent-authored notes instead of failing
-    loudly. An id is an OPAQUE HANDLE: nothing parses its prefix, so it identifies neither the
-    kind of object nor which store it lives in. A `grp-` id can name a lane and a domain
-    at once; a newly created record is given a `lane-` or `dom-` id.
-  - **Domain NOTES (F335, `rsched/domainnotes.py`)**: the light channel between routines that
-    are already teammates. Reaching a sibling used to go through the same `report` machinery as
-    reaching a stranger — a ledger row, a delivery into the target's `inbox/`, and an open
-    maintenance item on the Messages page until somebody closed it — which turns "here is the file
-    I staged for you" into a tracked work item a human has to close. A NOTE is coordination; a
-    REPORT is work somebody must ACT on, tracked until answered — and `report` keeps that
-    meaning unchanged. A member writes `<domain-store>/notes/<to-slug>/note-*.json` with an
-    ordinary file write (the store is already writable to it — **no new action kind**); the
-    engine renders the waiting notes into the state digest at boot and DELETES them as it reads,
-    mirroring how `inbox/` drains, so a note is delivered exactly once and never becomes a
+- **Shared stores and the notes between them (D67/F335, `rsched/sharedstores.py`)**: a shared
+  store is a directory directly under `.control/group-stores/`; a routine SHARES it by naming
+  that directory among its own `fs_write_roots` — an ordinary per-routine setting, user-only like
+  every other key there and written by no run. Nothing else records the sharing:
+  `sharedstores.sharers()` reads the routines' own files (memoized per file on its stat
+  fingerprint), so it cannot disagree with itself and a routine deleted from disk stops sharing by
+  construction. A root ABOVE the stores (a meta routine that may write the whole routines home)
+  covers every store and shares none. The store reaches a run as an ORDINARY write root —
+  nothing injects it; children inherit it with the parent's roots. The harness contract
+  lists each store the routine shares with the OTHER routines sharing it; it also states the
+  collision semantics: writes are whole-file atomic and LAST WRITE WINS PER FILE, so the sharers exchange
+  files under per-routine names (`<slug>-<topic>.md`) and treat shared files as read-mostly. A
+  store is also the natural home for what an inbound-end member stages for the outbound-end
+  member that follows it in a lane chain (its own `state/` works too). The directory name and
+  the `grp-` store names are DELIBERATE: routines address these paths in their own memory — one
+  live routine holds `READ /control/group-stores/grp-8bfd2aa6/…` as a standing prevention rule it
+  wrote for itself after an incident; several more name a store in a ledger — so moving a store
+  would silently falsify agent-authored notes instead of failing loudly. A store's name is an
+  OPAQUE handle nothing parses.
+  - **Notes (F335)**: the light channel between routines sharing a store. A NOTE is
+    coordination; a REPORT is work somebody must ACT on, tracked until answered — and `report`
+    keeps that meaning unchanged. A routine writes `<store>/notes/<to-slug>/note-*.json` with an
+    ordinary file write (**no new action kind**); the engine renders the waiting notes — from
+    every store the addressee shares — into its state digest at boot and DELETES them as it
+    reads, mirroring how `inbox/` drains, so a note is delivered exactly once and never becomes a
     backlog someone has to clear by hand. The harness contract names the convention beside the
-    store root and LISTS the actual sibling slugs — a channel a run does not know about is a
-    channel that does not exist; "write to a member" is not actionable without their names.
-    **No approval, no ledger row, no Messages-page item**: the safety argument is the BOUNDARY,
-    not a gate. A note lives in the domain's own store, which is in its members' fs roots and
-    nobody else's, so reaching outside the domain is not something this channel declines — it is
-    something it cannot express. That is exactly why it may be approval-free — and why config
-    clustering and the trust boundary are one object rather than two. Membership is read LIVE
-    from the routines' own files, so a routine that leaves a domain loses the channel in both
-    directions at once. Delivery never starts a run: a sibling picks its notes up when it next
-    runs, which for a lane chain is the same chain or the next.
+    stores and LISTS the other sharers — a channel a run does not know about is a channel that
+    does not exist. **No approval, no ledger row, no Messages-page item**: a note lives in a
+    store only its sharers can write. A note addressed to a routine that does NOT share the
+    store would never be read, so the engine's write gate refuses it (`engine/fileops._write_gate`
+    → `sharedstores.note_refusal`, for write_file / edit_file / mkdir / a move's destination),
+    naming the routines that do share it and an addressed `report` as the channel that reaches
+    the one it meant; deleting a stranded note stays allowed. Sharing is read LIVE from the
+    routines' own files, so a routine that drops the root loses the channel in both directions at
+    once. Delivery never starts a run: the addressee picks its notes up when it next runs, which
+    for a lane chain is the same chain or the next.
 - **Config changed while a run is LIVE** (`rsched/configflow.py`, F337). A run reads
   `routine.yaml` at boot and composes its prompt once, so a mid-run config edit lands on disk with
   the run unaware — except for the ad-hoc live paths the system had grown (an access-request
@@ -1196,79 +1154,76 @@ whose TEXT must change on a live instance is converted by a one-shot migration i
   applied-ts ledger as the model/deliberation/rule switches (a resumed leg never re-fires a stale
   signal), and per-field best-effort: a value the run cannot use is logged and left for the next
   run rather than ending a live run, and the note still says the field changed.
-- **Stopping conditions — what DONE means** (`engine/stopping.py`, `web/api_stopping.py`,
-  F334/D98; user order 2026-08-14: "a run should stop on a MEANING-level condition, not only on
-  budget walls"). The USER owns `state/stopping.json` (the web endpoints are the only writer of
-  the LIST); the ENGINE makes it impossible to ignore and RECORDS what the run concluded.
-  Conditions are logically connected: each belongs to a GROUP combining `all`/`any`, the document
-  combines the groups the same way (two levels — enough for "(A AND B) OR C", shallow enough that
-  a UI and a weak model can both reason about it), `requires` holds a condition DORMANT until
-  another is met, and `stage` scopes one to a routine stage module (the "per-stage routine
-  conditions" half of the order). Every condition also declares a **SCOPE**, and the two ask the
-  model different questions. `scope: "run"` (the default) bounds ONE run: it is re-asked every
-  run, its verdict is recorded (`last_verdict`, rendered as "last run: met — …") and it NEVER
-  transitions, because a per-run bound cannot be "already met". `scope: "goal"` is the state
-  after which the ROUTINE is finished — sticky, and the only scope `evaluate()` has an opinion
-  about (`goal_satisfied`). The split exists because sticky + per-run is a contradiction that had
-  gone live: the 0.286.x backfill wrote 96 per-run conditions across 32 routines into a store
-  whose `met` was sticky, so 22 of the 31 read "EVERY stopping condition is now met — the job is
-  DONE. Finish NOW" at the top of every run while the gate demanded nothing and the verifier
-  checked nothing. Dropped conditions leave every verdict; an empty group is
-  vacuously satisfied under either mode, because the strict reading of an empty `any` would let an
-  emptied group block a job forever; a document with no conditions evaluates to `None` — no
-  opinion — so nothing announces a goal nobody set. The composer inlines the whole structure
-  (docs/prompt-anatomy.md §7) and the finish gate rejects a depth-0 finish whose summary skips an
-  ACTIVE condition (the R108 one-extra-turn shape; the reserved-finish turn is exempt, and dormant
-  conditions are never demanded). At the finish, `record_accounting` parses the model's own
-  `[s<n>] met|unmet` lines and stamps them back, emitting a `stopping_update` transcript event —
-  without that writer a condition stayed `open` however often a run reported it met, which is why
-  the status column was dead until 0.242.0. A GOAL condition's `met` is STICKY: a later run does
-  not silently reopen a finish line the user has been told was crossed. Satisfaction is REPORTED,
-  never enforced WITHIN a run. Both homes share ONE implementation and both get the GOAL rail
-  panel (`static/components/stopping.js`), where a per-condition toggle switches its scope.
+- **What DONE means — three questions, three owners** (reports/goal.md; operator orders
+  2026-08-14 and 2026-09-05). A run should stop on a MEANING-level condition, not only on budget
+  walls; a routine should be able to finish for good. The two questions have different
+  owners; a third one — what a run must never do — belongs before the action:
+  - **What one finished run leaves behind** is the recipe's `## Done when`
+    (`engine/donewhen.py`): one `- d<n> · <stage> — <outcome>` line each, in `main.md`, where the
+    design of a run already lives and changes (the improver, a recipe revision, `write_recipe`).
+    It is re-asked every run and never "already met". A run the operator starts by hand with a
+    one-line BRIEF (`engine/brief.py`) answers for the brief instead.
+  - **When the ROUTINE is done for good** is the operator's FINISH LINE
+    (`state/finish-line.json`, `engine/finishline.py`): zero or more OUTCOMES, all of which must
+    be reached, plus an optional `until` date after which it stops either way. Every outcome
+    names its JUDGE — `date` (the calendar decides, no run involved), `run` (a run claims `met`
+    with evidence, checked against its transcript) or `you` (a run reports the distance and may
+    never claim it). The web (`web/api_finishline.py`, the settings page's one accept) is its only
+    writer for what a person sets; no run writes the file (`fileops` seals it by path). The
+    engine stamps only what a run's finish reported: a distance per open outcome, `met` on an
+    outcome the run proves.
+  - **What a run must never do** is held before the action by permissions, rules and reminders;
+    what none of them can hold is a line of the recipe's `## Never`.
+  THE ACCOUNTING (`engine/accounting.py`): a depth-0 main finish carries an `accounting` FIELD —
+  one entry per Done-when line (`d<n> met|unmet|not due: <why>`) and per open outcome
+  (`g<n> distance: <what remains>`, or `g<n> met: <evidence>` where the run is the judge). The
+  finish gate sets aside a finish whose accounting is missing a line, bare, or claims what its
+  line cannot be (the R108 one-extra-turn shape; the reserved-finish turn and a follow-up reply
+  after the run ended owe nothing). It checks presence and shape, never semantics — a field, not
+  prose in the summary, because verdicts read back out of prose were lost one time in six. The
+  accounting lands in the run's `status.json` (the runs table, the dashboard), the finish line's
+  distances and one `stopping_update` transcript event; the next run's digest carries the finish
+  line and what the last run left `unmet`, said ONCE at boot and never per turn
+  (`engine/finish_digest.py`).
 - **Retirement — a routine that finishes for good** (`engine/goalreached.py`, operator order
   2026-09-05: routines want "the ability to disable themselves once they think they reached it").
-  ACROSS runs a met goal does have a consequence, and it is arranged so that nothing writes
-  config. `registry.RoutineInfo.retired` is DERIVED from the goal document (memoized on
-  `state/stopping.json` alone); the scheduler builds no fire-table entry and makes up no missed
-  fire for a retired routine; a lane chain records the member `outcome: "skipped"` and moves
-  on. That is the whole of "disabling itself" — clearing a goal condition in the panel puts the
-  routine back on the next rescan, and `enabled` is untouched. Making it permanent is a CLICK: the
-  finish that completes the goal queues ONE `goal-reached` proposal on the existing `pending.py`
-  bridge (deduped, because a met goal is sticky and every later run would file the same row);
-  approving it writes `enabled: false` through `patch_routine`, the one config writer, and
-  declining it calls `stopping.reopen_goal` so the routine resumes. Doing nothing leaves it
-  stopped with the proposal standing, which is the honest third state. Two properties make the
-  derived half safe to act on without a human: only the web can CREATE a goal condition (a run
-  reports against a finish line, it cannot draw one), and every `met` claim passes the v2
-  verifier below. A retired routine reads as `finished` on the dashboard and the routine page —
-  distinct from `disabled`, because one is done and the other was switched off — and its setup
-  surface carries a NOTE saying so instead of a cron that will never fire again. Nothing about
-  that NOTE is unmet — it reports a finished job — so it names no remedy where every unmet row
-  names one (docs/rules-permissions.md): reopening a goal is a decision about the work, taken in
-  the panel that owns the conditions; a diagnosis offering to undo a finished job reads as a
-  defect report on a routine that did exactly what it was for. Lane membership
-  and the routine's `domain:` are deliberately untouched: a retired member is skipped cleanly, so
-  dropping either would only cost it the D82 inherited config and the shared store.
-- **v2 — verifying the claims** (`engine/verifier.py`). v1 proves a run ACCOUNTED for its
-  conditions; it cannot prove the account is TRUE, so a run could write `[s3] met — PDF verified`
-  having never opened the PDF and the gate, the writer and the panel would all agree it was done.
-  At the finish a SECOND model (the `tool_call` role, never the main one) is asked, per condition
-  the summary claims `met`, whether the run's own transcript tail supports it. The design is
-  dominated by the two ways this could be worse than the problem:
+  Reaching the finish line has a consequence, arranged so that nothing writes config.
+  `registry.RoutineInfo.retired` is DERIVED from the finish line (memoized on its file and the
+  date); the scheduler builds no fire-table entry and makes up no missed fire for a retired
+  routine; a lane chain records the member `outcome: "skipped"` and moves on. That is the whole
+  of "disabling itself" — editing the finish line puts the routine back on the next rescan;
+  `enabled` is untouched. Making it permanent is a CLICK: ONE `goal-reached` card on the
+  `pending.py` bridge, queued by whichever party completed the line — the finish that proved the
+  last run-judged outcome, the scheduler's tick when a date or `until` passed, or the operator's
+  own save of an outcome only they judge (deduped, because a reached line stays reached).
+  Approving writes `enabled: false` through `patch_routine`, the one config writer; declining
+  reopens the met outcomes so the routine resumes — except for a line the CALENDAR reached, which
+  cannot be declined (reopening changes nothing a date decides): its date is changed on the
+  routine page; that save withdraws the card. Doing nothing leaves it stopped with the card
+  standing, which is the honest third state. A retired routine reads as `finished` on the
+  dashboard and the routine page — distinct from `disabled` — and its setup surface carries a
+  NOTE saying so, with no remedy: a diagnosis offering to undo a finished job reads as a defect
+  report on a routine that did exactly what it was for. Lane membership and roots are left
+  alone, so reopening costs nothing.
+- **Checking the claims** (`engine/verifier.py`). The accounting proves a run ANSWERED for every
+  line; it cannot prove the answer TRUE, so a run could write `d3 met: PDF verified` having never
+  opened the PDF. Each `met` is therefore checked once: deterministically first (a Done-when line
+  whose producing stage this run never entered is challenged with no model — skip detection is
+  imperfect, so the run can overrule it), then by a SECOND model (the `tool_call` role, never the
+  main one) asked whether the run's own transcript tail supports each remaining claim. The design
+  is dominated by the two ways this could be worse than the problem:
   - **False blocks** — a judge that blocks on doubt strands finished jobs over evidence outside
     the tail it was shown. So it is FAIL-OPEN at every level: an unavailable endpoint, an
-    unparseable answer, a condition the judge did not mention, and anything short of an explicit
+    unparseable answer, a claim the judge did not mention, and anything short of an explicit
     `supported: false` all ACCEPT; the prompt says absence of evidence is not evidence of absence
-    and to be generous. `unmet` claims are never judged (the run already agrees), and a run with
-    no active conditions pays no subcall at all — which is most runs.
+    and to be generous. `unmet` and distances are never judged; a finish that claims nothing
+    met pays no subcall at all.
   - **A livelock** — a stubborn model and a stubborn judge would trade refutations until the
-    budget dies, and a dead budget is precisely the outcome stopping conditions exist to replace.
-    So a condition is challenged AT MOST ONCE per run (`loop._challenged`): the finish is set
-    aside one turn with the objection and how to overrule it, and if the model re-asserts the
-    same verdict it STANDS. The disagreement is then recorded — `disputed` on the condition, in
-    the `stopping_update` event, and as an amber `disputed` mark in the panel. The engine gets
-    one intervention, the model keeps the last word, and the operator gets the audit trail.
+    budget dies. So a line is challenged AT MOST ONCE per run (`loop._challenged`): the finish is
+    set aside one turn with the objection and how to overrule it; if the model re-asserts the
+    same verdict it STANDS. The disagreement is then recorded — `disputed` on a finish-line
+    outcome and in the `stopping_update` event. The engine gets one intervention, the model keeps
+    the last word, and the operator gets the audit trail.
 - **Event triggers fire through the same seam** (docs/triggers.md): the webhook route
   (`web/api_hooks.py`, POST `/api/hooks/<slug>/<token>` — the ONE unauthenticated API route:
   constant-time token compare, generic 404, 64 KiB cap, rate limit + spool cap, rejections logged,
@@ -1300,7 +1255,7 @@ whose TEXT must change on a live instance is converted by a one-shot migration i
   util as an empty string and fails visibly against a 401). So a run holding the API secret can
   READ the daemon API but every config-mutating
   route (routine/conversation PATCH, permissions PUT, grant decisions, settings, triggers,
-  lanes, domains, schedule spools) answers 403 with a pointer to `ask_user config_patch` — the
+  lanes, schedule spools) answers 403 with a pointer to `ask_user config_patch` — the
   HTTP flank of "config is the user's" is sealed, mutating routes are primary-only BY
   DEFAULT, and opening one to routines is an explicit allowlist edit with its reason.
   **"Read-only" is not "may read anything"**: `ROUTINE_TOKEN_DENIED_READS`
@@ -1353,8 +1308,9 @@ they are slow by design. The container also carries `SYS_PTRACE` so `py-spy dump
 (deploy/DOCKER.md). All of it exists because on 2026-09-12 every sync handler took 20-50 s for
 an hour with one worker thread at 70% CPU, and the daemon could name neither the thread nor the
 requests it had starved. It named them the same afternoon (0.334.0): the dashboard reloading five
-endpoints on every bus event, `/api/domains` parsing every routine.yaml per domain (now memoized
-per file, `domains.domain_of`), and a trivial sync handler queueing for a threadpool token. The
+endpoints on every bus event, one of them re-parsing every routine.yaml per request (a scan of
+the routine files is memoized per file on its stat fingerprint since), and a trivial sync handler
+queueing for a threadpool token. The
 standing rule for the console follows from it: **a live refresh on a bus event fetches only what
 that event can change** — routine cards and status — never config-shaped or expensive data. The
 ring named the next one two days later (2026-09-14): `/api/questions`, fetched by five surfaces

@@ -76,9 +76,9 @@ arbitrary payload keys). Nothing reads them.
 - **`id`** — `F<n>` finding, `D<n>` decision, `R<n>` report. The prefix is the type, and the
   three namespaces never collide. `R` was chosen over `B` because the user's own
   reviewer-backlog items are written `B<n>` in prose and would mislink. A SUMMARY's id is the
-  RUN id it came from (`<slug>:<ts>`) — there is no `S<n>` namespace and no counter to own one,
-  and `S1` would collide visually with the stopping-condition accounting `[s1] met — …` that
-  appears verbatim inside summary prose.
+  RUN id it came from (`<slug>:<ts>`) — there is no `S<n>` namespace and no counter to own one;
+  an `S1` would read like the ids a finish's accounting carries (`d1 met: …`,
+  `g1 distance: …`).
 - **`type`** — `summary` | `finding` | `decision` | `report`.
 - **`status`** — see below. The key is `status`, never `state`: decisions already carried
   `status` on disk and a synonym would fork the vocabulary.

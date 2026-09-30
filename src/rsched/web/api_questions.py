@@ -15,7 +15,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from .. import registry
 from ..ids import now_iso
@@ -49,6 +49,8 @@ class Answer(BaseModel):
     # meta decision (self-audit reads it on its schedule) and for a routine whose run is
     # active (the live run drains the answer at its next turn boundary).
     run_now: bool = False
+    # …optionally with the one job that run is for (engine/brief.py)
+    brief: str = Field(default="", max_length=300)
 
 
 @router.post("/questions/{qid}/answer")
@@ -85,7 +87,7 @@ async def answer(request: Request, qid: str, body: Answer) -> dict:
     # answer at run start. A LIVE conversation reply needs no resume (it drains the answer at
     # its next turn boundary); a scheduled routine has its own next run.
     resumed = await _resume_terminal_conversation(request, match, routine_dir)
-    fired = await _run_now(request, match) if body.run_now else None
+    fired = await _run_now(request, match, body.brief) if body.run_now else None
     if fired:
         payload["ran_now"] = fired
         atomic_write_json(routine_dir / "inbox" / f"answer-{qid}.json", payload)
@@ -94,7 +96,7 @@ async def answer(request: Request, qid: str, body: Answer) -> dict:
             **({"run_id": fired} if fired else {})}
 
 
-async def _run_now(request: Request, match: dict) -> str | None:
+async def _run_now(request: Request, match: dict, brief: str = "") -> str | None:
     """Fire one manual run of the routine that asked, for the Decisions page's "answer &
     run now" — the same path as the routine page's Run now, so the run reads as `manual`
     everywhere. None when there is nothing to fire: a conversation or detached task (their
@@ -107,7 +109,7 @@ async def _run_now(request: Request, match: dict) -> str | None:
     info = registry.scan(state.server).get(str(match["routine"]))
     if info is None or state.runner.is_active(info.cfg.slug):
         return None
-    return await state.runner.fire(info.cfg, reason="manual")
+    return await state.runner.fire(info.cfg, reason="manual", brief=brief)
 
 
 def _announce_answer(request: Request, qid: str, routine: str) -> None:

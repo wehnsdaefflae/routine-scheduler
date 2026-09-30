@@ -105,10 +105,10 @@ to this contract has to see `_shared/steward.js`, `_shared/steward.css`, `_share
 `read_file` resolves against the routine's granted fs roots; a publisher's roots are usually
 nothing but its own directory. The consequence was not a failed run — it was a duplicated one:
 routines wrote themselves a private helper script to `open()` those same files directly, once per
-project, each copy free to rot (R1160). So `status-page` carries
+project, each copy free to rot (R1160). So the `steward-publishing` permission carries
 `expects: fs-read: ["/home/mark/.local/share/routine-scheduler-libraries/web/steward"]` — the SOFT
-edge, reported by the setup surface for every holder — and every routine holding the rule now
-carries that read root. `steward-hub-maintainer` already had it: it owns the master in both
+edge, reported by the setup surface for every holder — and every routine holding it now carries
+that read root. `steward-hub-maintainer` already had it: it owns the master in both
 directions.
 
 **What makes that true is a mechanism, not a sentence.** For a while it was only the sentence and
@@ -166,15 +166,14 @@ waiting stayed invisible behind the one that opened. Every list is on the page; 
 waiting starts collapsed, the summary carries the counts so a collapsed list still tells you
 whether to open it, and the choice is remembered.
 
-**A heading is one card's `tab`, spelled by the publisher.** The `status-page` rule ties that
-string to the routine's DOMAIN — the routines it shares a store with — so the hub shows the
-reader's own grouping rather than a second one invented for the web. The domain's NAME is not in
-a run's prompt (the store root it is given carries an opaque id), so the members keep the name
-themselves: a publisher reads the single line at `<shared-store>/steward-hub-tab.txt` and
-republishes it as its `tab`, writing it first if nobody has. One copy per domain is what keeps
-four siblings under one heading instead of four near-misses — and it is what moves a card when
-its routine joins a different domain. A publisher in no domain publishes no `tab` at all and the hub
-files it under its own default heading with the other unattached projects.
+**A heading is one card's `tab`, spelled by the publisher.** It comes from the routine's own
+`hub_tab` — an identity field like its name, set in the routine page's identity group — which
+the run's harness contract names as `HUB TAB: <value>`; the publisher republishes that string
+as its card's `tab`. The hub therefore shows the operator's own grouping rather than a second one
+invented for the web: the routines that sit under one heading are exactly the routines whose
+`hub_tab` says so, so four siblings land under one heading instead of four near-misses and a card
+moves when its routine's field changes. A routine with no `hub_tab` publishes no `tab` at all and
+the hub files it under its own default heading with the other unattached projects.
 
 `what=hub` is DERIVED from every project's own state document. There is no shared registry file,
 which removes a class of bug rather than documenting it: the old `projects.json` was one file
@@ -251,8 +250,9 @@ then gets `401 {"ok":false,"error":"not signed in"}` on every call — the same 
 password gets, the same body a dropped `Authorization` header gets. `miz-grant-steward` lost runs
 to exactly that (R1143, R1175), reporting the host as unreachable while every part of its publish
 path was in fact correct: granting the secret fixed it on the first attempt with nothing else
-changed. So the `status-page` rule tells a routine to request the grant BEFORE its first publish
-— and to fetch `gate.php?diag` before concluding anything from a 401.
+changed. So the kit's contract (`web/steward/CONTRACT.md`, "Getting in") tells a routine to
+request the grant BEFORE its first publish — and to fetch `gate.php?diag` before concluding
+anything from a 401.
 
 `/_shared/*` is deliberately public: a stylesheet, the shell and two body modules, no data. Every
 page is `index.php` and opens with `gate_require()`. The secret lives in `cgi-bin/gate.json.php`,
@@ -421,7 +421,7 @@ naming the key can.
 
 `put-state` now refuses an unknown top-level key, listing it and the accepted set — and refuses a
 document missing `generated`, `feedback_cursor` (a whole number) or `card` — the three with no
-safe default. `store.php`'s `STATE_KEYS` is the one list and the `status-page` rule states it in
+safe default. `store.php`'s `STATE_KEYS` is the one list and the kit's contract states it in
 the routine's own terms.
 
 **The extension point is the model, not the data.** A project that needs a section of its own
@@ -725,7 +725,8 @@ path with no credential, opening a listed deliverable. Each of them had been pas
 the routines' own words, because a routine verifies while signed in and therefore never sees what a
 stranger sees.
 
-So the `status-page` rule now states three proofs, each named after the failure it catches — a
+So the `steward-publishing` permission states three proofs, each named after the failure it
+catches — a
 write refused for a misspelled key, twelve loose files world-readable behind a removed blanket,
 and a page whose every document link 404'd for five hours because the run that corrected them
 re-sent its state document and not the collection those links live in.
@@ -752,7 +753,7 @@ stylesheets, documents. Everything else about it had already been removed — a 
 itself by publishing, `/<slug>/` is served generically by `p.php`, the hub's card order is derived
 from its own state — and what was left was file placement for ten siblings that each already run on
 their own schedule. So every document waited for a second routine's run, every deploy needed a
-staged copy in the shared domain store and a report, and a page could stand broken for hours
+staged copy in a shared store and a report, and a page could stand broken for hours
 with its fix already written down on the first routine's disk. That is what happened.
 
 It needed to exist for one reason: the FTP credential for the host is one account rooted at the
@@ -821,17 +822,19 @@ collection module used to filter `documents` on the presence of a url, so a file
 was not shown as pending, it was absent. A row that is never drawn is the one thing a reader cannot
 notice, which is why five compiled PDFs read to their author as missing rather than as waiting.
 
-## The rule
+## What binds a routine to this
 
-`status-page` in the library is what actually binds a routine to any of this, held by slug in
-`routine.yaml` — so publishing a web UI is opt-in per routine and a routine that does not
-publish never reads a word of it. The rule states the payload invariants, the publish order, the
-append-only discipline and what a run owes the user back when he edits one of its drafts. Since
-the gate was armed it also states the two things a publisher must hold before its first run — the
-`WEB_AUTH_SOURCES` grant and read access to the kit — plus what `gate-file.php?p=` is actually
-relative to.
+Publishing a page is opt-in per routine: the **`steward-publishing`** permission. Holding it puts
+its conduct in the run's capability notes — where the contract lives and the three proofs a
+publish owes before it counts as finished — and its `expects:` reports the kit's read root on the
+setup surface of every holder that lacks it. It requires no capability: gating `ftp` behind it
+would move that util into the engine's gated set for EVERY routine and silently break the ones
+that publish to other hosts; the access that matters is already a per-routine decision, the
+four-state `secret:FTP_SOURCES` grant.
 
-**A permission was considered and rejected.** Gating this behind a `web-publishing` permission
-doc would mean `requires: {utils: [ftp]}`, which moves `ftp` into the engine's gated-util set for
-*every* routine — silently breaking the four that publish to other hosts. The access that
-actually matters is already a per-routine decision: the four-state `secret:FTP_SOURCES` grant.
+How the hub works — keys, endpoints, the payload the store accepts, documents and links, the
+publish sequence — is ONE file, `web/steward/CONTRACT.md` in the library, maintained by
+steward-hub-maintainer beside the code it describes and read by a publishing run when it needs a
+section rather than copied into its memory. What a run owes the person who answers its page — act
+on each piece of feedback in the run that reads it, say so once when what it publishes goes unused
+— is the general rule `feedback-loop`; writing as the operator is `write-as-the-principal`.

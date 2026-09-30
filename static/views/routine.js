@@ -1,80 +1,55 @@
-// Routine detail: schedule, permissions (user-only toggles), budgets, models, origin, and the
-// navigable recipe (main.md + stage modules), then state & runs.
+// Routine detail: the overview (status, lane, last run, spend, decisions), the runs and the
+// routine's messages — then its SETTINGS, one form led by its pattern and saved by one accept
+// (views/routine-config.js), with the recipe, its health and its state folded in beside them.
 
 import { api } from "/static/api.js";
-import { renderConfigSections } from "/static/views/routine-config.js";
+import { renderSettings } from "/static/views/routine-config.js";
 import { setupCheck } from "/static/components/setupcheck.js";
-import { mountHealth } from "/static/views/routine-health.js";
+import { loadSettings } from "/static/components/settings-form.js";
+import { landOn } from "/static/components/settings-field.js";
 import { mountMessages } from "/static/views/routine-messages.js";
-import { mountRecipe } from "/static/views/routine-recipe.js";
-import { groupSections, routineHero } from "/static/views/routine-overview.js";
+import { routineHero } from "/static/views/routine-overview.js";
 import { confirmDialog } from "/static/components/dialog.js";
 import { summaryLine } from "/static/md.js";
-import { wireRecipeNav } from "/static/resizable.js";
 import { chip, el, emptyState, fmtDur, fmtTokens, skeleton, toast, toastError, when } from "/static/util.js";
-
-// The config sections (rendered flat by routine-config.js + the recipe/state blocks below)
-// are regrouped into these labeled, collapsible groups — an operator scans the group they
-// need instead of a single wall. Order = most-touched first; every heading each module emits
-// is claimed here, and groupSections keeps any stray in a trailing "More" group.
-//
-// ONLY THE LEADING GROUP OPENS BY DEFAULT. With all seven open the page ran 11-12 000px, so
-// the runs table and "Run now" — the two things most visits are for — sat below ten thousand
-// pixels of forms, and someone who came to change one dial had no map. Each head carries its
-// own hint line, which IS the map. Nothing is hidden: one click opens a group, and
-// groupSections remembers the choice per browser from then on.
-const SECTION_GROUPS = [
-  { title: "Schedule & triggers", hint: "when and how it fires",
-    headings: ["Schedule", "Triggers", "Schedule once"] },
-  // "Start from a template" leads this group: it is the one control that writes the other
-  // two wholesale, so an operator reading "what may it do?" meets the starting point before
-  // the per-routine edits. Unclaimed, it fell into the trailing "More" fold and was unreachable.
-  // "Domain" sits second because it answers the same question the other way round: a template
-  // COPIES once and the copy becomes this routine's own, a domain LAYERS under this routine's
-  // file at every load and brings a shared store with it (docs/lanes-domains.md).
-  { title: "Permissions & practices", open: false, hint: "its starting point, what it may do, and how it works",
-    headings: ["Start from a template", "Domain", "Recommended setup",
-               "Permissions & capabilities", "General rules", "Effective surface"] },
-  // D103: the two secret scopes read together — what this routine OWNS, and which shared
-  // names it may be handed. Before this group they fell into the trailing "More" fold.
-  { title: "Secrets & access", open: false, hint: "its own credentials · shared-store exposure · settled denials",
-    headings: ["Own secrets", "Secret exposure", "Declined access"] },
-  // "Goal" leads this group, ahead of the budgets: F334/D98's whole claim is that budgets are a
-  // runaway BACKSTOP and the stopping conditions are what decides when a job is finished, so
-  // the group that holds the ceilings has to say the meaning-level bound first.
-  { title: "Goal & limits", open: false, hint: "what DONE means · per-run ceilings · retention · filesystem reach",
-    headings: ["Goal", "Budgets", "Retention", "Filesystem roots"] },
-  { title: "Models & resources", open: false, hint: "models · connections · machines",
-    headings: ["Models", "Connections", "Machines"] },
-  { title: "Recipe & memory", open: false, hint: "the workflow files, their health, and run state",
-    headings: ["Recipe health", "Recipe", "State & memory"] },
-  { title: "Identity & origin", open: false, hint: "name · description · tags · provenance",
-    headings: ["Name", "Description", "Tags", "Origin"] },
-];
 
 export async function render(view, slug, query = {}) {
   view.append(skeleton(["35%", "100%", "70%"]));
-  let d, st;
-  try { [d, st] = await Promise.all([api(`/api/routines/${slug}`), api("/api/status").catch(() => ({}))]); }
-  catch (err) { view.replaceChildren(emptyState("✕", `Couldn't load ${slug}`, err.message)); return; }
+  let d, st, settings;
+  try {
+    // the settings are read beside the detail, so the page's sections all exist by the time it
+    // returns — the side table-of-contents indexes the headings the view has rendered by then
+    [d, st, settings] = await Promise.all([api(`/api/routines/${slug}`),
+      api("/api/status").catch(() => ({})),
+      loadSettings(slug).catch((err) => ({ error: err.message }))]);
+  } catch (err) { view.replaceChildren(emptyState("✕", `Couldn't load ${slug}`, err.message)); return; }
   view.replaceChildren();
   const llmReady = st.llm_ready !== false;
 
   // Three reasons a routine is not running, and they are not interchangeable: it is between
-  // runs, it reached its FINAL GOAL and is done, or you switched it off.
+  // runs, it reached its FINISH LINE and is done, or you switched it off.
   const runChip = (x) => (x.active_state ? chip(x.active_state, x.active_state)
     : x.retired ? chip("finished", "finished")
     : x.enabled ? chip("idle", "idle") : chip("disabled", "disabled"));
   const chipHost = el("span", {}, runChip(d));
   const titleH1 = el("h1", {}, d.name || slug);
+  // Run now takes an optional BRIEF: one line the run started by hand answers for, instead of
+  // its recipe's Done when (engine/brief.py). Empty is an ordinary run of the recipe.
+  const briefIn = el("input", { type: "text", class: "run-brief tight", maxlength: "300",
+    placeholder: "one job for this run (optional)", "data-run-brief": "", "data-nopersist": true,
+    title: "a one-line brief for the run you start now — it answers for this instead of its "
+      + "recipe's Done when; leave it empty for an ordinary run",
+    onkeydown: (e) => { if (e.key === "Enter" && !runBtn.disabled) { e.preventDefault(); runNow(); } } });
+  const runBtn = el("button", { class: "btn primary", disabled: !llmReady, "data-run-now": "",
+    title: llmReady ? "" : "connect an LLM endpoint in Settings first", onclick: () => runNow() },
+    "▶ run now");
   view.append(el("div", { class: "page-head" },
     el("div", {},
       titleH1),
     el("div", { class: "row" }, chipHost,
-      d.active_run
-        ? el("a", { class: "btn primary", href: `#/run/${d.active_run}` }, "◉ watch live")
-        : el("button", { class: "btn primary", disabled: !llmReady,
-            title: llmReady ? "" : "connect an LLM endpoint in Settings first", onclick: runNow }, "▶ run now"),
+      ...(d.active_run
+        ? [el("a", { class: "btn primary", href: `#/run/${d.active_run}` }, "◉ watch live")]
+        : [briefIn, runBtn]),
       el("button", { class: "btn danger", onclick: archive }, "archive"))));
   if (d.problems?.length) {
     view.append(el("div", { class: "panel err", style: "margin-top:14px" },
@@ -90,21 +65,24 @@ export async function render(view, slug, query = {}) {
   // ONE fetch feeds both readers of the surface: the strip here, and the ability cards
   // below, which hang each resolved need under the ability that owns it.
   // Each strip row also offers the act that closes it, addressing a `sec-*` anchor that
-  // renderConfigSections puts on the page further down — so the strip is mounted first and
-  // aims at sections that appear after it. The offers are pressed by a reader, long after
-  // this render finishes; a strip mounted into a page whose config never renders would find
-  // nothing to land on and say so on the button instead. Pressed, then, is when it goes stale:
-  // the act happens in a panel below, so the strip is repainted from there — `repaintSetup`
-  // hands that repaint to the one module that knows a change landed.
+  // renderSettings puts on the page further down — so the strip is mounted first and aims at
+  // sections that appear after it. The offers are pressed by a reader, long after this render
+  // finishes; a strip mounted into a page whose settings never render would find nothing to
+  // land on and say so on the button instead. The act is a change to the draft below, while the
+  // strip describes what the routine HOLDS — so it is repainted when the change is accepted.
+  // `repaintSetup` hands that repaint to the one module that knows an accept landed.
   const setupHost = el("div", {});
   view.append(setupHost);
   d.surface = await setupCheck(setupHost, slug);
 
-  async function runNow(e) {
-    e.target.disabled = true;
-    try { const r = await api(`/api/routines/${slug}/run`, { method: "POST" });
-      location.hash = `#/run/${r.run_id}`; }
-    catch (err) { toastError(err); e.target.disabled = false; }
+  async function runNow() {
+    runBtn.disabled = true;
+    const brief = briefIn.value.trim();
+    try {
+      const r = await api(`/api/routines/${slug}/run`,
+        { method: "POST", ...(brief ? { body: { brief } } : {}) });
+      location.hash = `#/run/${r.run_id}`;
+    } catch (err) { toastError(err); runBtn.disabled = false; }
   }
   async function archive() {
     if (!(await confirmDialog(`Archive "${slug}"? It leaves the scheduler (dir moves to .archive).`, { confirmLabel: "archive" }))) return;
@@ -161,50 +139,24 @@ export async function render(view, slug, query = {}) {
     messagesPane = mountMessages(msgHost, slug);
   }
 
-  // -- config + recipe: rendered flat into a DETACHED host, then regrouped by groupSections
-  // into labeled, collapsible groups. Every section body is untouched; the async panels
-  // (permissions/rules/connections/machines) fill node refs that grouping only relocates. --
-  const cfgHost = el("div", {});
-  const { refreshHead, refreshSurface, dispose: disposeConfig } = renderConfigSections(cfgHost, d, {
-    slug, titleH1, chipHost, runChip,
-    // The strip is a READER of the surface; every writer of it is in these panels. So the
-    // config side re-reads once per change and hands the answer here, where the strip lives.
+  // -- settings: one form over every setting, led by the routine's pattern, saved by one
+  // accept. The recipe, its health and its state fold in beside them.
+  if (settings.error) {
+    view.append(el("h2", { id: "sec-settings" }, "Settings"),
+      el("div", { class: "panel err" }, `the settings could not be read: ${settings.error}`));
+    return () => {};
+  }
+  const cfg = renderSettings(view, d, settings, {
+    slug, titleH1, chipHost, runChip, recipeFile: query.file || "",
+    // The strip is a READER of the surface; the settings are what move it. So the settings
+    // side re-reads once per accept and hands the answer here, where the strip lives.
     repaintSetup: (surface) => setupCheck(setupHost, slug, surface),
   });
-
-  // recipe health: runs bucketed by the recipe version that produced them (engine-stamped
-  // commit; the durable usage stream survives retention). Flags a regressing recipe change —
-  // flag-first, the roll-back is the user's click.
-  const healthBox = el("div", { class: "panel" }, skeleton(["60%", "90%"]));
-  cfgHost.append(el("h2", {}, "Recipe health"), healthBox);
-
-  // recipe: the routine's OWN workflow files (main.md + stage modules) — a
-  // navigable tree; edits go through the generic /file endpoint. A run never edits its own
-  // recipe/config, so this editor is the human's lever on the recipe.
-  cfgHost.append(el("h2", {}, "Recipe"));
-  const navCol = el("div", { class: "recipe-navcol" }, skeleton(["80%", "60%", "70%"]));
-  const editorCol = el("div", { class: "recipe-editorcol" },
-    el("div", { class: "muted small" }, "pick a file on the left to view or edit it"));
-  cfgHost.append(el("div", { class: "panel" },
-    el("div", { class: "muted small", style: "margin-bottom:10px" },
-      "the routine's OWN workflow — ", el("strong", {}, "main.md"), " routes through the ",
-      el("strong", {}, "stage"), " modules (in run-flow order). The general rules it holds "
-      + "live in the library, not here. Edit freely; the routine-improver may also refine these."),
-    el("div", { class: "recipe-wrap" }, navCol, editorCol)));
-  wireRecipeNav(navCol);
-  const recipe = mountRecipe(navCol, editorCol, slug, query.file || "");
-  const health = mountHealth(healthBox, slug, { onRecipeChanged: recipe.refreshTree });
-
-  // state + ledger
-  const stateFiles = (d.files?.state) || [];
-  cfgHost.append(el("h2", {}, "State & memory"),
-    el("div", { class: "panel" },
-      el("div", { class: "muted small" },
-        stateFiles.length ? `state/ · ${stateFiles.join("  ·  ")}` : "no state files yet"),
-      el("details", { class: "mt" }, el("summary", { style: "cursor:pointer" }, "LEDGER tail"),
-        el("pre", { class: "doc mt" }, d.ledger_tail || "(empty)"))));
-
-  view.append(groupSections(cfgHost, SECTION_GROUPS));
+  // `?section=<id>` lands the reader on one section, opening the folds on the way: the
+  // Decisions page sends a finish line the calendar reached to its Goal settings.
+  if (query.section) {
+    requestAnimationFrame(() => landOn(view, document.getElementById(`sec-${query.section}`)));
+  }
 
   // The page used to be a static snapshot — a run finishing while you look at it left a
   // stale hub. Its own run lifecycle events refresh the header chip, health, and runs.
@@ -212,18 +164,20 @@ export async function render(view, slug, query = {}) {
     const ev = e.detail || {};
     if (!["run_started", "run_finished"].includes(ev.event)) return;
     if (!String(ev.run_id || "").startsWith(`${slug}:`)) return;
-    refreshHead();
+    cfg.refreshHead();
     messagesPane?.reload();   // a run drains the inbox at boot and files reports as it works
     if (ev.event === "run_finished") {
-      health.reload();
-      // a run moves the surface too: it can meet the last goal condition, write the phase file
-      // the `state:phase` row asks for, or author the util a held capability names
-      refreshSurface();
+      cfg.health.reload();
+      // a run moves the surface too: it can reach the finish line, write the phase file the
+      // `state:phase` row asks for, or author the util a held capability names — and it reports
+      // on the finish line, which the Goal group reads
+      cfg.refreshSurface();
+      cfg.onRunFinished();
       try { renderRuns(await api(`/api/routines/${slug}`)); } catch { /* keep the old table */ }
     }
   };
   window.addEventListener("rsched-bus", onBus);
-  return () => { window.removeEventListener("rsched-bus", onBus); disposeConfig(); };
+  return () => { window.removeEventListener("rsched-bus", onBus); cfg.dispose(); };
 
   // The Runs table is capped (user order 2026-08-15, F345): with keep_runs at 30+ the full
   // history made this element the tallest thing on the page, pushing every section below

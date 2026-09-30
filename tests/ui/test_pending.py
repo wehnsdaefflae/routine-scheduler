@@ -3,14 +3,15 @@ would be created, one click materializes it through the same scaffold path, and 
 the proposing routine so its next run stops waiting.
 
 The FINISHED band rides the same queue and is the odd one out: its subject has already changed
-state (a routine whose final goal is met has stopped running, derived from its goal document), so
-neither button is what stops it. The tests at the foot pin exactly that, because a card implying
-"click to stop it" would describe the wrong mechanism.
+state (a routine whose finish line is reached has stopped running, derived from its finish-line
+document), so neither button is what stops it. The tests at the foot pin exactly that, because a
+card implying "click to stop it" would describe the wrong mechanism.
 """
 
 from __future__ import annotations
 
 import json
+import re
 
 from playwright.sync_api import expect
 
@@ -18,11 +19,13 @@ from rsched.paths import atomic_write_json
 
 
 def _queue(ui, *, pid="pc-20260827-030000-aaaaaa", kind="create_routine", routine="uir",
-           fields=None, summary="routine 'fau-comms-steward' from pattern 'general-task'"):
+           fields=None, summary="routine 'fau-comms-steward' from pattern 'general-task'",
+           run_id=None):
     d = ui.routines / ".control" / "pending-creations"
     d.mkdir(parents=True, exist_ok=True)
     atomic_write_json(d / f"{pid}.json", {
-        "id": pid, "kind": kind, "routine": routine, "run_id": f"{routine}:20260827-030000",
+        "id": pid, "kind": kind, "routine": routine,
+        "run_id": f"{routine}:20260827-030000" if run_id is None else run_id,
         "created_at": "2026-08-27T03:00:00+02:00", "summary": summary,
         "fields": fields if fields is not None else {
             "slug": "fau-comms-steward", "name": "FAU comms steward",
@@ -155,19 +158,22 @@ def test_two_gaps_from_one_commit_are_one_card(ui, ui_page):
     assert list(d.glob("pc-*.json")) == []
 
 
-# ---- the FINISHED band: a routine reporting its final goal met ------------------------------------
+# ---- the FINISHED band: a routine whose finish line is reached --------------------------------
 
-def _queue_goal(ui, *, routine="uir", pid="pc-20260905-090000-bbbbbb"):
-    return _queue(ui, pid=pid, kind="goal-reached", routine=routine,
-                  summary=f"{routine} reports its final goal met — 1 condition. It has stopped "
-                          "running; retire it or reopen the goal.",
-                  fields={"conditions": [
-                      {"id": "s1", "text": "the application is submitted",
-                       "note": "submitted 2026-09-05, receipt filed",
-                       "resolved_run": f"{routine}:20260905-080000", "disputed": ""}],
-                      # stopping-condition groups (all/any) — the joiners over the conditions,
-                      # not an axis a routine sits on; this field keeps the word "group"
-                      "groups": []})
+_PROVED = {"id": "g1", "text": "the application is submitted", "judge": "run", "date": "",
+           "status": "met", "evidence": "submitted 2026-09-05, receipt filed",
+           "met_run": "uir:20260905-080000", "disputed": ""}
+
+
+def _queue_goal(ui, *, routine="uir", pid="pc-20260905-090000-bbbbbb", outcomes=None, until="",
+                why="every outcome of its finish line is reached", run_id=None):
+    """The card engine/goalreached.propose files: the finish line's outcomes, its `until` and
+    why it counts as reached."""
+    return _queue(ui, pid=pid, kind="goal-reached", routine=routine, run_id=run_id,
+                  summary=f"{routine} reached its finish line — {why}. It has stopped running; "
+                          "retire it, or reopen the finish line to keep it going.",
+                  fields={"outcomes": [_PROVED] if outcomes is None else outcomes,
+                          "until": until, "why": why})
 
 
 def test_the_finished_band_says_the_routine_has_already_stopped(ui, ui_page):
@@ -175,31 +181,51 @@ def test_the_finished_band_says_the_routine_has_already_stopped(ui, ui_page):
     ui_page.goto(f"{ui.url}/#/questions")
     card = ui_page.locator("[data-goal]")
     expect(card).to_be_visible()
-    expect(card).to_contain_text("reports its final goal met")
+    expect(card).to_contain_text("reached its finish line")
+    expect(card).to_contain_text("every outcome of its finish line is reached")
     # the mechanism, stated on the card: neither button is what stopped it
     expect(card).to_contain_text("it has already stopped running")
     expect(card.get_by_role("button", name="retire it")).to_be_visible()
     expect(card.get_by_role("button", name="not yet")).to_be_visible()
     # the EVIDENCE is open by default — this is the thing to read before agreeing a job is over
-    expect(card).to_contain_text("the application is submitted")
-    expect(card).to_contain_text("the run said: submitted 2026-09-05, receipt filed")
+    outcome = card.locator('[data-goal-outcome="g1"]')
+    expect(outcome).to_contain_text("the application is submitted")
+    expect(outcome).to_contain_text("a run proved it")
+    expect(outcome).to_contain_text("the run said: submitted 2026-09-05, receipt filed")
+    expect(outcome.locator('a[href="#/run/uir:20260905-080000"]')).to_be_visible()
 
 
-def test_not_yet_reopens_the_goal_and_the_routine_is_scheduled_again(ui, ui_page):
-    """Declining has to change the goal DOCUMENT, because retirement is derived from it — dropping
-    the record alone would leave the routine unscheduled with nothing left on the page to act on."""
-    atomic_write_json(ui.routine_dir("uir") / "state" / "stopping.json", {
-        "mode": "all", "groups": [{"id": "g1", "name": "", "mode": "all"}],
-        "conditions": [{"id": "s1", "text": "the application is submitted", "status": "met",
-                        "group": "g1", "scope": "goal"}]})
+def test_not_yet_reopens_the_finish_line_and_the_routine_is_scheduled_again(ui, ui_page):
+    """Declining has to change the finish-line DOCUMENT, because retirement is derived from it —
+    dropping the record alone would leave the routine unscheduled with nothing left on the page
+    to act on."""
+    line = ui.routine_dir("uir") / "state" / "finish-line.json"
+    atomic_write_json(line, {"outcomes": [_PROVED], "until": ""})
     _queue_goal(ui)
     ui_page.goto(f"{ui.url}/#/questions")
     expect(ui_page.locator("[data-goal]")).to_be_visible()
 
     ui_page.get_by_role("button", name="not yet").click()
-    expect(ui_page.locator("#toast")).to_contain_text("goal reopened")
+    expect(ui_page.locator("#toast")).to_contain_text("finish line reopened (g1)")
     expect(ui_page.locator("[data-goal]")).to_have_count(0)
 
-    stored = json.loads(
-        (ui.routine_dir("uir") / "state" / "stopping.json").read_text(encoding="utf-8"))
-    assert stored["conditions"][0]["status"] == "open"
+    stored = json.loads(line.read_text(encoding="utf-8"))
+    assert stored["outcomes"][0]["status"] == "open"
+    assert stored["outcomes"][0]["evidence"] == "submitted 2026-09-05, receipt filed"   # kept
+
+
+def test_a_line_the_calendar_reached_is_changed_by_its_date_not_reopened(ui, ui_page):
+    """Reopening changes nothing a date decides, so the card offers no "not yet": it sends the
+    reader to the routine's Goal settings, where the date is moved, with the folds opened."""
+    _queue_goal(ui, outcomes=[], until="2026-01-31", why="its end date 2026-01-31 has passed",
+                run_id="")
+    ui_page.goto(f"{ui.url}/#/questions")
+    card = ui_page.locator("[data-goal]")
+    expect(card).to_contain_text("its end date 2026-01-31 has passed")
+    expect(card).to_contain_text("no run involved")
+    expect(card).to_contain_text("stop scheduling after 2026-01-31")
+    expect(card.get_by_role("button", name="not yet")).to_have_count(0)
+    card.locator("[data-goal-date]").click()
+    ui_page.wait_for_url(re.compile(r"#/routine/uir\?section=goal$"))
+    expect(ui_page.locator("#sec-goal")).to_be_in_viewport()
+    expect(ui_page.locator("[data-finish-line]")).to_be_visible()

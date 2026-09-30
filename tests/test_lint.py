@@ -1,5 +1,6 @@
 """Workflow library lint + materialization + scaffold, against the real library-seed."""
 
+import shutil
 from pathlib import Path
 
 import pytest
@@ -114,27 +115,24 @@ def test_tags_on_library_elements():
         assert len(d["tags"]) >= 3, (d["slug"], d["tags"])
     assert set(rules["web-research"]["tags"]) >= {"web", "research"}
     perms = {d["slug"]: d for d in library_docs.list_docs(SEED / "permissions")}
-    assert set(perms) == {"util-authoring", "util-revision", "util-removal",
-                          "memory", "messaging-discord",
-                          "run-history", "shell", "workflow-generation", "background-tasks",
-                          "scheduling", "global-utils", "rule-authoring",
-                          "remote-machines", "darknet", "outbound-mail",
-                          "messaging-signal", "messaging-telegram", "messaging-whatsapp",
-                          "messaging-zulip", "usenet", "scripts", "notifications",
-                          "recipe-authoring", "reminders",
-                          "browser-sessions"}  # variants collapsed: level = capability
+    # seventeen: what every routine does (memory, scripts, run history) needs no permission;
+    # a doc that could not act (background tasks, workflow generation) is gone
+    assert set(perms) == {"util-authoring", "util-removal", "rule-authoring",
+                          "recipe-authoring", "scheduling", "shell", "outbound-mail",
+                          "steward-publishing", "browser-sessions", "darknet", "usenet",
+                          "notifications", "messaging-discord", "messaging-signal",
+                          "messaging-telegram", "messaging-whatsapp", "messaging-zulip"}
     # `self-modification` was retired when own-recipe writes became a fixed engine rule; 0.261.0
     # brought the DECISION back as `recipe-authoring`, because keying it on an fs write root
     # meant granting a working directory silently granted the right to reword the task.
     assert "self-modification" not in perms
-    # Each act gets its own permission: writing a util adds a capability, removing one takes
-    # it away from every caller, and each messenger reaches a different person differently.
-    assert perms["util-authoring"]["requires"]["actions"] == ["write_util"]
-    assert perms["util-revision"]["requires"]["actions"] == ["revise_util"]
+    # Removing a util takes it away from every caller, so it is its own permission apart from
+    # writing one; each messenger reaches a different person differently.
+    assert perms["util-authoring"]["requires"]["actions"] == ["write_util", "revise_util"]
     assert perms["util-removal"]["requires"]["actions"] == ["remove_util"]
     for channel in ("signal", "telegram", "whatsapp", "zulip"):
         doc = perms[f"messaging-{channel}"]
-        assert doc["requires"]["utils"] == [channel], channel
+        assert doc["requires"]["utils"] == [f"{channel}:send"], channel
         # no util_tags wildcard: the retired bundle's [chat, messaging] also swept in
         # discord and ntfy, so a "Signal only" grant was not expressible
         assert not doc["requires"].get("util_tags"), channel
@@ -250,19 +248,36 @@ def test_scaffold_degrade_names_the_cause_and_logs_a_health_event(tmp_path):
     assert ev["routine"] == "born-degraded" and ev["detail"]
 
 
+RECORDER = ('"""Records what it finds and nothing else."""\n'
+            "from routine.actions import read_file, write_file\n"
+            'META = {"name": "Recorder", "slug": "recorder", "description": "records",\n'
+            '        "when_to_use": "w", "version": 1, "tags": ["a", "b", "c"],\n'
+            '        "tools": ["read_file", "write_file"]}\n'
+            'PHASES = ["steady"]\n'
+            'DONE_WHEN = ["d1 · record — the finding is recorded"]\n'
+            "def main():\n    record()\n"
+            'def record():\n    """Record the finding."""\n')
+
+
 def test_scaffold_stamps_tools_allowlist(tmp_path):
     """A workflow META `tools:` allowlist lands in the routine's main.md frontmatter, where
-    the engine reads and enforces it at run time (improvement-proposer is the shipped case)."""
+    the engine reads and enforces it at run time."""
     import frontmatter
 
+    from rsched.workflows.lint import lint_workflow_py
+
+    assert lint_workflow_py(RECORDER, filename="recorder.py", rule_slugs=[]) == []
+    lib = tmp_path / "library"
+    shutil.copytree(SEED, lib, ignore=shutil.ignore_patterns("__pycache__"))
+    (lib / "workflows" / "recorder.py").write_text(RECORDER, encoding="utf-8")
     server = ServerConfig()
     server.routines_home = tmp_path / "routines"
     server.routines_home.mkdir()
-    server.libraries_home = SEED
-    d = scaffold(server, slug="proposer", name="Proposer", instruction="x",
-                 workflow_slug="improvement-proposer")
+    server.libraries_home = lib
+    d = scaffold(server, slug="recorder", name="Recorder", instruction="x",
+                 workflow_slug="recorder")
     meta = frontmatter.load(d / "main.md").metadata
-    assert meta["tools"] == ["read_file", "write_file", "util", "llm", "ask_user", "finish"]
+    assert meta["tools"] == ["read_file", "write_file"]
     # general-task has no tools META → no allowlist is stamped (unrestricted)
     d2 = scaffold(server, slug="unrestricted", name="U", instruction="x",
                   workflow_slug="general-task")
@@ -293,24 +308,24 @@ def test_scaffold_creates_valid_routine(tmp_path):
     # at run time). Without a generator endpoint, decompose falls back to the whole workflow.
     assert (d / "main.md").exists()
     raw = yaml.safe_load((d / "routine.yaml").read_text())
-    assert raw["budgets"]["max_turns"] == 60
-    # rules = the workflow's includes, recorded as SLUGS and referenced from main.md's
-    # Standing practices tail. Nothing is copied into the routine dir: one library copy is the
-    # whole point, so a revision reaches every holder. Since 0.263.0 a new routine ADOPTS a
-    # settings template COPIED IN at creation (0.269.0), so the routine's own file carries the
-    # whole set and what the file says IS what the run gets.
+    # saved FOLLOWING its settings pattern: the pattern's budgets and rules are its own values
+    from rsched.patterns import store
+    pattern = store.read(SEED, raw["pattern"])
+    assert pattern is not None
+    assert raw["budgets"]["max_turns"] == pattern["settings"]["budgets"]["max_turns"]
+    assert set(raw["rules"]) == set(pattern["settings"]["rules"])
+    # rules are recorded as SLUGS; nothing is copied into the routine dir — one library copy
+    # is the whole point, so a revision reaches every holder
     assert set(cfg.rules) >= {"web-research", "decision-record"}
     assert not (d / "rules").exists()
-    assert "- `web-research` —" in (d / "main.md").read_text(encoding="utf-8")
     main_text = (d / "main.md").read_text()
-    assert "## Standing practices" in main_text
+    assert "## Standing practices" not in main_text      # the prompt names held rules itself
+    assert "## Done when" in main_text
     assert "improve-" not in main_text
-    # permissions are pure config (no local copies). The fitted template's are written into the
-    # routine's own file, so there is no second layer to resolve and no `template:` key to
-    # resolve it from — reading routine.yaml tells you what the routine can do.
-    assert "template" not in raw, "a template is copied in, never referenced"
+    # permissions are pure config (no local copies), written into the routine's own file —
+    # reading routine.yaml tells you what the routine can do.
     assert set(raw["permissions"]) == set(cfg.permissions)
-    assert "util-authoring" in cfg.permissions and "memory" in cfg.permissions
+    assert "util-authoring" in cfg.permissions
     # recipe improvement is centralized — self-modification is NOT a default anymore
     assert "self-modification" not in cfg.permissions
     assert (d / ".gitignore").read_text().startswith("runs/")
@@ -426,7 +441,7 @@ def test_every_seed_conduct_doc_states_its_effect():
             assert str(meta.get("effect") or "").strip(), f"{sub}/{path.name} has no effect:"
             assert not linter(raw, filename=path.name), f"{sub}/{path.name} fails its linter"
             checked += 1
-    assert checked >= 40, "the seed library lost most of its conduct docs"
+    assert checked >= 30, "the seed library lost most of its conduct docs"
 
 
 def test_rendered_steps_are_what_main_sequences():
@@ -484,6 +499,7 @@ def test_lint_rejects_action_import_the_tools_allowlist_excludes():
             'META = {"name": "X", "slug": "x", "description": "d", "when_to_use": "w",\n'
             '        "version": 1, "tags": ["a", "b", "c"], "tools": %s}\n'
             'PHASES = ["steady"]\n'
+            'DONE_WHEN = ["d1 · main — the thing is recorded"]\n'
             "def main():\n    pass\n")
     stray = lint_workflow_py(base % '["read_file", "finish"]', filename="x.py", rule_slugs=[])
     assert any("write_util" in p and "tools: excludes" in p for p in stray)
@@ -496,23 +512,16 @@ def test_lint_rejects_action_import_the_tools_allowlist_excludes():
 
 def test_lint_all_covers_every_directory_the_library_holds(tmp_path):
     """`rsched lint` is what says the library is clean, so a directory `lint_all` skips is a
-    directory nobody checks. Two arrived after the first four and were never wired in — the
-    settings templates a routine is created FROM (whose linter existed, orphaned, called only
-    by its own tests) and the shared reminder store.
+    directory nobody checks. The shared reminder store arrived after the first kinds and was
+    never wired in, so a malformed reminder was found by whatever read it next.
     """
     from rsched.workflows.lint import lint_all
 
     home = merged_library(tmp_path)
-    (home / "templates").mkdir()
-    (home / "templates" / "broken.md").write_text(
-        "---\ntags: [a, b, c]\nconfig:\n  nonsense: 1\n---\n# template: broken — t\nb\n",
-        encoding="utf-8")
     (home / "reminders").mkdir()
     (home / "reminders" / "rem-wrong.json").write_text(
         '{"id": "rem-other", "regex": ".*", "description": "d"}', encoding="utf-8")
     results = lint_all(home)
-    assert "templates/broken.md" in results
-    assert any("not a shareable key" in p for p in results["templates/broken.md"])
     assert "reminders/rem-wrong.json" in results
     text = " | ".join(results["reminders/rem-wrong.json"])
     assert "does not match the filename" in text     # id ≠ filename

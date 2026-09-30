@@ -38,10 +38,14 @@ function groupFor(rule) {
 
 // available: [{slug, summary, tags}] from GET /api/library · held: [slug]
 // opts: {onSave(payload) -> Promise, live?: boolean}
+//    or {onChange(selected), saved: [slug]} — a DRAFT picker (the routine page's settings form):
+//       no apply button, every tick reports the full selection, and a row is marked staged
+//       against `saved` (what the routine holds) rather than against `held` (the draft).
 // Returns {node, value}: value() is {add, remove} against the ORIGINAL held set.
 export function rulePicker(available, held, opts = {}) {
-  const start = new Set(held || []);
-  const now = new Set(start);
+  const start = new Set(opts.saved || held || []);
+  const now = new Set(held || []);
+  let ready = false;                 // building the picker reports nothing
   const all = available || [];
   const host = el("div", { class: "rulepicker" });
   const status = el("div", { class: "muted small" });
@@ -109,12 +113,14 @@ export function rulePicker(available, held, opts = {}) {
       if (why) why.textContent = staged ? (dropping ? WILL_DROP : WILL_BIND) : "";
     }
     paintStatus();
+    if (ready) opts.onChange?.([...now]);
   }
 
   /** A bound rule: what the routine practises, with its full text one click away. */
   function boundRow(rule) {
     const doc = docExpander("rules", rule.slug);
-    const box = el("input", { type: "checkbox", checked: "", "data-nopersist": true,
+    const box = el("input", { type: "checkbox", checked: now.has(rule.slug) ? "" : null,
+                              "data-nopersist": true,
                               title: "unbind — takes effect at the next run" });
     const why = el("span", { class: "rule-why small" });
     const node = el("div", { class: "rule-bound", "data-rule": rule.slug },
@@ -133,7 +139,8 @@ export function rulePicker(available, held, opts = {}) {
 
   /** A catalogue row: name, one line, and a bind control. */
   function availRow(rule) {
-    const box = el("input", { type: "checkbox", "data-nopersist": true });
+    const box = el("input", { type: "checkbox", checked: now.has(rule.slug) ? "" : null,
+                              "data-nopersist": true });
     const why = el("span", { class: "rule-why small" });
     const node = el("label", { class: "avail-row", "data-rule": rule.slug }, box,
       el("span", { class: "avail-name" }, rule.slug),
@@ -158,12 +165,10 @@ export function rulePicker(available, held, opts = {}) {
     host.append(
       el("div", { class: "lbl" }, `Practises · ${bound.length}`),
       el("div", { class: "muted small prose", style: "margin:-4px 0 9px" },
-        "Standing practices: the run reads each one before the situation it governs, from the "
-        + "single copy in the library — the prose is never pasted into the prompt, so binding "
-        + "one costs nothing until it is needed. A run may read ANY rule at any time; binding "
-        + "is what makes one standing, listed in this routine's ",
-        el("span", { class: "ref-tag" }, "Standing practices"),
-        " and in every run's digest."));
+        "Every run's digest names each practised rule with the moment it applies; the run "
+        + "reads the prose from the single copy in the library when that moment comes. The "
+        + "prose is never pasted into the prompt, so binding one costs nothing until it is "
+        + "needed. A run may read ANY rule at any time; binding is what makes one standing."));
     host.append(bound.length
       ? el("div", { class: "rule-bounds" }, ...bound.map(boundRow))
       : el("div", { class: "muted small" },
@@ -205,6 +210,7 @@ export function rulePicker(available, held, opts = {}) {
     remove: [...start].filter((s) => !now.has(s)),
   });
   render();
+  ready = true;
   return {
     node: host,
     get value() { return value(); },

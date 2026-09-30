@@ -21,11 +21,13 @@ routine.yaml" seal is ACTION-LAYER only and the runner REPORTS a change it sees 
 preventing it. The instruction contains only the task; cross-cutting conduct is
 a set of GENERAL RULES with ONE library copy each (`rules:` in routine.yaml holds slugs — the run
 reads the prose with `read_rule` and applies the principle to its own case); schedule, PERMISSIONS,
-workdir, budgets, and model roles are routine config (`routine.yaml` / UI), started from a
-library **settings TEMPLATE** (`rsched/templates.py`) that is COPIED IN once at creation or by
-the routine page's adopt action — a PRESELECTION, not a layer: the file then says what the
-routine IS and every value is edited where it lives. Only a DOMAIN's shared config layers live
-(D82); a routine names at most one.
+workdir, budgets, and model roles are routine config (`routine.yaml` / UI) — the routine's OWN
+values, read against the library **settings PATTERN** it follows as a reference, never a layer
+(docs/patterns.md): nothing is merged under the file, so it says what the routine IS and every
+value is edited where it lives. A proposal to change them — creation's, the recommender's, a
+pattern switch's — is a PENDING change the person keeps or drops with ONE accept, never a write.
+Routines that work together SHARE A STORE — a directory under `.control/group-stores/` named
+among each one's own write roots (`rsched/sharedstores.py`).
 
 ## Where the detail lives
 
@@ -51,16 +53,20 @@ one you are about to touch, not all of them.
   the cap as an ARGUMENT so the caller's decision is the only one, and `clamp_to_cap` never
   touches message 0 — the composed system prompt is the largest body in every run, so ordering by
   size cut the recipe's own contract first and rewrote the cached prefix from byte zero
-- The reminder layer is ON by default at `local` (the `reminders` permission is in
-  DEFAULT_PERMISSIONS and ADOPT_PERMISSIONS, and `reminders: "local"` in DEFAULT_CAPABILITIES —
-  the one dial whose default is not off, which is why it has to be named there at all): a caution
-  a run leaves itself about its own actions is ordinary conduct, and a layer nobody switches on
-  never learns anything. `global` is NOT — the shared store is a SEEDED library directory
-  (`<library>/reminders/`), a write there needs the dial raised AND the user's approval, and the
-  Library tab is where one is inspected or removed. The four-way tally has exactly ONE automatic
+- The reminder layer is ON by default at `local` (`reminders: "local"` in DEFAULT_CAPABILITIES
+  and in every settings pattern — a SETTING, no permission behind it): a caution a run leaves
+  itself about its own actions is ordinary conduct; a layer nobody switches on never learns
+  anything. The dial governs AUTHORING: at `local` a run writes its own and applies every CURATED
+  reminder that reaches it — a curated one declares its reach, `universal` (every routine whose
+  action matches) or `listed` (only routines whose `shared_reminders` name it, which a pattern
+  carries). `global` — writing the curated store, each write approved — is the curator's:
+  rules-review holds it and runs a census-driven `reminders` stage. A label is recorded only
+  against a hold of that reminder in that run, once. The four-way tally has exactly ONE automatic
   reader (`reminders.looks_too_broad`); nothing demotes a reminder behind the run's back
 - `docs/reminders.md` — the consequence-reminder layer (the pre-execution hold, the two
-  stores, the four-way tally that tunes a pattern); `docs/rule-assists.md` — its curated
+  stores and a curated one's reach, the curation process, the four-way tally that tunes a
+  pattern); `docs/patterns.md` — settings patterns, pending changes and the one accept;
+  `docs/run-gates.md` — the declarative checks that skip a fire with nothing to do; `docs/rule-assists.md` — its curated
   half: a rule's own `assists:` block surfacing its operative line at the moment it applies
   (why timing is possible where compliance-checking is not, the four moments — a pre-action
   HOLD plus three reminder moments, coupled to their payloads — and the
@@ -76,17 +82,19 @@ one you are about to touch, not all of them.
   allow-once for turn-action classes), and each curated rule's provenance
 - `docs/child-runs.md`, `docs/background-tasks.md`, `docs/triggers.md`, `docs/schedule-once.md`
   — the child-run and firing mechanisms
-- `docs/lanes-domains.md` — how routines relate to each other on THREE axes: a LANE is when
-  they fire and in what order (daemon-owned, at most one, enforced), a DOMAIN is what they
-  share (the D82 config block + the shared store + the notes boundary, named in the routine's
-  OWN routine.yaml, at most one), `tags:` is what a routine is about. Read it before touching
-  any of the three — their cardinalities and their owners differ, which IS the design
+- `docs/lanes-tags.md` — how routines relate to each other on THREE axes: a LANE is when
+  they fire and in what order (daemon-owned, at most one, enforced), a SHARED STORE is which
+  files they read and write together plus the notes channel between them (a directory under
+  `.control/group-stores/` named in each routine's OWN `fs_write_roots`, any number), `tags:` is
+  what a routine is about. Read it before touching any of the three — their cardinalities and
+  their owners differ, which IS the design
 - `docs/conversations.md`, `docs/playbooks.md` — interactive sessions and reusable briefs. A
   conversation's spine is EMERGENT: it writes its own `state/plan.md` (inlined at the top of every
   reply by `state_digest`) where a routine gets `stages/` + `phase.json` compiled at creation —
   don't "fix" a conversation by giving it a compiled workflow
 - `docs/status-pages.md` — the shared web UI routines publish to (one shell, one
-  append-only feedback contract, the `status-page` rule that makes it opt-in)
+  append-only feedback contract, the `steward-publishing` permission that makes it opt-in and
+  the kit's `CONTRACT.md` that says how)
 - `docs/items.md` — the maintenance-item index (findings, decisions, bug reports): the
   item shape, the status vocabulary and its precedence, and the changelog join;
   `docs/messages.md` — a routine's four message folders (the Messages page/D74), the
@@ -106,14 +114,18 @@ one you are about to touch, not all of them.
   ships it. An entry there is an ORDER, not a note
 - `docs/admin.md`, `docs/run-gates.md`, `docs/revise-recipe.md`, `docs/output-compression.md`,
   `docs/claude-proxy-cutover.md` — the admin conversation tier, the pre-engine admission gate,
-  in-place recipe revision, stdout compression (ONE engine: stdlib JSON minification, nothing
-  else — no optional dependency), and the subscription transport
+  in-place recipe revision, stdout compression (LOSSLESS stdlib encodings only — grep headings,
+  path folding, JSON minified with tables — engine behaviour rather than a setting, no optional
+  dependency), and the subscription transport
 - `.codemap/` — the derived module/route/contract map `self-audit` works from
   (gitignored; regenerate with the `codemap` util, never hand-edit)
 
 ## Commands
 
-- `uv sync` — install/refresh the venv
+- `uv sync` — install/refresh the venv, on Python 3.12: `.python-version` pins the host to the
+  interpreter the engine image runs (`FROM python:3.12-…`, kept in step by `tests/test_policy.py`);
+  the suite refuses to start on another minor version — a host run on 3.14 once tested an
+  interpreter production does not use
 - `uv run pytest -q` — full suite (fast, no network; PARALLEL by default via pytest-xdist
   `-n auto --dist worksteal` in addopts — pass `-n0` for a serial run / debugging with `-s`). Two conftest
   env knobs keep it honest AND fast: `RSCHED_SKIP_DOCS_BUILD` (the app lifespan's pdoc build
@@ -181,9 +193,9 @@ one you are about to touch, not all of them.
   own siblings, DECLARED-ONLY (no `calls:` line → no `gu` on PATH at all; an undeclared or unknown
   sibling is refused rather than run without the secrets and net that declaration carries), one jail
   and one env over the whole call tree. There is no model channel inside — a judgment call belongs
-  in the recipe. Gated by the
-  `script` capability (`scripts` permission doc), no approval dial — the blast radius is a subset of
-  the routine's own sandboxed permissions. routine-improver scouts recipes for deterministic prose
+  in the recipe. A BASE kind, like `util` and the memory pair — no capability, no approval dial:
+  the blast radius is a subset of the routine's own sandboxed permissions; a switch every
+  routine held was ceremony. routine-improver scouts recipes for deterministic prose
   responsibilities and nudges them into scripts.
   `finish` and `report` are ALWAYS_KINDS — available on every
   turn regardless of the workflow's `tools:` allowlist or the capability set. **The engine never ends a run
@@ -200,8 +212,7 @@ one you are about to touch, not all of them.
   still-queued message in the summary instead). Budgets are a runaway BACKSTOP, never a pace; do not reintroduce prose that has a run
   ration its work against the turn counter. The 85% warning is an EVENT, not a state: it is said
   once at the warn line and once at 95%, per resource. Riding every observation past 85% made it
-  a countdown, and runs converged at the ceiling whether or not their stopping conditions were
-  met. Every action carries `say` (finding-first narration:
+  a countdown; runs converged at the ceiling whether or not their job was done. Every action carries `say` (finding-first narration:
   what the last observation taught you + why this action; terse for routine steps, 2-3 sentences
   at decision points; worded per the routine's `deliberation` level) + `kind`, plus an optional
   **`note`** — 1-3 SELF-CONTAINED lines worth keeping beyond the context window, engine-filed to
@@ -254,8 +265,8 @@ one you are about to touch, not all of them.
   them names the paths rather than a count. Collection lives in `subruns._collect`, the child's
   single finalization point: two paths report an exit (`wait` and the turn boundary), so anything
   that must happen once per child belongs there and not in a reporter. One child-task executor,
-  `engine/childrun.py`; a `subtask` with `workflow: "generate"` drafts a new pattern when the
-  `workflows: generate` capability is held (see docs/child-runs.md).
+  `engine/childrun.py`; a child picks its pattern from the catalog and never drafts one — a
+  pattern is drafted only when a person picks `generate` while creating a routine.
   **`report` is the ONE channel for work that is not the run's own task** — ungated, held by
   every routine. What varies is whether the run can name an owner. UNADDRESSED goes to the
   triage stream self-audit reads; ADDRESSED (`target`) is ALSO delivered into that routine's
@@ -283,13 +294,15 @@ one you are about to touch, not all of them.
   finding. Closing what you received is the SAME RUN's job, not the next audit's (D131): the
   `problem-routing` rule carries a `pre-finish` assist that spends one turn on a run ending
   while `ctx.reports_open` is non-empty.
-  Teammates inside one DOMAIN have a lighter channel that is NOT the report ledger (F335,
-  `rsched/domainnotes.py`): a member writes `<domain-store>/notes/<sibling>/note-*.json` with an
-  ordinary file write and the engine surfaces it in the sibling's state digest at boot, dropping
-  it as it reads — no approval, no ledger row, no Messages item, and no new action kind. The
-  boundary IS the safety model: the store is in members' fs roots and nobody else's, so a note
-  cannot leave the domain — which is exactly why the shared config block and the trust boundary
-  are ONE object and not two. A note is coordination; a report is work an OWNER must act on.
+  Routines that SHARE A STORE have a lighter channel that is NOT the report ledger (F335,
+  `rsched/sharedstores.py`): a routine writes `<store>/notes/<addressee>/note-*.json` with an
+  ordinary file write and the engine surfaces it in the addressee's state digest at boot,
+  dropping it as it reads — no approval, no ledger row, no Messages item, and no new action
+  kind. A store is shared by naming it among a routine's OWN `fs_write_roots`, so a note cannot
+  leave the routines sharing it; one written for a routine that does NOT share the store would
+  never be read, so the engine's write gate refuses it (`sharedstores.note_refusal`) and names
+  an addressed `report` as the channel that reaches that routine. A note is coordination; a
+  report is work an OWNER must act on.
   One `R<n>` namespace, one append-only
   ledger `.control/reports.jsonl` (order rows + `delivered` event rows), one Items type; the
   page shows open → in_progress once drained → settled once answered. Triage is therefore
@@ -301,13 +314,16 @@ one you are about to touch, not all of them.
   the handlers — one shared branch checked before any kind's success wording
   (`obs_admin.QUEUEABLE_KINDS`), or a proposal reads as a completed action over an absent
   payload (R1200/R1183). The two handlers live in `engine/admin_handlers.py` beside that
-  renderer; `interact.py` is the ASK protocol alone. `create_routine` carries an optional
-  `stopping:` — the user's own words for what DONE looks like for one run — which seeds the new
-  routine's STOPPING CONDITIONS rather than evaporating into the instruction prose, so the engine
-  still never writes `routine.yaml` (R353). `manage_lane list` answers directly (naming each
+  renderer; `interact.py` is the ASK protocol alone. `create_routine` carries what the
+  clarification settled beside the task, each in the user's own words and never folded into the
+  instruction prose (R353): `pattern` + `setup` (the settings pattern and its answers),
+  `done_when` (the recipe's `## Done when`), `finish_line` (judge-led outcomes and `until`) and
+  `never` (the recipe's `## Never`). The routine is saved with its pattern's values; everything
+  specific to it lands as PENDING changes under "check the changes i recommend." — the engine
+  still never writes `routine.yaml`. `manage_lane list` answers directly (naming each
   lane's MEMBERS in fire order, F424); every mutating verb queues. A lane is the TEMPORAL axis
-  only — no verb reaches a shared config block or a shared store, because those follow the
-  routine's own `domain:` key, which no run may write. A within-reply CHILD (depth > 0) is
+  only — no verb reaches a routine's settings or the stores it shares, because those are its
+  own routine.yaml, which no run may write. A within-reply CHILD (depth > 0) is
   refused outright and never sees the kinds: the queue is for a run that HAS a user, just not
   right now. Ungated like `report` — the approval is the gate, and it is a human.
   `ask_user` carries an optional `default` — what the run DOES when a blocking ask times out —
@@ -319,7 +335,7 @@ one you are about to touch, not all of them.
   `memory_*` are the ONLY way into `.memory/` for a RUN (generic file actions are rejected
   there); the engine owns `.memory/INDEX.md` (built from each write's `about`) and the 100-line
   note cap. The operator's file endpoint agrees about the files the engine owns:
-  `PUT /api/routines/{slug}/file` refuses `routine.yaml`, `state/stopping.json`,
+  `PUT /api/routines/{slug}/file` refuses `routine.yaml`, `state/finish-line.json`,
   `.memory/INDEX.md`, `.git/`, `runs/`, `inbox/` and `questions/` BY NAME
   (`api_routine_files.NOT_EDITABLE_HERE`), each refusal naming the endpoint or owner that holds
   it — the operator's own `.memory/` notes stay editable there.
@@ -399,36 +415,28 @@ by a test, by the engine, or by a past incident.
 - **The composed prompt is a caching contract.** The message list is appended-to, never
   mutated; per-turn boilerplate is banned. Only compaction, schema-retry cleanup and the
   media fallback may rewrite it, each invalidating the provider cache by design.
-- **What DONE means is the user's, and it is not a budget.** A run's meaning-level bounds are
-  STOPPING CONDITIONS (`engine/stopping.py`, F334/D98, user order 2026-08-14): user prose in
-  `state/stopping.json` that the composer inlines (`engine/stopping_digest.py`) and the finish
-  gate makes impossible to ignore.
-  Budgets stay a runaway BACKSTOP; this is what actually decides when a job is finished.
-  Every condition declares a **SCOPE** and the two are answered differently. `run` (the default)
-  bounds ONE run and is re-asked every run — it records its verdict (`last_verdict`) and NEVER
-  transitions, because a per-run bound cannot be "already met". `goal` is the state after which
-  the ROUTINE is finished: sticky, and it RETIRES the routine — `registry.RoutineInfo.retired` is
-  derived from it, the scheduler builds no fire entry, lane chains skip the member as
-  `outcome: "skipped"` (not a failure), and `engine/goalreached.py` queues ONE Decisions-page
-  proposal whose approval writes `enabled: false` through the ordinary PATCH and whose refusal
-  REOPENS the goal. Nothing about retirement writes config: that is how a routine disables itself
-  without breaking "a run never writes routine.yaml". Only the web (`api_stopping`) creates a goal
-  condition, so a routine can report against a finish line but never draw its own. Never collapse
-  the two scopes back into one: sticky + per-run had most of the fleet reading "the job is DONE.
-  Finish NOW" at the top of every run.
-  Conditions are LOGICALLY CONNECTED — groups combine with `all`/`any`, the document combines the
-  groups the same way (two levels: enough for "(A AND B) OR C", shallow enough for a UI and a weak
-  model), `requires` gates one condition on another, and `stage` scopes one to a routine phase.
-  The engine judges NO semantics: the contract is an ACCOUNTING (`[s<n>] met|unmet — why` per
-  ACTIVE condition), the gate rejects a summary that skips one, and `record_accounting` stamps the
-  model's verdict back at the finish so the panel, the next run and the user all read the same
-  state. Satisfaction is REPORTED, never enforced. **v2** (`engine/verifier.py`) checks the
-  claims a summary marks `met` against the run's own transcript with a `tool_call` subcall, and
-  is built around its own two failure modes: FAIL-OPEN everywhere (an unavailable endpoint, an
-  unparseable answer, an unmentioned condition or anything short of an explicit
-  `supported: false` all accept) so it cannot strand a finished job, and AT MOST ONE challenge
-  per condition per run so a stubborn model and a stubborn judge cannot livelock the run into a
-  dead budget. A re-asserted verdict STANDS and the disagreement is recorded (`disputed`).
+- **What DONE means has three owners — none of them is a budget** (reports/goal.md).
+  WHAT ONE FINISHED RUN LEAVES BEHIND is the recipe's `## Done when` (`engine/donewhen.py`,
+  `- d<n> · <stage> — <outcome>`), re-asked every run and never "already met"; a run started by
+  hand with a BRIEF (`engine/brief.py`) answers for the brief instead. WHEN THE ROUTINE IS DONE
+  FOR GOOD is the operator's FINISH LINE (`state/finish-line.json`, `engine/finishline.py`):
+  outcomes each with a JUDGE — `date` (the calendar), `run` (a run proves it, its `met` checked),
+  `you` (a run reports the distance and may never claim it) — plus an optional `until`. WHAT A
+  RUN MUST NEVER DO is held before the action by permissions, rules and reminders; a
+  recipe's `## Never` carries what none of them can hold. The finish owes an `accounting` FIELD
+  — one entry per Done-when line and per open outcome (`engine/accounting.py`); the gate checks
+  presence and shape, never semantics. A `met` is checked once against the run's own
+  transcript (`engine/verifier.py`: FAIL-OPEN everywhere, AT MOST ONE challenge per line per
+  run, a re-asserted verdict STANDS and is recorded `disputed`). Budgets stay a runaway
+  BACKSTOP. Reaching the finish line RETIRES the routine without writing config:
+  `registry.RoutineInfo.retired` is derived from the file, the scheduler builds no fire entry,
+  lane chains skip the member as `outcome: "skipped"`, and ONE Decisions card
+  (`engine/goalreached.py`) makes it permanent — approving writes `enabled: false` through the
+  ordinary PATCH, declining reopens the outcomes (a line the calendar reached is re-dated
+  instead; that save withdraws the card). No run writes the finish line; the engine stamps
+  only what a finish reported. Never let the per-run list and the routine's end share one store
+  again: sticky + per-run had most of the fleet reading "the job is DONE. Finish NOW" at the top
+  of every run.
 - **Global chrome is positioned by `base.css` ALONE, and losing that fails silently.** The
   components mounted outside `#view` so they survive navigation — the side table-of-contents
   (`components/toc.js`) and the LLM activity dock (`components/taskmanager.js`) — set no
@@ -466,8 +474,8 @@ by a test, by the engine, or by a past incident.
   are easy to break and hard to notice: a member cron a lane's schedule suppresses (D71) names a
   time the routine will never fire at, a routine in no scheduled lane with no cron of its own is
   started by nothing on a clock, and `state/phase.json` must record its phase under the key
-  `phase` — the composer reads `.get("phase")` and that value is what scopes a stopping condition
-  to a stage, so any other key writes a file matching nothing. Those are NOTE rows: nothing is
+  `phase` — the composer reads `.get("phase")`, so any other key writes a file matching
+  nothing. Those are NOTE rows: nothing is
   broken, the file is misleading. The BOOT note carries only `blocks`/`interrupts`
   (`surface.BOOT_SEVERITIES`) — a NOTE is for the operator, and a run can neither act on it nor
   be saved a turn by it.
@@ -490,8 +498,7 @@ by a test, by the engine, or by a past incident.
   and nothing cascades the membership away — ARCHIVING is the in-band delete and the one moment
   the web layer knows, dropping the slug from every lane holding it as `lanes_left`; the web
   refuses only the slugs a caller ADDS, so one stale member cannot lock a lane against every
-  further edit, F442); and a routine naming a `domain:` no record answers to, which inherits an
-  EMPTY block and silently loses the shared permissions it was given the domain for.
+  further edit, F442).
   An `expects:` row must be an UNCONDITIONAL presumption — it fires on EVERY holder, and has
   been wrong twice the same way by presuming a write root a holder never needs.
 - **A lane's fire table is process memory; the WATERMARK is what survives.** `lane_next_fires`
@@ -516,6 +523,14 @@ by a test, by the engine, or by a past incident.
   now. The report trigger stays an explicit opt-in for a routine whose job IS its inbox. The
   health stream files a `partial` as `budget_exhausted` ONLY when a budget violation forced it;
   a partial the model chose is `run_partial`.
+- **A run gate may answer "no work" only when it KNOWS there is none.** Every check
+  (`rsched/gatekit/`) reads what it cannot establish — a refused login, a timeout, a file that
+  does not parse, no earlier ok run to compare against — as WORK; a fire is skipped only when
+  EVERY check said no work. Built-in reasons run before any check and cannot be configured away:
+  inbox freight, an answer waiting to be read, a note in a shared store, a last run that did not
+  finish ok, a changed config or recipe (`daemon/gate_prepare.py`). A wrong run costs one fire; a
+  wrong skip silently loses work — prefer a gate over none, never a check that guesses
+  (docs/run-gates.md).
 - **An inbox message's `via` is not a label — it is the delivery POLICY.** It decides when the
   message is consumed, whether the post-finish reap may resume a finished run for it, whether the
   conversation surface offers it as the operator's own editable text, and whether it counts as the
@@ -534,9 +549,9 @@ by a test, by the engine, or by a past incident.
   (`createTaskTree`'s `isLive`, `activityFeed`'s `isOpen`) and its view's teardown stops it
   (`tests/ui/test_view_teardown.py`, `tests/ui/test_bus_budget.py`).
   Never put a config-shaped or expensive endpoint
-  (`/api/domains`, `/api/schedule/week`, `/api/stats`, 300 runs) on that path — one that
-  refetched `/api/domains` every 600 ms under five active runs queued every daemon request
-  behind it for 20-50 s. The watch ribbon splits its two halves for exactly this reason: run
+  (`/api/schedule/week`, `/api/stats`, 300 runs) on that path — one config-shaped endpoint
+  refetched every 600 ms under five active runs queued every daemon request behind it for
+  20-50 s. The watch ribbon splits its two halves for exactly this reason: run
   events repaint its rectangles from `/api/runs`, while `/api/schedule/week` rides its own 120 s
   timer and is repainted from cache in between. When the console is slow, `/api/debug/slow` and
   `docker logs rsched | grep "slow request"` say which path, before anyone guesses. The

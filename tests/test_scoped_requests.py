@@ -80,7 +80,7 @@ def library(tmp_path):
     (home / "messaging.md").write_text(
         "---\nrequires:\n  utils: [signal, discord]\n  util_tags: [chat]\n---\nConduct\n")
     (home / "memory.md").write_text(
-        "---\nrequires:\n  actions: [memory_read]\n---\nMemory conduct\n")
+        "---\nrequires:\n  actions: [shell]\n---\nShell conduct\n")
     routine = tmp_path / "routine"
     routine.mkdir()
     atomic_write_yaml(routine / "routine.yaml", {"permissions": [], "capabilities": {}})
@@ -97,7 +97,7 @@ def reload_policy(server, routine):
 @pytest.mark.parametrize("reverse", [False, True])
 def test_forever_save_reload_no_widening(tmp_path, combined, reverse):
     server, routine = library(tmp_path)
-    ids = ["util:signal:read", "action:memory_read"]
+    ids = ["util:signal:read", "action:shell"]
     if reverse:
         ids.reverse()
     if combined:
@@ -108,23 +108,25 @@ def test_forever_save_reload_no_widening(tmp_path, combined, reverse):
             reload_policy(server, routine)
     raw, g = reload_policy(server, routine)
     assert set(raw["capabilities"]["utils"]) == {"signal:read"}
-    assert not raw["capabilities"].get("util_tags")
     assert g.deny(call("read")) is None
     assert g.deny(call("send")) and g.deny(call("read", "discord"))
-    assert g.allows_kind("memory_read")
+    assert g.allows_kind("shell")
     assert "messaging" in raw["permissions"]
     apply_forever(server, routine, ["util:signal"], "allow_forever")
     assert reload_policy(server, routine)[1].deny(call("send")) is None
 
 
-def test_narrow_doc_cannot_cover_broad_or_other_verb(tmp_path):
+def test_a_verb_doc_grants_at_its_own_grain(tmp_path):
+    """A doc reserving one verb reserves nothing else: a bare request is granted as that
+    verb (the only part that is gated); a request for a verb nobody reserves has no
+    covering doc — it is open already and granting a sibling verb would widen it."""
     server, routine = library(tmp_path)
     (server.permissions_home / "messaging.md").write_text(
         "---\nrequires:\n  utils: [signal:read]\n---\nConduct\n")
-    apply_forever(server, routine, ["util:signal:read"], "allow_forever")
-    for eid in ("util:signal", "util:signal:send"):
-        with pytest.raises(HTTPException, match="no permission doc"):
-            apply_forever(server, routine, [eid], "allow_forever")
+    apply_forever(server, routine, ["util:signal"], "allow_forever")
+    assert reload_policy(server, routine)[1].utils == frozenset({"signal:read"})
+    with pytest.raises(HTTPException, match="no permission doc"):
+        apply_forever(server, routine, ["util:signal:send"], "allow_forever")
     assert reload_policy(server, routine)[1].utils == frozenset({"signal:read"})
 
 

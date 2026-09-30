@@ -32,16 +32,14 @@ else
   echo "config exists: ${CONFIG}"
 fi
 
-# The library — ONE git repo holding workflows/, rules/, permissions/, templates/, playbooks/
-# and utils/. Seeded by bootstrap.seed_libraries, which git-inits it and installs the
+# The library — ONE git repo holding workflows/, rules/, permissions/, patterns/, reminders/,
+# playbooks/ and utils/. Seeded by bootstrap.seed_libraries, which git-inits it and installs the
 # best-effort auto-push hook; the `gu` dispatcher is installed by the engine
 # (utils_lib.ensure_library) on first use.
 #
-# This CALLS the one implementation rather than carrying a shell copy of it. The copy that used
-# to live here had drifted badly: it still created the `fragments/` directory retired when
-# traits/permissions replaced it, and it copied neither rules, permissions, templates nor
-# playbooks — so a host install started with four of the library's five doc kinds missing, and
-# only the add-only boot sync ever filled them in.
+# This CALLS the one implementation rather than carrying a shell copy of it: a shell copy drifts
+# from the library's doc kinds; a host install then starts with kinds missing that only the
+# add-only boot sync ever fills in.
 if [ ! -d "${LIBRARIES}" ]; then
   (cd "${REPO}" && uv run python -c \
     'import sys; from pathlib import Path; from rsched.bootstrap import seed_libraries; seed_libraries(Path(sys.argv[1]))' \

@@ -41,34 +41,30 @@ DEFAULT_BUDGETS = {
 # kinds, reserved utils, the write_util approval level, previous-run read depth. The two
 # stay consistent via the web layer's cascades: activating a doc switches on what its
 # `requires:` names; switching a capability off deactivates the docs requiring it.
-# `messaging-*` (the personal channels), `run-history` depth and `shell` (the escape-hatch
-# ACTION KIND) stay opt-in. There is NO
-# self-modification permission: a run never edits its own recipe or routine.yaml — the
-# routine-improver meta routine refines recipes centrally (its fs_write_roots covering
-# the homes is the one engine-recognized unlock). Defaults added here AFTER routines
-# exist reach them via bootstrap.ADOPT_PERMISSIONS (one-time, at boot).
-# global-utils is a default because every routine reaches for the toolbox: it is the one
-# conduct doc that presumes NO capability (`requires: {}`) — the `util` action is a base
-# kind — and exists purely to teach discovery, composition, and never-silently-route-around
-# a broken util.
-DEFAULT_PERMISSIONS = ["util-authoring", "memory", "global-utils", "reminders"]
-# What a routine with no `capabilities:` block of its own MEANS. Keys absent here fall to the
-# all-off baseline (`grants.EMPTY_CAPABILITIES`) — which is why `reminders` has to be named:
-# it is the one dial whose default is NOT off, so leaving it out would say the opposite of
-# what the layer is. It is on the same footing as the permission behind it, which is in
-# DEFAULT_PERMISSIONS: a caution a run leaves itself about its own actions is ordinary
-# conduct, not a privilege, and the floor keeps it only while that permission is held.
-DEFAULT_CAPABILITIES = {"actions": ["write_util", "memory_read", "memory_write"],
-                        "utils": [], "confirm": "always", "runs": "none",
-                        "workflows": "catalog", "reminders": "local"}
-# RULES a new routine gets when creation picks none explicitly (creation normally
-# preselects per task). A rule is a GENERAL rule — principle prose the run applies to its
-# own particular case — and it lives in ONE place, the library. A routine holds slugs, not
-# copies: `rules:` in routine.yaml, listed at the end of its main.md and fetched on demand
-# (`read_rule`). Read-only to every run; only the USER changes the set (rules.py) or the
-# prose (the Library tab). Improvement of the RULES THEMSELVES is the rules-review meta
-# routine's job — it observes how runs actually interpreted each one and proposes revisions.
-DEFAULT_RULES = ["ask-policy", "web-research", "decision-record", "intent-inference"]
+# `messaging-*` (the personal channels) and `shell` (the escape-hatch ACTION KIND) stay
+# opt-in; a settings PATTERN decides what a routine holds (docs/patterns.md). These are
+# only what a routine with no list of its own means. Calling utils, the memory notebook, its
+# own scripts and reading its last run are BASE behaviour — no permission, nothing to switch.
+# Defaults added here AFTER routines exist reach them via bootstrap.ADOPT_PERMISSIONS.
+DEFAULT_PERMISSIONS = ["util-authoring"]
+# What a routine with no `capabilities:` block of its own MEANS. The settings are named
+# because two of them are not off: `runs: last` is every routine's floor (D96) and the local
+# reminder store is on, because a caution a run leaves itself about its own actions is
+# ordinary conduct and a layer nobody switches on never learns anything. New utils ask for
+# approval, revisions do not (the operator approved 55 of 56 revisions and declined 8 of 21
+# creations — the approval belongs where the answers are decisions).
+DEFAULT_CAPABILITIES = {"actions": ["write_util", "revise_util"], "utils": [],
+                        "confirm": "creations", "runs": "last", "reminders": "local"}
+# RULES every routine holds unless its settings say otherwise — the conduct every kind of work
+# meets (a pattern adds the rules of its KIND of work on top). A rule is a GENERAL rule —
+# principle prose the run applies to its own particular case — and it lives in ONE place, the
+# library. A routine holds slugs, not copies: `rules:` in routine.yaml; the prompt names each
+# held rule with the one line saying when it applies. The run reads the prose on demand
+# (`read_rule`). Read-only to every run; only the USER changes the set or the prose (the
+# Library tab). Improvement of the RULES THEMSELVES is the rules-review meta routine's job —
+# it observes how runs actually interpreted each one and proposes revisions.
+DEFAULT_RULES = ["evidence-discipline", "ask-policy", "fix-the-cause", "problem-routing",
+                 "decision-record", "web-research"]
 # Each routine picks its own models: the MAIN orchestrator loop, the model TOOL_CALLs (the
 # `llm` action) use, and an OPTIONAL UNCENSORED model a refused `llm` tool-call is
 # re-referred to. The uncensored role is opt-in and has NO system_model fallback: a routine

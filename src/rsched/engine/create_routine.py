@@ -56,9 +56,9 @@ DEFAULT_WORKFLOW = "general-task"
 #: The choice that is always on the workflow question beside the library patterns: draft one
 #: FITTED to this task. No catalog covers every task, and a routine built on a pattern that
 #: merely almost fits carries that mismatch for its whole life, so the list is never closed.
-#: The user PICKING it is the gate — the `workflows: generate` capability governs a SUBTASK
-#: drafting a pattern on its own initiative, where nobody is watching; here someone chose it
-#: one screen ago, and the confirming call is the answer to that choice.
+#: The user PICKING it is the gate: this is the only place a pattern is drafted — no run drafts
+#: one on its own initiative, where nobody is watching — and here someone chose it one screen
+#: ago, so the confirming call is the answer to that choice.
 GENERATE_SLUG = "generate"
 
 #: Where a conversation's pending routine draft lives (relative to the conversation dir).
@@ -174,16 +174,31 @@ _DESIGN_CHECKS = (
     "copy it in — name it to the user as a rule or permission choice. Conduct baked into "
     "the instruction keeps acting after they change the routine's setup, which takes the "
     "control surface away from them.",
-    "SCOPE — schedule and cadence, budgets, working directory, and model/endpoint choices "
-    "are routine CONFIG, set in the UI. Never ask about them and never write them into the "
-    "instruction. A draft that names a schedule ('every Monday…') is giving you a hint: "
-    "phrase the task per-run ('each run, cover what appeared since the last covered point, "
-    "tracked in state/') so it holds whatever the cadence turns out to be.",
+    "SETTINGS — the routine is saved with its SETTINGS PATTERN's values (settings_patterns "
+    "below lists the ones for this workflow, each with the questions it needs answered: "
+    "cadence, folders, mailbox, what a run gate should watch). Ask the user every one of "
+    "those questions the task does not already answer, as decisions. Carry their "
+    "answers in `setup` — never in the instruction, which stays the task alone. A draft "
+    "that names a schedule ('every Monday…') is answering one of them: put it in `setup` "
+    "and phrase the task per-run ('each run, cover what appeared since the last covered "
+    "point, tracked in state/') so it holds whatever the cadence turns out to be.",
 )
 
 
+def _settings_patterns(server, workflow: str) -> list[dict]:
+    """The settings patterns a routine on `workflow` can follow, with the questions each one
+    needs answered — what the preview shows so the clarification covers them.
+    """
+    from ..patterns import store
+
+    patterns = store.list_all(server.libraries_home)
+    on_workflow = [p for p in patterns if p["workflow"] == workflow] or patterns
+    return [{"slug": p["slug"], "summary": p["summary"], "when": p["when"],
+             "asks": [a["question"] for a in p["asks"]]} for p in on_workflow]
+
+
 def _preview_obs(draft: dict, catalog: list[dict], *, updated: bool,
-                 blocked_same_leg: bool = False) -> dict:
+                 patterns: list[dict], blocked_same_leg: bool = False) -> dict:
     """The draft/preview observation: what WILL be created, the catalog the choice was made
     against, the design judgements the draft must have made, and the exact next step. The
     teaching copy is the contract — a same-leg confirm attempt gets told why it was held.
@@ -196,6 +211,7 @@ def _preview_obs(draft: dict, catalog: list[dict], *, updated: bool,
            # F383: the pattern catalog rides the observation so the relay compares against
            # what the library actually holds — the choice stops being an unexamined default.
            "workflow_catalog": catalog,
+           "settings_patterns": patterns,
            "design_checks": list(_DESIGN_CHECKS),
            "next": ("Nothing is created yet. Put this draft to the user as DECISIONS, not as "
                     "prose: every point still open goes out as its own `ask_user` carrying "
@@ -205,23 +221,24 @@ def _preview_obs(draft: dict, catalog: list[dict], *, updated: bool,
                     "always one of these, and its options are the entries of "
                     "workflow_catalog — which always ends in 'generate', drafting a new "
                     "pattern fitted to this task; never present the workflow as already "
-                    "chosen. State what the routine PRODUCES each run and what DONE looks "
-                    "like for one run in the user's own words; if either is YOUR inference, "
-                    "it is an open point and it goes out as an ask_user with options like the "
-                    "rest. Their answer to the DONE question is not prose to paraphrase into "
-                    "the instruction: put it in `stopping`, one condition per entry, in their "
-                    "words. That becomes the routine's stopping conditions, which every run "
-                    "must account for in its finish summary — without them a run is bounded "
-                    "only by its budgets, which are a runaway backstop and not a definition of "
-                    "done. Omit `stopping` rather than inventing conditions they did not "
-                    "state. ASK A SECOND, DIFFERENT QUESTION: is there a state after which "
-                    "this routine is FINISHED for good — a thing submitted, a migration "
-                    "complete, an event past? Their answer goes in `goal`, verbatim, and it "
-                    "has teeth: a met goal stops the scheduler firing the routine. Many "
-                    "routines honestly have no such state (a monitor, a digest) and then "
-                    "`goal` is omitted — but ASK, because a routine nobody ever asked runs "
-                    "forever by default, and where the answer carries a DATE the recipe must "
-                    "name it literally. Then finish the reply — or put the go-ahead itself to "
+                    "chosen. State what the routine PRODUCES each run and what one finished run "
+                    "leaves behind in the user's own words; if either is YOUR inference, it is "
+                    "an open point and it goes out as an ask_user with options like the rest. "
+                    "Their answer about a finished run goes in `done_when`, one outcome per "
+                    "entry, in their words — it becomes the recipe's Done when, which every run "
+                    "accounts for. ASK A SECOND, DIFFERENT QUESTION: is there a state after "
+                    "which this routine is FINISHED for good — a thing submitted, a migration "
+                    "complete, an event past — and who judges it? Their answer goes in "
+                    "`finish_line`, each outcome led by its judge (`run:` the run can prove "
+                    "it, `you:` only they can, `YYYY-MM-DD:` a date reaches it), plus `until "
+                    "YYYY-MM-DD` for a date after which it stops either way. Many routines "
+                    "honestly have none (a monitor, a digest) — then omit it, but ASK, because "
+                    "a routine nobody asked runs forever. ASK A THIRD: is there anything a "
+                    "run must NEVER do? Each answer goes in `never`, in their words — never "
+                    "into `done_when`, which lists outcomes. Pick the settings pattern from "
+                    "settings_patterns with them and ask each of its questions the task does "
+                    "not answer; their answers go in `setup`. Then finish the reply — or put "
+                    "the go-ahead itself to "
                     "them as a BLOCKING ask_user, whose answer reaches you without ending the "
                     "reply. Once the user has answered either way, call create_routine again "
                     "with the SAME fields to materialize it; a call with changed fields updates "
@@ -235,8 +252,10 @@ def _preview_obs(draft: dict, catalog: list[dict], *, updated: bool,
 
 
 def _materialize(ctx: RunContext, *, slug: str, name: str, instruction: str,
-                 workflow_slug: str, stopping: list[str] | None = None,
-                 goal: list[str] | None = None) -> dict:
+                 workflow_slug: str, pattern: str = "", setup: list[str] | None = None,
+                 done_when: list[str] | None = None,
+                 finish_line: list[str] | None = None,
+                 never: list[str] | None = None) -> dict:
     """The confirmed half: draft the fitted pattern if that is what the user picked, then build
     the routine from `workflow_slug`. Every failure here is an OBSERVATION the model can act on
     — a conversation run must never die because a build step did.
@@ -257,7 +276,8 @@ def _materialize(ctx: RunContext, *, slug: str, name: str, instruction: str,
                                            workflow_slug=workflow_slug)
         routine_dir = scaffold(ctx.server, slug=slug, name=name, instruction=instruction,
                                workflow_slug=workflow_slug, description=description,
-                               stopping=stopping, goal=goal)
+                               pattern=pattern, setup=setup, done_when=done_when,
+                               finish_line=finish_line, never=never)
     except ValueError as exc:
         # bad slug, unknown workflow, or a dir that appeared mid-flight — a teaching rejection,
         # corrected by the model, never a crash
@@ -271,18 +291,15 @@ def _materialize(ctx: RunContext, *, slug: str, name: str, instruction: str,
                 "error": f"materialization failed mid-build ({exc}); nothing usable was "
                          "created — check the routines home and try again"}
     _draft_path(ctx).unlink(missing_ok=True)
-    import contextlib
-
-    import yaml as _yaml
-
     from ..paths import read_yaml
+    from ..patterns import drafts
 
-    adopted = ""
-    with contextlib.suppress(OSError, _yaml.YAMLError):
-        adopted = str(read_yaml(routine_dir / "routine.yaml", {}).get("template") or "")
+    pending = drafts.read(ctx.server.routines_home, slug)
     return {"kind": "create_routine", "slug": slug, "name": name,
             "workflow": workflow_slug, "created": True, "dir": str(routine_dir),
-            "template": adopted, "url": routine_page_url(ctx.server, slug),
+            "pattern": str(read_yaml(routine_dir / "routine.yaml", {}).get("pattern") or ""),
+            "proposed": sorted((pending or {}).get("changes") or {}),
+            "url": routine_page_url(ctx.server, slug),
             "rescan_s": ctx.server.registry_rescan_s}
 
 
@@ -343,28 +360,29 @@ def handle_create_routine(ctx: RunContext, action: dict) -> dict:
     root conversation; QUEUE the proposal for the operator anywhere else (F328). Returns the
     observation dict the loop records and renders.
 
-    Action fields (all reused from the shared schema — no create_routine-only fields):
+    Action fields:
       target   — the new routine's kebab-case slug (required)
       name     — its human display name (required)
       prompt   — the clarified task instruction, decomposed into the routine's stages (required)
       workflow — the library workflow pattern to materialize from (optional; DEFAULT_WORKFLOW)
-      stopping — what DONE looks like for one run, in the USER's words (optional); seeded into
-                 the new routine's state/stopping.json as RUN-scoped conditions.
-      goal — the state after which the ROUTINE is finished (optional); seeded into the same
-             document as GOAL-scoped conditions, which retire the routine when met.
-                 Part of the draft's identity, so
-                 changing it restarts the confirmation like any other field.
+      pattern  — the settings pattern it follows (optional; the one that fits by default)
+      setup    — the user's answers to that pattern's questions (optional); they become the
+                 new routine's PROPOSED settings, accepted on its page
+      done_when — what one finished run leaves behind, in the USER's words (optional); lines
+                 of the recipe's `## Done when`
+      finish_line — when the routine is done for good, each outcome led by its judge
+                 (optional; engine/finishline.from_words)
+      never    — what a run must never do, in the USER's words (optional); lines of the
+                 recipe's `## Never` and context for the settings it is proposed
+    Every field is part of the draft's identity, so changing one restarts the confirmation.
     """
     slug = str(action.get("target") or "").strip()
     name = str(action.get("name") or "").strip()
     instruction = str(action.get("prompt") or "").strip()
     workflow_slug = str(action.get("workflow") or "").strip() or DEFAULT_WORKFLOW
-    raw_stopping = action.get("stopping")
-    stopping = [t.strip() for t in raw_stopping
-                if isinstance(t, str) and t.strip()] if isinstance(raw_stopping, list) else []
-    raw_goal = action.get("goal")
-    goal = [t.strip() for t in raw_goal
-            if isinstance(t, str) and t.strip()] if isinstance(raw_goal, list) else []
+    pattern = str(action.get("pattern") or "").strip()
+    setup, done_when, finish_line, never = (_lines(action.get(k)) for k in
+                                            ("setup", "done_when", "finish_line", "never"))
     server = ctx.server
 
     if (server.routines_home / slug).exists():
@@ -377,7 +395,8 @@ def handle_create_routine(ctx: RunContext, action: dict) -> dict:
         return _unknown_workflow_obs(slug, workflow_slug, catalog)
 
     fields = {"slug": slug, "name": name, "instruction": instruction,
-              "workflow": workflow_slug, "stopping": stopping, "goal": goal}
+              "workflow": workflow_slug, "pattern": pattern, "setup": setup,
+              "done_when": done_when, "finish_line": finish_line, "never": never}
     # A run with no user in the loop QUEUES instead of creating (F328). It is the same D92
     # draft, with a longer gap before the confirmation: the operator sees it on the Decisions
     # page and one click materializes it through this very scaffold path. Nothing is created
@@ -391,13 +410,21 @@ def handle_create_routine(ctx: RunContext, action: dict) -> dict:
         record = {**fields, "pid": os.getpid(), "user_replies": ctx.user_replies,
                   "created_at": now_iso()}
         atomic_write_json(_draft_path(ctx), record)
-        return _preview_obs(record, catalog, updated=draft is not None)
+        return _preview_obs(record, catalog, updated=draft is not None,
+                            patterns=_settings_patterns(server, workflow_slug))
     if draft.get("pid") == os.getpid() and ctx.user_replies <= draft["user_replies"]:
         # Same reply that drafted it, and nobody has spoken since — no user has seen the
         # preview yet. Hold, teach.
-        return _preview_obs(draft, catalog, updated=False, blocked_same_leg=True)
+        return _preview_obs(draft, catalog, updated=False, blocked_same_leg=True,
+                            patterns=_settings_patterns(server, workflow_slug))
 
     # Confirmed: identical fields, and the user has spoken since the preview — a later leg,
     # or a blocking ask answered inside this one (R1310).
     return _materialize(ctx, slug=slug, name=name, instruction=instruction,
-                        workflow_slug=workflow_slug, stopping=stopping, goal=goal)
+                        workflow_slug=workflow_slug, pattern=pattern, setup=setup,
+                        done_when=done_when, finish_line=finish_line, never=never)
+
+
+def _lines(raw: object) -> list[str]:
+    return [t.strip() for t in raw if isinstance(t, str) and t.strip()] \
+        if isinstance(raw, list) else []

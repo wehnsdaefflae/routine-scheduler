@@ -12,14 +12,23 @@ from pathlib import Path
 
 from .grantpolicy import GrantPolicy
 from .grants import (
-    _DEFAULT_REMINDERS_SOURCE,
-    _DEFAULT_RUNS_SOURCE,
     GATED_KINDS,
-    _catalog_tags,
     normalize_capabilities,
     read_library_requires,
     split_util_verb,
 )
+
+
+def _util_names(permissions_home: Path) -> frozenset[str]:
+    """Every util the library holds — `<libraries_home>/utils` sits beside `permissions/` by
+    construction. An unreadable library yields none, which reads every write_util as a
+    creation: the stricter of the two approvals.
+    """
+    from . import utils_lib
+    try:
+        return frozenset(u["name"] for u in utils_lib.list_utils(Path(permissions_home).parent))
+    except OSError:
+        return frozenset()
 
 
 def load_policy(permissions_home: Path, active: list[str] | None,
@@ -35,47 +44,27 @@ def load_policy(permissions_home: Path, active: list[str] | None,
     """
     lib = read_library_requires(permissions_home)
     gated_utils: dict[str, list[str]] = {}
+    gated_verbs: dict[str, dict[str, list[str]]] = {}
     kind_sources: dict[str, list[str]] = {}
-    runs_sources: list[str] = []
-    reminders_sources: list[str] = []
-    gated_tags: dict[str, list[str]] = {}
     for slug, req in lib.items():
         for kind in req.get("actions") or []:
             if kind in GATED_KINDS:
                 kind_sources.setdefault(kind, []).append(slug)
         for util in req.get("utils") or []:
-            # Key by the BARE name: a doc that reserves only `signal:read` still makes the
-            # `signal` util gated, or the name lookup in deny() would miss it and the util
-            # would be wide open — the fail-open direction.
-            gated_utils.setdefault(split_util_verb(util)[0], []).append(slug)
-        for tag in req.get("util_tags") or []:
-            gated_tags.setdefault(tag, []).append(slug)
-        if req.get("runs"):
-            runs_sources.append(slug)
-        if req.get("reminders"):
-            reminders_sources.append(slug)
-    # Expand tag classes into concrete gated utils against the LIVE catalog. Read it only when
-    # a doc actually declares `util_tags` — with no tag gates in the library this costs nothing
-    # and the policy is byte-identical to the name-only one.
-    util_tag_index: dict[str, tuple[str, ...]] = {}
-    if gated_tags:
-        for util in _catalog_tags(permissions_home):
-            tags = set(util["tags"])
-            hit = tags & set(gated_tags)
-            if not hit:
-                continue
-            util_tag_index[util["name"]] = tuple(sorted(tags))
-            for tag in sorted(hit):
-                for slug in gated_tags[tag]:
-                    if slug not in gated_utils.setdefault(util["name"], []):
-                        gated_utils[util["name"]].append(slug)
+            # A BARE name reserves the whole util; `name:verb` reserves that one verb and
+            # leaves the util's other verbs open (a mailbox is read behind its credential,
+            # sent from behind the permission).
+            name, verb = split_util_verb(util)
+            if verb:
+                gated_verbs.setdefault(name, {}).setdefault(verb, []).append(slug)
+            else:
+                gated_utils.setdefault(name, []).append(slug)
     caps, _ = normalize_capabilities(capabilities)
     # The create-vs-revise split needs to know which util names already exist — but only when
     # the routine holds exactly ONE half. Holding both makes every write_util allowed;
     # holding neither denies them all. Either way the catalog is not worth reading.
     held_write = {"write_util", "revise_util"} & set(caps.get("actions") or [])
-    known_utils = (frozenset(u["name"] for u in _catalog_tags(permissions_home))
-                   if len(held_write) == 1 else frozenset())
+    known_utils = _util_names(permissions_home) if len(held_write) == 1 else frozenset()
     return GrantPolicy(active=tuple(active or []),
                        # `<libraries_home>/permissions` by construction (ServerConfig), so the
                        # util catalog sits beside it — the reserved-util gate resolves a call's
@@ -85,9 +74,10 @@ def load_policy(permissions_home: Path, active: list[str] | None,
                        actions=frozenset(k for k in caps.get("actions") or []
                                          if k in GATED_KINDS),
                        utils=frozenset(caps.get("utils") or []),
-                       util_tags=frozenset(caps.get("util_tags") or []),
-                       util_tag_index=util_tag_index,
                        gated_utils={k: tuple(v) for k, v in gated_utils.items()},
+                       gated_verbs={k: {v: tuple(d) for v, d in verbs.items()}
+                                    for k, verbs in gated_verbs.items()
+                                    if k not in gated_utils},
                        kind_sources={k: tuple(v) for k, v in kind_sources.items()},
                        confirm=caps.get("confirm") or "always",
                        rule_confirm=caps.get("rule_confirm") or "always",
@@ -97,18 +87,13 @@ def load_policy(permissions_home: Path, active: list[str] | None,
                        reminders=caps.get("reminders") or "none",
                        # D96 (user decision 2026-08-20): own-runs read at 'last' depth is
                        # ALWAYS ON for a routine — baseline observability, like the state
-                       # digest carrying the last result. The run-history permission doc
-                       # governs only the 'all' depth (longitudinal work stays an explicit
-                       # opt-in). Sub-workflow children DO load through here (empty caps),
-                       # so the loop's depth>0 seam drops them back to "none" — a child's
-                       # brief, not the archive, is its context.
+                       # digest carrying the last result. The `runs: all` SETTING opens the
+                       # whole archive (longitudinal work). Sub-workflow children DO load
+                       # through here (empty caps), so the loop's depth>0 seam drops them
+                       # back to "none" — a child's brief, not the archive, is its context.
                        run_history="all" if caps.get("runs") == "all" else "last",
-                       workflows=caps.get("workflows") or "catalog",
                        denied=frozenset(k for k, v in (grants_map or {}).items()
                                         if v is False),
                        recipe_unlocked=recipe_unlocked,
                        admin=admin,
-                       runs_sources=tuple(runs_sources) or _DEFAULT_RUNS_SOURCE,
-                       reminders_sources=(tuple(reminders_sources)
-                                          or _DEFAULT_REMINDERS_SOURCE),
                        current_run_ts=current_run_ts)

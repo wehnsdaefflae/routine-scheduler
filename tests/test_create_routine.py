@@ -33,11 +33,11 @@ SEED = REPO / "library-seed"
 
 
 def _server(tmp_path):
-    """Tmp homes with the REAL library-seed workflows/rules/permissions copied in, so
-    scaffold's decompose degrades to its no-LLM fallback (no endpoint) and still writes a
+    """Tmp homes with the REAL library-seed workflows/rules/permissions/patterns copied in,
+    so scaffold's decompose degrades to its no-LLM fallback (no endpoint) and still writes a
     complete routine dir."""
     lib = tmp_path / "library"
-    for kind in ("workflows", "rules", "permissions"):
+    for kind in ("workflows", "rules", "permissions", "patterns"):
         shutil.copytree(SEED / kind, lib / kind, ignore=shutil.ignore_patterns("__pycache__"))
     s = ServerConfig()
     s.routines_home = tmp_path / "routines"
@@ -190,7 +190,11 @@ def test_draft_carries_the_catalog_and_demands_a_decision_not_prose(tmp_path):
     assert len(catalog) > 1 and all(c["slug"] and c["description"] for c in catalog)
     assert ACTION["workflow"] in {c["slug"] for c in catalog}
     assert "ask_user" in obs["next"] and "`options`" in obs["next"]
-    assert "PRODUCES" in obs["next"] and "DONE" in obs["next"]
+    # the three questions creation always asks, each with its own home
+    assert "PRODUCES" in obs["next"]
+    for field in ("`done_when`", "`finish_line`", "`never`"):
+        assert field in obs["next"], field
+    assert obs["settings_patterns"] and all(p["asks"] for p in obs["settings_patterns"])
 
 
 def test_same_leg_confirm_is_held(tmp_path):
@@ -323,51 +327,86 @@ def test_mid_build_oserror_is_teaching_error_and_leaves_no_dir(tmp_path, monkeyp
     assert not (server.routines_home / ACTION["target"]).exists()
 
 
-def test_the_done_answer_becomes_the_new_routine_s_stopping_conditions(tmp_path):
-    """F334/D98 made stopping conditions what decides when a job is finished, and F383 already
-    makes creation ask "what DONE looks like for one run, in the user's own words" — but that
-    answer only ever reached the instruction prose, so every routine ever created started with
-    an empty goal document, bounded by its budgets alone. `stopping` carries it through.
-    """
-    from rsched.engine import stopping as stopping_mod
+def test_the_done_answer_becomes_the_recipe_s_done_when(tmp_path):
+    """What the person said one finished run delivers lands in the recipe's `## Done when`, in
+    their words — even on a degraded build with no generator, which appends them to the
+    pattern's own skeleton rather than losing them. Blank entries are dropped."""
+    from rsched.engine import donewhen
 
     server = _server(tmp_path)
     ctx = _ctx(server, home="conversations_home")
-    action = dict(ACTION, stopping=["the digest is published", "  ", "the link resolves"])
+    action = dict(ACTION, done_when=["the digest is published", "  ", "the link resolves"])
     create_routine.handle_create_routine(ctx, action)
     _age_draft(ctx)
     obs = create_routine.handle_create_routine(ctx, action)
     assert obs.get("created")
-
-    doc = stopping_mod.load(server.routines_home / ACTION["target"])
-    # blank entries are dropped, order is kept, ids are assigned by the store
-    assert [c["text"] for c in doc["conditions"]] == ["the digest is published",
-                                                      "the link resolves"]
-    assert [c["id"] for c in doc["conditions"]] == ["s1", "s2"]
-    assert all(c["status"] == "open" and c["group"] == "g1" for c in doc["conditions"])
+    lines = donewhen.read(server.routines_home / ACTION["target"])
+    assert [x["text"] for x in lines][-2:] == ["the digest is published", "the link resolves"]
+    assert [x["id"] for x in lines] == [f"d{i}" for i in range(1, len(lines) + 1)]
 
 
-def test_no_stopping_answer_seeds_no_conditions(tmp_path):
-    """An invented condition is worse than none — every later run has to account for it."""
-    from rsched.engine import stopping as stopping_mod
+def test_the_never_answer_becomes_the_recipe_s_never_section(tmp_path):
+    server = _server(tmp_path)
+    ctx = _ctx(server, home="conversations_home")
+    action = dict(ACTION, never=["never mail the authors"])
+    create_routine.handle_create_routine(ctx, action)
+    _age_draft(ctx)
+    assert create_routine.handle_create_routine(ctx, action).get("created")
+    main = (server.routines_home / ACTION["target"] / "main.md").read_text(encoding="utf-8")
+    assert "## Never\n\n- never mail the authors\n" in main
+
+
+def test_the_finish_line_is_proposed_on_the_new_routine_s_page(tmp_path):
+    """The finish line the person described is specific to this routine: it waits under "check
+    the changes i recommend." instead of being written behind their back."""
+    from rsched.engine import finishline
+    from rsched.patterns import drafts
+
+    server = _server(tmp_path)
+    ctx = _ctx(server, home="conversations_home")
+    action = dict(ACTION, finish_line=["you: the list feels complete", "until 2027-01-01"])
+    create_routine.handle_create_routine(ctx, action)
+    _age_draft(ctx)
+    obs = create_routine.handle_create_routine(ctx, action)
+    assert obs.get("created") and "finish_line" in obs["proposed"]
+    rdir = server.routines_home / ACTION["target"]
+    assert finishline.load(rdir) == {"outcomes": [], "until": ""}
+    value = drafts.read(server.routines_home, ACTION["target"])["changes"]["finish_line"]["value"]
+    assert value["until"] == "2027-01-01"
+    assert [(o["judge"], o["text"]) for o in value["outcomes"]] == [
+        ("you", "the list feels complete")]
+
+
+def test_no_answers_seed_nothing(tmp_path):
+    """An invented outcome is worse than none — every later run has to account for it."""
+    from rsched.engine import finishline
+    from rsched.patterns import drafts
 
     server = _server(tmp_path)
     ctx = _ctx(server, home="conversations_home")
     create_routine.handle_create_routine(ctx, dict(ACTION))
     _age_draft(ctx)
     create_routine.handle_create_routine(ctx, dict(ACTION))
-    assert stopping_mod.load(server.routines_home / ACTION["target"])["conditions"] == []
+    rdir = server.routines_home / ACTION["target"]
+    assert "## Never" not in (rdir / "main.md").read_text(encoding="utf-8")
+    assert finishline.load(rdir) == {"outcomes": [], "until": ""}
+    assert "finish_line" not in (drafts.read(server.routines_home, ACTION["target"])
+                                 or {"changes": {}})["changes"]
 
 
-def test_a_changed_stopping_answer_restarts_the_confirmation(tmp_path):
-    """`stopping` is part of the draft's identity like every other field: changing what DONE
-    means is a design change, and a design change must go back to the user."""
-    server = _server(tmp_path)
-    ctx = _ctx(server, home="conversations_home")
-    create_routine.handle_create_routine(ctx, dict(ACTION, stopping=["the digest is published"]))
-    _age_draft(ctx)
-    obs = create_routine.handle_create_routine(ctx, dict(ACTION, stopping=["something else"]))
-    assert obs.get("draft") and obs.get("updated") and not obs.get("created")
+def test_a_changed_answer_restarts_the_confirmation(tmp_path):
+    """Every answer is part of the draft's identity: changing what a finished run delivers,
+    when the routine ends or what it must never do is a design change; a design change
+    goes back to the user."""
+    for field, first, second in (("done_when", ["published"], ["something else"]),
+                                 ("finish_line", ["run: submitted"], ["you: approved"]),
+                                 ("never", ["never mail"], ["never post"])):
+        server = _server(tmp_path / field)
+        ctx = _ctx(server, home="conversations_home")
+        create_routine.handle_create_routine(ctx, dict(ACTION, **{field: first}))
+        _age_draft(ctx)
+        obs = create_routine.handle_create_routine(ctx, dict(ACTION, **{field: second}))
+        assert obs.get("draft") and obs.get("updated") and not obs.get("created"), field
 
 
 def test_materialize_generates_a_comprehensive_description(tmp_path, monkeypatch):
@@ -435,7 +474,7 @@ def test_draft_carries_the_standing_design_checks(tmp_path):
     ctx = _ctx(server, home="conversations_home")
     obs = create_routine.handle_create_routine(ctx, dict(ACTION))
     checks = " ".join(obs["design_checks"])
-    for needle in ("SHAPE", "MECHANISM", "OWNERSHIP", "SCOPE"):
+    for needle in ("SHAPE", "MECHANISM", "OWNERSHIP", "SETTINGS"):
         assert needle in checks, needle
     assert "read_rule" in checks and "scripts/" in checks
     assert "trait" not in checks.lower()

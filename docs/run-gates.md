@@ -1,68 +1,132 @@
-# Optional automatic run admission
+# Run gates — skipping a scheduled fire that has nothing to do
 
-`run_gate: {enabled: true, timeout_s: 30}` explicitly opts a routine into a pre-engine
-predicate at `scripts/gate.py`. Omission defaults off; timeout is a strict integer 1–300.
-Malformed gate settings reject loading, even when disabled. Unrecoverable unrelated
-configuration errors reject an enabled gate rather than silently dropping it.
+A run gate answers one question before a scheduled fire becomes a run: **is there work?** It is
+the routine's own list of CHECKS — `run_gate: {enabled, timeout_s, checks: [...]}` in
+`routine.yaml` — each a known question with parameters (`rsched/gatekit/`), asked without a
+model, before any engine process, endpoint or decomposition. A fire the gate skips costs
+seconds instead of a run.
 
-The control is on the routine page, inside the **Schedule** section and saved by that
-section's own button — the gate decides whether a scheduled fire becomes a run at all, so it
-belongs beside the schedule rather than in a config file. The timeout field appears once the
-gate is on. `GET /api/routines/{slug}` returns `run_gate: {enabled, timeout_s}` in the same
-payload; `PATCH` accepts partial nested fields and a top-level null is a no-op.
+**The one rule every check obeys: it may answer "no work" only when it KNOWS there is none.**
+Anything it cannot establish — a mailbox that refuses the login, a feed that times out, a state
+file that does not parse, no earlier run to compare against — is WORK, with the reason naming
+what could not be checked. A wrong "run" costs one ordinary fire; a wrong "skip" silently loses
+work, which is the one failure a gate must not have. The fire is skipped only when EVERY check
+answered "no work".
 
-Only fresh `schedule`, `catchup`, and `lane` attempts evaluate the predicate. Direct
-Run now, CLI run-once, triggers, one-shots, conversations, background jobs, and resume
-bypass it. Run lane now still gates its members. Pending inbox files bypass admission;
-inbox arrival during a successful gate evaluation overrides skip without consuming files.
+## The checks
 
-The accepted run ID is reserved first. Gate execution holds the normal concurrency slot,
-before any engine process, endpoint/model resolution or decomposition. The script receives
-one JSON argv argument with `version: 1`, `routine`, `run_id`, and fire `reason`.
-Exit zero and print exactly one UTF-8 JSON object:
+| kind | work when | key parameters |
+|---|---|---|
+| `mail` | mail waits in a mailbox — unread, or new since the last ok run | `host`, the login secrets (or `accounts_secret` + `account`), `folders` (a special-use flag such as `\All` names a folder whatever the server calls it), a WATCH LIST (`senders_file`, `from_any`, `subject_any` — a message counts when it meets any of them), `from_domains_not` |
+| `hub_feedback` | feedback waits on the routine's Steward hub page that its last publish has not consumed | `project`, `source` |
+| `url_changed` | a page, feed or API answers differently than at the last ok run | `url`, `select` (`body`, `feed`, `json:<dotted.path>`) |
+| `files_changed` | a file under a folder is new or changed since the last ok run | `paths`, `glob`, `nonempty` (an intake folder the routine empties) |
+| `unpaired_files` | a source file still has no output beside it | `path`, `match`, `output` (`{stem}`/`{suffix}`), `exclude` |
+| `repo_changed` | a git repository has new commits since the last ok run | `path`, `ref` |
+| `runs_since` | other routines have run since the last ok run (reviewers) | `min_runs`, `routines` |
+| `state` | a file in the routine's own directory says work is waiting | `file`, `key`, `idle_values`, `missing_field` |
+| `dates` | a dated duty is due | `from`/`until` (a window), or `file` + `key` (`*` maps over a list), `within_days`, `done_key`/`done_values` |
+| `weekdays` | the first fire on one of these weekdays | `days` (0 = Monday) |
+| `max_quiet` | the last ok run is older than this — a backstop every gate should carry | `days` |
+| `script` | the routine's own predicate `scripts/admit.py` says so | — |
+
+`gatekit.KINDS` is the vocabulary: the console builds each check's form from it and
+`gatekit.validate` checks a `routine.yaml` against it, so a kind cannot be half-added. An
+enabled gate needs at least one check — with nothing to ask, either answer would be a lie.
+Malformed gate settings reject loading, even when disabled.
+
+**The baseline.** "Since the last ok run" means the newest ADMITTED run that finished ok (a
+skipped fire processed nothing and is passed over); the checks that compare contents keep a
+FINGERPRINT per check in that run's `gate.json`. No such run is itself work.
+
+## Reasons that run before any check is asked
+
+Built in, never configured, because each one is work by construction:
+
+- freight waits in the inbox (a message, a report addressed to the routine);
+- an answer to one of its questions waits to be read (an answer never STARTS a run, but a fired
+  one must not be skipped past it);
+- a note from a routine sharing one of its stores waits (`rsched/sharedstores.py`);
+- the last admitted run did not finish ok — it may have left work behind;
+- its configuration or recipe changed since the last ok run (`routine.yaml`, `tuning.yaml`,
+  `main.md`, `stages/`, `state/finish-line.json`): a granted permission can unblock parked
+  work, a revised recipe can add some.
+
+## Which fires are gated
+
+Only fresh `schedule`, `catchup` and `lane` attempts. Run now, CLI run-once, triggers,
+one-shots, conversations, background jobs and resume bypass it; "run lane now" still gates its
+members. Inbox arrival during a gate evaluation that decided "skip" overrides the skip without
+consuming anything.
+
+## Where it is set
+
+On the routine page, in the **Run gate** section of the *Schedule & gate* group: the gate's
+on/off switch, its timeout, and the list of checks — add one from the menu of kinds, fill its
+form, remove it again. The `script` kind opens `scripts/admit.py` beside the list, starting from
+a template when the file does not exist yet; the script saves with its own button. Every other
+change lands with the page's one accept like any other setting. *Test the gate now* asks the
+checks as shown — saved or not — through the real admission path and starts no run
+(`POST /api/routines/{slug}/gate/test`). A settings pattern can carry a gate for its kind
+of work (`docs/patterns.md`). `GET /api/routines/{slug}` returns `run_gate` whole; `PATCH`
+accepts a partial one, validated whole after the merge.
+
+## The custom predicate
+
+`scripts/admit.py` — not `gate.py`: three routines already run a `scripts/gate.py` as an IN-RUN
+check runner; ticking the gate over those would have failed every fire. It receives one
+JSON argv argument with `version: 1`, `routine`, `run_id` and the fire `reason`, exits zero and
+prints exactly one UTF-8 JSON object:
 
 ```json
 {"version":1,"decision":"skip","reason":"No new source records"}
 ```
 
-Use `decision: "run"` to admit. The reason must be nonempty and at most 1000 characters.
-Each output stream is limited to 16 KiB. Malformed output, nonzero exit, missing scripts,
-authorization failure, sandbox refusal, overflow, or timeout is a **failed attempt**, never
-an implicit skip or run. Subprocess groups are killed on completion, timeout and abort.
-The timeout includes interpreter startup, filesystem/secret/sandbox preparation and script
-execution. Preparation runs in a dedicated same-source interpreter, with private stdin
-configuration and a tracked process group, not in an uncancellable event-loop thread.
-Timeout and abort kill that group; no dependency installs occur. Diagnostic stderr is
-retained in `gate-stderr.txt`, bounded to 16 KiB, separately from protocol stdout.
+Use `decision: "run"` to admit. The reason must be non-empty and at most 1000 characters. Each
+output stream is limited to 16 KiB. Malformed output, a non-zero exit, a missing script,
+authorization failure, sandbox refusal, overflow or timeout is a **failed attempt**, never an
+implicit skip or run. Gate code is operator-trusted, not proven pure: it must not consume inbox
+entries, advance cursors or perform the routine's work.
 
-Script docstring headers reuse `net:`, `secrets:`, and validated `fs:` declarations. `calls:` is rejected in
-this initial scope. Required central secrets need persistent grants; scoped secrets belong
-to their routine, and ungranted optional secrets are withheld. No approval loop or model
-fallback runs. Dependency-bearing scripts require a preprovisioned `.venv/bin/python`;
-missing packages fail normally. Admission requires the strict shared sandbox even if the
-server permits degradation for ordinary utilities. `fs: roots` includes configured roots
-and domain stores (subject to the shared private-store exclusion); `fs: none` or an absent
-header includes only the shared sandbox base (own directory, temporary space, toolchain
-and library). `fs: ro /path` and `fs: rw /path` only mount paths already covered by
-persistent grants with the requested access; unauthorized paths are not mounted. RO
-never upgrades to RW merely because the grant permits writes. Base mounts are not narrowed
-by declarations. Malformed/empty/duplicate declarations fail closed; no one-run grants
-are inherited. Enable required Landlock kernel/LSM support on refusal, deliberately run
-manually to bypass admission, or explicitly disable the opt-in gate; changing server
-sandbox mode does not relax gate isolation. Gate code is operator-trusted, not proven
-pure: it must not consume inbox entries, advance cursors, or perform the routine's work.
+Its docstring header reuses `net:`, `secrets:` and validated `fs:` declarations; `calls:` is
+rejected. Required central secrets need persistent grants; scoped secrets belong to their
+routine; ungranted optional secrets are withheld. Dependency-bearing scripts require a
+preprovisioned `.venv/bin/python`; missing packages fail normally.
+
+## Execution and isolation
+
+The accepted run id is reserved first. Gate execution holds the normal concurrency slot, before
+any engine process. The declarative checks run as `gatekit/run.py` — standard library only —
+inside a Landlock jail built from what the listed kinds need and nothing else (network only for
+`mail`, `url_changed` and `hub_feedback`; only the secrets their parameters name; the paths they
+read). The custom predicate gets its own jail, built from its header. Admission requires the
+strict shared sandbox even if the server permits degradation for ordinary utilities: `fs: roots`
+includes configured roots and the shared stores among them; `fs: none` or an absent header
+includes only the shared sandbox base (own directory, temporary space, toolchain, library);
+`fs: ro /path` and `fs: rw /path` mount only paths already covered by persistent grants with
+the requested access; RO never upgrades to RW. Malformed, empty or duplicate declarations
+fail closed; no one-run grants are inherited.
+
+The timeout (an integer 1–300 s) covers interpreter startup, filesystem, secret and sandbox
+preparation and the checks themselves. Preparation runs in a dedicated same-source interpreter
+with private stdin configuration and a tracked process group, never in an uncancellable
+event-loop thread; timeout and abort kill that group. Diagnostic stderr is kept in
+`gate-stderr.txt`, bounded to 16 KiB, apart from protocol stdout.
 
 Engine launch retains its process handle through cancellation. An abort during the launch
-handshake kills/reaps the acquired process group before publishing `run_started`, preserves
-aborted status, and releases ownership once. This is not a child-side launch barrier: the
-child may execute instructions before the parent receives its process handle.
+handshake kills and reaps the acquired process group before publishing `run_started`, keeps the
+aborted status and releases ownership once.
 
-A skip writes `state: finished`, `outcome: skipped`, zero usage/turn, `result.md`, and
-`gate.json`. It advances a lane even under stop-on-failure. Errors write failed status and
-gate metadata; bypasses record their reason. There is no second agent loop and no gate retry.
+## What a decision leaves behind
 
-An error also writes a **`run_failed` health event** (a cancel writes `run_canceled`). It has
-to be written here: no engine ever started, so the engine's own event cannot fire and the reap
+A skip writes `state: finished`, `outcome: skipped`, zero usage and turns, `result.md` and
+`gate.json` (the decision, its reason and each check's answer). It advances a lane even under
+stop-on-failure. An admitted run's `gate.json` carries the fingerprints the next fire compares
+against. Errors write failed status and gate metadata; bypasses record their reason. There is
+no second agent loop and no gate retry.
+
+An error also writes a **`run_failed` health event** (a cancel writes `run_canceled`). It has to
+be written here: no engine ever started, so the engine's own event cannot fire and the reap
 finds a run that is already terminal. A withdrawn gate secret or a kernel that dropped Landlock
-fails every scheduled fire of a gated routine forever, before turn 0, and `run_failed` is the
-event a health sweep reads first.
+fails every scheduled fire of a gated routine before turn 0; `run_failed` is the event a
+health sweep reads first.

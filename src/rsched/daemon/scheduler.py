@@ -113,11 +113,15 @@ class Scheduler:
             if slug in self.suppressed_members:
                 continue
             if not info.fireable:
-                # Switched off, or RETIRED — every goal-scoped stopping condition met, so the
-                # routine is finished and gets no fire table entry at all. Retirement is derived
-                # from its own goal document, never written: clearing a goal condition puts it
-                # back on the next rescan, and `enabled` is untouched. A retirement proposal is
-                # waiting on the Decisions page to make it permanent (engine/goalreached.py).
+                # Switched off, or RETIRED — its finish line is reached, so the routine is
+                # finished and gets no fire table entry at all. Retirement is derived from its
+                # own finish line, never written: editing the finish line puts it back on the
+                # next rescan; `enabled` is untouched. One card on the Decisions page makes
+                # it permanent — queued here when the CALENDAR reached it (a date outcome or
+                # the `until` date), since no run did (engine/goalreached.py).
+                if info.retired and info.cfg.enabled:
+                    from ..engine.goalreached import propose_if_due
+                    propose_if_due(self.server.routines_home, slug, info.cfg.name)
                 continue
             nf = registry.next_fire(info.cfg, now)
             if nf is None:

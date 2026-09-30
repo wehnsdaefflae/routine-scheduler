@@ -4,8 +4,8 @@ and does the phase it records mean anything?
 Both are NOTE rows: nothing is broken, the FILE is misleading. A member cron a lane's
 schedule suppresses (D71) names a time the routine will never fire at; a routine in no
 scheduled lane with no cron of its own is started by nothing on a clock; a `state/phase.json`
-recording a key the composer does not read (`lifecycle`, `state`) scopes no stopping
-condition to any stage. Split out of `surface.py` at 663 lines; the row vocabulary is
+recording a key the engine does not read (`lifecycle`, `state`) never counts as entering a
+stage. Split out of `surface.py` at 663 lines; the row vocabulary is
 `surface_nodes`.
 """
 
@@ -29,9 +29,9 @@ def _schedule_nodes(server: Any, cfg: RoutineConfig) -> list[dict]:
     cron of its own, in no scheduled lane, is never started by anything on a clock, which is a
     perfectly good on-demand design and indistinguishable from an oversight.
 
-    Only the LANE is asked. A routine's domain shares a config block and a store but nothing on
-    a clock; its tags fire nothing at all. Nothing on either axis can make this file disagree
-    with itself (docs/lanes-domains.md).
+    Only the LANE is asked. A shared store is shared files and nothing on a clock; tags fire
+    nothing at all. Nothing on either axis can make this file disagree with itself
+    (docs/lanes-tags.md).
 
     Neither breaks a run, so neither shouts. What they cost is the operator's belief about when
     the routine runs, which is exactly what a NOTE is for.
@@ -40,20 +40,19 @@ def _schedule_nodes(server: Any, cfg: RoutineConfig) -> list[dict]:
 
     if not cfg.enabled:
         return []                       # a disabled routine already says it does not run
-    from ..engine.stopping import goal_reached
-    if goal_reached(cfg.dir):
-        # Not a misconfiguration — the opposite. Every goal-scoped stopping condition is met, so
-        # the scheduler stops firing it. Said out loud because the page would otherwise show a
+    from ..engine import finishline
+    if why := finishline.reached(finishline.load(cfg.dir)):
+        # Not a misconfiguration — the opposite. The routine reached its finish line, so the
+        # scheduler stops firing it. Said out loud because the page would otherwise show a
         # cron that will never fire again with nothing explaining why.
         #
         # And said with NO fix, because nothing here is unmet: the row reports a success; an
-        # offer to reopen the goal is an affordance for undoing one. Reopening is a decision a
-        # person makes about the work, taken in the panel that owns the conditions (`_node`).
+        # offer to reopen is an affordance for undoing one. Reopening is a decision a person
+        # makes about the work, taken where the finish line is edited (`_node`).
         return [_node("schedule:goal", "retired", NOTE,
-                      "every final-goal stopping condition is met, so this routine is FINISHED "
-                      "and nothing fires it any more",
+                      f"{why}, so this routine is FINISHED and nothing fires it any more",
                       "its schedule is inert and a lane chain skips it; the Decisions page "
-                      "carries the proposal that retires it for good")]
+                      "carries the card that retires it for good")]
     try:
         all_lanes = lanes_mod.list_lanes(server.routines_home)
     except OSError:
@@ -88,11 +87,13 @@ def _schedule_nodes(server: Any, cfg: RoutineConfig) -> list[dict]:
 def _phase_nodes(server: Any, cfg: RoutineConfig) -> list[dict]:
     """Does `state/phase.json` record the phase under the key the engine reads?
 
-    The composer reads it as `.get("phase")`; that value is what scopes a stopping
-    condition to a stage. Routines that invented their own key wrote a file that LOOKS right
-    and matches nothing: funscript-trainer recorded `lifecycle`, self-audit `state`,
-    routine-improver an empty object. Nothing breaks — the digest dumps the whole object, so
-    the run still reads it — but every stage-scoped condition silently never fires.
+    The engine reads it as `.get("phase")`; that value is one of the two ways a run counts as
+    having ENTERED a stage (`fileops`, stage coverage), which is what a Done-when line's
+    producing stage is checked against at the finish. Routines that invented their own key
+    wrote a file that LOOKS right and matches nothing: funscript-trainer recorded `lifecycle`,
+    self-audit `state`, routine-improver an empty object. Nothing breaks — the digest dumps the
+    whole object, so the run still reads it — but a stage entered only by recording it is
+    never counted.
 
     Only said for a routine whose recipe actually TRACKS a phase — detected by the recipe
     naming `state/phase.json`, not by a `## Phases` heading: the routines that get this wrong
@@ -130,14 +131,15 @@ def _phase_nodes(server: Any, cfg: RoutineConfig) -> list[dict]:
             return []
         return [_node("state:phase", "absent", NOTE,
                       "its recipe declares phases but no completed run has recorded one",
-                      "the digest reports no phase and any stage-scoped stopping condition "
-                      "never matches; the next run that records a phase fixes it",
+                      "the digest reports no phase and a stage entered only by recording it "
+                      "is never counted; the next run that records a phase fixes it",
                       {"kind": "fix_phase", "expected": "phase"})]
     if not isinstance(raw, dict) or not str(raw.get("phase") or "").strip():
         found = ", ".join(sorted(raw)) if isinstance(raw, dict) and raw else "nothing"
         return [_node("state:phase", "mis-keyed", NOTE,
                       "state/phase.json does not record the phase under the `phase` key",
                       f"the engine reads `phase`; this file holds {found}. The digest still "
-                      "shows the object, but stage-scoped stopping conditions never match",
+                      "shows the object, but a stage entered only by recording it is never "
+                      "counted",
                       {"kind": "fix_phase", "expected": "phase"})]
     return []

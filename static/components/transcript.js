@@ -48,6 +48,30 @@ export function splitRef(text) {
   return m ? { ref: m[1], body: (text || "").slice(m[0].length) } : { ref: null, body: text || "" };
 }
 
+// A finish deferred for its ACCOUNTING (engine/accounting.problems): the ids it left out, the
+// entries with a verdict and no note, and the verdicts it claimed that its line cannot carry.
+function accountingGaps(found) {
+  const parts = [];
+  if ((found.missing || []).length) parts.push(`no verdict for ${found.missing.join(", ")}`);
+  if ((found.bare || []).length) parts.push(`no note behind ${found.bare.join(", ")}`);
+  if ((found.refused || []).length) parts.push(found.refused.join("; "));
+  return parts.join(" · ") || "an entry did not parse";
+}
+
+// What a finish recorded: the verdict it gave each line, the finish-line outcomes it newly
+// proved, and where a check of its transcript disagreed — or that the finish line is reached.
+function accountingLine(p) {
+  if (p.goal_reached) {
+    return "— the finish line is reached: scheduling stops; a Decisions card asks to "
+      + "confirm retiring the routine —";
+  }
+  const judged = Object.entries(p.judged || {}).map(([id, v]) => `${id} ${v}`).join(" · ");
+  const met = (p.met || []).length ? ` · proved ${p.met.join(", ")}` : "";
+  const disputed = (p.disputed || []).length
+    ? ` · a check of the transcript disagreed on ${p.disputed.join(", ")}` : "";
+  return `— accounting: ${judged || "nothing owed"}${met}${disputed} —`;
+}
+
 export function referButton(onRefer, label, snippet) {
   if (!onRefer) return null;
   return el("button", { class: "refer-btn", title: "refer to this in your next message",
@@ -373,23 +397,21 @@ export function createTranscript(container, opts = {}) {
         + (o.lines || []).map((l) => `· ${l}`).join("\n")
         + "\nEmitting the same action again runs it (one hold per action string per run).";
     } else if (o.kind === "finish" && o.rejected) {
-      // SIX rungs reach this observation and each hands the turn back for its own reason.
-      // They were all rendered as the fabrication guard, which was the only one when the
-      // renderer was written — so a run deferred for an open stopping condition read as a
-      // hallucinated completion, which is the opposite diagnosis.
+      // SIX rungs reach this observation and each hands the turn back for its own reason, so
+      // each is named — a run deferred for its accounting is not a hallucinated completion,
+      // which is the opposite diagnosis.
       text = o.pending_user_input
           ? "finish DEFERRED — a user message arrived mid-finish; it is delivered instead"
-        : o.stopping_unaccounted
-          ? "finish DEFERRED — the summary does not account for open stopping conditions: "
-            + o.stopping_unaccounted.join(", ")
+        : o.accounting
+          ? `finish DEFERRED — the accounting is incomplete: ${accountingGaps(o.accounting)}`
         : o.assist
           ? "finish DEFERRED — a general rule this routine practises governs the ending itself"
         : o.unbacked_claims
           ? `finish REJECTED — the summary claims ${o.unbacked_claims.join(", ")}, `
             + "which this run never did"
-        : o.stopping_unsupported
-          ? "finish DEFERRED — the transcript does not support the \"met\" claim on "
-            + o.stopping_unsupported.join(", ")
+        : o.claims_unsupported
+          ? "finish DEFERRED — the run's own transcript does not support the \"met\" claim on "
+            + o.claims_unsupported.join(", ")
         : "finish REJECTED — no action had been executed yet (fabrication guard)";
     } else {
       text = JSON.stringify(o, null, 1);
@@ -507,11 +529,11 @@ export function createTranscript(container, opts = {}) {
     subrun_end: (ev) => el("div", { class: "ev subrun" }, subrunNode(ev,
       `${ev.payload.mode === "sequential" ? "→ subtask" : "↰ subrun"} ${ev.payload.n} "${ev.payload.label}" ${ev.payload.status} — ${ev.payload.turns} turns, ${fmtTokens(ev.payload.usage)}`,
       md(ev.payload.summary || "(no summary)", "obs md"))),
-    // F334/D98: the run's own [s<n>] accounting, stamped into state/stopping.json at the
-    // finish. A neutral line, like compaction — it records a state change the reader needs
-    // to see in place, not an action the model took.
-    stopping_update: (ev) => el("div", { class: "ev compaction" },
-      `— stopping conditions met: ${(ev.payload.met || []).join(", ")} —`),
+    // The run's accounting, stamped where every reader finds it at the finish — or the finish
+    // line reached. A neutral line, like compaction: it records a state change the reader
+    // needs to see in place, not an action the model took.
+    stopping_update: (ev) => el("div", { class: "ev compaction", "data-accounting-event": "" },
+      accountingLine(ev.payload || {})),
     header: (ev) => el("div", { class: "ev system" },
       // every half falls back — the workflow one always did, and the model one printed a
       // literal "undefined:undefined" on any header without an orchestrator block (a

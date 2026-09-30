@@ -1,0 +1,238 @@
+"""Settings patterns: the vocabulary, the immutable store, pending changes and the one accept."""
+import pytest
+
+from rsched.config import load_routine
+from rsched.paths import read_yaml
+from rsched.patterns import drafts, fields, store
+
+
+def test_sets_compare_as_sets_and_triggers_ignore_their_identity():
+    assert fields.equal("rules", ["b", "a"], ["a", "b", "a"])
+    one = [{"id": "t-1", "type": "report", "cooldown_s": 900, "created": "x"}]
+    two = [{"id": "t-9", "type": "report", "cooldown_s": 900, "created": "y"}]
+    assert fields.equal("triggers", one, two)
+    assert not fields.equal("triggers", one, [])
+
+
+def test_diff_names_added_and_removed_items():
+    out = fields.diff({"rules": ["a", "b"]}, {"rules": ["b", "c"]}, ["rules"])
+    assert out["rules"]["added"] == ["c"] and out["rules"]["removed"] == ["a"]
+
+
+def test_overrides_are_only_governed_fields_that_differ():
+    mine = {"rules": ["a"], "keep_runs": 30, "tags": ["x"]}
+    pattern = {"rules": ["a"], "keep_runs": 10}
+    assert fields.overrides(mine, pattern) == ["keep_runs"]
+
+
+def test_a_finish_line_compares_on_what_a_person_wrote_not_what_a_run_reported():
+    mine = {"until": "", "outcomes": [
+        {"id": "g1", "text": "submitted", "judge": "run", "date": "", "status": "open",
+         "distance": "two sections left", "distance_run": "r:3", "distance_ts": "t"}]}
+    theirs = {"outcomes": [{"text": "submitted", "judge": "run"}]}
+    assert fields.equal("finish_line", mine, theirs)
+    assert not fields.equal("finish_line", mine, {"outcomes": [{"text": "submitted",
+                                                                "judge": "you"}]})
+
+
+def test_snapshot_reads_every_field(make_routine):
+    cfg, _ = load_routine(make_routine())
+    snap = fields.snapshot(cfg)
+    assert set(snap) == set(fields.BY_KEY)
+    assert snap["schedule"]["friendly"]["frequency"] == "weekly"
+
+
+def pattern_doc(**settings):
+    return {"title": "Watcher", "summary": "watches things", "workflow": "watch-and-digest",
+            "settings": settings or {"rules": ["ask-policy"], "keep_runs": 20}}
+
+
+def test_patterns_are_created_never_overwritten(tmp_path):
+    lib = tmp_path / "lib"
+    stored = store.create(lib, "watcher", pattern_doc())
+    assert stored["settings"]["keep_runs"] == 20 and stored["problems"] == []
+    with pytest.raises(FileExistsError):
+        store.create(lib, "watcher", pattern_doc())
+    assert [p["slug"] for p in store.list_all(lib)] == ["watcher"]
+    assert store.delete(lib, "watcher") and store.read(lib, "watcher") is None
+
+
+@pytest.mark.parametrize("doc", [
+    {"title": "", "summary": "s", "workflow": "w", "settings": {"keep_runs": 3}},
+    {"title": "t", "summary": "s", "workflow": "w", "settings": {}},
+    {"title": "t", "summary": "s", "workflow": "w", "settings": {"name": "mine"}},
+    {"title": "t", "summary": "s", "workflow": "w", "settings": {"nope": 1}},
+    {"title": "t", "summary": "s", "workflow": "w", "settings": {"keep_runs": 3},
+     "asks": [{"field": "nope", "question": "?"}]}])
+def test_an_unsound_pattern_is_refused(tmp_path, doc):
+    with pytest.raises(ValueError):
+        store.create(tmp_path / "lib", "p", doc)
+
+
+def test_drafts_prune_what_already_landed(tmp_path):
+    home = tmp_path / "routines"
+    drafts.write(home, "r", changes={"keep_runs": {"value": 10, "reason": "less history"},
+                                     "rules": {"value": ["a"], "reason": "x"}},
+                 pattern="watcher", message="check", source="test")
+    left = drafts.prune(home, "r", {"keep_runs": 10, "rules": []}, assigned="")
+    assert set(left["changes"]) == {"rules"}
+    assert drafts.prune(home, "r", {"keep_runs": 10, "rules": ["a"]}, assigned="watcher") is None
+    assert drafts.read(home, "r") is None
+
+
+# ------------------------------------------------------------------ the web surface
+
+
+@pytest.fixture
+def client(api_client, make_routine):
+    c, tmp = api_client
+    make_routine("alpha")
+    return c, tmp
+
+
+def test_following_a_pattern_is_proposed_not_written(client):
+    c, tmp = client
+    store.create(tmp / "library", "watcher", pattern_doc(keep_runs=12))
+    before = (tmp / "routines/alpha/routine.yaml").read_text()
+    out = c.post("/api/routines/alpha/settings/follow", json={"pattern": "watcher"}).json()
+    assert out["draft"]["pattern"] == "watcher"
+    assert out["draft"]["changes"]["keep_runs"]["value"] == 12
+    assert (tmp / "routines/alpha/routine.yaml").read_text() == before
+
+
+def test_one_accept_applies_every_kept_change_and_clears_the_draft(client):
+    c, tmp = client
+    store.create(tmp / "library", "watcher", pattern_doc(keep_runs=12))
+    c.post("/api/routines/alpha/settings/follow", json={"pattern": "watcher"})
+    r = c.post("/api/routines/alpha/settings", json={
+        "changes": {"keep_runs": 12, "improve": False,
+                    "triggers": [{"type": "report", "cooldown_s": 900,
+                                  "max_fires_per_day": 24}],
+                    "finish_line": {"outcomes": [{"text": "digest sent", "judge": "run"}],
+                                    "until": "2027-01-01"}},
+        "pattern": "watcher"})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    raw = read_yaml(tmp / "routines/alpha/routine.yaml")
+    assert raw["retention"]["keep_runs"] == 12 and raw["improve"] is False
+    assert raw["pattern"] == "watcher"
+    assert [t["type"] for t in raw["triggers"]] == ["report"]
+    assert body["draft"] is None and body["overrides"] == []
+    assert body["fields"]["finish_line"]["outcomes"][0]["text"] == "digest sent"
+    assert body["fields"]["finish_line"]["until"] == "2027-01-01"
+
+
+def test_accepting_keeps_an_existing_triggers_identity(client):
+    """The page sends back the rows it was given — validated, defaults spelled out — while the
+    file leaves them out; the webhook a third party holds must keep its URL either way."""
+    c, tmp = client
+    c.post("/api/routines/alpha/triggers", json={"type": "webhook"})
+    token = read_yaml(tmp / "routines/alpha/routine.yaml")["triggers"][0]["token"]
+    shown = c.get("/api/routines/alpha/settings").json()["fields"]["triggers"]
+    r = c.post("/api/routines/alpha/settings", json={"changes": {"triggers": [
+        *shown, {"type": "report", "cooldown_s": 900, "max_fires_per_day": 24}]}})
+    assert r.status_code == 200, r.text
+    rows = read_yaml(tmp / "routines/alpha/routine.yaml")["triggers"]
+    assert {t["type"] for t in rows} == {"webhook", "report"}
+    assert next(t for t in rows if t["type"] == "webhook")["token"] == token
+
+
+def test_a_trigger_row_compares_equal_with_or_without_its_defaults():
+    bare = [{"id": "t-1", "type": "webhook", "token": "x", "cooldown_s": 60}]
+    spelled = [{"type": "webhook", "cooldown_s": 60, "max_fires_per_day": 0}]
+    assert fields.equal("triggers", bare, spelled)
+    assert not fields.equal("triggers", bare, [{**spelled[0], "max_fires_per_day": 5}])
+
+
+def test_an_unknown_setting_is_refused(client):
+    c, _ = client
+    assert c.post("/api/routines/alpha/settings",
+                  json={"changes": {"colour": "red"}}).status_code == 422
+
+
+def test_save_as_new_pattern_then_the_button_goes_quiet(client):
+    c, tmp = client
+    first = c.get("/api/routines/alpha/settings").json()
+    assert first["save_as_enabled"] is True and first["pattern"] is None
+    out = c.post("/api/routines/alpha/patterns",
+                 json={"title": "Alpha kind", "summary": "what alpha is"}).json()
+    assert out["pattern"]["slug"] == "alpha-kind"
+    assert out["save_as_enabled"] is False and out["identical"] == ["alpha-kind"]
+    assert read_yaml(tmp / "routines/alpha/routine.yaml")["pattern"] == "alpha-kind"
+    again = c.post("/api/routines/alpha/patterns", json={"title": "Copy", "summary": "same"})
+    assert again.status_code == 409
+
+
+def test_deleting_a_pattern_releases_its_followers_and_keeps_their_values(client):
+    c, tmp = client
+    c.post("/api/routines/alpha/patterns", json={"title": "Alpha kind", "summary": "s"})
+    before = read_yaml(tmp / "routines/alpha/routine.yaml")
+    out = c.delete("/api/patterns/alpha-kind").json()
+    assert out["released"] == ["alpha"]
+    after = read_yaml(tmp / "routines/alpha/routine.yaml")
+    assert "pattern" not in after
+    assert {k: v for k, v in before.items() if k != "pattern"} == after
+    assert c.get("/api/patterns").json()["patterns"] == []
+
+
+def test_the_pattern_list_carries_the_field_vocabulary_the_library_renders(client):
+    c, _ = client
+    meta = c.get("/api/patterns").json()["meta"]
+    assert [f["key"] for f in meta] == [f.key for f in fields.FIELDS]
+    assert next(f for f in meta if f["key"] == "fs_write_roots")["label"] == "Read-write roots"
+
+
+# --- the shipped patterns --------------------------------------------------------------------
+
+SEED = __import__("pathlib").Path(__file__).resolve().parents[1] / "library-seed"
+
+
+def _seed_patterns() -> list[dict]:
+    return store.list_all(SEED)
+
+
+def test_every_shipped_pattern_is_sound_and_governs_every_field():
+    """A pattern is a whole settings document: a field it leaves out is a field nobody can
+    see a routine depart from. `name` and `description` are the routine's own."""
+    shipped = _seed_patterns()
+    assert len(shipped) == 14
+    for p in shipped:
+        assert p["problems"] == [], (p["slug"], p["problems"])
+        assert set(p["settings"]) == set(fields.GOVERNABLE), p["slug"]
+
+
+def test_every_shipped_pattern_names_only_what_the_library_ships():
+    from rsched import library_docs
+    from rsched.workflows.library import list_workflows
+
+    rules = set(library_docs.slugs(SEED / "rules"))
+    permissions = set(library_docs.slugs(SEED / "permissions"))
+    workflows = {w["slug"] for w in list_workflows(SEED)}
+    for p in _seed_patterns():
+        s = p["settings"]
+        assert set(s["rules"]) <= rules, (p["slug"], set(s["rules"]) - rules)
+        assert set(s["permissions"]) <= permissions, (p["slug"],
+                                                      set(s["permissions"]) - permissions)
+        assert p["workflow"] in workflows, (p["slug"], p["workflow"])
+        for ask in p["asks"]:
+            assert ask["field"] in fields.GOVERNABLE, (p["slug"], ask)
+
+
+def test_a_shipped_patterns_capabilities_survive_its_own_permissions():
+    """Accepting a pattern writes its permissions AND its capabilities; if the save-time floor
+    took a capability away, the routine would read as departing from its pattern the moment it
+    followed it."""
+    from rsched.grants import floor_capabilities, read_library_requires
+
+    lib = read_library_requires(SEED / "permissions")
+    for p in _seed_patterns():
+        s = p["settings"]
+        floored = floor_capabilities(s["permissions"], lib, dict(s["capabilities"]))
+        assert fields.equal("capabilities", floored, s["capabilities"]), p["slug"]
+
+
+def test_a_shipped_pattern_carries_every_budget():
+    from rsched.config.base import DEFAULT_BUDGETS
+
+    for p in _seed_patterns():
+        assert set(p["settings"]["budgets"]) == set(DEFAULT_BUDGETS), p["slug"]

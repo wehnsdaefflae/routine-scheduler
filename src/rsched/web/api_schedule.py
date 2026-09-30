@@ -7,8 +7,8 @@ own — the daemon suppresses its cron — so its vestigial `fires` are withheld
 them would draw runs that never happen, R313) and the lane's own cron rides out under the
 response's `lanes` key instead, for the client to draw as one chained row.
 
-The lane is the ONLY one of the three axes this endpoint knows: a domain shares a config and
-a store but nothing on a clock; tags fire nothing at all (docs/lanes-domains.md).
+The lane is the ONLY grouping this endpoint knows: a shared store is shared files and nothing
+on a clock; tags fire nothing at all (docs/lanes-tags.md).
 """
 
 from __future__ import annotations

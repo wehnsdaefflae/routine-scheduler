@@ -1,4 +1,4 @@
-"""Per-routine output-compression roll-up for the Stats tab — what the optional compressor
+"""Per-routine output-compression roll-up for the Stats tab — what the lossless compressor
 actually bought — and what it cost to find out.
 
 The per-observation `compression` metadata answers "what happened to THIS command's
@@ -20,17 +20,13 @@ nothing in), the same contract per-util counts follow.
 
 from __future__ import annotations
 
-from pathlib import Path
-
-from .. import registry
 from ..config import ServerConfig
-from . import memo
 from .usage_stream import usage_records
 
 # the outcome vocabulary of engine.output_compression (metrics["status"])
-STATUSES = ("applied", "measured", "unchanged", "fallback", "skipped", "unavailable")
+STATUSES = ("applied", "unchanged", "fallback", "skipped")
 # outcomes where the compressor actually RAN — the ones that cost the run its time
-ATTEMPTED = ("applied", "measured", "unchanged", "fallback")
+ATTEMPTED = ("applied", "unchanged", "fallback")
 
 
 def _int(value: object) -> int:
@@ -53,49 +49,12 @@ def _cell(slug: str) -> dict:
             "first": "", "last": "", **dict.fromkeys(STATUSES, 0)}
 
 
-def _mode_sources(server: ServerConfig) -> list[Path]:
-    """Every file that can change a routine's EFFECTIVE compression mode: its own config,
-    its tuning override, and the domain block it inherits keys from (D82). Rebuilt per
-    call, so a routine appearing or being deleted invalidates the memo by itself.
-    """
-    paths: list[Path] = []
-    for home in (server.routines_home, server.conversations_home):
-        paths.append(home / ".control" / "domains.json")
-        try:
-            entries = sorted(home.iterdir())
-        except OSError:
-            continue
-        paths += [p for d in entries
-                  if d.is_dir() and not d.name.startswith(".") and (d / "routine.yaml").exists()
-                  for p in (d / "routine.yaml", d / "tuning.yaml")]
-    return paths
-
-
-def _modes(server: ServerConfig) -> dict[str, str]:
-    """Each routine's CURRENT output-compression setting — the reason an empty row is
-    empty (switched off) rather than a routine whose outputs never qualified.
-
-    Memoized on the config files themselves: this is the SECOND catalog walk of an
-    /api/stats call (aggregate's is the first), and on the live instance it cost 1.6 s of
-    a 16 s request to re-derive values that change when a person edits a setting.
-    """
-    def compute() -> dict[str, str]:
-        modes: dict[str, str] = {}
-        for home in (server.routines_home, server.conversations_home):
-            for slug, info in registry.scan(server, home).items():
-                modes[slug] = info.cfg.output_compression
-        return modes
-
-    return memo.memoized(f"compression-modes:{server.routines_home}",
-                         _mode_sources(server), compute)
-
-
 def compression_stats(server: ServerConfig) -> dict:
     """`{"rows": [...], "totals": {...}, "since": iso|None, "records": n}` — one row per
     routine that has reported a counted run, ordered by estimated tokens saved.
 
     Rows carry the raw outcome counts plus two derived readings: `candidates` (successful
-    command outputs the mode let through at all) and `attempts` (the compressor ran).
+    command outputs at all) and `attempts` (the compressor ran).
     `applied ÷ attempts` is the hit rate; `fallback` is the compressor producing a result
     the engine's own verification refused, which is a cost with no benefit at all.
     """
@@ -121,10 +80,8 @@ def compression_stats(server: ServerConfig) -> dict:
             cell["last"] = max(cell["last"], ts)
             cell["first"] = min(cell["first"] or ts, ts)
 
-    modes = _modes(server)
     totals = _cell("(all)")
     for cell in rows.values():
-        cell["mode"] = modes.get(cell["routine"])   # None = no such dir any more
         cell["candidates"] = sum(cell[s] for s in STATUSES)
         cell["attempts"] = sum(cell[s] for s in ATTEMPTED)
         totals["runs"] += cell["runs"]

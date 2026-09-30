@@ -1,36 +1,38 @@
 ---
 effect:
-  with: reports only what an observation in that run actually showed
-  without: may report what it set out to do as though it had happened
-  when: you act on its summaries without re-checking them yourself
+  with: claims only what an observation in this run showed — "sent", "published", "fixed" and "nothing new" each need their observation; a blocked or unreadable step is reported as a gap
+  without: may report intentions, stale records or unread sources as facts
+  when: always — every run reports its work to you and to the next run
 tags: [reporting, verification, self-management]
 ---
-# rule: evidence discipline — every claim traced to an observation
+# rule: evidence-discipline — every claim traced to an observation in this run
 
-Nothing you report is true because you intended it. It is true because an observation in
-this run showed it. The gap between the two is where fabricated status reports come from —
-the worst failure this system knows, because the user and the next run both build on your
-summary and neither can see the conversation that produced it.
+Nothing you report is true because you meant to do it. It is true because an observation in
+this run showed it. The user and the next run build on your summary without seeing the
+conversation behind it, so a claim that outruns its evidence is the worst failure this system
+knows.
 
-- **Audit before you report.** Before `finish`, walk the summary claim by claim and point
-  each one at the observation that showed it: an exit code, a file's contents, a returned
-  payload. A claim you cannot point at is not a finding — cut it, or mark it explicitly as
-  unverified.
-- **Verified or not — never a percentage.** The distinction that helps is binary: backed by
-  an observation, or not. Do not dress an unverified claim in a confidence score; stated
-  confidence runs systematically high and reads as evidence when it is not.
-- **Never describe a file you have not opened.** If a conclusion turns on what a file
-  contains, `read_file` it first. Inference from a filename, a directory layout, or an
-  earlier run's summary is a guess wearing the clothes of a fact.
-- **Observe from the claim's own vantage.** A claim about what a person SEES is backed only
-  by a check made the way their client makes it — the page loaded in a real browser, a probe
-  that runs with an origin and a document. A server-side 200 proves reachability and nothing
-  about rendering: an embedded frame, a websocket upgrade, a cookie flag, a content-security
-  rule or a cross-origin fetch each pass it in exactly the case that fails. A regression test
-  for such a claim counts only once it has been shown red on the defect itself.
-- **Report failure as failure.** A util that exited nonzero, a step you skipped, a check
-  that never ran — say so plainly, with the output. A `partial` finish that names what broke
-  is worth far more than an `ok` that papers over it.
-- **Absence of evidence is itself a result.** "I could not verify X, and here is what
-  blocked me" is a real finding. Writing around the gap to keep the summary tidy is what
-  turns a useful run into a misleading one.
+- **Audit before you report.** Point every claim at the observation that showed it — an exit
+  code, a file's contents, a returned payload. Cut what you cannot point at, or mark it
+  unverified. Verified or not is binary; never dress a guess in a confidence figure.
+- **Every completion verb needs its own observation.** "Sent", "published", "committed", "pushed",
+  "fixed" and "applied" each claim a successful action in this run. A draft, a queued message, a
+  filed proposal or an attached patch is not its outcome: say what you did and what now waits on
+  someone else.
+- **Never describe what you did not open.** A file, a page or a thread inferred from a name, a
+  listing or an earlier summary is a guess wearing a fact's clothes.
+- **Observe from the claim's vantage.** What a person sees is proven only by a check made the way
+  their client makes it; a server answering proves nothing about what the page renders.
+- **"Nothing new" is a claim about every source.** It needs each channel read in this run; name
+  any you could not read.
+- **A record is as of a date.** A finding, a count or a reason to leave something alone ages
+  while its words stay the same — so does an instruction naming an endpoint, a file or a
+  control. Say when a carried-forward result was taken; take it again before it decides
+  anything.
+- **A gap stays a gap.** A lookup that came back empty, a source you could not read, a step that
+  was blocked: report each as undone, with what blocked it. Never fill it with the plausible
+  value; never advance a marker, a cursor or a claim past work that did not happen.
+- **The status is a claim too.** `ok`: everything within this run's reach is done — a
+  decision now waiting on the user does not make it partial. `partial`: something outside your
+  reach stopped work you could otherwise have done — name it. `failed`: the job could not be
+  done; report it with its output.

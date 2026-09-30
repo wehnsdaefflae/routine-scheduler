@@ -1,0 +1,978 @@
+{
+ "done_when": {
+  "aisafety-grant-steward": {
+   "replaces": "## Completion criteria\n\n- **Per run:** the route was chosen correctly and any interrupted prior run was recovered by verifying rather than guessing; Mark's feedback was ingested past the cursor before any new work, every row implemented or explicitly captured, and the cursor advanced only past what was consumed; the funder's live terms were re-checked against `docs/grant-spec.md` and the eligibility bar confirmed; everything genuinely due in the application landed in `content/app.json` and was read back, the run stopping when nothing was left due or at a clean boundary the budget could no longer cross; every segment carries a current authorship score and English feedback that quotes literal substrings, judges whether prior feedback was implemented, and offers a drop-in rewrite; the four PDFs compiled inside their limits, were scored, uploaded and had their gate links fetched back this run; the checklist, the weighted total score, the anchored 1–10 rating and exactly one open question were refreshed; the page was republished with every changed body re-sent and all three verifications passed; `STATE.md`, `DELIVERABLES.md`, `BACKLOG.md` and `WORKLOG.md` were curated and exactly one `LEDGER.md` entry appended; nothing was sent to the funder.\n- **Overall:** the application is SUBMITTED — the attachment set final and inside its limits, the pre-application checklist complete, Mark's own email sent to mail@aisafetyaachen.org, and he knows where the steward page and the final PDFs live — AND the funder's decision has come back and Mark has been told what it was. This fund decides on a ROLLING basis, within four weeks of submission, so there is no deadline: do not manufacture urgency out of one. Meeting that retires the routine: the scheduler stops firing it and a Decisions-page proposal asks him to confirm.\n",
+   "block": "## Done when\n\n- d1 · orient-and-route — an interrupted prior run, if any, is recovered by verifying and shipping what it left rather than by guessing\n- d2 · ingest-mark-feedback — every feedback row past the cursor (edits, ticks, placeholder answers, the question's answer) is implemented or captured before new work, with the cursor at the last row consumed\n- d3 · recheck-grant-terms-and-signal — the funder's live terms were re-checked against docs/grant-spec.md, every change carried into the content it affects, and the eligibility bar confirmed\n- d4 · advance-application-content — everything due in the application landed in content/app.json and was read back, or is named with what it waits on\n- d5 · score-and-coach-each-segment — every segment carries a score of its current text and English coach feedback that opens with a verdict on the prior feedback, quotes literal substrings and gives a drop-in rewrite\n- d6 · compile-and-upload-attachments — the four attachment PDFs compiled inside their limits, were scored and uploaded, and every gate link was fetched back this run\n- d7 · refresh-checklist-rating-and-question — the checklist, the weighted total score and the anchored 1–10 rating are refreshed, with at most one open question (a real one)\n- d8 · publish-page-and-record — the page is republished with every changed body re-sent, all three verifications passed and feedback ids kept stable, and the finish summary carries its URL\n- d9 · publish-page-and-record — STATE.md, DELIVERABLES.md, BACKLOG.md and WORKLOG.md are refreshed to current truth and exactly one LEDGER.md entry is appended\n",
+   "never": []
+  },
+  "ards": {
+   "replaces": "## Completion criteria\n\n- **Per run:** prior site feedback ingested past the `ards` cursor and folded into direction; new\n  FAU inbox/calendar signal gathered and every referenced document indexed; no dated obligation left\n  slipping (a due reply/scoping email/invoice handled up to its gate); every verified increment that\n  was genuinely due landed (analysis advanced/hardened, scoping email drafted, or report/manuscript\n  text written) and the work left better — the run stopping when nothing is left due, or at a clean\n  boundary the budget can no longer cross, never because a first increment already felt like a run's\n  worth; state files + `LEDGER.md` refreshed; the status site regenerated\n  + published into `ards` (state + deliverables + exactly one open question surfaced, stable\n  `ards`-prefixed feedback ids preserved, the shared feedback store never clobbered); no\n  patient-level data anywhere but the workspace.\n- **Overall (DONE_WHEN):** the agreed deliverables — the **statistical analysis** and its\n  **write-up** — are delivered to Susanne Bertermann, and the scoped, priced continuation has been\n  **sent**. Meeting that retires the routine: the scheduler stops firing it and a Decisions-page\n  proposal asks Mark to confirm.\n",
+   "block": "## Done when\n\n- d1 · ingest-ards-site-feedback-first — every feedback entry past the `ards` cursor is folded into direction or mirrored into BACKLOG.md/DELIVERABLES.md, with the cursor at the last entry consumed\n- d2 · gather-fau-inbox-calendar-and-index-docs — every FAU mail and calendar item new since the marker is processed, each document it references stored and indexed, and the marker past what was processed\n- d3 · guard-deliverables-and-promised-replies — every obligation due before the next run (a promised reply, the scoping email, the invoice) is done up to its send gate, with Mark's go requested\n- d4 · advance-analysis-scoping-or-writeup — every increment that was due (analysis advanced or hardened, scoping email drafted, report or manuscript text written) landed verified, or is named with what it waits on\n- d5 · record-state-and-append-ledger — STATE.md, DELIVERABLES.md, BACKLOG.md and WORKLOG.md match this run's outcome; exactly one LEDGER.md entry is appended\n- d6 · republish-ards-status-page-guarded — the `ards` page shows current state and deliverables with at most one open question (a real one), its `ards`-prefixed ids intact, read back as served\n",
+   "never": []
+  },
+  "bahnbonus-seat-position": {
+   "replaces": "## Completion criteria\n- **Per run:** every not-yet-handled upcoming ride found in Gmail has its boarding guide **sent to the user as a Discord message** (with `artifacts/<ride>.md` written as the backing copy), or there was no new upcoming ride; its `key` is recorded in `state/processed_rides.json`, exactly one `LEDGER.md` entry was appended, and the run result states the Discord message went out. This routine is open-ended and recurring — there is no terminal \"all done.\"\n- A guide that was written to an artifact but **never sent to Discord** is a failed delivery — the user never sees it. A claimed-but-unread guide, a delivery not confirmed sent, or a delivered ride not written into `processed_rides.json`, is a failure — always read back what you wrote, confirm the Discord send exited 0, and record it before finishing.\n",
+   "block": "## Done when\n\n- d1 · find-next-upcoming-ride — every upcoming ride in Gmail whose key is not in state/processed_rides.json was found, or the Gmail search established that none is new\n- d2 · write-boarding-guide — each such ride has artifacts/<ride>.md naming the platform sector, the Wagen, the walking direction and the seat section with its rationale\n- d3 · verify-and-record — each guide was read back and sent to the user as a Discord message, the send exited 0, and the finish summary says it went out\n- d4 · verify-and-record — each delivered ride's key is in state/processed_rides.json and LEDGER.md has one entry per ride, or one saying no ride was new\n",
+   "never": []
+  },
+  "birthday-admin": {
+   "replaces": "## Completion criteria\n\n**Overall (DONE_WHEN):** the birthday weekend of **12–14 March 2027** has taken place — the venue was\nbooked, the invitations were sent and answered, and the final plan was delivered. Meeting that\nretires the routine: the scheduler stops firing it and a Decisions-page proposal asks Mark to\nconfirm.\n\n**Per run:**\n\n- New feedback is ingested and the high-water mark has moved, or the reason it could not be is\n  recorded.\n- Every reply in the mailbox is either folded into `state/outbox.json` or listed in the sweep's\n  `ignored` with a reason — a sweep that stops half way leaves no trace at all.\n- The model edit either passed the held-out gate or was not made, and the number is in the ledger.\n- `public/admin/view.json` is rebuilt, the guest data files are regenerated rather than hand-patched,\n  and **every gate in `scripts/gate.py` PUSH_GATES passes** before the push (`gate --push` prints the\n  count — the recipe does not carry it).\n- Every mail that went out is in `state/outbox.json` with its verified Sent id, committed the run it\n  went out — the mail is irreversible the second it leaves, so its record must not depend on the run\n  surviving to the end.\n- The work is committed and **pushed**. A run that did not push has not published, however clean the\n  rest of it was; say so in the summary rather than letting it read as done.\n- This run has its `LEDGER.md` entry: tracks touched, what changed, candidates rejected and why,\n  held-out numbers.\n- **No contact outside the UI.** The run ends there.\n",
+   "block": "## Done when\n\n- d1 · intake — new feedback is ingested and the high-water mark moved, or the reason it could not be is recorded\n- d2 · intake — every reply in the mailbox is folded into state/outbox.json or listed in the sweep's `ignored` with a reason\n- d3 · learn — the model edit passed the held-out gate or was not made, with the held-out number in the ledger\n- d4 · present — public/admin/view.json is rebuilt and the guest data files regenerated rather than hand-patched, with every PUSH_GATES gate passing before the push\n- d5 · present — every mail that went out is in state/outbox.json with its verified Sent id, committed the run it went out\n- d6 · present — the work is committed and pushed; a run that did not push says so in its summary instead of reading as done\n- d7 · record — this run's LEDGER.md entry names the tracks touched, what changed, candidates rejected with their reasons, and held-out numbers\n",
+   "never": []
+  },
+  "bkm-foerder-steward": {
+   "replaces": "## Completion criteria\n\n**Per run:** Der Feedback-Store wurde privat gelesen und der Cursor ehrlich auf die höchste tatsächlich gelesene Sequenznummer gesetzt; jede Nutzerkorrektur und jede neue Unternehmensangabe ist im Profil bzw. als gekennzeichneter Faktor-Override eingearbeitet oder explizit zur Priorisierung benannt; alles genuin Fällige (mindestens BATCH_FLOOR=3, nach oben offen) wurde an offiziellen Quellen verifiziert, mit vier bezifferten und begründeten Faktoren bewertet, unter stabilem Slug persistiert und zurückgelesen; jede Unterseite trägt unter jedem Einzelpunkt Upvote/Downvote/Freitext mit über Läufe stabilen IDs; die vollständige deutsche Seite ist live, Daten vor Seite, Assets und Unterseiten vor Landing-Page, und die Feedback-Datendatei nachweislich vom Upload ausgeschlossen; die Nachweise (feldweiser Rücklesevergleich, Abweisung ohne Zugangsdaten, 403 auf eine Nicht-Seiten-Datei, abrufbare Dokumentlinks, **die gerendert abgerufene und tatsächlich angesehene Seite** sowie **ein bestandener Schreibtest über ein Bedienelement der Seite**) liegen vor; genau ein LEDGER-Eintrag ist angehängt und der Abschlussbericht mit Top-Programm, Score, vier Faktoren, Änderungen, eingearbeiteten Nutzerangaben, wartender Frage und Seitenlink ist abgegeben. War nichts fällig und hat sich am Präferenzmodell nichts bewegt, ist der ehrliche Abschluss: das nachweislich geprüfte Nichts protokollieren, es klar sagen und beenden — ohne Republish.\n\n**Overall:** PERPETUAL — Förderprogramme werden laufend neu aufgelegt, geändert und befristet, und der Nutzer liefert laufend neue Unternehmensfakten und Faktorkorrekturen nach; es gibt keinen Zustand, nach dem der Korpus fertig und die Zuspitzung endgültig wäre.\n",
+   "block": "## Done when\n\n- d1 · feedback-zuerst-lesen — jeder Feedback-Eintrag jenseits des Cursors ist als Profilangabe oder gekennzeichneter Override eingearbeitet oder zur Priorisierung benannt, der Cursor auf der höchsten gelesenen Nummer\n- d2 · programm-pruefen-bewerten-und-unterseite-rendern — jedes fällige Programm ist an offizieller Quelle verifiziert, mit vier begründeten Faktoren bewertet, persistiert und zurückgelesen, sonst im LEDGER benannt\n- d3 · programm-pruefen-bewerten-und-unterseite-rendern — jedes gelistete Programm trägt Quell-URL und Prüfdatum, jede Unterseite unter jedem Einzelpunkt Upvote, Downvote und Freitext mit stabiler ID\n- d4 · steward-page-publizieren-und-rangliste-zuspitzen — die deutsche Seite ist live, mit Rangliste nach Score, benanntem Spitzenprogramm und jedem offenen scorerelevanten Unternehmensfakt als Sachfrage\n- d5 · nachweise-fuehren-und-lauf-abschliessen — alle Nachweise liegen vor: feldweiser Rücklesevergleich, Abweisung ohne Zugangsdaten, 403 auf eine Nicht-Seiten-Datei, Dokumentlinks, angesehene Seite, Schreibtest\n- d6 · nachweise-fuehren-und-lauf-abschliessen — genau ein LEDGER-Eintrag ist angehängt; der Abschlussbericht nennt Top-Programm mit Score und vier Faktoren, Änderungen, Nutzerangaben, wartende Frage und Seitenlink\n",
+   "never": []
+  },
+  "config-optimizer": {
+   "replaces": "## Completion criteria\nA run is done when:\n- All four config surfaces have been reviewed from their live source (never from memory).\n- Every value examined has a verdict (`ok` / `sub-optimal` / `detrimental`) and, where flagged, a recommendation (generally-sound default and/or case-specific value).\n- Every routine's cadence has been judged against its measured turn and wall-clock use across several runs, with blocked runs excluded from that judgement.\n- `state/config-audit.md` is written with flagged items grouped up front, a section per surface, the inferred case, and where each surface lives.\n- Any user-confirmed changes are applied at their source and logged (surface, key, old→new).\n- **Output floor, per run.** Every flagged finding — the ones this run produced AND every one still\n  pending from an earlier run — ends in one of exactly three states: (a) **applied and verified** at\n  source, (b) **standing as an open one-click apply request** the user can act on, or (c) **withdrawn,\n  with the reason recorded**. \"Left pending in the report\" is not a fourth state and is not a complete\n  outcome: a finding nobody can act on and nobody has withdrawn is a dropped finding wearing a status.\n  A finding pending across **three or more runs** is re-raised with a plainer question or withdrawn —\n  re-filing the same unanswered question unchanged is what makes a row permanent. A run that applied\n  nothing and filed nothing new says in its finish summary **which user answer it is waiting on**.\n- `state/config-map.json`, `state/case-context.md`, and `state/phase.json` are updated, and exactly one LEDGER entry is appended.\n",
+   "block": "## Done when\n\n- d1 · evaluate-surfaces — all four config surfaces were read from their live source this run, every value examined has a verdict (ok / sub-optimal / detrimental), and every flagged one a recommendation\n- d2 · evaluate-surfaces — every routine's cadence is judged against its measured turn and wall-clock use across several runs, blocked runs excluded\n- d3 · write-report — state/config-audit.md is rewritten flagged-first, with a section per surface, the inferred case and where each surface lives\n- d4 · apply-confirmed — every user-confirmed change is applied and verified at its source and logged as surface, key, old → new\n- d5 · apply-confirmed — every flagged finding, new or pending, is applied and verified, open as a one-click apply request, or withdrawn with its reason; one pending three runs is re-raised plainer or withdrawn\n- d6 · record — state/config-map.json, state/case-context.md and state/phase.json are updated, exactly one LEDGER entry is appended, and a run that applied and filed nothing names the answer it waits on\n",
+   "never": []
+  },
+  "doppelcheck-maintainer": {
+   "replaces": "## Completion criteria\n\n**Per run:** the org's repo list was enumerated fresh and diffed against the previous snapshot; every new or updated issue and PR was read and answered, labelled or closed publicly; every audit pass ran over every repo with `file:line` or status-code evidence; every actionable technical fix either shipped — verified, committed as `Mark <wernsdorfer+github@gmail.com>`, pushed to the default branch, and confirmed live with its CI run — or is recorded as refused/reverted/deferred with a reason; every content-gate item is researched, drafted as exact wording and filed as a question with the live text untouched; the findings record is overwritten in place, one ledger entry appended (rotating if over threshold), health metrics updated; and the report names what was audited, what shipped per repo, what was deliberately left, and every failure as prominently as every fix.\n\n**Overall:** PERPETUAL — repositories keep receiving issues, dependencies keep aging, links and claims keep going stale, and the org keeps gaining repos, so there is no state after which this maintenance is done; it ends only if the user withdraws the mandate or archives the org, which is what `state/stopping.json` records.\n",
+   "block": "## Done when\n\n- d1 · orient-and-enumerate-org-repos — the org's repositories were enumerated fresh through the GitHub API and diffed against the previous snapshot\n- d2 · triage-issues-and-reply-as-maintainer — every new or updated issue and PR was read in full and answered, labelled or closed publicly\n- d3 · sync-clones-and-sweep-all-repos — every audit pass ran over every enumerated repo, each finding with its `file:line` or fetched status code\n- d4 · apply-verify-and-push-to-default-branches — every actionable technical fix is verified, pushed to the default branch and confirmed live with its CI run, or recorded as refused, reverted or deferred with its reason\n- d5 · research-and-propose-gated-content — every content-gate item is researched against sources, drafted as exact wording and filed as a question, or already waits on one\n- d6 · record-findings-and-report-the-sweep — the findings record is overwritten in place, exactly one ledger entry appended (rotated when over threshold) and the health metrics updated\n- d7 · record-findings-and-report-the-sweep — the finish report names every pass audited per repo, what shipped per repo, what was deliberately left with its reason, and every failure as prominently as every fix\n",
+   "never": []
+  },
+  "eye-stabilize-folder": {
+   "replaces": "## Completion criteria\n\n- Per run: predator was reachable and the worker staged; the pending set was enumerated\n  idempotently from the real listing; a worker was running or (if none ran and work remained)\n  submitted; any output claimed done was independently verified >1MB on predator; a `LEDGER`\n  entry was appended.\n- **Overall (DONE_WHEN):** every `.mp4` in the target folder has its `[eye-stabilized]` output\n  beside it, or is recorded as failed with a reason, and Mark has been told where the outputs live.\n  Meeting that retires the routine: the scheduler stops firing it and a Decisions-page proposal asks\n  Mark to confirm. Until then, a single run converging on its budget with an honest partial tally is\n  a correct, complete run — the batch is resumable and the next fire continues from the listing.\n",
+   "block": "## Done when\n\n- d1 — the worker is staged on predator and the pending set comes from this run's real listing of the folder, with pending and done counts, or the access blocker was asked as a pick with its remedies\n- d2 — a worker is running on predator, or one was submitted because none ran and pending clips remained\n- d3 — every output claimed done was verified on predator as present and larger than 1 MB\n- d4 — exactly one LEDGER.md entry is appended and the finish summary gives the tally: pending at start, completed, already done, failed with reasons, remaining\n",
+   "never": []
+  },
+  "fau-grant-prep": {
+   "replaces": "## Completion criteria\n\n**Per run:** every increment of the grant application that is genuinely due is produced and written to `artifacts/` — new or refined proposal sections, a preliminary-work summary, a theme analysis, a compliance check. Each is verified by reading it back and checking it against `state/BAnz-AT-27.07.2026-B1-1.pdf`. The run stops when nothing is left due, or at a clean boundary the budget can no longer cross — never because a first increment already felt like a run's worth. Progress is recorded in `state/progress.json`. The status site is regenerated with current state and one open question.\n\n**Overall (DONE_WHEN):** the IPCEI-AI application package has been **submitted** to the programme, having been checked against every requirement in the funding announcement — all required sections drafted, preliminary work synthesized from `/mnt/sshd_volume1/work/bgu_wlf/`, `/mnt/sshd_volume1/work/ewsan_bohrdaten/`, and the Obsidian vault, research ideas articulated, budget framework prepared. Meeting that retires the routine: the scheduler stops firing it and a Decisions-page proposal asks Mark to confirm.\n",
+   "block": "## Done when\n\n- d1 · ingest-site-feedback — every feedback entry for this project past the cursor is folded into state/direction-model.json, with the cursor at the last entry consumed\n- d2 · select-theme-and-draft-increment — every due increment of the application is written to artifacts/, read back and checked against state/BAnz-AT-27.07.2026-B1-1.pdf\n- d3 · record-grant-state — state/progress.json records what advanced this run\n- d4 · publish-grant-status-site — the status site shows current state and drafted deliverables, with at most one open question (a real one)\n",
+   "never": []
+  },
+  "folder-reorg": {
+   "replaces": "## Completion criteria\n\nPer run: prior site feedback ingested past the cursor (content-hash keyed) and folded into the\ndirection model + learned rules; the three roots scanned/diffed and the shadow RECONCILED against\nlive disk so it never drifts; no dated obligation left slipping (backups triggered + verified with\nfresh per-location ages, freezes honored, repoint cards queued for commit); every bounded,\nverified, impact-ordered shadow batch that was genuinely due landed (counts/hashes checked) with\nmanifest.jsonl appended and per-batch undo intact — the run stopping when nothing was left due, or\nat a clean boundary the budget could no longer cross, never because a first batch already felt like\na run's worth; the work left better via a concrete quality lift; two short research\nprobes + (on cadence/structural change) a fresh-eyes audit done, findings filed; state files +\nWORKLOG + a single LEDGER entry refreshed and kept lean; the review/feedback site regenerated and\nguarded-published into this project's SUBDIR (build progress + shrinking backlog + the few one-click\ncards + catalog + vault index + per-location backup ages + EXACTLY ONE open question, stable ids\npreserved, the shared feedback store never clobbered, no sibling folder touched). Invariants every\nrun: live stores NEVER written during build; nothing deleted without explicit per-item permission\n(junk only STAGED to `08_Archive/_to_delete/`); copy-verify-before-remove and re-check-against-live-\ndisk always; proposal-only until NAS-write granted; live-system actions gated behind explicit\nCOMMIT approval + a full pre-commit backup; never an affirmatively false external claim, never done\nwithout evidence. **Overall (DONE_WHEN):** the shadow tree is validated against live disk, the COMMIT has been\napproved by Mark and performed (structure swapped in, apps repointed by the user, Dropbox slimmed,\nold layout frozen), and the superseded tree has been removed with explicit per-item permission —\nwith the undo manifest intact — and the user has been told where the reorganized system lives.\nMeeting that retires the routine: the scheduler stops firing it and a Decisions-page proposal asks\nMark to confirm.\n\n",
+   "block": "## Done when\n\n- d1 · ingest-feedback-first-and-learn-rules — every feedback card past the cursor is folded into the direction model and generalized into a learned rule, with the cursor at the last row consumed\n- d2 · scan-diff-reconcile-shadow — the three roots were scanned and diffed and the shadow reconciled against live disk, with counts and hashes checked\n- d3 · guard-deadlines-backups-deposits — every due backup was triggered and verified with fresh per-location ages; every confirmed deposit point has its repoint card queued for commit\n- d4 · advance-one-shadow-batch — every shadow batch that was due landed bounded, verified by counts and hashes and impact-ordered, with manifest.jsonl appended and its undo intact\n- d5 · research-and-fresh-eyes-audit — one product and one process research probe ran, the fresh-eyes audit ran when its cadence or a structural change called for it, and findings are filed in BACKLOG\n- d6 · record-manifest-and-state — STATE, BACKLOG, DELIVERABLES and WORKLOG are current and lean; exactly one LEDGER entry is appended\n- d7 · publish-review-site-and-commit-gate — the site in this project's subdir shows build progress, backlog, the undecided cards, catalog, vault index and backup ages, with stable ids and at most one real open question\n",
+   "never": [
+    "Never remove a source file until its copy has been verified by hash at its destination."
+   ]
+  },
+  "freelance-radar": {
+   "replaces": "## Completion criteria\n\n- **The outward floor, and it comes first because it is the job.** This routine's own standard is\n  stated above: *\"A run that adds 200 cards and advances no engagement has done less than one that\n  adds none and gets an application out.\"* So every run ends with **at least one engagement moved\n  outward** — an application submitted, an approved sign-off consumed and sent, a reply drafted and\n  published for Mark, or an inbound inquiry answered. When none of those was possible, the run names\n  **which specific gate blocked each candidate** (no confirmed sign-off waiting, no open listing that\n  passes the quality bar, a login lapse, a platform cap) — a per-candidate blocker, never a summary\n  sentence. A run that ingested, enriched, published a dashboard and moved nothing outward has done\n  the *preparatory* half of its job and must say so plainly rather than reporting success.\n- The interface family ran before the ingest, and what it reported was fixed or is in the ledger.\n- Login health was read from each platform's own flag — the routine detects a lapse itself, it does\n  not wait for Mark to notice inboxes dropping to zero.\n- Every draft this run wrote was **published to the Pipeline page when it was written**, not at send\n  time — that publication is Mark's whole opportunity to stop it.\n- Nothing went out that he had cancelled, and the text sent was byte-for-byte the text standing on\n  the card at send time (re-read immediately before sending, never a copy made earlier in the run).\n- Both intervention points rendered a real control on the board: a card he cannot cancel is a gate\n  he does not have.\n- The dashboard is published and *verified live*, not merely pushed.\n- Every check's coverage line was read, not just its verdict.\n- This run has its `LEDGER.md` entry.\n",
+   "block": "## Done when\n\n- d1 — every engagement that could move outward this run moved (an application submitted, a sign-off sent, a reply drafted and published, an inquiry answered) or is named with the gate that blocked it\n- d2 · preflight — the interface family ran before ingest with every check's coverage line read; each finding is fixed or in the ledger\n- d3 · ingest — login health was read from each platform's own flag, so a lapse is detected by the run, not by an empty inbox\n- d4 · dashboard — the dashboard is published and verified live, not merely pushed\n- d5 — every pick and every draft this run made stood on the Pipeline page with a working cancel control as soon as it existed\n- d6 · send — every armed card he did not cancel went out at the end of this run, byte-for-byte the text on the card re-read immediately before sending\n- d7 · record — this run has its LEDGER.md entry\n",
+   "never": []
+  },
+  "funscript-trainer": {
+   "replaces": "## Completion criteria\n\n- **Per run:** every increment the run took was produced and VERIFIED (a claimed-but-unverified checkpoint, tensor set, or metric is the worst failure here), a single LEDGER entry records the run, and all durable state is written so the next run resumes cleanly. The run stops when nothing is left due, or at a clean boundary the budget can no longer cross — never because a first increment already felt like a run's worth.\n- **Overall (DONE_WHEN):** a registered current-best model scores held-out mean correlation ≥ 0.60 AND median timing error ≤ 150 ms over a held-out split of at least 10 clips; `infer.py` on the GPU box is verified to emit a schema-valid `.funscript` for an arbitrary video; and Mark has been told where the model and `infer.py` live. Meeting all of that retires the routine: the scheduler stops firing it and a Decisions-page proposal asks Mark to confirm.\n",
+   "block": "## Done when\n\n- d1 · orient-and-monitor-gpu-jobs — every active job id has its status read on its machine this run; each finished job's checkpoint and metrics are verified to exist there\n- d2 — every increment the run took is done and verified on the machine, or submitted as a detached job with its id recorded; an unverified checkpoint, tensor set or metric does not count\n- d3 · evaluate-register-and-verify-infer — every completed model is scored on the held-out split against the prior best with numbers; a new best has infer.py re-verified to emit a schema-valid .funscript\n- d4 · record-and-report-increment — config, experiment ledger, dataset manifest and model registry let the next run resume cleanly; exactly one LEDGER entry records the run\n",
+   "never": []
+  },
+  "global-utils-review": {
+   "replaces": "## Completion criteria\n\n- **Per run, THE TWO MECHANICAL CHECKS — run them, and report both numbers in the finish\n  summary.** They are cheap, they are objective, and a run that skips them is not a re-audit:\n  1. `scripts/candidates.py` — how many utils **nobody holds**, and how many of those this run\n     disposed of. On 2026-09-26 it was **52 of 84**, and no prior run had ever computed it.\n  2. `gu list 2>&1 | grep '^!!'` — how many utils the catalog reports **NONCONFORMING** (a util\n     that shows no usage line to any caller). On 2026-09-26 it was **22 of 84**, never checked.\n  Reporting the numbers is the point: a figure that moves the wrong way is the next run's first\n  question, and a figure nobody computes is how a catalog sprawls for a month unnoticed.\n- **Per run:** every current global util has been put through the **four-question placement test** (not merely checked for health) and given a verdict; `state/utils-review.md` is refreshed flagged-first; every applied change (autonomous or confirmed) has been verified at its source (util re-run of `--selftest` + file read-back) and logged; the recurring-`shell`-pattern scan has been run (or its argv-source-unavailable note recorded) and any candidate flagged; declined/unanswered proposals are left pending in the report; `state/utils-map.json` and the review cursor are updated.\n- **Per run, REGISTRY SHAPE — a floor, not a menu.** The run must **reduce the live registry count by at least 5**, and keep going while both the distance to ~50 and the turn budget allow. There is no alternative branch: landing a replacement, dispatching reports and naming blockers are *steps toward* the floor, never substitutes for it. A finish summary carries the count **before → after**, the deletions by name, and the next three candidates. *Flagging without moving is not completion, and one fold is not a run.*\n- **Per run, CALLER OUTCOME — because a deletion count is a one-sided objective, and a\n  one-sided objective gets satisfied one-sidedly.** The end this routine serves is a catalog\n  routines can CALL; the count is only a means to it, and nothing in the criteria above can see\n  the difference. Two things, and they are deliberately different in kind:\n  - **A WATCH LINE you report, never a condition you must satisfy.** From the same live stats\n    this routine already reads at `map-utils-and-stats`, carry the fleet-wide\n    `usage_error + missing` share of all util calls into the finish summary, beside its value at\n    the previous run. It stood at **11.2%** across September (2,821 of 25,247 calls). Report it;\n    do not chase it. It swings several points week to week on traffic this routine does not\n    control — the largest non-ok counts belong to the test-runner, the code search and the git\n    util, driven by whoever is running a gate that week — so a rise is a PROMPT to look at last\n    run's folds first, never a verdict on this run and never a bar to finishing.\n  - **A HARD condition, scoped to what the run controls: A FOLD IS NOT DONE WHEN THE ORIGINAL IS\n    DELETED.** It is done when every place that named the old util has been updated — the four\n    places `stages/propose-and-apply-changes.md` lists. Carry any un-updated caller as an open\n    row, by name; finish it before taking a new family. A fold that renames a CLI and leaves its\n    callers guessing has moved the count and broken the catalog.\n- **Per run, BUDGET — unspent turns are unfinished work.** This routine's backlog is never empty while the registry is above ~50, so finishing with turns left means stopping short, not being done. Before any `finish`, check the remaining budget: with **more than ~15% left**, do not finish — take the next candidate off `state/consolidation-plan.md` and land it. Only two things end a run early: the registry has reached ~50, or every remaining candidate is blocked by a named, recorded blocker. \"The reports are answered\" and \"a fold landed\" are not among them.\n  **The ceiling is the other error, and it is not completion.** A run that ends AT its turn\n  ceiling was CUT OFF mid-work — it did not \"use its budget well\". Say so: a finish at or within\n  a few turns of `max_turns` reports the ceiling as the reason it stopped, names what was left\n  mid-flight, and says whether the ceiling or the scope is the thing that should change. Never\n  describe a ceiling stop as a completed pass, and never pace the work against the turn counter\n  to land on it — the \"~N turns left\" warning is a backstop firing, not a schedule.\n- **Overall:** open-ended — a fresh full review each scheduled run, resuming from the map and cursor in `state/`, **driving the registry toward ~50 utils** by applying the placement test until the catalog holds only global capability.\n",
+   "block": "## Done when\n\n- d1 · classify-utils — every live util went through the four-question placement test this run and has a recorded verdict with its live-stats and caller evidence\n- d2 · scan-shell-patterns — the recurring-shell-pattern scan ran, or its argv-source-unavailable note is recorded, with every candidate flagged\n- d3 · write-review-report — state/utils-review.md is refreshed flagged-first, with every declined or unanswered proposal standing pending in it\n- d4 · propose-and-apply-changes — every change applied this run, autonomous or confirmed, was verified at its source (selftest re-run and file read-back) and logged\n- d5 · propose-and-apply-changes — every fold this run landed has every place that named the old util updated, or each un-updated caller carried as an open row by name\n- d6 · record-run — state/utils-map.json and the review cursor are updated and one LEDGER entry is appended\n- d7 · record-run — the finish summary gives the unheld count and how many were disposed of, the NONCONFORMING count, the registry count before → after with deletions named, and the next three candidates\n- d8 · record-run — the finish summary carries the fleet-wide usage_error + missing share of util calls beside its value at the previous run\n",
+   "never": [
+    "Never describe a stop at or near max_turns as a completed pass; report the ceiling as why the run stopped, what was left mid-flight, and whether ceiling or scope should change.",
+    "Never take a new family while a fold's un-updated caller is still an open row.",
+    "Never chase the usage_error + missing watch line or treat a rise as a bar to finishing; a rise is a prompt to look at last run's folds first."
+   ]
+  },
+  "grants-radar": {
+   "replaces": "## Completion criteria\n\n- All four input channels were drained at orient AND re-checked before the run ends: a sign-off can\n  land between two commits of the same run.\n- Every phase's own controls ran to exit 0, or what they printed is in the ledger as a queue.\n- Anything submitted was signed off first, and the text sent was byte-for-byte the approved text.\n- The dashboard is published and *verified live*, not merely pushed.\n- The hub card is refreshed by writing the state document (`put-state`) to the unified store; the\n  derived hub (`/api.php?what=hub`) then shows it — there is no `projects.json` any more.\n- **The records are within their own budgets, and this is a criterion because a threshold no line\n  checks is a threshold nothing enforces.** `stages/record.md` has said \"over 40 entries or 40 KB,\n  whichever comes first, rotate\" for a long time, and `LEDGER.md` reached **379 KB — nine times its\n  own trigger** — because the rule lived in a late stage that no completion criterion gated on. So:\n  measure `LEDGER.md` at record time and, if it is over either threshold, **rotate it in that same\n  run** (oldest month into `archive/`, durable lessons condensed into `LEDGER_SUMMARY.md`). Noticing\n  the overflow and deferring the rotation is how a record reaches nine times its bound; the same\n  applies to any `state/` file the read-back test marks as scratch.\n- This run has its `LEDGER.md` entry: what changed, what was rejected and why, the control tallies\n  reported as PRIMARY and DERIVED apart. **This criterion is not satisfiable by running out of\n  turns.** Run `20260922-063003` finished `ok` having skipped `improvement` and `record` at\n  `turns_left: 0`; a full day's work left no ledger entry and the self-audit's findings went\n  unacted-on. A run that ends without this entry is `partial`, whatever else it achieved — and\n  the way to never be in that position is the ten-turn reserve above, checked from stage 5 on.\n- No contact with a funder outside a signed-off submission.\n",
+   "block": "## Done when\n\n- d1 — all four input channels were drained at orient and re-checked before the run ends\n- d2 — every phase's own controls ran to exit 0, or what they printed is in the ledger as a queue\n- d3 · dashboard — the dashboard is published and verified live, not merely pushed; the hub card shows this run's state through put-state\n- d4 · pipeline — every signed-off application was submitted as the exact approved packet, byte for byte, or handed back to Mark when its portal cannot be automated\n- d5 · record — LEDGER.md is within 40 entries and 40 KB (rotated this run if it was over), as is every state/ file the read-back test marks as scratch\n- d6 · record — this run has its LEDGER.md entry: what changed, what was rejected and why, the control tallies as PRIMARY and DERIVED apart\n",
+   "never": [
+    "Never contact a funder except through a submission Mark signed off."
+   ]
+  },
+  "library-sync": {
+   "replaces": "## Completion criteria\n- The export ran against the repo tree, or its error is recorded verbatim with no repair\n  attempted.\n- The repo was committed and pushed, or the failure is recorded verbatim and reported to\n  whoever owns it — never worked around.\n- This run has its LEDGER entry, and the finish summary says whether the off-box copy is\n  current. A sync that did not push is a FAILED run, however cleanly the export went.\n",
+   "block": "## Done when\n\n- d1 · export — the export ran against the repo tree, or its error is recorded verbatim\n- d2 · sync — the repo was committed and pushed (a sync that did not push is a failed run), or the failure is recorded verbatim and reported to whoever owns it\n- d3 · record — this run has its LEDGER entry and the finish summary says whether the off-box copy is current\n",
+   "never": []
+  },
+  "llmsectest-weekday": {
+   "replaces": "## Completion criteria\n\n**Per run:** Preflight ran and the contract's step-1 inputs were consumed; any due dated grant obligation was guarded first (or established as none due); every due channel's signal was drawn and its marker advanced, with `state/signal.json` rewritten and carrying THIS run's date and one entry per due channel — including every channel carried as HELD, whose hold was re-tested against its own stated condition this run rather than inherited; the single longest-waited heavy phase ran and exactly one decision was executed and verified (machine ticket recorded if a cohort pass was submitted); one concrete answer exists per active campaign; **at least one new real third-party application was enrolled into the cohort, or the run names what it attempted and what stopped it**; **every member holding an unfiled finding either had its message drafted and put to Mark for sign-off, or the run names the account or judgement of his that the route waits on**; the journal entry was written and passed the blind fresh-context contradiction review with real contradictions resolved; the close-out gate passes, all three repos are committed and pushed, one LEDGER entry is appended (rotated if oversized), the next run's handoff brief is written, **the pending ask queue reached Mark through `deliver_asks` (or it established that the queue is unchanged since the last delivery) and any replies he left were read back and recorded through the ledger**, **the ask queue was ALSO written into `artifacts/` as a self-contained HTML page — every run, unconditionally, whether or not anything was sent, SHORT, carrying a named recommendation with its reasoning on every ask and the full text of anything going out under his name**, this run's HTML report is rendered into `artifacts/` and named in the finish summary, and friction hitches are filed. A run with genuinely nothing due — no obligation, no due channel, no waiting heavy phase, no active campaign — establishes that against the sources, says so plainly, still writes its journal entry and handoff brief and closes out, and finishes; an idle run reported honestly beats an invented increment. **The cohort floor and the disclosure duty are never part of that emptiness**: there is no such thing as a run with no application to enrol or no maintainer to write to, so a quiet day is a day those two get the run's attention rather than a day they lapse.\n\n**Overall:** PERPETUAL — this routine runs once per weekday for the life of the LLMSecTest project (Prototype Fund FKZ 16IS26S10, funding period 2026-06-01 to 2026-11-30); it ends only when the contract's own stopping conditions in `state/stopping.json` declare the project done, and until then fresh signal, obligations, and campaigns keep arriving.\n",
+   "block": "## Done when\n\n- d1 · guard-dated-obligations — any recurring grant obligation preflight reported due was handled first, outside the day's budget, or established against the register, not from memory, as not due\n- d2 · gather-channel-signal — every due channel was drawn and its marker advanced; state/signal.json carries this run's date and one entry per due channel, every HELD hold re-tested this run\n- d3 · run-heavy-phase-and-decide — the longest-waited heavy phase ran and the one decision it called for was executed and verified, with the machine ticket recorded if a cohort pass was submitted\n- d4 · run-heavy-phase-and-decide — the binding cohort pass ran this run over the real members on the bound machine, or the run says plainly whether nothing new was there to pass or which checked blocker it filed\n- d5 · run-heavy-phase-and-decide — the cohort gained every real third-party application this run could integrate AND verify, or none for a reason the run CHECKED: the blocker, what it measured, the smallest unblocker\n- d6 · answer-standing-campaigns — every unfiled finding is drafted for its project's own disclosed channel and put to Mark, sent once he signed it off, or waits on a named account or judgement of his\n- d7 · journal-and-fresh-review — the journal entry was written before a fresh-context review handed only the entry and the diff; real contradictions are resolved and its outcome recorded even when it found nothing\n- d8 · close-out-and-handoff — the close-out gate's verify phase reports no FAIL; every FAIL it did report was fixed, not explained\n- d9 · close-out-and-handoff — every repository this run touched is committed AND pushed, the docs redeployed if code docs or a docstring changed, the cleanup step run and the ship phase passed\n- d10 · close-out-and-handoff — the next run's handoff brief carries one concrete answer for every campaign preflight named active; running out of ideas is not an answer\n- d11 · close-out-and-handoff — the pending ask queue reached Mark on Zulip (or is established unchanged since the last delivery); every reply he left is read back and recorded through the ledger tool\n- d12 · close-out-and-handoff — artifacts/ holds this run's short, self-contained HTML ask page, with a named recommendation on every ask and the full text of anything going out as Mark\n- d13 · close-out-and-handoff — exactly one LEDGER entry is appended (rotated if oversized); this run's HTML report is rendered into artifacts/ and named in the finish summary\n- d14 — the local HTML overview states its own denominators and they match the manifest: real third-party applications in the cohort, reports published, and reports WITHHELD with the reason\n- d15 — the second-stage application advanced this run by VERIFIED work (evidence earned, a named commitment, a blocker answered) or the checked reason it could not is named; not due once it is submitted\n",
+   "never": [
+    "Never commit, push, clean up or ship out of the order verify, fix, commit, push, cleanup, ship.",
+    "Never publish a withheld cohort report; withholding a member whose upstream has not consented is the disclosure rule working."
+   ]
+  },
+  "miz-grant-steward": {
+   "replaces": "## Completion criteria\n\n- **Per run:** shared state ingested from the hub with the collaborators' feedback treated as authoritative; research corpus grown with cited findings; every segment and every attachment scored for AI-vs-human authorship and given actionable German feedback; all five attachments recompiled as one visually-consistent PDF set (or a hard blocker noted); checklist and 1–10 rating refreshed; steward page republished to the hub (`STEWARD_PAGE`) via `op=put-state`/`put-items`/`put-model`; local canonical mirror (`state/shared-state.json`) updated; exactly one LEDGER entry appended.\n- **Grading a run:** the run's OUTCOME follows the run-scoped conditions — the coach session's own work. The submission goal is a distance marker reported honestly every run, never the cause of a `partial`; and a condition blocked by a capability the host does not serve (the `op=lease` editor lock, R1905) is reported `unmet` with its residual and its owning report, not argued into `met` and not treated as a verdict on the session. Check `gu runs digest` before asserting anything about how previous runs closed.\n- **Overall (DONE_WHEN):** the MIZ application is submitted — or the **27 Sep 2026** deadline has passed — and both Mark and Florence know where the steward page and the final documents live. Meeting that retires the routine: the scheduler stops firing it and a Decisions-page proposal asks the operator to confirm.\n",
+   "block": "## Done when\n\n- d1 · ingest-and-seed-application — every collaborator edit, checklist tick and comment past the feedback cursor is folded in as the authoritative brief; Florence's WhatsApp thread was read\n- d2 · research-miz-babelsberg-and-field — the research corpus holds this run's live-web findings, each with its citation\n- d3 · score-and-coach-each-segment — every segment is scored for AI-vs-human authorship and carries German feedback judging whether prior feedback was implemented, quoting literal substrings, giving concrete rewrites\n- d4 · compile-attachment-pdfs — all five attachments are recompiled as one visually consistent PDF set, each scored as a complete document, or the hard blocker is noted\n- d5 · refresh-checklist-and-rate-application — the checklist and the 1–10 rating with its German verdict are refreshed\n- d6 · publish-steward-page — the steward page is republished to the hub (model, collection, state document) and read back through the status-page rule's three verifications\n- d7 · persist-state-and-record-ledger — state/shared-state.json mirrors the published state and exactly one LEDGER entry is appended\n",
+   "never": []
+  },
+  "moltbook-heartbeat": {
+   "replaces": "## Completion criteria\n\nPer run: a concrete increment — either claim progress (a posted verification tweet and status re-check, or a filed block with the exact missing credential named) or genuine in-character engagement (votes/comments/an original post, each verified by its API response) — recorded in one LEDGER.md entry and the engagement-log note, with all state committed.\n\nOverall this is open-ended (standing presence), with one milestone: the account reaches `claimed` status. Treat the claim as complete only when the status endpoint actually returns `claimed`; until then each run either advances or re-guards the pending claim. When nothing is due, guard the standing obligations and finish cleanly.\n",
+   "block": "## Done when\n\n- d1 · check-claim-status — the account's claim status was read from the status endpoint this run\n- d2 · complete-claim — while the status reads pending_claim, the verification tweet is posted and the status re-checked, or the claim is filed as blocked naming exactly the missing X credential\n- d3 · engage-in-character — once claimed, the feed and own threads were read and every candidate worth engaging got an in-character vote, comment or reply, each write verified by its API response\n- d4 · record-engagement-and-commit — exactly one LEDGER.md entry is appended and the engagement-log note records this run's post and comment ids, votes, claim progress and open threads\n",
+   "never": []
+  },
+  "nanogeofeld": {
+   "replaces": "## Completion criteria\n\n**Per run:** prior site feedback ingested past the `state/` cursor and folded into direction; new signal gathered since the markers and every referenced document/dataset (Hannes' sensor sample foremost) stored once + indexed; no dated obligation (the Antrag deadline, promised partner inputs) left slipping; every verified increment that was genuinely due landed (AP 3.4 text, data-model/architecture, or frontend) with a non-cosmetic quality lift and all public surfaces synced — the run stopping when nothing is left due, or at a clean boundary the budget can no longer cross, never because a first increment already felt like a run's worth; state files + `LEDGER.md` refreshed; the status site regenerated + published into `nanogeofeld/` only (state + deliverables + exactly one open question surfaced, stable `nanogeofeld`-prefixed feedback ids preserved, the shared feedback store never clobbered, the live URL verified 200 with the change present).\n\n**Overall (DONE_WHEN):** the **AP 3.4 description is submission-ready** AND the **agreed first version of the data-integration frontend is delivered** — where the acceptance bar for that first version has been established through research or partner correspondence and confirmed by Mark via the web UI. Meeting it retires the routine: the scheduler stops firing it and a Decisions-page proposal asks Mark to confirm — say so in the finish summary and tell Mark where the deliverable lives. Stewardship is otherwise open-ended: this gates the project's end, not each run.\n",
+   "block": "## Done when\n\n- d1 · ingest-mark-feedback — every feedback entry past the state/ cursor is folded into direction or mirrored into BACKLOG.md/DELIVERABLES.md, with the cursor at the last entry consumed\n- d2 · catch-up-partner-signal — new FAU mail and calendar signal since the markers is gathered; every referenced document or dataset (Hannes' sensor sample foremost) is stored once and indexed\n- d3 · guard-antrag-deadline-and-obligations — every obligation due before the next run (the Antrag deadline, promised partner inputs) is done up to its gate\n- d4 · advance-one-nanogeofeld-deliverable — every increment that was due (AP 3.4 text, data model or architecture, frontend) landed verified with all public surfaces synced, or is named with what it waits on\n- d5 · record-and-publish-status — STATE.md, DELIVERABLES.md, BACKLOG.md and WORKLOG.md are current and exactly one LEDGER.md entry is appended\n- d6 · record-and-publish-status — the `nanogeofeld/` page shows current state and deliverables with at most one open question (a real one) and stable ids; a republish returned 200 live with the change present\n",
+   "never": []
+  },
+  "newsletter-digest": {
+   "replaces": "## Completion criteria\n\n- **Per run:** new newsletters processed (or none confirmed), included mails marked read,\n  `state/last_processed.json` advanced, this run's article set published to the routine's\n  Steward project (`steward.markwernsdorfer.com/newsletter-digest/`) via `put-state`/\n  `put-model`/`put-items`, verified per the `status-page` rule's three required checks (read-back\n  diff, unauthenticated-refusal check, document-link check), and that URL delivered to the user\n  over an instant channel. Exactly one LEDGER entry appended.\n- **Overall:** ongoing — the routine keeps running as long as the inbox yields new newsletters.\n\n**A run that processed new items and did not dedup, categorize and ship is `partial`, not `ok`.**\nRun `20260922-030002` finished `ok` with `stages.skipped: [deduplicate, categorize, finalize]`\nand five turns left. Those are not auxiliary stages for a DIGEST: deduplication and categories\nare the entire difference between a digest and a pile of links, and `finalize` is where the\nthing ships and gets recorded. A run that extracted articles and skipped them delivered raw\ninput and called it a product — and because it finished `ok`, nothing downstream could tell.\n\nSo the honest reading of the per-run criteria above: if `fetch-new-items` found new items, then\n`deduplicate` and `categorize` MUST have been entered and `finalize` MUST have run, or the run\nfinishes `partial` naming which stage was skipped and why. The one legitimate skip path is the\none the run flow already describes — `fetch-new-items` finding nothing, which jumps to\n`ensure-server` and then `finalize`. `finalize` is on both paths and is never skippable: it is\nwhat advances the markers and writes the LEDGER entry, so skipping it means the next run cannot\nknow this one happened.\n\n**Watch the turn budget from `rank-and-render` on.** That same run ended at `turns_left: 5` of\n100. If fewer than ten turns remain when a stage hands off, go straight to `finalize`: markers\nadvanced and a LEDGER entry naming what is unfinished are worth more than one more stage's work\nthat no next run will know about.\n",
+   "block": "## Done when\n\n- d1 · fetch-new-items — every unread recognized-sender newsletter in the inbox was fetched and processed this run, or the listing confirmed none is new\n- d2 · deduplicate — every article from this run's new newsletters was deduplicated against the corpus\n- d3 · categorize — every new article carries a category\n- d4 · ensure-server — the Steward project serves this run's article set (model, items, state), verified by the status-page rule's three checks\n- d5 · ensure-server — the project URL reached the user over an instant channel\n- d6 · finalize — every included mail is marked read, state/last_processed.json advanced, and exactly one LEDGER entry is appended\n",
+   "never": [
+    "Never end a run without finalize: from rank-and-render on, with fewer than ten turns left at a hand-off, go straight to finalize."
+   ]
+  },
+  "predatory-publisher-tarpit": {
+   "replaces": "## Completion criteria\n\n- The correct run mode was chosen from the digest and the resume map was loaded, so no thread is baited twice and each resumes at its right stage.\n- On a first run, `state/` exists, `state/phase.json` reads `steady`, `state/threads.json` is seeded, and the user's existing filter rules are snapshotted.\n- Recent INBOX and Junk mail was scanned and partitioned into fresh solicitations versus replies to active threads, with legitimate contacts left untouched — or the run finished cleanly because there was nothing to act on.\n- The filter script filing predatory senders to Junk was refreshed additively, backed up, and validated before activation — or the prior script stands and the rejection reason is recorded.\n- Every fresh solicitation has one warm first-contact draft saved to Drafts and a ledger entry opened at stage one.\n- Every advanceable reply thread has one escalation draft saved to Drafts, threaded correctly, with its stage advanced by exactly one and its stall recorded; threads that could not advance are noted for next run.\n- The outbox gate ran: after the review window, exactly the bait drafts the routine authored and the user left undeleted were sent (threaded, via `fau-mail-send`), each vetoed (deleted) draft was left unsent, no personal draft was touched, and every sent thread is marked `dispatched` so it is never re-sent.\n- `state/threads.json` is updated, exactly one LEDGER entry with a hand-off note is appended, friction is reported, and the run finished.\n",
+   "block": "## Done when\n\n- d1 · bootstrap-fau-mail-and-sieve — on a first run, state/ exists with state/phase.json at steady, state/threads.json seeded and the user's existing filter rules snapshotted\n- d2 · scan-and-classify-solicitations — recent INBOX and Junk mail was scanned and every predatory message classified as a fresh solicitation or a reply in a baited thread\n- d3 · refresh-junk-sieve-filters — every newly caught predatory sender is in the live filter script, refreshed additively, backup-first and validated before activation, or the prior one stands with the rejection reason\n- d4 · draft-first-contact-bait — every fresh solicitation has one warm first-contact draft in Drafts and its thread opened in the ledger at stage one\n- d5 · draft-escalation-stalls — every advanceable reply thread has one threaded escalation draft in Drafts, its stage advanced by exactly one and its stall recorded; each thread that could not advance is noted\n- d6 · send-approved-drafts — every bait draft this routine authored that the user left undeleted was sent threaded and its thread marked dispatched\n- d7 · record-state-and-handoff — state/threads.json holds every thread's bait state, one LEDGER entry carries the hand-off note, and the summary lists senders caught, filter changes and threads advanced\n",
+   "never": []
+  },
+  "routine-improver": {
+   "replaces": "## Completion criteria\n\n**The floor: this sweep exists to SHIP improvements, not to document that it ran.** Every\ncriterion below is necessary and none of them is sufficient — a run that satisfies all of them\nwith nothing fixed has failed. Judge the run by what is better afterwards: defects fixed,\ncontradictions removed, capabilities added, cruft that will never cost a turn again. Spend the\nbudget until it is gone or the target list is genuinely exhausted, and if turns remain while a\nknown defect stands anywhere on this sweep's list, that defect is what the turns are for.\n\n- Every selected target was studied, passed through the lenses and fresh-eyes, its changes\n  committed and one `routine-improver:` line appended to its LEDGER.\n- **ALL SEVEN lenses are accounted for on every target** — each either applied, or named as\n  unrun with the reason, in `cursor.changes` and in that target's LEDGER line. A lens you never\n  opened must not read like a lens that found nothing; that is how sweep-54 skipped lens 7 on ten\n  targets and still finished `ok` with every condition met. A sweep that cannot say what it did\n  per lens has not passed this criterion, however much it fixed.\n- **A target reported CLEAN carries the evidence that made it clean** — what was read, what was\n  checked — because \"no findings\" and \"did not look\" are indistinguishable in a summary, and only\n  one of them is a result. The same test applies one level down, to each lens.\n- `library-pass` ran: every fix you applied is tallied under its target's pattern slug in\n  `state/library-watch.json`, and any confirmed PATTERN defect was carried upstream,\n  version-bumped, left lint-clean and committed with its blast radius stated.\n- Findings you could not act on were HANDED TO THEIR OWNER (see\n  the `problem-routing` rule) — a config or permission limit to `config-optimizer`, a util\n  defect to `global-utils-review`, a scheduler defect to `self-audit` — or, only where no routine\n  can act, raised as a deferred question naming the target. A finding dropped without either\n  needs a reason in your LEDGER.\n- Reports addressed to you were acted on, or explicitly declined with a reason.\n- `state/visits.json` advanced for every target touched; your own LEDGER has this run's entry.\n\n**Communication: as much as it takes to forget nothing, and not one message more.**\n- **A fix committed is not a row closed.** Send each target's closing report in the SAME turn as\n  its commit, not at the end of the sweep.\n- **Get the closure SHAPE right or the row stays open.** `closes: true` never travels alone: it\n  needs `answers: R<n>` when you are replying to a row someone sent you, or a `settles: [R<n>]`\n  list when your report answers rows without being a reply to any one of them. A `closes` with\n  neither is rejected and costs a turn. A report that ANNOUNCES a fix nobody must act on is born\n  settled — say so with `settles` + `closes` rather than leaving a courtesy note that waits\n  forever for a reply that should never come. Deferred to the end, a full inbox reads as a finished\n  one and done work is indistinguishable from a stall (sweep-50 made exactly this mistake on\n  R1572/R1619 and only a finish hold caught it).\n- **Verify closure against the ledger, never against your own LEDGER.** Before finishing, read\n  `.control/reports.jsonl` and confirm a reply event exists for every row delivered to you. Prose\n  in a finish summary is invisible to the report store.\n- **A finding you cannot act on is routed the moment you find it**, to the routine that owns it,\n  with the evidence and what \"done\" looks like. Nothing waits for the record step to be\n  remembered.\n- **Do not send what nobody must act on.** A courtesy report is noise that costs another routine\n  a read; an announcement that needs no reply is born settled. The test is whether someone must\n  DO something — if not, it belongs in a LEDGER line or a shared-store note, not a report.\n",
+   "block": "## Done when\n\n- d1 · gate-sweep — every scheduled or lane-fired routine has a gate predicate installed or a recorded reason it has none\n- d2 — every selected target was studied, passed through the lenses and fresh-eyes, its changes committed, and one `routine-improver:` line appended to its LEDGER\n- d3 · apply-lenses — every target's LEDGER line accounts for all seven lenses (applied, or unrun with its reason); a target or lens reported clean names what was read and checked\n- d4 · library-pass — every fix is tallied under its pattern slug in state/library-watch.json; each confirmed pattern defect is upstream, version-bumped, lint-clean and committed with its blast radius\n- d5 — every finding this run could not act on is handed to its owner or raised as a deferred question naming the target, or its LEDGER says why it was dropped\n- d6 — every report delivered to this routine was acted on or declined with a reason, with a reply event in .control/reports.jsonl\n- d7 · record — state/visits.json advanced for every target touched and this routine's LEDGER has this run's entry\n",
+   "never": [
+    "Never leave a target's closing report for the end of the sweep; send it in the same turn as the commit it reports.",
+    "Never hold a finding you cannot act on until the record step; route it to its owner the moment you find it, with the evidence and what done looks like.",
+    "Never send a report nobody must act on: an announcement is born settled (settles + closes); anything else is a LEDGER line or a shared-store note."
+   ]
+  },
+  "rules-review": {
+   "replaces": "## Completion criteria\n- Every selected rule was either revised with named run evidence, or explicitly left alone\n  with the reason recorded.\n- The compaction pass ran: any rule over the soft length budget was either compacted (principle\n  preserved, every working reading kept, lint clean) or explicitly left long with the reason\n  recorded.\n- Every non-rule problem found along the way was reported to the routine that owns it\n  (see `stages/route-elsewhere.md`) — not carried, not escalated to the user by default.\n- `state/reviewed.json` advanced for every rule examined; this run has its LEDGER entry.\n",
+   "block": "## Done when\n\n- d1 · revise — every selected rule was revised with named run evidence, or explicitly left alone with the reason recorded\n- d2 · compact — every rule over the soft length budget was compacted (principle preserved, every working reading kept, lint clean) or explicitly left long with the reason recorded\n- d3 · route-elsewhere — every non-rule problem found was reported to the routine that owns it\n- d4 · record — state/reviewed.json advanced for every rule examined and this run has its LEDGER entry\n",
+   "never": []
+  },
+  "scheduler-improvement-research": {
+   "replaces": "## Completion criteria\n\nPer run: every proposal accepted since the last run handed to `self-audit` as a `DECIDED:` report (up to the open-thread cap, oldest acceptance first) and the hand-off recorded against its block in `decisions.md`; all five fixed axes (technology, methodology, functionality, aesthetics, architecture) reviewed; every materially-new, well-grounded proposal filed as a deferred decision on the subpage AND mirrored to `decisions.md` (no per-axis cap — the run stops when the good candidates are exhausted, or at a clean boundary the budget can no longer cross); `state/proposed.md` updated with every filed proposal; every axis that yielded nothing new noted explicitly (for architecture, an architecture-fights-intention finding is action-required and must be filed, not deferred as optional); one `LEDGER.md` entry appended. No implementation performed and no other outward action taken.\n\n**Overall (PERPETUAL):** no end — the backlog keeps growing across runs until the user stops the routine. No goal condition retires it.\n",
+   "block": "## Done when\n\n- d1 · orient — every proposal accepted since the last run is handed to self-audit as a `DECIDED:` report, oldest first up to the open-thread cap, with the hand-off recorded against its block in decisions.md\n- d2 · review-axes — all five fixed axes (technology, methodology, functionality, aesthetics, architecture) were reviewed, each ending in filed proposals or an explicit \"nothing new\"\n- d3 · review-axes — every materially new, well-grounded proposal is filed as a deferred decision, an architecture-fights-intention finding filed as action-required\n- d4 · mirror-and-log — every filed proposal is mirrored to decisions.md and recorded in state/proposed.md; one LEDGER.md entry is appended\n",
+   "never": []
+  },
+  "self-audit": {
+   "replaces": "## Completion criteria\n- `audit/report.json` rewritten with stable ids (F1, D1…), **every finding and decision carrying\n  a `status`** from the `docs/items.md` vocabulary; the anchor in `state/audit.json` advanced\n  (`last_commit`/`last_ts`/`last_run`); reviewer feedback reconciled; LEDGER appended.\n- Every changelog row you appended names the item ids it addressed in `items: [...]`, and every\n  item you cite — bug report, finding or decision — is cited by its id (`R7`, `F202`, `D45`).\n- Every code change is **test-gated green before commit**; any red edit reverted, never committed.\n- A restart is requested **iff** code was committed this run.\n- Every unprovable suspicion is backed by evidence or turned into an instrumentation fix.\n- **The active item set is accounted for**: every `open` and `in_progress` item (report, finding,\n  decision) was MOVED this run — fixed, routed to its owner, closed with a reason, or (for a\n  genuinely owner-/operator-blocked one) named in the BLOCKED ledger with its one-line blocker.\n  Untargeted rows never end the run un-triaged; `in_progress` rows an owner drained but never\n  answered are chased or escalated, not passed over. Read the active set from the daemon\n  (`/api/items?status=open` and `?status=in_progress`), which is authoritative, not from a util\n  whose derived status diverges (F401).\n- A run that finds nothing worth changing — and says so clearly — is a good run. No churn.\n  But \"nothing worth changing\" is a statement about the CODE, never about the queue: while an\n  authorized item is unbuilt, the run has something to build, and a clean tree is the best\n  moment to build it.\n",
+   "block": "## Done when\n\n- d1 · analyse-findings — every unprovable suspicion is backed by evidence or turned into an instrumentation fix\n- d2 · act-apply-fixes — the authorized queue advanced as a gated live-tree commit or a committed worktree step (state/plan.md ticked), or the summary names the operator decision it waits on; no other reason counts\n- d3 · act-apply-fixes — every code change was test-gated green before its commit, every red edit is reverted, every changelog row names its item ids and every cited item is cited by id\n- d4 — every open and in_progress item moved this run: fixed, routed to its owner, closed with a reason, chased if an owner sat on it, or named in the BLOCKED ledger with its blocker\n- d5 · write-report — audit/report.json is rewritten with stable ids, every finding and decision carrying a status from the docs/items.md vocabulary, and reviewer feedback reconciled\n- d6 · request-restart — a restart is requested if and only if code was committed this run\n- d7 · record-close — the state/audit.json anchor (last_commit, last_ts, last_run) is advanced and the LEDGER entry appended\n",
+   "never": [
+    "Never take the active item set from a util's derived status; read it from the daemon's /api/items?status=open and ?status=in_progress."
+   ]
+  },
+  "sprind": {
+   "replaces": "## Completion criteria\n\n- Per run: every `text_changed_key` is re-scored with Pangram; a text or comment change triggers one fresh whole-application German review covering every section, all cross-section dependencies, and a direct `comment_response` for every non-empty current comment. For each processed app, attachments and demo are compared with the full current application; evidenced inconsistencies in writable sources are corrected under `ai-writing-tells`; all current LaTeX attachments are compiled and inspected; all current PDFs and demo files are syntax-checked as applicable, published through `sprind_demo_pages`, read back byte-identically, and linked from the review page. The affected app pages and index are rebuilt in German, validated, uploaded, and read back byte-identically. Complete text and comment baselines are advanced only after success, and exactly one LEDGER entry records the work and evidence.\n- A run where nothing changed and no bootstrap is needed publishes nothing and finishes `keine Änderungen`.\n- **Overall (DONE_WHEN):** the SPRIND „Deutschland, was geht?“ submission deadline of **20 August 2026** has passed — the three applications (ki-pruefstand, meldefluss, vergabeklar) were coached to their final state and the review pages under https://sprind.markwernsdorfer.com/applications/ stand as the final record. Meeting that retires the routine: the scheduler stops firing it and a Decisions-page proposal asks the user to confirm. Until it is accounted for, each run keeps the site at `/applications/` current with the user's saved edits — every processed app has a German editable + Pangram-scored page reachable from the German index — and tells the user which apps/sections were re-evaluated and that the live FTP URLs are authoritative.\n- A claimed-but-unverified outcome (an unread-back score, an unchecked upload, an unverified link) is the worst failure here — read back and confirm every external result.\n",
+   "block": "## Done when\n\n- d1 · score-changed-sections-pangram — every changed section's text is re-scored with Pangram; each processed app's total re-scored from its full reassembled document\n- d2 · analyze-changed-sections-german — every app with a changed text or comment has one fresh whole-application German review covering every section and cross-section dependency, answering every non-empty comment\n- d3 · sync-attachments-and-demo — every processed app's attachments and demo match the current application, each evidenced inconsistency in a writable source corrected under `ai-writing-tells`\n- d4 · sync-attachments-and-demo — every current attachment is compiled and inspected; every PDF and demo file published, read back and linked from its review page\n- d5 · build-publish-german-pages — every processed app's German review page and the index are rebuilt, validated, published and read back\n- d6 · record-baseline-and-report — text and comment baselines are advanced for every processed app, one LEDGER entry records the work and evidence, and the summary names the apps and sections re-evaluated\n",
+   "never": []
+  },
+  "steward-hub-maintainer": {
+   "replaces": "## Completion criteria\n\n- **Per run:** every increment that was genuinely due — each master defect fixed and locally verified (optionally smoke-tested), the master/manifest reconciliation, or a clean \"master clean\" confirmation — the run stopping when the list is empty or at a clean boundary the budget can no longer cross, never because a first fix already felt like a run's worth; with each addressed cluster item closed with evidence or reported as blocked, `state/` and `state/phase.json` updated, exactly one LEDGER entry appended, and the run finished stating where the deliverable lives.\n- **Overall (PERPETUAL):** the master kit is correct and coherent (routines retrieve it from the local master), and the cluster the items API returns for this routine is worked down to empty — then kept there. This routine is a standing obligation with **no end**: there is no goal condition that retires it, and a run that finds nothing open and the master clean is a valid, complete run.\n",
+   "block": "## Done when\n\n- d1 · reconcile-master-host-drift — the master files were re-hashed against state/master-manifest.json, with any drift recorded in state/drift-report.json\n- d2 · fix-and-verify-master — every master defect this run took is fixed, locally verified (PHP lint, JS syntax, module allowlist, rewrite logic) and read back, or the master is confirmed clean\n- d3 — every hub card whose slug names no installed routine is retired and the retirement reported\n- d4 · close-cluster-and-record — every addressed cluster item is closed with evidence or reported as blocked\n- d5 · close-cluster-and-record — state/ and state/phase.json are updated, exactly one LEDGER entry is appended, and the finish summary says where the deliverable lives\n",
+   "never": []
+  },
+  "suedlink-wlf": {
+   "replaces": "## Completion criteria\n\n- Route was chosen correctly (bootstrap / same-day light-delta / steady); an interrupted prior run was recovered by verifying then shipping, not by blindly committing or discarding.\n- Prior site feedback was ingested past the cursor (cursor advanced) and folded into the direction model before any new work.\n- New signal was gathered from mailbox / calendar / project tree; every incoming delivery filed into a dated `information_*/` folder with its `.eml`, and every referenced document retrieved, stored once, and indexed.\n- No dated obligation was left silently slipping: each due one was confirmed genuinely outstanding from the record, then prepared as a source `.md` in the project tree (for threading headers + record) AND surfaced on the status site as an editable sign-off card (the `gate` object on the current shell, per the group-store contract) — never written into his FAU Drafts folder; the send is Mark's gated action on the site, and a later run sends his approved `value` text verbatim, once.\n- Everything genuinely due beyond the obligations landed and was verified, with a passing test/build read back and one concrete quality lift; the run stopped when nothing was left due, or at a clean boundary the budget could no longer cross — never because a first increment already felt like a run's worth. Any negative finding was proven with its check reported; all touched public surfaces updated the same run.\n- Research (product + process) and, on cadence, the fresh-eyes audit ran; findings became BACKLOG proposals with small safe ones applied; absorbed corrections generalized into durable rules.\n- State recorded: `STATE.md` curated, `notes.md` + `WORKLOG.md` + `DELIVERABLES.md` + `BACKLOG.md` updated, exactly one `LEDGER.md` entry appended.\n- The status site was regenerated and published into the `suedlink-wlf` subdir only (feedback store and sibling folders untouched, upload set verified scoped), surfacing state + deliverables + exactly one open question with stable feedback ids preserved and the feedback data file never clobbered; Mark told the hub URL + subdir.\n- **Overall (DONE_WHEN):** the WLF prediction model and the technical report are delivered to the partners and accepted. Meeting that retires the routine: the scheduler stops firing it and a Decisions-page proposal asks Mark to confirm — say so in the finish summary and tell Mark where each deliverable lives.\n- No claim made without evidence; no affirmatively false external statement; nothing sent that Mark had not approved on the site, and nothing written into his FAU Drafts folder.\n",
+   "block": "## Done when\n\n- d1 · orient-from-notes-and-claude-md — an interrupted prior run, if any, was recovered by verifying then shipping, not by blindly committing or discarding\n- d2 · ingest-hub-feedback-first — every feedback entry past the cursor was folded into the direction model before any new work, with the cursor advanced to the last entry consumed\n- d3 · scan-mailbox-and-index-deliveries — new mailbox, calendar and project-tree signal is gathered, each delivery filed in a dated information_*/ folder with its .eml, each referenced document stored once and indexed\n- d4 · guard-obligations-and-draft-followups — every due obligation is confirmed outstanding from the record, kept as a source .md and put on the site as a sign-off card; every text Mark approved is sent verbatim, once\n- d5 · advance-one-wlf-analysis-increment — everything due beyond the obligations landed, verified by a passing test or build read back; every negative finding is proven with its check, every touched surface updated\n- d6 · product-process-research-and-fresh-eyes-audit — the product and process research probes ran, as did the fresh-eyes audit when its cadence came round; findings are BACKLOG proposals, small safe ones applied\n- d7 · record-and-republish-suedlink-hub-card — STATE.md, notes.md, WORKLOG.md, DELIVERABLES.md and BACKLOG.md are updated and exactly one LEDGER.md entry is appended\n- d8 · record-and-republish-suedlink-hub-card — the `suedlink-wlf` page shows current state and deliverables with at most one open question (a real one) and stable ids; Mark has the hub URL and subdir\n",
+   "never": []
+  },
+  "token-lab": {
+   "replaces": "## Completion criteria\n- `artifacts/report.html` regenerated with a dated header and a \"what changed\" section.\n- `state/backlog.md` moved forward (something added, sharpened, or retired — with why).\n- At least one experiment recorded under `state/experiments/` (or an explicit LEDGER\n  note why none was possible this run).\n- Nothing outside this routine's directory was written; no util anyone else uses was\n  changed.\n- Every improvement an experiment has CONFIRMED worth adopting (this run, or a prior run's\n  win not yet handed off) has been SUGGESTED to its responsible routine via a `report`. A\n  confirmed win left only in this lab's report with no outgoing suggestion is an incomplete run.\n- A run that finds a candidate method is NOT worth adopting — and shows the numbers —\n  is a good run. Negative results are results.\n",
+   "block": "## Done when\n\n- d1 · research — every candidate method this run found is in state/backlog.md with its sources and a falsifiable claim; every entry it settled is retired with why\n- d2 · experiment — this run's bounded A/B experiment is recorded under state/experiments/ with its design, raw numbers and verdict, or the LEDGER says why none was possible\n- d3 · report — artifacts/report.html is rewritten whole with a dated header and a \"what changed\" section, every claim carrying a number or a source\n- d4 · report — every improvement an experiment confirmed worth adopting, this run or earlier and not yet handed off, is suggested to its responsible routine in a `report`\n",
+   "never": [
+    "Never write or revise a util another routine uses; a proven util improvement goes to its owner as a `report`."
+   ]
+  },
+  "train-seat-finder-scheduler": {
+   "replaces": "## Completion criteria\n- Per run, if the soonest upcoming, not-yet-handled ride departs within the ~48h horizon: a one-time departure−1h trigger of the BahnBonus Seat Position Finder is set for that single ride, it is recorded in `state/scheduled_connections.json`, and exactly one LEDGER entry records the run — done.\n- Per run, if there is no upcoming unhandled ride, or the soonest is still beyond the horizon: nothing is scheduled, and the LEDGER entry records why. This is correct, not a miss — a later daily run arms it once it comes near.\n- A schedule claimed-but-not-verified is a failure: always read back that the schedule exists before recording it.\n- **Coverage depends on the daily cadence.** \"Every train gets covered\" holds only because this routine runs *daily* and arms each ride as it enters the ~48h window. That cadence is set by `schedule.cron` in `routine.yaml` (the user's to set) — with an **empty cron the routine never runs automatically**, so nothing is armed. The ~48h horizon assumes a daily cadence.\n",
+   "block": "## Done when\n\n- d1 · scan-inbox — the Gmail inbox was scanned across the full ~6-month booking horizon for Deutsche Bahn booking confirmations\n- d2 · schedule-trigger — when the soonest unhandled ride departs within ~48h, its one-time departure−1h trigger of the BahnBonus Seat Position Finder is set and read back\n- d3 · record-run — the armed ride is recorded in state/scheduled_connections.json; exactly one LEDGER entry records the run, including why nothing was armed when nothing was\n",
+   "never": []
+  },
+  "tv-show-tracker-seedbox-manager": {
+   "replaces": "## Completion criteria\n\n- Every show in `state/shows.json` has been checked for a new episode.\n- For shows with a new episode available: a torrent has been searched for, evaluated, and (if meeting criteria or falling back) added to the seedbox — unless the disk-space gate forbade new grabs this run.\n- For torrents fully downloaded and verified present locally: the seedbox torrent entry + data files have been erased immediately (erase-on-complete policy), the pointer advanced in `state/shows.json`, and the entry dropped from `state/seedbox_state.json`.\n- For locally-deleted (consumed) items: seedbox torrent + data removed; suggestion items got their taste-model question filed.\n- Sub-optimal-torrent retry counters have been checked and decremented for any eligible episodes; once a counter reaches 0, retrying stops for that episode.\n- If the weekly recommendation window is due: spin-offs and recommendations have been searched, evaluated (with taste-model guidance), and added.\n- `state/shows.json` has been updated to reflect all changes.\n",
+   "block": "## Done when\n\n- d1 · research-aired-episodes — every show in state/shows.json was checked for a new episode\n- d2 — every newly aired episode has a torrent searched, evaluated and added to the seedbox, or is named as held back by the disk-space gate or as unavailable\n- d3 — every sub-optimal episode whose retry counter is above 0 was re-searched, a strictly better version swapped in when found, and its counter decremented\n- d4 · seedbox-cleanup-and-advance-pointers — every complete torrent the disk-space gate let through was pulled into /srv/videos, verified at exact size, erased from the seedbox with its data and its pointer advanced\n- d5 · seedbox-cleanup-and-advance-pointers — every locally deleted item has its seedbox torrent and data removed; each that was a suggestion has its taste-model question filed\n- d6 · weekly-spinoffs-and-recommendations — when the weekly window is due, spin-offs and taste-model recommendations were searched, evaluated and added\n- d7 · record-ledger-and-commit — state/shows.json reflects every change this run\n",
+   "never": []
+  },
+  "uncensored-model-radar": {
+   "replaces": "## Completion criteria\n\n- `state/watchlist.json` reflects this run's ranked top-5 (the trigger state).\n- `state/largest_known.json` reflects the largest empirically-complying model (derived pointer, kept for continuity).\n- `state/discovered_models.json` includes every uncensored cloud-accessible model found this run (no duplicates with prior runs).\n- **Testing floor — the deliverable is the tested list, not the discovered one.** Only an\n  empirically-complying model may enter the watchlist, so a run that discovers without testing\n  cannot change the deliverable at all. Every run therefore **tests at least one untested\n  candidate** while any reachable untested candidate exists: take them largest-first from\n  `state/discovered_models.json`, and keep testing until the budget is spent or the untested\n  pool is empty. Record each result (complied / refused / unreachable) so no candidate is\n  tested twice. A run that tested nothing states **why the untested pool was empty or\n  unreachable** — \"none found this run\" is a statement about DISCOVERY and never excuses\n  leaving an already-discovered candidate untested.\n- The ranked usable list (complying-only, up to 5) is reported in the LEDGER entry and the `finish` summary, flagged as changed (an entrant or a departure) or unchanged since the prior run — no Discord send (permanently declined 2026-08-15).\n- One LEDGER entry was appended describing what was searched, what was found, the usable list, whether the reachable pool was exhausted below 5, and whether it changed since the prior run.\n- Everything is committed.\n",
+   "block": "## Done when\n\n- d1 · search-providers — every uncensored, cloud-accessible model found this run is in state/discovered_models.json, with no duplicates against prior runs\n- d2 · verify-models — every untested candidate the run could reach was tested largest-first with its verdict (complied, refused, unreachable) recorded, or the summary says why none could be\n- d3 · compare-and-notify — state/watchlist.json holds this run's ranked usable list (at most five empirically complying models, largest first) and state/largest_known.json names the largest\n- d4 · record — one LEDGER entry and the finish summary report the usable list, whether the reachable pool fell short of five, and whether the list changed since the prior run\n",
+   "never": []
+  },
+  "voice-model-trainer": {
+   "replaces": "## Completion criteria\n\n- **Per run:** the run is done when everything genuinely due has been advanced and recorded (the concrete artifact changes, one LEDGER entry, updated manifests/decisions log), OR when a pending remote job is still running with nothing else productive available and that stand-by is recorded. It stops when the list is empty, or at a clean boundary the budget can no longer cross — never because a first increment already felt like a run's worth. Bootstrap runs complete by initializing state, recording the GPU spec + chosen base + SICO baseline, and advancing to `steady`.\n- **Overall (DONE_WHEN):** the model paraphrases a full paragraph while preserving its meaning, and Mark cannot distinguish the result from his own writing. **Mark judges this** — report the current distance and wait for his verdict; never mark it met yourself. Since 2026-09-24 this is ONE condition about ONE deliverable: `gu voice-rewrite`, serving the single published current-best checkpoint, does this for **arbitrary input text** — a neutral paraphrase, AI-generated prose, or a draft of his own — and reads HUMAN to `pangram` while preserving the source's meaning. There is no second bar and no per-input-kind exemption: a model that restyles his own paraphrased text beautifully and mangles AI prose is not done, and neither is the reverse. The AI-input side is measured against the probe that exposed it (`eval/aitest/`, where ckpt-v6 scores 0.0000 and the arbitrary German formal paragraph measured on 2026-09-24 scored 0.0000 human in broken German), the paraphrase side against the held-out eval set. Meeting it retires the routine: the scheduler stops firing it and a Decisions-page proposal asks Mark to confirm. Short of that, a plateau at target on BOTH pangram human-ness and fidelity across multiple consecutive runs moves the phase to `maintain`, where runs guard the best checkpoint rather than launching new training. All work is autonomous; the corpus, datasets and checkpoints live on predator, while fetching and staging may happen anywhere (the residency rule was repealed 2026-09-21). There is no outward communication in scope — but run summaries SHOULD quote excerpts of Mark's own text and of the model's rewrites, because that is the only way he can give the verdict DONE_WHEN asks of him.\n",
+   "block": "## Done when\n\n- d1 · orient-and-poll-remote-jobs — every pending detached job on predator was polled this run and its status in state/jobs.json is current\n- d2 · bootstrap-gpu-and-dealigned-base — on a bootstrap run, state is initialized with the GPU spec, the chosen non-instruct base and the SICO baseline recorded; the phase is advanced to steady\n- d3 — everything due this run was advanced and recorded, with every corpus, dataset and checkpoint it produced on predator, or the run is a recorded stand-by on a job still running\n- d4 · record-manifests-and-decide-next — the touched manifests, state/decisions_log.md and state/phase.json are updated; exactly one LEDGER.md entry is appended\n- d5 · record-manifests-and-decide-next — the finish summary quotes excerpts of Mark's own text beside the model's rewrites and names what is still due and where the artifacts live on predator\n",
+   "never": [
+    "Never communicate outward: no mail, message or post leaves this routine."
+   ]
+  },
+  "website-maintenance-consultancy": {
+   "replaces": "## Completion criteria\n\n**Per run:** all five audit passes ran over the whole tree and are named in the report with their evidence (clean passes included); every user inbox request was executed or answered with why it could not be and carried forward; every applied fix is surgical, mirrored across DE and EN where not language-specific, and individually verified; the whole-tree gate passed before any push (every edited file parses, script checks pass, the internal link graph resolves across DE and EN, no `deprecated/` file changed, no house-rule violation introduced, no secret or contact-form recipient configuration in the diff); if anything was applied, it is committed and pushed to `main` and the live site plus each changed page was fetched and confirmed to render the change; every content proposal is researched with citations and filed as a question with exact DE+EN wording, with the live text untouched until the user answers; `state/findings.md` is overwritten with the accumulated record and exactly one ledger entry appended; and the finish summary lists what was audited, every change as file + what + why, everything deliberately not changed with its reason, the pushed SHA and the live-check result — or states first that nothing was published and why.\n\n**Overall:** PERPETUAL — a live, edited, externally-linked website keeps drifting (links rot, facts age, engagements end, metadata falls out of step with the pages that exist), so this routine ends only if the user retires the site, hands it over, or withdraws the mandate, and it records that decision in `state/stopping.json`.\n",
+   "block": "## Done when\n\n- d1 · full-audit-sweep-all-passes — the full sweep ran: cruft, bugs, SEO, performance and content all audited over the whole tree this run, each pass named with its evidence, clean ones included\n- d2 — every user inbox request was executed, or answered with why it could not be and carried forward\n- d3 · triage-fix-and-verify-each-edit — every fix it made is surgical, mirrored across DE and EN where not language-specific, and verified before the push\n- d4 · pre-push-gate-ship-to-main-and-live-check — the whole-tree gate passed before the push: files parse, script checks pass, the DE/EN link graph resolves, no deprecated/ file, house-rule breach or secret in the diff\n- d5 · pre-push-gate-ship-to-main-and-live-check — the changes are pushed to `main` and the live site at markwernsdorfer.com loads, each changed page fetched and showing the change\n- d6 · research-content-proposals-for-confirmation — every content change is researched with citations and filed as a question with its exact DE and EN wording, or already waits on one\n- d7 · record-findings-and-report-the-sweep — state/findings.md is overwritten with the accumulated record and exactly one ledger entry is appended\n- d8 · record-findings-and-report-the-sweep — the run reports exactly what it changed (file, what, why) and what it found but left alone, with the pushed SHA and live check, or says first that nothing was published\n",
+   "never": []
+  },
+  "weightloss": {
+   "replaces": "## Completion criteria\nper run: new feedback ingested + preference model updated, corpus/evaluations extended by everything genuinely due (at least BATCH_FLOOR, with no upper bound; the run stopping when the due list is empty or at a clean boundary the budget can no longer cross), full site regenerated and published with stable ids preserved and the feedback data file untouched; overall (PERPETUAL): no end — the per-run criteria above gate each run, never the operation, and no goal condition retires this routine. What DONE means for one run is the user's, in `state/stopping.json`; account for each of its conditions in your finish summary.\n",
+   "block": "## Done when\n\n- d1 · ingest — every feedback entry past the cursor is ingested and the preference model updated, with the cursor at the highest seq consumed\n- d2 — every directive, bug report and request in this run's feedback is implemented this run, or on the prioritize card with its stable id\n- d3 — every item open on the prioritize card at the start of the run is finished or split to its next increment; the LEDGER records OPEN_AT_START → OPEN_AT_END\n- d4 — everything due this run extended the records and the model: new personal data since the last-covered cursor pulled in and the predictor model refit on the latest window\n- d5 · render-publish — the site is regenerated and published with stable ids preserved\n",
+   "never": []
+  }
+ },
+ "goal_refs": {
+  "aisafety-grant-steward": [
+   {
+    "file": "stages/orient-and-route.md",
+    "old": "last run's summary, the stopping conditions and their last verdicts, the `state/notes.md` tail",
+    "new": "last run's summary, the FINISH LINE with each outcome's last distance, the `state/notes.md` tail"
+   },
+   {
+    "file": "stages/publish-page-and-record.md",
+    "old": "- Finish with the accounting every active stopping condition requires — `[s<n>] met — why` / `[s<n>] unmet — why` — and a direct link to the page, so he goes from \"what did this run do\" to seeing it in one step.",
+    "new": "- Finish with the `accounting` field: one entry per `Done when` line (`d<n> met: <evidence>`, `d<n> unmet: <what remains>` or `d<n> not due: <how that was established>`) and one per open finish-line outcome (`g<n> distance: <what remains>`, or `g<n> met: <evidence>` once proven). Put a direct link to the page in the summary, so he goes from \"what did this run do\" to seeing it in one step."
+   },
+   {
+    "file": "stages/publish-page-and-record.md",
+    "old": "- **The goal**: the application is submitted — Mark has emailed the four attachments to mail@aisafetyaachen.org — and he knows where the steward page and the final PDFs live. Record it as met only on evidence that he actually sent it, never on your own readiness assessment. Meeting every goal condition retires the routine:",
+    "new": "- **Finish-line outcome g1**: the application is submitted — Mark has emailed the four attachments to mail@aisafetyaachen.org — and he knows where the steward page and the final PDFs live. Claim `g1 met` only on evidence that he actually sent it, never on your own readiness assessment. Meeting every finish-line outcome retires the routine:"
+   },
+   {
+    "file": ".memory/external-checks-tooling.md",
+    "old": "## Gmail sweep (proves s16/s17 either way)",
+    "new": "## Gmail sweep (proves finish-line g1/g2 either way)"
+   },
+   {
+    "file": ".memory/network-outage-diagnosis.md",
+    "old": "s16 (submitted?) and s17 (funder replied?) rest on the mailbox sweep.",
+    "new": "Finish-line outcomes g1 (submitted?) and g2 (funder replied?) rest on the mailbox sweep."
+   },
+   {
+    "file": ".memory/steward-hub-contract.md",
+    "old": "tab = exact group name \"Professional · Daily\";",
+    "new": "tab = the HUB TAB your run instructions name, published exactly as given;"
+   },
+   {
+    "file": "stages/publish-page-and-record.md",
+    "old": "The card's tab is the routine group's name exactly as the scheduler spells it.",
+    "new": "The card's tab is the HUB TAB your run instructions name, published exactly as given."
+   }
+  ],
+  "ards": [
+   {
+    "file": "main.md",
+    "old": "When DONE_WHEN is met, say so and account for it against the goal condition —\n   meeting every goal condition retires the routine: the scheduler stops firing it and a\n   Decisions-page proposal asks Mark to confirm.",
+    "new": "When the finish line's g1 is met, say so and claim `g1 met: <evidence>` in the\n   accounting (until then `g1 distance: <what remains>`) — meeting it retires the routine: the\n   scheduler stops firing it and a Decisions-page proposal asks Mark to confirm."
+   },
+   {
+    "file": "stages/republish-ards-status-page-guarded.md",
+    "old": "If DONE_WHEN is met — the **statistical analysis** and its **write-up**\nare delivered to Susanne Bertermann and the scoped, priced continuation has been **sent** — say so\nplainly in the finish summary and account for it against the goal condition. Meeting every goal\ncondition retires the routine: the scheduler stops firing it and a Decisions-page proposal asks Mark\nto confirm.",
+    "new": "If the finish line's g1 is met — the **statistical analysis** and its **write-up**\nare delivered to Susanne Bertermann and the scoped, priced continuation has been **sent** — say so\nplainly in the finish summary and claim `g1 met: <evidence>` in the accounting; until then account\n`g1 distance: <what remains>`. Meeting it retires the routine: the scheduler stops firing it and a\nDecisions-page proposal asks Mark to confirm."
+   },
+   {
+    "file": ".memory/fau-group-store.md",
+    "old": "is injected into your fs read+write roots at every run boot (the\nrun prompt names the path).",
+    "new": "is one of your own write roots (the\nrun prompt names the path)."
+   },
+   {
+    "file": ".memory/steward-unified-publish.md",
+    "old": "`card.tab` MUST be exactly `FAU` (the scheduler group).",
+    "new": "`card.tab` MUST be exactly the HUB TAB your run instructions name."
+   },
+   {
+    "file": "stages/republish-ards-status-page-guarded.md",
+    "old": "`card{name,tab:\"FAU\",href,status}`",
+    "new": "`card{name,tab:<HUB TAB>,href,status}`"
+   },
+   {
+    "file": "../.control/group-stores/grp-8bfd2aa6/fau-steward-webroot.md",
+    "old": "`state.card {name, tab:\"<group name, e.g. FAU>\", href, status}`",
+    "new": "`state.card {name, tab:<your HUB TAB>, href, status}`"
+   },
+   {
+    "file": ".memory/INDEX.md",
+    "old": "The FAU group SHARED store (injected fs root, read with read_file not memory_read)",
+    "new": "The FAU SHARED store (one of your own write roots, read with read_file not memory_read)"
+   }
+  ],
+  "birthday-admin": [
+   {
+    "file": "scripts/steward_publish.py",
+    "old": "def load(path):\n    with open(path, encoding=\"utf-8\") as fh:\n        return json.load(fh)\n",
+    "new": "def load(path):\n    with open(path, encoding=\"utf-8\") as fh:\n        return json.load(fh)\n\n\ndef hub_tab_from(text):\n    \"\"\"The top-level `hub_tab:` of a routine.yaml's text -- \"\" when absent or empty.\"\"\"\n    for line in text.splitlines():\n        if line.startswith(\"hub_tab:\"):\n            value = line.split(\":\", 1)[1].strip()\n            if len(value) >= 2 and value[0] == value[-1] == \"'\":\n                return value[1:-1].replace(\"''\", \"'\")\n            if len(value) >= 2 and value[0] == value[-1] == '\"':\n                return json.loads(value)\n            return \"\" if value in (\"~\", \"null\") else value\n    return \"\"\n\n\ndef hub_tab():\n    \"\"\"This routine's own `hub_tab` (routine.yaml): the one source of the hub card's `tab`.\"\"\"\n    with open(os.path.join(ROOT, \"routine.yaml\"), encoding=\"utf-8\") as fh:\n        return hub_tab_from(fh.read())\n"
+   },
+   {
+    "file": "scripts/steward_publish.py",
+    "old": "def build_state(view, items):\n",
+    "new": "def build_state(view, items, tab):\n"
+   },
+   {
+    "file": "scripts/steward_publish.py",
+    "old": "            \"tab\": \"Projects\",\n",
+    "new": "            # The heading this card sits under on the hub is this routine's own `hub_tab`,\n            # published exactly as given; with none set the card carries no `tab` at all.\n            **({\"tab\": tab} if tab else {}),\n"
+   },
+   {
+    "file": "scripts/steward_publish.py",
+    "old": "    state = build_state(view, items)\n",
+    "new": "    state = build_state(view, items, hub_tab())\n"
+   },
+   {
+    "file": "scripts/steward_publish.py",
+    "old": "\"card_tab\": state[\"card\"][\"tab\"]}",
+    "new": "\"card_tab\": state[\"card\"].get(\"tab\")}"
+   },
+   {
+    "file": "scripts/steward_publish.py",
+    "old": "    st = build_state(view, items)\n    assert st[\"card\"][\"tab\"] == \"Projects\", \"card.tab must be Projects\"\n",
+    "new": "    st = build_state(view, items, hub_tab())\n    assert st[\"card\"].get(\"tab\", \"\") == hub_tab(), \"card.tab is this routine's own hub_tab\"\n    assert \"tab\" not in build_state(view, items, \"\")[\"card\"], \"no hub tab set: the card carries no tab\"\n    assert build_state(view, items, \"T\")[\"card\"][\"tab\"] == \"T\", \"a set hub tab is published as given\"\n    assert hub_tab_from(\"name: x\\nhub_tab: 'A & B'\\n\") == \"A & B\" and hub_tab_from(\"name: x\\n\") == \"\"\n"
+   },
+   {
+    "file": ".memory/steward-publish.md",
+    "old": "card{tab:\"Projects\"}.",
+    "new": "card (its `tab` only from this routine's own `hub_tab` — with none set, no `tab`)."
+   }
+  ],
+  "config-optimizer": [
+   {
+    "file": ".memory/apply-reach.md",
+    "old": "## Route 3 — DOMAIN config: one-click, and it MERGES as of 0.358.0\n`config_patch.domain: \"<grp-id>\"` → PATCHes `/api/domains/{id}`; `DomainPatch.config` is a plain\ndict, so `config.permissions` / `config.capabilities` ARE accepted here. Naming BOTH `routine`\nand `domain` in one patch is refused.\n- The old wholesale-replace hazard (which deleted FAU's block on 2026-09-21) is **RETIRED**.\n  `config` merges key by key; **removal must be SAID** (`remove: [\"k\"]` or an explicit null).\n  Prior bytes are backed to `.control/domains-history/`.\n- **Still stands (R1662):** a domain patch does not revoke a permission a MEMBER declares in its\n  own file. Verify each member at source after a narrowing.\n",
+    "new": "## Route 3 — a change for several routines: one Route-1 patch per routine\nThere is no shared config block: a routine's rules, permissions, capabilities, roots and grants are\nexactly its own `routine.yaml`, so a change meant for several routines is one patch per routine\n(Route 2 for permissions), each verified at its own source.\n"
+   },
+   {
+    "file": "scripts/collect_audit.py",
+    "old": "    domains=json.loads((home/'.control/domains.json').read_text())\n",
+    "new": ""
+   },
+   {
+    "file": "scripts/collect_audit.py",
+    "old": "    out={'routines':rows,'domains':domains,'lanes':lanes}",
+    "new": "    out={'routines':rows,'lanes':lanes}"
+   },
+   {
+    "file": "scripts/collect_audit.py",
+    "old": "'routines':len(rows),'domains':len(domains['domains']),'lanes':len(lanes['lanes'])",
+    "new": "'routines':len(rows),'lanes':len(lanes['lanes'])"
+   },
+   {
+    "file": "scripts/render_audit.py",
+    "old": "    t += [\"### 4.3 Shared domains and lanes\", \"\",\n          \"Domain config fills only what a member omits; a member's explicit value wins. \"\n          \"A lane owns scheduling only, and a lane cron suppresses member crons.\", \"\",\n          \"| record | current | verdict | recommendation / rationale |\", \"|---|---|---|---|\"]\n    for d in data[\"domains\"][\"domains\"]:\n        fk = fl.get(\"domain_flags\", {}).get(d[\"id\"])\n        v, rec = (fk[\"verdict\"], fk[\"rec\"]) if fk else (\"ok\", \"Retain current role-scoped defaults.\")\n        t.append(f\"| Domain {d['id']} ({d.get('name')}) | {cell(d)} | {v} | {rec} |\")\n",
+    "new": "    t += [\"### 4.3 Lanes\", \"\",\n          \"A lane owns scheduling only; a lane cron suppresses member crons.\", \"\",\n          \"| record | current | verdict | recommendation / rationale |\", \"|---|---|---|---|\"]\n"
+   },
+   {
+    "file": ".memory/INDEX.md",
+    "old": "+ SOURCE-verified group-merge semantics (config/groupconfig.py: group=DEFAULT, LIST UNION, MAPPING member-wins, DIALS fill-only-if-member-omits so member's explicit dial wins) ",
+    "new": "+ nothing is inherited from a group (a routine's settings are exactly its own routine.yaml) "
+   },
+   {
+    "file": ".memory/apply-reach.md",
+    "old": "  enabled, fs_read_roots, fs_write_roots, grants, improve, keep_runs, machines, **models**, name,\n  output_compression, **permissions**, rules, run_gate, schedule, tags. The authority is\n  `RoutinePatch` in `web/api_routine_patch.py` — re-read it rather than this list when unsure.\n  `routine` and `domain` are ROUTING keys, popped before the body is checked: `domain` sends the\n  patch to Route 3, so a routine's own `domain:` membership is NOT movable by a config_patch.",
+    "new": "  enabled, fs_read_roots, fs_write_roots, grants, hub_tab, improve, keep_runs, machines,\n  **models**, name, pattern, **permissions**, rules, run_gate, schedule, shared_reminders, tags.\n  The authority is `RoutinePatch` in `web/api_routine_patch.py` — re-read it rather than this\n  list when unsure. `routine` is a ROUTING key, popped before the body is checked."
+   },
+   {
+    "file": ".memory/apply-reach.md",
+    "old": "  current docs. While domains exist, a doc or dial the domain supplies stays the domain's and is\n  NOT written into the member's file — so verify the member's EFFECTIVE set, not its file alone.",
+    "new": "  current docs."
+   },
+   {
+    "file": ".memory/group-scheduling.md",
+    "old": "## Domain config MERGE — SOURCE `config/domainconfig.py` `apply_shared_config` (verified 2026-09-30) — ONLY while `.control/domains.json` exists\nA routine's DOMAIN (at most one, named by its OWN `domain:` key; records in `.control/domains.json`) is merged in at load. **The domain is a DEFAULT, never an override.** Merge is PRE-validation (a domain can't grant a member something the member alone would be refused).\n- **LIST keys** (permissions, rules, machines, tags, **fs_read_roots, fs_write_roots**, capabilities.actions/utils/util_tags) — UNION, member-first order.\n- **MAPPING keys** (models, connections, grants, budgets) — merge PER KEY, **member wins** (`{**domain, **member}`): a member overrides one budget/model key without losing the rest; a member with no `models.main` inherits the domain's.\n- **Capability DIALS** (confirm, rule_confirm, remind_confirm, runs, workflows, reminders) — domain value fills ONLY when the member OMITS the dial; **a member's explicit dial ALWAYS wins.** So a domain CANNOT clamp a member that sets a LOOSER dial. `strip_shared_dials` drops a member dial equal to the domain's on save.\n- The domain's store `.control/group-stores/<domain-id>/` is injected into every member's fs roots at boot.\n⇒ A domain member EFFECTIVELY holds every rule/util/perm/grant/fs-root its domain lists even if its yaml omits it (domain-BLIND false gap). BUT a member's EXPLICIT dial is NOT overridden.\n**Once the settings-patterns release ships (0.369.0: `docs/patterns.md` in the repo, `pattern:` in routine.yaml, `domains.json` renamed `domains.retired-*.json`), none of this section applies:** nothing is merged — a routine's routine.yaml holds every value itself (copied from the pattern it follows, which is a reference, never a layer), so a gap read from the file is a real gap; a shared store is shared by naming `.control/group-stores/<id>` in the routine's OWN `fs_write_roots`.",
+    "new": "## Nothing is merged into a routine\nA routine's `routine.yaml` holds every value itself — copied from the settings pattern it follows, which is a reference, never a layer — so a gap read from the file is a real gap. A shared store is shared by naming `.control/group-stores/<id>` in the routine's OWN `fs_write_roots`."
+   },
+   {
+    "file": ".memory/group-scheduling.md",
+    "old": "ALSO name a domain that shares nothing with the lane but the string — resolve an id against the store you read it from. Domains while they exist: FAU `grp-8bfd2aa6`, **Instance `grp-d06ce35e` = MY DOMAIN** (store `.control/group-stores/grp-d06ce35e/`; 9 members = every Instance-lane routine), Travel `grp-f8effea9`, Morning Brief `grp-4a70b446`, Labs `grp-80fd7080`, Professional `grp-c1f68a2d`; 11 routines in none.",
+    "new": "ALSO name a shared-store directory under `.control/group-stores/` that has nothing to do with the lane but the string — resolve an id against the place you read it from."
+   },
+   {
+    "file": ".memory/group-scheduling.md",
+    "old": "## Lesson: cross-check `.control/lanes.json` FIRST — and, while domains exist, the member's domain block; a member's EXPLICIT dial overrides the domain\nCo-laned members chain (never concurrent) → false cron collisions. A domain UNIONS rules/utils/grants/fs-roots into its members → false capability/root gaps. But do NOT assume a domain DIAL clamps a member — an explicit member confirm/runs/workflows WINS. Genuine cross-LANE same-slot collisions ARE real (resolve membership first).",
+    "new": "## Lesson: cross-check `.control/lanes.json` FIRST\nCo-laned members chain (never concurrent) → false cron collisions. Genuine cross-LANE same-slot collisions ARE real (resolve membership first)."
+   }
+  ],
+  "doppelcheck-maintainer": [
+   {
+    "file": "main.md",
+    "old": "and report. **Overall:** PERPETUAL — repositories keep receiving issues, dependencies keep aging, links and claims keep going stale, and the org keeps gaining repos, so there is no state after which this maintenance is done; it ends only if the user withdraws the mandate or archives the org, which is what `state/stopping.json` records.",
+    "new": "and report. **Overall:** PERPETUAL — repositories keep receiving issues, dependencies keep aging, links and claims keep going stale, and the org keeps gaining repos, so there is no state after which this maintenance is done; it ends only when the user switches it off, after withdrawing the mandate or archiving the org."
+   },
+   {
+    "file": "main.md",
+    "old": "It consumes the state digest (`state/phase.json`, `state/stopping.json`, the `LEDGER.md` tail,",
+    "new": "It consumes the state digest (`state/phase.json`, the `LEDGER.md` tail,"
+   },
+   {
+    "file": "main.md",
+    "old": "Advance `state/phase.json` to `stand-down` only when the goal-scoped stopping conditions in `state/stopping.json` are met.",
+    "new": "Advance `state/phase.json` to `stand-down` only when the user himself says the mandate is withdrawn or the org archived: this routine has no finish line."
+   },
+   {
+    "file": "stages/orient-and-enumerate-org-repos.md",
+    "old": "- `state/stopping.json` — the goal-scoped conditions under which this maintenance ends (the user\n  withdraws the mandate, or the org is archived/handed over). Read it; do not evaluate it here —\n  the recording stage owns the phase advance.\n",
+    "new": ""
+   },
+   {
+    "file": "stages/orient-and-enumerate-org-repos.md",
+    "old": "Account the stopping\nconditions in `state/stopping.json` as met.",
+    "new": "Account each `Done when`\nline as not due: the mandate is closed."
+   },
+   {
+    "file": "stages/record-findings-and-report-the-sweep.md",
+    "old": "- `state/stopping.json` — the user's own words for when this mandate ends.\n",
+    "new": ""
+   },
+   {
+    "file": "stages/record-findings-and-report-the-sweep.md",
+    "old": "Read `state/stopping.json` and compare it against reality. Advance `state/phase.json` to\n`stand-down` ONLY if its goal-scoped conditions are met — the user withdrew the mandate, or the\norg and its repositories are archived/handed over. Turn budget, a quiet run, a clean sweep, or\n\"nothing to do this time\" are NOT stopping conditions: this maintenance is perpetual, so the\ndefault action here is to leave the phase at `steady`.",
+    "new": "This routine has no finish line: it runs until the user switches it off. Advance\n`state/phase.json` to `stand-down` ONLY when the user himself says so — he withdrew the mandate,\nor the org and its repositories are archived/handed over. Turn budget, a quiet run, a clean sweep,\nor \"nothing to do this time\" never end it: this maintenance is perpetual, so the\ndefault action here is to leave the phase at `steady`."
+   },
+   {
+    "file": "stages/record-findings-and-report-the-sweep.md",
+    "old": "touched only if the stopping conditions are genuinely met,",
+    "new": "touched only on the user's own word that the mandate ended,"
+   },
+   {
+    "file": ".memory/doppelcheck-build-and-audit-toolchain.md",
+    "old": "— stopping conditions live in\n`state/stopping.json` and are not routine config.",
+    "new": "— the finish line lives in\n`state/finish-line.json` (Mark's alone) and is not routine config."
+   }
+  ],
+  "fau-grant-prep": [
+   {
+    "file": ".memory/fau-group-store.md",
+    "old": "is injected into your fs read+write roots at every run boot (the\nrun prompt names the path).",
+    "new": "is one of your own write roots (the\nrun prompt names the path)."
+   },
+   {
+    "file": ".memory/steward-unified-api.md",
+    "old": "- `card` {name, tab:\"FAU\" (exact group name), href:",
+    "new": "- `card` {name, tab: the HUB TAB your run instructions name, exactly as given, href:"
+   },
+   {
+    "file": "stages/publish-grant-status-site.md",
+    "old": "`state.card {name, tab:\"FAU\", href, status}`",
+    "new": "`state.card {name, tab:<HUB TAB>, href, status}`"
+   },
+   {
+    "file": ".memory/INDEX.md",
+    "old": "The FAU group SHARED store (injected fs root, read with read_file not memory_read)",
+    "new": "The FAU SHARED store (one of your own write roots, read with read_file not memory_read)"
+   }
+  ],
+  "folder-reorg": [
+   {
+    "file": "main.md",
+    "old": "Set phase to `wind-down` when\n   DONE_WHEN is met, and finish with a run summary: what was built/reconciled, the space the eventual\n   commit will free, backlog remaining, and the single most important open question.",
+    "new": "Set phase to `wind-down` when\n   nothing of the finish line's g1 remains — report that as its distance, since only Mark judges it\n   met. Finish with a run summary: what was built/reconciled, the space the eventual\n   commit will free, backlog remaining, and the single most important open question."
+   },
+   {
+    "file": "main.md",
+    "old": "`DONE_WHEN` is the project's END, NOT the status word.",
+    "new": "The finish line is the project's END, NOT the status word."
+   },
+   {
+    "file": "main.md",
+    "old": "this run met its per-run completion criteria and nothing went wrong that was left",
+    "new": "this run met every due `Done when` line and nothing went wrong that was left"
+   },
+   {
+    "file": ".memory/run-status-convention.md",
+    "old": "NOT by the terminal\n`DONE_WHEN` (shadow validated + commit performed)",
+    "new": "NOT by the terminal\nfinish line (shadow validated + commit performed)"
+   },
+   {
+    "file": ".memory/run-status-convention.md",
+    "old": "this run met its per-run completion criteria and nothing went wrong that",
+    "new": "this run met every due `Done when` line and nothing went wrong that"
+   },
+   {
+    "file": ".memory/webroot-and-feedback-contract.md",
+    "old": "  **card.tab MUST = my routine-GROUP name = `Personal · Daily`** (grp-484a47fb; co-members bina, weightloss,\n  tv-show-tracker-seedbox-manager). VERIFY each run from run-context co-members — NOT from reports.",
+    "new": "  **card.tab = the HUB TAB my run instructions name, exactly as given; with none named, publish NO\n  `tab`** — the hub then files the card under its own heading."
+   },
+   {
+    "file": ".memory/webroot-and-feedback-contract.md",
+    "old": "4. Verify `?what=hub` (card+tab+needs_you).",
+    "new": "4. Verify `?what=hub` (card+needs_you; the tab too when a HUB TAB is named)."
+   }
+  ],
+  "freelance-radar": [
+   {
+    "file": "scripts/publish_unified.py",
+    "old": "                       [--tab TEXT] [--name TEXT] [--href TEXT]\n",
+    "new": "                       [--name TEXT] [--href TEXT]\n"
+   },
+   {
+    "file": "scripts/publish_unified.py",
+    "old": "# The hub TAB is the name of the DOMAIN this routine belongs to, and the members keep it in the\n# one place all of them can read. The `status-page` rule requires reading that line EACH RUN and\n# publishing it verbatim -- a tab remembered in code goes stale the day the set is renamed.\n# Measured 2026-09-21: this script's hardcoded default published \"Professional · Daily\" while the\n# shared line already said \"Förderung & Aufträge\".\nHUB_TAB_FILE = Path(\"/home/mark/routines/.control/group-stores/grp-c1f68a2d/steward-hub-tab.txt\")\nHUB_TAB_FALLBACK = \"Professional · Daily\"\nHUB_TAB_HELP = \"hub heading; default = the shared store's steward-hub-tab.txt line\"\n\n\ndef _hub_tab():\n    \"\"\"The domain's own name for itself, read fresh; the literal is a last resort only.\"\"\"\n    try:\n        line = HUB_TAB_FILE.read_text(encoding=\"utf-8\").strip()\n    except OSError:\n        return HUB_TAB_FALLBACK\n    return line or HUB_TAB_FALLBACK\n",
+    "new": "# The hub TAB is this routine's own `hub_tab` (routine.yaml) -- the one source of the card's\n# `tab`, named to the run as HUB TAB. It is published exactly as given; with none set the card\n# carries no `tab` and the hub files it under its own heading.\n\n\ndef hub_tab_from(text):\n    \"\"\"The top-level `hub_tab:` of a routine.yaml's text -- \"\" when absent or empty.\"\"\"\n    for line in text.splitlines():\n        if line.startswith(\"hub_tab:\"):\n            value = line.split(\":\", 1)[1].strip()\n            if len(value) >= 2 and value[0] == value[-1] == \"'\":\n                return value[1:-1].replace(\"''\", \"'\")\n            if len(value) >= 2 and value[0] == value[-1] == '\"':\n                return json.loads(value)\n            return \"\" if value in (\"~\", \"null\") else value\n    return \"\"\n\n\ndef _hub_tab():\n    \"\"\"This routine's own `hub_tab`, read fresh from its routine.yaml.\"\"\"\n    return hub_tab_from((ROOT / \"routine.yaml\").read_text(encoding=\"utf-8\"))\n\n\ndef apply_tab(card, tab):\n    \"\"\"Publish the hub tab exactly as given; with none set the card carries no `tab` at all.\"\"\"\n    if tab:\n        card[\"tab\"] = tab\n    else:\n        card.pop(\"tab\", None)\n    return card\n"
+   },
+   {
+    "file": "scripts/publish_unified.py",
+    "old": "    ap.add_argument(\"--tab\", default=_hub_tab(), help=HUB_TAB_HELP)\n",
+    "new": ""
+   },
+   {
+    "file": "scripts/publish_unified.py",
+    "old": "        card.update({\"name\": args.name, \"href\": args.href, \"tab\": args.tab, \"status\": status_text})\n",
+    "new": "        card.update({\"name\": args.name, \"href\": args.href, \"status\": status_text})\n        apply_tab(card, _hub_tab())\n"
+   },
+   {
+    "file": "scripts/publish_unified.py",
+    "old": "        result[\"put_state\"] = {\"server_ok\": res.get(\"ok\"), \"tab\": args.tab, \"generated\": now}\n        print(f\"publish_unified: put-state ok={res.get('ok')} tab={args.tab!r}\", file=sys.stderr)\n",
+    "new": "        result[\"put_state\"] = {\"server_ok\": res.get(\"ok\"), \"tab\": card.get(\"tab\"), \"generated\": now}\n        print(f\"publish_unified: put-state ok={res.get('ok')} tab={card.get('tab')!r}\", file=sys.stderr)\n"
+   },
+   {
+    "file": "scripts/publish_unified.py",
+    "old": "    print(\"publish_unified selftest: ok\", file=sys.stderr)\n",
+    "new": "    # The card's tab has ONE source, this routine's own `hub_tab`: published as given when set,\n    # removed -- never carried over from the live card -- when not.\n    assert hub_tab_from(\"name: x\\nhub_tab: Förderung & Aufträge\\n\") == \"Förderung & Aufträge\"\n    assert hub_tab_from(\"hub_tab: 'AI Radar'\\n\") == \"AI Radar\"\n    assert hub_tab_from(\"name: x\\n\") == \"\"\n    assert apply_tab({\"tab\": \"Professional · Daily\"}, \"\") == {}, \"no hub tab set: no tab\"\n    assert apply_tab({}, \"FAU\") == {\"tab\": \"FAU\"}\n\n    print(\"publish_unified selftest: ok\", file=sys.stderr)\n"
+   }
+  ],
+  "grants-radar": [
+   {
+    "file": ".memory/site-publishing.md",
+    "old": "- **`card.tab` is NOT the scheduler group name — read it, never remember it.** It is\n  **`Förderung & Aufträge`** as of 2026-09-12, set from the shared store's `steward-hub-tab.txt`, which\n  is the authority. This note previously said \"Professional · Biweekly\" (the scheduler group), and that\n  was already stale when it was written; a run trusting it would republish the wrong tab. **Read the\n  live `state.card.tab` back before you write the card and preserve what is there**, unless\n  `steward-hub-tab.txt` says otherwise.",
+    "new": "- **`card.tab` is the HUB TAB your run instructions name — publish it exactly as given, never from\n  memory** (with none named, publish no `tab`). It is neither the scheduler group name nor whatever\n  the live card still carries: set it from the HUB TAB line each time you write the card."
+   },
+   {
+    "file": ".memory/page-layout-and-own-module.md",
+    "old": "Publish the single line from `<shared-store>/steward-hub-tab.txt` as `card.tab`, read fresh each\nrun. On 2026-09-12 that file said **`Förderung & Aufträge`** while the card had been publishing\n`Professional · Biweekly` — corrected to match the file.",
+    "new": "Publish the HUB TAB your run instructions name as `card.tab`, exactly as given — it is this\nroutine's own hub-tab setting. With none named, publish no `tab` at all."
+   },
+   {
+    "file": ".memory/unified-hub-migration.md",
+    "old": "`state.card {name, href, tab:\"Professional · Weekly\", status}`",
+    "new": "`state.card {name, href, tab:<HUB TAB>, status}`"
+   }
+  ],
+  "llmsectest-weekday": [
+   {
+    "file": "main.md",
+    "old": "create `state/` (phase.json, since-marker files for channel/campaign ages, stopping.json distilled from the contract's DONE conditions and `application.md` scope) and advance phase to `steady`",
+    "new": "create `state/` (phase.json, since-marker files for channel/campaign ages) and advance phase to `steady`"
+   },
+   {
+    "file": "main.md",
+    "old": "Update `state/phase.json`, advancing to `wrap-up` only if the GOAL-scoped stopping conditions in `state/stopping.json` are met.",
+    "new": "Update `state/phase.json`, advancing to `wrap-up` only when Mark himself declares the project done: this routine has no finish line."
+   },
+   {
+    "file": "main.md",
+    "old": "and finish accounting the stopping conditions as met.",
+    "new": "and finish accounting every `Done when` line as not due."
+   },
+   {
+    "file": "stages/preflight-and-orient.md",
+    "old": "- `state/stopping.json` — distil the GOAL-scoped DONE conditions from `CONTRACT.md`'s own stopping conditions plus `application.md` scope/milestones into `{\"conditions\": [\"<condition in the contract's own words>\", ...], \"funding_period_end\": \"2026-11-30\", \"fkz\": \"16IS26S10\"}`. These are the user's words for the state after which this routine is finished; do not invent conditions the contract does not hold.\n",
+    "new": ""
+   },
+   {
+    "file": "stages/preflight-and-orient.md",
+    "old": "(first fire) `state/phase.json` + `state/stopping.json` to confirm they wrote and parse.",
+    "new": "(first fire) `state/phase.json` to confirm they wrote and parse."
+   },
+   {
+    "file": "stages/preflight-and-orient.md",
+    "old": "on first fire `state/`, `phase.json` (=`steady`), `stopping.json`, and the since-marker mirrors exist.",
+    "new": "on first fire `state/`, `phase.json` (=`steady`), and the since-marker mirrors exist."
+   },
+   {
+    "file": "stages/close-out-and-handoff.md",
+    "old": "(the project's goal was declared done on a prior run)",
+    "new": "(Mark declared the project done)"
+   },
+   {
+    "file": "stages/close-out-and-handoff.md",
+    "old": "6. **Update phase.** Re-read `state/stopping.json` (the GOAL-scoped DONE conditions distilled from the contract and `application.md`). If and only if every stopping condition is met, set `state/phase.json` `phase` to `\"wrap-up\"` so the next fire runs the terminal close-out. Otherwise leave it `\"steady\"`. Do not advance on a hunch — advance only against the written conditions.",
+    "new": "6. **Update phase.** This routine has no finish line: it runs until Mark switches it off. Set `state/phase.json` `phase` to `\"wrap-up\"` only when Mark himself declares the project done, so the next fire runs the terminal close-out; otherwise leave it `\"steady\"`. When the contract's own stopping conditions read as met, say so plainly in the finish summary with the evidence — the decision to end is Mark's, never a run's."
+   },
+   {
+    "file": "stages/close-out-and-handoff.md",
+    "old": "Account the per-run completion criteria as met — or say plainly and specifically which were not and why.",
+    "new": "Account every `Done when` line in the finish's `accounting` (met, unmet or not due, each with what backs it); say plainly and specifically which were not met and why."
+   },
+   {
+    "file": "stages/close-out-and-handoff.md",
+    "old": "3. **Finish** accounting the stopping conditions in `state/stopping.json` as met.",
+    "new": "3. **Finish**, accounting every `Done when` line as not due."
+   },
+   {
+    "file": "stages/close-out-and-handoff.md",
+    "old": "`state/phase.json` advanced to `wrap-up` only if `state/stopping.json` is fully met;",
+    "new": "`state/phase.json` advanced to `wrap-up` only on Mark's own declaration;"
+   },
+   {
+    "file": "stages/close-out-and-handoff.md",
+    "old": "finish called with the stopping conditions accounted as met.",
+    "new": "finish called with every `Done when` line accounted as not due."
+   },
+   {
+    "file": "stages/run-heavy-phase-and-decide.md",
+    "old": "When ANY stopping condition — whatever its scope — names a deliverable due inside the next 21 days",
+    "new": "When ANY `Done when` line — or one of the contract's own stopping conditions — names a deliverable due inside the next 21 days"
+   }
+  ],
+  "miz-grant-steward": [
+   {
+    "file": "stages/persist-state-and-record-ledger.md",
+    "old": "Account honestly for each stopping condition independently of the outcome label; do not mark an unverified condition met just to obtain `ok`.",
+    "new": "Account honestly for each `Done when` line and the finish line independently of the outcome label; do not mark an unverified line met just to obtain `ok`."
+   },
+   {
+    "file": "stages/persist-state-and-record-ledger.md",
+    "old": "- **RUN-scoped conditions (s1–s6) decide the outcome.** They describe one coach session.\n- **The FINAL-GOAL condition (s7, submission) is a distance marker.**",
+    "new": "- **The `Done when` lines (d1–d7) decide the outcome.** They describe one coach session.\n- **The finish line (g1, submission) is a distance marker.**"
+   },
+   {
+    "file": "stages/persist-state-and-record-ledger.md",
+    "old": "Account for every active stopping condition.",
+    "new": "Account for every `Done when` line and the finish line's g1 in the `accounting` field."
+   },
+   {
+    "file": ".memory/steward-hub-interface.md",
+    "old": "tab MUST = \"Professional · Daily\" (group name; hub derives tab).",
+    "new": "tab MUST = the HUB TAB your run instructions name, exactly as given (the hub groups cards by it)."
+   },
+   {
+    "file": "scripts/build-hub-payload.py",
+    "old": "STATE = ROOT / \"state\" / \"shared-state.json\"\n",
+    "new": "STATE = ROOT / \"state\" / \"shared-state.json\"\n\n\ndef hub_tab_from(text):\n    \"\"\"The top-level `hub_tab:` of a routine.yaml's text -- \"\" when absent or empty.\"\"\"\n    for line in text.splitlines():\n        if line.startswith(\"hub_tab:\"):\n            value = line.split(\":\", 1)[1].strip()\n            if len(value) >= 2 and value[0] == value[-1] == \"'\":\n                return value[1:-1].replace(\"''\", \"'\")\n            if len(value) >= 2 and value[0] == value[-1] == '\"':\n                return json.loads(value)\n            return \"\" if value in (\"~\", \"null\") else value\n    return \"\"\n\n\ndef hub_tab():\n    \"\"\"This routine's own `hub_tab` (routine.yaml): the one source of the hub card's `tab`.\"\"\"\n    return hub_tab_from((ROOT / \"routine.yaml\").read_text(encoding=\"utf-8\"))\n"
+   },
+   {
+    "file": "scripts/build-hub-payload.py",
+    "old": "def build(data, deployed):\n",
+    "new": "def build(data, deployed, tab=None):\n"
+   },
+   {
+    "file": "scripts/build-hub-payload.py",
+    "old": "    card = {\"name\": _card_name, \"href\": \"/miz-grant-steward/\",\n            \"tab\": (pathlib.Path('/home/mark/routines/.control/group-stores/grp-c1f68a2d/steward-hub-tab.txt').read_text().strip()),\n            \"status\": (f\"Antrag bei {score}/10 · {days} Tage bis zur MIZ-Frist · Seite live. \" + tail)}\n",
+    "new": "    card = {\"name\": _card_name, \"href\": \"/miz-grant-steward/\",\n            \"status\": (f\"Antrag bei {score}/10 · {days} Tage bis zur MIZ-Frist · Seite live. \" + tail)}\n    # The heading this card sits under on the hub is this routine's own `hub_tab`, published\n    # exactly as given; with none set the card carries no `tab` at all.\n    tab = hub_tab() if tab is None else tab\n    if tab:\n        card[\"tab\"] = tab\n"
+   },
+   {
+    "file": "scripts/build-hub-payload.py",
+    "old": "    assert st[\"card\"][\"tab\"] == pathlib.Path('/home/mark/routines/.control/group-stores/grp-c1f68a2d/steward-hub-tab.txt').read_text().strip()\n",
+    "new": "    assert st[\"card\"].get(\"tab\", \"\") == hub_tab(), \"the card's tab is this routine's own hub_tab\"\n    assert \"tab\" not in build(fixture, {name}, tab=\"\")[\"state_body\"][\"state\"][\"card\"], \"no hub tab set: no tab\"\n    assert build(fixture, {name}, tab=\"T\")[\"state_body\"][\"state\"][\"card\"][\"tab\"] == \"T\"\n    assert hub_tab_from(\"name: x\\nhub_tab: 'A & B'\\n\") == \"A & B\" and hub_tab_from(\"name: x\\n\") == \"\"\n"
+   }
+  ],
+  "nanogeofeld": [
+   {
+    "file": "main.md",
+    "old": "When the Overall criterion below is met, say so plainly in the finish summary, account for it against the goal condition, and tell Mark where the deliverable lives — meeting every goal condition retires the routine: the scheduler stops firing it and a Decisions-page proposal asks Mark to confirm. Otherwise just finish the run.",
+    "new": "Account the finish line's g1 by its distance every run — only Mark judges it met. When nothing of it remains, say so plainly in the finish summary and tell Mark where the deliverable lives; his judgement retires the routine: the scheduler stops firing it and a Decisions-page proposal asks him to confirm. Otherwise just finish the run."
+   },
+   {
+    "file": "stages/record-and-publish-status.md",
+    "old": "- If **DONE_WHEN** is met — **AP 3.4 is submission-ready** AND **the agreed first version of the frontend is delivered with its acceptance bar established (via research/correspondence) and confirmed by Mark via the web UI** — say so plainly in the finish note, account for it against the goal condition, and tell Mark exactly **where the deliverable lives** (the AP 3.4 draft path + the `nanogeofeld/` site URL). Meeting every goal condition retires the routine: the scheduler stops firing it and a Decisions-page proposal asks Mark to confirm.",
+    "new": "- If nothing of the **finish line** (g1) remains — **AP 3.4 is submission-ready** AND **the agreed first version of the frontend is delivered with its acceptance bar established (via research/correspondence) and confirmed by Mark via the web UI** — say so plainly in the finish note, give that as the `g1` distance with its evidence, and tell Mark exactly **where the deliverable lives** (the AP 3.4 draft path + the `nanogeofeld/` site URL). Never claim `g1 met`: only Mark judges it. Once he does, the scheduler stops firing the routine and a Decisions-page proposal asks him to confirm."
+   },
+   {
+    "file": ".memory/fau-group-store.md",
+    "old": "is injected into your fs read+write roots at every run boot (the\nrun prompt names the path).",
+    "new": "is one of your own write roots (the\nrun prompt names the path)."
+   },
+   {
+    "file": ".memory/INDEX.md",
+    "old": "The FAU group SHARED store (injected fs root, read with read_file not memory_read)",
+    "new": "The FAU SHARED store (one of your own write roots, read with read_file not memory_read)"
+   }
+  ],
+  "newsletter-digest": [
+   {
+    "file": "stages/finalize.md",
+    "old": "The completion criteria require the published URL to reach the user over an instant channel each",
+    "new": "The recipe's `Done when` (d5) requires the published URL to reach the user over an instant channel each"
+   },
+   {
+    "file": "stages/ensure-server.md",
+    "old": "`tab` — the routine GROUP name exactly as\n   the scheduler spells it, not an invented category —",
+    "new": "`tab` — the HUB TAB your run instructions name,\n   exactly as given, not an invented category —"
+   }
+  ],
+  "routine-improver": [
+   {
+    "file": "stages/lens-productivity-floor.md",
+    "old": "a completion criterion contradicting a hard rule;",
+    "new": "a `Done when` line contradicting a hard rule;"
+   }
+  ],
+  "rules-review": [
+   {
+    "file": "scripts/review_inventory.py",
+    "old": "    domains = {d['id']: d.get('config', {}) for d in json.loads((ROOT/'.control/domains.json').read_text())['domains']}\n",
+    "new": ""
+   },
+   {
+    "file": "scripts/review_inventory.py",
+    "old": "        domain = config.get('domain')\n        if domain and domain not in domains:\n            raise ValueError(f'{p}: unknown domain {domain}')\n        rules = set(config.get('rules', [])) | set(domains.get(domain, {}).get('rules', []))\n",
+    "new": "        rules = set(config.get('rules', []))\n"
+   }
+  ],
+  "self-audit": [
+   {
+    "file": "main.md",
+    "old": "includes duty (c)**: stopping condition `s4` asks whether an",
+    "new": "includes duty (c)**: `Done when` line d2 asks whether an"
+   },
+   {
+    "file": "stages/act-apply-fixes.md",
+    "old": "before its restore, s2 is\n     `unmet` in the finish summary, naming the check.",
+    "new": "before its restore, d3 is\n     `unmet` in the finish accounting, naming the check."
+   },
+   {
+    "file": "stages/act-apply-fixes.md",
+    "old": "successful releases, satisfied s4, or an explanatory",
+    "new": "successful releases, satisfied d2, or an explanatory"
+   },
+   {
+    "file": "stages/record-close.md",
+    "old": "a met s4, a plan entry",
+    "new": "a met d2, a plan entry"
+   },
+   {
+    "file": "stages/record-close.md",
+    "old": "6b. **s2 is answered from the TRANSCRIPT, not from the outcome.** For every red verdict this\n   run produced over your own edits, check that the action immediately after it was the restore\n   (`stages/act-apply-fixes.md`, the restore-first gate). All of them restored first → `s2 met`.\n   Any one acted on before its restore → `s2 unmet`, naming the check that went red. \"Nothing\n   red was committed\" answers only half of s2 and is not sufficient evidence for `met`.",
+    "new": "6b. **d3 is answered from the TRANSCRIPT, not from the outcome.** For every red verdict this\n   run produced over your own edits, check that the action immediately after it was the restore\n   (`stages/act-apply-fixes.md`, the restore-first gate). All of them restored first → `d3 met`.\n   Any one acted on before its restore → `d3 unmet`, naming the check that went red. \"Nothing\n   red was committed\" answers only half of d3 and is not sufficient evidence for `met`."
+   },
+   {
+    "file": "stages/gather-evidence.md",
+    "old": "only utils that DECLARE them, fs roots not widened by group config inheritance (D82),\n  conversation-granted",
+    "new": "only utils that DECLARE them,\n  conversation-granted"
+   },
+   {
+    "file": "scripts/authority_audit.py",
+    "old": "    document = json.loads((HOME / '.control/domains.json').read_text())\n    domains = {}\n    for row in document['domains']:\n        ident = row['id']\n        if not ident or ident in domains or not isinstance(row['config'], dict):\n            raise ValueError('invalid or duplicate domain')\n        domains[ident] = row['config']\n",
+    "new": ""
+   },
+   {
+    "file": "scripts/authority_audit.py",
+    "old": "        domain = raw.get('domain', '')\n        if domain and domain not in domains:\n            raise ValueError(f'{path}: missing domain {domain}')\n",
+    "new": ""
+   },
+   {
+    "file": "scripts/authority_audit.py",
+    "old": "        shared = domains.get(domain, {})\n",
+    "new": ""
+   },
+   {
+    "file": "scripts/authority_audit.py",
+    "old": "            'domain': domain,\n            'domain_authority': {k: shared[k] for k in FIELDS if k in shared},\n",
+    "new": ""
+   },
+   {
+    "file": "scripts/authority_audit.py",
+    "old": "            'provenance': cfg.inherited,\n",
+    "new": ""
+   },
+   {
+    "file": "scripts/authority_audit.py",
+    "old": "            'domain_store': str(HOME / '.control/group-stores' / domain) if domain else None,\n",
+    "new": ""
+   },
+   {
+    "file": "scripts/authority_audit.py",
+    "old": "'schema': 'persisted-authority-v1'",
+    "new": "'schema': 'persisted-authority-v2'"
+   },
+   {
+    "file": "scripts/permission_audit.py",
+    "old": "def inventory(home):\n    # Domain data is required: unreadable/malformed input must never mean no grants.\n    document = json.loads((home / '.control/domains.json').read_text())\n    domains = {}\n    for row in document['domains']:\n        ident = row['id']\n        if not isinstance(ident, str) or not ident.strip() or ident in domains:\n            raise ValueError(f'domains: invalid or duplicate id {ident!r}')\n        config = row['config']\n        if not isinstance(config, dict):\n            raise ValueError(f'domain {ident}: config must be a mapping')\n        permissions = config.get('permissions', [])\n        if not isinstance(permissions, list) or any(not isinstance(p, str) or not p.strip() or p != p.strip() for p in permissions):\n            raise ValueError(f'domain {ident}: invalid permission list')\n        domains[ident] = config\n",
+    "new": "def default_permissions():\n    \"\"\"The scheduler's default, loaded from source rather than duplicating its changing vocabulary.\"\"\"\n    import ast\n    source = Path('/home/mark/git-repos/routine-scheduler/src/rsched/config/base.py')\n    tree = ast.parse(source.read_text())\n    return next(ast.literal_eval(n.value) for n in tree.body\n                if isinstance(n, ast.Assign)\n                and any(isinstance(t, ast.Name) and t.id == 'DEFAULT_PERMISSIONS'\n                        for t in n.targets))\n\n\ndef inventory(home):\n"
+   },
+   {
+    "file": "scripts/permission_audit.py",
+    "old": "        domain = raw.get('domain', '')\n        if not isinstance(domain, str):\n            raise ValueError(f'{path}: domain must be a string')\n        if domain and domain not in domains:\n            raise ValueError(f'{path}: unknown domain {domain}')\n        own = raw.get('permissions', [])\n        if 'permissions' not in raw and not domains.get(domain, {}).get('permissions'):\n            # Load the default from source rather than duplicate its changing vocabulary.\n            import ast\n            source = Path('/home/mark/git-repos/routine-scheduler/src/rsched/config/base.py')\n            tree = ast.parse(source.read_text())\n            own = next(ast.literal_eval(n.value) for n in tree.body\n                       if isinstance(n, ast.Assign)\n                       and any(isinstance(t, ast.Name) and t.id == 'DEFAULT_PERMISSIONS'\n                               for t in n.targets))\n        inherited = domains.get(domain, {}).get('permissions', [])\n        for value in (own, inherited):\n            if not isinstance(value, list) or any(not isinstance(p, str) for p in value):\n                raise ValueError(f'{path}: permissions must be a list of strings')\n        result[path.parent.name] = dict(own=sorted(set(own)), domain=domain,\n            domain_perms=sorted(set(inherited)), effective=sorted(set(own) | set(inherited)))\n",
+    "new": "        own = raw['permissions'] if 'permissions' in raw else default_permissions()\n        if not isinstance(own, list) or any(not isinstance(p, str) for p in own):\n            raise ValueError(f'{path}: permissions must be a list of strings')\n        result[path.parent.name] = dict(own=sorted(set(own)), effective=sorted(set(own)))\n"
+   },
+   {
+    "file": "scripts/permission_audit.py",
+    "old": "        (home / '.control').mkdir()\n        (home / 'worker').mkdir()\n        (home / 'worker/routine.yaml').write_text('permissions: [memory]\\ndomain: team\\n')\n        domain = home / '.control/domains.json'\n        domain.write_text(json.dumps({'domains': [{'id': 'team', 'config': {'permissions': ['shell']}}]}))\n        assert inventory(home)['worker']['effective'] == ['memory', 'shell']\n        (home / 'worker/routine.yaml').write_text('description: test\\n')\n        assert inventory(home)['worker']['effective'] == ['global-utils', 'memory', 'reminders', 'util-authoring'], 'missing permissions must use scheduler defaults'\n        domain.write_text('{broken')\n        try:\n            inventory(home)\n        except json.JSONDecodeError:\n            pass\n        else:\n            raise AssertionError('malformed domain data was silently accepted')\n        domain.unlink()\n        try:\n            inventory(home)\n        except FileNotFoundError:\n            pass\n        else:\n            raise AssertionError('missing domain data was silently accepted')\n    print('selftest: inline YAML/domain union and missing/malformed-domain rejection PASS')\n",
+    "new": "        (home / 'worker').mkdir()\n        (home / 'worker/routine.yaml').write_text('permissions: [memory, shell]\\n')\n        assert inventory(home)['worker']['effective'] == ['memory', 'shell']\n        (home / 'worker/routine.yaml').write_text('description: test\\n')\n        assert inventory(home)['worker']['effective'] == sorted(set(default_permissions())), 'missing permissions must use scheduler defaults'\n        (home / 'worker/routine.yaml').write_text('permissions: shell\\n')\n        try:\n            inventory(home)\n        except ValueError:\n            pass\n        else:\n            raise AssertionError('a malformed permission list was silently accepted')\n    print('selftest: own-file permissions, scheduler defaults and malformed-list rejection PASS')\n"
+   },
+   {
+    "file": "scripts/permission_audit.py",
+    "old": "    print(json.dumps(dict(scanned=len(current), domained=sum(bool(v['domain']) for v in current.values()),\n",
+    "new": "    print(json.dumps(dict(scanned=len(current),\n"
+   },
+   {
+    "file": "scripts/test_authority_audit.py",
+    "old": "import json\nimport authority_audit as audit\n",
+    "new": "import authority_audit as audit\n"
+   },
+   {
+    "file": "scripts/test_authority_audit.py",
+    "old": "    cfg.write_text('name: Worker\\ndescription: Offline authority fixture\\npermissions: []\\ncapabilities:\\n  actions: []\\n  utils: [example:read]\\n  runs: last\\ngrants:\\n  \"util:example\": false\\ndomain: team\\n')\n    domain = home / '.control/domains.json'\n    domain.write_text(json.dumps({'domains': [{'id': 'team', 'name': 'Team', 'config': {'capabilities': {'actions': ['shell'], 'runs': 'all'}}}]}))\n    monkeypatch.setattr(audit, 'HOME', home)\n    monkeypatch.setattr(audit, 'LIB', lib)\n    return cfg, domain, lib\n",
+    "new": "    cfg.write_text('name: Worker\\ndescription: Offline authority fixture\\npermissions: []\\ncapabilities:\\n  actions: [shell]\\n  utils: [example:read]\\n  runs: last\\ngrants:\\n  \"util:example\": false\\n')\n    monkeypatch.setattr(audit, 'HOME', home)\n    monkeypatch.setattr(audit, 'LIB', lib)\n    return cfg, lib\n"
+   },
+   {
+    "file": "scripts/test_authority_audit.py",
+    "old": "def test_domain_authority_member_override_and_tombstones(store):",
+    "new": "def test_own_authority_and_tombstones(store):"
+   },
+   {
+    "file": "scripts/test_authority_audit.py",
+    "old": "    cfg, domain, _ = store\n    before = audit.inventory()\n    raw = json.loads(domain.read_text())\n    raw['domains'][0]['config']['capabilities']['actions'].append('script')\n    domain.write_text(json.dumps(raw))\n",
+    "new": "    cfg, _ = store\n    before = audit.inventory()\n    raw = yaml.safe_load(cfg.read_text())\n    raw['capabilities']['actions'].append('schedule_run')\n    cfg.write_text(yaml.safe_dump(raw))\n"
+   },
+   {
+    "file": "scripts/test_authority_audit.py",
+    "old": "    cfg, _, _ = store\n    raw = yaml.safe_load(cfg.read_text())\n    raw['capabilities']['utils'] = ['example:read', 'other:read']",
+    "new": "    cfg, _ = store\n    raw = yaml.safe_load(cfg.read_text())\n    raw['capabilities']['utils'] = ['example:read', 'other:read']"
+   },
+   {
+    "file": "scripts/test_authority_audit.py",
+    "old": "    cfg, _, _ = store\n    before = audit.inventory()['routines']['worker']\n    raw = yaml.safe_load(cfg.read_text())\n    raw['capabilities']['utils'] = ['example:read', 'extra:write']",
+    "new": "    cfg, _ = store\n    before = audit.inventory()['routines']['worker']\n    raw = yaml.safe_load(cfg.read_text())\n    raw['capabilities']['utils'] = ['example:read', 'extra:write']"
+   },
+   {
+    "file": "scripts/test_authority_audit.py",
+    "old": "@pytest.mark.parametrize('bad', ['{broken', '{\"domains\":[{\"id\":\"team\",\"config\":{}},{\"id\":\"team\",\"config\":{}}]}'])\ndef test_bad_domain_never_means_no_authority(store, bad):\n    store[1].write_text(bad)\n    with pytest.raises(ValueError):\n        audit.inventory()\n\n\ndef test_missing_domain_file_fails(store):\n    store[1].unlink()\n    with pytest.raises(FileNotFoundError):\n        audit.inventory()\n\n\ndef test_library_change_is_fingerprinted(store):\n",
+    "new": "@pytest.mark.parametrize('bad', ['{broken', '- a list, not a mapping\\n'])\ndef test_bad_config_never_means_no_authority(store, bad):\n    store[0].write_text(bad)\n    with pytest.raises((ValueError, yaml.YAMLError)):\n        audit.inventory()\n\n\ndef test_library_change_is_fingerprinted(store):\n"
+   },
+   {
+    "file": "scripts/test_authority_audit.py",
+    "old": "    (store[2] / 'permissions/test.md').write_text('changed declaration')",
+    "new": "    (store[1] / 'permissions/test.md').write_text('changed declaration')"
+   },
+   {
+    "file": "scripts/test_authority_audit.py",
+    "old": "    cfg, _, _ = store\n    raw = yaml.safe_load(cfg.read_text())\n    raw['fs_read_roots'] = ['/home/mark/.config/routine-scheduler']",
+    "new": "    cfg, _ = store\n    raw = yaml.safe_load(cfg.read_text())\n    raw['fs_read_roots'] = ['/home/mark/.config/routine-scheduler']"
+   },
+   {
+    "file": "scripts/test_authority_audit.py",
+    "old": "    cfg, _, _ = store\n    before = audit.inventory()['routines']['worker']\n    raw = yaml.safe_load(cfg.read_text())\n    raw['fs_read_roots'] = ['/home/mark/.ssh']",
+    "new": "    cfg, _ = store\n    before = audit.inventory()['routines']['worker']\n    raw = yaml.safe_load(cfg.read_text())\n    raw['fs_read_roots'] = ['/home/mark/.ssh']"
+   }
+  ],
+  "sprind": [
+   {
+    "file": "scripts/build-steward-payload.py",
+    "old": "ROOT = pathlib.Path(__file__).resolve().parent.parent\n",
+    "new": "ROOT = pathlib.Path(__file__).resolve().parent.parent\n\n\ndef hub_tab_from(text):\n    \"\"\"The top-level `hub_tab:` of a routine.yaml's text -- \"\" when absent or empty.\"\"\"\n    for line in text.splitlines():\n        if line.startswith(\"hub_tab:\"):\n            value = line.split(\":\", 1)[1].strip()\n            if len(value) >= 2 and value[0] == value[-1] == \"'\":\n                return value[1:-1].replace(\"''\", \"'\")\n            if len(value) >= 2 and value[0] == value[-1] == '\"':\n                return json.loads(value)\n            return \"\" if value in (\"~\", \"null\") else value\n    return \"\"\n\n\ndef tab_entry():\n    \"\"\"`{\"tab\": <hub_tab>}` for the hub card, or `{}` when this routine names no hub tab.\"\"\"\n    tab = hub_tab_from((ROOT / \"routine.yaml\").read_text(encoding=\"utf-8\"))\n    return {\"tab\": tab} if tab else {}\n"
+   },
+   {
+    "file": "scripts/build-steward-payload.py",
+    "old": "            \"tab\": \"On demand\",\n",
+    "new": "            # The hub heading is this routine's own `hub_tab`; with none set, no `tab` at all.\n            **tab_entry(),\n"
+   },
+   {
+    "file": ".memory/steward-publishing.md",
+    "old": "`card{name,href:/sprind/,tab:\"On demand\",status}`",
+    "new": "`card{name,href:/sprind/,status}` (plus `tab` only when a HUB TAB is named)"
+   }
+  ],
+  "suedlink-wlf": [
+   {
+    "file": "main.md",
+    "old": "If DONE_WHEN is met, say so plainly and account for it against the goal condition — meeting every goal condition retires the routine: the scheduler stops firing it and a Decisions-page proposal asks Mark to confirm. Finish with evidence.",
+    "new": "Account DONE_WHEN (the finish line's g1) by its distance — only Mark judges it met; when nothing of it remains, say so plainly and tell Mark where each deliverable lives. Finish with evidence."
+   },
+   {
+    "file": "stages/record-and-republish-suedlink-hub-card.md",
+    "old": "If **DONE_WHEN** is met — the WLF prediction model AND the `bgu_report/` technical report are both delivered to the partners AND accepted — say so plainly in the finish summary, account for it against the goal condition, and tell Mark where each deliverable lives. Meeting every goal condition retires the routine: the scheduler stops firing it and a Decisions-page proposal asks Mark to confirm. Otherwise the project stays in `steady`.",
+    "new": "If nothing of **DONE_WHEN** (the finish line's g1) remains — the WLF prediction model AND the `bgu_report/` technical report are both delivered to the partners AND accepted — say so plainly in the finish summary, give that as the `g1` distance with its evidence, and tell Mark where each deliverable lives. Never claim `g1 met`: only Mark judges it. Once he does, the scheduler stops firing the routine and a Decisions-page proposal asks him to confirm. Otherwise the project stays in `steady`."
+   },
+   {
+    "file": ".memory/fau-group-store.md",
+    "old": "is injected into your fs read+write roots at every run boot (the\nrun prompt names the path).",
+    "new": "is one of your own write roots (the\nrun prompt names the path)."
+   },
+   {
+    "file": ".memory/INDEX.md",
+    "old": "The FAU group SHARED store (injected fs root, read with read_file not memory_read)",
+    "new": "The FAU SHARED store (one of your own write roots, read with read_file not memory_read)"
+   }
+  ],
+  "website-maintenance-consultancy": [
+   {
+    "file": "main.md",
+    "old": "pushes straight to `main`. **Overall:** PERPETUAL — a live, edited, externally-linked website keeps drifting (links rot, facts age, engagements end, metadata falls out of step with the pages that exist), so this routine ends only if the user retires the site, hands it over, or withdraws the mandate, and it records that decision in `state/stopping.json`.",
+    "new": "pushes straight to `main`. **Overall:** PERPETUAL — a live, edited, externally-linked website keeps drifting (links rot, facts age, engagements end, metadata falls out of step with the pages that exist), so this routine ends only if the user retires the site, hands it over, or withdraws the mandate; it runs until he switches it off."
+   },
+   {
+    "file": "main.md",
+    "old": "Consume the state digest (`state/phase.json`, `state/stopping.json`, the `state/LEDGER.md` tail,",
+    "new": "Consume the state digest (`state/phase.json`, the `state/LEDGER.md` tail,"
+   },
+   {
+    "file": "main.md",
+    "old": "Advance `state/phase.json` to `stand-down` only if the goal-scoped conditions in `state/stopping.json` are met.",
+    "new": "Advance `state/phase.json` to `stand-down` only when the user himself says the site is retired, handed over or the mandate withdrawn: this routine has no finish line."
+   },
+   {
+    "file": "main.md",
+    "old": "and finish with the stopping conditions accounted as met.",
+    "new": "and finish with every `Done when` line accounted as not due."
+   },
+   {
+    "file": "stages/orient-inbox-and-findings.md",
+    "old": "- `state/stopping.json` — the goal-scoped conditions under which this maintenance mandate ends\n  (site retired, handed over, mandate withdrawn). Read it so you know what would close the routine;\n  do not evaluate or advance anything here.\n",
+    "new": ""
+   },
+   {
+    "file": "stages/orient-inbox-and-findings.md",
+    "old": "- `state/stopping.json` — the goal-scoped conditions in the user's own terms, e.g.\n  `{\"perpetual\": true, \"ends_when\": [\"site retired\", \"site handed over\", \"mandate withdrawn\"],\n  \"met\": false}`.\n",
+    "new": ""
+   },
+   {
+    "file": "stages/record-findings-and-report-the-sweep.md",
+    "old": "- `state/stopping.json` — the goal-scoped conditions in the user's own words.\n",
+    "new": ""
+   },
+   {
+    "file": "stages/record-findings-and-report-the-sweep.md",
+    "old": "Read `state/stopping.json` and compare against reality: this mandate ends only when the user\nretires the site, hands it over, or withdraws the mandate. Advance `state/phase.json` to\n`stand-down` ONLY when one of those recorded conditions is actually met and evidenced (a user\nmessage in this run's inbox, or a repo/site state that unambiguously shows it). Absent that, leave\nthe phase at `steady` — a quiet run, a clean sweep or a run with nothing to publish is never a\nreason to stand down.",
+    "new": "This routine has no finish line: it runs until the user switches it off. The mandate ends only\nwhen he retires the site, hands it over, or withdraws the mandate. Advance `state/phase.json` to\n`stand-down` ONLY on his own word in this run's inbox — never on a repo or site state you read.\nAbsent that, leave the phase at `steady` — a quiet run, a clean sweep or a run with nothing to\npublish is never a reason to stand down."
+   },
+   {
+    "file": "stages/stand-down-closeout.md",
+    "old": "- `state/stopping.json` — the user's own words for when this maintenance ends (the site retired,\n  handed over, or the mandate withdrawn). Quote the condition that is now met in the summary.\n",
+    "new": "- The user's own words that ended this maintenance (the site retired, handed over, or the mandate\n  withdrawn) — the one-line reason recorded with the phase change. Quote them in the summary.\n"
+   },
+   {
+    "file": "stages/stand-down-closeout.md",
+    "old": "1. **That the maintenance mandate is closed**, quoting the stopping condition from\n   `state/stopping.json` that is met.",
+    "new": "1. **That the maintenance mandate is closed**, quoting the user's own words that closed it."
+   },
+   {
+    "file": "stages/stand-down-closeout.md",
+    "old": "Then finish the run, accounting the stopping conditions as met.",
+    "new": "Then finish the run, accounting every `Done when` line as not due; say in the summary that the\nroutine keeps firing until the user switches it off, since it has no finish line."
+   },
+   {
+    "file": "stages/stand-down-closeout.md",
+    "old": "the met stopping condition, and every open item",
+    "new": "the user's words that closed the mandate, and every open item"
+   },
+   {
+    "file": "stages/stand-down-closeout.md",
+    "old": "- The run is finished with the stopping conditions accounted as met — this routine does not run\n  again unless the user revives it.",
+    "new": "- The run is finished with every `Done when` line accounted as not due; its summary tells the user\n  the routine keeps firing until he switches it off."
+   }
+  ],
+  "weightloss": [
+   {
+    "file": ".memory/steward-hub-migration.md",
+    "old": "`card.tab` is\nexactly `Personal · Daily`.",
+    "new": "`card.tab` is\nthe HUB TAB your run instructions name, exactly as given; with none named, publish no `tab`."
+   },
+   {
+    "file": "stages/render-publish.md",
+    "old": "`card.tab` must be exactly `Personal · Daily`, the scheduler group's own spelling.",
+    "new": "`card.tab` is the HUB TAB your run instructions name, exactly as given; with none named, publish no `tab` at all."
+   }
+  ]
+ },
+ "additions": {
+  "rules-review": {
+   "files": {
+    "stages/reminders.md": "# reminders — keep the shared caution store earning its turns\n\nEvery routine leaves itself consequence reminders: a pattern over the rendered action plus the\nconsequence worth interrupting for. Most stay local, which is right — born local, shared once\nearned. Nothing else on this instance looks across them, so a caution three routines each\nlearned the hard way stays three private lessons, while a shared one that stopped paying keeps\ncosting every routine it reaches. This stage is that look, once per pass. You hold the shared\nstore: you may write it, while every write waits for the operator's approval.\n\n1. **Take the census.** Run the census of every reminder on the instance — every routine's own\n   store and the shared one, recounted from the retained transcripts. Judge its clusters; do not\n   re-derive its numbers by reading transcripts yourself. Per reminder it reports the holds and\n   the labels recounted one label per hold (a label with no hold behind it counts for nothing),\n   the matching actions in its own routine and in every other one, its problems (it matches\n   nothing, its util is gone, its util changed after it was written) and the clusters: one\n   caution written independently by more than one routine.\n2. **Triage each cluster and each reminder with a problem. Fix the cause first:**\n   - the caution describes a defect or a trap in one util → an addressed report to\n     global-utils-review carrying the holds, the labels and the run ids. The reminders stay\n     local until the fix ships; then tell their owners to delete them.\n   - the engine or an API misbehaves → a report to self-audit.\n   - it is a principle of conduct rather than a call → your own queue: a rule, or an assist of\n     one.\n   - a correct but surprising behaviour whose consequence follows for ANY caller of that util\n     or action form → a shared reminder with reach `universal`.\n   - a caution that belongs to one kind of work (git in a published repository, a job on a\n     shared GPU) → a shared reminder with reach `listed`, plus a report to the operator naming\n     the settings patterns whose routines should list it: a routine lists it in its settings,\n     which no run writes.\n   - dead (it matches nothing, or its util is gone) → an addressed report asking its owner to\n     delete or re-anchor it. A dead shared one you delete yourself.\n3. **Promote only on evidence:** at least three hold-anchored `would_have`, or two routines that\n   wrote the same class independently; `could_not` on at most a quarter of the anchored holds;\n   a match target that is a util or an action form, never a path inside one routine; replayed\n   matches in other routines below about one per routine-week. Promote by adding it at shared\n   scope with its reach. Then send each routine whose local copy it replaces an addressed report\n   asking it to delete that copy — its store is its own.\n4. **Keep the shared store honest.** For every shared reminder read its outcomes across the\n   routines it reached: a `could_not` plurality means narrow its pattern or delete it; a fixed\n   util means delete it.\n\nWrite each decision into `state/reminders-review.json` — the pass date plus, per reminder or\ncluster, the verdict with its reason — so the next pass does not reopen a settled one. The record\nstage carries your promotions, deletions and routed reports into the LEDGER entry.\n\n## Next\n\nAdvance to **record** (`state/phase.json` = `{\"phase\": \"record\", \"cursor\": {}}`).\n"
+   },
+   "edits": [
+    {
+     "file": "main.md",
+     "old": "When the queue is empty, `compact` runs\nonce, then `record` finishes the run.",
+     "new": "When the queue is empty, `compact` runs\nonce, then `reminders`, then `record` finishes the run."
+    },
+    {
+     "file": "main.md",
+     "old": "7. **record** — update `state/reviewed.json`, append the LEDGER entry, finish.",
+     "new": "7. **reminders** — once per pass, the census of every consequence reminder on the\n   instance: promote what earned it, route what is a defect elsewhere, retire what stopped\n   paying (`stages/reminders.md`).\n8. **record** — update `state/reviewed.json`, append the LEDGER entry, finish."
+    },
+    {
+     "file": "stages/compact.md",
+     "old": "Advance to **record** (`state/phase.json` = `{\"phase\": \"record\", \"cursor\": {}}`).",
+     "new": "Advance to **reminders** (`state/phase.json` = `{\"phase\": \"reminders\", \"cursor\": {}}`)."
+    },
+    {
+     "file": "stages/select-rules.md",
+     "old": "— the length pass still runs — and then record.",
+     "new": "— the length pass still runs — then the reminder pass, then record."
+    },
+    {
+     "file": "main.md",
+     "old": "- d4 · record — state/reviewed.json advanced for every rule examined and this run has its LEDGER entry\n",
+     "new": "- d4 · record — state/reviewed.json advanced for every rule examined and this run has its LEDGER entry\n- d5 · reminders — every reminder cluster and every reminder the census flagged is promoted, routed to its owner or left with the reason recorded\n"
+    }
+   ]
+  }
+ }
+}

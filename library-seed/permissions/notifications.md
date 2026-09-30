@@ -1,24 +1,17 @@
 ---
 effect:
-  with: push a short notice to your own phone or desktop
-  without: cannot reach you anywhere but the console
-  when: you want telling about something without going and looking
-tags: [notifications, attention, conduct]
+  with: pushes a short notice to your own phone or desktop through ntfy
+  without: reaches you only through the console and the browser push that carries its decisions
+  when: you want telling about something without going to look
+tags: [notifications, attention, outbound]
 requires:
   utils: [ntfy]
 ---
-# permission: notifications — push a notice to the user's own devices via ntfy
+# permission: notifications — push a notice to the operator's own devices
 
-Unlocks the `ntfy` util: publish a short message or notification to the user's own
-ntfy topic — their phone or desktop. This is a one-way push to the user's OWN devices:
-a much smaller intrusion than personal messaging (no third party, no conversation),
-but it still spends the user's attention, so it is an attention claim, not a free
-log line.
-
-Push only what the user would want to be interrupted for: a result they are waiting
-on, a decision that blocks progress, a failure they need to know about now. Batch —
-one notice per run carrying everything that matters, never a stream of progress pings.
-Anything that can wait for the run summary waits there. Write the notice to stand
-alone (what happened, what you need) and never push routine success the user did not
-ask to be told about. Silence is the default; a notification is a deliberate choice
-you could defend.
+A push interrupts him. Send at most one per run. It stands alone (what happened, what you need)
+and carries only what he would want to be interrupted for: a result he is waiting on, a failure
+he must know about now.
+A decision goes through `ask_user`, which already reaches his devices by browser push; never push
+it a second time.
+Success he did not ask to hear about stays in your summary.

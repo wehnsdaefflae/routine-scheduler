@@ -8,7 +8,11 @@ from __future__ import annotations
 
 from .run_context import RunContext
 
-_PERMISSION_NOTE_MAX_LINES = 14
+#: A held permission's note is cut at a CHARACTER budget, on a line boundary. It used to be cut
+#: at 14 lines, which dropped the very conduct 18 of 25 docs existed for (a line count says
+#: nothing about length; the conduct sat below the mechanism). The docs are now written
+#: conduct-first to fit, so the budget is a backstop, not a truncator.
+PERMISSION_NOTE_MAX_CHARS = 1_000
 
 
 def _permission_notes(ctx: RunContext, g) -> str:
@@ -25,12 +29,12 @@ def _permission_notes(ctx: RunContext, g) -> str:
         if not raw:
             continue
         body = library_docs.doc_body(raw).strip()
-        lines = list(body.splitlines())
-        if not lines:
+        if not body:
             continue
-        if len(lines) > _PERMISSION_NOTE_MAX_LINES:
-            lines = [*lines[:_PERMISSION_NOTE_MAX_LINES], "[…]"]
-        chunks.append("\n".join(lines))
+        if len(body) > PERMISSION_NOTE_MAX_CHARS:
+            body = body[:body.rfind("\n", 0, PERMISSION_NOTE_MAX_CHARS) + 1 or
+                        PERMISSION_NOTE_MAX_CHARS].rstrip() + "\n[…]"
+        chunks.append(body)
     return "\n\n".join(chunks)
 
 
@@ -103,12 +107,12 @@ def _util_catalog_block(utils: list[dict], kinds: list[str], g) -> str:
         if not head.startswith(u["name"]):
             head = f"{u['name']} — {head}"
         note = ""
-        # A tag-class grant covers the util just as a by-name grant does — annotating it
-        # "not granted" would tell the run it cannot call something it can.
-        by_tag = g is not None and bool(
-            set(g.util_tag_index.get(u["name"], ())) & g.util_tags)
-        if (g is not None and u["name"] in g.gated_utils and u["name"] not in g.utils
-                and not by_tag):
+        if g is not None and u["name"] in g.gated_verbs and u["name"] not in g.utils:
+            verbs = sorted(v for v in g.gated_verbs[u["name"]]
+                           if f"{u['name']}:{v}" not in g.utils)
+            if verbs:
+                note = f"  [{', '.join(verbs)} reserved — not granted to this routine]"
+        if g is not None and u["name"] in g.gated_utils and u["name"] not in g.utils:
             # a deny-forever tombstone reads differently from merely-not-granted:
             # the first is a settled decision (never re-request), the second is
             # requestable (grants.request_route names the way).
@@ -256,8 +260,8 @@ def capabilities_digest(ctx: RunContext, allowed_kinds: set[str] | None = None) 
                             "around the util library; hold it, use it for the one-off, and "
                             "turn anything you run twice into a util or a scripts/ helper)")
         if g.allows_kind("schedule_run"):
-            cap_bits.append("schedule_run (arm/cancel a one-shot future run of a routine — "
-                            "self-target always; other routines via the scheduling permission)")
+            cap_bits.append("schedule_run (arm/cancel a one-shot future run of this routine "
+                            "or another)")
         if g.allows_kind("script"):
             from .. import scripts
             have = scripts.list_scripts(ctx.routine.dir)
@@ -298,19 +302,14 @@ def capabilities_digest(ctx: RunContext, allowed_kinds: set[str] | None = None) 
                             "LANES from this conversation — the routines page's lane rows as "
                             "an action; `cron` sets the lane schedule, no operator needed. It "
                             "reaches the TEMPORAL axis only: when a set of routines fires and "
-                            "in what order. What those routines SHARE — config block, shared "
-                            "store, notes boundary — is their DOMAIN, a per-routine setting in "
-                            "the routine's own config, which no run writes: ask for a domain "
-                            "change with ask_user + config_patch instead)")
+                            "in what order. What a routine may reach — its settings, its roots, "
+                            "the stores it shares — is its own config, which no run writes: "
+                            "propose such a change with ask_user + config_patch instead)")
         cap_bits += [f"reserved util {u!r}" for u in sorted(g.utils)]
-        cap_bits += [f"every util tagged {t!r}" for t in sorted(g.util_tags)]
         if g.run_history != "none":
             cap_bits.append("read previous runs under runs/ "
                             + ("(the last run only)" if g.run_history == "last"
                                else "(all of them)"))
-        if g.workflows == "generate":
-            cap_bits.append("generate a NEW workflow pattern for a subtask when none in the "
-                            "catalog fits (set that subtask's workflow to 'generate')")
         parts.append("Capabilities enabled (user-set, engine-enforced): "
                      + ("; ".join(cap_bits) if cap_bits else "(none beyond the base kinds)")
                      + ". Held permissions (conduct notes below): "

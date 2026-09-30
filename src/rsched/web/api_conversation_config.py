@@ -11,8 +11,6 @@ fields are adopted at its next turn boundary, and it is told about the rest.
 
 from __future__ import annotations
 
-from typing import Literal
-
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, ConfigDict
 
@@ -97,7 +95,6 @@ def detail(request: Request, slug: str) -> dict:
         "rules": list(info.cfg.rules),
         "budgets": info.cfg.budgets,
         "deliberation": info.cfg.deliberation,
-        "output_compression": info.cfg.output_compression,
         "runs": [{"run_id": r.run_id, "ts": r.ts, "state": r.state} for r in info.runs],
         "background": list_background_rows(request, slug),
         "problems": info.problems,
@@ -114,7 +111,6 @@ class ConversationPatch(BaseModel):
     models: dict | None = None
     machines: list[str] | None = None   # catalog machine names (D102) — REPLACE wholesale
     connections: dict | None = None   # {provider: account} — bound OAuth connections (D55)
-    output_compression: Literal["off", "measure", "compress"] | None = None
     deliberation: str | None = None   # DELIBERATION_LEVELS — applies at the next reply
     fs_read_roots: list[str] | None = None    # D82: full folder-access lists — REPLACE
     fs_write_roots: list[str] | None = None   # wholesale (workdir stays write_roots[0])
@@ -166,8 +162,6 @@ def patch_conversation(request: Request, slug: str, patch: ConversationPatch) ->
         raw["connections"] = validate_connections(updates["connections"])
     if "machines" in updates:
         raw["machines"] = validate_machines(request.app.state.server, updates["machines"])
-    raw.update({"output_compression": updates["output_compression"]}
-               if "output_compression" in updates else {})
     if "deliberation" in updates:   # tuning, not config — lands in tuning.yaml
         if updates["deliberation"] not in DELIBERATION_LEVELS:
             raise HTTPException(400, f"deliberation: unknown level "

@@ -1,7 +1,7 @@
 # Examples: four complete routines
 
-Four realistic setups, end to end: the draft you type, what the clarifier asks, what to
-pick on the create page, and what daily operation looks like. They are deliberately
+Four realistic setups, end to end: the draft you type, what the clarifier asks, the settings
+pattern each follows with the changes you accept for it, and what daily operation looks like. They are deliberately
 different in cadence, permissions, and human involvement — together they exercise most of
 the system. Treat them as templates: swap the domain, keep the shape.
 
@@ -13,7 +13,7 @@ the gate for anything irreversible** — but each stresses a different feature:
 | [Freelance radar](#1-freelance-radar) | weekday mornings | multi-source scanning, sub-workflows per source, autonomous util repair, a send-gate |
 | [Grants radar](#2-grants-radar) | weekly | a long pipeline with sign-off gates, full run history, document utils |
 | [Project steward](#3-project-steward) | weekdays | the `shell` permission, real build/test cycles, standing-project state |
-| [Birthday planner](#4-birthday-planner) | twice a week | iterative convergence on taste, Discord decisions, learning from feedback |
+| [Birthday planner](#4-birthday-planner) | twice a week | iterative convergence on taste, decisions on your phone, learning from feedback |
 
 ---
 
@@ -44,15 +44,14 @@ out only after your explicit go.
 - *"Sending: via the platform's form or by email?"* → whichever the posting offers;
   platform-form utils exist (`freelancermap-apply`, `freelance-de-apply`, `gulp-apply`).
 
-### Create page
+### Settings
 
 | setting | pick | why |
 |---|---|---|
-| workflow | `general-task` | scan → score → draft → gate is ordinary tool work |
-| rules | ask-policy, web-research, decision-record, intent-inference | the routine-improver meta routine handles improvement passes for every routine |
-| permissions + capabilities | **util-authoring** — approval *new utils only*, memory | scrapers break at 6 a.m. — the `creations` approval level auto-applies *revisions* without waking you (new utils still ask); the send-gate is a blocking ask on the Decisions page |
-| budgets | 60 turns · 45 min · defaults; **ask_timeout_min 240** | a send-gate that waits longer than half a day is stale anyway |
-| schedule | weekdays 06:30 | the shortlist is ready with your coffee |
+| pattern | `radar` | ingest listings, verify, keep a board you pick from, act only after your sign-off |
+| changes you accept | **outbound-mail** permission; approval *new utils only*; **ask_timeout_min 240**; weekdays 06:30 | the application goes out in your name, so sending is a decision you make once here; scrapers break at 6 a.m. and a revision auto-applies without waking you; a send-gate that waits longer than half a day is stale; the shortlist is ready with your coffee |
+| done when | every platform was read or recorded as unreadable; every new posting is scored; every pick has a draft | what one finished run leaves behind — the recipe's own `## Done when` |
+| finish line | none | it runs until you switch it off |
 
 ### A typical run
 
@@ -97,15 +96,13 @@ submitted only after your sign-off.
 > submission — by form, email, or portal. Track every submitted application to a
 > decision and keep statistics across the year.
 
-### Create page
+### Settings
 
 | setting | pick | why |
 |---|---|---|
-| workflow | `general-task` (or generate a pipeline pattern once the library has traffic) | |
-| rules | ask-policy, web-research, decision-record, intent-inference | source tuning and pipeline growth come from the routine-improver's research/features lenses |
-| permissions + capabilities | util-authoring, memory, **run-history** — depth *all* | **full run history** is the point: "did we already see this program in March?", "what did the run that submitted X actually do?" — longitudinal questions the LEDGER alone can't answer |
-| budgets | **80 turns · 60 min** · ask_timeout_min 480 | a weekly run may verify dozens of pages; give it room |
-| schedule | Mondays 07:00 | deadlines are usually weekday-anchored |
+| pattern | `radar` | a board of calls you pick from, a pipeline behind each pick that waits for your sign-off |
+| changes you accept | run history *all*; **80 turns · 60 min**; Mondays 07:00 | **full run history** is the point: "did we already see this program in March?", "what did the run that submitted X actually do?" — longitudinal questions the LEDGER alone can't answer; a weekly run may verify dozens of pages; deadlines are usually weekday-anchored |
+| finish line | none | new calls keep coming; each application's own deadline lives in its pipeline, not in the routine's end |
 
 ### A typical run
 
@@ -120,7 +117,7 @@ submitted only after your sign-off.
    attachments via `xlsx-pdf` / `pdf-stamp` where forms are involved) → pangram pass →
    **sign-off gate** (blocking, default `hold`) → submit → monitor
    the inbox for the funder's reply.
-5. Cross-run statistics from the full run history (`run-history` at depth `all`): submissions
+5. Cross-run statistics from the full run history (`runs: all`): submissions
    per month, tier→outcome rates — into `state/stats.md`. LEDGER, finish.
 
 **Where you come in:** tier-A programs arrive as deferred "apply?" questions; each
@@ -148,16 +145,13 @@ grant-funded open-source project: deliverables register, worklog, public repo hy
 > Draft outbound messages (Zulip status updates, emails) but post NOTHING without my
 > go. Commit your work; keep `WORKLOG.md` append-only.
 
-### Create page
+### Settings
 
 | setting | pick | why |
 |---|---|---|
-| workflow | `general-task` | orient → take everything that is due → execute → record |
-| rules | ask-policy, web-research, decision-record, change-restraint | engineering improvement arrives via the routine-improver's lenses |
-| permissions | **shell**, util-authoring, memory, run-history | **this is the routine the shell permission exists for**: `{"kind": "shell", "command": "cd ~/projects/llmsectest && uv run pytest -q", "timeout_s": 900}` — builds, test suites, linters. Repeatable operations still get promoted to utils (`pytest-run`, `git-sync` already exist) |
-| fs roots | read+write: `~/projects/llmsectest` | the project lives outside the routine dir |
-| budgets | 80 turns · **90 min** · ask_timeout_min 480 | test suites take wall-clock time |
-| schedule | weekdays 07:00 | |
+| pattern | `code-maintainer` | sweep, fix, verify, push, report — with `change-scope` and `make-failure-visible` among its rules |
+| changes you accept | **shell**; read+write root `~/projects/llmsectest`; **90 min**; weekdays 07:00 | **this is the routine the shell permission exists for**: `{"kind": "shell", "command": "cd ~/projects/llmsectest && uv run pytest -q", "timeout_s": 900}` — builds, test suites, linters (repeatable operations still get promoted to utils); the project lives outside the routine dir; test suites take wall-clock time |
+| finish line | `until` the end of the funding period | the project ends on a date whatever else is reached |
 
 ### A typical run
 
@@ -197,15 +191,14 @@ learning your taste run over run.
 > availability in `state/guests.md` from what I relay. Never contact anyone — venues,
 > guests, vendors — yourself: prepare drafts and shortlists, I do the outreach.
 
-### Create page
+### Settings
 
 | setting | pick | why |
 |---|---|---|
-| workflow | `general-task` | propose → feedback → learn → propose is steady-state work |
-| rules | ask-policy, web-research, decision-record | the routine-improver's UI lens keeps `proposals.md` readable as it grows |
-| permissions | memory, **run-history** | taste questions ride browser push to your phone as ordinary decisions; run-history lets it diff proposals against exactly what you saw last time |
-| budgets | 40 turns · 30 min · **ask_timeout_min 1440** | taste questions can wait a day; the run continues on its stated default and folds your late answer into the next one |
-| schedule | Tuesdays + Fridays 18:00 | often enough to converge, rare enough to have news |
+| pattern | `personal-steward` | one personal project steered through a page you answer |
+| changes you accept | **ask_timeout_min 1440**; Tuesdays + Fridays 18:00 | taste questions ride browser push to your phone and can wait a day — the run continues on its stated default and folds your late answer into the next one; often enough to converge, rare enough to have news |
+| never | contact anyone — venues, guests, vendors | a line of its recipe's `## Never`: it prepares, you do the outreach |
+| finish line | `run:` the weekend took place and the plan was delivered; `until 2027-03-14` | the birthday is the end of the job |
 
 ### A typical run
 
@@ -236,8 +229,9 @@ re-proposing what you already declined.
   *rejections* (in LEDGER/state) so nothing is re-proposed. Cheap and transformative.
 - **Sub-workflows per source, not one mega-loop.** Parallel children with disjoint outputs
   (Freelance radar step 2) keep the main conversation short and the failures isolated.
-- **Repair, don't route around.** A broken util fixed under `util-revision` (revisions
-  auto-approved) is fixed for every routine. A silent workaround breaks everyone tomorrow.
-- **Give history only where history is the point.** Only Grants radar carries
-  `run-history` at full depth (`all`); the others get by on the last summary + LEDGER —
-  smaller prompts, fewer places to wander.
+- **Repair, don't route around.** A broken util fixed under `util-authoring` (revisions
+  auto-approved at *new utils only*) is fixed for every routine. A silent workaround breaks
+  everyone tomorrow.
+- **Give history only where history is the point.** Only Grants radar reads every earlier run
+  (`runs: all`); the others get by on the last run + LEDGER — smaller prompts, fewer places to
+  wander.

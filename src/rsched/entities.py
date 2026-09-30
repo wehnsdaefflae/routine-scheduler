@@ -1,6 +1,6 @@
 """The grant-entity vocabulary — ONE namespaced id grammar for everything a run can be
 granted: `<class>:<name>`. It spans the capability layer (gated action kinds, reserved
-utils, run-history depth, workflow generation) AND the resource layer (secrets,
+utils and verbs, run-history depth, the reminder dial) AND the resource layer (secrets,
 connections, machines, filesystem roots) plus the recreate unlock, so every access
 request, denial tombstone and one-run grant speaks the same language.
 
@@ -29,7 +29,7 @@ from .secrets import KEY_RE
 # time against the live vocabularies: library requires, provider registry, machine catalog,
 # secrets store).
 CLASSES = ("action", "util", "secret", "connection", "machine",
-           "fs-read", "fs-write", "runs", "workflows", "reminders", "recreate")
+           "fs-read", "fs-write", "runs", "reminders", "recreate")
 # Resource-class entities flow to child tasks (children inherit their parent's resources);
 # capability-class ones are top-level-only (sub-workflows run with capabilities off).
 RESOURCE_CLASSES = frozenset({"secret", "connection", "machine", "fs-read", "fs-write"})
@@ -44,7 +44,7 @@ NO_FOREVER_CLASSES = frozenset({"recreate"})
 # them could only mean "the next util call that touches it", a coarser promise than the
 # button makes — so they stayed four-state until D76
 # (below) accepted the coarser promise.
-TURN_ACTION_CLASSES = frozenset({"action", "util", "runs", "workflows"})
+TURN_ACTION_CLASSES = frozenset({"action", "util", "runs"})
 # D76 (operator, 2026-08-06, revisiting the D65 scope choice): secret:/fs-read:/fs-write:
 # ARE once-grantable, under the explicitly COARSER spend the operator approved ("spent at
 # the next requesting util invocation"). Their use happens inside a util subprocess
@@ -65,8 +65,7 @@ TRUE_ROW_CLASSES = frozenset({"secret"})
 # for months disappears from under its next run otherwise).
 NEVER_GRANTABLE = ("~/.config/routine-scheduler", "~/.credentials", "~/.ssh")
 
-_LEVELS = {"runs": ("last", "all"), "workflows": ("generate",),
-           "reminders": ("local", "global")}
+_LEVELS = {"runs": ("last", "all"), "reminders": ("local", "global")}
 
 
 def parse_entity(eid: object) -> tuple[str, str] | None:
