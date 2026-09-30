@@ -415,6 +415,12 @@ details.raw pre { margin: 0; padding: 10px 14px; overflow-x: auto; background: v
    of the classes are shared with the Python highlighter above. */
 .tok-key { color: var(--signal); }
 .tok-punc { color: var(--ink-3); }
+/* A JSON literal is not a number, and in an action fold the difference carries meaning — `300`
+   is a timeout, `true` is a switch. They shared --iris (inherited from the Python palette, where
+   .tok-num and .tok-const legitimately read alike) until the 2026-09-30 render check showed
+   `300`, `true` and `null` in one colour. Looked at, not asserted: the class-level tests all
+   passed over it. */
+pre.hl-json .tok-const { color: var(--warn); }
 
 .save-errors {
   margin-top: 10px; padding: 10px 13px; border-radius: var(--r2); font-size: var(--t-s);
