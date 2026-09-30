@@ -24,6 +24,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
+#: The package's importable surface is this vocabulary alone. The jail-side scripts are not
+#: members: they import their siblings by bare name, so they load only after `run.py` has put
+#: this directory on the import path. Anything that lists a package's submodules by importing
+#: them (pdoc's Help build does) would otherwise try, and warn, in whatever order it walks.
+__all__ = ["DEFAULT_AUTH_SECRET", "ENTRY", "KINDS", "NET_KINDS", "SECRET_PARAMS", "needs_net",
+           "paths_named", "secrets_named", "validate"]
+
 #: The file the daemon executes inside the jail.
 ENTRY = Path(__file__).resolve().parent / "run.py"
 

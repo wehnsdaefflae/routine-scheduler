@@ -67,6 +67,19 @@ def test_every_module_the_api_reference_documents_imports():
             importlib.import_module(name)
 
 
+def test_the_gate_kit_package_page_imports_no_jail_side_script():
+    """pdoc lists a package's submodules by importing each one; the jail-side kit loads only
+    after `run.py` has fixed the import path, so the package names its surface in `__all__`
+    and the page tries none of them (the order-dependent warnings on 0.369.1's boot)."""
+    import warnings
+
+    import pdoc.doc
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        assert pdoc.doc.Module.from_name("rsched.gatekit").submodules == []
+
+
 def test_ensure_docs_never_raises(tmp_path, monkeypatch):
     # a failing build (import error, unreadable repo, …) must not take the daemon down
     import rsched.docs_build as db
