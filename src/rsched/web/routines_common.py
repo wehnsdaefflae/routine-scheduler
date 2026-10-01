@@ -1,8 +1,8 @@
 """Shared routine-endpoint plumbing: catalog lookups, the locked git-commit, the ONE
-routine.yaml write choreography (`write_routine_config`), and the permission-layer detail
-— imported by api_routines, api_routine_edit, api_routine_patch, api_conversations,
-api_hooks, and api_runs alike (it used to live inside api_routines, which every sibling
-then reached into).
+routine.yaml write choreography (`write_routine_config`), the run-is-live guard and queue,
+control.json signalling, and the permission-layer detail — imported by most routers, the
+conversation ones included (it used to live inside api_routines, which every sibling then
+reached into).
 """
 
 from __future__ import annotations

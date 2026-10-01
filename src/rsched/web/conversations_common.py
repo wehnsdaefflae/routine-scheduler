@@ -1,5 +1,6 @@
 """Shared conversation-endpoint plumbing: home/info lookups, streamed attachment
-saving, and the list-item shaping — used by api_conversations and its playbook sibling.
+saving, and the list-item shaping — used by the conversation routers and by api_run_control,
+whose run-page messages save their attachments the same way.
 """
 
 from __future__ import annotations

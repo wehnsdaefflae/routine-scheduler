@@ -145,9 +145,10 @@ def _materialize_goal_reached(request: Request, rec: dict) -> dict:
 
 @router.post("/pending-creations/{pid}/materialize")
 def materialize(request: Request, pid: str) -> dict:
-    """Build what the run proposed. The record is dropped either way it ends — a proposal that
-    materialized is done, while one that failed is a proposal the operator must look at again
-    rather than a button that silently does nothing twice.
+    """Build what the run proposed. The record is dropped only once the proposal has
+    materialized; one that fails stays on the page with the reason in the 4xx — a proposal
+    the operator must look at again, to fix or discard, rather than a button that silently
+    does nothing twice.
     """
     server = request.app.state.server
     rec = pending.load(server.routines_home, pid)
