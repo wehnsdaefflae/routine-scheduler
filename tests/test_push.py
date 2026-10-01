@@ -41,6 +41,19 @@ def test_vapid_key_generated_once_and_stable(tmp_path):
     assert (tmp_path / "vapid-private.pem").exists()
 
 
+def test_concurrent_first_use_yields_one_key(tmp_path):
+    """Two first requests at once each generated a pair and the later save replaced the
+    earlier, so one browser held a public key whose private half was gone. Every caller now
+    gets the same key, and the private key is not world-readable."""
+    from conftest import hammer
+
+    server = _server(tmp_path)
+    keys: list[str] = []
+    assert hammer(lambda _tag: keys.append(push.vapid_public_key(server))) == []
+    assert len(set(keys)) == 1 and keys[0] == push.vapid_public_key(server)
+    assert (tmp_path / "vapid-private.pem").stat().st_mode & 0o777 == 0o600
+
+
 def test_subscription_store_upserts_by_endpoint(tmp_path):
     server = _server(tmp_path)
     assert push.subscriptions(server) == []

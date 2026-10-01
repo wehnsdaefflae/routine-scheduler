@@ -17,7 +17,7 @@ import logging
 import threading
 from pathlib import Path
 
-from ..paths import atomic_write_json, config_file, read_json
+from ..paths import atomic_write, atomic_write_json, config_file, file_lock, read_json
 
 log = logging.getLogger("rsched.push")
 
@@ -55,19 +55,26 @@ def push_dir(server) -> Path:
 def vapid_public_key(server) -> str:
     """The applicationServerKey browsers subscribe with (urlsafe-b64, no padding) —
     generating and persisting the private key on first use.
+
+    First use is checked and generated under a file lock and written atomically (0600).
+    `Vapid.save_key` is a plain open-and-write at the umask's mode: two first requests at
+    once (the Settings page and a re-subscribing tab) each generated a pair and the later
+    save replaced the earlier, so one browser subscribed against a public key whose private
+    half no longer existed and every push to it failed; a reader between open and write
+    parsed an empty PEM; and the private key landed world-readable.
     """
     from cryptography.hazmat.primitives import serialization
     from py_vapid import Vapid, b64urlencode
 
     path = push_dir(server) / _VAPID_FILE
-    path.parent.mkdir(parents=True, exist_ok=True)
-    if path.exists():
-        v = Vapid.from_file(str(path))
-    else:
-        v = Vapid()
-        v.generate_keys()
-        v.save_key(str(path))
-        log.info("push: generated VAPID keypair at %s", path)
+    with file_lock(path.with_name(f".{path.name}.lock")):
+        if path.exists():
+            v = Vapid.from_file(str(path))
+        else:
+            v = Vapid()
+            v.generate_keys()
+            atomic_write(path, v.private_pem())
+            log.info("push: generated VAPID keypair at %s", path)
     raw = v.public_key.public_bytes(serialization.Encoding.X962,
                                     serialization.PublicFormat.UncompressedPoint)
     return b64urlencode(raw)
