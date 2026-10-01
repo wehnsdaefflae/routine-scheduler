@@ -78,7 +78,6 @@ def routine_surface(server: Any, cfg: RoutineConfig) -> dict:
     `nodes` are typed, each carrying WHY it is needed and what an unmet need costs. `verdict`
     counts them so a caller can decide at a glance whether to shout.
     """
-    from .. import grants as grants_mod
     from .. import utils_run
     from ..secrets import load_secrets
     from . import library_reads
@@ -91,8 +90,8 @@ def routine_surface(server: Any, cfg: RoutineConfig) -> dict:
 
     # -- the soft edge, from held docs AND bound rules (a rule may expect, never require) ----
     expects = {}
-    perm_expects = grants_mod.read_library_expects(server.permissions_home)
-    rule_expects = grants_mod.read_library_expects(server.rules_home)
+    perm_expects = library_reads.expects(server.permissions_home)
+    rule_expects = library_reads.expects(server.rules_home)
     for slug in cfg.permissions or []:
         if slug in perm_expects:
             expects[slug] = perm_expects[slug]
