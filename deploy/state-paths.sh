@@ -4,8 +4,10 @@
 # `deploy/backup.sh` (recurring mirror) both read it, so the two cannot drift.
 #
 # THE INVARIANT: every bind mount in docker-compose.yml that holds DATA appears in one of
-# the two lists below. A data home that is mounted but not listed here dies on a recreate,
-# a migration or a disk failure with nothing to catch it — that bug shipped once already.
+# the two lists below, or in the third that declares it deliberately not carried. A data home
+# that is mounted but not listed here dies on a recreate, a migration or a disk failure with
+# nothing to catch it — that bug shipped once already, so tests/test_deploy_state.py now
+# checks the compose file against these lists instead of trusting this comment.
 #
 # Paths are HOME-relative, so `tar xzf … -C <RSCHED_HOME>` and an rsync into a mirror root
 # both recreate the exact layout the compose file mounts.
@@ -13,8 +15,8 @@
 # Core data. Absent = a broken install, so a consumer refuses rather than quietly skipping.
 STATE_PATHS_REQUIRED=(
   git-repos/routine-scheduler          # the source tree self-audit edits + the daemon runs from
-  .config/routine-scheduler            # config.yaml (token, endpoints, source_repo)
-  .credentials                         # SECRETS: endpoint keys + claude-code OAuth token
+  .config/routine-scheduler            # SECRETS: config.yaml's tokens, the Secrets store
+                                       # (secrets.env), the cliproxy keys; endpoints, source_repo
   routines                             # the routine repos, their runs, state, ledgers
   conversations                        # interactive sessions: routine-shaped, un-versioned, irreplaceable
   background                           # detached background runs a conversation launched, mid-flight
@@ -25,6 +27,10 @@ STATE_PATHS_REQUIRED=(
 # that has been paired. Real data, but its absence is a fresh install rather than a broken
 # one. Listed apart so the difference is declared instead of inferred from a missing file.
 STATE_PATHS_OPTIONAL=(
+  .credentials                         # SECRETS: the key files an endpoint's `key_env_file`
+                                       # names — the last rung of the credential ladder, below
+                                       # the Secrets store, so an install that never used one
+                                       # has none (install.sh does not create it)
   chrome-profile                       # the logged-in browser sessions (docs/browser-sessions.md)
   telegram-sessions                    # a LINKED SESSION is the credential — there is no API key to
   signal-sessions                      # re-enter, so losing one of these unlinks the account and
@@ -42,9 +48,14 @@ STATE_PATHS_OPTIONAL=(
   git-repos/pytest-sarif-demo
 )
 
-# Deliberately NOT carried, so their absence is a decision and not an oversight:
-#   .cache/ms-playwright  — a ~170 MB browser download the `page-fetch` util re-fetches on
-#                           first use. Bind-mounted to survive a RECREATE, worthless in a copy.
+# Deliberately NOT carried, so their absence is a decision and not an oversight. The one
+# HOME-relative bind among them is a list entry rather than a comment so the invariant check
+# can read it; the other two have no HOME-relative path to list:
+STATE_PATHS_NOT_CARRIED=(
+  .cache/ms-playwright                 # a ~170 MB browser download the `page-fetch` util
+                                       # re-fetches on first use. Bind-mounted to survive a
+                                       # RECREATE, worthless in a copy.
+)
 #   tor-data (volume)     — Tor's guard/consensus state: regenerable, meaningless elsewhere.
 #   /srv/ObsidianVault    — the llmsectest grant documents, mounted read-only from the host's
 #                           own Obsidian store. It is not this instance's state and it is not
@@ -58,6 +69,10 @@ STATE_PATHS_OPTIONAL=(
 # host and pid that hold the profile — rsync copies the link and then fails setting times on a
 # target that does not exist (exit 23), and a restored SingletonLock tells a fresh Chrome that
 # another instance already owns the profile.
+#
+# Both consumers match these against every file's HOME-RELATIVE name — tar's member names,
+# rsync's `--relative` paths — so an entry that names a path is anchored to that home and a bare
+# name matches at any depth. That shared reading is what lets ONE list serve both.
 STATE_EXCLUDES=(
   # The LLMSecTest workspace's regenerable bulk — anchored, so these names are excluded THERE
   # and nowhere else. `apps/` is the cohort's per-member materialisation (compose stacks, data

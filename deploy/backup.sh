@@ -11,10 +11,10 @@
 #
 # It reads the SAME inventory as bundle.sh (deploy/state-paths.sh), so the two cannot drift.
 #
-# WARNING: the mirror carries SECRETS — the bearer tokens and the Secrets store in
-# ~/.config/routine-scheduler/config.yaml, plus ~/.credentials when that optional file-based
-# mechanism is used at all. The mirror root is created mode 700, but a network share may not
-# honour that; the script prints the mode it actually got, so read it.
+# WARNING: the mirror carries SECRETS — the bearer tokens in config.yaml and the Secrets store
+# beside it in ~/.config/routine-scheduler/, the messenger session stores, plus ~/.credentials
+# when that optional file-based mechanism is used at all. The mirror root is created mode 700,
+# but a network share may not honour that; the script prints the mode it actually got, so read it.
 set -euo pipefail
 
 MIRROR="${1:-/mnt/sshd_volume1/rsched-backup}"
@@ -64,9 +64,12 @@ echo
 started=$(date +%s)
 failed=()
 for p in "${STATE_PATHS[@]}"; do
-  dest="${MIRROR}/${p}"
-  mkdir -p "$(dirname "${dest}")"
   printf '  %-42s ' "${p}"
+  # --relative from the `/./` in the source: rsync sees every file under its HOME-relative name
+  # (`git-repos/LLMSecTest_agentic/apps/…`) — the name bundle.sh's tar sees — and recreates the
+  # home at that path in the mirror. That is what makes STATE_EXCLUDES mean the same thing to
+  # both consumers. Synced from INSIDE each home, rsync saw only `apps/…`, so every exclude
+  # anchored to a workspace matched nothing and the mirror carried the bulk the tarball leaves out.
   # --delete so the mirror CONVERGES rather than accumulating deleted files forever. Owner and
   # group are dropped: we are not root, and a NAS export usually cannot represent them anyway.
   # --one-file-system is LOAD-BEARING, not tidiness: a routine that binds a remote machine gets
@@ -76,9 +79,9 @@ for p in "${STATE_PATHS[@]}"; do
   # --delete-excluded, not plain --delete: rsync PROTECTS excluded files on the receiver, so
   # anything the exclude list gains later — or that a pre-exclusion run already copied — would
   # sit in the mirror forever. That is how a stale Chrome SingletonLock survived being excluded.
-  if out=$(rsync -a -x --delete --delete-excluded --no-owner --no-group --stats \
+  if out=$(rsync -a -R -x --delete --delete-excluded --no-owner --no-group --stats \
              "${RSYNC_EXCLUDES[@]}" \
-             "${HOME}/${p}/" "${dest}/" 2>&1); then
+             "${HOME}/./${p}/" "${MIRROR}/" 2>&1); then
     xfer=$(echo "${out}" | awk -F': *' '/Number of regular files transferred/ {print $2}')
     sent=$(echo "${out}" | awk -F': *' '/Total transferred file size/ {print $2}')
     echo "ok  (${xfer:-0} files, ${sent:-0})"

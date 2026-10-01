@@ -45,23 +45,25 @@ docker compose down                         # stop the test container
 deploy/bundle.sh                            # → ~/rsched-migration-<ts>.tgz  (contains secrets!)
 ```
 
-`deploy/state-paths.sh` is the authority on what a migration carries, and its two lists mirror
-the bind mounts in `docker-compose.yml` — a data home that is mounted but unlisted would die on
-the migration instead of on the recreate, which is the same loss one host later. Both
+`deploy/state-paths.sh` is the authority on what a migration carries, and its lists mirror the
+bind mounts in `docker-compose.yml` — a data home that is mounted but unlisted would die on the
+migration instead of on the recreate, which is the same loss one host later, so
+`tests/test_deploy_state.py` fails on a bind the lists neither carry nor declare left out. Both
 `bundle.sh` and `backup.sh` source that one file, so they cannot drift apart. What it takes:
 
 | Path (`${RSCHED_HOME}`-relative) | Why it must travel |
 | --- | --- |
 | `git-repos/routine-scheduler` | the source tree self-audit edits and the daemon runs from |
-| `.config/routine-scheduler` | `config.yaml` — token, endpoints, homes, `source_repo` |
-| `.credentials` | **secrets**: endpoint keys + the claude-code OAuth token |
+| `.config/routine-scheduler` | **secrets**: `config.yaml` (tokens, endpoints, homes, `source_repo`), the Secrets store beside it, the cliproxy keys |
 | `routines` | the routine repos, their runs, state and ledgers |
 | `conversations` | interactive sessions — routine-shaped, un-versioned, irreplaceable |
 | `background` | detached background runs a conversation launched, possibly mid-flight |
-| `.local/share/routine-scheduler-libraries` | the library repo: `workflows/`, `rules/`, `utils/` |
+| `.local/share/routine-scheduler-libraries` | the library repo: `workflows/`, `rules/`, `permissions/`, `patterns/`, `utils/`, … |
 
 Plus the homes that exist only once a feature has been used, taken when present and reported as
-skipped when not (`STATE_PATHS_OPTIONAL`): `chrome-profile` (the logged-in browser —
+skipped when not (`STATE_PATHS_OPTIONAL`): `.credentials` (the key files an endpoint's
+`key_env_file` names — the credential ladder's last rung, below the Secrets store, so an install
+that never used one has none), `chrome-profile` (the logged-in browser —
 [docs/browser-sessions.md](../docs/browser-sessions.md)), `telegram-sessions`, `signal-sessions`
 and `whatsapp-sessions` (a **linked session on disk IS the credential** — there is no API key to
 re-enter, so losing one unlinks the account and someone has to re-pair by phone), `.config/gh`
@@ -126,13 +128,16 @@ mirror would land on the very disk it is meant to survive, and report success. I
 sshfs-mounted at `<routine>/mnt/<name>` while it runs, and a backup firing at that moment would
 otherwise copy another host's filesystem into the mirror.
 
-Deletion is `--delete-excluded` rather than plain `--delete`: rsync **protects** excluded files on
-the receiving side, so anything the exclude list gains later would sit in the mirror forever —
-which is how a stale Chrome `SingletonLock` survived being excluded on the first live run. A
-`flock` keeps two scheduled runs from racing, and the mirror root is created mode 700 because it
-carries the bearer tokens and Secrets store from `config.yaml` — check the mode the script
-reports, since a network share may not honour it. `chrome-profile` carries the same torn-copy
-caveat as the tarball, and the script says so on every run.
+Each home is mirrored with `--relative`, so rsync matches the exclude list against the same
+HOME-relative names tar does: an exclude anchored to a workspace (`git-repos/LLMSecTest_agentic/apps`)
+cuts the same files from both, which `tests/test_deploy_state.py` checks by running the two
+side by side. Deletion is `--delete-excluded` rather than plain `--delete`: rsync **protects**
+excluded files on the receiving side, so anything the exclude list gains later would sit in the
+mirror forever — which is how a stale Chrome `SingletonLock` survived being excluded on the first
+live run. A `flock` keeps two scheduled runs from racing, and the mirror root is created mode 700
+because it carries `config.yaml`'s bearer tokens and the Secrets store beside it — check the mode
+the script reports, since a network share may not honour it. `chrome-profile` carries the same
+torn-copy caveat as the tarball, and the script says so on every run.
 
 ### Running it nightly
 
