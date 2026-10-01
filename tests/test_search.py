@@ -72,6 +72,10 @@ def _build_tree(tmp_path, make_routine):
         {"ts": "2026-07-01T12:00:10+00:00", "type": "assistant_action", "turn": 1,
          "payload": {"say": "narwhal analysis in the child task", "kind": "util", "name": "x"}},
     ])
+    _write_events(run / "sub" / "1" / "sub" / "2" / "transcript.jsonl", [
+        {"ts": "2026-07-01T12:00:11+00:00", "type": "assistant_action", "turn": 1,
+         "payload": {"say": "aardvark census by the grandchild", "kind": "util", "name": "x"}},
+    ])
     old = d / "runs" / "20260601-110000"
     old.mkdir(parents=True)
     with gzip.open(old / "transcript.jsonl.gz", "wt", encoding="utf-8") as fh:
@@ -131,6 +135,7 @@ def test_kinds_and_metadata(index):
     _one(index, "proceed", kind="question")
     _one(index, "unicorn", kind="history")
     _one(index, "narwhal", kind="say", sub="1")
+    _one(index, "aardvark", kind="say", sub="1/2")   # a child's child: its own sub/ nests
     _one(index, "okapi", run_ts="20260601-110000")   # the gzipped transcript
     _one(index, "vaporwave", home="conversation", slug="c-plan", kind="instruction")
     _one(index, "seventeen", home="conversation", kind="finish")

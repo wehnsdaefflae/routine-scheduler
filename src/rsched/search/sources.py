@@ -22,6 +22,7 @@ from pathlib import Path
 from ..config import ServerConfig
 from ..engine.transcript import read_events
 from ..paths import read_json
+from ..readmodels.memo import run_tree
 
 # One doc row = one searchable unit of prose. `kind` is the search-result vocabulary
 # (rendered as a chip in the UI) — extend, never repurpose.
@@ -102,28 +103,26 @@ def _routine_sources(home_kind: str, d: Path) -> Iterator[SourceFile]:
 
 def _run_sources(home_kind: str, slug: str, run_dir: Path) -> Iterator[SourceFile]:
     ts = run_dir.name
-    yield from _transcript_tree(home_kind, slug, run_dir, ts, sub="")
+    yield from _transcript_tree(home_kind, slug, run_dir, ts)
     if (run_dir / "result.md").is_file():
         yield SourceFile(run_dir / "result.md", home_kind, slug, ts, kind="result")
     for p in _md_files(run_dir / "history"):
         yield SourceFile(p, home_kind, slug, ts, kind="history")
 
 
-def _transcript_tree(home_kind: str, slug: str, run_dir: Path, ts: str,
-                     sub: str) -> Iterator[SourceFile]:
-    """This run level's transcript (plain or retention-gzipped — never both on disk)
-    plus, recursively, every subrun's under sub/<n>/.
+def _transcript_tree(home_kind: str, slug: str, run_dir: Path,
+                     ts: str) -> Iterator[SourceFile]:
+    """Every level's transcript in the run tree (`run_tree` — the run, then each subrun under
+    `sub/<n>/`, recursively), plain or retention-gzipped: the plain file while both exist
+    (gzip writes the archive before it unlinks the original). `sub` is the subrun path
+    ("2", "2/1"), "" for the run itself.
     """
-    for name in ("transcript.jsonl", "transcript.jsonl.gz"):
-        if (run_dir / name).is_file():
-            yield SourceFile(run_dir / name, home_kind, slug, ts, sub=sub, kind="transcript")
-            break
-    subdir = run_dir / "sub"
-    if subdir.is_dir():
-        for child in sorted((p for p in subdir.iterdir()
-                             if p.is_dir() and p.name.isdigit()), key=lambda p: int(p.name)):
-            child_sub = f"{sub}/{child.name}" if sub else child.name
-            yield from _transcript_tree(home_kind, slug, child, ts, sub=child_sub)
+    for level in run_tree(run_dir):
+        sub = "/".join(level.relative_to(run_dir).parts[1::2])   # sub/2/sub/1 → "2/1"
+        for name in ("transcript.jsonl", "transcript.jsonl.gz"):
+            if (level / name).is_file():
+                yield SourceFile(level / name, home_kind, slug, ts, sub=sub, kind="transcript")
+                break
 
 
 def extract(src: SourceFile) -> list[Doc]:

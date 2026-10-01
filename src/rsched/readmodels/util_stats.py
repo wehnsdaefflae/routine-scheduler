@@ -5,18 +5,18 @@ first and last executed when" for every global util.
 Three sources, no database (stat-fingerprint memos in the registry.py idiom):
 
 - **Library git history** (one `git log --name-only -- utils` walk, memoized on the
-  library's HEAD): created = the oldest commit touching `utils/<name>/`, last revised =
-  the newest.
+  library repo's reflog — every commit and every pull appends to it): created = the oldest
+  commit touching `utils/<name>/`, last revised = the newest.
 - **The workflow-usage stream** (durable — survives run retention): records carry a
   per-run `utils` outcome breakdown from RunContext.util_stats. A record that HAS the
   `utils` key marks its run as counted at the source; such runs are never re-derived
   from transcripts.
 - **Retained transcripts** (backfill for pre-stream history): runs the stream has not
-  counted are scanned for util observations — root and sub transcripts, gzip included,
-  memoized per file behind an (inode, mtime, size) fingerprint, so each terminal
-  transcript is parsed once per process. Backfill sees executions only; rejected/denied
-  calls never became observations pre-stream, so those counts honestly start at the
-  stream's adoption.
+  counted are scanned for util observations — every transcript in the run tree, nested
+  children and gzip included, memoized per file behind an (inode, mtime, size)
+  fingerprint, so each terminal transcript is parsed once per process. Backfill sees
+  executions only; rejected/denied calls never became observations pre-stream, so those
+  counts honestly start at the stream's adoption.
 
 Outcome vocabulary (RunContext.count_util): ok / error (non-zero exit) / usage_error
 (exit 2 — argparse's bad-arguments convention, the "called with wrong syntax" signal) /
@@ -38,9 +38,7 @@ from ..engine.transcript import read_events
 from ..ids import now_iso
 from ..paths import atomic_write_json
 from ..utils_lib import USAGE_ERROR_EXIT
-from ..workflows.library import head_commit
-from . import library_reads
-from .memo import fingerprint
+from . import library_reads, memo
 
 log = logging.getLogger("rsched.util_stats")
 
@@ -48,24 +46,29 @@ OUTCOMES = ("ok", "error", "usage_error", "missing", "denied", "rejected")
 _EXECUTED = ("ok", "error", "usage_error")   # outcomes where the util actually ran
 _PSEUDO = ("list", "show")                   # catalog discovery, not execution
 
-# Stat-validated memos (see rsched/registry.py): re-decided from the filesystem on every
-# lookup, so the disk stays the source of truth. Terminal transcripts never change, so
-# each is parsed exactly once per process; the git walk re-runs only when HEAD moves.
+# A stat-validated memo (see rsched/registry.py): re-decided from the filesystem on every
+# lookup, so the disk stays the source of truth, and terminal transcripts never change, so
+# each is parsed exactly once per process. Its own dict rather than `memo.memoized`, whose
+# bound is sized for read models and would be flooded by one entry per transcript. Each
+# backfill pass prunes it to the transcripts that pass read, so it holds the runs the
+# stream has not counted yet — never every transcript the process has ever seen.
 _transcript_memo: dict[str, tuple[tuple, dict]] = {}
-_git_dates_memo: dict[str, tuple[str, dict]] = {}
 
 
 def _git_dates(home: Path) -> dict[str, dict]:
     """Map util name → {created, revised} (ISO committer dates) for every util that ever
     lived in the library repo, from ONE `git log` walk over utils/. Empty when the
     library has no git history.
+
+    Memoized on the repo's reflog, like the recipe log and the recipe baseline: every commit
+    and every pull appends to `.git/logs/HEAD`, so a stat says whether HEAD moved without
+    the `git rev-parse` per call that asking git would cost.
     """
-    head = head_commit(home)
-    if not head:
-        return {}
-    hit = _git_dates_memo.get(str(home))
-    if hit is not None and hit[0] == head:
-        return {k: dict(v) for k, v in hit[1].items()}
+    return memo.memoized(f"util-dates:{home}", [home / ".git" / "logs" / "HEAD"],
+                         lambda: _read_git_dates(home))
+
+
+def _read_git_dates(home: Path) -> dict[str, dict]:
     try:
         r = libgit.git(home, "log", "--format=%x01%cI", "--name-only", "--", "utils")
     except (OSError, subprocess.TimeoutExpired):
@@ -82,8 +85,7 @@ def _git_dates(home: Path) -> dict[str, dict]:
             # newest commit comes first: the first sighting is the last revision,
             # every later sighting pushes `created` further into the past
             dates.setdefault(name, {"revised": current})["created"] = current
-    _git_dates_memo[str(home)] = (head, dates)
-    return {k: dict(v) for k, v in dates.items()}
+    return dates
 
 
 def _merge(dst: dict, name: str, counts: dict, first: str = "", last: str = "") -> None:
@@ -124,11 +126,12 @@ def _stream_utils(server: ServerConfig) -> tuple[dict, set[str], int]:
 
 
 def _scan_transcript(path: Path) -> dict:
-    """Per-util execution counts + first/last event ts from ONE transcript file
-    (plain or .gz), memoized behind its stat fingerprint.
+    """Per-util execution counts + first/last event ts from ONE run level's transcript —
+    `path` names the plain file, which `read_events` falls back from to its retention .gz —
+    memoized behind the stat fingerprint of both.
     """
     gz = path.with_suffix(path.suffix + ".gz")
-    fp = fingerprint([path, gz])
+    fp = memo.fingerprint([path, gz])
     hit = _transcript_memo.get(str(path))
     if hit is not None and hit[0] == fp:
         return hit[1]
@@ -160,11 +163,12 @@ def _scan_transcript(path: Path) -> dict:
 
 def _backfill(server: ServerConfig, covered: set[str]) -> tuple[dict, int]:
     """Scan retained transcripts of runs the stream has NOT counted (pre-stream
-    history) — both homes, root + sub transcripts. Returns (per-util aggregate,
-    scanned run count).
+    history) — both homes, every level of each run tree (`memo.run_tree`: a child's
+    children nest under its own `sub/`). Returns (per-util aggregate, scanned run count).
     """
     agg: dict[str, dict] = {}
     scanned = 0
+    read: set[str] = set()
     for home in (server.routines_home, server.conversations_home):
         try:
             if not home.is_dir():
@@ -180,12 +184,9 @@ def _backfill(server: ServerConfig, covered: set[str]) -> tuple[dict, int]:
                     if f"{rdir.name}:{run_dir.name}" in covered:
                         continue
                     scanned += 1
-                    transcripts = [run_dir / "transcript.jsonl",
-                                   *sorted((run_dir / "sub").glob("*/transcript.jsonl")),
-                                   *sorted((run_dir / "sub").glob("*/transcript.jsonl.gz"))]
-                    for t in transcripts:
-                        if t.suffix == ".gz" and t.with_suffix("").exists():
-                            continue   # the plain file is scanned; don't double-read
+                    for level in memo.run_tree(run_dir):
+                        t = level / "transcript.jsonl"
+                        read.add(str(t))
                         try:
                             cells = _scan_transcript(t)
                         except Exception:  # ONE corrupt transcript must not raise out of
@@ -200,6 +201,10 @@ def _backfill(server: ServerConfig, covered: set[str]) -> tuple[dict, int]:
             # snapshot — skip that home, keep whatever the other home contributed
             log.warning("util_stats: skipping unreadable home %s", home, exc_info=True)
             continue
+    # counted by the stream since, or taken by retention. `list()` snapshots the keys in one
+    # step: a comprehension over the live dict can meet another request's insert mid-iteration.
+    for stale in [key for key in list(_transcript_memo) if key not in read]:
+        _transcript_memo.pop(stale, None)
     return agg, scanned
 
 

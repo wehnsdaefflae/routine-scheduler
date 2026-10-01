@@ -132,12 +132,14 @@ own counts; parents never fold them in (the read-model sums records at every dep
 
 `rsched/readmodels/util_stats.py` joins three sources into the Stats tab table:
 
-1. **Library git history** (one `git log` walk, memoized on HEAD): created = oldest
-   commit touching `utils/<name>/`, last revised = newest.
+1. **Library git history** (one `git log` walk, memoized on the library repo's reflog, which
+   every commit and pull appends to): created = oldest commit touching `utils/<name>/`,
+   last revised = newest.
 2. **The stream**: per-run outcome breakdowns, first/last execution timestamps.
 3. **Transcript backfill** for pre-stream history: runs whose records lack the `utils`
-   key are scanned for util observations (root + sub transcripts, gzip included),
-   memoized per file behind a stat fingerprint. Backfill sees executions only —
+   key are scanned for util observations (every level of the run tree — a child's own
+   children nest under its `sub/` — gzip included), memoized per file behind a stat
+   fingerprint and pruned to the runs still uncounted. Backfill sees executions only —
    rejected/denied calls never became observations back then, so those counts honestly
    start at the stream's adoption.
 

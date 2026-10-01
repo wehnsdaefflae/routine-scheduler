@@ -155,13 +155,30 @@ def tree_paths(root: Path, *patterns: str) -> list[Path]:
     return out
 
 
-def transcript_paths(run_dir: Path) -> list[Path]:
-    """Every transcript that feeds a run-scoped read-model: the run's own plus the whole
-    child tree's, gz variants included (retention swaps the raw file for .gz).
+def run_tree(run_dir: Path) -> list[Path]:
+    """`run_dir` plus every child run's dir beneath it, depth first in creation order. A child
+    lives at `sub/<n>/` — `n` is the tree-wide counter, so numeric order is creation order and
+    `10` comes after `2` — and its own children nest under ITS `sub/`. Only those numbered dirs
+    are entered: a child's working files (artifacts, clones, spilled output) are never walked.
     """
-    return [run_dir / "transcript.jsonl", run_dir / "transcript.jsonl.gz",
-            *sorted(run_dir.glob("sub/**/transcript.jsonl")),
-            *sorted(run_dir.glob("sub/**/transcript.jsonl.gz"))]
+    out = [run_dir]
+    try:
+        children = sorted((p for p in (run_dir / "sub").iterdir()
+                           if p.name.isdigit() and p.is_dir()), key=lambda p: int(p.name))
+    except OSError:
+        return out
+    for child in children:
+        out += run_tree(child)
+    return out
+
+
+def transcript_paths(run_dir: Path) -> list[Path]:
+    """Every transcript that feeds a run-scoped read-model: each level of the run tree's, gz
+    variant included (retention swaps the raw file for .gz) and absent ones too, so a file
+    appearing invalidates like one changing.
+    """
+    return [d / name for d in run_tree(run_dir)
+            for name in ("transcript.jsonl", "transcript.jsonl.gz")]
 
 
 def reset() -> None:
