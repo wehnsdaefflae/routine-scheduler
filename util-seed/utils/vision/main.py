@@ -17,7 +17,9 @@ OpenRouter vision model id. PDFs go through --task pdf (native file input, bille
 Free-tier models are rate-limited (~50 req/day); on HTTP 429 the util retries once on the
 task's paid fallback. Needs OPENROUTER_VISION_KEY in Secrets — a deliberately separate key
 from the endpoints' OPENROUTER_API_KEY (which is stripped from util environments so utils
-can't silently bill the orchestrator's key). --selftest is offline (request building only)."""
+can't silently bill the orchestrator's key). Every request fits inside the deadline the call was
+given (RSCHED_UTIL_TIMEOUT_S), fallback included, so a failure is reported rather than cut off.
+--selftest is offline (request building and the deadline only)."""
 
 import argparse
 import base64
@@ -25,11 +27,18 @@ import json
 import mimetypes
 import os
 import sys
+import time
 from pathlib import Path
 
 API_URL = "https://openrouter.ai/api/v1/chat/completions"
 KEY_VAR = "OPENROUTER_VISION_KEY"
 MAX_FILE_MB = 20  # request-payload sanity cap per file, before base64 (+33%)
+#: One request's own cap — and, for a call made by hand (no deadline exported), the budget of
+#: each of the two requests a rate-limited primary can cost.
+REQUEST_TIMEOUT_S = 180
+#: What is kept back from the call's deadline: room to print why it failed before the scheduler
+#: ends the util.
+REPORT_MARGIN_S = 10
 
 # task → (primary model, fallback used when the primary is rate-limited / rejects).
 # Chosen 2026-07 from OpenRouter's live catalog: Nemotron 3 Nano Omni leads OCRBench-V2 /
@@ -86,7 +95,7 @@ def build_body(model: str, prompt: str, parts: list[dict], max_tokens: int) -> d
 
 
 def ask(model: str, prompt: str, parts: list[dict], key: str, max_tokens: int,
-        timeout: int = 180) -> dict:
+        timeout: float = REQUEST_TIMEOUT_S) -> dict:
     import httpx
 
     resp = httpx.post(API_URL, json=build_body(model, prompt, parts, max_tokens),
@@ -104,6 +113,28 @@ def ask(model: str, prompt: str, parts: list[dict], key: str, max_tokens: int,
                       "out": usage.get("completion_tokens", 0)}}
 
 
+def deadline_s() -> float:
+    """Seconds this whole call may spend asking: the scheduler's deadline for it
+    (RSCHED_UTIL_TIMEOUT_S, exported by both util runners) less the reporting margin. Two
+    clocks that race is what R1813 cost `remote exec`: here a rate-limited primary and its
+    fallback could each take the fixed 180 s, 360 s against the 300 s every util call gets by
+    default, so the runner's kill came first and the caller got nothing at all. A call made by
+    hand has no deadline, only each request's own cap.
+    """
+    try:
+        budget = int(os.environ.get("RSCHED_UTIL_TIMEOUT_S", ""))
+    except ValueError:
+        budget = 0
+    if budget <= 0:
+        return 2.0 * REQUEST_TIMEOUT_S
+    return float(max(budget - REPORT_MARGIN_S, 5))
+
+
+def _left(end: float) -> float:
+    """One request's timeout: its own cap, or whatever the call has left when that is less."""
+    return max(min(float(REQUEST_TIMEOUT_S), end - time.monotonic()), 1.0)
+
+
 def run(sources: list[str], prompt: str, task: str, override: str | None,
         max_tokens: int) -> dict:
     key = os.environ.get(KEY_VAR, "").strip()
@@ -115,13 +146,14 @@ def run(sources: list[str], prompt: str, task: str, override: str | None,
         task = "pdf"   # PDFs need a file-input model regardless of the asked task
     primary, fallback = models_for(task, override)
     parts = [part_for(s) for s in sources]
+    end = time.monotonic() + deadline_s()
     try:
-        return ask(primary, prompt, parts, key, max_tokens)
+        return ask(primary, prompt, parts, key, max_tokens, timeout=_left(end))
     except RuntimeError as exc:
         if fallback == primary or "HTTP 429" not in str(exc):
             raise
         print(f"note: {primary} is rate-limited — retrying on {fallback}", file=sys.stderr)
-        return ask(fallback, prompt, parts, key, max_tokens)
+        return ask(fallback, prompt, parts, key, max_tokens, timeout=_left(end))
 
 
 PNG_1PX = base64.b64decode(
@@ -164,6 +196,32 @@ def selftest() -> int:
         raise AssertionError("missing key must raise")
     except RuntimeError as exc:
         assert KEY_VAR in str(exc)
+    # the deadline: each request is capped by what the CALL has left, so a rate-limited
+    # primary and its fallback both end inside the runner's deadline and the failure is
+    # printed rather than cut off (R1813) — 180 s apiece was 360 s against a 300 s call
+    os.environ["RSCHED_UTIL_TIMEOUT_S"] = "60"
+    assert deadline_s() == 50
+    asked = []
+
+    def rate_limited(model, prompt, parts, key, max_tokens, timeout):
+        asked.append((model, timeout))
+        raise RuntimeError(f"HTTP 429 from {model}")
+
+    real_ask = globals()["ask"]
+    globals()["ask"] = rate_limited
+    os.environ[KEY_VAR] = "selftest-key"
+    try:
+        run(["https://x.test/a.png"], "p", "ocr", None, 64)
+        raise AssertionError("both requests were rate-limited, so the call must fail")
+    except RuntimeError as exc:
+        assert "HTTP 429" in str(exc)
+    finally:
+        globals()["ask"] = real_ask
+        os.environ.pop(KEY_VAR, None)
+        os.environ.pop("RSCHED_UTIL_TIMEOUT_S", None)
+    assert [m for m, _t in asked] == list(TASKS["ocr"]), asked
+    assert all(t <= 50 for _m, t in asked), asked
+    assert deadline_s() == 2 * REQUEST_TIMEOUT_S, "a call made by hand: each request's own cap"
     print("selftest: ok", file=sys.stderr)
     return 0
 
