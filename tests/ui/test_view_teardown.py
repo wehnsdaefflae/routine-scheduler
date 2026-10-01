@@ -83,3 +83,27 @@ def test_collapsing_the_activity_section_stops_its_poll(ui, ui_page):
     # the 300-run window, which nothing else on the page requests
     feed = [u for u in after if "limit=300" in u]
     assert not feed, f"the activity feed kept polling while collapsed: {feed}"
+
+
+def test_a_pending_file_card_refresh_dies_with_its_card(ui, ui_page):
+    """The files card coalesces a burst of file observations into one refetch 1.5 s later
+    (components/fileactivity.js poke). Leaving the view inside that window used to send the
+    refetch anyway, for a card nobody can see."""
+    ui.seed_run("uir", "20260714-070000", "running")
+    ui_page.goto(f"{ui.url}/#/help")
+    ui_page.wait_for_selector("#view h1")
+    ui_page.evaluate("""async () => {
+      const { createFileActivity } = await import("/static/components/fileactivity.js");
+      const box = document.createElement("div");
+      document.body.append(box);
+      window.__card = { box, files: createFileActivity(box,
+        { url: "/api/runs/uir:20260714-070000/files" }) };
+    }""")
+    expect(ui_page.locator(".filelist")).to_have_count(1)
+    ui_page.wait_for_timeout(500)                     # its own first read is out and back
+
+    after = _watch(ui_page)
+    ui_page.evaluate("() => { window.__card.files.poke(); window.__card.box.remove(); }")
+    ui_page.wait_for_timeout(2500)                    # > the 1.5 s coalescing window
+    files = [u for u in after if u.endswith("/files")]
+    assert not files, f"the files card refetched after it was gone: {files}"

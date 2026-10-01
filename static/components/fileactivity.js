@@ -105,7 +105,9 @@ export function createFileActivity(container, { url }) {
     refresh,
     poke() {  // live tail: many file observations arrive in bursts — one refetch per lull
       if (timer) return;
-      timer = setTimeout(() => { timer = null; refresh(); }, 1500);
+      // …and none once the card is gone: a view left inside the lull is torn down, and its
+      // refetch would be a request for a card nobody can see
+      timer = setTimeout(() => { timer = null; if (box.isConnected) refresh(); }, 1500);
     },
   };
 }
