@@ -1,8 +1,8 @@
 """Dispatch a validated action to its effect and return the observation dict.
 
 DISPATCH covers the EFFECT kinds: util and shell (the util runner and the one-off command
-live here), the file kinds (read_file / write_file / edit_file / delete / move / mkdir —
-fileops.py), view_image (mediaops.py), the name-addressed stores (memory_read /
+live here), the file kinds (read_file / write_file / edit_file — fileops.py; delete / move /
+mkdir — fsops.py), view_image (mediaops.py), the name-addressed stores (memory_read /
 memory_write / read_rule — memops.py), llm and list_models (llmaction.py). `script`, the
 third way a run executes code, lives here too but is reached through actionroute.py, which
 puts the call-time secret gate in front of it and of `util`. Every other kind has its own
@@ -22,15 +22,8 @@ from ..paths import expand
 from ..utils_lib import USAGE_ERROR_EXIT
 from .actions import could_be_util
 from .exec_env import _extra_secrets, _unbound_connection_request
-from .fileops import (
-    UTIL_DEFAULT_TIMEOUT_S,
-    do_delete,
-    do_edit_file,
-    do_mkdir,
-    do_move,
-    do_read_file,
-    do_write_file,
-)
+from .fileops import UTIL_DEFAULT_TIMEOUT_S, do_edit_file, do_read_file, do_write_file
+from .fsops import do_delete, do_mkdir, do_move
 from .llmaction import do_list_models, do_llm
 from .mediaops import do_view_image
 from .memops import do_memory_read, do_memory_write, do_read_rule

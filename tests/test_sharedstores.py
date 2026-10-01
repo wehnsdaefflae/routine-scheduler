@@ -23,7 +23,8 @@ from conftest import make_test_server
 from rsched import sharedstores
 from rsched.config import load_routine
 from rsched.engine.budgets_config import Budgets
-from rsched.engine.fileops import do_delete, do_edit_file, do_mkdir, do_move, do_write_file
+from rsched.engine.fileops import do_edit_file, do_write_file
+from rsched.engine.fsops import do_delete, do_mkdir, do_move
 from rsched.engine.run_context import RunContext
 from rsched.engine.transcript import Transcript
 from rsched.grantpolicy import GrantPolicy

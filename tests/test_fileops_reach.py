@@ -24,7 +24,8 @@ import pytest
 from rsched.config import ServerConfig, load_routine
 from rsched.engine.budgets_config import Budgets
 from rsched.engine.childrun import _sub_routine
-from rsched.engine.fileops import do_delete, do_move, do_read_file, do_write_file
+from rsched.engine.fileops import do_read_file, do_write_file
+from rsched.engine.fsops import do_delete, do_move
 from rsched.engine.mediaops import do_view_image
 from rsched.engine.run_context import RunContext
 from rsched.engine.transcript import Transcript
