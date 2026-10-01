@@ -106,6 +106,31 @@ def test_a_small_provider_output_limit_is_taken_as_is(tmp_path, monkeypatch):
                          "moonshot/kimi-k3")["max_output_tokens"] == 8_192
 
 
+@pytest.mark.parametrize(("window", "published", "cap"), [
+    (32_768, None, 8_192),        # a window and nothing else (Ollama, vLLM, a bare gateway row)
+    (32_768, 32_768, 8_192),      # a published maximum as large as the window itself
+    (8_192, None, 2_048),         # smaller than the engine ceiling: the old cap was impossible
+    (131_072, None, 32_000),      # from 128k up the engine ceiling binds, as before
+])
+def test_the_output_cap_never_starves_a_small_window(tmp_path, monkeypatch, window, published,
+                                                     cap):
+    """A flat 32,000-token reservation on a 32k window leaves 768 tokens of prompt, and on an
+    8k one less than nothing — the model is refused as `impossible` and every turn overflows.
+    The cap a row resolves to is therefore bounded by the window too: never more than a
+    quarter of it, which leaves every window of 128k and up exactly where it was."""
+    from rsched.engine.compaction import window_ceiling_tokens
+
+    server = _server(tmp_path)
+    top = {"max_completion_tokens": published} if published else {}
+    monkeypatch.setattr(limits, "_get", lambda *a, **k: {"data": [
+        {"id": "moonshot/kimi-k3", "context_length": window, "top_provider": top}]})
+    limits.refresh(server, force=True)
+    row = limits.lookup(server.routines_home, "or", "moonshot/kimi-k3")
+    assert row["max_output_tokens"] == cap
+    assert row["provider_max_output_tokens"] == published     # what was published, as it was
+    assert window_ceiling_tokens(window, cap) >= window * 3 // 4
+
+
 # ---- discovery per provider ----------------------------------------------------------------------
 
 def test_nanogpt_is_read_from_its_own_route(tmp_path, monkeypatch):
@@ -136,6 +161,10 @@ def test_a_listing_that_answers_nothing_falls_back_to_the_static_table(tmp_path,
     limits.refresh(server, force=True)
     row = limits.lookup(server.routines_home, "claude", "claude-opus-4-8")
     assert row["context_tokens"] == 1_000_000 and row["source"] == "table"
+    # The table carries WINDOWS: the output cap is the engine's, and no provider maximum is
+    # claimed for a figure nobody published.
+    assert row["max_output_tokens"] == limits.ENGINE_OUTPUT_CEILING
+    assert row["provider_max_output_tokens"] is None
     # The discovered model window takes precedence over the larger endpoint fallback.
     _ep, ref = EndpointRegistry(server).resolve("opus")
     assert ref.context_tokens == 1_000_000
@@ -200,9 +229,16 @@ def test_new_model_refreshes_inside_global_ttl(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize(("model", "expected"), [
-    ("claude-haiku-4-5-20251001", 200000),
-    ("claude-sonnet-5", 1000000), ("claude-sonnet-4-6", 1000000),
-    ("claude-opus-4-8", 1000000), ("claude-opus-99", None),
+    # the current lineup (platform.claude.com models overview, 2026-10-01)
+    ("claude-fable-5-1", 1_000_000), ("claude-opus-5-5", 1_000_000),
+    ("claude-sonnet-5-5", 1_000_000), ("claude-haiku-4-5-20251001", 200_000),
+    # still served
+    ("claude-mythos-5-1", 1_000_000), ("claude-sonnet-5", 1_000_000),
+    ("claude-sonnet-4-6", 1_000_000), ("claude-opus-4-8", 1_000_000),
+    ("claude-opus-4-5-20251101", 200_000), ("claude-sonnet-4-5-20250929", 200_000),
+    # retired (model deprecations page): a request to one fails, so no window is claimed
+    ("claude-opus-4-1-20250805", None), ("claude-3-haiku-20240307", None),
+    ("claude-opus-99", None),
 ])
 def test_claude_revision_windows(model, expected):
     assert limits._static_window(model) == expected

@@ -9,19 +9,24 @@ This is the trap in "max out the tokens", and it is worth stating plainly:
 
 - **The input window is adopted verbatim.** Pure win — a bigger window is more context.
 - **The output cap is NOT maxed out.** Providers validate `input + requested_output <= window`
-  up front (that is exactly what the live nano-gpt 400 above says), and
+  up front (a provider's oversize 400 says exactly that), and
   `compaction.window_ceiling_tokens` subtracts `max_tokens` from the input budget for the same
   reason. Kimi K3's real 943,718-token output limit would collapse the usable prompt to ~10% of
-  its 1M window. So the output cap resolves to `min(discovered, ENGINE_OUTPUT_CEILING)` — a
-  ceiling on what THIS HARNESS needs for one JSON action plus reasoning, not a stand-in for what
-  the model can do.
+  its 1M window. So the output cap resolves to the provider's maximum, never above
+  ENGINE_OUTPUT_CEILING — a ceiling on what THIS HARNESS needs for one JSON action plus
+  reasoning, not a stand-in for what the model can do — and never above a quarter of the
+  window (`_output_cap`), because the same arithmetic starves a SMALL window: a flat 32,000 on
+  a 32k model left 768 tokens of prompt. A provider that publishes a window and no maximum gets
+  the cap derived from the window the same way.
 
 ## Precedence, and why config still wins
 
-`explicit config value` → `discovered` → `kind floor`. An operator who types a number is sizing
-DOWN deliberately (a cost budget, a slow provider), and `engine/window.py` already promises to
-honour that; discovery must not overrule it. What discovery replaces is the *absence* of a value,
-which used to mean "a guess on the endpoint" and now means "ask the provider".
+`per-MODEL config` → `discovered` → `endpoint default` → `engine floor` (the chain
+`EndpointRegistry.resolve` walks). An operator who types a number on a model is sizing DOWN
+deliberately (a cost budget, a slow provider), and `engine/window.py` already promises to honour
+that; discovery must not overrule it. What discovery replaces is the endpoint's value, which was
+only ever a default a model inherits when it says nothing — "a guess on the endpoint" that now
+means "ask the provider".
 
 ## Derived state, never config
 
@@ -29,7 +34,7 @@ The cache lives at `<routines_home>/.control/model-limits.json` — the pattern
 `daemon/library_watch.py` sets for daemon-owned derived state, explicitly "never config". Nothing
 here writes `config.yaml`: the web layer remains the only config writer, a run still writes no
 config, and deleting this file costs one refresh. Resolution READS it and never fetches: `resolve`
-is on the per-turn path and must not make a network call, so a miss is simply the floor.
+is on the per-turn path and must not make a network call, so a miss is simply the next tier down.
 """
 
 from __future__ import annotations
@@ -54,28 +59,34 @@ TTL = timedelta(hours=24)
 #: for a reasoning model to think and for an `llm` tool-call's answer. Deliberately NOT the
 #: provider maximum — see the module docstring. 16k truncated `effort: max` turns; 32k has not.
 ENGINE_OUTPUT_CEILING = 32_000
+#: The output reservation never takes more than 1/OUTPUT_WINDOW_DIVISOR of the window, so the
+#: prompt always keeps three quarters of it — above the uncached compaction gate (0.6) and just
+#: under the cached one (0.8), so a small model compacts a little earlier instead of never
+#: fitting. From a 128,000-token window up, ENGINE_OUTPUT_CEILING is the smaller of the two.
+OUTPUT_WINDOW_DIVISOR = 4
 _TIMEOUT = 20
 
-#: Claude windows for the ids no configured provider publishes figures FOR — a subscription
+#: Claude WINDOWS for the ids no configured provider publishes figures FOR — a subscription
 #: proxy whose `/v1/models` carries `{id, object, created, owned_by}` and nothing else, which is
 #: every anthropic-kind endpoint here. (Anthropic's OWN listing has published
 #: `max_input_tokens`/`max_tokens` since 2026-03; read it the day a direct endpoint is
 #: configured.) A static table is a guess with a longer half-life than the guess it replaces, so
 #: it is kept HERE beside the discovery code and its staleness is visible in Settings as
-#: `source: table` rather than passing for a measurement.
+#: `source: table` rather than passing for a measurement. It carries no output maxima: a row
+#: from it gets the cap derived from its window, like any provider that publishes none.
 STATIC_WINDOWS: dict[str, int] = {
-    # https://platform.claude.com/docs/en/build-with-claude/context-windows (2026-09-10).
-    # Specific revisions precede older families; unknown future revisions are not guessed.
+    # https://platform.claude.com/docs/en/about-claude/models/overview and the model
+    # deprecations page (2026-10-01). A key matches every id that STARTS with it — a dated
+    # snapshot (`claude-haiku-4-5-20251001`) and a later point revision of a 5-series family
+    # (`claude-opus-5-5` under `claude-opus-5`, whose window every such revision has kept);
+    # the 4-series changed window between revisions, so each is keyed on its own. Retired
+    # models are not listed: a request to one fails whatever its window.
     "claude-opus-4-6": 1_000_000, "claude-opus-4-7": 1_000_000,
     "claude-opus-4-8": 1_000_000, "claude-opus-5": 1_000_000,
     "claude-sonnet-4-6": 1_000_000, "claude-sonnet-5": 1_000_000,
     "claude-fable-5": 1_000_000, "claude-mythos-5": 1_000_000,
-    "claude-opus-4-1": 200_000, "claude-opus-4-5": 200_000,
-    "claude-sonnet-4-5": 200_000, "claude-haiku-4-5": 200_000,
-    "claude-3": 200_000,
+    "claude-opus-4-5": 200_000, "claude-sonnet-4-5": 200_000, "claude-haiku-4-5": 200_000,
 }
-
-STATIC_OUTPUT = 32_000
 
 #: What one provider's catalog route answered: the limits it published, keyed by model id, and
 #: the ids it LISTS. The two are not the same set — a gateway may list a model and publish no
@@ -140,6 +151,15 @@ def _static_window(model_id: str) -> int | None:
         if low.startswith(prefix) or f"/{prefix}" in low:
             return window
     return None
+
+
+def _output_cap(window: int, published: int | None) -> int:
+    """The output cap a discovered row resolves to: the provider's published maximum (or, when
+    it publishes none, the engine's ceiling), never above ENGINE_OUTPUT_CEILING and never above
+    a quarter of the window — see the module docstring and OUTPUT_WINDOW_DIVISOR.
+    """
+    return min(published or ENGINE_OUTPUT_CEILING, ENGINE_OUTPUT_CEILING,
+               window // OUTPUT_WINDOW_DIVISOR)
 
 
 # ------------------------------------------------------------------- per-provider discovery ----
@@ -283,7 +303,7 @@ def _openai_generic(ep) -> Listing:
 
 def _ollama(ep, model_ids: list[str]) -> Listing:
     """`POST {origin}/api/show` per model → `model_info["<arch>.context_length"]`. Ollama has no
-    output limit of its own, so the output cap is derived from the window rather than the floor.
+    output limit of its own, so the output cap is derived from the window (`_output_cap`).
 
     What this does NOT reach is `openai_compat`'s native `num_ctx`: `complete()` is never
     handed the resolved window, so the decode ceiling is still the ENDPOINT's
@@ -318,9 +338,11 @@ def _ollama(ep, model_ids: list[str]) -> Listing:
 
 def refresh(server, *, force: bool = False) -> dict:
     """Re-ask every configured provider and rewrite the cache. Returns `{written, skipped,
-    misses}`. Never raises: a provider that is down leaves the previous figures in place.
+    misses}`. A provider fault never raises: one that is down leaves the previous figures in
+    place (only the cache write itself can fail, and the caller logs it).
 
-    Called from the daemon tick behind the TTL and from a Settings save, never from `resolve`.
+    Called from the daemon tick behind the TTL, never from `resolve`. A Settings save that adds
+    a model makes the cache stale at once (`_missing_models`), so the next tick asks.
     """
     home = server.routines_home
     cache = load(home)
@@ -370,7 +392,7 @@ def refresh(server, *, force: bool = False) -> dict:
         for mid in model_ids:
             hit = table.get(mid)
             if hit is None and (static := _static_window(mid)) is not None:
-                hit, provider_used = (static, STATIC_OUTPUT), "table"
+                hit, provider_used = (static, None), "table"
             else:
                 provider_used = provider
             if hit is None:
@@ -382,8 +404,7 @@ def refresh(server, *, force: bool = False) -> dict:
             ctx, max_out = hit
             out[_key(ep_name, mid)] = {
                 "context_tokens": ctx,
-                "max_output_tokens": min(max_out, ENGINE_OUTPUT_CEILING) if max_out
-                                     else ENGINE_OUTPUT_CEILING,
+                "max_output_tokens": _output_cap(ctx, max_out),
                 "provider_max_output_tokens": max_out,
                 "source": provider_used, "fetched": now.isoformat()}
     if served_out:
