@@ -1622,9 +1622,11 @@ def test_settings_server_config(client):
     assert raw["sandbox"] == "strict" and raw["max_concurrent_runs"] == 4
     assert raw["registry_rescan_s"] == 15 and raw["github_client_id"] == "abc123"
     assert c.get("/api/settings/server").json()["sandbox"] == "strict"   # live object mirrors it
-    assert c.put("/api/settings/server", json={"sandbox": "bogus"}).status_code == 400
-    assert c.put("/api/settings/server", json={"max_concurrent_runs": 0}).status_code == 400
-    assert c.put("/api/settings/server", json={"registry_rescan_s": 0}).status_code == 400
+    # judged by ServerConfig's own fields, and the refusal names the field it is about
+    for bad in ({"sandbox": "bogus"}, {"max_concurrent_runs": 0}, {"registry_rescan_s": 0}):
+        refused = c.put("/api/settings/server", json=bad)
+        assert refused.status_code == 400 and next(iter(bad)) in refused.json()["detail"]
+    assert yaml.safe_load((tmp / "config.yaml").read_text())["sandbox"] == "strict"
 
 
 def test_endpoints_prefer_inline_key(monkeypatch):
