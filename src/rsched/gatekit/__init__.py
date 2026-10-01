@@ -216,6 +216,9 @@ def _kind_problems(where: str, kind: str, check: dict) -> list[str]:
         out.append(f"{where}: dates needs `from` (a window) or `file` (dates the run keeps)")
     if kind == "dates" and check.get("done_key") and "*." not in str(check.get("key") or ""):
         out.append(f"{where}: dates.done_key needs a key of the form <list>.*.<date field>")
+    if kind == "dates" and isinstance(check.get("within_days"), int) and check["within_days"] < 0:
+        # a lead time counts a date EARLY; a negative one would read a due duty as not due
+        out.append(f"{where}: dates.within_days is 0 or more (days early a date counts)")
     if kind == "unpaired_files" and "{stem}" not in str(check.get("output") or ""):
         out.append(f"{where}: unpaired_files.output must contain {{stem}}")
     return out

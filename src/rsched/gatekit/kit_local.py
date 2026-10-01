@@ -216,9 +216,11 @@ def _open_dates(doc: object, check: dict) -> list:
     items = dig(doc, items_path.rstrip("."))
     if not isinstance(items, list):
         raise UnknownError(f"{items_path.rstrip('.') or 'the file'} is not a list")
+    if not all(isinstance(item, dict) for item in items):
+        raise UnknownError(f"{items_path.rstrip('.') or 'the file'} holds items that are not "
+                           f"records, so their {done_key} cannot be read")
     done = {str(v) for v in check.get("done_values") or []}
-    return [item.get(field) for item in items
-            if isinstance(item, dict) and str(item.get(done_key)) not in done]
+    return [item.get(field) for item in items if str(item.get(done_key)) not in done]
 
 
 def weekdays(check: dict, ctx: dict) -> tuple[bool, str, str]:

@@ -466,6 +466,24 @@ def test_a_finished_items_date_is_never_due(tmp_path, routine):
     assert gatekit.validate(bad)
 
 
+def test_a_negative_lead_time_is_refused():
+    """`within_days` counts a date EARLY; a negative one counts it late — a duty due today
+    read as not due for days, the one wrong answer a gate must not give."""
+    bad = [{"kind": "dates", "file": "state/d.json", "key": "due", "within_days": -2}]
+    assert any("within_days" in p for p in gatekit.validate(bad))
+    assert gatekit.validate([{**bad[0], "within_days": 0}]) == []
+
+
+def test_done_items_that_are_not_records_are_work(tmp_path, routine):
+    """With `done_key` each listed item is a record holding its date and its status; a list of
+    bare dates there cannot be read as configured — work, never "no dated duty is due"."""
+    atomic_write_json(routine / "state/d.json", {"items": ["2026-09-01"]})
+    check = [{"kind": "dates", "file": "state/d.json", "key": "items.*.due",
+              "done_key": "status"}]
+    out = kit.evaluate(ctx(tmp_path, check))
+    assert out["decision"] == "run" and "could not check" in one(out)["reason"]
+
+
 def test_a_special_use_folder_is_found_whatever_the_server_calls_it():
     from rsched.gatekit.kit_net import (  # the kit's own class, as it raises it
         UnknownError,
