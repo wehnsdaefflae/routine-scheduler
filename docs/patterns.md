@@ -116,7 +116,8 @@ pattern (committed to the library repo) and the routine follows it. Refused, nam
 pattern, when one already carries exactly these values.
 
 **Deleting a pattern** (`DELETE /api/patterns/{slug}`). Its followers keep every value they
-hold — those were always their own — and stop naming it, in the same operation. The Library tab
+hold — those were always their own — and stop naming it, in the same operation. A pattern file
+that no longer parses (which `rsched lint` names, below) is deleted the same way. The Library tab
 lists every pattern with its followers (`GET /api/patterns`).
 
 ## What a pattern carries that is easy to miss

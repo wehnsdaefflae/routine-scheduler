@@ -167,6 +167,16 @@ def create(libraries_home: Path, slug: str, doc: dict) -> dict:
     return stored
 
 
+def exists(libraries_home: Path, slug: str) -> bool:
+    """A pattern FILE by that slug, whether or not `read` can use it — a file broken by hand or
+    by a merge is still the operator's to delete, and asking `read` hid it from that too.
+    """
+    try:
+        return _path(libraries_home, slug).is_file()
+    except ValueError:
+        return False
+
+
 def delete(libraries_home: Path, slug: str) -> bool:
     path = _path(libraries_home, slug)
     if not path.is_file():

@@ -309,6 +309,20 @@ def test_a_broken_pattern_file_leaves_every_settings_surface_up(client):
     assert c.get("/api/routines/alpha/settings").status_code == 200
 
 
+def test_a_pattern_file_that_no_longer_parses_can_still_be_deleted(client):
+    """`rsched lint` names a broken pattern file and every listing passes it over — and the
+    one way to remove it answered "no settings pattern" (404), because it asked the READER,
+    which cannot use the file, whether the file exists."""
+    c, tmp = client
+    broken = store.home(tmp / "library") / "broken.yaml"
+    broken.parent.mkdir(parents=True, exist_ok=True)
+    broken.write_text("summary: [x\n", encoding="utf-8")
+    r = c.delete("/api/patterns/broken")
+    assert r.status_code == 200, r.text
+    assert r.json()["released"] == [] and not broken.exists()
+    assert c.delete("/api/patterns/broken").status_code == 404     # gone is still gone
+
+
 def test_the_pattern_list_carries_the_field_vocabulary_the_library_renders(client):
     c, _ = client
     meta = c.get("/api/patterns").json()["meta"]

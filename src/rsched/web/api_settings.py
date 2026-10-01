@@ -296,12 +296,13 @@ def pattern_detail(request: Request, slug: str) -> dict:
 @router.delete("/patterns/{slug}")
 def delete_pattern(request: Request, slug: str) -> dict:
     """Delete a pattern. Its followers keep every value they hold — those were always their
-    own — and stop naming it, in the same operation.
+    own — and stop naming it, in the same operation. A pattern file that no longer parses is
+    deleted the same way: the lint names it and nothing else can remove it.
     """
     from .. import libgit, registry
 
     server = _state(request).server
-    if store.read(server.libraries_home, slug) is None:
+    if not store.exists(server.libraries_home, slug):
         raise HTTPException(404, f"no settings pattern {slug!r}")
     released = []
     for follower in store.followers(server.routines_home, slug):
