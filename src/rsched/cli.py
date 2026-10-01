@@ -211,30 +211,40 @@ def _instance_problems(server) -> list[str]:
 
 
 def cmd_abort(args) -> int:
+    """Abort `<slug>` (its newest active run) or `<slug>:<ts>` (that run).
+
+    Only an ACTIVE run is signalled, in both forms. A finished run's status.json keeps the
+    pid it ran under, and the OS hands pids out again, so signalling a named finished run
+    reached whatever process group holds that pid NOW.
+    """
     import asyncio
 
     from . import registry
     from .daemon.runner_state import abort_process
     from .ids import parse_run_id
-    from .paths import read_json
 
     server, _ = load_server_config()
     target = args.run_id
+    ts = ""
     if ":" in target:
-        slug, ts = parse_run_id(target)
+        try:
+            slug, ts = parse_run_id(target)
+        except ValueError as exc:
+            print(f"error: {exc} — expected <slug> or <slug>:<YYYYMMDD-HHMMSS>",
+                  file=sys.stderr)
+            return 2
     else:
         slug = target
-        runs = registry.run_index(_dir_across_homes(server, slug), slug)
-        alive = [r for r in runs if r.state in registry.ACTIVE_STATES]
-        if not alive:
-            print(f"no active run for {slug}", file=sys.stderr)
-            return 1
-        ts = alive[0].ts
-    run_dir = _dir_across_homes(server, slug) / "runs" / ts
-    st = read_json(run_dir / "status.json")
-    pid = st.get("pid") if isinstance(st, dict) else None
-    ok = asyncio.run(abort_process(pid))
-    print(f"abort {'sent' if ok else 'failed — process not found'} for {slug}:{ts}",
+    runs = [r for r in registry.run_index(_dir_across_homes(server, slug), slug)
+            if not ts or r.ts == ts]
+    alive = [r for r in runs if r.state in registry.ACTIVE_STATES]
+    if not alive:
+        print(f"run {target} is not active ({runs[0].state})" if ts and runs
+              else f"no active run for {target}", file=sys.stderr)
+        return 1
+    run = alive[0]
+    ok = asyncio.run(abort_process(run.pid))
+    print(f"abort {'sent' if ok else 'failed — process not found'} for {run.run_id}",
           file=sys.stderr)
     return 0 if ok else 1
 

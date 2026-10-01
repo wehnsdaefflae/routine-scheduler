@@ -81,6 +81,35 @@ def test_abort_paths(cli_server, make_routine, capsys):
     assert "abortee:20260716-200000" in capsys.readouterr().err
 
 
+def test_abort_of_a_finished_run_signals_nothing(cli_server, make_routine, capsys):
+    """A finished run's status.json keeps the pid it ran under, and the OS hands pids out
+    again. Naming such a run explicitly used to SIGTERM whatever process group holds that pid
+    now — here a stand-in for the recycled pid, which must survive the call."""
+    import subprocess
+
+    d = make_routine(slug="done")
+    stranger = subprocess.Popen(["sleep", "30"], start_new_session=True)
+    try:
+        run_dir = d / "runs" / "20260716-200000"
+        run_dir.mkdir(parents=True)
+        atomic_write_json(run_dir / "status.json", {
+            "run_id": "done:20260716-200000", "state": "finished", "outcome": "ok",
+            "pid": stranger.pid, "started": "20260716-200000",
+            "updated": "2026-07-16T20:00:00+00:00", "turn": 3, "usage": {}, "elapsed_s": 9})
+        assert cli.cmd_abort(_args(run_id="done:20260716-200000")) == 1
+        assert "not active" in capsys.readouterr().err
+        assert stranger.poll() is None                       # the stranger was never signalled
+    finally:
+        stranger.kill()
+        stranger.wait()
+
+
+def test_abort_of_a_malformed_run_id_is_a_usage_error(cli_server, capsys):
+    assert cli.cmd_abort(_args(run_id="abortee:yesterday")) == 2
+    err = capsys.readouterr().err
+    assert "malformed run id" in err and "Traceback" not in err
+
+
 # ---- lint -------------------------------------------------------------------------------
 
 
