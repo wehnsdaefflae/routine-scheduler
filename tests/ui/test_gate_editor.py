@@ -124,3 +124,57 @@ def test_the_routines_own_predicate_is_edited_in_place(ui, ui_page):
     until((ui.routines / "uir" / "scripts" / "admit.py").is_file, what="the saved predicate")
     # one script check at most: the kind leaves the add menu once it is listed
     expect(panel.locator('[data-gate-add] option[value="script"]')).to_have_count(0)
+
+
+def _hold_gate_tests(page):
+    held = []
+
+    def hold(route):        # Playwright wraps a Python function, never a bound builtin
+        held.append(route)
+
+    page.route(re.compile(r"/api/routines/uir/gate/test$"), hold)
+    return held
+
+
+def _a_gate_to_test(page):
+    panel = _gate(page)
+    panel.locator("[data-gate-add]").select_option("weekdays")
+    days = panel.locator('[data-gate-check="weekdays"] .gate-param input')
+    days.fill("0, 1, 2, 3, 4, 5, 6")
+    days.press("Tab")
+    return panel
+
+
+def test_a_double_clicked_gate_test_asks_the_checks_once(ui, ui_page):
+    """A check can be a mailbox login, a page fetch or the routine's own script — the button
+    rests while its test is out, so a double-click asks them once."""
+    ui_page.goto(f"{ui.url}/#/routine/uir")
+    panel = _a_gate_to_test(ui_page)
+    held = _hold_gate_tests(ui_page)
+    panel.locator("[data-gate-test]").dblclick()
+    until(lambda: held, what="the gate test", page=ui_page)
+    ui_page.wait_for_timeout(400)
+    assert len(held) == 1, f"{len(held)} gate tests for one click"
+
+
+def test_only_the_newest_gate_test_paints_its_verdict(ui, ui_page):
+    """Edit the gate while a slow test is out and test again: the old test, landing last,
+    must not put the old gate's verdict under the new one."""
+    ui_page.goto(f"{ui.url}/#/routine/uir")
+    panel = _a_gate_to_test(ui_page)
+    held = _hold_gate_tests(ui_page)
+    panel.locator("[data-gate-test]").click()
+    until(lambda: len(held) == 1, what="the first gate test", page=ui_page)
+    timeout = panel.locator("[data-gate-timeout]")
+    timeout.fill("45")
+    timeout.press("Tab")                                   # the gate changed; it re-renders
+    panel.locator("[data-gate-test]").click()
+    until(lambda: len(held) == 2, what="the second gate test", page=ui_page)
+
+    held[1].fulfill(json={"decision": "skip", "reason": "the newer gate", "checks": []})
+    verdict = panel.locator("[data-gate-verdict]")
+    expect(verdict).to_have_attribute("data-gate-verdict", "skip")
+    held[0].fulfill(json={"decision": "run", "reason": "the older gate", "checks": []})
+    ui_page.wait_for_timeout(500)
+    expect(verdict).to_have_attribute("data-gate-verdict", "skip")
+    expect(panel.locator(".gate-result")).to_contain_text("the newer gate")
