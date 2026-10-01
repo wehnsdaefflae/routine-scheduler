@@ -6,12 +6,12 @@ re-deriving it. An entry is deleted the moment it ships (its narration moves to 
 subsystem doc it belongs to); an entry that stops being wanted is deleted too. Nothing here
 describes current behaviour, so nothing here is a reference for how the system works today.
 
-**Who builds from this file.** The `self-audit` routine reads every `## ` heading here at
-orient as one of the three sources of its decided-work queue, gives each an `in_progress`
-decision row whose detail names this file as where it was decided so the Items page can see
-it, and deletes the entry in the commit that ships it. Adding an entry here is therefore an
-order, not a note: write one only for work that is actually decided, and delete one the
-moment it stops being wanted.
+**Who builds from this file.** The `scheduler-builder` routine reads every `## ` heading here at
+orient as one of the sources of its queue and deletes the entry in the commit that ships it.
+`self-audit`, which keeps the item ledger, gives each entry an `in_progress` decision row whose
+detail names this file as where it was decided, so the Items page can see it. Adding an entry
+here is therefore an order, not a note: write one only for work that is actually decided, and
+delete one the moment it stops being wanted.
 From 2026-08-26 to 2026-09-22 this file had no reader at all: five entries accumulated and
 none was built, the oldest waiting thirty-three days through roughly a hundred and eighty
 releases, because the builder's queue could not see it.
@@ -345,3 +345,36 @@ columns, and the `assist_hold` observation asking for the label — are specifie
 docs/rule-assists.md, "What is still deferred".
 
 **First increment.** All four together: until every one lands the label has nowhere to go.
+
+---
+
+## A ⚑ priority flag on handed-over work reaches the builder (decided 2026-10-01, in conversation)
+
+**Decided in conversation 2026-10-01; no finding.** The operator split self-audit into maintenance
+(`self-audit`) and feature development (`scheduler-builder`) and asked for no overlap between them.
+This is the one place the code still assumes the old shape.
+
+**Problem.** `priorities.owned_priority_items` resolves the owner of every flagged `F<n>`/`D<n>` to
+`self-audit` (`SELF_AUDIT_SLUG`), because every such row lives in self-audit's `report.json`. Since
+the split, a row self-audit has handed over is the builder's work: its `detail` carries the line
+`Handed to scheduler-builder <date>: …` and its status is `in_progress`. So a ⚑ the operator sets
+on, say, a decision being built lands in self-audit's state digest — the routine that may not build
+it — and never in the builder's. The operator's "work this first" signal reaches the wrong routine
+for exactly the items it is most likely to be set on.
+
+**Shape.** Ownership of a flagged `F`/`D` is read from its row at read time, never stored (the
+module's existing rule): `scheduler-builder` when the row's `detail` contains the hand-over line
+AND its status is `in_progress`; `self-audit` otherwise (an `addressed` row back with the ledger
+keeper, so a flag on finished work still reaches someone who can clear or answer it). `R<n>`
+resolution is unchanged — a `DECIDED:` report already targets the builder. One module owns the
+marker: a `HANDED_TO_BUILDER` constant beside `SELF_AUDIT_SLUG` (and a `BUILDER_SLUG`), so the
+recipes' wording and the resolver cannot drift apart silently — a test pins the constant to the
+line self-audit's `write-report` stage writes. `readmodels/items.py` mirrors the resolver (its
+docstring says the two must agree), so the Messages page names the same owner the digest does.
+
+**First increment.** `owned_priority_items` reads `report.json` for BOTH slugs, resolves each
+flagged `F`/`D` by the rule above, and returns it to exactly one of them; the module docstring and
+the priorities passage in `docs/items.md` say the new rule. Red-first tests with a fixture
+report.json: a flagged handed-over `D` appears in `digest_section(…, "scheduler-builder")` and NOT
+in self-audit's; a flagged un-handed `F` appears only in self-audit's; an `addressed` handed-over
+row returns to self-audit.

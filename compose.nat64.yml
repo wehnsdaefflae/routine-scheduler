@@ -1,0 +1,28 @@
+# NAT64 OVERRIDE — reach IPv4-only hosts while this line has no IPv4.
+#
+#   on:   ./deploy/nat64.sh on
+#   off:  ./deploy/nat64.sh off
+#
+# What it does: points the two containers that reach arbitrary destinations at public DNS64
+# resolvers. A DNS64 resolver answers an IPv4-only name with a synthetic IPv6 address whose
+# gateway translates; a DUAL-STACK name comes back with its real address, so this changes
+# nothing for the traffic that already works. Measured 2026-09-27 from this network:
+# openrouter.ai and api.anthropic.com resolve real and go direct, github.com is synthesized and
+# answers HTTP 200 with a valid certificate in 0.39s. TLS is end to end, so the gateway carries
+# bytes it cannot read.
+#
+# TURN IT OFF WHEN IPv4 RETURNS. It is not harmful, but with it on an IPv4-only host keeps going
+# through a volunteer's gateway instead of straight out your own line: slower, and someone else
+# sees the destination.
+#
+# cliproxy is deliberately absent. Anthropic is dual-stack, so the model transport never needs
+# translation and its traffic should not touch a third party.
+services:
+  rsched:
+    dns:
+      - 2a00:1098:2b::1
+      - 2a01:4f8:c2c:123f::1
+  chrome:
+    dns:
+      - 2a00:1098:2b::1
+      - 2a01:4f8:c2c:123f::1

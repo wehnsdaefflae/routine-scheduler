@@ -231,8 +231,14 @@ systemctl --user disable --now routine-scheduler.service
   `http://172.30.7.10:9222` — see [docs/browser-sessions.md](../docs/browser-sessions.md). Its
   profile is a bind mount and part of the migration bundle, but the sessions inside it are not
   portable off a desktop machine: signing in is a one-time human step per host.
-- **Dependency changes** committed by self-audit are picked up on the next restart (`uv run`
+- **Dependency changes** committed by self-audit or scheduler-builder are picked up on the next restart (`uv run`
   re-syncs from the mounted `pyproject.toml`), exactly like the systemd unit.
+- **A line without IPv4 needs the NAT64 override.** `deploy/nat64.sh on` restarts `rsched` and
+  `chrome` with the public DNS64 resolvers in `compose.nat64.yml`, so IPv4-only hosts (GitHub)
+  are reached through a translating gateway while dual-stack hosts still go direct; the Claude
+  proxy is deliberately left out. `deploy/nat64.sh status` shows which resolvers each container
+  uses. Turn it `off` the day IPv4 returns: a third party's gateway then sees the destination of
+  every IPv4-only call for no benefit.
 - **Host mounts (`/mnt`, `/srv`, `/tmp`) are bind-mounted with `rslave` propagation** so the
   fs-roots picker can offer USB disks / NAS mounts, including ones mounted on the host AFTER the
   container started (F190: without the bind, the daemon's mount namespace has no `/mnt` at all
