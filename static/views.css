@@ -238,16 +238,19 @@ table.list tr.disabled-row td { opacity: 0.55; }
   background: color-mix(in srgb, var(--err-dim) 60%, var(--deck));
 }
 /* exit 2 — the CALL was wrong, so the util never ran: not a failure of the work, a failure to
-   ask for it. Same weight as an error, different hue, because the repair is in the arguments. */
+   ask for it. Same weight as an error, different hue, because the repair is in the arguments —
+   and the hue is WARN, not summons: the run repairs its own call, so nothing waits on a person
+   (coral is reserved for that, base.css). */
 .obs-usage > summary {
-  border-left-color: var(--summons); color: var(--summons);
-  background: color-mix(in srgb, var(--summons-dim) 60%, var(--deck));
+  border-left-color: var(--warn); color: var(--warn);
+  background: color-mix(in srgb, var(--warn-dim) 60%, var(--deck));
 }
 /* exit 124 — the deadline killed it, so NOTHING is known about the work. Dashed, like the
-   refusal row above: an absence of a verdict, not a verdict. */
+   refusal row above: an absence of a verdict, not a verdict. Warn as well — a deadline is the
+   run's to plan around, not a person's to answer. */
 .obs-timeout > summary {
-  border-left: 3px dashed var(--summons); color: var(--summons);
-  background: color-mix(in srgb, var(--summons-dim) 40%, var(--deck));
+  border-left: 3px dashed var(--warn); color: var(--warn);
+  background: color-mix(in srgb, var(--warn-dim) 40%, var(--deck));
 }
 .obs-refused > summary {
   border-left: 3px dashed var(--err); color: var(--err);
@@ -1331,7 +1334,9 @@ summary.setup-head::-webkit-details-marker { display: none; }
   display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px;
   align-items: start; padding: 11px 13px; cursor: pointer;
 }
-.ability.orphan .ability-head { cursor: default; }
+/* the two cards whose head is no checkbox: the uncovered capabilities, and the settings no doc
+   switches on (components/abilities-settings.js) */
+.ability.orphan .ability-head, .ability.ab-settings .ability-head { cursor: default; }
 .ability-name { font-size: var(--t-m); color: var(--ink); }
 /* The card's VERDICT in its head ("will fail" · "needs a decision" · "ready"; the uncovered
    card's count). The markup has named it `.pill` from the start and no rule ever defined one,
@@ -1375,6 +1380,9 @@ summary.setup-head::-webkit-details-marker { display: none; }
 .ab-row .ent { min-width: 0; }            /* let the grid shrink it instead of the select */
 .ab-row .ent-id { color: var(--ink); word-break: break-all; }
 .ab-row.has-control select { width: 100%; max-width: 260px; }
+/* the settings card spans the panel, so its dials size to their longest line of help rather
+   than clipping it at a card column's width */
+.ab-settings .ab-row.has-control select { width: auto; max-width: 100%; }
 .ability-more > summary {
   cursor: pointer; list-style: none; padding: 5px 13px; font-size: var(--t-s);
   color: var(--ink-3); border-top: 1px solid var(--rule);

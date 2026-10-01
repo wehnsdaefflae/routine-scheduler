@@ -20,6 +20,14 @@
 // endpoint card's save-key row in Settings. So below 1900px it opens COLLAPSED and a click-open
 // is transient (it folds again on the next route change); above it, where the margin is real,
 // the open/closed choice is remembered.
+//
+// IT CONNECTS THE FIRST TIME IT IS SEEN, never at load for its own sake. The screen admits one
+// viewer at a time, and a dock that dialled it at every console load — folded, hidden on
+// #/browser, or on a phone where it is not displayed at all — took that seat for a preview
+// nobody was looking at (operator: "connect only when you first open it"). So it dials when it
+// is first open AND on screen: at load only where it rests open, otherwise on the first click or
+// on leaving #/browser. Once dialled it stays as it is — folding hides the frame rather than
+// hanging up — so routing still never reconnects it.
 
 import { api } from "/static/api.js";
 import { el, storage } from "/static/util.js";
@@ -136,12 +144,22 @@ export async function initBrowserDock() {
     else mountUnreachable();
   };
 
+  // The first sight of the dock is the one dial (see the head of this file): what it found —
+  // a frame or "unreachable" with its retry — is what every later open shows.
+  let dialled = false;
+  const connectOnSight = () => {
+    if (dialled || !open || slot.hidden) return;
+    dialled = true;
+    check();
+  };
+
   toggle.onclick = () => {
     open = !open;
     // A narrow console's dock is an overlay over live controls, so its open state is transient:
     // remembering it would park it on the Routines page's run-now column for good.
     if (wide.matches) storage.set(KEY_OPEN, open ? "1" : "0");
     paint();
+    connectOnSight();
   };
 
   // The #/browser page IS this screen, full size and interactive. Mirroring it in the corner
@@ -150,10 +168,10 @@ export async function initBrowserDock() {
     const onBrowserPage = location.hash.startsWith("#/browser");
     slot.hidden = onBrowserPage;
     if (!onBrowserPage && !wide.matches && open) { open = false; paint(); }
+    connectOnSight();
   };
   window.addEventListener("hashchange", onRoute);
 
   paint();
   onRoute();
-  await check();
 }
