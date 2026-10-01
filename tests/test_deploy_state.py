@@ -1,11 +1,13 @@
 """The deploy STATE inventory, read against the compose file and run through its consumers.
 
 `deploy/state-paths.sh` is the one list of what lives outside the engine image. `bundle.sh`
-(the one-shot migration tarball) and `backup.sh` (the recurring mirror) both source it so the
-two cannot drift, and the compose file's binds are what it has to cover. None of it is Python,
-which is why it is tested here: each of these drifted once in a way only a migration, a disk
-failure or a fresh host would have shown — a data home mounted but never carried, a mirror
-that ignored the excludes the tarball honoured, an optional credential store required.
+(the one-shot migration tarball) and `backup.sh` (the nightly dated snapshots) both source it
+so the two cannot drift, and the compose file's binds are what it has to cover. None of it is
+Python, which is why it is tested here: each of these drifted once in a way only a migration, a
+disk failure or a fresh host would have shown — a data home mounted but never carried, a
+backup that ignored the excludes the tarball honoured, an optional credential store required.
+The backup's own run — and the check that it carries exactly the tarball's files — is in
+tests/test_backup_snapshots.py, which builds its instances with `_home` from here.
 """
 from __future__ import annotations
 
@@ -14,10 +16,8 @@ import re
 import shutil
 import subprocess
 import tarfile
-import tempfile
 from pathlib import Path
 
-import pytest
 import yaml
 
 REPO = Path(__file__).resolve().parents[1]
@@ -172,43 +172,3 @@ def test_an_install_without_key_files_bundles(tmp_path):
     assert proc.returncode == 0, proc.stderr
     assert "skipping .credentials" in proc.stderr
     assert "git-repos/routine-scheduler/data.txt" in _tar_files(out)
-
-
-@pytest.mark.skipif(shutil.which("rsync") is None, reason="backup.sh mirrors with rsync")
-def test_the_tarball_and_the_mirror_carry_the_same_files(tmp_path):
-    """bundle.sh and backup.sh read ONE exclude list, so they must carry exactly the same
-    files. The mirror used to sync each home from inside it, where rsync never sees the
-    `git-repos/LLMSecTest_agentic/` prefix an anchored exclude names — so it copied the
-    workspace bulk the tarball leaves out. backup.sh refuses a mirror on its home's device
-    (the unmounted-share guard), so the mirror lives on a different filesystem here."""
-    shm = Path("/dev/shm")  # noqa: S108 — a second FILESYSTEM is the point; mkdtemp makes the dir
-    if not shm.is_dir() or not os.access(shm, os.W_OK) \
-            or shm.stat().st_dev == tmp_path.stat().st_dev:
-        pytest.skip("needs a writable filesystem apart from tmp_path for the mirror")
-    home = _home(tmp_path)
-    out = tmp_path / "bundle.tgz"
-    proc = _bundle(home, out)
-    assert proc.returncode == 0, proc.stderr
-    tarred = _tar_files(out)
-
-    share = Path(tempfile.mkdtemp(prefix="rsched-backup-test-", dir=shm))
-    try:
-        mirror = share / "mirror"
-        stale = mirror / "git-repos/LLMSecTest_agentic/apps/stale.txt"
-        stale.parent.mkdir(parents=True)
-        stale.write_text("copied before the exclude existed", encoding="utf-8")
-        proc = subprocess.run(["bash", str(DEPLOY / "backup.sh"), str(mirror)], env=_env(home),
-                              capture_output=True, text=True, timeout=120, check=False)
-        if "another backup is already running" in proc.stdout:
-            pytest.skip("a real backup holds the mirror lock")
-        assert proc.returncode == 0, proc.stdout + proc.stderr
-        mirrored = {str(p.relative_to(mirror)) for p in mirror.rglob("*")
-                    if (p.is_symlink() or p.is_file()) and p.name != ".rsched-backup-completed"}
-    finally:
-        shutil.rmtree(share, ignore_errors=True)
-
-    assert not EXCLUDED & tarred, f"the tarball carried excluded files: {EXCLUDED & tarred}"
-    assert not EXCLUDED & mirrored, f"the mirror carried excluded files: {EXCLUDED & mirrored}"
-    assert "routines/r1/apps/kept.txt" in tarred   # a workspace's exclude stays in its home
-    assert mirrored == tarred, (f"only mirrored: {mirrored - tarred}; "
-                                f"only tarred: {tarred - mirrored}")

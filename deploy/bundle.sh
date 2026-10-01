@@ -7,7 +7,8 @@
 # This is a ONE-SHOT MIGRATION tool, not a backup. The archive is a frozen snapshot, and
 # `routines` and `conversations` are rewritten by every run — DOCKER.md's flow ends by
 # decommissioning the source host, which is the only reason staleness does not matter there.
-# For recurring protection use deploy/backup.sh, which mirrors the same inventory incrementally.
+# For recurring protection use deploy/backup.sh, which keeps dated snapshots of the same
+# inventory, each costing only what changed since the one before.
 #
 # WARNING: the archive carries SECRETS — config.yaml's bearer tokens and the Secrets store in
 # ~/.config/routine-scheduler/, the linked messenger sessions, the `claude /login` token, and

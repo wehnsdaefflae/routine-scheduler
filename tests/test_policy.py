@@ -3,7 +3,9 @@
 1. **Delete-after-convergence** (migrations): one-shot migration code must declare its own
    expiry with a `MIGRATION(expires=YYYY-MM-DD)` marker comment next to the code, and the
    suite FAILS once that date passes — a "temporary" migration can never silently become
-   permanent. It fires for real: the 2026-08-31/09-01 batch was deleted on its expiry.
+   permanent. It fires for real: the 2026-08-31/09-01 batch was deleted on its expiry. The
+   deploy scripts are read too: they migrate the state they keep (backup.sh's snapshot
+   layout), and a marker nothing reads is exactly the silent permanence this exists to stop.
 2. **Version discipline**: a bump of `rsched.__version__` must come with a matching
    `## [x.y.z]` header at the top of CHANGELOG.md (0.27 shipped without notes once).
    A pre-commit hook runs this file so the mismatch never reaches a commit.
@@ -19,14 +21,16 @@ SRC = Path(rsched.__file__).parent
 REPO = Path(__file__).resolve().parent.parent
 
 MIGRATION_MARKER = re.compile(r"MIGRATION\(expires=(\d{4}-\d{2}-\d{2})\)")
-# code that LOOKS like a migration: a migrate-named def/class or a migrate-* CLI command
-MIGRATION_CODE = re.compile(r"def \w*migrat\w*|class \w*[Mm]igrat\w*|[\"']migrate-")
+# code that LOOKS like a migration: a migrate-named def/class, a migrate-* CLI command, or a
+# migrate-named shell function in a deploy script
+MIGRATION_CODE = re.compile(r"def \w*migrat\w*|class \w*[Mm]igrat\w*|[\"']migrate-"
+                            r"|^\s*\w*migrat\w*\s*\(\)\s*\{", re.MULTILINE)
 
 
 def test_migration_code_declares_expiry_and_expires():
     today = datetime.now(tz=UTC).date().isoformat()
     problems = []
-    for path in sorted(SRC.rglob("*.py")):
+    for path in [*sorted(SRC.rglob("*.py")), *sorted((REPO / "deploy").glob("*.sh"))]:
         text = path.read_text(encoding="utf-8")
         markers = MIGRATION_MARKER.findall(text)
         problems.extend(

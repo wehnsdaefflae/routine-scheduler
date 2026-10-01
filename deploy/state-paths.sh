@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # The rsched STATE INVENTORY — the single list of what is not in the container image.
 # Sourced, never executed: `deploy/bundle.sh` (one-shot migration tarball) and
-# `deploy/backup.sh` (recurring mirror) both read it, so the two cannot drift.
+# `deploy/backup.sh` (nightly dated snapshots) both read it, so the two cannot drift.
 #
 # THE INVARIANT: every bind mount in docker-compose.yml that holds DATA appears in one of
 # the two lists below, or in the third that declares it deliberately not carried. A data home
@@ -9,7 +9,7 @@
 # nothing to catch it — that bug shipped once already, so tests/test_deploy_state.py now
 # checks the compose file against these lists instead of trusting this comment.
 #
-# Paths are HOME-relative, so `tar xzf … -C <RSCHED_HOME>` and an rsync into a mirror root
+# Paths are HOME-relative, so `tar xzf … -C <RSCHED_HOME>` and an rsync into a snapshot folder
 # both recreate the exact layout the compose file mounts.
 
 # Core data. Absent = a broken install, so a consumer refuses rather than quietly skipping.

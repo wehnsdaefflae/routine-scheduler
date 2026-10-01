@@ -127,39 +127,83 @@ schedule it is the wrong shape — `routines` and `conversations` are rewritten 
 (~1600 files, ~90 MB a day on this instance), so the tarball is stale within minutes and a
 nightly rebuild moves ~3.6 GB to capture ~90 MB.
 
-`deploy/backup.sh` mirrors the same inventory incrementally instead:
+`deploy/backup.sh` keeps **dated snapshots** of the same inventory instead:
 
 ```bash
-deploy/backup.sh                                  # → /mnt/sshd_volume1/rsched-backup
-deploy/backup.sh /path/to/some/other/mirror       # …or anywhere else
+deploy/backup.sh                                  # → /mnt/sshd_volume1/rsched-backup/snapshots/<today>
+deploy/backup.sh /path/to/some/other/root         # …or anywhere else
+deploy/backup.sh --help                           # the layout, what is kept, how to restore
 ```
+
+Every run writes `<root>/snapshots/<YYYY-MM-DD>` — the host's local date; a second run the same
+day refreshes that day's — and `<root>/latest` points at the newest complete one. Each snapshot
+is a whole copy on its own, but `rsync --link-dest` hard-links every file that did not change
+since the newest earlier snapshot, so a night costs only what changed. Snapshots rather than one
+mirror, because a mirror copies DAMAGE as faithfully as work: a run that wrecked state at 01:00
+was copied over the last good copy at 03:30, and a deleted conversation lived in it only until
+the next night.
+
+A snapshot is built under a temporary name (`snapshots/.in-progress`) and takes its date only
+once every home copied, so a failed or interrupted run never leaves a half snapshot that a
+restore could pick or a later run could build on, and `latest` stays where it was. After a
+**successful** run, retention keeps the **14 newest snapshots plus the newest of each of the 8
+most recent older ISO weeks** — weeks that hold one, so nights the host was down cost no depth —
+and deletes the rest: about ten weeks of history. A failed run deletes nothing, and no run
+deletes the snapshot it just wrote. rsync's exit 24 — a file that vanished between its listing
+and its copy, routine on a live instance — still completes the snapshot; any other failure
+keeps none.
 
 It refuses to run unless the destination is on a **different device** than `$HOME`. That check is
 load-bearing rather than defensive: the default target is an autofs/sshfs mount of another
 machine, and when that share is down its mountpoint is an ordinary empty local directory — so the
-mirror would land on the very disk it is meant to survive, and report success. It also passes
+backup would land on the very disk it is meant to survive, and report success. It also passes
 `--one-file-system`, because a routine bound to a remote machine has that machine's share
 sshfs-mounted at `<routine>/mnt/<name>` while it runs, and a backup firing at that moment would
-otherwise copy another host's filesystem into the mirror.
+otherwise copy another host's filesystem into the snapshot.
 
-Each home is mirrored with `--relative`, so rsync matches the exclude list against the same
+Each home is copied with `--relative`, so rsync matches the exclude list against the same
 HOME-relative names tar does: an exclude anchored to a workspace (`git-repos/LLMSecTest_agentic/apps`)
-cuts the same files from both, which `tests/test_deploy_state.py` checks by running the two
-side by side. Deletion is `--delete-excluded` rather than plain `--delete`: rsync **protects**
-excluded files on the receiving side, so anything the exclude list gains later would sit in the
-mirror forever — which is how a stale Chrome `SingletonLock` survived being excluded on the first
-live run. A `flock` keeps two scheduled runs from racing, and the mirror root is created mode 700
-because it carries `config.yaml`'s bearer tokens and the Secrets store beside it — check the mode
-the script reports, since a network share may not honour it. `chrome-profile` carries the same
+cuts the same files from both, which `tests/test_backup_snapshots.py` checks by running the two
+side by side. Every snapshot starts **empty**, so an exclude takes effect the very next night,
+even for a file an older snapshot still holds — the single mirror needed `--delete-excluded` for
+that, after a stale Chrome `SingletonLock` survived being excluded on its first live run. A
+`flock` keeps two scheduled runs from racing, and the root is created mode 700 because it
+carries `config.yaml`'s bearer tokens and the Secrets store beside it — check the mode the
+script reports, since a network share may not honour it. `chrome-profile` carries the same
 torn-copy caveat as the tarball, and the script says so on every run.
+
+The first run on a root that still holds the old single mirror (every home directly under the
+root) **moves** it into `snapshots/<date of its last completed run>` — a rename, instant at any
+size — and links that night's snapshot against it.
+
+### Restoring
+
+Restore with the service stopped, so nothing writes a home while it is copied back:
+
+```bash
+docker compose stop rsched          # host install: systemctl --user stop routine-scheduler
+rsync -a --delete /mnt/sshd_volume1/rsched-backup/snapshots/2026-09-30/routines/ ~/routines/
+docker compose start rsched
+```
+
+A snapshot holds each home at its inventory path (`routines`, `conversations`,
+`.config/routine-scheduler`, …); to restore `chrome-profile`, stop the `chrome` sidecar too.
+`--delete` makes the home exactly what the snapshot holds, which also removes what no snapshot
+carries — `.venv`s, `__pycache__`, a workspace's excluded bulk — each of which rebuilds on first
+use or by its own setup. One conversation or file is a plain `cp -a` out of the snapshot; a whole
+host from nothing is `rsync -a <root>/latest/ ~/`, then step 3's `docker compose up -d --build`.
+**Never edit a file inside a snapshot**: an unchanged file is ONE file, shared by every snapshot
+that holds it.
 
 ### Running it nightly
 
 `deploy/rsched-backup.{service,timer}` are systemd **user** units — 03:30 with a 15-minute
 jitter, `Persistent=true` so a night the host was down runs once it is back, and a 2-hour
 `TimeoutStartSec` so a wedged NAS fails the unit instead of blocking every later firing on the
-lock. They are NOT installed by `deploy/install.sh`, deliberately: the mirror root is
-host-specific, and a default install has nowhere correct to point.
+lock. They are NOT installed by `deploy/install.sh`, deliberately: the backup root is
+host-specific, and a default install has nowhere correct to point. The service runs the
+checkout's `backup.sh`, so an update reaches the next firing by itself; re-copy the two units
+only when they change.
 
 ```bash
 install -m 0644 deploy/rsched-backup.service ~/.config/systemd/user/
