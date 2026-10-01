@@ -50,7 +50,11 @@ Built in, never configured, because each one is work by construction:
 - the last admitted run did not finish ok — it may have left work behind;
 - its configuration or recipe changed since the last ok run (`routine.yaml`, `tuning.yaml`,
   `main.md`, `stages/`, `state/finish-line.json`): a granted permission can unblock parked
-  work, a revised recipe can add some.
+  work, a revised recipe can add some. A run reads its configuration and recipe at boot, so
+  those count from when the last ok run STARTED; it reads the finish line again at its finish
+  and stamps it there (a distance per open outcome), so the finish line counts from when that
+  run ENDED — measured from the start, the run's own stamp read as a change and no routine
+  whose runs keep an accounting could ever be skipped.
 
 ## Which fires are gated
 

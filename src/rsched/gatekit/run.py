@@ -6,7 +6,7 @@ this directory on the import path, so the entry puts it there itself — the `ki
 the only code the jail mounts.
 
 Protocol: argv[1] is `{version: 2, routine, routine_dir, routines_home, libraries_home, now,
-last_ok: {run_id, started, fingerprints} | null, checks: [...]}`; stdout is
+last_ok: {run_id, started, ended, fingerprints} | null, checks: [...]}`; stdout is
 `{version: 1, decision, reason, checks: [{id, kind, work, reason, fingerprint?}]}`.
 """
 
