@@ -131,7 +131,9 @@ HomePath = Annotated[Path, BeforeValidator(_home_path)]
 
 
 class _Config(BaseModel):
-    model_config = ConfigDict(extra="ignore", populate_by_name=True,
+    # validate_by_name: an aliased field (schedule.cron → `cron`) also loads by its own name —
+    # a model_dump handed to another process (the gate's preparation child) round-trips.
+    model_config = ConfigDict(extra="ignore", validate_by_name=True,
                               coerce_numbers_to_str=True)
 
 
