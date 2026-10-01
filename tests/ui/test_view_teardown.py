@@ -78,6 +78,26 @@ def test_a_missing_run_does_not_keep_polling_for_itself(ui, ui_page):
     assert len(tree) <= 1, f"the missing run's task tree was polled: {tree}"
 
 
+def test_a_run_view_that_fails_mid_render_leaves_no_broken_callback(ui, ui_page):
+    """A render that throws part-way shows "view failed to load" — and whatever it had armed by
+    then keeps running. The run view armed its duration clock ~200 lines above the `let` of the
+    state that clock reads, so a throw in between left a timer hitting "Cannot access
+    'curState' before initialization" every five seconds for the life of the tab."""
+    ui.seed_run("uir", "20260714-070000", "running")
+    # the run rail's grip is the one caller of this query: make mounting it throw
+    ui_page.add_init_script("""(() => {
+      const real = window.matchMedia.bind(window);
+      window.matchMedia = (q) => {
+        if (q === "(min-width: 760px)") throw new Error("injected rail failure");
+        return real(q);
+      };
+    })()""")
+    ui_page.goto(f"{ui.url}/#/run/uir:20260714-070000")
+    expect(ui_page.locator("#view")).to_contain_text("view failed to load")
+    ui_page.wait_for_timeout(5600)          # past the duration clock's 5 s tick
+    # the ui_page fixture fails the test on any uncaught error collected meanwhile
+
+
 def test_leaving_right_after_a_send_does_not_remount_the_conversation(ui, ui_page):
     """A send that wakes a DIFFERENT run remounts the conversation 700 ms later. Left inside
     that window, the remount ran anyway — into a view already torn down, arming a live tail

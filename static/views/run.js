@@ -32,6 +32,10 @@ export async function render(view, runId, query = {}) {
   // sub ids are path-like strings ("2", or "2/1" from a search hit into a NESTED child —
   // the tab bar only has top-level tabs, so a nested link lands on its top-level subtree)
   const initialSub = query.sub != null && query.sub !== "" ? String(query.sub) : null;
+  // The run's state, read by the duration clock, the rail's pollers and every live predicate.
+  // Declared before any of them is armed: a render that throws part-way leaves what it armed
+  // running, and a callback reading a `let` still in its temporal dead zone throws forever.
+  let curState = "";
 
   const stateChip = chip("connecting", "loading");
   const usageSpan = el("span", { class: "muted small" });
@@ -299,7 +303,6 @@ export async function render(view, runId, query = {}) {
   controls.append(delibBox);
 
   // ---- transcript sources: main run = resilient tail; a sub-run = paged fetch + poll ----------
-  let curState = "";
   const subs = new Map();          // n -> label
   let viewingSub = null;           // null = main, else sub-run number
   let tail = null;                 // the always-on main tail (state + main transcript)

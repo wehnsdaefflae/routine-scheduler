@@ -100,9 +100,14 @@ function updateLocation(path) {
   renderCrumbs(path);
 }
 
+// A segment as the reader should see it: decoded — or as typed, when it is no valid escape.
+// decodeURIComponent THROWS on a broken one (`%E0%A4%A`), and this runs before the route's own
+// error handling: a truncated link used to leave the skeleton up for good.
+const decodeSegment = (s) => { try { return decodeURIComponent(s); } catch { return s; } };
+
 // Breadcrumb built from the URL alone (no extra fetches) — earlier segments link back up.
 function crumbsFor(path) {
-  const parts = path.replace(/^#\/?/, "").split("/").filter(Boolean).map(decodeURIComponent);
+  const parts = path.replace(/^#\/?/, "").split("/").filter(Boolean).map(decodeSegment);
   const top = parts[0] || "";
   switch (top) {
     case "": return [{ label: "Conversations" }];

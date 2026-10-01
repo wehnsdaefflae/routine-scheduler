@@ -64,11 +64,18 @@ function modelControl(detail, slug, isLive) {
 export function renderHead(head, detail, stateChip, { slug, isLive, onListChanged }) {
   const title = el("h1", { class: "conv-h1", contenteditable: "plaintext-only",
     spellcheck: "false" }, detail.title || slug);
+  // `saved` is the title the conversation HAS — it moves with every save, or renaming one back
+  // to where it started compared equal to a stale baseline and was silently skipped.
+  let saved = detail.title || slug;
   title.onblur = async () => {
     const t = title.textContent.trim();
-    if (!t || t === detail.title) return;
-    try { await api(`/api/conversations/${slug}`, { method: "PATCH", body: { title: t } }); onListChanged(); }
-    catch (err) { toastError(err); }
+    if (!t) { title.textContent = saved; return; }   // a cleared heading is no new name
+    if (t === saved) return;
+    try {
+      await api(`/api/conversations/${slug}`, { method: "PATCH", body: { title: t } });
+      saved = t;
+      onListChanged();
+    } catch (err) { toastError(err); }
   };
   const tagsRow = el("span", { class: "conv-tagline" },
     tagsEditor(detail.tags, async (next) => {
