@@ -625,8 +625,10 @@ review weighed and did not recommend).
 - Delete `~/routines/.permissions-adopted.json`: its writer (`bootstrap.adopt_permissions`) is gone.
 - Read `.control/migrations/seed-utils.json` and `.control/migrations/enabled.json`: anything they
   left as it was is named there. (The live library's `git`, `remote`, `pytest-run`,
-  `reminder-census` and `vision` were brought current by hand on 2026-10-01, library commit
-  7d06482, so seed-utils should report them "already current".)
+  `reminder-census` and `vision` were brought current by hand on 2026-10-01, library commits
+  7d06482 and 92bd051, and 0.372.1 made util-seed's `git` and `remote` the library's files — so
+  seed-utils should report all four utils it carries, `remote`, `vision`, `git` and
+  `reminder-census`, "already current". Anything else there is a real finding.)
 - Once library-sync has exported after the operator rotated the routine token, confirm the library
   repo's `config/config.yaml` reads `routine_token: REDACTED`.
 
