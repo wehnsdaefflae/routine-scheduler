@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
@@ -81,13 +82,20 @@ def zone_key(name: str) -> str:
     return name
 
 
-def friendly_to_cron(spec: dict) -> str:
-    """Friendly spec → cron string ('' for manual). Raises ValueError on bad input."""
-    freq = (spec or {}).get("frequency", "manual")
+def friendly_to_cron(spec: dict | None) -> str:
+    """Friendly spec → cron string ('' for manual). Raises ValueError on bad input — on
+    EVERY bad input: the routine PATCH answers 400 for a ValueError and catches nothing else.
+    """
+    if spec is None:
+        spec = {}
+    if not isinstance(spec, dict):
+        # ValueError, not TypeError: the contract is one error for any bad spec, shape or value
+        raise ValueError(f"a schedule spec is a mapping, got {spec!r}")  # noqa: TRY004
+    freq = spec.get("frequency", "manual")
     if freq in ("manual", "disabled"):
         return ""
     if freq == "hourly":
-        minute = int(spec.get("minute", 0))
+        minute = _int(spec.get("minute", 0), "minute")
         _check(0 <= minute <= 59, "minute must be 0-59")
         return f"{minute} * * * *"
     hh, mm = _parse_time(spec.get("time", "07:00"))
@@ -100,11 +108,11 @@ def friendly_to_cron(spec: dict) -> str:
         days_in = spec.get("weekdays")
         if not isinstance(days_in, list) or not days_in:   # explicit — mypy can narrow this
             raise ValueError("weekly needs a non-empty weekdays list (0=Sunday … 6=Saturday)")
-        days = sorted({int(d) for d in days_in})
+        days = sorted({_int(d, "a weekday") for d in days_in})
         _check(all(0 <= d <= 6 for d in days), "weekdays must be 0-6")
         return f"{mm} {hh} * * {','.join(str(d) for d in days)}"
     if freq == "monthly":
-        day = int(spec.get("day", 1))
+        day = _int(spec.get("day", 1), "day")
         _check(1 <= day <= 31, "day must be 1-31")
         return f"{mm} {hh} {day} * *"
     raise ValueError(f"unknown frequency {freq!r}")
@@ -188,6 +196,13 @@ def _parse_time(t: str) -> tuple[int, int]:
         return h, m
     except (ValueError, AttributeError):
         raise ValueError(f"bad time {t!r} (expected HH:MM)") from None
+
+
+def _int(value: Any, what: str) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        raise ValueError(f"{what} must be a whole number, got {value!r}") from None
 
 
 def _check(cond: bool, msg: str) -> None:

@@ -60,6 +60,20 @@ def test_invalid_friendly():
         friendly_to_cron({"frequency": "weekly", "time": "08:00", "weekday": 1})
 
 
+@pytest.mark.parametrize("spec", [
+    {"frequency": "hourly", "minute": None},
+    {"frequency": "monthly", "time": "07:00", "day": None},
+    {"frequency": "weekly", "time": "07:00", "weekdays": [None]},
+    {"frequency": "weekly", "time": "07:00", "weekdays": ["mon"]},
+    "daily",
+])
+def test_every_malformed_spec_is_a_value_error(spec):
+    """The routine PATCH answers 400 for the ValueError this promises and catches nothing
+    else, so a null field (TypeError) or a spec that is no mapping (AttributeError) was a 500."""
+    with pytest.raises(ValueError):
+        friendly_to_cron(spec)
+
+
 @pytest.fixture
 def etc(monkeypatch, tmp_path):
     """The two /etc files server_tz reads, pointed at tmp — absent until a test writes them."""
