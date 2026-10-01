@@ -3,8 +3,8 @@
 Split out of `cli.py` (F393): dispatching commands and painting a transcript are different jobs,
 and this one is pure presentation. It is the only place the engine's event vocabulary is turned
 into something a person reads at a prompt rather than in the console, so it has to stay in step
-with `engine/transcript.py`'s types — an event it does not know is shown plainly rather than
-dropped.
+with `engine/transcript.py`'s types (tests/test_cli.py renders every one of them) — an event it
+does not know is shown plainly rather than dropped.
 """
 
 from __future__ import annotations
@@ -13,11 +13,7 @@ from .engine import child
 from .engine.actionschema import BRIEF_FIELD
 
 
-def _server_tz() -> str:
-    from .schedule import server_tz
-    return server_tz()
-
-def _render_event(obj: dict) -> str | None:  # noqa: PLR0911 — one return per event type
+def _render_event(obj: dict) -> str:  # noqa: PLR0911 — one return per event type
     t = obj.get("type")
     p = obj.get("payload", {})
     if t == "header":
@@ -45,30 +41,7 @@ def _render_event(obj: dict) -> str | None:  # noqa: PLR0911 — one return per 
                      str(p.get(BRIEF_FIELD.get(str(p.get("kind")), ""), "") or ""))
         return f"[{obj.get('turn')}] {say}\n    → {p.get('kind')}: {brief}"
     if t == "observation":
-        kind = p.get("kind")
-        if kind == "util":
-            return f"    ← util {p.get('name')}: " + ("missing" if p.get("missing")
-                                                      else f"exit {p.get('exit')}")
-        if kind == "shell":
-            return f"    ← shell: exit {p.get('exit')}"
-        if kind == "write_util":
-            state = ("pending approval" if p.get("pending_approval") else "declined"
-                     if p.get("declined") else "selftest ok" if p.get("selftest_ok")
-                     else "selftest failed")
-            return f"    ← write_util {p.get('name')}: {state}"
-        if kind == "llm":
-            return "    ← llm reply" + (" (error)" if p.get("error") else "")
-        if kind == "spawn":
-            return (f"    ← spawn REJECTED: {p.get('reason')}" if p.get("rejected")
-                    else f"    ← sub-workflow #{p.get('n')} started")
-        if kind == "subtask":
-            if p.get("rejected"):
-                return f"    ← subtask REJECTED: {p.get('reason')}"
-            return f"    ← subtask #{p.get('n')} started (sequential, background)"
-        if kind == "wait":
-            done = ", ".join(f"#{f['n']}:{f['status']}" for f in p.get("finished", []))
-            return f"    ← wait → {done or ('timeout' if p.get('timed_out') else 'nothing new')}"
-        return f"    ← {kind}"
+        return _render_observation(p)
     if t == "question":
         return f"    ? [{p.get('mode')}] {p.get('question')}"
     if t == "answer":
@@ -87,6 +60,54 @@ def _render_event(obj: dict) -> str | None:  # noqa: PLR0911 — one return per 
         if t == "subrun_start":
             return f'    ↳ {label} #{p.get('n')} "{p.get('label')}" started ({p.get('workflow')})'
         return f"    ↰ {label} #{p.get('n')} {p.get('status')} — {p.get('turns')} turns"
+    if t == "refusal":
+        model = f" · {p['model']}" if p.get("model") else ""
+        return f"    ⊘ refusal flagged ({p.get('where')}{model}): {p.get('message', '')[:120]}"
+    if t == "stopping_update":
+        return f"    — {_accounting(p)} —"
+    if t == "stages_skipped":
+        entered = ", ".join(p.get("entered") or []) or "none"
+        return (f"    ↷ stages skipped: {', '.join(p.get('skipped') or [])} "
+                f"(entered: {entered})")
     if t == "finish":
         return f"── finish: {p.get('status')} ──\n{p.get('summary', '')}"
-    return None
+    return f"    · {t}"
+
+
+def _render_observation(p: dict) -> str:  # noqa: PLR0911 — one return per action kind
+    kind = p.get("kind")
+    if kind == "util":
+        return f"    ← util {p.get('name')}: " + ("missing" if p.get("missing")
+                                                  else f"exit {p.get('exit')}")
+    if kind == "shell":
+        return f"    ← shell: exit {p.get('exit')}"
+    if kind == "write_util":
+        state = ("pending approval" if p.get("pending_approval") else "declined"
+                 if p.get("declined") else "selftest ok" if p.get("selftest_ok")
+                 else "selftest failed")
+        return f"    ← write_util {p.get('name')}: {state}"
+    if kind == "llm":
+        return "    ← llm reply" + (" (error)" if p.get("error") else "")
+    if kind == "spawn":
+        return (f"    ← spawn REJECTED: {p.get('reason')}" if p.get("rejected")
+                else f"    ← sub-workflow #{p.get('n')} started")
+    if kind == "subtask":
+        if p.get("rejected"):
+            return f"    ← subtask REJECTED: {p.get('reason')}"
+        return f"    ← subtask #{p.get('n')} started (sequential, background)"
+    if kind == "wait":
+        done = ", ".join(f"#{f['n']}:{f['status']}" for f in p.get("finished", []))
+        return f"    ← wait → {done or ('timeout' if p.get('timed_out') else 'nothing new')}"
+    return f"    ← {kind}"
+
+
+def _accounting(p: dict) -> str:
+    """A `stopping_update` in the words the console's transcript uses for it."""
+    if p.get("goal_reached"):
+        return ("the finish line is reached: scheduling stops; a Decisions card asks to "
+                "confirm retiring the routine")
+    judged = " · ".join(f"{i} {v}" for i, v in (p.get("judged") or {}).items())
+    met = f" · proved {', '.join(p['met'])}" if p.get("met") else ""
+    disputed = (f" · a check of the transcript disputed {', '.join(p['disputed'])}"
+                if p.get("disputed") else "")
+    return f"accounting: {judged or 'nothing owed'}{met}{disputed}"

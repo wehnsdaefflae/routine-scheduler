@@ -13,9 +13,10 @@ import sys
 from pathlib import Path
 
 from .cli_daemon import cmd_daemon
-from .cli_render import _render_event, _server_tz
+from .cli_render import _render_event
 from .config import MODEL_KINDS, load_server_config
 from .paths import expand
+from .schedule import server_tz
 
 
 def _parse_model_overrides(values: list[str]) -> dict[str, str]:
@@ -70,9 +71,7 @@ def cmd_run_once(args) -> int:
     signal.signal(signal.SIGINT, lambda *_: request_abort())
 
     def on_event(obj: dict) -> None:
-        line = _render_event(obj)
-        if line:
-            print(line, flush=True)
+        print(_render_event(obj), flush=True)
 
     try:
         status, run_dir = run_routine(routine_dir, server,
@@ -292,7 +291,7 @@ def cmd_scaffold(args) -> int:
             if args.instruction_file
             else f"# Instruction\n\n(fill in) — scaffolded for {args.slug}",
             workflow_slug=args.workflow, cron=args.cron or "",
-            tz=args.tz or _server_tz(),
+            tz=args.tz or server_tz(),
             description=args.description or "",
             tags=args.tag or None,
             fs_read_roots=args.read_root or None, fs_write_roots=args.write_root or None,

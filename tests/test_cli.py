@@ -113,8 +113,32 @@ def test_render_subrun_events_name_mode_and_outcome():
     assert "#2" in end and "ok" in end and "5 turns" in end
 
 
-def test_render_unknown_event_type_is_silent():
-    assert _render_event({"type": "no_such_event", "payload": {}}) is None
+def test_every_transcript_event_type_renders_a_line():
+    """The CLI is a third reader of the vocabulary (CLAUDE.md: extend the tuple and its readers
+    together). `refusal`, `stopping_update` and `stages_skipped` printed NOTHING, so a run-once
+    watcher never saw a refusal flagged, the finish's accounting or the stages it skipped."""
+    from rsched.engine.transcript import EVENT_TYPES
+
+    for t in EVENT_TYPES:
+        assert _render_event({"type": t, "payload": {}}), t
+
+
+def test_render_the_finish_notices():
+    ref = _render_event({"type": "refusal", "payload": {
+        "where": "main", "model": "m1", "message": "I can't help with that"}})
+    assert "refusal" in ref and "m1" in ref and "can't help" in ref
+    acct = _render_event({"type": "stopping_update", "payload": {
+        "met": ["g1"], "judged": {"d1": "met", "g1": "met"}, "disputed": ["d1"]}})
+    assert "d1 met" in acct and "g1" in acct and "disputed" in acct
+    assert "finish line" in _render_event({"type": "stopping_update",
+                                           "payload": {"goal_reached": True}})
+    skipped = _render_event({"type": "stages_skipped", "payload": {
+        "declared": ["gather", "write"], "entered": ["write"], "skipped": ["gather"]}})
+    assert "gather" in skipped and "skipped" in skipped
+
+
+def test_render_an_unknown_event_type_plainly_never_drops_it():
+    assert "no_such_event" in _render_event({"type": "no_such_event", "payload": {}})
 
 
 # ------------------------------------------------------- _parse_model_overrides
