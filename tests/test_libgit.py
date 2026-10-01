@@ -190,6 +190,26 @@ def test_ensure_library_refuses_to_reinit_a_repo_that_lost_its_git(tmp_path):
     assert ".active/" in (lib / ".gitignore").read_text(encoding="utf-8")   # not overwritten
 
 
+def test_ensure_library_clones_its_remote_into_an_empty_bind_mount(tmp_path):
+    """A container's library is an EMPTY directory at first boot — the bind mount exists before
+    anything is in it. The clone was attempted only when the path did not exist at all, so a
+    configured remote was never cloned there: a fresh repo was initialised beside it instead,
+    with no history in common with the remote it then pushes to."""
+    remote = tmp_path / "remote.git"
+    seed = tmp_path / "seed"
+    utils_lib.ensure_library(seed)
+    (seed / "kept.md").write_text("from the remote\n", encoding="utf-8")
+    libgit.commit(seed, "a library with history", routines_home=None)
+    subprocess.run(["git", "clone", "-q", "--bare", str(seed), str(remote)], check=True)
+    lib = tmp_path / "mounted"
+    lib.mkdir()                                            # what a fresh bind mount leaves
+
+    utils_lib.ensure_library(lib, remote=str(remote))
+
+    assert (lib / "kept.md").read_text(encoding="utf-8") == "from the remote\n"
+    assert _git(lib, "log", "-1", "--format=%s").strip() == "a library with history"
+
+
 def test_ensure_library_still_creates_one_over_a_populated_but_never_used_dir(tmp_path):
     """A dir with content but no dispatcher was never a library — a seed copy, a restore in
     progress, a fixture. It still gets initialised, or a first boot could never complete."""

@@ -95,7 +95,8 @@ GITIGNORE = "__pycache__/\n*.pyc\n"
 
 def ensure_library(home: Path, *, remote: str = "") -> None:
     """Create the util library if absent (dir + dispatcher + git). If `remote` is set and
-    the library does not exist yet, clone it to bootstrap; otherwise init empty.
+    the library does not exist yet — no directory, or an EMPTY one, which is what a container's
+    bind mount is at first boot — clone it to bootstrap; otherwise init empty.
 
     A library that ONCE WORKED and has lost its `.git` is a damaged repo, never a fresh one, and
     it is refused rather than re-initialised. Re-initialising discarded the whole history (the
@@ -121,7 +122,8 @@ def ensure_library(home: Path, *, remote: str = "") -> None:
                   "or its remote, or `git init` it by hand if you really want a new one.", home)
         return
     home.parent.mkdir(parents=True, exist_ok=True)
-    if remote and not home.exists():
+    # git clones into an empty directory as readily as into a missing one
+    if remote and (not home.exists() or (home.is_dir() and not any(home.iterdir()))):
         r = libgit.git(home.parent, "clone", "--quiet", remote, str(home), timeout=120)
         if r.returncode == 0:
             for key, val in libgit.IDENTITY_PAIRS:
