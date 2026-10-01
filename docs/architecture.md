@@ -136,7 +136,12 @@ the limits (single-writer status.json preserved).
   is POSITIONAL — head 6, tail 24 — so a load-bearing fact in the middle survives only in
   `history/`, reachable if the run remembers to look. `note`, `memory_write` and the LEDGER
   already exist to carry a fact out of the conversation; what was missing was the moment to use
-  them. The archive is deferred by exactly one turn and the run is told why. Safe by
+  them. The archive is deferred by exactly one turn and the run is told why — and the deferred
+  pass is OWED (`loop._evict_owed`): the next turn takes it under the cap that decided it, so
+  "the archive happens on your next turn" holds even when the cap has moved since. It did not
+  before: a stage boundary's anticipatory discount lasts one turn, so re-testing the ordinary
+  gate spent the once-per-run warning on a pass that never came, and the compaction that did
+  come later came unannounced. Safe by
   construction: when the FRACTION binds the gate there is 20-40% of the window before the hard
   ceiling, a whole turn of slack; when the CEILING binds there is none, so the warning is
   skipped and the archive happens now. `clamp_to_cap` runs unconditionally afterwards either

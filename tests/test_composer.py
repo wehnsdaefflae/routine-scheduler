@@ -964,6 +964,34 @@ def test_a_stage_boundary_compacts_a_prompt_only_approaching_the_gate(monkeypatc
     assert loop._last_seen_phase == "draft"     # and the boundary is spent, not re-triggered
 
 
+def test_the_pass_the_eviction_warning_defers_happens_on_the_next_turn(monkeypatch):
+    """The warning tells the run "the archive happens on your next turn either way" — and at a
+    stage boundary it did not. The boundary lowered the cap, the warning deferred that pass,
+    and the next turn — no longer AT the boundary — re-tested the ordinary cap, found the prompt
+    under it and archived nothing. The once-per-run warning was spent on a pass that never came,
+    and the compaction that did come later arrived unannounced.
+    """
+    from types import SimpleNamespace
+
+    from rsched.config import ModelRef
+    from rsched.engine.window import compact_if_needed
+
+    loop, calls = _gate_loop(monkeypatch, usage={"cached_in": 5_000}, phase="draft")
+    events: list[tuple] = []
+    loop.ctx.transcript = SimpleNamespace(event=lambda t, p, **_k: events.append((t, p)))
+    loop._evict_warned = False
+    ref = ModelRef("e", "m", context_tokens=100_000, max_tokens=0)
+    compact_if_needed(loop, endpoint=None, ref=ref)     # boundary: 70k > 0.8 x 0.85 x 100k
+    assert not calls, "the warning defers the pass by exactly one turn"
+    assert "about to be ARCHIVED" in loop.messages[-1]["content"]
+    loop.messages.append({"role": "user", "content": "OBSERVATION (util x, exit 0):\nok"})
+    compact_if_needed(loop, endpoint=None, ref=ref)     # same stage, ordinary 0.8 gate
+    assert calls, "the archive the warning announced must happen on the next turn"
+    # …and it is still the boundary's pass on the record, not a forced mid-step one
+    passes = [p for t, p in events if t == "compaction"]
+    assert passes and passes[-1].get("anticipated") == "draft"
+
+
 def test_mid_step_inside_the_same_stage_does_not_anticipate(monkeypatch):
     """It is the BOUNDARY that lowers the trigger, not the phase. A run already working inside
     `draft` is mid-step, where compacting is the very thing this avoids."""
