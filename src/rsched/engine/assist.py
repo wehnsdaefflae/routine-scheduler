@@ -1,27 +1,31 @@
 """The assist RUNTIME — evaluating a rule's relevance triggers and delivering the line.
 
 `rsched/assists.py` says what an assist IS and reads the library's declarations;
-`assist_predicates.py` holds the checks. This file is the engine seam: three moments, one
+`assist_predicates.py` holds the checks. This file is the engine seam: four moments, one
 delivery convention, and the guards that keep a layer which is live in every routine from
 becoming rent on every turn.
 
-The three moments, and why they deliver differently:
+The four moments, and why they deliver differently:
 
+- **pre-action** — the action is HELD (`hold`), through the one interception seam a
+  consequence reminder uses too (`engine/hold.py`); it costs a turn, which is why the rung is
+  reserved for an irreversible cost to skipping.
 - **observation** — the line rides the tail of the observation the run was getting anyway,
   the same no-turn carrier `remind.apply_ops` uses for `[REMINDERS: …]`.
 - **boundary** — an appended ENGINE NOTE at the turn boundary, exactly the shape
   `switches.apply_rule_additions` already uses to put rule prose into a live thread. Append
   only: the composed prompt is a caching contract.
-- **pre-finish** — a rung of the finish gate. This one COSTS a turn, and has to: a line
+- **pre-finish** — a rung of the finish gate. This one COSTS a turn too, and has to: a line
   surfaced as the run ends is a line nobody can act on, so the finish is set aside and the
-  model gets one more turn. It is the only moment here that spends anything.
+  model gets one more turn.
 
 Two guards, both borrowed rather than invented. An assist fires **at most once per run**
 (`loop.assists_fired`), the rule the hold ledger (`loop.holds`, engine/hold.py) and the claim
 verifier's `_challenged` set already apply to their own interventions — a trigger that can
-fire twice on one situation livelocks a stubborn model into a dead budget. And **at most one finish
-deferral per run across all assists**, because the finish gate already has five rungs that can
-each defer, and a sixth that can fire repeatedly would turn a run's ending into a negotiation.
+fire twice on one situation livelocks a stubborn model into a dead budget. And **at most one
+finish deferral per run across all assists**, because the finish gate already has five rungs
+that can each defer, and a sixth that can fire repeatedly would turn a run's ending into a
+negotiation.
 """
 
 from __future__ import annotations
@@ -44,7 +48,7 @@ def configure(loop) -> None:
     loop.assists = load(loop)
     loop.assists_fired = set()
     loop.assist_finish_deferred = False
-    loop.assist_user_replies = 0
+    loop.assist_user_replies = None     # the user-replies watermark, seeded at the 1st boundary
 
 
 def load(loop) -> list[Assist]:
@@ -52,13 +56,36 @@ def load(loop) -> list[Assist]:
 
     Read ONCE at construction, like the reminder set and for the same reason — the composed
     prompt is append-only, and the rules layer's own doctrine is that a library revision lands
-    at the next run, not mid-flight.
+    at the next run, not mid-flight. What the user binds or unbinds WHILE the run is live is
+    another matter: that reaches the run at once (`switches.apply_rule_additions` /
+    `apply_rule_drop`), and the rule's assists go with it — `rules_bound` / `rules_unbound`.
     """
     ctx = loop.ctx
     try:
         return lib.for_rules(ctx.server.rules_home, list(ctx.routine.rules or []))
     except OSError:
         return []
+
+
+def rules_bound(loop, slugs: list[str]) -> None:
+    """Rules the user bound to the routine mid-run bring their assists: an assist is part of
+    the rule, and the rule itself has just reached the run as a note.
+    """
+    loaded = {a.rule for a in loop.assists}
+    try:
+        new = lib.for_rules(loop.ctx.server.rules_home, [s for s in slugs if s not in loaded])
+    except OSError:
+        return
+    loop.assists = [*loop.assists, *new]
+
+
+def rules_unbound(loop, slugs: list[str]) -> None:
+    """Rules the user unbound mid-run take their assists with them. The run is told the rule
+    no longer binds it; its assists firing on — holding an action, deferring the finish — would
+    be the rule still governing a routine that does not hold it.
+    """
+    gone = set(slugs)
+    loop.assists = [a for a in loop.assists if a.rule not in gone]
 
 
 def _fire(loop, assist: Assist, situation: Situation) -> bool:
@@ -130,13 +157,19 @@ def at_boundary(loop) -> None:
     """Turn-boundary assists, appended as ENGINE NOTEs. Costs no turn.
 
     The `user_replies` watermark is advanced here whatever fired, so the arrival edge a
-    predicate reads is the edge since the LAST boundary rather than since the run began.
+    predicate reads is the edge since the LAST boundary rather than since the run began. The
+    leg's FIRST boundary only seeds it: whatever the user said before that — the message that
+    opens a resumed leg, which is a conversation's every later reply, or one drained at boot —
+    is the leg's task, not an intervention in it, exactly as a fresh run's opening prose is
+    never counted at all. Counted from zero, it fired the correction line on every reply.
     """
-    ctx = loop.ctx
+    replies = int(getattr(loop.ctx, "user_replies", 0) or 0)
+    if loop.assist_user_replies is None:
+        loop.assist_user_replies = replies
     if loop.assists:
         for assist in _matching(loop, "boundary", Situation(loop=loop)):
             enginenote.append(loop, _rendered(assist))
-    loop.assist_user_replies = int(getattr(ctx, "user_replies", 0) or 0)
+    loop.assist_user_replies = replies
 
 
 def at_finish(loop, action: dict) -> str | None:

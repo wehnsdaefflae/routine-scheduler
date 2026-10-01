@@ -348,8 +348,11 @@ Unlike other routine file edits this is **not** 409-guarded during a run — no 
 routine.yaml, so the web layer is the only writer and no race exists. A newly bound rule even
 reaches a run already in flight: the composed prompt is immutable (caching contract), so
 `control.json` `add_rules` makes the engine append the prose (read from the library) as an
-engine note at the next turn boundary. Unbinding takes effect at the next run — prose already
-in a live context cannot be unsaid.
+engine note at the next turn boundary. Unbinding reaches a live run the same way
+(`drop_rules`): the prose already in its context cannot be unsaid, but its authority can — an
+engine note says the rule no longer binds, and the opt-in `erase` also withdraws the text,
+at the price of the provider cache from the first rewritten message on. Either way the rule's
+[assists](rule-assists.md) arrive and leave with it.
 
 A **run** never changes which rules bind it. It may `read_rule` any rule in the library —
 ungated, because a routine must be able to read what binds it and library prose has no side

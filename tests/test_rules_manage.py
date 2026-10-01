@@ -185,7 +185,7 @@ def test_user_bound_rule_reaches_a_live_run_once(make_routine, tmp_path, lib):
                      run_ts="20260721-070000", run_dir=run_dir,
                      transcript=Transcript(run_dir / "transcript.jsonl"),
                      budgets=Budgets.from_config(cfg.budgets))
-    loop = SimpleNamespace(ctx=ctx, messages=[], _last_rules_ts="")
+    loop = SimpleNamespace(ctx=ctx, messages=[], _last_rules_ts="", assists=[])
     atomic_write_json(ctx.root_run_dir / "control.json",
                       {"add_rules": {"slugs": ["alpha"], "ts": "t1"}})
     apply_rule_additions(loop)

@@ -72,9 +72,14 @@ on demand with `read_rule`, so a library revision reaches every holder at its ne
 migration. The user binds and unbinds at any time (`POST /routines/{slug}/rules`, the same
 endpoint conversations use — `rsched/rules.py` writes the config list). A newly bound rule reaches a run **already in flight**: the composed prompt is immutable
 under the caching contract, so `control.json` `add_rules` → `engine/switches.apply_rule_additions`
-appends the rule's prose as an engine note at the next turn boundary. Unbinding has no live
-counterpart on purpose — prose already in a context cannot be unsaid — so it lands at the next
-run. A run never changes which rules bind it; `read_rule` is ungated (a routine must be able to
+appends the rule's prose as an engine note at the next turn boundary. Unbinding reaches it the
+same way (`drop_rules` → `apply_rule_drop`): prose already in a context cannot be unsaid, but
+its authority can — `ENGINE NOTE: the user UNBOUND the general rule(s) '<slug>' — they no
+longer bind this routine. Stop applying them from now on; no later run holds them.`, plus
+`Their text has been withdrawn from the conversation above (<n> message(s) rewritten).` when
+the user chose the opt-in `erase`, which tombstones the carrying messages and so costs the
+provider cache from the first one on. Either way the rule's assists arrive and leave with it. A
+run never changes which rules bind it; `read_rule` is ungated (a routine must be able to
 read what binds it — reading library prose has no side effect); reading one it does NOT
 hold applies it for that run only. Rewriting the text is a separate capability: `write_rule`,
 gated by the `rule-authoring` permission under its own approval dial `rule_confirm`, because a

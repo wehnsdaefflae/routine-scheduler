@@ -275,6 +275,92 @@ def test_a_boundary_assist_arrives_as_an_engine_note(make_routine, scripted):
     assert status == "ok"
 
 
+def test_the_message_that_opens_a_resumed_leg_is_its_task_not_a_correction(
+        make_routine, scripted):
+    """A conversation's every later reply is a RESUMED leg, opened by the user's message —
+    injected at boot, so it counts as the user speaking. Counted against a watermark of zero,
+    the leg's first boundary read it as an intervention and the correction line fired on every
+    reply. A fresh run's opening prose is never counted; a resumed leg's is now not either."""
+    from rsched.engine.inbox import file_message
+    from rsched.paths import atomic_write_json
+
+    d = make_routine(slug="assistr")
+    server = _server(d)
+    _rule(server, "fix-the-cause", "boundary", "user-corrected", "name the intention")
+    _hold_rule(d, ["fix-the-cause"])
+    scripted([write_file("state/a.txt"), finish(summary="first reply")])
+    assert run_routine(d, server, run_ts=TS)[0] == "ok"
+
+    atomic_write_json(d / "inbox" / "msg-1.json", {"text": "now do b", "via": "web-converse"})
+
+    def corrected_in_flight():
+        # lands AFTER this turn's drain: a correction to the leg in progress, which IS the edge
+        file_message(d, "no — use the short form", via="web")
+        return write_file("state/b.txt")
+
+    ep = scripted([corrected_in_flight, write_file("state/c.txt"),
+                   finish(summary="second reply")])
+    status, run_dir = run_routine(d, server, run_ts=TS, resume_from=TS)
+    assert status == "ok"
+    first_prompt = json.dumps(ep.calls[0]["messages"], ensure_ascii=False)
+    assert "now do b" in first_prompt and "[RULE fix-the-cause" not in first_prompt
+    events, _ = read_events(run_dir / "transcript.jsonl")
+    notes = [e["payload"]["text"] for e in events if e["type"] == "user_injection"
+             and e["payload"].get("source") == "engine" and "[RULE" in e["payload"]["text"]]
+    assert len(notes) == 1, notes          # the in-flight correction still fires, once
+
+
+def _signal_at_next_boundary(routine_dir, signal: str, slug: str) -> None:
+    """What the web layer writes when the user binds or unbinds a rule on a LIVE run."""
+    from rsched.paths import atomic_write_json
+
+    atomic_write_json(routine_dir / "runs" / TS / "control.json",
+                      {signal: {"slugs": [slug], "ts": f"{signal}-1"}})
+
+
+def test_an_unbound_rule_stops_assisting_the_live_run(make_routine, scripted):
+    """An unbind reaches a live run at once — "they no longer bind this routine. Stop applying
+    them" — so the rule's assists must stop too, or it goes on holding actions and deferring
+    the finish of a run it no longer binds."""
+    d = make_routine(slug="assistr")
+    server = _server(d)
+    _rule(server, "fix-the-cause", "observation", "repeated-failure", "change route now")
+    _hold_rule(d, ["fix-the-cause"])
+
+    def fail_then_unbind():
+        _signal_at_next_boundary(d, "drop_rules", "fix-the-cause")
+        return util("nonexistent-util")
+
+    ep = scripted([fail_then_unbind, util("nonexistent-util"), write_file("state/a.txt"),
+                   finish()])
+    status, _run_dir = run_routine(d, server, run_ts=TS)
+    shown = _shown(ep)
+    assert "UNBOUND the general rule(s) 'fix-the-cause'" in shown
+    assert "change route now" not in shown          # the second failure found no assist
+    assert status == "ok"
+
+
+def test_a_rule_bound_mid_run_brings_its_assists(make_routine, scripted):
+    """Binding is the same act in the other direction: the rule's prose reaches the live run as
+    a note, and the rule's assists — part of the rule — reach it with the prose."""
+    d = make_routine(slug="assistr")
+    server = _server(d)
+    _rule(server, "fix-the-cause", "observation", "repeated-failure", "change route now")
+    _hold_rule(d, [])
+
+    def fail_then_bind():
+        _signal_at_next_boundary(d, "add_rules", "fix-the-cause")
+        return util("nonexistent-util")
+
+    ep = scripted([fail_then_bind, util("nonexistent-util"), write_file("state/a.txt"),
+                   finish()])
+    status, _run_dir = run_routine(d, server, run_ts=TS)
+    shown = _shown(ep)
+    assert "the user bound the general rule 'fix-the-cause'" in shown
+    assert "[RULE fix-the-cause — the same call has now failed twice this run]" in shown
+    assert status == "ok"
+
+
 def test_a_pre_finish_assist_defers_the_finish_exactly_once(make_routine, scripted):
     """decision-record's moment — the one that costs a turn, because a line surfaced as the
     run ends is a line nobody can act on."""

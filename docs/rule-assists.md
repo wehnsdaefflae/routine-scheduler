@@ -164,10 +164,14 @@ turns. The four-way label lands with the hold payload, where a turn is actually 
 An assist is part of the rule, not a permission of its own. The user already decided this
 routine practises this rule — `effect.when` is exactly that decision — and an assist changes
 only WHEN its line is read, never what the routine may do. Nothing here can reach a routine
-that does not hold the rule.
+that does not hold the rule — mid-run included: a rule the user binds to a live run brings its
+assists with the note that delivers its prose, and one they unbind takes its assists with it
+(`assist.rules_bound` / `rules_unbound`, called from `engine/switches.py`). An unbind that left
+them firing had the rule still holding actions and deferring the finish of a run it no longer
+bound.
 
 `DEFAULT_RULES` is not empty, so this layer is live in most routines from the day it ships —
-which is why precision, not coverage, is the budget, and why only three of the seven assists
+which is why precision, not coverage, is the budget, and why only four of the eight assists
 cost a turn.
 
 ## The payload axis, and what exists
