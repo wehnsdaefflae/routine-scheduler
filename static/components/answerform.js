@@ -64,8 +64,29 @@ export function answerForm(q, {
     "ask back") : null;
   // quick mode drops the free-text row (input still backs the option buttons' submit path)
   const row = quick ? null : el("div", { class: "row mt" }, input, send, discuss, extraControls);
-  const decide = async (decision, btnRow) => {
-    for (const b of btnRow.querySelectorAll("button")) b.disabled = true;
+  // one-click decision (F189): clicking an option SUBMITS it — free text stays possible via
+  // the input; digit keys still only prefill (editable before Enter).
+  const optionBtns = request.length ? [] : options.map((o, i) => el("button", {
+    class: "btn small", ...(numbered ? { title: `press ${i + 1}` } : {}),
+    onclick: () => { input.value = o; submit(false); },
+  }, numbered ? `${i + 1} · ${o}` : o));
+  const decisionBtns = request.length ? DECISIONS.map(([key, label, help]) => el("button", {
+    class: `btn small${key === "allow_forever" ? " primary" : ""}`, title: help,
+    onclick: () => decide(key),
+  }, label)) : [];
+  // ONE answer in flight, whichever control starts it — send, ask back, an option, a typed
+  // decision or a key. Only the button pressed used to be disabled, so a double-click on an
+  // option (or Enter pressed twice) posted the answer twice: two toasts, two onSuccess — and on
+  // the Decisions page the second spliced ANOTHER question's input out of the arrow-key order.
+  // A sent answer leaves the form locked (the host settles it); a failed one unlocks it.
+  let sending = false;
+  const lock = (on) => {
+    for (const b of [send, discuss, ...optionBtns, ...decisionBtns]) if (b) b.disabled = on;
+  };
+  const decide = async (decision) => {
+    if (sending) return;
+    sending = true;
+    lock(true);
     try {
       await submitText(null, false, decision);
       forgetField(input);
@@ -84,32 +105,19 @@ export function answerForm(q, {
         return;
       }
       toastError(err);
-      for (const b of btnRow.querySelectorAll("button")) b.disabled = false;
+      sending = false;
+      lock(false);
     }
   };
-  const decisionRow = request.length ? (() => {
-    const btnRow = el("div", { class: "row mt answer-opts", style: "gap:8px" });
-    for (const [key, label, help] of DECISIONS) {
-      btnRow.append(el("button", {
-        class: `btn small${key === "allow_forever" ? " primary" : ""}`, title: help,
-        onclick: () => decide(key, btnRow),
-      }, label));
-    }
-    return el("div", {},
-      el("div", { class: "row mt", style: "gap:6px;flex-wrap:wrap" },
-        el("span", { class: "faint small" }, "requests access to:"),
-        request.map((e) => el("code", { class: "small" }, e))),
-      btnRow);
-  })() : null;
+  const decisionRow = request.length ? el("div", {},
+    el("div", { class: "row mt", style: "gap:6px;flex-wrap:wrap" },
+      el("span", { class: "faint small" }, "requests access to:"),
+      request.map((e) => el("code", { class: "small" }, e))),
+    el("div", { class: "row mt answer-opts", style: "gap:8px" }, decisionBtns)) : null;
   const node = el("div", {},
     decisionRow,
-    !request.length && options.length ? el("div", { class: "row mt answer-opts", style: "gap:8px" },
-      options.map((o, i) => el("button", {
-        class: "btn small", ...(numbered ? { title: `press ${i + 1}` } : {}),
-        // one-click decision (F189): clicking an option SUBMITS it — free text stays
-        // possible via the input; digit keys still only prefill (editable before Enter).
-        onclick: () => { input.value = o; submit(false); },
-      }, numbered ? `${i + 1} · ${o}` : o))) : null,
+    optionBtns.length ? el("div", { class: "row mt answer-opts", style: "gap:8px" }, optionBtns)
+      : null,
     q.default && defaultLine ? el("div", { class: "faint small mt",
       title: "what the routine does if this stays unanswered" },
       `↪ without an answer: ${q.default}`) : null,
@@ -117,9 +125,9 @@ export function answerForm(q, {
 
   const submit = async (intermediate = false) => {
     const text = input.value.trim();
-    if (!text) return;
-    send.disabled = true;
-    if (discuss) discuss.disabled = true;
+    if (!text || sending) return;
+    sending = true;
+    lock(true);
     try {
       await submitText(text, intermediate);
       forgetField(input);   // submitted — the draft must never refill this field
@@ -134,8 +142,8 @@ export function answerForm(q, {
         return;
       }
       toastError(err);
-      send.disabled = false;
-      if (discuss) discuss.disabled = false;
+      sending = false;
+      lock(false);
     }
   };
   send.onclick = () => submit(false);
