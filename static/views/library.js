@@ -200,11 +200,12 @@ export async function render(view, sub, query = {}) {
 
   function item(label, problems, tags, onopen, summary, href) {
     // a REAL href (the section deep-link) so middle-click/new-tab work; a plain click
-    // still opens the inline editor without a re-route
+    // still opens the inline editor without a re-route. Opening is a fetch that can fail —
+    // the same toast the deep link below gives, never an uncaught rejection.
     return el("tr", {},
       el("td", {}, el("a", { href: href || "#", onclick: (e) => {
         if (e.metaKey || e.ctrlKey || e.shiftKey || e.button === 1) return;
-        e.preventDefault(); onopen();
+        e.preventDefault(); onopen().catch((err) => toastError(err));
       } }, label)),
       // null, not "": el() drops a null child, and an empty TEXT node would keep the cell from
       // matching `td:empty` — which is what folds an unused line away when the row stacks
@@ -295,13 +296,15 @@ export async function render(view, sub, query = {}) {
   // this deletion costs is particular: the reminder stops holding actions everywhere at the
   // next run, and each routine's evidence about it is deliberately NOT removed with it.
   async function removeReminder(r) {
-    const gone = await deleter(`/library/reminders/${r.id}`,
-      `Remove the curated reminder ${r.id}?\n\n/${r.regex}/ — ${r.description}\n\n`
-      + "Routines whose reminders capability is at `global` stop being held by it from their "
-      + "next run. Their own tallies (how often it fired, and how those fires turned out) are "
-      + "each routine's own state and are left alone. Recoverable from the library's git "
-      + "history.")();
-    if (gone) { toast(`removed ${r.id}`); remount(); }
+    try {
+      const gone = await deleter(`/api/library/reminders/${r.id}`,
+        `Remove the curated reminder ${r.id}?\n\n/${r.regex}/ — ${r.description}\n\n`
+        + "Routines whose reminders capability is at `global` stop being held by it from their "
+        + "next run. Their own tallies (how often it fired, and how those fires turned out) are "
+        + "each routine's own state and are left alone. Recoverable from the library's git "
+        + "history.")();
+      if (gone) { toast(`removed ${r.id}`); remount(); }
+    } catch (err) { toastError(err, 5000); }
   }
 
   async function openWorkflow(slug) {
