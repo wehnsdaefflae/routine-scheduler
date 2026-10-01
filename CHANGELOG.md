@@ -15,6 +15,215 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.372.0] — 2026-10-01
+
+### The decisions from the 0.371.0 review, built
+
+items: operator (2026-10-01), a guided decision session after the 0.371.0 review — each change
+below is the option the operator picked
+
+#### Models
+
+- **The Anthropic adapter never forces the tool choice.** Fable 5.1, Opus 5.5 and Sonnet 5.5
+  answer a forced `tool_choice` with a 400; 0.371.0 recovered by retrying on `auto`, but every
+  structured call re-learned it — one wasted round trip on every turn those models served. The
+  action tool is now offered on `auto` held to one call; a reply in text has its action read
+  from the text. Haiku 4.5, which honours forcing, is no longer held to it. After upgrading,
+  check a Codex model's first turn through the subscription proxy (docs/claude-proxy-cutover.md).
+
+#### Child runs
+
+- Docs only: parallel children are each sliced from the remainder they see and are not netted
+  against each other, so a fan-out can together spend more than the parent had left. The
+  operator kept that; engine/child.py and docs/child-runs.md no longer promise otherwise.
+
+#### Deploy — the images
+
+- The engine image runs **Node 24 LTS** (24.21.0, npm 11.19.0), copied out of the official
+  node image; NodeSource's piped installer is gone. The claude CLI (`@anthropic-ai/claude-code`,
+  now a native binary placed by its postinstall) declares Node ≥ 22, which the old Node 20 was
+  already below; the build now runs `claude --version`, so a stub left by a failed postinstall
+  fails the BUILD instead of the util's first call. The gh apt repository gets its own
+  `apt-get update` — the NodeSource installer had been doing it as a side effect.
+- **Every base image is pinned by digest** with its tag kept (python, node, uv, and the chrome and
+  tor Debian bases); deploy/DOCKER.md, "The image", says how to bump one.
+- **Every RUN runs under bash with pipefail**, so a failed download fails the step that caused it.
+- **The rsched container reports health**: a no-token probe of the console's web manifest every
+  30 s, a 5-minute start period covering a boot. `unhealthy` is a report, never a restart
+  (deploy/DOCKER.md, "Health"). tests/test_deploy_image.py pins all of it.
+
+#### Deploy — backups keep dated snapshots
+
+- **A bad night no longer overwrites the last good backup.** `deploy/backup.sh` writes
+  `<root>/snapshots/<YYYY-MM-DD>` every run with `rsync --link-dest` against the newest complete
+  snapshot: a file unchanged since then is a hard link, so a night costs only what changed, and
+  the run reports exactly what it added to the share (the line that would show a share unable to
+  hard-link). `latest` points at the newest complete snapshot.
+- **Retention:** the 14 newest, plus the newest of each of the 8 most recent older ISO weeks that
+  have one (~ten weeks); pruning happens only after a successful run and never takes the
+  snapshot just written.
+- **All or nothing:** a snapshot is built under a temporary name and takes its date only when
+  every home copied; a failed or interrupted run leaves no half snapshot and `latest` untouched.
+  A file that vanishes mid-copy (rsync exit 24) no longer fails the night.
+- **Restore:** `deploy/backup.sh --help` and deploy/DOCKER.md, "Restoring".
+- **Migration** (one-shot, expires 2026-11-15): the first run MOVES the existing single mirror
+  into the first snapshot — a rename, not a copy. tests/test_policy.py now checks MIGRATION
+  markers in deploy/*.sh too.
+- A deleted conversation is now recoverable for as long as retention keeps a night it existed.
+- The engine image carries `rsync`, so the release gate runs the backup tests instead of
+  skipping them.
+
+#### Decisions — "ask back" works on every blocking decision
+
+- **On a util, rule or curated-reminder approval, an access request or a secret-exposure
+  request, "ask back" now reaches the run at once.** The wait already ended, but every consumer
+  except `ask_user` turned the reply into its own "approval pending" line and dropped the
+  operator's words — the console's "the model will reply and re-ask" was true for plain
+  questions only. Each kind's observation now carries the words verbatim, worded once
+  (`obs_admin.dialog_reply`): answer them, then re-submit the action.
+- **The re-submission replaces the open record**, keyed by what the decision is ABOUT
+  (`(type, subject)` — the util, the rule, the reminder, a request's entity ids), so the
+  Decisions page keeps one card per decision. Fixed: an unrelated question after an ask-back no
+  longer deletes the approval the operator had not decided yet (a single "dialog" slot was
+  resolved by whatever plain question came next).
+- An ask-back never approves, grants or runs anything; approve/decline and the access buttons
+  decide exactly as before, and a plain reply that settles nothing is still held until the
+  decision is made. Fixed too: a curated-reminder op carried again on a finish after an
+  ask-back is re-submitted instead of skipped as a replay.
+- Internal: the `config_patch` filing check moved to `engine/config_bridge.py`.
+- **An ask-back's record is superseded by a re-submission in a later leg too** — after a
+  restart between the two, or in a conversation's next reply. The open records were keyed in
+  memory, so a resumed leg filed a second card beside the first; the `question` event now
+  carries the subject and a resumed leg re-keys every record still open from the whole
+  transcript (`engine/askback.py`).
+- **A finish never ends the run over an ask-back on the approval it carried.** A `remind` op
+  riding a finish can file a curated reminder's approval; a finish that stands has no
+  observation for the operator's words to ride, so the finish gate now sets it aside like a
+  user message that arrived while finishing, and the finish that carries the op again
+  re-submits it.
+
+#### Runs — once means once
+
+- **A resumed run no longer repeats an intervention it already spent.** A reminder or rule
+  HOLD the run had confirmed, a rule assist that had fired, the one finish deferral across all
+  assists, the verifier's single challenge per claimed line, and the warning before old context
+  is archived were all in-memory ledgers that every resumed leg (a restart, a crash, an
+  operator resume, a parked question answered after its process died) started EMPTY. Each layer
+  now rebuilds its own from the transcript (`engine/guardscope.py`; the facts an event did not
+  record ride as payload keys — `assists`, `undo_point`, `evict_warning` — no new event type).
+- **The scope is the operator's decision:** once per RUN for a routine; once per REPLY in a
+  conversation, because each reply is a new task — a reply cut off and resumed keeps its own.
+- A label for a reminder hold made before a restart is accepted after it, and counted once; a
+  write into a repo the run had found clean stays unheld after a resume.
+- The hold and finish-deferral messages say "per run — per reply, in a conversation".
+
+#### Console — the frontend follow-ups
+
+- **A console element can no longer carry a script string as an event handler**: `el()` takes
+  a function under any `on*` name, whatever its case, and refuses anything else (a string there
+  becomes an inline handler the browser compiles as script). `onClick: fn` now listens for
+  `click`, and a null `class` no longer renders as the word "null".
+- **Once per press**: arming or cancelling a one-shot (a double press armed two for one
+  instant), setting or removing a routine's own secret, saving the gate script — which now says
+  when the write waits for the active run — Notifications, "finish setup" and proxy
+  re-authentication.
+- **Cancelling a confirm puts the keyboard back on the button that asked**, instead of
+  leaving focus on the page body.
+- An endpoint saved with a blank context window takes the server's default instead of the
+  console's copy of it (25 000).
+- The four jump-to journeys (an item reference, a settings field, a setup fix, a page section)
+  share one fold-opening and flash helper (`static/landing.js`).
+- The static layout tests read the stylesheet's rules, not comments that merely name them.
+
+#### Conversations — ⚑ flag a reply as a refusal
+
+- **Every conversation reply has a ⚑ control** (beside ⟲ rewind and ⑂ fork). After a warning
+  gate — which quotes the message that will be re-sent, names the model that takes over, and
+  says plainly that files written and messages sent after that point are NOT undone — the reply
+  and everything after it are archived (the D69 rewind's own cut, reversible by hand), the
+  message that produced it is re-sent verbatim, and the conversation's UNCENSORED model answers
+  it and stays its MAIN model from then on (`tool_call` is unchanged). With no uncensored model
+  configured, the gate asks for one from the catalog; the pick becomes both roles. Operator
+  decision 2026-10-01: the automatic refusal handling keeps the honeypot rule — the flag is the
+  one path on which the uncensored model answers and acts.
+- The flag is recorded: the engine writes a `refusal` event (`where: operator`) naming the turn,
+  the model that refused and the one taking over, and the chat shows it as a ⚑ line.
+- ⟲ rewind and ⚑ both reset the conversation's last result to the last reply KEPT — a discarded
+  reply no longer reaches the next leg's state digest as "Last run result".
+- **The refusal detector's shortcut reads only the opening sentence.** A reply that answers and
+  then says it "can't provide" one detail is no longer intercepted as a refusal; anything the
+  opening sentence does not settle goes to the classifier, as before.
+- The rewind cut moved to `engine/rewind.py`; the route is `web/api_refusal_flag.py`
+  (GET previews the gate's facts, POST validates everything before its first write).
+
+#### Console — capability settings, colours, the browser dock
+
+- **Permissions & capabilities has a "Run history & reminders" card** with three dials — how far
+  back a run reads its earlier runs, the consequence-reminder layer (none / local / global), and,
+  at global, who approves a reminder written to the library — on routine pages, conversation
+  headers and the new-conversation composer. The approval dials offer only values the server
+  accepts (a stray "off" is gone).
+- The routine page's General rules note says a bind or unbind made there takes effect at the next
+  run (it goes through the page's one accept, which waits for an active run).
+- A malformed util call (exit 2) or a timeout (exit 124) is drawn in the WARNING colour; coral
+  stays reserved for what waits on you.
+- **The browser preview connects to the shared screen the first time you open it** — at load only
+  where it rests open (≥1900px) — so a folded preview no longer takes the screen's one viewer slot.
+- A toast reads above an open dialog instead of blurred under its scrim; the side-TOC links and
+  the Settings section chips are keyboard stops; a call the secret gate stopped reads "NOT run —
+  secret exposure pending/declined" instead of "exit undefined"; a conversation's browser
+  screenshot opens through the one new-tab rule.
+
+#### The review's follow-up list, worked
+
+- **A routine is switched off in ONE place — the top-level `enabled`** every reader already reads.
+  `schedule.disabled` is folded into it once at boot across all three homes without changing any
+  routine's on/off state (`migrate_enabled`, expires 2026-11-15, recorded in
+  `.control/migrations/enabled.json`); the old key now reads as an unknown key.
+- **The settings page shows each capability setting as the run ENFORCES it**: a `capabilities:`
+  block that leaves a setting out holds the all-off value the engine reads, not a new routine's
+  default — the page had shown `reminders: local` where the engine ran `none`.
+- **Failover**: a run that stepped down a model chain no longer walks back up to the head it left
+  (members keyed by catalog name), and a model switch mid-retry no longer carries its failed
+  attempts into every later turn (`engine/turndebris.py`).
+- **The live library gets this release's util fixes** — `remote` (an exclusive machine's queue
+  in the box's own order; an unreachable host fails at once), `vision` (a rate limit reported
+  inside the deadline), `git` (a linked worktree or submodule; no commit lock in a work tree),
+  `reminder-census` — through a one-shot boot migration that replaces a live util only while it
+  is byte-identical to the seed it supersedes (`migrate_seed_utils`, expires 2026-11-15).
+- A settings pattern can no longer hand a credential store to the routines made from it; a library
+  doc can expect a folder under `~`; a container whose library is an empty bind mount clones the
+  configured remote; a share mount whose server is gone no longer holds a finished run's process
+  at unmount; the dormant boot-time permission adopter is gone.
+- Run gates read "today" on the routine's own clock; a flagged item leads the Messages page again;
+  a search typed while the index refreshes answers at once and a busy index is a 503, never "bad
+  query syntax"; a broken settings-pattern file can be deleted; a server setting is checked by the
+  config's own field and the refusal names it; `rsched scaffold` refuses a zone no routine can load.
+- A reminder or rule sees which files a multi-image `view_image` looks at; a page written deep in
+  a report tree still earns the "look at it" reminder; a child's files are handed back by the one
+  place that finalizes it; a recipe file saved from the console lands through one code path.
+- The daemon keeps only a bounded tail (256 KB) of each engine's stderr — a long, chatty run no
+  longer grows the daemon by every byte it logs.
+- Comments, docstrings and docs name the code that does the thing (stale names swept).
+
+#### The live library, by hand
+
+- `rsched export` (library-sync's export stage) redacts `routine_token` and any `*_token`,
+  `*_secret`, `*_password`, `*_api_key` (library commit fd98b13); the 0.371.0 library-seed changes
+  and the `general-task` merge reached the live library the same day.
+- The 0.371.0 and 0.372.0 seed-util fixes reached it by hand (library commit 7d06482):
+  `pytest-run` and `reminder-census` were still the pre-0.371.0 seed, `vision` the 0.371.1 one;
+  `git` and `remote` had live edits since 2026-09-23 and were merged three ways — `git` keeps the
+  library's own 900 s sync ceiling and its staging-error naming (R1883) on top of the seed's
+  SIGTERM-first runner and option fencing.
+
+#### Handed to the routines
+
+- Every proposal the review left unbuilt is an entry in `docs/designs.md` — seventeen decided
+  ones and four headed **Decide:** whose first increment is to put the options and the review's
+  recommendation to the operator — by the operator's order: "the proposed changes all need to go
+  to self audit or the feature development routine".
+
 ## [0.371.1] — 2026-10-01
 
 ### Fixed — a fixed time the clock repeats when daylight saving ends fires once
