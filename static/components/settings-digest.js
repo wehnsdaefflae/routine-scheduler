@@ -81,7 +81,10 @@ export function describe(key, v) {
         (c.utils || []).length ? `utils ${list(c.utils)}` : "",
         c.confirm ? `util approval: ${c.confirm}` : "",
         c.runs ? `previous runs: ${c.runs}` : "",
-        c.reminders ? `reminders: ${c.reminders}` : ""].filter(Boolean).join(" · ") || "none";
+        c.reminders ? `reminders: ${c.reminders}` : "",
+        // named where its dial is shown: only `global` writes a reminder anyone approves
+        c.reminders === "global" && c.remind_confirm ? `reminder approval: ${c.remind_confirm}` : "",
+      ].filter(Boolean).join(" · ") || "none";
     }
     case "rules": return (v || []).length ? `${v.length} rule${v.length === 1 ? "" : "s"}: ${list(v)}`
       : "no general rules";

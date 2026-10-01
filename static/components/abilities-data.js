@@ -1,18 +1,53 @@
-// Option ladders and explanatory copy for the abilities panel. A card carries a dial only for
-// the approval level its doc's gated action rides on: a doc requires actions and utils alone,
-// so the run-history depth and the reminder stores are settings edited elsewhere on the page.
+// Option ladders and explanatory copy for the abilities panel.
+//
+// Every ladder is the SERVER's vocabulary for its key — grants.CONFIRM_LEVELS, RUN_HISTORY_LEVELS,
+// reminders.LEVELS — value for value and in its order, each with its one line of help. An option
+// the server refuses is a save that 422s; a held value with no option is a dial that cannot show
+// what the routine holds (tests/ui/test_ability_settings.py holds both ends). The approval
+// ladders once led with an `off` the server has never accepted: a write_util that is off is a
+// missing ACTION, not an approval level.
+//
+// A doc's card carries the approval dial its gated action rides on. The other three are
+// SETTINGS no doc switches on (a doc requires actions and utils alone), so they share a card of
+// their own: how far back a run reads, the reminder layer, and who approves a shared reminder.
+//
+// An option marked `heldOnly` is never OFFERED, only shown while it is what the mapping holds:
+// `runs: none` is a child run's scope, and a routine's own run reads its last run regardless
+// (D96), so choosing it would change nothing.
 export const CONFIRM_OPTIONS = [
-  ["off", "off — engine rejects write_util"],
   ["always", "on — every create/revise asks you"],
   ["creations", "on — new utils ask; revisions are autonomous"],
   ["never", "on — fully autonomous (selftest-gated)"],
 ];
 export const RULE_CONFIRM_OPTIONS = [
-  ["off", "off — engine rejects write_rule"],
   ["always", "on — every rule change asks you"],
   ["creations", "on — new rules ask; revisions are autonomous"],
   ["never", "on — fully autonomous (lint-gated)"],
 ];
+export const RUNS_OPTIONS = [
+  ["none", "none — the same as last: its previous run", { heldOnly: true }],
+  ["last", "last — its previous run only"],
+  ["all", "all — every run it keeps (longitudinal work)"],
+];
+export const REMINDER_OPTIONS = [
+  ["none", "none — off: no reminder holds an action"],
+  ["local", "local — leaves its own; heeds the shared ones"],
+  ["global", "global — also writes the shared ones, as curator"],
+];
+// Who approves a write to the library's SHARED reminders — revealed only at `global`, the one
+// level that can make one.
+export const REMIND_CONFIRM_OPTIONS = [
+  ["always", "on — every shared reminder it writes asks you"],
+  ["creations", "on — new ones ask; revising or deleting doesn't"],
+  ["never", "on — fully autonomous (regex-checked)"],
+];
+// What a mapping that leaves a setting out holds once saved: the server fills a missing key
+// with its all-off value (grants.SETTING_DEFAULTS, through capabilities_for), so a dial
+// resting on it shows what the save would write. Every read the panel is given fills all five.
+export const SETTING_DEFAULTS = {
+  confirm: "always", rule_confirm: "always", remind_confirm: "always",
+  runs: "none", reminders: "none",
+};
 
 // What a gated capability MEANS, with a concrete example — a bare action kind told the reader
 // nothing (F178, user order 2026-07-23). Kept verbatim from the panel this replaces.

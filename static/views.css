@@ -1320,7 +1320,9 @@ summary.setup-head::-webkit-details-marker { display: none; }
   display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px;
   align-items: start; padding: 11px 13px; cursor: pointer;
 }
-.ability.orphan .ability-head { cursor: default; }
+/* the two cards whose head is no checkbox: the uncovered capabilities, and the settings no doc
+   switches on (components/abilities-settings.js) */
+.ability.orphan .ability-head, .ability.ab-settings .ability-head { cursor: default; }
 .ability-name { font-size: var(--t-m); color: var(--ink); }
 /* The card's VERDICT in its head ("will fail" · "needs a decision" · "ready"; the uncovered
    card's count). The markup has named it `.pill` from the start and no rule ever defined one,
@@ -1364,6 +1366,9 @@ summary.setup-head::-webkit-details-marker { display: none; }
 .ab-row .ent { min-width: 0; }            /* let the grid shrink it instead of the select */
 .ab-row .ent-id { color: var(--ink); word-break: break-all; }
 .ab-row.has-control select { width: 100%; max-width: 260px; }
+/* the settings card spans the panel, so its dials size to their longest line of help rather
+   than clipping it at a card column's width */
+.ab-settings .ab-row.has-control select { width: auto; max-width: 100%; }
 .ability-more > summary {
   cursor: pointer; list-style: none; padding: 5px 13px; font-size: var(--t-s);
   color: var(--ink-3); border-top: 1px solid var(--rule);

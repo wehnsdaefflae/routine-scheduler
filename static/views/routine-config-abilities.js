@@ -1,7 +1,7 @@
-// Routine settings — ABILITIES: what this routine may do (conduct permissions and the
-// capabilities they switch on) and how it works (the general rules it practises). Behind "more":
-// the library's shared reminders it takes on and the effective surface — the read-only join of
-// everything the setup resolves to.
+// Routine settings — ABILITIES: what this routine may do (conduct permissions, the capabilities
+// they switch on, and the settings no doc switches on: run history and the reminder layer) and
+// how it works (the general rules it practises). Behind "more": the library's shared reminders
+// it takes on and the effective surface — the read-only join of everything the setup resolves to.
 //
 // A conduct doc and the capabilities it presumes are ONE decision — ticking a doc switches its
 // requirements on, and a capability a held doc requires has no off switch of its own (only the
@@ -62,11 +62,13 @@ export function abilitiesGroup(ctx) {
         ["what this routine is ALLOWED to do — enforced by the engine on every action. One card per ",
          "ability, carrying everything that ability needs: the action kinds and reserved utils it ",
          "requires, the secrets, roots and bindings it resolves to, plus its APPROVAL DIAL where it ",
-         "has one — who approves a util change, who approves a rule change. Enforcement reads the ",
-         "capabilities, not the conduct doc, so an ability whose requirements are not all switched ",
-         "on fails closed — its card says so, with the switch that fixes it inside that card. ",
-         "Only you can change any of this — a routine ",
-         "can never grant itself anything. Takes effect at the next run."],
+         "has one — who approves a util change, who approves a rule change. Below the cards sit ",
+         "three SETTINGS no doc switches on: how far back a run reads its earlier runs, the ",
+         "consequence-reminder layer, and — at global — who approves a reminder it writes to the ",
+         "library. Enforcement reads the capabilities, not the conduct doc, so an ability whose ",
+         "requirements are not all switched on fails closed — its card says so, with the switch ",
+         "that fixes it inside that card. Only you can change any of this — a routine can never ",
+         "grant itself anything. Takes effect at the next run."],
         abilities.node),
       ...settingsSection({ title: "General rules", id: "general-rules" },
         ["the rules this routine reads before the situations they govern. Each states a ",
@@ -78,8 +80,9 @@ export function abilitiesGroup(ctx) {
     ],
     more: [
       ...settingsSection({ title: "Shared reminders", id: "shared-reminders" },
-        ["cautions the library curates, taken on by choice: each HOLDS an action matching its ",
-         "pattern before it runs, so the run decides again with the consequence in front of it. ",
+        ["cautions the library curates, taken on by choice: while the reminder layer is on (its ",
+         "dial is under Permissions & capabilities), each HOLDS an action matching its pattern ",
+         "before it runs, so the run decides again with the consequence in front of it. ",
          "The routine's own reminders need no list — its runs leave them for themselves; they ",
          "are tallied (and deleted) under Recipe health."],
         reminders.node),

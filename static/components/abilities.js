@@ -38,6 +38,9 @@
 //                                 perform it is the defect this attribute exists to make
 //                                 impossible, so it is on the button, never on the row.
 //
+// Below the cards sit the three SETTINGS no doc switches on — run history, the reminder layer and
+// the shared-reminder approval — on a card of their own (components/abilities-settings.js).
+//
 // (permissions, capabilities, opts) in, {node, value} out, for its three hosts: the routine page,
 // the conversation rail and the composer.
 // `opts.surface` is optional — an unsaved conversation has no routine to resolve, so the cards
@@ -54,21 +57,24 @@ import { el } from "/static/util.js";
 import { docExpander } from "/static/components/docexpand.js";
 
 import {
-  CONFIRM_OPTIONS, RULE_CONFIRM_OPTIONS, ACTION_HELP, UTIL_HELP, ABSENT_UTIL, KIND_LABEL
+  CONFIRM_OPTIONS, RULE_CONFIRM_OPTIONS, SETTING_DEFAULTS, ACTION_HELP, UTIL_HELP, ABSENT_UTIL,
+  KIND_LABEL
 } from "/static/components/abilities-data.js";
 import { createOrphanCard } from "/static/components/abilities-orphans.js";
+import { selectDial, settingsCard } from "/static/components/abilities-settings.js";
 
 export function abilitiesPanel(permissions, capabilities, opts = {}) {
   const docs = permissions || [];
   const held = new Set(docs.filter((p) => p.active && !p.routine_only).map((p) => p.slug));
+  // The settings half of the mapping rests on what the panel is GIVEN: every read fills all five
+  // (the detail through routines_common.permission_layers_detail, the routine page's draft
+  // through patterns/fields.effective_capabilities). Only a draft can leave one out — a proposal
+  // naming just actions and utils — and that one shows what saving it would write.
   const caps = {
     actions: new Set(capabilities?.active?.actions || []),
     utils: new Set(capabilities?.active?.utils || []),
-    confirm: capabilities?.active?.confirm || "always",
-    rule_confirm: capabilities?.active?.rule_confirm || "always",
-    runs: capabilities?.active?.runs || "none",
-    reminders: capabilities?.active?.reminders || "none",
-    remind_confirm: capabilities?.active?.remind_confirm || "always",
+    ...Object.fromEntries(Object.entries(SETTING_DEFAULTS)
+      .map(([key, fallback]) => [key, capabilities?.active?.[key] || fallback])),
   };
   const surface = opts.surface?.nodes || null;
   // The mapping as SAVED. The panel is rebuilt from a fresh read after every save, so this is
@@ -144,28 +150,16 @@ export function abilitiesPanel(permissions, capabilities, opts = {}) {
    */
   function dialFor(doc) {
     const r = needs(doc);
+    const dial = (options, key, label) => ({ kind: "approval", state: "ok",
+      control: selectDial(options, caps[key], (v) => { caps[key] = v; },
+                          { key, label, after: render }) });
     if ((r.actions || []).includes("write_util")) {
-      return { kind: "approval", state: "ok",
-               control: selectDial(CONFIRM_OPTIONS, caps.confirm, (v) => { caps.confirm = v; }) };
+      return dial(CONFIRM_OPTIONS, "confirm", "who approves a util change");
     }
     if ((r.actions || []).includes("write_rule")) {
-      return { kind: "approval", state: "ok",
-               control: selectDial(RULE_CONFIRM_OPTIONS, caps.rule_confirm,
-                                   (v) => { caps.rule_confirm = v; }) };
+      return dial(RULE_CONFIRM_OPTIONS, "rule_confirm", "who approves a rule change");
     }
     return null;
-  }
-
-  function selectDial(options, current, set) {
-    // A card whose doc requires the capability never OFFERS the off value — off is the engine
-    // rejecting the very thing the ability is for. It still SHOWS it while that is where the
-    // mapping actually stands: a control resting on a value the routine does not hold reads as
-    // a closed row, leaving the reader nothing to move.
-    const sel = el("select", {},
-      ...options.filter(([v]) => v !== "off" || v === current).map(([v, label]) =>
-        el("option", { value: v, selected: current === v ? "" : null }, label)));
-    sel.onchange = () => { set(sel.value); render(); };
-    return sel;
   }
 
   /** A compact catalogue row for an ability the routine does NOT hold. No stack, no state:
@@ -266,6 +260,10 @@ export function abilitiesPanel(permissions, capabilities, opts = {}) {
 
   const orphanCard = createOrphanCard({
     surface, caps, savedCaps, held, docs, needs, baseName, stackRow, render });
+  // Built once and re-appended by every render, like the orphan slot: its values move only
+  // through its own dials, and a change there reports through repaint() without a rebuild.
+  const settings = [el("div", { class: "lbl" }, "Settings"),
+                    settingsCard({ caps, stackRow, changed: () => repaint() })];
 
   /** Which rows are staged for a change, whether save is live — and the uncovered card, which
    *  is rebuilt rather than repainted. What a row there OFFERS is decided by the docs ticked on
@@ -289,7 +287,8 @@ export function abilitiesPanel(permissions, capabilities, opts = {}) {
     const off = docs.filter((p) => !on.includes(p));
     host.replaceChildren();
     if (!docs.length) {
-      host.append(el("div", { class: "muted" }, "no permissions in the library"));
+      // the settings are the routine's whatever the library holds
+      host.append(el("div", { class: "muted" }, "no permissions in the library"), ...settings);
       return;
     }
     host.append(el("div", { class: "lbl" }, `Holds · ${on.length}`));
@@ -304,7 +303,7 @@ export function abilitiesPanel(permissions, capabilities, opts = {}) {
     // this routine holds a single doc — and a routine holding NONE is where a capability
     // switched on by nothing is likeliest. Inside the grid it had nowhere to appear in that
     // case, which is the one case the card is most about.
-    host.append(orphanSlot);
+    host.append(orphanSlot, ...settings);
     if (off.length) {
       const avail = [
         el("div", { class: "set-desc muted small", style: "margin:-4px 0 8px" },
@@ -329,9 +328,7 @@ export function abilitiesPanel(permissions, capabilities, opts = {}) {
     return {
       active: docs.filter((p) => (p.routine_only ? p.active : held.has(p.slug))).map((p) => p.slug),
       capabilities: { actions: [...caps.actions], utils: [...caps.utils],
-                      confirm: caps.confirm, rule_confirm: caps.rule_confirm,
-                      remind_confirm: caps.remind_confirm,
-                      runs: caps.runs, reminders: caps.reminders },
+                      ...Object.fromEntries(Object.keys(SETTING_DEFAULTS).map((k) => [k, caps[k]])) },
     };
   }
 
