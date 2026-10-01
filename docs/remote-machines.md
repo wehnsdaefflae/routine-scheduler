@@ -114,7 +114,16 @@ remote cancel gpu-box --job <id>                # terminate the job's process gr
 remote queue  gpu-box                           # who is waiting, in the order they will run
 remote push gpu-box --src ./data.tar --dest /srv/data.tar   # SFTP upload
 remote pull gpu-box --src /srv/out.ckpt --dest ./out.ckpt   # SFTP download
+remote pubkey gpu-box                           # the PUBLIC key a run presents, to install
 ```
+
+**A box that stopped accepting the key** (a reinstall, a restored snapshot, a home directory
+replaced by an upgrade) needs the key put back, and the private half lives in the Secrets store.
+`pubkey` derives the public half with the same loader `connect` authenticates with and prints
+the `authorized_keys` line, its SHA256 fingerprint and where it goes: a box set up with
+`deploy/setup-remote-agent-user.sh` reads that user's keys ONLY from the root-owned
+`/etc/ssh/authorized_keys/<user>`, so a line appended to `~<user>/.ssh/authorized_keys` there is
+never read.
 
 **Long jobs.** `exec` has a timeout and loses output if the connection drops — it is for short
 commands. A multi-minute-to-hours GPU job belongs in `submit`: it starts a detached process (its

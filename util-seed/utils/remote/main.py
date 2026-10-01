@@ -18,6 +18,7 @@ usage:
   gu remote push MACHINE --src LOCAL --dest REMOTE [--json]  # upload a file or a tree (SFTP)
   gu remote pull MACHINE --src REMOTE --dest LOCAL [--json]  # download a file (SFTP)
   gu remote scan-host HOST [--port N] [--json]               # read a host key line, for pinning
+  gu remote pubkey MACHINE [--json]                          # the PUBLIC key we present, to install in authorized_keys
   gu remote test MACHINE [--json]                            # connect + run `true`
   gu remote --selftest
 calls: (none)
@@ -107,6 +108,7 @@ past it and will collide with whatever is running.
 
 import argparse
 import base64
+import hashlib
 import io
 import json
 import os
@@ -309,6 +311,70 @@ def fair_share_order(tickets: list) -> list:
     # has one, in holder order, until all are drained
     return [t for row in zip_longest(*(by_holder[h] for h in holders)) for t in row
             if t is not None]
+
+
+def cmd_pubkey(m: dict, keys: dict[str, str]) -> dict:
+    """The PUBLIC half of the key this routine presents to a machine — the exact
+    `authorized_keys` line to install, plus its SHA256 fingerprint for comparing against what
+    is on the box. Offline. The key is loaded by `_load_key`, the loader `connect`
+    authenticates with, so the line is the key the box will actually be shown; and only its
+    public half travels on to `authorized_key`, so no private material can reach the output.
+
+    Why this verb exists: when a machine stops accepting the binding (a reinstall, a
+    dist-upgrade that replaced the home dir, a restored snapshot), the operator has to put a
+    key back on the box — and could previously only guess WHICH public key the scheduler
+    presents, because the private half lives in the Secrets store and no verb exposed its
+    counterpart. A public key is not a secret; publishing it is the normal way to install it.
+    """
+    pem = keys.get(m["name"]) or ""
+    if not pem.strip():
+        raise RemoteError(f"machine {m['name']!r} has no private key available — set its "
+                          "key_var secret in Settings → Secrets")
+    pkey = _load_key(pem)
+    return authorized_key(m, pkey.get_name(), pkey.get_base64(), bits=pkey.get_bits())
+
+
+def authorized_key(m: dict, keytype: str, b64: str, *, bits: int | None = None) -> dict:
+    """`pubkey`'s payload, built from the public half alone: the line, its OpenSSH SHA256
+    fingerprint, and where the line goes.
+
+    WHERE is one of two files, and the hint names both. A box set up with
+    deploy/setup-remote-agent-user.sh reads the user's keys ONLY from the root-owned
+    `/etc/ssh/authorized_keys/<user>` (its `Match User` block sets AuthorizedKeysFile), so a
+    line appended to `~<user>/.ssh/authorized_keys` there is never read; anywhere else it is
+    that user's own file. `sshd -T` names the one a given box reads.
+    """
+    name, user, host = m["name"], m.get("user") or "", m.get("host") or ""
+    who = user or "USER"
+    line = f"{keytype} {b64} rsched-{name}"
+    fingerprint = "SHA256:" + base64.b64encode(
+        hashlib.sha256(base64.b64decode(b64)).digest()).decode().rstrip("=")
+    return {
+        "command": "pubkey",
+        "machine": name,
+        "user": user,
+        "host": host,
+        "port": int(m.get("port") or 22),
+        "key_type": keytype,
+        "bits": bits,
+        "fingerprint": fingerprint,
+        "authorized_keys_line": line,
+        "install_hint": (
+            f"On {host or 'the box'}, as root, append the line to the file sshd reads {who}'s "
+            f"keys from — `sshd -T -C user={who},host=localhost,addr=127.0.0.1 | grep -i "
+            f"authorizedkeysfile` names it.\n"
+            f"A box set up with deploy/setup-remote-agent-user.sh reads ONLY the root-owned "
+            f"/etc/ssh/authorized_keys/{who}:\n"
+            f"  echo '{line}' >> /etc/ssh/authorized_keys/{who}\n"
+            f"Anywhere else it is the user's own file:\n"
+            f"  install -d -m 700 ~{who}/.ssh\n"
+            f"  echo '{line}' >> ~{who}/.ssh/authorized_keys\n"
+            f"  chmod 600 ~{who}/.ssh/authorized_keys && chown -R {who}: ~{who}/.ssh\n"
+            f"Then verify from the scheduler with: gu remote test {name}"),
+        "note": ("This is the PUBLIC half only — safe to paste anywhere. Compare `fingerprint` "
+                 "with `ssh-keygen -lf <that file>` on the box to see whether the right key is "
+                 "already installed."),
+    }
 
 
 def _ticket_view(ticket: dict) -> dict:
@@ -1541,6 +1607,21 @@ def selftest() -> int:
     for _tok in ("queued=", "echo stopped", "echo pending", "echo running", "echo nojob"):
         assert _tok in _snip, f"status snippet can never emit {_tok!r}"
 
+    # pubkey: the payload comes from the PUBLIC half alone. The vector is a published one —
+    # github.com's ed25519 host key and the fingerprint GitHub publishes for it — so the
+    # arithmetic is checked against OpenSSH's own answer rather than against itself.
+    _gh = "AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl"
+    _pk = authorized_key({"name": "g", "user": "agent", "host": "h"}, "ssh-ed25519", _gh)
+    assert _pk["fingerprint"] == "SHA256:+DiY3wvvV6TuJJhbpZisF/zLDA0zPMSvHdkr4UvCOqU", _pk
+    assert _pk["authorized_keys_line"] == f"ssh-ed25519 {_gh} rsched-g", _pk
+    assert "/etc/ssh/authorized_keys/agent" in _pk["install_hint"], \
+        "a box set up by setup-remote-agent-user.sh reads ONLY that file; the hint must name it"
+    try:
+        cmd_pubkey({"name": "g"}, {})
+        raise AssertionError("a machine with no key must be refused")
+    except RemoteError as exc:
+        assert "no private key" in str(exc), exc
+
     selftest_queue()
     print("selftest: ok", file=sys.stderr)
     return 0
@@ -1712,6 +1793,7 @@ def main() -> int:
         sp.add_argument("--src", required=True); sp.add_argument("--dest", required=True)
     sp = leaf("scan-host", help="read a host's public key (for pinning)")
     sp.add_argument("host"); sp.add_argument("--port", type=int, default=22)
+    leaf("pubkey", help="the PUBLIC key this routine presents to a machine (to install it)")
     leaf("test", help="connect + run true")
 
     args = p.parse_args()
@@ -1719,7 +1801,7 @@ def main() -> int:
         return selftest()
     if not args.op:
         p.error("a command is required (list | exec | submit | status | logs | cancel | "
-                "queue | push | pull | scan-host | test)")
+                "queue | push | pull | scan-host | pubkey | test)")
 
     machines, keys = load_machines()
     exit_code = 0
@@ -1755,6 +1837,8 @@ def main() -> int:
                 payload = cmd_push(m, keys, args.src, args.dest)
             elif args.op == "pull":
                 payload = cmd_pull(m, keys, args.src, args.dest)
+            elif args.op == "pubkey":
+                payload = cmd_pubkey(m, keys)
             else:                                    # test (argparse-gated to the leaves above)
                 payload = cmd_test(m, keys)
     except RemoteError as exc:

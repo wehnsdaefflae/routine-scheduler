@@ -392,7 +392,8 @@ connect (paramiko `RejectPolicy` — no TOFU in a headless run). Pieces:
   which is what `shell` used until 0.287.0 promoted it to an action kind): `list` / `exec` (short blocking) / `submit`·`status`·`logs`·`cancel` (DETACHED jobs
   for long GPU work — a setsid process group, killable; `--notify-webhook <the routine's own
   trigger URL>` lets the job ping the routine on completion instead of polling) / `push`·`pull`
-  (SFTP) / `scan-host` · `test`. Host keys pinned; a mismatch refuses.
+  (SFTP) / `scan-host` · `pubkey` (the public half of the key a run presents, to install on
+  the box) · `test`. Host keys pinned; a mismatch refuses.
 - **Engine injection** mirrors OAuth: `exec_env._machine_env(ctx)` (merged with `_connection_env`
   in `_extra_secrets`) passes the two vars to `run_util` as `extra_secrets`, under the SAME
   declared-var gate — a key reaches a util iff the routine binds the machine AND the util declares

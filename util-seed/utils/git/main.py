@@ -634,6 +634,40 @@ def _identity_for(repo: Path) -> list[str]:
 NO_EDITOR = ["-c", "core.editor=true"]
 
 
+#: The SYNC path's ceiling, and why it is 900 s and not the runner's 60 (2026-09-28,
+#: library-sync run 20260928-000003): staging, fetching, pulling and pushing are size- and
+#: network-bound, and the routine-scheduler-libraries mirror carries multi-hundred-MB state
+#: files — staging ~285 changed paths there blew a 60 s limit and killed `git add` mid-run,
+#: which left a stale `.git/index.lock` and reported only "timed out after 60 seconds": a repo
+#: wedged by the tool meant to sync it. The timeout exists to stop a genuine hang, so it sits
+#: well above the slowest legitimate run — and it still ends git through `_git`, SIGTERM first.
+_SYNC_TIMEOUT = 900
+
+
+def _sync_git(repo: Path, *args: str, timeout: float = _SYNC_TIMEOUT) -> subprocess.CompletedProcess:
+    """`_git` at the sync path's ceiling (`_SYNC_TIMEOUT`)."""
+    return _git(repo, *args, timeout=timeout)
+
+
+def _stage_all(repo: Path) -> str:
+    """`git add -A`, returning git's OWN error text when staging fails ("" on success).
+
+    R1883 (llmsectest-weekday, via self-audit): the return code of this step used to be
+    discarded. When staging failed for an environmental reason -- `insufficient permission for
+    adding an object to repository database .git/objects`, a stale index.lock, a full disk --
+    the sync carried on to the commit step, which reported git's generic "Changes not staged
+    for commit". That sentence is true and useless: it describes the state, not the cause, and
+    it reads to every caller as "there was nothing to commit". A 416-turn run's entire output
+    went uncommitted behind it, and the reporter spent three attempts diagnosing the wrong
+    layer. git had already printed the real reason; the util threw it away.
+    """
+    r = _sync_git(repo, "add", "-A")
+    if r.returncode == 0:
+        return ""
+    return ((r.stderr or r.stdout).strip() or
+            f"git add -A failed with exit {r.returncode} and printed nothing")
+
+
 def _named_git_dir(dot_git_file: Path) -> Path | None:
     """The git dir a `.git` FILE names (`gitdir: <path>`, relative to the file's own dir), or
     None when it names none that exists — paths._named_git_dir's copy (a util cannot import
@@ -693,7 +727,7 @@ def _conflicts(repo: Path) -> list[dict]:
     """Every unmerged path with its conflict kind, from the index rather than from parsing
     git's prose (which is localized and changes between versions). NUL-separated (`-z`), so a
     path comes back exactly as the file is named — the caller opens it to resolve it."""
-    out = _git(repo, "ls-files", "-u", "-z").stdout.split("\0")
+    out = _sync_git(repo, "ls-files", "-u", "-z").stdout.split("\0")
     stages: dict[str, set[int]] = {}
     for line in out:
         # "<mode> <sha> <stage>\t<path>"
@@ -714,7 +748,7 @@ def _conflicts(repo: Path) -> list[dict]:
 
 
 def _rebase_in_progress(repo: Path) -> bool:
-    git_dir = Path(_git(repo, "rev-parse", "--git-dir").stdout.strip() or ".git")
+    git_dir = Path(_sync_git(repo, "rev-parse", "--git-dir").stdout.strip() or ".git")
     if not git_dir.is_absolute():
         git_dir = repo / git_dir
     return (git_dir / "rebase-merge").exists() or (git_dir / "rebase-apply").exists()
@@ -727,12 +761,12 @@ def _rescue_tag(repo: Path, branch: str) -> str:
     the remote's changes, that commit is still reachable from this tag. Cheap insurance
     against the failure this util cannot otherwise undo.
     """
-    remote_tip = _git(repo, "rev-parse", f"origin/{branch}").stdout.strip()
+    remote_tip = _sync_git(repo, "rev-parse", f"origin/{branch}").stdout.strip()
     if not remote_tip:
         return ""
     stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
     tag = f"git-sync-pre-rebase/{branch}/{stamp}"
-    _git(repo, "tag", "-f", tag, remote_tip)
+    _sync_git(repo, "tag", "-f", tag, remote_tip)
     return tag
 
 
@@ -747,18 +781,21 @@ def finish_rebase(repo_path: str, push: bool = True) -> dict:
     repo = Path(repo_path).expanduser()
     if not _rebase_in_progress(repo):
         return {"repo": str(repo), "ok": False, "error": "no rebase in progress"}
-    branch = (_git(repo, "rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
-              or _git(repo, "symbolic-ref", "--short", "HEAD").stdout.strip() or "main")
+    branch = (_sync_git(repo, "rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
+              or _sync_git(repo, "symbolic-ref", "--short", "HEAD").stdout.strip() or "main")
     with _repo_lock(repo):
-        _git(repo, "add", "-A")
-        r = _git(repo, *_identity_for(repo), *NO_EDITOR, "rebase", "--continue")
+        stage_error = _stage_all(repo)
+        if stage_error:
+            return {"repo": str(repo), "ok": False, "rebase_in_progress": True,
+                    "stage_failed": True, "error": "git add -A failed: " + stage_error[:300]}
+        r = _sync_git(repo, *_identity_for(repo), *NO_EDITOR, "rebase", "--continue")
         if r.returncode != 0:
             return {"repo": str(repo), "ok": False, "rebase_in_progress": True,
                     "conflicts": _conflicts(repo),
                     "error": (r.stderr or r.stdout).strip()[:300]}
     result: dict = {"repo": str(repo), "rebase_in_progress": False, "resolved": True}
-    if push and _git(repo, "remote").stdout.strip():
-        pr = _git(repo, "push", "origin", branch)
+    if push and _sync_git(repo, "remote").stdout.strip():
+        pr = _sync_git(repo, "push", "origin", branch)
         result["pushed"] = pr.returncode == 0
         if pr.returncode != 0:
             result["push_error"] = (pr.stderr or pr.stdout).strip()[:300]
@@ -773,7 +810,7 @@ def abort_rebase(repo_path: str) -> dict:
         return {"repo": str(repo), "ok": True, "aborted": False,
                 "note": "no rebase in progress"}
     with _repo_lock(repo):
-        r = _git(repo, "rebase", "--abort")
+        r = _sync_git(repo, "rebase", "--abort")
     return {"repo": str(repo), "ok": r.returncode == 0, "aborted": r.returncode == 0}
 
 
@@ -789,13 +826,18 @@ def _sync_run(repo_path: str, message: str = "", push: bool = True, pull: bool =
     # routine autocommitting THIS dir at the same instant takes turns instead of colliding.
     identity = _identity_for(repo)          # the commit's author AND the rebase's committer
     with _repo_lock(repo):
-        _git(repo, "add", "-A")
-        status = _git(repo, "status", "--porcelain").stdout.strip()
+        stage_error = _stage_all(repo)
+        if stage_error:
+            # Fail HERE, naming the layer, instead of letting the commit step report a
+            # generic "nothing staged" for what is really a filesystem/index failure.
+            return {"repo": str(repo), "ok": False, "committed": False,
+                    "stage_failed": True, "error": "git add -A failed: " + stage_error[:300]}
+        status = _sync_git(repo, "status", "--porcelain").stdout.strip()
         committed = False
         commit_error = ""
         if status:
             msg = message or "sync"
-            r = _git(repo, *identity, "commit", "-qm", msg)
+            r = _sync_git(repo, *identity, "commit", "-qm", msg)
             committed = r.returncode == 0
             if not committed:
                 # **A REFUSED COMMIT IS A FAILURE AND MUST SAY SO (2026-09-11).** This
@@ -806,8 +848,8 @@ def _sync_run(repo_path: str, message: str = "", push: bool = True, pull: bool =
                 # unrecorded while the run believed it had landed. The hook's own text is
                 # the only thing that says what to change, so it travels with the result.
                 commit_error = (r.stderr or r.stdout).strip()[:500]
-        has_remote = bool(_git(repo, "remote").stdout.strip())
-        branch = _git(repo, "symbolic-ref", "--short", "HEAD").stdout.strip() or "main"
+        has_remote = bool(_sync_git(repo, "remote").stdout.strip())
+        branch = _sync_git(repo, "symbolic-ref", "--short", "HEAD").stdout.strip() or "main"
         pulled = False
         pull_attempted = False
         pull_error = ""
@@ -816,9 +858,9 @@ def _sync_run(repo_path: str, message: str = "", push: bool = True, pull: bool =
         if pull and has_remote:
             # rebase local work on remote; abort cleanly on conflict rather than leave a mess
             pull_attempted = True
-            _git(repo, "fetch", "--quiet", "origin", branch)
+            _sync_git(repo, "fetch", "--quiet", "origin", branch)
             rescue = _rescue_tag(repo, branch)
-            r = _git(repo, *identity, "pull", "--rebase", "--quiet", "origin", branch)
+            r = _sync_git(repo, *identity, "pull", "--rebase", "--quiet", "origin", branch)
             pulled = r.returncode == 0
             if not pulled:
                 pull_error = (r.stderr or r.stdout).strip()[:300]
@@ -827,7 +869,7 @@ def _sync_run(repo_path: str, message: str = "", push: bool = True, pull: bool =
                     # moment the conflicted content is reachable to read and resolve.
                     held = _conflicts(repo)
                 else:
-                    _git(repo, "rebase", "--abort")
+                    _sync_git(repo, "rebase", "--abort")
     if held:
         # a held rebase means HEAD is mid-replay — pushing now would publish a partial state
         return {"repo": str(repo), "committed": committed, "had_changes": bool(status),
@@ -839,7 +881,7 @@ def _sync_run(repo_path: str, message: str = "", push: bool = True, pull: bool =
     push_error = ""
     if push and has_remote:
         push_attempted = True
-        r = _git(repo, "push", "origin", branch)
+        r = _sync_git(repo, "push", "origin", branch)
         pushed = r.returncode == 0
         if not pushed:
             push_error = (r.stderr or r.stdout).strip()[:300]
@@ -894,11 +936,50 @@ def _sync_selftest() -> int:
         assert in_wt["committed"] and in_wt["ok"] is True, in_wt
         assert not (wt / ".rsched-commit.lock").exists(), "the lock is a file in the work tree"
         assert not _git(wt, "status", "--porcelain").stdout.strip(), "the tree is not clean"
+        _selftest_stage_failure(Path(tmp))
         _selftest_conflicts(Path(tmp))
         _selftest_hook_refusal(Path(tmp))
         _selftest_identity(Path(tmp))
     print("selftest: ok", file=sys.stderr)
     return 0
+
+
+def _selftest_stage_failure(tmp: Path) -> None:
+    """R1883: a FAILED `git add` must name the staging failure, not look like an empty diff.
+
+    The reporter (llmsectest-weekday, via self-audit) lost a 416-turn run's entire output to
+    this: `git add -A` failed with `insufficient permission for adding an object to repository
+    database .git/objects`, the return code was discarded, and the commit step then reported
+    git's generic \"Changes not staged for commit\" -- which reads as \"nothing to commit\".
+    Three attempts at the wrong layer before the real error surfaced.
+
+    Reproduced here the same way it happened in the wild: make the object database unwritable,
+    so git itself produces that exact message. The assertion is on WHAT THE CALLER IS TOLD --
+    ok=False, stage_failed, and git's own words quoted -- because that is the whole defect.
+    """
+    repo = tmp / "stagefail"
+    repo.mkdir()
+    subprocess.run(["git", "-C", str(repo), "init", "-q"], check=True)
+    (repo / "work.txt").write_text("output that must not be silently dropped\n")
+    objects = repo / ".git" / "objects"
+    mode = objects.stat().st_mode
+    os.chmod(objects, 0o500)                      # readable, NOT writable: git cannot add
+    try:
+        res = _sync_run(str(repo), message="should not be reported as nothing-to-commit",
+                        push=False, pull=False)
+    finally:
+        os.chmod(objects, mode)                   # always restore, even on assertion failure
+    # running as root defeats the permission bit; skip rather than assert a false pass
+    if res.get("committed"):
+        return
+    assert res["ok"] is False, f"a failed staging must not report ok: {res}"
+    assert res.get("stage_failed") is True, f"the staging failure must be NAMED: {res}"
+    err = (res.get("error") or "").lower()
+    assert "git add" in err, f"the error must say which step failed: {res}"
+    assert "permission" in err or "unable" in err or "cannot" in err, \
+        f"git's OWN reason must be quoted, not a generic message: {res}"
+    assert "not staged for commit" not in err, \
+        f"the generic status message must not stand in for the cause: {res}"
 
 
 def _selftest_identity(tmp: Path) -> None:

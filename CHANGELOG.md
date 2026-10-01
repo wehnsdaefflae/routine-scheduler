@@ -15,6 +15,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.372.1] — 2026-10-01
+
+### Fixed — the boot migration no longer asks for a fix that already landed
+
+items: review follow-up (2026-10-01)
+
+- **`util-seed`'s `git` and `remote` are the live library's versions.** Both carried live edits
+  — `git`'s 900 s sync ceiling and its staging-error naming (R1883), `remote`'s `pubkey` verb —
+  that 0.372.0 merged into the LIVE copies by hand, so the seeds lagged the library, and
+  `migrate_seed_utils` would have recorded both as "edited since it was seeded … carry the fix
+  by hand": a task for self-audit that was already done. The seeds now match the library byte
+  for byte, the migration records all four utils "already current", and a fresh install gets
+  the same `git` and `remote` as this instance.
+- **`remote pubkey` names the file sshd actually reads.** Its install hint said to append to
+  `~<user>/.ssh/authorized_keys`; a box set up with `deploy/setup-remote-agent-user.sh` reads
+  that user's keys ONLY from the root-owned `/etc/ssh/authorized_keys/<user>`, so following the
+  hint changed nothing. It now names both files and the `sshd -T` line that tells them apart.
+  The verb loads the key with `connect`'s own loader instead of a copy of it, and builds its
+  payload from the public half alone; the selftest pins the fingerprint against github.com's
+  published ed25519 host key. The live library got the same file (library commit 92bd051), and
+  `docs/remote-machines.md` documents the verb.
+
 ## [0.372.0] — 2026-10-01
 
 ### The decisions from the 0.371.0 review, built
