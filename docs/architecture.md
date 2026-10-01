@@ -704,6 +704,11 @@ deliverable, a decision for the user, a blocker). A conversation's spine is its 
   here and rendered in the chat's side panel (html sandboxed, md/img/pdf/csv/json
   inline); routines get the SAME panel on the run view (`api_routines` `/artifacts` + `/artifact`,
   `components/artifacts.js` with `base: "routines"`), with the state-graph card on top.
+  A file fetched for the panel or the files card is a blob URL, and a blob URL carries the
+  console's ORIGIN — so a new tab opens one as itself only when its type cannot carry script
+  (raster image, audio, video, PDF, plain text, an untyped download) and frames everything else
+  in the same `allow-scripts` sandbox (`components/blobtab.js`): a page a routine wrote never
+  runs with the operator token in reach.
   The RAIL those cards sit in is one component too (`components/rail.js`, R341): the run view
   and the conversation view render the same collapsible sections, remembered per browser —
   they were divergent copies, and only the conversation one could collapse (F296/R340).

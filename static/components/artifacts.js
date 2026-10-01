@@ -4,10 +4,12 @@
 // PDF) — listed newest-first and rendered inline by type. Files are fetched WITH the
 // auth header and rendered from blob URLs (iframes/imgs can't carry Authorization); html
 // renders in a sandboxed iframe (scripts yes, same-origin no — an artifact can never read
-// the console's token). Re-writing the same filename updates the artifact in place:
-// refresh() re-lists. `base` picks the API family: "conversations" (default) | "routines".
+// the console's token), and the "open" link hands a new tab the same sandbox (blobtab.js).
+// Re-writing the same filename updates the artifact in place: refresh() re-lists. `base`
+// picks the API family: "conversations" (default) | "routines".
 
 import { api, apiBlobUrl } from "/static/api.js";
+import { newTabHref } from "/static/components/blobtab.js";
 import { confirmDialog } from "/static/components/dialog.js";
 import { md } from "/static/md.js";
 import { el, emptyState, relTime, toast } from "/static/util.js";
@@ -40,6 +42,13 @@ export function createArtifacts(container, { slug, base = "conversations" }) {
   let items = [];
   let openPath = null;
   let blobUrl = null;   // the viewer's current object URL (revoked on replace)
+  let tabLink = null;   // the new-tab href built from it (blobtab.js), revoked with it
+  const release = () => {
+    if (blobUrl) URL.revokeObjectURL(blobUrl);
+    tabLink?.revoke();
+    blobUrl = null;
+    tabLink = null;
+  };
 
   const fileUrl = (p) => (base === "routines"
     ? `/api/routines/${slug}/artifact?path=${encodeURIComponent(p)}`
@@ -52,19 +61,18 @@ export function createArtifacts(container, { slug, base = "conversations" }) {
     viewer.replaceChildren(el("div", { class: "faint small" }, "loading…"));
     const ext = (item.name.split(".").pop() || "").toLowerCase();
     try {
-      if (blobUrl) { URL.revokeObjectURL(blobUrl); blobUrl = null; }
+      release();
+      const { url, type } = await apiBlobUrl(fileUrl(item.path));
+      blobUrl = url;
+      tabLink = newTabHref(url, type, item.name);
       let body;
       if (ext === "md" || ext === "csv" || ext === "tsv" || ext === "json" || TEXTUAL.has(ext)) {
-        const { url } = await apiBlobUrl(fileUrl(item.path));
-        blobUrl = url;
         const text = await (await fetch(url)).text();
         body = ext === "md" ? el("div", { class: "prose" }, md(text))
           : ext === "csv" || ext === "tsv" ? csvTable(text, ext === "csv" ? "," : "\t")
           : el("pre", { class: "art-pre" }, ext === "json"
               ? JSON.stringify(JSON.parse(text), null, 2) : text);
       } else {
-        const { url } = await apiBlobUrl(fileUrl(item.path));
-        blobUrl = url;
         body = ext === "html"
           ? el("iframe", { class: "art-frame", sandbox: "allow-scripts", src: url })
           : IMG.has(ext) ? el("img", { class: "art-img", src: url, alt: item.name })
@@ -74,7 +82,7 @@ export function createArtifacts(container, { slug, base = "conversations" }) {
           : el("div", { class: "faint" }, "no inline view for this type — download below");
       }
       const dl = el("a", { class: "btn small", href: blobUrl, download: item.name }, "⭳ download");
-      const pop = el("a", { class: "btn small", href: blobUrl, target: "_blank",
+      const pop = el("a", { class: "btn small", href: tabLink.href, target: "_blank",
                             title: "open full-size in a new tab" }, "⧉ open");
       viewer.replaceChildren(
         el("div", { class: "art-viewer-head" },
@@ -151,6 +159,6 @@ export function createArtifacts(container, { slug, base = "conversations" }) {
   return {
     refresh,
     count: () => items.length,
-    destroy() { if (blobUrl) URL.revokeObjectURL(blobUrl); },
+    destroy: release,
   };
 }
