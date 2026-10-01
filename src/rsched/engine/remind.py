@@ -206,26 +206,35 @@ def apply_ops(loop, action: dict, poll_s: float, *, replayable: bool = False) ->
 
     `replayable` marks a call site the ENGINE itself can re-drive with the same fields — the
     finish path, where every rung of the finish gate hands the SAME finish back for revision
-    and the model re-emits it with its side fields intact. The payload is then applied at most
-    once per run, which is the rule this codebase already applies to its own re-emissions
-    (`loop.holds`, engine/hold.py: re-emitting a held action is the confirmation, not a second
-    hold; the claim verifier's one challenge per claimed line). Without it a finish deferred
-    three times records one hold's label three times, and the tally the whole layer is
-    justified by — `fires` minus the labels — goes negative.
+    and the model re-emits it with its side fields intact. Each field's payload is then applied
+    at most once per run, which is the rule this codebase already applies to its own
+    re-emissions (`loop.holds`, engine/hold.py: re-emitting a held action is the confirmation,
+    not a second hold; the claim verifier's one challenge per claimed line). Without it a
+    finish deferred three times records one hold's label three times, and the tally the whole
+    layer is justified by — `fires` minus the labels — goes negative. Keyed per FIELD, because
+    an op the operator asked back on was not applied (`_approve_global` withdraws its key): the
+    finish that carries it again is the re-submission they are owed, and the label beside it
+    must still not count twice.
     """
-    if replayable and (action.get("remind") or action.get("remind_feedback")):
-        key = json.dumps([action.get("remind"), action.get("remind_feedback")], sort_keys=True)
-        if key in loop.reminder_replayed:
+    fields = [f for f in ("remind_feedback", "remind") if action.get(f)]
+    if replayable and fields:
+        fields = [f for f in fields if _replay_key(f, action[f]) not in loop.reminder_replayed]
+        if not fields:
             return ""
-        loop.reminder_replayed.add(key)
+        loop.reminder_replayed.update(_replay_key(f, action[f]) for f in fields)
     notes = []
-    if action.get("remind_feedback"):
+    if "remind_feedback" in fields:
         notes.append(_apply_feedback(loop, action["remind_feedback"]))
-    if action.get("remind"):
+    if "remind" in fields:
         notes.append(_apply_op(loop, action["remind"], poll_s))
     notes.append(_label_nudge(loop, action))
     lines = [n for n in notes if n]
     return ("\n" + "\n".join(f"[REMINDERS: {n}]" for n in lines)) if lines else ""
+
+
+def _replay_key(field: str, payload: object) -> str:
+    """One side field's payload as the replay ledger stores it (`apply_ops`)."""
+    return json.dumps([field, payload], sort_keys=True)
 
 
 def _label_nudge(loop, action: dict) -> str:
@@ -353,8 +362,13 @@ def _approve_global(loop, verb: str, target: Reminder, op: dict, poll_s: float) 
     `creations` splits the ladder where the blast radius does: a NEW global reminder starts
     holding actions in routines that never asked for it; revising or deleting one only changes
     something the user already approved.
+
+    An ASK-BACK on the approval comes back as the note itself: the operator's words, and the
+    instruction to carry the same op again — the decision's subject is the reminder id the
+    question names, so that re-submission replaces the open record.
     """
-    from .interact import handle_ask, is_approval
+    from .interact import handle_ask, is_approval, still_pending
+    from .obs_admin import dialog_reply
 
     ctx = loop.ctx
     if ctx.depth > 0:
@@ -374,7 +388,15 @@ def _approve_global(loop, verb: str, target: Reminder, op: dict, poll_s: float) 
                     f"caution: {description}",
         "mode": "blocking", "options": ["approve", "decline"],
         "default": "the global reminder store is NOT changed"}, poll_s,
-        qtype="reminder-approval")
+        qtype="reminder-approval", subject=target.id)
+    if ask.get("dialog"):
+        # Nothing was applied, so carrying the same op again is the re-submission the operator
+        # is owed — never a replay the finish path may skip (`apply_ops`).
+        loop.reminder_replayed.discard(_replay_key("remind", op))
+        return f"{verb} of global reminder {target.id}: " + dialog_reply(
+            still_pending(ask), "approval", "carry the same `remind` op again (as it was, or "
+            "revised in light of their message), your answer in the `say` of the action it "
+            "rides", "The curated store is unchanged until they approve.")
     if not ask.get("answered"):
         return (f"the approval for {verb} of global reminder {target.id} is still open — "
                 "the store is unchanged; carry on and revisit it once it is settled")

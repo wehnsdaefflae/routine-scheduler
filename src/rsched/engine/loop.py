@@ -128,7 +128,7 @@ class EngineLoop:
     base_grants: Any
     consumed_dir: Any
     ctx: Any
-    dialog_qid: str | None
+    dialog_qids: dict[tuple[str, str], str]
     executed_actions: Any
     final_summary: Any
     grants: Any

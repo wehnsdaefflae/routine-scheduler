@@ -210,6 +210,10 @@ allowed hold. Its side fields ARE
 applied, before that gate — the last turn of a run is very often the one the engine asked for a
 `did`/`didnt` label on; dropping it there would throw away the evidence the layer exists to
 collect. If a finish guard sets the finish aside, the engine note rides the guard's own message.
+The model re-emits that finish with its side fields intact, so each field's payload is applied
+at most once per run (`remind.apply_ops`, keyed per FIELD) — except an op whose curated approval
+got an ask-back (below): nothing was applied, so the finish that carries it again re-submits it.
+A finish that STANDS ends the run instead, and that approval stays open as deferred.
 
 **Who owns the tally.** `reminders.record` is the only writer of a stat and works off DISK, doing
 its own read-modify-write; the engine's in-memory set owns the DEFINITIONS, because this run's ops
@@ -269,6 +273,14 @@ interrupting routines that never asked for it. The approval question names its r
 global reminder asks, revising or deleting one only changes something already approved. A
 sub-workflow cannot touch the global store at all (it binds every routine, so it is a top-level
 decision); a curated write is committed to the library repo like any other library write.
+
+An **ask-back** on that approval — the run view's reply that decides nothing ("is that pattern
+not too broad?") — reaches the run at once, as the `[REMINDERS: …]` note on the action that
+carried the op: the operator's words, and the instruction to carry the same op again (as it was
+or revised), answering them in that action's `say`. Nothing reaches the curated store on it. The
+re-submission replaces the open approval because its subject is the reminder id the question
+names (`interact.handle_ask`); no unrelated ask can resolve it. A plain reply that is neither
+approve nor decline is still held as a delayed message while the run waits (D38).
 
 A denied scope routes to an access request (`reminders:local` / `reminders:global` are grant
 entities), so a run that keeps needing the curated store can ask for it instead of going quiet.

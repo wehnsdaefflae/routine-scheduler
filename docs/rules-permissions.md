@@ -379,6 +379,8 @@ next run. Three writers, in increasing autonomy:
   new rule, `anchor`/`replacement` to revise one in place. The library linter gates the write
   (heading, tags, no capabilities in frontmatter) BEFORE the approval ask, so a malformed draft
   never reaches you, and the approval question names every routine the change would reach.
+  Asking back on that approval ("why this wording?") reaches the run at once: it answers and
+  re-submits, and the re-submission replaces the open approval — nothing is written meanwhile.
 - **The `rules-review` meta routine**, which is that capability pointed at the whole layer: it
   reads how runs actually interpreted each rule — followed, misread, ignored, or a good
   interpretation the text never contained — and revises from that evidence.
@@ -676,6 +678,15 @@ fresh user deletion must
 always outrank an old grant. Secret exposure (D39) rides this same flow: the first util
 call declaring an undecided store secret files one blocking request covering every
 undecided name.
+
+A request settles on one of those typed decisions only; free text is held as a delayed message
+while the run waits (D38). The run view's **ask back** — the reply that decides nothing, offered
+on every blocking decision, approvals included — instead ends the wait at once and reaches the
+run as the observation of the action that asked: the operator's words, and the instruction to
+answer them and re-submit the same request (for the secret gate, the same call). Nothing is
+granted on it. The record stays open until the re-submission replaces it — a request's subject
+is its entity ids, whoever files it (`interact.handle_ask`) — and no unrelated ask can resolve
+it; a run that ends without re-submitting leaves it open as deferred.
 
 What is deliberately NOT an entity — structurally impossible stays impossible, never a
 deniable row: `routine.yaml` writes, `runs/` writes, `.memory/` via file actions,

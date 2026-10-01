@@ -146,6 +146,13 @@ def test_doc_pins_the_canonical_engine_strings(make_routine, tmp_path):
         # A blocking ask answered with "ask back": the user's own words ARE the observation
         # (obs_admin) — it fell through to the plain deferred line, and the model never saw them
         "the user replied WITHOUT deciding",
+        # …on ANY blocking decision, in ONE wording (obs_admin.dialog_reply): the approvals and
+        # the secret gate dropped the words and said "approval requested", and a re-submission
+        # never replaced the record it answered. The shared promise, the request's way forward
+        # and the curated reminder's (the one that rides a note, not an observation head)
+        "the re-submission replaces the open record",
+        "its question answering them",
+        "carry the same `remind` op again",
         # A kill that has not landed yet must not read as a termination (obs_children)
         "still winding down",
         # SHARED STORES: the harness contract of a run whose write roots include a shared store
