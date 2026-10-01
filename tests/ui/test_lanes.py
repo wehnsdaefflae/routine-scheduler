@@ -277,6 +277,74 @@ def test_expanded_lane_rows_drag_to_reorder(ui, ui_page, make_routine):
         f"drag did not reorder the lane: {members()}"
 
 
+def _open_editor(ui, ui_page, lane_id):
+    ui_page.goto(f"{ui.url}/#/routines")
+    row = ui_page.locator(f'tr[data-lane-row="{lane_id}"]')
+    row.wait_for()
+    row.locator("[data-lane-edit]").click()
+    editor = ui_page.locator(f'[data-lane="{lane_id}"]')
+    editor.wait_for()
+    return editor
+
+
+def _shown_members(editor):
+    return editor.locator("[data-member]").evaluate_all(
+        "rows => rows.map((r) => r.dataset.member)")
+
+
+def _members(ui, lane_id):
+    rec = lanes.get(ui.routines, lane_id)
+    return [m["slug"] for m in (rec["members"] if rec else [])]
+
+
+def test_a_refused_member_edit_leaves_the_editor_on_what_the_store_holds(ui, ui_page,
+                                                                          make_routine):
+    """Every editor control PATCHes and re-renders from the reply. The member buttons edited the
+    lane record IN PLACE before sending it, so when the server refused the edit, the re-render
+    drew the refused list as if it had been saved — and the record was the dashboard's own copy
+    of the lane, edited behind its back."""
+    make_routine(slug="gm1")
+    lane = lanes.create(ui.routines, name="Ordered", members=[{"slug": "uir"}, {"slug": "gm1"}])
+    editor = _open_editor(ui, ui_page, lane["id"])
+    ui_page.route(f"**/api/lanes/{lane['id']}", lambda route: (
+        route.fulfill(status=400, json={"detail": "refused by the store"})
+        if route.request.method == "PATCH" else route.continue_()))
+
+    editor.locator('[data-member="uir"]').get_by_role("button", name="remove").click()
+    expect(ui_page.locator("#toast:not([hidden])")).to_contain_text("refused by the store")
+    expect(editor.locator("[data-member]")).to_have_count(2)
+    editor.locator('[data-member="gm1"]').get_by_role("button", name="↑").click()
+    expect(ui_page.locator("#toast:not([hidden])")).to_contain_text("refused by the store")
+    assert _shown_members(editor) == ["uir", "gm1"]
+
+
+def test_a_double_click_on_a_member_button_saves_one_move(ui, ui_page, make_routine):
+    """A second click before the first PATCH's reply acted on rows drawn from the state before
+    it: two clicks on ↓ swapped the pair and then swapped it straight back, so the store kept
+    the original order while the reader had asked to move a member. One save at a time."""
+    make_routine(slug="gm1")
+    make_routine(slug="gm2")
+    lane = lanes.create(ui.routines, name="Ordered",
+                        members=[{"slug": "uir"}, {"slug": "gm1"}, {"slug": "gm2"}])
+    editor = _open_editor(ui, ui_page, lane["id"])
+
+    editor.locator('[data-member="uir"]').get_by_role("button", name="↓").dblclick()
+    until(lambda: _members(ui, lane["id"]) != ["uir", "gm1", "gm2"], page=ui_page,
+          what="the member move")
+    ui_page.wait_for_timeout(500)                       # any second save has landed by now
+    assert _members(ui, lane["id"]) == ["gm1", "uir", "gm2"]
+    expect(editor.locator("[data-member]").first).to_have_attribute("data-member", "gm1")
+
+
+def test_escape_closes_the_lane_editor(ui, ui_page):
+    """The overlay closes on Escape — which needs focus INSIDE it. It opened with focus left on
+    the ✎ button in the table behind it, so the key went nowhere until the reader clicked in."""
+    lane = lanes.create(ui.routines, name="Nightly", members=[{"slug": "uir"}])
+    editor = _open_editor(ui, ui_page, lane["id"])
+    ui_page.keyboard.press("Escape")
+    expect(editor).to_have_count(0)
+
+
 def test_routines_page_lane_editor_catchup_policy(ui, ui_page):
     """The lane editor carries the boot catch-up policy: born run_once (a missed fire is made
     up once at the next boot), switchable to skip; the choice persists to the store."""

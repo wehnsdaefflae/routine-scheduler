@@ -127,6 +127,9 @@ function overlay(title, body, { onClose }) {
   // no overlay-click close: an accidental click must not discard half-edited state
   wrap.onkeydown = (e) => { if (e.key === "Escape") { e.preventDefault(); done(); } };
   document.body.append(wrap);
+  // A modal takes the focus — the Escape above reaches it only from inside, and the button that
+  // opened it sits in the table behind it. The caller focuses its first field once it is built.
+  close.focus();
   return { close: done };
 }
 
@@ -159,6 +162,7 @@ function openLaneCreate(data, { reload }) {
       + "runs in another lane; a routine belongs to at most one") : null,
     el("div", { class: "row mt" }, addBtn));
   const ov = overlay("New lane", body, { onClose: null });
+  nameIn.focus();
   addBtn.onclick = async () => {
     const name = nameIn.value.trim();
     if (!name) { toast("a lane name is required"); return; }
@@ -173,28 +177,43 @@ function openLaneCreate(data, { reload }) {
 
 /** The per-lane editor: rename, ordered members, add/remove, on-failure, schedule, delete.
  *  Saves apply immediately (each control PATCHes) and the panel re-renders from the response,
- *  so it never goes stale against its own writes. */
+ *  so it never goes stale against its own writes — nor against a write the server refused. */
 export function openLaneEditor(lane, data, { reload }) {
-  let l = lane;                      // updated from every PATCH response
+  let l = lane;   // REPLACED by every PATCH response and never edited: it is the dashboard's record
   const body = el("div", { class: "mt", "data-lane": l.id });
   const ov = overlay(`Lane “${l.name}”`, body, { onClose: reload });
 
+  // One save at a time. Every control re-renders from the reply, and a click before the reply
+  // acted on rows drawn from the state BEFORE the first save — two clicks on ↓ swapped a pair
+  // and swapped it straight back. The panel is inert until the reply has been drawn.
   const patch = async (fields) => {
+    body.inert = true;
     try {
-      const r = await api(`/api/lanes/${l.id}`, { method: "PATCH", body: fields });
-      l = r.lane;
-      render();
-    } catch (ex) { err(ex); render(); }
+      l = (await api(`/api/lanes/${l.id}`, { method: "PATCH", body: fields })).lane;
+    } catch (ex) { err(ex); }
+    finally { body.inert = false; }
+    render();
   };
-  const saveMembers = () => patch({ members: l.members });
+  // A member edit is sent as a NEW list; `l` changes only when the reply replaces it, so a
+  // refused edit re-renders what the store holds rather than what was asked for.
+  const saveMembers = (members) => patch({ members });
+  const swapped = (a, b) => {
+    const next = [...l.members];
+    [next[a], next[b]] = [next[b], next[a]];
+    return next;
+  };
 
   function render() {
     body.replaceChildren();
 
-    // rename — applies on change (blur/Enter), like every other immediate-save control here
+    // rename — applies on change (blur/Enter), like every other immediate-save control here;
+    // a blank name cannot be saved, so it snaps back to the one the lane has
     const nameIn = el("input", { type: "text", value: l.name, "data-lane-name": "",
       "data-nopersist": true, style: "width:220px" });
-    nameIn.onchange = () => { if (nameIn.value.trim()) patch({ name: nameIn.value.trim() }); };
+    nameIn.onchange = () => {
+      const name = nameIn.value.trim();
+      if (name) patch({ name }); else nameIn.value = l.name;
+    };
     body.append(el("label", { class: "small" },
       el("div", { class: "muted" }, "name"), nameIn));
 
@@ -206,9 +225,9 @@ export function openLaneEditor(lane, data, { reload }) {
       const down = el("button", { class: "btn small",
         ...(i === l.members.length - 1 ? { disabled: "" } : {}) }, "↓");
       const rm = el("button", { class: "btn small danger" }, "remove");
-      up.onclick = () => { [l.members[i - 1], l.members[i]] = [l.members[i], l.members[i - 1]]; saveMembers(); };
-      down.onclick = () => { [l.members[i + 1], l.members[i]] = [l.members[i], l.members[i + 1]]; saveMembers(); };
-      rm.onclick = () => { l.members.splice(i, 1); saveMembers(); };
+      up.onclick = () => saveMembers(swapped(i - 1, i));
+      down.onclick = () => saveMembers(swapped(i, i + 1));
+      rm.onclick = () => saveMembers(l.members.filter((_, j) => j !== i));
       rows.append(el("div", { class: "row", style: "gap:6px;align-items:center",
         "data-member": m.slug },
         el("span", { class: "small mono", style: "width:22px" }, `${i + 1}.`),
@@ -226,10 +245,7 @@ export function openLaneEditor(lane, data, { reload }) {
       const sel = el("select", { "data-lane-add-member": "" },
         ...addable.map((r) => el("option", { value: r.slug }, r.name)));
       const addBtn = el("button", { class: "btn small" }, "add member");
-      addBtn.onclick = () => {
-        l.members = [...(l.members || []), { slug: sel.value }];
-        saveMembers();
-      };
+      addBtn.onclick = () => saveMembers([...(l.members || []), { slug: sel.value }]);
       body.append(el("div", { class: "row mt", style: "gap:6px;align-items:center" },
         sel, addBtn));
     }
@@ -290,4 +306,5 @@ export function openLaneEditor(lane, data, { reload }) {
   }
 
   render();
+  body.querySelector("[data-lane-name]").focus();
 }
