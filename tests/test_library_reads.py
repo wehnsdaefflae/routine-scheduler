@@ -54,7 +54,7 @@ def test_the_library_is_parsed_once_per_change_not_once_per_request(tmp_path, mo
 
 
 def test_the_whole_library_lint_invalidates_on_any_kind_it_walks(tmp_path):
-    """`lint_all` reads five directories; the fingerprint has to name all five, or a bad
+    """`lint_all` reads six kinds of document; the fingerprint has to name all six, or a bad
     document lands on a page still showing the pre-edit verdict.
     """
     lib = _library(tmp_path)
@@ -64,6 +64,12 @@ def test_the_whole_library_lint_invalidates_on_any_kind_it_walks(tmp_path):
         json.dumps({"id": "rem-x", "regex": "^util:", "description": ""}), encoding="utf-8")
     problems = library_reads.lint(lib)
     assert problems["reminders/rem-x.json"], "a reminder added after the first read must be seen"
+    (lib / "patterns").mkdir()
+    (lib / "patterns" / "steward.yaml").write_text(
+        "title: Steward\nsummary: s\nworkflow: gone\nsettings:\n  rules: [nope]\n",
+        encoding="utf-8")
+    problems = library_reads.lint(lib)
+    assert problems["patterns/steward.yaml"], "a pattern added after the first read must be seen"
     assert library_reads.utils(lib) == library_reads.utils(lib)
     assert [u["name"] for u in library_reads.utils(lib)] == ["ping"]
 

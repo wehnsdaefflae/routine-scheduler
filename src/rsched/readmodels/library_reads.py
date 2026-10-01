@@ -91,14 +91,18 @@ def lint(libraries_home: Path) -> dict[str, list[str]]:
 
 
 def _lint_sources(home: Path) -> list[Path]:
-    """Every file `lint_all` reads — the five kinds it walks, each with its own dir, so a
-    doc added to any of them invalidates the verdict for all of them.
+    """Every file `lint_all` reads — the six kinds it walks, each with its own dir, so a
+    doc added to any of them invalidates the verdict for all of them. A kind `lint_all`
+    learns to walk joins this list the same day: settings patterns were linted for a release
+    while a pattern pulled or added left the Library page on the verdict from before it.
     """
     from .. import playbooks, reminders
+    from ..patterns import store as patterns
     from ..workflows import library
 
     return [*memo.tree_paths(library.workflows_dir(home), "*.py"),
             *memo.tree_paths(library.rules_dir(home), "*.md"),
             *memo.tree_paths(library.permissions_dir(home), "*.md"),
             *memo.tree_paths(reminders.reminders_home(home), "*.json"),
-            *memo.tree_paths(playbooks.playbooks_dir(home), "*/MAIN.md")]
+            *memo.tree_paths(playbooks.playbooks_dir(home), "*/MAIN.md"),
+            *memo.tree_paths(patterns.home(home), "*.yaml")]
