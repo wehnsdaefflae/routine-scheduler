@@ -109,11 +109,16 @@ one you are about to touch, not all of them.
 - `docs/designs.md` — specs for work DECIDED BUT UNBUILT (one entry per queued finding, or
   per decision taken before a finding exists).
   Nothing there describes current behaviour, so never read it as a reference; an entry is
-  deleted when it ships and its narration moves to the subsystem doc it belongs to. The
-  `self-audit` routine READS it at orient as one of the three sources of its decided-work queue
-  (`audit/report.json`, `docs/designs.md`, and a report delivered to it whose title begins
-  `DECIDED:`), gives each `## ` entry a decision row, and deletes the entry in the commit that
-  ships it. An entry there is an ORDER, not a note
+  deleted when it ships and its narration moves to the subsystem doc it belongs to. Two
+  routines split the work on this instance between MAINTENANCE and FEATURE DEVELOPMENT and never do
+  each other's: `self-audit` audits, triages, keeps the item ledger (`audit/report.json`, the
+  changelog) and fixes self-evident defects that it can gate within one run; `scheduler-builder`
+  builds what the operator DECIDED — a decision self-audit hands over by the line
+  `Handed to scheduler-builder` in its row, every `## ` entry here (self-audit gives each a
+  decision row), and every report whose title begins `DECIDED:` — carrying anything larger than
+  one run as a campaign in a `.audit-wt/` worktree, deleting the entry in the commit that ships
+  it and handing each release back through its `state/shipped.jsonl`, which self-audit turns into
+  changelog rows. An entry there is an ORDER, not a note
 - `docs/admin.md`, `docs/run-gates.md`, `docs/revise-recipe.md`, `docs/output-compression.md`,
   `docs/claude-proxy-cutover.md` — the admin conversation tier, the pre-engine admission gate,
   in-place recipe revision, stdout compression (LOSSLESS stdlib encodings only — grep headings,

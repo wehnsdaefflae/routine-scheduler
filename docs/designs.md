@@ -6,12 +6,12 @@ re-deriving it. An entry is deleted the moment it ships (its narration moves to 
 subsystem doc it belongs to); an entry that stops being wanted is deleted too. Nothing here
 describes current behaviour, so nothing here is a reference for how the system works today.
 
-**Who builds from this file.** The `self-audit` routine reads every `## ` heading here at
-orient as one of the three sources of its decided-work queue, gives each an `in_progress`
-decision row whose detail names this file as where it was decided so the Items page can see
-it, and deletes the entry in the commit that ships it. Adding an entry here is therefore an
-order, not a note: write one only for work that is actually decided, and delete one the
-moment it stops being wanted.
+**Who builds from this file.** The `scheduler-builder` routine reads every `## ` heading here at
+orient as one of the sources of its queue and deletes the entry in the commit that ships it.
+`self-audit`, which keeps the item ledger, gives each entry an `in_progress` decision row whose
+detail names this file as where it was decided, so the Items page can see it. Adding an entry
+here is therefore an order, not a note: write one only for work that is actually decided, and
+delete one the moment it stops being wanted.
 From 2026-08-26 to 2026-09-22 this file had no reader at all: five entries accumulated and
 none was built, the oldest waiting thirty-three days through roughly a hundred and eighty
 releases, because the builder's queue could not see it.
