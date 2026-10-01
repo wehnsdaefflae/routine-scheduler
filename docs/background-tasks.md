@@ -51,7 +51,8 @@ disk so it is restart-safe:
    result reaches an away user; if a reply is live, the message rides its next turn boundary. This wake
    is state-driven (terminal owner + a pending message), so it also catches the race where the owner
    finishes a reply just after the message was written. It counts only the messages a RESUMED leg
-   drains (`inbox.LIVE_MESSAGE_VIAS`: the user's own, a background result, a branch hand-back) —
+   drains (`inbox.LIVE_MESSAGE_VIAS`: the user's own, a background result, a branch hand-back,
+   a one-shot's fire text) —
    anything else waiting is a fresh run's freight, and waking for it consumed nothing, so every tick
    woke the owner again. Nothing pings anywhere else: the durable message in the conversation IS the
    delivery, and the console surfaces it.

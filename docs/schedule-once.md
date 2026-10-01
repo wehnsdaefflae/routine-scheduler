@@ -118,7 +118,9 @@ is a **new engine action** the engine executes un-sandboxed, exactly like `write
   the created `id`; an unknown target gets the valid slugs and close matches back instead of a
   bare refusal. `cancel` removes the file. A CONVERSATION may target itself — the "remind me in
   3 days" flow: its request is namespaced `conv--<slug>` in the spool, so a same-named routine
-  can never be mis-fired, and the manager wakes it by RESUMING the conversation.
+  can never be mis-fired, and the manager wakes it by RESUMING the conversation. The fire
+  text is filed `via: schedule_once`, which is in `inbox.LIVE_MESSAGE_VIAS` for exactly this
+  reason: a resumed leg drains only that set, and a conversation never boots fresh.
 - **Cross-routine scope** (a real decision for the build — flag in D27):
   - **(a)** Any routine holding `scheduling` may target ANY routine. Simple; fits the current
     single-operator deployment (every routine is the same owner). **Recommended now.**

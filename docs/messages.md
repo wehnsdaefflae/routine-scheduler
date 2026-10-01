@@ -56,7 +56,9 @@ thing that must never start a run — read as freight the gate had to admit a ru
 A FRESH run's boot drains the whole inbox. A leg that is not a fresh boot — a mid-run turn
 boundary, or a continuation leg on a finished run — drains only `LIVE_MESSAGE_VIAS`: the user
 talking to THIS run, plus the results of work this run started (a detached background task's
-delivery, a branch's hand-back). Everything else (an audit
+delivery, a branch's hand-back, a one-shot's fire text — a conversation's "remind me in 3
+days" fires by RESUMING it, and a conversation never boots fresh, so off this set the
+reminder was never delivered). Everything else (an audit
 decision answer, a sibling's report delivery, a routine-page queued message) is addressed to
 the routine's NEXT FRESH run, and a follow-up leg draining it wholesale silently ate answers
 meant for that night's run (D92/D93).
