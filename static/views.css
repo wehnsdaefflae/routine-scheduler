@@ -315,7 +315,7 @@ table.list tr.disabled-row td { opacity: 0.55; }
 /* Markdown is what the agent WROTE, so it reads in the prose voice; its code spans,
    fences and tables stay machine. */
 .md { font-family: var(--f-prose); font-size: 14.5px; line-height: 1.62; overflow-wrap: anywhere; }
-.md pre, .md code, .md .mdi code, .md table.list { font-family: var(--f-mono); }
+.md pre, .md code, .md table.list { font-family: var(--f-mono); }
 .md p { margin: 0 0 7px; }
 .md > :last-child { margin-bottom: 0; }
 .md h3, .md h4, .md h5 { margin: 10px 0 5px; font-size: var(--t-m); }
@@ -748,10 +748,14 @@ pre.hl-json .tok-const { color: var(--warn); }
 .chip-running { color: var(--signal); border-color: color-mix(in srgb, var(--signal) 38%, transparent); }
 
 /* ---------- state graph (run rail + conversation artifact rail) ---------- */
+/* F296/R341: every rail cap doubles as its section's collapse toggle. Unscoped from
+   .conv-view when the run view started rendering the SAME rail component. */
 .rail-cap {
   font-size: 10px; color: var(--ink-3); letter-spacing: 0.14em; text-transform: uppercase;
-  margin: 10px 0 4px;
+  margin: 10px 0 4px; cursor: pointer; user-select: none;
 }
+.rail-cap::before { content: "▾ "; color: var(--ink-3); }
+.rail-cap.closed::before { content: "▸ "; }
 /* detached background tasks (the `detach` action): a flat list in the conversation rail */
 .bg-tasks { display: flex; flex-direction: column; gap: 4px; font-family: var(--f-display); }
 .bg-task { display: flex; align-items: center; gap: 6px; font-size: 12px; min-width: 0; }
@@ -773,11 +777,6 @@ pre.hl-json .tok-const { color: var(--warn); }
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .browser-shot { width: 100%; border: 1px solid var(--rule-2); border-radius: 6px; cursor: zoom-in; }
-/* F296/R341: every rail cap doubles as its section's collapse toggle. Unscoped from
-   .conv-view when the run view started rendering the SAME rail component. */
-.rail-cap { cursor: pointer; user-select: none; }
-.rail-cap::before { content: "▾ "; color: var(--ink-3); }
-.rail-cap.closed::before { content: "▸ "; }
 .stategraph { display: flex; flex-direction: column; font-family: var(--f-display); }
 .sg-node {
   display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--ink-2);
@@ -1044,9 +1043,9 @@ pre.hl-json .tok-const { color: var(--warn); }
 .cmd-help .cmd-cap { font-size: var(--t-xs); text-transform: uppercase; letter-spacing: 0.1em; color: var(--ink-2); margin: 8px 0 4px; }
 .cmd-help .cmd-row { display: flex; gap: 10px; padding: 2px 0; font-size: 12px; align-items: baseline; }
 .cmd-help code { color: var(--signal); white-space: nowrap; }
-.msg.user.cmd .msg-body { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+.msg.user.cmd .msg-body { font-family: var(--f-mono); font-size: 12px; }
 .ev.cmd-result { border-left: 2px solid var(--rule); padding-left: 10px; margin: 6px 0 10px; }
-.ev.cmd-result pre { margin: 0; white-space: pre-wrap; word-break: break-word; font-size: 12px; max-height: 320px; overflow: auto; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.ev.cmd-result pre { margin: 0; white-space: pre-wrap; word-break: break-word; font-size: 12px; max-height: 320px; overflow: auto; font-family: var(--f-mono); }
 .ev.cmd-result.err pre { color: var(--err); }
 
 /* filesystem-root picker (components/dirpicker.js) + the root list (components/fsroots.js) */
@@ -1070,8 +1069,6 @@ pre.hl-json .tok-const { color: var(--warn); }
 .root-path { font-family: var(--f-mono); font-size: 12px; color: var(--ink); background: var(--deck-2);
   border: 1px solid var(--rule); border-radius: 6px; padding: 3px 9px; overflow: hidden;
   text-overflow: ellipsis; white-space: nowrap; max-width: 560px; }
-
-/* Summary: a read row recedes so unread work stands out */
 
 /* ── routine page: overview hero + collapsible config groups ───────────────────────────
    The hero is an instrument cluster an operator reads before touching any config; the
@@ -1444,7 +1441,6 @@ summary.setup-head::-webkit-details-marker { display: none; }
   display: block; margin-top: 8px; padding: 8px 10px; font-size: 12px;
   border: 1px solid var(--rule-2); border-radius: 3px; background: var(--plate-2);
 }
-.rule-erase[hidden] { display: none; }
 
 /* --- effective surface: one heading per provenance group (the doc or util behind the rows) --- */
 .surface-group-head {
