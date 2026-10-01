@@ -285,6 +285,42 @@ def test_a_crashed_engine_is_still_closed_out_as_failed(make_routine, tmp_path):
     assert info.state == "failed" and "rc=-9" in info.summary
 
 
+def test_a_thread_id_is_not_a_live_run_process():
+    """kill(pid, 0) answers for a THREAD id too, so a stale status.json pid the kernel had since
+    handed to one of the daemon's own threads read as a live engine: its orphan was never
+    reaped, a lane chain or a detached delivery waited on it forever."""
+    import os
+    import threading
+
+    tid: list[int] = []
+    hold = threading.Event()
+    worker = threading.Thread(target=lambda: (tid.append(threading.get_native_id()),
+                                              hold.wait()))
+    worker.start()
+    try:
+        while not tid:
+            pass
+        assert runner_state._pid_alive(os.getpid())          # a process: alive
+        assert not runner_state._pid_alive(tid[0])           # a thread of one: not a run
+    finally:
+        hold.set()
+        worker.join()
+
+
+async def test_an_abort_never_signals_the_daemons_own_process_group(monkeypatch):
+    """The abort fallback signals whatever process group a recorded pid leads. An engine leads a
+    session of its own, so a pid inside the CALLER's group is never a run's — it is the daemon,
+    or a thread of it, that a stale status.json happens to name — and signalling it SIGTERMed and
+    then SIGKILLed the daemon itself."""
+    import os
+
+    sent: list[tuple[int, int]] = []
+    monkeypatch.setattr(runner_state.os, "killpg", lambda pgid, sig: sent.append((pgid, sig)))
+    monkeypatch.setattr(runner_state, "KILL_GRACE_S", 0.5)
+    assert await runner_state.abort_process(os.getpid()) is False
+    assert sent == []
+
+
 def test_notable_stderr_extracts_only_warnings_and_errors():
     # Info/debug chatter is dropped; WARNING/ERROR/CRITICAL/traceback lines are kept, tail-first.
     assert _notable_stderr(b"") == ""

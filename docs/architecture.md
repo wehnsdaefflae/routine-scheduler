@@ -1302,7 +1302,11 @@ whose TEXT must change on a live instance is converted by a one-shot migration i
   dropping the sentinel. Orphaned runs claiming to be alive are closed out at boot.
 - **Aborting a run** (`runner.abort` → `runner_state.abort_process`, behind the run page's abort,
   a conversation's stop, a background task's cancel and `rsched abort`): SIGTERM to the engine's
-  process group, SIGKILL `KILL_GRACE_S` (10 s) later if it is still there. The engine's handler
+  process group, SIGKILL `KILL_GRACE_S` (10 s) later if it is still there. A pid read from a
+  status.json can outlive its process, so it is signalled only while it still names a process
+  (not a thread the kernel gave that id since) outside the caller's own process group — an
+  engine leads a session of its own, and a stale pid once aimed both signals at the daemon. The
+  engine's handler
   only raises the abort flag (`engine/control.request_abort`), which the loop reads at every turn
   boundary and right after a model call — no signal interrupts a model call, so a stop that lands
   in one waits for the call or for the SIGKILL. A util, script or `shell` command in flight is

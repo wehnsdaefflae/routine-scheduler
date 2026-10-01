@@ -147,6 +147,14 @@ def _last_vm_hwm_kb(run_dir: Path) -> int | None:
         return None
 
 def _pid_alive(pid: int | None) -> bool:
+    """Is `pid` a live PROCESS — what a run's recorded pid can be?
+
+    kill(pid, 0) answers for a THREAD id too, and the kernel reuses ids: a stale status.json
+    pid it had since handed to one of the daemon's own threads read as a live engine, so that
+    orphan was never reaped and a lane chain or a detached delivery waited on it forever. A
+    thread's /proc entry names the process it belongs to (`Tgid`), which tells the two apart;
+    without procfs, kill(0) is all there is.
+    """
     if not pid:
         return False
     try:
@@ -155,7 +163,12 @@ def _pid_alive(pid: int | None) -> bool:
         return False
     except PermissionError:
         return True   # exists, owned by another uid — alive (EPERM is not ESRCH)
-    return True
+    try:
+        status = Path(f"/proc/{pid}/status").read_text(encoding="utf-8")
+    except OSError:
+        return True
+    tgid = re.search(r"^Tgid:\s*(\d+)", status, re.MULTILINE)
+    return tgid is None or int(tgid[1]) == pid
 
 async def abort_process(pid: int | None) -> bool:
     """SIGTERM the engine's process group; SIGKILL stragglers after the grace period.
@@ -167,11 +180,19 @@ async def abort_process(pid: int | None) -> bool:
     ends a util, script or shell command, through the engine's own `utils_run.run_jailed`; a git
     is left to finish (`libgit.git`). An engine SIGKILLed while one of those groups is still
     ending leaves the group's SIGKILL to `procgroup.terminate`'s backstop (`KILL_GRACE_S`).
+
+    The pid may come from a status.json (a run the daemon does not track, `rsched abort`), and
+    a recorded pid can outlive its process. An engine leads a session of its own, so a pid in
+    the CALLER's process group is never a run's: it is the caller, or a process the kernel gave
+    that id since, and signalling its group SIGTERMed and then SIGKILLed the daemon itself.
     """
     if not pid or not _pid_alive(pid):
         return False
     try:
-        os.killpg(os.getpgid(pid), signal.SIGTERM)
+        pgid = os.getpgid(pid)
+        if pgid == os.getpgrp():
+            return False
+        os.killpg(pgid, signal.SIGTERM)
     except (ProcessLookupError, PermissionError):
         return False
     for _ in range(int(KILL_GRACE_S / 0.5)):
