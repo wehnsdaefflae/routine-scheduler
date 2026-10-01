@@ -34,7 +34,7 @@ from functools import lru_cache
 from pathlib import Path
 
 from . import landlock
-from .paths import expand
+from .paths import expand, within
 
 log = logging.getLogger("rsched.sandbox")
 
@@ -203,13 +203,20 @@ def _admit(declared: str, granted: tuple[Path, ...]) -> Path | None:
     the variable could aim the mount. The path is admitted only when a granted root equals it
     or contains it: a declaration narrows what the run holds, it can never widen it, which is
     what keeps a routine holding `write_util` from authoring itself a wider jail.
+
+    Containment is checked on the RESOLVED path (`paths.within`: both sides resolved, symlinks
+    followed and `..` collapsed), never lexically, because Landlock resolves symlinks and `..`
+    at mount time — a declaration like `rw <granted>/../secret`, or an `rw <link>` where `link`
+    is a symlink out of the granted root, is lexically "under" the grant but opens a path that
+    is not, so a lexical parent check mounted exactly the escape this axis exists to forbid.
+    The resolved path is what is returned, so the jail rule attaches to the real inode.
     """
     expanded = os.path.expandvars(declared)
     if "$" in expanded:
         return None          # the variable is not set daemon-side: it names no path at all
-    resolved = expand(expanded)
+    resolved = expand(expanded).resolve()
     for root in granted:
-        if resolved == root or root in resolved.parents:
+        if within(root, resolved):
             return resolved
     return None
 

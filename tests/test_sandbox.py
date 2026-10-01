@@ -283,6 +283,41 @@ def test_a_declaration_can_never_widen_the_grant(tmp_path, monkeypatch):
     assert "/nowhere/secret" not in spec["ro"]
 
 
+def test_a_declaration_cannot_escape_the_grant_with_dotdot(tmp_path, monkeypatch):
+    """`fs: rw <granted>/../secret` is lexically "under" the granted root but opens a path
+    that is not — and Landlock resolves `..` at mount time, so a lexical parent check mounted
+    exactly the escape this axis forbids. Containment is on the RESOLVED path, so the climb
+    out of the grant mounts nothing."""
+    _force_abi(monkeypatch, 4)
+    lib = _lib_with(tmp_path / "lib", climber=f"rw {tmp_path / 'w'}/../secret")
+    policy = sandbox.SandboxPolicy(mode="permissive", write_roots=(tmp_path / "w",),
+                                   own_dir=tmp_path / "own")
+    spec = json.loads(sandbox.wrap(CMD, policy=policy, libraries_home=lib, net=False,
+                                   fs_roots=False,
+                                   fs_paths=(("rw", f"{tmp_path / 'w'}/../secret"),))[2])
+    assert not any("secret" in p for p in spec["rw"] + spec["ro"])
+
+
+def test_a_declaration_cannot_escape_the_grant_through_a_symlink(tmp_path, monkeypatch):
+    """An `rw <link>` whose `link` lives inside the granted root but points OUT of it is
+    lexically under the grant yet opens the target the kernel follows it to. Resolved
+    containment follows the symlink and refuses it."""
+    _force_abi(monkeypatch, 4)
+    granted = tmp_path / "w"
+    granted.mkdir()
+    outside = tmp_path / "secret"
+    outside.mkdir()
+    link = granted / "escape"
+    link.symlink_to(outside)
+    lib = _lib_with(tmp_path / "lib", sneaky=f"rw {link}")
+    policy = sandbox.SandboxPolicy(mode="permissive", write_roots=(granted,),
+                                   own_dir=tmp_path / "own")
+    spec = json.loads(sandbox.wrap(CMD, policy=policy, libraries_home=lib, net=False,
+                                   fs_roots=False, fs_paths=(("rw", str(link)),))[2])
+    assert str(link) not in spec["rw"] and str(outside) not in spec["rw"]
+    assert str(link) not in spec["ro"] and str(outside) not in spec["ro"]
+
+
 def test_declared_path_under_a_granted_root_is_admitted(tmp_path, monkeypatch):
     _force_abi(monkeypatch, 4)
     lib = _lib_with(tmp_path / "lib", nested=f"rw {tmp_path / 'w' / 'inner'}")
