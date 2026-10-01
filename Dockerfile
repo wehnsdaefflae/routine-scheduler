@@ -42,6 +42,10 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 #     also the probe of the rsched service's healthcheck (docker-compose.yml)
 #   sshfs     — mount a bound remote machine's `share` into a routine (docs/remote-machines.md);
 #     needs the fuse device + CAP_SYS_ADMIN at RUN time (see docker-compose.yml)
+#   rsync     — deploy/backup.sh runs on the HOST, but its tests (tests/test_backup_snapshots.py)
+#     drive the real script, and the gate that ships a release runs INSIDE this container
+#     (CLAUDE.md, the browser suite): without rsync here every one of them skips, and a skipped
+#     backup test reads exactly like a passing one
 #   lib*/fonts-* — Chromium's system libraries, so the page-fetch util's Playwright browser RUNS
 #     here (the ~170 MB browser itself is user-level: downloaded once by the util into the
 #     bind-mounted ~/.cache/ms-playwright — image carries the stable root-owned libs only)
@@ -66,7 +70,7 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 #     with a build error no routine can act on. The full chain, not just gcc: a compiled dep
 #     that needs g++ or a Makefile is exactly the case a partial toolchain still fails.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        git curl ca-certificates gnupg sshfs build-essential php-cli \
+        git curl ca-certificates gnupg sshfs rsync build-essential php-cli \
     # GitHub CLI apt repo
     && mkdir -p -m 755 /etc/apt/keyrings \
     && curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
