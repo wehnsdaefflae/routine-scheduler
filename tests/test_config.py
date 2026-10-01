@@ -251,12 +251,18 @@ def test_a_schedule_without_a_zone_is_in_the_servers_zone(tmp_path, monkeypatch)
     assert problems == [] and cfg.tz == "America/New_York"
 
 
-def test_a_host_zone_zoneinfo_cannot_load_defaults_to_utc(tmp_path, monkeypatch):
-    """A default is never a zone the scheduler would choke on: a host whose TZ is not an IANA
-    key falls back to UTC, the same fallback server_tz takes for an undetectable zone."""
+def test_a_host_zone_zoneinfo_cannot_load_is_never_the_default(tmp_path, monkeypatch):
+    """A default is never a zone the scheduler would choke on: a TZ that is not an IANA key is
+    skipped like every other source server_tz cannot load, so the default is the next source's
+    zone (UTC when none names one) — never the unloadable string."""
+    from zoneinfo import ZoneInfo
+
+    from rsched.schedule import server_tz
+
     monkeypatch.setenv("TZ", "Not/A_Zone")
     cfg, problems = load_routine(_mk_routine(tmp_path, {"description": "x"}))
-    assert problems == [] and cfg.tz == "UTC"
+    assert problems == [] and cfg.tz != "Not/A_Zone"
+    assert cfg.tz == server_tz() and ZoneInfo(cfg.tz)
 
 
 def test_retention_keeps_at_least_one_run(tmp_path):

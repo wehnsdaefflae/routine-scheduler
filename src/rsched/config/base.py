@@ -155,9 +155,10 @@ def default_tz() -> str:
 
     It is the zone the console's schedule editor speaks and the one every friendly-schedule
     save writes beside the cron, so a routine.yaml that names no zone and one saved from the
-    page mean the same clock. A host zone `ZoneInfo` cannot load (a POSIX `TZ` string) reads as
-    UTC — the fallback `server_tz` takes for an undetectable zone — because a default is never
-    validated, and an unknown zone reaching the scheduler unwinds its tick.
+    page mean the same clock. A source `ZoneInfo` cannot load (a POSIX `TZ` string) is skipped
+    by `server_tz` itself, which ends in UTC when no source names a zone; the check here is the
+    backstop, because a default is never validated and an unknown zone reaching the scheduler
+    unwinds its tick.
     """
     from ..schedule import server_tz
 
