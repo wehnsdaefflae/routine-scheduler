@@ -2474,6 +2474,24 @@ def test_a_permissions_save_tells_a_live_run_and_the_scheduler(client, monkeypat
     assert set(signal["fields"]) == {"permissions", "capabilities"}
 
 
+def test_a_forever_decision_tells_a_live_run_what_it_changed(client):
+    """A forever-decision writes routine.yaml at click time like any PATCH, but told a live
+    run nothing (F337): the decided entity reached it through the answer, the rest of the
+    edit — here the `grants:` row, which the run's base policy adopts live — did not."""
+    c, tmp = client
+    rdir = tmp / "routines" / "apir"
+    mk_run(rdir, "20260922-100000", "running", turn=1, pid=4242)
+    atomic_write_json(rdir / "questions" / "pending" / "q-r9.json",
+                      {"qid": "q-r9", "question": "May I?", "options": [],
+                       "asked": "20260922-100000", "mode": "deferred", "type": "request",
+                       "request": ["secret:FOO_KEY"]})
+    r = c.post("/api/questions/q-r9/answer", json={"decision": "allow_forever"})
+    assert r.status_code == 200, r.text
+    signal = read_json(rdir / "runs" / "20260922-100000" / "control.json")["config_change"]
+    assert signal["fields"] == ["grants"]
+    assert signal["values"] == {"grants": {"secret:FOO_KEY": True}}
+
+
 def test_archiving_a_routine_takes_it_out_of_its_lane(client):
     """CLAUDE.md justifies the missing cascade with "routines are deleted out of band"
     (F442) — but archive IS the in-band deletion, and the one moment the web layer knows the

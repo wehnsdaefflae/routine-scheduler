@@ -21,7 +21,7 @@ from starlette.concurrency import run_in_threadpool
 
 from .. import registry
 from ..ids import now_iso
-from ..paths import atomic_write_json, read_json
+from ..paths import atomic_write_json, read_json, read_yaml
 from .decisions_read import (
     _audit_decisions,
     _record_dir,
@@ -150,6 +150,26 @@ def _announce_answer(request: Request, qid: str, routine: str) -> None:
     bus.publish({"event": "question_answered", "qid": qid, "routine": routine})
 
 
+def _tell_live_run(request: Request, routine_dir: Path, before: object) -> None:
+    """A forever-decision edits routine.yaml, and every web edit of that file tells a LIVE run
+    what changed and which half reaches it (F337, `routines_common.signal_config_change`) —
+    the PATCH routes did, this one did not. The decided entity itself already reaches the run
+    through the answer (the overlay bridge); what the note adds is the rest of the edit — a
+    `grants:` row adopted live, a capability cascade or a new root named as next-run — so the
+    run is never left reasoning from a config it no longer has.
+    """
+    from ..configflow import ADOPTABLE
+    from .routines_common import signal_config_change
+
+    prev = before if isinstance(before, dict) else {}
+    after = read_yaml(routine_dir / "routine.yaml", {})
+    after = after if isinstance(after, dict) else {}
+    fields = sorted(k for k in {*prev, *after} if prev.get(k) != after.get(k))
+    info = registry.info(request.app.state.server, routine_dir.parent, routine_dir.name)
+    if info is not None and fields:
+        signal_config_change(info, fields, {k: after.get(k) for k in fields if k in ADOPTABLE})
+
+
 def _decide_request(request: Request, match: dict, routine_dir,
                     decision: str) -> dict:
     """Settle an ACCESS REQUEST with one of the four typed decisions: validate it against
@@ -173,11 +193,13 @@ def _decide_request(request: Request, match: dict, routine_dir,
     out: dict = {"decision": decision, "text": DECISION_PHRASES[decision],
                  "intermediate": False}
     if decision.endswith("_forever"):
+        before = read_yaml(routine_dir / "routine.yaml", {})
         out.update(grants_apply.apply_forever(request.app.state.server, routine_dir,
                                               req_ids, decision))
         _git_commit(request, routine_dir, f"grant decision via web ({decision}: "
                                  f"{', '.join(req_ids)})")
         request.app.state.scheduler.rescan()
+        _tell_live_run(request, routine_dir, before)
     elif decision == "allow_now":
         # a one-run connection grant still needs its account resolved at decision time
         for eid in req_ids:
