@@ -209,9 +209,11 @@ def log_health_event(routines_home: Path, event: str, *, routine: str,
                      run_id: str, detail: str = "", **fields: object) -> None:
     """Append a health event to the JSONL log under routines_home/.control/.
 
-    `fields` adds event-specific STRUCTURED keys beside the five common ones (today: `rc`
-    and `vm_hwm_kb` on a close-out). A None value is dropped rather than written, so a
-    caller can pass an unknown reading without minting a null the readers must handle.
+    `fields` adds event-specific STRUCTURED keys beside the five common ones — `rc` and
+    `vm_hwm_kb` on a close-out, `resource`/`limit` on budget_exhausted, `repo` on a commit
+    event, …; each event's own are listed in the module docstring. A None value is dropped
+    rather than written, so a caller can pass an unknown reading without minting a null the
+    readers must handle.
 
     Best-effort: silently ignores I/O errors so logging never blocks the daemon or engine.
     """

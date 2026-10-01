@@ -44,13 +44,12 @@ recipe/config files — a rejected call is corrected inside the schema-retry cyc
 never becomes a turn. Base kinds — util, read_file, write_file, llm, spawn, … — stay
 ungated.
 
-Recipe writes are NOT a capability: a run never edits its own recipe (main.md, stages/)
-— recipe improvement is the routine-improver meta routine's job. The single
-override is the user-granted resource `fs_write_roots`: when a write root covers a
-routine's dir (the improver's case), the engine unlocks the recipe files for that run.
-`routine.yaml` is NEVER writable by any run — not even the improver, not even under an
-fs_write_root: config (permissions, capabilities, budgets, roots) is the user's, changed
-only via the UI or a deferred ask_user.
+A run edits its own recipe (main.md, stages/, tuning.yaml) only when the routine holds the
+`write_recipe` capability (through the recipe-authoring doc) or the run is an in-place
+revise leg (engine/revise.py) — never because a write root happens to cover the routine's
+dir, which is how it unlocked before 0.261.0. `routine.yaml` is NEVER writable by any run —
+not even the improver, not even under an fs_write_root: config (permissions, capabilities,
+budgets, roots) is the user's, changed only via the UI or a deferred ask_user.
 """
 
 from __future__ import annotations
@@ -94,6 +93,39 @@ _DEFAULT_KIND_SOURCE = {"write_util": "util-authoring", "revise_util": "util-aut
                         "remove_util": "util-removal",
                         "write_rule": "rule-authoring",
                         "schedule_run": "scheduling", "shell": "shell"}
+# write_util approval policy, least → most permissive: "always" (user approves create AND
+# revise), "creations" (revisions are autonomous once the selftest passes; NEW utils ask),
+# "never".
+# Shared by ALL THREE approval dials: `confirm` (write_util), `rule_confirm` (write_rule)
+# and `remind_confirm` (a GLOBAL consequence reminder). Same ladder, separate dials on purpose —
+# a rule is held by many routines, so a revision lands in every one of them at their next run,
+# and a global reminder starts HOLDING actions in routines that never asked for it. Each blast
+# radius is a different decision from "may this routine author utils", and collapsing them would
+# make a never-confirm util policy silently authorize the other two.
+CONFIRM_LEVELS = ("always", "creations", "never")
+APPROVAL_DIALS = ("confirm", "rule_confirm", "remind_confirm")
+# runs: access to previous runs. `last` is every routine's floor (D96); `all` is the setting a
+# longitudinal routine (self-audit, rules-review) is given. `none` exists for CHILD runs only,
+# which read their brief rather than the archive (loopsetup).
+RUN_HISTORY_LEVELS = ("none", "last", "all")
+# The SETTINGS half of a capabilities mapping — the approval dials, the previous-run read depth
+# and the reminder layer — each with its all-off value. The user's choice per routine: never a
+# permission doc's requirement, and kept through the floor with no permission behind it. ONE
+# vocabulary, read by the validator, the cascade and the floor alike.
+SETTING_DEFAULTS = {**dict.fromkeys(APPROVAL_DIALS, "always"), "runs": "none",
+                    "reminders": "none"}
+# The routine's own recipe files — writable by the owning run only under the `write_recipe`
+# capability or in a revise leg (see the module docstring). stages/ + main.md are the
+# materialized workflow. The general RULES are not here at all: they live in the library, one
+# copy, and no run writes them under any grant. routine.yaml (the user's config) is guarded
+# separately: NEVER writable by any run, even the improver — see CONFIG_FILE and
+# GrantPolicy.deny.
+RECIPE_PREFIXES = ("main.md", "stages/", "tuning.yaml")
+CONFIG_FILE = "routine.yaml"
+# An all-off capabilities mapping — the base for cascades and the subrun/clarify default.
+EMPTY_CAPABILITIES = {"actions": [], "utils": [], **SETTING_DEFAULTS}
+
+
 # A capabilities `utils:` entry is either a bare util name (every verb) or `name:verb`
 # (that ONE subcommand — the util's first positional argument). Verb-scoping is how a
 # routine gets read-only access to a channel it must not write to.
@@ -108,32 +140,6 @@ def is_util_entry(entry: object) -> bool:
         return False
     name, verb = split_util_verb(entry)
     return is_slug(name) and (not verb or is_slug(verb))
-# write_util approval policy, least → most permissive: "always" (user approves create AND
-# revise), "creations" (revisions are autonomous once the selftest passes; NEW utils ask),
-# "never".
-# Shared by ALL THREE approval dials: `confirm` (write_util), `rule_confirm` (write_rule)
-# and `remind_confirm` (a GLOBAL consequence reminder). Same ladder, separate dials on purpose —
-# a rule is held by many routines, so a revision lands in every one of them at their next run,
-# and a global reminder starts HOLDING actions in routines that never asked for it. Each blast
-# radius is a different decision from "may this routine author utils", and collapsing them would
-# make a never-confirm util policy silently authorize the other two.
-CONFIRM_LEVELS = ("always", "creations", "never")
-# runs: access to previous runs. `last` is every routine's floor (D96); `all` is the setting a
-# longitudinal routine (self-audit, rules-review) is given. `none` exists for CHILD runs only,
-# which read their brief rather than the archive (loopsetup).
-RUN_HISTORY_LEVELS = ("none", "last", "all")
-# The routine's own recipe files — never writable by the owning run unless a user-granted
-# fs_write_root covers the routine dir (the improver's case; see the module docstring).
-# stages/ + main.md are the materialized workflow. The general RULES are not here at all:
-# they live in the library, one copy, and no run writes them under any grant. routine.yaml
-# (the user's config) is guarded separately: NEVER writable by any run, even the improver —
-# see CONFIG_FILE and GrantPolicy.deny.
-RECIPE_PREFIXES = ("main.md", "stages/", "tuning.yaml")
-CONFIG_FILE = "routine.yaml"
-# An all-off capabilities mapping — the base for cascades and the subrun/clarify default.
-EMPTY_CAPABILITIES = {"actions": [], "utils": [], "confirm": "always",
-                      "rule_confirm": "always", "remind_confirm": "always",
-                      "runs": "none", "reminders": "none"}
 
 
 # The SOFT edge (`expects:`), the counterpart to `requires:`. A permission doc's `requires:`
@@ -191,19 +197,14 @@ def normalize_capabilities(raw: object, *, label: str = "capabilities",
     run-history depth and the reminder stores are SETTINGS the user chooses per routine,
     never something holding a doc switches on.
     """
+    known = ("actions", "utils") if requires else ("actions", "utils", *SETTING_DEFAULTS)
     if raw is None:
         return {}, []
     if not isinstance(raw, dict):
-        return {}, [f"{label} must be a mapping (actions / utils"
-                    + (")" if requires else " / confirm / rule_confirm / remind_confirm / "
-                       "runs / reminders)")]
-    known = (("actions", "utils") if requires
-             else ("actions", "utils", "confirm", "rule_confirm", "remind_confirm", "runs",
-                   "reminders"))
+        return {}, [f"{label} must be a mapping ({' / '.join(known)})"]
     problems = [f"{label}.{k}: unknown key (expected {' / '.join(known)})"
                 + (" — that is a setting the user chooses per routine, not a requirement"
-                   if requires and k in ("confirm", "rule_confirm", "remind_confirm", "runs",
-                                         "reminders") else "")
+                   if requires and k in SETTING_DEFAULTS else "")
                 for k in raw if k not in known]
     out: dict = {}
     for key, valid, kind_label in (("actions", lambda a: a in CAPABILITY_ACTIONS,
@@ -223,7 +224,7 @@ def normalize_capabilities(raw: object, *, label: str = "capabilities",
         out[key] = [v for v in vals if valid(v)]
     if requires:
         return out, problems
-    for dial in ("confirm", "rule_confirm", "remind_confirm"):
+    for dial in APPROVAL_DIALS:
         if dial in raw:
             if raw[dial] in CONFIRM_LEVELS:
                 out[dial] = raw[dial]
@@ -305,11 +306,7 @@ def capabilities_for(active: list[str], lib: dict[str, dict],
 
 
 def _settings(caps: dict) -> dict:
-    return {"confirm": caps.get("confirm") or "always",
-            "rule_confirm": caps.get("rule_confirm") or "always",
-            "remind_confirm": caps.get("remind_confirm") or "always",
-            "runs": caps.get("runs") or "none",
-            "reminders": caps.get("reminders") or "none"}
+    return {key: caps.get(key) or default for key, default in SETTING_DEFAULTS.items()}
 
 
 def floor_capabilities(active: list[str], lib: dict[str, dict], caps: dict) -> dict:

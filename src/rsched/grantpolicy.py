@@ -8,17 +8,20 @@ capabilities plus the run's one-time grant overlay, never from a permission doc.
 without its capability therefore fails CLOSED, which is the whole reason the two layers are
 separate.
 
-The four-state grant model (allow/deny x now/forever, plus allow-once for turn-action classes)
-lives here as `entity_state`; the WEB layer writes forever-decisions to routine.yaml at click
-time and the engine only ever bridges now-decisions into the live overlay. No run writes its
-own config, so this object is read-only with respect to what created it.
+The four-state grant model (allow/deny x now/forever, plus allow-once for the once-grantable
+classes, `entities.ONCE_CLASSES`) lives here as `entity_state`; the WEB layer writes
+forever-decisions to routine.yaml at click time and the engine only ever bridges now-decisions
+into the live overlay. No run writes its own config, so this object is read-only with respect
+to what created it.
+
+It also owns the two path questions that are POLICY rather than filesystem (`is_recipe_path`,
+`is_runs_path`): is this the routine's own recipe (a write there needs `write_recipe`), and is
+this under runs/ (engine-owned, read-only to the run).
 """
 
-# path questions that are POLICY, not filesystem: is this the routine's own recipe (a write there
-# unlocks self-editing), and is this under runs/ (engine-owned).
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from . import utilgate
@@ -41,15 +44,15 @@ def _norm_rel(path: str) -> str:
         p = p[2:]
     return p
 
+
 def is_recipe_path(path: str) -> bool:
     p = _norm_rel(path)
     return any(p == pre.rstrip("/") or p.startswith(pre) for pre in RECIPE_PREFIXES)
 
+
 def is_runs_path(path: str) -> bool:
     p = _norm_rel(path)
     return p == "runs" or p.startswith("runs/")
-
-
 
 
 #: The words every denial of an UNDECIDED entity ends with (`GrantPolicy.request_route`).
@@ -57,6 +60,7 @@ def is_runs_path(path: str) -> bool:
 #: `capability-denied` assist predicate, which recognises a refusal the run could still ask
 #: for by exactly this phrase.
 REQUEST_ROUTE_MARK = "request it: ask_user with request:"
+
 
 @dataclass(frozen=True)
 class GrantPolicy:
@@ -73,10 +77,6 @@ class GrantPolicy:
     # verb of that util stays open, which is how reading a mailbox stays behind nothing but its
     # credential while sending needs the permission.
     gated_verbs: dict = field(default_factory=dict)
-    # Util names the library already has, for the create-vs-revise split. Loaded ONLY when
-    # the routine holds exactly one half (holding both, or neither, settles the call without
-    # knowing) — so the common policies cost no catalog read.
-    known_utils: frozenset = frozenset()
     kind_sources: dict = field(default_factory=dict)  # gated kind → library docs requiring it
     confirm: str = "always"                    # write_util approval policy
     rule_confirm: str = "always"               # write_rule approval policy (own blast radius)
@@ -94,10 +94,11 @@ class GrantPolicy:
     # in-memory on the RunContext, folded in here so every consumer reads ONE policy.
     granted_now: frozenset = frozenset()
     denied_now: frozenset = frozenset()
-    # own recipe/config writable? True only when a user fs_write_root covers the routine
-    # dir (the routine-improver's case) — computed at policy load, never a capability.
-    # The recipe set includes tuning.yaml (machine-tunable behavior parameters, e.g.
-    # deliberation) — the file boundary IS the permission boundary, no key-level gates.
+    # own RECIPE writable? (routine.yaml never is.) loopsetup derives it once from the
+    # `write_recipe` capability, or a revise leg (engine/revise.py); `with_overlay` raises it
+    # when a one-run grant of `action:write_recipe` lands. The recipe set includes tuning.yaml
+    # (machine-tunable behavior parameters, e.g. deliberation) — the file boundary IS the
+    # permission boundary, no key-level gates.
     recipe_unlocked: bool = False
     # D62 admin conversation: the operator authenticated this leg with RSCHED_ADMIN_TOKEN,
     # so CAPABILITY gating is lifted (gated kinds, reserved utils, previous-run read depth).
@@ -115,8 +116,9 @@ class GrantPolicy:
     # workflow as the scope that lacks the kind, not claim the routine lacks it (R46).
     is_subrun: bool = False
     # The util library root, so the reserved-util gate can resolve a call's `calls:` TREE and
-    # not just its name. None (hand-built policies, tests) skips that check — the direct-name
-    # gate is unaffected either way.
+    # not just its name, and write_util can tell a creation from a revision. None (hand-built
+    # policies, tests) skips the tree check and reads every write_util as a creation — the
+    # direct-name gate is unaffected either way.
     libraries_home: Path | None = None
 
     def allows_kind(self, kind: str) -> bool:
@@ -137,8 +139,6 @@ class GrantPolicy:
         `granted_now` for their own consumers (env injection, fs roots, the secrets
         gate). Always applied over the CONFIG-derived base policy, never stacked.
         """
-        from dataclasses import replace
-
         actions, utils = set(self.actions), set(self.utils)
         run_history, reminders = self.run_history, self.reminders
         for eid in granted_now:
@@ -274,6 +274,26 @@ class GrantPolicy:
                 f"conduct). Work with what you have. "
                 f"{self.request_route(f'action:{kind}')}")
 
+    def _util_exists(self, name: str) -> bool:
+        """Is `name` already in the library — is this write_util a REVISION?
+
+        Asked at the call, of the live library, whenever the answer can matter: unless BOTH
+        halves of the split are held. It used to be a catalog loaded with the policy, and only
+        for a routine holding exactly one half. A routine holding neither loaded nothing, so
+        an existing util read as a CREATION — the denial asked for `action:write_util` — and a
+        one-run grant of that half, folded in by `with_overlay`, then let write_util REVISE the
+        existing util. Live also means a util this run created is a revision when it is
+        written again.
+        """
+        if {"write_util", "revise_util"} <= self.actions or self.libraries_home is None:
+            return False
+        from .utils_lib import exists
+
+        try:
+            return exists(self.libraries_home, name)
+        except OSError:      # an unreadable library: a creation, as a missing name would be
+            return False
+
     def deny(self, action: dict) -> str | None:
         """A precise, actionable rejection for a gated call — or None when permitted. Worded
         for the model inside the schema-retry cycle: capabilities are switched by the USER
@@ -288,7 +308,7 @@ class GrantPolicy:
         mode = ""
         if kind == "write_util":
             name = str(action.get("name") or "")
-            revising = name in self.known_utils
+            revising = self._util_exists(name)
             need = "revise_util" if revising else "write_util"
             mode = (f"util {name!r} {'already exists' if revising else 'does not exist yet'}, "
                     f"so this is a {'REVISION' if revising else 'CREATION'}. ")
@@ -330,8 +350,5 @@ class GrantPolicy:
                             f"(main.md / stages/ / tuning.yaml), which needs the recipe-authoring "
                             f"permission — this routine does not hold it, so its instructions are "
                             f"the user's. Describe the change you need in a deferred ask_user "
-                            f"(or a report), or request it: "
-                            f"{self.request_route('action:write_recipe')}")
+                            f"(or a report). {self.request_route('action:write_recipe')}")
         return None
-
-

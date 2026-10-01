@@ -103,8 +103,8 @@ def test_a_name_that_cannot_be_a_util_is_not_attributed_to_one():
 
     The predicate is the util NAMING rule, not the slug rule, and the difference is the
     point: `ids.is_slug` admits `300` (digits are legal slugs) and admits a bare run id,
-    while `GrantPolicy.known_utils` is populated only for a routine holding exactly one half
-    of the write/revise split — so neither separates a real name from a shifted value. What
+    while the policy carries no catalog of util names (write_util's create-vs-revise split
+    asks the library per call) — so neither separates a real name from a shifted value. What
     every one of the 101 catalog utils has, and no shifted value here does, is kebab-case
     WITH A LETTER. A name that merely resembles one (a bare run id) is out of scope on
     purpose: no guard should risk refusing a real util to catch it.

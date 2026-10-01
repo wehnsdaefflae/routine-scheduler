@@ -426,6 +426,34 @@ def test_owner_resolution_and_digest_section(audit_home):
     assert priorities.digest_section(audit_home, "newsletter-digest") == ""
 
 
+def test_a_flagged_row_that_was_folded_belongs_to_the_carriers_target(audit_home):
+    """A triage row routed to its owner is the CARRIER target's now — the Messages card says so
+    (`to`, readmodels/item_reports) and this resolver must agree (D75). Read as untargeted,
+    the flag kept landing in self-audit's digest, putting the routed row back in front of
+    triage: the re-routing F492's fold exists to stop."""
+    with (audit_home / ".control" / "reports.jsonl").open("a", encoding="utf-8") as fh:
+        for row in ({"id": "R3", "ts": "2026-08-05T10:00:00+02:00", "routine": "self-audit",
+                     "run_id": "self-audit:x", "title": "carrier", "target": "global-utils-review",
+                     "supersedes": ["R1"]},
+                    {"id": "R1", "event": "superseded", "ts": "2026-08-05T10:00:00+02:00",
+                     "by": "R3", "to": "global-utils-review"}):
+            fh.write(json.dumps(row) + "\n")
+    priorities.set_priority(audit_home, "R1", True)
+    card = _by_id(items_model.build(audit_home / "self-audit", audit_home))["R1"]
+    assert card["to"] == "global-utils-review"
+    assert [i["id"] for i in priorities.owned_priority_items(audit_home,
+                                                            "global-utils-review")] == ["R1"]
+    assert priorities.owned_priority_items(audit_home, "self-audit") == []
+
+
+def test_a_report_id_past_four_digits_can_be_flagged(tmp_path):
+    """The ledger numbers without bound (`reports.REPORT_ID_RE`); the counter passed R2000 in
+    its second month. A `\\d{1,4}` id pattern would answer R10000 with "not an item id"."""
+    home = tmp_path / "routines"
+    priorities.set_priority(home, "r10000", True)
+    assert "R10000" in priorities.read_priorities(home)
+
+
 def test_state_digest_carries_the_priority_section(audit_home):
     from rsched.engine.composer import state_digest
     d = audit_home / "self-audit"

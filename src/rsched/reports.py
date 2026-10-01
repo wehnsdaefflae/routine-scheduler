@@ -21,7 +21,8 @@ is not a scheduler defect by filing an addressed one carrying `answers`, so the 
 recorded rather than performed by hand.
 
 Every row gets a monotonic `R<n>` assigned here under the same advisory lock as the append —
-two runs reporting at once cannot collide. `R` and not `B`: the user's own reviewer-backlog
+two runs reporting at once cannot collide, and a filing that cannot take the lock is refused
+rather than minting an id without it. `R` and not `B`: the user's own reviewer-backlog
 items are written `B<n>` in prose, and the console's reference links would mislink them. The
 id makes a report a first-class ITEM alongside findings and decisions (docs/items.md).
 
@@ -132,7 +133,9 @@ class Disposal:
     def __post_init__(self) -> None:
         # Normalize once, here, so every reader downstream compares like with like: the ledger
         # stores ids upper-cased and a caller passing "r123" must not mint a row nothing matches.
-        object.__setattr__(self, "answers", str(self.answers or "").strip())
+        # Both faces: an `answers: "r123"` settled R123 only because each reader re-upper-cased
+        # it, while the case-sensitive ones — the card's reference links, `refs` — missed it.
+        object.__setattr__(self, "answers", str(self.answers or "").strip().upper())
         object.__setattr__(self, "settles",
                            tuple(str(i).strip().upper() for i in self.settles if str(i).strip()))
         # `closes` is a property OF a disposal: with neither face there is nothing to complete.
@@ -171,7 +174,8 @@ def file_report(routines_home: Path, *, routine: str, run_id: str, title: str, d
                 supersedes: tuple[str, ...] = ()) -> tuple[Path, str, list[str]] | None:
     """Append one report, and deliver it when it is addressed.
 
-    Returns `(path, id, folded)` on success, or None if the write failed. `folded` is what was
+    Returns `(path, id, folded)` on success, or None if the write failed (an I/O error, or
+    the ledger lock not taken — see below). `folded` is what was
     actually taken over — decided under the ledger lock, so the observation the run reads can
     never claim a row that a concurrent filing had already folded. An UNADDRESSED report is
     best-effort like the health log — a failed write must never abort the reporting run, whose
@@ -198,20 +202,30 @@ def file_report(routines_home: Path, *, routine: str, run_id: str, title: str, d
 
     Raises `ThreadCapError` when this would open an `OPEN_THREAD_CAP`-plus-first parallel
     thread to one owner. A reply, a settlement and a consolidation are all exempt: each one
-    REDUCES the open-thread count, and capping the way out would punish it.
+    REDUCES the open-thread count, and capping the way out would punish it. A consolidation
+    counts by what it actually FOLDS here, under the lock — not by what it asked to: rows a
+    concurrent filing folded first leave it a plain new thread, and the cap applies.
+
+    The id is minted only under the ledger lock. `file_lock` hands back False when it could
+    not take the lock within its timeout (a stalled holder) and leaves proceeding to the
+    caller; here that is a failed write (None), because two filers past a stalled third would
+    mint the same `R<n>` — and the fold keeps the first row of an id, so the second report
+    would vanish into it.
     """
     disposal = disposal or Disposal()
     answers, closes = disposal.answers, disposal.closes
     path = reports_path(routines_home)
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        with file_lock(path.with_suffix(".lock")):
+        with file_lock(path.with_suffix(".lock")) as held:
+            if not held:
+                return None
             rows = read_reports(path)
-            if target and not answers and not disposal.settles and not supersedes:
+            folded, _ = supersedable(rows, list(supersedes))
+            if target and not answers and not disposal.settles and not folded:
                 open_ids = open_threads(rows, routine=routine, target=target)
                 if len(open_ids) >= OPEN_THREAD_CAP:
                     raise ThreadCapError(routine, target, open_ids)
-            folded, _ = supersedable(rows, list(supersedes))
             item_id = next_id(path)
             _append(path, {"id": item_id, "ts": now_iso(), "routine": routine, "run_id": run_id,
                            "title": title[:TITLE_MAX], "detail": detail[:DETAIL_MAX],

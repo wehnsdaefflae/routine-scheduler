@@ -162,34 +162,23 @@ def test_age_backstop_never_touches_a_live_call(monkeypatch):
     assert tc.snapshot()["tasks"][0]["status"] == "done"
 
 
-def test_abandon_task_records_the_cause(monkeypatch):
+def test_an_abandoned_call_carries_its_cause_and_prunes(monkeypatch):
     """B: the cause — an abandoning caller says so, instead of leaving the task to age out.
 
     `engine/archival.py:settle()` abandons an in-flight archival thread by design (the run is
-    over and the digest stands). Nothing told the task center, so the task stayed `running`.
+    over and the digest stands). It reports through the ordinary channel: the engine's
+    `instrument.abandon_open_calls` writes the call's `failed` record (tests/test_instrument.py),
+    the tailer ingests it, and the task ends with the cause instead of `running` forever.
     """
     clock = [1000.0]
     monkeypatch.setattr(m.time, "monotonic", lambda: clock[0])
     bus = FakeBus()
     tc = TaskCenter(bus)
     tc.ingest(_rec("t1", "started"))
-    tc.abandon_task("t1", reason="the run ended before the archive finished")
+    tc.ingest(_rec("t1", "failed", error="the run ended before the archive finished"))
     task = tc.snapshot()["tasks"][0]
     assert task["status"] == "error"
     assert "the run ended before the archive finished" in task["error"]
     assert bus.events[-1]["event"] == "llm_task" and bus.events[-1]["status"] == "error"
     clock[0] += m.LINGER_S + 1
     assert tc.snapshot()["tasks"] == []
-
-
-def test_abandon_task_is_a_no_op_for_unknown_or_terminal(monkeypatch):
-    """Abandoning must never resurrect a finished task or invent one."""
-    clock = [1000.0]
-    monkeypatch.setattr(m.time, "monotonic", lambda: clock[0])
-    tc = TaskCenter(FakeBus())
-    tc.abandon_task("nope", reason="r")
-    assert tc.snapshot()["tasks"] == []
-    tc.ingest(_rec("t1", "started"))
-    tc.ingest(_rec("t1", "finished"))
-    tc.abandon_task("t1", reason="too late")
-    assert tc.snapshot()["tasks"][0]["status"] == "done", "a finished task stays finished"

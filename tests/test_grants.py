@@ -354,6 +354,18 @@ def test_deny_blocks_own_recipe_and_config_writes():
     assert unlocked.deny({"kind": "write_file", "path": "routine.yaml", "content": "x"}) is not None
 
 
+def test_the_recipe_denial_names_the_request_route_once():
+    """The request route is a whole sentence of its own ("If it is essential, request it:
+    ask_user with request: …"). The recipe denial prefixed it with ", or request it: " and the
+    model read "or request it: If it is essential, request it: ask_user …" on every refusal."""
+    from rsched.grantpolicy import REQUEST_ROUTE_MARK
+
+    denial = GrantPolicy().deny({"kind": "edit_file", "path": "stages/collect.md"})
+    assert denial is not None and denial.count("request it:") == 1
+    assert f'{REQUEST_ROUTE_MARK} "action:write_recipe"' in denial
+    assert "(or a report). If it is essential" in denial
+
+
 def test_validate_action_carries_capability_denials():
     """The capability check rides the same retry cycle as the workflow allowlist; finish is
     always permitted and grants=None means unrestricted."""
@@ -499,12 +511,36 @@ def test_write_util_revise_branch_uses_the_live_catalog(tmp_path):
         'usage: gu existing\n"""\n', encoding="utf-8")
     creator = load_policy(home, ["util-authoring"], {"actions": ["write_util"]})
     reviser = load_policy(home, ["util-revision"], {"actions": ["revise_util"]})
-    assert "existing" in creator.known_utils
     denial = creator.deny(_write_util("existing"))
     assert denial and "REVISION" in denial and "util-revision" in denial
     assert reviser.deny(_write_util("existing")) is None
     # …and the create-only holder can still create
     assert creator.deny(_write_util("not-there-yet")) is None
+
+
+def test_a_half_granted_for_the_run_still_tells_create_from_revise(tmp_path):
+    """The split used to read a catalog loaded WITH the policy, and only for a routine holding
+    exactly one half. A routine holding neither loaded nothing: an existing util read as a
+    CREATION (so the denial asked for `action:write_util`), and once the user granted that half
+    for the run — `with_overlay` keeps the base policy's catalog — write_util REVISED the
+    existing util under a creation grant. The handler checks nothing after `deny` but the
+    approval dial, so with `confirm: creations` nobody was asked."""
+    home = _lib(tmp_path, {"util-authoring": AUTHORING, "util-revision": REVISION})
+    (home.parent / "utils" / "existing").mkdir(parents=True)
+    (home.parent / "utils" / "existing" / "main.py").write_text('"""does a thing."""\n',
+                                                                encoding="utf-8")
+    neither = load_policy(home, [], {"confirm": "creations"})
+    denial = neither.deny(_write_util("existing"))
+    assert denial and "REVISION" in denial and '"action:revise_util"' in denial
+    creation_for_the_run = neither.with_overlay({"action:write_util"}, set())
+    refused = creation_for_the_run.deny(_write_util("existing"))
+    assert refused and "REVISION" in refused, "a creation grant must not revise"
+    assert creation_for_the_run.deny(_write_util("brand-new")) is None
+    # a util created mid-run is a revision the next time it is written
+    (home.parent / "utils" / "brand-new").mkdir()
+    (home.parent / "utils" / "brand-new" / "main.py").write_text('"""new."""\n',
+                                                                 encoding="utf-8")
+    assert creation_for_the_run.deny(_write_util("brand-new"))
 
 
 def test_util_grant_can_be_scoped_to_one_verb(tmp_path):

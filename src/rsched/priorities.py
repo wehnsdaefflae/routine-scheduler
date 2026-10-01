@@ -8,8 +8,9 @@ an item card, stored here, that (a) floats the item to the top of the Messages p
 items" section listing the flagged items that routine owns, so its orient stage reads
 them before it plans.
 
-Ownership is resolved at read time, never stored: an `R<n>`'s owner is its `target`
-(an untargeted triage row belongs to self-audit, which owns triage), and every
+Ownership is resolved at read time, never stored: an `R<n>`'s owner is its `target` — for
+a row another report took over (`supersedes`), the target the carrier handed it to — and an
+untargeted triage row belongs to self-audit, which owns triage; every
 `F<n>`/`D<n>` lives in self-audit's report.json, so self-audit owns those. The store
 itself is one small JSON map under `.control/` — NOT report.json (self-audit rewrites
 that wholesale every run, which would silently clobber a user's flag) and NOT
@@ -26,7 +27,9 @@ from .paths import atomic_write_json, file_lock, read_json
 from .reports import read_reports, reports_path
 
 PRIORITIES_FILE = "item-priorities.json"
-ITEM_ID_RE = re.compile(r"^[FDR]\d{1,4}$")
+# Unbounded like the ledger's own `reports.REPORT_ID_RE`: the report counter passed R2000 in
+# its second month, and a flag the API refused at R10000 would read as "not an item id".
+ITEM_ID_RE = re.compile(r"^[FDR]\d+$")
 
 #: Findings and decisions live in this routine's report.json; untargeted reports wait in
 #: its triage. Mirrors readmodels/items.py — the read model and this resolver must agree.
@@ -96,7 +99,12 @@ def owned_priority_items(routines_home: Path, routine_slug: str) -> list[dict]:
             row = report_rows.get(item_id)
             if row is None:
                 continue
-            owner = str(row.get("target") or "") or SELF_AUDIT_SLUG
+            # The Messages card's `to` (readmodels/item_reports): a FOLDED row is the carrier
+            # target's now. Read as untargeted, a flagged triage row that was routed to its
+            # owner kept landing in self-audit's digest — the re-routing F492 removed.
+            folded = row.get("superseded")
+            carrier_to = folded.get("to") if isinstance(folded, dict) else ""
+            owner = str(row.get("target") or carrier_to or "") or SELF_AUDIT_SLUG
             if owner == routine_slug:
                 out.append({"id": item_id, "title": str(row.get("title") or "")})
         elif routine_slug == SELF_AUDIT_SLUG:

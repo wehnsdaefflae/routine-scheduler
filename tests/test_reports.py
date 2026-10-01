@@ -125,6 +125,46 @@ def test_ids_are_monotonic_across_reporters(tmp_path):
     assert next_id(reports_path(home)) == "R3"
 
 
+def test_no_id_is_minted_without_the_ledger_lock(tmp_path, monkeypatch):
+    """`file_lock` yields False when a stalled holder kept the lock past its timeout and
+    leaves proceeding to the caller. Minting an id there is how two filers past a stalled
+    third both write the same `R<n>` — and the fold keeps the FIRST row of an id, so the
+    second report vanishes into it. The filing is refused instead: an addressed report's
+    handler surfaces that, an unaddressed one is best-effort anyway."""
+    from contextlib import contextmanager
+
+    import rsched.reports as reports_mod
+
+    loop, home = _loop(tmp_path, slug="self-audit")
+    target = _routine(home, "routine-improver")
+    handle_report(loop, {"title": "before the stall"})
+
+    @contextmanager
+    def stalled(_path, **_kw):
+        yield False
+
+    monkeypatch.setattr(reports_mod, "file_lock", stalled)
+    obs = handle_report(loop, {"title": "during the stall", "target": "routine-improver"})
+    assert obs["filed"] is False and obs["id"] == ""
+    assert [r["id"] for r in _rows(home)] == ["R1"]
+    assert not list((target / "inbox").glob("msg-*.json")), "nothing delivered either"
+    assert "could NOT write" in format_observation(obs)
+
+
+def test_an_answer_is_stored_as_the_canonical_id(tmp_path):
+    """`answers` is an id like `settles` is, and the ledger stores ids upper-cased. Each
+    reader re-upper-cased it, so an `answers: "r1"` did settle R1 — but it was stored and shown
+    as written, so the case-sensitive readers (the card's reference links, `refs`) missed it."""
+    loop, home = _loop(tmp_path)
+    handle_report(loop, {"title": "a question"})
+    handle_report(loop, {"title": "the reply", "answers": " r1 "})
+    assert _rows(home)[1]["answers"] == "R1"
+    audit = _routine(home, "self-audit")
+    built = {i["id"]: i for i in items._build(*items.source_paths(audit, home))["items"]}
+    assert built["R1"]["answered_by"] == "R2"
+    assert "R1" in built["R2"]["refs"]
+
+
 # -- addressed: delivery to the owner --------------------------------------------------------
 
 

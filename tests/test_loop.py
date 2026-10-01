@@ -52,13 +52,16 @@ def _server(routine_dir, *, util_authoring: str | None = "never") -> ServerConfi
     # the builtin fallback body; util actions on a missing name return a "missing"
     # observation. write_util rides the routine's CAPABILITIES: confirm defaults to "never"
     # here (the legacy "false") so write_util tests don't block on approval; pass
-    # util_authoring=None to switch write_util off entirely.
+    # util_authoring=None to switch write_util off entirely. Both halves, as the shipped
+    # util-authoring doc requires them: create-only would refuse every REVISION these tests
+    # simulate by patching `utils_lib.exists`.
     s.routines_home = routine_dir.parent          # hermetic: .control logs land in tmp
     s.libraries_home = routine_dir.parent.parent / "test-library"
     caps_actions = ["memory_read", "memory_write"]
     if util_authoring is not None:
-        _library_permission(s, "util-authoring", "requires:\n  actions: [write_util]")
-        caps_actions = ["write_util", *caps_actions]
+        _library_permission(s, "util-authoring",
+                            "requires:\n  actions: [write_util, revise_util]")
+        caps_actions = ["write_util", "revise_util", *caps_actions]
         _set_capabilities(routine_dir, actions=caps_actions, confirm=util_authoring)
     else:
         _set_capabilities(routine_dir, actions=caps_actions)

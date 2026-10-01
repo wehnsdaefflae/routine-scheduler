@@ -59,7 +59,8 @@ class RunInfo:
 @dataclass
 class RoutineInfo:
     """A routine plus its recent runs and open questions — one catalog entry, rebuilt
-    from the filesystem on every rescan (no cache, no database).
+    from the filesystem on every rescan (no cache files, no database; the parses behind it
+    are stat-validated memos, see below).
     """
 
     cfg: RoutineConfig
@@ -179,14 +180,8 @@ def scan(server: ServerConfig, home: Path | None = None) -> dict[str, RoutineInf
         if not (d / "routine.yaml").exists():
             continue
         visited.add(str(d))
-        cfg, problems = _load_routine_memo(d)
-        if cfg is None:
-            cfg = RoutineConfig(slug=d.name, dir=d, enabled=False)
-            problems = [*problems, "unloadable routine.yaml — treated as disabled"]
-        catalog[cfg.slug] = RoutineInfo(cfg=cfg, problems=problems,
-                                        runs=run_index(d, cfg.slug),
-                                        open_questions=_open_questions_memo(d),
-                                        retired=_retired_from_goal(d))
+        entry = _entry(d)
+        catalog[entry.slug] = entry
     _prune(_cfg_memo, home, visited)
     _prune(_questions_memo, home, visited)
     _prune(_retired_memo, home, visited)
@@ -219,22 +214,32 @@ def info(server: ServerConfig, home: Path, slug: str) -> RoutineInfo | None:
     """
     d = home / slug
     if is_slug(slug) and (d / "routine.yaml").exists():
-        cfg, problems = _load_routine_memo(d)
-        if cfg is None:
-            cfg = RoutineConfig(slug=slug, dir=d, enabled=False)
-            problems = [*problems, "unloadable routine.yaml — treated as disabled"]
-        if cfg.slug == slug:
-            return RoutineInfo(cfg=cfg, problems=problems, runs=run_index(d, cfg.slug),
-                               open_questions=_open_questions_memo(d),
-                               retired=_retired_from_goal(d))
+        entry = _entry(d)
+        if entry.slug == slug:
+            return entry
     return scan(server, home).get(slug)
 
 
+def _entry(d: Path) -> RoutineInfo:
+    """One routine directory as a catalog entry, off the four memos. `scan` and `info` both
+    build through here, so what an unloadable routine.yaml reads as cannot differ between the
+    whole-home walk and the one-directory lookup.
+    """
+    cfg, problems = _load_routine_memo(d)
+    if cfg is None:
+        cfg = RoutineConfig(slug=d.name, dir=d, enabled=False)
+        problems = [*problems, "unloadable routine.yaml — treated as disabled"]
+    return RoutineInfo(cfg=cfg, problems=problems, runs=run_index(d, cfg.slug),
+                       open_questions=_open_questions_memo(d), retired=_retired_from_goal(d))
+
+
 def _load_routine_memo(d: Path) -> tuple[RoutineConfig | None, list[str]]:
-    # Config AND tuning both feed the parsed RoutineConfig, so an edit to either must miss the
-    # memo — tuning because a slider move (or the improver re-levelling deliberation) changes
-    # the config without touching routine.yaml.
-    fp = fingerprint([d / "routine.yaml", d / "tuning.yaml"])
+    # Every file `load_routine` reads has to be in the key, or the memo serves an answer the
+    # disk no longer gives. Config AND tuning feed the parsed RoutineConfig — tuning because a
+    # slider move (or the improver re-levelling deliberation) changes the config without
+    # touching routine.yaml — and main.md's EXISTENCE is one of the problems it reports: a
+    # recipe written after the first scan kept reading "no main.md" until something else moved.
+    fp = fingerprint([d / "routine.yaml", d / "tuning.yaml", d / "main.md"])
     hit = _cfg_memo.get(str(d))
     if hit is None or hit[0] != fp:
         hit = (fp, load_routine(d))

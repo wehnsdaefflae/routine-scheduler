@@ -27,8 +27,14 @@ from rsched.engine.admin_handlers import handle_report
 from rsched.engine.inbox import drain_messages
 from rsched.engine.observations import format_observation
 from rsched.readmodels import items
-from rsched.report_threads import OPEN_THREAD_CAP, open_threads, supersedable
-from rsched.reports import read_reports, reports_path, retract_report, stamp_delivered
+from rsched.report_threads import OPEN_THREAD_CAP, ThreadCapError, open_threads, supersedable
+from rsched.reports import (
+    file_report,
+    read_reports,
+    reports_path,
+    retract_report,
+    stamp_delivered,
+)
 
 
 def _routine(home: Path, slug: str) -> Path:
@@ -233,6 +239,25 @@ def test_a_reply_and_a_fold_are_never_capped(home):
     assert folded["filed"] and folded["supersedes"] == ["R2", "R3"]
 
 
+def test_a_fold_that_folds_nothing_is_a_new_thread_and_is_capped(home):
+    """The exemption is earned by what the ledger actually FOLDS under its lock, not by what
+    the report asked to fold. The handler checks `supersedes` before it takes the lock, so a
+    concurrent filing can fold the same row first: keyed on the REQUEST, this report then
+    opened a fourth parallel thread with nothing folded at all."""
+    _fill_to_cap(home)                                                   # R1-R3, self-audit
+    handle_report(_loop(home, "freelance-radar"), {"title": "a triage row"})            # R4
+    handle_report(_loop(home, "freelance-radar"),                                       # R5
+                  {"target": "global-utils-review", "title": "folded first",
+                   "supersedes": ["R4"]})
+    # self-audit's handler validated R4 before R5 landed; its filing reaches the ledger after
+    with pytest.raises(ThreadCapError) as refused:
+        file_report(home, routine="self-audit", run_id="self-audit:20260915-120000",
+                    title="late fold", target="global-utils-review",
+                    target_dir=home / "global-utils-review", supersedes=("R4",))
+    assert refused.value.open_ids == ["R1", "R2", "R3"]
+    assert [r["id"] for r in read_reports(reports_path(home))] == ["R1", "R2", "R3", "R4", "R5"]
+
+
 def test_an_untargeted_report_is_never_capped(home):
     """Triage has no owner to overload, and a run that cannot name one must still be able to
     say what it found — that is the whole point of the unaddressed half of the channel.
@@ -279,3 +304,11 @@ def test_supersedable_splits_and_keeps_the_callers_order(home):
     ok, bad = supersedable(rows, ["r3", "R1", "R404", "R2"])
     assert ok == ["R1"]
     assert bad == ["R3", "R404", "R2"]
+
+
+def test_supersedable_names_each_row_once(home):
+    """A repeated id is one row: listed twice it minted two `superseded` events and a
+    carrier whose `supersedes` named the same row twice on its card."""
+    rows = [{"id": "R1"}, {"id": "R2"}]
+    assert supersedable(rows, ["R1", "r1", " R1", "R2", "R404", "r404"]) == (["R1", "R2"],
+                                                                             ["R404"])

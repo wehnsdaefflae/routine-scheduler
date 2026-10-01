@@ -302,9 +302,11 @@ instead"), while an own-RECIPE write (`main.md` / `stages/` / `tuning.yaml`) is 
 the routine may hold — denied without it as "editing this routine's own recipe (main.md /
 stages/ / tuning.yaml) needs the recipe-authoring permission, which this routine does not hold
 — its instructions are the user's. File a deferred ask_user (or a report) describing the
-change instead" (engine/fileops.py `_write_gate`). For a switched-off capability the way out is a
-typed ACCESS REQUEST (grants.request_route): `If it is essential, request it: ask_user
-with request: "<entity-id>" and a question saying what you need it for` (with mode
+change instead" (engine/fileops.py `_write_gate`; the relative-path form `GrantPolicy.deny`
+refuses first says the same and ends with the access-request route below). For a switched-off
+capability the way out is a typed ACCESS REQUEST (`GrantPolicy.request_route`): `If it is
+essential, request it: ask_user with request: "<entity-id>" and a question saying what you
+need it for` (with mode
 "blocking" if the run cannot proceed without it, deferred otherwise), closing with
 `The user decides: allow/deny, once or forever.` A tombstoned entity gets the settled wording instead — `The
 user has PERMANENTLY declined <entity> for this routine — do not request it again` (deny
