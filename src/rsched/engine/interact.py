@@ -214,9 +214,14 @@ def _config_target(ctx, cpatch: dict | None, *,
 
 def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question") -> dict:
     ctx = loop.ctx
+    # EVERY write of this decision record — the first filing and each re-filing that leaves it
+    # open — goes to the ROUTINE's own dir, where a person reads it; a child's `routine.dir` is
+    # its runs/<ts>/sub/<n>/ workspace, which no surface scans. One name for that dir keeps the
+    # re-files from drifting back to the per-run dir the first filing had to be moved off.
+    qdir = ctx.root_routine_dir
     if qtype == "question" and loop.dialog_qid:
         # a re-ask after a dialog reply supersedes the still-open previous record
-        inbox.resolve_question(ctx.routine.dir, loop.dialog_qid)
+        inbox.resolve_question(qdir, loop.dialog_qid)
         loop.dialog_qid = None
     qid = _free_qid(ctx)
     mode = action.get("mode") or "deferred"
@@ -236,11 +241,10 @@ def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question") -> di
     # precisely the defect.
     conversation = _lands_in_conversation(ctx)
     ctarget, cterr = _config_target(ctx, cpatch, conversation=conversation)
+    if not cterr:
+        cterr = _config_patch_shape(cpatch, ctarget, conversation=conversation)
     if cterr:
-        return {"kind": qtype if qtype != "question" else "ask_user", "error": cterr}
-    cterr = _config_patch_shape(cpatch, ctarget, conversation=conversation)
-    if cterr:
-        return {"kind": qtype if qtype != "question" else "ask_user", "error": cterr}
+        return {"kind": "ask_user", "error": cterr}
     # A typed access request (entities.py) rides the same record; the Decisions page
     # renders the allow/deny × now/forever buttons for it (plus allow-once for
     # turn-action classes, D65), and the answer's `decision` is what settles it (free
@@ -259,11 +263,20 @@ def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question") -> di
     ctx.transcript.event("question", {"qid": qid, "mode": mode, "question": question,
                                       "options": options, **extra,
                                       **({"request": req_ids} if req_ids else {})})
+
+    def leave_open(*, churn: bool = True) -> None:
+        """(Re)file the record as DEFERRED — the shape every ending that leaves it open shares.
+        `churn` counts it as a decision thrown over the wall (`asks_deferred` telemetry); a
+        dialog reply is not one — the conversation about it is still going.
+        """
+        inbox.file_question(qdir, qid, question, options, ctx.run_ts, qtype=qtype,
+                            default=default, config_patch=cpatch, config_target=ctarget,
+                            request=req_ids)
+        if churn:
+            ctx.asks_deferred += 1
+
     if mode == "deferred":
-        inbox.file_question(ctx.root_routine_dir, qid, question, options, ctx.run_ts,
-                            qtype=qtype, default=default, config_patch=cpatch,
-                            config_target=ctarget, request=req_ids)
-        ctx.asks_deferred += 1   # churn telemetry: a decision thrown over the wall
+        leave_open()
         return {"kind": "ask_user", "qid": qid, "mode": mode,
                 **({"request": req_ids} if req_ids else {})}
 
@@ -272,7 +285,7 @@ def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question") -> di
                .isoformat(timespec="seconds"))
     # blocking decisions are durable records too — the Decisions page never depends on a
     # live status.json to show one, and an aborted run leaves it behind as deferred
-    inbox.file_question(ctx.root_routine_dir, qid, question, options, ctx.run_ts,
+    inbox.file_question(qdir, qid, question, options, ctx.run_ts,
                         mode="blocking", qtype=qtype, default=default, expires=expires,
                         config_patch=cpatch, config_target=ctarget,
                         request=req_ids)
@@ -287,7 +300,7 @@ def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question") -> di
         while time.monotonic() < deadline:
             if loop._aborted():
                 raise RunAborted
-            answer = inbox.take_answer(ctx.routine.dir, qid, loop.consumed_dir)
+            answer = inbox.take_answer(qdir, qid, loop.consumed_dir)
             # D38: an approval is settled ONLY by a clear approve/decline, and an access
             # REQUEST only by one of the typed decisions (the web's buttons). Any
             # other reply ("Bin hier", an unrelated instruction) is user INPUT that
@@ -299,7 +312,7 @@ def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question") -> di
                 ctx.transcript.event("answer", {"qid": qid, "text": str(answer["text"]),
                                                 "source": src, "held": True})
                 ctx.user_replies += 1     # held or not, the user spoke (R1310)
-                inbox.file_message(ctx.routine.dir, str(answer["text"]), source=src,
+                inbox.file_message(qdir, str(answer["text"]), source=src,
                                    via="web")   # the user's own reply to THIS run — live
                 answer = None
                 continue
@@ -308,10 +321,7 @@ def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question") -> di
             time.sleep(poll_s)
     except RunAborted:
         # the run dies but the decision survives — as a deferred question for the next run
-        inbox.file_question(ctx.routine.dir, qid, question, options, ctx.run_ts,
-                            qtype=qtype, default=default, config_patch=cpatch,
-                            config_target=ctarget, request=req_ids)
-        ctx.asks_deferred += 1
+        leave_open()
         raise
     finally:
         ctx.credit_suspended(time.monotonic() - started)
@@ -319,10 +329,7 @@ def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question") -> di
     if answer and answer.get("defer"):
         # The user parked the decision from the Decisions page — continue exactly like a
         # timeout: on the stated default, the record staying open as deferred.
-        inbox.file_question(ctx.routine.dir, qid, question, options, ctx.run_ts,
-                            qtype=qtype, default=default, config_patch=cpatch,
-                            config_target=ctarget, request=req_ids)
-        ctx.asks_deferred += 1
+        leave_open()
         return {"kind": "ask_user", "qid": qid, "mode": mode, "deferred_by_user": True,
                 **({"default": default} if default else {})}
     if answer:
@@ -336,17 +343,13 @@ def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question") -> di
             # A dialog reply, not the answer: the user needs some back-and-forth before they
             # can decide. The decision record STAYS OPEN (deferred — the run is no longer
             # parked on it): the model's re-ask supersedes it, and a finish without a re-ask
-            # leaves it live for the next run instead of silently dropping it.
-            inbox.file_question(ctx.routine.dir, qid, question, options, ctx.run_ts,
-                                qtype=qtype, default=default, config_patch=cpatch,
-                                config_target=ctarget, request=req_ids)
+            # leaves it live for the next run instead of silently dropping it. What the model
+            # is told — their words and what to do with them — is obs_admin's wording.
+            leave_open(churn=False)
             loop.dialog_qid = qid
             return {"kind": "ask_user", "qid": qid, "mode": mode, "dialog": True,
-                    "user_message": answer["text"],
-                    "note": "This is a dialog reply, NOT the final answer — the user needs "
-                            "more back-and-forth first. Address their message, then ask again "
-                            "with ask_user (the original question, or a sharper version)."}
-        inbox.resolve_question(ctx.routine.dir, qid)
+                    "user_message": answer["text"]}
+        inbox.resolve_question(qdir, qid)
         if req_ids:
             # One of the typed decisions (guaranteed by the settle rule above):
             # seed the run overlay, rebuild the live policy + transport schema, and
@@ -362,9 +365,6 @@ def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question") -> di
                 "answer": answer["text"], "source": source}
     # timeout: continue WITHOUT the decision — on the stated default when there is one.
     # The record stays open (now deferred) so a late answer still reaches a future run.
-    inbox.file_question(ctx.routine.dir, qid, question, options, ctx.run_ts,
-                        qtype=qtype, default=default, config_patch=cpatch,
-                        config_target=ctarget, request=req_ids)
-    ctx.asks_deferred += 1
+    leave_open()
     return {"kind": "ask_user", "qid": qid, "mode": mode, "timed_out": True,
             "timeout_min": timeout_min, **({"default": default} if default else {})}

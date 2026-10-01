@@ -143,6 +143,9 @@ def test_doc_pins_the_canonical_engine_strings(make_routine, tmp_path):
         "allowed for ONE action only",
         "ONCE-GRANT SPENT",
         "(one action only)",
+        # A blocking ask answered with "ask back": the user's own words ARE the observation
+        # (obs_admin) — it fell through to the plain deferred line, and the model never saw them
+        "the user replied WITHOUT deciding",
         # SHARED STORES: the harness contract of a run whose write roots include a shared store
         # names each store, who else shares it and its collision contract — and the hub line
         "SHARED STORES (read+write roots you share with other routines",

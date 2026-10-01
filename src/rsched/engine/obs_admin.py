@@ -186,6 +186,16 @@ def format_admin(obs: dict, kind: str) -> str | None:  # noqa: C901, PLR0911, PL
             return (f"OBSERVATION (ask_user): no answer within {obs.get('timeout_min')}m — "
                     f"question stays open as deferred ({obs['qid']}). {tail}; a late answer "
                     "reaches a future run.")
+        if obs.get("dialog"):
+            # The console's "ask back": the user replied to a BLOCKING question without
+            # deciding it. Their words are the whole point — this used to fall through to the
+            # "filed as deferred … Continue." line below, so the model never saw them and
+            # carried on as if nobody had answered.
+            return (f"OBSERVATION (ask_user): the user replied WITHOUT deciding — a dialog reply, "
+                    f"NOT the answer; the question stays open ({obs['qid']}):\n"
+                    f"{obs.get('user_message', '')}\nAddress their message, then ask again with "
+                    "ask_user (the original question, or a sharper version) — your re-ask "
+                    "replaces the open record.")
         return (f"OBSERVATION (ask_user): question filed as deferred ({obs['qid']}). The user will "
                 "see it in the UI; the answer, if any, reaches a future run. Continue.")
     return None
