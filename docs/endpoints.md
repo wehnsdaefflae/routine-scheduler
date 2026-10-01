@@ -323,12 +323,18 @@ base URL of the server, whatever key you configured it with. This is the guarant
 for a model no provider lists.
 
 **Anthropic API** — `kind: anthropic`, no base_url needed, `sk-ant-…` key. Metered: know
-your budget caps. The action rides one tool, offered on `tool_choice: auto` held to one call
-and never forced: the newest Claude models (Fable 5.1, Opus 5.5, Sonnet 5.5) refuse a forced
-`tool_choice` with a 400, and absorbing that 400 cost an extra round trip on every call they
-served (the operator chose not to force on this wire, 2026-10-01). A model that answers in
-text instead has its action read from the text. A model that refuses several optional fields
-(a configured `temperature`, the effort knob) is degraded one 400 at a time.
+your budget caps. The action rides one tool with `tool_choice` FORCING it. The newest Claude
+models on the direct API (Fable 5.1, Opus 5.5, Sonnet 5.5) refuse a forced choice with a 400,
+and the adapter answers it by offering the tool on `auto` held to one call — a round trip per
+structured call on those models. Through the subscription proxy nothing refuses it: the proxy
+strips thinking and effort from a forced call instead ([subscription
+proxy](claude-proxy-cutover.md)). 0.372.0 stopped forcing, to spare that round trip; through
+the proxy Opus then answered with tool calls nothing could be read from, every run failed
+over to its fallback model, and the operator chose to force again (2026-10-01). A model that
+answers in text instead has its action read from the text. A model that refuses several
+optional fields (a configured `temperature`, the effort knob) is degraded one 400 at a time.
+A reply no action can be read from names what it carried — block types, a tool call's name,
+its input's type — in the run's empty-completion error.
 
 ## Windows and output caps are DISCOVERED — leave them blank
 

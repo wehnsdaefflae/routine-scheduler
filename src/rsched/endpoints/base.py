@@ -109,9 +109,10 @@ class Completion:
     stop_reason: str = ""
     # Provider detail on WHY it stopped ({category, explanation, ...} verbatim on a Messages
     # API classifier refusal, which can omit it; the promoted refusal's prose on
-    # openai_compat) — {} when unreported. Diagnostic only: surfaced in the refusal error
-    # event so the category is visible in the transcript (F164, R5); the engine branches on
-    # stop_reason, never on this.
+    # openai_compat) — {} when unreported. The Anthropic adapter adds `unread` to a reply it
+    # could read nothing from: its content blocks by type, never a value. Diagnostic only:
+    # surfaced in the refusal and empty-completion error events so the transcript says what
+    # came back (F164, R5); the engine branches on stop_reason, never on this.
     stop_details: dict = field(default_factory=dict)
 
 

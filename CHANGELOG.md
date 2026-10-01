@@ -15,6 +15,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.372.2] — 2026-10-01
+
+### Fixed — Opus answers through the subscription proxy again
+
+items: a regression report from the deploy session on the production host (2026-10-01); the
+operator chose to force again
+
+**What happened.** 0.372.0 stopped forcing the action tool (`tool_choice: auto` held to one
+call), to spare the newest Claude models a 400 on every structured call to the direct API.
+Through CLIProxyAPI that 400 never happens: the proxy strips `thinking` and
+`output_config.effort` from every forced call instead — so on 0.370.2 the "Opus high" and "Opus
+medium" effort never reached the model, and all 23 Opus runs that day answered cleanly.
+Unforced, the effort arrived, Opus thought, and its replies came back `stop_reason: tool_use`
+with nothing the adapter could read. From the moment 0.372.1 went live, every Opus turn spent
+two subscription calls on empty completions and failed its run over to GLM 5.3, billed per token.
+
+- **The action tool is forced again** — the 0.371.0 adapter: forced first; a model that
+  refuses forcing (the newest Claude models on the direct API) gets `auto` held to one call; a
+  gateway that does not know `tool_choice` loses it. Codex models are back on the route their
+  action schema was validated on.
+- **A reply no action can be read from names what it carried.** `stop_details["unread"]` lists
+  its content blocks — each type, a tool call's name and its input's type, never a value — and
+  the run's empty-completion error prints it. This regression was diagnosed blind because that
+  error said only that nothing came back, and the exact shape behind it is still unconfirmed:
+  the tool renaming CLIProxyAPI does under its Claude OAuth cloak would explain it, but the
+  deployed proxy config disables cloaking.
+- `docs/endpoints.md`, `docs/architecture.md` and `docs/claude-proxy-cutover.md` say why the
+  tool is forced, and that through the proxy a model's effort reaches only its plain calls.
+
 ## [0.372.1] — 2026-10-01
 
 ### Fixed — the boot migration no longer asks for a fix that already landed

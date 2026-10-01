@@ -455,7 +455,7 @@ def test_ollama_native_malformed_json_on_200_is_retryable(monkeypatch):
 
 # --- anthropic -------------------------------------------------------------------
 
-def test_anthropic_tool_on_auto_and_parse(monkeypatch, tmp_path):
+def test_anthropic_forced_tool_and_parse(monkeypatch, tmp_path):
     keyfile = tmp_path / "anthropic.env"
     keyfile.write_text('ANTHROPIC_API_KEY="sk-test"\n')
     ep = AnthropicEndpoint(EndpointConfig(
@@ -475,12 +475,13 @@ def test_anthropic_tool_on_auto_and_parse(monkeypatch, tmp_path):
     assert seen["body"]["system"] == [{"type": "text", "text": "be brief",
                                        "cache_control": {"type": "ephemeral"}}]
     assert seen["body"]["tools"][0]["cache_control"] == {"type": "ephemeral"}
-    assert seen["body"]["tool_choice"] == _ONE_CALL_AT_MOST       # offered, never forced
+    assert seen["body"]["tool_choice"] == _FORCED
     assert all(m["role"] != "system" for m in seen["body"]["messages"])
     last = seen["body"]["messages"][-1]
     assert last["content"][0]["cache_control"] == {"type": "ephemeral"}
     assert last["content"][0]["text"] == "continue"
     assert c.parsed == {"say": "s", "kind": "finish"} and c.usage == {"in": 7, "out": 3}
+    assert c.stop_details == {}                       # a readable reply describes nothing
 
 
 def test_anthropic_missing_key(tmp_path):
@@ -498,7 +499,9 @@ def _anth():
 
 _ANTH_OK = {"content": [{"type": "tool_use", "name": "action", "input": {"say": "s", "kind": "finish"}}],
             "usage": {"input_tokens": 1, "output_tokens": 1}}
-# The tool_choice every schema'd call sends — pinned as the literal wire shape.
+# The tool_choice every schema'd call sends, and what a model that refuses forcing gets
+# instead — pinned as the literal wire shapes.
+_FORCED = {"type": "tool", "name": "action"}
 _ONE_CALL_AT_MOST = {"type": "auto", "disable_parallel_tool_use": True}
 
 
@@ -578,7 +581,7 @@ def test_anthropic_one_shot_places_no_breakpoints(monkeypatch, tmp_path):
     assert isinstance(seen["body"]["messages"][-1]["content"], str)
     # everything else about the call is unchanged — this is a caching decision, not a
     # different request shape
-    assert seen["body"]["tool_choice"] == _ONE_CALL_AT_MOST
+    assert seen["body"]["tool_choice"] == _FORCED
 
 
 def test_anthropic_cache_usage_captured(monkeypatch):
@@ -904,19 +907,48 @@ def _refuses_forced_tool_use(bodies):
     return fake_post
 
 
-def test_anthropic_never_forces_the_tool_so_no_call_pays_a_400(monkeypatch):
-    """The newest Claude models (Fable 5.1, Opus 5.5, Sonnet 5.5) answer a FORCED tool_choice
-    with a 400. Degrading on that 400 kept them working, but every schema'd call re-learned it:
-    one wasted round trip on every turn of every run they served. The operator's decision
-    (2026-10-01): never force on this wire. The tool is offered on `auto` with at most ONE
-    call (the engine takes one action per turn; plain `auto` would let a reply carry several,
-    all but one silently lost), so the first request is the one that is answered."""
+def test_anthropic_forced_tool_choice_400_degrades_to_auto(monkeypatch):
+    """The newest Claude models on the direct API (Fable 5.1, Opus 5.5, Sonnet 5.5) answer a
+    FORCED tool_choice with a 400 — non-retryable, so every schema'd call on them would fail.
+    The model that rejects it says so and gets the call again on `auto` with at most ONE tool
+    call (the engine takes one action per turn, and plain `auto` would let a reply carry
+    several, all but one silently lost); the one tool is still offered. A model that ACCEPTS
+    forced tool use keeps it — through the subscription proxy that is every model, because the
+    proxy strips thinking from a forced call instead of refusing it."""
     bodies: list = []
     monkeypatch.setattr(anth_mod.httpx, "post", _refuses_forced_tool_use(bodies))
     c = _anth().complete(MESSAGES, model="claude-opus-5-5", schema={"type": "object"})
-    assert [b["tool_choice"] for b in bodies] == [_ONE_CALL_AT_MOST]
-    assert bodies[0]["tools"][0]["name"] == "action"
+    assert [b["tool_choice"] for b in bodies] == [_FORCED, _ONE_CALL_AT_MOST]
+    assert bodies[1]["tools"] == bodies[0]["tools"]
     assert c.parsed == {"say": "s", "kind": "finish"}
+
+
+def test_anthropic_a_tool_reply_no_action_can_be_read_from_names_its_blocks(monkeypatch):
+    """0.372.1 offered the tool on `auto`; through the subscription proxy Opus then answered
+    `stop_reason: tool_use` with nothing the adapter could read, and the engine's error said
+    only "empty completion" — the cause had to be guessed from outside. A reply no action can
+    be read from now lists what it carried: each block's type, a tool call's name and its
+    input's TYPE, never a value (a thought or an input can hold anything)."""
+    replies = iter([
+        {"content": [{"type": "thinking", "thinking": "a private thought", "signature": "s"},
+                     {"type": "tool_use", "name": "mcp__a_b__c_action",
+                      "input": {"say": "s", "kind": "finish"}}],
+         "stop_reason": "tool_use", "usage": {"input_tokens": 1, "output_tokens": 1}},
+        {"content": [{"type": "tool_use", "name": "action", "input": '{"kind": "finish"}'}],
+         "stop_reason": "tool_use", "usage": {"input_tokens": 1, "output_tokens": 1}},
+        {"content": [], "stop_reason": "tool_use",
+         "usage": {"input_tokens": 1, "output_tokens": 0}},
+    ])
+    monkeypatch.setattr(anth_mod.httpx, "post", lambda *a, **k: FakeResponse(payload=next(replies)))
+    renamed, stringly, bare = (_anth().complete(MESSAGES, model="m", schema={"type": "object"})
+                               for _ in range(3))
+    assert renamed.parsed is None and renamed.text == ""
+    assert renamed.stop_details == {
+        "unread": "thinking, tool_use 'mcp__a_b__c_action' (input: dict)"}
+    assert "private thought" not in str(renamed.stop_details)
+    assert stringly.parsed is None
+    assert stringly.stop_details == {"unread": "tool_use 'action' (input: str)"}
+    assert bare.stop_details == {"unread": "no content blocks"}
 
 
 def test_anthropic_degrades_every_field_a_model_rejects_one_400_at_a_time(monkeypatch):
@@ -945,14 +977,14 @@ def test_anthropic_degrades_every_field_a_model_rejects_one_400_at_a_time(monkey
     assert c.parsed == {"say": "s", "kind": "finish"}
     assert ["temperature" in b for b in bodies] == [True, False, False, False]
     assert ["output_config" in b for b in bodies] == [True, True, False, False]
-    assert all(b["tool_choice"] == _ONE_CALL_AT_MOST for b in bodies)   # never named: kept
+    assert all(b["tool_choice"] == _FORCED for b in bodies)   # never named: kept
     assert len(bodies) == 4               # two 400s, the 529, then the accepted request
 
 
 def test_anthropic_a_400_naming_nothing_sent_is_not_retried(monkeypatch):
-    """The loop ends where the 400 names nothing still in the body. A gateway that does not
-    know `tool_choice` loses it (the tool is still offered); a 400 after that surfaces as-is
-    instead of looping."""
+    """The loop ends where the 400 names nothing still in the body. A gateway that refuses
+    even the unforced choice (it does not know the field) loses it entirely — the tool is
+    still offered; a 400 after that surfaces as-is instead of looping."""
     bodies = []
 
     def fake_post(url, json=None, headers=None, timeout=None):
@@ -963,5 +995,5 @@ def test_anthropic_a_400_naming_nothing_sent_is_not_retried(monkeypatch):
     with pytest.raises(EndpointError) as exc:
         _anth().complete(MESSAGES, model="m", schema={"type": "object"})
     assert not exc.value.retryable and "tool_choice" in str(exc.value)
-    assert [b.get("tool_choice") for b in bodies] == [_ONE_CALL_AT_MOST, None]
+    assert [b.get("tool_choice") for b in bodies] == [_FORCED, _ONE_CALL_AT_MOST, None]
     assert all(b["tools"][0]["name"] == "action" for b in bodies)

@@ -530,9 +530,10 @@ def test_empty_completions_fail_over_to_fallback(make_routine, monkeypatch):
 
     d = make_routine("emptyfo")
     server = _catalog_server(d.parent)
+    unread = {"unread": "thinking, tool_use 'mcp__a_b__c_action' (input: dict)"}
     eps = _wire(monkeypatch, server, {
         "epA": [Completion(text=""),
-                Completion(text="")],
+                Completion(text="", stop_reason="tool_use", stop_details=unread)],
         "epB": [write_file("state/probe.txt", say="grounding work"),
                 finish(summary="served by the backup model")]})
     status, run_dir = run_routine(d, server, run_ts=TS)
@@ -543,6 +544,9 @@ def test_empty_completions_fail_over_to_fallback(make_routine, monkeypatch):
                and "empty completion (no content" in e["payload"].get("message", "")]
     assert len(empties) == 2
     assert "stop_reason=unreported" in empties[0]["payload"]["message"]
+    # what an unreadable reply carried reaches the transcript, not only that it was empty
+    assert "stop_reason=tool_use" in empties[1]["payload"]["message"]
+    assert "tool_use 'mcp__a_b__c_action' (input: dict)" in empties[1]["payload"]["message"]
     switch = [e for e in events if e["type"] == "error" and e["payload"].get("failover")]
     assert switch and switch[0]["payload"]["failover"]["to"] == "backup"
     assert failover.is_cooling("epA", "m-a")

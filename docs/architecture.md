@@ -273,11 +273,14 @@ Two kinds:
   `response_format` on a 503 that hides a schema-incapable backend). Caching
   is the provider's implicit prefix caching; `cached_tokens` is surfaced from usage details.
 - **anthropic** — Messages API, direct or through CLIProxyAPI for subscription authentication. Schema via a single tool
-  offered on `tool_choice: auto` held to one call — never forced: the newest Claude models 400 on a
-  forced choice, and re-learning that cost a round trip on every call (operator, 2026-10-01); effort
-  via `output_config`. Every optional field a model may refuse — `output_config`, `temperature`,
-  the `cache_control` markers, `tool_choice` on a gateway that does not know it — is dropped on a
-  400 that names it, one field per 400 until the request is accepted. Sets `cache_control` breakpoints (tools +
+  with a FORCED `tool_choice` — the shape the proxy answers reliably, since it strips thinking and
+  effort from a forced call (0.372.0's unforced `auto` let Opus answer with tool calls nothing
+  could be read from; operator, 2026-10-01); a model that refuses forcing — the newest Claude
+  models on the direct API — gets `auto` held to one call. Effort via `output_config`. Every
+  optional field a model may refuse — the forced `tool_choice`, `output_config`, `temperature`,
+  the `cache_control` markers — is degraded on a 400 that names it, one field per 400 until the
+  request is accepted, and a reply no action can be read from names its content blocks in
+  `stop_details["unread"]`. Sets `cache_control` breakpoints (tools +
   system static, a moving one on the last message) on CONVERSATION turns — ~0.1x reads on the whole
   prefix every turn. A ONE-SHOT
   call places none: `cacheable` is derived from the task kind at the one seam every completion passes

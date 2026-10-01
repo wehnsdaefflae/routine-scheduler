@@ -1,20 +1,28 @@
 """Anthropic Messages API adapter.
 
-Schema via tool use: one tool named "action" whose input_schema is the requested schema,
-offered on `tool_choice: auto` held to ONE call (`_ONE_CALL_AT_MOST` — the engine takes one
-action per turn) and NEVER forced. The newest Claude models (Fable 5.1, Opus 5.5, Sonnet 5.5)
-answer a forced tool_choice with a 400, and learning that from the 400 cost a round trip on
-every structured call they served — every turn of every run; the operator chose not to force
-on this wire at all (2026-10-01), accepting that a model which would honour forcing (Haiku
-4.5) is no longer held to it. A model that answers in text instead of calling the tool has its
-action read from the text by the engine. Without a schema it is a plain messages call.
+Schema enforcement via tool use: one tool named "action" whose input_schema is the requested
+schema, with tool_choice FORCING it (`_FORCED`). Forcing is what the subscription proxy serves
+reliably: CLIProxyAPI strips `thinking` and `output_config.effort` from every forced call (the
+Messages API allows thinking only on `auto`), so a forced call is answered there with the action
+under its own name. 0.372.0 offered the tool on `auto` instead, to spare the newest models the
+400 below; through the proxy that let a configured effort reach Opus, and its turns came back
+`stop_reason: tool_use` with no action to read — every run failed over to its fallback model, so
+the operator chose to force again (2026-10-01). Without a schema it is a plain messages call.
 
-Every other optional field a model may refuse — `output_config` (effort), `temperature`, the
-`cache_control` markers, and `tool_choice` itself on a gateway that does not know it — rides
-the body, and a 400 that NAMES one drops it for a retry (`_degrade`). This adapter's KIND is a
-WIRE, not a provider: a subscription proxy speaks it while serving `gpt-*` ids, and Haiku 4.5
-still honours temperature. So no such field is sent blindly or dropped blindly: the model that
-rejects one says so, and pays a round trip per refused field.
+Every optional field a model may refuse — the forced `tool_choice`, `output_config` (effort),
+`temperature`, the `cache_control` markers — rides the body, and a 400 that NAMES one degrades
+it for a retry (`_degrade`). This adapter's KIND is a WIRE, not a provider: a subscription
+proxy speaks it while serving `gpt-*` ids, Haiku 4.5 still honours temperature, and the newest
+Claude models on the direct API (Fable 5.1, Opus 5.5, Sonnet 5.5) refuse forced tool use — on
+those the tool is still offered, on `auto` with at most one call (`_ONE_CALL_AT_MOST`: the engine
+takes ONE action per turn), and the engine reads an action from a text reply when the model
+writes one instead. So no field is sent blindly or dropped blindly: the model that rejects one
+says so, and pays a round trip per refused field.
+
+A reply no action can be read from — no `action` call with an object input, and no text — says
+what it DID carry: `stop_details["unread"]` lists its content blocks (each type, a tool call's
+name and its input's type, never a value), and the engine's empty-completion error prints it.
+The regression above was diagnosed blind because that error said only that nothing came back.
 
 Prompt caching is on for CONVERSATIONS: cache_control breakpoints on the tools block and
 the system prompt (static per run) plus a moving breakpoint on the last message — each turn
@@ -55,18 +63,21 @@ from .base import (
 API_VERSION = "2023-06-01"
 
 #: Optional top-level fields and the words in a 400's body that name each. Current Claude
-#: models REMOVED the sampling parameters; the 400 is non-retryable, so without the degrade one
-#: filled Settings box failed a model over on every turn of every run, while the same wire still
-#: serves models that accept the field. `cache_control` (nested) is handled in `_degrade` itself.
+#: models REMOVED the sampling parameters and the newest refuse a forced tool_choice; the 400
+#: is non-retryable, so without the degrade one filled Settings box — or the adapter's own
+#: forced tool — failed a model over on every turn of every run, while the same wire still
+#: serves models that accept the field. `cache_control` (nested) and `tool_choice` (replaced
+#: before it is dropped) are handled in `_degrade` itself.
 _DROPPABLE = (
     ("output_config", ("effort", "output_config")),
     ("temperature", ("temperature",)),
-    ("tool_choice", ("tool_choice", "disable_parallel_tool_use")),
 )
 
-#: The tool_choice every schema'd call sends: the API default, held to ONE call — `auto` alone
-#: would let a reply carry several, and `_parse` keeps a single action. Never a forced choice
-#: (see the module docstring).
+#: The tool_choice every schema'd call sends (see the module docstring for why it is forced).
+_FORCED = {"type": "tool", "name": "action"}
+
+#: What a refused forced tool_choice becomes: the API default, held to ONE call — `auto` alone
+#: would let a reply carry several, and `_parse` keeps a single action.
 _ONE_CALL_AT_MOST = {"type": "auto", "disable_parallel_tool_use": True}
 
 
@@ -82,6 +93,21 @@ def _usage(raw: dict) -> dict:
     if raw.get("cache_creation_input_tokens"):
         usage["cache_write"] = int(raw["cache_creation_input_tokens"])
     return usage
+
+
+def _describe(blocks: list[dict]) -> str:
+    """What a reply no action could be read from carried, for the empty-completion error:
+    each block's type, plus a tool call's name and the TYPE of its input — never a value, so
+    nothing a model wrote or thought reaches the transcript through this line.
+    """
+    parts = []
+    for block in blocks:
+        kind = str(block.get("type") or "untyped")
+        if kind == "tool_use":
+            kind += (f" {str(block.get('name') or '')[:80]!r}"
+                     f" (input: {type(block.get('input')).__name__})")
+        parts.append(kind)
+    return ", ".join(parts) or "no content blocks"
 
 
 def merge_consecutive(messages: list[Message]) -> list[Message]:
@@ -183,14 +209,21 @@ def _strip_cache_control(body: dict) -> dict:
 
 
 def _degrade(body: dict, error: str) -> dict | None:
-    """`body` without every optional field this 400 names, or None when it names none that is
-    still being sent — then the 400 stands. Each call drops at least one field and none comes
-    back, so a caller looping on it ends after at most four degraded requests.
+    """`body` with every optional field this 400 names degraded, or None when it names none
+    that is still being sent — then the 400 stands. A forced tool_choice is first unforced
+    (`_ONE_CALL_AT_MOST`) and dropped only if that is refused too; every other field is
+    dropped. Each call changes at least one field and none comes back, so a caller looping on
+    it ends after at most five degraded requests.
     """
     low = error.lower()
     out = {key: value for key, value in body.items()
            if not any(key == field and any(h in low for h in hints)
                       for field, hints in _DROPPABLE)}
+    if "tool_choice" in low and "tool_choice" in out:
+        if out["tool_choice"] == _ONE_CALL_AT_MOST:   # a gateway that does not know the field
+            del out["tool_choice"]
+        else:
+            out["tool_choice"] = _ONE_CALL_AT_MOST
     if "cache_control" in low:   # a proxy/old gateway that rejects caching
         out = _strip_cache_control(out)
     return out if out != body else None
@@ -198,8 +231,8 @@ def _degrade(body: dict, error: str) -> dict | None:
 
 class AnthropicEndpoint:
     """Anthropic-compatible Messages adapter; billing belongs to the upstream. Schema via
-    a single tool offered on `auto`, one call at most; effort via `output_config` and
-    `temperature` when configured — each optional field dropped on a 400 naming it.
+    a single tool, forced where the model allows; effort via `output_config` and
+    `temperature` when configured — each optional field degraded on a 400 naming it.
     """
 
     def __init__(self, cfg: EndpointConfig):
@@ -254,15 +287,15 @@ class AnthropicEndpoint:
             if cacheable:
                 tool["cache_control"] = {"type": "ephemeral"}   # static per run → a breakpoint
             body["tools"] = [tool]
-            body["tool_choice"] = dict(_ONE_CALL_AT_MOST)
+            body["tool_choice"] = dict(_FORCED)
         headers = {"x-api-key": self._api_key(), "anthropic-version": API_VERSION}
         sent = body
 
         def call() -> Completion:
-            # A 400 names ONE field and a model may refuse several (a sampling parameter AND
-            # the effort knob), so degrade until the 400 names nothing still sent. `sent`
-            # outlives the attempt: a retry after a transient failure resends what is left
-            # instead of re-earning every 400.
+            # A 400 names ONE field and a model may refuse several (a current Claude model
+            # refuses a forced tool_choice AND a sampling parameter), so degrade until the
+            # 400 names nothing still sent. `sent` outlives the attempt: a retry after a
+            # transient failure resends what is left instead of re-earning every 400.
             nonlocal sent
             resp = self._post(sent, headers, timeout)
             while resp.status_code == 400 and (smaller := _degrade(sent, resp.text)) is not None:
@@ -279,21 +312,27 @@ class AnthropicEndpoint:
     def _parse(self, resp: httpx.Response) -> Completion:
         raise_for_status(resp, self.name)
         data = json_or_raise(resp, self.name)
+        blocks = data.get("content") or []
         parsed, texts = None, []
-        for block in data.get("content") or []:
+        for block in blocks:
             if block.get("type") == "tool_use" and block.get("name") == "action":
                 parsed = block.get("input")
             elif block.get("type") == "text":
                 texts.append(block.get("text", ""))
+        parsed = parsed if isinstance(parsed, dict) else None
+        stop = str(data.get("stop_reason") or "")
         # stop_details is populated by the API only on stop_reason "refusal" — a dict
         # like {"type": "refusal", "category": "cyber"|…|null, "explanation": …} — and is
         # null on every other stop; surfaced verbatim so the transcript can name WHY a
         # classifier declined (R5). A refusal is an HTTP 200, so it reaches this parse.
-        details = data.get("stop_details")
+        raw = data.get("stop_details")
+        details = raw if isinstance(raw, dict) else {}
+        if parsed is None and not "".join(texts).strip() and stop != "refusal":
+            details = {**details, "unread": _describe(blocks)}
         return Completion(
             text="\n".join(texts),
-            parsed=parsed if isinstance(parsed, dict) else None,
+            parsed=parsed,
             usage=_usage(data.get("usage") or {}),  # reads ~0.1x, writes ~1.25x
-            stop_reason=str(data.get("stop_reason") or ""),
-            stop_details=details if isinstance(details, dict) else {},
+            stop_reason=stop,
+            stop_details=details,
         )
