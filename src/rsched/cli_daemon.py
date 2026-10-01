@@ -39,6 +39,10 @@ def cmd_daemon(_args) -> int:
     # before anything loads a routine.yaml that still names a domain
     from .migrate_settings_patterns import run_migration
     run_migration(server)
+    # MIGRATION(expires=2026-11-15): `schedule.disabled` folded into the one off switch,
+    # `enabled` — also before anything loads a routine.yaml, which no longer reads it
+    from .migrate_enabled import run_migration as fold_off_switch
+    fold_off_switch(server)
     # new default permissions reach existing routines once, at boot
     adopt_permissions(server.routines_home, server.permissions_home)
     # The library repo exists BEFORE the syncs fill it. A container has no install step and its

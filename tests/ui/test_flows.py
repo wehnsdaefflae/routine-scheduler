@@ -937,9 +937,9 @@ def test_routine_page_saves(ui, ui_page):
     delib_slider.focus()
     delib_slider.press("ArrowRight")   # standard → deliberate
 
-    # F448: switching a routine off is a SCHEDULE state, not a separate checkbox beside the
-    # cadence — the select's leading "Disabled" choice is the off switch, and it is what the
-    # accept must write to schedule.disabled.
+    # Switching a routine off is a choice of the SCHEDULE panel, not a separate checkbox beside
+    # the cadence — the select's leading "Disabled" choice is the off switch, and the accept
+    # writes it to the one key every reader reads, `enabled`.
     ui_page.locator("#sec-schedule + .panel div.row > select").first.select_option("disabled")
 
     # permissions: tick a doc on — it rides the same accept, cascade and all
@@ -963,10 +963,10 @@ def test_routine_page_saves(ui, ui_page):
     assert raw["description"] == "A sharper description.\nnow spanning two lines."
     assert raw["budgets"]["max_turns"] == 42
     assert "shell" in raw["permissions"]
-    # F448: the off switch lands in the schedule the firing gate actually reads, and the dead
-    # top-level `enabled` key is gone rather than written beside it.
-    assert raw["schedule"]["disabled"] is True
-    assert "enabled" not in raw
+    # the off switch lands in the one key the firing path reads, with no second spelling in the
+    # schedule beside it — and the cadence it had stays, for the day it is switched back on
+    assert raw["enabled"] is False
+    assert "disabled" not in raw["schedule"] and raw["schedule"]["cron"]
     assert "deliberation" not in raw   # tuning, not config — it lands in tuning.yaml
     tuning = yaml.safe_load(
         (ui.routine_dir("uir") / "tuning.yaml").read_text(encoding="utf-8"))
@@ -1633,11 +1633,10 @@ def test_dashboard_list_default_lane_rows_and_inline_pause(ui, ui_page):
     expect(row).to_be_visible()          # the dimmed row…
     expect(row.locator(".chip.disabled", has_text="off")).to_be_visible()   # …and the off tag
     cfg = yaml.safe_load((ui.routines / "uir" / "routine.yaml").read_text(encoding="utf-8"))
-    # The inline control still PATCHes `enabled` — that is the row's vocabulary and it is
-    # unchanged. F448 is about where it LANDS: the server translates it into the schedule gate
-    # the firing path reads, instead of a top-level key nothing consults.
-    assert cfg["schedule"]["disabled"] is True
-    assert "enabled" not in cfg
+    # The inline control PATCHes `enabled`, and that is where it lands: the one off switch
+    # every reader reads, with no second spelling written into the schedule beside it.
+    assert cfg["enabled"] is False
+    assert "disabled" not in cfg["schedule"]
     # …and resumes from the same control
     ui_page.locator("table.list tbody tr", has_text="Test uir").last \
         .get_by_role("button", name="▷").click()

@@ -189,14 +189,20 @@ def effective_capabilities(caps: object) -> dict:
 
 
 def patch_shape(key: str, value: object, lane_managed: bool) -> tuple[str, object]:
-    """One settings value in the shape the validated routine PATCH takes."""
+    """One settings value in the shape the validated routine PATCH takes.
+
+    The schedule's "disabled" cadence is the routine's off switch, so it lands on `enabled`
+    — keeping the cron it had, ready for the day it is switched back on. A lane-managed
+    routine's own cadence decides nothing (the lane fires it), so all its schedule value can
+    still say is that it is on.
+    """
     if key == "schedule":
         spec = dict(value) if isinstance(value, dict) else {}
         friendly = spec.get("friendly") or {"frequency": "manual"}
         if friendly.get("frequency") == "disabled":
-            return "schedule", {"disabled": True}
+            return "enabled", False
         if lane_managed:
-            return "schedule", {"disabled": False}
+            return "enabled", True
         return "schedule", {"friendly": friendly, "catchup": spec.get("catchup") or "skip"}
     if key == "reminders":
         return "shared_reminders", value

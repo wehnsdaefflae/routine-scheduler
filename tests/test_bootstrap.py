@@ -137,6 +137,7 @@ def test_a_fresh_containers_first_boot_seeds_utils_and_docs(tmp_path, monkeypatc
     monkeypatch.setattr(bootstrap, "ensure_config", lambda: False)
     monkeypatch.setattr(cli_daemon, "load_server_config", lambda: (server, []))
     monkeypatch.setattr("rsched.migrate_settings_patterns.run_migration", lambda s: {})
+    monkeypatch.setattr("rsched.migrate_enabled.run_migration", lambda s: {})
     monkeypatch.setattr("rsched.web.app.create_app", lambda s: None)
     monkeypatch.setattr("uvicorn.run", lambda *a, **k: None)
 

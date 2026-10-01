@@ -89,6 +89,10 @@ class RoutineConfig(_Config):
     slug: str
     dir: Path
     name: BlankableStr = ""
+    # THE off switch, and its one spelling: `enabled: false` starts no run at all — no cron,
+    # trigger, lane or one-shot fire and no manual start (runner.fire refuses). Every reader
+    # asks this field (the fire table, catch-up, lanes, the runner, the console's `enabled`);
+    # the console's "Disabled" cadence and the dashboard's pause both write it.
     enabled: bool = True
     run_gate: RunGateConfig = Field(default_factory=RunGateConfig)
     tags: list[str] = Field(default_factory=list)  # freeform, for filtering (e.g. "meta")
@@ -234,6 +238,9 @@ class RoutineConfig(_Config):
 
 
 TUNING_FILE = "tuning.yaml"
+#: What routine.yaml's `schedule:` mapping may hold — the keys `cron`, `tz` and `catchup` load
+#: from (their AliasPaths above).
+SCHEDULE_KEYS = frozenset({"cron", "tz", "catchup"})
 
 
 def load_tuning(routine_dir: Path) -> tuple[dict, list[str]]:
@@ -330,6 +337,16 @@ def load_routine(routine_dir: Path) -> tuple[RoutineConfig | None, list[str]]:
                                                            "playbook", "retention"}
     problems.extend(f"{key}: unknown routine.yaml key — check the spelling (ignored)"
                     for key in sorted(set(raw) - known))
+    # The same check one level down: `schedule:` holds exactly the three keys its aliased
+    # fields read. A stray one there is read by nothing — `schedule.disabled`, the off switch's
+    # retired second spelling, most of all: it once had the final word over `enabled`.
+    schedule_raw = raw.get("schedule")
+    if isinstance(schedule_raw, dict):
+        problems.extend(
+            f"schedule.{key}: unknown routine.yaml key — "
+            + ("a routine is switched off by the top-level `enabled: false`" if key == "disabled"
+               else "check the spelling") + " (ignored)"
+            for key in sorted(set(schedule_raw) - SCHEDULE_KEYS))
     try:
         gate = RunGateConfig.model_validate(raw.get("run_gate", {}))
     except ValidationError as exc:
@@ -340,9 +357,6 @@ def load_routine(routine_dir: Path) -> tuple[RoutineConfig | None, list[str]]:
             return None, [*problems, "run_gate: enabled gate forbids whole-config fallback"]
         cfg = RoutineConfig(slug=slug, dir=routine_dir)
     cfg.run_gate = gate
-    schedule_state = raw.get("schedule") or {}
-    if isinstance(schedule_state, dict) and schedule_state.get("disabled") is True:
-        cfg.enabled = False
     cfg.name = cfg.name or slug
     if not cfg.description:
         problems.append("description is empty — every routine needs a one-line "
