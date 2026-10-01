@@ -144,6 +144,38 @@ def test_decisions_answer_keeps_focus_across_bus_refresh(ui, ui_page):
     expect(box).to_have_value("half an answer")
 
 
+def test_decisions_arrow_keys_survive_a_repaint_during_an_answer(ui, ui_page):
+    """An answer drops its own text box from the ↑/↓ order once it lands. If the list was
+    repainted while the answer was in flight (a click on an option leaves no text box focused,
+    so a bus tick may rebuild it), that box was no longer in the order — and dropping index -1
+    dropped the LAST question's box instead, which ↓ could then never reach."""
+    ui.seed_question("uir", "q-a", "First?", options=["yes", "no"], asked="20260714-070000")
+    ui.seed_question("uir", "q-b", "Second?", options=["yes", "no"], asked="20260714-070100")
+    held = []
+
+    def hold(route):   # a def, not held.append: Playwright tags its handler with an attribute
+        held.append(route)
+
+    ui_page.route("**/api/questions/q-a/answer", hold)
+    ui_page.goto(f"{ui.url}/#/questions")
+    expect(ui_page.locator('textarea[data-persist="answer-q-b"]')).to_be_visible()
+
+    ui_page.locator(".question-item", has_text="First?").get_by_role(
+        "button", name="1 · yes").click()
+    until(lambda: held, what="the answer to be sent", page=ui_page)
+    ui_page.evaluate("document.querySelectorAll('.answer-input')"
+                     ".forEach((n) => { n.dataset.old = '1'; })")
+    ui_page.evaluate(
+        "window.dispatchEvent(new CustomEvent('rsched-bus', {detail: {event: 'run_state'}}))")
+    expect(ui_page.locator(".answer-input[data-old]")).to_have_count(0)   # repainted
+    held[0].continue_()
+    expect(_toast(ui_page)).to_contain_text("answered")
+
+    ui_page.locator('textarea[data-persist="answer-q-a"]').focus()
+    ui_page.keyboard.press("ArrowDown")
+    assert ui_page.evaluate("document.activeElement.dataset.persist") == "answer-q-b"
+
+
 def test_state_graph_shows_phase_instrumentation(ui, ui_page):
     """The run view's state-graph rail shows per-phase turns/tokens/time from the
     transcript — the instrument panel, not just a highlighted chain. The current phase

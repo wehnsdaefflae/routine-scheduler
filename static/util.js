@@ -112,15 +112,16 @@ export function fmtDur(secs) {
   return `${Math.floor(secs / 3600)}h ${Math.round((secs % 3600) / 60)}m`;
 }
 
+// The counts in the console's one compact form (fmtNum — a long run reads "2.30M", where this
+// line used to print "2300.0k") and the cost in fmtCost's.
 export function fmtTokens(usage) {
   if (!usage) return "";
-  const f = (n) => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n ?? 0));
-  const cost = usage.cost > 0
-    ? ` · $${usage.cost >= 0.1 ? usage.cost.toFixed(2) : usage.cost.toFixed(4)}` : "";
+  const usd = fmtCost(usage);
+  const cost = usd ? ` · ${usd}` : "";
   // cache traffic (cheap re-reads, ~0.1x) is reported separately from fresh input —
   // showing it makes cache hit rates visible per run/turn
-  const cached = usage.cached_in > 0 ? ` (+${f(usage.cached_in)} cached)` : "";
-  return `${f(usage.in || 0)} in${cached} / ${f(usage.out || 0)} out${cost}`;
+  const cached = usage.cached_in > 0 ? ` (+${fmtNum(usage.cached_in)} cached)` : "";
+  return `${fmtNum(usage.in)} in${cached} / ${fmtNum(usage.out)} out${cost}`;
 }
 
 export function fmtCost(usage) {

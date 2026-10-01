@@ -5,8 +5,8 @@
   "start_url": "/#/questions",
   "scope": "/",
   "display": "standalone",
-  "background_color": "#0f1419",
-  "theme_color": "#0f1419",
+  "background_color": "#0d1218",
+  "theme_color": "#0d1218",
   "icons": [
     {
       "src": "/static/icon.svg",

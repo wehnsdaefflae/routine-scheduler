@@ -363,7 +363,10 @@ export async function render(view, query = {}) {
             : firedRunId ? "run starting now" : "next run"}`)));
         state.items = state.items.filter((x) => x.qid !== q.qid);
         syncToolbar();
-        inputs.splice(inputs.indexOf(form.input), 1);
+        // A repaint while the answer was in flight rebuilt `inputs` without this box — and
+        // splicing at index -1 would drop the LAST question's box from the ↑/↓ order instead.
+        const at = inputs.indexOf(form.input);
+        if (at >= 0) inputs.splice(at, 1);
         focusAt(index);          // move on to the next open question
       },
       extraControls: [briefIn, runNow, lifecycle].filter(Boolean),
