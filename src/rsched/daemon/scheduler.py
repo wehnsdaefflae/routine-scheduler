@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from collections.abc import Callable, Coroutine
 from datetime import UTC, datetime
 
 from .. import lane_fires, lanes, registry
@@ -92,9 +93,10 @@ class Scheduler:
         # A pending restart waits for a quiet gap instead of blocking new runs (restart.py): the
         # monotonic stamp of when runner.active last emptied, or None while a run is active.
         self._idle_since: float | None = None
-        # The one in-flight machine-queue mirror refresh, so a box that answers slowly (or not at
-        # all) can never stack one SSH attempt per tick on the loop's shared executor.
-        self._queue_refresh: asyncio.Future[None] | None = None
+        # The one in-flight task per off-tick refresh (`_off_tick`), so a box or a provider that
+        # answers slowly (or not at all) can never stack one attempt per tick on the loop's
+        # shared executor — and a running task always has an owner, never a dangling reference.
+        self._off_tick_tasks: dict[str, asyncio.Task[None]] = {}
         self.started = now_iso()   # process birth — a restart is visible as a changed value
 
     def rescan(self) -> None:
@@ -158,7 +160,7 @@ class Scheduler:
         from .lane_catchup import boot_catchup as lane_boot_catchup
         lane_boot_catchup(self.server, _now())
 
-    def _log_loop_failure(self, what: str) -> None:
+    def _log_loop_failure(self, what: str, exc: Exception) -> None:
         """One bad pass must never kill scheduling for good — at BOOT as much as in the loop.
 
         An exception anywhere in a scheduling pass (a hand-edited lane tz reaching ZoneInfo, a
@@ -168,7 +170,7 @@ class Scheduler:
         is the same failure with a worse blast radius: nothing fires until someone restarts it.
         Log it, flag it in the health stream, keep going — a later rescan recovers.
         """
-        log.exception("scheduler %s failed — continuing", what)
+        log.error("scheduler %s failed — continuing", what, exc_info=exc)
         try:
             log_health_event(self.server.routines_home, "scheduler_tick_error",
                              routine="(daemon)", run_id="",
@@ -179,8 +181,8 @@ class Scheduler:
     async def run_forever(self) -> None:
         try:
             self.rescan()
-        except Exception:
-            self._log_loop_failure("boot rescan")
+        except Exception as exc:
+            self._log_loop_failure("boot rescan", exc)
         # One pass retains shutdown evidence; home-qualified keys preserve colliding slugs.
         recovery_catalog = {
             **{f"routines:{slug}": info for slug, info in self.catalog.items()},
@@ -201,13 +203,13 @@ class Scheduler:
         if fixed:
             try:
                 self.rescan()
-            except Exception:
-                self._log_loop_failure("boot rescan")
+            except Exception as exc:
+                self._log_loop_failure("boot rescan", exc)
         try:
             await self.boot_catchup()
-        except Exception:
-            self._log_loop_failure("boot catch-up")
-        loop = asyncio.get_event_loop()
+        except Exception as exc:
+            self._log_loop_failure("boot catch-up", exc)
+        loop = asyncio.get_running_loop()
         self._last_scan = loop.time()
         log.info("scheduler up: %d routines, next fires: %s", len(self.catalog),
                  {s: t.isoformat(timespec="minutes") for s, t in self.next_fires.items()})
@@ -310,8 +312,21 @@ class Scheduler:
                 await self.library.tick()
             except _TickSkip:
                 continue  # draining / shutting down: fire nothing this tick
-            except Exception:
-                self._log_loop_failure("tick")
+            except Exception as exc:
+                self._log_loop_failure("tick", exc)
+
+    def _off_tick(self, key: str, work: Callable[[], Coroutine[None, None, None]]) -> None:
+        """Start `work` as a task beside the tick unless the previous one for `key` is still
+        running. The refreshes below each end in a thread on the loop's default executor, and a
+        provider or box that answers slowly holds its attempt for a whole connect timeout — so
+        one fresh attempt per 5 s tick stacked threads on the pool every run's llm tailer awaits.
+        The task is KEPT here: the loop holds only a weak reference to a task, so one nobody
+        holds may be collected mid-flight.
+        """
+        running = self._off_tick_tasks.get(key)
+        if running is not None and not running.done():
+            return
+        self._off_tick_tasks[key] = asyncio.create_task(work())
 
     def _refresh_machine_queues(self) -> None:
         """Mirror every EXCLUSIVE machine's job queue (rsched/machine_queue.py) so the prompt and
@@ -321,17 +336,15 @@ class Scheduler:
         collision this mechanism exists to prevent.
 
         Noticing every 5s is not the same as READING every 5s, and the two were once the same
-        call: the TTL is machine_queue's (REFRESH_AFTER_S), and ONE refresh runs at a time. An
-        unreachable box holds each attempt for its connect timeout (20-60s), so a fresh attempt
-        per tick stacked up to a dozen threads on the loop's default executor (8 workers on the
-        4-core host) — the same pool LibraryWatch, the OAuth refresh and every run's llm tailer
-        await inline in this tick body.
+        call: the TTL is machine_queue's (REFRESH_AFTER_S), and ONE refresh runs at a time
+        (`_off_tick`). An unreachable box holds each attempt for its connect timeout (20-60s),
+        so a fresh attempt per tick stacked up to a dozen threads on the loop's default executor
+        (8 workers on the 4-core host) — the same pool LibraryWatch, the OAuth refresh and every
+        run's llm tailer await inline in this tick body.
         """
         from ..machine_queue import refresh as refresh_queues
 
         if not any(m.exclusive for m in (self.server.machines or {}).values()):
-            return
-        if self._queue_refresh is not None and not self._queue_refresh.done():
             return
 
         async def go() -> None:
@@ -340,7 +353,7 @@ class Scheduler:
             except Exception as exc:
                 log.warning("machine queue refresh failed: %s", exc)
 
-        self._queue_refresh = asyncio.ensure_future(go())
+        self._off_tick("machine-queues", go)
 
     def _refresh_limits(self) -> None:
         """Re-ask each provider what its models' real limits are, behind a 24h TTL
@@ -351,6 +364,10 @@ class Scheduler:
         Reading provider METADATA is not an outbound message, so the 0.230.0 ban on
         engine/daemon-implicit sends does not reach it — nothing is told anything, and the
         result is derived state under `.control/`, never config.
+
+        The cache stays stale until a refresh WRITES it, and asking every provider in turn can
+        take several connect timeouts — so without `_off_tick` every tick in between started
+        another full refresh beside the one still running.
         """
         from ..endpoints import limits
 
@@ -365,7 +382,7 @@ class Scheduler:
             except Exception as exc:
                 log.warning("model limits refresh failed: %s", exc)
 
-        asyncio.ensure_future(go())   # noqa: RUF006 — fire-and-forget by design
+        self._off_tick("model-limits", go)
 
     def _tick_once(self, loop) -> None:
         """The tick preamble: restart state machine, then a due registry rescan. Raises

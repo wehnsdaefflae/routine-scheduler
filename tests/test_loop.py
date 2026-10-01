@@ -2893,8 +2893,8 @@ def test_build_child_carries_tools_allowlist(make_routine, monkeypatch):
 
     d = make_routine(slug="childtools")
     monkeypatch.setattr(adapt, "materialize", lambda home, slug: (
-        "---\nname: T\nslug: t\nmaterialized_from: {slug: t, commit: '', version: 1}\n"
-        "tools: [read_file, ask_user]\n---\n\nBody.\n", {}))
+        ("---\nname: T\nslug: t\nmaterialized_from: {slug: t, commit: '', version: 1}\n"
+         "tools: [read_file, ask_user]\n---\n\nBody.\n"), {}))
     from conftest import ScriptedEndpoint
     from rsched.config import load_routine
     cfg, _ = load_routine(d)

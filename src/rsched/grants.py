@@ -155,8 +155,8 @@ def normalize_expects(raw: object, *, label: str = "expects") -> tuple[dict, lis
     if raw is None:
         return {}, []
     if not isinstance(raw, dict):
-        return {}, [f"{label} must be a mapping of entity class → names "
-                    f"({' / '.join(CLASSES)}; '*' means at least one)"]
+        return {}, [(f"{label} must be a mapping of entity class → names "
+                     f"({' / '.join(CLASSES)}; '*' means at least one)")]
     out: dict[str, list[str]] = {}
     problems: list[str] = []
     for cls, vals in raw.items():

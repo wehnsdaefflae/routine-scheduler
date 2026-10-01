@@ -860,3 +860,33 @@ async def test_retention_runs_off_the_event_loop(tmp_path, monkeypatch):
     assert seen == {}                                   # the reap returned without waiting
     await asyncio.gather(*runner._supervisors)
     assert seen["thread"] != loop_thread                # …and it ran in a worker thread
+
+
+async def test_a_slow_limits_refresh_is_never_stacked_by_later_ticks(tmp_path, monkeypatch):
+    """The model-limits cache stays stale until a refresh WRITES it, and asking every provider
+    in turn can take several connect timeouts — so each 5 s tick in between used to start one
+    more full refresh in a thread beside the one still running."""
+    import threading
+
+    from rsched.endpoints import limits
+
+    release = threading.Event()
+    calls: list[int] = []
+
+    def slow_refresh(server, *, force=False):
+        calls.append(1)
+        release.wait(5)
+        return {"written": 0, "skipped": 0, "misses": []}
+
+    monkeypatch.setattr(limits, "stale", lambda server: True)
+    monkeypatch.setattr(limits, "refresh", slow_refresh)
+    sched = Scheduler(_server(tmp_path), FakeRunner(), EventBus())
+    for _ in range(4):                       # four ticks while the first refresh is in flight
+        sched._refresh_limits()
+        await asyncio.sleep(0.02)
+    assert len(calls) == 1
+    release.set()
+    await sched._off_tick_tasks["model-limits"]
+    sched._refresh_limits()                  # the next stale tick after it ends starts afresh
+    await sched._off_tick_tasks["model-limits"]
+    assert len(calls) == 2

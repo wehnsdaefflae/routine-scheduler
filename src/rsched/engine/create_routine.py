@@ -152,36 +152,36 @@ def _unknown_workflow_obs(slug: str, workflow_slug: str, catalog: list[dict]) ->
 #: second copy was never executed, so its copy silently went stale (it still described conduct
 #: as per-routine "traits" long after rules became one shared library doc).
 _DESIGN_CHECKS = (
-    "SHAPE — if the task BOTH ingests/processes signal (reads sources, updates state, "
-    "computes) AND sends outbound communication (mail, messages, publishing), offer the user "
-    "the choice of TWO routines in one LANE instead of one: a lane fires its members in "
-    "order, so an outbound-sender member placed last acts on the state the ingesting member "
-    "just refreshed instead of waiting a whole cadence. Their call, not yours. "
-    "(Operator standing rule, 2026-08-05.)",
-    "MECHANISM — judge which parts of the task are judgment-free and repeated identically "
-    "every run (fetching/polling, parsing structured data, arithmetic, filtering/sorting/"
-    "dedup, threshold checks, assembling a fixed artifact) and say so in the instruction: "
-    "those belong in the routine's OWN scripts/, written once and called thereafter, with "
-    "the recipe staying the single interpreter. Genuinely generative work — drafting prose, "
-    "weighing fit, deciding what matters — stays in the recipe. A capability other routines "
-    "would share too is a util, not this routine's script. (Operator standing rule, "
-    "2026-08-12.)",
-    "OWNERSHIP — the instruction is the TASK and nothing else. Conduct is general RULES "
-    "(one copy each in the library, bound by slug in routine.yaml, read at run time with "
-    "read_rule) and capability is user-set PERMISSIONS. Put neither in the instruction, and "
-    "never let it assume a rule or permission is present. If the draft mixes conduct into "
-    "the task ('message me on discord when…', 'improve your own prompt each run'), do not "
-    "copy it in — name it to the user as a rule or permission choice. Conduct baked into "
-    "the instruction keeps acting after they change the routine's setup, which takes the "
-    "control surface away from them.",
-    "SETTINGS — the routine is saved with its SETTINGS PATTERN's values (settings_patterns "
-    "below lists the ones for this workflow, each with the questions it needs answered: "
-    "cadence, folders, mailbox, what a run gate should watch). Ask the user every one of "
-    "those questions the task does not already answer, as decisions. Carry their "
-    "answers in `setup` — never in the instruction, which stays the task alone. A draft "
-    "that names a schedule ('every Monday…') is answering one of them: put it in `setup` "
-    "and phrase the task per-run ('each run, cover what appeared since the last covered "
-    "point, tracked in state/') so it holds whatever the cadence turns out to be.",
+    ("SHAPE — if the task BOTH ingests/processes signal (reads sources, updates state, "
+     "computes) AND sends outbound communication (mail, messages, publishing), offer the user "
+     "the choice of TWO routines in one LANE instead of one: a lane fires its members in "
+     "order, so an outbound-sender member placed last acts on the state the ingesting member "
+     "just refreshed instead of waiting a whole cadence. Their call, not yours. "
+     "(Operator standing rule, 2026-08-05.)"),
+    ("MECHANISM — judge which parts of the task are judgment-free and repeated identically "
+     "every run (fetching/polling, parsing structured data, arithmetic, filtering/sorting/"
+     "dedup, threshold checks, assembling a fixed artifact) and say so in the instruction: "
+     "those belong in the routine's OWN scripts/, written once and called thereafter, with "
+     "the recipe staying the single interpreter. Genuinely generative work — drafting prose, "
+     "weighing fit, deciding what matters — stays in the recipe. A capability other routines "
+     "would share too is a util, not this routine's script. (Operator standing rule, "
+     "2026-08-12.)"),
+    ("OWNERSHIP — the instruction is the TASK and nothing else. Conduct is general RULES "
+     "(one copy each in the library, bound by slug in routine.yaml, read at run time with "
+     "read_rule) and capability is user-set PERMISSIONS. Put neither in the instruction, and "
+     "never let it assume a rule or permission is present. If the draft mixes conduct into "
+     "the task ('message me on discord when…', 'improve your own prompt each run'), do not "
+     "copy it in — name it to the user as a rule or permission choice. Conduct baked into "
+     "the instruction keeps acting after they change the routine's setup, which takes the "
+     "control surface away from them."),
+    ("SETTINGS — the routine is saved with its SETTINGS PATTERN's values (settings_patterns "
+     "below lists the ones for this workflow, each with the questions it needs answered: "
+     "cadence, folders, mailbox, what a run gate should watch). Ask the user every one of "
+     "those questions the task does not already answer, as decisions. Carry their "
+     "answers in `setup` — never in the instruction, which stays the task alone. A draft "
+     "that names a schedule ('every Monday…') is answering one of them: put it in `setup` "
+     "and phrase the task per-run ('each run, cover what appeared since the last covered "
+     "point, tracked in state/') so it holds whatever the cadence turns out to be."),
 )
 
 

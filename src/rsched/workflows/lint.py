@@ -168,10 +168,10 @@ def _effect_problems(meta: dict, filename: str, subject: str) -> list[str]:
 
     eff = meta.get("effect")
     if not isinstance(eff, dict):
-        return [f"{filename}: needs an effect: block with {list(EFFECT_FIELDS)} — what the "
-                f"routine does with this ({subject}), what it does without it, and when to "
-                "hold it. The title and the body cannot stand in: one names a topic, the "
-                "other instructs the run"]
+        return [(f"{filename}: needs an effect: block with {list(EFFECT_FIELDS)} — what the "
+                 f"routine does with this ({subject}), what it does without it, and when to "
+                 "hold it. The title and the body cannot stand in: one names a topic, the "
+                 "other instructs the run")]
     problems = []
     for key in EFFECT_FIELDS:
         text = str(eff.get(key) or "").strip()

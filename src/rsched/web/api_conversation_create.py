@@ -171,8 +171,8 @@ def _resolve_create_models(server, model: str, models: str) -> dict[str, str] | 
 
 
 @router.post("/conversations")
-async def create_conversation(request: Request, text: Annotated[str, Form()] = "",  # noqa: PLR0913 — one Form field per composer knob
-
+async def create_conversation(request: Request, *,  # noqa: PLR0913 — one Form field per composer knob
+                              text: Annotated[str, Form()] = "",
                               workdir: Annotated[str, Form()] = "",
                               model: Annotated[str, Form()] = "",
                               models: Annotated[str, Form()] = "",

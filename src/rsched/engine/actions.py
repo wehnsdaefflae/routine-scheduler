@@ -58,8 +58,8 @@ KIND_EXAMPLES: dict[str, dict] = {
                        "prompt": "<the clarified task, decomposed into the routine's stages>",
                        "workflow": "general-task", "pattern": "watcher",
                        "setup": ["<the user's answer to one of the pattern's questions>"],
-                       "done_when": ["<what one finished run leaves behind, in the user's "
-                                     "words>"],
+                       "done_when": [("<what one finished run leaves behind, in the user's "
+                                      "words>")],
                        "never": ["<what a run must never do, in the user's words>"]},
     "manage_lane": {"say": "<why this lane change now>", "kind": "manage_lane",
                      "verb": "create", "name": "Morning jobs",
@@ -217,8 +217,8 @@ def validate_action(obj: dict, allowed_kinds: set[str] | None = None,  # noqa: C
     if kind not in KIND_FIELDS:
         return [f"unknown kind {kind!r}"]
     if allowed_kinds is not None and kind not in ALWAYS_KINDS and kind not in allowed_kinds:
-        return [f"kind={kind} is not available in this workflow — it permits only "
-                f"{sorted(allowed_kinds | set(ALWAYS_KINDS))}; use one of those"]
+        return [(f"kind={kind} is not available in this workflow — it permits only "
+                 f"{sorted(allowed_kinds | set(ALWAYS_KINDS))}; use one of those")]
     if grants is not None and kind not in ALWAYS_KINDS and (denial := grants.deny(obj)):
         return [denial]
     required, optional = KIND_FIELDS[kind]

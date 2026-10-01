@@ -185,8 +185,8 @@ def _remind_problems(op: object, grants) -> list[str]:
 
 def _feedback_problems(fb: object) -> list[str]:
     if not isinstance(fb, dict):
-        return ['`remind_feedback` must be an object: {"id": "<reminder id>", '
-                '"label": "could_not|would_have|did|didnt"}']
+        return [('`remind_feedback` must be an object: {"id": "<reminder id>", '
+                 '"label": "could_not|would_have|did|didnt"}')]
     problems = []
     if not str(fb.get("id") or "").strip():
         problems.append("`remind_feedback.id` must name the reminder whose fire you are "

@@ -45,14 +45,14 @@ def recreate_denial(loop, action: dict) -> list[str]:
     if state == "granted_now":
         return []   # the user explicitly allowed this recreate, this run
     if state in ("denied_forever", "denied_now"):
-        return [f"util {name!r} was DELETED from the util library by the user, and "
-                f"{g.request_route(eid)}"]
-    return [f"util {name!r} existed before and was DELETED from the util library by the "
-            f"user — a user-deleted util is never recreated without asking. First ask_user "
-            f'with request: "{eid}", mode "blocking", and a question saying why it is '
-            f"needed; recreate only after the user allows it (the grant covers this run). "
-            f"On a deny or a timeout, work without it and note the gap in your finish "
-            f"summary."]
+        return [(f"util {name!r} was DELETED from the util library by the user, and "
+                 f"{g.request_route(eid)}")]
+    return [(f"util {name!r} existed before and was DELETED from the util library by the "
+             f"user — a user-deleted util is never recreated without asking. First ask_user "
+             f'with request: "{eid}", mode "blocking", and a question saying why it is '
+             f"needed; recreate only after the user allows it (the grant covers this run). "
+             f"On a deny or a timeout, work without it and note the gap in your finish "
+             f"summary.")]
 
 
 def handle_write_util(loop, action: dict, poll_s: float) -> dict:  # noqa: PLR0911 — gate ladder: every refusal is its own teaching exit

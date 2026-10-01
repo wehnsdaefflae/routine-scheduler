@@ -42,59 +42,59 @@ KINDS: dict[str, tuple[str, dict[str, tuple[str, bool, str]]]] = {
         "mail waits in a mailbox — unread, or new since the last run that finished ok",
         {"host": ("str", True, "IMAP server, e.g. faumail.fau.de or imap.gmail.com"),
          "port": ("int", False, "IMAP port (default 993)"),
-         "mode": ("str", False, "`unseen` (default): any unread message; `new`: any message "
-                                "that arrived after the last ok run started"),
+         "mode": ("str", False, ("`unseen` (default): any unread message; `new`: any message "
+                                 "that arrived after the last ok run started")),
          "user_secret": ("secret", False, "secret holding the login name"),
          "password_secret": ("secret", False, "secret holding the password"),
          "accounts_secret": ("secret", False,
-                             "secret holding a JSON account map {name: {email, app_password}} "
-                             "— used instead of user_secret/password_secret"),
+                             ("secret holding a JSON account map {name: {email, app_password}} "
+                              "— used instead of user_secret/password_secret")),
          "account": ("str", False, "which account of accounts_secret (default: the first)"),
-         "folders": ("list", False, "folders to look in (default INBOX); a special-use "
-                                    "flag such as \\All or \\Sent names the folder whatever "
-                                    "the server calls it"),
+         "folders": ("list", False, ("folders to look in (default INBOX); a special-use "
+                                     "flag such as \\All or \\Sent names the folder whatever "
+                                     "the server calls it")),
          "senders_file": ("path", False,
-                          "a JSON file in the routine's own directory with `senders` and/or "
-                          "`sender_domains` lists — mail FROM those counts"),
+                          ("a JSON file in the routine's own directory with `senders` and/or "
+                           "`sender_domains` lists — mail FROM those counts")),
          "from_any": ("list", False, "mail whose From contains one of these counts"),
-         "subject_any": ("list", False, "mail whose Subject contains one of these counts — "
-                                        "with the two above a WATCH LIST: a message counts "
-                                        "when it meets any of them (none given: every "
-                                        "message counts)"),
+         "subject_any": ("list", False, ("mail whose Subject contains one of these counts — "
+                                         "with the two above a WATCH LIST: a message counts "
+                                         "when it meets any of them (none given: every "
+                                         "message counts)")),
          "from_domains_not": ("list", False,
                               "never count mail from these domains (and their subdomains)")}),
     "hub_feedback": (
-        "feedback waits on the routine's Steward hub page that its last publish has not "
-        "consumed",
+        ("feedback waits on the routine's Steward hub page that its last publish has not "
+         "consumed"),
         {"project": ("str", True, "the hub project slug the routine publishes"),
-         "source": ("str", False, "which entry of the web-auth secret holds the hub login "
-                                  "(default `steward`)"),
-         "auth_secret": ("secret", False, "the secret holding the web logins (default "
-                                          "WEB_AUTH_SOURCES)")}),
+         "source": ("str", False, ("which entry of the web-auth secret holds the hub login "
+                                   "(default `steward`)")),
+         "auth_secret": ("secret", False, ("the secret holding the web logins (default "
+                                           "WEB_AUTH_SOURCES)"))}),
     "url_changed": (
         "a web page, feed or API answers differently than it did at the last ok run",
         {"url": ("str", True, "the address to fetch (GET)"),
-         "select": ("str", False, "what to compare: `body` (default), `feed` (the set of "
-                                  "RSS/Atom item ids), or `json:<dotted.path>` where `*` maps "
-                                  "over a list (e.g. json:data.*.id)"),
+         "select": ("str", False, ("what to compare: `body` (default), `feed` (the set of "
+                                   "RSS/Atom item ids), or `json:<dotted.path>` where `*` maps "
+                                   "over a list (e.g. json:data.*.id)")),
          "token_secret": ("secret", False, "secret holding a bearer token for the request"),
          "auth_source": ("str", False, "an entry of the web-auth secret to log in with (Basic)"),
          "auth_secret": ("secret", False, "the web-auth secret (default WEB_AUTH_SOURCES)")}),
     "files_changed": (
         "a file under a folder is new or changed since the last ok run",
-        {"paths": ("list", True, "folders (inside the routine's filesystem roots or its own "
-                                 "directory) to look in"),
+        {"paths": ("list", True, ("folders (inside the routine's filesystem roots or its own "
+                                  "directory) to look in")),
          "glob": ("str", False, "only files matching this pattern (default: every file)"),
-         "nonempty": ("bool", False, "report work whenever the folder holds ANY matching file "
-                                     "(for an intake folder the routine empties)")}),
+         "nonempty": ("bool", False, ("report work whenever the folder holds ANY matching file "
+                                      "(for an intake folder the routine empties)"))}),
     "unpaired_files": (
         "a source file still has no output beside it (a work queue defined by files)",
         {"path": ("path", True, "the folder holding sources and outputs"),
          "match": ("str", True, "which files are sources, e.g. *.mp4"),
-         "output": ("str", True, "the output name for a source, with {stem} and {suffix}, "
-                                 "e.g. `{stem} [done]{suffix}`"),
-         "exclude": ("list", False, "patterns that are never sources, e.g. tmp*.mp4 (an "
-                                    "output is recognised by its name without being listed)")}),
+         "output": ("str", True, ("the output name for a source, with {stem} and {suffix}, "
+                                  "e.g. `{stem} [done]{suffix}`")),
+         "exclude": ("list", False, ("patterns that are never sources, e.g. tmp*.mp4 (an "
+                                     "output is recognised by its name without being listed)"))}),
     "repo_changed": (
         "a git repository has new commits since the last ok run",
         {"path": ("path", True, "the repository (inside the routine's roots)"),
@@ -102,34 +102,34 @@ KINDS: dict[str, tuple[str, dict[str, tuple[str, bool, str]]]] = {
     "runs_since": (
         "other routines have run since the last ok run (for routines that review runs)",
         {"min_runs": ("int", False, "how many new runs count as work (default 1)"),
-         "routines": ("list", False, "only these routines (default: every routine but this "
-                                     "one)")}),
+         "routines": ("list", False, ("only these routines (default: every routine but this "
+                                      "one)"))}),
     "state": (
         "a file in the routine's own directory says work is waiting",
         {"file": ("path", True, "a path relative to the routine's directory"),
-         "key": ("str", False, "a dotted path inside the JSON file (without it: the file is "
-                               "work when it exists and is not empty)"),
-         "idle_values": ("list", False, "the value at `key` means NO work only when it is one "
-                                        "of these — any other value is work (e.g. a phase)"),
-         "missing_field": ("str", False, "the value at `key` (the whole file when no key) "
-                                         "is a list: work when any item lacks this field "
-                                         "(e.g. an untested candidate)")}),
+         "key": ("str", False, ("a dotted path inside the JSON file (without it: the file is "
+                                "work when it exists and is not empty)")),
+         "idle_values": ("list", False, ("the value at `key` means NO work only when it is one "
+                                         "of these — any other value is work (e.g. a phase)")),
+         "missing_field": ("str", False, ("the value at `key` (the whole file when no key) "
+                                          "is a list: work when any item lacks this field "
+                                          "(e.g. an untested candidate)"))}),
     "dates": (
         "a dated duty is due",
         {"from": ("str", False, "work every fire from this date on (YYYY-MM-DD)"),
          "until": ("str", False, "…until this date, inclusive (with `from`: a window)"),
          "file": ("path", False, "a JSON file in the routine's directory holding dates"),
-         "key": ("str", False, "a dotted path to a date or a list of dates in that file "
-                               "(`*` maps over a list, e.g. obligations.*.due_date)"),
+         "key": ("str", False, ("a dotted path to a date or a list of dates in that file "
+                                "(`*` maps over a list, e.g. obligations.*.due_date)")),
          "within_days": ("int", False, "a file date counts this many days early (default 0)"),
-         "done_key": ("str", False, "the field of each listed item saying it is finished "
-                                    "(e.g. status) — needs a key <list>.*.<date field>"),
-         "done_values": ("list", False, "the values of done_key that mean finished — such "
-                                        "an item's date is never due")}),
+         "done_key": ("str", False, ("the field of each listed item saying it is finished "
+                                     "(e.g. status) — needs a key <list>.*.<date field>")),
+         "done_values": ("list", False, ("the values of done_key that mean finished — such "
+                                         "an item's date is never due"))}),
     "weekdays": (
         "a standing duty is due on these weekdays",
-        {"days": ("list", True, "weekday numbers, 0 = Monday … 6 = Sunday — the first fire on "
-                                "such a day is work")}),
+        {"days": ("list", True, ("weekday numbers, 0 = Monday … 6 = Sunday — the first fire on "
+                                 "such a day is work"))}),
     "max_quiet": (
         "the last ok run is older than this — a backstop every gate should carry",
         {"days": ("int", True, "at most this many days between ok runs")}),

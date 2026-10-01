@@ -137,6 +137,7 @@ ignore = [
     "SLF001",  # private-member access across sibling modules is deliberate at engine seams
     "A002",    # shadowing builtins in narrow scopes (id, input) reads fine
     "ERA001",  # commented code detector false-positives on prose examples
+    "CPY001",  # no per-file copyright headers: a single-author repo, provenance lives in git
 ]
 
 [tool.ruff.lint.per-file-ignores]

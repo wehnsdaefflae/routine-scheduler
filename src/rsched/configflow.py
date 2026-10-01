@@ -42,31 +42,31 @@ CLASSIFICATION: dict[str, tuple[str, str]] = {
     "enabled": (NEXT_RUN, "it governs whether the daemon FIRES, not a run already going"),
     "schedule": (NEXT_RUN, "it governs when the next run starts"),
     "run_gate": (NEXT_RUN, "admission is evaluated before the next automatic engine starts"),
-    "models": (NEXT_RUN, "the transport is bound per turn, but swapping a model mid-run is the "
-                         "run page's model-switch control, not a config edit"),
+    "models": (NEXT_RUN, ("the transport is bound per turn, but swapping a model mid-run is the "
+                          "run page's model-switch control, not a config edit")),
     "connections": (NEXT_RUN, "OAuth tokens are injected into the util environment at boot"),
     "machines": (NEXT_RUN, "the machine bindings and share mounts are resolved at boot"),
-    "permissions": (NEXT_RUN, "the held conduct docs are read at boot: their prose is composed "
-                              "into the prompt and their capabilities projected into the action "
-                              "schema, so widening or narrowing authority reaches the NEXT run"),
-    "capabilities": (NEXT_RUN, "the policy and the action schema are projected from this mapping "
-                               "at boot; a live run's schema is already fixed, and its permission "
-                               "prose would no longer match what it may do"),
-    "rules": (NEXT_RUN, "prose already in the context cannot be unsaid; the /rules picker "
-                        "pushes an ADDED rule to a live run, a config patch does not"),
-    "fs_read_roots": (NEXT_RUN, "the sandbox roots are computed at boot and passed to every "
-                                "util subprocess; an access-REQUEST decided mid-run does reach "
-                                "the run, a config edit does not"),
-    "fs_write_roots": (NEXT_RUN, "the sandbox jail is built at boot from these roots and "
-                                 "handed to every util subprocess; widening it mid-run would "
-                                 "not reach the jails already created"),
+    "permissions": (NEXT_RUN, ("the held conduct docs are read at boot: their prose is composed "
+                               "into the prompt and their capabilities projected into the action "
+                               "schema, so widening or narrowing authority reaches the NEXT run")),
+    "capabilities": (NEXT_RUN, ("the policy and the action schema are projected from this mapping "
+                                "at boot; a live run's schema is already fixed, and its permission "
+                                "prose would no longer match what it may do")),
+    "rules": (NEXT_RUN, ("prose already in the context cannot be unsaid; the /rules picker "
+                         "pushes an ADDED rule to a live run, a config patch does not")),
+    "fs_read_roots": (NEXT_RUN, ("the sandbox roots are computed at boot and passed to every "
+                                 "util subprocess; an access-REQUEST decided mid-run does reach "
+                                 "the run, a config edit does not")),
+    "fs_write_roots": (NEXT_RUN, ("the sandbox jail is built at boot from these roots and "
+                                  "handed to every util subprocess; widening it mid-run would "
+                                  "not reach the jails already created")),
     "keep_runs": (NEXT_RUN, "retention is applied after a run, never during one"),
     "improve": (NEXT_RUN, "it is read by the improver, not by the run"),
     "workflow": (NEXT_RUN, "the recipe was decomposed into the prompt at boot"),
-    "pattern": (NEXT_RUN, "a reference: which library pattern this routine's settings are read "
-                          "against — the settings themselves are this routine's own"),
-    "shared_reminders": (NEXT_RUN, "the live reminder set is read once (at boot) and kept in "
-                                   "step with the run's own reminder ops"),
+    "pattern": (NEXT_RUN, ("a reference: which library pattern this routine's settings are read "
+                           "against — the settings themselves are this routine's own")),
+    "shared_reminders": (NEXT_RUN, ("the live reminder set is read once (at boot) and kept in "
+                                    "step with the run's own reminder ops")),
     "name": (NEXT_RUN, "a label, not behaviour"),
     "description": (NEXT_RUN, "a label, not behaviour"),
     "tags": (NEXT_RUN, "a label, not behaviour"),

@@ -32,13 +32,13 @@ class CommandError(ValueError):
 # the display order. Every kind here is executor-dispatched (an EFFECT, not loop control).
 COMMAND_HELP = (
     ("util", "/util <name> [arg …]",
-     "run a global util with exactly the arguments `gu <name>` takes (add --json for "
-     "structured output); `/util list` shows the catalog"),
+     ("run a global util with exactly the arguments `gu <name>` takes (add --json for "
+      "structured output); `/util list` shows the catalog")),
     ("read_file", "/read_file <path> [path …]",
      "read one or more files (working dir or an allowed root)"),
     ("view_image", "/view_image <path> [what to look for…]",
-     "show an image/PDF to the assistant (described via the vision util when the model "
-     "can't view it directly)"),
+     ("show an image/PDF to the assistant (described via the vision util when the model "
+      "can't view it directly)")),
     ("write_file", "/write_file <path> <content…>",
      "write a file — everything after the path is the content, verbatim"),
     ("edit_file", '/edit_file <path> anchor="…" replacement="…"',

@@ -124,7 +124,7 @@ def _seed_instruction(pb: dict | None, first_message: str, conv_dir: Path) -> st
         for name, body in pb["details"].items():
             (conv_dir / "playbook" / name).write_text(body, encoding="utf-8")
         parts.append("Detail files referenced above live under `playbook/` — read e.g. "
-                     f"`playbook/{sorted(pb['details'])[0]}` with read_file when a step needs it.")
+                     f"`playbook/{min(pb['details'])}` with read_file when a step needs it.")
     req = first_message.strip()
     parts.append("---\n## This conversation's specific request\n"
                  + (req or "(none given — follow the playbook above; ask me for any parameters it "

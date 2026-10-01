@@ -123,8 +123,8 @@ def load_server_config(path: Path | None = None) -> tuple[ServerConfig, list[str
         except OSError as exc:
             # A sandboxed util jail deliberately denies the server config — teach, don't traceback.
             return ServerConfig(source=path), [
-                f"{path}: unreadable ({exc}) — a sandboxed run cannot read the server config; "
-                "run this from an unjailed shell",
+                (f"{path}: unreadable ({exc}) — a sandboxed run cannot read the server config; "
+                 "run this from an unjailed shell"),
             ]
     else:
         problems.append(f"{path}: not found (using defaults; run deploy/install.sh)")

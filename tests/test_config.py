@@ -282,13 +282,17 @@ def test_catalog_max_tokens_and_fallbacks(tmp_path):
     assert not any("'b'" in x for x in problems)       # a valid fallback raises no problem
 
 
-def test_unreadable_server_config_is_a_problem_line_not_a_traceback(tmp_path):
+def test_unreadable_server_config_is_a_problem_line_not_a_traceback(tmp_path, monkeypatch):
+    # The read itself is refused rather than the file's mode bits: root reads a 0o000 file, so a
+    # chmod-based version passed as a non-root user and failed in any container running as root.
+    from rsched.config import server as server_mod
+
+    def refuse(path, default=None):
+        raise PermissionError(13, "Permission denied", str(path))
+
     cfg = tmp_path / "config.yaml"
     cfg.write_text("token: x\n", encoding="utf-8")
-    cfg.chmod(0o000)
-    try:
-        server, problems = load_server_config(cfg)
-    finally:
-        cfg.chmod(0o600)
+    monkeypatch.setattr(server_mod, "read_yaml", refuse)
+    server, problems = load_server_config(cfg)
     assert any("unreadable" in p for p in problems)
     assert server.source == cfg
