@@ -23,12 +23,18 @@ def _denied_roots() -> list[Path]:
     keeping these invisible to runs; the picker must not hand their layout (key file
     names, connection accounts, mount keys) to any bearer holder either. Names only is
     still reconnaissance.
-    """
-    from ..paths import config_file
 
-    home = Path("~").expanduser()
-    return [config_file().parent,      # secrets.env, connections.json, vapid keys, .mounts/
-            home / ".credentials", home / ".ssh", home / ".claude"]
+    Every store no grant may open (`entities.NEVER_GRANTABLE`, the one list), plus the config
+    dir this instance actually loaded (secrets.env, connections.json, vapid keys, .mounts/ —
+    `RSCHED_CONFIG` may move it off the default) and ~/.claude, the claude CLI's OAuth
+    credentials — not on the never list only because the sandbox opens it to utils (the CLI
+    needs it, sandbox._HOME_RW), which is no reason to show its layout here.
+    """
+    from ..entities import NEVER_GRANTABLE
+    from ..paths import config_file, expand
+
+    return [*(expand(store) for store in NEVER_GRANTABLE), config_file().parent,
+            expand("~/.claude")]
 
 
 def _deny_sensitive(target: Path) -> None:

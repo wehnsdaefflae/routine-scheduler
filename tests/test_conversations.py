@@ -887,6 +887,33 @@ def test_delete_conversation_tears_down_background(client):
     assert not task.exists() and not conv_dir.exists()
 
 
+def test_delete_conversation_removes_the_tree_off_the_event_loop(client, monkeypatch):
+    """The delete is async (it awaits the background aborts), and a long conversation is
+    thousands of files: removed on the event loop, it froze every SSE stream meanwhile."""
+    import asyncio
+    import shutil
+
+    c, server = client
+    slug = c.post("/api/conversations", data={"text": "t"}).json()["slug"]
+    conv_dir = server.conversations_home / slug
+    ts = "20260712-120000"
+    atomic_write_json(conv_dir / "runs" / ts / "status.json",
+                      {"run_id": f"{slug}:{ts}", "state": "finished", "turn": 1})
+    real, on_loop = shutil.rmtree, []
+
+    def spy(path, *args, **kwargs):
+        try:
+            asyncio.get_running_loop()
+            on_loop.append(True)
+        except RuntimeError:
+            on_loop.append(False)
+        return real(path, *args, **kwargs)
+
+    monkeypatch.setattr(shutil, "rmtree", spy)
+    assert c.delete(f"/api/conversations/{slug}").status_code == 200
+    assert not conv_dir.exists() and on_loop == [False]
+
+
 # ---- runner + registry + bootstrap ---------------------------------------------------------------
 
 def test_runner_reserved_interactive_slots(server):

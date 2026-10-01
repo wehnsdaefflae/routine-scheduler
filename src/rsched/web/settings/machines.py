@@ -16,13 +16,13 @@ from pydantic import BaseModel
 from ... import machines as machines_mod
 from ... import sandbox, utils_run
 from ...config import MachineConfig
+from ...machine_queue import REMOTE_UTIL
 from ...secrets import load_secrets
 from .common import rewrite_block, server_of
 
 router = APIRouter()
 
 _NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")   # catalog key = the name routines bind
-REMOTE_UTIL = "remote"
 
 
 def _machine_view(mac: MachineConfig, have_keys: set[str]) -> dict:

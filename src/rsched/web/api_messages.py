@@ -22,6 +22,8 @@ kept — delivery stamping matches on them.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
@@ -46,6 +48,30 @@ def _clean_text(body: MessageBody) -> str:
     if not text:
         raise HTTPException(400, "empty message")
     return text
+
+
+# The two writes a queued inbox message allows, shared with the conversation surface (D139),
+# which edits and withdraws its own queue the same way — `via` narrows which files it may
+# address (`routines_common.queued_message`).
+
+def rewrite_queued(inbox: Path, msg_id: str, body: MessageBody, *, via: str = "") -> None:
+    """Rewrite a queued message's text in place — the SAME file, so its position in the queue
+    holds and its `ts` stands; `edited` is stamped so a run can tell.
+    """
+    path, prev = queued_message(inbox, msg_id, via=via)
+    rec = {k: v for k, v in prev.items() if k not in _FEEDBACK_FIELDS}
+    rec.update(text=_clean_text(body), edited=now_iso())
+    atomic_write_json(path, rec)
+
+
+def withdraw_queued(inbox: Path, msg_id: str, *, via: str = "") -> None:
+    """Withdraw a queued message: the delivery is removed and no run ever sees it."""
+    path, _ = queued_message(inbox, msg_id, via=via)
+    try:
+        path.unlink()
+    except FileNotFoundError:  # a run consumed it between the check and now — same outcome
+        raise HTTPException(
+            404, "this message is no longer queued — a run already consumed it") from None
 
 
 def _delivery(request: Request, slug: str) -> str:
@@ -85,23 +111,13 @@ def edit_message(request: Request, slug: str, msg_id: str, body: MessageBody) ->
     the original `ts` is kept and `edited` stamped. Gone from the inbox = consumed =
     immutable — the transcript now owns it.
     """
-    info = _info(request, slug)
-    path, prev = queued_message(info.cfg.dir / "inbox", msg_id)
-    rec = {k: v for k, v in prev.items() if k not in _FEEDBACK_FIELDS}
-    rec.update(text=_clean_text(body), edited=now_iso())
-    atomic_write_json(path, rec)
+    rewrite_queued(_info(request, slug).cfg.dir / "inbox", msg_id, body)
     return {"ok": True, "id": msg_id, "delivery": _delivery(request, slug)}
 
 
 @router.delete("/routines/{slug}/messages/{msg_id}")
 def delete_message(request: Request, slug: str, msg_id: str) -> dict:
-    info = _info(request, slug)
-    path, _ = queued_message(info.cfg.dir / "inbox", msg_id)
-    try:
-        path.unlink()
-    except FileNotFoundError:  # a run consumed it between the check and now — same outcome
-        raise HTTPException(
-            404, "this message is no longer queued — a run already consumed it") from None
+    withdraw_queued(_info(request, slug).cfg.dir / "inbox", msg_id)
     return {"ok": True, "id": msg_id}
 
 

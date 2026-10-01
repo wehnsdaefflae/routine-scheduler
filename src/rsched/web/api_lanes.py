@@ -38,9 +38,15 @@ def _routines_home(request: Request):
     return _state(request).server.routines_home
 
 
+#: Every body here forbids unknown keys, like RoutinePatch: a silently-dropped stray reads as
+#: "saved" (R102), and on a lane the stray most worth refusing is `config` — a lane carries none.
+_STRICT = ConfigDict(extra="forbid")
+
+
 class MemberSpec(BaseModel):
     """One membership record: the routine's slug."""
 
+    model_config = _STRICT
     slug: str = Field(min_length=1)
 
 
@@ -69,6 +75,7 @@ def _validate_members(request: Request, members: list[MemberSpec] | None,
 
 
 class LaneCreate(BaseModel):
+    model_config = _STRICT
     name: str = Field(min_length=1)
     members: list[MemberSpec] = Field(default_factory=list)
     on_failure: str | None = None
@@ -78,8 +85,7 @@ class LaneCreate(BaseModel):
 
 
 class LanePatch(BaseModel):
-    # forbid unknown keys, like RoutinePatch: a silently-dropped stray reads as "saved"
-    model_config = ConfigDict(extra="forbid")
+    model_config = _STRICT
 
     name: str | None = None
     members: list[MemberSpec] | None = None
@@ -112,6 +118,7 @@ def _schedule_to_cron(spec: dict | None) -> tuple[str, str] | None:
 
 
 class DefaultBody(BaseModel):
+    model_config = _STRICT
     default_on_failure: str
 
 
