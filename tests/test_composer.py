@@ -317,6 +317,32 @@ def test_capabilities_digest_utils_kinds_and_grants(make_routine, tmp_path):
     assert "spawn" not in kinds2 and "ask_user" in kinds2
 
 
+def test_an_unresolvable_main_model_says_the_window_is_unknown(make_routine, tmp_path):
+    """The digest's first line is the model and its context window, and the run budgets its
+    reads against it. A resolution failure used to delete that line entirely under a silent
+    `except Exception: pass`, so the run planned against a window nobody had told it and no
+    transcript named the fault. It now says what is unknown and why.
+    """
+    from types import SimpleNamespace
+
+    from rsched.engine.capabilities import capabilities_digest
+
+    ctx = _ctx(make_routine, tmp_path, slug="capsnomodel")
+
+    def for_model(*_a):
+        raise RuntimeError("endpoint 'claude-proxy' is unreachable")
+
+    ctx.registry = SimpleNamespace(for_model=for_model)
+    text = capabilities_digest(ctx)
+    first = text.splitlines()[0]
+    assert first.startswith("Model: ")
+    assert "could not be resolved" in first
+    assert "endpoint 'claude-proxy' is unreachable" in first
+    assert "UNKNOWN" in first
+    # the rest of the digest still arrives: a missing window must not cost the run its kinds
+    assert "Action kinds usable this run:" in text
+
+
 def test_capabilities_never_advertise_a_granted_kind_the_tools_list_leaves_out(make_routine,
                                                                                tmp_path):
     """The kinds line reads grant ∩ workflow `tools:`, but the capability lines below it read

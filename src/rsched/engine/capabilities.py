@@ -234,8 +234,15 @@ def capabilities_digest(ctx: RunContext, allowed_kinds: set[str] | None = None) 
                      f"{ref.context_tokens:,} tokens; the engine archives the middle of "
                      "the conversation to on-disk history at ~60-80% of that, so budget your "
                      "reads (large files via read_file ranges, not whole).")
-    except Exception:
-        pass
+    except Exception as exc:
+        # A silent `pass` here deleted the whole "Model: … context window ≈ N tokens" line from
+        # the prompt and said nothing: the run then planned its reads against a window it had
+        # never been told, and no transcript named the resolution failure. Say what is unknown
+        # and why, so the run budgets conservatively instead of guessing (and so the fault is
+        # legible to whoever reads the prompt afterwards).
+        parts.append(f"Model: this run's main model could not be resolved ({exc}) — its context "
+                     "window is UNKNOWN here, so read in ranges and keep the conversation lean "
+                     "rather than assuming headroom.")
     g = ctx.grants
     kinds = effective_kinds(allowed_kinds, g)
     parts.append("Action kinds usable this run: " + ", ".join(kinds) + ". Anything else is "

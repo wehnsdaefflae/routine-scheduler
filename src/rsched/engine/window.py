@@ -215,8 +215,15 @@ def _pick_archival_model(loop, middle: list[dict], endpoint, ref, cinfo: dict):
                 f"{dedicated}: unavailable ({exc}); using Automatic")
     try:
         candidates.append(ctx.registry.for_model("tool_call", ctx.routine.models))
-    except Exception:
-        pass
+    except Exception as exc:
+        # The branch 8 lines above records exactly this failure for the dedicated compaction
+        # model; this one swallowed it, so an archival run that lost a candidate looked
+        # identical to one that never had it. Same key, same shape: a declined candidate is
+        # reported either way, and `archival_selection_fallback` already carries a `; `-joined
+        # list further down.
+        prior = cinfo.get("archival_selection_fallback")
+        note = f"tool_call: unavailable ({exc})"
+        cinfo["archival_selection_fallback"] = f"{prior}; {note}" if prior else note
     candidates.append((endpoint, ref))
     declined: list[str] = []
     for c_endpoint, c_ref in candidates:

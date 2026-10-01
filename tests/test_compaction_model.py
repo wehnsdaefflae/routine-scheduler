@@ -81,6 +81,41 @@ def test_archival_selection_keeps_foreground_window(tmp_path, monkeypatch, dedic
     assert ("archival_selection_fallback" in events[-1]) == bool(dedicated and (small or unavailable))
 
 
+def test_a_tool_call_candidate_that_cannot_be_resolved_is_reported_not_swallowed(monkeypatch):
+    """The dedicated-model branch records WHY a candidate dropped out; the `tool_call` branch
+    eight lines below it caught the same failure and `pass`ed. An archival run that lost a
+    candidate then looked identical to one that never had it, so the one number that explains a
+    surprise archival choice did not exist.
+    """
+    # The same 20 000-token window the sibling tests use, so the compaction gate actually trips.
+    main = ModelRef(endpoint="ep", model="main", name="main",
+                    context_tokens=20000, max_tokens=1000)
+    events, selected = [], []
+
+    def for_model(*_a):
+        raise RuntimeError("no tool_call binding")
+
+    ctx = SimpleNamespace(
+        server=SimpleNamespace(compaction_model=""),
+        routine=SimpleNamespace(models={}), usage={}, phase="", tokens_remaining=lambda: None,
+        registry=SimpleNamespace(for_model=for_model),
+        transcript=SimpleNamespace(event=lambda kind, data: events.append(data)))
+    loop = SimpleNamespace(ctx=ctx, messages=[{"role": "user", "content": "x" * 2000}] * 50,
+                           turn_records=[], _last_compact_after=0)
+    monkeypatch.setattr(window, "_warn_before_eviction", lambda *a: False)
+    monkeypatch.setattr(window, "maybe_compact",
+                        lambda msgs, *_a: (msgs[:6] + msgs[-24:], {"mode": "digest"}))
+    monkeypatch.setattr(window.archival, "start", lambda *a: selected.append(a[3].name))
+
+    window._archive_if_needed(loop, "main-endpoint", main)
+
+    # It still archives — on the foreground model, the remaining candidate …
+    assert selected == ["main"]
+    # … and it SAYS the tool_call candidate was unavailable, with the reason.
+    assert "tool_call: unavailable" in events[-1]["archival_selection_fallback"]
+    assert "no tool_call binding" in events[-1]["archival_selection_fallback"]
+
+
 def test_archival_falls_back_to_the_main_model_when_the_tool_window_is_too_small(monkeypatch):
     """Machine work belongs on the cheaper tier, but only if it FITS there: a tool-call model
     whose window cannot hold the middle hands the archive back to the main model."""
