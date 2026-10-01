@@ -33,6 +33,9 @@ SCHEMA_VERSION = 1
 # them to build <mark> nodes via textContent — no HTML ever rides the payload.
 MARK_START, MARK_END = "\ue000", "\ue001"
 MAX_LIMIT = 200
+#: A long pass (the first over a deleted cache, a bulk change) commits every this many files,
+#: so readers see its progress as it goes rather than when it ends, and a crash keeps it.
+COMMIT_EVERY = 50
 
 # External-content FTS5: metadata lives in `docs` (queryable, per-file prunable via the
 # docs_file index), the FTS table holds only the text and stays in sync through the
@@ -94,6 +97,8 @@ class SearchIndex:
         self._lock = threading.Lock()
         self._conn: sqlite3.Connection | None = None
         self._shut = False
+        # the counts of the last pass that finished — what a query reports while another runs
+        self._last: dict | None = None
 
     # ---- connection & schema ------------------------------------------------------------
 
@@ -163,7 +168,7 @@ class SearchIndex:
 
     # ---- indexing -------------------------------------------------------------------------
 
-    def refresh(self, budget_s: float | None = None) -> dict:
+    def refresh(self, budget_s: float | None = None, *, wait: bool = True) -> dict:
         """One incremental pass: prune rows for files gone from disk, then walk the
         candidates NEWEST run first, fingerprinting and reindexing in a single budgeted
         loop — the budget covers the stat()s too, not just the reindexing (a stat-walk
@@ -171,6 +176,13 @@ class SearchIndex:
         AFTER each file, so every pass makes progress and any backlog eventually drains.
         Returns {"indexed", "pending", "files"}; pending counts files not yet CONFIRMED
         fresh this pass — a later call continues the work.
+
+        `wait=False` is the query seam's: when a pass is already running — the maintainer's,
+        which may hold the writer for its whole 15 s budget — it does not queue behind it. It
+        answers at once with the last finished pass's counts and `refreshing: True`, and the
+        search reads the index as it stands (WAL readers never wait on the writer). Before any
+        pass has finished here, how much is pending is unknown: one is the honest floor, and
+        what tells the console that results may be incomplete.
 
         A corrupt image is discarded and the pass rebuilds from disk, exactly as the query
         seam heals (F356). `_db()` only proves the HEADER readable at open; damage past it
@@ -180,16 +192,23 @@ class SearchIndex:
         transient, and never a reason to throw a good index away.
         """
         t0 = time.monotonic()
-        with self._lock:
+        if not self._lock.acquire(blocking=wait):
+            last = self._last or {"pending": 1, "files": 0}
+            return {**last, "indexed": 0, "refreshing": True}
+        try:
             try:
-                return self._refresh_pass(t0, budget_s)
+                stats = self._refresh_pass(t0, budget_s)
             except sqlite3.OperationalError:
                 raise
             except sqlite3.DatabaseError as exc:
                 log.warning("search index unreadable during refresh (%s) — rebuilding from disk",
                             exc)
                 self._discard_locked()
-                return self._refresh_pass(t0, budget_s)
+                stats = self._refresh_pass(t0, budget_s)
+            self._last = stats
+            return stats
+        finally:
+            self._lock.release()
 
     def _refresh_pass(self, t0: float, budget_s: float | None) -> dict:
         """One pass of `refresh`. The caller holds `_lock`."""
@@ -204,6 +223,8 @@ class SearchIndex:
             if _fingerprint(src.path) != known.get(path):
                 self._index_file(db, src)
                 indexed += 1
+                if indexed % COMMIT_EVERY == 0:
+                    db.commit()
             scanned += 1
             if budget_s is not None and time.monotonic() - t0 >= budget_s:
                 break
