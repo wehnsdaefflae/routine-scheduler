@@ -411,6 +411,14 @@ def validate_action(obj: dict, allowed_kinds: set[str] | None = None,  # noqa: C
 _NAMEABLE_UTIL_RE = re.compile(r"^(?=[a-z0-9-]*[a-z])[a-z0-9][a-z0-9-]*$")
 
 
+def could_be_util(name: str) -> bool:
+    """Could `name` name a util at all? The F546 test every per-util telemetry tick passes —
+    a value that cannot is a field shift, and attributing it invents a permanent phantom row
+    on the Stats tab — and the signature `field_shift_diagnosis` names.
+    """
+    return bool(_NAMEABLE_UTIL_RE.match(name))
+
+
 def util_rejection_outcome(obj: dict, allowed_kinds: set[str] | None = None,
                            grants=None) -> tuple[str, str] | None:
     """Classify a REJECTED util action for per-util telemetry (RunContext.count_util):
@@ -439,7 +447,7 @@ def util_rejection_outcome(obj: dict, allowed_kinds: set[str] | None = None,
     # is loaded only for a routine holding exactly one half of the write/revise split, so
     # neither separates a name from a shifted value. What every real util name has and no
     # shifted value did: kebab-case with a LETTER in it. Unattributable IS what None means.
-    if not _NAMEABLE_UTIL_RE.match(name):
+    if not could_be_util(name):
         return None
     denied = ((allowed_kinds is not None and "util" not in allowed_kinds)
               or (grants is not None and grants.deny(obj) is not None))
@@ -457,7 +465,7 @@ def field_shift_diagnosis(obj: dict) -> str:
     correction described the symptom; the fault went unnamed, and the run concluded the failure
     was its own inability to hold the schema.
 
-    The detectable signature is the same one F546's telemetry guard uses — `_NAMEABLE_UTIL_RE`,
+    The detectable signature is the same one F546's telemetry guard uses — `could_be_util`,
     the util naming rule — so the two cannot drift: a `kind: "util"` whose `name` could not be
     a util name at all is not a wrong util, it is a misplaced value. Returns "" when there is
     nothing specific to say, because a diagnosis that fires on ordinary mistakes would teach
@@ -466,7 +474,7 @@ def field_shift_diagnosis(obj: dict) -> str:
     if str(obj.get("kind") or "") != "util":
         return ""
     name = str(obj.get("name") or "").strip()
-    if not name or _NAMEABLE_UTIL_RE.match(name):
+    if not name or could_be_util(name):
         return ""
     shown = name if len(name) <= 80 else name[:77] + "…"
     return (f"LOOK AT THE WHOLE OBJECT, not only the field named above: `name` holds "

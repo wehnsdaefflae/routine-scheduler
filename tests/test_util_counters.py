@@ -55,6 +55,21 @@ def test_do_util_counts_outcomes(make_routine, tmp_path, monkeypatch):
     assert ctx.util_stats["ghost"] == {"missing": 1}
 
 
+def test_a_miss_on_a_name_that_cannot_be_a_util_is_not_counted(make_routine, tmp_path,
+                                                                monkeypatch):
+    """A FIELD SHIFT can be schema-valid (`name: "300"`), so it reaches the executor's miss
+    without any rejection — and a `missing` tick there mints the same permanent phantom row
+    F546 closed at the validation seam. A real-looking miss is still counted."""
+    from rsched import utils_lib
+
+    ctx = _ctx(make_routine, tmp_path)
+    monkeypatch.setattr(utils_lib, "list_utils", lambda home: [])
+    for shifted in ("300", "Your leaner days pack eating into a tighter span."):
+        assert dispatch({"kind": "util", "name": shifted, "args": []}, ctx)["missing"]
+    dispatch({"kind": "util", "name": "ghost-util", "args": []}, ctx)
+    assert ctx.util_stats == {"ghost-util": {"missing": 1}}
+
+
 def test_pseudo_utils_are_not_counted(make_routine, tmp_path):
     ctx = _ctx(make_routine, tmp_path)
     dispatch({"kind": "util", "name": "list", "args": []}, ctx)

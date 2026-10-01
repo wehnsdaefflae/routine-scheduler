@@ -20,6 +20,7 @@ from .. import sandbox, shellrun, utils_lib, utils_run
 from ..ids import is_slug
 from ..paths import expand
 from ..utils_lib import USAGE_ERROR_EXIT
+from .actions import could_be_util
 from .exec_env import _extra_secrets, _unbound_connection_request
 from .fileops import (
     UTIL_DEFAULT_TIMEOUT_S,
@@ -165,7 +166,10 @@ def do_util(action: dict, ctx: RunContext) -> dict:  # noqa: PLR0911 — list/sh
         return {"kind": "util", "name": "search", "query": query,
                 "listing": utils_lib.search_listing(home, query)}
     if not utils_lib.exists(home, name):
-        ctx.count_util(name, "missing")
+        # A schema-valid FIELD SHIFT (`name: "300"`) reaches this miss without any rejection,
+        # and counting it would mint the phantom Stats row F546 closed at the validation seam.
+        if could_be_util(name):
+            ctx.count_util(name, "missing")
         obs = {"kind": "util", "name": name, "missing": True,
                "available": [u["name"] for u in utils_lib.list_utils(home)]}
         # R367: the name may be a ROUTINE-LOCAL script, which the util action never
