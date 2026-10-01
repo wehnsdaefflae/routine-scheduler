@@ -2296,6 +2296,39 @@ def test_reserve_is_spent_once_then_the_engine_stops_the_run(make_routine, scrip
     assert fin["turns"] == 11
 
 
+def test_a_run_whose_reserved_turn_refused_an_action_can_be_resumed(make_routine, scripted):
+    """The reserved turn records its refusal as `{kind, rejected, reason}` — no result fields.
+    A resume re-renders every stored observation, and fifteen kinds' renderers read a RESULT
+    (`bytes`, `exit`, `name` …), so the replay raised and the run — a conversation's next
+    message — could never be resumed. The refusal now replays as what it was."""
+    d, _ep, status, _run_dir, _events = _run(make_routine, scripted, [
+        *[write_file(f"state/p{i}.txt", say=f"Step {i}.") for i in range(12)],
+    ], budgets={"max_turns": 10})
+    assert status == "partial"
+    ep2 = scripted([write_file("state/after.txt"), finish(summary="picked up again")])
+    status2, _ = run_routine(d, _server(d), run_ts=TS, resume_from=TS)
+    assert status2 == "ok"
+    replayed = " ".join(m["content"] for m in ep2.calls[0]["messages"])
+    assert ("OBSERVATION (write_file REJECTED): the reserved finish turn executes nothing "
+            "but `finish`") in replayed
+
+
+def test_a_deferred_finish_replays_the_message_the_model_read(make_routine, scripted):
+    """A resumed leg rebuilds its prompt from the transcript. The finish gate recorded only
+    the rung's keys, so the replay showed `OBSERVATION (finish): {"kind": "finish", …}` where
+    the model had read the deferral — the missing accounting ids, the refuted claims, the
+    rule's line all gone from the prompt the run resumed with."""
+    d, _ep, status, _run_dir, _events = _run(make_routine, scripted, [
+        finish(),                                    # the fabrication guard sets it aside
+        probe(), finish(summary="done for real")])
+    assert status == "ok"
+    ep2 = scripted([finish(summary="and still done")])
+    run_routine(d, _server(d), run_ts=TS, resume_from=TS)
+    replayed = " ".join(m["content"] for m in ep2.calls[0]["messages"])
+    assert "OBSERVATION (finish REJECTED): you have not executed a single action" in replayed
+    assert '"rejected": true' not in replayed
+
+
 def test_health_event_on_budget_exhaustion(make_routine, scripted, tmp_path):
     """A budget-forced partial finish writes a budget_exhausted event to health-events.jsonl."""
     d = make_routine(slug="healthbud")

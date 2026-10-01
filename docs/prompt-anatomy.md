@@ -166,7 +166,7 @@ transcript event — on a resume they are NOT folded into the system prompt's se
 through the SAME renderer the live path used — `control.injected_message`,
 `control.command_message`, `enginenote.message`, `control.child_finished_message` — so a
 resumed leg's prefix is byte-identical to the leg that wrote it, which is the whole point under
-a caching contract. Three consequences worth stating:
+a caching contract. Consequences worth stating:
 
 - **An engine note is not a user message.** A `user_injection` event whose `source` is `engine`
   was written by `enginenote.append`, which records the prose verbatim, and it replays as
@@ -178,6 +178,16 @@ a caching contract. Three consequences worth stating:
   `replay: false` and the replay skips them, so a leg cannot stack one copy per resume.
 - **A slash command replays as ONE message**, command plus result, the same shape
   `control.command_message` builds live — not as two.
+- **A finish the gate set aside replays as its deferral.** Every rung records the message it
+  sent on its observation (`message`, beside the rung's own keys), and `format_observation`
+  renders that verbatim — not the bare payload as JSON, which dropped the missing accounting
+  ids, the refuted claims and the rule's line from the prompt the run resumed with.
+- **A refused action replays as what it was.** The reserved finish turn records a non-finish
+  action it refused as `{kind, rejected, reason}` — nothing ran, so there is no result. It
+  replays as `OBSERVATION (<kind> REJECTED): <reason>`, the wording the kinds that refuse on
+  their own (spawn, subtask, detach, create_routine, manage_lane) already use; the result
+  renderers read fields such an observation never carries, and their KeyError made the run
+  unresumable.
 
 Interrupted run (crash / budget / abort — no model-authored `finish`):
 
