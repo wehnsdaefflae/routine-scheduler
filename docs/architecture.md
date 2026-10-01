@@ -87,8 +87,11 @@ the limits (single-writer status.json preserved).
 - **The message list is a prompt-caching contract**: composed once, appended-to only, never mutated —
   so providers serve each turn's prefix from cache (~0.1x). Per-turn boilerplate is banned: the util
   reminder is ONE-SHOT on the kickoff/resume note, the history pointer re-appears only every 10th turn,
-  and schema-retry debris is dropped from the live prompt once a retry succeeds (the transcript keeps
-  the error events). Cache traffic reports as usage `cached_in`/`cache_write` (kept OUT of `in`, so
+  and a turn's retry debris — schema-retry pairs, a refused finish and its re-drive note, a failover
+  notice — is dropped from the live prompt once the turn's action is accepted (the transcript keeps
+  the error events). The debris is remembered by identity, not as the tail past a length
+  (`engine/turndebris.py`): a model switch mid-turn re-fits the prompt to the new window, and a
+  compaction there moves it. Cache traffic reports as usage `cached_in`/`cache_write` (kept OUT of `in`, so
   token budgets keep their meaning). A provider's cache is earned by a BYTE-STABLE prefix and by
   nothing else — there is no per-run key an adapter is handed. THREE sanctioned exceptions
   rewrite the list in place:

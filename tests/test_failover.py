@@ -370,8 +370,8 @@ def test_the_fallback_model_is_told_it_is_the_fallback(make_routine, monkeypatch
         "own output — which is the misdiagnosis this whole change exists to stop")
 
     # appended ONCE at the switch, never re-rendered per turn. It does not survive into the
-    # NEXT turn's prompt, and that is correct rather than a loss: completion drops everything
-    # beyond the turn's base message list on success (the retry/notice debris earned its keep
+    # NEXT turn's prompt, and that is correct rather than a loss: completion drops the turn's
+    # debris on success (engine/turndebris.py — the retries and this notice earned their keep
     # eliciting THIS reply), and the transcript's error event keeps the durable record.
     assert sum(1 for m in inherited
                if "MODEL FAILOVER" in str(m.get("content") or "")) == 1

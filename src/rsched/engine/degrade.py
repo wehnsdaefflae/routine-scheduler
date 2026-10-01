@@ -14,7 +14,7 @@ import json
 from ..endpoints import failover
 from ..endpoints.base import EndpointError
 from ..health_events import log_health_event
-from . import refusal
+from . import refusal, turndebris
 from .compaction import estimate_input_tokens
 from .overflow import _recover_oversize_prompt, _shrink_window_to_provider
 from .window import apply_media_fallback
@@ -165,11 +165,11 @@ def _intercept_refusal_finish(loop, candidate, ref, refstate: dict) -> bool:
     else:
         note = ("the refusal-triggering part is being handled separately — do NOT "
                 "finish-fail on its account; proceed with the REMAINDER of the task.")
-    loop.messages.append({"role": "assistant",
-                          "content": json.dumps(candidate, ensure_ascii=False)})
-    loop.messages.append({"role": "user", "content":
-                          "That finish was a content refusal and was NOT accepted as this "
-                          "turn's action. " + note})
+    turndebris.append(loop, {"role": "assistant",
+                             "content": json.dumps(candidate, ensure_ascii=False)},
+                      {"role": "user", "content":
+                       "That finish was a content refusal and was NOT accepted as this "
+                       "turn's action. " + note})
     return True
 
 def _turn_task_text(loop) -> str:
@@ -287,7 +287,7 @@ def _tell_the_run(loop, failed_ref, new_ref, exc: EndpointError) -> None:
 
     Everything else this function's callers write is for a reader AFTER the fact: a transcript
     event and a fleet health event. The run itself was never told, and
-    completion.py deletes the failed-attempt debris from the live prompt on success — so the
+    completion.py drops the failed-attempt debris from the live prompt on success — so the
     new model inherited the turn with no trace of the switch and no way to know its own
     situation.
 
@@ -298,7 +298,9 @@ def _tell_the_run(loop, failed_ref, new_ref, exc: EndpointError) -> None:
 
     One appended line, at the switch, never re-rendered per turn: the message list is
     appended-to and never mutated (CLAUDE.md), and a failover has already invalidated the
-    provider cache by changing model, so the append costs nothing extra.
+    provider cache by changing model, so the append costs nothing extra. It is the turn's
+    debris like the retries around it (`turndebris`): it informs the reply it was written for,
+    and the transcript's failover event is the durable record.
     """
     rungs = loop.ctx.failover_rungs
     step = "one rung" if rungs == 1 else f"{rungs} rungs"
@@ -308,7 +310,7 @@ def _tell_the_run(loop, failed_ref, new_ref, exc: EndpointError) -> None:
     failed = f"{failed_ref.endpoint}/{failed_ref.model}"
     serving = f"{new_ref.endpoint}/{new_ref.model}"
     configured = loop.ctx.configured_model or failed
-    loop.messages.append({"role": "user", "content": (
+    turndebris.append(loop, {"role": "user", "content": (
         f"[MODEL FAILOVER — you are no longer the model this routine was configured with]\n"
         f"{failed} failed hard ({str(exc)[:200]}), so this turn "
         f"and the rest of the run are served by {serving} — {step} down "

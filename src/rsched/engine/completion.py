@@ -15,7 +15,7 @@ from ..endpoints import failover
 from ..endpoints.base import EndpointError, retry_base_delay
 from ..endpoints.base import fold_usage as base_fold
 from ..schema_guard import SchemaViolation, extract_json, retry_message, validate
-from . import overflow, refusal
+from . import overflow, refusal, turndebris
 from .actions import (
     KIND_EXAMPLES,
     field_shift_diagnosis,
@@ -112,7 +112,7 @@ def next_action(loop) -> tuple[dict | None, dict]:
     # classifier-refusal path), and the consecutive-empty streak from the CURRENT model.
     refstate = {"referral_tried": False, "empty": 0}
     overflow.new_turn(loop)         # the oversize-shrink allowance is per TURN, like these
-    base_len = len(loop.messages)   # schema-retry debris beyond this is dropped on success
+    turndebris.new_turn(loop)       # what elicits only this turn's action, dropped on success
     attempt = 0
     while attempt < MAX_SCHEMA_ATTEMPTS:
         attempt += 1
@@ -178,11 +178,7 @@ def next_action(loop) -> tuple[dict | None, dict]:
                     and _intercept_refusal_finish(loop, candidate, ref, refstate)):
                 attempt -= 1   # the re-driven turn is not a schema violation
                 continue
-            if len(loop.messages) > base_len:
-                # Drop the failed-attempt/correction pairs from the live prompt — they
-                # earned their keep eliciting THIS reply and would otherwise be re-read
-                # every remaining turn. The transcript's error events keep the record.
-                del loop.messages[base_len:]
+            turndebris.drop(loop)
             usage_sum["model"] = f"{ref.endpoint}/{ref.model}"   # per-turn attribution
             return candidate, usage_sum
         except SchemaViolation as exc:
@@ -218,13 +214,14 @@ def next_action(loop) -> tuple[dict | None, dict]:
                         f"\n\nNOTE: the fragment «{rec['isolated']}» in the current "
                         "task was flagged and is being handled separately by another "
                         "model — proceed with the REMAINDER of the task without it.")
-            loop.messages.append({"role": "assistant", "content": raw[:4000]})
             # D146-C: when the object itself is field-shifted, say so instead of letting the
             # correction describe whichever field happened to carry a constraint.
-            loop.messages.append({"role": "user", "content": retry_message(
-                exc.problems, example=KIND_EXAMPLES.get(kind_hint or ""),
-                repeated=repeated,
-                diagnosis=field_shift_diagnosis(completion.parsed or {})) + essence_note})
+            turndebris.append(
+                loop, {"role": "assistant", "content": raw[:4000]},
+                {"role": "user", "content": retry_message(
+                    exc.problems, example=KIND_EXAMPLES.get(kind_hint or ""),
+                    repeated=repeated,
+                    diagnosis=field_shift_diagnosis(completion.parsed or {})) + essence_note})
             if attempt == MAX_SCHEMA_ATTEMPTS - 1:
                 # Persistent violations under a provider-enforced grammar are often the
                 # grammar's fault (empty-string debris fields are its signature) — give
