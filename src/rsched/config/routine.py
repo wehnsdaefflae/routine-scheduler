@@ -381,7 +381,7 @@ def load_routine(routine_dir: Path) -> tuple[RoutineConfig | None, list[str]]:
     # the one problem where degrading quietly is worse than the problem — two live routines
     # audit and export the server's own configuration as their actual job, and a root that
     # vanishes from under their next run fails them with nothing naming the cause. The PATCH
-    # edge refuses a NEW one (web/api_routine_patch.py); this is how an existing one stops
+    # edges refuse a NEW one (web/config_fields.validate_roots); this is how an existing one stops
     # being silent, on the routine page and in `rsched validate`.
     for key in ("fs_read_roots", "fs_write_roots"):
         for root in guarded_roots(getattr(cfg, key)):

@@ -693,7 +693,9 @@ docs (they ride the cascade; they grant nothing).
 
 The same question applies to the three fs paths that are never grantable at all
 (`entities.NEVER_GRANTABLE`: the instance config dir, `~/.credentials`, `~/.ssh`). They are
-refused at the runtime ask, refused at the config PATCH, and REPORTED by the loader for a
+refused at the runtime ask, refused at every edge where an operator MAKES a grant (the routine
+PATCH, the conversation PATCH and create form — one enforcer, `config_fields.validate_roots`,
+which also refuses a non-absolute root), and REPORTED by the loader for a
 file that already lists one — that last one deliberately does not drop the root, because a
 routine that has legitimately been reading it would otherwise fail its next run with nothing
 naming the cause. All three compare a root as written AND as resolved

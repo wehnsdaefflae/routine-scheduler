@@ -27,12 +27,11 @@ from pydantic import BaseModel
 from .. import conversations as conv_mod
 from ..config import DELIBERATION_LEVELS, load_routine
 from ..paths import atomic_write_json
-from .api_conversation_config import granted_roots
 from .api_routine_edit import (
     PermissionsBody,
     resolve_permission_layers,
 )
-from .config_fields import validate_models
+from .config_fields import validate_models, validate_roots
 from .conversations_common import (
     _save_attachments,
 )
@@ -47,11 +46,9 @@ _autolabel_tasks: set[asyncio.Task] = set()   # strong refs for fire-and-forget 
 
 
 def _parse_roots(raw: str, field: str) -> list[str]:
-    """The composer's folder-access fields (D70): a JSON string array of server paths.
-    Each must be absolute (or ~-anchored — the canonical form live configs carry);
-    existence is NOT required, matching the routine page's roots editor. A credential store
-    is refused exactly as the header panel refuses it (`granted_roots`). Returns the cleaned
-    list; raises 400 on anything else.
+    """The composer's folder-access fields (D70): a JSON string array of server paths, then
+    the one grant enforcer (`config_fields.validate_roots` — absolute, deduplicated, never a
+    credential store). Existence is NOT required, matching the routine page's roots editor.
     """
     if not raw.strip():
         return []
@@ -61,15 +58,7 @@ def _parse_roots(raw: str, field: str) -> list[str]:
         raise HTTPException(400, f"{field}: expected a JSON array of paths") from None
     if not isinstance(vals, list) or not all(isinstance(v, str) for v in vals):
         raise HTTPException(400, f"{field}: expected a JSON array of paths")
-    roots: list[str] = []
-    for v in vals:
-        p = v.strip().rstrip("/") or "/"
-        if not p.startswith(("/", "~/")) or p == "~":
-            raise HTTPException(
-                400, f"{field}: {v!r} is not an absolute path (use /abs/path or ~/path)")
-        if p not in roots:
-            roots.append(p)
-    return granted_roots(field, roots)
+    return validate_roots(field, vals)
 
 
 def _parse_rules(server, raw: str) -> list[str] | None:
@@ -227,7 +216,7 @@ async def create_conversation(request: Request,
     # boots — reply #1 already runs with it (the mid-run grant path stays for later changes).
     # The workdir is write root #1, so it is a grant like the lists.
     if workdir:
-        granted_roots("workdir", [workdir])
+        validate_roots("workdir", [workdir])
     read_roots = _parse_roots(form.fs_read_roots, "fs_read_roots")
     write_roots = _parse_roots(form.fs_write_roots, "fs_write_roots")
     # F339: rules and connections are pre-start choices too: reply #1 boots with the rules
