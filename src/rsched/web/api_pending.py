@@ -37,7 +37,9 @@ class Discard(BaseModel):
 @router.get("/pending-creations")
 def list_pending(request: Request) -> list[dict]:
     """Everything a run has proposed and nobody has decided yet, oldest first."""
-    return pending.load_all(request.app.state.server.routines_home)
+    from .decisions_read import open_proposals
+
+    return open_proposals(request.app.state.server)
 
 
 def _materialize_routine(server, fields: dict) -> dict:

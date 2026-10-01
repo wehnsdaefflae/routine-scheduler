@@ -4,8 +4,8 @@ store, and the decision sender the daemon drives off the event bus.
 Opt-in like the Discord mirror: nothing is sent until a browser subscribes (Settings →
 Notifications). State lives in the config dir (mounted in Docker, never inside a routine):
 `vapid-private.pem` (generated on first use), `push-subscriptions.json` (one entry per
-browser), `push-notified.json` (qids already pushed — the sender's dedupe memory, and the set it
-diffs to withdraw a notification once its decision is answered).
+browser), `push-notified.json` (question qids and proposal ids already pushed — the sender's dedupe
+memory, and the set it diffs to withdraw a notification once its ask is settled).
 A dead subscription (push service answers 404/410) is dropped on sight. Everything is
 best-effort: push failures never disturb the daemon.
 """
@@ -136,46 +136,59 @@ def send_to_all(server, payload: dict) -> int:
     return sum(_send_one(server, s, payload) for s in subscriptions(server))
 
 
+def _open_asks(server) -> list[tuple[str, str, str]]:
+    """What waits on a person, as (key, title, text): every open unanswered QUESTION (keyed by
+    its qid) and every standing PROPOSAL (keyed by its `pc-` id — the two id spaces never
+    meet). The same two lists the Decisions page and the header badge read, so the surfaces
+    can never disagree; proposals were missing here until 2026-10, so a queued creation or a
+    met goal reached nobody away from the console.
+    """
+    from .decisions_read import open_decisions, open_proposals
+
+    asks = [(str(q["qid"]), f"decision needed · {q.get('routine', '?')}",
+             str(q.get("question") or ""))
+            for q in open_decisions(server) if q.get("qid") and not q.get("answered")]
+    asks += [(str(p["id"]), f"proposal · {p.get('routine') or '?'}", str(p.get("summary") or ""))
+             for p in open_proposals(server)]
+    return asks
+
+
 def notify_new_decisions(server) -> int:
-    """The sender the bus listener calls: diff the instance's open decisions against the
-    already-pushed set and push one notification per NEW one. Same source of truth as the
-    Decisions page (decisions_read.open_decisions), so the surfaces can never disagree.
-    Cheap no-op while nobody is subscribed.
+    """The sender the bus listener calls: diff what waits on a person (`_open_asks`) against
+    the already-pushed set and push one notification per NEW one. Cheap no-op while nobody is
+    subscribed.
     """
     if not subscriptions(server):
         return 0
-    from .decisions_read import open_decisions
-
-    qs = [q for q in open_decisions(server) if q.get("qid") and not q.get("answered")]
-    open_qids = {q["qid"] for q in qs}
+    asks = _open_asks(server)
+    open_keys = {key for key, _, _ in asks}
     with _lock:
         notified = read_json(push_dir(server) / _NOTIFIED_FILE)
         notified = notified if isinstance(notified, list) else []
         known = set(notified)
-        fresh = [q for q in qs if q["qid"] not in known]
-        # A decision we already pushed that is no longer open+unanswered has been answered (or
-        # withdrawn): send a same-tag "close" push so the phone notification is retracted, and
-        # drop the qid so a decision that re-opens later notifies afresh.
-        stale = [qid for qid in notified if qid not in open_qids]
+        fresh = [ask for ask in asks if ask[0] not in known]
+        # An ask we already pushed that is no longer open has been answered, decided or
+        # withdrawn: send a same-tag "close" push so the phone notification is retracted, and
+        # drop the key so an ask that re-opens later notifies afresh.
+        stale = [key for key in notified if key not in open_keys]
         if not fresh and not stale:
             return 0
         stale_set = set(stale)
-        notified = ([qid for qid in notified if qid not in stale_set]
-                    + [q["qid"] for q in fresh])[-_NOTIFIED_CAP:]
+        notified = ([key for key in notified if key not in stale_set]
+                    + [key for key, _, _ in fresh])[-_NOTIFIED_CAP:]
         atomic_write_json(push_dir(server) / _NOTIFIED_FILE, notified)
     sent = 0
-    for q in fresh:
-        body = str(q.get("question") or "").replace("\n", " ")[:160]
+    for key, title, text in fresh:
         sent += send_to_all(server, {
-            "title": f"decision needed · {q.get('routine', '?')}",
-            "body": body,
-            "tag": f"rsched-{q['qid']}",
+            "title": title,
+            "body": text.replace("\n", " ")[:160],
+            "tag": f"rsched-{key}",
             "url": "/#/questions",
         })
-    for qid in stale:
+    for key in stale:
         # `close: true` tells the service worker to clear the tray notification with this tag
-        # rather than show a new one (sw.js) — the answered decision's alert is retracted.
-        sent += send_to_all(server, {"tag": f"rsched-{qid}", "close": True})
+        # rather than show a new one (sw.js) — the settled ask's alert is retracted.
+        sent += send_to_all(server, {"tag": f"rsched-{key}", "close": True})
     return sent
 
 

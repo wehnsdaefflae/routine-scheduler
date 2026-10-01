@@ -93,7 +93,8 @@ export async function render(view, query = {}) {
 
   // F328: creations a SCHEDULED run proposed — it had no user in the loop, so it queued
   // instead of creating. Above the decisions because nothing happens until one is clicked.
-  const pending = pendingBand();
+  // A decided proposal leaves the badge at once rather than at the next bus event.
+  const pending = pendingBand({ onChanged: () => loadQuestions().catch(() => {}) });
   view.append(pending.node);
 
   const list = el("div", { class: "mt" });

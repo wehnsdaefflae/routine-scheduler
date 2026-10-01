@@ -75,6 +75,18 @@ def test_discard_confirms_then_tells_the_proposer(ui, ui_page):
     assert "discarded" in json.loads(msg.read_text())["text"]
 
 
+def test_the_header_badge_counts_a_standing_proposal_until_it_is_decided(ui, ui_page):
+    """A proposal waits on a person exactly as a question does, but the badge read questions
+    only — a met goal or a queued creation sat on the Decisions page with the badge at 0.
+    Deciding it takes it off the badge at once, without waiting for a bus event."""
+    _queue(ui)
+    ui_page.goto(f"{ui.url}/#/questions")
+    expect(ui_page.locator("#q-badge")).to_have_text("1")
+    ui_page.get_by_role("button", name="discard").click()
+    ui_page.locator(".modal-overlay").get_by_role("button", name="discard").click()
+    expect(ui_page.locator("#q-badge")).to_be_hidden()
+
+
 def test_a_lane_proposal_reads_as_a_lane_change(ui, ui_page):
     _queue(ui, kind="manage_lane", summary="create lane 'FAU comms'",
            fields={"verb": "create", "name": "FAU comms", "members": ["uir"]})

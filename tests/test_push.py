@@ -101,6 +101,30 @@ def test_answered_decision_is_withdrawn(make_routine, tmp_path, monkeypatch):
     assert len(sent) == before
 
 
+def test_a_standing_proposal_is_pushed_and_withdrawn_once_decided(tmp_path, monkeypatch):
+    """A queued proposal (a creation, a met goal, library drift) waits on a person exactly as
+    a question does. The sender counted none of them, so a scheduled run's proposal reached
+    nobody away from the console; it is pushed once, keyed by its `pc-` id, and retracted
+    when the operator decides it (the record leaves the queue)."""
+    from rsched import pending
+
+    server = _server(tmp_path)
+    rec = pending.queue(server.routines_home, kind="create_routine", routine="scout",
+                        run_id="scout:20260712-070000", fields={"slug": "new-one"},
+                        summary="create routine new-one")
+    push.add_subscription(server, SUB_A)
+    sent: list[dict] = []
+    monkeypatch.setattr(push, "_send_one", lambda _srv, sub, payload: sent.append(payload) or True)
+
+    assert push.notify_new_decisions(server) == 1
+    assert sent[-1]["tag"] == f"rsched-{rec['id']}" and "scout" in sent[-1]["title"]
+    assert "create routine new-one" in sent[-1]["body"]
+    assert push.notify_new_decisions(server) == 0          # never twice
+    assert pending.drop(server.routines_home, rec["id"])
+    assert push.notify_new_decisions(server) == 1
+    assert sent[-1] == {"tag": f"rsched-{rec['id']}", "close": True}
+
+
 def test_notify_is_a_noop_without_subscribers(make_routine, tmp_path, monkeypatch):
     server = _server(tmp_path)
     d = make_routine(slug="quiet")

@@ -21,8 +21,13 @@ expires}`). Answering on any surface resolves the record everywhere.
 
 - **Web** — always on, and the only delivery the system performs by itself. The Decisions
   page, the in-app notification tier (Settings → Notifications, opt-in), and browser **Web
-  Push** (opt-in per browser, works with the tab closed). Both push tiers key off the same
-  open-decisions source the Decisions page reads, so the surfaces can never disagree.
+  Push** (opt-in per browser, works with the tab closed). Both push tiers and the header badge
+  key off the same two lists the Decisions page reads — the open questions
+  (`decisions_read.open_decisions`) and the standing PROPOSALS (`open_proposals`: a queued
+  creation or lane change, a met goal, library drift — `.control/pending-creations/`) — so
+  the surfaces can never disagree. Proposals were invisible to the badge and both push tiers
+  until 2026-10; a proposal notifies once, keyed by its `pc-` id, and its push is retracted
+  when it is decided.
 - **A messenger** (Discord, Signal, Telegram, WhatsApp, Zulip, e-mail, an `ntfy` push to your
   own devices, …) is an ordinary
   **util call by the agent itself**: visible in the transcript, gated by that channel's
