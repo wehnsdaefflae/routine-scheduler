@@ -1,17 +1,19 @@
 """Dispatch a validated action to its effect and return the observation dict.
 
-DISPATCH covers util / read_file / view_image / write_file / edit_file / memory_read /
-memory_write / read_rule / llm / list_models; `script` and `shell` — the other two ways a
-run executes code — live here too and are routed from actionroute.py. Control-flow kinds
-(spawn, subruns, kill, wait, finish) live in loop.py — they change the run's state machine
-— and the user-facing kinds (ask_user, write_util, write_rule) in interact.py /
-authoring.py. Every observation dict feeds both the transcript event and (via
+DISPATCH covers the EFFECT kinds: util and shell (the util runner and the one-off command
+live here), the file kinds (read_file / write_file / edit_file / delete / move / mkdir —
+fileops.py), view_image (mediaops.py), the name-addressed stores (memory_read /
+memory_write / read_rule — memops.py), llm and list_models (llmaction.py). `script`, the
+third way a run executes code, lives here too but is reached through actionroute.py, which
+puts the call-time secret gate in front of it and of `util`. Every other kind has its own
+handler there — the child-run kinds (spawn, subtask, subruns, kill, wait) in subruns.py,
+ask_user in interact.py, the library authoring kinds in authoring.py — and `finish` never
+leaves the loop. Every observation dict feeds both the transcript event and (via
 observations.format_observation) the next user message.
 """
 
 from __future__ import annotations
 
-import logging
 import re
 
 from .. import sandbox, shellrun, utils_lib, utils_run
@@ -34,13 +36,6 @@ from .memops import do_memory_read, do_memory_write, do_read_rule
 from .observations import truncate
 from .output_compression import command_output
 from .run_context import RunContext
-
-log = logging.getLogger("rsched.engine")
-
-READ_DEFAULT_MAX_LINES = 200
-# argparse exits 2 on bad arguments — the deterministic "called with wrong syntax" signal
-# for per-util telemetry (a util not using argparse may exit 1 for everything; then its
-# usage errors count as plain errors, which is the honest fallback).
 
 
 def _note_if_killed(ctx: RunContext, kind: str, name: str, code: int) -> None:

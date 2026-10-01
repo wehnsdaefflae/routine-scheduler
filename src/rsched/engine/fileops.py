@@ -80,7 +80,7 @@ def _within(resolved: Path, sealed: Path) -> bool:
 
 
 def _runs_read_gate(ctx: RunContext, resolved) -> str | None:
-    """Backstop for previous-run access (grants.deny handles the relative-path form inside
+    """Backstop for previous-run access (GrantPolicy.deny handles the relative-path form inside
     the schema-retry cycle; this catches absolute paths and scopes `runs: last`). The
     current run's own tree — status, archived history, a child's own workspace — is always
     readable. Anchored on the ROUTINE's runs/: a child (run history `none`) reaches it
@@ -333,7 +333,7 @@ def _engine_owned(ctx: RunContext, resolved) -> str | None:
 
 
 def _write_gate(ctx: RunContext, resolved, *, creates: bool = True) -> str | None:
-    """Backstop for engine-owned and permission-gated writes (grants.deny handles the
+    """Backstop for engine-owned and permission-gated writes (GrantPolicy.deny handles the
     relative-path form; this catches absolute paths and traversals into every routine dir
     the run can reach — `_routine_dirs`).
 

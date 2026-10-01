@@ -438,9 +438,9 @@ and the capabilities digest's catalog listing):
   TOOLING, not a
   co-equal interpreter: the recipe stays the single interpreter of the task and delegates
   judgment-free sub-steps (polling, parsing, calculations, fixed artifacts) so a repeating
-  step is written once and re-run for free. Run via the `script` action (gated by the
-  `script` capability; conduct: the `scripts` permission doc) in a persistent VENV inside
-  the routine's workdir — `<routine>/.venv`, created on first use, the script's PEP 723
+  step is written once and re-run for free. Run via the `script` action — a BASE kind every
+  routine holds since 0.369.0, with no capability and no approval dial — in a persistent VENV
+  inside the routine's workdir — `<routine>/.venv`, created on first use, the script's PEP 723
   deps installed into it (net-open build step, R40's prewarm rationale), gitignored against
   the `git add -A` autocommit. The jail is the run's fs roots (recipe and script read and
   write the SAME files) PLUS the private stores its declared utils claim on their `fs:`
@@ -448,19 +448,22 @@ and the capabilities digest's catalog listing):
   store from the wholesale mount, and a script execing `gu whatsapp` got the session
   directory subtracted and never re-admitted, F465); the env carries ONLY the granted secrets the script's header
   `secrets:` line declares, plus whatever its declared utils declare (`NAME?` = optional,
-  withheld when not granted; a declared, present, still-undecided secret files the util
-  call's blocking exposure ask, over the transitive set). Authored by
+  withheld when not granted and named in the observation's `[note]`, as for a util; a
+  declared, present, still-undecided secret files the util call's blocking exposure ask, over
+  the transitive set). Authored by
   the run itself with `write_file` (an own-dir write; the repo's autocommit versions it) or
   by the user; no approval dial — the blast radius is a subset of the routine's own
-  sandboxed permissions. The capabilities digest lists the routine's scripts when the
-  capability is held; children run with capabilities off, so a subrun never sees the kind.
+  sandboxed permissions. The capabilities digest lists the routine's scripts. A child's own
+  dir is its workspace, which holds no `scripts/`, so the routine's helpers are the parent's
+  to call.
 - `.util_outputs/<run-ts>/t<turn>-<util>.out|.err` (`engine/outputs.py`) — util output too large for
   the observation that carried it, saved in full instead of destroyed. A util's stdout is captured up
-  to 1 MB (`utils_lib.OUTPUT_CAP`) and then head+tail truncated to 8k for the observation, and the
+  to 1 MB (`utils_lib.OUTPUT_CAP`) and then cut to its 8k head for the observation (stderr keeps
+  head and tail), and the
   transcript records the TRUNCATED payload — so that band had no survivor, and re-running is not the
   same data for a fetch, a paid call, or a mailbox read. ONLY truncated output is kept: an output the
   observation carried whole is already in the transcript verbatim. The pointer rides the observation
-  that lost the middle (so the store needs no index), earlier runs' spills reach the next run through
+  that lost text (so the store needs no index), earlier runs' spills reach the next run through
   the state digest, and reads are ordinary `read_file` — which pages by line window, making a big
   output cheaper on disk than it ever was in context. Engine-owned and read-only for the run (like
   `runs/`), gitignored on first use (the run-end autocommit is `git add -A` and util output can carry
