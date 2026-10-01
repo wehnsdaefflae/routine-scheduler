@@ -183,17 +183,15 @@ def test_tools_allowlist_enforced_at_runtime(make_routine, scripted):
     assert "util" not in obs_kinds
 
 
-def test_inbox_unreadable_message_logged_and_left(tmp_path, caplog):
-    """An unreadable inbox file is skipped with a log trace and left for the next drain."""
-    import logging
-    import os
+def test_inbox_unreadable_message_logged_and_left(tmp_path, caplog, monkeypatch):
+    """An unreadable inbox file is skipped with a log trace and left for the next drain.
 
-    import pytest
+    The read fails at its own seam rather than by chmod: root reads a mode-000 file anyway,
+    so the chmod version skipped itself wherever the suite runs as root."""
+    import logging
+    from pathlib import Path
 
     from rsched.engine import inbox as inbox_mod
-
-    if os.geteuid() == 0:
-        pytest.skip("permission-based unreadability needs a non-root user")
 
     d = tmp_path / "r"
     (d / "inbox").mkdir(parents=True)
@@ -201,12 +199,16 @@ def test_inbox_unreadable_message_logged_and_left(tmp_path, caplog):
     good.write_text('{"text": "hello"}', encoding="utf-8")
     bad = d / "inbox" / "msg-2.json"
     bad.write_text("secret", encoding="utf-8")
-    bad.chmod(0o000)
-    try:
-        with caplog.at_level(logging.WARNING, logger="rsched.inbox"):
-            out = inbox_mod.drain_messages(d, tmp_path / "consumed")
-    finally:
-        bad.chmod(0o600)
+    real_read_text = Path.read_text
+
+    def read_text(self, *args, **kwargs):
+        if self == bad:
+            raise PermissionError(13, "Permission denied", str(self))
+        return real_read_text(self, *args, **kwargs)
+
+    with monkeypatch.context() as m, caplog.at_level(logging.WARNING, logger="rsched.inbox"):
+        m.setattr(Path, "read_text", read_text)
+        out = inbox_mod.drain_messages(d, tmp_path / "consumed")
     assert out == [{"text": "hello", "via": "", "attachments": []}]
     assert bad.exists()                          # left in place for the next drain
     assert "cannot read msg-2.json" in caplog.text
