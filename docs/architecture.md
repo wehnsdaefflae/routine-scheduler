@@ -417,9 +417,10 @@ and the capabilities digest's catalog listing):
   `workflow: {library_slug, library_commit}` (provenance only), `models:` (role → catalog model NAME:
   main / tool_call / uncensored), `connections:` (provider → account label — OAuth
   connection bindings, a resource like models; see OAuth connections above),
-  `permissions:` (held CONDUCT docs) + `capabilities:` (the engine-enforced surface: {actions, utils,
-  confirm, runs, workflows} — both user-changeable only, side by side on the routine page with cascades between
-  them; `workflows: catalog|generate` gates in-run pattern drafting for subtasks),
+  `permissions:` (held CONDUCT docs) + `capabilities:` (the engine-enforced surface: `actions`,
+  `utils`, the approval dials `confirm` / `rule_confirm` / `remind_confirm` and the levels `runs` /
+  `reminders` — both user-changeable only, side by side on the routine page with cascades between
+  them; a child run picks its pattern from the catalog and never drafts one),
   `budgets:` (max_turns / max_total_turns (cumulative across resume windows) / wall_clock_min /
   total_tokens / max_cost (whole-$ ceiling) — the last four honor -1 = unlimited — / subruns /
   subrun_depth / ask_timeout_min — all editable in the UI, creation flow + routine page), `fs_read_roots` / `fs_write_roots`, retention —
