@@ -78,6 +78,33 @@ def test_a_missing_run_does_not_keep_polling_for_itself(ui, ui_page):
     assert len(tree) <= 1, f"the missing run's task tree was polled: {tree}"
 
 
+def test_a_transcript_page_landing_after_you_left_does_not_scroll_the_next_page(ui, ui_page):
+    """The live tail's REST catch-up delivers its page of events after an await — and the view
+    it delivered to may be gone by then. Its onEvent follows the newest message by scrolling
+    the WINDOW to the bottom, so a long transcript answering after the reader had moved on
+    yanked the page they had moved to down to its end."""
+    ui.seed_run("uir", "20260714-070000", "finished", summary="done")
+    held = []
+
+    def hold_first(route):
+        if held:
+            route.continue_()
+        else:
+            held.append(route)
+
+    ui_page.route("**/api/runs/uir:20260714-070000/transcript?offset=0", hold_first)
+    ui_page.goto(f"{ui.url}/#/run/uir:20260714-070000")
+    until(lambda: held, what="the transcript page to be asked for", page=ui_page)
+    ui_page.evaluate("location.hash = '#/library'")
+    expect(ui_page.locator("h2", has_text="Global utils")).to_be_attached()   # long enough to scroll
+    ui_page.evaluate("window.scrollTo(0, 0)")
+    assert ui_page.evaluate("document.body.scrollHeight > window.innerHeight * 2")
+
+    held[0].continue_()
+    ui_page.wait_for_timeout(800)
+    assert ui_page.evaluate("window.scrollY") == 0, "the dead run view scrolled the Library"
+
+
 def test_a_run_view_that_fails_mid_render_leaves_no_broken_callback(ui, ui_page):
     """A render that throws part-way shows "view failed to load" — and whatever it had armed by
     then keeps running. The run view armed its duration clock ~200 lines above the `let` of the
