@@ -15,8 +15,13 @@
 // owns only the gesture: geometry, ghost, tip, target resolution. The semantic ops arrive as
 // HANDLERS from the view — { reorder(lane, slug, targetSlug, after), join(lane, slug,
 // fromLane), leave(lane, slug), reschedule(slug, when), rescheduleLane(lane, when) } — each
-// async, each ending in a data reload that redraws the strip from truth. While a gesture is
-// live, weekgrid holds its re-renders (active()), so the bar never vanishes mid-drag.
+// async, each ending in a data reload that redraws the strip from truth.
+//
+// From the PRESS to the release weekgrid holds its re-renders (active()). The press already
+// names a bar and, by index, the row it was grabbed from; a redraw before the drag threshold
+// swapped the rows out from under that record, so a drop after a re-sort resolved against
+// another row — another lane's schedule. A render held that way is drawn once the gesture is
+// over: `onSettle` is called after every gesture, outside the release's own event dispatch.
 
 import { el } from "/static/util.js";
 
@@ -26,10 +31,10 @@ const BAR_PAD = 4;            // widen skinny bars' hit range for sibling target
 
 const fmtAt = new Intl.DateTimeFormat(undefined, { weekday: "short", hour: "2-digit", minute: "2-digit" });
 
-export function weekDrag(host, handlers) {
+export function weekDrag(host, handlers, onSettle = null) {
   let layout = null;          // { svg, rows: [{row, y, rowbg}], hits, t0, span, W, headH, rowH }
-  let gesture = null;         // live drag state, null when idle
-  let suppressClick = false;  // a completed drag must not fire the bar's <a> navigation
+  let gesture = null;         // the press (and, past the threshold, the drag); null when idle
+  let suppressClick = false;  // a drag's own release must not fire the bar's <a> navigation
 
   const tip = el("div", { class: "wg-dragtip", hidden: true });
   const zone = el("div", { class: "wg-dropzone", hidden: true },
@@ -42,6 +47,15 @@ export function weekDrag(host, handlers) {
     e.preventDefault();
     e.stopPropagation();
   }, true);
+
+  // The click a release produces is dispatched in the same task as its pointerup, on the
+  // nearest common ancestor of the press and the release — OUTSIDE this strip when the release
+  // is, where the listener above never sees it. So the flag lives for exactly that dispatch: one
+  // left standing swallowed the next real click on any bar.
+  function swallowReleaseClick() {
+    suppressClick = true;
+    setTimeout(() => { suppressClick = false; });
+  }
 
   function setLayout(l) {
     layout = l;
@@ -82,7 +96,7 @@ export function weekDrag(host, handlers) {
     gesture = { hit, x0: e.clientX, y0: e.clientY, sx0: sx, sy0: sy, live: false, action: null };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
-    window.addEventListener("pointercancel", cancel);
+    window.addEventListener("pointercancel", cleanup);   // no click follows a cancelled pointer
     window.addEventListener("keydown", key);
   }
 
@@ -143,6 +157,10 @@ export function weekDrag(host, handlers) {
 
   function move(e) {
     if (!gesture) return;
+    // No button held any more: the release happened where no pointerup reached this page (over
+    // another window, under a context menu). The gesture is over — left open, it would hold
+    // every re-render of the strip until a reload.
+    if (!e.buttons) { cleanup(); return; }
     if (!gesture.live) {
       if (Math.hypot(e.clientX - gesture.x0, e.clientY - gesture.y0) < DRAG_MIN_PX) return;
       begin();
@@ -167,12 +185,12 @@ export function weekDrag(host, handlers) {
     tip.style.top = `${e.clientY - hostR.top - 26}px`;
   }
 
-  function up(e) {
+  function up() {
     if (!gesture) return;
     const { live, action, hit } = gesture;
     cleanup();
     if (!live) return;            // a plain click — let the bar's link do its thing
-    suppressClick = true;
+    swallowReleaseClick();
     if (!action || action.type === "none") return;
     if (action.type === "reorder") handlers.reorder(action.lane, hit.slug, action.targetSlug, action.after);
     else if (action.type === "join") handlers.join(action.lane, hit.slug, action.from);
@@ -181,19 +199,20 @@ export function weekDrag(host, handlers) {
     else if (action.type === "reschedule") handlers.reschedule(hit.slug, action.when);
   }
 
+  // Escape abandons a drag with the button still down; the release, whenever it comes, still
+  // ends a drag and must not navigate.
   function key(e) {
-    if (e.key === "Escape") cancel();
-  }
-
-  function cancel() {
-    if (gesture?.live) suppressClick = true;
+    if (e.key !== "Escape" || !gesture) return;
+    if (gesture.live) {
+      window.addEventListener("pointerup", swallowReleaseClick, { once: true, capture: true });
+    }
     cleanup();
   }
 
   function cleanup() {
     window.removeEventListener("pointermove", move);
     window.removeEventListener("pointerup", up);
-    window.removeEventListener("pointercancel", cancel);
+    window.removeEventListener("pointercancel", cleanup);
     window.removeEventListener("keydown", key);
     gesture?.ghost?.remove();
     for (const r of layout?.rows || []) r.rowbg.classList.remove("wg-drop-ok");
@@ -202,7 +221,9 @@ export function weekDrag(host, handlers) {
     zone.hidden = true;
     zone.classList.remove("armed");
     gesture = null;
+    // never inside the release's dispatch: a redraw there detaches the bar its click is for
+    if (onSettle) setTimeout(onSettle);
   }
 
-  return { setLayout, active: () => !!gesture?.live };
+  return { setLayout, active: () => !!gesture };
 }

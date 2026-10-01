@@ -221,12 +221,34 @@ def test_drag_onto_another_lanes_row_joins(ui, ui_page, make_routine):
 
 def test_drag_along_own_row_reschedules(ui, ui_page, make_routine):
     """A horizontal drag on the bar of a routine in NO lane re-times its cron: one day-width
-    to the right moves the weekly fixture cron (Mon 07:00) to Tuesday, same cadence."""
+    to the right moves the weekly fixture fire (Mon 07:00 Berlin) to the same instant one day
+    later, same cadence.
+
+    The assertion is on the INSTANT the stored (cron, tz) pair fires at, never on the cron's
+    raw fields: the drop is re-timed in the SERVER's zone and the PATCH stores that zone beside
+    the new cron, so the same Tuesday 07:00 Berlin is `0 7 * * 2` on a Berlin host and
+    `0 5 * * 2` on a UTC one. Reading the hour field made this test pass only where the host
+    and the fixture share a zone."""
+    from datetime import timedelta
+    from zoneinfo import ZoneInfo
+
     import yaml
+    from croniter import croniter
+
+    def stored():
+        cfg = yaml.safe_load((ui.routines / "uir" / "routine.yaml").read_text())
+        sched = cfg.get("schedule") or {}
+        return sched.get("cron", ""), sched.get("tz", "")
 
     ui_page.goto(f"{ui.url}/#/routines")
     bar = ui_page.locator(".weekpanel a[href='#/routine/uir'] .wg-bar").first
     expect(bar).to_be_visible()
+    # The strip's day 0 opens at the BROWSER's midnight, and a seven-day window holds exactly
+    # one fire of a weekly cron: that fire is the bar being dragged.
+    before = stored()
+    midnight_ms = ui_page.evaluate("() => new Date().setHours(0, 0, 0, 0)")
+    opens = datetime.fromtimestamp(midnight_ms / 1000, ZoneInfo(before[1]))
+    dragged = croniter(before[0], opens - timedelta(seconds=1)).get_next(datetime)
 
     # a weekly fire can sit days away — bring it to the viewport's left edge so the +1 day
     # drop (half the visible two-day strip) still lands inside the window
@@ -235,14 +257,81 @@ def test_drag_along_own_row_reschedules(ui, ui_page, make_routine):
     src = _center(bar)
     _drag(ui_page, src, (src[0] + day_w, src[1]))
 
-    def cron():
-        cfg = yaml.safe_load((ui.routines / "uir" / "routine.yaml").read_text())
-        return (cfg.get("schedule") or {}).get("cron", "")
+    until(lambda: stored() != before, what="reschedule")
+    cron, tz = stored()
+    fields = cron.split()
+    assert fields[2] == "*" and fields[3] == "*" and fields[4] != "*", \
+        f"weekly cadence should survive the drag: {cron!r}"
+    moved = croniter(cron, dragged.astimezone(ZoneInfo(tz))).get_next(datetime)
+    assert abs(moved - (dragged + timedelta(days=1))) <= timedelta(minutes=30), \
+        f"the fire at {dragged} should move one day on, but {cron!r} ({tz}) fires at {moved}"
 
-    until(lambda: cron().split()[-1:] == ["2"], what="reschedule")
-    fields = cron().split()
-    assert fields[2] == "*" and fields[3] == "*" and int(fields[1]) in (6, 7), \
-        f"weekly cadence should survive the drag: {cron()!r}"
+
+def test_a_drag_released_off_the_strip_does_not_eat_the_next_click(ui, ui_page):
+    """A finished drag swallows the ONE click its own release produces, so dropping a bar does
+    not also follow the bar's link. The browser dispatches that click on the nearest common
+    ancestor of the press and the release — outside the strip when the release is — so a flag
+    waiting for it inside the strip waited for good and ate the next real click on any bar."""
+    ui_page.goto(f"{ui.url}/#/routines")
+    bar = ui_page.locator(".weekpanel a[href='#/routine/uir'] .wg-bar").first
+    expect(bar).to_be_visible()
+    _scroll_strip_to(ui_page, bar)
+    _drag(ui_page, _center(bar), _center(ui_page.locator("#view h1")))
+    expect(ui_page.locator(".weekgrid.wg-dragging")).to_have_count(0)
+
+    bar.click()
+    ui_page.wait_for_url(f"{ui.url}/#/routine/uir")
+
+
+def test_a_drag_whose_release_never_arrived_ends_at_the_next_move(ui, ui_page):
+    """The strip holds every re-render while a gesture is open, so a gesture that never closed
+    froze it until a reload. A release where no pointerup reaches the page (over another window,
+    under a context menu) shows on the next move instead — no button is held any more."""
+    ui_page.goto(f"{ui.url}/#/routines")
+    bar = ui_page.locator(".weekpanel a[href='#/routine/uir'] .wg-bar").first
+    expect(bar).to_be_visible()
+    _scroll_strip_to(ui_page, bar)
+    x, y = _center(bar)
+    ui_page.mouse.move(x, y)
+    ui_page.mouse.down()
+    ui_page.mouse.move(x + 30, y - 6, steps=3)            # past the threshold: a live drag
+    strip = ui_page.locator(".weekpanel .weekgrid")
+    expect(strip).to_have_class(re.compile(r"\bwg-dragging\b"))
+
+    ui_page.evaluate("([x, y]) => window.dispatchEvent(new PointerEvent('pointermove',"
+                     " { clientX: x, clientY: y, buttons: 0 }))", [x + 40, y])
+    expect(strip).not_to_have_class(re.compile(r"\bwg-dragging\b"))
+    expect(strip.locator(".wg-ghost")).to_have_count(0)
+    ui_page.mouse.move(x + 40, y + 200)                   # release well away from every bar
+    ui_page.mouse.up()
+
+
+def test_a_pressed_bar_holds_the_strip_until_it_is_released(ui, ui_page):
+    """A press already names its bar and, by INDEX, the row it was grabbed from. A redraw between
+    the press and the drag threshold swapped the rows out from under that record, so a drop
+    after a re-sort resolved against another row — another lane's schedule. The strip now holds
+    a redraw from the press to the release, and draws it once the gesture is over."""
+    ui_page.set_viewport_size({"width": 1400, "height": 900})
+    ui_page.goto(f"{ui.url}/#/routines")
+    bar = ui_page.locator(".weekpanel a[href='#/routine/uir'] .wg-bar").first
+    expect(bar).to_be_visible()
+    _scroll_strip_to(ui_page, bar)
+    svg = ui_page.locator(".weekpanel svg.wg")
+    width = float(svg.get_attribute("width"))
+    svg.evaluate("e => { e.dataset.pressed = '1'; }")
+
+    x, y = _center(bar)
+    ui_page.mouse.move(x, y)
+    ui_page.mouse.down()
+    ui_page.set_viewport_size({"width": 1100, "height": 900})   # re-fits the strip's width
+    ui_page.wait_for_timeout(500)
+    assert svg.evaluate("e => e.dataset.pressed") == "1", "the strip was redrawn under a press"
+
+    ui_page.mouse.move(x + 3, y + 120)                    # off the bar, under the threshold
+    ui_page.mouse.up()
+    expect(ui_page.locator(".weekpanel svg.wg:not([data-pressed])")).to_have_count(1)
+    assert float(ui_page.locator(".weekpanel svg.wg").get_attribute("width")) < width, (
+        "the redraw held during the press was never drawn")
 
 
 def test_a_lane_name_is_readable_and_its_column_has_one_definition(ui, ui_page, make_routine):

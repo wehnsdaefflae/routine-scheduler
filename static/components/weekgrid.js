@@ -101,9 +101,12 @@ const NOW_REFRESH_MS = 30_000;
 
 export function weekGrid(dragHandlers = null) {
   const node = el("div", { class: "weekgrid" });
-  const drag = dragHandlers ? weekDrag(node, dragHandlers) : null;
   let lastArgs = null;
   let lastMeasuredW = 0;
+  let held = false;   // an update arrived mid-gesture and has not been drawn yet
+  const drag = dragHandlers
+    ? weekDrag(node, dragHandlers, () => { if (held) update(...lastArgs); })
+    : null;
 
   // cards: the dashboard's currently visible routines; firesBySlug: Map slug → [ms, …] of
   // recurring cron fires; oneShotsBySlug: Map slug → [ms, …] of armed one-shot fires (rendered
@@ -111,9 +114,11 @@ export function weekGrid(dragHandlers = null) {
   // cron, paused, fires — the LANE's cron fires, D71).
   function update(cards, firesBySlug, oneShotsBySlug = new Map(), lanes = []) {
     lastArgs = [cards, firesBySlug, oneShotsBySlug, lanes];
-    // A live refresh mid-gesture would tear the dragged bar out from under the pointer —
-    // hold this render; the drop's own reload (or the next tick) redraws from fresh truth.
-    if (drag?.active()) return;
+    // A refresh mid-gesture would tear the pressed bar, and the row it was grabbed from, out
+    // from under the pointer — hold it until the gesture settles (a drop's own reload then
+    // redraws from fresh truth as well).
+    held = !!drag?.active();
+    if (held) return;
     // Pixel-true geometry: two day columns fill the strip beside the name column; the SVG is
     // laid out at the full seven-day width inside the scroll container.
     lastMeasuredW = node.clientWidth;
@@ -281,9 +286,10 @@ export function weekGrid(dragHandlers = null) {
     if (lastArgs) update(...lastArgs);
   }, NOW_REFRESH_MS);
   // Re-fit the day width when the panel's width actually changes (open/close, viewport
-  // resize) — the pixel-true strip cannot rely on SVG's own scaling any more.
+  // resize) — the pixel-true strip cannot rely on SVG's own scaling any more. Mid-gesture the
+  // re-fit is held like any other update and drawn when the gesture settles.
   const ro = new ResizeObserver(() => {
-    if (!lastArgs || drag?.active()) return;
+    if (!lastArgs) return;
     if (Math.abs(node.clientWidth - lastMeasuredW) < 2) return;
     update(...lastArgs);
   });
