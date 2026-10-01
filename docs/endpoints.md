@@ -161,11 +161,12 @@ default. Routines and the system model reference a model by its catalog **name**
 - `temperature` — sampling temperature; inherits the endpoint's when unset. Leave it blank on a
   current Claude model — see the endpoint field above.
 - `max_tokens` — the requested **output** cap per completion, sent on every engine call
-  (turns and `llm` actions). Inherits the
-  endpoint's `max_tokens` when unset; with neither set, a generous engine default (16,384)
-  applies and Settings flags the model with a **⚠ max_tokens** chip — implausible values
-  (below 4,096, or larger than the context window) are flagged too, so "every model set
-  correctly" is auditable at a glance.
+  (turns and `llm` actions). Leave it blank: it resolves through the same chain as the window
+  (*Windows and output caps are DISCOVERED* below) — the discovered cap, then the endpoint's
+  `max_tokens`, then a generous engine default (16,384). Settings flags a model still riding
+  that default with a **⚠ max_tokens** chip — implausible hand values (below 4,096, or larger
+  than the context window) are flagged too, so "every model set correctly" is auditable at a
+  glance.
 - `fallbacks` — the ordered **failover chain**: catalog model names tried in order when this
   model fails hard. See *Failover & cooldowns* below.
 
@@ -284,7 +285,8 @@ turn loop.
 The transports are `httpx` + `tenacity` on purpose. An SDK would replace ~120 lines (`post_json`,
 the status classifier, the Retry-After read, the retry wrapper) and keep every line that actually
 earns its place, because each provider-specific degrade needs the raw status and body: the
-`output_config`/`cache_control` strip for gateways, the `response_format` 400 **and** the generic
+`output_config`/`cache_control` strip for gateways, the forced-`tool_choice` and `temperature`
+drops for the Claude models that refuse them, the `response_format` 400 **and** the generic
 503 that hides a schema-incapable backend, the 402 "can only afford N" retry, Ollama's native
 `/api/chat`, the four catalog readers, the proxy-management routes. On top of that the Anthropic
 SDK is built on `httpx2` — a second HTTP stack beside the `httpx` the daemon, web layer and utils
@@ -320,7 +322,11 @@ base URL of the server, whatever key you configured it with. This is the guarant
 for a model no provider lists.
 
 **Anthropic API** — `kind: anthropic`, no base_url needed, `sk-ant-…` key. Metered: know
-your budget caps.
+your budget caps. The action rides one tool the request forces; the newest Claude models
+(Fable 5.1, Opus 5.5, Sonnet 5.5) refuse a forced `tool_choice` with a 400, which the adapter
+absorbs by asking again on `auto` held to one tool call — one extra round trip per call on
+those models, and the same holds through a subscription proxy. A model that refuses several
+fields (that one plus a configured `temperature`) is degraded one 400 at a time.
 
 ## Windows and output caps are DISCOVERED — leave them blank
 
@@ -344,16 +350,20 @@ What can be discovered, per kind:
 | `openai` @ OpenRouter | `GET /models` → `context_length` | `top_provider.max_completion_tokens` |
 | `openai` @ Nano-GPT | its own `/api/models` (the OpenAI-compatible route carries none) | same |
 | `openai` @ Ollama | `POST /api/show` → the arch's `context_length` | none — derived from the window |
-| `openai`, other | `max_model_len` / `context_length` if the gateway emits one (vLLM does) | rarely |
-| `anthropic` @ Anthropic | a built-in Claude table (see below) | the table |
+| `openai`, other | `max_model_len` / `context_length` if the gateway emits one (vLLM does) | rarely — derived from the window |
+| `anthropic` @ Anthropic | a built-in Claude table (see below) | none — derived from the window |
 | `anthropic` @ a proxy | whatever its `/v1/models` carries, then the table for Claude ids | the same |
 
 **The output cap is deliberately NOT maxed out.** Providers validate
 `input + requested_output <= window` up front, and the engine subtracts `max_tokens` from the
 input budget for the same reason, so adopting a model's full output limit would starve the prompt:
 one live model reports a 943,718-token output maximum against a 1,310,720-token window. The
-discovered cap is `min(provider maximum, 32,000)` — a ceiling on what this harness needs for one
-JSON action plus reasoning, not a claim about the model.
+discovered cap is the provider's maximum, never above 32,000 — a ceiling on what this harness
+needs for one JSON action plus reasoning, not a claim about the model — and never above a
+quarter of the window, because the same arithmetic starves a SMALL model: a flat 32,000 on a 32k
+window left 768 tokens of prompt, and an 8k model was refused outright. Where nothing is
+published the cap is derived from the window the same way, so every window from 128k up gets
+32,000 and a 32k one 8,192.
 
 **The kind is not the provider.** An `anthropic` endpoint is Anthropic's own API only when it
 points at Anthropic's host. A subscription proxy speaks the same wire and serves whatever its
@@ -367,7 +377,10 @@ Anthropic's own listing is the one published source this instance does not read.
 `max_input_tokens`, `max_tokens` and a capability tree since March 2026, and every configured
 `anthropic` endpoint here is a proxy, so the reader would have no caller. **Add one when you add
 a direct `kind: anthropic` endpoint** — until then a Claude id the table does not name resolves
-to the endpoint default, which is the case to watch for on a brand-new model.
+to the endpoint default, which is the case to watch for on a brand-new model. A table key covers
+the ids that start with it: a dated snapshot, and a later point revision of a 5-series family
+(`claude-opus-5-5` reads `claude-opus-5`'s window, which every such revision has kept). A brand-new
+family, or a 4-series revision, needs its own row. Retired models carry none.
 
 A miss is not a failure: the model drops to the next tier, and the Settings card says WHICH miss
 it is. Those are two different states and only one is fixable by discovery:

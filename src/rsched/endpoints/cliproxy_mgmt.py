@@ -93,3 +93,30 @@ def client(cfg: EndpointConfig, timeout: int) -> tuple[httpx.Client, str]:
     url = cfg.base_url.rstrip("/").removesuffix("/v1") + "/v0/management"
     return httpx.Client(timeout=timeout, follow_redirects=False,
                         headers={"Authorization": f"Bearer {key}"}), url
+
+
+def management_error(status_code: int) -> EndpointError:
+    """A management route refused: named by its status alone, never by its body."""
+    return EndpointError(f"Proxy management HTTP {status_code}; check the management key "
+                         "and management access configuration.")
+
+
+def auth_files(mgmt: httpx.Client, url: str) -> list[dict]:
+    """The proxy's auth-file listing — one dict per account, TOKENS INCLUDED, so a caller
+    projects what it needs and returns nothing else. Raises EndpointError on a refusal or an
+    unknown shape; an unparseable body raises ValueError, which every caller already reads
+    as an unreachable proxy.
+    """
+    response = mgmt.get(f"{url}/auth-files")
+    if response.status_code != 200:
+        raise management_error(response.status_code)
+    listing = response.json()
+    files = listing.get("files") if isinstance(listing, dict) else None
+    if not isinstance(files, list):
+        raise EndpointError("Proxy account listing has an unrecognised format.")
+    return [f for f in files if isinstance(f, dict)]
+
+
+def file_provider(f: dict) -> str:
+    """An auth file's provider name, which a listing carries as `provider` or as `type`."""
+    return str(f.get("provider") or f.get("type") or "")

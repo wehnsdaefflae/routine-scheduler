@@ -1,15 +1,17 @@
 """Anthropic Messages API adapter.
 
-Schema enforcement via forced tool-use: one tool named "action" whose input_schema is the
-requested schema, with tool_choice forcing it — long-supported and reliable. Without a
-schema it is a plain messages call.
+Schema enforcement via tool use: one tool named "action" whose input_schema is the requested
+schema, with tool_choice forcing it. Without a schema it is a plain messages call.
 
-`temperature` rides the body when one is configured, and a 400 naming it drops it for one
-degraded retry — the same seam `output_config` uses. Current CLAUDE models removed the
-sampling parameters (`effort` is the knob that replaced them), but this adapter's KIND is a
-WIRE, not a provider: a subscription proxy speaks it while serving `gpt-*` ids, and Haiku
-4.5 still honours temperature. So the field is neither sent blindly nor dropped blindly —
-the model that rejects it says so, once.
+Every optional field a model may refuse — the forced `tool_choice`, `output_config` (effort),
+`temperature`, the `cache_control` markers — rides the body, and a 400 that NAMES one degrades
+it for a retry (`_degrade`). This adapter's KIND is a WIRE, not a provider: a subscription
+proxy speaks it while serving `gpt-*` ids, Haiku 4.5 still honours temperature, and only the
+newest Claude models (Fable 5.1, Opus 5.5, Sonnet 5.5) refuse forced tool use — on those the
+tool is still offered, on `auto` with at most one call (the engine takes ONE action per turn),
+and the engine reads an action from a text reply when the model writes one instead. So no
+field is sent blindly or dropped blindly: the model that rejects one says so, and pays a round
+trip per refused field.
 
 Prompt caching is on for CONVERSATIONS: cache_control breakpoints on the tools block and
 the system prompt (static per run) plus a moving breakpoint on the last message — each turn
@@ -37,7 +39,6 @@ from .base import (
     PDF_MIME,
     Completion,
     Message,
-    anthropic_usage,
     json_or_raise,
     post_json,
     raise_for_status,
@@ -50,7 +51,34 @@ from .base import (
 
 API_VERSION = "2023-06-01"
 
-_EFFORT_ERROR_HINTS = ("effort", "output_config")
+#: Optional top-level fields and the words in a 400's body that name each. Current Claude
+#: models REMOVED the sampling parameters and the newest refuse a forced tool_choice; the 400
+#: is non-retryable, so without the degrade one filled Settings box — or the adapter's own
+#: forced tool — failed a model over on every turn of every run, while the same wire still
+#: serves models that accept the field. `cache_control` (nested) and `tool_choice` (replaced
+#: before it is dropped) are handled in `_degrade` itself.
+_DROPPABLE = (
+    ("output_config", ("effort", "output_config")),
+    ("temperature", ("temperature",)),
+)
+
+#: What a refused forced tool_choice becomes: the API default, held to ONE call — `auto` alone
+#: would let a reply carry several, and `_parse` keeps a single action.
+_ONE_CALL_AT_MOST = {"type": "auto", "disable_parallel_tool_use": True}
+
+
+def _usage(raw: dict) -> dict:
+    """The Messages API's usage block → our usage dict. `input_tokens` EXCLUDES cache traffic
+    on this API; cache reads/writes are surfaced as `cached_in` / `cache_write`, kept OUT of
+    "in" so token budgets keep their meaning.
+    """
+    usage = {"in": int(raw.get("input_tokens") or 0),
+             "out": int(raw.get("output_tokens") or 0)}
+    if raw.get("cache_read_input_tokens"):
+        usage["cached_in"] = int(raw["cache_read_input_tokens"])
+    if raw.get("cache_creation_input_tokens"):
+        usage["cache_write"] = int(raw["cache_creation_input_tokens"])
+    return usage
 
 
 def merge_consecutive(messages: list[Message]) -> list[Message]:
@@ -151,10 +179,31 @@ def _strip_cache_control(body: dict) -> dict:
     return out
 
 
+def _degrade(body: dict, error: str) -> dict | None:
+    """`body` with every optional field this 400 names degraded, or None when it names none
+    that is still being sent — then the 400 stands. A forced tool_choice is first unforced
+    (`_ONE_CALL_AT_MOST`) and dropped only if that is refused too; every other field is
+    dropped. Each call changes at least one field and none comes back, so a caller looping on
+    it ends after at most five degraded requests.
+    """
+    low = error.lower()
+    out = {key: value for key, value in body.items()
+           if not any(key == field and any(h in low for h in hints)
+                      for field, hints in _DROPPABLE)}
+    if "tool_choice" in low and "tool_choice" in out:
+        if out["tool_choice"] == _ONE_CALL_AT_MOST:   # a gateway that does not know the field
+            del out["tool_choice"]
+        else:
+            out["tool_choice"] = _ONE_CALL_AT_MOST
+    if "cache_control" in low:   # a proxy/old gateway that rejects caching
+        out = _strip_cache_control(out)
+    return out if out != body else None
+
+
 class AnthropicEndpoint:
     """Anthropic-compatible Messages adapter; billing belongs to the upstream. Schema via
-    a single forced tool-use; effort via `output_config` and `temperature` when configured,
-    each degraded on a 400 naming it.
+    a single tool, forced where the model allows; effort via `output_config` and
+    `temperature` when configured — each optional field degraded on a 400 naming it.
     """
 
     def __init__(self, cfg: EndpointConfig):
@@ -163,7 +212,6 @@ class AnthropicEndpoint:
         self.api_key = cfg.api_key
         self.key_env_file = cfg.key_env_file
         self.key_var = cfg.key_var
-        self.context_tokens = cfg.context_tokens
         self.temperature = cfg.temperature
 
     def supports_media(self, media_type: str, *, multimodal: bool) -> bool:
@@ -212,25 +260,18 @@ class AnthropicEndpoint:
             body["tools"] = [tool]
             body["tool_choice"] = {"type": "tool", "name": "action"}
         headers = {"x-api-key": self._api_key(), "anthropic-version": API_VERSION}
+        sent = body
 
         def call() -> Completion:
-            resp = self._post(body, headers, timeout)
-            if resp.status_code == 400:
-                low = resp.text.lower()
-                degraded = dict(body)
-                if "output_config" in degraded and any(h in low for h in _EFFORT_ERROR_HINTS):
-                    degraded.pop("output_config")
-                if "temperature" in degraded and "temperature" in low:
-                    # Current Claude models REMOVED the sampling parameters and answer 400.
-                    # The 400 is non-retryable, so without this one filled Settings box
-                    # would fail a model over on every turn of every run — while the same
-                    # wire still serves models (Haiku 4.5, a proxy's `gpt-*` ids) that
-                    # honour it. The model that rejects it says so; nothing is guessed.
-                    degraded.pop("temperature")
-                if "cache_control" in low:   # a proxy/old gateway that rejects caching
-                    degraded = _strip_cache_control(degraded)
-                if json.dumps(degraded, sort_keys=True) != json.dumps(body, sort_keys=True):
-                    resp = self._post(degraded, headers, timeout)
+            # A 400 names ONE field and a model may refuse several (a current Claude model
+            # refuses a forced tool_choice AND a sampling parameter), so degrade until the
+            # 400 names nothing still sent. `sent` outlives the attempt: a retry after a
+            # transient failure resends what is left instead of re-earning every 400.
+            nonlocal sent
+            resp = self._post(sent, headers, timeout)
+            while resp.status_code == 400 and (smaller := _degrade(sent, resp.text)) is not None:
+                sent = smaller
+                resp = self._post(sent, headers, timeout)
             return self._parse(resp)
 
         return with_retries(call)
@@ -256,7 +297,7 @@ class AnthropicEndpoint:
         return Completion(
             text="\n".join(texts),
             parsed=parsed if isinstance(parsed, dict) else None,
-            usage=anthropic_usage(data.get("usage") or {}),  # reads ~0.1x, writes ~1.25x
+            usage=_usage(data.get("usage") or {}),  # reads ~0.1x, writes ~1.25x
             stop_reason=str(data.get("stop_reason") or ""),
             stop_details=details if isinstance(details, dict) else {},
         )

@@ -99,19 +99,19 @@ class Completion:
     usage: dict = field(default_factory=lambda: {"in": 0, "out": 0})
     provider: str = ""            # serving provider behind an aggregator (OpenRouter), if reported
     # Why generation stopped, VERBATIM from the provider (anthropic stop_reason, openai
-    # finish_reason, the CLI envelope's stop_reason/subtype) — "" when unreported. One
-    # mapped exception: openai_compat promotes the spec's dedicated `message.refusal`
-    # field to "refusal" when content is empty, so the same semantic isn't hidden behind
-    # a bare finish_reason "stop". The engine keys off this to tell a classifier refusal
-    # (HTTP 200, stop_reason "refusal"/"content_filter", usually an EMPTY reply) from a
-    # provider hiccup: a refusal is referred/failed over, NEVER blind-retried against the
-    # same model (engine/completion.py REFUSAL_STOPS).
+    # finish_reason, ollama done_reason) — "" when unreported. One mapped exception:
+    # openai_compat promotes the spec's dedicated `message.refusal` field to "refusal" when
+    # content is empty, so the same semantic isn't hidden behind a bare finish_reason
+    # "stop". The engine keys off this to tell a classifier refusal (HTTP 200, stop_reason
+    # "refusal"/"content_filter", usually an EMPTY reply) from a provider hiccup: a refusal
+    # is referred/failed over, NEVER blind-retried against the same model
+    # (engine/completion.py REFUSAL_STOPS).
     stop_reason: str = ""
-    # Provider detail on WHY it stopped, verbatim ({category, explanation, ...} on a
-    # classifier refusal — the Messages API and the CLI envelope both send it; can be
-    # missing even on a refusal) — {} when unreported. Diagnostic only: surfaced in the
-    # refusal error event so the category is visible in the transcript (F164, R5); the
-    # engine branches on stop_reason, never on this.
+    # Provider detail on WHY it stopped ({category, explanation, ...} verbatim on a Messages
+    # API classifier refusal, which can omit it; the promoted refusal's prose on
+    # openai_compat) — {} when unreported. Diagnostic only: surfaced in the refusal error
+    # event so the category is visible in the transcript (F164, R5); the engine branches on
+    # stop_reason, never on this.
     stop_details: dict = field(default_factory=dict)
 
 
@@ -140,11 +140,11 @@ class ChatEndpoint(Protocol):
     No streaming, no state, no tools — endpoints are transports, never a second harness.
     Nothing identifies the conversation: caching is the PROVIDER's, earned by a byte-stable
     prefix (implicit for OpenAI-style providers, `cache_control` breakpoints for anthropic),
-    which the engine's append-only message list gives it without a key.
+    which the engine's append-only message list gives it without a key. Nor the model's
+    window: one endpoint serves many models, so the window rides the resolved ModelRef.
     """
 
     name: str
-    context_tokens: int
 
     def complete(
         self,
@@ -295,21 +295,6 @@ def _retry_after_seconds(resp: httpx.Response) -> float | None:
     except (TypeError, ValueError):
         return None
     return secs if secs > 0 else None
-
-
-def anthropic_usage(raw: dict) -> dict:
-    """Anthropic-shaped usage (the Messages API and the claude CLI envelope) → our usage
-    dict. `input_tokens` EXCLUDES cache traffic on this API; cache reads/writes are
-    surfaced as `cached_in` / `cache_write`, kept OUT of "in" so token budgets keep
-    their meaning.
-    """
-    usage = {"in": int(raw.get("input_tokens") or 0),
-             "out": int(raw.get("output_tokens") or 0)}
-    if raw.get("cache_read_input_tokens"):
-        usage["cached_in"] = int(raw["cache_read_input_tokens"])
-    if raw.get("cache_creation_input_tokens"):
-        usage["cache_write"] = int(raw["cache_creation_input_tokens"])
-    return usage
 
 
 def cache_read_share(usage: dict | None) -> float | None:

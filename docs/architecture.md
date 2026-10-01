@@ -242,10 +242,13 @@ Two kinds:
   / ollama-native; degrades gracefully (retries without `response_format`/`reasoning` on a 400, and without
   `response_format` on a 503 that hides a schema-incapable backend). Caching
   is the provider's implicit prefix caching; `cached_tokens` is surfaced from usage details.
-- **anthropic** — Messages API, direct or through CLIProxyAPI for subscription authentication. Schema via a single forced tool-use; effort via
-  `output_config`, degraded on a 400 that names it. Sets `cache_control` breakpoints (tools +
+- **anthropic** — Messages API, direct or through CLIProxyAPI for subscription authentication. Schema via a single tool, forced where
+  the model allows; effort via `output_config`. Every optional field a model may refuse — the forced
+  `tool_choice` (the newest Claude models 400 on it; it becomes `auto` held to one call),
+  `output_config`, `temperature`, the `cache_control` markers — is degraded on a 400 that names
+  it, one field per 400 until the request is accepted. Sets `cache_control` breakpoints (tools +
   system static, a moving one on the last message) on CONVERSATION turns — ~0.1x reads on the whole
-  prefix every turn; a 400 naming cache_control gets a degraded retry without the markers. A ONE-SHOT
+  prefix every turn. A ONE-SHOT
   call places none: `cacheable` is derived from the task kind at the one seam every completion passes
   through (`instrument.CACHEABLE_KINDS` = {"turn"}), because a prefix that is never sent again would
   pay a 1.25x write for a read that never comes (measured: 0.3% read share on `llm_action`).

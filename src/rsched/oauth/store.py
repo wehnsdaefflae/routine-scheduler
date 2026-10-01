@@ -79,6 +79,9 @@ def load_connections() -> dict[str, Connection]:
 
 
 def get_connection(provider: str, account: str) -> Connection | None:
+    """One record, read fresh — the seam the tests assert the store through. Production paths
+    read the whole map once (`tokens_for_routine`) or under the lock (`update_connection`).
+    """
     return load_connections().get(_conn_key(provider, account))
 
 

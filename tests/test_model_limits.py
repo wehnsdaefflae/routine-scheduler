@@ -18,7 +18,7 @@ import httpx
 import pytest
 
 from rsched.config import EndpointConfig, ModelConfig, ServerConfig
-from rsched.endpoints import EndpointRegistry, limits
+from rsched.endpoints import EndpointRegistry, catalogs, limits
 
 
 def _server(tmp_path, *, endpoints=None, models=None) -> ServerConfig:
@@ -77,8 +77,8 @@ def test_resolution_never_touches_the_network(tmp_path, monkeypatch):
     model and every single turn."""
     def boom(*_a, **_k):
         raise AssertionError("resolve() made a network call")
-    monkeypatch.setattr(limits.httpx, "get", boom)
-    monkeypatch.setattr(limits.httpx, "post", boom)
+    monkeypatch.setattr(httpx, "get", boom)
+    monkeypatch.setattr(httpx, "post", boom)
     EndpointRegistry(_server(tmp_path)).resolve("kimi")
 
 
@@ -86,7 +86,7 @@ def test_resolution_never_touches_the_network(tmp_path, monkeypatch):
 
 def test_the_output_cap_is_clamped_to_what_the_harness_needs(tmp_path, monkeypatch):
     server = _server(tmp_path)
-    monkeypatch.setattr(limits, "_get", lambda *a, **k: {"data": [
+    monkeypatch.setattr(catalogs, "_get", lambda *a, **k: {"data": [
         {"id": "moonshot/kimi-k3", "context_length": 1_310_720,
          "top_provider": {"max_completion_tokens": 943_718}}]})
     limits.refresh(server, force=True)
@@ -98,12 +98,37 @@ def test_the_output_cap_is_clamped_to_what_the_harness_needs(tmp_path, monkeypat
 
 def test_a_small_provider_output_limit_is_taken_as_is(tmp_path, monkeypatch):
     server = _server(tmp_path)
-    monkeypatch.setattr(limits, "_get", lambda *a, **k: {"data": [
+    monkeypatch.setattr(catalogs, "_get", lambda *a, **k: {"data": [
         {"id": "moonshot/kimi-k3", "context_length": 65_536,
          "top_provider": {"max_completion_tokens": 8_192}}]})
     limits.refresh(server, force=True)
     assert limits.lookup(server.routines_home, "or",
                          "moonshot/kimi-k3")["max_output_tokens"] == 8_192
+
+
+@pytest.mark.parametrize(("window", "published", "cap"), [
+    (32_768, None, 8_192),        # a window and nothing else (Ollama, vLLM, a bare gateway row)
+    (32_768, 32_768, 8_192),      # a published maximum as large as the window itself
+    (8_192, None, 2_048),         # smaller than the engine ceiling: the old cap was impossible
+    (131_072, None, 32_000),      # from 128k up the engine ceiling binds, as before
+])
+def test_the_output_cap_never_starves_a_small_window(tmp_path, monkeypatch, window, published,
+                                                     cap):
+    """A flat 32,000-token reservation on a 32k window leaves 768 tokens of prompt, and on an
+    8k one less than nothing — the model is refused as `impossible` and every turn overflows.
+    The cap a row resolves to is therefore bounded by the window too: never more than a
+    quarter of it, which leaves every window of 128k and up exactly where it was."""
+    from rsched.engine.compaction import window_ceiling_tokens
+
+    server = _server(tmp_path)
+    top = {"max_completion_tokens": published} if published else {}
+    monkeypatch.setattr(catalogs, "_get", lambda *a, **k: {"data": [
+        {"id": "moonshot/kimi-k3", "context_length": window, "top_provider": top}]})
+    limits.refresh(server, force=True)
+    row = limits.lookup(server.routines_home, "or", "moonshot/kimi-k3")
+    assert row["max_output_tokens"] == cap
+    assert row["provider_max_output_tokens"] == published     # what was published, as it was
+    assert window_ceiling_tokens(window, cap) >= window * 3 // 4
 
 
 # ---- discovery per provider ----------------------------------------------------------------------
@@ -119,7 +144,7 @@ def test_nanogpt_is_read_from_its_own_route(tmp_path, monkeypatch):
         seen["url"] = url
         return {"models": {"text": {"z-ai/glm-5.2": {"maxInputTokens": 1_048_576,
                                                      "maxOutputTokens": 96_000}}}}
-    monkeypatch.setattr(limits, "_get", fake)
+    monkeypatch.setattr(catalogs, "_get", fake)
     limits.refresh(server, force=True)
     assert seen["url"] == "https://nano-gpt.com/api/models"
     row = limits.lookup(server.routines_home, "ng", "z-ai/glm-5.2")
@@ -132,10 +157,14 @@ def test_a_listing_that_answers_nothing_falls_back_to_the_static_table(tmp_path,
     server = _server(tmp_path, endpoints={
         "claude": EndpointConfig(name="claude", kind="anthropic", context_tokens=2_000_000)},
         models={"opus": ModelConfig(name="opus", endpoint="claude", model="claude-opus-4-8")})
-    monkeypatch.setattr(limits, "_get", lambda *a, **k: None)
+    monkeypatch.setattr(catalogs, "_get", lambda *a, **k: None)
     limits.refresh(server, force=True)
     row = limits.lookup(server.routines_home, "claude", "claude-opus-4-8")
     assert row["context_tokens"] == 1_000_000 and row["source"] == "table"
+    # The table carries WINDOWS: the output cap is the engine's, and no provider maximum is
+    # claimed for a figure nobody published.
+    assert row["max_output_tokens"] == limits.ENGINE_OUTPUT_CEILING
+    assert row["provider_max_output_tokens"] is None
     # The discovered model window takes precedence over the larger endpoint fallback.
     _ep, ref = EndpointRegistry(server).resolve("opus")
     assert ref.context_tokens == 1_000_000
@@ -147,7 +176,7 @@ def test_a_failed_probe_keeps_what_was_already_known(tmp_path, monkeypatch):
     server = _server(tmp_path)
     _cache(server, **{"or|moonshot/kimi-k3": {"context_tokens": 262_144,
                                               "max_output_tokens": 32_000, "source": "openrouter"}})
-    monkeypatch.setattr(limits, "_get", lambda *a, **k: None)
+    monkeypatch.setattr(catalogs, "_get", lambda *a, **k: None)
     out = limits.refresh(server, force=True)
     assert out["misses"] == ["or/moonshot/kimi-k3"]
     assert limits.lookup(server.routines_home, "or", "moonshot/kimi-k3")["context_tokens"] \
@@ -159,7 +188,7 @@ def test_a_dead_provider_never_raises(tmp_path, monkeypatch):
 
     def boom(*_a, **_k):
         raise httpx.ConnectError("no route to host")
-    monkeypatch.setattr(limits.httpx, "get", boom)
+    monkeypatch.setattr(httpx, "get", boom)
     assert limits.refresh(server, force=True)["written"] == 0
 
 
@@ -168,7 +197,7 @@ def test_the_ttl_stops_a_refresh_per_tick(tmp_path, monkeypatch):
     _cache(server, **{"or|moonshot/kimi-k3": {"context_tokens": 1, "max_output_tokens": 1}})
     assert limits.stale(server) is False
     calls = []
-    monkeypatch.setattr(limits, "_get", lambda *a, **k: calls.append(1) or None)
+    monkeypatch.setattr(catalogs, "_get", lambda *a, **k: calls.append(1) or None)
     limits.refresh(server)                       # inside the TTL → no fetch at all
     assert calls == []
 
@@ -186,23 +215,30 @@ def test_the_ttl_stops_a_refresh_per_tick(tmp_path, monkeypatch):
     ("http://127.0.0.1:8317", "anthropic", "openai"),
 ])
 def test_the_provider_is_sniffed_from_the_endpoint(base, kind, want):
-    assert limits._provider(EndpointConfig(name="x", kind=kind, base_url=base)) == want
+    assert catalogs.provider_of(EndpointConfig(name="x", kind=kind, base_url=base)) == want
 
 
 def test_new_model_refreshes_inside_global_ttl(tmp_path, monkeypatch):
     server = _server(tmp_path)
     _cache(server, **{"old|id": {"context_tokens": 200000}})
     assert limits.stale(server)
-    monkeypatch.setattr(limits, "_get", lambda *a, **k: None)
+    monkeypatch.setattr(catalogs, "_get", lambda *a, **k: None)
     limits.refresh(server)
     # Missing metadata is retried after the TTL, not on every scheduler tick.
     assert not limits.stale(server)
 
 
 @pytest.mark.parametrize(("model", "expected"), [
-    ("claude-haiku-4-5-20251001", 200000),
-    ("claude-sonnet-5", 1000000), ("claude-sonnet-4-6", 1000000),
-    ("claude-opus-4-8", 1000000), ("claude-opus-99", None),
+    # the current lineup (platform.claude.com models overview, 2026-10-01)
+    ("claude-fable-5-1", 1_000_000), ("claude-opus-5-5", 1_000_000),
+    ("claude-sonnet-5-5", 1_000_000), ("claude-haiku-4-5-20251001", 200_000),
+    # still served
+    ("claude-mythos-5-1", 1_000_000), ("claude-sonnet-5", 1_000_000),
+    ("claude-sonnet-4-6", 1_000_000), ("claude-opus-4-8", 1_000_000),
+    ("claude-opus-4-5-20251101", 200_000), ("claude-sonnet-4-5-20250929", 200_000),
+    # retired (model deprecations page): a request to one fails, so no window is claimed
+    ("claude-opus-4-1-20250805", None), ("claude-3-haiku-20240307", None),
+    ("claude-opus-99", None),
 ])
 def test_claude_revision_windows(model, expected):
     assert limits._static_window(model) == expected
@@ -224,8 +260,8 @@ def test_an_anthropic_base_url_gets_the_catalog_one_segment_deeper():
     """
     anth = EndpointConfig(name="p", kind="anthropic", base_url="http://cliproxy:8317")
     oai = EndpointConfig(name="o", kind="openai", base_url="https://openrouter.ai/api/v1")
-    assert limits._models_url(anth) == "http://cliproxy:8317/v1/models"
-    assert limits._models_url(oai) == "https://openrouter.ai/api/v1/models"
+    assert catalogs.models_url(anth) == "http://cliproxy:8317/v1/models"
+    assert catalogs.models_url(oai) == "https://openrouter.ai/api/v1/models"
 
 
 def test_a_listed_id_with_no_published_limits_is_served_but_undiscovered(tmp_path, monkeypatch):
@@ -241,7 +277,7 @@ def test_a_listed_id_with_no_published_limits_is_served_but_undiscovered(tmp_pat
         seen["url"] = url
         return {"data": [{"id": "gpt-6-astra", "object": "model", "owned_by": "openai"},
                          {"id": "gpt-5.6-terra", "object": "model", "owned_by": "openai"}]}
-    monkeypatch.setattr(limits, "_get", fake)
+    monkeypatch.setattr(catalogs, "_get", fake)
     out = limits.refresh(server, force=True)
 
     assert seen["url"] == "http://cliproxy:8317/v1/models"
@@ -257,7 +293,7 @@ def test_a_claude_id_on_a_proxy_still_gets_the_static_table(tmp_path, monkeypatc
     """
     server = _proxy_server(tmp_path, {
         "sonnet": ModelConfig(name="sonnet", endpoint="codex-proxy", model="claude-sonnet-5")})
-    monkeypatch.setattr(limits, "_get",
+    monkeypatch.setattr(catalogs, "_get",
                         lambda *a, **k: {"data": [{"id": "claude-sonnet-5"}]})
     limits.refresh(server, force=True)
     row = limits.lookup(server.routines_home, "codex-proxy", "claude-sonnet-5")
@@ -270,9 +306,9 @@ def test_an_unanswered_catalog_keeps_the_previous_served_set(tmp_path, monkeypat
     """
     server = _proxy_server(tmp_path, {
         "astra": ModelConfig(name="astra", endpoint="codex-proxy", model="gpt-6-astra")})
-    monkeypatch.setattr(limits, "_get", lambda *a, **k: {"data": [{"id": "gpt-6-astra"}]})
+    monkeypatch.setattr(catalogs, "_get", lambda *a, **k: {"data": [{"id": "gpt-6-astra"}]})
     limits.refresh(server, force=True)
-    monkeypatch.setattr(limits, "_get", lambda *a, **k: None)
+    monkeypatch.setattr(catalogs, "_get", lambda *a, **k: None)
     limits.refresh(server, force=True)
     assert limits.serves(server.routines_home, "codex-proxy", "gpt-6-astra") is True
 
@@ -285,7 +321,7 @@ def test_no_catalog_at_all_leaves_the_question_unanswered(tmp_path, monkeypatch)
         "claude": EndpointConfig(name="claude", kind="anthropic",
                                  base_url="https://api.anthropic.com")},
         models={"opus": ModelConfig(name="opus", endpoint="claude", model="claude-opus-4-8")})
-    monkeypatch.setattr(limits, "_get", lambda *a, **k: None)
+    monkeypatch.setattr(catalogs, "_get", lambda *a, **k: None)
     limits.refresh(server, force=True)
     assert limits.serves(server.routines_home, "claude", "claude-opus-4-8") is None
 
@@ -294,5 +330,5 @@ def test_the_served_key_is_not_counted_as_a_model_row(tmp_path, monkeypatch):
     """`written`/`skipped` mean model rows; the cache also carries fetched/checked_models/served."""
     server = _proxy_server(tmp_path, {
         "astra": ModelConfig(name="astra", endpoint="codex-proxy", model="gpt-6-astra")})
-    monkeypatch.setattr(limits, "_get", lambda *a, **k: {"data": [{"id": "gpt-6-astra"}]})
+    monkeypatch.setattr(catalogs, "_get", lambda *a, **k: {"data": [{"id": "gpt-6-astra"}]})
     assert limits.refresh(server, force=True)["written"] == 0     # served, but no figures
