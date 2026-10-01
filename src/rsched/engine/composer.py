@@ -68,7 +68,7 @@ def _plan_text(routine_dir: Path) -> str:
 def state_digest(routine_dir: Path, deferred_qa: list[dict], open_qs: list[dict], *,
                  routines_home: Path | None = None, slug: str = "",
                  held_rules: list[str] | None = None,
-                 write_roots: list[Path] | None = None, brief: str = "") -> str:
+                 store_notes: list[dict] | None = None, brief: str = "") -> str:
     from ..paths import read_json
 
     parts: list[str] = []
@@ -80,12 +80,12 @@ def state_digest(routine_dir: Path, deferred_qa: list[dict], open_qs: list[dict]
         from ..priorities import digest_section
         if prio := digest_section(routines_home, slug):
             parts.append(prio)
-        # F335: notes the routines sharing a store with this one left for it, from every store
-        # among its `write_roots`. DRAINS — this digest is built once per run, at boot; a
-        # note is delivered exactly once (mirroring how inbox/ drains).
-        from ..sharedstores import digest_section as notes_section
-        if store_notes := notes_section(routines_home, slug, write_roots or []):
-            parts.append(store_notes)
+    # F335: notes the routines sharing a store with this one left for it — DRAINED by boot
+    # (`sharedstores.drain`) before this is composed, so the digest builder stays pure and a
+    # note is delivered exactly once (mirroring how inbox/ drains).
+    from ..sharedstores import digest_section as notes_section
+    if notes_block := notes_section(store_notes or []):
+        parts.append(notes_block)
     phase = read_json(routine_dir / "state" / "phase.json")
     parts.append(f"Current phase: {json.dumps(phase, ensure_ascii=False)}" if phase
                  else "Current phase: (none recorded — likely the first run)")

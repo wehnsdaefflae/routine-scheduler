@@ -79,6 +79,7 @@ staged for you" into a ledger row and a Messages-page item somebody has to close
     <store>/notes/<to-slug>/note-<anything>.json     {"from": slug, "ts": iso, "text": …}
 
 A routine WRITES one with an ordinary file write. The engine READS them at the addressee's boot
+(`engine/boot` calls `sharedstores.drain` beside the inbox drain)
 from every store it shares, renders them into the state digest as `NOTES FROM ROUTINES YOU SHARE
 A STORE WITH`, and DELETES them once read. No approval, no ledger row, no Messages-page item:
 the store is in its sharers' write roots and nobody else's.
