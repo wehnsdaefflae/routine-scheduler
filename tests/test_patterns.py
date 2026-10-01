@@ -96,6 +96,36 @@ def test_a_routine_yaml_that_does_not_parse_follows_nothing(tmp_path):
     assert store.followers(home, "watcher") == ["good"]
 
 
+def test_creation_proposes_a_patterns_access_decisions_and_writes_none(tmp_path):
+    """`grants` is ask-first: a pattern deciding which secrets a routine receives would be a
+    pattern granting them. So the new routine is saved WITHOUT the pattern's grants, and they
+    wait as a pending change for the person's click."""
+    import shutil
+    from pathlib import Path
+
+    from rsched.config import ServerConfig
+    from rsched.workflows.scaffold import scaffold
+
+    seed = Path(__file__).resolve().parents[1] / "library-seed"
+    server = ServerConfig()
+    server.libraries_home = tmp_path / "library"
+    for kind in ("workflows", "rules", "permissions"):
+        shutil.copytree(seed / kind, server.libraries_home / kind,
+                        ignore=shutil.ignore_patterns("__pycache__"))
+    server.routines_home = tmp_path / "routines"
+    server.routines_home.mkdir()
+    store.create(server.libraries_home, "granting", {
+        **pattern_doc(rules=["ask-policy"], grants={"secret:FOO_KEY": True}),
+        "workflow": "general-task"})
+    d = scaffold(server, slug="newbie", name="Newbie", instruction="Do the thing.",
+                 workflow_slug="general-task", pattern="granting")
+    raw = read_yaml(d / "routine.yaml")
+    assert raw["pattern"] == "granting" and not raw.get("grants")
+    assert raw["rules"] == ["ask-policy"]                    # the rest of the pattern is saved
+    draft = drafts.read(server.routines_home, "newbie")
+    assert draft is not None and draft["changes"]["grants"]["value"] == {"secret:FOO_KEY": True}
+
+
 def test_drafts_prune_what_already_landed(tmp_path):
     home = tmp_path / "routines"
     drafts.write(home, "r", changes={"keep_runs": {"value": 10, "reason": "less history"},

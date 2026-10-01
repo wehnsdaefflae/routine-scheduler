@@ -14,4 +14,6 @@ and only the reference goes.
 - `store.py`    — the library store: list, read, create (never edit), delete, followers.
 - `drafts.py`   — pending changes awaiting the person's accept, one document per routine.
 - `recommend.py`— the recommender: which pattern fits and which changes this routine needs.
+- `apply.py`    — a pattern's values written into a new routine's own files at creation
+                  (every governed value but the `ask_first` ones, which wait as pending).
 """

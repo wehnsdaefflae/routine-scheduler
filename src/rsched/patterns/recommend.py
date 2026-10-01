@@ -194,8 +194,9 @@ def _prompt(server, slug: str, saved: dict, pattern: dict | None, context: str,
 def at_creation(server, *, slug: str, pattern_slug: str, context: str,
                 finish_line: dict | None) -> list[str]:
     """After a routine is scaffolded on its pattern: write its pending changes — the finish
-    line the person described, plus whatever the recommender finds — under the message the
-    routine page leads with. Returns the fields proposed.
+    line the person described, the pattern's `ask_first` values (which creation never writes),
+    plus whatever the recommender finds — under the message the routine page leads with.
+    Returns the fields proposed.
     """
     from ..config import load_routine
     from . import drafts
@@ -206,6 +207,13 @@ def at_creation(server, *, slug: str, pattern_slug: str, context: str,
     saved = fields.snapshot(cfg)
     pattern = store.read(Path(server.libraries_home), pattern_slug) if pattern_slug else None
     changes = recommend(server, slug=slug, saved=saved, pattern=pattern, context=context)
+    if pattern is not None:
+        reason = f"the value {pattern['title']} carries — it decides access, so it waits for you"
+        changes.update({key: {"value": value, "reason": reason}
+                        for key, value in pattern["settings"].items()
+                        if fields.BY_KEY[key].ask_first and key not in changes
+                        and not fields.equal(key, saved.get(key), value)
+                        and valid(key, value, server)})
     if finish_line and (finish_line.get("outcomes") or finish_line.get("until")) \
             and valid("finish_line", finish_line):
         changes["finish_line"] = {"value": fields.canonical("finish_line", finish_line),

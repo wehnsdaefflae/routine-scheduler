@@ -97,7 +97,9 @@ rides as `done_when`, when the routine is done for good as `finish_line`, what a
 do as `never`. The routine is saved with its pattern's values; what is specific to it — the
 setup answers turned into settings (folders, a mailbox watch list for the gate, a cadence), the
 finish line, whatever else the recommender finds — waits as pending changes under "check the
-changes i recommend." (`patterns/recommend.at_creation`).
+changes i recommend." (`patterns/recommend.at_creation`). So does the pattern's own `grants`:
+an ask-first field is never saved without the person's click, because a pattern deciding which
+secrets a routine receives would be a pattern granting them.
 
 **Recommend for this routine** (`POST …/settings/recommend`). The system model picks the pattern
 that fits the routine as it now is — the one built on its workflow when there is exactly one —
