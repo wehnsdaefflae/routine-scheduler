@@ -690,7 +690,7 @@ deliverable, a decision for the user, a blocker). A conversation's spine is its 
   inherited history refers to — a transcript naming a missing attachment is a broken history), and
   the transcript up to the fork point. NOT `artifacts/`: the branch produces its own and hands those
   back, so copying the parent's would make every hand-back return the parent its own files. The cut
-  snaps to a clean turn boundary via `history.cut_index_for_turn`, the SAME cut the D69 rewind uses —
+  snaps to a clean turn boundary via `rewind.cut_index_for_turn`, the SAME cut the D69 rewind uses —
   a prefix ending mid-turn would replay as an assistant action with no result. Per-event `usage` is
   STRIPPED from the copy (the parent accounted for that spend; counting it again in the branch would
   double it instance-wide) and the header is rewritten to name the branch, since every read model
@@ -714,6 +714,22 @@ deliverable, a decision for the user, a blocker). A conversation's spine is its 
   actions (`POST …/branch`, `POST …/handback`, with `GET …/lineage` for the family in both
   directions): where two lines of work diverge, and whether a branch's result is worth the parent's
   attention, are decisions that cannot be inferred.
+- **Refusal flag** (⚑, `web/api_refusal_flag.py`, operator decision 2026-10-01) — any reply of a
+  settled conversation can be REDONE on its uncensored model, which then carries the conversation.
+  One POST, validated whole before its first write: the reply and everything after it go through
+  the D69 truncation (`rewind.rewind_transcript(before_reply=(turn, ts))` — the cut lands just
+  before the message that OPENED the reply, `rewind.reply_opening`: what the user sent between the
+  leg's start and its first turn, a first reply's message being instruction.md, so its cut keeps
+  the header alone; the tail is archived and result.md set back to the last reply kept),
+  `models.main` becomes the uncensored model (a pick, when there is none, lands as uncensored AND
+  main) through `config_fields.validate_models`, and the message is re-sent verbatim on the
+  `conversation` via carrying `refusal_flag` inbox metadata, which the engine records as the
+  `operator` seam's `refusal` event as it delivers the message (`refusal.record_operator_flag`
+  from `control.inject_user_message`) — the transcript keeps one writer. A reply is addressed by
+  its turn AND its finish's `ts`, because one that ran no turn of its own (a classifier refusal
+  that exhausted the chain) shares the previous reply's turn number. A GET on the same path is the
+  warning gate's preview, so the browser never re-derives which message opened a reply. The one
+  path on which the uncensored model answers and acts; the automatic path keeps the honeypot rule.
 - Web: `web/api_conversations.py` (create/message are multipart — **attachments** land in
   `<conv>/attachments/` and ride the message text as an `[attached files]` block; vision util for
   images). **Artifacts**: deliverables the model `write_file`s into a DELIVERABLE DIR —

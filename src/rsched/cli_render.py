@@ -62,7 +62,10 @@ def _render_event(obj: dict) -> str:  # noqa: PLR0911 — one return per event t
         return f"    ↰ {label} #{p.get('n')} {p.get('status')} — {p.get('turns')} turns"
     if t == "refusal":
         model = f" · {p['model']}" if p.get("model") else ""
-        return f"    ⊘ refusal flagged ({p.get('where')}{model}): {p.get('message', '')[:120]}"
+        # the operator seam names the model that carries on (engine/refusal.record_operator_flag)
+        takeover = f" → {p['takeover_model']} takes over" if p.get("takeover_model") else ""
+        return (f"    ⊘ refusal flagged ({p.get('where')}{model}): "
+                f"{p.get('message', '')[:120]}{takeover}")
     if t == "stopping_update":
         return f"    — {_accounting(p)} —"
     if t == "stages_skipped":

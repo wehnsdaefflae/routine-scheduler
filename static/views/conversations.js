@@ -17,6 +17,7 @@ import { navigate } from "/static/router.js";
 import { liveTail } from "/static/stream.js";
 import { forgetField } from "/static/formpersist.js";
 import { forkAt, rewindTo } from "/static/components/branches.js";
+import { flagRefusal } from "/static/components/refusalflag.js";
 import { createChat, typedBody, userEcho } from "/static/components/chat.js";
 import { createArtifacts } from "/static/components/artifacts.js";
 import { createRail } from "/static/components/rail.js";
@@ -382,6 +383,10 @@ export async function render(view, slug, _query = {}) {
       // takes a typed turn number; this is the same call with the number already known.
       onBranch: (turn) => forkAt(slug, turn, { isLive: () => !TERMINAL.has(curState) }),
       onRewind: (turn) => rewindTo(slug, detail.run_id, turn, { isLive: () => !TERMINAL.has(curState) }),
+      // ⚑ (operator decision 2026-10-01): redo a refused reply on the uncensored model, which
+      // then carries the conversation — the pick, when it has none, from its own catalog
+      onFlag: (reply) => flagRefusal(detail.run_id, reply, { isLive: () => !TERMINAL.has(curState),
+        catalog: detail.catalog || [], catalogMeta: detail.catalog_meta || {} }),
       onRefer: composer.setRef,
       // message attachments render inline (attachments/ is a servable subdir of the route)
       fileUrl: (rel) => `/api/conversations/${slug}/file?path=${encodeURIComponent(rel)}`,

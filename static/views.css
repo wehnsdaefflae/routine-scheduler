@@ -565,11 +565,12 @@ pre.hl-json .tok-const { color: var(--warn); }
      ⧉ copy    every bubble; ✓/✕ swaps the glyph for a moment after a click
      ⑂ branch  "branch from here" (R1006)
      ⟲ rewind  "rewind to here" (D69 / F416, operator msg 2026-09-01)
-   Only REPLIES carry the last two: a reply is the clean turn boundary a fork or a cut needs.
+     ⚑ flag    "flag as refusal" — redone on the uncensored model (operator, 2026-10-01)
+   Only REPLIES carry the last three: a reply is the clean turn boundary a fork or a cut needs.
    Mellowed (operator order 2026-08-23): hover reveals them at HALF strength — full contrast only
    when the pointer is ON one (or it holds keyboard focus), so they read as affordances, not
    features. One family, so one rule: they were three copies differing by their offset. */
-.msg :is(.copy-msg, .branch-msg, .rewind-msg) {
+.msg :is(.copy-msg, .branch-msg, .rewind-msg, .flag-msg) {
   position: absolute; top: 3px; background: none; border: none; cursor: pointer;
   color: var(--ink-3); font-size: 12px; line-height: 1; padding: 3px 5px;
   opacity: 0; transition: opacity 0.12s;
@@ -577,8 +578,9 @@ pre.hl-json .tok-const { color: var(--warn); }
 .msg .copy-msg { right: 28px; font-size: var(--t-s); }
 .msg .branch-msg { right: 52px; }
 .msg .rewind-msg { right: 76px; }
-.msg:hover :is(.copy-msg, .branch-msg, .rewind-msg) { opacity: .45; }
-.msg :is(.copy-msg, .branch-msg, .rewind-msg):is(:hover, :focus-visible) {
+.msg .flag-msg { right: 100px; }
+.msg:hover :is(.copy-msg, .branch-msg, .rewind-msg, .flag-msg) { opacity: .45; }
+.msg :is(.copy-msg, .branch-msg, .rewind-msg, .flag-msg):is(:hover, :focus-visible) {
   opacity: .9; color: var(--ink);
 }
 /* F385: per-fence copy — the bubble button's quieter sibling, pinned to the block corner */
@@ -598,8 +600,17 @@ pre.hl-json .tok-const { color: var(--warn); }
    control still takes a tap — a touch on a reply's corner could fork the conversation through
    a control nobody could see. A mouse keeps the hover-only affordance. */
 @media (hover: none) {
-  .msg :is(.copy-msg, .branch-msg, .rewind-msg), .msg-body pre .copy-fence { opacity: .45; }
+  .msg :is(.copy-msg, .branch-msg, .rewind-msg, .flag-msg), .msg-body pre .copy-fence { opacity: .45; }
 }
+/* ⚑'s warning gate: the consequences as short paragraphs, and the message it re-sends quoted
+   VERBATIM — wrapped as written, and scrolled inside the gate when a first message is long */
+.flag-gate p { margin: 0 0 8px; }
+.flag-quote {
+  margin: 0 0 10px; padding: 6px 10px; border-left: 3px solid var(--rule-2);
+  background: var(--plate-3); color: var(--ink-2); font-size: var(--t-s);
+  white-space: pre-wrap; overflow-wrap: anywhere; max-height: 12em; overflow: auto;
+}
+.flag-pick { width: 100%; margin-top: 10px; }
 .msg.user { align-self: flex-end; background: var(--plate-3); border-color: var(--rule-2); }
 /* F295: the optimistic echo of a just-sent message — below the streamed history, dashed
    until the woken leg's real user_injection event replaces it */

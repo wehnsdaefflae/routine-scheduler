@@ -19,7 +19,7 @@ import time
 from .. import reports
 from ..paths import read_json
 from ..schema_guard import validate
-from . import child, inbox, mediaops
+from . import child, inbox, mediaops, refusal
 from .actions import util_rejection_outcome, validate_action
 from .actionschema import ACTION_SCHEMA
 from .commands import CommandError, parse_command
@@ -82,12 +82,17 @@ def inject_user_message(loop, m: dict) -> None:
     auto-attaching image/PDF media the main endpoint can show — the single place the
     injected-message shape is built (turn-boundary drain and boot-drain alike). A
     message flagged `command` is not prose for the model: it is a user-authored ACTION
-    and executes instead.
+    and executes instead. One carrying a `refusal_flag` is preceded by that flag's
+    `refusal` event — a record for the reader; the model reads only the message.
     """
     if m.get("command"):
         run_user_command(loop, m)
         return
     ctx = loop.ctx
+    if isinstance(m.get("refusal_flag"), dict):
+        # the operator flagged the reply this message produced as a refusal and re-sent it
+        # (web/api_refusal_flag): the record goes down first, where the flag happened
+        refusal.record_operator_flag(ctx, m["refusal_flag"])
     # The event carries the attachment rels so the transcript UI can render the files
     # (thumbnails / links) instead of the bare filename list inside the text block —
     # ALL of them, not just the media the model can view (a csv is still linkable).

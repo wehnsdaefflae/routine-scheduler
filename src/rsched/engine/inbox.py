@@ -136,6 +136,10 @@ def drain_messages(routine_dir: Path, consumed_dir: Path,
     carries `report` (its `R<n>` id) and `from` (the sending slug). Those two keys are what
     keep it out of the prompt's user-message channel: a report is not something the user said,
     and rendering it as though it were invites the run to answer the wrong party.
+
+    A message the operator RE-SENT by flagging a conversation reply as a refusal
+    (web/api_refusal_flag) carries `refusal_flag` — what the engine records, as the `refusal`
+    event of the `operator` seam, when it delivers the message (control.inject_user_message).
     """
     inbox = routine_dir / "inbox"
     if not inbox.is_dir():
@@ -164,6 +168,8 @@ def _drain_locked(inbox: Path, consumed_dir: Path, vias: tuple[str, ...] | None)
             out.append({"text": str(obj["text"]), "via": str(obj.get("via") or ""),
                         "attachments": [str(a) for a in (obj.get("attachments") or [])],
                         **({"command": True} if obj.get("command") else {}),
+                        **({"refusal_flag": dict(obj["refusal_flag"])}
+                           if isinstance(obj.get("refusal_flag"), dict) else {}),
                         **({"report": str(obj["report"]),
                             "from": str(obj.get("from") or ""),
                             **({"closes": True} if obj.get("closes") is True else {})}
@@ -298,10 +304,11 @@ def file_message(routine_dir: Path, text: str, *, source: str = "",
     unknown one rather than filing freight on a policy nobody chose.
 
     `extra` is merged into the record for the keys ONE channel adds on top of that shape — a
-    conversation message's `attachments` rels and `command` flag, a report delivery's
-    `report`/`from`/`closes`, the audit editor's structured feedback fields — so such a
-    caller still files through this writer instead of hand-rolling the filename beside it,
-    which is how the unique-suffix rule and the `ts` spelling start differing per endpoint.
+    conversation message's `attachments` rels and `command` flag (and, re-sent by the refusal
+    flag, its `refusal_flag`), a report delivery's `report`/`from`/`closes`, the audit
+    editor's structured feedback fields — so such a caller still files through this writer
+    instead of hand-rolling the filename beside it, which is how the unique-suffix rule and
+    the `ts` spelling start differing per endpoint.
 
     `name` is the message's STEM without the `msg-` prefix, for the channels whose filename
     is a KEY rather than a timestamp: a report delivery is `msg-rep-<id>` so the sender can

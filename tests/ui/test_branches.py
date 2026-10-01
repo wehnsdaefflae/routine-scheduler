@@ -240,7 +240,7 @@ def test_the_reply_corner_controls_show_at_rest_where_nothing_can_hover(ui, ui_p
     — a phone has no hover, so a hover-revealed control is no control there. ⑂ branch and
     ⟲ rewind are the same family in the same corner and were left out: on a phone they stayed
     at opacity 0 and still took a tap, so a touch on a reply's corner could fork the
-    conversation (no confirm) through a control nobody could see."""
+    conversation (no confirm) through a control nobody could see. ⚑ flag joined the family."""
     slug, conv_dir = _start_conversation(ui, ui_page)
     run_dir = conv_dir / "runs" / "20260827-100000"
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -257,7 +257,7 @@ def test_the_reply_corner_controls_show_at_rest_where_nothing_can_hover(ui, ui_p
         assert page.evaluate("matchMedia('(hover: none)').matches"), "not a no-hover pointer"
         reply = page.locator(".msg.assistant", has_text="Option B, on the cost curve")
         expect(reply).to_be_visible()
-        for control in ("copy-msg", "branch-msg", "rewind-msg"):
+        for control in ("copy-msg", "branch-msg", "rewind-msg", "flag-msg"):
             opacity = reply.locator(f".{control}").evaluate("e => getComputedStyle(e).opacity")
             assert float(opacity) > 0, f".{control} is invisible where nothing can hover"
     finally:

@@ -752,7 +752,7 @@ def test_resume_run_endpoint(client, monkeypatch):
 def test_rewind_transcript_unit(tmp_path):
     """D69 core: rewind_transcript keeps events through a turn's action+observation, archives
     the dropped tail (nothing is destroyed), and refuses a no-op (last turn / missing turn)."""
-    from rsched.engine.history import rewind_transcript
+    from rsched.engine.rewind import rewind_transcript
     from rsched.engine.transcript import read_events
 
     run_dir = tmp_path / "runs" / "20260710-160000"

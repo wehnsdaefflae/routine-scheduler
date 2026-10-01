@@ -229,7 +229,7 @@ async def rewind_run(request: Request, run_id: str, body: Rewind) -> dict:
     """
     slug, run_dir = _run_dir(request, run_id)
     require_terminal(run_dir, "rewinds")
-    from ..engine.history import rewind_transcript
+    from ..engine.rewind import rewind_transcript
 
     info = rewind_transcript(run_dir, body.turn)
     if info is None:

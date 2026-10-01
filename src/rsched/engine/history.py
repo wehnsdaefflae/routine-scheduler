@@ -1,17 +1,17 @@
-"""Facts derived from a run's TRANSCRIPT — what a resumed leg, a rewind and a branch rebuild
-from the record rather than from a live loop.
+"""Facts derived from a run's TRANSCRIPT — what a resumed leg rebuilds from the record rather
+than from a live loop.
 
 `replay_messages` turns the events back into the message list the model read (resume), and
-the rest recover what a fresh RunContext would otherwise forget: the turn boundary a rewind or
-a branch may cut at, children that died with the process, earlier legs' spend and counters,
-the paths a run has seen, and the stage modules it has entered. Shrinking a LIVE message list
-is a different job on different data and lives in `compaction.py` / `window.py` (F393).
+the rest recover what a fresh RunContext would otherwise forget: children that died with the
+process, earlier legs' spend and counters, the paths a run has seen, and the stage modules it
+has entered. Where a rewind, a branch or the refusal flag may CUT a transcript is `rewind.py`.
+Shrinking a LIVE message list is a different job on different data and lives in
+`compaction.py` / `window.py` (F393).
 """
 
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 from ..endpoints.base import fold_usage
 from . import enginenote
@@ -111,58 +111,6 @@ def replay_messages(events: list[dict]) -> tuple[list[dict], int, list[dict]]:
         # header / question / answer / compaction / error / subrun_start stay out of the prompt
     flush_children()   # a crash between _collect and the next turn still delivers the result
     return messages, last_turn, records
-
-
-def cut_index_for_turn(events: list[dict], turn: int) -> int | None:
-    """The event index that closes `turn` — its assistant_action, plus the observation that
-    answered it when there is one. None when the turn is not in the transcript.
-
-    The one definition of a clean TURN BOUNDARY in a transcript, shared by the D69 rewind
-    (which truncates there) and conversation branching (which copies up to there, F325). Both
-    need a prefix that replays into paired messages; cutting mid-turn leaves an assistant action
-    with no result, which `replay_messages` would hand the model as a dangling turn.
-    """
-    for i, ev in enumerate(events):
-        if ev.get("type") == "assistant_action" and ev.get("turn") == turn:
-            if i + 1 < len(events) and events[i + 1].get("type") == "observation":
-                return i + 1
-            return i
-    return None
-
-
-def rewind_transcript(run_dir: Path, keep_through_turn: int) -> dict | None:
-    """D69: rewind a conversation to a chosen turn so a dead/derailed run can be RE-OPENED and
-    continued from there instead of being lost. Rewrites runs/<ts>/transcript.jsonl to keep
-    every event up to and INCLUDING the assistant_action of `keep_through_turn` and the
-    observation that immediately followed it — dropping every later turn (and any trailing
-    finish/error). The discarded tail is not destroyed: it is moved to a timestamped
-    `rewind-<ts>.jsonl` sibling so the rewind is auditable and reversible by hand.
-
-    A subsequent `runner.resume` on the same run dir replays the truncated transcript, so the
-    conversation continues live from the kept point with a fresh budget window. Returns a
-    summary dict (kept/dropped counts + archive name), or None when there is nothing to do
-    (turn not found, or already the last turn — no tail to drop).
-    """
-    from ..ids import now_iso
-    from ..paths import atomic_write
-    from .transcript import read_events
-
-    tpath = run_dir / "transcript.jsonl"
-    events, _ = read_events(tpath, 0)
-    if not events:
-        return None
-    cut = cut_index_for_turn(events, keep_through_turn)
-    if cut is None or cut >= len(events) - 1:
-        return None   # turn not found, or nothing after it to drop
-    kept = events[: cut + 1]
-    dropped = events[cut + 1 :]
-    archive = f"rewind-{now_iso().replace(':', '').replace('-', '')}.jsonl"
-    atomic_write(run_dir / archive,
-                 "".join(json.dumps(e, ensure_ascii=False) + "\n" for e in dropped))
-    atomic_write(tpath,
-                 "".join(json.dumps(e, ensure_ascii=False) + "\n" for e in kept))
-    return {"kept_events": len(kept), "dropped_events": len(dropped),
-            "kept_through_turn": keep_through_turn, "archive": archive}
 
 
 def orphaned_children(events: list[dict]) -> list[dict]:

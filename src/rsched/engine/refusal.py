@@ -36,6 +36,15 @@ and classifier refusals alike):
 The calling seam then proceeds on its NORMAL path (schema retry, failover chain, or
 returning the refusal to the orchestrator as its observation) — clarification records,
 it never substitutes an answer.
+
+That honeypot rule binds this AUTOMATIC path, where nobody decided anything. There is
+exactly one path on which the uncensored model ANSWERS and ACTS, and a person opens it, by
+the operator's decision of 2026-10-01: the conversation reply flagged ⚑ as a refusal
+(web/api_refusal_flag). Behind a warning gate the reply and everything after it are
+archived, the message that produced it is re-sent, and the conversation's uncensored model
+becomes its MAIN model from then on. `record_operator_flag` writes that seam's `refusal`
+event (`where: "operator"`) as the re-sent message is delivered — no isolation and no
+harness delivery: the operator already said what the refusal was.
 """
 
 from __future__ import annotations
@@ -170,6 +179,24 @@ def is_refusal(ctx, text: str) -> bool:
     ctx.add_usage(completion.usage)
     parsed = completion.parsed
     return isinstance(parsed, dict) and parsed.get("refusal") is True
+
+
+def record_operator_flag(ctx, flag: dict) -> None:
+    """Record the OPERATOR seam's refusal: a conversation reply the operator flagged (⚑,
+    web/api_refusal_flag), discarded, and had re-answered by the model that now carries the
+    conversation. Called as the re-sent message is delivered (control.inject_user_message),
+    so the event stands where it happened — just before that message — and the engine stays
+    the transcript's only writer. Only the keys this seam defines are kept: the flag rode an
+    inbox file, and an event is a contract its readers parse.
+    """
+    turn = flag.get("turn")
+    record: dict = {"where": "operator", "turn": turn if isinstance(turn, int) else None,
+                    "model": str(flag.get("model") or ""),
+                    "takeover_model": str(flag.get("takeover_model") or ""),
+                    "message": str(flag.get("message") or "").strip()[:_FRAGMENT_CAP]}
+    if flag.get("archive"):
+        record["archive"] = str(flag["archive"])
+    ctx.transcript.event("refusal", record)
 
 
 def clarify_refusal(ctx, *, task: str, refusal: str, where: str, model: str = "") -> dict:

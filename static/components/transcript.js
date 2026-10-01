@@ -52,6 +52,14 @@ export function splitRef(text) {
   return m ? { ref: m[1], body: (text || "").slice(m[0].length) } : { ref: null, body: text || "" };
 }
 
+// The operator's ⚑ on a conversation reply (engine/refusal.record_operator_flag), in ONE
+// sentence for the chat's line and the run view's transcript alike.
+export function operatorFlagText(p) {
+  return `⚑ you flagged the reply at turn ${p.turn ?? "?"}${p.model ? ` (${p.model})` : ""} `
+    + "as a refusal — it and everything after it were archived and your message was re-sent; "
+    + `${p.takeover_model || "the uncensored model"} carries the conversation from here`;
+}
+
 // A finish deferred for its ACCOUNTING (engine/accounting.problems): the ids it left out, the
 // entries with a verdict and no note, and the verdicts it claimed that its line cannot carry.
 function accountingGaps(found) {
@@ -494,9 +502,13 @@ export function createTranscript(container, opts = {}) {
         el("pre", {}, ev.payload.raw)) : null),
     // The refusal-clarification record (engine/refusal.py): the flag, the isolated
     // trigger fragment, and the harness's pretend-compliance — shown as evidence, never
-    // as an answer (the uncensored role is a honeypot harness by design).
+    // as an answer (the uncensored role is a honeypot harness by design). The OPERATOR
+    // seam is the exception — a reply flagged by hand, whose takeover model then answers.
     refusal: (ev) => {
       const p = ev.payload;
+      if (p.where === "operator") {
+        return el("div", { class: "ev refusal operator-flag" }, operatorFlagText(p));
+      }
       return el("div", { class: "ev refusal" },
         el("div", {},
           `⛔ refusal flagged (${p.where}${p.model ? ` · ${p.model}` : ""}): ${p.message || ""}`),

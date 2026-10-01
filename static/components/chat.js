@@ -14,10 +14,13 @@
 //                       from a topic shift — not a branch; see onBranch)
 //   onBranch(turn)    — the user clicked "⑂ branch from here" on a reply: fork the
 //                       conversation at THAT reply's turn (F325 / R1006)
+//   onRewind(turn)    — "⟲ rewind to here" on a reply (D69 / F416)
+//   onFlag({turn, ts}) — "⚑ flag as refusal" on a reply: redo it on the uncensored model,
+//                       which then carries the conversation (operator decision 2026-10-01)
 //   onRefer({label, snippet}) — "refer to" on any message primes the composer (also passed
 //                       into the work-fold transcripts, so a single step is referable)
 
-import { attachmentRow, createTranscript, referButton, revokeBlobs, splitRef } from "/static/components/transcript.js";
+import { attachmentRow, createTranscript, operatorFlagText, referButton, revokeBlobs, splitRef } from "/static/components/transcript.js";
 import { answerForm } from "/static/components/answerform.js";
 import { isDeliverable } from "/static/components/artifacts.js";
 import { md, mdInline } from "/static/md.js";
@@ -149,6 +152,21 @@ function rewindBtn(turn, onRewind) {
     onclick: () => onRewind(turn) }, "⟲");
 }
 
+// ⚑ flag-as-refusal (operator decision 2026-10-01): this reply is a refusal the conversation's
+// uncensored model should answer instead — and go on answering. Every reply carries it, the
+// engine's own failure replies included: a classifier refusal that exhausted the chain ends
+// as one. The reply names itself by its turn AND its own ts, because such a reply ran no turn
+// of its own and shares the turn number of the reply before it. The gate and the mid-reply
+// toast are the onFlag wiring's (components/refusalflag.js).
+function flagBtn(ev, onFlag) {
+  if (!onFlag || !Number.isInteger(ev.turns)) return null;
+  return el("button", { class: "flag-msg", "data-flag-turn": String(ev.turns),
+    title: "flag this reply as a refusal — it and every reply after it are discarded, your "
+         + "message is re-sent, and the conversation's uncensored model answers it and "
+         + "carries the conversation from here",
+    onclick: () => onFlag({ turn: ev.turns, ts: ev.ts || "" }) }, "⚑");
+}
+
 export function createChat(container, opts = {}) {
   const root = el("div", { class: "chat" });
   container.append(root);
@@ -207,7 +225,8 @@ export function createChat(container, opts = {}) {
         (summary || "").split("\n")[0]),
       copyBtn(() => summary || ""),
       branchBtn(ev.turns, opts.onBranch),
-      rewindBtn(ev.turns, opts.onRewind));
+      rewindBtn(ev.turns, opts.onRewind),
+      flagBtn(ev, opts.onFlag));
     return node;
   }
 
@@ -337,6 +356,15 @@ export function createChat(container, opts = {}) {
           closeFold("ok");
           root.append(el("div", { class: "msg question-msg" }, questionInline(ev),
             referButton(opts.onRefer, "your question", p.question)));
+          return;
+        case "refusal":
+          // The operator's own ⚑ is a fact of the CONVERSATION — which reply was discarded and
+          // which model carries on — so it stands between the bubbles. The automatic seams'
+          // refusals are trace detail of one reply's work and stay in its fold.
+          if (p.where === "operator") {
+            closeFold("ok");
+            root.append(el("div", { class: "ev refusal operator-flag" }, operatorFlagText(p)));
+          } else ensureFold().transcript.add(ev);
           return;
         case "answer":
           // the answer line supersedes any inline strip/form for the same question — a

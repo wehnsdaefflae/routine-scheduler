@@ -47,7 +47,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from .engine import child, inbox
-from .engine.history import cut_index_for_turn
+from .engine.rewind import cut_index_for_turn
 from .engine.transcript import read_events
 from .ids import now_iso, run_ts
 from .paths import atomic_write, atomic_write_json, atomic_write_yaml, read_yaml

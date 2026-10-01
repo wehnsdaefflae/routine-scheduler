@@ -127,6 +127,10 @@ def test_render_the_finish_notices():
     ref = _render_event({"type": "refusal", "payload": {
         "where": "main", "model": "m1", "message": "I can't help with that"}})
     assert "refusal" in ref and "m1" in ref and "can't help" in ref
+    flagged = _render_event({"type": "refusal", "payload": {
+        "where": "operator", "turn": 3, "model": "m1", "takeover_model": "unc",
+        "message": "I would rather not"}})
+    assert "operator" in flagged and "unc takes over" in flagged
     acct = _render_event({"type": "stopping_update", "payload": {
         "met": ["g1"], "judged": {"d1": "met", "g1": "met"}, "disputed": ["d1"]}})
     assert "d1 met" in acct and "g1" in acct and "disputed" in acct
