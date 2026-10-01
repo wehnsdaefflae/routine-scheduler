@@ -44,7 +44,7 @@ def dialog_reply(obs: dict, what: str, resubmit: str, until: str = "") -> str:
     open record (`interact.handle_ask` supersedes by subject). One pattern for every kind, so a
     question, an approval and a request cannot drift into dialects of the same promise; a kind
     supplies only its noun (`what`), how it is re-submitted, and what stays untouched until the
-    operator decides (`until`). `obs` carries `qid` and `user_message` (`interact.still_pending`).
+    operator decides (`until`). `obs` carries `qid` and `user_message` (`askback.still_pending`).
     """
     tail = f" {until}" if until else ""
     return (f"the user replied WITHOUT deciding — a dialog reply, NOT the answer; the {what} "

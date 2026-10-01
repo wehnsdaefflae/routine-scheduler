@@ -18,7 +18,7 @@ The console's ASK BACK (an `intermediate` answer) is a reply to ANY blocking dec
 decides nothing — the operator needs some back-and-forth first. It ends the wait at once and
 comes back as a DIALOG result, which every consumer (the authoring approvals, the curated
 reminder gate, the secret-exposure gate, `ask_user` itself) puts on the observation of the
-action that asked (`still_pending`), worded once (`obs_admin.dialog_reply`): the operator's
+action that asked (`askback.still_pending`), worded once (`obs_admin.dialog_reply`): the operator's
 words, and the instruction to answer them and re-submit that action. The record stays open;
 the re-submission SUPERSEDES it, because it is the next decision filed for the same SUBJECT
 (`handle_ask`). Nothing is written, granted or run on the strength of a reply that decided
@@ -32,7 +32,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from ..ids import question_id
-from . import availability, config_bridge, inbox, requests, runkind
+from . import askback, availability, config_bridge, inbox, requests, runkind
 from .control import RunAborted
 
 # Natural affirmatives count: approval answers arrive as free text, and "Do it. The mail
@@ -132,28 +132,6 @@ def _free_qid(ctx) -> str:
     return qid
 
 
-def still_pending(ask: dict) -> dict:
-    """The fields an UNSETTLED decision puts on the observation of the action that asked: it is
-    pending under its record — and after an ask-back the operator's words ride along, for the
-    renderer to put in front of the model (`obs_admin.dialog_reply`). ONE shape for every
-    consumer, so no renderer can find the words under one key and miss them under another.
-    """
-    out: dict = {"pending_approval": True, "qid": ask.get("qid")}
-    if ask.get("dialog"):
-        out.update(dialog=True, user_message=str(ask.get("user_message") or ""))
-    return out
-
-
-def _supersede(loop, qdir: Path, key: tuple[str, str]) -> None:
-    """The decision just filed IS the re-submission an ask-back asked for when one left a
-    record open on the same `(type, subject)` — so that record goes, once the new one exists.
-    After the filing, never before: an ask refused before it files anything must not cost the
-    open decision either.
-    """
-    if old := loop.dialog_qids.pop(key, None):
-        inbox.resolve_question(qdir, old)
-
-
 def _await_reply(loop, qdir: Path, qid: str, qtype: str, *, deadline: float,
                  poll_s: float) -> dict | None:
     """Wait on a BLOCKING record until a reply ends the wait — None when the deadline passes
@@ -240,8 +218,11 @@ def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question",
         # thing that makes the question answerable in context.
         question = f"[child task #{ctx.sub_n} {ctx.sub_label!r}] {question}"
     extra = {"type": qtype, **({"default": default} if default else {})}
+    # `subject` rides the record of the asking, so a resumed leg can re-key a record an
+    # ask-back left open (`askback.rebuild_dialogs`) — the transcript records what was asked
     ctx.transcript.event("question", {"qid": qid, "mode": mode, "question": question,
                                       "options": options, **extra,
+                                      **({"subject": subject} if subject else {}),
                                       **({"request": req_ids} if req_ids else {})})
 
     def leave_open(*, churn: bool = True) -> None:
@@ -257,7 +238,7 @@ def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question",
 
     if mode == "deferred":
         leave_open()
-        _supersede(loop, qdir, (qtype, subject))
+        askback.supersede(loop, qdir, (qtype, subject))
         return {"kind": "ask_user", "qid": qid, "mode": mode,
                 **({"request": req_ids} if req_ids else {})}
 
@@ -270,7 +251,7 @@ def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question",
                         mode="blocking", qtype=qtype, default=default, expires=expires,
                         config_patch=cpatch, config_target=ctarget,
                         request=req_ids)
-    _supersede(loop, qdir, (qtype, subject))
+    askback.supersede(loop, qdir, (qtype, subject))
     ctx.write_status("waiting_user",
                      question={"qid": qid, "question": question, "options": options,
                                "asked": ctx.run_ts, "expires": expires, **extra,
@@ -305,9 +286,9 @@ def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question",
             # written, granted or run. The record STAYS OPEN (deferred — the run is no longer
             # parked on it): the re-submission supersedes it under its subject, and a finish
             # without one leaves it live for the next run instead of silently dropping it.
-            # A consumer puts this result on its own kind's observation (`still_pending`); what
-            # the model is told — their words and what to do with them — is obs_admin's
-            # wording.
+            # A consumer puts this result on its own kind's observation
+            # (`askback.still_pending`); what the model is told — their words and what to do
+            # with them — is obs_admin's wording.
             leave_open(churn=False)
             loop.dialog_qids[(qtype, subject)] = qid
             return {"kind": "ask_user", "qid": qid, "mode": mode, "dialog": True,

@@ -17,7 +17,8 @@ from __future__ import annotations
 from .. import sandbox, utils_header, utils_lib, utils_run
 from ..ids import is_slug
 from ..paths import resolve_rel
-from .interact import handle_ask, is_approval, still_pending
+from .askback import still_pending
+from .interact import handle_ask, is_approval
 from .observations import truncate
 
 

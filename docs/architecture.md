@@ -638,7 +638,10 @@ and the capabilities digest's catalog listing):
   written, granted or run on it. The record stays open, and the re-submission SUPERSEDES it as
   the next decision filed for the same SUBJECT (`interact.handle_ask`; `loop.dialog_qids` keyed
   `(type, subject)` — the util, the rule, the reminder id, a request's entity ids); no
-  unrelated ask can resolve it. Blocking asks are durable records too, and the console is
+  unrelated ask can resolve it. The key outlives the leg: a resumed leg — a restart between the
+  ask-back and the re-submission, a conversation whose next reply re-submits — re-keys every
+  record still open from the transcript (`askback.rebuild_dialogs`; the `question` event carries
+  the subject), across replies as well, because an open decision outlives the reply it began in. Blocking asks are durable records too, and the console is
   the ONLY surface that carries them: no channel mirrors a decision, and the engine and daemon
   make no implicit outbound send at all (0.230.0 — see docs/notifications.md). Browser push is
   the away-from-console tier, rendering the same open-decisions record. The web layer posts

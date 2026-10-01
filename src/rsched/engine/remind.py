@@ -375,7 +375,8 @@ def _approve_global(loop, verb: str, target: Reminder, op: dict, poll_s: float) 
     instruction to carry the same op again — the decision's subject is the reminder id the
     question names, so that re-submission replaces the open record.
     """
-    from .interact import handle_ask, is_approval, still_pending
+    from .askback import still_pending
+    from .interact import handle_ask, is_approval
     from .obs_admin import dialog_reply
 
     ctx = loop.ctx

@@ -16,7 +16,8 @@ from __future__ import annotations
 from .. import utils_lib, utils_run
 from . import requests
 from .actionschema import PSEUDO_UTILS
-from .interact import handle_ask, still_pending
+from .askback import still_pending
+from .interact import handle_ask
 
 
 def secret_state(ctx, secret: str) -> str:

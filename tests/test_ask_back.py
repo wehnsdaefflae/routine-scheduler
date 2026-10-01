@@ -181,6 +181,27 @@ def test_the_re_submission_supersedes_the_open_record(case, make_routine, script
 
 
 @pytest.mark.parametrize("case", CASES)
+def test_a_re_submission_after_a_resume_supersedes_the_record_asked_back_on_before_it(
+        case, make_routine, scripted, monkeypatch):
+    """The open records are keyed in memory, so a leg that resumed after the ask-back — a
+    restart between it and the re-submission, a conversation whose next reply re-submits —
+    filed a SECOND record beside the open one: two cards on the Decisions page for one
+    decision. The resumed leg re-keys them from the transcript (`askback.rebuild_dialogs`)."""
+    d = make_routine(slug="resumed")
+    action, _ran = _arm(case, d, monkeypatch)
+    _reply(d, 1)
+    scripted([action, finish(status="partial", summary="asked back; the decision is open")])
+    status, _run_dir = run_routine(d, _server(d), run_ts=TS)
+    assert status == "partial" and list(_pending(d)) == [f"q-{TS}-1"]
+    _reply(d, 3, "and what does it cost?")      # the resumed leg's re-submission is turn 3
+    scripted([{**action, "say": "answered them — re-submitting"},
+              finish(status="partial", summary="still open")])
+    status, _run_dir = run_routine(d, _server(d), run_ts=TS, resume_from=TS)
+    assert status == "partial"
+    assert list(_pending(d)) == [f"q-{TS}-3"], "the record asked back on before the resume"
+
+
+@pytest.mark.parametrize("case", CASES)
 def test_an_unrelated_ask_leaves_the_open_record_alone(case, make_routine, scripted,
                                                        monkeypatch):
     """The single dialog slot pointed at whatever record was asked back on last, and the next

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from .. import reports, rules, sharedstores
 from ..paths import read_json, resolve_rel
-from . import enginenote, guardscope, inbox, mediaops
+from . import askback, enginenote, guardscope, inbox, mediaops
 from .composer import build_system_prompt, kickoff_message, state_digest
 from .control import inject_user_message, run_user_command
 from .history import orphaned_children, prior_counters, prior_usage, replay_messages, seen_paths
@@ -112,6 +112,9 @@ def boot(loop) -> None:
         # already fired, a line the verifier already challenged stay spent for the rest of
         # the run — of the reply, in a conversation, whose next reply starts them fresh
         guardscope.rebuild(loop, events)
+        # …and the records an ask-back left open, so a re-submission in this leg supersedes
+        # them — read from the whole transcript: an open decision outlives the reply it began in
+        askback.rebuild_dialogs(loop, events)
         # Children that were RUNNING at the interruption are dead (threads don't survive a
         # restart). Mark each aborted in the transcript (so the tree is honest and a re-resume
         # doesn't re-detect it) and tell the model below — otherwise it would `wait` forever
