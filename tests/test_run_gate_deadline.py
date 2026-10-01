@@ -8,12 +8,6 @@ import pytest
 from rsched.daemon import gate_prepare, run_gate, runner_reap, runner_state
 from rsched.paths import atomic_write_json, read_json
 from test_run_gate import finish, script, skip_body
-from test_run_gate import setup_gate as gate_fixture
-
-
-@pytest.fixture
-def setup_gate(tmp_path, monkeypatch):
-    return gate_fixture.__wrapped__(tmp_path, monkeypatch)
 
 
 def bootstrap_patch(monkeypatch, code):

@@ -26,19 +26,13 @@ from rsched.grants import CONFIRM_LEVELS, RUN_HISTORY_LEVELS, SETTING_DEFAULTS
 from rsched.reminders import LEVELS as REMINDER_LEVELS
 
 from .conftest import until
+from .helpers import configure, start_conversation
 
 SETTINGS = tuple(SETTING_DEFAULTS)            # confirm, rule_confirm, remind_confirm, runs, reminders
 
 
 def _stored(path) -> dict:
     return yaml.safe_load(path.read_text(encoding="utf-8"))
-
-
-def _configure(ui, **over) -> None:
-    path = ui.routine_dir("uir") / "routine.yaml"
-    cfg = _stored(path)
-    cfg.update(over)
-    path.write_text(yaml.safe_dump(cfg), encoding="utf-8")
 
 
 def _open_abilities(page) -> None:
@@ -54,14 +48,6 @@ def _dial(scope, key):
 
 def _routine_dial(page, key):
     return _dial(page.locator("#sec-permissions + .panel"), key)
-
-
-def _start_conversation(ui, page, text="look into this") -> str:
-    page.goto(f"{ui.url}/#/conversations")
-    page.locator(".conv-new textarea").fill(text)
-    page.get_by_role("button", name="start conversation").click()
-    page.wait_for_url("**/conversations/**")
-    return page.url.rsplit("/", 1)[-1]
 
 
 # ---- the routine page: a draft, saved by the one accept ------------------------------------
@@ -83,9 +69,9 @@ def test_a_routine_with_no_capabilities_block_reads_its_defaults(ui, ui_page):
 
 
 def test_the_dials_show_what_the_routine_holds(ui, ui_page):
-    _configure(ui, capabilities={"actions": ["write_util", "revise_util"], "utils": [],
-                                 "confirm": "creations", "runs": "all", "reminders": "global",
-                                 "remind_confirm": "creations"})
+    configure(ui, capabilities={"actions": ["write_util", "revise_util"], "utils": [],
+                                "confirm": "creations", "runs": "all", "reminders": "global",
+                                "remind_confirm": "creations"})
     ui_page.goto(f"{ui.url}/#/routine/uir")
     _open_abilities(ui_page)
     expect(_routine_dial(ui_page, "runs")).to_have_value("all")
@@ -169,7 +155,7 @@ def test_an_untouched_conversation_panel_saves_what_it_loaded(ui, ui_page):
     """The header's save sends the WHOLE mapping, settings included — so a dial resting on a
     value the conversation does not hold would rewrite it on a save nobody meant as a change.
     Untouched, the save must send back exactly the settings the conversation's file holds."""
-    slug = _start_conversation(ui, ui_page)
+    slug, _conv_dir = start_conversation(ui, ui_page, "look into this")
     path = ui.conversations / slug / "routine.yaml"
     before = _stored(path)["capabilities"]
     ui_page.locator(".conv-caps > summary").click()
@@ -188,7 +174,7 @@ def test_an_untouched_conversation_panel_saves_what_it_loaded(ui, ui_page):
 
 
 def test_a_conversation_dial_change_is_saved(ui, ui_page):
-    slug = _start_conversation(ui, ui_page)
+    slug, _conv_dir = start_conversation(ui, ui_page, "look into this")
     path = ui.conversations / slug / "routine.yaml"
     ui_page.locator(".conv-caps > summary").click()
     panel = ui_page.locator(".conv-caps")

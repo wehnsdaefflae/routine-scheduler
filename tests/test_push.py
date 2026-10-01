@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 
+from helpers import tmp_server
 from rsched.config import ServerConfig
 from rsched.daemon.events import EventBus
 from rsched.engine import inbox
@@ -22,11 +23,9 @@ def client(api_client, make_routine):
 
 
 def _server(tmp_path) -> ServerConfig:
-    s = ServerConfig()
-    s.source = tmp_path / "config.yaml"          # push state lands next to the config
-    s.routines_home = tmp_path / "routines"
-    s.libraries_home = tmp_path / "library"
-    return s
+    # push state lands next to the config
+    return tmp_server(tmp_path, create=False, source=tmp_path / "config.yaml",
+                      libraries_home=tmp_path / "library")
 
 
 SUB_A = {"endpoint": "https://push.example/a", "keys": {"p256dh": "x", "auth": "y"}}

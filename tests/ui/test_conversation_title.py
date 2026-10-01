@@ -14,6 +14,7 @@ import yaml
 from playwright.sync_api import expect
 
 from .conftest import until
+from .helpers import start_conversation
 
 
 def _name(conv_dir) -> str:
@@ -26,11 +27,7 @@ def _retitle(title, text: str) -> None:
 
 
 def test_a_title_renamed_back_is_saved(ui, ui_page):
-    ui_page.goto(f"{ui.url}/#/conversations")
-    ui_page.locator(".conv-new textarea").fill("Plan the trip.")
-    ui_page.get_by_role("button", name="start conversation").click()
-    ui_page.wait_for_url("**/conversations/**")
-    conv_dir = ui.conversations / ui_page.url.rsplit("/", 1)[-1]
+    _slug, conv_dir = start_conversation(ui, ui_page, "Plan the trip.")
     title = ui_page.locator(".conv-h1")
     expect(title).not_to_have_text("")
     original = title.inner_text().strip()
@@ -49,11 +46,7 @@ def test_a_title_renamed_back_is_saved(ui, ui_page):
 def test_a_double_click_saves_once(ui, ui_page):
     """The header's save buttons never disabled themselves, so a double click sent the PATCH
     twice; they go through util.act() now, which holds the button for the request."""
-    ui_page.goto(f"{ui.url}/#/conversations")
-    ui_page.locator(".conv-new textarea").fill("Plan the trip.")
-    ui_page.get_by_role("button", name="start conversation").click()
-    ui_page.wait_for_url("**/conversations/**")
-    slug = ui_page.url.rsplit("/", 1)[-1]
+    slug, _conv_dir = start_conversation(ui, ui_page, "Plan the trip.")
     patches: list[str] = []
     ui_page.on("request", lambda r: patches.append(r.url)
                if r.method == "PATCH" and r.url.endswith(f"/api/conversations/{slug}") else None)

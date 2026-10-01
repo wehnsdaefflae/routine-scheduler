@@ -8,25 +8,14 @@ the confirmation says so before anything is removed.
 
 from __future__ import annotations
 
-import yaml
 from playwright.sync_api import expect
 
 from .conftest import until
-
-
-def _stored(ui, slug="uir") -> dict:
-    return yaml.safe_load((ui.routines / slug / "routine.yaml").read_text(encoding="utf-8"))
-
-
-def _follow(ui, slug, pattern) -> None:
-    path = ui.routines / slug / "routine.yaml"
-    cfg = yaml.safe_load(path.read_text(encoding="utf-8"))
-    cfg["pattern"] = pattern
-    path.write_text(yaml.safe_dump(cfg), encoding="utf-8")
+from .helpers import configure, stored_config
 
 
 def test_the_library_lists_every_pattern_readably(ui, ui_page):
-    _follow(ui, "uir", "watcher")
+    configure(ui, pattern="watcher")
     ui_page.goto(f"{ui.url}/#/library")
     section = ui_page.locator("[data-patterns]")
     expect(section).to_be_visible()
@@ -49,8 +38,8 @@ def test_the_library_lists_every_pattern_readably(ui, ui_page):
 
 
 def test_deleting_a_pattern_leaves_its_followers_values_alone(ui, ui_page):
-    _follow(ui, "uir", "watcher")
-    before = {k: v for k, v in _stored(ui).items() if k != "pattern"}
+    configure(ui, pattern="watcher")
+    before = {k: v for k, v in stored_config(ui).items() if k != "pattern"}
     pattern_file = ui.server_cfg.libraries_home / "patterns" / "watcher.yaml"
     assert pattern_file.exists()
 
@@ -66,7 +55,7 @@ def test_deleting_a_pattern_leaves_its_followers_values_alone(ui, ui_page):
 
     expect(ui_page.locator("#toast:not([hidden])")).to_contain_text("follow no pattern now")
     until(lambda: not pattern_file.exists(), what="the pattern file to go")
-    after = _stored(ui)
+    after = stored_config(ui)
     assert "pattern" not in after
     assert {k: v for k, v in after.items() if k != "pattern"} == before
     expect(ui_page.locator('.pat[data-pattern="watcher"]')).to_have_count(0)

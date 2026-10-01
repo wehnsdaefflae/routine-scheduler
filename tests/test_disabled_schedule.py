@@ -8,14 +8,11 @@ key a file's switch lived in depended on which door last touched it.
 import pytest
 import yaml
 
+from helpers import routine_yaml
 from rsched.config import ServerConfig, load_routine
 from rsched.daemon.events import EventBus
 from rsched.daemon.runner import Runner
 from rsched.patterns import fields
-
-
-def _raw(root):
-    return yaml.safe_load((root / "routine.yaml").read_text(encoding="utf-8"))
 
 
 def _write(root, raw):
@@ -25,7 +22,7 @@ def _write(root, raw):
 @pytest.mark.parametrize("reason", ["manual", "schedule", "catchup", "webhook", "report", "lane", "one-shot"])
 async def test_switched_off_refuses_every_new_start_without_creating_run(make_routine, reason):
     root = make_routine(slug="disabled")
-    _write(root, {**_raw(root), "enabled": False})
+    _write(root, {**routine_yaml(root), "enabled": False})
     cfg, problems = load_routine(root)
     assert not problems and cfg.enabled is False
     runner = Runner(ServerConfig(routines_home=root.parent), EventBus())
@@ -42,12 +39,12 @@ def test_the_pause_toggle_writes_the_key_every_reader_reads(api_client, make_rou
 
     r = c.patch("/api/routines/apir", json={"enabled": False})
     assert r.status_code == 200 and "enabled" in r.json()["updated"]
-    raw = _raw(root)
+    raw = routine_yaml(root)
     assert raw["enabled"] is False and "disabled" not in raw["schedule"]
     assert load_routine(root)[0].enabled is False
 
     assert c.patch("/api/routines/apir", json={"enabled": True}).status_code == 200
-    assert _raw(root)["enabled"] is True and load_routine(root)[0].enabled is True
+    assert routine_yaml(root)["enabled"] is True and load_routine(root)[0].enabled is True
     # strict: a string is refused rather than read as true
     assert c.patch("/api/routines/apir", json={"enabled": "no"}).status_code == 422
 
@@ -60,7 +57,7 @@ def test_the_disabled_cadence_is_the_same_switch(api_client, make_routine):
 
     r = c.patch("/api/routines/apir", json={"schedule": {"friendly": {"frequency": "disabled"}}})
     assert r.status_code == 200
-    raw = _raw(root)
+    raw = routine_yaml(root)
     assert raw["enabled"] is False and "disabled" not in raw["schedule"]
 
     r = c.patch("/api/routines/apir",
@@ -86,7 +83,7 @@ def test_the_settings_accept_switches_off_and_keeps_the_cron(api_client, make_ro
 
     r = c.post("/api/routines/apir/settings", json={"changes": {"schedule": off}})
     assert r.status_code == 200, r.text
-    raw = _raw(root)
+    raw = routine_yaml(root)
     assert raw["enabled"] is False and raw["schedule"]["cron"] == "0 7 * * 1"
     assert "disabled" not in raw["schedule"]
 
@@ -95,7 +92,7 @@ def test_a_leftover_schedule_disabled_is_reported_and_read_by_nothing(make_routi
     """No second spelling survives in the loader: a stray `schedule.disabled` (a hand edit, a
     file the boot migration never saw) decides nothing, and says so."""
     root = make_routine(slug="stale")
-    raw = _raw(root)
+    raw = routine_yaml(root)
     raw["schedule"]["disabled"] = True
     _write(root, raw)
     cfg, problems = load_routine(root)

@@ -6,29 +6,19 @@ earlier runs' spills reach the next run through the state digest.
 
 from types import SimpleNamespace
 
-from rsched.config import ServerConfig, load_routine
+from helpers import run_context
 from rsched.engine import outputs
-from rsched.engine.budgets_config import Budgets
 from rsched.engine.composer import state_digest
 from rsched.engine.executor import dispatch
 from rsched.engine.observations import OBS_CAP_CHARS, format_observation, truncate
 from rsched.engine.run_context import RunContext
-from rsched.engine.transcript import Transcript
 from rsched.grantpolicy import GrantPolicy
 
 BIG = "x" * (OBS_CAP_CHARS * 2)
 
 
 def _ctx(make_routine, slug="spiller", turn=7, run_ts="20260726-120000") -> RunContext:
-    d = make_routine(slug=slug)
-    cfg, _problems = load_routine(d)
-    run_dir = d / "runs" / run_ts
-    run_dir.mkdir(parents=True)
-    ctx = RunContext(routine=cfg, server=ServerConfig(), registry=None, run_ts=run_ts,
-                     run_dir=run_dir, transcript=Transcript(run_dir / "transcript.jsonl"),
-                     budgets=Budgets.from_config(cfg.budgets))
-    ctx.turn = turn
-    return ctx
+    return run_context(make_routine(slug=slug), run_ts, turn=turn)
 
 
 def test_spill_keeps_only_what_the_observation_could_not_carry(make_routine):

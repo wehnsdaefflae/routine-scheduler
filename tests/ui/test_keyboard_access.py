@@ -16,6 +16,7 @@ import yaml
 from playwright.sync_api import expect
 
 from .conftest import until
+from .helpers import start_conversation
 
 
 def test_a_filter_chip_toggles_from_the_keyboard(ui, ui_page):
@@ -66,11 +67,7 @@ def test_a_library_count_jumps_from_the_keyboard(ui, ui_page):
 
 
 def test_a_tag_is_removed_from_the_keyboard(ui, ui_page):
-    ui_page.goto(f"{ui.url}/#/conversations")
-    ui_page.locator(".conv-new textarea").fill("Plan the trip.")
-    ui_page.get_by_role("button", name="start conversation").click()
-    ui_page.wait_for_url("**/conversations/**")
-    conv_dir = ui.conversations / ui_page.url.rsplit("/", 1)[-1]
+    _slug, conv_dir = start_conversation(ui, ui_page, "Plan the trip.")
 
     adder = ui_page.locator(".conv-tagline input")
     adder.fill("alpha")

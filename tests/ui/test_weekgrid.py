@@ -15,6 +15,7 @@ from datetime import datetime
 from playwright.sync_api import expect
 
 from .conftest import until
+from .helpers import lane_members
 
 # ---- pointer-gesture helpers (weekgrid-drag.js) ------------------------------------------
 
@@ -147,13 +148,6 @@ def _chained_lane(ui, make_routine):
                         members=[{"slug": "gm1"}, {"slug": "gm2"}])
 
 
-def _members(ui, lane_id):
-    from rsched import lanes
-
-    rec = lanes.get(ui.routines, lane_id)
-    return [m["slug"] for m in (rec["members"] if rec else [])]
-
-
 def test_scheduled_lane_chains_on_one_labelled_row(ui, ui_page, make_routine):
     """D71/R313: a lane WITH a cron owns its members' schedule. The row draws the LANE's
     fires — each member once per fire, chained — so both members carry the SAME bar count,
@@ -183,7 +177,7 @@ def test_drag_onto_sibling_reorders_the_lane(ui, ui_page, make_routine):
     src = _center(ui_page.locator(".weekpanel a[href='#/routine/gm1'] .wg-bar").first)
     tgt = _center(ui_page.locator(".weekpanel a[href='#/routine/gm2'] .wg-bar").first)
     _drag(ui_page, src, (tgt[0] + 4, tgt[1]))   # right half of the sibling → "after gm2"
-    until(lambda: _members(ui, g["id"]) == ["gm2", "gm1"], what="reorder")
+    until(lambda: lane_members(ui, g["id"]) == ["gm2", "gm1"], what="reorder")
 
 
 def test_drag_to_remove_strip_leaves_the_lane(ui, ui_page, make_routine):
@@ -200,7 +194,7 @@ def test_drag_to_remove_strip_leaves_the_lane(ui, ui_page, make_routine):
     expect(zone).to_be_visible()   # the remove strip appears for a bar that is in a lane
     ui_page.mouse.move(*_center(zone), steps=6)
     ui_page.mouse.up()
-    until(lambda: _members(ui, g["id"]) == ["gm2"], what="leave")
+    until(lambda: lane_members(ui, g["id"]) == ["gm2"], what="leave")
 
 
 def test_drag_onto_another_lanes_row_joins(ui, ui_page, make_routine):
@@ -216,7 +210,7 @@ def test_drag_onto_another_lanes_row_joins(ui, ui_page, make_routine):
     row_y = _center(chained_bar)[1]
     sc = ui_page.locator(".weekpanel .wg-scroll").bounding_box()
     _drag(ui_page, _center(solo_bar), (sc["x"] + sc["width"] / 2, row_y))
-    until(lambda: _members(ui, g["id"]) == ["gm1", "gm2", "uir"], what="join")
+    until(lambda: lane_members(ui, g["id"]) == ["gm1", "gm2", "uir"], what="join")
 
 
 def test_drag_along_own_row_reschedules(ui, ui_page, make_routine):

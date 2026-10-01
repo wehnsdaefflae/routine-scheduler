@@ -27,6 +27,7 @@ import pytest
 import yaml
 
 from conftest import finish
+from helpers import pid_alive, server_for
 from rsched import sandbox, scripts, shellrun, utils_lib, utils_run
 from rsched.config import ServerConfig, load_routine
 from rsched.engine.budgets_config import Budgets
@@ -43,25 +44,9 @@ GROUP = "sleep 60 & echo $! > member.tmp && mv member.tmp member; wait"
 ENDED = re.compile(r"was ended by the run's abort after \d+s \(process group terminated\)")
 
 
-def _until(check, limit: float = 20.0) -> None:
-    deadline = time.monotonic() + limit
-    while not check():
-        assert time.monotonic() < deadline, "the command never got going"
-        time.sleep(0.02)
-
-
-def _alive(pid: int) -> bool:
-    """Whether `pid` still runs — a zombie (exited, not yet collected by its init) does not."""
-    try:
-        stat = Path(f"/proc/{pid}/stat").read_text(encoding="utf-8")
-    except FileNotFoundError:
-        return False
-    return not stat.rsplit(") ", 1)[1].startswith("Z")
-
-
 def _gone(pid: int, limit: float = 10.0) -> bool:
     deadline = time.monotonic() + limit
-    while _alive(pid):
+    while pid_alive(pid):
         if time.monotonic() > deadline:
             return False
         time.sleep(0.05)
@@ -170,11 +155,8 @@ def test_a_venv_build_the_abort_ended_reports_the_abort(tmp_path, make_routine):
 # -- the engine ---------------------------------------------------------------------------
 
 def _server(routine_dir: Path) -> ServerConfig:
-    s = ServerConfig()
-    s.routines_home = routine_dir.parent
-    s.libraries_home = routine_dir.parent.parent / "test-library"
-    s.sandbox = "off"        # the jail's inputs are pinned elsewhere; this exercises the process
-    return s
+    # the jail's inputs are pinned elsewhere; this exercises the process
+    return server_for(routine_dir, sandbox="off")
 
 
 def test_an_abort_ends_the_shell_command_in_flight(make_routine, scripted):

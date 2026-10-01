@@ -11,8 +11,9 @@ from types import SimpleNamespace
 import pytest
 
 from conftest import finish, write_file
+from helpers import server_for, util_library
 from rsched import machine_mounts, machines, secrets, utils_run
-from rsched.config import MachineConfig, RoutineConfig, ServerConfig, load_server_config
+from rsched.config import MachineConfig, RoutineConfig, load_server_config
 from rsched.engine import runtime
 from rsched.engine.exec_env import _extra_secrets, _machine_env
 from rsched.engine.runtime import run_routine
@@ -35,13 +36,6 @@ tags: test
 """
 print("hi")
 '''
-
-
-def _lib(tmp_path, name, body):
-    d = tmp_path / "utils" / name
-    d.mkdir(parents=True)
-    (d / "main.py").write_text(body, encoding="utf-8")
-    return tmp_path
 
 
 def _mac(name, **kw):
@@ -101,7 +95,7 @@ def test_dedupes_bindings():
 
 # ----------------------------------------------------------------- the declared-var gate -----
 def test_declared_machine_vars_injected(tmp_path):
-    home = _lib(tmp_path, "remoteish", DECLARING)
+    home = util_library(tmp_path, "remoteish", DECLARING)
     env = utils_run._child_env(home, "remoteish",
                                {"RSCHED_MACHINES": "[]", "RSCHED_MACHINE_KEYS": '{"g":"PEM"}'})
     assert env["RSCHED_MACHINE_KEYS"] == '{"g":"PEM"}'
@@ -109,7 +103,7 @@ def test_declared_machine_vars_injected(tmp_path):
 
 
 def test_undeclared_machine_vars_absent(tmp_path):
-    home = _lib(tmp_path, "plainish", PLAIN)
+    home = util_library(tmp_path, "plainish", PLAIN)
     env = utils_run._child_env(home, "plainish", {"RSCHED_MACHINE_KEYS": '{"g":"PEM"}'})
     assert "RSCHED_MACHINE_KEYS" not in env
 
@@ -118,7 +112,7 @@ def test_machine_keys_scrubbed_even_if_inherited(tmp_path, monkeypatch):
     # the engine injects the key via extra_secrets; an undeclaring util gets NEITHER the injected
     # value NOR any inherited one (the scrub pops it), so the key never leaks to the wrong util
     monkeypatch.setenv("RSCHED_MACHINE_KEYS", "leaked")
-    home = _lib(tmp_path, "plainish", PLAIN)
+    home = util_library(tmp_path, "plainish", PLAIN)
     env = utils_run._child_env(home, "plainish", {"RSCHED_MACHINE_KEYS": '{"g":"PEM"}'})
     assert "RSCHED_MACHINE_KEYS" not in env
 
@@ -127,7 +121,7 @@ def test_ssh_agent_vars_always_stripped(tmp_path, monkeypatch):
     # SSH_AUTH_SOCK / SSH_AGENT_PID never reach a util (they'd bypass the machine binding)
     monkeypatch.setenv("SSH_AUTH_SOCK", "agent.sock")
     monkeypatch.setenv("SSH_AGENT_PID", "1234")
-    home = _lib(tmp_path, "plainish", PLAIN)
+    home = util_library(tmp_path, "plainish", PLAIN)
     env = utils_run._child_env(home, "plainish", {})
     assert "SSH_AUTH_SOCK" not in env and "SSH_AGENT_PID" not in env
 
@@ -337,13 +331,6 @@ def test_remove_lookalike_never_deletes_data(tmp_path):
 SENTINEL_SHARE = SimpleNamespace(name="gpu")
 
 
-def _server_for(d):
-    server = ServerConfig()
-    server.routines_home = d.parent
-    server.libraries_home = d.parent.parent / "lib"
-    return server
-
-
 def test_run_routine_mounts_then_unmounts(make_routine, scripted, monkeypatch):
     calls: list = []
     monkeypatch.setattr(machine_mounts, "mount_routine_shares",
@@ -353,7 +340,8 @@ def test_run_routine_mounts_then_unmounts(make_routine, scripted, monkeypatch):
                         lambda mounted: calls.append(("unmount", mounted)))
     d = make_routine(slug="mountr")
     scripted([write_file("state/out.txt", content="x"), finish(summary="done")])
-    status, _ = run_routine(d, _server_for(d), run_ts="20260708-070000")
+    status, _ = run_routine(d, server_for(d, libraries_home=d.parent.parent / "lib"),
+                            run_ts="20260708-070000")
     assert status == "ok"
     assert calls[0] == "mount" and calls[-1] == ("unmount", [SENTINEL_SHARE])
 
@@ -375,7 +363,8 @@ def test_run_routine_unmounts_even_when_loop_raises(make_routine, scripted, monk
     d = make_routine(slug="boomr")
     scripted([])
     with pytest.raises(RuntimeError, match="boom"):
-        run_routine(d, _server_for(d), run_ts="20260708-070000")
+        run_routine(d, server_for(d, libraries_home=d.parent.parent / "lib"),
+                    run_ts="20260708-070000")
     assert unmounted == [[SENTINEL_SHARE]]    # the finally ran despite the crash
 
 

@@ -7,37 +7,28 @@ from types import SimpleNamespace
 
 import yaml
 
+from helpers import run_context, server_config
 from rsched.config import (
     DEFAULT_DELIBERATION,
     DELIBERATION_LEVELS,
-    ServerConfig,
     load_routine,
     load_tuning,
     write_tuning,
 )
 from rsched.engine import deliberation
-from rsched.engine.budgets_config import Budgets
 from rsched.engine.fileops import do_edit_file, do_write_file
 from rsched.engine.harness import harness_contract
 from rsched.engine.run_context import RunContext
 from rsched.engine.switches import apply_deliberation_switch
-from rsched.engine.transcript import Transcript, read_events
+from rsched.engine.transcript import read_events
 from rsched.grantpolicy import GrantPolicy
 from rsched.paths import atomic_write_json
 
 
 def _ctx(make_routine, tmp_path, **kwargs) -> RunContext:
-    d = make_routine(**kwargs)
-    cfg, _problems = load_routine(d)
-    assert cfg is not None
-    run_dir = d / "runs" / "20260716-070000"
-    run_dir.mkdir(parents=True)
-    server = ServerConfig()
-    server.libraries_home = tmp_path / "libraries"
-    ctx = RunContext(routine=cfg, server=server, registry=None, run_ts="20260716-070000",
-                     run_dir=run_dir, transcript=Transcript(run_dir / "transcript.jsonl"),
-                     budgets=Budgets.from_config(cfg.budgets))
-    ctx.deliberation = cfg.deliberation
+    ctx = run_context(make_routine(**kwargs), "20260716-070000",
+                      server=server_config(libraries_home=tmp_path / "libraries"))
+    ctx.deliberation = ctx.routine.deliberation
     return ctx
 
 

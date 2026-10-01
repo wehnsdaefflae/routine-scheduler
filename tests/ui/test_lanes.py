@@ -20,6 +20,7 @@ from playwright.sync_api import expect
 from rsched import lane_runs, lanes
 
 from .conftest import TOKEN, until
+from .helpers import lane_members
 
 
 def _detail(ui, ui_page, slug: str) -> dict:
@@ -292,11 +293,6 @@ def _shown_members(editor):
         "rows => rows.map((r) => r.dataset.member)")
 
 
-def _members(ui, lane_id):
-    rec = lanes.get(ui.routines, lane_id)
-    return [m["slug"] for m in (rec["members"] if rec else [])]
-
-
 def test_a_refused_member_edit_leaves_the_editor_on_what_the_store_holds(ui, ui_page,
                                                                           make_routine):
     """Every editor control PATCHes and re-renders from the reply. The member buttons edited the
@@ -329,10 +325,10 @@ def test_a_double_click_on_a_member_button_saves_one_move(ui, ui_page, make_rout
     editor = _open_editor(ui, ui_page, lane["id"])
 
     editor.locator('[data-member="uir"]').get_by_role("button", name="↓").dblclick()
-    until(lambda: _members(ui, lane["id"]) != ["uir", "gm1", "gm2"], page=ui_page,
+    until(lambda: lane_members(ui, lane["id"]) != ["uir", "gm1", "gm2"], page=ui_page,
           what="the member move")
     ui_page.wait_for_timeout(500)                       # any second save has landed by now
-    assert _members(ui, lane["id"]) == ["gm1", "uir", "gm2"]
+    assert lane_members(ui, lane["id"]) == ["gm1", "uir", "gm2"]
     expect(editor.locator("[data-member]").first).to_have_attribute("data-member", "gm1")
 
 

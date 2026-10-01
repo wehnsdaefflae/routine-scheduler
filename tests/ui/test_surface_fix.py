@@ -42,11 +42,14 @@ import pytest
 import yaml
 from playwright.sync_api import expect
 
+from helpers import write_util
 from rsched import lanes, secrets
 from rsched.config import MachineConfig
 from rsched.oauth import store as oauth_store
 from rsched.oauth.store import Connection
 from rsched.readmodels.remedies import REMEDIES
+
+from .helpers import configure, stored_config, unfold
 
 # What an unmet row carries, in two parts. The FIX line is the offer as a whole — `data-fix`
 # holds the server's `kind`, which is the vocabulary the halves have to agree on, so it is
@@ -128,15 +131,6 @@ CONTROL_KIND = """(n) => {
 OPERABLE = ("button", "input", "select", "textarea", "a")
 
 
-def _util(ui, name: str, *, secrets_hdr: str = "(none)", fs: str = "none") -> None:
-    """A reserved util in the library, declaring what the surface joins on."""
-    d = ui.server_cfg.libraries_home / "utils" / name
-    d.mkdir(parents=True, exist_ok=True)
-    (d / "main.py").write_text(
-        f'"""{name} — t.\n\nusage: gu {name}\ncalls: (none)\ntags: t\n'
-        f'secrets: {secrets_hdr}\nnet: none\nfs: {fs}\n"""\n', encoding="utf-8")
-
-
 def _rule(ui, slug: str, expects: dict) -> None:
     """A library RULE declaring a soft edge. `expects:` is legal on a rule where `requires:` is
     not, so this is the only way a `connection:` need reaches the surface at all.
@@ -184,30 +178,8 @@ def _configure(ui, *, permissions=(), capabilities=None, **over) -> None:
     leaving either implicit means the model's defaults apply (write_util plus the doc that
     covers it), which adds rows these tests are not about — one gap, one row.
     """
-    path = ui.routines / "uir" / "routine.yaml"
-    cfg = yaml.safe_load(path.read_text(encoding="utf-8"))
-    cfg["permissions"] = list(permissions)
-    cfg["capabilities"] = {"actions": [], "utils": [], **(capabilities or {})}
-    cfg.update(over)
-    path.write_text(yaml.safe_dump(cfg), encoding="utf-8")
-
-
-def _stored(ui) -> dict:
-    """What routine.yaml says now — where an act that claims to have landed has to show up."""
-    return yaml.safe_load((ui.routines / "uir" / "routine.yaml").read_text(encoding="utf-8"))
-
-
-def _unfold(page) -> None:
-    """Open every routine-page settings group and each group's "more" menu.
-
-    The page ships with only its two leading groups open (views/routine-config.js): seven open at
-    once made it 11-12 000px tall. The rarely needed sections fold once more behind each group's
-    "more". A control inside a fold is not visible, so a test that reads one unfolds first. What
-    the DEFAULT is — and that the choice is remembered — is pinned in test_routine_groups.py, not
-    here.
-    """
-    page.wait_for_selector(".rgroup-head")
-    page.evaluate("() => { for (const d of document.querySelectorAll('details.rgroup, details.rmore')) d.open = true; }")
+    configure(ui, permissions=list(permissions),
+              capabilities={"actions": [], "utils": [], **(capabilities or {})}, **over)
 
 
 def _open(ui_page, ui):
@@ -215,7 +187,7 @@ def _open(ui_page, ui):
     here asserts what happens to be above or below the fold at this height."""
     ui_page.set_viewport_size({"width": 1100, "height": 620})
     ui_page.goto(f"{ui.url}/#/routine/uir")
-    _unfold(ui_page)
+    unfold(ui_page)
 
 
 def _row(ui_page, ui, entity: str):
@@ -329,29 +301,29 @@ def _seed_switch_on(ui, mp) -> None:
 
 
 def _seed_cover_or_drop(ui, mp) -> None:
-    _util(ui, "poster")
+    write_util(ui.server_cfg, "poster")
     _configure(ui, capabilities={"utils": ["poster"]})
 
 
 def _seed_grant(ui, mp) -> None:
     secrets.set_secret("UI_FIX_TOKEN", "v")
-    _util(ui, "poster", secrets_hdr="UI_FIX_TOKEN")
+    write_util(ui.server_cfg, "poster", secrets="UI_FIX_TOKEN")
     _configure(ui, capabilities={"utils": ["poster"]})
 
 
 def _seed_clear_grant(ui, mp) -> None:
     secrets.set_secret("UI_FIX_TOKEN", "v")
-    _util(ui, "poster", secrets_hdr="UI_FIX_TOKEN")
+    write_util(ui.server_cfg, "poster", secrets="UI_FIX_TOKEN")
     _configure(ui, capabilities={"utils": ["poster"]}, grants={"secret:UI_FIX_TOKEN": False})
 
 
 def _seed_add_secret(ui, mp) -> None:
-    _util(ui, "poster", secrets_hdr="UI_FIX_TOKEN")
+    write_util(ui.server_cfg, "poster", secrets="UI_FIX_TOKEN")
     _configure(ui, capabilities={"utils": ["poster"]})
 
 
 def _seed_add_root(ui, mp) -> None:
-    _util(ui, "store", fs="rw /srv/fix-store")
+    write_util(ui.server_cfg, "store", fs="rw /srv/fix-store")
     _configure(ui, capabilities={"utils": ["store"]})
 
 
@@ -527,7 +499,7 @@ def test_a_capability_this_routine_owns_can_be_switched_off_where_the_row_says(u
     have stripped this capability anyway, so only the request the CLIENT sends can tell the
     control apart from the floor doing its job.
     """
-    _util(ui, "poster")
+    write_util(ui.server_cfg, "poster")
     _configure(ui, capabilities={"utils": ["poster"]})
 
     row = _row(ui_page, ui, "util:poster")
@@ -544,7 +516,7 @@ def test_a_capability_this_routine_owns_can_be_switched_off_where_the_row_says(u
     assert "poster" not in (caps.get("utils") or []), (
         f"the press changed nothing the accept carried: {caps}")
     expect(ui_page.locator("#toast:not([hidden])")).to_contain_text("accepted")
-    assert "poster" not in (_stored(ui)["capabilities"].get("utils") or [])
+    assert "poster" not in (stored_config(ui)["capabilities"].get("utils") or [])
 
 
 def test_a_missing_util_offers_the_half_a_person_can_perform(ui, ui_page):
@@ -599,8 +571,8 @@ def test_a_lane_suppressed_cron_can_actually_be_cleared(ui, ui_page):
     _operable(clear, "clear a cron the lane suppresses")
     clear.click()
     expect(ui_page.locator("#toast:not([hidden])")).to_contain_text("cleared")
-    assert not (_stored(ui).get("schedule") or {}).get("cron"), (
-        f"the cron the lane overrides is still in the file: {_stored(ui).get('schedule')}")
+    assert not (stored_config(ui).get("schedule") or {}).get("cron"), (
+        f"the cron the lane overrides is still in the file: {stored_config(ui).get('schedule')}")
 
 
 # ---- the rows themselves ---------------------------------------------------------------------
@@ -660,7 +632,7 @@ def test_a_satisfied_row_offers_nothing_to_click(ui, ui_page):
     """
     store = ui.tmp / "ok-store"
     store.mkdir()
-    _util(ui, "okstore", fs=f"rw {store}")
+    write_util(ui.server_cfg, "okstore", fs=f"rw {store}")
     _configure(ui, capabilities={"utils": ["okstore"]}, fs_write_roots=[str(store)])
 
     row = _row(ui_page, ui, f"fs-write:{store}")
@@ -674,7 +646,7 @@ def test_a_fix_that_lives_elsewhere_says_so_and_goes_there(ui, ui_page):
     jump would scroll to nothing, so the row reads as a journey and makes it — landing on the
     section that owns the store rather than at the top of Settings.
     """
-    _util(ui, "poster", secrets_hdr="UI_FIX_TOKEN")
+    write_util(ui.server_cfg, "poster", secrets="UI_FIX_TOKEN")
     _configure(ui, capabilities={"utils": ["poster"]})
 
     row = _row(ui_page, ui, "secret:UI_FIX_TOKEN")
@@ -728,7 +700,7 @@ def test_a_withheld_secret_lands_where_its_control_actually_is(ui, ui_page):
     is not the claim; a link that arrives at the control is.
     """
     secrets.set_secret("UI_FIX_TOKEN", "v")
-    _util(ui, "poster", secrets_hdr="UI_FIX_TOKEN")
+    write_util(ui.server_cfg, "poster", secrets="UI_FIX_TOKEN")
     _configure(ui, capabilities={"utils": ["poster"]},
                grants={"secret:UI_FIX_TOKEN": False})
 

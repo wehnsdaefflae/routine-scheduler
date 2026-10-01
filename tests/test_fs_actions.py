@@ -9,30 +9,10 @@ Validation lives in engine.actions.validate_action; the handlers in engine.fsops
 
 from __future__ import annotations
 
-from rsched.config import ServerConfig, load_routine
+from helpers import action_ctx
 from rsched.engine.actions import validate_action
-from rsched.engine.budgets_config import Budgets
 from rsched.engine.fileops import do_read_file
 from rsched.engine.fsops import do_delete, do_mkdir, do_move
-from rsched.engine.run_context import RunContext
-from rsched.engine.transcript import Transcript
-from rsched.grantpolicy import GrantPolicy
-
-
-def _ctx(make_routine, tmp_path) -> RunContext:
-    d = make_routine()
-    cfg, _problems = load_routine(d)
-    assert cfg is not None
-    run_dir = d / "runs" / "20260716-070000"
-    run_dir.mkdir(parents=True)
-    server = ServerConfig()
-    server.libraries_home = tmp_path / "libraries"
-    ctx = RunContext(routine=cfg, server=server, registry=None, run_ts="20260716-070000",
-                     run_dir=run_dir, transcript=Transcript(run_dir / "transcript.jsonl"),
-                     budgets=Budgets.from_config(cfg.budgets))
-    ctx.grants = GrantPolicy()
-    return ctx
-
 
 # ---- validation -----------------------------------------------------------------------------
 
@@ -60,7 +40,7 @@ def test_validation_refuses_memory_paths_for_all_three():
 
 
 def test_mkdir_parents_and_existing(make_routine, tmp_path):
-    ctx = _ctx(make_routine, tmp_path)
+    ctx = action_ctx(make_routine(), tmp_path)
     deep = "state/a/b/c"
     assert do_mkdir({"path": deep, "parents": True}, ctx)["created"] is True
     assert (ctx.routine.dir / deep).is_dir()
@@ -70,7 +50,7 @@ def test_mkdir_parents_and_existing(make_routine, tmp_path):
 
 
 def test_move_relocates_and_refuses_overwrite(make_routine, tmp_path):
-    ctx = _ctx(make_routine, tmp_path)
+    ctx = action_ctx(make_routine(), tmp_path)
     src = ctx.routine.dir / "state" / "draft.md"
     src.parent.mkdir(exist_ok=True)
     src.write_text("hello", encoding="utf-8")
@@ -86,7 +66,7 @@ def test_move_relocates_and_refuses_overwrite(make_routine, tmp_path):
 
 
 def test_delete_file_and_directory_tree(make_routine, tmp_path):
-    ctx = _ctx(make_routine, tmp_path)
+    ctx = action_ctx(make_routine(), tmp_path)
     f = ctx.routine.dir / "state" / "old.json"
     f.parent.mkdir(exist_ok=True)
     f.write_text("x" * 10, encoding="utf-8")
@@ -108,7 +88,7 @@ def test_a_not_found_refusal_names_the_read_that_would_show_what_is_there(make_r
     leaves it guessing at the name; the parent directory's LISTING is the answer, and read_file
     returns one for a directory path.
     """
-    ctx = _ctx(make_routine, tmp_path)
+    ctx = action_ctx(make_routine(), tmp_path)
     err = do_delete({"path": "state/nope.json"}, ctx)["error"]
     assert "no such path" in err and "read_file its parent directory" in err
     err = do_move({"src": "state/nope.json", "dst": "state/x.json"}, ctx)["error"]
@@ -119,7 +99,7 @@ def test_a_not_found_refusal_names_the_read_that_would_show_what_is_there(make_r
 
 
 def test_runs_and_routine_yaml_are_sealed(make_routine, tmp_path):
-    ctx = _ctx(make_routine, tmp_path)
+    ctx = action_ctx(make_routine(), tmp_path)
     assert "runs/ is engine-owned" in do_delete(
         {"path": "runs/20260716-070000", "recursive": True}, ctx)["error"]
     assert "routine.yaml is config" in do_delete({"path": "routine.yaml"}, ctx)["error"]
@@ -131,7 +111,7 @@ def test_a_removal_never_takes_a_sealed_path_with_it(make_routine, tmp_path):
     """Every seal asked whether a path lies INSIDE something sealed; a removal also takes what
     lies inside the path. `delete path: "." recursive: true` passed every seal and removed the
     whole routine — routine.yaml, .memory/, runs/ with the live transcript, .git."""
-    ctx = _ctx(make_routine, tmp_path)
+    ctx = action_ctx(make_routine(), tmp_path)
     d = ctx.routine.dir
     for whole in (".", "state/.."):
         err = do_delete({"path": whole, "recursive": True}, ctx)["error"]
@@ -162,7 +142,7 @@ def test_delete_and_move_act_on_a_link_not_on_what_it_points_to(make_routine, tm
     """`rm link` and `mv link x` semantics. Resolving the whole path followed the link, so
     deleting one deleted its target and moving one moved the target away — each leaving the
     link behind, dangling."""
-    ctx = _ctx(make_routine, tmp_path)
+    ctx = action_ctx(make_routine(), tmp_path)
     data = ctx.routine.dir / "state" / "data"
     data.mkdir(parents=True)
     (data / "keep.txt").write_text("precious", encoding="utf-8")
@@ -189,7 +169,7 @@ def test_unseen_outside_dir_delete_and_move_are_refused(make_routine, tmp_path):
     """The write_file overwrite-gate reasoning, extended to destruction: a path OUTSIDE
     the routine's own dir that this run has never read cannot be deleted or moved away —
     the model must have looked at what it destroys. Reading it once lifts the gate."""
-    ctx = _ctx(make_routine, tmp_path)
+    ctx = action_ctx(make_routine(), tmp_path)
     ext = tmp_path / "conversations" / "c-1"
     ext.mkdir(parents=True)
     ctx.routine.fs_write_roots = [tmp_path / "conversations"]
@@ -215,7 +195,7 @@ def test_a_listing_or_a_size_read_grounds_destruction(make_routine, tmp_path):
     as its LISTING and a binary/oversized file as its SIZE — both are a look, both satisfy
     the gate, and neither decodes a byte of media. The gate itself is unchanged: a path this
     run has not pointed read_file at is still refused."""
-    ctx = _ctx(make_routine, tmp_path)
+    ctx = action_ctx(make_routine(), tmp_path)
     videos = tmp_path / "videos"
     pack = videos / "Show S01"
     pack.mkdir(parents=True)

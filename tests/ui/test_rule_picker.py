@@ -13,6 +13,7 @@ import yaml
 from playwright.sync_api import expect
 
 from .conftest import until
+from .helpers import start_conversation, unfold
 
 # The stub runner resumes a terminal conversation to this ts (tests/ui/conftest.py); a run seeded
 # there in a working state is the reply in flight the conversation view follows.
@@ -20,11 +21,7 @@ LIVE_TS = "20260715-120001"
 
 
 def _live_conversation(ui, ui_page) -> str:
-    ui_page.goto(f"{ui.url}/#/conversations")
-    ui_page.locator(".conv-new textarea").fill("Help me restyle the landing page.")
-    ui_page.get_by_role("button", name="start conversation").click()
-    ui_page.wait_for_url("**/conversations/**")
-    slug = ui_page.url.rsplit("/", 1)[-1]
+    slug, _conv_dir = start_conversation(ui, ui_page, "Help me restyle the landing page.")
     ui.seed_run(slug, LIVE_TS, "running", home=ui.conversations)
     ui_page.reload()
     ui_page.locator(".conv-caps > summary").click()
@@ -72,9 +69,7 @@ def test_a_draft_picker_offers_no_live_run_controls(ui, ui_page):
     path.write_text(yaml.safe_dump(cfg), encoding="utf-8")
     ui.seed_run("uir", "20260714-070000", "running")
     ui_page.goto(f"{ui.url}/#/routine/uir")
-    ui_page.wait_for_selector(".rgroup-head")
-    ui_page.evaluate("() => { for (const d of document.querySelectorAll("
-                     "'details.rgroup, details.rmore')) d.open = true; }")
+    unfold(ui_page)
     panel = ui_page.locator("#sec-general-rules + .panel")
     bound = panel.locator('.rule-bound[data-rule="ask-policy"] input[type="checkbox"]')
     expect(bound).to_be_visible()

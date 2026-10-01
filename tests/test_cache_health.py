@@ -11,16 +11,10 @@ from __future__ import annotations
 import json
 
 from conftest import finish
+from helpers import health_events
 from rsched.endpoints.base import Completion, cache_read_share
 from rsched.engine.runtime import run_routine
 from test_loop import TS, _server, probe
-
-
-def _events(server) -> list[dict]:
-    path = server.routines_home / ".control" / "health-events.jsonl"
-    if not path.is_file():
-        return []
-    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line]
 
 
 def test_share_is_none_when_the_transport_reports_no_cache():
@@ -52,7 +46,7 @@ def test_degraded_share_raises_a_health_event(make_routine, scripted):
     server = _run_with_usage(make_routine, scripted,
                              {"in": 10, "out": 5, "cached_in": 20_000, "cache_write": 300_000})
 
-    got = [e for e in _events(server) if e["event"] == "cache_read_degraded"]
+    got = health_events(server.routines_home, event="cache_read_degraded")
     assert len(got) == 1
     assert got[0]["routine"] == "cachey"
     # structured fields, not prose: "is any transport doing this, and since when" has to be
@@ -65,7 +59,7 @@ def test_degraded_share_raises_a_health_event(make_routine, scripted):
 def test_healthy_share_is_silent(make_routine, scripted):
     server = _run_with_usage(make_routine, scripted,
                              {"in": 10, "out": 5, "cached_in": 400_000, "cache_write": 10_000})
-    assert [e for e in _events(server) if e["event"] == "cache_read_degraded"] == []
+    assert health_events(server.routines_home, event="cache_read_degraded") == []
 
 
 def test_a_run_too_small_to_judge_is_silent(make_routine, scripted):
@@ -73,9 +67,9 @@ def test_a_run_too_small_to_judge_is_silent(make_routine, scripted):
     ratio only means something once there is enough traffic behind it."""
     server = _run_with_usage(make_routine, scripted,
                              {"in": 10, "out": 5, "cached_in": 100, "cache_write": 4_000})
-    assert [e for e in _events(server) if e["event"] == "cache_read_degraded"] == []
+    assert health_events(server.routines_home, event="cache_read_degraded") == []
 
 
 def test_an_uncached_transport_is_silent(make_routine, scripted):
     server = _run_with_usage(make_routine, scripted, {"in": 50_000, "out": 500})
-    assert [e for e in _events(server) if e["event"] == "cache_read_degraded"] == []
+    assert health_events(server.routines_home, event="cache_read_degraded") == []

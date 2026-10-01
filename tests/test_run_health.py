@@ -7,6 +7,7 @@ import json
 from datetime import UTC, datetime
 
 from conftest import git_in
+from helpers import write_usage_stream
 from rsched.config import ServerConfig
 from rsched.readmodels.run_health import (
     BALLOON_RATIO,
@@ -165,13 +166,6 @@ def _setup(tmp_path):
     return server, d
 
 
-def _stream(server, records):
-    control = server.routines_home / ".control"
-    control.mkdir(parents=True, exist_ok=True)
-    (control / "workflow-usage.jsonl").write_text(
-        "".join(json.dumps(r) + "\n" for r in records), encoding="utf-8")
-
-
 def test_buckets_by_stamp_and_by_date(tmp_path):
     """Stamped records bucket exactly; pre-stamp records are date-attributed (inferred);
     the newest change is regression-evaluated against the runs before it."""
@@ -199,7 +193,7 @@ def test_buckets_by_stamp_and_by_date(tmp_path):
         {"routine": "other", "run_id": "other:x", "depth": 0, "status": "ok",
          "turns": 2, "tokens": 100, "ts": "2026-07-13T08:00:00+00:00"},
     ]
-    _stream(server, records)
+    write_usage_stream(server.routines_home, records)
 
     h = routine_health(server, d, "gitr")
     assert h["tracked"] is True
@@ -221,8 +215,9 @@ def test_buckets_by_stamp_and_by_date(tmp_path):
 def test_current_version_shown_even_without_runs(tmp_path):
     """A fresh recipe change with zero runs must still appear — 'unproven' is a finding."""
     server, d = _setup(tmp_path)
-    _stream(server, [{"routine": "gitr", "run_id": "gitr:a", "depth": 0, "status": "ok",
-                      "turns": 5, "tokens": 100, "ts": "2026-07-05T07:00:00+00:00"}])
+    write_usage_stream(server.routines_home, [
+        {"routine": "gitr", "run_id": "gitr:a", "depth": 0, "status": "ok",
+         "turns": 5, "tokens": 100, "ts": "2026-07-05T07:00:00+00:00"}])
     (d / "main.md").write_text("# v2\n", encoding="utf-8")
     _git(d, "add", "-A")
     _git(d, "commit", "-qm", "recipe: v2", date="2026-07-10T10:00:00+00:00")
@@ -237,8 +232,9 @@ def test_unversioned_dir_degrades_to_untracked(tmp_path):
     server.routines_home = tmp_path / "routines"
     d = server.routines_home / "conv"
     d.mkdir(parents=True)
-    _stream(server, [{"routine": "conv", "run_id": "conv:a", "depth": 0, "status": "ok",
-                      "turns": 3, "tokens": 50, "ts": "2026-07-05T07:00:00+00:00"}])
+    write_usage_stream(server.routines_home, [
+        {"routine": "conv", "run_id": "conv:a", "depth": 0, "status": "ok",
+         "turns": 3, "tokens": 50, "ts": "2026-07-05T07:00:00+00:00"}])
     h = routine_health(server, d, "conv")
     assert h["tracked"] is False and h["versions"] == []
     assert h["untracked"]["runs"] == 1
@@ -265,7 +261,7 @@ def test_payload_carries_the_time_trend_and_the_budget_endings(tmp_path):
     dear = [{"routine": "gitr", "run_id": f"gitr:d{i}", "depth": 0, "status": "partial",
              "turns": 5, "tokens": 200_000, "ts": f"2026-07-1{i}T07:00:00+00:00"}
             for i in range(1, 6)]
-    _stream(server, cheap + dear)
+    write_usage_stream(server.routines_home, cheap + dear)
     control = server.routines_home / ".control"
     (control / "health-events.jsonl").write_text(
         json.dumps({"event": "budget_exhausted", "routine": "gitr", "run_id": "gitr:d1",
@@ -387,7 +383,7 @@ def test_version_buckets_count_runs_not_legs(tmp_path):
     from rsched.readmodels import memo
 
     server, d = _setup(tmp_path)
-    _stream(server, [
+    write_usage_stream(server.routines_home, [
         {"routine": "gitr", "run_id": "gitr:a", "depth": 0, "status": "ok",
          "turns": 10, "tokens": 30_000, "ts": "2026-07-01T07:00:00+00:00"},
         {"routine": "gitr", "run_id": "gitr:a", "depth": 0, "status": "ok",
@@ -420,7 +416,7 @@ def test_a_continued_partial_is_not_one_failure_and_one_success(tmp_path):
     from rsched.readmodels import memo
 
     server, d = _setup(tmp_path)
-    _stream(server, [
+    write_usage_stream(server.routines_home, [
         {"routine": "gitr", "run_id": "gitr:x", "depth": 0, "status": "partial",
          "turns": 10, "tokens": 20_000, "ts": "2026-07-01T07:00:00+00:00"},
         {"routine": "gitr", "run_id": "gitr:x", "depth": 0, "status": "ok",

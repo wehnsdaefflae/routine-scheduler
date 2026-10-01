@@ -14,19 +14,12 @@ from __future__ import annotations
 import yaml
 
 from conftest import FakeRunner, mk_run
+from helpers import health_events, tmp_server
 from rsched import lane_runs, lanes, registry
-from rsched.config import ServerConfig
 
 
 def m(slug: str) -> dict:
     return {"slug": slug}
-
-
-def _server(tmp_path) -> ServerConfig:
-    s = ServerConfig()
-    s.routines_home = tmp_path / "routines"
-    s.routines_home.mkdir(parents=True, exist_ok=True)
-    return s
 
 
 def _routine(server, slug, *, enabled=True):
@@ -77,7 +70,7 @@ def test_arm_refuses_a_second_in_flight_chain(tmp_path):
 
 async def test_first_tick_fires_member_zero(tmp_path):
     from rsched.daemon.lane_runs import LaneRunManager
-    server = _server(tmp_path)
+    server = tmp_server(tmp_path)
     _routine(server, "a")
     _routine(server, "b")
     lane = lanes.create(server.routines_home, name="G", members=[m("a"), m("b")])
@@ -94,7 +87,7 @@ async def test_first_tick_fires_member_zero(tmp_path):
 
 async def test_ok_member_advances_to_the_next(tmp_path):
     from rsched.daemon.lane_runs import LaneRunManager
-    server = _server(tmp_path)
+    server = tmp_server(tmp_path)
     da = _routine(server, "a")
     _routine(server, "b")
     lane = lanes.create(server.routines_home, name="G", members=[m("a"), m("b")])
@@ -118,7 +111,7 @@ async def test_ok_member_advances_to_the_next(tmp_path):
 async def test_a_lane_chains_once(tmp_path):
     """The baseline chain: every member once, in order, then the file is consumed."""
     from rsched.daemon.lane_runs import LaneRunManager
-    server = _server(tmp_path)
+    server = tmp_server(tmp_path)
     da = _routine(server, "a")
     db = _routine(server, "b")
     lane = lanes.create(server.routines_home, name="G", members=[m("a"), m("b")])
@@ -140,7 +133,7 @@ async def test_a_lane_chains_once(tmp_path):
 
 async def test_stop_policy_halts_on_a_failed_member(tmp_path):
     from rsched.daemon.lane_runs import LaneRunManager
-    server = _server(tmp_path)
+    server = tmp_server(tmp_path)
     da = _routine(server, "a")
     _routine(server, "b")
     lane = lanes.create(server.routines_home, name="G", members=[m("a"), m("b")],
@@ -160,7 +153,7 @@ async def test_stop_policy_halts_on_a_failed_member(tmp_path):
 
 async def test_stop_policy_halts_on_a_partial_member(tmp_path):
     from rsched.daemon.lane_runs import LaneRunManager
-    server = _server(tmp_path)
+    server = tmp_server(tmp_path)
     da = _routine(server, "a")
     _routine(server, "b")
     lane = lanes.create(server.routines_home, name="G", members=[m("a"), m("b")],
@@ -180,7 +173,7 @@ async def test_stop_policy_halts_on_a_partial_member(tmp_path):
 
 async def test_continue_policy_fires_remaining_after_a_failure(tmp_path):
     from rsched.daemon.lane_runs import LaneRunManager
-    server = _server(tmp_path)
+    server = tmp_server(tmp_path)
     da = _routine(server, "a")
     db = _routine(server, "b")
     lane = lanes.create(server.routines_home, name="G", members=[m("a"), m("b")],
@@ -205,7 +198,7 @@ async def test_continue_policy_fires_remaining_after_a_failure(tmp_path):
 
 async def test_missing_or_disabled_member_is_recorded_as_failure(tmp_path):
     from rsched.daemon.lane_runs import LaneRunManager
-    server = _server(tmp_path)
+    server = tmp_server(tmp_path)
     _routine(server, "b", enabled=False)                        # present but disabled
     lane = lanes.create(server.routines_home, name="G", members=[m("ghost"), m("b")],
                         on_failure="continue")
@@ -224,7 +217,7 @@ async def test_missing_or_disabled_member_is_recorded_as_failure(tmp_path):
 
 async def test_a_still_running_member_defers(tmp_path):
     from rsched.daemon.lane_runs import LaneRunManager
-    server = _server(tmp_path)
+    server = tmp_server(tmp_path)
     da = _routine(server, "a")
     lane = lanes.create(server.routines_home, name="G", members=[m("a")])
     lane_runs.arm(server.routines_home, lane, default_on_failure="stop")
@@ -240,7 +233,7 @@ async def test_a_still_running_member_defers(tmp_path):
 
 async def test_draining_defers_the_next_fire(tmp_path):
     from rsched.daemon.lane_runs import LaneRunManager
-    server = _server(tmp_path)
+    server = tmp_server(tmp_path)
     _routine(server, "a")
     lane = lanes.create(server.routines_home, name="G", members=[m("a")])
     lane_runs.arm(server.routines_home, lane, default_on_failure="stop")
@@ -255,20 +248,12 @@ async def test_draining_defers_the_next_fire(tmp_path):
 # -- F316: chain health events -------------------------------------------------------------
 
 
-def _health_events(server):
-    import json
-    p = server.routines_home / ".control" / "health-events.jsonl"
-    if not p.exists():
-        return []
-    return [json.loads(x) for x in p.read_text(encoding="utf-8").splitlines() if x.strip()]
-
-
 async def test_chain_end_emits_a_done_health_event(tmp_path):
     """F316: a chain's end writes lane_chain_done — the periodic heartbeat whose ABSENCE
     is how an audit detects a silently starved lane (the in-flight file is consumed at
     finalize, so this event is the chain's only durable record)."""
     from rsched.daemon.lane_runs import LaneRunManager
-    server = _server(tmp_path)
+    server = tmp_server(tmp_path)
     da = _routine(server, "a")
     db = _routine(server, "b")
     lane = lanes.create(server.routines_home, name="Nightly", members=[m("a"), m("b")],
@@ -285,7 +270,7 @@ async def test_chain_end_emits_a_done_health_event(tmp_path):
     mk_run(db, "20260717-120000", "finished", outcome="failed")
     runner.active.clear()
     await mgr.tick(catalog)                                     # collects b → chain done
-    evs = [e for e in _health_events(server) if e["event"] == "lane_chain_done"]
+    evs = health_events(server.routines_home, event="lane_chain_done")
     assert len(evs) == 1
     ev = evs[0]
     assert ev["routine"] == lane["id"] and ev["run_id"].startswith("lr-")
@@ -298,7 +283,7 @@ async def test_a_switched_off_member_is_not_counted_not_ok(tmp_path):
     failure: the lane's heartbeat must not read "1 not-ok (x)" every day for a routine that
     is simply off — that is the line an audit reads first, and it was wrong daily."""
     from rsched.daemon.lane_runs import LaneRunManager
-    server = _server(tmp_path)
+    server = tmp_server(tmp_path)
     da = _routine(server, "a")
     _routine(server, "off", enabled=False)
     lane = lanes.create(server.routines_home, name="Daily", members=[m("a"), m("off")],
@@ -313,7 +298,7 @@ async def test_a_switched_off_member_is_not_counted_not_ok(tmp_path):
     await mgr.tick(catalog)                                     # collects a
     await mgr.tick(catalog)                                     # skips off (cursor past the end)
     await mgr.tick(catalog)                                     # → chain done
-    evs = [e for e in _health_events(server) if e["event"] == "lane_chain_done"]
+    evs = health_events(server.routines_home, event="lane_chain_done")
     assert len(evs) == 1
     assert "Daily: 2 member runs, 0 not-ok," in evs[0]["detail"]
 
@@ -321,7 +306,7 @@ async def test_a_switched_off_member_is_not_counted_not_ok(tmp_path):
 async def test_stop_emits_a_stopped_health_event(tmp_path):
     """A policy stop is lane_chain_stopped, never lane_chain_done."""
     from rsched.daemon.lane_runs import LaneRunManager
-    server = _server(tmp_path)
+    server = tmp_server(tmp_path)
     da = _routine(server, "a")
     _routine(server, "b")
     lane = lanes.create(server.routines_home, name="G", members=[m("a"), m("b")],
@@ -334,7 +319,7 @@ async def test_stop_emits_a_stopped_health_event(tmp_path):
     mk_run(da, "20260717-120000", "finished", outcome="failed")
     runner.active.clear()
     await mgr.tick(catalog)                                     # collects failure → stop
-    evs = _health_events(server)
+    evs = health_events(server.routines_home)
     stopped = [e for e in evs if e["event"] == "lane_chain_stopped"]
     assert len(stopped) == 1 and "1 not-ok (a)" in stopped[0]["detail"]
     assert not [e for e in evs if e["event"] == "lane_chain_done"]
@@ -343,7 +328,7 @@ async def test_stop_emits_a_stopped_health_event(tmp_path):
 async def test_skipped_member_emits_a_health_event(tmp_path):
     """A missing/disabled member is visible to audit consumers, not only to rec['log']."""
     from rsched.daemon.lane_runs import LaneRunManager
-    server = _server(tmp_path)
+    server = tmp_server(tmp_path)
     _routine(server, "a")
     lane = lanes.create(server.routines_home, name="G", members=[m("ghost"), m("a")],
                         on_failure="continue")
@@ -351,8 +336,7 @@ async def test_skipped_member_emits_a_health_event(tmp_path):
     runner = FakeRunner()
     mgr = LaneRunManager(server, runner)
     await mgr.tick(registry.scan(server))                       # skips ghost
-    evs = [e for e in _health_events(server)
-           if e["event"] == "lane_chain_member_skipped"]
+    evs = health_events(server.routines_home, event="lane_chain_member_skipped")
     assert len(evs) == 1
     assert evs[0]["routine"] == "ghost" and evs[0]["run_id"] == ""
     assert "chain continues" in evs[0]["detail"]
@@ -360,7 +344,7 @@ async def test_skipped_member_emits_a_health_event(tmp_path):
 
 async def test_gate_skipped_member_advances_under_stop_policy(tmp_path):
     from rsched.daemon.lane_runs import LaneRunManager
-    server = _server(tmp_path)
+    server = tmp_server(tmp_path)
     da = _routine(server, "a")
     _routine(server, "b")
     lane = lanes.create(server.routines_home, name="Gate", members=[m("a"), m("b")])
@@ -393,7 +377,7 @@ async def test_a_pending_restart_holds_the_next_member_when_nothing_else_runs(tm
     """
     from rsched.daemon import restart
     from rsched.daemon.lane_runs import LaneRunManager
-    server = _server(tmp_path)
+    server = tmp_server(tmp_path)
     da = _routine(server, "a")
     _routine(server, "b")
     lane = lanes.create(server.routines_home, name="Nightly", members=[m("a"), m("b")],
@@ -427,7 +411,7 @@ async def test_a_pending_restart_does_not_hold_a_chain_while_a_person_is_running
     conversation parked on the user, which defers the restart with no deadline at all."""
     from rsched.daemon import restart
     from rsched.daemon.lane_runs import LaneRunManager
-    server = _server(tmp_path)
+    server = tmp_server(tmp_path)
     _routine(server, "a")
     lane = lanes.create(server.routines_home, name="Nightly", members=[m("a")],
                         on_failure="continue")

@@ -14,6 +14,7 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 
+from conftest import mk_run
 from rsched.daemon.events import EventBus
 from rsched.paths import atomic_write_json
 from rsched.web import sse
@@ -28,15 +29,10 @@ def _append_line(path, obj):
 
 
 def _mk_run(routines, slug, ts, state):
-    run_dir = routines / slug / "runs" / ts
-    run_dir.mkdir(parents=True, exist_ok=True)
-    atomic_write_json(run_dir / "status.json",
-                      {"run_id": f"{slug}:{ts}", "state": state, "turn": 1})
-    (run_dir / "transcript.jsonl").write_text(
-        json.dumps({"type": "header", "run_id": f"{slug}:{ts}"}) + "\n"
-        + json.dumps({"ts": "t", "type": "assistant_action", "turn": 1,
-                      "payload": {"say": "s", "kind": "util", "name": "gu-list"}}) + "\n")
-    return run_dir
+    return mk_run(routines / slug, ts, state, turn=1, transcript=[
+        {"type": "header", "run_id": f"{slug}:{ts}"},
+        {"ts": "t", "type": "assistant_action", "turn": 1,
+         "payload": {"say": "s", "kind": "util", "name": "gu-list"}}])
 
 
 def _label(item: dict) -> tuple:

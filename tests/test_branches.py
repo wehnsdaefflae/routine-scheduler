@@ -13,18 +13,12 @@ from pathlib import Path
 
 import pytest
 import yaml
-from fastapi.testclient import TestClient
 
-from conftest import make_test_server
+from conftest import authed_client, seeded_server
 from rsched import branches
 from rsched import conversations as conv_mod
 from rsched.engine import inbox
 from rsched.paths import atomic_write_json
-from rsched.web.app import create_app
-
-REPO = Path(__file__).resolve().parents[1]
-SEED = REPO / "library-seed"
-TOKEN = "test-token"
 
 # A tiny but REAL transcript: header, two complete turns, a finish. Turn 1 is the fork point
 # used throughout — everything after it belongs to the parent alone.
@@ -43,12 +37,7 @@ EVENTS = [
 
 @pytest.fixture
 def server(tmp_path):
-    lib = tmp_path / "library"
-    shutil.copytree(SEED / "workflows", lib / "workflows")
-    shutil.copytree(SEED / "rules", lib / "rules")
-    shutil.copytree(SEED / "permissions", lib / "permissions")
-    return make_test_server(tmp_path, conversations_home=str(tmp_path / "conversations"),
-                            libraries_home=str(lib))
+    return seeded_server(tmp_path)
 
 
 def _parent(server, *, slug="c-p"):
@@ -287,9 +276,7 @@ def test_handback_refuses_when_the_parent_is_gone(server):
 
 @pytest.fixture
 def client(server):
-    app = create_app(server, with_scheduler=False)
-    with TestClient(app) as c:
-        c.headers["Authorization"] = f"Bearer {TOKEN}"
+    with authed_client(server) as c:
         yield c
 
 

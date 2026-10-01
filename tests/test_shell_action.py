@@ -18,35 +18,24 @@ from pathlib import Path
 import jsonschema
 import pytest
 
+from helpers import run_context, server_config
 from rsched import utils_run
-from rsched.config import ServerConfig, load_routine
 from rsched.engine.actions import validate_action
 from rsched.engine.actionschema import ACTION_SCHEMA
-from rsched.engine.budgets_config import Budgets
 from rsched.engine.executor import dispatch
 from rsched.engine.kindsurface import effective_kinds, schema_for_kinds
 from rsched.engine.observations import format_observation
-from rsched.engine.run_context import RunContext
-from rsched.engine.transcript import Transcript
 from rsched.grantpolicy import GrantPolicy
 from rsched.grants import GATED_KINDS
 
 
 @pytest.fixture
 def shell_ctx(make_routine, tmp_path):
-    routine = make_routine(slug="sheller")
-    cfg, _problems = load_routine(routine)
-    run_dir = routine / "runs" / "20260903-120000"
-    run_dir.mkdir(parents=True)
-    server = ServerConfig()
-    server.libraries_home = tmp_path / "libraries"
+    # the jail's INPUTS are pinned separately; this exercises exec
+    server = server_config(libraries_home=tmp_path / "libraries", sandbox="off")
     (server.libraries_home / "utils").mkdir(parents=True)
-    server.sandbox = "off"      # the jail's INPUTS are pinned separately; this exercises exec
-    ctx = RunContext(routine=cfg, server=server, registry=None, run_ts="20260903-120000",
-                     run_dir=run_dir, transcript=Transcript(run_dir / "transcript.jsonl"),
-                     budgets=Budgets.from_config(cfg.budgets))
-    ctx.grants = GrantPolicy(actions=frozenset({"shell"}))
-    return ctx
+    return run_context(make_routine(slug="sheller"), "20260903-120000", server=server,
+                       grants=GrantPolicy(actions=frozenset({"shell"})))
 
 
 # -- the contract -----------------------------------------------------------------------

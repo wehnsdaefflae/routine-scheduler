@@ -10,34 +10,20 @@ import json
 from types import SimpleNamespace
 
 from conftest import finish, write_file
-from rsched.config import ServerConfig
+from helpers import health_events, server_for
 from rsched.engine.runtime import run_routine
 
 TS = "20260708-070000"
-
-
-def _server(routine_dir, tmp_path) -> ServerConfig:
-    s = ServerConfig()
-    s.routines_home = tmp_path / "routines"
-    s.libraries_home = tmp_path / "test-library"
-    return s
-
-
-def _health(tmp_path) -> list[dict]:
-    path = tmp_path / "routines" / ".control" / "health-events.jsonl"
-    if not path.exists():
-        return []
-    return [json.loads(ln) for ln in path.read_text(encoding="utf-8").splitlines() if ln.strip()]
 
 
 def test_budget_exhausted_names_the_budget_that_spent_the_run(make_routine, scripted, tmp_path):
     d = make_routine(slug="whichbudget", budgets={"max_turns": 3})
     scripted([*[write_file(f"state/p{i}.txt", say=f"Step {i}.") for i in range(3)],
               finish("partial", "three files in, resume at p3")])
-    status, run_dir = run_routine(d, _server(d, tmp_path), run_ts=TS)
+    status, run_dir = run_routine(d, server_for(d), run_ts=TS)
 
     assert status == "partial"
-    rows = [e for e in _health(tmp_path) if e["event"] == "budget_exhausted"]
+    rows = health_events(tmp_path / "routines", event="budget_exhausted")
     assert len(rows) == 1
     assert rows[0]["resource"] == "turns" and rows[0]["limit"] == 3
     assert rows[0]["status"] == "partial"
@@ -55,10 +41,10 @@ def test_the_reserved_turn_is_on_the_record_even_when_the_run_finishes_ok(
     d = make_routine(slug="okbudget", budgets={"max_turns": 2})
     scripted([*[write_file(f"state/p{i}.txt", say=f"Step {i}.") for i in range(2)],
               finish("ok", "everything asked for is done")])
-    status, _run_dir = run_routine(d, _server(d, tmp_path), run_ts=TS)
+    status, _run_dir = run_routine(d, server_for(d), run_ts=TS)
 
     assert status == "ok"
-    rows = [e for e in _health(tmp_path) if e["event"] == "budget_exhausted"]
+    rows = health_events(tmp_path / "routines", event="budget_exhausted")
     assert len(rows) == 1 and rows[0]["status"] == "ok" and rows[0]["resource"] == "turns"
 
 
@@ -69,7 +55,7 @@ def test_the_violation_is_a_transcript_event_not_only_a_message(make_routine, sc
     d = make_routine(slug="budevent", budgets={"max_turns": 2})
     scripted([*[write_file(f"state/p{i}.txt", say=f"Step {i}.") for i in range(2)],
               finish("partial", "stopped")])
-    _status, run_dir = run_routine(d, _server(d, tmp_path), run_ts=TS)
+    _status, run_dir = run_routine(d, server_for(d), run_ts=TS)
 
     events, _ = read_events(run_dir / "transcript.jsonl")
     notes = [e["payload"]["text"] for e in events
@@ -90,7 +76,7 @@ def test_a_non_finish_on_the_reserved_turn_is_not_executed(make_routine, scripte
     d = make_routine(slug="reservedkind", budgets={"max_turns": 2})
     ep = scripted([*[write_file(f"state/p{i}.txt", say=f"Step {i}.") for i in range(2)],
                    write_file("state/after-the-wall.txt", say="One more anyway.")])
-    status, run_dir = run_routine(d, _server(d, tmp_path), run_ts=TS)
+    status, run_dir = run_routine(d, server_for(d), run_ts=TS)
 
     assert status == "partial"
     assert not (d / "state" / "after-the-wall.txt").exists()

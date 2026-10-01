@@ -5,11 +5,8 @@ grants-aware repair route (fix-it-yourself vs escalate), never a silent dead end
 
 import pytest
 
-from rsched.config import ServerConfig, load_routine
-from rsched.engine.budgets_config import Budgets
+from helpers import run_context, server_config
 from rsched.engine.executor import dispatch
-from rsched.engine.run_context import RunContext
-from rsched.engine.transcript import Transcript
 from rsched.grantpolicy import GrantPolicy
 
 ECHOER = '''"""echoer — prints its arguments back.
@@ -59,15 +56,8 @@ def util_ctx(make_routine, tmp_path, monkeypatch):
         d = home / "utils" / name          # utils live in the library's utils/ subtree
         d.mkdir(parents=True)
         (d / "main.py").write_text(body, encoding="utf-8")
-    routine = make_routine(slug="utiler")
-    cfg, _problems = load_routine(routine)
-    run_dir = routine / "runs" / "20260716-210000"
-    run_dir.mkdir(parents=True)
-    server = ServerConfig()
-    server.libraries_home = home
-    return RunContext(routine=cfg, server=server, registry=None, run_ts="20260716-210000",
-                      run_dir=run_dir, transcript=Transcript(run_dir / "transcript.jsonl"),
-                      budgets=Budgets.from_config(cfg.budgets))
+    return run_context(make_routine(slug="utiler"), "20260716-210000",
+                       server=server_config(libraries_home=home))
 
 
 def test_util_runs_for_real_and_captures_stdout(util_ctx):

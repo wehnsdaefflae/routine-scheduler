@@ -9,8 +9,10 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import sys
 import threading
+from contextlib import contextmanager
 from pathlib import Path
 
 # The app lifespan launches a pdoc docs build in a thread that shutdown can only AWAIT —
@@ -34,6 +36,11 @@ from production_guard import _no_production_writes  # noqa: F401
 from rsched.config import ModelRef, ServerConfig
 from rsched.endpoints import EndpointRegistry
 from rsched.endpoints.base import Completion
+
+# The shared builders are ordinary modules the tests import, and pytest rewrites the asserts
+# of test modules and conftests only: registered here, before any test imports them, a
+# failing assert inside a builder still reports its operands like one written in the test.
+pytest.register_assert_rewrite("helpers", "ui.helpers")
 
 
 def _static_is_dirty() -> bool:
@@ -347,19 +354,40 @@ def make_test_server(tmp_path, **overrides):
     return server
 
 
+#: The repo's own library seed: the real workflows, rules, permissions and playbooks.
+LIBRARY_SEED = Path(__file__).resolve().parents[1] / "library-seed"
+
+
+def seeded_server(tmp_path, kinds=("workflows", "rules", "permissions")):
+    """make_test_server over a library holding the REAL seed's `kinds` (copied, no git) and a
+    tmp conversations home — what scaffolding a routine or a conversation reads."""
+    lib = tmp_path / "library"
+    for kind in kinds:
+        shutil.copytree(LIBRARY_SEED / kind, lib / kind)
+    return make_test_server(tmp_path, conversations_home=str(tmp_path / "conversations"),
+                            libraries_home=str(lib))
+
+
+@contextmanager
+def authed_client(server, token=TEST_TOKEN):
+    """A TestClient over a hermetic app for `server` — no scheduler, its lifespan entered —
+    that sends the bearer `token`: the client behind api_client and every web-API file that
+    builds a server of its own."""
+    from fastapi.testclient import TestClient
+
+    from rsched.web.app import create_app
+
+    with TestClient(create_app(server, with_scheduler=False)) as c:
+        c.headers["Authorization"] = f"Bearer {token}"
+        yield c
+
+
 @pytest.fixture
 def api_client(tmp_path):
     """(TestClient, tmp_path) over a hermetic app: tmp homes, bearer auth TEST_TOKEN, a dummy
     endpoint + one-model catalog as the system model, no scheduler. The shared base for the
     web-API test files — each layers its own routines/monkeypatches on top."""
-    from fastapi.testclient import TestClient
-
-    from rsched.web.app import create_app
-
-    server = make_test_server(tmp_path)
-    app = create_app(server, with_scheduler=False)
-    with TestClient(app) as c:
-        c.headers["Authorization"] = f"Bearer {TEST_TOKEN}"
+    with authed_client(make_test_server(tmp_path)) as c:
         yield c, tmp_path
 
 
@@ -518,7 +546,8 @@ def git_in(d, *args, date: str = "", check: bool = True):
 def mk_run(routine_dir: Path, ts: str, state: str, *, turn: int = 3, pid: int | None = None,
            usage: dict | None = None, elapsed_s: float | None = None, question=None,
            summary: str | None = None, outcome: str | None = None, model: str | None = None,
-           updated: str | None = None, transcript: list[dict] | None = None) -> Path:
+           started: str | None = None, updated: str | None = None,
+           transcript: list[dict] | None = None) -> Path:
     """One run-dir factory: runs/<ts>/status.json plus optional result.md / transcript
     lines. Callers pass only the fields their assertions need."""
     from rsched.paths import atomic_write_json
@@ -538,6 +567,8 @@ def mk_run(routine_dir: Path, ts: str, state: str, *, turn: int = 3, pid: int | 
         st["outcome"] = outcome
     if model is not None:
         st["model"] = model
+    if started is not None:
+        st["started"] = started
     if updated is not None:
         st["updated"] = updated
     atomic_write_json(run_dir / "status.json", st)
@@ -547,6 +578,17 @@ def mk_run(routine_dir: Path, ts: str, state: str, *, turn: int = 3, pid: int | 
         (run_dir / "transcript.jsonl").write_text(
             "".join(json.dumps(e) + "\n" for e in transcript), encoding="utf-8")
     return run_dir
+
+
+def usage_run(routine_dir: Path, ts: str, state: str, *, tin: int = 0, tout: int = 0,
+              cost: float | None = None, elapsed_s: float = 0, model: str | None = None,
+              cached: int = 0, cache_write: int = 0) -> Path:
+    """mk_run with the token usage a stats reader folds: input and output always, the cost
+    and both cache halves only when given."""
+    usage = {"in": tin, "out": tout, **({"cost": cost} if cost is not None else {}),
+             **({"cached_in": cached} if cached else {}),
+             **({"cache_write": cache_write} if cache_write else {})}
+    return mk_run(routine_dir, ts, state, usage=usage, elapsed_s=elapsed_s, model=model or None)
 
 
 def hammer(work, threads: int = 6) -> list[BaseException]:
@@ -572,3 +614,71 @@ def hammer(work, threads: int = 6) -> list[BaseException]:
     finally:
         sys.setswitchinterval(interval)
     return errors
+
+
+# ---- fixtures more than one file requests ------------------------------------------------------
+
+
+@pytest.fixture
+def setup_gate(tmp_path, monkeypatch):
+    """A routine whose run gate is one script check, on an isolated home, and the Runner that
+    admits it: (cfg, server, runner). The admission tests write the script themselves."""
+    from rsched.config import RoutineConfig
+    from rsched.config.routine import RunGateConfig
+    from rsched.daemon.events import EventBus
+    from rsched.daemon.runner import Runner
+
+    root = tmp_path / "routines" / "gate-test"
+    (root / "scripts").mkdir(parents=True)
+    server = ServerConfig(routines_home=root.parent, libraries_home=tmp_path / "lib",
+                          conversations_home=tmp_path / "conversations",
+                          background_home=tmp_path / "background", sandbox="strict")
+    # 60s, not 8: this is the deadline for tests that are not ABOUT the deadline, and a gate
+    # child is a fresh interpreter importing rsched. Measured under six concurrent runs of one
+    # of them, a single gate takes ~7s of a healthy box — one second of headroom, which the
+    # release gate's fifteen workers spend. `test_declared_optional_and_granted_secrets[False]`
+    # failed that way on 2026-09-23 and passed alone, the shape of a flake nobody diagnoses.
+    # The tests that DO exercise the deadline set their own (1s, 2s), so nothing here
+    # weakens them; a genuinely hung gate still trips this.
+    cfg = RoutineConfig(slug=root.name, dir=root,
+                        run_gate=RunGateConfig(enabled=True, timeout_s=60,
+                                               checks=[{"kind": "script"}]))
+    monkeypatch.setenv("RSCHED_CONFIG", str(tmp_path / "config.yaml"))
+    return cfg, server, Runner(server, EventBus())
+
+
+@pytest.fixture
+def cli_server(tmp_path, monkeypatch):
+    """Tmp homes wired into every cmd_* via the module's load_server_config seam."""
+    from rsched import cli
+    from rsched.config import load_server_config
+
+    lib = tmp_path / "library"
+    for kind in ("workflows", "rules", "permissions"):
+        shutil.copytree(LIBRARY_SEED / kind, lib / kind)
+    cfg_path = tmp_path / "config.yaml"
+    cfg_path.write_text(yaml.safe_dump({
+        "token": "t", "routines_home": str(tmp_path / "routines"),
+        "libraries_home": str(lib)}), encoding="utf-8")
+    server, problems = load_server_config(cfg_path)
+    assert not problems
+    (tmp_path / "routines").mkdir(exist_ok=True)
+    monkeypatch.setattr(cli, "load_server_config", lambda: (server, []))
+    return server
+
+
+@pytest.fixture
+def empty_store(monkeypatch):
+    """No secrets in the store unless a test says otherwise — the readers read the live one."""
+    monkeypatch.setattr("rsched.secrets.load_secrets", dict)
+
+
+@pytest.fixture
+def reset_llm_sink():
+    """The LLM-task sink is process-global (one engine subprocess, one sink); a test that sets
+    one must not hand it to the next."""
+    from rsched.endpoints.instrument import set_sink
+
+    set_sink(None)
+    yield
+    set_sink(None)

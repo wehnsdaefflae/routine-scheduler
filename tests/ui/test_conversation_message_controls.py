@@ -16,14 +16,7 @@ import json
 
 from playwright.sync_api import expect
 
-
-def _start_conversation(ui, ui_page):
-    ui_page.goto(f"{ui.url}/#/conversations")
-    ui_page.locator(".conv-new textarea").fill("Plan the trip.")
-    ui_page.get_by_role("button", name="start conversation").click()
-    ui_page.wait_for_url("**/conversations/**")
-    slug = ui_page.url.rsplit("/", 1)[-1]
-    return slug, ui.conversations / slug
+from .helpers import start_conversation
 
 
 def _queued(conv_dir):
@@ -39,7 +32,7 @@ def _queued(conv_dir):
 def test_a_queued_message_can_be_revised_from_its_own_bubble(ui, ui_page):
     """The revised text replaces the old one in the SAME file, so the message keeps its
     place in the queue and the model reads one message, not two."""
-    _slug, conv_dir = _start_conversation(ui, ui_page)
+    _slug, conv_dir = start_conversation(ui, ui_page, "Plan the trip.")
 
     composer = ui_page.locator(".conv-view textarea").last
     composer.fill("book teh 9:40 train")
@@ -66,7 +59,7 @@ def test_a_queued_message_can_be_revised_from_its_own_bubble(ui, ui_page):
 
 
 def test_a_queued_message_can_be_withdrawn_before_the_model_reads_it(ui, ui_page):
-    _slug, conv_dir = _start_conversation(ui, ui_page)
+    _slug, conv_dir = start_conversation(ui, ui_page, "Plan the trip.")
 
     composer = ui_page.locator(".conv-view textarea").last
     composer.fill("never mind this one")

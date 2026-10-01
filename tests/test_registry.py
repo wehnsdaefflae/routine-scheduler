@@ -4,18 +4,13 @@ from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from conftest import mk_run
+from helpers import tmp_server
 from rsched import firetimes, registry
-from rsched.config import ServerConfig, load_routine
+from rsched.config import load_routine
 from rsched.engine.transcript import read_events
 from rsched.paths import atomic_write_json
 
 BERLIN = ZoneInfo("Europe/Berlin")
-
-
-def _server(tmp_path) -> ServerConfig:
-    s = ServerConfig()
-    s.routines_home = tmp_path / "routines"
-    return s
 
 
 def _mk_run(d, ts, state, summary=""):
@@ -32,7 +27,7 @@ def test_info_answers_for_one_dir_exactly_as_scan_does(make_routine, tmp_path):
     (tmp_path / "routines" / "broken").mkdir()
     (tmp_path / "routines" / "broken" / "routine.yaml").write_text(":::not yaml{{{")
     _mk_run(d, "20260706-070000", "finished", "did the thing")
-    server = _server(tmp_path)
+    server = tmp_server(tmp_path, create=False)
     catalog = registry.scan(server)
 
     for slug in ("alpha", "beta", "broken"):
@@ -49,7 +44,7 @@ def test_info_never_joins_a_path_it_was_handed(tmp_path, make_routine):
     old dict lookup could not be walked out of. A name that is not a slug takes the full
     scan, which builds every path itself."""
     make_routine(slug="alpha")
-    server = _server(tmp_path)
+    server = tmp_server(tmp_path, create=False)
     (tmp_path / "routine.yaml").write_text("slug: escaped\n")
     for hostile in ("..", "../..", ".control", "Alpha/../alpha"):
         assert registry.info(server, server.routines_home, hostile) is None
@@ -64,7 +59,7 @@ def test_info_falls_back_when_the_file_names_a_different_slug(tmp_path, make_rou
     cfg = yaml.safe_load((d / "routine.yaml").read_text(encoding="utf-8"))
     cfg["slug"] = "renamed"
     (d / "routine.yaml").write_text(yaml.safe_dump(cfg), encoding="utf-8")
-    server = _server(tmp_path)
+    server = tmp_server(tmp_path, create=False)
     assert registry.info(server, server.routines_home, "alpha") is None
     found = registry.info(server, server.routines_home, "renamed")
     assert found is not None and found.cfg.dir == d
@@ -80,7 +75,7 @@ def test_scan_catalog(make_routine, tmp_path):
     _mk_run(d, "20260706-070000", "finished", "did the thing")
     _mk_run(d, "20260707-070000", "running")
 
-    catalog = registry.scan(_server(tmp_path))
+    catalog = registry.scan(tmp_server(tmp_path, create=False))
     assert set(catalog) == {"alpha", "beta", "broken"}
     assert catalog["broken"].cfg.enabled is False and catalog["broken"].problems
     alpha = catalog["alpha"]
@@ -160,7 +155,7 @@ def test_parse_run_ts_reads_utc():
 def test_scan_memo_freshness_and_isolation(make_routine, tmp_path):
     d = make_routine(slug="memo")
     run_dir = _mk_run(d, "20260707-070000", "running")
-    server = _server(tmp_path)
+    server = tmp_server(tmp_path, create=False)
 
     first = registry.scan(server)["memo"]
     # returned objects are copies — mutating them must not poison later scans
@@ -181,7 +176,7 @@ def test_scan_memo_freshness_and_isolation(make_routine, tmp_path):
 
 def test_scan_memo_sees_config_and_question_changes(make_routine, tmp_path):
     d = make_routine(slug="memoq")
-    server = _server(tmp_path)
+    server = tmp_server(tmp_path, create=False)
     assert registry.scan(server)["memoq"].open_questions == []
 
     # a question appears → listed; its answer arrives in inbox/ → flagged answered
@@ -205,7 +200,7 @@ def test_scan_memo_sees_the_recipe_appear_and_vanish(make_routine, tmp_path):
     after the first scan kept reading "no main.md" until an unrelated config edit moved the
     fingerprint — on the routine page, for as long as the daemon lived."""
     d = make_routine(slug="recipe")
-    server = _server(tmp_path)
+    server = tmp_server(tmp_path, create=False)
 
     def missing() -> list[str]:
         return [p for p in registry.scan(server)["recipe"].problems if "main.md" in p]
@@ -224,7 +219,7 @@ def test_scan_memo_prunes_deleted_dirs(make_routine, tmp_path):
 
     d = make_routine(slug="gone")
     _mk_run(d, "20260707-070000", "finished")
-    server = _server(tmp_path)
+    server = tmp_server(tmp_path, create=False)
     registry.scan(server)
     assert str(d) in registry._cfg_memo
     sh.rmtree(d)

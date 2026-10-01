@@ -8,9 +8,7 @@ from playwright.sync_api import expect
 
 from rsched import schedule_once
 
-
-def _toast(page):
-    return page.locator("#toast:not([hidden])")
+from .helpers import open_section
 
 
 def _seed(ui, slug="uir", *, reason="seeded check"):
@@ -22,10 +20,7 @@ def _seed(ui, slug="uir", *, reason="seeded check"):
 def _open(ui, ui_page):
     """The routine page with Schedule once — in Schedule & gate's "more" — unfolded. Arming a
     one-shot is an ACTION rather than a setting, so it takes effect on its own button."""
-    ui_page.goto(f"{ui.url}/#/routine/uir")
-    ui_page.wait_for_selector("#sec-schedule-once", state="attached")
-    ui_page.evaluate(
-        "() => document.getElementById('sec-schedule-once').closest('details').open = true")
+    open_section(ui, ui_page, "sec-schedule-once")
 
 
 def test_schedule_once_card_renders_and_cancels(ui, ui_page):

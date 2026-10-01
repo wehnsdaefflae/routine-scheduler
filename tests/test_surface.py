@@ -24,6 +24,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from helpers import write_util
 from rsched.readmodels import remedies as remedies_mod
 from rsched.readmodels import surface as surface_mod
 from rsched.readmodels import surface_caps, surface_needs, surface_nodes, surface_schedule
@@ -60,26 +61,12 @@ def _cfg(tmp_path: Path, **over) -> SimpleNamespace:
     return SimpleNamespace(**base)
 
 
-def _util(server, name, *, secrets="(none)", fs="none", calls="(none)", net="none") -> None:
-    d = server.libraries_home / "utils" / name
-    d.mkdir(parents=True, exist_ok=True)
-    (d / "main.py").write_text(
-        f'"""{name} — t.\n\nusage: gu {name}\ncalls: {calls}\ntags: t\n'
-        f'secrets: {secrets}\nnet: {net}\nfs: {fs}\n"""\n', encoding="utf-8")
-
-
 def _doc(server, kind, slug, body: str) -> None:
     (server.libraries_home / kind / f"{slug}.md").write_text(body, encoding="utf-8")
 
 
 def _by_id(surface, eid):
     return next((n for n in surface["nodes"] if n["id"] == eid), None)
-
-
-@pytest.fixture
-def empty_store(monkeypatch):
-    """No secrets in the store unless a test says otherwise — the surface reads the live one."""
-    monkeypatch.setattr("rsched.secrets.load_secrets", dict)
 
 
 def test_the_soft_edge_is_parsed_once_per_library_change(tmp_path, monkeypatch):
@@ -113,7 +100,7 @@ def test_a_utils_private_store_with_no_covering_grant_blocks(tmp_path):
     """The voice-model-trainer case: a routine holds a messenger whose session directory — the
     credential itself — no granted root covers, so the util cannot run at all."""
     server = _server(tmp_path)
-    _util(server, "signal", fs="roots, rw /srv/signal-sessions")
+    write_util(server, "signal", fs="roots, rw /srv/signal-sessions")
     cfg = _cfg(tmp_path, capabilities={"utils": ["signal"]})
     surface = routine_surface(server, cfg)
     node = _by_id(surface, "fs-write:/srv/signal-sessions")
@@ -132,7 +119,7 @@ def test_an_unset_env_var_in_a_declaration_is_not_a_gap(tmp_path, monkeypatch):
     so the unresolved one must not be reported as a missing root."""
     monkeypatch.delenv("NOT_SET_ANYWHERE", raising=False)
     server = _server(tmp_path)
-    _util(server, "sig", fs="rw $NOT_SET_ANYWHERE, rw /srv/store")
+    write_util(server, "sig", fs="rw $NOT_SET_ANYWHERE, rw /srv/store")
     surface = routine_surface(server, _cfg(tmp_path, capabilities={"utils": ["sig"]},
                                            fs_write_roots=["/srv/store"]))
     assert not [n for n in surface["nodes"] if "$" in n["id"]]
@@ -148,7 +135,7 @@ def test_a_declared_secret_reports_what_its_state_will_cost(tmp_path, monkeypatc
                                                             severity, needle):
     monkeypatch.setattr("rsched.secrets.load_secrets", lambda: {"FOO_TOKEN": "x"})
     server = _server(tmp_path)
-    _util(server, "poster", secrets="FOO_TOKEN")
+    write_util(server, "poster", secrets="FOO_TOKEN")
     grants = {} if grant is None else {"secret:FOO_TOKEN": grant}
     surface = routine_surface(server, _cfg(tmp_path, capabilities={"utils": ["poster"]},
                                            grants=grants))
@@ -160,7 +147,7 @@ def test_a_declared_secret_reports_what_its_state_will_cost(tmp_path, monkeypatc
 @pytest.mark.usefixtures("empty_store")
 def test_a_secret_absent_from_the_store_blocks(tmp_path):
     server = _server(tmp_path)
-    _util(server, "poster", secrets="MISSING_TOKEN")
+    write_util(server, "poster", secrets="MISSING_TOKEN")
     surface = routine_surface(server, _cfg(tmp_path, capabilities={"utils": ["poster"]}))
     assert _by_id(surface, "secret:MISSING_TOKEN")["severity"] == BLOCKS
 
@@ -171,8 +158,8 @@ def test_optional_and_engine_injected_secrets_are_not_reported(tmp_path):
     BINDING rather than the store — reporting either as a missing credential would be noise
     that trains the operator to ignore the panel."""
     server = _server(tmp_path)
-    _util(server, "tg", secrets="TELEGRAM_2FA_PASSWORD?")
-    _util(server, "remote", secrets="RSCHED_MACHINES, RSCHED_MACHINE_KEYS")
+    write_util(server, "tg", secrets="TELEGRAM_2FA_PASSWORD?")
+    write_util(server, "remote", secrets="RSCHED_MACHINES, RSCHED_MACHINE_KEYS")
     surface = routine_surface(server, _cfg(tmp_path,
                                            capabilities={"utils": ["tg", "remote"]}))
     assert [n for n in surface["nodes"] if n["id"].startswith("secret:")] == []
@@ -181,8 +168,8 @@ def test_optional_and_engine_injected_secrets_are_not_reported(tmp_path):
 @pytest.mark.usefixtures("empty_store")
 def test_secrets_resolve_transitively_over_calls(tmp_path):
     server = _server(tmp_path)
-    _util(server, "leaf", secrets="LEAF_TOKEN")
-    _util(server, "top", calls="leaf")
+    write_util(server, "leaf", secrets="LEAF_TOKEN")
+    write_util(server, "top", calls="leaf")
     surface = routine_surface(server, _cfg(tmp_path, capabilities={"utils": ["top"]}))
     node = _by_id(surface, "secret:LEAF_TOKEN")
     # the HELD util is named, not the declarer: it is the one the operator granted
@@ -194,7 +181,7 @@ def test_a_held_doc_whose_capability_is_off_fails_closed(tmp_path):
     """Enforcement reads capabilities ONLY, so a doc held without its capability is not a
     cosmetic inconsistency — every call it teaches is rejected."""
     server = _server(tmp_path)
-    _util(server, "discord")
+    write_util(server, "discord")
     _doc(server, "permissions", "messaging-discord",
          "---\ntags: [a]\nrequires:\n  utils: [discord]\n---\n# permission: x — y\n")
     surface = routine_surface(server, _cfg(tmp_path, permissions=["messaging-discord"]))
@@ -253,7 +240,7 @@ def test_an_expected_root_written_with_a_tilde_is_met_by_the_routines_own_root(t
 @pytest.mark.usefixtures("empty_store")
 def test_a_permission_expecting_a_machine_reports_the_unbound_case(tmp_path):
     server = _server(tmp_path)
-    _util(server, "remote")
+    write_util(server, "remote")
     _doc(server, "permissions", "remote-machines",
          "---\ntags: [a]\nrequires:\n  utils: [remote]\nexpects:\n  machine: ['*']\n---\n"
          "# permission: x — y\n")
@@ -288,7 +275,7 @@ def test_recipe_authoring_is_a_note_not_a_problem(tmp_path):
 @pytest.mark.usefixtures("empty_store")
 def test_surface_lines_renders_only_unmet_rows_worst_first(tmp_path):
     server = _server(tmp_path)
-    _util(server, "poster", secrets="GONE_TOKEN")
+    write_util(server, "poster", secrets="GONE_TOKEN")
     _doc(server, "rules", "status-page",
          "---\ntags: [a, b, c]\nexpects:\n  fs-write: ['*']\n---\n# rule: status page — y\n")
     lines = surface_lines(routine_surface(server, _cfg(
@@ -308,7 +295,7 @@ def test_boot_files_an_engine_note_naming_the_setup_gaps(tmp_path, monkeypatch):
     from rsched.engine import boot as boot_mod
 
     server = _server(tmp_path)
-    _util(server, "poster", secrets="GONE_TOKEN")
+    write_util(server, "poster", secrets="GONE_TOKEN")
     cfg = _cfg(tmp_path, capabilities={"utils": ["poster"]})
     messages: list[dict] = []
     events: list[tuple] = []
@@ -357,7 +344,7 @@ def test_a_capability_no_held_doc_requires_is_reported(tmp_path):
     enforcement is capabilities-only so prose can never widen anything. So a hand-edited file
     can carry a reserved util with no conduct doc behind it and every layer stays silent."""
     server = _server(tmp_path)
-    _util(server, "discord")
+    write_util(server, "discord")
     _doc(server, "permissions", "messaging-discord",
          "---\ntags: [a]\nrequires:\n  utils: [discord]\n---\n# permission: x — y\n")
     orphan = _cfg(tmp_path, permissions=[], capabilities={"utils": ["discord"]})
@@ -379,7 +366,7 @@ def test_the_words_for_a_drop_name_both_ways_out(tmp_path):
     """The terminal reader is handed the same two ways out the console offers: hold a doc that
     requires the capability, or drop it from the routine's own mapping."""
     server = _server(tmp_path)
-    _util(server, "discord")
+    write_util(server, "discord")
     own = surface_lines(routine_surface(server, _cfg(tmp_path,
                                                      capabilities={"utils": ["discord"]})))
     assert ("fix: hold a conduct doc that requires it, or drop it from this routine's "
@@ -605,7 +592,7 @@ def test_a_met_row_offers_no_remedy(tmp_path):
     """A fix affordance on a satisfied row invites clicking to check what is already true; the
     panel's whole value is that all of it can be read without touching anything."""
     server = _server(tmp_path)
-    _util(server, "signal", fs="roots, rw /srv/signal-sessions")
+    write_util(server, "signal", fs="roots, rw /srv/signal-sessions")
     _doc(server, "permissions", "personal-messaging",
          "---\ntags: [a, b, c]\nrequires:\n  utils: [signal]\n---\n# permission: x — y\n")
     surface = routine_surface(server, _cfg(tmp_path, permissions=["personal-messaging"],
@@ -649,7 +636,7 @@ def test_each_kind_of_gap_names_what_would_settle_it(tmp_path):
     out write access to satisfy it would be the panel widening what it reports on), bind the
     account a rule presumes."""
     server = _server(tmp_path)
-    _util(server, "reader", fs="ro /srv/data")
+    write_util(server, "reader", fs="ro /srv/data")
     _doc(server, "rules", "publishes",
          "---\ntags: [a, b, c]\nexpects:\n  connection: [google]\n---\n# rule: x — y\n")
     surface = routine_surface(server, _cfg(tmp_path, rules=["publishes"],

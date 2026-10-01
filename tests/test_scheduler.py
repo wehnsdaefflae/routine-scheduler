@@ -10,6 +10,7 @@ import pytest
 
 import rsched.daemon.scheduler as sched_mod
 from conftest import FakeRunner
+from helpers import health_events, tmp_server
 from rsched.config import ServerConfig, load_routine
 from rsched.daemon import restart, runner_reap, runner_state
 from rsched.daemon.events import EventBus
@@ -22,10 +23,7 @@ from rsched.registry import read_run, scan
 
 
 def _server(tmp_path, max_concurrent=2) -> ServerConfig:
-    s = ServerConfig()
-    s.routines_home = tmp_path / "routines"
-    s.max_concurrent_runs = max_concurrent
-    return s
+    return tmp_server(tmp_path, create=False, max_concurrent_runs=max_concurrent)
 
 
 def test_rescan_keeps_owed_fires(make_routine, tmp_path):
@@ -502,12 +500,6 @@ async def test_reap_sweep_ignores_non_user_messages(make_routine, tmp_path, monk
 # --- F188: a user cancel must not masquerade as a crash in the health stream -----------
 
 
-def _health_events(server, routine):
-    path = server.routines_home / ".control" / "health-events.jsonl"
-    return [json.loads(ln) for ln in path.read_text(encoding="utf-8").splitlines()
-            if json.loads(ln)["routine"] == routine]
-
-
 async def test_user_cancel_logs_run_canceled_not_orphaned(make_routine, tmp_path, monkeypatch):
     """An abort the USER requested that kills the engine before it can write its own
     finish must land in the health stream as run_canceled — not as an orphaned_run crash
@@ -522,7 +514,7 @@ async def test_user_cancel_logs_run_canceled_not_orphaned(make_routine, tmp_path
     assert await _wait_for(lambda: runner.active["cancelee"].proc is not None)
     assert await runner.abort("cancelee") is True
     assert await _wait_for(lambda: not runner.active)
-    mine = _health_events(server, "cancelee")
+    mine = health_events(server.routines_home, routine="cancelee")
     assert mine and mine[-1]["event"] == "run_canceled"
     assert all(e["event"] != "orphaned_run" for e in mine)
     assert "engine exited" in mine[-1]["detail"] and mine[-1]["run_id"].startswith("cancelee:")
@@ -546,7 +538,7 @@ def test_dead_pid_recovery_still_logs_orphaned_run(make_routine, tmp_path):
     server = _server(tmp_path)
     runner = Runner(server, EventBus())
     assert runner_reap.recover_orphans(runner, scan(server)) == 1
-    events = _health_events(server, "orphan2")
+    events = health_events(server.routines_home, routine="orphan2")
     assert [e["event"] for e in events] == ["orphaned_run"]
     # a boot-time orphan has no process left to report on: the optional fields are DROPPED
     # rather than written as nulls every reader would then have to handle
@@ -578,7 +570,7 @@ async def test_sigkilled_run_auto_resumes_exactly_once(make_routine, tmp_path, m
              for p in (d / "inbox").glob("msg-*.json")]
     recov = [n for n in notes if "AUTOMATIC RECOVERY" in n.get("text", "")]
     assert recov and recov[0].get("via") == "background"         # resumed-boot drainable
-    mine = _health_events(server, "oomer")
+    mine = health_events(server.routines_home, routine="oomer")
     assert [e["event"] for e in mine] == ["orphaned_run", "orphaned_run"]
     assert read_run(run_dir, "oomer").state == "failed"          # second kill: stays failed
 
@@ -622,7 +614,7 @@ async def test_refused_scheduled_fire_logs_health_event(make_routine, tmp_path, 
     assert await _wait_for(lambda: runner.active["overfirer"].proc is not None)
     # second scheduled fire collides with the still-active first → refused
     assert await runner.fire(cfg, reason="schedule") is None
-    mine = _health_events(server, "overfirer")
+    mine = health_events(server.routines_home, routine="overfirer")
     assert mine and mine[-1]["event"] == "fire_refused"
     assert mine[-1]["run_id"] == "" and "overrun" in mine[-1]["detail"]
     await runner.abort("overfirer")
@@ -640,7 +632,7 @@ async def test_non_scheduled_overrun_stays_quiet(make_routine, tmp_path, monkeyp
     assert await _wait_for(lambda: runner.active["resumer"].proc is not None)
     assert await runner.fire(cfg, reason="trigger") is None
     hpath = server.routines_home / ".control" / "health-events.jsonl"
-    events = _health_events(server, "resumer") if hpath.exists() else []
+    events = health_events(server.routines_home, routine="resumer") if hpath.exists() else []
     assert all(e["event"] != "fire_refused" for e in events)
     await runner.abort("resumer")
 
@@ -835,8 +827,7 @@ def test_a_sigkill_at_sixty_megabytes_is_not_diagnosed_as_an_oom(make_routine, t
 
 
 def _health_causes(tmp_path):
-    lines = (tmp_path / "routines" / ".control" / "health-events.jsonl").read_text().splitlines()
-    return [json.loads(ln)["cause"] for ln in lines if ln.strip()]
+    return [e["cause"] for e in health_events(tmp_path / "routines")]
 
 
 def test_close_out_records_the_cause_as_a_filterable_health_field(make_routine, tmp_path):

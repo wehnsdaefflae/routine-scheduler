@@ -7,6 +7,7 @@ import base64
 import json
 from types import SimpleNamespace
 
+from helpers import run_context, server_config
 from rsched import utils_run
 from rsched.endpoints import anthropic_api, openai_compat
 from rsched.endpoints.base import EndpointError, supports_media_type
@@ -268,20 +269,9 @@ def test_drain_messages_carries_attachments(tmp_path):
 # --- loop runtime fallback net -----------------------------------------------
 
 def _loop(make_routine, tmp_path):
-    from rsched.config import ServerConfig, load_routine
-    from rsched.engine.budgets_config import Budgets
     from rsched.engine.loop import EngineLoop
-    from rsched.engine.run_context import RunContext
-    from rsched.engine.transcript import Transcript
     d = make_routine(slug="mm")
-    server = ServerConfig()
-    server.routines_home = d.parent
-    run_dir = d / "runs" / "20260714-070000"
-    run_dir.mkdir(parents=True)
-    cfg, _ = load_routine(d)
-    ctx = RunContext(routine=cfg, server=server, registry=None, run_ts="20260714-070000",
-                     run_dir=run_dir, transcript=Transcript(run_dir / "transcript.jsonl"),
-                     budgets=Budgets.from_config(cfg.budgets))
+    ctx = run_context(d, "20260714-070000", server=server_config(routines_home=d.parent))
     return EngineLoop(ctx, "## Run flow", "instr")
 
 

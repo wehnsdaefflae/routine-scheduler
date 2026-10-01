@@ -23,6 +23,7 @@ from pathlib import Path
 
 import pytest
 
+from helpers import write_executable
 from test_deploy_state import DEPLOY, EXCLUDED, _bundle, _env, _home, _tar_files
 
 SHM = Path("/dev/shm")  # noqa: S108 — a second FILESYSTEM is the point; mkdtemp makes the dir
@@ -53,23 +54,18 @@ def root(tmp_path) -> Iterator[Path]:
         shutil.rmtree(share, ignore_errors=True)
 
 
-def _stub(path: Path, text: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(text, encoding="utf-8")
-    path.chmod(0o755)
-
-
 def _backup(home: Path, root: Path, today: str, rsync: str | None = None,
             ) -> subprocess.CompletedProcess:
     """One run of the real script on the day `today` — a stub answers `date +%F` and hands every
     other call to the real date — optionally through an `rsync` stub."""
     bin_dir = home.parent / "bin"
-    _stub(bin_dir / "date",
-          f'#!/bin/sh\n[ "$*" = "+%F" ] && {{ echo {today}; exit 0; }}\nexec {REAL_DATE} "$@"\n')
+    write_executable(
+        bin_dir / "date",
+        f'#!/bin/sh\n[ "$*" = "+%F" ] && {{ echo {today}; exit 0; }}\nexec {REAL_DATE} "$@"\n')
     if rsync is None:
         (bin_dir / "rsync").unlink(missing_ok=True)
     else:
-        _stub(bin_dir / "rsync", rsync)
+        write_executable(bin_dir / "rsync", rsync)
     env = _env(home)
     env["PATH"] = f"{bin_dir}{os.pathsep}{env['PATH']}"
     with TEST_LOCK.open("w") as held:

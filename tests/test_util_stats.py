@@ -9,7 +9,7 @@ import json
 import shutil
 import subprocess
 
-from rsched.config import ServerConfig
+from helpers import stats_server, write_usage_stream
 from rsched.readmodels.util_stats import util_stats
 
 UTIL_SRC = '''"""fetch — fetches a page.
@@ -21,24 +21,10 @@ print("ok")
 '''
 
 
-def _server(tmp_path) -> ServerConfig:
-    s = ServerConfig()
-    s.routines_home = tmp_path / "routines"
-    s.conversations_home = tmp_path / "conversations"
-    s.libraries_home = tmp_path / "library"
-    (s.routines_home / ".control").mkdir(parents=True, exist_ok=True)
-    return s
-
-
 def _add_util(server, name, src=UTIL_SRC):
     d = server.libraries_home / "utils" / name
     d.mkdir(parents=True, exist_ok=True)
     (d / "main.py").write_text(src, encoding="utf-8")
-
-
-def _stream(server, records):
-    (server.routines_home / ".control" / "workflow-usage.jsonl").write_text(
-        "".join(json.dumps(r) + "\n" for r in records), encoding="utf-8")
 
 
 def _run_with_transcript(server, slug, ts, events, *, gz=False):
@@ -64,9 +50,9 @@ def _obs(name, *, exit_code=0, missing=False, ts="2026-06-01T08:00:00+00:00"):
 
 
 def test_stream_records_aggregate_and_span(tmp_path):
-    server = _server(tmp_path)
+    server = stats_server(tmp_path)
     _add_util(server, "fetch")
-    _stream(server, [
+    write_usage_stream(server.routines_home, [
         {"run_id": "r:1", "ts": "2026-07-01T07:00:00+00:00",
          "utils": {"fetch": {"ok": 2, "error": 1}}},
         {"run_id": "r:2", "ts": "2026-07-03T07:00:00+00:00",
@@ -94,9 +80,9 @@ def test_a_continued_run_is_counted_once_not_once_per_leg(tmp_path):
     (`history.prior_counters`), so every leg's usage record carries the run's CUMULATIVE
     counts. Summed per record, a conversation answering three replies with one call each read
     as 1 + 2 + 3 = 6 calls."""
-    server = _server(tmp_path)
+    server = stats_server(tmp_path)
     _add_util(server, "fetch")
-    _stream(server, [
+    write_usage_stream(server.routines_home, [
         {"run_id": "chat:1", "ts": f"2026-07-01T0{n}:00:00+00:00",
          "utils": {"fetch": {"ok": n}}} for n in (1, 2, 3)])
     out = util_stats(server)
@@ -107,7 +93,7 @@ def test_a_continued_run_is_counted_once_not_once_per_leg(tmp_path):
 def test_backfill_scans_only_uncovered_runs(tmp_path):
     """A run whose stream record carries `utils` was counted at the source — its
     transcript is skipped; a pre-stream run's transcript (gzip included) is scanned."""
-    server = _server(tmp_path)
+    server = stats_server(tmp_path)
     _add_util(server, "fetch")
     # covered run: stream has utils for it; its transcript would double count if read
     _run_with_transcript(server, "r", "20260701-070000", [_obs("fetch")])
@@ -122,7 +108,7 @@ def test_backfill_scans_only_uncovered_runs(tmp_path):
     ])
     _run_with_transcript(server, "r", "20260501-070000",
                          [_obs("fetch", ts="2026-05-01T07:00:00+00:00")], gz=True)
-    _stream(server, [
+    write_usage_stream(server.routines_home, [
         {"run_id": "r:20260701-070000", "ts": "2026-07-01T07:10:00+00:00",
          "utils": {"fetch": {"ok": 1}}},
         {"run_id": "r:20260601-070000", "ts": "2026-06-01T07:10:00+00:00"},  # pre-stream shape
@@ -147,7 +133,7 @@ def test_backfill_reads_every_level_of_the_run_tree(tmp_path):
     """A child's own children nest under ITS `sub/` (`runs/<ts>/sub/1/sub/2/`, the layout
     retention's rglob gzips). The backfill globbed one level down, so a grandchild's calls —
     plain or gzipped — were never counted."""
-    server = _server(tmp_path)
+    server = stats_server(tmp_path)
     _add_util(server, "fetch")
     _run_with_transcript(server, "r", "20260601-070000", [_obs("fetch")])
     run = server.routines_home / "r" / "runs" / "20260601-070000"
@@ -169,7 +155,7 @@ def test_the_transcript_memo_holds_only_what_the_stream_has_not_counted(tmp_path
     retention deletes) used to stay in the dict for the life of the process."""
     import rsched.readmodels.util_stats as us
 
-    server = _server(tmp_path)
+    server = stats_server(tmp_path)
     _add_util(server, "fetch")
     _run_with_transcript(server, "r", "20260601-070000", [_obs("fetch")])
     _run_with_transcript(server, "r", "20260602-070000", [_obs("fetch")])
@@ -178,8 +164,9 @@ def test_the_transcript_memo_holds_only_what_the_stream_has_not_counted(tmp_path
 
     util_stats(server)
     assert len(held()) == 2
-    _stream(server, [{"run_id": "r:20260601-070000", "ts": "2026-06-01T07:10:00+00:00",
-                      "utils": {"fetch": {"ok": 1}}}])
+    write_usage_stream(server.routines_home, [
+        {"run_id": "r:20260601-070000", "ts": "2026-06-01T07:10:00+00:00",
+         "utils": {"fetch": {"ok": 1}}}])
     shutil.rmtree(server.routines_home / "r" / "runs" / "20260602-070000")
     util_stats(server)
     assert held() == set()
@@ -188,7 +175,7 @@ def test_the_transcript_memo_holds_only_what_the_stream_has_not_counted(tmp_path
 def test_git_dates_created_and_revised(tmp_path):
     import os
 
-    server = _server(tmp_path)
+    server = stats_server(tmp_path)
     _add_util(server, "fetch")
     lib = server.libraries_home
 
@@ -215,14 +202,14 @@ def test_git_dates_created_and_revised(tmp_path):
 
 
 def test_empty_world(tmp_path):
-    out = util_stats(_server(tmp_path))
+    out = util_stats(stats_server(tmp_path))
     assert out["utils"] == [] and out["backfill_runs"] == 0
 
 
 def test_a_line_that_is_not_an_event_skips_the_line_not_the_transcript(tmp_path):
     """The scan checked `isinstance(ev, dict)` and then called `ev.get` on the next line anyway,
     so one line holding a list threw the whole transcript away (the outer guard logged it)."""
-    server = _server(tmp_path)
+    server = stats_server(tmp_path)
     _add_util(server, "fetch")
     _run_with_transcript(server, "r", "20260601-070000", [_obs("fetch"), [1, 2], _obs("fetch")])
     assert {r["name"]: r for r in util_stats(server)["utils"]}["fetch"]["ok"] == 2
@@ -234,11 +221,11 @@ def test_backfill_tolerates_unreadable_transcript(tmp_path, monkeypatch):
     yields no snapshot at all. The bad run is skipped; every other source still counts."""
     import rsched.readmodels.util_stats as us
 
-    server = _server(tmp_path)
+    server = stats_server(tmp_path)
     _add_util(server, "fetch")
     _run_with_transcript(server, "r", "20260601-070000",
                          [_obs("fetch", ts="2026-06-01T07:01:00+00:00")])
-    _stream(server, [
+    write_usage_stream(server.routines_home, [
         {"run_id": "r:stream", "ts": "2026-07-01T07:00:00+00:00",
          "utils": {"fetch": {"ok": 1}}},
     ])
@@ -260,9 +247,9 @@ def test_write_snapshot_persists_to_xdg_state(tmp_path, monkeypatch):
     from rsched.readmodels.util_stats import snapshot_path, write_util_stats_snapshot
 
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
-    server = _server(tmp_path)
+    server = stats_server(tmp_path)
     _add_util(server, "fetch")
-    _stream(server, [
+    write_usage_stream(server.routines_home, [
         {"run_id": "r:1", "ts": "2026-07-01T07:00:00+00:00",
          "utils": {"fetch": {"ok": 2, "error": 1}}},
     ])
@@ -289,7 +276,7 @@ def test_backfill_tolerates_unreadable_home(tmp_path, monkeypatch):
 
     import rsched.readmodels.util_stats as us
 
-    server = _server(tmp_path)
+    server = stats_server(tmp_path)
     _add_util(server, "fetch")
     _run_with_transcript(server, "r", "20260601-070000",
                          [_obs("fetch", ts="2026-06-01T07:01:00+00:00")])
@@ -317,7 +304,7 @@ def test_write_snapshot_degrades_when_util_stats_raises(tmp_path, monkeypatch):
     from rsched.readmodels.util_stats import snapshot_path, write_util_stats_snapshot
 
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
-    server = _server(tmp_path)
+    server = stats_server(tmp_path)
 
     def boom(_server):
         raise RuntimeError("compute failed")
@@ -348,7 +335,7 @@ def test_write_snapshot_logs_breadcrumb_when_state_dir_unwritable(tmp_path, monk
     blocker = tmp_path / "blocker"
     blocker.write_text("i am a file, not a dir", encoding="utf-8")
     monkeypatch.setenv("XDG_STATE_HOME", str(blocker / "state"))
-    server = _server(tmp_path)
+    server = stats_server(tmp_path)
 
     with caplog.at_level(logging.WARNING):
         returned = write_util_stats_snapshot(server)     # must NOT raise

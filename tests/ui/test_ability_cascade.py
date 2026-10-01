@@ -16,14 +16,9 @@ import re
 import yaml
 from playwright.sync_api import expect
 
+from .helpers import unfold
+
 PENDING_DROP = re.compile(r"\bpending-drop\b")
-
-
-def _unfold(page) -> None:
-    """Open every routine-page settings group and each group's "more" menu (the page ships
-    with only its two leading groups open — views/routine-config.js)."""
-    page.wait_for_selector(".rgroup-head")
-    page.evaluate("() => { for (const d of document.querySelectorAll('details.rgroup, details.rmore')) d.open = true; }")
 
 
 def _card(page, slug):
@@ -39,7 +34,7 @@ def test_unticking_a_doc_switches_off_that_doc_and_no_other(ui, ui_page):
                              "confirm": "creations", "runs": "last", "reminders": "local"})
     path.write_text(yaml.safe_dump(cfg), encoding="utf-8")
     ui_page.goto(f"{ui.url}/#/routine/uir")
-    _unfold(ui_page)
+    unfold(ui_page)
     short = _card(ui_page, "scheduling")
     expect(short.locator("[data-switch-on]")).to_be_visible()     # its own remedy, in place
 

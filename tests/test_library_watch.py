@@ -13,6 +13,7 @@ from types import SimpleNamespace
 import pytest
 import yaml
 
+from helpers import util_src
 from rsched import libgit, pending
 from rsched.daemon.library_watch import LibraryWatch
 
@@ -24,11 +25,6 @@ def _git(repo: Path, *args: str) -> None:
                         "PATH": "/usr/bin:/bin", "HOME": str(repo)})
 
 
-def _util_src(name: str, secrets: str = "(none)") -> str:
-    return (f'"""{name} — t.\n\nusage: gu {name}\ncalls: (none)\ntags: t\n'
-            f'secrets: {secrets}\nnet: none\nfs: none\n"""\n')
-
-
 @pytest.fixture
 def world(tmp_path, monkeypatch):
     monkeypatch.setattr("rsched.secrets.load_secrets", dict)
@@ -37,7 +33,7 @@ def world(tmp_path, monkeypatch):
         (lib / sub).mkdir(parents=True)
     (routines / ".control").mkdir(parents=True)
     (lib / "utils" / "sig").mkdir()
-    (lib / "utils" / "sig" / "main.py").write_text(_util_src("sig"), encoding="utf-8")
+    (lib / "utils" / "sig" / "main.py").write_text(util_src("sig"), encoding="utf-8")
     (routines / "holder").mkdir()
     (routines / "holder" / "routine.yaml").write_text(yaml.safe_dump(
         {"description": "t", "permissions": [], "rules": [],
@@ -65,7 +61,7 @@ def test_a_commit_that_breaks_a_holder_queues_a_decision(world):
     watch = LibraryWatch(server)
     watch._check()                                   # baseline
 
-    (lib / "utils" / "sig" / "main.py").write_text(_util_src("sig", "NEW_PIN"),
+    (lib / "utils" / "sig" / "main.py").write_text(util_src("sig", secrets="NEW_PIN"),
                                                    encoding="utf-8")
     _git(lib, "add", "-A")
     _git(lib, "commit", "-qm", "sig: require a PIN")
@@ -84,13 +80,13 @@ def test_the_same_gap_is_queued_once_not_once_per_commit(world):
     server, lib, routines = world
     watch = LibraryWatch(server)
     watch._check()
-    (lib / "utils" / "sig" / "main.py").write_text(_util_src("sig", "NEW_PIN"),
+    (lib / "utils" / "sig" / "main.py").write_text(util_src("sig", secrets="NEW_PIN"),
                                                    encoding="utf-8")
     _git(lib, "add", "-A")
     _git(lib, "commit", "-qm", "one")
     watch._check()
     (lib / "utils" / "sig" / "main.py").write_text(
-        _util_src("sig", "NEW_PIN") + "# unrelated\n", encoding="utf-8")
+        util_src("sig", secrets="NEW_PIN") + "# unrelated\n", encoding="utf-8")
     _git(lib, "add", "-A")
     _git(lib, "commit", "-qm", "two")
     watch._check()
@@ -98,7 +94,8 @@ def test_the_same_gap_is_queued_once_not_once_per_commit(world):
 
 
 def _break_sig(lib) -> None:
-    (lib / "utils" / "sig" / "main.py").write_text(_util_src("sig", "NEW_PIN"), encoding="utf-8")
+    (lib / "utils" / "sig" / "main.py").write_text(util_src("sig", secrets="NEW_PIN"),
+                                                   encoding="utf-8")
     _git(lib, "add", "-A")
     _git(lib, "commit", "-qm", "sig: require a PIN")
 
@@ -111,7 +108,7 @@ def test_a_library_change_that_closes_the_gap_withdraws_its_record(world):
     _break_sig(lib)
     watch._check()
     assert len(pending.load_all(routines)) == 1
-    (lib / "utils" / "sig" / "main.py").write_text(_util_src("sig"), encoding="utf-8")
+    (lib / "utils" / "sig" / "main.py").write_text(util_src("sig"), encoding="utf-8")
     _git(lib, "add", "-A")
     _git(lib, "commit", "-qm", "sig: the PIN is optional again")
     watch._check()

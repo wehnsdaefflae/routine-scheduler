@@ -5,26 +5,15 @@ the next run through the state digest.
 
 from types import SimpleNamespace
 
-from rsched.config import ServerConfig, load_routine
+from helpers import run_context
+from rsched.config import ServerConfig
 from rsched.engine import notes
-from rsched.engine.budgets_config import Budgets
 from rsched.engine.composer import state_digest
 from rsched.engine.run_context import RunContext
-from rsched.engine.transcript import Transcript
 
 
 def _ctx(make_routine, slug="noter", turn=3, phase="gather") -> RunContext:
-    d = make_routine(slug=slug)
-    cfg, _problems = load_routine(d)
-    run_dir = d / "runs" / "20260716-180000"
-    run_dir.mkdir(parents=True)
-    ctx = RunContext(routine=cfg, server=ServerConfig(), registry=None,
-                     run_ts="20260716-180000", run_dir=run_dir,
-                     transcript=Transcript(run_dir / "transcript.jsonl"),
-                     budgets=Budgets.from_config(cfg.budgets))
-    ctx.turn = turn
-    ctx.phase = phase
-    return ctx
+    return run_context(make_routine(slug=slug), "20260716-180000", turn=turn, phase=phase)
 
 
 def test_capture_appends_stamped_self_addressed_lines(make_routine):

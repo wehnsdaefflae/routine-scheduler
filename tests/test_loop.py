@@ -16,6 +16,7 @@ from conftest import (
     wait_,
     write_file,
 )
+from helpers import server_for, set_capabilities
 from rsched.config import ServerConfig
 from rsched.endpoints.base import EndpointError
 from rsched.engine.runtime import run_routine
@@ -34,20 +35,7 @@ def _library_permission(server: ServerConfig, slug: str, requires_yaml: str) -> 
         encoding="utf-8")
 
 
-def _set_capabilities(routine_dir, **updates) -> None:
-    """Merge capability keys into the routine.yaml `capabilities:` mapping."""
-    import yaml as _yaml
-
-    path = routine_dir / "routine.yaml"
-    raw = _yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    caps = raw.get("capabilities") or {}
-    caps.update(updates)
-    raw["capabilities"] = caps
-    path.write_text(_yaml.safe_dump(raw), encoding="utf-8")
-
-
 def _server(routine_dir, *, util_authoring: str | None = "never") -> ServerConfig:
-    s = ServerConfig()
     # hermetic: the library holds only what a test declares (no utils) → sub-workflows use
     # the builtin fallback body; util actions on a missing name return a "missing"
     # observation. write_util rides the routine's CAPABILITIES: confirm defaults to "never"
@@ -55,16 +43,15 @@ def _server(routine_dir, *, util_authoring: str | None = "never") -> ServerConfi
     # util_authoring=None to switch write_util off entirely. Both halves, as the shipped
     # util-authoring doc requires them: create-only would refuse every REVISION these tests
     # simulate by patching `utils_lib.exists`.
-    s.routines_home = routine_dir.parent          # hermetic: .control logs land in tmp
-    s.libraries_home = routine_dir.parent.parent / "test-library"
+    s = server_for(routine_dir)
     caps_actions = ["memory_read", "memory_write"]
     if util_authoring is not None:
         _library_permission(s, "util-authoring",
                             "requires:\n  actions: [write_util, revise_util]")
         caps_actions = ["write_util", "revise_util", *caps_actions]
-        _set_capabilities(routine_dir, actions=caps_actions, confirm=util_authoring)
+        set_capabilities(routine_dir, actions=caps_actions, confirm=util_authoring)
     else:
-        _set_capabilities(routine_dir, actions=caps_actions)
+        set_capabilities(routine_dir, actions=caps_actions)
     return s
 
 
@@ -678,7 +665,7 @@ def test_gated_util_requires_its_permission(make_routine, scripted):
     (d2 / "routine.yaml").write_text(_yaml.safe_dump(cfg))
     server2 = _server(d2)
     _library_permission(server2, "messaging-discord", "requires:\n  utils: [discord]")
-    _set_capabilities(d2, utils=["discord"])
+    set_capabilities(d2, utils=["discord"])
     scripted([util("discord", ["send", "hi"]), finish()])
     status2, run_dir2 = run_routine(d2, server2, run_ts=TS)
     events2, _ = read_events(run_dir2 / "transcript.jsonl")
@@ -2142,7 +2129,7 @@ def test_previous_runs_ride_the_run_history_permission(make_routine, scripted):
     (server2.permissions_home / "run-history.md").write_text(
         "---\ntags: [a, b, c]\nrequires:\n  runs: last\n---\n"
         "# permission: run-history — read the previous run\nbody\n")
-    _set_capabilities(d2, runs="last")
+    set_capabilities(d2, runs="last")
     scripted([{"say": "Peek.", "kind": "read_file", "path": "runs/20260101-000000/result.md"},
               finish()])
     status2, run_dir2 = run_routine(d2, server2, run_ts=TS)

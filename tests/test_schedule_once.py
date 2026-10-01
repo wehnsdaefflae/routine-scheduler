@@ -11,20 +11,13 @@ import pytest
 import yaml
 
 from conftest import FakeRunner
+from helpers import tmp_server
 from rsched import registry, schedule_once
-from rsched.config import ServerConfig
 from rsched.daemon.schedule_once import OneShotManager
 from rsched.engine.actions import validate_action
 from rsched.engine.admin_handlers import handle_schedule_run
 from rsched.grantpolicy import GrantPolicy
 from rsched.paths import read_json
-
-
-def _server(tmp_path) -> ServerConfig:
-    s = ServerConfig()
-    s.routines_home = tmp_path / "routines"
-    s.routines_home.mkdir(parents=True, exist_ok=True)
-    return s
 
 
 def _routine(server, slug="oneshot", *, enabled=True):
@@ -80,7 +73,7 @@ def test_parse_fire_at_an_out_of_range_spec_is_a_value_error(spec):
 
 
 def test_handle_schedule_run_reports_an_out_of_range_fire_at(tmp_path):
-    server = _server(tmp_path)
+    server = tmp_server(tmp_path)
     _routine(server, "tgt")
     obs = handle_schedule_run(_loop(server), {"target": "tgt", "fire_at": "+99999999999d"})
     assert "out of range" in obs["bad_fire_at"]
@@ -91,7 +84,7 @@ def test_handle_schedule_run_reports_an_out_of_range_fire_at(tmp_path):
 
 
 def test_spool_roundtrip_and_cancel(tmp_path):
-    server = _server(tmp_path)
+    server = tmp_server(tmp_path)
     home = server.routines_home
     assert schedule_once.pending_requests(home, "oneshot") == []
     assert schedule_once.slugs_with_requests(home) == []
@@ -116,7 +109,7 @@ def test_spool_roundtrip_and_cancel(tmp_path):
 
 
 async def test_tick_fires_due_injects_reason_and_consumes(tmp_path):
-    server = _server(tmp_path)
+    server = tmp_server(tmp_path)
     d = _routine(server)
     past = datetime.now(UTC) - timedelta(minutes=1)
     schedule_once.arm(server.routines_home, "oneshot", fire_at=past,
@@ -141,7 +134,7 @@ async def test_the_wake_up_text_goes_through_the_one_inbox_writer(tmp_path, monk
     a second). This manager hand-rolled the filename beside that writer."""
     from rsched.engine import inbox as inbox_mod
 
-    server = _server(tmp_path)
+    server = tmp_server(tmp_path)
     d = _routine(server)
     rec = schedule_once.arm(server.routines_home, "oneshot",
                             fire_at=datetime.now(UTC) - timedelta(minutes=1),
@@ -160,7 +153,7 @@ async def test_the_wake_up_text_goes_through_the_one_inbox_writer(tmp_path, monk
 
 
 async def test_tick_leaves_a_not_yet_due_request(tmp_path):
-    server = _server(tmp_path)
+    server = tmp_server(tmp_path)
     _routine(server)
     future = datetime.now(UTC) + timedelta(hours=1)
     schedule_once.arm(server.routines_home, "oneshot", fire_at=future,
@@ -172,7 +165,7 @@ async def test_tick_leaves_a_not_yet_due_request(tmp_path):
 
 
 async def test_tick_defers_while_active_and_draining_then_fires(tmp_path):
-    server = _server(tmp_path)
+    server = tmp_server(tmp_path)
     _routine(server)
     past = datetime.now(UTC) - timedelta(minutes=1)
     schedule_once.arm(server.routines_home, "oneshot", fire_at=past, reason="x",
@@ -194,7 +187,7 @@ async def test_tick_defers_while_active_and_draining_then_fires(tmp_path):
 
 
 async def test_tick_drops_request_for_disabled_routine(tmp_path):
-    server = _server(tmp_path)
+    server = tmp_server(tmp_path)
     _routine(server, enabled=False)
     past = datetime.now(UTC) - timedelta(minutes=1)
     schedule_once.arm(server.routines_home, "oneshot", fire_at=past, reason="x",
@@ -211,7 +204,7 @@ async def test_tick_drops_request_for_a_retired_routine(tmp_path):
     spending a run to re-assert a met goal and re-file the retirement proposal that is
     already waiting on the Decisions page. The request is dropped, not held: a retired
     routine has no later run that would consume it."""
-    server = _server(tmp_path)
+    server = tmp_server(tmp_path)
     _routine(server)
     past = datetime.now(UTC) - timedelta(minutes=1)
     schedule_once.arm(server.routines_home, "oneshot", fire_at=past, reason="x",
@@ -225,7 +218,7 @@ async def test_tick_drops_request_for_a_retired_routine(tmp_path):
 
 
 async def test_tick_drops_expired_request(tmp_path):
-    server = _server(tmp_path)
+    server = tmp_server(tmp_path)
     _routine(server)
     now = datetime.now(UTC)
     schedule_once.arm(server.routines_home, "oneshot", fire_at=now - timedelta(minutes=5),
@@ -264,7 +257,7 @@ def test_schedule_run_capability_gate():
 
 
 def test_handle_schedule_run_arms_then_cancels(tmp_path):
-    server = _server(tmp_path)
+    server = tmp_server(tmp_path)
     _routine(server, slug="target-r")
     loop = _loop(server, run_id="self-audit:20260719-103133")
     obs = handle_schedule_run(loop, {"target": "target-r", "fire_at": "+3d",
@@ -281,7 +274,7 @@ def test_handle_schedule_run_arms_then_cancels(tmp_path):
 
 
 def test_handle_schedule_run_unknown_target_and_bad_fire_at(tmp_path):
-    server = _server(tmp_path)
+    server = tmp_server(tmp_path)
     _routine(server, slug="target-r")
     loop = _loop(server)
     ghost = handle_schedule_run(loop, {"target": "ghost", "fire_at": "+3d",
@@ -350,7 +343,7 @@ def test_api_week_surfaces_armed_one_shots(sched_client):
 def test_handle_schedule_run_conversation_self_target(tmp_path):
     """A conversation may always self-target (the schema promises it): its spool entry is
     namespaced conv--<slug> so a same-named routine can never be mis-fired."""
-    server = _server(tmp_path)
+    server = tmp_server(tmp_path)
     conv_dir = tmp_path / "conversations" / "chatty"
     conv_dir.mkdir(parents=True)
     (conv_dir / "routine.yaml").write_text("slug: chatty\n", encoding="utf-8")
@@ -372,7 +365,7 @@ async def test_manager_wakes_conversation_by_resume(tmp_path):
 
     from rsched.daemon.schedule_once import OneShotManager
 
-    server = _server(tmp_path)
+    server = tmp_server(tmp_path)
     conv_dir = tmp_path / "conversations" / "chatty"
     (conv_dir / "runs" / "20260722-090000").mkdir(parents=True)
     (conv_dir / "inbox").mkdir()

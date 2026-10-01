@@ -11,15 +11,12 @@ import pytest
 import yaml
 from fastapi.testclient import TestClient
 
-from conftest import TEST_TOKEN, make_test_server
+from conftest import authed_client, make_test_server
 from rsched.config import ServerConfig
 from rsched.paths import atomic_write_json
 from rsched.search import SearchIndex
 from rsched.search.index import MARK_END, MARK_START, _escape_query
 from rsched.search.sources import extract, iter_sources
-from rsched.web.app import create_app
-
-TOKEN = TEST_TOKEN
 
 
 def _write_events(path, events):
@@ -369,13 +366,11 @@ def client(tmp_path, make_routine):
     _build_tree(tmp_path, make_routine)
     server = make_test_server(tmp_path, conversations_home=str(tmp_path / "conversations"),
                               background_home=str(tmp_path / "background"))
-    app = create_app(server, with_scheduler=False)
-    with TestClient(app) as c:
-        c.headers["Authorization"] = f"Bearer {TOKEN}"
+    with authed_client(server) as c:
         # A query never queues behind the lifespan maintainer's pass (it answers from the index
         # as it stands), so these route tests wait for that first pass here — what they pin is
         # the route over a built index, not which of two threads wins the start.
-        app.state.search.refresh()
+        c.app.state.search.refresh()
         yield c
 
 

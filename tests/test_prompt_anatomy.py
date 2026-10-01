@@ -13,13 +13,10 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import rsched
-from rsched.config import ServerConfig, load_routine
+from helpers import run_context, server_config
 from rsched.engine.actions import KIND_EXAMPLES
 from rsched.engine.actionschema import ACTION_SCHEMA, KINDS
-from rsched.engine.budgets_config import Budgets
 from rsched.engine.composer import build_system_prompt, kickoff_message, state_digest
-from rsched.engine.run_context import RunContext
-from rsched.engine.transcript import Transcript
 from rsched.grantpolicy import GrantPolicy
 from rsched.schema_guard import retry_message
 
@@ -45,14 +42,8 @@ COMPOSED_NEEDLES: frozenset[str] = frozenset()
 
 def _system_prompt(make_routine, tmp_path, depth=0) -> str:
     d = make_routine(slug=f"anatomy{depth}")
-    cfg, _ = load_routine(d)
-    run_dir = d / "runs" / "20260712-070000"
-    run_dir.mkdir(parents=True)
-    server = ServerConfig()
-    server.libraries_home = tmp_path / "libraries"
-    ctx = RunContext(routine=cfg, server=server, registry=None, run_ts="20260712-070000",
-                     run_dir=run_dir, transcript=Transcript(run_dir / "transcript.jsonl"),
-                     budgets=Budgets.from_config(cfg.budgets))
+    ctx = run_context(d, "20260712-070000",
+                      server=server_config(libraries_home=tmp_path / "libraries"))
     ctx.depth = depth
     ctx.grants = GrantPolicy(active=("util-authoring", "memory"),
                              actions=frozenset({"write_util", "memory_read", "memory_write"}))

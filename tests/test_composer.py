@@ -4,27 +4,18 @@ history / transcript replay (history.py)."""
 import json
 import os
 
-from rsched.config import ServerConfig, load_routine
-from rsched.engine.budgets_config import Budgets
+from helpers import run_context, server_config
 from rsched.engine.compaction import estimate_input_tokens, maybe_compact, turn_record
 from rsched.engine.composer import build_system_prompt, state_digest
 from rsched.engine.harness import harness_contract
 from rsched.engine.observations import format_observation, truncate
 from rsched.engine.run_context import RunContext
-from rsched.engine.transcript import Transcript
 
 
 def _ctx(make_routine, tmp_path, **kwargs) -> RunContext:
-    d = make_routine(**kwargs)
-    cfg, _problems = load_routine(d)
-    assert cfg is not None
-    run_dir = d / "runs" / "20260708-070000"
-    run_dir.mkdir(parents=True)
-    server = ServerConfig()
-    server.libraries_home = tmp_path / "libraries"   # empty → catalog says "no utils yet"
-    return RunContext(routine=cfg, server=server, registry=None, run_ts="20260708-070000",
-                      run_dir=run_dir, transcript=Transcript(run_dir / "transcript.jsonl"),
-                      budgets=Budgets.from_config(cfg.budgets))
+    # an empty library → the catalog says "no utils yet"
+    return run_context(make_routine(**kwargs), "20260708-070000",
+                       server=server_config(libraries_home=tmp_path / "libraries"))
 
 
 def test_harness_contract_mentions_the_load_bearing_facts(make_routine, tmp_path):

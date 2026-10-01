@@ -16,6 +16,7 @@ from datetime import UTC, datetime, timedelta
 from playwright.sync_api import expect
 
 from .conftest import until
+from .helpers import watch_requests
 
 
 def _ts(minutes_ago: int) -> str:
@@ -35,19 +36,13 @@ def _open_feed(ui, ui_page):
     return panel
 
 
-def _watch(page, pattern):
-    seen: list[str] = []
-    page.on("request", lambda r: seen.append(r.url) if pattern.search(r.url) else None)
-    return seen
-
-
 def test_the_feed_never_fetches_the_decision_list_itself(ui, ui_page):
     """CLAUDE.md: one reader per endpoint — questions-store.js owns /api/questions. The feed's
     4 s poll used to ask for it every round, beside the badge's own fetch of the same list."""
     ui.seed_run("uir", LIVE, "running")
     _open_feed(ui, ui_page)
-    polled = _watch(ui_page, re.compile(r"limit=300"))
-    questions = _watch(ui_page, re.compile(r"/api/questions$"))
+    polled = watch_requests(ui_page, re.compile(r"limit=300"))
+    questions = watch_requests(ui_page, re.compile(r"/api/questions$"))
     ui_page.wait_for_timeout(4600)                               # > one 4 s poll round
     assert polled, "the poll never ran — this test would pass for the wrong reason"
     assert not questions, f"the feed fetched the decision list itself: {questions}"

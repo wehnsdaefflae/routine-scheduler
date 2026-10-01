@@ -17,20 +17,17 @@ from datetime import UTC, datetime
 import httpx
 import pytest
 
+from helpers import tmp_server
 from rsched.config import EndpointConfig, ModelConfig, ServerConfig
 from rsched.endpoints import EndpointRegistry, catalogs, limits
 
 
 def _server(tmp_path, *, endpoints=None, models=None) -> ServerConfig:
-    s = ServerConfig()
-    s.routines_home = tmp_path / "routines"
-    s.routines_home.mkdir(parents=True, exist_ok=True)
-    s.endpoints = endpoints or {
+    endpoints = endpoints or {
         "or": EndpointConfig(name="or", kind="openai",
                              base_url="https://openrouter.ai/api/v1", context_tokens=200_000)}
-    s.models = models or {
-        "kimi": ModelConfig(name="kimi", endpoint="or", model="moonshot/kimi-k3")}
-    return s
+    models = models or {"kimi": ModelConfig(name="kimi", endpoint="or", model="moonshot/kimi-k3")}
+    return tmp_server(tmp_path, endpoints=endpoints, models=models)
 
 
 def _cache(server, **rows):

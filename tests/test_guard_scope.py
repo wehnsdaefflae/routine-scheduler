@@ -21,14 +21,14 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from conftest import finish, util, write_file
+from helpers import server_for, set_capabilities, transcript_events
 from rsched import assists as lib
 from rsched import reminders as rem_store
 from rsched.endpoints.base import EndpointError
 from rsched.engine import finishline, guardscope
 from rsched.engine.runtime import run_routine
-from rsched.engine.transcript import read_events
 from rsched.reminders import Reminder
-from test_assists import TS, _age_ledger, _capabilities, _hold_rule, _rule, _server, _write_root
+from test_assists import TS, _age_ledger, _hold_rule, _rule, _write_root
 
 
 def _down() -> EndpointError:
@@ -36,16 +36,13 @@ def _down() -> EndpointError:
     return EndpointError("provider down")
 
 
-def _events(run_dir) -> list[dict]:
-    return read_events(run_dir / "transcript.jsonl")[0]
-
-
 def _observed(run_dir) -> list[str]:
-    return [e["payload"].get("kind") for e in _events(run_dir) if e["type"] == "observation"]
+    return [e["payload"].get("kind") for e in transcript_events(run_dir)
+            if e["type"] == "observation"]
 
 
 def _reminder(d, regex: str) -> None:
-    _capabilities(d, reminders="local")
+    set_capabilities(d, reminders="local")
     rem_store.save_local(d, [Reminder(id="rem-1", regex=regex, description="it clobbers x",
                                       scope="local", created_run="r:1",
                                       stats=rem_store.blank_stats())], {})
@@ -58,7 +55,7 @@ def test_a_hold_confirmed_before_a_resume_is_not_held_again(make_routine, script
     The label the hold asked for still lands on the far side: the hold is the run's, so the
     label it is owed is the run's too."""
     d = make_routine(slug="scope")
-    server = _server(d)
+    server = server_for(d)
     _reminder(d, r"^write_file path=state/x\.txt")
     scripted([write_file("state/x.txt"), _down()])
     assert run_routine(d, server, run_ts=TS)[0] == "failed"
@@ -77,12 +74,12 @@ def test_an_observation_assist_does_not_fire_again_after_a_resume(make_routine, 
     """The second failure of the same call fired fix-the-cause's line; the leg died; the
     resumed leg fails the same way twice more — the line was said, once, for this run."""
     d = make_routine(slug="scope")
-    server = _server(d)
+    server = server_for(d)
     _rule(server, "fix-the-cause", "observation", "repeated-failure", "change route now")
     _hold_rule(d, ["fix-the-cause"])
     scripted([util("nonexistent-util"), util("nonexistent-util"), _down()])
     assert run_routine(d, server, run_ts=TS)[0] == "failed"
-    second = [e for e in _events(d / "runs" / TS) if e["type"] == "observation"][1]
+    second = [e for e in transcript_events(d / "runs" / TS) if e["type"] == "observation"][1]
     assert second["payload"]["assists"] == ["fix-the-cause/m"]     # the record names the fire
 
     scripted([util("nonexistent-util"), util("nonexistent-util"), write_file("state/a.txt"),
@@ -98,7 +95,7 @@ def test_a_boundary_assist_does_not_fire_again_after_a_resume(make_routine, scri
     from rsched.engine.inbox import file_message
 
     d = make_routine(slug="scope")
-    server = _server(d)
+    server = server_for(d)
     _rule(server, "fix-the-cause", "boundary", "user-corrected", "name the intention")
     _hold_rule(d, ["fix-the-cause"])
 
@@ -113,7 +110,7 @@ def test_a_boundary_assist_does_not_fire_again_after_a_resume(make_routine, scri
     scripted([correcting("state/c.txt"), write_file("state/d.txt"), finish()])
     status, run_dir = run_routine(d, server, run_ts=TS, resume_from=TS)
     assert status == "ok"
-    notes = [e["payload"] for e in _events(run_dir) if e["type"] == "user_injection"
+    notes = [e["payload"] for e in transcript_events(run_dir) if e["type"] == "user_injection"
              and "[RULE" in e["payload"].get("text", "")]
     assert len(notes) == 1, notes
     assert notes[0]["assists"] == ["fix-the-cause/m"]
@@ -123,7 +120,7 @@ def test_the_assist_finish_deferral_does_not_recur_after_a_resume(make_routine, 
     """A run is held at its finish by an assist at most once — a restart between the deferral
     and the next finish does not buy the rule a second negotiation."""
     d = make_routine(slug="scope")
-    server = _server(d)
+    server = server_for(d)
     _rule(server, "decision-record", "pre-finish", "ledger-untouched", "append one entry")
     _hold_rule(d, ["decision-record"])
     _age_ledger(d)
@@ -133,7 +130,7 @@ def test_the_assist_finish_deferral_does_not_recur_after_a_resume(make_routine, 
     scripted([finish(), finish()])
     status, run_dir = run_routine(d, server, run_ts=TS, resume_from=TS)
     assert status == "ok"
-    deferred = [e["payload"] for e in _events(run_dir) if e["type"] == "observation"
+    deferred = [e["payload"] for e in transcript_events(run_dir) if e["type"] == "observation"
                 and e["payload"].get("assist")]
     assert len(deferred) == 1, deferred
     assert deferred[0]["assists"] == ["decision-record/m"]
@@ -146,7 +143,7 @@ def test_the_verifier_does_not_challenge_a_line_twice_across_a_resume(make_routi
     from rsched.engine import verifier
 
     d = make_routine(slug="scope")
-    server = _server(d)
+    server = server_for(d)
     finishline.save(d, {"outcomes": [{"text": "the PDF is verified", "judge": "run"}]},
                     now="t")
     monkeypatch.setattr(verifier, "refuted", lambda loop, claims, summary: [
@@ -158,7 +155,7 @@ def test_the_verifier_does_not_challenge_a_line_twice_across_a_resume(make_routi
     scripted([claim, claim])
     status, run_dir = run_routine(d, server, run_ts=TS, resume_from=TS)
     assert status == "ok"
-    challenged = [e for e in _events(run_dir) if e["type"] == "observation"
+    challenged = [e for e in transcript_events(run_dir) if e["type"] == "observation"
                   and e["payload"].get("claims_unsupported")]
     assert len(challenged) == 1
     row = finishline.load(d)["outcomes"][0]
@@ -171,7 +168,7 @@ def test_a_repo_found_clean_stays_an_undo_point_across_a_resume(make_routine, sc
     run's own first edit read as uncommitted work and its next edit into the same clean repo
     was held: the false positive the clean-tree check exists to remove, one leg later."""
     d = make_routine(slug="scope")
-    server = _server(d)
+    server = server_for(d)
     _rule(server, "git-checkpoint", "pre-action", "uncheckpointed-repo-write", "commit first")
     _hold_rule(d, ["git-checkpoint"])
     repo = tmp_path / "project"
@@ -184,7 +181,7 @@ def test_a_repo_found_clean_stays_an_undo_point_across_a_resume(make_routine, sc
     _write_root(d, repo)
     scripted([write_file(str(repo / "a.py"), content="a"), _down()])
     assert run_routine(d, server, run_ts=TS)[0] == "failed"
-    first = next(e for e in _events(d / "runs" / TS) if e["type"] == "observation")
+    first = next(e for e in transcript_events(d / "runs" / TS) if e["type"] == "observation")
     assert Path(first["payload"]["undo_point"]) == repo     # named on the write it let through
 
     scripted([write_file(str(repo / "b.py"), content="b"),
@@ -208,7 +205,7 @@ def test_a_new_reply_starts_fresh_while_a_resumed_reply_keeps_its_guards(make_ro
     made = make_routine(slug="c-scope")
     d = convs / made.name
     made.rename(d)
-    server = _server(d)
+    server = server_for(d)
     server.conversations_home = convs
     server.routines_home = convs
     _reminder(d, r"^write_file path=state/x\.txt")
@@ -366,7 +363,7 @@ def test_the_eviction_warning_is_given_once_across_a_resume(make_routine):
     note_prompt_size(first, REF, {"in": 100_000, "cached_in": 50_000, "cache_write": 10_000})
     compact_if_needed(first, None, REF)
     assert first._evict_warned is True
-    notes = [e["payload"] for e in _events(first.ctx.run_dir)
+    notes = [e["payload"] for e in transcript_events(first.ctx.run_dir)
              if e["type"] == "user_injection" and e["payload"].get("evict_warning")]
     assert len(notes) == 1 and "about to be ARCHIVED" in notes[0]["text"]
 

@@ -14,16 +14,13 @@ from __future__ import annotations
 
 import re
 
-import yaml
 from playwright.sync_api import expect
 
 from .conftest import until
+from .helpers import hold_requests, stored_config
 
 CHANGED = re.compile(r"\bsf-changed\b")
-
-
-def _stored(ui, slug="uir"):
-    return yaml.safe_load((ui.routines / slug / "routine.yaml").read_text(encoding="utf-8"))
+GATE_TEST = re.compile(r"/api/routines/uir/gate/test$")
 
 
 def _gate(page):
@@ -57,12 +54,12 @@ def test_adding_a_check_switches_the_gate_on_and_the_accept_saves_it(ui, ui_page
     days.fill("0, 1, 2, 3, 4, 5, 6")
     days.press("Tab")
     expect(ui_page.locator('.sf-field[data-field="run_gate"]')).to_have_class(CHANGED)
-    assert not (_stored(ui).get("run_gate") or {}).get("checks")    # a draft until accepted
+    assert not (stored_config(ui).get("run_gate") or {}).get("checks")  # a draft until accepted
 
     ui_page.locator(".accept-bar [data-accept]").click()
-    until(lambda: (_stored(ui).get("run_gate") or {}).get("enabled") is True,
+    until(lambda: (stored_config(ui).get("run_gate") or {}).get("enabled") is True,
           what="the accepted gate")
-    gate = _stored(ui)["run_gate"]
+    gate = stored_config(ui)["run_gate"]
     assert gate["checks"] == [{"kind": "weekdays", "id": "c1", "days": [0, 1, 2, 3, 4, 5, 6]}]
     assert gate["timeout_s"] == 30
 
@@ -105,8 +102,9 @@ def test_the_timeout_rides_the_same_accept(ui, ui_page):
     timeout.fill("90")
     timeout.press("Tab")
     ui_page.locator(".accept-bar [data-accept]").click()
-    until(lambda: (_stored(ui).get("run_gate") or {}).get("timeout_s") == 90, what="the timeout")
-    assert _stored(ui)["run_gate"]["checks"] == [{"kind": "max_quiet", "id": "c1", "days": 3}]
+    until(lambda: (stored_config(ui).get("run_gate") or {}).get("timeout_s") == 90,
+          what="the timeout")
+    assert stored_config(ui)["run_gate"]["checks"] == [{"kind": "max_quiet", "id": "c1", "days": 3}]
 
 
 def test_the_routines_own_predicate_is_edited_in_place(ui, ui_page):
@@ -126,16 +124,6 @@ def test_the_routines_own_predicate_is_edited_in_place(ui, ui_page):
     expect(panel.locator('[data-gate-add] option[value="script"]')).to_have_count(0)
 
 
-def _hold_gate_tests(page):
-    held = []
-
-    def hold(route):        # Playwright wraps a Python function, never a bound builtin
-        held.append(route)
-
-    page.route(re.compile(r"/api/routines/uir/gate/test$"), hold)
-    return held
-
-
 def _a_gate_to_test(page):
     panel = _gate(page)
     panel.locator("[data-gate-add]").select_option("weekdays")
@@ -150,7 +138,7 @@ def test_a_double_clicked_gate_test_asks_the_checks_once(ui, ui_page):
     rests while its test is out, so a double-click asks them once."""
     ui_page.goto(f"{ui.url}/#/routine/uir")
     panel = _a_gate_to_test(ui_page)
-    held = _hold_gate_tests(ui_page)
+    held = hold_requests(ui_page, GATE_TEST)
     panel.locator("[data-gate-test]").dblclick()
     until(lambda: held, what="the gate test", page=ui_page)
     ui_page.wait_for_timeout(400)
@@ -162,7 +150,7 @@ def test_only_the_newest_gate_test_paints_its_verdict(ui, ui_page):
     must not put the old gate's verdict under the new one."""
     ui_page.goto(f"{ui.url}/#/routine/uir")
     panel = _a_gate_to_test(ui_page)
-    held = _hold_gate_tests(ui_page)
+    held = hold_requests(ui_page, GATE_TEST)
     panel.locator("[data-gate-test]").click()
     until(lambda: len(held) == 1, what="the first gate test", page=ui_page)
     timeout = panel.locator("[data-gate-timeout]")

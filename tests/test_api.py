@@ -6,7 +6,7 @@ import pytest
 import yaml
 from fastapi.testclient import TestClient
 
-from conftest import make_test_server, mk_run
+from conftest import authed_client, make_test_server, mk_run
 from rsched import utils_run
 from rsched.config import load_server_config
 from rsched.paths import atomic_write_json, read_json
@@ -18,10 +18,7 @@ TOKEN = "test-token"
 @pytest.fixture
 def client(tmp_path, make_routine):
     make_routine(slug="apir")  # lives under tmp_path/routines via the shared fixture
-    server = make_test_server(tmp_path)
-    app = create_app(server, with_scheduler=False)
-    with TestClient(app) as c:
-        c.headers["Authorization"] = f"Bearer {TOKEN}"
+    with authed_client(make_test_server(tmp_path)) as c:
         yield c, tmp_path
 
 

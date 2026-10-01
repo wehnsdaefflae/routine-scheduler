@@ -5,14 +5,8 @@ over them.
 
 from types import SimpleNamespace
 
-import pytest
-import yaml
-
 from rsched import cli
-from rsched.config import load_server_config
 from rsched.workflows.recipelint import recipe_notes
-
-REPO_SEED = cli.Path(__file__).resolve().parents[1] / "library-seed"
 
 MAIN = """# Test recipe
 
@@ -133,24 +127,6 @@ def test_a_stage_restating_main_is_the_normal_shape(tmp_path):
 
 
 # ---- the wiring: `rsched validate` reports, and never fails over, a recipe finding --------
-
-
-@pytest.fixture
-def cli_server(tmp_path, monkeypatch):
-    import shutil
-
-    lib = tmp_path / "library"
-    for kind in ("workflows", "rules", "permissions"):
-        shutil.copytree(REPO_SEED / kind, lib / kind)
-    cfg_path = tmp_path / "config.yaml"
-    cfg_path.write_text(yaml.safe_dump({
-        "token": "t", "routines_home": str(tmp_path / "routines"),
-        "libraries_home": str(lib)}), encoding="utf-8")
-    server, problems = load_server_config(cfg_path)
-    assert not problems
-    (tmp_path / "routines").mkdir(exist_ok=True)
-    monkeypatch.setattr(cli, "load_server_config", lambda: (server, []))
-    return server
 
 
 def test_validate_reports_the_recipe_and_stays_green(cli_server, make_routine, tmp_path, capsys):

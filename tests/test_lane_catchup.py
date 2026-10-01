@@ -8,29 +8,14 @@ up the most recent due fire once when the watermark is older than it.
 
 from __future__ import annotations
 
-import json
 from datetime import UTC, datetime, timedelta
 
 from conftest import FakeRunner
+from helpers import health_events, tmp_server
 from rsched import firetimes, lane_fires, lane_runs, lanes
-from rsched.config import ServerConfig
 from rsched.daemon import lane_catchup
 from rsched.daemon.events import EventBus
 from rsched.daemon.scheduler import Scheduler
-
-
-def _server(tmp_path) -> ServerConfig:
-    s = ServerConfig()
-    s.routines_home = tmp_path / "routines"
-    s.routines_home.mkdir(parents=True, exist_ok=True)
-    return s
-
-
-def _events(server) -> list[dict]:
-    p = server.routines_home / ".control" / "health-events.jsonl"
-    if not p.exists():
-        return []
-    return [json.loads(x) for x in p.read_text(encoding="utf-8").splitlines() if x.strip()]
 
 
 def test_arm_stamps_the_watermark(tmp_path):
@@ -45,7 +30,7 @@ def test_arm_stamps_the_watermark(tmp_path):
 def test_first_boot_stamps_and_arms_nothing(tmp_path):
     """No watermark = no evidence of a miss: the first boot after the upgrade must not fire
     every lane at once. It leaves a mark, and every later boot has something to compare."""
-    server = _server(tmp_path)
+    server = tmp_server(tmp_path)
     lane = lanes.create(server.routines_home, name="N", cron="0 7 * * *", tz="UTC")
     now = datetime(2026, 9, 12, 9, 0, tzinfo=UTC)
     assert lane_catchup.boot_catchup(server, now) == []
@@ -57,7 +42,7 @@ def test_missed_fire_is_made_up_once(tmp_path):
     """The watermark says the last arm was Monday; the cron came due Tuesday 08:30 and the
     daemon was down: boot arms ONE chain (armed_by=catchup) and records the event. A lane
     armed since its last due fire is left alone, however many fires it missed before that."""
-    server = _server(tmp_path)
+    server = tmp_server(tmp_path)
     home = server.routines_home
     lane = lanes.create(home, name="Biweekly", cron="30 8 * * 2,4", tz="UTC")
     fresh = lanes.create(home, name="Fresh", cron="0 7 * * *", tz="UTC")
@@ -68,7 +53,7 @@ def test_missed_fire_is_made_up_once(tmp_path):
     rec = lane_runs.read(home, lane["id"])
     assert rec is not None and rec["armed_by"] == "catchup"
     assert lane_runs.read(home, fresh["id"]) is None
-    evs = [e for e in _events(server) if e["event"] == "lane_fire_catchup"]
+    evs = health_events(server.routines_home, event="lane_fire_catchup")
     assert len(evs) == 1 and evs[0]["routine"] == lane["id"] and "Biweekly" in evs[0]["detail"]
     # the arm moved the watermark past the due fire: a second boot makes up nothing more
     assert lane_catchup.boot_catchup(server, now + timedelta(minutes=5)) == []
@@ -79,7 +64,7 @@ def test_a_naive_stamp_reads_as_no_evidence_and_spares_the_other_lanes(tmp_path)
     safe to delete) used to come back naive, and comparing it with the aware due fire raised
     TypeError mid-loop — the make-up of every lane after it was lost with it. It reads like a
     missing entry now: stamped at boot, nothing made up for it."""
-    server = _server(tmp_path)
+    server = tmp_server(tmp_path)
     home = server.routines_home
     naive = lanes.create(home, name="Naive", cron="0 7 * * *", tz="UTC")
     missed = lanes.create(home, name="Missed", cron="0 7 * * *", tz="UTC")
@@ -94,7 +79,7 @@ def test_a_naive_stamp_reads_as_no_evidence_and_spares_the_other_lanes(tmp_path)
 
 
 def test_skip_policy_paused_and_in_flight_lanes_are_not_made_up(tmp_path):
-    server = _server(tmp_path)
+    server = tmp_server(tmp_path)
     home = server.routines_home
     old = datetime(2026, 9, 1, 7, 0, tzinfo=UTC).isoformat()
     skipper = lanes.create(home, name="S", cron="0 7 * * *", tz="UTC")
@@ -112,13 +97,13 @@ def test_skip_policy_paused_and_in_flight_lanes_are_not_made_up(tmp_path):
     assert lane_runs.read(home, skipper["id"]) is None
     assert lane_runs.read(home, paused["id"]) is None
     assert lane_runs.read(home, busy["id"])["armed_by"] == "ui"   # untouched
-    assert not [e for e in _events(server) if e["event"] == "lane_fire_catchup"]
+    assert not health_events(server.routines_home, event="lane_fire_catchup")
 
 
 async def test_scheduler_boot_catchup_arms_missed_lanes(make_routine, tmp_path):
     """The scheduler's boot_catchup runs the lane half beside the routine half."""
     make_routine(slug="member")
-    server = _server(tmp_path)
+    server = tmp_server(tmp_path)
     home = server.routines_home
     lane = lanes.create(home, name="Nightly", members=[{"slug": "member"}],
                         cron="0 2 * * *", tz="UTC")
@@ -155,7 +140,7 @@ async def test_a_pause_skipped_lane_fire_is_not_made_up_at_the_next_boot(make_ro
 
     make_routine(slug="member")
     monkeypatch.setattr(sched_mod, "TICK_S", 0.02)
-    server = _server(tmp_path)
+    server = tmp_server(tmp_path)
     home = server.routines_home
     lane = lanes.create(home, name="Daily", members=[{"slug": "member"}],
                         cron="0 7 * * *", tz="UTC")
@@ -177,7 +162,7 @@ async def test_a_pause_skipped_lane_fire_is_not_made_up_at_the_next_boot(make_ro
     assert lane_runs.read(home, lane["id"]) is None
     pause.set_paused(server, False)
     assert lane_catchup.boot_catchup(server, datetime.now(UTC)) == []
-    assert not [e for e in _events(server) if e["event"] == "lane_fire_catchup"]
+    assert not health_events(server.routines_home, event="lane_fire_catchup")
 
 
 def test_concurrent_stamps_keep_both_watermarks(tmp_path, monkeypatch):
@@ -279,7 +264,7 @@ def test_resume_makes_up_a_weekly_lane_and_leaves_a_daily_one_alone(tmp_path):
     +02:00, i.e. a moment the lane was never due, and the judgement it was testing could not
     have held for any threshold.
     """
-    server = _server(tmp_path)
+    server = tmp_server(tmp_path)
     home = server.routines_home
     weekly = lanes.create(home, name="Weekly Research", cron="0 5 * * 6", tz="UTC")
     daily = lanes.create(home, name="Nightly", cron="0 5 * * *", tz="UTC")
@@ -298,7 +283,7 @@ def test_resume_makes_up_a_weekly_lane_and_leaves_a_daily_one_alone(tmp_path):
     made = lane_runs.read(home, weekly["id"])
     assert made is not None and made["armed_by"] == "catchup"
     assert lane_runs.read(home, daily["id"]) is None
-    evs = [e for e in _events(server) if e["event"] == "lane_fire_catchup"]
+    evs = health_events(server.routines_home, event="lane_fire_catchup")
     assert len(evs) == 1 and evs[0]["routine"] == weekly["id"]
     assert "Weekly Research" in evs[0]["detail"]
     # the owed record is spent for BOTH — including the one that was declined, or the next
@@ -311,7 +296,7 @@ def test_resume_makes_up_a_weekly_lane_and_leaves_a_daily_one_alone(tmp_path):
 def test_resume_never_makes_up_a_skip_or_paused_or_in_flight_lane(tmp_path):
     """The same four exclusions boot catch-up honours — a lane the operator paused, a lane whose
     policy is `skip`, an unscheduled lane, and one whose chain is already running."""
-    server = _server(tmp_path)
+    server = tmp_server(tmp_path)
     home = server.routines_home
     due = datetime(2026, 9, 26, 5, 0, tzinfo=UTC)
     skipper = lanes.create(home, name="S", cron="0 5 * * 6", tz="UTC")
@@ -328,12 +313,12 @@ def test_resume_never_makes_up_a_skip_or_paused_or_in_flight_lane(tmp_path):
     assert lane_runs.read(home, skipper["id"]) is None
     assert lane_runs.read(home, paused["id"]) is None
     assert lane_runs.read(home, busy["id"])["armed_by"] == "ui"    # untouched
-    assert not [e for e in _events(server) if e["event"] == "lane_fire_catchup"]
+    assert not health_events(server.routines_home, event="lane_fire_catchup")
 
 
 def test_a_lane_that_lost_no_fire_is_untouched_by_a_resume(tmp_path):
     """No owed record = nothing to make up. A resume is not a reason to fire anything."""
-    server = _server(tmp_path)
+    server = tmp_server(tmp_path)
     home = server.routines_home
     lane = lanes.create(home, name="W", cron="0 5 * * 6", tz="UTC")
     lane_fires.stamp(home, lane["id"], datetime(2026, 9, 19, 5, 0, tzinfo=UTC).isoformat())
@@ -353,7 +338,7 @@ async def test_the_scheduler_records_what_its_paused_skip_dropped(make_routine, 
 
     make_routine(slug="member")
     monkeypatch.setattr(sched_mod, "TICK_S", 0.02)
-    server = _server(tmp_path)
+    server = tmp_server(tmp_path)
     home = server.routines_home
     lane = lanes.create(home, name="Weekly", members=[{"slug": "member"}],
                         cron="0 5 * * 6", tz="UTC")

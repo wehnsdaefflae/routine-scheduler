@@ -49,11 +49,7 @@ class CapturingSink:
         self.records.append(rec)
 
 
-@pytest.fixture(autouse=True)
-def _reset_sink():
-    set_sink(None)
-    yield
-    set_sink(None)
+pytestmark = pytest.mark.usefixtures("reset_llm_sink")
 
 
 def test_passthrough_when_no_sink():

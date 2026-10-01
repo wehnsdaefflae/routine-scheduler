@@ -10,19 +10,8 @@ from playwright.sync_api import expect
 from rsched.config import MachineConfig
 
 from .conftest import until
+from .helpers import unfold
 
-
-def _unfold(page) -> None:
-    """Open every routine-page settings group and each group's "more" menu.
-
-    The page ships with only its two leading groups open (views/routine-config.js): seven open at
-    once made it 11-12 000px tall. The rarely needed sections fold once more behind each group's
-    "more". A control inside a fold is not visible, so a test that reads one unfolds first. What
-    the DEFAULT is — and that the choice is remembered — is pinned in test_routine_groups.py, not
-    here.
-    """
-    page.wait_for_selector(".rgroup-head")
-    page.evaluate("() => { for (const d of document.querySelectorAll('details.rgroup, details.rmore')) d.open = true; }")
 
 def test_machines_card_add(ui, ui_page):
     ui_page.goto(f"{ui.url}/#/settings?section=machines")
@@ -119,7 +108,7 @@ def test_routine_machine_binding(ui, ui_page):
     ui.server_cfg.machines = {"gpu-box": mac}   # the live server the API reads
 
     ui_page.goto(f"{ui.url}/#/routine/uir")
-    _unfold(ui_page)
+    unfold(ui_page)
     # the machine's checkbox is inside its label row
     row = ui_page.locator("#sec-machines + .panel label", has_text="gpu-box")
     row.wait_for()

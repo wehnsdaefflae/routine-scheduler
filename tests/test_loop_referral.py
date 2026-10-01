@@ -11,13 +11,12 @@ from __future__ import annotations
 
 import pytest
 
-from rsched.config import ModelRef, load_routine
+from helpers import run_context
+from rsched.config import ModelRef
 from rsched.endpoints.base import Completion, EndpointError
-from rsched.engine.budgets_config import Budgets
 from rsched.engine.completion import next_action
 from rsched.engine.loop import EngineLoop
-from rsched.engine.run_context import RunContext
-from rsched.engine.transcript import Transcript, read_events
+from rsched.engine.transcript import read_events
 from test_loop import TS, _server
 
 REFUSAL = Completion(text="I'm sorry, but I can't help with that request.", parsed=None,
@@ -80,15 +79,8 @@ class _FakeRegistry:
 
 def _loop(make_routine, registry) -> EngineLoop:
     d = make_routine(slug="ref")
-    server = _server(d)
-    run_dir = d / "runs" / TS
-    run_dir.mkdir(parents=True)
-    cfg, _ = load_routine(d)
-    ctx = RunContext(routine=cfg, server=server, registry=registry, run_ts=TS,
-                     run_dir=run_dir,
-                     transcript=Transcript(run_dir / "transcript.jsonl"),
-                     budgets=Budgets.from_config(cfg.budgets))
-    loop = EngineLoop(ctx, "## Run flow", "instr")
+    loop = EngineLoop(run_context(d, TS, server=_server(d), registry=registry),
+                      "## Run flow", "instr")
     loop.messages = [{"role": "user", "content": "kickoff"}]
     return loop
 

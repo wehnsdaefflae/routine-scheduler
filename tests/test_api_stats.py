@@ -3,20 +3,15 @@ consumes: totals for the cards, the by_* slices for the tables, and per-run rows
 configurable charts. Aggregation math itself lives in test_stats.py; this pins the route
 wiring + serialized surface."""
 
-from conftest import mk_run
-
-
-def _mk_run(routine_dir, ts, state, *, tin, tout, cost=None, elapsed_s=0, model=None):
-    usage = {"in": tin, "out": tout, **({"cost": cost} if cost is not None else {})}
-    mk_run(routine_dir, ts, state, usage=usage, elapsed_s=elapsed_s, model=model or None)
+from conftest import usage_run
 
 
 def test_stats_route_serves_the_stats_tab_shape(api_client, make_routine):
     c, _tmp = api_client
     d = make_routine(slug="alpha")
-    _mk_run(d, "20260712-070000", "finished", tin=100, tout=40, cost=0.25,
-            elapsed_s=60, model="dummy/m")           # a modern run records endpoint/model
-    _mk_run(d, "20260713-070000", "failed", tin=50, tout=10, elapsed_s=30)
+    usage_run(d, "20260712-070000", "finished", tin=100, tout=40, cost=0.25,
+              elapsed_s=60, model="dummy/m")           # a modern run records endpoint/model
+    usage_run(d, "20260713-070000", "failed", tin=50, tout=10, elapsed_s=30)
 
     r = c.get("/api/stats")
     assert r.status_code == 200

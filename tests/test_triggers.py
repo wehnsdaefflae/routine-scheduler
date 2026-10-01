@@ -5,19 +5,12 @@ tests/test_detached.py — on-disk fixtures, no subprocess, asyncio_mode=auto.""
 import yaml
 
 from conftest import FakeRunner
+from helpers import tmp_server
 from rsched import registry, triggers
-from rsched.config import ServerConfig, load_routine
+from rsched.config import load_routine
 from rsched.daemon.triggers import TriggerManager, _event_text
 from rsched.ids import now_iso
 from rsched.paths import read_json
-
-
-def _server(tmp_path) -> ServerConfig:
-    s = ServerConfig()
-    s.routines_home = tmp_path / "routines"
-    s.routines_home.mkdir(parents=True, exist_ok=True)
-    return s
-
 
 WEBHOOK = {"id": "t-aaaa1111", "type": "webhook", "token": "tok-" + "a" * 28,
            "cooldown_s": 0}
@@ -79,7 +72,7 @@ def test_validate_triggers_reserved_types_kept_but_flagged():
 
 
 def test_load_routine_canonicalizes_triggers(tmp_path):
-    server = _server(tmp_path)
+    server = tmp_server(tmp_path)
     d = _routine(server, trig=[dict(WEBHOOK), {"id": "t-bad", "type": "webhook"}])
     cfg, problems = load_routine(d)
     assert cfg is not None
@@ -91,7 +84,7 @@ def test_load_routine_canonicalizes_triggers(tmp_path):
 
 
 def test_spool_roundtrip(tmp_path):
-    server = _server(tmp_path)
+    server = tmp_server(tmp_path)
     home = server.routines_home
     assert triggers.pending_events(home, "webby") == []
     assert triggers.slugs_with_events(home) == []
@@ -108,7 +101,7 @@ def test_spool_roundtrip(tmp_path):
 
 
 def test_describe_triggers_rows(tmp_path):
-    server = _server(tmp_path)
+    server = tmp_server(tmp_path)
     home = server.routines_home
     triggers.write_event(home, "webby", trigger_id="t-aaaa1111", payload="x")
     triggers.write_state(home, "webby", {
@@ -128,7 +121,7 @@ def test_describe_triggers_rows(tmp_path):
 
 
 async def test_tick_fires_once_and_injects_every_payload(tmp_path):
-    server = _server(tmp_path)
+    server = tmp_server(tmp_path)
     d = _routine(server, trig=[dict(WEBHOOK)])
     for n in range(3):
         triggers.write_event(server.routines_home, "webby",
@@ -155,7 +148,7 @@ async def test_the_injection_goes_through_the_one_inbox_writer(tmp_path, monkeyp
     writer exists to prevent, one `ts` spelling and one uniqueness rule per endpoint."""
     from rsched.engine import inbox as inbox_mod
 
-    server = _server(tmp_path)
+    server = tmp_server(tmp_path)
     d = _routine(server, slug="fresh", trig=[dict(WEBHOOK)])
     triggers.write_event(server.routines_home, "fresh", trigger_id="t-aaaa1111",
                          payload="hello")
@@ -174,7 +167,7 @@ async def test_the_injection_goes_through_the_one_inbox_writer(tmp_path, monkeyp
 
 
 async def test_tick_coalesces_while_active_and_draining(tmp_path):
-    server = _server(tmp_path)
+    server = tmp_server(tmp_path)
     d = _routine(server, trig=[dict(WEBHOOK)])
     triggers.write_event(server.routines_home, "webby", trigger_id="t-aaaa1111", payload="x")
     runner = FakeRunner()
@@ -197,7 +190,7 @@ async def test_tick_coalesces_while_active_and_draining(tmp_path):
 async def test_cooldown_defers_the_fire(tmp_path):
     """Cooldown is PER TRIGGER (docs/triggers.md): the trigger's OWN last-fired stamp
     gates it; a sibling trigger fires regardless of another's window."""
-    server = _server(tmp_path)
+    server = tmp_server(tmp_path)
     _routine(server, trig=[{**WEBHOOK, "cooldown_s": 3600}])
     triggers.write_state(server.routines_home, "webby",
                          {"last_fired": now_iso(), "fires": 1,
@@ -220,7 +213,7 @@ async def test_cooldown_defers_the_fire(tmp_path):
 
 async def test_cooldown_is_per_trigger_not_routine_global(tmp_path):
     """One trigger cooling must not hold a SIBLING trigger's events hostage."""
-    server = _server(tmp_path)
+    server = tmp_server(tmp_path)
     other = {**WEBHOOK, "id": "t-bbbb2222", "token": "tok-bbbb",
              "cooldown_s": 3600}
     _routine(server, trig=[{**WEBHOOK, "cooldown_s": 3600}, other])
@@ -237,7 +230,7 @@ async def test_cooldown_is_per_trigger_not_routine_global(tmp_path):
 
 
 async def test_stale_events_dropped(tmp_path):
-    server = _server(tmp_path)
+    server = tmp_server(tmp_path)
     d = _routine(server, trig=[dict(WEBHOOK)])
     triggers.write_event(server.routines_home, "webby", trigger_id="t-deleted", payload="x")
     runner = FakeRunner()
@@ -255,7 +248,7 @@ async def test_stale_events_dropped(tmp_path):
 
 
 async def test_tick_never_raises(tmp_path):
-    server = _server(tmp_path)
+    server = tmp_server(tmp_path)
     triggers.write_event(server.routines_home, "ghost", trigger_id="t-1", payload="x")
     mgr = TriggerManager(server, FakeRunner())
     await mgr.tick({})                                         # no catalog entry → dropped, no raise
@@ -274,7 +267,7 @@ async def test_crash_replayed_event_lands_exactly_once(tmp_path):
     """The inbox message filename is DERIVED from the spool event filename - so an event
     replayed after a crash between inject and unlink OVERWRITES its own message instead of
     duplicating it (exactly-once delivery across crashes)."""
-    server = _server(tmp_path)
+    server = tmp_server(tmp_path)
     d = _routine(server, trig=[dict(WEBHOOK)])
     evt_path = triggers.write_event(server.routines_home, "webby",
                                     trigger_id="t-aaaa1111", payload="the-one-event")
@@ -332,7 +325,7 @@ async def test_report_delivery_fires_the_target(tmp_path):
     on the next tick; nothing is consumed daemon-side (the run's own drain does that)."""
     from rsched.reports import file_report
 
-    server = _server(tmp_path)
+    server = tmp_server(tmp_path)
     d = _routine(server, slug="target", trig=[dict(REPORT_TRIG)])
     file_report(server.routines_home, routine="sender", run_id="sender:20260805-010101",
                 title="fix it", detail="d", target="target", target_dir=d)
@@ -353,7 +346,7 @@ async def test_report_deliveries_coalesce_within_cooldown(tmp_path):
 
     from rsched.reports import file_report
 
-    server = _server(tmp_path)
+    server = tmp_server(tmp_path)
     d = _routine(server, slug="target", trig=[dict(REPORT_TRIG)])
     file_report(server.routines_home, routine="s", run_id="s:1", title="one",
                 target="target", target_dir=d)
@@ -380,7 +373,7 @@ async def test_report_trigger_respects_disabled_active_closures_and_answers(tmp_
     from rsched.paths import atomic_write_json
     from rsched.reports import Disposal, file_report
 
-    server = _server(tmp_path)
+    server = tmp_server(tmp_path)
     # disabled routine: delivery never fires it
     d_off = _routine(server, slug="offline", trig=[dict(REPORT_TRIG)], enabled=False)
     file_report(server.routines_home, routine="s", run_id="s:1", title="t",
@@ -421,7 +414,7 @@ async def test_an_in_flight_temp_file_never_buys_a_run(tmp_path):
     the target directory, so the old filter also matched `.msg-….json.XXXX.tmp`; that file
     is unreadable, unreadable WAKES here by design, and a race with any inbox write
     therefore bought a whole run of the recipe."""
-    server = _server(tmp_path)
+    server = tmp_server(tmp_path)
     d = _routine(server, slug="racy", trig=[dict(REPORT_TRIG)])
     (d / "inbox" / ".msg-20260922T101010-abcd1234.json.9f3a.tmp").write_text(
         '{"text": "hal', encoding="utf-8")
@@ -437,7 +430,7 @@ async def test_one_routine_that_raises_never_starves_the_rest_of_the_pass(tmp_pa
     once — not once per five-second tick — until it next succeeds."""
     from rsched.health_events import HEALTH_EVENTS_FILE
 
-    server = _server(tmp_path)
+    server = tmp_server(tmp_path)
     _routine(server, slug="aaa-broken", trig=[dict(REPORT_TRIG)])
     d = _routine(server, slug="zzz-fine", trig=[dict(REPORT_TRIG)])
     (d / "inbox" / "msg-x.json").write_text('{"text": "work", "via": "report"}', "utf-8")
@@ -463,7 +456,7 @@ async def test_the_page_counts_exactly_what_the_report_trigger_fires_on(tmp_path
     """The routine page's pending number and the daemon's watch read the ONE inbox predicate
     with the same flags. They used to differ on an unparseable file: the watch is fail-OPEN
     and fired a run for it while the page counted it as nothing — "0 pending" over a fire."""
-    server = _server(tmp_path)
+    server = tmp_server(tmp_path)
     d = _routine(server, slug="garbled", trig=[dict(REPORT_TRIG)])
     (d / "inbox" / "msg-20260922T101010-abcd1234.json").write_text("{not json",
                                                                    encoding="utf-8")
@@ -481,7 +474,7 @@ async def test_a_retired_routine_is_not_fired_by_a_report_trigger(tmp_path):
     retirement proposal already waiting on the Decisions page."""
     from rsched.reports import file_report
 
-    server = _server(tmp_path)
+    server = tmp_server(tmp_path)
     d = _routine(server, slug="finished", trig=[dict(REPORT_TRIG)])
     file_report(server.routines_home, routine="s", run_id="s:1", title="one more thing",
                 target="finished", target_dir=d)
@@ -497,7 +490,7 @@ async def test_a_retired_routine_drops_its_spooled_webhook_events(tmp_path):
     """The same rule for the webhook path, and the spool is dropped rather than held: a
     retired routine has no later run to drain it, so keeping the events would hold a spool
     open forever for a routine that is finished."""
-    server = _server(tmp_path)
+    server = tmp_server(tmp_path)
     _routine(server, slug="webby", trig=[dict(WEBHOOK)])
     triggers.write_event(server.routines_home, "webby", trigger_id=WEBHOOK["id"],
                          payload="hello")
