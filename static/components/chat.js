@@ -7,7 +7,9 @@
 //                       transcript.js: deferred → full form, blocking → one-click strip)
 //   loadSub(n, off)   — subrun expansion inside the work fold
 //   isLive()          — live-run predicate for subrun polling
-//   onArtifact(path)  — a write_file into artifacts/ landed (the panel refreshes)
+//   onArtifact(path)  — a write/edit landed in a deliverable dir — artifacts/, reports/ or
+//                       output/, the panel's own rows (artifacts.js isDeliverable) — so
+//                       the panel refreshes while the reply is still working
 //   onFork(title, qt) — the user clicked the [new-topic] fork button (a NEW conversation
 //                       from a topic shift — not a branch; see onBranch)
 //   onBranch(turn)    — the user clicked "⑂ branch from here" on a reply: fork the
@@ -17,6 +19,7 @@
 
 import { attachmentRow, createTranscript, referButton, revokeBlobs, splitRef } from "/static/components/transcript.js";
 import { answerForm } from "/static/components/answerform.js";
+import { isDeliverable } from "/static/components/artifacts.js";
 import { md, mdInline } from "/static/md.js";
 import { el, fmtTime, fmtTokens, fullOutput, compressionInfo } from "/static/util.js";
 
@@ -319,7 +322,7 @@ export function createChat(container, opts = {}) {
           return;
         case "observation":
           if ((p.kind === "write_file" || p.kind === "edit_file") && !p.error
-              && String(p.path || "").includes("artifacts/") && opts.onArtifact) {
+              && isDeliverable(p.path) && opts.onArtifact) {
             opts.onArtifact(p.path);
           }
           if (p.user_command) {         // the user asked for this result — show it, don't fold it
