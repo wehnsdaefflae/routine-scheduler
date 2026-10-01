@@ -46,7 +46,12 @@ def load(routines_home: Path) -> dict[str, str]:
 
 
 def stamp(routines_home: Path, lane_id: str, when: str | None = None) -> None:
-    """Record that `lane_id`'s chain was armed now (or at `when`, ISO).
+    """Record that `lane_id`'s chain was armed now (or at `when`, ISO)."""
+    _set(routines_home, str(lane_id), when or now_iso())
+
+
+def _set(routines_home: Path, key: str, value: str | None) -> None:
+    """Write one entry (or drop it, for None) — the file's one writer.
 
     LOCKED, because one file holds every lane's watermark and is rewritten whole, and three
     contexts write it: the scheduler on the daemon's loop thread, the web layer's sync
@@ -57,8 +62,28 @@ def stamp(routines_home: Path, lane_id: str, when: str | None = None) -> None:
     """
     with file_lock(lock_path(routines_home)):
         data = load(routines_home)
-        data[str(lane_id)] = when or now_iso()
+        if value is not None:
+            data[key] = value
+        elif data.pop(key, None) is None:
+            return                                   # nothing to drop, nothing to rewrite
         atomic_write_json(path(routines_home), data)
+
+
+def _instant(raw: str | None) -> datetime | None:
+    """A stored stamp as an AWARE datetime, or None when it is absent, unreadable or naive.
+
+    Every writer stamps an aware instant. A naive one — a hand edit of a file documented as
+    safe to delete — came back naive, and boot catch-up's comparison with an aware due fire
+    raised TypeError mid-loop, losing the make-up of every lane after it. It reads like a
+    missing entry instead: no evidence of a miss, stamped afresh at the next boot.
+    """
+    if not raw:
+        return None
+    try:
+        when = datetime.fromisoformat(raw)
+    except ValueError:
+        return None
+    return when if when.tzinfo is not None else None
 
 
 #: Key prefix for the SECOND thing this file remembers: the fire a global pause skipped and
@@ -76,21 +101,12 @@ def stamp_paused_skip(routines_home: Path, lane_id: str, when: str | None = None
     up when the pause is lifted — the operator's D156 choice C. One entry per lane: a pause that
     swallows two fires of one lane owes the lane one chain, not two.
     """
-    with file_lock(lock_path(routines_home)):
-        data = load(routines_home)
-        data[_SKIP_PREFIX + str(lane_id)] = when or now_iso()
-        atomic_write_json(path(routines_home), data)
+    _set(routines_home, _SKIP_PREFIX + str(lane_id), when or now_iso())
 
 
 def last_paused_skip(routines_home: Path, lane_id: str) -> datetime | None:
     """When a global pause last dropped this lane's due fire, or None when it owes nothing."""
-    raw = load(routines_home).get(_SKIP_PREFIX + str(lane_id))
-    if not raw:
-        return None
-    try:
-        return datetime.fromisoformat(raw)
-    except ValueError:
-        return None
+    return _instant(load(routines_home).get(_SKIP_PREFIX + str(lane_id)))
 
 
 def clear_paused_skip(routines_home: Path, lane_id: str) -> None:
@@ -99,18 +115,9 @@ def clear_paused_skip(routines_home: Path, lane_id: str) -> None:
     Cleared on a decline as well as on an arm: an owed fire that survives the resume that
     declined it would be made up by the next resume, at a time nobody skipped anything.
     """
-    with file_lock(lock_path(routines_home)):
-        data = load(routines_home)
-        if data.pop(_SKIP_PREFIX + str(lane_id), None) is not None:
-            atomic_write_json(path(routines_home), data)
+    _set(routines_home, _SKIP_PREFIX + str(lane_id), None)
 
 
 def last_armed(routines_home: Path, lane_id: str) -> datetime | None:
     """The last recorded arm as an aware datetime, or None when nothing was recorded."""
-    raw = load(routines_home).get(str(lane_id))
-    if not raw:
-        return None
-    try:
-        return datetime.fromisoformat(raw)
-    except ValueError:
-        return None
+    return _instant(load(routines_home).get(str(lane_id)))

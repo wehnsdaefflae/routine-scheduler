@@ -75,9 +75,10 @@ from .ids import now_iso
 from .paths import atomic_write_json, file_lock, read_json
 from .schedule import server_tz, zone_key
 
-# What to do when a member run fails partway through a sequential lane fire (Phase B reads
-# this; Phase A only stores it). "stop" = abort the rest of the chain; "continue" = fire the
-# remaining members anyway. A lane's own value may be null → inherit the instance default.
+# What to do when a member run fails partway through a sequential lane fire (resolved into the
+# chain at arm time — rsched.lane_runs — and read by the daemon's advance). "stop" = abort the
+# rest of the chain; "continue" = fire the remaining members anyway. A lane's own value may be
+# null → inherit the instance default.
 ON_FAILURE = ("stop", "continue")
 DEFAULT_ON_FAILURE = "stop"
 
