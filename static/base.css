@@ -760,7 +760,9 @@ label.field > span, .field > .lbl {
 #toast {
   position: fixed; bottom: var(--s5); left: 50%; transform: translateX(-50%);
   background: var(--plate); border: 1px solid var(--signal); color: var(--ink);
-  border-radius: var(--r2); padding: var(--s3) var(--s4); z-index: 100; box-shadow: var(--lift-2);
+  /* above the token gate (200) and a modal's scrim (210): a toast is often the ANSWER to what
+     the dialog just did — a refused lane edit's error was blurred under the scrim it raised */
+  border-radius: var(--r2); padding: var(--s3) var(--s4); z-index: 220; box-shadow: var(--lift-2);
   font-size: var(--t-m); max-width: min(92vw, 620px);
 }
 #toast.err { border-color: var(--err); }

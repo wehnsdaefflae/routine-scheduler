@@ -62,6 +62,12 @@ def test_browser_section_renders_and_close_clears_session(ui, ui_page):
         shot = ui_page.locator(".browser-shot")
         expect(shot).to_be_visible()
         assert shot.evaluate("el => el.src.startsWith('blob:')")
+        # clicking it opens the file through the one new-tab rule (blobtab.js): an image is a
+        # passive type, so the tab is the image itself, never a page with the console's origin
+        with ui_page.context.expect_page() as popup:
+            shot.click()
+        assert popup.value.url == shot.evaluate("el => el.src")
+        popup.value.close()
 
         ui_page.locator(".browser-sess .bg-cancel").click()
         # the stop endpoint deletes the model-written handle (the fake pid kills nothing)

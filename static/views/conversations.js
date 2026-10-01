@@ -17,6 +17,7 @@ import { navigate } from "/static/router.js";
 import { liveTail } from "/static/stream.js";
 import { forgetField } from "/static/formpersist.js";
 import { forkAt, rewindTo } from "/static/components/branches.js";
+import { newTabHref } from "/static/components/blobtab.js";
 import { flagRefusal } from "/static/components/refusalflag.js";
 import { createChat, typedBody, userEcho } from "/static/components/chat.js";
 import { createArtifacts } from "/static/components/artifacts.js";
@@ -350,8 +351,14 @@ export async function render(view, slug, _query = {}) {
           const img = el("img", { class: "browser-shot", alt: "latest browser view",
                                   title: "latest screenshot — click to open full-size" });
           apiBlobUrl(`/api/conversations/${slug}/browser/view?name=${encodeURIComponent(s.name)}&t=${s.view.mtime}`)
-            .then(({ url }) => { brBlobs.push(url); img.src = url;
-                                 img.onclick = () => window.open(url, "_blank"); })
+            .then(({ url, type }) => {
+              brBlobs.push(url); img.src = url;
+              // through the one new-tab rule (blobtab.js): an image opens as itself, and a type
+              // that could carry script never reaches a tab with the console's origin
+              const tab = newTabHref(url, type, s.name);
+              if (tab.href !== url) brBlobs.push(tab.href);   // a wrapper is freed with its file
+              img.onclick = () => window.open(tab.href, "_blank");
+            })
             .catch(() => img.remove());
           brBody.append(img);
         }

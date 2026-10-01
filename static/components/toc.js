@@ -12,7 +12,7 @@
 // either way, so base.css hides it there and the page is read top-to-bottom. Skipped on views
 // that carry their own page-level rail.
 
-import { el } from "/static/util.js";
+import { asButton, el } from "/static/util.js";
 import { openFolds } from "/static/landing.js";
 
 export function mountToc(box) {
@@ -29,15 +29,17 @@ export function mountToc(box) {
         .replace(/^-+|-+$/g, "") || "section";
       h.id = `toc-${base}-${i}`;
     }
-    const a = el("a", { class: "toc-link", title: h.textContent.trim(),
-      onclick: (e) => {
-        e.preventDefault();
-        // a section folded inside a closed group (or its "more" menu) has no box to scroll to:
-        // open every fold on the way, as a fix link does
-        openFolds(h);
-        h.scrollIntoView({ behavior: "smooth", block: "start" });
-      } },
-      h.textContent.trim());
+    const jump = (e) => {
+      e?.preventDefault();
+      // a section folded inside a closed group (or its "more" menu) has no box to scroll to:
+      // open every fold on the way, as a fix link does
+      openFolds(h);
+      h.scrollIntoView({ behavior: "smooth", block: "start" });
+    };
+    // No href (a hash would hand the destination to the console's router), so the keyboard
+    // reaches it as the button it behaves as
+    const a = el("a", { class: "toc-link", title: h.textContent.trim(), onclick: jump,
+      ...asButton(jump) }, h.textContent.trim());
     a.dataset.tocFor = h.id;
     return a;
   });

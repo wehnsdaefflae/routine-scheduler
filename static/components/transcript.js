@@ -378,7 +378,16 @@ export function createTranscript(container, opts = {}) {
   function addObservation(ev) {
     const o = ev.payload;
     let text;
-    if (o.kind === "util" || (o.kind === "script" && o.exit != null)) {
+    if ((o.kind === "util" || o.kind === "script") && (o.pending_secrets || o.declined_secrets)) {
+      // The secret gate stopped the call before it ran — no exit code exists, and rendering one
+      // read as "exit undefined". Names only for a PENDING request (the run's own ask); a
+      // declined one is counted, as the model is told (observations._secret_gate).
+      const declined = o.declined_secrets || [];
+      text = `${o.name} NOT run — secret exposure `
+        + (declined.length ? `declined for ${declined.length} secret${declined.length === 1 ? "" : "s"}`
+          : `pending for ${o.pending_secrets.join(", ")}`)
+        + (o.dialog ? `\nthe user replied without deciding: ${o.user_message}` : "");
+    } else if (o.kind === "util" || (o.kind === "script" && o.exit != null)) {
       text = o.missing ? `util "${o.target || o.name}" does not exist (available: ${(o.available || []).join(", ")})`
         : o.listing != null ? `util catalog\n${o.listing}`
         : o.source != null ? `source of "${o.target}"\n${o.source}`
@@ -431,12 +440,14 @@ export function createTranscript(container, opts = {}) {
     } else if (o.kind === "reminder_hold") {
       text = `HELD — "${o.action}" did NOT run. It matches a consequence reminder:\n`
         + (o.reminders || []).map((r) => `· [${r.id} · ${r.scope}] ${r.description}`).join("\n")
-        + "\nEmitting the same action again runs it (one hold per action string per run).";
+        + "\nEmitting the same action again runs it (one hold per action string per run — per "
+        + "reply, in a conversation).";
     } else if (o.kind === "assist_hold") {
       text = `HELD — "${o.action}" did NOT run. A general rule this routine practises `
         + `governs this moment:\n`
         + (o.lines || []).map((l) => `· ${l}`).join("\n")
-        + "\nEmitting the same action again runs it (one hold per action string per run).";
+        + "\nEmitting the same action again runs it (one hold per action string per run — per "
+        + "reply, in a conversation).";
     } else if (o.kind === "finish" && o.rejected) {
       // SIX rungs reach this observation and each hands the turn back for its own reason, so
       // each is named — a run deferred for its accounting is not a hallucinated completion,

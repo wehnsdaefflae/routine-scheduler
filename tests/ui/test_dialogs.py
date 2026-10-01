@@ -147,3 +147,21 @@ def test_an_artifacts_delete_is_its_own_keyboard_stop(ui, ui_page):
     ui_page.keyboard.press("Enter")
     expect(ui_page.get_by_role("dialog", name=re.compile(r"Delete artifact notes\.md"))
            ).to_be_visible()
+
+
+def test_a_toast_is_read_above_an_open_dialog(ui, ui_page):
+    """A toast is often the ANSWER to what an open dialog just did — a refused lane edit's error
+    — and it sat at z-index 100 under the scrim (210) that blurs everything beneath it."""
+    ui_page.goto(f"{ui.url}/#/")
+    ui_page.wait_for_selector("#view")
+    stack = ui_page.evaluate("""() => {
+        const toast = document.getElementById('toast');
+        const scrim = document.createElement('div');
+        scrim.className = 'modal-overlay';
+        document.body.append(scrim);
+        const z = (el) => Number(getComputedStyle(el).zIndex);
+        const out = {toast: z(toast), scrim: z(scrim)};
+        scrim.remove();
+        return out;
+    }""")
+    assert stack["toast"] > stack["scrim"], stack

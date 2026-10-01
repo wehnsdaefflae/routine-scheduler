@@ -57,6 +57,14 @@ EVENTS = [
     {"type": "stages_skipped",
      "payload": {"declared": ["gather", "draft", "send"], "entered": ["draft"],
                  "skipped": ["gather", "send"], "run_id": "uir:20260905-120000"}},
+    # calls the secret gate stopped before they ran: no exit code exists (it read
+    # "frob → exit undefined"); a pending request names its secrets, a declined one counts them
+    {"type": "observation", "turn": 7,
+     "payload": {"kind": "util", "name": "frob", "pending_secrets": ["FOO_KEY"],
+                 "pending_approval": True, "qid": "q-x", "dialog": True,
+                 "user_message": "why does it need this key?"}},
+    {"type": "observation", "turn": 8,
+     "payload": {"kind": "script", "name": "tool", "declined_secrets": ["A_KEY", "B_KEY"]}},
 ]
 
 
@@ -105,6 +113,15 @@ def test_the_transcript_renders_every_event_shape_in_words(ui, ui_page):
 
     # the two side fields ride the turn beside the note pin instead of hiding in the json fold
     assert "^util:fs-ops mv " in body and "would_have" in body
+
+    # a hold is once per run — per reply, in a conversation (engine/guardscope.py)
+    assert "one hold per action string per run — per reply, in a conversation" in body
+
+    # what the secret gate stopped: said in words, never as an exit code that does not exist
+    assert "frob NOT run — secret exposure pending for FOO_KEY" in body
+    assert "the user replied without deciding: why does it need this key?" in body
+    assert "tool NOT run — secret exposure declined for 2 secrets" in body
+    assert "A_KEY" not in body                     # a declined request is counted, not named
 
 
 # A file that runs script when it is opened as a page. Served with its own type (image/svg+xml,

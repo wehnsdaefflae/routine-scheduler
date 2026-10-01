@@ -49,3 +49,24 @@ def test_the_rail_foot_stays_at_the_foot_without_an_index(ui, ui_page):
         "() => window.innerHeight"
         " - document.querySelector('.topbar .rail-foot').getBoundingClientRect().bottom")
     assert gap < 40, f"the rail's foot floated {gap:.0f}px above the bottom of the rail"
+
+
+def test_toc_links_and_settings_chips_are_reached_from_the_keyboard(ui, ui_page):
+    """Both were elements with a click handler and nothing else — a TOC link is an <a> with no
+    href (a hash would hand the destination to the router), a Settings chip a <span> — so Tab
+    passed them by and Enter did nothing. They are tab stops now, pressed with Enter or Space."""
+    ui_page.set_viewport_size({"width": 1425, "height": 900})
+    ui_page.goto(f"{ui.url}/#/settings")
+    ui_page.wait_for_selector("#sec-connections")
+    link = ui_page.locator(".side-toc .toc-link", has_text="Notifications")
+    assert link.get_attribute("tabindex") == "0"
+    link.focus()
+    ui_page.keyboard.press("Enter")
+    expect(ui_page.locator("#sec-notifications")).to_be_in_viewport()
+
+    chip = ui_page.locator(".settings-nav .tag.click", has_text="Secrets")
+    assert chip.get_attribute("tabindex") == "0" and chip.get_attribute("role") == "button"
+    chip.focus()
+    ui_page.keyboard.press(" ")
+    expect(ui_page.locator("#sec-secrets")).to_be_in_viewport()
+    expect(chip).to_have_class("tag click on")

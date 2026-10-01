@@ -8,7 +8,7 @@
 import { api } from "/static/api.js";
 import { setQuery } from "/static/router.js";
 import { settingsSection } from "/static/components/settings-section.js";
-import { act, el } from "/static/util.js";
+import { act, asButton, el } from "/static/util.js";
 import { renderConnections } from "/static/views/settings-connections.js";
 import { renderEndpoints } from "/static/views/settings-endpoints.js";
 import { renderGithub } from "/static/views/settings-github.js";
@@ -97,7 +97,8 @@ export async function render(view, query = {}) {
     for (const g of GROUPS) {
       secNav.append(el("span", { class: "lbl" }, g.label));
       for (const s of g.sections) {
-        const b = el("span", { class: "tag click", onclick: () => goSection(s.id) }, s.nav);
+        const go = () => goSection(s.id);
+        const b = el("span", { class: "tag click", onclick: go, ...asButton(go) }, s.nav);
         b.dataset.sec = s.id;
         secNav.append(b);
       }
