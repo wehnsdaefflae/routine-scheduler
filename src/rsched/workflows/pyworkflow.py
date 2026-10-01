@@ -27,11 +27,11 @@ ACTIONS_MODULE = "routine.actions"
 def parse_py(source: str) -> dict:
     """Statically parse a Python-workflow file (no execution). Returns a meta dict: the META keys
     plus `phases` (from PHASES), `action_imports` (the names on the `from routine.actions import`
-    line) and `has_main`. Raises SyntaxError on invalid Python, ValueError if META is missing /
-    not a literal.
+    line) and `has_main`. Raises SyntaxError on invalid Python, ValueError if META is missing
+    or META / PHASES / DONE_WHEN is not a plain literal.
     """
     tree = ast.parse(source)                      # SyntaxError on malformed Python
-    meta: dict | None = None
+    meta: object = None
     phases = None
     done_when = None
     funcs: list[str] = []
@@ -45,11 +45,11 @@ def parse_py(source: str) -> dict:
             for target in node.targets:
                 name = target.id if isinstance(target, ast.Name) else None
                 if name == "META":
-                    meta = ast.literal_eval(node.value)      # ValueError if not a pure literal
+                    meta = _literal(node.value, name)
                 elif name == "PHASES":
-                    phases = ast.literal_eval(node.value)
+                    phases = _literal(node.value, name)
                 elif name == "DONE_WHEN":
-                    done_when = ast.literal_eval(node.value)
+                    done_when = _literal(node.value, name)
     if not isinstance(meta, dict):
         # ValueError on purpose (not TypeError): callers (lint, generate) catch ValueError
         # as "not a valid pattern file" — changing the type would break that contract.
@@ -60,6 +60,17 @@ def parse_py(source: str) -> dict:
     out["action_imports"] = action_imports
     out["has_main"] = "main" in funcs
     return out
+
+
+def _literal(node: ast.expr, name: str) -> object:
+    """A top-level literal's value — or ValueError, whatever literal_eval raised. A call is a
+    ValueError already; an unhashable key (`{["a"]: 1}`) is a TypeError and a nesting too deep
+    a RecursionError, and every caller (lint, the catalog, generate) catches ValueError only.
+    """
+    try:
+        return ast.literal_eval(node)
+    except (TypeError, RecursionError) as exc:
+        raise ValueError(f"{name} is not a plain literal ({exc})") from exc
 
 
 def _step_order(tree: ast.Module) -> list[str]:

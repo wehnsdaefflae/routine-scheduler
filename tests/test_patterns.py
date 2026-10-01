@@ -335,6 +335,22 @@ def test_a_proposal_the_accept_button_would_refuse_is_not_offered():
     assert not valid("models", {"main": "no-such-model"}, srv)
 
 
+def test_the_recommender_is_told_what_each_gate_parameter_means(tmp_path):
+    """The prompt spells the SCHEDULE's weekday numbering (0 = Sunday), while a gate's
+    `weekdays` check numbers from Monday. Listing the checks' parameter NAMES only left the
+    model one convention to copy: a duty proposed for Monday landed on Tuesday, and the gate
+    answered "no standing duty is due today" on the real day."""
+    from types import SimpleNamespace
+
+    from rsched.patterns.recommend import _prompt
+
+    server = SimpleNamespace(permissions_home=tmp_path / "p", rules_home=tmp_path / "r")
+    text = _prompt(server, "r", {}, None, "a weekly duty", ["run_gate", "schedule"])
+    assert "0 = Monday" in text and "0=Sunday" in text
+    assert "json:<dotted.path>" in text                        # a select's syntax, not its name
+    assert "max_quiet: " in text and "days (int, required)" in text
+
+
 def test_a_refused_connection_names_the_field_and_the_way_out():
     """The accept is whole-draft, so this 400 refuses every OTHER change the person kept. A
     message naming only the provider (the operator's 2026-09-30 report: "i get 'unknown

@@ -285,6 +285,15 @@ def test_scaffold_stamps_tools_allowlist(tmp_path):
     assert "tools" not in meta2
 
 
+def test_a_literal_python_cannot_hash_is_a_lint_problem_not_a_crash():
+    """literal_eval raises TypeError for an unhashable key (`{["a"]: 1}`), which none of the
+    pattern readers caught — `rsched lint`, the Library listing and generate()'s repair round
+    raised instead of naming the file."""
+    problems = lint_workflow_py('META = {["a"]: 1}\n\ndef main():\n    pass\n',
+                                filename="x.py", rule_slugs=[])
+    assert problems and "META" in problems[0] and "plain literal" in problems[0]
+
+
 def test_materialize_unknown_workflow(tmp_path):
     (tmp_path / "workflows").mkdir()
     with pytest.raises(FileNotFoundError):

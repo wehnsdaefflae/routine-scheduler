@@ -9,6 +9,7 @@ import re
 from ..config import ServerConfig
 from ..endpoints import EndpointRegistry
 from ..ids import slugify
+from ..paths import atomic_write
 from .library import git_commit, list_rules, read_workflow, workflows_dir
 from .lint import lint_workflow_py
 
@@ -143,7 +144,8 @@ def generate(server: ServerConfig, instruction: str, hint: str = "",
                 draft = re.sub(r"([\'\"]slug[\'\"]\s*:\s*[\'\"])"
                                + re.escape(base_slug) + r"([\'\"])",
                                r"\g<1>" + slug + r"\g<2>", draft, count=1)
-            path.write_text(draft.rstrip() + "\n", encoding="utf-8")
+            # atomic: the catalog, the lint and the library sync read this directory live
+            atomic_write(path, draft.rstrip() + "\n")
             git_commit(home, f"draft workflow {slug} (generated on demand)",
                        routines_home=server.routines_home, paths=[f"workflows/{slug}.py"])
             return slug, ""

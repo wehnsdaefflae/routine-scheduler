@@ -206,3 +206,19 @@ def test_generate_description_empty_task_never_calls_the_model(server, monkeypat
 
     assert sug_mod.generate_description(server, name="Just A Name", instruction="  ") == "Just A Name"
     assert ep.calls == []
+
+
+def test_generate_description_survives_a_routine_yaml_that_is_no_mapping(server, monkeypatch):
+    """The sibling catalog reads every routine.yaml; one that parses to a list made `.get`
+    raise out of a generator whose contract is to never fail the creation flow."""
+    for slug, text in (("listy", "- a\n- b\n"), ("named", "name: Named one\ntags: [x]\n")):
+        (server.routines_home / slug).mkdir()
+        (server.routines_home / slug / "routine.yaml").write_text(text, encoding="utf-8")
+    ep = _SysEndpoint([{"description": "It watches things."}])
+    _patch_system_model(monkeypatch, "rsched.workflows.suggest", ep)
+    from rsched.workflows import suggest as sug_mod
+
+    assert sug_mod.generate_description(server, name="N", instruction="watch") == (
+        "It watches things.")
+    prompt = ep.calls[0]["messages"][0]["content"]
+    assert "- named: Named one [x]" in prompt and "listy" not in prompt

@@ -1,10 +1,11 @@
-"""The suggesters: everything the console asks the SYSTEM MODEL on a person's behalf.
+"""The suggesters: what the console asks the SYSTEM MODEL on a person's behalf.
 
-Four of them, all the same shape — build a prompt, get one JSON object back, degrade quietly if
-it does not come: rank the library's workflows against an instruction, propose the rules and
-permissions a new routine should hold, recommend setup for an existing one, and write a routine's
-description at create time. None of them may fail the flow they sit in; a person is waiting on a
-form, and "pick it yourself" is always an acceptable answer where "500" is not.
+All the same shape — build a prompt, get one JSON object back, degrade quietly if it does not
+come. Here: rank the library's workflows against an instruction (`suggest`) and write a
+routine's description at create time (`generate_description`); the settings recommender
+(`patterns/recommend.py`) asks through the same `_ask_json`. None of them may fail the flow
+they sit in; a person is waiting on a form, and "pick it yourself" is always an acceptable
+answer where "500" is not.
 """
 
 from __future__ import annotations
@@ -44,10 +45,10 @@ def _ask_json(server: ServerConfig, prompt: str, schema: dict, *,
               purpose: str) -> tuple[dict | None, str]:
     """One schema-valid JSON object from the system model: `(obj, "")`, or `(None, why)`.
 
-    Every suggester in this module wants exactly this and nothing more: ask once, and if the
-    reply does not satisfy the schema, show the model its own reply plus the violation and ask
-    again. One retry, because a model that cannot produce the shape twice will not produce it on
-    a third try either, and these calls sit in front of a person waiting on a form.
+    Every suggester wants exactly this and nothing more: ask once, and if the reply does not
+    satisfy the schema, show the model its own reply plus the violation and ask again. One
+    retry, because a model that cannot produce the shape twice will not produce it on a third
+    try either, and these calls sit in front of a person waiting on a form.
 
     `why` is `"unavailable"` (no system model, or the endpoint failed) or `"malformed"` (it
     answered twice and neither answer fit the schema). Both mean "pick it yourself", so most
@@ -139,9 +140,10 @@ DESCRIBE_SCHEMA = {
 
 
 def _sibling_catalog(server: ServerConfig) -> str:
-    """Compact list of the OTHER routines that already exist — slug · name · tags — so a
-    generated description can name real inter-routine dependencies instead of inventing them.
-    Bounded (60 rows) so a large instance never blows the prompt; best-effort per file.
+    """Compact list of the routines that already exist — slug · name · tags — so a generated
+    description can name real inter-routine dependencies instead of inventing them. Bounded
+    (60 rows) so a large instance never blows the prompt; best-effort per file: one that does
+    not parse to a mapping is passed over.
     """
     import yaml
 
@@ -150,6 +152,8 @@ def _sibling_catalog(server: ServerConfig) -> str:
         try:
             cfg = read_yaml(y, {})
         except (OSError, yaml.YAMLError):
+            continue
+        if not isinstance(cfg, dict):
             continue
         nm = str(cfg.get("name") or y.parent.name)
         tags = ", ".join(t for t in (cfg.get("tags") or []) if isinstance(t, str))

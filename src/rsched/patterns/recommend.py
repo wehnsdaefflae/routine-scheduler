@@ -104,7 +104,7 @@ def valid(key: str, value: object, server: object | None = None) -> bool:
     """Would the page's own accept take this value? Checked with the validators it uses.
 
     The patch model checks a field's SHAPE; three fields are then checked for MEANING by the
-    accept route itself (`web/config_fields.py`, called at `api_routine_patch.py:300-311`), and
+    accept route itself (`web/config_fields.py`, called from `api_routine_patch.apply_updates`), and
     a value that clears the shape and fails the meaning is the worst kind to offer: the accept
     is whole-draft, so one refused field 400s every other change the person kept. That is how
     `connections: {"fau-mail": {"scopes": [...]}}` — a util's name where an OAuth provider
@@ -163,8 +163,14 @@ def _prompt(server, slug: str, saved: dict, pattern: dict | None, context: str,
                       for d in library_docs.list_docs(server.permissions_home))
     rules = "\n".join(f"- {d['slug']}: {d['summary']}"
                       for d in library_docs.list_docs(server.rules_home))
-    kinds = "\n".join(f"- {kind}: {meaning}; params: {', '.join(spec) or 'none'}"
-                      for kind, (meaning, spec) in gatekit.KINDS.items())
+    # Each parameter with its type and meaning, as the console's gate form shows them: a name
+    # alone left the model to guess formats — and the one weekday numbering this prompt spells
+    # is the SCHEDULE's (0 = Sunday), while a `weekdays` check counts from Monday.
+    kinds = "\n".join(
+        f"- {kind}: {meaning}; params: " + ("; ".join(
+            f"{name} ({typ}{', required' if required else ''}): {help_}"
+            for name, (typ, required, help_) in spec.items()) or "none")
+        for kind, (meaning, spec) in gatekit.KINDS.items())
     base = (f"It follows the pattern {pattern['slug']!r} ({pattern['summary']})."
             if pattern else "It follows no pattern yet.")
     return (
