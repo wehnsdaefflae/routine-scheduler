@@ -51,13 +51,18 @@ UTILS = os.path.join(HOME, "utils")
 
 
 def _summary(name):
+    # one unreadable or oddly-written util must not take the whole listing down with it:
+    # a whitespace-only first docstring line has no line [0], and bytes that are not UTF-8
+    # raise a ValueError, not an OSError
     main_py = os.path.join(UTILS, name, "main.py")
     try:
-        src = open(main_py, encoding="utf-8").read()
-    except OSError:
+        with open(main_py, encoding="utf-8") as fh:
+            src = fh.read()
+    except (OSError, ValueError):
         return ""
     m = re.search(r'"""(.+?)(?:\\n|""")', src, re.DOTALL)
-    return (m.group(1).strip() if m else "").splitlines()[0] if m else ""
+    lines = m.group(1).strip().splitlines() if m else []
+    return lines[0] if lines else ""
 
 
 def main():
