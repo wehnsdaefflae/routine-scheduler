@@ -219,7 +219,10 @@ class DetachedManager:
             if owner.get("slug") and owner.get("dir"):
                 cleared_owners[str(owner["slug"])] = Path(owner["dir"])
             log.info("detached gc removed task=%s", taskid)
-        # an owner whose LAST task was just GC'd needs its digest emptied
+        # an owner whose LAST task was just GC'd needs its digest emptied — a second scan of
+        # the home, so only on a tick that removed something
+        if not cleared_owners:
+            return
         remaining = {str((i.cfg.owner or {}).get("slug") or "")
                      for i in registry.scan(self.server, self.home).values()}
         for slug, owner_dir in cleared_owners.items():

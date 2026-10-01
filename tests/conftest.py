@@ -462,7 +462,7 @@ def wait_(n=None, all_=False, timeout_s=None, say="Waiting for children."):
 
 class FakeRunner:
     """Runner double: records fire/resume, marks the slug active, returns the run id.
-    active_states/recover_orphans satisfy the scheduler protocol as no-ops."""
+    active_states satisfies the scheduler's restart check as a no-op."""
 
     def __init__(self, *, ts: str = "20260717-120000"):
         self.fired: list[tuple[str, str]] = []
@@ -477,9 +477,6 @@ class FakeRunner:
 
     def active_states(self):
         return []
-
-    def recover_orphans(self, catalog):
-        return 0
 
     async def fire(self, cfg, *, reason="schedule", brief="") -> str:
         self.fired.append((cfg.slug, reason))
