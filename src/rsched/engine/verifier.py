@@ -33,7 +33,7 @@ from __future__ import annotations
 
 import logging
 
-from ..endpoints.base import EndpointError
+from ..schema_guard import SchemaViolation, extract_json
 
 log = logging.getLogger("rsched.verifier")
 
@@ -100,6 +100,25 @@ def unentered(claims: list[dict], entered: set[str]) -> list[dict]:
             for c in claims if c.get("stage") and c["stage"] not in entered]
 
 
+def _verdicts(completion) -> list | None:
+    """The judge's verdict list, or None when its reply carries none.
+
+    Read from the endpoint's native parse when it made one, else out of the reply TEXT — the
+    shape every OpenAI-compatible adapter returns schema output in (`parsed` stays None there,
+    and every other schema'd caller falls back to the text the same way). Reading `parsed`
+    alone made the check a silent no-op whenever the `tool_call` role was served by one of
+    them: every claim was accepted unread.
+    """
+    parsed = completion.parsed
+    if parsed is None:
+        try:
+            parsed = extract_json(completion.text or "")
+        except SchemaViolation:
+            return None
+    verdicts = parsed.get("verdicts") if isinstance(parsed, dict) else None
+    return verdicts if isinstance(verdicts, list) else None
+
+
 def refuted(loop, claims: list[dict], summary: str) -> list[dict]:
     """The claims (`[{id, text}]`) the run's transcript does not support, as `[{id, text,
     evidence}]` — empty when there is nothing to check, when every claim stands, or when the
@@ -116,17 +135,21 @@ def refuted(loop, claims: list[dict], summary: str) -> list[dict]:
             model=ref.model, schema=VERDICT_SCHEMA, effort=ref.effort,
             temperature=ref.temperature, max_tokens=ref.max_tokens,
             purpose="finish · verify claims", kind="llm_action")
-    except (EndpointError, AttributeError, ValueError) as exc:
-        # fail-open, loudly: the run's word stands and the operator can see why it was not checked
+    except Exception as exc:
+        # fail-open, loudly: whatever went wrong — no model for the role, a provider error, an
+        # adapter bug — the run's word stands, at its finish of all moments, and the operator
+        # can see why it was not checked
         log.warning("finish: could not verify the met claims (%s) — accepting them", exc)
         return []
     ctx.add_usage(completion.usage)
-    parsed = completion.parsed
-    if not isinstance(parsed, dict):
+    verdicts = _verdicts(completion)
+    if verdicts is None:
+        log.warning("finish: the claim judge answered without a verdict list — accepting the "
+                    "met claims unchecked")
         return []
     by_id = {c["id"]: c for c in claims}
     out = []
-    for v in parsed.get("verdicts") or []:
+    for v in verdicts:
         # only an explicit, well-formed refutation of a line actually claimed counts
         if not isinstance(v, dict) or v.get("supported") is not False:
             continue
