@@ -191,6 +191,7 @@ function renderMetaBanner(metaRoutines) {
       "but the system won't audit or improve itself until you enable them."),
     ...all.map(enableBtn),
     el("button", { class: "nb-close", title: "dismiss (stays dismissed on this browser)",
+      "aria-label": "dismiss",   // a bare "×" is announced as "times"
       onclick: () => { storage.set(META_DISMISS_KEY, "1"); banner.hidden = true; } }, "×"));
   banner.hidden = false;
 }

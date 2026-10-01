@@ -192,14 +192,30 @@ export function fullOutput(p) {
   return saved.length ? `\n[full output saved] ${saved.join(", ")}` : "";
 }
 
+// A clickable non-button as the button it stands in for — el() attrs for a tab stop, the role,
+// and Enter/Space. A chip or a table row keeps its own look this way (a <button> would bring
+// the browser's), but an element with only a click handler cannot be reached or pressed from
+// the keyboard at all.
+export const asButton = (activate) => ({
+  role: "button", tabindex: "0",
+  onkeydown: (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); activate(e); } },
+});
+
+// `active` makes a clickable chip a toggle (a filter), and says whether it is on.
 export function tagChip(text, { onClick, onRemove, active } = {}) {
   const cls = ["tag", onClick ? "click" : "", active ? "on" : ""]
     .filter(Boolean).join(" ");
   const attrs = { class: cls };
-  if (onClick) attrs.onclick = onClick;
+  if (onClick) {
+    Object.assign(attrs, { onclick: onClick, ...asButton(onClick) },
+      active === undefined ? {} : { "aria-pressed": String(Boolean(active)) });
+  }
   const node = el("span", attrs, text);
-  if (onRemove) node.append(el("span", { class: "x", title: "remove",
-    onclick: (e) => { e.stopPropagation(); onRemove(); } }, "×"));
+  if (onRemove) {
+    const remove = (e) => { e.stopPropagation(); onRemove(); };
+    node.append(el("span", { class: "x", title: "remove", "aria-label": `remove ${text}`,
+      onclick: remove, ...asButton(remove) }, "×"));
+  }
   return node;
 }
 

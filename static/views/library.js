@@ -55,9 +55,12 @@ export async function render(view, sub, query = {}) {
   const jumpTo = (title) => [...sections.querySelectorAll("h2")]
     .find((h) => h.textContent.trim() === title)
     ?.scrollIntoView({ behavior: "smooth", block: "start" });
-  countLine.replaceChildren(...COUNTS.map(([label, n, title]) =>
-    el("span", { class: "tag click", "data-count": label, title: `jump to ${title}`,
-      onclick: () => jumpTo(title) }, `${label} ${n}`)));
+  countLine.replaceChildren(...COUNTS.map(([label, n, title]) => {
+    const chip = tagChip(`${label} ${n}`, { onClick: () => jumpTo(title) });
+    chip.dataset.count = label;
+    chip.title = `jump to ${title}`;
+    return chip;
+  }));
 
   // Set by the view's teardown. A delete or a save + commit (a util's selftest takes seconds)
   // reaches its updateURL()/refresh() only once the request returns, and the reader may have

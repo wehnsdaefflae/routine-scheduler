@@ -16,7 +16,7 @@ import { slugColor } from "/static/components/charts.js";
 import { heartbeat } from "/static/components/heartbeat.js";
 import { laneControls, laneProgress, openLaneEditor } from "/static/components/lanemanage.js";
 import { summaryLine } from "/static/md.js";
-import { chip, el, fmtCost, fmtDur, fmtNum, storage, tagChip, toast, toastError,
+import { asButton, chip, el, fmtCost, fmtDur, fmtNum, storage, tagChip, toast, toastError,
          when } from "/static/util.js";
 import { WORKING as RUNNING } from "/static/states.js";
 
@@ -289,16 +289,22 @@ export function routineRows(ctx) {
       // chain has got: which member of how many is running.
       const controls = raw ? laneControls(raw, ctx.laneData(), { reload: ctx.reload }) : [];
       const progress = raw ? laneProgress(raw, ctx.laneData()) : null;
+      const toggle = (e) => {
+        open ? openLanes.delete(lane.id) : openLanes.add(lane.id);
+        storage.set(LANES_OPEN_KEY, JSON.stringify([...openLanes]));
+        ctx.repaint();
+        // the repaint rebuilt the table: put a keyboard user back on this lane's toggle
+        if (e?.type === "keydown") {
+          document.querySelector(`[data-lane-row="${CSS.escape(lane.id)}"] [aria-expanded]`)?.focus();
+        }
+      };
+      // The whole cell expands on a click; its name is the keyboard's way to the same toggle.
       rows.push(el("tr", { class: "lane-row", "data-lane-row": lane.id },
         el("td", { colSpan: COLS.length,
           title: open ? "collapse this lane's rows" : "expand this lane's member rows",
-          onclick: () => {
-            open ? openLanes.delete(lane.id) : openLanes.add(lane.id);
-            storage.set(LANES_OPEN_KEY, JSON.stringify([...openLanes]));
-            ctx.repaint();
-          } },
+          onclick: toggle },
           el("div", { class: "row", style: "justify-content:space-between;align-items:center;gap:8px" },
-            el("span", {},
+            el("span", { ...asButton(toggle), "aria-expanded": String(open) },
               el("span", { class: "tri" }, open ? "▾ " : "▸ "),
               `⛓ ${lane.name}`,
               lane.paused ? el("span", { class: "muted small", "data-lane-paused": "",

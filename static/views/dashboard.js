@@ -198,10 +198,17 @@ export async function render(view) {
     // still matches tags — visible()'s haystack includes them).
     filterBar.append(el("span", { class: "lbl" }, "state"));
     for (const s of Object.keys(STATE_BUCKETS)) {
-      filterBar.append(tagChip(s, {
+      const stateChip = tagChip(s, {
         active: states.has(s),
-        onClick: () => { states.has(s) ? states.delete(s) : states.add(s); renderFilterBar(); renderBody(); },
-      }));
+        onClick: (e) => {
+          states.has(s) ? states.delete(s) : states.add(s);
+          renderFilterBar(); renderBody();
+          // the bar was rebuilt: put a keyboard user back on the chip they pressed
+          if (e?.type === "keydown") filterBar.querySelector(`[data-state="${s}"]`)?.focus();
+        },
+      });
+      stateChip.dataset.state = s;
+      filterBar.append(stateChip);
     }
     const sortSel = el("select", { style: "margin-left:10px" },
       Object.entries(SORTS).map(([k, [label]]) => el("option", { value: k }, `sort: ${label}`)));
