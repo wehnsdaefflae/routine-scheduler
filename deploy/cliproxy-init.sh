@@ -1,34 +1,31 @@
 #!/usr/bin/env bash
 # Prepare persistent proxy state. Run on the Docker host, from this checkout.
 # Refuses to replace an existing configuration or keys; safe to run again.
+#
+# Shell and coreutils only. It runs on the HOST, where this checkout has no venv of its own —
+# a migration bundle excludes `.venv` and the engine's environment lives inside the image — so
+# the `.venv/bin/python` it used to start was missing on exactly the hosts that need it.
 set -euo pipefail
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-"${repo}/.venv/bin/python" - "${repo}" "${RSCHED_HOME:-/home/mark}" <<'PY'
-import os
-import secrets
-import sys
-from pathlib import Path
+state="${RSCHED_HOME:-/home/mark}/.config/routine-scheduler/cliproxy"
 
-import yaml
+umask 077                                    # every file and dir below is the owner's alone
+mkdir -p "${state}/auth"
+chmod 700 "${state}" "${state}/auth"
+if [ -e "${state}/config.yaml" ]; then
+  echo "Already configured: ${state}/config.yaml; existing keys preserved."
+  exit 0
+fi
 
-repo, data_home = map(Path, sys.argv[1:])
-state = data_home / ".config/routine-scheduler/cliproxy"
-state.mkdir(parents=True, exist_ok=True, mode=0o700)
-os.chmod(state, 0o700)
-(state / "auth").mkdir(exist_ok=True, mode=0o700)
-target = state / "config.yaml"
-if target.exists():
-    print(f"Already configured: {target}; existing keys preserved.")
-    raise SystemExit(0)
-config = yaml.safe_load((repo / "deploy/cliproxy.config.example.yaml").read_text())
-client = secrets.token_urlsafe(32)
-management = secrets.token_urlsafe(32)
-config["api-keys"] = [client]
-config["remote-management"]["secret-key"] = management
+# 32 random bytes as 43 URL-safe characters (what Python's secrets.token_urlsafe(32) gives).
+key() { head -c 32 /dev/urandom | base64 | tr '+/' '-_' | tr -d '=\n'; }
+client="$(key)"
+management="$(key)"
+
+set -o noclobber                             # never replace a key file, even racing a second run
 # Keep the original management key because the proxy hashes its config value at boot.
-with os.fdopen(os.open(state / "client.env", os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "w") as out:
-    out.write(f"CLIPROXY_API_KEY={client}\nCLIPROXY_MANAGEMENT_KEY={management}\n")
-with os.fdopen(os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "w") as out:
-    yaml.safe_dump(config, out, sort_keys=False)
-print(f"Created proxy state in {state}. Keys were not printed.")
-PY
+printf 'CLIPROXY_API_KEY=%s\nCLIPROXY_MANAGEMENT_KEY=%s\n' "${client}" "${management}" \
+  > "${state}/client.env"
+sed -e "s/REPLACE_CLIENT_KEY/\"${client}\"/" -e "s/REPLACE_MANAGEMENT_KEY/\"${management}\"/" \
+  "${repo}/deploy/cliproxy.config.example.yaml" > "${state}/config.yaml"
+echo "Created proxy state in ${state}. Keys were not printed."
