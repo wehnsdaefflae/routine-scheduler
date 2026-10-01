@@ -15,6 +15,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.372.3] — 2026-10-01
+
+### Fixed — every compose command on the host reads one file set and one profile list
+
+items: found while deploying 0.372.1 (2026-10-01)
+
+- **`deploy/nat64.sh on` no longer drops the host's memory ceilings.** It handed its own `up` a
+  file list naming `docker-compose.yml` and `compose.nat64.yml`. A list replaces Compose's
+  default — and with it the auto-loading of the gitignored `docker-compose.override.yml` — so
+  from 2026-09-27, when NAT64 was switched on, until the 0.372.1 deploy every container ran with
+  no memory limit (`HostConfig.Memory` 0): the condition the override's 2026-09-14 PID-1 OOM note
+  exists to prevent. The list it writes now names the override whenever the file exists.
+- **The selection lives in `.env`, so a bare command keeps it.** `nat64.sh on` writes
+  `COMPOSE_FILE` there and `off` deletes the line (Compose's own default, override included, is
+  back). A host that runs the subscription proxy keeps `COMPOSE_PROFILES=claude-proxy` there too
+  (docs/claude-proxy-cutover.md, "Deployment"). Compose reads both on every command run from the
+  checkout's root, so DOCKER.md's plain `build` and `up -d` are right again. Measured against the
+  live containers' config hashes before this change: on this host the plain `up -d` would have
+  recreated `rsched` and `chrome` without the DNS64 resolvers, which is why 0.372.1 had to be
+  deployed with all three files and the profile typed out. With the two lines it recreates
+  nothing.
+- **nat64.sh refuses an `up` that leaves a running service out.** It used to hard-code the
+  proxy's profile, because an `up` without it cannot settle the project's networks and strands
+  the model transport (2026-09-27). It now checks that every service with a container here is in
+  the selection, names the one that is not, and leaves `.env` as it was. A host without the proxy
+  needs no profile. It also refuses while `COMPOSE_FILE` or `COMPOSE_PROFILES` is exported in the
+  shell, which would beat `.env`. `status` prints the selection and, per container, its
+  resolvers, its memory ceiling and whether its config is the one the selection gives it.
+- **`tests/test_deploy_selection.py`** drives the real script through a stand-in `docker` that
+  resolves the file set the way Compose does (Compose v5.5.1, measured on the server). Against
+  the old script its first test fails on the missing override. It also fails on any tracked file
+  that hands a compose command a file flag, a profile flag or a one-command `COMPOSE_FILE`.
+- Docs: deploy/DOCKER.md ("One compose selection per host", Rebuilding, the NAT64 and override
+  caveats, step 1, step 3), docs/claude-proxy-cutover.md, CLAUDE.md ("Deploy"), and the comments
+  in compose.nat64.yml and docker-compose.yml's networks block. `.gitignore` covers the copy
+  nat64.sh writes beside `.env` before renaming it over.
+
+**Once on this host**, from the checkout's root: add `COMPOSE_PROFILES=claude-proxy` to `.env`,
+then run `deploy/nat64.sh on`. It writes `COMPOSE_FILE` and runs a bare `docker compose up -d`.
+`deploy/nat64.sh status` beforehand shows which containers that recreates.
+
 ## [0.372.2] — 2026-10-01
 
 ### Fixed — Opus answers through the subscription proxy again

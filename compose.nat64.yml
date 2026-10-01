@@ -1,7 +1,14 @@
 # NAT64 OVERRIDE — reach IPv4-only hosts while this line has no IPv4.
 #
-#   on:   ./deploy/nat64.sh on
-#   off:  ./deploy/nat64.sh off
+#   on:      ./deploy/nat64.sh on
+#   off:     ./deploy/nat64.sh off
+#   status:  ./deploy/nat64.sh status
+#
+# `on` puts this file into COMPOSE_FILE in `.env`, after docker-compose.yml and the host's
+# docker-compose.override.yml, so every compose command run from the checkout's root reads it —
+# a rebuild included (deploy/DOCKER.md, "One compose selection per host"). Never hand it to one
+# command as a file flag: that reaches the one command. A file list given by hand also replaces
+# Compose's default, dropping the override's memory ceilings with it.
 #
 # What it does: points the two containers that reach arbitrary destinations at public DNS64
 # resolvers. A DNS64 resolver answers an IPv4-only name with a synthetic IPv6 address whose

@@ -742,7 +742,14 @@ converging mirror copied a night's damage over the last good copy. Never edit in
 a linked file is ONE file every snapshot shares. **The tarball is not a backup** — `routines` and
 `conversations` are rewritten by every run, so it is stale within minutes, and a nightly re-tar
 moves gigabytes to capture megabytes. Keep the two lists in the one file: a second copy is how five
-data homes went unbundled for a release. **`docker compose up -d` NEVER reloads code**: the source is
+data homes went unbundled for a release. **Every compose command runs bare, from the checkout's
+root**: the host's file set and profiles live in `.env` (`COMPOSE_FILE`, which `deploy/nat64.sh`
+writes while NAT64 is on; `COMPOSE_PROFILES=claude-proxy`), which Compose reads on every command.
+A file flag or a profile flag REPLACES that selection for the one command — and any file list
+drops the gitignored `docker-compose.override.yml` with this host's memory ceilings, which is how
+every container ran unlimited from 2026-09-27 until the 0.372.1 deploy (deploy/DOCKER.md, "One
+compose selection per host"; `tests/test_deploy_selection.py` fails on a tracked file that hands
+compose either flag). **`docker compose up -d` NEVER reloads code**: the source is
 bind-mounted, so compose compares the CONFIG, finds no drift and no-ops while the running process
 keeps the modules it imported at boot — a green `compose config` and a `Container rsched Running`
 both look like success and mean nothing about what is live (probe a changed behaviour through the
