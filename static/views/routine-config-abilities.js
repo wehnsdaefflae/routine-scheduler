@@ -37,7 +37,7 @@ export function abilitiesGroup(ctx) {
   const rules = fieldBlock(form, "rules", (value, set) => {
     const host = el("div", {}, skeleton(["60%", "80%"]));
     library.then((lib) => host.replaceChildren(rulePicker(lib.rules || [], value || [], {
-      saved: form.saved("rules") || [], live: !!d.active_run, onChange: set }).node));
+      saved: form.saved("rules") || [], onChange: set }).node));
     return host;
   }, { noWas: true });
 

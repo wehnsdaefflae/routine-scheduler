@@ -27,9 +27,10 @@ import { highlightJson } from "/static/components/code.js";
 import { ruleLink, utilLink } from "/static/components/conceptlinks.js";
 import { el, fmtTime, fmtTokens, fullOutput, compressionInfo, toast } from "/static/util.js";
 
-// Mirror of engine/actions.py BRIEF_FIELD (the source of truth) — a kind missing here
-// renders its turn line with an EMPTY brief, which is how this map drifted 10 kinds
-// behind before the 2026-08-21 sweep caught it. Keep the two in lockstep.
+// Mirror of engine/actionschema.py BRIEF_FIELD (the source of truth; static/ is no-build and
+// cannot import it) — a kind missing here renders its turn line with an EMPTY brief, which is
+// how this map drifted 10 kinds behind before the 2026-08-21 sweep caught it.
+// tests/test_actions.py now holds the two in lockstep.
 const BRIEF_FIELD = { util: "name", write_util: "name", remove_util: "name",
                       read_file: "path", view_image: "path", write_file: "path",
                       edit_file: "path", delete: "path", move: "src", mkdir: "path",
@@ -93,6 +94,23 @@ export function referButton(onRefer, label, snippet) {
 // component that mounted the row revokes them in its destroy(), exactly once.
 const ATT_IMG = new Set(["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp"]);
 
+// A blob URL carries THIS console's origin, so a file opened from one as a page of its own runs
+// as the console: an HTML, SVG or XML attachment's script read the operator token out of
+// localStorage the moment it was opened. A type that can run script opens as its source text;
+// an image, a PDF or plain text opens as itself. A thumbnail still SHOWS an SVG — an <img> runs
+// no script.
+const RUNS_SCRIPT = /(?:html|xml)\b/i;
+
+async function openAsPage({ url, type }, blobs) {
+  let href = url;
+  if (RUNS_SCRIPT.test(type || "")) {
+    const bytes = await (await fetch(url)).blob();
+    href = URL.createObjectURL(new Blob([bytes], { type: "text/plain;charset=utf-8" }));
+    blobs?.push(href);
+  }
+  window.open(href, "_blank");
+}
+
 export function attachmentRow(rels, fileUrl, blobs) {
   if (!rels?.length || !fileUrl) return null;
   const row = el("div", { class: "att-row" });
@@ -101,15 +119,16 @@ export function attachmentRow(rels, fileUrl, blobs) {
     const ext = (name.split(".").pop() || "").toLowerCase();
     if (ATT_IMG.has(ext)) {
       const img = el("img", { class: "att-thumb", alt: name, title: `${name} — click to open` });
-      img.onclick = () => { if (img.src) window.open(img.src, "_blank"); };
-      apiBlobUrl(fileUrl(rel)).then(({ url }) => { blobs?.push(url); img.src = url; })
+      let file = null;   // {url, type} once the thumbnail has loaded
+      img.onclick = () => { if (file) openAsPage(file, blobs); };
+      apiBlobUrl(fileUrl(rel)).then((f) => { blobs?.push(f.url); file = f; img.src = f.url; })
         .catch(() => img.replaceWith(
           el("span", { class: "faint small" }, `🖼 ${name} (unavailable)`)));
       row.append(img);
     } else {
       const btn = el("button", { class: "btn small att-file", title: rel }, `📎 ${name}`);
       btn.onclick = () => apiBlobUrl(fileUrl(rel))
-        .then(({ url }) => { blobs?.push(url); window.open(url, "_blank"); })
+        .then((f) => { blobs?.push(f.url); return openAsPage(f, blobs); })
         .catch((err) => toast(`could not load ${name}: ${err.message}`, 4000, { error: true }));
       row.append(btn);
     }

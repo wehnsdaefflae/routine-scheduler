@@ -113,6 +113,27 @@ def test_the_ribbon_summary_counts_are_ways_in(ui, ui_page):
     ui_page.wait_for_url(f"{ui.url}/#/run/uir:{ts}")
 
 
+def test_a_resize_repaints_the_ribbon_from_the_runs_it_holds(ui, ui_page):
+    """A resize changes the band's geometry and nothing it shows. It used to queue a refetch of
+    200 runs — coalesced to one per 20 s — and until that landed the band stayed drawn for the
+    old width, stretched, since its SVG scales without keeping its aspect."""
+    ui.seed_run("uir", (datetime.now(UTC) - timedelta(hours=2)).strftime("%Y%m%d-%H%M%S"),
+                "finished", elapsed_s=120)
+    ui_page.set_viewport_size({"width": 1425, "height": 900})
+    ui_page.goto(f"{ui.url}/#/routines")
+    expect(ui_page.locator(".ribbon-summary")).to_contain_text("1 run in 24h")
+
+    runs: list[str] = []
+    ui_page.on("request", lambda r: runs.append(r.url) if "/api/runs" in r.url else None)
+    ui_page.set_viewport_size({"width": 1100, "height": 900})
+    ui_page.wait_for_timeout(1000)
+    drawn = ui_page.evaluate("() => [document.querySelector('.ribbon-track').clientWidth,"
+                             " document.querySelector('.ribbon-track svg').viewBox.baseVal.width]")
+    assert drawn[0] == drawn[1], f"the band is drawn for {drawn[1]}px in a {drawn[0]}px track"
+    expect(ui_page.locator(".ribbon-track .rb-run")).to_have_count(1)
+    assert not runs, f"a resize refetched the run list: {runs}"
+
+
 def test_the_group_row_says_what_is_happening_not_a_ratio(ui, ui_page):
     """D157-C: the group row SAYS the state instead of encoding it.
 

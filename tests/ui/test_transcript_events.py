@@ -16,6 +16,7 @@ why none of them was caught by the js_errors collector or by anyone reading code
 from __future__ import annotations
 
 import json
+import re
 
 from playwright.sync_api import expect
 
@@ -95,3 +96,46 @@ def test_the_transcript_renders_every_event_shape_in_words(ui, ui_page):
 
     # the two side fields ride the turn beside the note pin instead of hiding in the json fold
     assert "^util:fs-ops mv " in body and "would_have" in body
+
+
+# A file that runs script when it is opened as a page. Served with its own type (image/svg+xml,
+# text/html), fetched with the token, and handed to the browser as a blob — whose URL carries the
+# CONSOLE's origin, so opened as a top-level page it would run as the console.
+ACTIVE_FILES = {
+    "attachments/look.svg": '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24">'
+                            '<script>window.ran = localStorage.getItem("rsched_token")</script>'
+                            '<rect width="24" height="24" fill="red"/></svg>',
+    "attachments/page.html": '<!doctype html><script>'
+                             'window.ran = localStorage.getItem("rsched_token")</script><p>hi</p>',
+}
+
+
+def test_an_attachment_that_could_run_script_opens_as_its_source(ui, ui_page):
+    """A message attachment opens full-size in a tab of its own. As a blob that tab is the
+    console's own origin, and the console has no other wall: an SVG or HTML file a person
+    attached — one saved from a web page, say — read the operator token out of localStorage the
+    moment it was opened. Such a file opens as its text; its thumbnail still SHOWS an SVG, since
+    an <img> runs no script."""
+    ts = "20260905-130000"
+    run_dir = ui.seed_run("uir", ts, "finished", summary="done")
+    for rel, text in ACTIVE_FILES.items():
+        path = ui.routines / "uir" / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+    event = {"type": "user_injection",
+             "payload": {"text": "what do these do?", "attachments": list(ACTIVE_FILES)}}
+    with (run_dir / "transcript.jsonl").open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps(event) + "\n")
+
+    ui_page.goto(f"{ui.url}/#/run/uir:{ts}")
+    thumb = ui_page.locator(".att-thumb")
+    expect(thumb).to_have_attribute("src", re.compile(r"^blob:"))
+    for opener in (thumb, ui_page.locator(".att-file", has_text="page.html")):
+        with ui_page.context.expect_page() as info:
+            opener.click()
+        tab = info.value
+        tab.wait_for_load_state()
+        assert tab.evaluate("() => window.ran ?? null") is None, "the file ran as the console"
+        assert tab.evaluate("() => document.contentType") == "text/plain"
+        assert "localStorage" in tab.evaluate("() => document.body.textContent")
+        tab.close()

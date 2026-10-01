@@ -154,9 +154,6 @@ export function scheduleEditor(initial = { frequency: "manual" }, serverTz = "",
   return api;
 }
 
-// Cron string → friendly spec, mirroring rsched.schedule.cron_to_friendly: the four simple
-// cadences round-trip, anything else comes back {frequency: "custom", cron} (read-only in
-// every editor, and not drag-reschedulable).
 // A cron day-of-week field as a sorted weekday set, or null when it isn't one — the
 // client half of the server's _parse_dow (digits, commas, simple ranges; anything else
 // stays "custom").
@@ -174,6 +171,9 @@ function parseDow(dow) {
   return out.length && out.every((x) => x >= 0 && x <= 6) ? out : null;
 }
 
+// Cron string → friendly spec, mirroring rsched.schedule.cron_to_friendly: the four simple
+// cadences round-trip, anything else comes back {frequency: "custom", cron} (read-only in
+// every editor, and not drag-reschedulable).
 export function cronToFriendly(cron) {
   const c = (cron || "").trim();
   if (!c) return { frequency: "manual" };

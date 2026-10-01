@@ -6,20 +6,22 @@
 // Files / Artifacts sections could not be collapsed at all. Both now render this.
 //
 // A section is a caption plus one or more bodies. The caption is the toggle (click, Enter or
-// Space); the open/closed state lives in localStorage under `rail:<name>`, so it is shared
-// across the two views on purpose — a person who folds "tasks" away means it in both.
+// Space); the open/closed state lives in browser storage under `rail:<name>`, so it is shared
+// across the two views on purpose — a person who folds "tasks" away means it in both. It goes
+// through util.js's `storage`, which degrades to memory where the browser refuses storage: a
+// direct localStorage read there threw, and took the whole run view down with it.
 //
 // Sections can be added after construction (the conversation rail reveals `browser` and
 // `background` only once there is something in them) and hidden again with `toggle`.
 
-import { el } from "/static/util.js";
+import { el, storage } from "/static/util.js";
 
 const KEY = (name) => `rail:${name}`;
 
 export function createRail(container, { sections = [] } = {}) {
   const caps = new Map();      // name → {cap, bodies}
 
-  const isClosed = (name) => localStorage.getItem(KEY(name)) === "closed";
+  const isClosed = (name) => storage.get(KEY(name)) === "closed";
 
   function apply(name) {
     const rec = caps.get(name);
@@ -35,7 +37,7 @@ export function createRail(container, { sections = [] } = {}) {
     const cap = el("div", { class: "rail-cap", role: "button", tabindex: "0",
                             "data-rail": name, title: "collapse / expand" }, name);
     const flip = () => {
-      localStorage.setItem(KEY(name), isClosed(name) ? "open" : "closed");
+      storage.set(KEY(name), isClosed(name) ? "open" : "closed");
       apply(name);
     };
     cap.onclick = flip;
