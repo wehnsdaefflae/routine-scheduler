@@ -1,6 +1,7 @@
 // Small DOM + formatting helpers (no framework, no build). el() is textContent-only — it has
-// no HTML pathway, so strings passed to it can never become markup. The ONE sanctioned
-// innerHTML pathway is md.js (simple markdown for model-authored prose), which escapes first.
+// no HTML pathway, so strings passed to it can never become markup, nor script: an `on*`
+// attribute takes a FUNCTION and nothing else. The ONE sanctioned innerHTML pathway is md.js
+// (simple markdown for model-authored prose), which escapes first.
 
 // Web storage can throw (private mode, blocked site data, embedded contexts) — even READING the
 // `localStorage`/`sessionStorage` global does — so every console read goes through one of these
@@ -17,12 +18,26 @@ function webStorage(area) {
 export const storage = webStorage("localStorage");     // per browser
 export const session = webStorage("sessionStorage");   // per tab, gone when it closes
 
+// An event handler is a function, wired with addEventListener. Anything else under an `on*`
+// name used to fall through to setAttribute, where a string IS an inline handler — the browser
+// compiles it as script, and since HTML lowercases attribute names, `onClick`/`ONCLICK` compile
+// too. That is the one way an el() string could run, so the name is refused rather than set;
+// null/undefined/false still mean "no handler", like every other attribute. The event type is
+// lowercased for the same reason the attribute is: `onClick: fn` listened for a "Click" event,
+// which nothing ever fires.
+const HANDLER_RE = /^on/i;
+
 export function el(tag, attrs = {}, ...children) {
   const node = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs)) {
+    if (v === null || v === undefined || v === false) continue;
     if (k === "class") node.className = v;
-    else if (k.startsWith("on") && typeof v === "function") node.addEventListener(k.slice(2), v);
-    else if (v !== null && v !== undefined && v !== false) node.setAttribute(k, v === true ? "" : v);
+    else if (HANDLER_RE.test(k)) {
+      if (typeof v !== "function") {
+        throw new TypeError(`el(${tag}): ${k} must be a function, not ${typeof v}`);
+      }
+      node.addEventListener(k.slice(2).toLowerCase(), v);
+    } else node.setAttribute(k, v === true ? "" : v);
   }
   for (const c of children.flat()) {
     if (c === null || c === undefined) continue;
