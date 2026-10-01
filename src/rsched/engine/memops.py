@@ -25,13 +25,17 @@ def _memory_topics(mem_dir) -> list[str]:
 def _memory_index_upsert(mem_dir, name: str, about: str | None) -> None:
     """INDEX.md is engine-owned: one `- <name>.md: <about>` line per note, updated in the
     same operation as the note itself so the catalog can never drift. about=None removes.
+
+    ONE line is the invariant every later upsert relies on — the replace finds a note's entry
+    by its prefix — so `about` is folded onto a single line: a line break in it left the
+    continuation behind as an orphan line no revision or delete could ever reach.
     """
     index = mem_dir / "INDEX.md"
     lines = index.read_text(encoding="utf-8").splitlines() if index.exists() else []
     prefix = f"- {name}.md:"
     lines = [ln for ln in lines if not ln.startswith(prefix)]
     if about is not None:
-        lines.append(f"{prefix} {about.strip()}")
+        lines.append(f"{prefix} {' '.join(about.split())}")
     atomic_write(index, "\n".join(lines) + ("\n" if lines else ""))
 
 def do_memory_read(action: dict, ctx: RunContext) -> dict:
