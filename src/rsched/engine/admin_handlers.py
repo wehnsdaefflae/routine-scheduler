@@ -12,8 +12,21 @@ in the same sense: the run's real job is elsewhere.
 from __future__ import annotations
 
 import difflib
+from pathlib import Path
 
 from .. import report_threads, reports, schedule_once
+
+
+def _unknown_target(kind: str, target: str, home: Path) -> dict:
+    """The refusal for a target slug naming no routine — with the valid slugs and the close
+    matches, not a bare rejection: a run guessing a sibling's slug (the train-seat friction)
+    has to be able to correct the guess on its next turn.
+    """
+    slugs = sorted(p.name for p in home.iterdir()
+                   if not p.name.startswith(".") and (p / "routine.yaml").is_file())
+    return {"kind": kind, "target": target, "unknown_target": True,
+            "suggestions": difflib.get_close_matches(target, slugs, n=3, cutoff=0.5),
+            "valid_targets": slugs}
 
 
 def handle_schedule_run(loop, action: dict) -> dict:
@@ -36,13 +49,7 @@ def handle_schedule_run(loop, action: dict) -> dict:
             and (ctx.routine.dir / "routine.yaml").is_file():
         spool_slug = f"conv--{target}"
     elif not (home / target / "routine.yaml").is_file():
-        # Discoverability: a scheduling routine guessing a sibling's slug (the train-seat
-        # friction) should get the valid slugs + close matches back, not a bare rejection.
-        slugs = sorted(p.name for p in home.iterdir()
-                       if not p.name.startswith(".") and (p / "routine.yaml").is_file())
-        return {"kind": "schedule_run", "target": target, "unknown_target": True,
-                "suggestions": difflib.get_close_matches(target, slugs, n=3, cutoff=0.5),
-                "valid_targets": slugs}
+        return _unknown_target("schedule_run", target, home)
     if action.get("cancel"):
         req_id = str(action.get("id")).strip() if action.get("id") else None
         removed = schedule_once.cancel(home, spool_slug, req_id)
@@ -90,13 +97,7 @@ def handle_report(loop, action: dict) -> dict:
             return {"kind": "report", "target": target, "self_target": True}
         target_dir = home / target
         if not (target_dir / "routine.yaml").is_file():
-            # Discoverability: a routine guessing a sibling's slug should get the valid slugs
-            # and close matches back, not a bare rejection (as schedule_run does).
-            slugs = sorted(p.name for p in home.iterdir()
-                           if not p.name.startswith(".") and (p / "routine.yaml").is_file())
-            return {"kind": "report", "target": target, "unknown_target": True,
-                    "suggestions": difflib.get_close_matches(target, slugs, n=3, cutoff=0.5),
-                    "valid_targets": slugs}
+            return _unknown_target("report", target, home)
     answers = str(action.get("answers") or "").strip()
     wanted = [str(i).strip().upper() for i in (action.get("supersedes") or [])]
     folded: list[str] = []

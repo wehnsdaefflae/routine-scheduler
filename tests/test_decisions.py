@@ -211,7 +211,7 @@ def test_dialog_reply_keeps_the_record_open_and_a_reask_supersedes_it(make_routi
 
     t = threading.Thread(target=driver)
     t.start()
-    scripted([
+    ep = scripted([
         {"say": "q", "kind": "ask_user", "question": "Go?", "mode": "blocking"},
         {"say": "re-ask with options", "kind": "ask_user", "mode": "blocking",
          "question": "Go? Options: yes (ship now) / no (hold)."},
@@ -224,10 +224,28 @@ def test_dialog_reply_keeps_the_record_open_and_a_reask_supersedes_it(make_routi
     first_obs = next(e for e in events if e["type"] == "observation"
                      and e["payload"]["kind"] == "ask_user")
     assert first_obs["payload"].get("dialog") is True
+    # the model composed its re-ask with the user's own words in front of it
+    assert "which options do I have?" in str(ep.calls[1]["messages"])
     answers = [e["payload"] for e in events if e["type"] == "answer"]
     assert answers[0]["intermediate"] is True and answers[1]["text"] == "yes"
     # the superseded record and the answered one are both gone — nothing lingers
     assert not list((d / "questions" / "pending").glob("*.json"))
+
+
+def test_a_dialog_reply_reaches_the_model_in_the_users_own_words():
+    """The console's "ask back" on a blocking question: the user replied WITHOUT deciding.
+    Their words are the whole point of the reply, and the observation fell through to the
+    plain deferred line — "question filed as deferred … Continue." — so the model never saw
+    them and carried on as if nobody had answered."""
+    from rsched.engine.observations import format_observation
+
+    text = format_observation({"kind": "ask_user", "qid": "q-20260708-070000-3",
+                               "mode": "blocking", "dialog": True,
+                               "user_message": "which options do I have?"})
+    assert "which options do I have?" in text
+    assert "NOT the answer" in text and "q-20260708-070000-3" in text
+    assert "ask again with ask_user" in text
+    assert "filed as deferred" not in text
 
 
 def test_dialog_reply_survives_a_finish_without_reask(make_routine, scripted):

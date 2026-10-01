@@ -42,6 +42,15 @@ The two in-engine modes are real routines on disk under `runs/<ts>/sub/<n>/` whi
 their own context window, pattern and finish summary. Decomposition is **recursive**: a child can
 decompose again (bounded by `max_subrun_depth`).
 
+A child's number `n` NAMES that directory, so it is unique across every leg of the run — read
+off the child directories already there (`childrun.claim_child`) — while the `max_subruns`
+allowance COUNTS the children of the current leg and starts afresh with each one. The two were
+one counter until a conversation's second reply numbered its first child `#1` again: it ran
+inside the first reply's child directory, appended to its transcript, and handed that child's
+artifacts back as its own. Admission is one step under the tree's lock (`subruns._admit`) — the
+allowance check and the claim together — so two parallel siblings can never both take the last
+child.
+
 A child's exit is announced under ONE headline whatever its mode —
 `CHILD RUN FINISHED (<mode noun>) — #<n> …` — with the mode named inside it rather than changing
 the noun. Only the follow-on instruction differs, because only that genuinely differs: a
@@ -125,6 +134,9 @@ Collection happens in `subruns._collect`, the child's single finalization point 
 either reporter. Two paths report an exit (`wait`, which consumes finished children directly, and
 the turn-boundary announcement), so collecting in a reporter meant a child that finished during a
 wait handed nothing back. Anything that must happen once per child belongs at that one point.
+Both reporters name the landed paths in the ONE spelling `child.handback_paths_line` owns, and
+the `subrun_end` event records them (`collected`), so the announcement a resumed leg rebuilds
+from the event can name them too.
 
 ## The decomposition gate
 
@@ -193,10 +205,13 @@ A parent controls its running children with two actions and one invariant:
   longer needs; there is nothing else to add for "abort".
 - **Gather** — `wait n=N` / `wait all=true` blocks until a child (or all) finishes; a finished
   child is also announced at the next turn boundary whether or not you are waiting.
-- **Reap on finish** — a parent's `finish` kills every child still running. Children never outlive
-  the parent (the in-process-thread invariant above), so a parent can always stop the whole subtree
-  by finishing — and neither does a command a child started: a child whose thread is abandoned
-  while it is still ending one leaves the group's SIGKILL to `procgroup.terminate`'s backstop.
+- **Reap on finish** — a parent's `finish` kills every child still running, telling them all at
+  once and giving them ONE shared `subruns.KILL_JOIN_S` (12 s) to stop, however many there are.
+  Children never outlive the parent (the in-process-thread invariant above), so a parent can
+  always stop the whole subtree by finishing — and neither does a command a child started: a
+  child whose thread is abandoned while it is still ending one leaves the group's SIGKILL to
+  `procgroup.terminate`'s backstop. A `kill` whose child is still inside a model call (which no
+  abort interrupts) says so — "still winding down" — and the exit is announced when it lands.
 
 There is **no pause/resume** of a running child, by design: a subtask is usually a handful of turns,
 so the coordination cost of holding one mid-flight and resuming it later exceeds just letting it run

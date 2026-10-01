@@ -8,6 +8,8 @@ turn boundary. Children never outlive the parent: its finish/abort kills them.
 Threading model: each child EngineLoop runs in its own thread and writes ONLY its own transcript
 under sub/<n>/; all parent-transcript events are emitted from the parent thread (single writer
 per file). Children carry a per-loop abort Event so one can be killed without touching siblings.
+The one state the whole tree shares — the `max_subruns` allowance and the child numbers — is
+decided under the tree's one lock, in one step (`_admit`).
 """
 
 from __future__ import annotations
@@ -15,19 +17,18 @@ from __future__ import annotations
 import threading
 import time
 
-from . import inbox
-from .childrun import Subrun, build_child
+from . import child, inbox
+from .childrun import Subrun, build_child, claim_child
 from .observations import truncate
 
 MAX_PARALLEL = 4
-#: How long `kill` and the parent's exit wait for a child to stop. A child whose abort is ending
-#: a util or script group (`utils_run.run_jailed`) may take up to `procgroup.TERM_GRACE_S` (30 s)
-#: — longer, on purpose: after a `kill` it finishes in its own thread; after the parent's exit
-#: the backstop `procgroup.terminate` armed delivers the group's SIGKILL.
+#: How long `kill` and the parent's exit wait for children to stop — ONE deadline for the
+#: parent's exit however many are still running, never one per child. A child whose abort is
+#: ending a util or script group (`utils_run.run_jailed`) may take up to
+#: `procgroup.TERM_GRACE_S` (30 s) — longer, on purpose: after a `kill` it finishes in its own
+#: thread; after the parent's exit the backstop `procgroup.terminate` armed delivers the
+#: group's SIGKILL.
 KILL_JOIN_S = 12.0
-# Below this many tokens left, skip in-run workflow generation (≈2 full-context system-model
-# calls) and fall back to the default pattern — generation must not tip a run over its budget.
-GEN_FLOOR_TOKENS = 20_000
 
 
 def _usage_snapshot(usage: dict) -> dict:
@@ -78,8 +79,7 @@ class SubrunManager:
                     f"call: do the work here instead of decomposing it")
         if ctx.depth + 1 > ctx.budgets.max_subrun_depth:
             return f"max {noun} depth ({ctx.budgets.max_subrun_depth}) reached"
-        running = sum(1 for s in self.subruns.values() if s.status == "running")
-        if running >= MAX_PARALLEL:
+        if (running := self._running()) >= MAX_PARALLEL:
             return (f"{running} child-tasks already running (parallel cap {MAX_PARALLEL}) — "
                     "wait for or kill one first")
         return None
@@ -107,6 +107,39 @@ class SubrunManager:
                     "action shows each one's endpoint and attributes.")
         return None
 
+    def _admit(self, action: dict) -> int | str:
+        """Admit ONE new child — its claimed number — or the reason it cannot start.
+
+        The `model` override is judged first (D81 extended, 2026-08-22): it is the CALL's own
+        fault, and the cap refusal tells the run its call was fine. The allowance check and
+        the claim then happen in one step under the tree's lock: `sub_counter` is shared by
+        every node of the tree and parallel children reach it from their own threads, so an
+        allowance read outside the lock that guards the increment let two siblings both take
+        the last child.
+        """
+        if reason := self._model_reason(action):
+            return reason
+        ctx = self.parent.ctx
+        with ctx.sub_lock:
+            if reason := self._cap_reason(noun="child-task"):
+                return reason
+            return claim_child(ctx)
+
+    def _start_child(self, action: dict, *, mode: str, prefix: str,
+                     overrides: dict | None = None) -> Subrun | str:
+        """Admit, build and start ONE child in either mode — or the reason it cannot start.
+        An unnamed child is labelled by its number (`sub-3`, `task-3`).
+        """
+        admitted = self._admit(action)
+        if isinstance(admitted, str):
+            return admitted
+        ctx = self.parent.ctx
+        label = action.get("label") or f"{prefix}-{admitted}"
+        sub = build_child(ctx, action, n=admitted, label=label, mode=mode,
+                          alloc_overrides=overrides, emit=ctx.transcript.event)
+        self._start(sub)
+        return sub
+
     def _start(self, sub: Subrun) -> None:
         """Register the child and run its EngineLoop in a daemon thread; its exit sets the
         completion events so a blocked parent wakes at once.
@@ -120,33 +153,28 @@ class SubrunManager:
                 sub.summary = f"sub-routine crashed: {exc}"
             finally:
                 sub.ctx.transcript.close()
+                sub.ended_mono = time.monotonic()
                 sub.done.set()
                 self.exit_event.set()
 
-        thread = threading.Thread(target=run_child, name=f"child-{sub.n}", daemon=True)
-        sub.thread = thread
         self.subruns[sub.n] = sub
-        thread.start()
+        threading.Thread(target=run_child, name=f"child-{sub.n}", daemon=True).start()
+
+    def _running(self) -> int:
+        return sum(1 for s in self.subruns.values() if s.status == "running")
 
     # -- spawn (parallel) -----------------------------------------------------------
 
     def spawn(self, action: dict) -> dict:
-        ctx = self.parent.ctx
-        default_label = f"sub-{ctx.sub_counter[0] + 1}"
-        if reason := self._cap_reason(noun="child-task"):
-            return {"kind": "spawn", "rejected": True,
-                    "label": action.get("label") or default_label, "reason": reason}
-        if reason := self._model_reason(action):
-            return {"kind": "spawn", "rejected": True,
-                    "label": action.get("label") or default_label, "reason": reason}
-        running = sum(1 for s in self.subruns.values() if s.status == "running")
-        sub = build_child(ctx, action, mode="parallel", default_label=default_label,
-                          emit=ctx.transcript.event)
-        self._start(sub)
+        running = self._running()
+        sub = self._start_child(action, mode=child.PARALLEL, prefix="sub")
+        if isinstance(sub, str):
+            return {"kind": "spawn", "rejected": True, "label": action.get("label") or "",
+                    "reason": sub}
         return {"kind": "spawn", "n": sub.n, "label": sub.label, "workflow": sub.workflow,
                 "note": sub.note, "running": running + 1}
 
-    # -- subtask (sequential, blocking) ---------------------------------------------
+    # -- subtask (sequential) -------------------------------------------------------
 
     def subtask(self, action: dict) -> dict:
         """Start ONE SEQUENTIAL child — NON-BLOCKING, so the conversation stays live while it
@@ -157,23 +185,17 @@ class SubrunManager:
         folds the announced result into that next brief. `turns` pins its budget (else half the
         parent's remainder).
         """
-        ctx = self.parent.ctx
-        default_label = f"task-{ctx.sub_counter[0] + 1}"
-        if reason := self._cap_reason(noun="child-task"):
-            return {"kind": "subtask", "rejected": True,
-                    "label": action.get("label") or default_label, "reason": reason}
-        # A bad `model` override (unconfigured uncensored, unknown catalog name) is a
-        # teaching rejection before anything is built (D81 extended, 2026-08-22).
-        if reason := self._model_reason(action):
-            return {"kind": "subtask", "rejected": True,
-                    "label": action.get("label") or default_label, "reason": reason}
         turns = action.get("turns")
         overrides = {"turns": int(turns)} if isinstance(turns, int) and turns > 0 else None
-        sub = build_child(ctx, action, mode="sequential", default_label=default_label,
-                          alloc_overrides=overrides, emit=ctx.transcript.event)
-        self._start(sub)
+        sub = self._start_child(action, mode=child.SEQUENTIAL, prefix="task",
+                                overrides=overrides)
+        if isinstance(sub, str):
+            return {"kind": "subtask", "rejected": True, "label": action.get("label") or "",
+                    "reason": sub}
+        # `note` says when the requested pattern was unavailable and the child runs on the
+        # builtin fallback — the parent has to know its child is not running what it asked for.
         return {"kind": "subtask", "n": sub.n, "label": sub.label, "workflow": sub.workflow,
-                "note": "", "started": True}
+                "note": sub.note, "started": True}
 
     # -- lifecycle (shared) ---------------------------------------------------------
 
@@ -203,10 +225,14 @@ class SubrunManager:
             usage = _usage_snapshot(sub.ctx.usage)
             self.parent.ctx.add_usage(usage)
             self.parent.ctx.referrals += sub.ctx.referrals
+            # `collected` rides the event because the announcement a resumed leg rebuilds
+            # from it (history.replay_messages) has to name the same hand-back the live one
+            # did — a payload EXTENSION, present only when something was handed back.
             self.parent.ctx.transcript.event("subrun_end", {
                 "n": sub.n, "label": sub.label, "workflow": sub.workflow, "mode": sub.mode,
                 "status": sub.status, "summary": sub.summary,
-                "turns": sub.ctx.turn, "usage": usage})
+                "turns": sub.ctx.turn, "usage": usage,
+                **({"collected": list(sub.collected_paths)} if sub.collected_paths else {})})
             # children feed workflow-library optimization like any other run
             from ..health_events import log_workflow_usage
 
@@ -227,11 +253,13 @@ class SubrunManager:
                                compression=sub.ctx.compression_stats)
 
     def status_table(self) -> dict:
+        now = time.monotonic()
         rows = [{"n": sub.n, "label": sub.label, "workflow": sub.workflow,
                  "mode": sub.mode,
                  "state": sub.status if sub.done.is_set() else "running",
                  "turns": sub.ctx.turn,
-                 "elapsed_s": round(time.monotonic() - sub.started_mono, 1),
+                 # a finished child's elapsed is how long it RAN, not how long ago it started
+                 "elapsed_s": round((sub.ended_mono or now) - sub.started_mono, 1),
                  "summary_head": (truncate(sub.summary, cap=200)[0]
                                   if sub.done.is_set() else "")}
                 for sub in self.subruns.values()]
@@ -310,18 +338,21 @@ class SubrunManager:
                 for s in finished]
 
     def kill_all(self, *, reason: str) -> int:
-        """Parent is exiting — children never outlive it."""
-        killed = 0
+        """Parent is exiting — children never outlive it. Every running child is told to stop
+        at once, and they share ONE `KILL_JOIN_S` to do it: a wait per child let four children
+        stuck in model calls (which no abort interrupts) hold the parent's finish for four
+        times the grace the rest of the system plans around (procgroup's backstop arithmetic).
+        """
+        running = [sub for sub in self.subruns.values() if not sub.done.is_set()]
+        for sub in running:
+            sub.abort_event.set()
+        deadline = time.monotonic() + KILL_JOIN_S
         for sub in self.subruns.values():
-            if not sub.done.is_set():
-                sub.abort_event.set()
-                killed += 1
-        for sub in self.subruns.values():
-            sub.done.wait(timeout=KILL_JOIN_S)
+            sub.done.wait(timeout=max(0.0, deadline - time.monotonic()))
             if not sub.announced:
                 sub.announced = True
                 if not sub.done.is_set():
                     sub.status = "aborted"
                     sub.summary = f"killed: {reason} (did not stop in time)"
                 self._collect(sub)
-        return killed
+        return len(running)

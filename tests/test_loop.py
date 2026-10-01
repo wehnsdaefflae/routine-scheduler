@@ -1405,7 +1405,7 @@ def test_child_deliverables_are_collected_into_the_parent(make_routine, scripted
     tasks already use) is now copied into the PARENT's artifacts/, namespaced by child number,
     and the finished-announcement names exactly what landed.
     """
-    d, ep, status, _run_dir, _events = _run(make_routine, scripted, [
+    d, ep, status, _run_dir, events = _run(make_routine, scripted, [
         (PARENT, subtask("CHILD-A: produce the report.", label="build")),
         ("CHILD-A", write_file("artifacts/report.md", content="# the deliverable")),
         ("CHILD-A", finish(summary="wrote artifacts/report.md")),
@@ -1423,6 +1423,10 @@ def test_child_deliverables_are_collected_into_the_parent(make_routine, scripted
     # made this test pass alone and fail under load.
     said = json.dumps(ep.calls[-1]["messages"])
     assert "artifacts/from-sub-1/report.md" in said
+    # …and the exit EVENT names it too: a resumed leg rebuilds the announcement from the
+    # event, and has to name the same hand-back the live one did
+    end = next(e["payload"] for e in events if e["type"] == "subrun_end")
+    assert end["collected"] == ["artifacts/from-sub-1/report.md"]
 
 
 def test_a_child_that_writes_nothing_collects_nothing(make_routine, scripted):
@@ -1436,8 +1440,64 @@ def test_a_child_that_writes_nothing_collects_nothing(make_routine, scripted):
     ], slug="nocollect")
     assert status == "ok"
     assert not (d / "artifacts" / "from-sub-1").exists()
-    assert "Collected from the child" not in json.dumps(ep.calls[-1]["messages"])
+    assert "Collected into your artifacts/" not in json.dumps(ep.calls[-1]["messages"])
     assert "from-sub-1" not in json.dumps(ep.calls[-1]["messages"])
+
+
+def test_a_resumed_leg_numbers_its_children_after_the_earlier_legs(make_routine, scripted):
+    """Every resumed leg — each conversation reply, a recovered routine run — starts its child
+    ALLOWANCE at zero again, but not its child NUMBERS: those name directories still on disk.
+    Numbering from the allowance counter handed the second leg's first child `sub/1/` again —
+    it ran inside the first child's directory, appended to its transcript, and the parent was
+    told the first child's artifact was this child's hand-back.
+    """
+    d = make_routine(slug="legs")
+    scripted([
+        ("CHILD-A", write_file("artifacts/a.md", content="from leg one")),
+        ("CHILD-A", finish(summary="leg one child")),
+        subtask("CHILD-A: leg one.", label="one"),
+        wait_(n=1),
+        finish(summary="leg one done"),
+    ])
+    _, run_dir = run_routine(d, _server(d), run_ts=TS)
+    ep = scripted([
+        ("CHILD-B", finish(summary="leg two child wrote nothing")),
+        subtask("CHILD-B: leg two.", label="two"),
+        wait_(n=2),
+        finish(summary="leg two done"),
+    ])
+    status, _ = run_routine(d, _server(d), run_ts=TS, resume_from=TS)
+    assert status == "ok"
+    events, _ = read_events(run_dir / "transcript.jsonl")
+    assert [e["payload"]["n"] for e in events if e["type"] == "subrun_start"] == [1, 2]
+    first, _ = read_events(run_dir / "sub" / "1" / "transcript.jsonl")
+    assert [e["type"] for e in first].count("header") == 1      # one child per directory
+    assert not (run_dir / "sub" / "2" / "artifacts").exists()    # a workspace of its own
+    ends = [e["payload"] for e in events if e["type"] == "subrun_end"]
+    assert ends[0]["collected"] == ["artifacts/from-sub-1/a.md"]
+    assert "collected" not in ends[1]                            # it handed back nothing
+    told = [str(m.get("content")) for m in ep.calls[-1]["messages"]
+            if "leg two child wrote nothing" in str(m.get("content"))]
+    assert told and not any("Collected into your artifacts/" in m for m in told)
+
+
+def test_a_subtask_on_an_unavailable_pattern_says_it_fell_back(make_routine, scripted):
+    """The parent asked for a pattern and its child is not running it — that has to reach the
+    parent. A spawn's observation always carried the builtin-fallback note; a subtask's
+    hard-coded an empty one, so a sequential child's parent never learned its step was running
+    on the generic body instead of the pattern it chose.
+    """
+    _d, ep, status, _run_dir, events = _run(make_routine, scripted, [
+        (PARENT, subtask("CHILD-N: one step.", label="step", workflow="no-such-pattern")),
+        ("CHILD-N", finish(summary="did the step")),
+        (PARENT, wait_(n=1)),
+        (PARENT, finish(summary="done")),
+    ], slug="fallbacknote")
+    assert status == "ok"
+    obs = next(e["payload"] for e in events if e["type"] == "observation"
+               and e["payload"].get("kind") == "subtask")
+    assert "no-such-pattern" in obs["note"] and "builtin fallback" in obs["note"]
+    assert "builtin fallback" in json.dumps(ep.calls[-1]["messages"])
 
 
 def test_subtasks_run_in_order_and_forward_results(make_routine, scripted):
@@ -2908,7 +2968,7 @@ def test_build_child_carries_tools_allowlist(make_routine, monkeypatch):
     """A child materialized from a pattern with a `tools:` allowlist gets that allowlist on
     its EngineLoop — the restriction must not be dropped between materialize and the loop."""
     from rsched.engine.budgets_config import Budgets
-    from rsched.engine.childrun import build_child
+    from rsched.engine.childrun import build_child, claim_child
     from rsched.engine.run_context import RunContext
     from rsched.engine.transcript import Transcript
     from rsched.workflows import adapt
@@ -2928,8 +2988,10 @@ def test_build_child_carries_tools_allowlist(make_routine, monkeypatch):
                      run_dir=run_dir, transcript=Transcript(run_dir / "transcript.jsonl"),
                      budgets=Budgets.from_config(cfg.budgets))
     events = []
-    sub = build_child(ctx, {"prompt": "do a thing", "label": "c1"}, mode="parallel",
-                      default_label="c1", emit=lambda t, p: events.append((t, p)))
+    with ctx.sub_lock:
+        n = claim_child(ctx)
+    sub = build_child(ctx, {"prompt": "do a thing", "label": "c1"}, n=n, label="c1",
+                      mode="parallel", emit=lambda t, p: events.append((t, p)))
     assert sub.loop.allowed_tools == {"read_file", "ask_user", "finish"}
 
 
@@ -3062,6 +3124,27 @@ def test_write_util_edit_mode_teaches_on_bad_anchor(make_routine, scripted, monk
            and e["payload"]["kind"] == "write_util"]
     assert obs[0]["edit_failed"] and "--full" in obs[0]["reason"]
     assert obs[1]["edit_failed"] and "2×" in obs[1]["reason"] and "all" in obs[1]["reason"]
+
+
+def test_edit_mode_is_one_rule_for_both_library_kinds():
+    """write_util and write_rule patch through ONE anchor rule (`authoring._anchor_edit`), so a
+    guard taught to one kind cannot be missing from the other — the rule kind's refusal of an
+    empty anchor is the case in point: "" occurs between every two characters, and counted it
+    reads as "occurs N× … set all: true", after which `all: true` would weave the replacement
+    between every character."""
+    from rsched.engine.authoring import _anchor_edit
+
+    kw = {"current": "the util's current source", "verbatim_from": "<show>",
+          "whole": "'content'"}
+    text = "x = 1\ny = 2\nx = 1\n"
+    assert _anchor_edit(text, {"anchor": "", "all": True, "replacement": "z"}, **kw)[0] == ""
+    assert "non-empty 'anchor'" in _anchor_edit(text, {}, **kw)[1]
+    assert "copy it VERBATIM" in _anchor_edit(text, {"anchor": "q = 9"}, **kw)[1]
+    assert "occurs 2×" in _anchor_edit(text, {"anchor": "x = 1"}, **kw)[1]
+    assert _anchor_edit(text, {"anchor": "y = 2", "replacement": "y = 3"}, **kw) == (
+        "x = 1\ny = 3\nx = 1\n", "")
+    assert _anchor_edit(text, {"anchor": "x = 1", "replacement": "x = 0", "all": True},
+                        **kw)[0] == "x = 0\ny = 2\nx = 0\n"
 
 
 def test_write_util_edit_mode_needs_an_existing_util(make_routine, scripted, monkeypatch):

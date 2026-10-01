@@ -5,9 +5,12 @@ only in how the parent schedules it and how its budget is sliced.
 
 Each child is a REAL routine on disk under `runs/<ts>/sub/<n>/` while it runs (its own main.md +
 stages/ + instruction), so its module reads resolve under its own dir and it can itself
-decompose (the tree is recursive; `sub_counter` is shared tree-wide so every node's `n` is
-unique). Lifecycle (start/monitor/announce/kill) stays in `SubrunManager` (subruns.py), which
-owns the exit-event machinery; this module only builds a child, not its thread.
+decompose (the tree is recursive). Two numbers describe a child and they are not the same one:
+`sub_counter` COUNTS the children admitted this leg against the tree-wide `max_subruns`
+allowance, while `n` NAMES one — unique across every leg of the run, read off the child
+directories themselves (`claim_child`). Lifecycle (start/monitor/announce/kill) stays in
+`SubrunManager` (subruns.py), which owns the exit-event machinery; this module only builds a
+child, not its thread.
 """
 
 from __future__ import annotations
@@ -64,16 +67,59 @@ class Subrun:
     loop: EngineLoop                   # the child EngineLoop
     abort_event: threading.Event
     started_mono: float
-    mode: str = child.PARALLEL         # a child.MODES value — the scheduling mode only
+    mode: str = child.PARALLEL         # a child.MODE_NOUN key — the scheduling mode only
     parent_dir: Path | None = None     # where the hand-back lands (child.handback_dirname)
     collected_paths: tuple = ()        # what actually landed there, parent-relative
     note: str = ""                     # e.g. "recipe X unavailable — builtin fallback"
-    thread: threading.Thread | None = None   # attached by SubrunManager just before start
     status: str = "running"            # running | ok | partial | failed | aborted
     summary: str = ""
+    ended_mono: float | None = None    # when its thread finished — freezes `elapsed_s`
     announced: bool = False            # parent notified of exit?
     collected: bool = False            # usage folded into the parent?
     done: threading.Event = field(default_factory=threading.Event)
+
+
+def _highest_child_number(run_dir: Path) -> int:
+    """The highest child number any leg of this run has used, at any depth; 0 when none.
+
+    The child directories ARE the record — `sub/<n>/` for the run's own children,
+    `sub/<n>/sub/<m>/` for theirs — and they outlive the leg that made them. Only numbered
+    directories are walked, so the cost is the size of the child tree, not of its files.
+    """
+    top, pending = 0, [run_dir / "sub"]
+    while pending:
+        here = pending.pop()
+        try:
+            numbered = [p for p in here.iterdir() if p.name.isdecimal()]
+        except OSError:          # no `sub/` here (yet) — nothing numbered below it
+            continue
+        for p in numbered:
+            top = max(top, int(p.name))
+            pending.append(p / "sub")
+    return top
+
+
+def claim_child(parent_ctx: RunContext) -> int:
+    """Count one more child against the tree's allowance and claim its NUMBER and directory.
+    The caller holds `parent_ctx.sub_lock` and has checked the allowance under it.
+
+    The number is one past the highest any child of this RUN has ever used, not the
+    admission counter: that one counts THIS leg's children for the `max_subruns` cap and
+    starts again at zero on every resumed leg — every conversation reply, every recovered
+    routine run — while the earlier legs' child directories are still on disk. Numbering from
+    the counter handed a second leg's first child `sub/1/` again: it ran inside the first
+    child's directory, appended to its transcript, and handed that child's artifacts back to
+    the parent as its own.
+    """
+    parent_ctx.sub_counter[0] += 1
+    n = _highest_child_number(parent_ctx.root_run_dir) + 1
+    while True:
+        try:
+            (parent_ctx.run_dir / "sub" / str(n)).mkdir(parents=True)
+        except FileExistsError:  # unreachable after the scan — but never share a directory
+            n += 1
+            continue
+        return n
 
 
 def materialize_to_disk(server, slug: str, sub_dir, prompt: str) -> tuple[str, str]:
@@ -99,22 +145,16 @@ def materialize_to_disk(server, slug: str, sub_dir, prompt: str) -> tuple[str, s
         return "(builtin-fallback)", f"recipe {slug!r} unavailable ({exc}) — builtin fallback"
 
 
-def build_child(parent_ctx: RunContext, action: dict, *, mode: str,
-                default_label: str, alloc_overrides: dict | None = None,
-                emit) -> Subrun:
-    """Materialize + wire ONE child task (not started). `mode` selects the scheduler and how the
-    budget is sliced (`alloc_overrides` pins e.g. a subtask's explicit `turns` cap; otherwise
-    the child gets half the parent's remainder). `emit` records the `subrun_start` event on the
-    PARENT transcript (single writer). The caller starts + tracks the returned Subrun.
+def build_child(parent_ctx: RunContext, action: dict, *, n: int, label: str, mode: str,
+                alloc_overrides: dict | None = None, emit) -> Subrun:
+    """Materialize + wire ONE child task (not started) into the directory `claim_child` made
+    for number `n`. `mode` selects the scheduler and how the budget is sliced
+    (`alloc_overrides` pins e.g. a subtask's explicit `turns` cap; otherwise the child gets
+    half the parent's remainder). `emit` records the `subrun_start` event on the PARENT
+    transcript (single writer). The caller starts + tracks the returned Subrun.
     """
-    label = action.get("label") or default_label
     recipe_slug = action.get("workflow") or "general-task"
-
-    with parent_ctx.sub_lock:   # tree-wide counter; parallel spawns race without it
-        parent_ctx.sub_counter[0] += 1
-        n = parent_ctx.sub_counter[0]
     sub_dir = parent_ctx.run_dir / "sub" / str(n)
-    sub_dir.mkdir(parents=True, exist_ok=True)
     recipe_slug, note = materialize_to_disk(parent_ctx.server, recipe_slug, sub_dir,
                                             action["prompt"])
     transcript = Transcript(sub_dir / "transcript.jsonl")

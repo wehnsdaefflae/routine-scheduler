@@ -87,3 +87,13 @@ def test_a_leg_that_may_not_consume_its_freight_is_told_what_is_waiting(tmp_path
     assert len(inbox.drain_messages(d, tmp_path / "consumed")) == 3
     # a fresh boot drains everything, so after it there is no freight to report
     assert inbox.queued_freight(d, exclude_vias=LIVE_MESSAGE_VIAS) == []
+
+
+def test_a_message_with_no_first_line_is_named_not_fatal(tmp_path):
+    """Every scanner reads `{"text": "  \\n "}` as a message (its text is truthy), so the
+    freight digest must too — it took the FIRST LINE by indexing, and a whitespace-only text has
+    none: the IndexError surfaced inside the state digest of the resumed leg being booted."""
+    d = _routine(tmp_path)
+    inbox.file_message(d, "  \n ", via="web-audit")
+    freight = inbox.queued_freight(d, exclude_vias=LIVE_MESSAGE_VIAS)
+    assert [(f["via"], f["text"]) for f in freight] == [("web-audit", "")]
