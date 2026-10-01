@@ -38,9 +38,12 @@ print(json.dumps({"version": 1, "decision": "run" if work else "skip",
                   "reason": "why, in one sentence"}))
 `;
 
+// One read of the vocabulary per tab — but never of a FAILED read: the cache held the rejected
+// promise, so one refused fetch broke every gate editor in the tab until a reload.
 let kindsCache = null;
 async function loadKinds() {
-  kindsCache ??= api("/api/gate/kinds").then((d) => d.kinds);
+  kindsCache ??= api("/api/gate/kinds").then((d) => d.kinds)
+    .catch((err) => { kindsCache = null; throw err; });
   return kindsCache;
 }
 

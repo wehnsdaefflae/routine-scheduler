@@ -7,9 +7,8 @@
 // merge: the branch keeps its own conversation, and the parent receives a summary plus files.
 
 import { api } from "/static/api.js";
-import { remount } from "/static/router.js";
 import { confirmDialog, promptDialog } from "/static/components/dialog.js";
-import { navigate } from "/static/router.js";
+import { navigate, remount } from "/static/router.js";
 import { el, toast, toastError } from "/static/util.js";
 
 // Fork this conversation at `turn` — the fork path used by the per-message "branch from here"

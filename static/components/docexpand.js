@@ -18,13 +18,15 @@ const stripFrontmatter = (text) =>
 export function docExpander(kind, slug) {
   const body = el("div", { class: "doc-expand-body", hidden: "" });
   let loaded = false;
-  const btn = el("button", { class: "doc-expand-btn", type: "button" }, "▸ full description");
+  const btn = el("button", { class: "doc-expand-btn", type: "button", "aria-expanded": "false" },
+    "▸ full description");
   btn.onclick = async (e) => {
     e.preventDefault();
     e.stopPropagation();
     const open = body.hidden;
     body.hidden = !open;
     btn.textContent = open ? "▾ full description" : "▸ full description";
+    btn.setAttribute("aria-expanded", String(open));
     if (open && !loaded) {
       loaded = true;
       body.textContent = "loading…";
@@ -32,6 +34,9 @@ export function docExpander(kind, slug) {
         const d = await api(`/api/library/${kind}/${slug}`);
         body.replaceChildren(md(stripFrontmatter(d.content || "")));
       } catch (err) {
+        // a failed read is not the doc: the next open asks again (it used to say this
+        // error on every open until the page was reloaded)
+        loaded = false;
         body.textContent = `could not load ${kind}/${slug}: ${err?.message || err}`;
       }
     }

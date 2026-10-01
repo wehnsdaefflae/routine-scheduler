@@ -7,7 +7,7 @@
 // {provider: account} map; `onSave` receives the new map and PATCHes the owner.
 
 import { api } from "/static/api.js";
-import { el, skeleton, toast, toastError } from "/static/util.js";
+import { act, el, skeleton } from "/static/util.js";
 
 export function connectionsCard(bound, { onSave, onChange } = {}) {
   // Two modes. With `onSave` it is the routine editor: a save button PATCHes the
@@ -45,11 +45,10 @@ export function connectionsCard(bound, { onSave, onChange } = {}) {
           : el("span", { class: "muted small" }, "no connected accounts — connect one in Settings")));
     }
     if (onSave) {
-      box.append(el("div", { class: "row mt" }, el("button", { class: "btn primary",
-        onclick: async () => {
-          try { await onSave(current()); toast("connections saved"); }
-          catch (err) { toastError(err); }
-        } }, "save connections")));
+      // act(): disabled while the save is out, so a double-click saves once
+      const save = el("button", { class: "btn primary" }, "save connections");
+      save.onclick = () => act(save, () => onSave(current()), "connections saved");
+      box.append(el("div", { class: "row mt" }, save));
     }
   }).catch((err) => box.replaceChildren(el("div", { class: "muted" }, err.message)));
   return box;

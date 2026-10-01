@@ -2,6 +2,8 @@
 BOTH a configured app (creds in Secrets) and a saved redirect URL, and saving the redirect URL
 persists to config.yaml and re-enables connect. (No real OAuth round-trip — that needs a provider.)"""
 
+import re
+
 import yaml
 from playwright.sync_api import expect
 
@@ -103,3 +105,34 @@ def test_conversation_connection_binding(ui, ui_page, monkeypatch):
     raw = yaml.safe_load((ui.conversations / slug / "routine.yaml").read_text(encoding="utf-8"))
     assert raw["connections"] == {"notion": "acme"}
 
+
+
+def test_a_double_clicked_connections_save_patches_once(ui, ui_page):
+    """The card's save hand-rolled the try/toast shape without disabling the button, so a
+    double-click PATCHed the binding twice. It is util.js `act()` now: disabled while out."""
+    ui_page.goto(f"{ui.url}/#/conversations")
+    ui_page.locator(".conv-new textarea").fill("bind my accounts")
+    ui_page.get_by_role("button", name="start conversation").click()
+    ui_page.wait_for_url("**/conversations/**")
+    slug = ui_page.url.rsplit("/", 1)[-1]
+    ui_page.locator(".conv-caps > summary").click()   # ⚙ capabilities & budgets
+    save = ui_page.get_by_role("button", name="save connections")
+    expect(save).to_be_visible()
+
+    patches = []
+
+    def hold(route):
+        if route.request.method == "PATCH":
+            patches.append(route)
+        else:
+            route.fallback()
+
+    detail = re.compile(rf"/api/conversations/{slug}$")
+    ui_page.route(detail, hold)
+    save.dblclick()
+    until(lambda: patches, what="the connections PATCH", page=ui_page)
+    ui_page.wait_for_timeout(400)
+    assert len(patches) == 1, f"{len(patches)} PATCHes for one save"
+    expect(save).to_be_disabled()
+    ui_page.unroute(detail)                            # releases the held PATCH
+    expect(save).to_be_enabled()

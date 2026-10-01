@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import re
 
+import pytest
 from playwright.sync_api import expect
 
 from rsched.paths import atomic_write_json
@@ -221,3 +222,17 @@ def test_a_run_started_with_a_brief_says_so_and_accounts_for_it(ui, ui_page):
     expect(b1).to_contain_text("check only the new grant call")
     expect(b1.locator(".acct-note")).to_have_text("the new call is read and filed")
     expect(ui_page.locator("[data-run-accounting] .acct-cap")).to_have_text(["the brief"])
+
+
+@pytest.mark.browser_context_args(timezone_id="Pacific/Kiritimati")
+def test_a_date_outcome_is_reached_on_the_local_day(ui, ui_page):
+    """The scheduler judges a date by its LOCAL day (engine/finishline.today); the editor used
+    the UTC day. At 12:00 UTC it is already 02:00 on the next day at UTC+14, so a date outcome
+    for that day has come — the editor said it had not."""
+    ui_page.clock.set_fixed_time("2026-07-15T12:00:00Z")
+    atomic_write_json(ui.routines / "uir" / "state" / "finish-line.json", {
+        "outcomes": [{"id": "g1", "text": "the submission deadline", "judge": "date",
+                      "date": "2026-07-16", "status": "open"}], "until": ""})
+    ui_page.goto(f"{ui.url}/#/routine/uir")
+    panel = _section(ui_page, "sec-goal")
+    expect(panel.locator('.fl-row[data-outcome="g1"] .fl-reached')).to_have_text("reached")
