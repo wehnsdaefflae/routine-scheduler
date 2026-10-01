@@ -209,6 +209,27 @@ def test_routine_mount_dir(tmp_path):
     assert machine_mounts.routine_mount_dir(tmp_path) == tmp_path / "mnt"
 
 
+def test_a_hung_unmount_is_given_up_on_and_the_next_helper_tried(tmp_path, monkeypatch):
+    """The engine unmounts in the `finally` that ends every run. An unmount of a FUSE mount
+    whose server is gone can hang with no end, and the helpers ran with no timeout: the
+    finished run's process stayed alive until the daemon killed it."""
+    import subprocess
+
+    calls: list[tuple] = []
+
+    def fake_run(argv, **kw):
+        calls.append((argv[0], kw.get("timeout")))
+        if argv[0] == "fusermount3":
+            raise subprocess.TimeoutExpired(argv, kw.get("timeout") or 0)
+        return subprocess.CompletedProcess(argv, 0, "", "")
+
+    monkeypatch.setattr(machine_mounts.shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(machine_mounts.subprocess, "run", fake_run)
+    machine_mounts._unmount_path(tmp_path / "mnt" / "gpu")
+    assert [name for name, _t in calls] == ["fusermount3", "fusermount"]
+    assert all(t == machine_mounts.UNMOUNT_TIMEOUT_S for _n, t in calls)
+
+
 
 def test_ensure_gitignore_idempotent(tmp_path):
     (tmp_path / ".gitignore").write_text("runs/\n", encoding="utf-8")

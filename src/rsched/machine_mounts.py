@@ -136,12 +136,27 @@ def _remove_lookalike_mountpoint(mountpoint: Path) -> None:
     except OSError:
         pass
 
+#: How long one unmount helper may take. Unmounting a FUSE mount whose server is gone can hang
+#: with no end, and the engine unmounts in the `finally` that ends every run
+#: (runtime.run_routine): unbounded, a finished run's process stayed alive until the daemon
+#: killed it.
+UNMOUNT_TIMEOUT_S = 20
+
+
 def _unmount_path(mountpoint: Path) -> None:
-    """Best-effort unmount, trying the FUSE helpers then umount (whichever the host has)."""
+    """Best-effort unmount, trying the FUSE helpers then umount (whichever the host has) — each
+    bounded by UNMOUNT_TIMEOUT_S, a helper that hangs given up on for the next.
+    """
     for argv in (["fusermount3", "-u", str(mountpoint)], ["fusermount", "-u", str(mountpoint)],
                  ["umount", str(mountpoint)]):
         if shutil.which(argv[0]):
-            r = subprocess.run(argv, capture_output=True, text=True, check=False)
+            try:
+                r = subprocess.run(argv, capture_output=True, text=True, check=False,
+                                   timeout=UNMOUNT_TIMEOUT_S)
+            except subprocess.TimeoutExpired:
+                log.warning("unmount %s: %s gave no answer within %ss", mountpoint, argv[0],
+                            UNMOUNT_TIMEOUT_S)
+                continue
             if r.returncode == 0:
                 return
 
