@@ -481,6 +481,9 @@ BRIEF_FIELD = {"util": "name", "write_util": "name", "remove_util": "name", "rea
                "manage_lane": "verb",
                "kill": "n", "wait": "n",
                "ask_user": "question", "report": "title", "finish": "status"}
+#: The kinds that may name several files at once (`paths`) where BRIEF_FIELD names one — what
+#: `canon` renders, and the reminder gate accepts, as `<kind> paths=<a,b>`.
+LIST_KINDS = ("read_file", "view_image")
 
 
 def brief_value(action: dict) -> str:
@@ -515,7 +518,8 @@ def canon(action: dict) -> str:
         script:store stage --note x   the routine's own script, the same way and for the same
                                       reason: `script name=store` cannot tell `stage` from `drop`
         shell: rm -rf build/          the command IS the action; a `command=` label adds nothing
-        read_file paths=a.md,b.md     `read_file` carries a LIST (`paths`), not the singular field
+        read_file paths=a.md,b.md     `read_file` and `view_image` carry a LIST (`paths`), not
+                                      the singular field
         write_file path=state/x.json  every other kind names its field, so the string says what
                                       it is (`finish status=ok` too)
         subruns                       a kind with no identifying field is just itself
@@ -530,8 +534,8 @@ def canon(action: dict) -> str:
         return f"{kind}:{action.get('name') or '?'}{f' {tail}' if tail else ''}"
     if kind == "shell":
         return f"shell: {action.get('command') or ''}".rstrip()
-    if kind == "read_file" and isinstance(action.get("paths"), list) and action["paths"]:
-        return f"read_file paths={','.join(str(x) for x in action['paths'])}"
+    if kind in LIST_KINDS and isinstance(action.get("paths"), list) and action["paths"]:
+        return f"{kind} paths={','.join(str(x) for x in action['paths'])}"
     field = BRIEF_FIELD.get(kind, "")
     value = str(action.get(field, "") or "") if field else ""
     return f"{kind} {field}={value}" if value else kind

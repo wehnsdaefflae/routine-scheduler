@@ -57,6 +57,7 @@ def test_a_form_no_action_renders_as_is_refused(pattern, fragment):
 @pytest.mark.parametrize("pattern", [
     "^util:fs-ops mv ", "^script:store stage", "^shell: git push", "^write_file path=state/",
     "^read_file paths=a", "^read_file path=a", "^write", "^(util:x|shell: y)", "^finish",
+    "^view_image paths=scans/", "^view_image path=scans/",
 ])
 def test_every_rendered_form_passes(pattern):
     assert checks.regex_problem(pattern) is None
