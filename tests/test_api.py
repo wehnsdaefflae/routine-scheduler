@@ -905,6 +905,79 @@ def test_question_defer_to_next_run(client):
     assert c.post("/api/questions/q-d2/defer").status_code == 400
 
 
+def test_answering_files_off_the_event_loop(client, monkeypatch):
+    """The answer route is async — it awaits the runner — and it used to FILE on the loop
+    too: finding the record walks every home's decision catalog, and a forever-decision
+    commits under the repo lock, waiting up to 30 s for an engine holding it. Every stream,
+    every async route and the scheduler tick waited with it. Here the record lookup is held
+    open, and an async route must still answer meanwhile."""
+    import threading
+
+    from rsched.web import api_questions
+
+    c, tmp = client
+    atomic_write_json(tmp / "routines" / "apir" / "questions" / "pending" / "q-slow.json",
+                      {"qid": "q-slow", "question": "Ok?", "options": [],
+                       "asked": "20260707", "mode": "deferred"})
+    entered, release = threading.Event(), threading.Event()
+    real_find = api_questions.find_question
+
+    def held_find(server, qid):
+        entered.set()
+        release.wait(10)
+        return real_find(server, qid)
+
+    monkeypatch.setattr(api_questions, "find_question", held_find)
+    answered: dict = {}
+    probe: dict = {}
+    filing = threading.Thread(target=lambda: answered.update(
+        r=c.post("/api/questions/q-slow/answer", json={"text": "yes"})))
+    filing.start()
+    try:
+        assert entered.wait(5)
+        prober = threading.Thread(target=lambda: probe.update(
+            r=c.get("/api/runs/not-a-run-id/events")))     # an ASYNC route: runs on the loop
+        prober.start()
+        prober.join(3)
+        loop_was_free = not prober.is_alive()
+    finally:
+        release.set()
+        filing.join(10)
+    prober.join(10)
+    assert loop_was_free, "the answer route held the event loop while filing"
+    assert probe["r"].status_code == 400 and answered["r"].status_code == 200
+
+
+def test_question_events_are_published_on_the_loop(client, monkeypatch):
+    """The bus is a set of asyncio queues — not thread-safe — and snooze, defer and revise
+    are sync routes on worker threads. A put from there wakes no sleeping loop, so open
+    views heard about the change whenever something else next woke it."""
+    import asyncio
+
+    c, tmp = client
+    pending = tmp / "routines" / "apir" / "questions" / "pending"
+    atomic_write_json(pending / "q-e1.json", {"qid": "q-e1", "question": "Later?",
+                                              "options": [], "asked": "20260707",
+                                              "mode": "deferred"})
+    where: list[str] = []
+    bus = c.app.state.bus
+    real_publish = bus.publish
+
+    def publish(event):
+        try:
+            asyncio.get_running_loop()
+            where.append("loop")
+        except RuntimeError:
+            where.append("worker thread")
+        real_publish(event)
+
+    monkeypatch.setattr(bus, "publish", publish)
+    assert c.post("/api/questions/q-e1/snooze", json={"minutes": 5}).status_code == 200
+    assert c.post("/api/questions/q-e1/answer", json={"text": "fine"}).status_code == 200
+    assert c.post("/api/questions/q-e1/revise", json={"text": "finer"}).status_code == 200
+    assert where == ["loop", "loop", "loop"]
+
+
 def test_routine_card_spend_line(client):
     """Cards carry this month + last month from the durable spend series, so the
     dashboard can answer "what does this cost me and is it growing" at a glance."""

@@ -12,10 +12,14 @@ derivation, and each answer POST publishes a bus event so open views resync at o
 
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
+import anyio.from_thread
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
+from starlette.concurrency import run_in_threadpool
 
 from .. import registry
 from ..ids import now_iso
@@ -55,22 +59,57 @@ class Answer(BaseModel):
 
 @router.post("/questions/{qid}/answer")
 async def answer(request: Request, qid: str, body: Answer) -> dict:
+    """File one answer, then — on the loop, where the runner lives — resume a finished
+    conversation or fire the "answer & run now".
+
+    The FILING runs on a worker thread. Finding the record walks the decision catalog of all
+    three homes whenever anything there changed, and a forever-decision writes routine.yaml
+    and commits under the repo's lock, waiting up to 30 s for an engine that holds it. On
+    the loop, every stream, every async route and the scheduler tick waited with it.
+    """
     if not body.text.strip() and not body.decision:
         raise HTTPException(400, "empty answer")
     if qid.startswith("audit:"):
-        from .api_audit import Feedback, write_feedback
+        return await run_in_threadpool(_answer_audit_decision, request, qid, body)
+    match, routine_dir, payload = await run_in_threadpool(_file_answer, request, qid, body)
+    # A conversation is a one-shot run with no scheduled "next run": an answer filed on a
+    # FINISHED conversation would sit in the inbox forever (F39). Resume it in place — as
+    # api_conversations.message() does — so the engine's collect_deferred_answers drains the
+    # answer at run start. A LIVE conversation reply needs no resume (it drains the answer at
+    # its next turn boundary); a scheduled routine has its own next run.
+    resumed = await _resume_terminal_conversation(request, match, routine_dir)
+    fired = await _run_now(request, match, body.brief) if body.run_now else None
+    if fired:
+        # still on the loop with no await since the fire: the run's engine cannot have
+        # booted and consumed the file before it is rewritten
+        payload["ran_now"] = fired
+        atomic_write_json(routine_dir / "inbox" / f"answer-{qid}.json", payload)
+    return {"ok": True, "routine": match["routine"], "mode": match["mode"],
+            **({"resumed": True} if resumed else {}),
+            **({"run_id": fired} if fired else {})}
 
-        match = next((q for q in _audit_decisions(request.app.state.server)
-                      if q["qid"] == qid), None)
-        if match is None:
-            raise HTTPException(404, f"no open audit decision {qid!r}")
-        text = body.text.strip()
-        choice = text if text in match["options"] else ""
-        routine_dir = request.app.state.server.routines_home / match["routine"]
-        write_feedback(routine_dir, Feedback(kind="decision", target=qid.removeprefix("audit:"),
-                                             choice=choice, text="" if choice else text))
-        _announce_answer(request, qid, match["routine"])
-        return {"ok": True, "routine": match["routine"], "mode": "deferred", "meta": True}
+
+def _answer_audit_decision(request: Request, qid: str, body: Answer) -> dict:
+    """A self-audit decision's answer: the report's own `[AUDIT decision · id]` feedback."""
+    from .api_audit import Feedback, write_feedback
+
+    match = next((q for q in _audit_decisions(request.app.state.server)
+                  if q["qid"] == qid), None)
+    if match is None:
+        raise HTTPException(404, f"no open audit decision {qid!r}")
+    text = body.text.strip()
+    choice = text if text in match["options"] else ""
+    routine_dir = request.app.state.server.routines_home / match["routine"]
+    write_feedback(routine_dir, Feedback(kind="decision", target=qid.removeprefix("audit:"),
+                                         choice=choice, text="" if choice else text))
+    _announce_answer(request, qid, match["routine"])
+    return {"ok": True, "routine": match["routine"], "mode": "deferred", "meta": True}
+
+
+def _file_answer(request: Request, qid: str, body: Answer) -> tuple[dict, Path, dict]:
+    """Settle the record behind `qid`: apply a decision's grant, write the answer file,
+    announce it. Returns (record, its dir, the answer payload) for the loop half.
+    """
     server = request.app.state.server
     match = _record_match(server, qid)
     routine_dir = _record_dir(server, match)
@@ -81,19 +120,7 @@ async def answer(request: Request, qid: str, body: Answer) -> dict:
         payload.update(_decide_request(request, match, routine_dir, body.decision))
     atomic_write_json(routine_dir / "inbox" / f"answer-{qid}.json", payload)
     _announce_answer(request, qid, match["routine"])
-    # A conversation is a one-shot run with no scheduled "next run": an answer filed on a
-    # FINISHED conversation would sit in the inbox forever (F39). Resume it in place — as
-    # api_conversations.message() does — so the engine's collect_deferred_answers drains the
-    # answer at run start. A LIVE conversation reply needs no resume (it drains the answer at
-    # its next turn boundary); a scheduled routine has its own next run.
-    resumed = await _resume_terminal_conversation(request, match, routine_dir)
-    fired = await _run_now(request, match, body.brief) if body.run_now else None
-    if fired:
-        payload["ran_now"] = fired
-        atomic_write_json(routine_dir / "inbox" / f"answer-{qid}.json", payload)
-    return {"ok": True, "routine": match["routine"], "mode": match["mode"],
-            **({"resumed": True} if resumed else {}),
-            **({"run_id": fired} if fired else {})}
+    return match, routine_dir, payload
 
 
 async def _run_now(request: Request, match: dict, brief: str = "") -> str | None:
@@ -101,12 +128,13 @@ async def _run_now(request: Request, match: dict, brief: str = "") -> str | None
     run now" — the same path as the routine page's Run now, so the run reads as `manual`
     everywhere. None when there is nothing to fire: a conversation or detached task (their
     own lifecycle), or a routine with an active run (its next turn boundary drains the
-    answer, and a second run would be refused anyway).
+    answer, and a second run would be refused anyway). One routine is read, never the
+    catalog (`registry.info`), because this runs on the loop.
     """
     if match.get("conversation") or match.get("background") or match.get("wizard"):
         return None
     state = request.app.state
-    info = registry.scan(state.server).get(str(match["routine"]))
+    info = registry.info(state.server, state.server.routines_home, str(match["routine"]))
     if info is None or state.runner.is_active(info.cfg.slug):
         return None
     return await state.runner.fire(info.cfg, reason="manual", brief=brief)
@@ -115,10 +143,22 @@ async def _run_now(request: Request, match: dict, brief: str = "") -> str | None
 def _announce_answer(request: Request, qid: str, routine: str) -> None:
     """One bus event per answer: every open view (Decisions page, run views, badges)
     resyncs its question state immediately instead of waiting for a reload.
+
+    Published ON THE LOOP whichever side calls: the bus is a set of asyncio queues, which
+    are not thread-safe, and every caller here but the async route runs on a worker thread.
+    A put from there wakes no sleeping loop — the open views heard about a snooze, a defer or
+    a revision whenever something else next woke it.
     """
     bus = getattr(request.app.state, "bus", None)
-    if bus is not None:
-        bus.publish({"event": "question_answered", "qid": qid, "routine": routine})
+    if bus is None:
+        return
+    event = {"event": "question_answered", "qid": qid, "routine": routine}
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:                       # a worker thread: hop onto the loop
+        anyio.from_thread.run_sync(bus.publish, event)
+    else:
+        bus.publish(event)
 
 
 def _decide_request(request: Request, match: dict, routine_dir,
