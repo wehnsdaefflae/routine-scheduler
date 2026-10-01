@@ -27,19 +27,26 @@ is not answer-*", which also matched `atomic_write`'s in-flight `.msg-….json.X
 fresh boot that temp file reached the unparseable branch below, was logged "not a message
 file" and RENAMED into consumed/, so the writer's `replace()` failed and the message was lost.
 
-Consumed files move to <run_dir>/consumed/ for the audit trail.
+Consumed files move to <run_dir>/consumed/ for the audit trail. The drain and an in-place
+`rewrite_message` hold one lock (`inbox/.lock`): a rewrite is a read-check-write, and a drain
+renaming the file away between the check and the write let the write RE-CREATE it — the edited
+text then reached the run twice, once as consumed and once as a fresh message.
 """
 
 from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Callable
 from pathlib import Path
 
 from ..ids import now_iso
-from ..paths import read_json
+from ..paths import atomic_write_json, file_lock, read_json
 
 log = logging.getLogger("rsched.inbox")
+
+#: The lock the drain and `rewrite_message` share. A dotfile, so no `msg-*` scan sees it.
+LOCK_NAME = ".lock"
 
 #: The injection channels that mean "the user is talking to THIS run": the conversation
 #: composer and the run page. The daemon's post-finish sweep re-opens a finished run only
@@ -133,6 +140,11 @@ def drain_messages(routine_dir: Path, consumed_dir: Path,
     inbox = routine_dir / "inbox"
     if not inbox.is_dir():
         return []
+    with file_lock(inbox / LOCK_NAME):
+        return _drain_locked(inbox, consumed_dir, vias)
+
+
+def _drain_locked(inbox: Path, consumed_dir: Path, vias: tuple[str, ...] | None) -> list[dict]:
     out: list[dict] = []
     for path in sorted(inbox.glob("msg-*.json")):
         try:
@@ -297,8 +309,6 @@ def file_message(routine_dir: Path, text: str, *, source: str = "",
     """
     import uuid
 
-    from ..paths import atomic_write_json
-
     if via not in VIAS:
         raise ValueError(f"unknown inbox via {via!r} — delivery policy is decided by this "
                          f"value, so a writer names one of {sorted(VIAS)} (see inbox.VIAS)")
@@ -311,6 +321,25 @@ def file_message(routine_dir: Path, text: str, *, source: str = "",
                              **({"via": via} if via else {}),
                              **(extra or {})})
     return path
+
+
+def rewrite_message(path: Path, edit: Callable[[dict], dict]) -> dict:
+    """Rewrite one still-QUEUED message in place — the same file, so its queue position
+    holds — and return what was written. `edit` maps the record as it is NOW to its new form.
+
+    Raises LookupError once a drain has taken the file. The check and the write sit under the
+    drain's own lock (`LOCK_NAME`), because the write is an `atomic_write` — a rename that
+    CREATES the path when it is missing: a drain landing between a caller's existence check
+    and its write resurrected the message it had just consumed, and the edited text reached
+    the run twice. Withdrawing needs no such seam: `unlink` of a consumed file fails on its own.
+    """
+    with file_lock(path.parent / LOCK_NAME):
+        prev = read_json(path)
+        if isinstance(prev, dict):
+            rec = edit(prev)
+            atomic_write_json(path, rec)
+            return rec
+    raise LookupError(f"{path.name} is no longer queued")
 
 
 # ---- the question half ------------------------------------------------------------------
@@ -345,6 +374,7 @@ __all__ = [
     "queued_freight",
     "resolve_question",
     "revise_answer",
+    "rewrite_message",
     "take_answer",
     "user_authored",
 ]

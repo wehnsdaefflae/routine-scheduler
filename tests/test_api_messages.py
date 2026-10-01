@@ -80,6 +80,29 @@ def test_inbox_edit_keeps_engine_keys_and_drops_feedback_fields(client):
     assert (inbox / "answer-q1.json").exists()
 
 
+def test_an_edit_racing_the_drain_never_resurrects_the_consumed_message(client, monkeypatch):
+    """A drain that takes the file between the edit's resolve and its write must turn the
+    edit into a 404, not a rewrite: `atomic_write` CREATES a missing path, so the old
+    resolve-then-write re-queued the consumed message and the run received it twice."""
+    from rsched.engine import inbox as inbox_mod
+    from rsched.web import routines_common
+
+    c, tmp = client
+    rdir = tmp / "routines" / "apir"
+    mid = c.post("/api/routines/apir/messages", json={"text": "once"}).json()["id"]
+    resolve = routines_common.queued_message
+
+    def resolve_then_drain(*args, **kwargs):
+        found = resolve(*args, **kwargs)
+        inbox_mod.drain_messages(rdir, rdir / "runs" / "r1" / "consumed")   # the run boots
+        return found
+
+    monkeypatch.setattr(routines_common, "queued_message", resolve_then_drain)
+    r = c.put(f"/api/routines/apir/messages/{mid}", json={"text": "edited"})
+    assert r.status_code == 404
+    assert list((rdir / "inbox").glob("msg-*.json")) == []        # not re-queued
+
+
 def test_outbox_retract(client):
     """The outbox's ONE write: retracting a not-yet-consumed addressed report unlinks the
     delivery from the target's inbox and appends a `retracted` ledger event — the row

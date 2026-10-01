@@ -8,6 +8,7 @@ reached into).
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from pathlib import Path
 
 from fastapi import HTTPException, Request
@@ -61,6 +62,23 @@ def queued_message(inbox: Path, msg_id: str, *, via: str = "",
         raise HTTPException(404,
                             f"this {noun} is no longer queued — a run already consumed it")
     return path, obj
+
+
+def rewrite_queued_message(inbox: Path, msg_id: str, edit: Callable[[dict], dict], *,
+                           via: str = "", noun: str = "message") -> dict:
+    """Rewrite a still-queued inbox message in place through `engine.inbox.rewrite_message`
+    — resolved by `queued_message` (same id pattern, same `via` narrowing), 404 once a drain
+    has taken it. Never `atomic_write_json` on the resolved path: that re-creates a message
+    a run consumed after the resolve, and delivers the edit twice.
+    """
+    from ..engine import inbox as inbox_mod
+
+    path, _ = queued_message(inbox, msg_id, via=via, noun=noun)
+    try:
+        return inbox_mod.rewrite_message(path, edit)
+    except LookupError:
+        raise HTTPException(
+            404, f"this {noun} is no longer queued — a run already consumed it") from None
 
 
 

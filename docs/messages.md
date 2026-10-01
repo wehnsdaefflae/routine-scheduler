@@ -90,7 +90,12 @@ results) and delivered reports alike, because the inbox file IS the delivery veh
   reviewer-feedback fields (`kind`/`target`/`choice`/`raw`, api_audit's) are dropped —
   they describe the text that was replaced.
 - `DELETE /api/routines/{slug}/messages/{msg_id}` — withdraw; the run never sees it.
-  Gone from the inbox = consumed = immutable: both mutations answer 404 then.
+  Gone from the inbox = consumed = immutable: both mutations answer 404 then. Every in-place
+  edit (this route, the conversation queue's, the audit feedback editor's) goes through
+  `engine/inbox.rewrite_message`, which checks and writes under the drain's own lock
+  (`inbox/.lock`): an `atomic_write` re-CREATES a missing path, so a drain landing between a
+  separate check and the write re-queued the consumed message and the run received the edit
+  twice. `tests/test_policy_inbox_writer.py` fails on a write to a `queued_message` path.
 
 **Outbox — retraction, nothing else.** Outbox rows are derived from the append-only report
 ledger (`.control/reports.jsonl`, docs/items.md), and a report is the RUN's utterance: the

@@ -46,7 +46,10 @@ WRITER = "engine/inbox.py"
 #: hand-rolled spellings the unification removed (`f"msg-rep-{id}.json"`, `f"msg-bg-{task}.json"`,
 #: `"msg-trig-…"`, `"msg-once-…"`). A READ-side existence check builds the same expression, so
 #: this pattern cannot separate the two on its own — the write test looks at what is DONE with it.
-_MSG_PATH = re.compile(r"""["']msg-""")
+#: `queued_message(` is the web layer's resolver of a queued `msg-*` file by id: writing the path
+#: it returns is a rewrite of that shape, and a rewrite outside `inbox.rewrite_message` races the
+#: drain — the write re-creates a message a run consumed after the resolve, delivered twice.
+_MSG_PATH = re.compile(r"""["']msg-|\bqueued_message\(""")
 
 #: Handing that path to a writer: the repo's atomic writers, plus the raw escape hatches.
 _WRITE_CALL = re.compile(r"\b(atomic_write_json|atomic_write|write_text|write_bytes)\s*\(")
@@ -114,7 +117,8 @@ def test_only_one_module_writes_the_msg_star_shape():
                     f"`engine.inbox.file_message` is the ONE writer of that shape (F499). "
                     f"Call it instead: `file_message(routine_dir, text, via=…, "
                     f"name='<deterministic-key>')` when the filename is an idempotency key, "
-                    f"or without `name=` for the unique `msg-<ts>-<rand>` form.")
+                    f"or without `name=` for the unique `msg-<ts>-<rand>` form; an in-place "
+                    f"edit of a queued one goes through `inbox.rewrite_message`.")
     assert not problems, "\n".join(problems)
 
 

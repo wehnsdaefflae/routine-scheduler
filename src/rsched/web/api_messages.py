@@ -28,10 +28,9 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from ..ids import now_iso
-from ..paths import atomic_write_json
 from ..readmodels import messages
 from ..reports import read_reports, reports_path, retract_report
-from .routines_common import _info, _state, queued_message
+from .routines_common import _info, _state, queued_message, rewrite_queued_message
 
 router = APIRouter(tags=["messages"])
 
@@ -58,10 +57,10 @@ def rewrite_queued(inbox: Path, msg_id: str, body: MessageBody, *, via: str = ""
     """Rewrite a queued message's text in place — the SAME file, so its position in the queue
     holds and its `ts` stands; `edited` is stamped so a run can tell.
     """
-    path, prev = queued_message(inbox, msg_id, via=via)
-    rec = {k: v for k, v in prev.items() if k not in _FEEDBACK_FIELDS}
-    rec.update(text=_clean_text(body), edited=now_iso())
-    atomic_write_json(path, rec)
+    text = _clean_text(body)
+    rewrite_queued_message(inbox, msg_id, lambda prev: {
+        **{k: v for k, v in prev.items() if k not in _FEEDBACK_FIELDS},
+        "text": text, "edited": now_iso()}, via=via)
 
 
 def withdraw_queued(inbox: Path, msg_id: str, *, via: str = "") -> None:
