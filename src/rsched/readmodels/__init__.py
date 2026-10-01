@@ -21,11 +21,11 @@ tree), `items` (the system-maintenance index: findings, decisions, bug reports),
 Messages page can serve both), plus
 the shared primitives `memo` (stat-fingerprint cache with single-flight misses: a
 burst of identical requests computes once — plus `run_tree`, the one walk of a run's
-nested child dirs that every run-scoped model and the search index read),
-`library_reads` (the ONE memoized reader of the library's parsed docs, util headers and
-whole-library lint), `usage_stream` (the ONE parser of workflow-usage.jsonl) and
-`health_stream` (the ONE parser of health-events.jsonl, plus the blocked-fleet fold
-behind `/api/health/blocked`).
+nested child dirs that every run-scoped model and the search index read), `stamps` (the
+one way two moments are compared — never as text), `library_reads` (the ONE memoized
+reader of the library's parsed docs, util headers and whole-library lint), `usage_stream`
+(the ONE parser of workflow-usage.jsonl) and `health_stream` (the ONE parser of
+health-events.jsonl, plus the blocked-fleet fold behind `/api/health/blocked`).
 `web/decisions_read` (the open-decisions list behind `/api/questions`) follows the same
 discipline from the web package.
 """

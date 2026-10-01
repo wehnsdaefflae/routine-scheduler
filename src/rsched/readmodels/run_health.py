@@ -32,6 +32,7 @@ from pathlib import Path
 from ..config import ServerConfig
 from ..recipes import recipe_log
 from . import health_stream, library_reads, memo
+from .stamps import instant
 
 # --- regression heuristic constants (each with its reason) ---------------------------
 # Runs compared on each side of the newest recipe change. 5 ≈ one week of a daily
@@ -63,14 +64,6 @@ def _median(vals: list[float]) -> float:
     return float(s[mid]) if len(s) % 2 else (s[mid - 1] + s[mid]) / 2.0
 
 
-def _parse_dt(raw: str) -> datetime | None:
-    try:
-        dt = datetime.fromisoformat(str(raw))
-    except ValueError:
-        return None
-    return dt if dt.tzinfo else dt.replace(tzinfo=datetime.now().astimezone().tzinfo)
-
-
 def _stream_records(server: ServerConfig, slug: str) -> list[dict]:
     """This routine's depth-0 usage records, in append (chronological) order."""
     from .usage_stream import usage_records
@@ -86,23 +79,23 @@ def _empty_bucket(version: dict, *, current: bool) -> dict:
             "_turns": [], "_tokens": []}
 
 
-def _assign(rec: dict, versions: list[dict]) -> tuple[str | None, bool]:
+def _assign(rec: dict, dated: list[tuple[datetime | None, str]]) -> tuple[str | None, bool]:
     """(version commit, inferred?) for one record. Exact when the record carries the
     engine's recipe_commit stamp; date-mapped (newest version not after the run) for
-    pre-stamp records; None = unattributable (no versions at all).
+    pre-stamp records; None = unattributable (no versions at all). `dated` is the version
+    series newest first, each commit beside its date read once as an instant.
     """
     stamped = rec.get("recipe_commit")
     if stamped:
         return str(stamped), False
-    if not versions:
+    if not dated:
         return None, False
-    ts = _parse_dt(str(rec.get("ts") or ""))
+    ts = instant(rec.get("ts"))
     if ts is not None:
-        for v in versions:  # newest first
-            vd = _parse_dt(v["date"])
-            if vd is not None and vd <= ts:
-                return v["commit"], True
-    return versions[-1]["commit"], True   # predates every known version → the oldest
+        for when, commit in dated:
+            if when is not None and when <= ts:
+                return commit, True
+    return dated[-1][1], True   # predates every known version → the oldest
 
 
 def fold_legs(records: list[dict]) -> list[dict]:
@@ -227,8 +220,9 @@ def routine_health(server: ServerConfig, routine_dir: Path, slug: str) -> dict:
                               current=False)
 
     ordered: list[tuple[dict, str | None]] = []   # (record, bucket key) in run order
+    dated = [(instant(v["date"]), v["commit"]) for v in versions]
     for rec in records:
-        commit, inferred = _assign(rec, versions)
+        commit, inferred = _assign(rec, dated)
         if commit is not None and commit not in buckets:
             # stamped with a commit outside the log window (or rewritten history):
             # still a real version — give it its own bucket so nothing is silently lost

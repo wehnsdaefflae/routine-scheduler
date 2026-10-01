@@ -35,6 +35,7 @@ from pathlib import Path
 from .. import registry
 from ..config import ServerConfig
 from ..paths import atomic_write_json, read_json
+from .stamps import instant
 
 #: The watermark store — kept at its old path, shape and meaning. Renaming it would have bought a
 #: one-shot migration for no benefit; nothing else reads or writes it.
@@ -70,11 +71,8 @@ def _recency(run: registry.RunInfo) -> datetime:
     not even interleave: a compact run-ts sorts above every ISO stamp, so a routine whose newest
     run never wrote a status floated to the top of the page however old that run was.
     """
-    try:
-        when = datetime.fromisoformat(run.updated)
-    except (TypeError, ValueError):
-        return registry.parse_run_ts(run.ts) or datetime.min.replace(tzinfo=UTC)
-    return when if when.tzinfo else when.astimezone()
+    return (instant(run.updated) or registry.parse_run_ts(run.ts)
+            or datetime.min.replace(tzinfo=UTC))
 
 
 def build(server: ServerConfig) -> list[dict]:

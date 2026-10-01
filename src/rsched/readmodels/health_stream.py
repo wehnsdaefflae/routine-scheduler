@@ -23,10 +23,10 @@ window itself is cut at every call, over that shared list. A fold memoized on th
 kept answering for the moment it was first computed until the next append, so on a quiet
 instance a week-old refused fire still read as this week's.
 
-Stamps are compared as INSTANTS, never as strings: `ids.now_iso` writes the host's local time
-with its offset (`…T08:00:00+02:00` on a Berlin host), so a string compare against a UTC cutoff
-moved the window's edge by the host's offset, and two stamps either side of a DST change
-compared in the wrong order.
+Stamps are compared as INSTANTS (`stamps.instant`), never as strings: `ids.now_iso` writes the
+host's local time with its offset, so a string compare against a UTC cutoff moved the window's
+edge by the host's offset, and two stamps either side of a DST change compared in the wrong
+order.
 """
 
 from __future__ import annotations
@@ -38,6 +38,7 @@ from pathlib import Path
 from ..config import ServerConfig
 from ..health_events import HEALTH_EVENTS_FILE
 from . import memo
+from .stamps import instant
 
 #: The events that mean WORK THAT WAS DUE DID NOT HAPPEN, each with the one line the console
 #: labels the row with. The vocabulary is `health_events.py`'s header enum — a name added
@@ -102,17 +103,6 @@ def health_records(routines_home: Path) -> list[dict]:
     return memo.memoized_shared(f"health-stream:{path}", [path], parse)
 
 
-def _instant(raw: object) -> datetime | None:
-    """A stream stamp as an aware instant, or None when it names none. A naive stamp is read
-    in the host's zone — the zone `now_iso` writes in.
-    """
-    try:
-        when = datetime.fromisoformat(str(raw or ""))
-    except ValueError:
-        return None
-    return when if when.tzinfo else when.astimezone()
-
-
 def _stamped(routines_home: Path) -> list[tuple[datetime, dict]]:
     """Every event either fold reads, paired with its stamp as an instant, oldest first — the
     half of a fold that depends on the file alone, so the half memoized on its fingerprint.
@@ -127,7 +117,7 @@ def _stamped(routines_home: Path) -> list[tuple[datetime, dict]]:
         for rec in health_records(routines_home):
             event = rec.get("event")
             if event in BLOCKED_EVENTS or event in ENDING_EVENTS:
-                when = _instant(rec.get("ts"))
+                when = instant(rec.get("ts"))
                 if when is not None:
                     out.append((when, rec))
         return out
