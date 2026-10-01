@@ -30,8 +30,13 @@ export async function renderEndpoints(view) {
   const listBox = el("div", {});
   view.append(listBox);
 
+  // A failed read is painted into this section's own box, as settings-common.panelSection does
+  // for every other section: settings.js awaits all the fills together, so a rejection here
+  // took the WHOLE page down — Secrets with it, the section a broken endpoint is repaired from.
   async function load() {
-    const data = await api("/api/settings/endpoints");
+    let data;
+    try { data = await api("/api/settings/endpoints"); }
+    catch (err) { listBox.replaceChildren(el("div", { class: "muted" }, err.message)); return; }
     listBox.replaceChildren();
     if (!data.endpoints.length)
       listBox.append(el("div", { class: "muted small" }, "no endpoints yet — add one below."));
