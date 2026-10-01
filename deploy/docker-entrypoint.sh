@@ -2,14 +2,27 @@
 # Runs as root: Docker creates any MISSING bind-mount as root:root, which the non-root runtime user
 # then can't write (a fresh deploy couldn't even generate its config/token). Make the mount points
 # writable by `mark`, then drop privileges and start the daemon.
+#
+# The list is every WRITABLE bind of docker-compose.yml's rsched service that Docker would create
+# (tests/test_deploy_state.py holds it to that file: it once stopped at the homes that existed
+# when it was written, so conversations, background tasks, the messenger session stores and the
+# `claude /login` store all arrived root-owned and unusable on a fresh host), then two XDG
+# directories that are not binds at all (see below).
 set -e
 for d in \
+  "/home/mark/git-repos/routine-scheduler" \
   "/home/mark/.config/routine-scheduler" \
   "/home/mark/.config/gh" \
   "/home/mark/routines" \
+  "/home/mark/conversations" \
+  "/home/mark/background" \
+  "/home/mark/.claude" \
+  "/home/mark/telegram-sessions" \
+  "/home/mark/signal-sessions" \
+  "/home/mark/whatsapp-sessions" \
   "/home/mark/.local/share/routine-scheduler-libraries" \
-  "/home/mark/.local/state" \
   "/home/mark/.cache/ms-playwright" \
+  "/home/mark/.local/state" \
   "/home/mark/.cache/uv" ; do
   mkdir -p "$d"
   chown mark:mark "$d" 2>/dev/null || true

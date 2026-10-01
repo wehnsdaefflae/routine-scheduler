@@ -10,6 +10,7 @@ that ignored the excludes the tarball honoured, an optional credential store req
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 import tarfile
@@ -44,26 +45,48 @@ def _lists() -> dict[str, list[str]]:
 
 def _binds() -> list[dict]:
     """Every bind mount of every compose service: its HOME-relative source (None when the
-    source is not under RSCHED_HOME), target, and whether it is read-only."""
+    source is not under RSCHED_HOME), target, whether it is read-only, and whether Docker
+    creates a missing source (the short syntax always does)."""
     binds = []
     for service, spec in yaml.safe_load(COMPOSE.read_text(encoding="utf-8"))["services"].items():
         for vol in spec.get("volumes", []):
             if isinstance(vol, str):
                 # the variable carries a ':' of its own, so it goes before the split
                 src, dst, *mode = vol.replace(HOME_VAR, "@HOME@").split(":")
-                src, read_only = src.replace("@HOME@", HOME_VAR), "ro" in mode
+                src, read_only, creates = src.replace("@HOME@", HOME_VAR), "ro" in mode, True
             else:
                 src, dst, read_only = vol["source"], vol["target"], vol.get("read_only", False)
+                creates = vol.get("bind", {}).get("create_host_path", True)
             if not src.startswith(("/", HOME_VAR)):
                 continue                                     # a named volume
             rel = src.removeprefix(HOME_VAR + "/") if src.startswith(HOME_VAR) else None
             binds.append({"service": service, "home_rel": rel, "target": dst,
-                          "read_only": read_only})
+                          "read_only": read_only, "creates": creates})
     return binds
 
 
 def _covered(rel: str, roots: list[str]) -> bool:
     return any(rel == root or rel.startswith(root + "/") for root in roots)
+
+
+def _entrypoint_dirs() -> list[str]:
+    """The directories docker-entrypoint.sh hands to the runtime user before dropping root."""
+    text = (DEPLOY / "docker-entrypoint.sh").read_text(encoding="utf-8")
+    loop = re.search(r"^for d in (.*?); do$", text, re.MULTILINE | re.DOTALL)
+    assert loop, "docker-entrypoint.sh no longer has its `for d in …; do` ownership loop"
+    return re.findall(r'"([^"]+)"', loop.group(1))
+
+
+def test_the_entrypoint_hands_every_writable_bind_to_the_runtime_user():
+    """Docker creates a missing bind source root-owned, so a home the engine writes is unusable
+    to uid 1000 until the entrypoint chowns it. Its list was a hand copy of the compose binds
+    and missed every home added after it — conversations, background tasks, the messenger
+    session stores, the `claude /login` store — each dead on arrival on a fresh host."""
+    owned = set(_entrypoint_dirs())
+    missing = [b["target"] for b in _binds()
+               if b["service"] == "rsched" and b["target"].startswith("/home/mark/")
+               and not b["read_only"] and b["creates"] and b["target"] not in owned]
+    assert not missing, f"bind targets the entrypoint leaves root-owned when Docker creates them: {missing}"
 
 
 def test_every_data_bind_is_in_the_inventory():
