@@ -575,7 +575,9 @@ by a test, by the engine, or by a past incident.
   user having spoken (`inbox.MACHINE_VIAS`, read by `ctx.user_replies`). It is a CLOSED set
   (`engine/inbox.VIAS`) that the single writer `inbox.file_message` validates, seeded from what
   the code actually writes — a branch hand-back filed on the USER channel was read by the parent
-  as the operator speaking.
+  as the operator speaking. A QUEUED message is edited only through `inbox.rewrite_message`, under
+  the inbox lock the drain holds: a check-then-write lost the race to a drain and re-queued the
+  edited text, so the run received it twice.
 - **A console view acts only while it is mounted, and only on its newest read.** Work a view
   schedules past an `await` or a timer (a remount, a URL rewrite, a scroll, a rail refresh, a
   transcript catch-up) checks the view is still the current one, and of overlapping reads only
@@ -590,7 +592,9 @@ by a test, by the engine, or by a past incident.
   load depended on which tab was open; a fifth consumer SUBSCRIBES, it does not fetch. The same
   rule the other way: a component that POLLS takes a predicate for whether anybody can see it
   (`createTaskTree`'s `isLive`, `activityFeed`'s `isOpen`) and its view's teardown stops it
-  (`tests/ui/test_view_teardown.py`, `tests/ui/test_bus_budget.py`).
+  (`tests/ui/test_view_teardown.py`, `tests/ui/test_bus_budget.py`). `EventBus.publish` may be
+  called from any thread — it hands each put to its subscriber's loop — so a sync route running
+  in the threadpool publishes directly instead of hopping by hand.
   Never put a config-shaped or expensive endpoint
   (`/api/schedule/week`, `/api/stats`, 300 runs) on that path — one config-shaped endpoint
   refetched every 600 ms under five active runs queued every daemon request behind it for
