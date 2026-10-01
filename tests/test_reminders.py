@@ -637,6 +637,29 @@ def test_a_routine_at_local_cannot_write_a_curated_reminder_by_its_id(make_routi
     assert status == "ok"
 
 
+def test_a_curated_add_never_takes_the_id_of_a_reminder_that_does_not_reach_it(
+        make_routine, scripted):
+    """The live set holds only the curated reminders that REACH this routine. A `listed` one
+    it does not list is still in the store — and an id picked against the live set alone could
+    be that one's, which the write then overwrote: another kind of work's caution, gone."""
+    d = make_routine(slug="remr")
+    home = _server(d).reminders_home
+    store.write_global(home, _rem(rid=f"rem-{TS}-1", regex="^util:gpu-submit",
+                                  desc="the shared GPU's caution", scope="global",
+                                  reach="listed"))
+    _capabilities(d, reminders="global", remind_confirm="never")
+    scripted([{**write_file("state/a.txt"),
+               "remind": {"op": "add", "scope": "global", "regex": "^util:fs-ops mv ",
+                          "reach": "universal", "description": "mv overwrites silently"}},
+              finish()])
+    status, _run_dir = run_routine(d, _server(d), run_ts=TS)
+    kept = json.loads(store.global_path(home, f"rem-{TS}-1").read_text(encoding="utf-8"))
+    assert kept["regex"] == "^util:gpu-submit"                 # untouched
+    assert {r["regex"] for r in store.records(home)} == {"^util:gpu-submit",
+                                                          "^util:fs-ops mv "}
+    assert status == "ok"
+
+
 def test_a_global_write_lands_in_the_library_when_the_dial_is_autonomous(
         make_routine, scripted):
     d, _ep, status, _events = _run(

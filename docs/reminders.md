@@ -296,7 +296,10 @@ needs the live store the validator does not have:
   reminder is tested against every action, so an unbounded store taxes every turn forever;
 - a duplicate pattern is refused **within the same store** (revise the one that is there). Across
   stores it is allowed, because a local reminder shadowing a global one with the same pattern IS
-  the union's precedence — and promotion passes through exactly that overlap;
+  the union's precedence — and promotion passes through exactly that overlap. For the curated
+  store "the store" is every record in it, not only the ones that reach the writing routine: a
+  `listed` reminder it does not list still owns its pattern there, and its id — which a new
+  entry once took, overwriting it;
 - an unknown id, or a `revise` that tries to move a reminder between scopes;
 - a `revise` or `delete` of a CURATED reminder by a routine whose dial stops at `local`. The
   write gate can only ask about the scope an op names, and a revise or delete need not name
