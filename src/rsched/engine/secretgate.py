@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from .. import utils_lib, utils_run
 from . import requests
+from .actionschema import PSEUDO_UTILS
 from .interact import handle_ask
 
 
@@ -44,6 +45,31 @@ def _own_secrets(ctx) -> set[str]:
         return set(load_routine_secrets(ctx.routine.slug))
     except ValueError:
         return set()
+
+
+def _exposable(ctx, needed: set[str], optional: set[str]) -> list[str]:
+    """The names an exposure decision is about: the REQUIRED ones a call declares that the
+    central store holds and the routine's own store does not shadow (D103). A declared name
+    the store lacks needs no decision — the call fails visibly inside instead.
+    """
+    from ..secrets import load_secrets
+
+    required = needed - optional
+    return sorted((required & set(load_secrets())) - _own_secrets(ctx)) if required else []
+
+
+def declined_secrets(ctx, name: str) -> list[str]:
+    """The exposable secrets util `name` declares that the user DECLINED for this routine.
+
+    For a call the ENGINE makes on the run's behalf — the view_image vision fallback — which
+    no exposure gate precedes. Such a call asks nothing (the run did not choose the util or
+    its arguments, and an ask from inside a view would block it on a fallback it never asked
+    for), but a decline is the user's answer already given, and handing the util the secret
+    anyway overruled it.
+    """
+    needs = utils_run.util_needs(ctx.server.libraries_home, name)
+    return [s for s in _exposable(ctx, needs.secrets, needs.optional)
+            if secret_state(ctx, s) == "denied"]
 
 
 def withheld_optional(ctx, optional: set[str]) -> list[str]:
@@ -84,7 +110,7 @@ def gate_util_secrets(loop, action: dict, poll_s: float) -> dict | None:
     ctx = loop.ctx
     name = str(action.get("name") or "")
     home = ctx.server.libraries_home
-    if name in ("list", "show") or not utils_lib.exists(home, name):
+    if name in PSEUDO_UTILS or not utils_lib.exists(home, name):
         return None                     # discovery / missing-util paths expose no secrets
     needs = utils_run.util_needs(home, name)
     needed, optional = needs.secrets, needs.optional
@@ -114,18 +140,10 @@ def _gate_secrets(loop, *, kind: str, name: str, needed: set, optional: set,
     observation carries AND the noun the teaching prose uses ("util" / "script").
     """
     ctx = loop.ctx
-    from ..secrets import load_secrets
-    required = needed - optional
-    # D103: a name the routine holds in its OWN store needs no exposure decision — it is
-    # the routine's, and its value shadows the central one for this run.
-    present = sorted((required & set(load_secrets())) - _own_secrets(ctx)) if required else []
+    present = _exposable(ctx, needed, optional)
     if not present:
         return None   # nothing exposable — a declared-but-unset secret fails visibly inside
-
-    def _state(secret: str) -> str:
-        return secret_state(ctx, secret)
-
-    denied = [s for s in present if _state(s) == "denied"]
+    denied = [s for s in present if secret_state(ctx, s) == "denied"]
     if denied:
         # R17: a DENIAL enumerates nothing — the refusal must not hand back the very
         # names it refused (the transcript event keeps them for the user's surfaces;
@@ -137,7 +155,7 @@ def _gate_secrets(loop, *, kind: str, name: str, needed: set, optional: set,
                           f"routine — the {kind} was not run. The mapping is editable on the "
                           f"routine page (secret exposure); work without this {kind}, or file "
                           "a deferred ask_user explaining why it is needed."}
-    undecided = [s for s in present if _state(s) == "undecided"]
+    undecided = [s for s in present if secret_state(ctx, s) == "undecided"]
     if not undecided:
         return None
     if ctx.depth > 0:

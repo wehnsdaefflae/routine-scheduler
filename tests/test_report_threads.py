@@ -195,6 +195,20 @@ def test_supersedes_rejects_things_that_are_not_report_ids(home):
     assert any("takes report ids like R123" in p for p in problems)
 
 
+def test_answers_takes_one_report_id(home):
+    """The ledger matches `answers` against ids, so prose there answered nothing while the run
+    believed the exchange closed. Held to the grammar `settles`/`supersedes` already obey."""
+    for prose in ("the report about the broken util", "R12, R13", "F12"):
+        problems = validate_action({"kind": "report", "say": "s", "title": "t",
+                                    "target": "global-utils-review", "answers": prose,
+                                    "closes": True})
+        assert any("'answers' takes the ONE report id" in p for p in problems), prose
+    for ok in ("R12", "r12", " R12 "):    # the ledger reads ids case-insensitively
+        assert validate_action({"kind": "report", "say": "s", "title": "t",
+                                "target": "global-utils-review", "answers": ok,
+                                "closes": True}) == [], ok
+
+
 # ---- the cap ----------------------------------------------------------------------------
 
 

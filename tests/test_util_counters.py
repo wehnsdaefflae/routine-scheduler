@@ -11,7 +11,7 @@ import subprocess
 from conftest import finish, util, write_file
 from rsched import utils_run
 from rsched.config import ServerConfig, load_routine
-from rsched.engine.actions import util_rejection_outcome
+from rsched.engine.actions import util_rejection_outcome, validate_action
 from rsched.engine.budgets_config import Budgets
 from rsched.engine.executor import dispatch
 from rsched.engine.run_context import RunContext
@@ -55,6 +55,21 @@ def test_do_util_counts_outcomes(make_routine, tmp_path, monkeypatch):
     assert ctx.util_stats["ghost"] == {"missing": 1}
 
 
+def test_a_miss_on_a_name_that_cannot_be_a_util_is_not_counted(make_routine, tmp_path,
+                                                                monkeypatch):
+    """A FIELD SHIFT can be schema-valid (`name: "300"`), so it reaches the executor's miss
+    without any rejection — and a `missing` tick there mints the same permanent phantom row
+    F546 closed at the validation seam. A real-looking miss is still counted."""
+    from rsched import utils_lib
+
+    ctx = _ctx(make_routine, tmp_path)
+    monkeypatch.setattr(utils_lib, "list_utils", lambda home: [])
+    for shifted in ("300", "Your leaner days pack eating into a tighter span."):
+        assert dispatch({"kind": "util", "name": shifted, "args": []}, ctx)["missing"]
+    dispatch({"kind": "util", "name": "ghost-util", "args": []}, ctx)
+    assert ctx.util_stats == {"ghost-util": {"missing": 1}}
+
+
 def test_pseudo_utils_are_not_counted(make_routine, tmp_path):
     ctx = _ctx(make_routine, tmp_path)
     dispatch({"kind": "util", "name": "list", "args": []}, ctx)
@@ -76,10 +91,23 @@ def test_rejection_classifier():
     # malformed but permitted → rejected
     assert util_rejection_outcome({"kind": "util", "name": "fetch", "path": "x"},
                                   grants=GrantPolicy()) == ("fetch", "rejected")
-    # not attributable: no name, pseudo-utils, other kinds
+    # not attributable: no name, pseudo-utils (all three catalog verbs), other kinds
     assert util_rejection_outcome({"kind": "util"}) is None
-    assert util_rejection_outcome({"kind": "util", "name": "list"}) is None
+    for verb in ("list", "show", "search"):
+        assert util_rejection_outcome({"kind": "util", "name": verb},
+                                      allowed_kinds={"read_file"}) is None, verb
     assert util_rejection_outcome({"kind": "write_file", "name": "x"}) is None
+
+
+def test_a_util_may_not_take_a_catalog_verbs_name():
+    """`util name=search` is answered by the action itself, so a library util called
+    `search` (or `list`, `show`) could be written and never run."""
+    for verb in ("list", "show", "search"):
+        problems = validate_action({"say": "s", "kind": "write_util", "name": verb,
+                                    "content": "x"})
+        assert any("catalog verbs" in p for p in problems), verb
+    assert validate_action({"say": "s", "kind": "write_util", "name": "web-search",
+                            "content": "x"}) == []
 
 
 def test_a_name_that_cannot_be_a_util_is_not_attributed_to_one():

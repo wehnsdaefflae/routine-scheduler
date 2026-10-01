@@ -115,9 +115,10 @@ def do_llm(action: dict, ctx: RunContext) -> dict:
 def do_list_models(ctx: RunContext) -> dict:
     """The model DISCOVERY surface (paired with the per-call `model` override,
     2026-08-22): what this run's role bindings resolve to right now, plus every catalog
-    model a `model` field may name. Read-only — config stays the user's. A catalog row
-    that fails to resolve surfaces as its own error line instead of vanishing
-    (failure-visibility).
+    model a `model` field may name. Read-only — config stays the user's. A role or catalog
+    row that fails to resolve surfaces as its own error line instead of vanishing
+    (failure-visibility) — the uncensored role too, which resolved unguarded, so a role naming
+    a model no longer in the catalog raised out of the action and failed the run.
     """
     roles: dict = {}
     for role in ("main", "tool_call"):
@@ -126,9 +127,12 @@ def do_list_models(ctx: RunContext) -> dict:
             roles[role] = {"catalog": ref.name, "endpoint": ref.endpoint, "model": ref.model}
         except EndpointError as exc:
             roles[role] = {"error": str(exc)}
-    unc = ctx.registry.for_uncensored(ctx.routine.models)
-    roles["uncensored"] = ({"catalog": unc[1].name, "endpoint": unc[1].endpoint,
-                            "model": unc[1].model} if unc else None)
+    try:
+        unc = ctx.registry.for_uncensored(ctx.routine.models)
+        roles["uncensored"] = ({"catalog": unc[1].name, "endpoint": unc[1].endpoint,
+                                "model": unc[1].model} if unc else None)
+    except EndpointError as exc:
+        roles["uncensored"] = {"error": str(exc)}
     models = []
     for name in sorted(ctx.server.models):
         try:

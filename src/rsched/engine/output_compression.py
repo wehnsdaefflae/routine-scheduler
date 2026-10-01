@@ -9,7 +9,8 @@ back the captured output â€” byte for byte for text, value for value for JSON â€
 run could need is ever dropped: grep-shaped hits grouped under their file, path listings
 grouped under their folder, JSON minified with uniform arrays written as tables. Anything
 else keeps the existing capped head plus its spill pointer. Stdlib only, no dependency.
-Scheduler owns originals and transcript replay.
+An applied encoding's original is saved first, under the run's own `runs/<ts>/outputs/`; the
+transcript keeps the preview the model read, so a replay re-reads it and never compresses.
 """
 
 from __future__ import annotations
@@ -119,8 +120,8 @@ def _observation(ctx: RunContext, name: str, out: str, err: str, code: int) -> d
             return obs
         kind, encoded = found
         candidate = f"{lossless.LABELS[kind]}\n{encoded}"
-        rel = (ctx.routine.dir / "runs" / ctx.run_ts / "outputs"
-               / f"t{ctx.turn}-{name}.out").relative_to(ctx.routine.dir)
+        rel = outputs.unused_name(ctx.routine.dir / "runs" / ctx.run_ts / "outputs"
+                                  / f"t{ctx.turn}-{name}.out").relative_to(ctx.routine.dir)
         pointer = {**obs.get("full_output", {}), "stdout": str(rel), "stdout_chars": len(out)}
         baseline_size = len(stdout) + (len(outputs.pointer_line(obs["full_output"]))
                                       if obs.get("full_output") else 0)

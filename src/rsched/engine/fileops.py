@@ -1,7 +1,14 @@
-"""File-shaped effect handlers: read_file / view_image / write_file / edit_file, the
-memory actions, and read_rule — plus the path gates they share (the runs/ read depth,
-the write-grounding rule, the recipe/config seal). Split from executor.py, which keeps
-dispatch, the util runner, and the llm subcall (and routes the file kinds here).
+"""File-shaped effect handlers: read_file / write_file / edit_file — plus the path gates every
+file-shaped action shares (the runs/ read depth, the write-grounding rule, the seals on what
+the engine and the operator own). Split from executor.py, which keeps dispatch and the util
+runner; delete / move / mkdir live in fsops.py, `view_image` in mediaops.py and the
+name-addressed stores (`.memory/`, the rule library) in memops.py.
+
+Every gate compares RESOLVED paths. `resolve_rel` hands back a fully resolved path, so the
+dirs a seal is anchored on are resolved too (`_routine_dirs`) — and they are every routine
+dir the run can REACH, not only its own: a child's own dir is a workspace under
+`runs/<ts>/sub/<n>/`, but its roots extend the parent's tree (F185), so a seal anchored on
+the workspace alone sealed nothing the child could actually write.
 """
 
 from __future__ import annotations
@@ -9,10 +16,10 @@ from __future__ import annotations
 import difflib
 import json
 import os
-import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from ..grants import CONFIG_FILE
 from ..paths import atomic_write, read_json, resolve_rel
 from ..readmodels.statemap import STAGES_DIR
 from . import fileformat
@@ -35,25 +42,61 @@ READ_WINDOW_MAX_LINES = 500          # the schema's `max_lines` maximum, mirrore
 READ_MAX_BYTES = 8 * 1024 * 1024
 BINARY_SNIFF_BYTES = 8 * 1024        # a NUL byte in the first 8 KiB marks a file binary
 UTIL_DEFAULT_TIMEOUT_S = 300
-VISION_UTIL = "vision"
-VIEW_DEFAULT_PROMPT = ("Describe this file in full detail — transcribe any text verbatim and "
-                       "note structure, data, and notable visual elements.")
+
+
+def _is_workspace(d: Path) -> bool:
+    """Is `d` a child run's workspace (`…/sub/<n>`)? The test `RunContext.root_run_dir` walks by."""
+    return d.name.isdigit() and d.parent.name == "sub"
+
+
+def _routine_dirs(ctx: RunContext) -> list[Path]:
+    """Every routine dir this run's file actions can reach, RESOLVED, own dir first: for a
+    top-level run its own dir alone; for a CHILD its workspace, each ancestor child's
+    workspace (the roots chain down to grandchildren, F185), and last the ROUTINE's own dir.
+    Each holds engine- and operator-owned paths a run must leave alone.
+    """
+    own = ctx.routine.dir.resolve()
+    if ctx.depth == 0:
+        return [own]
+    dirs = [own]
+    d = ctx.run_dir.resolve()
+    while _is_workspace(d):
+        d = d.parent.parent                  # the parent's run dir: a workspace, or the root's
+        dirs.append(d if _is_workspace(d) else d.parent.parent)
+    return dirs
+
+
+def _own_dir(ctx: RunContext) -> Path:
+    """The run's own dir, resolved — the one the grounding rules exempt."""
+    return ctx.routine.dir.resolve()
+
+
+def _within(resolved: Path, sealed: Path) -> bool:
+    """Does the action path lie in (or at) `sealed`, taken at its own place or at what it
+    resolves to? An action path is resolved — wholly, or up to its final entry for delete and
+    move (`_entry`) — so a sealed path that is itself a link is met at its target by one and
+    at its own place by the other. Compared unresolved alone — behind a symlinked home, or a
+    relative CLI dir path — nothing matched, which opened the seal instead of closing it.
+    """
+    return resolved.is_relative_to(sealed) or resolved.is_relative_to(sealed.resolve())
 
 
 def _runs_read_gate(ctx: RunContext, resolved) -> str | None:
-    """Backstop for previous-run access (grants.deny handles the relative-path form inside
+    """Backstop for previous-run access (GrantPolicy.deny handles the relative-path form inside
     the schema-retry cycle; this catches absolute paths and scopes `runs: last`). The
-    current run's own tree — status, archived history — is always readable.
+    current run's own tree — status, archived history, a child's own workspace — is always
+    readable. Anchored on the ROUTINE's runs/: a child (run history `none`) reaches it
+    through the parent's tree, and a gate on its own workspace's runs/ never saw that.
     """
     g = ctx.grants
     if g is None:
         return None
-    runs_dir = ctx.routine.dir / "runs"
+    runs_dir = (_routine_dirs(ctx)[-1] / "runs").resolve()
     try:
         rel = resolved.relative_to(runs_dir)
     except ValueError:
         return None
-    if resolved.is_relative_to(ctx.root_run_dir):
+    if resolved.is_relative_to(ctx.root_run_dir.resolve()):
         return None
     if g.run_history == "none":
         # after D96 a routine's own policy always carries at least "last" — this branch
@@ -109,6 +152,15 @@ def _listing_lines(path: Path) -> Iterator[str]:
             yield f"file {size:>12}  {e.name}"
 
 
+def _sniff(path: Path) -> tuple[int, bool]:
+    """(size, binary?) from a stat and an 8 KiB head — everything known about a file before
+    a single byte of it is decoded.
+    """
+    size = path.stat().st_size
+    with path.open("rb") as fh:
+        return size, b"\0" in fh.read(BINARY_SNIFF_BYTES)
+
+
 def _refusal(rel_path: str, path: Path) -> dict | None:
     """The two reads that must never happen, decided from a stat and an 8 KiB sniff BEFORE
     anything is decoded: a binary file (a NUL byte in its head) and a file over
@@ -116,10 +168,8 @@ def _refusal(rel_path: str, path: Path) -> dict | None:
     file, and the reason the refusal still counts as having LOOKED at it for the
     destruction gate (history.seen_paths reads the key back on resume).
     """
-    size = path.stat().st_size
-    with path.open("rb") as fh:
-        head = fh.read(BINARY_SNIFF_BYTES)
-    if b"\0" in head:
+    size, binary = _sniff(path)
+    if binary:
         return {"path": rel_path, "size": size,
                 "error": f"binary file ({size:,} bytes) — read_file shows text only; "
                          "view_image sees an image or PDF, a util or shell handles the rest"}
@@ -188,7 +238,7 @@ def _read_one(rel_path: str, action: dict, ctx: RunContext) -> dict:
     # here (→ status.json → the SSE state event) with zero recipe cooperation; the
     # stage modules are the state graph's nodes (statemap), so the names always match.
     if (path.suffix == ".md" and path.parent.name == STAGES_DIR
-            and path.parent.parent == ctx.routine.dir):
+            and path.parent.parent == _own_dir(ctx)):
         ctx.phase = path.stem
         # …and the PATH taken, not just the current node (F521/R1681): a run that skipped
         # a declared stage was indistinguishable from one that worked through all of them.
@@ -213,7 +263,7 @@ def _note_recorded_phase(ctx: RunContext, path) -> None:
     evidence, and a write must never fail because of what it happened to contain. Validating
     the name against the declared set is `stage_coverage`'s job, not this seam's.
     """
-    if path.name != "phase.json" or path.parent != ctx.routine.dir / "state":
+    if path.name != "phase.json" or path.parent != _own_dir(ctx) / "state":
         return
     data = read_json(path)
     if not isinstance(data, dict):
@@ -241,10 +291,18 @@ def _memory_gate(ctx: RunContext, resolved) -> str | None:
     `engine/actions.py` also tests it, but LEXICALLY, on the string the model supplied: it is
     the cheap schema-retry correction that costs no turn. It is not a seal:
     `state/../.memory/INDEX.md` and the absolute form both walk straight past it and
-    `resolve_rel` puts them right back inside the own dir. The engine-owned index, the
-    100-line note cap and the `memory` capability gate all went with them.
+    `resolve_rel` puts them right back inside the own dir. The engine-owned index and the
+    100-line note cap went with them — and a child, whose roots reach the routine's tree,
+    walked into the ROUTINE's `.memory/` the same way.
     """
-    return MEMORY_REFUSAL if resolved.is_relative_to(ctx.routine.dir / ".memory") else None
+    if any(_within(resolved, d / ".memory") for d in _routine_dirs(ctx)):
+        return MEMORY_REFUSAL
+    return None
+
+
+FINISH_LINE_REFUSAL = ("the finish line is the operator's — a run reports against it in its "
+                       "finish `accounting` (a distance, or met for an outcome the run proves) "
+                       "and never edits it; if you believe it is wrong, file a report saying why")
 
 
 def _finish_line_gate(ctx: RunContext, resolved) -> str | None:
@@ -252,54 +310,97 @@ def _finish_line_gate(ctx: RunContext, resolved) -> str | None:
     answers for it through its finish accounting and never edits it (six runs once rewrote the
     document that decided their own end).
     """
-    if resolved != (ctx.routine.dir / FINISH_LINE).resolve():
-        return None
-    return ("the finish line is the operator's — a run reports against it in its finish "
-            "`accounting` (a distance, or met for an outcome the run proves) and never edits "
-            "it; if you believe it is wrong, file a report saying why")
+    if any(resolved in (d / FINISH_LINE, (d / FINISH_LINE).resolve())
+           for d in _routine_dirs(ctx)):
+        return FINISH_LINE_REFUSAL
+    return None
+
+
+def _removal_gate(ctx: RunContext, resolved: Path) -> str | None:
+    """What a REMOVAL — delete, a move's source — may not take with it. Every other seal asks
+    whether a path lies INSIDE something sealed; a removal also takes everything inside the
+    path, so `delete path: "." recursive: true` (or `state/..`) passed them all and removed the
+    whole routine: routine.yaml, .memory/, runs/ with the live transcript, .git. A routine dir
+    the run can reach is never removed whole, and neither is a directory holding its finish
+    line.
+    """
+    for d in _routine_dirs(ctx):
+        if d.is_relative_to(resolved):
+            return ("this would remove a routine's own directory, and its config, recipe, "
+                    "memory and run history with it — remove what is inside it instead")
+        line = d / FINISH_LINE
+        if line.exists() and line.is_relative_to(resolved):
+            return f"this would remove {FINISH_LINE}: {FINISH_LINE_REFUSAL}"
+    return None
+
+
+def _holds_config(resolved: Path) -> bool:
+    """Is there a routine.yaml anywhere in this tree? Removing the tree writes that file too."""
+    return (resolved.is_dir() and not resolved.is_symlink()
+            and any(CONFIG_FILE in files for _root, _dirs, files in os.walk(resolved)))
+
+
+def _engine_owned(ctx: RunContext, resolved) -> str | None:
+    """`runs/` and `.util_outputs/` of every reachable routine dir: the engine's record of
+    what happened, never rewritten by the run it records. One exemption, and only in the
+    ROUTINE's runs/: a child's own workspace tree (`runs/<ts>/sub/<n>/`, its children's
+    beneath it) is where a child WORKS. Everything else under it — the run's control.json,
+    status.json, transcript, the history of earlier runs — is the engine's and the web's;
+    a child that could write control.json could adopt a `config_change` (grants, budgets)
+    into the very run that spawned it.
+    """
+    dirs = _routine_dirs(ctx)
+    workspace = dirs[-2] if len(dirs) > 1 else None     # the top-most child workspace
+    for d in dirs:
+        if _within(resolved, d / "runs") and not (
+                d == dirs[-1] and workspace is not None and resolved.is_relative_to(workspace)):
+            return "runs/ is engine-owned and read-only for the run"
+        if _within(resolved, d / OUTPUTS_DIR):
+            return (f"{OUTPUTS_DIR}/ is engine-owned and read-only for the run — it is the "
+                    "saved full text of util output too large for its observation (read_file "
+                    "it); a run does not rewrite the record of what a util returned")
+    return None
 
 
 def _write_gate(ctx: RunContext, resolved, *, creates: bool = True) -> str | None:
-    """Backstop for engine-owned and permission-gated writes (grants.deny handles the
-    relative-path form; this catches absolute paths into the routine's own dir).
+    """Backstop for engine-owned and permission-gated writes (GrantPolicy.deny handles the
+    relative-path form; this catches absolute paths and traversals into every routine dir
+    the run can reach — `_routine_dirs`).
 
     `creates` is False for a path the action only REMOVES (delete, a move's source): a note
     left in a shared store for a routine that does not share it is refused when it is written;
-    clearing one that is already stranded there is the repair, not the defect.
+    clearing one that is already stranded there is the repair, not the defect. A removal is
+    held to what it would take WITH it instead (`_removal_gate`).
     """
     # All structural, not grants: they hold with no policy loaded — the memory seal, the finish
-    # line, and a note nobody would read, which is unread whatever the policy says.
+    # line, a note nobody would read (unread whatever the policy says), and a removal of a
+    # routine dir.
     err = _memory_gate(ctx, resolved) or _finish_line_gate(ctx, resolved)
     if err is None and creates:
         from ..sharedstores import note_refusal
 
         err = note_refusal(ctx.server.routines_home, resolved)
+    elif err is None:
+        err = _removal_gate(ctx, resolved)
     if err:
         return err
     g = ctx.grants
     if g is None:
         return None
-    if resolved.is_relative_to(ctx.routine.dir / "runs"):
-        return "runs/ is engine-owned and read-only for the run"
-    if resolved.is_relative_to(ctx.routine.dir / OUTPUTS_DIR):
-        return (f"{OUTPUTS_DIR}/ is engine-owned and read-only for the run — it is the saved "
-                "full text of util output too large for its observation (read_file it); a run "
-                "does not rewrite the record of what a util returned")
+    if err := _engine_owned(ctx, resolved):
+        return err
     # routine.yaml is config — never writable by ANY run (even the improver, even when the
     # recipe is unlocked): config is the user's, changed via the UI or a deferred ask_user.
     # Machine-tunable behavior knobs (deliberation) live in tuning.yaml, which is RECIPE.
-    if resolved.name == "routine.yaml":
+    if resolved.name == CONFIG_FILE or (not creates and _holds_config(resolved)):
         return ("routine.yaml is config (permissions, capabilities, budgets, roots) — no run "
                 "edits it, not even the routine-improver (machine-tunable knobs live in "
                 "tuning.yaml); file a deferred ask_user instead")
     if not g.recipe_unlocked:
         from ..grantpolicy import is_recipe_path
 
-        try:
-            rel = resolved.relative_to(ctx.routine.dir)
-        except ValueError:
-            return None
-        if is_recipe_path(str(rel)):
+        if any(resolved.is_relative_to(d) and is_recipe_path(str(resolved.relative_to(d)))
+               for d in _routine_dirs(ctx)):
             return ("editing this routine's own recipe (main.md / stages/ / tuning.yaml) "
                     "needs the recipe-authoring permission, which this routine does not "
                     "hold — its instructions are the user's. File a deferred ask_user (or a "
@@ -318,7 +419,7 @@ def do_write_file(action: dict, ctx: RunContext) -> dict:
         # destroys. The own dir is exempt (state/report rewrites are its normal mode);
         # append adds without destroying; creating a new file needs no grounding.
         if (path.is_file() and not action.get("append")
-                and not path.is_relative_to(ctx.routine.dir)
+                and not path.is_relative_to(_own_dir(ctx))
                 and str(path) not in ctx.seen_paths):
             return {"kind": "write_file", "path": action["path"],
                     "error": "this OVERWRITES an existing file this run has never read — "
@@ -340,8 +441,12 @@ def do_write_file(action: dict, ctx: RunContext) -> dict:
         else:
             # F460, the write_file half: only a STR body over an existing file can break a
             # format the engine did not produce (structured content is serialized here, and
-            # an append is not one document).
-            if (isinstance(action["content"], str) and path.is_file()
+            # an append is not one document). The old text is read for a format the gate
+            # checks and for no other: reading it unconditionally decoded whatever a write
+            # replaced — a log, a media file — whole, the materialisation read_file's cap
+            # exists to prevent (2026-09-14).
+            if (isinstance(action["content"], str) and fileformat.checks(path)
+                    and path.is_file()
                     and (err := fileformat.check_after(
                         path, path.read_text(encoding="utf-8", errors="replace"), data))):
                 return {"kind": "write_file", "path": action["path"], "error": err}
@@ -385,6 +490,28 @@ def _nearest_anchor_hint(text: str, anchor: str) -> str:
             "repr() shows the true bytes to copy.")
 
 
+def _edit_source(path: Path) -> tuple[str, str]:
+    """(the file's text, "") — or ("", why edit_file will not take it).
+
+    An edit holds the whole text and its replaced copy, so it refuses the two files read_file
+    refuses — a binary one and one over READ_MAX_BYTES — from the same stat and sniff, before
+    any decode. A file that is not UTF-8 is refused too, and never decoded lossily: writing
+    back an `errors="replace"` decode would corrupt every byte it could not read. That decode
+    used to raise out of the handler, and an exception there ends the RUN, not the action.
+    """
+    size, binary = _sniff(path)
+    if binary or size > READ_MAX_BYTES:
+        what = "a binary file" if binary else f"{size:,} bytes, over the {READ_MAX_BYTES:,} cap"
+        return "", (f"{what} — edit_file rewrites UTF-8 text in place; change this one with "
+                    "shell or a util instead")
+    try:
+        return path.read_text(encoding="utf-8"), ""
+    except UnicodeDecodeError as exc:
+        return "", (f"not UTF-8 text ({exc.reason} at byte {exc.start}) — edit_file rewrites "
+                    "UTF-8 text in place and will not re-encode this file; change it with "
+                    "shell or a util instead")
+
+
 def do_edit_file(action: dict, ctx: RunContext) -> dict:
     """Anchor-replace in place — revisions cost the diff, not the whole document (the
     write_file counterpart for touching a few lines of a large file).
@@ -396,7 +523,9 @@ def do_edit_file(action: dict, ctx: RunContext) -> dict:
         if not path.is_file():
             return {"kind": "edit_file", "path": action["path"],
                     "error": "file does not exist — create it with write_file"}
-        text = path.read_text(encoding="utf-8")
+        text, refused = _edit_source(path)
+        if refused:
+            return {"kind": "edit_file", "path": action["path"], "error": refused}
         anchor = str(action["anchor"])
         replacement = str(action.get("replacement") or "")
         count = text.count(anchor)
@@ -425,121 +554,3 @@ def do_edit_file(action: dict, ctx: RunContext) -> dict:
     return {"kind": "edit_file", "path": action["path"],
             "replacements": count if action.get("all") else 1,
             "bytes": len(new_text.encode("utf-8"))}
-
-
-# ---- native filesystem actions (D120=A): delete / move / mkdir --------------------
-# Same jail and same seals as write_file (resolve_rel against the write roots, _write_gate
-# for runs/ / .util_outputs/ / routine.yaml / the recipe), plus the destructive-op grounding
-# rule: removing or relocating a path OUTSIDE the routine's own dir requires having seen it
-# this run — the same reasoning as write_file's overwrite gate, extended to deletion.
-
-def _tree_size(path) -> int:
-    total = 0
-    for root, _dirs, files in os.walk(path):
-        for f in files:
-            try:
-                total += (Path(root) / f).stat().st_size
-            except OSError:
-                pass
-    return total
-
-
-def _unseen_destruction(ctx: RunContext, resolved, what: str) -> str | None:
-    """The grounding gate for delete and move-src: destroying a path outside the routine's
-    own dir that this run has never read. The own dir is exempt (state cleanup is a
-    routine's normal mode); elsewhere the model must have LOOKED at what it destroys — a
-    read_file of the path, which for a directory is its listing and for a binary or
-    oversized file its size (the refusal grounds too). A shell `ls` does not count: the
-    engine cannot see what a shell command showed, only what read_file returned. The gate
-    text names the two forms because a run that reads "read_file it first" about a season
-    pack once read_file'd a 1.5 GB .mkv to comply (2026-09-14).
-    """
-    if resolved.is_relative_to(ctx.routine.dir) or str(resolved) in ctx.seen_paths:
-        return None
-    return (f"this {what} a path outside the routine's own dir that this run has never "
-            "read — read_file it first (a directory reads as its listing, a binary or "
-            "oversized file as its size: both count), then remove it knowingly, so a stray "
-            "call cannot destroy something sight-unseen")
-
-
-def do_delete(action: dict, ctx: RunContext) -> dict:
-    try:
-        path = resolve_rel(ctx.routine.dir, action["path"], ctx.write_roots())
-        if err := _write_gate(ctx, path, creates=False):
-            return {"kind": "delete", "path": action["path"], "error": err}
-        if not path.exists() and not path.is_symlink():
-            return {"kind": "delete", "path": action["path"],
-                    "error": "no such path — read_file its parent directory (a directory "
-                             "reads as its listing) to see what is actually there"}
-        if len(path.parts) == 1:                     # the filesystem root is its only part
-            return {"kind": "delete", "path": action["path"],
-                    "error": "refusing to delete a filesystem-root path"}
-        if err := _unseen_destruction(ctx, path, "deletes"):
-            return {"kind": "delete", "path": action["path"], "error": err}
-        if path.is_dir() and not path.is_symlink():
-            if not action.get("recursive"):
-                return {"kind": "delete", "path": action["path"],
-                        "error": "path is a directory — pass recursive: true to remove the "
-                                 "whole tree (a stray call must not be able to wipe one)"}
-            freed = _tree_size(path)
-            what = "dir"
-            shutil.rmtree(path)
-        else:
-            freed = path.stat().st_size
-            what = "file"
-            path.unlink()
-    except (OSError, PermissionError) as exc:
-        return {"kind": "delete", "path": action["path"], "error": str(exc)}
-    return {"kind": "delete", "path": action["path"], "type": what,
-            "bytes_freed": freed, "removed": True}
-
-
-def do_move(action: dict, ctx: RunContext) -> dict:
-    try:
-        src = resolve_rel(ctx.routine.dir, action["src"], ctx.write_roots())
-        dst = resolve_rel(ctx.routine.dir, action["dst"], ctx.write_roots())
-        for p, field in ((src, "src"), (dst, "dst")):
-            if err := _write_gate(ctx, p, creates=field == "dst"):
-                return {"kind": "move", "src": action["src"], "dst": action["dst"],
-                        "error": f"{field}: {err}"}
-        if not src.exists() and not src.is_symlink():
-            return {"kind": "move", "src": action["src"], "dst": action["dst"],
-                    "error": "no such source path — read_file its parent directory (a "
-                             "directory reads as its listing) to see what is actually there"}
-        if dst.exists():
-            return {"kind": "move", "src": action["src"], "dst": action["dst"],
-                    "error": "destination already exists — move refuses to overwrite; "
-                             "delete it first if the replacement is really wanted"}
-        if err := _unseen_destruction(ctx, src, "moves"):
-            return {"kind": "move", "src": action["src"], "dst": action["dst"], "error": err}
-        moved = _tree_size(src) if src.is_dir() and not src.is_symlink() \
-            else src.stat().st_size
-        dst.parent.mkdir(parents=True, exist_ok=True)
-        shutil.move(str(src), str(dst))
-    except (OSError, PermissionError) as exc:
-        return {"kind": "move", "src": action["src"], "dst": action["dst"], "error": str(exc)}
-    return {"kind": "move", "src": action["src"], "dst": action["dst"],
-            "bytes_moved": moved, "moved": True}
-
-
-def do_mkdir(action: dict, ctx: RunContext) -> dict:
-    try:
-        path = resolve_rel(ctx.routine.dir, action["path"], ctx.write_roots())
-        if err := _write_gate(ctx, path):
-            return {"kind": "mkdir", "path": action["path"], "error": err}
-        existed = path.is_dir()
-        if existed and not action.get("parents"):
-            return {"kind": "mkdir", "path": action["path"],
-                    "error": "path already exists — pass parents: true to treat that as "
-                             "success"}
-        if action.get("parents"):
-            path.mkdir(parents=True, exist_ok=True)
-        else:
-            path.mkdir()
-    except FileExistsError as exc:
-        return {"kind": "mkdir", "path": action["path"], "error": str(exc)}
-    except (OSError, PermissionError) as exc:
-        return {"kind": "mkdir", "path": action["path"], "error": str(exc)}
-    return {"kind": "mkdir", "path": action["path"], "created": not existed}
-
-

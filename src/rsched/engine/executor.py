@@ -1,46 +1,35 @@
 """Dispatch a validated action to its effect and return the observation dict.
 
-DISPATCH covers util / read_file / view_image / write_file / edit_file / memory_read /
-memory_write / read_rule / llm / list_models; `script` and `shell` — the other two ways a
-run executes code — live here too and are routed from actionroute.py. Control-flow kinds
-(spawn, subruns, kill, wait, finish) live in loop.py — they change the run's state machine
-— and the user-facing kinds (ask_user, write_util, write_rule) in interact.py /
-authoring.py. Every observation dict feeds both the transcript event and (via
+DISPATCH covers the EFFECT kinds: util and shell (the util runner and the one-off command
+live here), the file kinds (read_file / write_file / edit_file — fileops.py; delete / move /
+mkdir — fsops.py), view_image (mediaops.py), the name-addressed stores (memory_read /
+memory_write / read_rule — memops.py), llm and list_models (llmaction.py). `script`, the
+third way a run executes code, lives here too but is reached through actionroute.py, which
+puts the call-time secret gate in front of it and of `util`. Every other kind has its own
+handler there — the child-run kinds (spawn, subtask, subruns, kill, wait) in subruns.py,
+ask_user in interact.py, the library authoring kinds in authoring.py — and `finish` never
+leaves the loop. Every observation dict feeds both the transcript event and (via
 observations.format_observation) the next user message.
 """
 
 from __future__ import annotations
 
-import logging
 import re
 
 from .. import sandbox, shellrun, utils_lib, utils_run
 from ..ids import is_slug
 from ..paths import expand
 from ..utils_lib import USAGE_ERROR_EXIT
+from .actions import could_be_util
 from .exec_env import _extra_secrets, _unbound_connection_request
-from .fileops import (
-    UTIL_DEFAULT_TIMEOUT_S,
-    do_delete,
-    do_edit_file,
-    do_mkdir,
-    do_move,
-    do_read_file,
-    do_write_file,
-)
+from .fileops import UTIL_DEFAULT_TIMEOUT_S, do_edit_file, do_read_file, do_write_file
+from .fsops import do_delete, do_mkdir, do_move
 from .llmaction import do_list_models, do_llm
 from .mediaops import do_view_image
 from .memops import do_memory_read, do_memory_write, do_read_rule
 from .observations import truncate
 from .output_compression import command_output
 from .run_context import RunContext
-
-log = logging.getLogger("rsched.engine")
-
-READ_DEFAULT_MAX_LINES = 200
-# argparse exits 2 on bad arguments — the deterministic "called with wrong syntax" signal
-# for per-util telemetry (a util not using argparse may exit 1 for everything; then its
-# usage errors count as plain errors, which is the honest fallback).
 
 
 def _note_if_killed(ctx: RunContext, kind: str, name: str, code: int) -> None:
@@ -72,6 +61,20 @@ def _note_if_killed(ctx: RunContext, kind: str, name: str, code: int) -> None:
         detail=f"{kind} {name} was killed by signal {-code} (run turn {ctx.turn})",
         kind=kind, util=name, signal=-code,
         children_vm_hwm_kb=resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss or None)
+
+
+def _withheld_note(ctx: RunContext, withheld: list[str]) -> dict:
+    """The observation field naming what F290 withheld from a call that RAN: undecided names
+    are requestable and may be enumerated, denied ones are a count only (R17 — a denial
+    enumerates nothing). Empty when nothing was withheld.
+    """
+    if not withheld:
+        return {}
+    from .secretgate import secret_state
+
+    undecided = [s for s in withheld if secret_state(ctx, s) == "undecided"]
+    return {"withheld_optional": {"undecided": undecided,
+                                  "denied": len(withheld) - len(undecided)}}
 
 
 def _ended_by_abort(ctx: RunContext, code: int) -> bool:
@@ -156,7 +159,10 @@ def do_util(action: dict, ctx: RunContext) -> dict:  # noqa: PLR0911 — list/sh
         return {"kind": "util", "name": "search", "query": query,
                 "listing": utils_lib.search_listing(home, query)}
     if not utils_lib.exists(home, name):
-        ctx.count_util(name, "missing")
+        # A schema-valid FIELD SHIFT (`name: "300"`) reaches this miss without any rejection,
+        # and counting it would mint the phantom Stats row F546 closed at the validation seam.
+        if could_be_util(name):
+            ctx.count_util(name, "missing")
         obs = {"kind": "util", "name": name, "missing": True,
                "available": [u["name"] for u in utils_lib.list_utils(home)]}
         # R367: the name may be a ROUTINE-LOCAL script, which the util action never
@@ -170,7 +176,7 @@ def do_util(action: dict, ctx: RunContext) -> dict:  # noqa: PLR0911 — list/sh
     # child env instead of blocking the call with an exposure ask — a public call runs
     # prompt-free; the observation names the withheld undecided ones so an auth-needing
     # call learns to request exposure explicitly (denied ones stay unenumerated, R17).
-    from .secretgate import secret_state, withheld_optional_secrets
+    from .secretgate import withheld_optional_secrets
     withheld = withheld_optional_secrets(ctx, name)
     code, out, err = utils_run.run_util(
         home, name, args, timeout=int(action.get("timeout_s") or UTIL_DEFAULT_TIMEOUT_S),
@@ -185,13 +191,7 @@ def do_util(action: dict, ctx: RunContext) -> dict:  # noqa: PLR0911 — list/sh
         ctx.count_util(name, "ok" if code == 0
                        else ("usage_error" if code == USAGE_ERROR_EXIT else "error"))
     obs = {"kind": "util", "name": name, "args": args, "exit": code,
-           **command_output(ctx, name, out, err, code)}
-    if withheld:
-        # undecided names are requestable and may be enumerated; denied ones are a count
-        # only (R17 — a denial enumerates nothing)
-        undecided = [s for s in withheld if secret_state(ctx, s) == "undecided"]
-        n_denied = len(withheld) - len(undecided)
-        obs["withheld_optional"] = {"undecided": undecided, "denied": n_denied}
+           **command_output(ctx, name, out, err, code), **_withheld_note(ctx, withheld)}
     if stopped:
         # Not a failure, so no repair route: a resumed run replays this observation, and
         # "the util itself may be broken — fix it" would send it after a util that is fine.
@@ -235,12 +235,12 @@ def do_script(action: dict, ctx: RunContext) -> dict:
     extras like connection tokens included only if declared, resolved transitively over
     the utils the script's `calls:` line declares), the recipe's fs jail, and `gu` on
     PATH only for a script that declares those calls. Same truncation + spill as a util
-    call. The loop's secret gate
-    (declared-required-undecided → the blocking ask) ran before this.
+    call, and the same F290 note naming an optional secret that was withheld. The loop's
+    secret gate (declared-required-undecided → the blocking ask) ran before this.
     """
     from .. import scripts
     from ..secrets import load_secrets
-    from .secretgate import secret_state
+    from .secretgate import secret_state, withheld_optional
     name = str(action.get("name") or "")
     args = [str(a) for a in action.get("args") or []]
     if not scripts.exists(ctx.routine.dir, name):
@@ -260,8 +260,8 @@ def do_script(action: dict, ctx: RunContext) -> dict:
                 "secrets and network into the shared jail, so an undeclared or unknown "
                 "sibling would run without them. Fix the header — e.g.\n"
                 "    calls: gmail, ftp\n— then rerun."}
-    declared, _net, _opt = scripts.needs(ctx.routine.dir, name,
-                                         ctx.server.libraries_home)
+    declared, _net, optional = scripts.needs(ctx.routine.dir, name,
+                                             ctx.server.libraries_home)
     env_secrets = {k: v for k, v in load_secrets().items()
                    if k in declared and secret_state(ctx, k) == "granted"}
     env_secrets |= {k: v for k, v in _extra_secrets(ctx).items() if k in declared}
@@ -272,7 +272,8 @@ def do_script(action: dict, ctx: RunContext) -> dict:
         env_secrets=env_secrets, aborted=ctx.aborted)
     _note_if_killed(ctx, "script", name, code)
     obs = {"kind": "script", "name": name, "args": args, "exit": code,
-           **command_output(ctx, f"script-{name}", out, err, code)}
+           **command_output(ctx, f"script-{name}", out, err, code),
+           **_withheld_note(ctx, withheld_optional(ctx, optional))}
     if _ended_by_abort(ctx, code):
         obs["aborted"] = True
     return obs

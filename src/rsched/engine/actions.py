@@ -15,7 +15,7 @@ import re
 
 from ..ids import is_slug
 from ..reports import REPORT_ID_RE
-from .actionschema import KINDS, READ_PATHS_MAX, SETTLES_MAX
+from .actionschema import KINDS, PSEUDO_UTILS
 from .remind import field_problems as reminder_field_problems
 
 # The fields that ride EVERY kind alongside `say`, each a no-turn side effect the engine
@@ -156,9 +156,11 @@ def normalize_action(obj: dict) -> dict:
     validator sees the model's intent, not the grammar's debris.
     """
     # weak models sometimes wrap the action in a generic tool-call envelope — unwrap it
+    if "kind" not in obj and isinstance(obj.get("action"), dict):   # {"action": {...}}
+        obj = obj["action"]
+    # …and only an object STILL without a kind is a tool-call envelope: reading an unwrapped
+    # action's own `name` as the tool turned `util name=report` into a `report` action
     if "kind" not in obj:
-        if isinstance(obj.get("action"), dict):        # {"action": {...}}
-            obj = obj["action"]
         inner = (obj.get("parameters") or obj.get("arguments")
                  or obj.get("tool_input") or obj.get("input"))
         tool = obj.get("tool_name") or obj.get("tool") or obj.get("name")
@@ -245,16 +247,14 @@ def validate_action(obj: dict, allowed_kinds: set[str] | None = None,  # noqa: C
         if has_path and (has_content or has_anchor):
             problems.append("kind=write_util takes 'path' ALONE — it IS the content source "
                             "(the file's exact bytes); drop 'content'/'anchor'")
-        if has_anchor and not isinstance(obj["anchor"], str):
-            problems.append("kind=write_util: 'anchor' must be a string (the exact text to "
-                            "find in the util's current source)")
-        if "replacement" in obj and not isinstance(obj["replacement"], str):
-            problems.append("kind=write_util: 'replacement' must be a string "
-                            '("" deletes the anchor)')
         # The name becomes a directory under the library — a non-slug (path separators,
         # dots) would write OUTSIDE utils/; rejected here like every permission problem.
         if not is_slug(str(obj.get("name") or "")):
             problems.append("kind=write_util requires 'name' to be a kebab-case util name")
+        elif obj["name"] in PSEUDO_UTILS:
+            problems.append(f"kind=write_util: {obj['name']!r} is one of the util action's own "
+                            f"catalog verbs ({', '.join(PSEUDO_UTILS)}) — a util by that name "
+                            "could never be called; pick another name")
     if kind == "remove_util" and not is_slug(str(obj.get("name") or "")):
         problems.append("kind=remove_util requires 'name' to be a kebab-case util name")
     if kind == "schedule_run":
@@ -286,19 +286,16 @@ def validate_action(obj: dict, allowed_kinds: set[str] | None = None,  # noqa: C
             problems.append("kind=manage_lane verb=set-default requires 'on_failure' "
                             "('stop' or 'continue')")
     if kind in ("read_file", "view_image"):
+        # The schema already holds `paths` to a list of at most READ_PATHS_MAX strings; what it
+        # cannot say is that none of them is blank.
         paths = obj.get("paths")
-        if paths is not None and (not isinstance(paths, list)
-                                  or not all(isinstance(p, str) and p.strip() for p in paths)):
+        if paths is not None and not all(p.strip() for p in paths):
             problems.append(f"kind={kind}: 'paths' must be a list of non-empty path strings")
             paths = None
         if not str(obj.get("path") or "").strip() and not paths:
             problems.append(f"kind={kind} requires 'path' (one file) or 'paths' (several)")
         elif str(obj.get("path") or "").strip() and paths:
             problems.append(f"kind={kind} takes 'path' OR 'paths', not both")
-        elif paths and len(paths) > READ_PATHS_MAX:
-            problems.append(f"kind={kind}: at most {READ_PATHS_MAX} paths per action")
-    if kind == "edit_file" and "replacement" in obj and not isinstance(obj["replacement"], str):
-        problems.append("kind=edit_file: 'replacement' must be a string (\"\" deletes the anchor)")
     # `closes` is a property OF a disposal — a terminal acknowledgment. `answers` disposes of
     # ONE exchange, `settles` of several; with neither there is nothing to complete, so a bare
     # closes is a contradiction, not a no-op. Before D134 only `answers` counted, which is why
@@ -309,17 +306,21 @@ def validate_action(obj: dict, allowed_kinds: set[str] | None = None,  # noqa: C
             and not obj.get("settles")):
         problems.append("kind=report: 'closes' is valid only together with 'answers' or "
                         "'settles' — it marks the disposal as completing those exchanges")
+    # `answers` is ONE report id, held to the grammar `settles` and `supersedes` are. The ledger
+    # matches it against ids, so free text there disposed of nothing — while the run, and its
+    # observation, believed the exchange answered (the settled-in-prose, open-in-the-ledger
+    # shape F497 measured).
+    if (kind == "report" and (answered := str(obj.get("answers") or "").strip())
+            and not REPORT_ID_RE.match(answered.upper())):
+        problems.append(f"kind=report: 'answers' takes the ONE report id you received and are "
+                        f"replying to, like R123 — not {answered[:60]!r}")
     # Settling rows CLAIMS they are finished. It needs no `target` (each settled row already has
     # its own raiser) but it does need well-formed ids, and a row cannot be both answered and
     # settled by one reply, nor both settled and folded — those say opposite things about who
     # holds the work next.
     if kind == "report" and obj.get("settles"):
-        if not isinstance(obj["settles"], list):
-            problems.append("kind=report: 'settles' must be a list of report ids (R<n>)")
-        elif len(obj["settles"]) > SETTLES_MAX:
-            problems.append(f"kind=report: 'settles' takes at most {SETTLES_MAX} report ids")
-        elif bad := [str(i) for i in obj["settles"]
-                     if not REPORT_ID_RE.match(str(i).strip().upper())]:
+        if bad := [str(i) for i in obj["settles"]
+                   if not REPORT_ID_RE.match(str(i).strip().upper())]:
             problems.append(f"kind=report: 'settles' takes report ids like R123 — not "
                             f"{', '.join(bad[:3])}")
         elif (answered := str(obj.get("answers") or "").strip().upper()) and answered in [
@@ -338,9 +339,7 @@ def validate_action(obj: dict, allowed_kinds: set[str] | None = None,  # noqa: C
     # Taking a row over means becoming its OWNER's thread. Without a target there is no owner
     # to become, and the folded rows would leave triage for nowhere.
     if kind == "report" and obj.get("supersedes"):
-        if not isinstance(obj["supersedes"], list):
-            problems.append("kind=report: 'supersedes' must be a list of report ids (R<n>)")
-        elif not str(obj.get("target") or "").strip():
+        if not str(obj.get("target") or "").strip():
             problems.append("kind=report: 'supersedes' needs 'target' — folding rows into this "
                             "report hands them to that owner, so name who is taking them")
         elif bad := [str(i) for i in obj["supersedes"]
@@ -355,9 +354,6 @@ def validate_action(obj: dict, allowed_kinds: set[str] | None = None,  # noqa: C
             problems.append(f"kind=report: {answered} cannot be both 'answers' and "
                             "'supersedes' — answering ENDS that thread, taking it over "
                             "CONTINUES it here. Pick one")
-    if kind == "ask_user" and "request" in obj and not isinstance(obj["request"], str):
-        problems.append('kind=ask_user: \'request\' must be ONE entity id string, "<class>:'
-                        '<name>" (e.g. "util:discord") — file one request per ask')
     # .memory/ is reachable ONLY through the memory actions — the engine owns INDEX.md and
     # enforces the note cap there; generic file access would silently bypass both.
     if kind in ("read_file", "view_image", "write_file", "edit_file",
@@ -374,6 +370,11 @@ def validate_action(obj: dict, allowed_kinds: set[str] | None = None,  # noqa: C
                 problems.append(f"kind={kind} may not touch .memory/ — use memory_read / "
                                 "memory_write (the engine maintains .memory/INDEX.md for you)")
                 break
+    # A rule is read by its catalog SLUG. The name is joined onto the library dir, so a path
+    # here read any .md file on the host past the run's fs jail (memops.do_read_rule).
+    if kind == "read_rule" and (name := str(obj.get("name") or "")) and not is_slug(name):
+        problems.append(f"kind=read_rule: 'name' must be a rule's kebab-case slug as the "
+                        f'catalog lists it, or "list" for the catalog — got {name!r}')
     if kind in ("memory_read", "memory_write"):
         name = str(obj.get("name") or "")
         if name and not is_slug(name):
@@ -412,6 +413,14 @@ def validate_action(obj: dict, allowed_kinds: set[str] | None = None,  # noqa: C
 _NAMEABLE_UTIL_RE = re.compile(r"^(?=[a-z0-9-]*[a-z])[a-z0-9][a-z0-9-]*$")
 
 
+def could_be_util(name: str) -> bool:
+    """Could `name` name a util at all? The F546 test every per-util telemetry tick passes —
+    a value that cannot is a field shift, and attributing it invents a permanent phantom row
+    on the Stats tab — and the signature `field_shift_diagnosis` names.
+    """
+    return bool(_NAMEABLE_UTIL_RE.match(name))
+
+
 def util_rejection_outcome(obj: dict, allowed_kinds: set[str] | None = None,
                            grants=None) -> tuple[str, str] | None:
     """Classify a REJECTED util action for per-util telemetry (RunContext.count_util):
@@ -421,10 +430,10 @@ def util_rejection_outcome(obj: dict, allowed_kinds: set[str] | None = None,
     "rejected" = a malformed call (schema/field problems). A denial never reaches the
     executor — it is corrected inside the schema-retry cycle and never becomes a turn —
     so it MUST be counted here at the validation seam or it would never be counted at
-    all. The catalog pseudo-utils (list/show) are discovery, not execution: skipped.
+    all. The catalog pseudo-utils (PSEUDO_UTILS) are discovery, not execution: skipped.
     """
     name = str(obj.get("name") or "").strip()
-    if obj.get("kind") != "util" or not name or name in ("list", "show"):
+    if obj.get("kind") != "util" or not name or name in PSEUDO_UTILS:
         return None
     # …and the name must be able to BE a util. A malformed action is by definition one whose
     # fields cannot be trusted, and the commonest malformation is a FIELD SHIFT — values
@@ -440,7 +449,7 @@ def util_rejection_outcome(obj: dict, allowed_kinds: set[str] | None = None,
     # catalog of util names (write_util's create-vs-revise split asks the library per call),
     # so neither separates a name from a shifted value. What every real util name has and no
     # shifted value did: kebab-case with a LETTER in it. Unattributable IS what None means.
-    if not _NAMEABLE_UTIL_RE.match(name):
+    if not could_be_util(name):
         return None
     denied = ((allowed_kinds is not None and "util" not in allowed_kinds)
               or (grants is not None and grants.deny(obj) is not None))
@@ -458,7 +467,7 @@ def field_shift_diagnosis(obj: dict) -> str:
     correction described the symptom; the fault went unnamed, and the run concluded the failure
     was its own inability to hold the schema.
 
-    The detectable signature is the same one F546's telemetry guard uses — `_NAMEABLE_UTIL_RE`,
+    The detectable signature is the same one F546's telemetry guard uses — `could_be_util`,
     the util naming rule — so the two cannot drift: a `kind: "util"` whose `name` could not be
     a util name at all is not a wrong util, it is a misplaced value. Returns "" when there is
     nothing specific to say, because a diagnosis that fires on ordinary mistakes would teach
@@ -467,7 +476,7 @@ def field_shift_diagnosis(obj: dict) -> str:
     if str(obj.get("kind") or "") != "util":
         return ""
     name = str(obj.get("name") or "").strip()
-    if not name or _NAMEABLE_UTIL_RE.match(name):
+    if not name or could_be_util(name):
         return ""
     shown = name if len(name) <= 80 else name[:77] + "…"
     return (f"LOOK AT THE WHOLE OBJECT, not only the field named above: `name` holds "

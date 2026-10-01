@@ -80,6 +80,36 @@ def test_projection_drops_other_kinds_fields_and_prose():
     assert "util" in props["name"]["description"]
 
 
+def test_a_shared_field_describes_every_kind_that_accepts_it():
+    """A field several kinds share is described clause by clause (`kind1/kind2: …`), and the
+    projection keeps only the clauses of the kinds a run can use. So a kind that ACCEPTS the
+    field but has no clause gets the field with nothing said about it — or, alone in a
+    projection, every other kind's prose instead (`manage_lane`'s `name`, `write_rule`'s
+    `all`). The reverse — a clause for a kind that does not take the field — describes an
+    argument the validator would refuse.
+    """
+    from rsched.engine.kindsurface import _clause_kinds
+
+    for field, spec in ACTION_SCHEMA["properties"].items():
+        named = {k for clause in str(spec.get("description") or "").split(" · ")
+                 for k in _clause_kinds(clause)}
+        if not named:
+            continue                       # one-kind or universal prose, not clause-led
+        accepting = {k for k, (req, opt) in KIND_FIELDS.items() if field in (*req, *opt)}
+        assert accepting <= named, f"{field!r}: no clause for {sorted(accepting - named)}"
+        assert named <= accepting, f"{field!r}: clause for non-accepting {sorted(named - accepting)}"
+
+
+def test_every_kind_but_script_has_one_prose_bullet():
+    """The harness contract glosses each kind a run can use; `script`'s gloss lives in
+    CAPABILITIES beside the scripts themselves — the one documented exception."""
+    from rsched.engine.kindsurface import KIND_PROSE
+
+    covered = [k for covers, _prose in KIND_PROSE for k in covers]
+    assert len(covered) == len(set(covered))
+    assert set(KINDS) - set(covered) == {"script"}
+
+
 def test_projection_is_materially_smaller():
     """The point of the exercise: a restricted workflow stops paying for the kinds it may not
     use. A four-kind allowlist is the realistic narrow case."""

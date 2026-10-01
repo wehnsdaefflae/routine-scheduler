@@ -92,6 +92,16 @@ capability-class grants: permissions and capabilities are off at depth > 0. Keep
 children's outputs disjoint by convention — they share the tree, and the harness contract
 already forbids them `LEDGER.md` / `state/phase.json`.
 
+Reaching the tree is not owning it. Every file-action seal holds on each routine dir a child
+can reach — its workspace, each ancestor child's, and the routine's — not on its workspace
+alone (`fileops._routine_dirs`): the routine's recipe, its `.memory/`, its finish line, its
+`.util_outputs/` and its `runs/` stay closed to a child exactly as they are to the routine's
+own runs. The one opening is the child's own workspace tree under `runs/<ts>/sub/<n>/`,
+where it works. Before this the seals were anchored on the workspace, so a sub-workflow
+could rewrite the routine's recipe and memory index, write the run's `control.json` (whose
+`config_change` the parent adopts live — grants, budgets) and read earlier runs it has no
+history for.
+
 **Handing a FILE back** (the contract's third part; from R409/R410). Isolation is deliberate — a
 shared writable dir between concurrent children is a race the engine would have to arbitrate —
 but it left the parent to know the child's path, search it and copy files out by hand, a

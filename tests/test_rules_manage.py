@@ -140,6 +140,22 @@ def test_read_rule_list_and_missing(lib, routine):
     assert "alpha" in format_observation(missing)
 
 
+def test_read_rule_reads_a_slug_never_a_path(lib, routine, tmp_path):
+    """The name is joined onto the library dir, and the kind is ungated — so a name that was
+    a PATH read any .md file on the host past the run's fs jail: another routine's `.memory/`
+    notes, its LEDGER, an earlier run's result. Refused at validation (no turn spent) and
+    again by the handler."""
+    other = tmp_path / "routines" / "other" / ".memory"
+    other.mkdir(parents=True)
+    (other / "private.md").write_text("# private\nthe other routine's note\n", encoding="utf-8")
+    for name in ("../../routines/other/.memory/private", str(other / "private")):
+        assert validate_action({"say": "s", "kind": "read_rule", "name": name})
+        obs = do_read_rule({"kind": "read_rule", "name": name}, _ctx(lib, routine))
+        assert obs["missing"] is True
+        assert "content" not in obs
+        assert obs["available"] == ["alpha", "beta"]
+
+
 def test_read_rule_is_ungated_so_a_routine_can_read_what_binds_it():
     """Deliberately NOT a capability: a routine unable to read the rules it practises would
     hold rules it cannot follow; library prose has no side effect to gate.

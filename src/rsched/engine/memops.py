@@ -11,6 +11,7 @@ never forked into the routine — and is ungated: a routine must be able to read
 
 from __future__ import annotations
 
+from ..ids import is_slug
 from ..paths import atomic_write
 from .observations import truncate
 from .run_context import RunContext
@@ -24,13 +25,17 @@ def _memory_topics(mem_dir) -> list[str]:
 def _memory_index_upsert(mem_dir, name: str, about: str | None) -> None:
     """INDEX.md is engine-owned: one `- <name>.md: <about>` line per note, updated in the
     same operation as the note itself so the catalog can never drift. about=None removes.
+
+    ONE line is the invariant every later upsert relies on — the replace finds a note's entry
+    by its prefix — so `about` is folded onto a single line: a line break in it left the
+    continuation behind as an orphan line no revision or delete could ever reach.
     """
     index = mem_dir / "INDEX.md"
     lines = index.read_text(encoding="utf-8").splitlines() if index.exists() else []
     prefix = f"- {name}.md:"
     lines = [ln for ln in lines if not ln.startswith(prefix)]
     if about is not None:
-        lines.append(f"{prefix} {about.strip()}")
+        lines.append(f"{prefix} {' '.join(about.split())}")
     atomic_write(index, "\n".join(lines) + ("\n" if lines else ""))
 
 def do_memory_read(action: dict, ctx: RunContext) -> dict:
@@ -59,18 +64,21 @@ def do_read_rule(action: dict, ctx: RunContext) -> dict:
 
     name = action["name"]
     home = ctx.server.rules_home
-    catalog = library_docs.list_docs(home)
     # "held" = bound by this routine's own config, so the model can tell a rule it should
     # ALREADY be applying from one it is consulting for the first time.
     held = set(ctx.routine.rules)
     if name == "list":
         return {"kind": "read_rule", "name": "list",
                 "rules": [{"slug": d["slug"], "summary": d["summary"],
-                           "held": d["slug"] in held} for d in catalog]}
-    raw = library_docs.read_doc(home, name)
+                           "held": d["slug"] in held} for d in library_docs.list_docs(home)]}
+    # A rule is addressed by its SLUG, never by a path. `read_doc` joins the name onto the
+    # library dir, so `../../<routine>/.memory/<note>` — or an absolute path, which a join
+    # simply adopts — read any .md file on the host past the run's fs jail, through a kind
+    # every routine holds. validate_action refuses such a name first; this is the backstop.
+    raw = library_docs.read_doc(home, name) if is_slug(name) else None
     if raw is None:
         return {"kind": "read_rule", "name": name, "missing": True,
-                "available": [d["slug"] for d in catalog]}
+                "available": library_docs.slugs(home)}
     body = library_docs.doc_body(raw).strip()
     return {"kind": "read_rule", "name": name, "content": body,
             "lines": len(body.splitlines()), "held": name in held}

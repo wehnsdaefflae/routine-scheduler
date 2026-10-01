@@ -2,9 +2,9 @@
 for the observation that carried it. Every callable kind spills here: `util`, `script` and
 `shell` all capture far more than an observation can carry.
 
-A util's stdout is captured up to `utils_lib.OUTPUT_CAP` (1 MB) and then head+tail
-truncated to `OBS_CAP_CHARS` for the observation. The transcript records the TRUNCATED
-observation, so everything between those two caps was produced and immediately destroyed:
+A util's stdout is captured up to `utils_lib.OUTPUT_CAP` (1 MB) and then cut to its head at
+`OBS_CAP_CHARS` for the observation (stderr keeps head and tail). The transcript records the
+TRUNCATED observation, so everything between those two caps was produced and destroyed:
 the only recovery was re-running the util, which does not return the same data for
 anything non-deterministic, paid, or time-bound (a page fetch, an LLM subcall, a mailbox
 read, a quote). This store keeps exactly that band.
@@ -19,8 +19,8 @@ Writes are engine-only (`fileops._write_gate`), like `runs/`: a run must not be 
 rewrite its own evidence. The dir is gitignored on first use — the run-end autocommit is
 `git add -A` and util output can carry tokens — mirroring `machine_mounts._ensure_mnt_gitignored`.
 
-Optional Headroom previews save their original stdout under the run's own `runs/` tree
-(output_compression.py), so this five-run cache cannot prune their recovery evidence.
+An applied lossless compression (output_compression.py) saves its original stdout under the
+run's own `runs/` tree instead, so this five-run cache cannot prune that recovery evidence.
 
 Retention is KEEP_RUNS run directories, pruned on write: a backstop against unbounded
 growth, never a promise about how long an output survives.
@@ -68,6 +68,19 @@ def _run_key(ctx: RunContext) -> str:
     return ctx.run_ts
 
 
+def unused_name(path: Path) -> Path:
+    """`path`, or the first free `<stem>-<n><suffix>` beside it. `t<turn>-<name>` is not unique
+    within a run: a user's slash command executes at the turn boundary under the number of the
+    model turn before it, and overwriting that turn's file left its observation — already in
+    the transcript and the context — pointing at output it never produced.
+    """
+    candidate, n = path, 2
+    while candidate.exists():
+        candidate = path.with_name(f"{path.stem}-{n}{path.suffix}")
+        n += 1
+    return candidate
+
+
 def _prune(base: Path) -> None:
     """Keep the KEEP_RUNS newest run dirs (ISO timestamps sort lexically); a run's
     sub-<n> dirs nest inside its own, so this prunes children with their parent.
@@ -98,10 +111,10 @@ def spill(ctx: RunContext, name: str, out: str, err: str, *,
                                         ("err", err, err_truncated)):
             if not truncated:
                 continue
-            rel = f"{rel_dir}/t{ctx.turn}-{name}.{stream}"
-            atomic_write(ctx.routine.dir / rel, text)
+            target = unused_name(ctx.routine.dir / rel_dir / f"t{ctx.turn}-{name}.{stream}")
+            atomic_write(target, text)
             key = "stdout" if stream == "out" else "stderr"
-            pointer[key] = rel
+            pointer[key] = str(target.relative_to(ctx.routine.dir))
             pointer[f"{key}_chars"] = len(text)
             if getattr(text, "capture_truncated", False):
                 pointer[f"{key}_capture_truncated"] = True
@@ -123,9 +136,11 @@ def pointer_line(pointer: dict) -> str:
          if pointer.get(k + "_capture_truncated")
          else f"the complete {pointer[k + '_chars']}-char {k} at `{pointer[k]}`")
         for k in ("stdout", "stderr") if pointer.get(k)]
+    # Not "the elided middle": stdout keeps its HEAD (observations.truncate, R45), so what it
+    # lost is the tail, while stderr loses its middle and an applied compression loses nothing.
     return (" and ".join(saved).capitalize()
-            + " — read_file it (start_line/max_lines page it) for the elided middle "
-              "instead of re-running the util.")
+            + " — read_file it (start_line/max_lines page it) for what the preview leaves "
+              "out, instead of re-running the util.")
 
 
 def digest(routine_dir: Path, limit: int = 8) -> str:
@@ -136,13 +151,16 @@ def digest(routine_dir: Path, limit: int = 8) -> str:
     base = routine_dir / OUTPUTS_DIR
     if not base.is_dir():
         return ""
+    # Newest by when it was WRITTEN: a reverse sort of the paths put `t9-…` above `t10-…`, so a
+    # run with more than `limit` spills showed its oldest ones and left the newest out.
     try:
-        files = sorted((p for p in base.rglob("*") if p.is_file()), reverse=True)
+        files = sorted(((p.stat(), p) for p in base.rglob("*") if p.is_file()),
+                       key=lambda sp: (sp[0].st_mtime_ns, str(sp[1])), reverse=True)
     except OSError:
         return ""
     if not files:
         return ""
-    rows = [f"- {p.relative_to(routine_dir)} ({p.stat().st_size}B)" for p in files[:limit]]
+    rows = [f"- {p.relative_to(routine_dir)} ({st.st_size}B)" for st, p in files[:limit]]
     more = (f"\n[... {len(files) - limit} older ones — the last {KEEP_RUNS} runs are kept]"
             if len(files) > limit else "")
     return (f"{OUTPUTS_DIR}/ (util output too large for the observation that carried it, saved "

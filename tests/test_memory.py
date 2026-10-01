@@ -53,6 +53,20 @@ def test_write_read_revise_delete_maintain_index(make_routine, tmp_path):
     assert (mem / "INDEX.md").read_text() == "- portal-quirks.md: scraping gotchas, incl. rate limits\n"
 
 
+def test_a_multiline_about_stays_one_index_line(make_routine, tmp_path):
+    """The upsert finds a note's entry by its `- <name>.md:` prefix, so an `about` with a line
+    break left its continuation behind as an orphan that no revision or delete could reach."""
+    ctx = _ctx(make_routine, tmp_path)
+    index = ctx.routine.dir / ".memory" / "INDEX.md"
+    _write(ctx, "portal", "x", "scraping gotchas:\n  rate limits\tand captchas")
+    assert index.read_text() == "- portal.md: scraping gotchas: rate limits and captchas\n"
+    _write(ctx, "portal", "x", "revised")
+    executor.dispatch({"kind": "memory_write", "name": "other", "content": "y",
+                       "about": "second"}, ctx)
+    executor.dispatch({"kind": "memory_write", "name": "portal", "delete": True}, ctx)
+    assert index.read_text() == "- other.md: second\n"
+
+
 def test_read_missing_lists_topics_and_delete_is_idempotent(make_routine, tmp_path):
     ctx = _ctx(make_routine, tmp_path)
     _write(ctx, "one", "x", "first")

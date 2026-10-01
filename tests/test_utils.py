@@ -386,6 +386,12 @@ def test_a_bound_connection_produces_no_request_route(tmp_path):
                                   fs_write_roots=[], connections={"google": "personal"},
                                   machines=[])
     assert _unbound_connection_request(ctx, "gapi") == ""
+    # …and so must one holding it for THIS run: the token was injected, so asking again
+    # would put the user's own allow-now back in front of them
+    ctx = _ctx(tmp_path)
+    ctx.granted_now = frozenset({"connection:google"})
+    ctx.grant_args = {"connection:google": "personal"}
+    assert _unbound_connection_request(ctx, "gapi") == ""
 
 
 def test_a_util_needing_no_connection_produces_no_route(tmp_path):

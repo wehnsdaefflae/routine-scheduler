@@ -52,7 +52,8 @@ def _ctx(tmp_path, endpoint):
     # executor passes into supports_media (one endpoint serves many models).
     ref = SimpleNamespace(multimodal=endpoint.multimodal, context_tokens=200_000) if endpoint else None
     registry = SimpleNamespace(for_model=lambda k, m: (endpoint, ref)) if endpoint else None
-    return SimpleNamespace(routine=routine, grants=None, root_run_dir=tmp_path / "runs" / "x",
+    return SimpleNamespace(routine=routine, grants=None, depth=0,
+                           root_run_dir=tmp_path / "runs" / "x",
                            read_roots=lambda: list(routine.fs_read_roots),
                            write_roots=lambda: list(routine.fs_write_roots),
                            server=SimpleNamespace(libraries_home=tmp_path / "utils",
@@ -186,13 +187,29 @@ def test_do_view_image_batched_mixed(tmp_path):
 
 # --- vision_describe ---------------------------------------------------------
 
+def _vision_ctx(tmp_path, monkeypatch, *, grants=None):
+    """A run context carrying what a util call's environment is assembled from, over a
+    library whose `vision` util declares one required key, and tmp secret stores."""
+    from rsched import secrets
+
+    monkeypatch.setattr(secrets, "secrets_path", lambda: tmp_path / "store" / "secrets.env")
+    home = tmp_path / "lib"
+    (home / "utils" / "vision").mkdir(parents=True)
+    (home / "utils" / "vision" / "main.py").write_text(
+        '"""vision — describe a file.\n\nsecrets: VISION_KEY\nnet: outbound\nfs: roots\n"""\n',
+        encoding="utf-8")
+    routine = SimpleNamespace(slug="seer", dir=tmp_path, fs_read_roots=[], fs_write_roots=[],
+                              connections={}, machines=[], grants=grants or {})
+    return SimpleNamespace(server=SimpleNamespace(libraries_home=home, sandbox="off",
+                                                  machines={}, routine_token=""),
+                           routine=routine, read_roots=list, write_roots=list,
+                           granted_now=set(), denied_now=set(), grant_args={},
+                           aborted=lambda: False)
+
+
 def test_vision_describe_parses_and_errors(tmp_path, monkeypatch):
     from rsched import utils_lib
-    routine = SimpleNamespace(dir=tmp_path, fs_read_roots=[], fs_write_roots=[])
-    ctx = SimpleNamespace(server=SimpleNamespace(libraries_home=tmp_path, sandbox="off"),
-                          routine=routine, read_roots=list, write_roots=list,
-                          aborted=lambda: False)
-    monkeypatch.setattr(utils_lib, "exists", lambda home, n: True)
+    ctx = _vision_ctx(tmp_path, monkeypatch)
     monkeypatch.setattr(utils_run, "run_util",
                         lambda home, n, args, timeout=300, policy=None, **_kw:
                         (0, json.dumps({"text": "hi"}), ""))
@@ -201,6 +218,26 @@ def test_vision_describe_parses_and_errors(tmp_path, monkeypatch):
     assert mediaops.vision_describe(ctx, "/x.png", "?").startswith("error:")
     monkeypatch.setattr(utils_lib, "exists", lambda home, n: False)
     assert "not installed" in mediaops.vision_describe(ctx, "/x.png", "?")
+
+
+def test_the_vision_fallback_runs_with_the_routines_own_secret_standing(tmp_path, monkeypatch):
+    """The engine's call asks nothing, but it is made in the run's environment: a DECLINED
+    key is not handed over (R17: the refusal counts, it does not name), and the routine's
+    own scoped key shadows the central one (D103) exactly as on a util the run called."""
+    from rsched import secrets
+
+    ctx = _vision_ctx(tmp_path, monkeypatch, grants={"secret:VISION_KEY": False})
+    secrets.set_secret("VISION_KEY", "central")
+    calls: list[dict] = []
+    monkeypatch.setattr(utils_run, "run_util", lambda *a, **k: calls.append(k) or (
+        0, json.dumps({"text": "seen"}), ""))
+    declined = mediaops.vision_describe(ctx, "/x.png", "?")
+    assert declined.startswith("error: the user declined exposing 1 secret the vision")
+    assert "VISION_KEY" not in declined and calls == []
+    ctx.routine.grants = {}                       # undecided: the engine's call still runs
+    secrets.set_routine_secret("seer", "VISION_KEY", "mine")
+    assert mediaops.vision_describe(ctx, "/x.png", "?") == "seen"
+    assert calls[0]["extra_secrets"]["VISION_KEY"] == "mine"
 
 
 # --- auto-attach helper + inbox drain ----------------------------------------
@@ -337,7 +374,7 @@ def test_read_file_end_truncates_and_resumes_in_sequence(tmp_path):
     big = tmp_path / "big.txt"
     big.write_text("\n".join(f"line-{i:05d}-{'x' * 24}" for i in range(4000)))
     ctx = SimpleNamespace(routine=SimpleNamespace(dir=tmp_path, fs_read_roots=[]),
-                          grants=None, seen_paths=set(), read_roots=list)
+                          grants=None, depth=0, seen_paths=set(), read_roots=list)
 
     obs = fileops._read_one("big.txt", {"max_lines": 500}, ctx)
     assert obs["truncated"] is True

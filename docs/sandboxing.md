@@ -212,8 +212,13 @@ the merge is the shadowing rule, not an accident. It stays under the declared-on
 everything else. An **OPTIONAL** secret
 (declared `NAME?`, D51/F290 — it backs a feature most calls don't use, like page-fetch's
 Basic auth) never files that request: not granted → it is WITHHELD from the child env and
-the util observation says so, so a public call runs prompt-free and an auth-needing one
-requests exposure explicitly (`ask_user` with `request: "secret:NAME"`). Optionality has ONE
+the util or script observation says so, so a public call runs prompt-free and an auth-needing
+one requests exposure explicitly (`ask_user` with `request: "secret:NAME"`). The one util
+call the ENGINE makes on a run's behalf — `view_image`'s vision fallback
+(`mediaops.vision_describe`) — files no exposure ask (the run chose neither the util nor its
+arguments), but it is made in the run's environment all the same: the routine's own scoped
+key shadows the central one, a not-granted optional secret is withheld, and a secret the user
+DECLINED for the routine is never handed over — the fallback is refused instead. Optionality has ONE
 precedence: a `?` on the util the run CALLED wins over a required declaration in a util it
 `calls:`, because only the called util knows whether the path reaching that sibling is taken
 (a scorer requires its own key; a util that scores only under one flag marks the key optional

@@ -4,7 +4,7 @@ jail and the same seals as write_file (fileops._write_gate), fs-ops' proven sema
 grounding rule: a path OUTSIDE the routine's own dir that this run has not read cannot be
 deleted or moved away.
 
-Validation lives in engine.actions.validate_action; the handlers in engine.fileops.
+Validation lives in engine.actions.validate_action; the handlers in engine.fsops.
 """
 
 from __future__ import annotations
@@ -12,7 +12,8 @@ from __future__ import annotations
 from rsched.config import ServerConfig, load_routine
 from rsched.engine.actions import validate_action
 from rsched.engine.budgets_config import Budgets
-from rsched.engine.fileops import do_delete, do_mkdir, do_move, do_read_file
+from rsched.engine.fileops import do_read_file
+from rsched.engine.fsops import do_delete, do_mkdir, do_move
 from rsched.engine.run_context import RunContext
 from rsched.engine.transcript import Transcript
 from rsched.grantpolicy import GrantPolicy
@@ -124,6 +125,61 @@ def test_runs_and_routine_yaml_are_sealed(make_routine, tmp_path):
     assert "routine.yaml is config" in do_delete({"path": "routine.yaml"}, ctx)["error"]
     assert "routine.yaml is config" in do_move(
         {"src": "routine.yaml", "dst": "state/config-copy.yaml"}, ctx)["error"]
+
+
+def test_a_removal_never_takes_a_sealed_path_with_it(make_routine, tmp_path):
+    """Every seal asked whether a path lies INSIDE something sealed; a removal also takes what
+    lies inside the path. `delete path: "." recursive: true` passed every seal and removed the
+    whole routine — routine.yaml, .memory/, runs/ with the live transcript, .git."""
+    ctx = _ctx(make_routine, tmp_path)
+    d = ctx.routine.dir
+    for whole in (".", "state/.."):
+        err = do_delete({"path": whole, "recursive": True}, ctx)["error"]
+        assert "a routine's own directory" in err, whole
+    # by its absolute name the entry's PARENT is the routines home, outside every root
+    assert "outside the allowed roots" in do_delete({"path": str(d), "recursive": True},
+                                                    ctx)["error"]
+    assert "a routine's own directory" in do_move(
+        {"src": ".", "dst": "state/elsewhere"}, ctx)["error"]
+    assert (d / "routine.yaml").is_file() and (d / "runs").is_dir()
+    # the operator's finish line goes with no removal of the directory holding it…
+    (d / "state" / "finish-line.json").write_text('{"outcomes": []}\n', encoding="utf-8")
+    assert "finish line is the operator's" in do_delete(
+        {"path": "state", "recursive": True}, ctx)["error"]
+    assert (d / "state" / "finish-line.json").is_file()
+    # …and no tree holding a routine's config is removed with it (by name, like every write)
+    other = tmp_path / "projects" / "nested-routine"
+    other.mkdir(parents=True)
+    (other / "routine.yaml").write_text("slug: nested-routine\n", encoding="utf-8")
+    ctx.routine.fs_write_roots = [tmp_path / "projects"]
+    ctx.seen_paths.add(str(other))
+    assert "routine.yaml is config" in do_delete(
+        {"path": str(other), "recursive": True}, ctx)["error"]
+    assert (other / "routine.yaml").is_file()
+
+
+def test_delete_and_move_act_on_a_link_not_on_what_it_points_to(make_routine, tmp_path):
+    """`rm link` and `mv link x` semantics. Resolving the whole path followed the link, so
+    deleting one deleted its target and moving one moved the target away — each leaving the
+    link behind, dangling."""
+    ctx = _ctx(make_routine, tmp_path)
+    data = ctx.routine.dir / "state" / "data"
+    data.mkdir(parents=True)
+    (data / "keep.txt").write_text("precious", encoding="utf-8")
+    (ctx.routine.dir / "state" / "alias.txt").symlink_to(data / "keep.txt")
+    (ctx.routine.dir / "state" / "shortcut").symlink_to(data)
+    gone = do_delete({"path": "state/alias.txt"}, ctx)
+    assert gone["type"] == "link"
+    assert not (ctx.routine.dir / "state" / "alias.txt").is_symlink()
+    assert (data / "keep.txt").read_text(encoding="utf-8") == "precious"
+    assert do_move({"src": "state/shortcut", "dst": "state/renamed"}, ctx)["moved"] is True
+    assert (ctx.routine.dir / "state" / "renamed").is_symlink() and data.is_dir()
+    # a link outside the own dir destroys nothing but itself, so it needs no prior read…
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "dangling").symlink_to(tmp_path / "nowhere")
+    ctx.routine.fs_write_roots = [outside]
+    assert do_delete({"path": str(outside / "dangling")}, ctx)["removed"] is True
 
 
 # ---- destructive-op grounding --------------------------------------------------------------

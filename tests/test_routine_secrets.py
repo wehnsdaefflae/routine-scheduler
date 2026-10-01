@@ -119,16 +119,15 @@ def test_declared_only_still_governs_a_scoped_secret():
 def test_the_exposure_gate_skips_a_name_the_routine_owns(make_routine):
     """A name in BOTH stores must not file an access request: the run will be handed its
     OWN value, so asking to be shown the shared one is a question about nothing."""
-    from rsched.engine.secretgate import _own_secrets
+    from rsched.engine.secretgate import _exposable, _own_secrets
 
     secrets.set_secret("SFTP_USER", "shared")
     secrets.set_routine_secret("scoped", "SFTP_USER", "mine")
     ctx = _ctx(make_routine)
     assert _own_secrets(ctx) == {"SFTP_USER"}
-
-    required = {"SFTP_USER"}
-    present = sorted((required & set(secrets.load_secrets())) - _own_secrets(ctx))
-    assert present == []          # nothing left to gate
+    assert _exposable(ctx, {"SFTP_USER"}, set()) == []          # nothing left to gate
+    secrets.set_secret("OTHER_KEY", "shared")
+    assert _exposable(ctx, {"SFTP_USER", "OTHER_KEY"}, set()) == ["OTHER_KEY"]
 
 
 # ---- the API ----------------------------------------------------------------------------

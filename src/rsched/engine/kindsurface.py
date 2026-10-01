@@ -114,6 +114,8 @@ def schema_for_kinds(kinds: list[str] | set[str] | None, *,
 # schema: a run is told how to use the channels it HAS, and nothing about the ones it
 # doesn't. The memory bullet was already grant-conditional in the composer; making every
 # bullet conditional generalizes that precedent instead of adding a second mechanism.
+# Every kind has a bullet but `script`: its gloss sits in CAPABILITIES (capabilities.py),
+# beside the routine's own scripts it can call, which is the one thing worth saying about it.
 #
 # Two placeholders are substituted (not f-string interpolated — the prose contains braces
 # in code fragments): {util_confirm} and {ask_timeout_min}.
