@@ -1,7 +1,8 @@
 """The conversation right rail against the REAL console: the browser-session section
 (D86 / R262 pt2 — rows from the persisted util handle, blob-rendered screenshot, close
 control hitting the stop endpoint) and the per-section collapse toggles with localStorage
-persistence (F296 / R262 pt1)."""
+persistence (F296 / R262 pt1). Plus the one state the left rail and the chat must agree with
+the rest of the console on: a conversation waiting on YOU."""
 
 from __future__ import annotations
 
@@ -9,6 +10,8 @@ import json
 import socket
 
 from playwright.sync_api import expect
+
+from rsched.paths import atomic_write_json
 
 # a 1x1 transparent PNG, byte-for-byte
 PNG = bytes.fromhex(
@@ -97,3 +100,39 @@ def test_a_conversation_has_no_goal_panel_and_no_compression_dial(ui, ui_page):
     expect(ui_page.locator(".conv-view .rail-cap", has_text="state").first).to_be_visible()
     expect(ui_page.locator('.conv-view .rail-cap[data-rail="goal"]')).to_have_count(0)
     expect(ui_page.get_by_label("Output compression", exact=True)).to_have_count(0)
+
+
+def _computed(page, prop: str, value: str) -> str:
+    """What `prop: value` computes to here — a token's colour in the page's current theme."""
+    return page.evaluate("""([prop, value]) => { const p = document.createElement("span");
+      p.style.setProperty(prop, value); document.body.append(p);
+      const c = getComputedStyle(p).getPropertyValue(prop); p.remove(); return c; }""",
+                         [prop, value])
+
+
+def test_a_conversation_waiting_on_you_wears_the_summons_colour(ui, ui_page):
+    """SUMMONS (coral) is the console's ONE colour for something waiting on a person — the
+    `waiting_user` chip, the transcript's question row, the decisions badge. The conversation
+    list's state dot and the chat's question bubble still wore amber, the retired palette's
+    catch-all, so a conversation that needed you looked like one that was merely paused."""
+    slug, conv_dir = _start_conversation(ui, ui_page)
+    question = {"qid": "q-1", "mode": "blocking", "question": "Option A or option B?",
+                "options": ["A", "B"], "type": "text", "asked": "20260827-100000"}
+    run_dir = conv_dir / "runs" / "20260827-100000"
+    run_dir.mkdir(parents=True, exist_ok=True)
+    (run_dir / "transcript.jsonl").write_text(
+        json.dumps({"type": "header", "run_id": "X", "routine": "X", "depth": 0}) + "\n"
+        + json.dumps({"type": "question", "turn": 1, "payload": question}) + "\n",
+        encoding="utf-8")
+    atomic_write_json(run_dir / "status.json",
+                      {"state": "waiting_user", "turn": 1, "question": question})
+    ui_page.reload()
+
+    dot = ui_page.locator(f'.conv-item[href$="/{slug}"] .dot')
+    bubble = ui_page.locator(".msg.question-msg")
+    expect(dot).to_have_class("dot waiting_user")
+    expect(bubble).to_be_visible()
+    assert (dot.evaluate("e => getComputedStyle(e).backgroundColor")
+            == _computed(ui_page, "background-color", "var(--summons)"))
+    assert (bubble.evaluate("e => getComputedStyle(e).backgroundColor")
+            == _computed(ui_page, "background-color", "var(--summons-dim)"))

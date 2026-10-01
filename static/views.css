@@ -526,7 +526,10 @@ pre.hl-json .tok-const { color: var(--warn); }
 .conv-hover-tags .tag { font-size: 9.5px; padding: 1px 6px; }
 .dot { width: 7px; height: 7px; border-radius: 50%; flex: none; background: var(--ink-3); }
 .dot.running, .dot.starting, .dot.queued { background: var(--signal); animation: pulse 1.2s infinite; }
-.dot.waiting_user, .dot.paused { background: var(--warn); }
+/* the .chip vocabulary's: waiting on a PERSON is summons, paused is warn — one amber for both
+   was the retired palette's, and made a conversation that needs you read as one that idles */
+.dot.waiting_user { background: var(--summons); }
+.dot.paused { background: var(--warn); }
 .dot.failed { background: var(--err); }
 .dot.finished { background: var(--ok); }
 
@@ -616,7 +619,8 @@ pre.hl-json .tok-const { color: var(--warn); }
   background: var(--plate); border: 1px solid var(--rule-2); border-radius: 6px; padding: 6px 8px;
 }
 .msg.assistant { align-self: flex-start; background: var(--plate); }
-.msg.question-msg { align-self: flex-start; background: var(--warn-dim); border-color: color-mix(in srgb, var(--warn) 38%, transparent); }
+/* the run asking YOU — summons, as the transcript's own question row (.ev.question) is */
+.msg.question-msg { align-self: flex-start; background: var(--summons-dim); border-color: color-mix(in srgb, var(--summons) 38%, transparent); }
 .msg-body { font-size: var(--t-m); line-height: 1.55; overflow-wrap: anywhere; }
 .msg-body p { margin: 0 0 6px; }
 .msg-body p:last-child { margin-bottom: 0; }
