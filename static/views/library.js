@@ -59,6 +59,13 @@ export async function render(view, sub, query = {}) {
     el("span", { class: "tag click", "data-count": label, title: `jump to ${title}`,
       onclick: () => jumpTo(title) }, `${label} ${n}`)));
 
+  // Set by the view's teardown. A delete or a save + commit (a util's selftest takes seconds)
+  // reaches its updateURL()/refresh() only once the request returns, and the reader may have
+  // left by then: updateURL() rewrites the CURRENT address and remount() re-renders the CURRENT
+  // route — which would carry them back here from wherever they went.
+  let disposed = false;
+  const refresh = () => { if (!disposed) remount(); };
+
   // Both the tag filter and the open editor are kept in the URL (#/library/<kind>/<slug>?tags=…)
   // so the view is shareable and restores on reload — without tearing itself down on each change.
   let openSub = sub || null;
@@ -71,8 +78,10 @@ export async function render(view, sub, query = {}) {
                          pattern: "Settings patterns", playbook: "Playbooks",
                          util: "Global utils" };
   const active = new Set((query.tags || "").split(",").filter(Boolean));
-  const updateURL = () => replaceHash(openSub ? `#/library/${openSub}` : "#/library",
-    { tags: [...active].join(",") });
+  const updateURL = () => {
+    if (!disposed) replaceHash(openSub ? `#/library/${openSub}` : "#/library",
+                               { tags: [...active].join(",") });
+  };
   // Every opener goes through here: it is what keeps the URL, the catalogue and the editor
   // saying the same thing about which document is open.
   const setOpen = (s) => { openSub = s; expandAll = false; updateURL(); renderSections(); };
@@ -288,7 +297,7 @@ export async function render(view, sub, query = {}) {
       toast(`deleted ${p.title}${n ? ` — ${n} routine${n === 1 ? "" : "s"} follow no pattern now` : ""}`);
       openSub = null;
       updateURL();
-      remount();
+      refresh();
     } catch (err) { toastError(err); }
   }
 
@@ -303,7 +312,7 @@ export async function render(view, sub, query = {}) {
         + "next run. Their own tallies (how often it fired, and how those fires turned out) are "
         + "each routine's own state and are left alone. Recoverable from the library's git "
         + "history.")();
-      if (gone) { toast(`removed ${r.id}`); remount(); }
+      if (gone) { toast(`removed ${r.id}`); refresh(); }
     } catch (err) { toastError(err, 5000); }
   }
 
@@ -476,7 +485,7 @@ export async function render(view, sub, query = {}) {
             toast("deleted + committed");
             openSub = null;     // the deep link points at a file that no longer exists
             updateURL();
-            remount();          // re-render the view in place — the list drops the file
+            refresh();          // re-render the view in place — the list drops the file
             return;
           }
         } catch (err) { toastError(err, 5000); }
@@ -494,7 +503,7 @@ export async function render(view, sub, query = {}) {
         if (digest === null) { btn.disabled = false; return; }
         await save(ed.value, digest);
         toast("saved + committed");
-        remount();   // refresh the list/tags in place; the deep link reopens this editor
+        refresh();   // refresh the list/tags in place; the deep link reopens this editor
         return;
       }
       catch (err) {
@@ -527,18 +536,18 @@ export async function render(view, sub, query = {}) {
   // deep-link: #/library/workflow/<slug>
   if (sub) {
     const [kind, id] = sub.split("/");
-    // a pattern unfolds in place (patternRow opens the one the URL names) — bring it into view
-    if (kind === "pattern" && id) {
-      sections.querySelector(`[data-pattern="${CSS.escape(id)}"]`)
-        ?.scrollIntoView({ block: "start" });
-      return;
-    }
     const opener = { workflow: openWorkflow,
                      rule: (id) => openDoc("rules", id),
                      permission: (id) => openDoc("permissions", id),
                      playbook: openPlaybook,
                      util: openUtil }[kind];
-    if (opener && id) opener(id).catch((e) => toastError(e));
+    // a pattern unfolds in place (patternRow opens the one the URL names) — bring it into view
+    if (kind === "pattern" && id) {
+      sections.querySelector(`[data-pattern="${CSS.escape(id)}"]`)
+        ?.scrollIntoView({ block: "start" });
+    } else if (opener && id) {
+      opener(id).catch((err) => toastError(err));
+    }
   }
-
+  return () => { disposed = true; };
 }

@@ -79,6 +79,17 @@ export async function render(view, runId, query = {}) {
   };
   const durTimer = setInterval(tickDur, 5000);
 
+  // Whether there is still anything live to poll for. A run whose detail read 404s never
+  // reports a state, and "no state yet" reads as live — so a missing run would be polled for
+  // as long as its page stood.
+  let missing = false;
+  const runLive = () => !missing && !TERMINAL.has(curState);
+  // The resume / rewind / converse paths re-attach by remounting this view once the run is live
+  // again. Left inside that window, the remount must not fire: remount() re-renders whatever
+  // route is CURRENT, which by then is another page.
+  let disposed = false;
+  const remountSoon = () => setTimeout(() => { if (!disposed) remount(); }, 800);
+
   const questionBox = el("div", {});
   col.append(questionBox);
 
@@ -107,7 +118,7 @@ export async function render(view, runId, query = {}) {
   let stateGraph = null;
   let artifacts = null;
   const taskTree = createTaskTree(treeBody, {
-    treeUrl: `/api/runs/${runId}/tree`, isLive: () => !TERMINAL.has(curState) });
+    treeUrl: `/api/runs/${runId}/tree`, isLive: runLive });
   const fileActivity = createFileActivity(filesBody, { url: `/api/runs/${runId}/files` });
 
   // sub-run selector (main + each spawned child); hidden until there is at least one sub-run
@@ -202,7 +213,7 @@ export async function render(view, runId, query = {}) {
     try {
       await api(`/api/runs/${runId}/resume-run`, { method: "POST" });
       toast("resuming where it left off — reconnecting…");
-      setTimeout(remount, 800);
+      remountSoon();
     } catch (err) { toastError(err); resumeBtn.disabled = false; }
   };
   // D69: rewind a terminal run to a chosen turn and re-open it live from there — the remedy
@@ -225,7 +236,7 @@ export async function render(view, runId, query = {}) {
       const r = await api(`/api/runs/${runId}/rewind`,
         { method: "POST", body: { turn } });
       toast(`rewound to turn ${r.kept_through_turn} — reconnecting…`);
-      setTimeout(remount, 800);
+      remountSoon();
     } catch (err) { toastError(err); rewindBtn.disabled = false; }
   };
   controls.append(pauseBtn, abortBtn, resumeBtn, rewindBtn);
@@ -355,7 +366,7 @@ export async function render(view, runId, query = {}) {
     subBox.replaceChildren();
     subTranscript = createTranscript(subBox, {
       loadSub: (m, o) => api(`/api/runs/${runId}/transcript?sub=${n}/${m}&offset=${o}`),
-      isLive: () => !TERMINAL.has(curState),
+      isLive: runLive,
       onRefer: setRef,
       fileUrl: (rel) => `/api/runs/${runId}/file?path=${encodeURIComponent(rel)}`,
     });
@@ -431,7 +442,7 @@ export async function render(view, runId, query = {}) {
         toast(recipeChk.checked
           ? "message delivered — the conversation continues with an editable recipe…"
           : "message delivered — waking the run to continue the conversation…");
-        setTimeout(remount, 800);   // reattach the tail to the now-live run
+        remountSoon();           // reattach the tail to the now-live run
         return;                  // keep the button disabled until the remount lands
       }
       const r = await apiUpload(`/api/runs/${runId}/inject`, fd);
@@ -454,7 +465,13 @@ export async function render(view, runId, query = {}) {
   catch (err) {
     mainBox.replaceChildren(emptyState("✕", "Run not found",
       `${err.message} — it may have been pruned by retention.`));
-    return;
+    // Nothing further mounts, so what already has stops here — and with it nothing is left
+    // for a teardown to do.
+    missing = true;
+    taskTree.stop();
+    planStrip.destroy();
+    clearInterval(durTimer);
+    return null;
   }
   const home = detail.home || "routine";
   // the goal section is THIS run's accounting: what it reported, at its end, for each line it
@@ -500,7 +517,7 @@ export async function render(view, runId, query = {}) {
       api(`/api/questions/${qid}/answer`, { method: "POST", body: decision ? { decision } : { text } }),
     // …and subrun lines unfold into the child's own conversation, in place.
     loadSub: (n, o) => api(`/api/runs/${runId}/transcript?sub=${n}&offset=${o}`),
-    isLive: () => !TERMINAL.has(curState),
+    isLive: runLive,
     onRefer: setRef,
     // message attachments render inline: the run file route serves attachments/ rels
     fileUrl: (rel) => `/api/runs/${runId}/file?path=${encodeURIComponent(rel)}`,
@@ -607,7 +624,8 @@ export async function render(view, runId, query = {}) {
     resume: () => { if (!followChk.checked) { followChk.checked = true; autoscroll = true; } },
   });
 
-  return () => { if (tail) tail.stop(); stopSubPoll(); clearInterval(durTimer);
+  return () => { disposed = true;
+                 if (tail) tail.stop(); stopSubPoll(); clearInterval(durTimer);
                  artifacts?.destroy();
                  taskTree.stop();   // its 3s poll reschedules while isLive(), which a torn-down
                                     // view freezes at its last non-terminal state — forever

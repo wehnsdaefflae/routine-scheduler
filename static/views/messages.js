@@ -415,4 +415,7 @@ export async function render(view, query = {}) {
   await load();
   // arriving via a ref link (#/messages?focus=F63): land on the named card and flash it
   if (query.focus) focusRef(String(query.focus));
+  // The search debounce is the one thing here that outlives a click: left pending, it would
+  // fetch for a page nobody is on and write these filters into the NEXT page's URL.
+  return () => clearTimeout(searchTimer);
 }
