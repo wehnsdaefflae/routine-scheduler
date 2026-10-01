@@ -272,42 +272,14 @@ export async function render(view) {
     body.append(grid);
   }
 
-  // Run events change routine cards, daemon status and live lane progress.
-  // The week strip remains cached on light refreshes; /api/lanes also carries the chain cursor
-  // and must refresh on run transitions. A config-shaped read refetched per bus tick is a storm:
-  // one such endpoint cost the daemon 4 s of parsing per request and was requested every 600 ms
-  // while runs were active (2026-09-12, 249 calls averaging 67 s).
-  let lastSched, lastFullLoadAt = 0;
-  async function load({ light = false } = {}) {
-    let routines, status, sched;
-    try {
-      if (light && lastSched !== undefined && laneData) {
-        [routines, status, laneData] = await Promise.all([
-          api("/api/routines"), api("/api/status").catch(() => ({})),
-          api("/api/lanes").catch(() => null)]);
-        sched = lastSched;
-      } else {
-        [routines, status, sched, laneData] = await Promise.all([
-          api("/api/routines"), api("/api/status").catch(() => ({})),
-          api("/api/schedule/week").catch(() => null),
-          // Lane membership is a nicety on this page — a hiccup on that fetch must never blank
-          // the routines list, so it degrades to "none" rather than throwing (R107, F269).
-          api("/api/lanes").catch(() => null),
-        ]);
-        lastSched = sched;
-        lastFullLoadAt = Date.now();
-      }
-    } catch (err) {
-      body.replaceChildren(emptyState("✕", "Couldn't reach the daemon", err.message));
-      return;
-    }
-    cards = routines;
-    serverTz = laneData?.server_tz || "";
+  // The lane and fire indexes the rows and the week strip read, from the lanes on screen and
+  // the newest week schedule.
+  function indexLanes() {
     // Members are RECORDS {slug} in the store; the display list keeps plain slugs (what the
     // week grid + rows consume). `fires` are the LANE's cron fire times from the week payload
     // (D71) — a scheduled lane's members carry no fires of their own, the chain is drawn from
     // these.
-    const laneFires = new Map((sched?.lanes || [])
+    const laneFires = new Map((lastSched?.lanes || [])
       .map((l) => [l.id, l.fires.map((t) => +new Date(t))]));
     lanesById = new Map((laneData?.lanes || []).map((l) => [l.id, l]));
     lanesOrdered = (laneData?.lanes || [])
@@ -322,8 +294,57 @@ export async function render(view) {
     for (const l of laneData?.lanes || []) {
       for (const m of l.members || []) laneBySlug.set(m.slug, l);
     }
-    firesBySlug = new Map((sched?.routines || []).map((r) => [r.slug, r.fires.map((t) => +new Date(t))]));
-    oneShotsBySlug = new Map((sched?.routines || []).map((r) => [r.slug, (r.one_shots || []).map((t) => +new Date(t))]));
+    firesBySlug = new Map((lastSched?.routines || [])
+      .map((r) => [r.slug, r.fires.map((t) => +new Date(t))]));
+    oneShotsBySlug = new Map((lastSched?.routines || [])
+      .map((r) => [r.slug, (r.one_shots || []).map((t) => +new Date(t))]));
+  }
+
+  // Run events change routine cards, daemon status and live lane progress.
+  // The week strip remains cached on light refreshes; /api/lanes also carries the chain cursor
+  // and must refresh on run transitions. A config-shaped read refetched per bus tick is a storm:
+  // one such endpoint cost the daemon 4 s of parsing per request and was requested every 600 ms
+  // while runs were active (2026-09-12, 249 calls averaging 67 s).
+  let lastSched, lastFullLoadAt = 0;
+  // Loads overlap — a bus tick's, a click's reload, a reconnect's — and answer in their own
+  // time. Whichever answered LAST used to win, so a read begun before a pause could land after
+  // the reload that showed it and quietly put the old state back, with nothing to correct it
+  // until some later event. So only the NEWEST load paints its routines. The week schedule has
+  // an order of its own, because only full loads read it: the newest one read is kept even when
+  // the load that read it lost that race, and redrawn if the winner has already painted.
+  let loadSeq = 0, schedSeq = 0, paintedSeq = 0;
+  async function load({ light = false } = {}) {
+    const seq = ++loadSeq;
+    const full = !(light && lastSched !== undefined && laneData);
+    let routines, status, sched, lanes;
+    try {
+      if (!full) {
+        [routines, status, lanes] = await Promise.all([
+          api("/api/routines"), api("/api/status").catch(() => ({})),
+          api("/api/lanes").catch(() => null)]);
+      } else {
+        [routines, status, sched, lanes] = await Promise.all([
+          api("/api/routines"), api("/api/status").catch(() => ({})),
+          api("/api/schedule/week").catch(() => null),
+          // Lane membership is a nicety on this page — a hiccup on that fetch must never blank
+          // the routines list, so it degrades to "none" rather than throwing (R107, F269).
+          api("/api/lanes").catch(() => null),
+        ]);
+      }
+    } catch (err) {
+      if (seq === loadSeq) body.replaceChildren(emptyState("✕", "Couldn't reach the daemon", err.message));
+      return;
+    }
+    if (full && seq > schedSeq) { schedSeq = seq; lastSched = sched; lastFullLoadAt = Date.now(); }
+    if (seq !== loadSeq) {
+      if (schedSeq === seq && paintedSeq > seq) { indexLanes(); renderBody(); }
+      return;
+    }
+    paintedSeq = seq;
+    laneData = lanes;
+    cards = routines;
+    serverTz = laneData?.server_tz || "";
+    indexLanes();
     llmReady = status.llm_ready !== false;
     banner.replaceChildren();
     if (!llmReady) banner.append(el("div", { class: "panel warn", style: "margin:12px 0" },

@@ -130,10 +130,15 @@ async function authedFetch(path, makeInit) {
       || (resp.status === 403
           && (resp.headers.get("WWW-Authenticate") || "").includes("insufficient_scope"));
     if (wrongToken && attempt === 0) {
-      clearToken();
-      await requestToken(resp.status === 403
-        ? "That is the routine token — read-only. Enter the operator's primary token."
-        : "Token rejected — enter the current one.");
+      // Only the credential this request CARRIED is known bad. Requests sent before a sign-in
+      // answer after it, and one of those clearing the token the operator just entered
+      // re-opened the gate over a good token; a newer one is simply retried.
+      if (getToken() === token) {
+        clearToken();
+        await requestToken(resp.status === 403
+          ? "That is the routine token — read-only. Enter the operator's primary token."
+          : "Token rejected — enter the current one.");
+      }
       continue;
     }
     return resp;

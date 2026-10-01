@@ -306,11 +306,20 @@ export async function render(view, query = {}) {
   }
 
   // ---- load ----------------------------------------------------------------------------
+  // Every chip, the routine select, the search box and each card action reload, and a slow
+  // daemon answers them out of order: the read for the filter you LEFT used to land after the
+  // one you chose and replace it, under chips that said otherwise. Only the newest one paints.
+  let loadSeq = 0;
   async function load() {
+    const seq = ++loadSeq;
     const qs = new URLSearchParams(Object.entries(filters).filter(([, v]) => v));
     let data;
     try { data = await api(`/api/items?${qs}`); }
-    catch (err) { body.replaceChildren(emptyState("✕", "Couldn't load the items", err.message)); return; }
+    catch (err) {
+      if (seq === loadSeq) body.replaceChildren(emptyState("✕", "Couldn't load the items", err.message));
+      return;
+    }
+    if (seq !== loadSeq) return;
 
     header.replaceChildren();
     body.replaceChildren();
