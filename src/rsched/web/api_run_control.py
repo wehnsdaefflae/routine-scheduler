@@ -236,7 +236,17 @@ async def abort_with_fallback(runner, slug: str, run_dir: Path) -> bool:
     """Abort via the runner (daemon-owned runs) with a recorded-pid fallback for runs the
     daemon doesn't track (a CLI run, a pre-restart orphan) — the ONE abort sequence the
     run, conversation, and background endpoints all share.
+
+    Only a run its own status still calls ACTIVE is aborted, by either path. A finished run's
+    status.json keeps the last pid it had, and the kernel is free to hand that number to any
+    later process: the fallback SIGTERMed whatever process GROUP held it now — another run's
+    engine, or one the daemon leads — which is what deleting a conversation with an old
+    finished background task, or an abort fired at a finished run, used to do. And the
+    runner aborts by SLUG, so the same abort used to stop whichever OTHER run of that routine
+    was live at the time.
     """
+    if run_state(run_dir) in TERMINAL_STATES:
+        return False
     if await runner.abort(slug):
         return True
     st = read_json(run_dir / "status.json")

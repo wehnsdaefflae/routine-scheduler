@@ -628,6 +628,57 @@ def test_intervention_endpoints(client):
     assert c.post(f"/api/runs/{rid}/pause").status_code == 409
 
 
+def test_abort_never_signals_a_finished_runs_pid(client):
+    """A finished run's status.json keeps the last pid it had, and the kernel reuses pids:
+    the recorded-pid fallback SIGTERMed whatever process GROUP held that number now. The
+    stand-in is a live process of our own, leading its own session like an engine does,
+    wearing a finished run's pid."""
+    import subprocess
+
+    c, tmp = client
+    proc = subprocess.Popen(["sleep", "60"], start_new_session=True)
+    try:
+        mk_run(tmp / "routines" / "apir", "20260708-110000", "finished", pid=proc.pid)
+        r = c.post("/api/runs/apir:20260708-110000/abort")
+        assert r.status_code == 409
+        assert proc.poll() is None                      # the bystander is still running
+    finally:
+        proc.kill()
+        proc.wait()
+
+
+def test_abort_of_a_finished_run_leaves_the_routines_live_run_alone(client, monkeypatch):
+    """The runner aborts by SLUG, so an abort naming an old, finished run stopped whichever
+    other run of the routine happened to be live."""
+    c, tmp = client
+    _mk_run(tmp / "routines", "apir", "20260708-120000", "finished")
+    aborted: list[str] = []
+
+    async def abort_live(slug):
+        aborted.append(slug)
+        return True
+
+    monkeypatch.setattr(c.app.state.runner, "abort", abort_live)
+    assert c.post("/api/runs/apir:20260708-120000/abort").status_code == 409
+    assert aborted == []
+    _mk_run(tmp / "routines", "apir", "20260708-130000", "running")
+    assert c.post("/api/runs/apir:20260708-130000/abort").status_code == 200
+    assert aborted == ["apir"]
+
+
+def test_run_reads_validate_their_query(client):
+    """A negative transcript offset reached a text-mode seek (a 500 on both the page and the
+    stream); a non-slug `routine` was joined onto every home, `../` and all."""
+    c, tmp = client
+    _mk_run(tmp / "routines", "apir", "20260708-140000", "finished")
+    rid = "apir:20260708-140000"
+    assert c.get(f"/api/runs/{rid}/transcript", params={"offset": -1}).status_code == 422
+    assert c.get(f"/api/runs/{rid}/events", params={"offset": -1}).status_code == 422
+    assert c.get("/api/runs", params={"limit": 0}).status_code == 422
+    assert c.get("/api/runs", params={"routine": "../routines/apir"}).status_code == 400
+    assert [r["run_id"] for r in c.get("/api/runs", params={"routine": "apir"}).json()] == [rid]
+
+
 def test_inject_carries_attachments(client):
     """A run-page message can carry file attachments (F202): uploads land under the
     routine dir's attachments/ (the run's working dir, so the recorded rels resolve for
