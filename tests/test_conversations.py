@@ -719,6 +719,24 @@ def test_patch_and_permissions(client):
     assert r.json()["active"] == ["darknet", "shell"]
 
 
+def test_a_permissions_save_tells_the_live_reply(client):
+    """F337 on the conversation side: the header panel's PATCH tells a reply in flight what
+    changed and which half reaches it, but `PUT /permissions` wrote routine.yaml and stopped —
+    a reply mid-flight finished under the old surface without a word, the silence the routine
+    side's PUT /permissions was fixed for."""
+    from rsched.paths import read_json
+
+    c, server = client
+    slug = c.post("/api/conversations", data={"text": "t"}).json()["slug"]
+    [run_dir] = (server.conversations_home / slug / "runs").iterdir()   # the live reply
+    r = c.put(f"/api/conversations/{slug}/permissions", json={"active": ["shell"]})
+    assert r.status_code == 200, r.text
+    assert r.json()["told_live_run"] is True
+    signal = read_json(run_dir / "control.json")["config_change"]
+    assert set(signal["fields"]) == {"permissions", "capabilities"}
+    assert signal["values"]["permissions"] == r.json()["active"]
+
+
 def test_delete_guarded_while_active(client):
     c, server = client
     slug = c.post("/api/conversations", data={"text": "t"}).json()["slug"]

@@ -207,9 +207,11 @@ def set_conversation_rules(request: Request, slug: str, body: RulesBody) -> dict
 
 @router.put("/conversations/{slug}/permissions")
 def set_permissions(request: Request, slug: str, body: PermissionsBody) -> dict:
-    # No active-reply guard: like the budget PATCH above, a conversation reads routine.yaml
-    # only at each reply's boot, so a permission/capability edit simply lands on the NEXT
-    # reply — blocking on a live reply would only add friction (the user can retune anytime).
+    """No active-reply guard: like the PATCH above, a conversation reads routine.yaml only at
+    each reply's boot, so a permission/capability edit lands on the NEXT reply — blocking on a
+    live reply would only add friction. A reply in flight is TOLD so (F337), as the PATCH and
+    the routine side's PUT /permissions tell theirs; this route used to stay silent.
+    """
     info = conversation_info(request, slug)
     active, caps = resolve_permission_layers(request.app.state.server, body,
                                              info.cfg.capabilities or {})
@@ -218,4 +220,7 @@ def set_permissions(request: Request, slug: str, body: PermissionsBody) -> dict:
     raw["permissions"] = active
     raw["capabilities"] = caps
     atomic_write_yaml(path, raw)
-    return {"ok": True, "active": active, "capabilities": caps}
+    live = signal_config_change(info, ["permissions", "capabilities"],
+                                {"permissions": active, "capabilities": caps})
+    return {"ok": True, "active": active, "capabilities": caps,
+            **({"told_live_run": True} if live else {})}
