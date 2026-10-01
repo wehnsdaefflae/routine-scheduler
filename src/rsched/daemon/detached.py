@@ -24,13 +24,14 @@ and the boot `reconcile()` are the same idempotent pass.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import shutil
 from datetime import UTC, datetime
 from pathlib import Path
 
 from .. import registry
-from ..config import DEFAULT_BUDGETS, ServerConfig, load_routine
+from ..config import DEFAULT_BUDGETS, RoutineConfig, ServerConfig, load_routine
 from ..paths import atomic_write_json, atomic_write_yaml, read_json, read_yaml
 from ..schedule import server_tz
 from . import detached_delivery
@@ -73,7 +74,7 @@ class DetachedManager:
             await detached_delivery.deliver(self, catalog)
             await detached_delivery.wake(self, catalog)
             self._rebuild_digests(catalog)
-            self._gc(catalog)
+            await self._gc(catalog)
         except Exception:
             log.exception("detached tick failed")
 
@@ -115,6 +116,24 @@ class DetachedManager:
                                      for d in runs.iterdir() if d.is_dir())
 
     async def _materialize_and_fire(self, taskid: str, task_dir: Path, req: dict) -> bool:
+        """True once the request is handled — fired, or dropped as unrunnable — so it can be
+        removed. The disk work (the library read, a `git rev-parse` in it, the task's own files)
+        runs in a thread: on the loop thread it stalled every request and tick while it ran.
+        """
+        cfg = await asyncio.to_thread(self._materialize, taskid, task_dir, req)
+        if cfg is None:
+            return True  # nothing to run (owner gone, or a dir that does not load): consumed
+        rid = await self.runner.fire(cfg, reason="detached")
+        if rid:
+            log.info("detached fired task=%s workflow=%s owner=%s run=%s", taskid,
+                     cfg.workflow_slug, req["owner"].get("slug"), rid)
+            return True
+        return False  # draining / transient — keep the request for the next tick
+
+    def _materialize(self, taskid: str, task_dir: Path, req: dict) -> RoutineConfig | None:
+        """Write the task dir and its routine.yaml; the loaded config, or None when there is
+        nothing to run (a broken dir is not retried: the request is consumed).
+        """
         from ..engine.childrun import materialize_to_disk
 
         owner = req["owner"]
@@ -122,7 +141,7 @@ class DetachedManager:
         if not (owner_dir / "routine.yaml").exists():
             log.warning("detached: owner %s of %s is gone — dropping request",
                         owner.get("slug"), taskid)
-            return True  # nothing to run for; treat as handled so the request is removed
+            return None
         workflow = str(req.get("workflow") or "general-task")
         for sub in ("state", "inbox", "artifacts"):
             (task_dir / sub).mkdir(parents=True, exist_ok=True)
@@ -132,13 +151,7 @@ class DetachedManager:
         if cfg is None:
             log.error("detached: task %s has an unloadable routine.yaml (%s)",
                       taskid, "; ".join(problems))
-            return True  # don't spin on a broken dir; the request is consumed
-        rid = await self.runner.fire(cfg, reason="detached")
-        if rid:
-            log.info("detached fired task=%s workflow=%s owner=%s run=%s",
-                     taskid, workflow, owner.get("slug"), rid)
-            return True
-        return False  # draining / transient — keep the request for the next tick
+        return cfg
 
     def _write_task_yaml(self, taskid: str, task_dir: Path, req: dict, owner_dir: Path,
                          workflow: str) -> None:
@@ -199,7 +212,7 @@ class DetachedManager:
 
     # -- 3. gc ------------------------------------------------------------------------------
 
-    def _gc(self, catalog: dict[str, registry.RoutineInfo]) -> None:
+    async def _gc(self, catalog: dict[str, registry.RoutineInfo]) -> None:
         now = datetime.now(UTC).timestamp()
         cleared_owners: dict[str, Path] = {}
         for taskid, info in catalog.items():
@@ -215,7 +228,8 @@ class DetachedManager:
             owner = info.cfg.owner or {}
             if _has_pending_bg_message(Path(owner.get("dir", "")), taskid):
                 continue  # owner hasn't drained the delivery yet — keep the dir until it does
-            shutil.rmtree(info.cfg.dir, ignore_errors=True)
+            # a whole task dir — its runs and artifacts — so off the loop thread
+            await asyncio.to_thread(shutil.rmtree, info.cfg.dir, ignore_errors=True)
             if owner.get("slug") and owner.get("dir"):
                 cleared_owners[str(owner["slug"])] = Path(owner["dir"])
             log.info("detached gc removed task=%s", taskid)

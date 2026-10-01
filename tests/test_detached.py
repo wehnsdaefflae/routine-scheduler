@@ -152,6 +152,45 @@ async def test_intake_idempotent_when_run_exists(tmp_path):
     assert not (server.background_home / ".requests" / "bg-1.json").exists()  # request consumed
 
 
+async def test_intake_and_gc_disk_work_runs_off_the_event_loop(tmp_path, monkeypatch):
+    """Materializing a task reads the library and runs `git rev-parse` in it (a git call on the
+    stalling disk can take a timeout plus its grace), and the gc removes a whole task dir. On
+    the loop thread either stalled every request and tick while it ran — the reason delivery's
+    artifact copy already ran in a thread."""
+    import threading
+
+    import rsched.daemon.detached as detached_mod
+    from rsched.engine import childrun
+
+    loop_thread = threading.current_thread().name
+    seen: dict[str, str] = {}
+    real_materialize = childrun.materialize_to_disk
+
+    def recording_materialize(*a, **k):
+        seen["materialize"] = threading.current_thread().name
+        return real_materialize(*a, **k)
+
+    def recording_rmtree(path, **k):
+        seen["rmtree"] = threading.current_thread().name
+
+    monkeypatch.setattr(childrun, "materialize_to_disk", recording_materialize)
+    monkeypatch.setattr(detached_mod.shutil, "rmtree", recording_rmtree)
+    server = _server(tmp_path)
+    owner = _owner(server)
+    mgr = DetachedManager(server, DetachedFakeRunner())
+    _request(server, "bg-1", owner)
+    await mgr.tick()
+    task = _task(server, "bg-2", owner)
+    await mgr.tick()                                  # delivers bg-2
+    for m in (owner / "inbox").glob("msg-bg-bg-2*.json"):
+        m.unlink()
+    old = (task / "delivered.json").stat().st_mtime - 10_000
+    os.utime(task / "delivered.json", (old, old))
+    await mgr.tick()                                  # gc's bg-2
+    assert seen["materialize"] != loop_thread
+    assert seen["rmtree"] != loop_thread
+
+
 # -- deliver --------------------------------------------------------------------------------
 
 async def test_deliver_writes_message_and_artifacts(tmp_path):
