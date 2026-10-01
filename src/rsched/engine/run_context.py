@@ -77,7 +77,8 @@ class RunContext:
     # Every stage module this run has ENTERED, in entry order, deduped (F521/R1681). `phase`
     # is the CURRENT node; this is the path taken — the only thing that can tell a run which
     # worked through its recipe from one that read one module and finished. Stamped beside
-    # `phase` at the same seam (engine/fileops.py), so it costs the recipe nothing.
+    # `phase` at the same seam (engine/fileops.py), so it costs the recipe nothing; a resumed
+    # leg starts from what the prior leg reported entered (history.prior_counters).
     phases_entered: list[str] = field(default_factory=list)
     # The phases the run RECORDED for itself — its own cursor, read from the routine's
     # state/phase.json at each write of it. The second evidence source `stage_coverage`

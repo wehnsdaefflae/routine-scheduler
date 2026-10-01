@@ -263,6 +263,14 @@ def prior_counters(status: dict) -> dict:
     owed = status.get("reports_open")
     if isinstance(owed, list):
         out["reports_open"] = [str(r) for r in owed]
+    # …and the stages the run has ENTERED (F521/R1681) are the run's, not the leg's. A fresh
+    # leg used to start from none, so it reported every stage an earlier leg had worked as
+    # skipped, and the finish's claim check challenged a `met` earned a leg before. The
+    # prior leg's `entered` already merges both evidence sources (reads and its own cursor).
+    stages = status.get("stages")
+    entered = stages.get("entered") if isinstance(stages, dict) else None
+    if isinstance(entered, list):
+        out["phases_entered"] = [str(s) for s in entered]
     for fld in _RESUME_COUNTER_FIELDS:
         val = status.get(fld)
         if isinstance(val, int) and not isinstance(val, bool):
