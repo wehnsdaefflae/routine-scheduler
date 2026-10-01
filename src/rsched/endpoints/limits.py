@@ -47,7 +47,7 @@ from urllib.parse import urlsplit
 import httpx
 
 from ..paths import atomic_write_json, read_json
-from .base import CONNECT_TIMEOUT
+from .base import CONNECT_TIMEOUT, resolve_api_key
 
 log = logging.getLogger("rsched.limits")
 
@@ -282,10 +282,9 @@ def _openai_generic(ep) -> Listing:
     `max_model_len` and several gateways add `context_length`. Opportunistic: a bare list is a
     miss, never a failure.
     """
-    from .openai_compat import OpenAICompatEndpoint
-
-    try:
-        key = OpenAICompatEndpoint(ep)._resolve_key()
+    try:   # the adapters' own ladder; a keyless local backend reads "none" like they do
+        key = resolve_api_key(name=ep.name, api_key=ep.api_key, key_var=ep.key_var,
+                              key_env_file=ep.key_env_file, required=False)
     except Exception:
         key = ""
     body = _get(_models_url(ep), {"Authorization": f"Bearer {key}"} if key else None)

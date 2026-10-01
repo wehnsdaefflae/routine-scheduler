@@ -86,8 +86,11 @@ Use the proxy root URL, without /v1. For a host installation use
 http://127.0.0.1:8317. A blank quota_auth_index automatically selects the single
 enabled Claude account; select an explicit index when there is more than one.
 Bind catalog models to exact IDs from /v1/models, then verify inference. Set each
-model's context allowance, output limit, effort and vision support deliberately.
-Existing routine references use catalog names and need no changes.
+model's effort and vision support deliberately. The proxy's catalog lists ids and no
+limits, so a Claude id takes its window from the built-in table and a Codex id from
+nothing at all: set a Codex model's context window and output limit by hand (the
+Settings card says which models still need it — docs/endpoints.md, "Windows and output
+caps are DISCOVERED"). Existing routine references use catalog names and need no changes.
 
 Codex models also use the `anthropic` kind: the forced-action tool route passed
 our live action schema. The OpenAI strict-schema route rejects optional nested
