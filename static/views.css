@@ -1302,7 +1302,10 @@ summary.setup-head::-webkit-details-marker { display: none; }
 /* --- ability cards + catalogue (components/abilities.js) ---------------------------------
    Held abilities are CARDS with their whole requirement stack; everything else is a compact
    catalogue row. An ability that is off has nothing outstanding, so it gets no stack and no
-   status dots — painting its requirements red said the opposite of the truth. */
+   status dots — painting its requirements red said the opposite of the truth.
+   A card's states are the surface's own (readmodels/surface_nodes.py), read in the setup
+   strip's palette: `blocks` is err, `interrupts` — the run will stop and ask a person — is
+   SUMMONS. The strip moved interrupts from amber to coral in 0.365.0; the cards here had not. */
 .ability-panel .lbl { margin: 16px 0 8px; }
 .ability-panel .lbl:first-child { margin-top: 0; }
 .abilities {
@@ -1310,7 +1313,7 @@ summary.setup-head::-webkit-details-marker { display: none; }
   align-items: start;            /* cards size to their content, never to the tallest sibling */
 }
 .ability { border: 1px solid var(--rule-2); border-radius: 3px; background: var(--plate); }
-.ability.interrupts { border-color: color-mix(in srgb, var(--warn) 38%, transparent); }
+.ability.interrupts { border-color: color-mix(in srgb, var(--summons) 38%, transparent); }
 .ability.blocks { border-color: color-mix(in srgb, var(--err) 38%, transparent); }
 .ability.orphan { border-color: color-mix(in srgb, var(--iris) 38%, transparent); grid-column: 1 / -1; }
 .ability-head {
@@ -1319,6 +1322,28 @@ summary.setup-head::-webkit-details-marker { display: none; }
 }
 .ability.orphan .ability-head { cursor: default; }
 .ability-name { font-size: var(--t-m); color: var(--ink); }
+/* The card's VERDICT in its head ("will fail" · "needs a decision" · "ready"; the uncovered
+   card's count). The markup has named it `.pill` from the start and no rule ever defined one,
+   so the one reading a closed card gives sat beside the name as plain body ink — the state in
+   the markup and nowhere on screen. Coloured by the CARD's state class, which speaks the
+   surface's vocabulary; the count on the uncovered card is no state at all. */
+.pill {
+  font-family: var(--f-mono); font-size: var(--t-xs); letter-spacing: 0.06em; padding: 1px 8px;
+  border-radius: 20px; border: 1px solid var(--rule-2); white-space: nowrap;
+  color: var(--ink-2); background: var(--plate-2);
+}
+.pill.ok {
+  color: var(--ok); background: var(--ok-dim);
+  border-color: color-mix(in srgb, var(--ok) 35%, transparent);
+}
+.ability.blocks .pill {
+  color: var(--err); background: var(--err-dim);
+  border-color: color-mix(in srgb, var(--err) 42%, transparent);
+}
+.ability.interrupts .pill {
+  color: var(--summons); background: var(--summons-dim);
+  border-color: color-mix(in srgb, var(--summons) 45%, transparent);
+}
 .ability-stack { list-style: none; margin: 0; padding: 0 0 2px; border-top: 1px solid var(--rule); }
 .ab-row {
   display: grid; grid-template-columns: 9px 76px 1fr; gap: 9px; align-items: start;
@@ -1329,7 +1354,7 @@ summary.setup-head::-webkit-details-marker { display: none; }
   width: 7px; height: 7px; border-radius: 50%; background: var(--ink-3); margin-top: 5px;
 }
 .ab-row.st-ok .dot { background: var(--ok); }
-.ab-row.st-interrupts .dot { background: var(--warn); }
+.ab-row.st-interrupts .dot { background: var(--summons); }
 .ab-row.st-blocks .dot { background: var(--err); }
 .ab-row.st-note .dot { background: var(--iris); }
 .ab-row .kind {
