@@ -56,10 +56,17 @@ def _forget(flow_id: str) -> None:
 
 
 def _gh_login() -> str | None:
+    """The login `gh` is signed in as, or None — also when github.com does not answer in
+    time: `gh api user` goes over the network, and its timeout escaping the status read made
+    the Settings page's GitHub card a 500 instead of "not connected".
+    """
     if not shutil.which("gh"):
         return None
-    r = subprocess.run(["gh", "api", "user", "-q", ".login"], capture_output=True, text=True,
-                       timeout=15, check=False)
+    try:
+        r = subprocess.run(["gh", "api", "user", "-q", ".login"], capture_output=True,
+                           text=True, timeout=15, check=False)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
     return (r.stdout.strip() or None) if r.returncode == 0 else None
 
 

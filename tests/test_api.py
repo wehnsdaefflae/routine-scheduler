@@ -1546,6 +1546,24 @@ def test_github_device_flow_resume(client):
         github._device_flows.pop("fl-resume", None)
 
 
+def test_github_status_survives_a_hanging_gh(client, monkeypatch):
+    """`gh api user` reaches github.com; when it does not answer within its timeout the
+    Settings page's GitHub card got a 500 (TimeoutExpired straight out of the status read)
+    instead of reading "not connected"."""
+    import subprocess
+
+    c, _ = client
+    monkeypatch.setattr("rsched.web.settings.github.shutil.which", lambda _name: "/usr/bin/gh")
+
+    def hang(*args, **kwargs):
+        raise subprocess.TimeoutExpired(args[0], kwargs.get("timeout", 15))
+
+    monkeypatch.setattr("rsched.web.settings.github.subprocess.run", hang)
+    r = c.get("/api/settings/github")
+    assert r.status_code == 200, r.text
+    assert r.json()["gh"] is True and r.json()["connected"] is False
+
+
 def test_status_meta_routines(client):
     """/api/status lists meta-tagged routines with their enabled state — the UI's
     'self-improvement is off' first-launch notice keys off this."""

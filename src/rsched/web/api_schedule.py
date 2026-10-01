@@ -22,6 +22,7 @@ from pydantic import BaseModel
 
 from .. import lanes, registry, schedule_once
 from ..schedule import server_tz
+from .routines_common import _info
 
 router = APIRouter(tags=["schedule"])
 
@@ -116,17 +117,11 @@ class ScheduleOnceCreate(BaseModel):
     reason: str = ""
 
 
-def _require_routine(request: Request, slug: str) -> None:
-    server = request.app.state.server
-    if registry.info(server, server.routines_home, slug) is None:
-        raise HTTPException(404, f"no routine {slug!r}")
-
-
 @router.post("/routines/{slug}/schedule-once", status_code=201)
 def arm_schedule_once(request: Request, slug: str, body: ScheduleOnceCreate) -> dict:
     """Arm a one-shot future run of the routine. 404 unknown routine, 422 bad fire_at."""
     server = request.app.state.server
-    _require_routine(request, slug)
+    _info(request, slug)
     try:
         fire_at = schedule_once.parse_fire_at(body.fire_at)
     except ValueError as exc:
@@ -139,7 +134,7 @@ def arm_schedule_once(request: Request, slug: str, body: ScheduleOnceCreate) -> 
 @router.get("/routines/{slug}/schedule-once")
 def list_schedule_once(request: Request, slug: str) -> dict:
     """The armed one-shots + the daemon fire ledger for the routine page card."""
-    _require_routine(request, slug)
+    _info(request, slug)
     return schedule_once.describe(request.app.state.server.routines_home, slug)
 
 
