@@ -113,6 +113,25 @@ def test_the_lane_editor_is_a_keyboard_dialog(ui, ui_page):
     expect(add).to_be_focused()
 
 
+def test_a_cancelled_confirm_gives_focus_back_to_the_button_that_asked(ui, ui_page):
+    """util.js act() disables the pressed button while its handler runs, and a delete's handler
+    opens a confirm — so the dialog, closing, handed focus back to a DISABLED button, which takes
+    none. A keyboard reader who cancelled was left on <body>, Tab starting over at the top."""
+    ui_page.goto(f"{ui.url}/#/settings?section=secrets")
+    ui_page.get_by_placeholder("KEY (e.g. CLAUDE_CODE_OAUTH_TOKEN)").fill("FOCUS_PROBE")
+    value = ui_page.locator('textarea[placeholder="value"]')
+    value.fill("x")
+    value.locator("xpath=..").get_by_role("button", name="set", exact=True).click()
+    delete = ui_page.locator("tr", has_text="FOCUS_PROBE").get_by_role("button", name="delete")
+    delete.focus()
+    ui_page.keyboard.press("Enter")
+    expect(ui_page.get_by_role("dialog")).to_be_visible()
+    ui_page.keyboard.press("Escape")
+    expect(ui_page.get_by_role("dialog")).to_have_count(0)
+    expect(delete).to_be_focused()
+    expect(delete).to_be_enabled()
+
+
 def test_an_artifacts_delete_is_its_own_keyboard_stop(ui, ui_page):
     """The delete was a span INSIDE the row's open button — nested interactive content no
     keyboard could reach. Two sibling buttons now: Tab from open lands on delete."""

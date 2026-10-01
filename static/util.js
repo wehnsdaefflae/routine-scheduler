@@ -363,9 +363,15 @@ export function queuedToast(res, savedMsg) {
  *  `okMsg` is the success line; when the endpoint answers `{queued:true}` (D78-A, an edit
  *  made while a run is active) the queued wording wins, because every save that can be
  *  queued must say so. Returns the handler's value, or undefined when it threw — a caller
- *  that must know the difference should await `api()` itself. */
+ *  that must know the difference should await `api()` itself.
+ *
+ *  A disabled button cannot hold focus, and a confirm `fn` opens hands focus back to its opener
+ *  on close — this button, still disabled then, so it took none and a keyboard reader who
+ *  cancelled was left on <body>. The button that had focus takes it back on its re-enable,
+ *  unless the reader has moved on to something else meanwhile. */
 export async function act(btn, fn, okMsg) {
   const buttons = Array.isArray(btn) ? btn : [btn];
+  const focused = buttons.find((b) => b === document.activeElement);
   for (const b of buttons) b.disabled = true;
   try {
     const res = await fn();
@@ -376,6 +382,8 @@ export async function act(btn, fn, okMsg) {
     return undefined;
   } finally {
     for (const b of buttons) b.disabled = false;
+    const nowhere = !document.activeElement || document.activeElement === document.body;
+    if (focused?.isConnected && nowhere) focused.focus();
   }
 }
 
