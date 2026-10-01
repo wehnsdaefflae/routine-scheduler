@@ -74,6 +74,20 @@ def _note_if_killed(ctx: RunContext, kind: str, name: str, code: int) -> None:
         children_vm_hwm_kb=resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss or None)
 
 
+def _withheld_note(ctx: RunContext, withheld: list[str]) -> dict:
+    """The observation field naming what F290 withheld from a call that RAN: undecided names
+    are requestable and may be enumerated, denied ones are a count only (R17 — a denial
+    enumerates nothing). Empty when nothing was withheld.
+    """
+    if not withheld:
+        return {}
+    from .secretgate import secret_state
+
+    undecided = [s for s in withheld if secret_state(ctx, s) == "undecided"]
+    return {"withheld_optional": {"undecided": undecided,
+                                  "denied": len(withheld) - len(undecided)}}
+
+
 def _ended_by_abort(ctx: RunContext, code: int) -> bool:
     """Whether the run's abort ended this util or script call (`utils_run.run_jailed`). The
     runner's own note on stderr says so in words; the observation also says it in a field
@@ -170,7 +184,7 @@ def do_util(action: dict, ctx: RunContext) -> dict:  # noqa: PLR0911 — list/sh
     # child env instead of blocking the call with an exposure ask — a public call runs
     # prompt-free; the observation names the withheld undecided ones so an auth-needing
     # call learns to request exposure explicitly (denied ones stay unenumerated, R17).
-    from .secretgate import secret_state, withheld_optional_secrets
+    from .secretgate import withheld_optional_secrets
     withheld = withheld_optional_secrets(ctx, name)
     code, out, err = utils_run.run_util(
         home, name, args, timeout=int(action.get("timeout_s") or UTIL_DEFAULT_TIMEOUT_S),
@@ -185,13 +199,7 @@ def do_util(action: dict, ctx: RunContext) -> dict:  # noqa: PLR0911 — list/sh
         ctx.count_util(name, "ok" if code == 0
                        else ("usage_error" if code == USAGE_ERROR_EXIT else "error"))
     obs = {"kind": "util", "name": name, "args": args, "exit": code,
-           **command_output(ctx, name, out, err, code)}
-    if withheld:
-        # undecided names are requestable and may be enumerated; denied ones are a count
-        # only (R17 — a denial enumerates nothing)
-        undecided = [s for s in withheld if secret_state(ctx, s) == "undecided"]
-        n_denied = len(withheld) - len(undecided)
-        obs["withheld_optional"] = {"undecided": undecided, "denied": n_denied}
+           **command_output(ctx, name, out, err, code), **_withheld_note(ctx, withheld)}
     if stopped:
         # Not a failure, so no repair route: a resumed run replays this observation, and
         # "the util itself may be broken — fix it" would send it after a util that is fine.
@@ -235,12 +243,12 @@ def do_script(action: dict, ctx: RunContext) -> dict:
     extras like connection tokens included only if declared, resolved transitively over
     the utils the script's `calls:` line declares), the recipe's fs jail, and `gu` on
     PATH only for a script that declares those calls. Same truncation + spill as a util
-    call. The loop's secret gate
-    (declared-required-undecided → the blocking ask) ran before this.
+    call, and the same F290 note naming an optional secret that was withheld. The loop's
+    secret gate (declared-required-undecided → the blocking ask) ran before this.
     """
     from .. import scripts
     from ..secrets import load_secrets
-    from .secretgate import secret_state
+    from .secretgate import secret_state, withheld_optional
     name = str(action.get("name") or "")
     args = [str(a) for a in action.get("args") or []]
     if not scripts.exists(ctx.routine.dir, name):
@@ -260,8 +268,8 @@ def do_script(action: dict, ctx: RunContext) -> dict:
                 "secrets and network into the shared jail, so an undeclared or unknown "
                 "sibling would run without them. Fix the header — e.g.\n"
                 "    calls: gmail, ftp\n— then rerun."}
-    declared, _net, _opt = scripts.needs(ctx.routine.dir, name,
-                                         ctx.server.libraries_home)
+    declared, _net, optional = scripts.needs(ctx.routine.dir, name,
+                                             ctx.server.libraries_home)
     env_secrets = {k: v for k, v in load_secrets().items()
                    if k in declared and secret_state(ctx, k) == "granted"}
     env_secrets |= {k: v for k, v in _extra_secrets(ctx).items() if k in declared}
@@ -272,7 +280,8 @@ def do_script(action: dict, ctx: RunContext) -> dict:
         env_secrets=env_secrets, aborted=ctx.aborted)
     _note_if_killed(ctx, "script", name, code)
     obs = {"kind": "script", "name": name, "args": args, "exit": code,
-           **command_output(ctx, f"script-{name}", out, err, code)}
+           **command_output(ctx, f"script-{name}", out, err, code),
+           **_withheld_note(ctx, withheld_optional(ctx, optional))}
     if _ended_by_abort(ctx, code):
         obs["aborted"] = True
     return obs

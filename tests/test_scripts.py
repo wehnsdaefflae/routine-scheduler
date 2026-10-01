@@ -358,6 +358,9 @@ def test_script_action_end_to_end(make_routine, scripted, monkeypatch):
     assert env_secrets.get("PROC_TOKEN") == "g-1"           # declared + granted → in
     assert "OPT_TOKEN" not in env_secrets                   # declared + denied → absent
     assert "GRANTED_UNDECLARED" not in env_secrets          # granted but UNDECLARED → absent
+    # …and the run is TOLD, as for a util (F290): the withheld optional secret is a count,
+    # because it was declined (R17)
+    assert obs["payload"]["withheld_optional"] == {"undecided": [], "denied": 1}
 
 
 STORE_UTIL = '''"""mailer — a util with a PRIVATE STORE, for the scripts tests.

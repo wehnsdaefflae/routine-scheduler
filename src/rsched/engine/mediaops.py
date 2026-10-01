@@ -26,14 +26,30 @@ def vision_describe(ctx: RunContext, abspath: str, prompt: str) -> str:
     """Run the `vision` util on one file and return its text (or an 'error: …' string). The
     single fallback used both by do_view_image and the loop's runtime net when the main
     endpoint can't take a file natively; the util bills its own key, out of the run's usage.
+
+    The call is the ENGINE's, so no exposure ask precedes it — but its environment is the
+    run's, assembled as for a util the run called: the routine's own scoped key shadows the
+    central one (D103), a not-granted optional secret is withheld (F290), and a secret the
+    user DECLINED for this routine is not handed over at all. Before this the util got the
+    central store's value whatever the routine's standing said.
     """
+    from .exec_env import _extra_secrets
+    from .secretgate import declined_secrets, withheld_optional_secrets
+
     home = ctx.server.libraries_home
     if not utils_lib.exists(home, VISION_UTIL):
         return "error: the `vision` util is not installed, so this file cannot be described"
+    if declined := declined_secrets(ctx, VISION_UTIL):
+        # R17: a decline enumerates nothing — a count, never the names it protected
+        return (f"error: the user declined exposing {len(declined)} secret"
+                f"{'s' if len(declined) != 1 else ''} the vision fallback needs to this "
+                "routine, so this file cannot be described here")
     args = [abspath, "--prompt", prompt or VIEW_DEFAULT_PROMPT, "--json"]
-    code, out, err = utils_run.run_util(home, VISION_UTIL, args, timeout=UTIL_DEFAULT_TIMEOUT_S,
-                                        policy=sandbox.policy_for_ctx(ctx),
-                                        cwd=ctx.routine.dir, aborted=ctx.aborted)
+    code, out, err = utils_run.run_util(
+        home, VISION_UTIL, args, timeout=UTIL_DEFAULT_TIMEOUT_S,
+        policy=sandbox.policy_for_ctx(ctx), extra_secrets=_extra_secrets(ctx),
+        withhold_secrets=set(withheld_optional_secrets(ctx, VISION_UTIL)),
+        cwd=ctx.routine.dir, aborted=ctx.aborted)
     if code != 0:
         return f"error: vision util failed (exit {code}): {(err or out or '').strip()[:800]}"
     try:
