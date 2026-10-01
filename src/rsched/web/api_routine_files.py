@@ -17,9 +17,10 @@ import os
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
-from ..paths import atomic_write, resolve_rel
+from .. import pending_edits
+from ..paths import resolve_rel
 from . import artifacts
-from .routines_common import _git_commit, _info, queue_or_apply
+from .routines_common import _info, queue_or_apply
 
 router = APIRouter(tags=["routines"])
 
@@ -125,14 +126,12 @@ def put_routine_file(request: Request, slug: str, body: RoutineFileBody) -> dict
         raise HTTPException(400, str(exc)) from exc
     if owner := recipe_editable(body.path):
         raise HTTPException(400, f"{body.path} is not editable here — it belongs to {owner}")
+    payload = {"path": body.path, "content": body.content}
 
     def _apply() -> dict:
-        p = resolve_rel(info.cfg.dir, body.path)
-        p.parent.mkdir(parents=True, exist_ok=True)
-        atomic_write(p, body.content)
-        _git_commit(request, info.cfg.dir, f"edit {body.path} via web")
-        return {"ok": True}
+        # the applier a queued edit is replayed by, so the two cannot land differently
+        return {"ok": True, **pending_edits.apply_file(
+            info.cfg.dir, payload, request.app.state.server.routines_home, queued=False)}
 
     # D78-A: queue while a run is active (apply at run end) instead of a 409 busy toast
-    return queue_or_apply(request, info, "file",
-                          {"path": body.path, "content": body.content}, _apply)
+    return queue_or_apply(request, info, "file", payload, _apply)

@@ -17,13 +17,12 @@ run. Only NON-destructive config/file edits queue: destructive ops (archive, con
 teardown) keep their hard 409, because "apply this deletion after the run" is not a safe
 default.
 
-Each applier here must have the same effect on disk as the endpoint's own idle-path edit
-(the closure each endpoint hands `web/routines_common.queue_or_apply`), so a queued edit and
-an immediate edit land identically: the same atomic write, the same commit. The two are still
-separate code — the endpoint's closure adds the web-only steps (a scheduler rescan, the F337
-live-run signal), which a reap-time replay has no run to send. Appliers take a routine_dir and
-the edit's typed payload and never touch FastAPI, so the daemon can import this module (web
-imports daemon, never the reverse).
+A queued edit and an immediate edit must land identically — the same atomic write, the same
+commit — so each endpoint's idle-path edit (the closure it hands
+`web/routines_common.queue_or_apply`) CALLS the code its applier replays: put_routine_file
+calls `apply_file`, revert_recipe calls `recipes.revert_recipe`. The closure adds only what a
+web response needs. Appliers take a routine_dir and the edit's typed payload and never touch
+FastAPI, so the daemon can import this module (web imports daemon, never the reverse).
 """
 
 from __future__ import annotations
@@ -47,15 +46,18 @@ MAX_PENDING_EDITS = 64   # spool cap per routine — past it the web rejects wit
 # -- appliers: (routine_dir, payload, routines_home) -> result dict; raise on invalid ----
 # `routines_home` is the instance whose health stream hears about a commit that did not land.
 
-def apply_file(routine_dir: Path, payload: dict, routines_home: Path) -> dict:
+def apply_file(routine_dir: Path, payload: dict, routines_home: Path, *,
+               queued: bool = True) -> dict:
     """Write one of the routine's own files (main.md, a stage module, a script, a note) and
-    commit it — the replay of put_routine_file, and atomic like it: a scheduler scan or a
-    starting run reads the old recipe or the new one, never half of it. (The endpoint refused
-    the files it does not own — routine.yaml among them — before anything was queued.)
+    commit it — put_routine_file's edit itself: the endpoint calls this with `queued=False`
+    on an idle routine and the reap replays it as queued, so the commit message is the only
+    difference between the two. Atomic: a scheduler scan or a starting run reads the old
+    recipe or the new one, never half of it. (The endpoint refused the files it does not own
+    — routine.yaml among them — before anything was queued.)
     """
     rel = str(payload["path"])
     atomic_write(resolve_rel(routine_dir, rel), str(payload.get("content", "")))
-    libgit.commit(routine_dir, f"edit {rel} via web (queued mid-run)",
+    libgit.commit(routine_dir, f"edit {rel} via web" + (" (queued mid-run)" if queued else ""),
                   routines_home=routines_home)
     return {"path": rel}
 

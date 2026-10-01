@@ -526,7 +526,8 @@ and the capabilities digest's catalog listing):
   both land there as `partial`. Deterministic thresholds, each constant justified in the module —
   see docs/run-analytics.md;
   `POST /routines/{slug}/recipe/revert` is the one-click rollback (recipe files only — never
-  routine.yaml or state; 409 while a run is active). Flag-first: the improver never auto-reverts.
+  routine.yaml or state; queued while a run is active and applied when it ends, D78-A).
+  Flag-first: the improver never auto-reverts.
 
 ## Child runs (spawn + subtask), questions, injection
 

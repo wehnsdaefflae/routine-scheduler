@@ -112,8 +112,8 @@ only the health stream says which budget forced a finish, and `last_detail` name
 `POST /api/routines/{slug}/recipe/revert {commit}` restores the recipe files to their
 state just before that commit and commits only those paths — `routine.yaml` (the user's
 config) and `state/` are never touched. The revert commit is itself the next recipe
-version, so health tracking continues seamlessly. Guarded like every web-side routine
-edit: 409 while a run is active.
+version, so health tracking continues seamlessly. Made while a run is active, the revert
+is queued and applied when the run ends (D78-A, `pending_edits`), like a recipe file edit.
 
 ## Per-util execution stats (Stats tab → Global utils)
 
