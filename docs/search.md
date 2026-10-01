@@ -38,8 +38,10 @@ syntax error.
 An SQLite **FTS5** database (stdlib `sqlite3`) at
 `<routines_home>/.control/search.sqlite3` — a **pure cache**: delete the file and it
 rebuilds from disk; the flat files stay the only source of truth (the no-database
-philosophy of `registry.py`). The daemon/web process is its ONLY writer — engine
-subprocesses never touch it.
+philosophy of `registry.py`). A CORRUPT file heals the same way wherever it is met: a
+refresh or a query that finds it malformed throws it away and the pass rebuilds from disk
+(a lock or busy timeout is transient and never discards it). The daemon/web process is its
+ONLY writer — engine subprocesses never touch it.
 
 Freshness is per-file stat fingerprints (inode + mtime + size, the registry's model):
 each refresh re-stats the sources, reindexes what changed (newest runs first), and

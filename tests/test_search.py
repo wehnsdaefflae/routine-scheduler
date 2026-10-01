@@ -203,6 +203,43 @@ def test_a_locked_index_is_never_discarded(server, index, monkeypatch):
     assert index.path.exists()                      # but the cache is NOT thrown away
 
 
+def test_corruption_the_writer_meets_heals_like_corruption_a_reader_meets(server, index):
+    """F356 healed corruption at the QUERY seam only, and `/api/search` refreshes BEFORE it
+    queries. `_db()` proves the header readable at open; damage past it surfaced in `refresh()`
+    as "database disk image is malformed" — a 500 on every search and a maintainer warning a
+    minute, with the query seam's heal never reached. The writer heals the same way."""
+    index.close()
+    image = bytearray(index.path.read_bytes())
+    assert len(image) > 4096                        # more than the header page to damage
+    image[4096:] = b"\xa5" * (len(image) - 4096)    # every page but the first
+    index.path.write_bytes(bytes(image))
+
+    stats = index.refresh()                         # rebuilds instead of raising
+    assert stats["pending"] == 0 and stats["indexed"] == stats["files"]
+    assert index.search("zeppelin")
+
+
+def test_a_discard_leaves_no_writer_on_the_unlinked_file(server, index, monkeypatch):
+    """Discarding closed the writer and unlinked the files under TWO acquisitions of the lock.
+    The maintainer, waiting on it, could take the gap: its refresh reopened the writer on the
+    old file, the unlink then removed that file from under it, and every later pass indexed
+    into an inode nothing could read — search answered empty until a restart. Simulated
+    deterministically: the waiting refresh runs exactly in that gap."""
+    real_close = index.close
+
+    def close_then_the_maintainer_refreshes():
+        real_close()
+        index.refresh()
+
+    monkeypatch.setattr(index, "close", close_then_the_maintainer_refreshes)
+    index._discard_cache()
+    monkeypatch.undo()
+
+    assert not index.path.exists()                  # the cache really was thrown away…
+    index.refresh()
+    assert index.search("zeppelin")                 # …and the rebuild is the one search reads
+
+
 def test_budget_bounds_work(server):
     idx = SearchIndex(server)
     stats = idx.refresh(budget_s=0)

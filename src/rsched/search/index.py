@@ -145,10 +145,14 @@ class SearchIndex:
 
     def close(self) -> None:
         with self._lock:
-            if self._conn is not None:
-                with contextlib.suppress(sqlite3.Error):
-                    self._conn.close()
-                self._conn = None
+            self._close_locked()
+
+    def _close_locked(self) -> None:
+        """Close the writer connection. The caller holds `_lock`."""
+        if self._conn is not None:
+            with contextlib.suppress(sqlite3.Error):
+                self._conn.close()
+            self._conn = None
 
     def shutdown(self) -> None:
         """Close for good: the process is ending; a refresh still running in a worker thread
@@ -167,26 +171,44 @@ class SearchIndex:
         AFTER each file, so every pass makes progress and any backlog eventually drains.
         Returns {"indexed", "pending", "files"}; pending counts files not yet CONFIRMED
         fresh this pass — a later call continues the work.
+
+        A corrupt image is discarded and the pass rebuilds from disk, exactly as the query
+        seam heals (F356). `_db()` only proves the HEADER readable at open; damage past it
+        surfaces here first — and `/api/search` refreshes before it queries, so a writer that
+        raised made every search a 500 and the maintainer log a warning a minute, forever,
+        without the query seam ever being reached. A lock or busy timeout still raises: it is
+        transient, and never a reason to throw a good index away.
         """
         t0 = time.monotonic()
         with self._lock:
-            db = self._db()
-            found = {str(s.path): s for s in sources.iter_sources(self.server)}
-            known = dict(db.execute("SELECT path, fingerprint FROM files").fetchall())
-            for path in [p for p in known if p not in found]:
-                self._drop_file(db, path)
-            candidates = sorted(found.items(), key=lambda item: item[1].run_ts, reverse=True)
-            indexed = scanned = 0
-            for path, src in candidates:
-                if _fingerprint(src.path) != known.get(path):
-                    self._index_file(db, src)
-                    indexed += 1
-                scanned += 1
-                if budget_s is not None and time.monotonic() - t0 >= budget_s:
-                    break
-            db.commit()
-            return {"indexed": indexed, "pending": len(candidates) - scanned,
-                    "files": len(found)}
+            try:
+                return self._refresh_pass(t0, budget_s)
+            except sqlite3.OperationalError:
+                raise
+            except sqlite3.DatabaseError as exc:
+                log.warning("search index unreadable during refresh (%s) — rebuilding from disk",
+                            exc)
+                self._discard_locked()
+                return self._refresh_pass(t0, budget_s)
+
+    def _refresh_pass(self, t0: float, budget_s: float | None) -> dict:
+        """One pass of `refresh`. The caller holds `_lock`."""
+        db = self._db()
+        found = {str(s.path): s for s in sources.iter_sources(self.server)}
+        known = dict(db.execute("SELECT path, fingerprint FROM files").fetchall())
+        for path in [p for p in known if p not in found]:
+            self._drop_file(db, path)
+        candidates = sorted(found.items(), key=lambda item: item[1].run_ts, reverse=True)
+        indexed = scanned = 0
+        for path, src in candidates:
+            if _fingerprint(src.path) != known.get(path):
+                self._index_file(db, src)
+                indexed += 1
+            scanned += 1
+            if budget_s is not None and time.monotonic() - t0 >= budget_s:
+                break
+        db.commit()
+        return {"indexed": indexed, "pending": len(candidates) - scanned, "files": len(found)}
 
     def _drop_file(self, db: sqlite3.Connection, path: str) -> None:
         row = db.execute("SELECT id FROM files WHERE path=?", (path,)).fetchone()
@@ -262,13 +284,20 @@ class SearchIndex:
                 conn.close()
 
     def _discard_cache(self) -> None:
-        """Throw the index away so the next refresh rebuilds it. The writer connection is
-        closed FIRST: on POSIX an unlinked file keeps its open handles alive, so a surviving
-        writer would keep indexing into an inode nothing can ever read again.
-        """
-        self.close()
+        """Throw the index away so the next refresh rebuilds it."""
         with self._lock:
-            self._remove_db_files()
+            self._discard_locked()
+
+    def _discard_locked(self) -> None:
+        """Close the writer, then unlink the files — in ONE critical section, the caller's.
+        On POSIX an unlinked file keeps its open handles alive, so a writer surviving the
+        unlink indexes into an inode nothing can ever read again, and every search answers
+        empty until a restart. Closing and unlinking under two acquisitions of `_lock` left
+        exactly that gap: the maintainer, waiting on the lock, reopened the writer between
+        them.
+        """
+        self._close_locked()
+        self._remove_db_files()
 
     def _match(self, db: sqlite3.Connection, fts_query: str, limit: int) -> list[dict]:
         rows = db.execute(
