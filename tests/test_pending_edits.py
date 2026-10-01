@@ -52,6 +52,56 @@ def _routine(tmp_path, yaml_text: str = "enabled: true\n"):
     return rdir
 
 
+def test_a_web_edit_commits_the_edited_file_and_nothing_else(tmp_path):
+    """`edit <path> via web` must hold the edited file ALONE.
+
+    The appliers staged the whole routine directory, so a web edit swept up whatever else
+    happened to be dirty in that tree and shipped it under its own message. Seen live:
+    library-sync commit 5baf069 "edit stages/export.md via web" carried that routine's pending
+    run-retention changes (deleted and gzipped `runs/*`, a status.json) — the history says a
+    stage module was edited and the diff says something else entirely. A routine's tree is
+    dirty routinely: its own runs write to it while the web edit is queued.
+    """
+    from rsched import libgit
+
+    rdir = _routine(tmp_path)
+    libgit.init_repo(rdir)
+    (rdir / "stages" / "export.md").write_text("first\n", encoding="utf-8")
+    libgit.commit(rdir, "seed", routines_home=tmp_path)
+
+    # what a run of this routine leaves lying around while the edit waits
+    (rdir / "state").mkdir()
+    (rdir / "state" / "status.json").write_text('{"runs": 3}\n', encoding="utf-8")
+    (rdir / "stages" / "unrelated.md").write_text("not part of this edit\n", encoding="utf-8")
+
+    pending_edits.apply_file(rdir, {"path": "stages/export.md", "content": "second\n"},
+                             tmp_path, queued=True)
+
+    named = libgit.git(rdir, "show", "--name-only", "--format=", "HEAD").stdout.split()
+    assert named == ["stages/export.md"], f"the commit carried more than its file: {named}"
+    # the bystanders are still uncommitted, exactly as they were
+    assert libgit.git(rdir, "log", "--oneline", "--", "state/status.json").stdout.strip() == ""
+    assert (rdir / "stages" / "export.md").read_text(encoding="utf-8") == "second\n"
+
+
+def test_a_trigger_edit_commits_routine_yaml_and_nothing_else(tmp_path):
+    """The same scoping for the trigger appliers, which share `_write_triggers`: they write one
+    file (routine.yaml) and must commit that one.
+    """
+    from rsched import libgit
+
+    rdir = _routine(tmp_path)
+    libgit.init_repo(rdir)
+    libgit.commit(rdir, "seed", routines_home=tmp_path)
+    (rdir / "stages" / "bystander.md").write_text("dirty\n", encoding="utf-8")
+
+    pending_edits.apply_trigger_create(
+        rdir, {"entry": {"id": "t1", "type": "webhook", "token": "x"}}, tmp_path)
+
+    named = libgit.git(rdir, "show", "--name-only", "--format=", "HEAD").stdout.split()
+    assert named == ["routine.yaml"], f"the commit carried more than routine.yaml: {named}"
+
+
 @pytest.mark.parametrize("broken", ["triggers: [never closed\n", "- a list\n- not a mapping\n"])
 def test_a_routine_yaml_that_does_not_load_fails_one_edit_and_wedges_nothing(tmp_path, broken):
     """routine.yaml can be broken under a live run — by hand, or by the run's own `shell` or

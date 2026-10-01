@@ -57,8 +57,13 @@ def apply_file(routine_dir: Path, payload: dict, routines_home: Path, *,
     """
     rel = str(payload["path"])
     atomic_write(resolve_rel(routine_dir, rel), str(payload.get("content", "")))
+    # SCOPED to the edited file (`paths=` + `only=True`): an unscoped stage swept up whatever
+    # else happened to be dirty in the routine's tree and shipped it under this message.
+    # library-sync commit 5baf069 "edit stages/export.md via web" carried that routine's
+    # pending run-retention changes — deleted and gzipped `runs/*` plus a status.json — so the
+    # history says a stage module was edited and the diff says something else entirely.
     libgit.commit(routine_dir, f"edit {rel} via web" + (" (queued mid-run)" if queued else ""),
-                  routines_home=routines_home)
+                  routines_home=routines_home, paths=[rel], only=True)
     return {"path": rel}
 
 
@@ -91,8 +96,10 @@ def _write_triggers(routine_dir: Path, raw: dict, entries: list[dict], message: 
                     routines_home: Path) -> None:
     raw["triggers"] = entries
     atomic_write_yaml(routine_dir / "routine.yaml", raw)
+    # Scoped like apply_file's: this writes ONE file, so a trigger edit must not also ship
+    # whatever else is dirty in the routine's tree under "trigger created via web".
     libgit.commit(routine_dir, f"{message} via web (queued mid-run)",
-                  routines_home=routines_home)
+                  routines_home=routines_home, paths=["routine.yaml"], only=True)
 
 
 def apply_trigger_create(routine_dir: Path, payload: dict, routines_home: Path) -> dict:
