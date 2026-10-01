@@ -801,7 +801,9 @@ back at the next restart and pushed. (It used to be: only utils had that guard, 
 workflow or rule returned at every boot.) The sync covers the flat kinds — workflows, rules,
 permissions, settings PATTERNS and the reminder store's README — plus whole playbook folders. It is ADD-ONLY and stays that way: these
 files are user-editable, so overwriting one would discard an operator's edit silently. A seed doc
-whose TEXT must change on a live instance is converted by a one-shot migration instead.
+or util whose TEXT must change on a live instance is carried by a one-shot migration instead,
+which replaces the live copy only while it is byte-identical to the seed it supersedes and names
+every copy it left (`migrate_seed_utils` carries this release's four util fixes).
 - **Workflows** are self-contained **Python pattern files** (`.py`) that DEPICT a routine's control flow —
   never executed, parsed statically with `ast` (`workflows/pyworkflow.py`). Each has a `META = {...}` dict
   (`slug / name / description / when_to_use / version / tags / includes`, optional `tools:`

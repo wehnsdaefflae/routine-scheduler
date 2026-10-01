@@ -55,6 +55,10 @@ def cmd_daemon(_args) -> int:
     # utils added to util-seed since bootstrap, then workflows/rules/permissions added since too,
     # then out-of-band writes (user/conversation) get history
     sync_seed_utils(server.libraries_home, routines_home=server.routines_home)
+    # MIGRATION(expires=2026-11-15): this release's fixes to four utils the live library
+    # already has — the sync above only adds missing ones
+    from .migrate_seed_utils import run_migration as carry_seed_util_fixes
+    carry_seed_util_fixes(server)
     sync_seed_library_docs(server.libraries_home, routines_home=server.routines_home)
     adopt_library_edits(server.libraries_home, routines_home=server.routines_home)
     for pr in problems:
