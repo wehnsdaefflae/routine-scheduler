@@ -77,10 +77,6 @@ class GrantPolicy:
     # verb of that util stays open, which is how reading a mailbox stays behind nothing but its
     # credential while sending needs the permission.
     gated_verbs: dict = field(default_factory=dict)
-    # Util names the library already has, for the create-vs-revise split. Loaded ONLY when
-    # the routine holds exactly one half (holding both, or neither, settles the call without
-    # knowing) — so the common policies cost no catalog read.
-    known_utils: frozenset = frozenset()
     kind_sources: dict = field(default_factory=dict)  # gated kind → library docs requiring it
     confirm: str = "always"                    # write_util approval policy
     rule_confirm: str = "always"               # write_rule approval policy (own blast radius)
@@ -120,8 +116,9 @@ class GrantPolicy:
     # workflow as the scope that lacks the kind, not claim the routine lacks it (R46).
     is_subrun: bool = False
     # The util library root, so the reserved-util gate can resolve a call's `calls:` TREE and
-    # not just its name. None (hand-built policies, tests) skips that check — the direct-name
-    # gate is unaffected either way.
+    # not just its name, and write_util can tell a creation from a revision. None (hand-built
+    # policies, tests) skips the tree check and reads every write_util as a creation — the
+    # direct-name gate is unaffected either way.
     libraries_home: Path | None = None
 
     def allows_kind(self, kind: str) -> bool:
@@ -277,6 +274,26 @@ class GrantPolicy:
                 f"conduct). Work with what you have. "
                 f"{self.request_route(f'action:{kind}')}")
 
+    def _util_exists(self, name: str) -> bool:
+        """Is `name` already in the library — is this write_util a REVISION?
+
+        Asked at the call, of the live library, whenever the answer can matter: unless BOTH
+        halves of the split are held. It used to be a catalog loaded with the policy, and only
+        for a routine holding exactly one half. A routine holding neither loaded nothing, so
+        an existing util read as a CREATION — the denial asked for `action:write_util` — and a
+        one-run grant of that half, folded in by `with_overlay`, then let write_util REVISE the
+        existing util. Live also means a util this run created is a revision when it is
+        written again.
+        """
+        if {"write_util", "revise_util"} <= self.actions or self.libraries_home is None:
+            return False
+        from .utils_lib import exists
+
+        try:
+            return exists(self.libraries_home, name)
+        except OSError:      # an unreadable library: a creation, as a missing name would be
+            return False
+
     def deny(self, action: dict) -> str | None:
         """A precise, actionable rejection for a gated call — or None when permitted. Worded
         for the model inside the schema-retry cycle: capabilities are switched by the USER
@@ -291,7 +308,7 @@ class GrantPolicy:
         mode = ""
         if kind == "write_util":
             name = str(action.get("name") or "")
-            revising = name in self.known_utils
+            revising = self._util_exists(name)
             need = "revise_util" if revising else "write_util"
             mode = (f"util {name!r} {'already exists' if revising else 'does not exist yet'}, "
                     f"so this is a {'REVISION' if revising else 'CREATION'}. ")

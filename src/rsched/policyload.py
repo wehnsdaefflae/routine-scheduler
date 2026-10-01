@@ -19,18 +19,6 @@ from .grants import (
 )
 
 
-def _util_names(permissions_home: Path) -> frozenset[str]:
-    """Every util the library holds — `<libraries_home>/utils` sits beside `permissions/` by
-    construction. An unreadable library yields none, which reads every write_util as a
-    creation: the stricter of the two approvals.
-    """
-    from . import utils_lib
-    try:
-        return frozenset(u["name"] for u in utils_lib.list_utils(Path(permissions_home).parent))
-    except OSError:
-        return frozenset()
-
-
 def load_policy(permissions_home: Path, active: list[str] | None,
                 capabilities: dict | None = None, current_run_ts: str = "",
                 recipe_unlocked: bool = False, admin: bool = False,
@@ -60,17 +48,12 @@ def load_policy(permissions_home: Path, active: list[str] | None,
             else:
                 gated_utils.setdefault(name, []).append(slug)
     caps, _ = normalize_capabilities(capabilities)
-    # The create-vs-revise split needs to know which util names already exist — but only when
-    # the routine holds exactly ONE half. Holding both makes every write_util allowed;
-    # holding neither denies them all. Either way the catalog is not worth reading.
-    held_write = {"write_util", "revise_util"} & set(caps.get("actions") or [])
-    known_utils = _util_names(permissions_home) if len(held_write) == 1 else frozenset()
     return GrantPolicy(active=tuple(active or []),
                        # `<libraries_home>/permissions` by construction (ServerConfig), so the
                        # util catalog sits beside it — the reserved-util gate resolves a call's
-                       # `calls:` tree from there.
+                       # `calls:` tree from there, and write_util's create-vs-revise split
+                       # asks it whether a name exists.
                        libraries_home=Path(permissions_home).parent,
-                       known_utils=known_utils,
                        actions=frozenset(k for k in caps.get("actions") or []
                                          if k in GATED_KINDS),
                        utils=frozenset(caps.get("utils") or []),

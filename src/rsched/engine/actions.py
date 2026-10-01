@@ -436,9 +436,9 @@ def util_rejection_outcome(obj: dict, allowed_kinds: set[str] | None = None,
     # weightloss:20260923-220004, served by a fallback model after a 503 and a 402).
     #
     # The test is the util NAMING rule, not the slug rule: `ids.is_slug` admits `300` and
-    # `c-20260821-060305` (digits and run ids are legal slugs), and GrantPolicy.known_utils
-    # is loaded only for a routine holding exactly one half of the write/revise split, so
-    # neither separates a name from a shifted value. What every real util name has and no
+    # `c-20260821-060305` (digits and run ids are legal slugs), and the policy carries no
+    # catalog of util names (write_util's create-vs-revise split asks the library per call),
+    # so neither separates a name from a shifted value. What every real util name has and no
     # shifted value did: kebab-case with a LETTER in it. Unattributable IS what None means.
     if not _NAMEABLE_UTIL_RE.match(name):
         return None
