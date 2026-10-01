@@ -231,3 +231,23 @@ def test_scan_memo_prunes_deleted_dirs(make_routine, tmp_path):
     assert "gone" not in registry.scan(server)
     assert str(d) not in registry._cfg_memo
     assert all(not k.startswith(str(d)) for k in registry._run_memo)
+
+
+def test_prune_survives_a_concurrent_insert(tmp_path):
+    """The memos are shared across threads, and the prune filter runs Python between dict
+    steps: a thread inserting while it iterated the live dict raised "dictionary changed size
+    during iteration" out of a scan. A dict whose iteration inserts mid-way stands in for
+    that thread; the prune snapshots the keys in one step and never iterates the live dict."""
+
+    class InsertsWhileIterated(dict):
+        def __iter__(self):
+            it = super().__iter__()
+            first = next(it)
+            self[f"{tmp_path}/late"] = "inserted by another thread"
+            yield first
+            yield from it
+
+    memo = InsertsWhileIterated({f"{tmp_path}/gone": 1, f"{tmp_path}/kept": 2, "/else/x": 3})
+    registry._prune(memo, tmp_path, {f"{tmp_path}/kept"})
+    assert f"{tmp_path}/gone" not in memo
+    assert memo[f"{tmp_path}/kept"] == 2 and memo["/else/x"] == 3
