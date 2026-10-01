@@ -131,5 +131,8 @@ lists every pattern with its followers (`GET /api/patterns`).
 
 `rsched lint` checks every pattern (`workflows/lint.lint_patterns`): a sound document naming
 only rules, permissions and a workflow the library holds — a pattern pointing at a deleted rule
-would hand every follower a binding to nothing. Patterns ride the library repo's sync like
+would hand every follower a binding to nothing. A file in `patterns/` that is no pattern at all
+(it does not parse, is not a mapping, or is not named by a slug) is reported there and passed
+over by every page and flow that lists patterns, so one broken file never takes them down.
+Patterns ride the library repo's sync like
 rules and permissions; the seed sync only adds a pattern a library lacks, never overwrites one.

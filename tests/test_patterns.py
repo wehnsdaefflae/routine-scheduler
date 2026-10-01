@@ -69,6 +69,33 @@ def test_an_unsound_pattern_is_refused(tmp_path, doc):
         store.create(tmp_path / "lib", "p", doc)
 
 
+def test_a_pattern_file_that_is_no_pattern_is_named_by_lint_and_breaks_no_listing(tmp_path):
+    """One hand-broken file (a merge conflict, a typo) used to raise out of every listing — each
+    routine's settings page, the Library tab, creation's catalog, `rsched lint` itself — while
+    a file that parsed to a list was silently left out of all of them, lint included."""
+    from rsched.workflows.lint import lint_patterns
+
+    lib = tmp_path / "lib"
+    store.create(lib, "watcher", pattern_doc())
+    (store.home(lib) / "broken.yaml").write_text("title: [unclosed\n", encoding="utf-8")
+    (store.home(lib) / "listy.yaml").write_text("- a\n- b\n", encoding="utf-8")
+    (store.home(lib) / "Bad Name.yaml").write_text("title: t\n", encoding="utf-8")
+    assert [p["slug"] for p in store.list_all(lib)] == ["watcher"]
+    assert store.read(lib, "broken") is None
+    found = lint_patterns(lib, ["ask-policy"], [])
+    assert "invalid YAML" in found["patterns/broken.yaml"][0]
+    assert "a pattern is a mapping" in found["patterns/listy.yaml"][0]
+    assert "kebab-case" in found["patterns/Bad Name.yaml"][0]
+
+
+def test_a_routine_yaml_that_does_not_parse_follows_nothing(tmp_path):
+    home = tmp_path / "routines"
+    for slug, text in (("good", "pattern: watcher\n"), ("bad", "pattern: [watcher\n")):
+        (home / slug).mkdir(parents=True)
+        (home / slug / "routine.yaml").write_text(text, encoding="utf-8")
+    assert store.followers(home, "watcher") == ["good"]
+
+
 def test_drafts_prune_what_already_landed(tmp_path):
     home = tmp_path / "routines"
     drafts.write(home, "r", changes={"keep_runs": {"value": 10, "reason": "less history"},
@@ -173,6 +200,16 @@ def test_deleting_a_pattern_releases_its_followers_and_keeps_their_values(client
     assert "pattern" not in after
     assert {k: v for k, v in before.items() if k != "pattern"} == after
     assert c.get("/api/patterns").json()["patterns"] == []
+
+
+def test_a_broken_pattern_file_leaves_every_settings_surface_up(client):
+    c, tmp = client
+    store.create(tmp / "library", "watcher", pattern_doc())
+    (store.home(tmp / "library") / "broken.yaml").write_text("summary: [x\n", encoding="utf-8")
+    listed = c.get("/api/patterns")
+    assert listed.status_code == 200
+    assert [p["slug"] for p in listed.json()["patterns"]] == ["watcher"]
+    assert c.get("/api/routines/alpha/settings").status_code == 200
 
 
 def test_the_pattern_list_carries_the_field_vocabulary_the_library_renders(client):

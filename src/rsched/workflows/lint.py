@@ -329,13 +329,16 @@ def lint_all(home: Path) -> dict[str, list[str]]:
 def lint_patterns(home: Path, rules: list[str], permissions: list[str]) -> dict[str, list[str]]:
     """Every settings pattern (`patterns/*.yaml`): sound as a document and naming only rules,
     permissions and a workflow the library holds — a pattern that points at a deleted rule
-    would hand every routine that follows it a binding to nothing.
+    would hand every routine that follows it a binding to nothing. A file that is no pattern
+    at all (it does not parse, is not a mapping, or is not named by a slug) is reported too:
+    every reader passes it over, so this is the one place it is seen.
     """
     from ..patterns import store
 
     workflows = {p.stem for p in workflows_dir(home).glob("*.py")} if workflows_dir(
         home).is_dir() else set()
-    out: dict[str, list[str]] = {}
+    out: dict[str, list[str]] = {f"patterns/{file}": [f"patterns/{file}: {why}"]
+                                 for file, why in store.unusable(home).items()}
     for p in store.list_all(home):
         name = f"patterns/{p['slug']}.yaml"
         found = list(p["problems"])
