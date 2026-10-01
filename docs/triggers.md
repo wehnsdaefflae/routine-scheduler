@@ -79,8 +79,10 @@ the payload.
   and at most 32 events may wait unprocessed (`429`). Combined with the cooldown below, a
   leaked URL can at most cause one run per cooldown window — it cannot burn budget or fill
   the disk.
-- **Tokens never leave the instance.** The library-sync routine's export redacts
-  `token` values in routine.yaml exactly like the server config's secrets.
+- **Tokens never leave the instance.** The library-sync routine's export redacts every
+  webhook `token` in a routine.yaml and withholds from the mirror any other file that carries
+  one — a hook URL pasted into a script or a publish payload (docs/architecture.md, Libraries &
+  seeds).
 
 ## The report trigger
 

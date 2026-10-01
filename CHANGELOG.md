@@ -15,6 +15,81 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.373.0] — 2026-10-01
+
+### Security — the library export can no longer publish a credential, wherever a routine keeps it
+
+items: operator (2026-10-01), found after deploying 0.372.1
+
+**What happened.** config-optimizer's 2026-09-25 run needed one change to `config.yaml`, a file
+no run may write. It copied the live file into its own `state/` as a rollback backup, wrote an
+edited full copy beside it, handed the operator one `cp`, and saved "prepare the file under
+`state/`, back up the live bytes, hand over one `cp`" in its memory as the pattern to reuse.
+library-sync's export mirrors routine state verbatim, so both copies — the console `token`, the
+Nano-GPT `api_key` and the pre-rotation `routine_token` — reached the library repo the next night
+(library commit 00bc3319) and were pushed. The export's redaction only ever looked at
+`config/config.yaml`. A dry run of the new export against this instance found three more files:
+sprind's webhook token in a script and in a publish payload, plus weightloss's Google OAuth client
+secret in a generated PHP config. The export had also stopped doing two things the docs promised:
+redacting webhook tokens in `routine.yaml` (sprind's was pushed) and redacting a URL's password
+in the config.
+
+- **The export reads every credential the instance holds before it writes anything** — the
+  config's own credential values, the central (`secrets.env`) and routine-scoped
+  (`secrets.d/<slug>.env`) Secrets stores, the OAuth connections (`connections.json`), every
+  routine's webhook tokens — and checks every file it is about to mirror, verbatim and
+  JSON-escaped. A file carrying one is WITHHELD: never written, pruned from the tree if an
+  earlier export put it there, listed in `withheld` by the NAME of what it carries (never the
+  value), with `was_mirrored` when that credential has already left the machine. Withholding
+  rather than redacting keeps every mirrored file a byte-identical copy and leaves the
+  credential in the routine's tree visible as the defect it is. ~6 s over the 473 MiB tree.
+- **A Secrets-store value is a credential when its name, or its field in a JSON-map value, says
+  so** (`*KEY`, `*TOKEN`, `*SECRET`, `*PASS`/`*PASSWORD`/`*PWD`, `*HASH`, `*API`, `*AUTH`,
+  `*CREDENTIAL(S)`), or when it spans lines — never when it is a path (`SFTP_SOURCES`' `key` names
+  a key file). The store also keeps the operator's addresses, hosts and user names, which sit in
+  hundreds of routine files by design: matching every store value withheld 688 of 6 672 files in
+  the dry run, the name rule exactly the 5 real leaks. Values under 8 characters (the engine's
+  `REDACT_MIN_CHARS`) are not matched.
+- **`routine.yaml` has its webhook trigger tokens redacted** and nothing else: a run gate's
+  `password_secret` / `accounts_secret` hold the NAME of a secret. The config's URL-password
+  redaction is back.
+- **It fails closed**: a config or store it cannot read or parse refuses the whole export
+  before anything is written.
+- `tests/test_instance_export.py` pins the util's standalone copies to the scheduler's own (the
+  stores' file names and format through `rsched.secrets`' writer, the OAuth store's file, the
+  redaction floor, a trigger from `triggers.new_webhook_trigger`), replays the incident against a
+  tree that already holds the leaked copy, and fixes the store-name vocabulary with this
+  instance's own names. The util's selftest covers each source, the JSON-escaped multi-line key,
+  the config withheld when a credential sits under an unnamed key, and both refusals.
+- Docs: docs/architecture.md ("Libraries & seeds" — which also said library-sync's commit is
+  scoped to `routines/ config/`; `gu git sync` stages the whole tree), docs/triggers.md,
+  docs/sandboxing.md, README.
+
+#### The cause, in the routines
+
+- **config-optimizer**: `.memory/apply-reach.md` Route 4 now hands the operator ONE command that
+  edits `config.yaml` in place with its backup beside it in the config dir, proves the edit in
+  memory without writing a copy, and states that nothing from `~/.config/routine-scheduler/` is
+  copied into the routine's files; `stages/apply-confirmed.md` says the payload is the change,
+  never a copy of the file; `main.md` gains a `## Never` with the same line. The two copies are
+  removed (routine commit 45a9a27); an inbox message asks its next run to re-save the note so
+  its engine-owned index line stops advertising the old pattern.
+- **library-sync**: its export stage reports each withheld file to the routine that keeps it (one
+  addressed report per routine, not repeated while open), never repairs it by hand, accounts the
+  resulting prune by the withheld list, and names an already-mirrored credential in its summary
+  as the operator's to rotate; its LEDGER entry lists the withheld files.
+
+#### The live library, by hand
+
+- `rsched export` carries the same guard, ported mechanically from the seed (the live library
+  merged `instance-export` into `rsched`, so the seed sync cannot carry it). It is library commit
+  694052af, made when the 21:47 restart's boot step adopted the edit.
+- The two config-optimizer copies leave the library's tracked tree going forward, history
+  untouched: rewriting it would jam library-sync. The console token and the Nano-GPT key remain
+  in the pushed history and are the operator's to rotate; so are sprind's webhook token and
+  weightloss's Google client secret, which the first export after this one reports as already
+  mirrored.
+
 ## [0.372.3] — 2026-10-01
 
 ### Fixed — every compose command on the host reads one file set and one profile list

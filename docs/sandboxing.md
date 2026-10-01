@@ -247,6 +247,13 @@ that transforms the value before printing it (base64, a substring) is not caught
 why declared-only injection above is the layer that limits exposure. `shell` is handed no
 store secret, so it has nothing to redact.
 
+A credential a routine WRITES into its own tree — a copy of the server config, a key quoted in a
+note — is readable to every routine that holds `~/routines`; the library mirror would carry
+it off the machine. The jail cannot see what a `shell` command or a script writes, so that guard
+sits where the tree leaves the box: library-sync's export withholds every file carrying a
+credential the instance holds and reports it to the routine that keeps it (docs/architecture.md,
+Libraries & seeds).
+
 Three NON-secret vars ride along for every util and script: `PATH` (the library root, so
 `gu <sibling>` resolves), `GLOBAL_UTILS_HOME`, and `RSCHED_UTIL_TIMEOUT_S` — the deadline
 this call was given. A util that waits on something slow sets its own timeout inside that

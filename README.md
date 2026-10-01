@@ -64,7 +64,7 @@ Stats tab.
   none — while every meta routine an instance HAS is disabled, a dismissible console banner says
   so and offers one click per routine to enable it, because self-improvement costs tokens. The
   instance itself syncs to one GitHub repo — routines, workflows, rules, utils, sanitized
-  config — via the **library-sync** routine (daily; it reports a failed push instead
+  config, never a file that carries a credential — via the **library-sync** routine (daily; it reports a failed push instead
   of burying it in a status file).
 - **Across routines**: workflows and global utils live in one shared library repo, so what
   one routine learns transfers to all — and utils compose (`gu` utils may call other utils),

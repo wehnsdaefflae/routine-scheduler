@@ -840,10 +840,28 @@ integrates), publishes `artifacts/report.html`. The **library-sync** ROUTINE
 never the work, noticing and REPORTING that a push stopped landing is, and a job whose only
 outcome surface was a status file let 94 commits pile up unpushed)
 syncs the WHOLE instance into that one repo: each routine's working tree (minus `runs/`, `.git`,
-transient inbox/question state) into `routines/<slug>/` and the server config — token/api_key
-values AND URL-embedded credentials redacted — into `config/`; then commit (scoped to
-`routines/ config/`, under the shared repo lock) → pull --rebase --autostash → push (never over a
-failed pull). `bootstrap.py` seeds on
+transient inbox/question state and whatever the routine's own `.gitignore` keeps out) into
+`routines/<slug>/` and the server config — every `*token`/`*api_key`/`*secret`/`*password` value
+AND the password of any URL redacted — into `config/`; then commit (`add -A` over the whole
+tree, under the shared repo lock) → pull --rebase --autostash → push (never over a failed pull).
+**No file reaches that repo carrying a credential the instance holds**, wherever a routine keeps
+it (`rsched export` live, seeded as `util-seed/utils/instance-export`). Before writing anything
+the export reads every credential stored beside the config — the config's own, the central and
+routine-scoped Secrets stores, the OAuth connections — and every routine's webhook tokens. A
+routine.yaml has its webhook tokens redacted; any other file containing one of those values,
+verbatim or JSON-escaped, is WITHHELD: never written, pruned from the tree if an earlier export
+put it there, and reported by NAME, never value — with `was_mirrored` when the credential has
+therefore already left the machine and is the operator's to rotate. library-sync reports each
+withheld file to the routine that keeps it, which owns the fix. Withholding rather than redacting
+is deliberate: every file the mirror holds stays a byte-identical copy while a credential kept in
+a routine's tree (a copy of the config in its state, a token pasted into a script) stays visible
+as the defect it is instead of shipping doctored. A Secrets-store value counts when its name or
+JSON-map field says credential (`*KEY`, `*TOKEN`, `*SECRET`, `*PASS`/`*PASSWORD`/`*PWD`, `*HASH`,
+`*API`, `*AUTH`, `*CREDENTIAL(S)`) or spans lines — never when it is a path: the store also
+keeps addresses, hosts and user names that sit in hundreds of routine files by design. A value
+under 8 characters (the engine's redaction floor) is not matched. The export fails CLOSED — a
+config or store it cannot read refuses the whole export, since it cannot vouch for a mirror whose
+credentials it cannot see. `bootstrap.py` seeds on
 first boot; `deploy/install.sh` for host installs. Everything in the library is user-EDITABLE from
 the Library tab, and DELETABLE except permission docs (the capability layer's conduct surface) and
 the `converse` workflow (every conversation is materialized from it BY SLUG, so losing it
