@@ -4,12 +4,15 @@ Split out of `api_routines.py` when the write guard below pushed it past 440 lin
 module, because the two halves answer the same question — which bytes under a routine dir a
 person may look at or change from the console — and the answer is not "all of them":
 
-- `artifacts/` is servable raw and deletable, and ONLY `artifacts/`;
+- the deliverable dirs (`artifacts.ARTIFACT_DIRS`: artifacts/, reports/, output/) are
+  servable raw and deletable, and ONLY those;
 - the recipe tree is readable and writable as JSON, and the files with a validated OWNER are
   refused by name (`NOT_EDITABLE_HERE`).
 """
 
 from __future__ import annotations
+
+import os
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
@@ -23,8 +26,8 @@ router = APIRouter(tags=["routines"])
 
 @router.get("/routines/{slug}/artifacts")
 def list_artifacts(request: Request, slug: str) -> list[dict]:
-    """Everything under <routine>/artifacts/ — the routine's deliverables, newest first
-    (the conversations panel's counterpart).
+    """Everything under the routine's deliverable dirs, newest first (the conversations
+    panel's counterpart).
     """
     info = _info(request, slug)
     return artifacts.list_artifacts(info.cfg.dir)
@@ -32,15 +35,15 @@ def list_artifacts(request: Request, slug: str) -> list[dict]:
 
 @router.delete("/routines/{slug}/artifacts")
 def delete_artifact(request: Request, slug: str, path: str) -> dict:
-    """Remove one artifact from the sidebar (user order 2026-08-14). artifacts/ only."""
+    """Remove one artifact from the sidebar (user order 2026-08-14). Deliverable dirs only."""
     info = _info(request, slug)
     return artifacts.delete_artifact(info.cfg.dir, path)
 
 
 @router.get("/routines/{slug}/artifact")
 def get_artifact(request: Request, slug: str, path: str):
-    """Serve one artifact raw (blob-rendered client-side). ONLY artifacts/ is servable
-    here — routine config/recipe reads stay on the JSON /file endpoint.
+    """Serve one artifact raw (blob-rendered client-side). ONLY the deliverable dirs are
+    servable here — routine config/recipe reads stay on the JSON /file endpoint.
     """
     info = _info(request, slug)
     return artifacts.serve_file(info.cfg.dir, path)
@@ -48,12 +51,21 @@ def get_artifact(request: Request, slug: str, path: str):
 
 @router.get("/routines/{slug}/file")
 def get_routine_file(request: Request, slug: str, path: str) -> dict:
+    """One file under the routine dir as JSON text — the recipe browser's read. Opened
+    through `artifacts.open_within`, so the containment that admits the path is proven on the
+    file actually read: this route answers the routine token, and a util racing a symlink
+    into its own dir must not get the console to read past its jail.
+    """
     info = _info(request, slug)
     try:
-        p = resolve_rel(info.cfg.dir, path)
-        return {"path": path, "content": p.read_text(encoding="utf-8")}
-    except (PermissionError, OSError) as exc:
+        fd = artifacts.open_within(resolve_rel(info.cfg.dir, path), [info.cfg.dir])
+    except OSError as exc:              # outside the dir, missing, or not a regular file
         raise HTTPException(404, str(exc)) from exc
+    with os.fdopen(fd, encoding="utf-8") as fh:
+        try:
+            return {"path": path, "content": fh.read()}
+        except UnicodeDecodeError as exc:
+            raise HTTPException(400, f"{path!r} is not a UTF-8 text file") from exc
 
 
 class RoutineFileBody(BaseModel):

@@ -702,7 +702,7 @@ deliverable, a decision for the user, a blocker). A conversation's spine is its 
   listing, serving and deletion; R339/F336 — scanning `artifacts/` alone left the panel empty for
   a run that committed a verified `reports/*.pdf`, with no way to register it) — are listed/served
   here and rendered in the chat's side panel (html sandboxed, md/img/pdf/csv/json
-  inline); routines get the SAME panel on the run view (`api_routines` `/artifacts` + `/artifact`,
+  inline); routines get the SAME panel on the run view (`api_routine_files` `/artifacts` + `/artifact`,
   `components/artifacts.js` with `base: "routines"`), with the state-graph card on top.
   The RAIL those cards sit in is one component too (`components/rail.js`, R341): the run view
   and the conversation view render the same collapsible sections, remembered per browser —
@@ -1274,7 +1274,11 @@ whose TEXT must change on a live instance is converted by a one-shot migration i
   path so that an encoded `?` or `#` in a segment ends it early. Cross-routine FILE reads
   (`/api/routines/{slug}/file`, `/api/runs/{id}/file`) are the same class and deliberately NOT
   denied yet: one routine was granted a sibling's transcripts on purpose, and that grant has to
-  be re-expressed as an fs-read root before the door closes.
+  be re-expressed as an fs-read root before the door closes. What they reach stays inside the
+  run homes, though: every web file read (and an artifact delete) proves containment on the file
+  as OPENED (`web/artifacts.open_within`, the kernel's `/proc/self/fd` name for the descriptor),
+  because a check made on a path before the open can be raced — a util swapping a directory of
+  its own for a symlink between the two had the console read, for it, a file its jail forbids.
 - **Search** (`rsched/search/`, `web/api_search.py`, the console's
   `components/searchbox.js`, focused by `/` or Ctrl-K): SQLite FTS5 over both homes' PROSE —
   transcript say/note/finish/questions/answers/user messages (gz + subrun trees included),

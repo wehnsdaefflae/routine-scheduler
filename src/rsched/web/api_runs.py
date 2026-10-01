@@ -174,14 +174,14 @@ def run_file(request: Request, run_id: str, path: str):
     file-activity read model records per row (`bases`): a child's working-dir file lives under
     `sub/<n>/`, and resolving it against the parent alone made it a dead row that 404'd while
     a sibling in the same directory opened (R1193). The recorded bases are tried first, the
-    two tree roots after, and every candidate still has to land inside one of them.
+    two tree roots after, and every candidate still has to land inside one of them — proven
+    on the file as OPENED (`artifacts.open_within`), since a run's util can rearrange these
+    directories while the console looks. Served never cached, like every artifact (R1682):
+    the rows are the same deliverables, rewritten in place under the same names.
     """
-    import mimetypes
-
-    from fastapi.responses import FileResponse
-
     from ..paths import within
     from ..readmodels.fileactivity import file_activity
+    from .artifacts import file_response, open_within
 
     _, run_dir = _run_dir(request, run_id)
     routine_dir = run_dir.parent.parent
@@ -200,9 +200,11 @@ def run_file(request: Request, run_id: str, path: str):
             continue
         if not (within(run_dir, resolved) or within(routine_dir, resolved)):
             continue
-        if resolved.is_file():
-            media = mimetypes.guess_type(resolved.name)[0] or "text/plain"
-            return FileResponse(resolved, media_type=media, filename=resolved.name)
+        try:
+            fd = open_within(resolved, [routine_dir])
+        except OSError:                # gone, not a regular file, or moved out from under us
+            continue
+        return file_response(fd, resolved.name, default_media="text/plain")
     if rel.is_absolute():
         raise HTTPException(400, "only files under the run and its routine directory "
                                  f"are served — {path!r} is outside both")
