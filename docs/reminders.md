@@ -28,7 +28,8 @@ util:fs-ops mv a b            a util call carries its ARGUMENTS (`util:fs-ops` a
                               cannot tell `mv` from `rm`)
 script:store stage --note x   so does a call of the routine's own script
 shell: rm -rf build/          the command IS the action
-read_file paths=a.md,b.md     the kind that carries a LIST names it
+read_file paths=a.md,b.md     the kind that carries a LIST names it — `view_image` too
+view_image paths=a.png,b.png  (a multi-image view names every file it looks at)
 write_file path=state/x.json  every other kind names its identifying field
 subruns                       a kind with no identifying field is just itself
 ```
