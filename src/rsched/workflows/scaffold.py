@@ -25,17 +25,12 @@ from ..paths import atomic_write_yaml
 GITIGNORE = "runs/\ninbox/\nquestions/\nmnt/\n.util_outputs/\n"
 
 
-
-# The parameter list IS routine creation's config surface (creation flow + API both fill it);
-# bundling it into an object would only relocate the same list.
+# The parameter list IS routine creation's config surface (the creation conversation, an
+# accepted proposal and the CLI fill it); bundling it into an object would only relocate it.
 def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,  # noqa: PLR0913
-             workflow_slug: str, cron: str = "", tz: str = "",
-             description: str = "", models: dict[str, str] | None = None,
-             budgets: dict | None = None,
+             workflow_slug: str, cron: str = "", tz: str = "", description: str = "",
              fs_read_roots: list[str] | None = None,
-             fs_write_roots: list[str] | None = None,
-             stages: dict[str, str] | None = None, enabled: bool = True,
-             tags: list[str] | None = None, deliberation: str = "",
+             fs_write_roots: list[str] | None = None, tags: list[str] | None = None,
              pattern: str = "", done_when: list[str] | None = None,
              finish_line: list[str] | None = None,
              setup: list[str] | None = None, never: list[str] | None = None) -> Path:
@@ -46,7 +41,7 @@ def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,  #
     PENDING changes on its page, under "check the changes i recommend.": what the person
     settled while designing it (`setup`, their answers to the pattern's questions), the
     `finish_line` they described (`run: …`, `you: …`, `YYYY-MM-DD: …`, `until YYYY-MM-DD`), and
-    whatever else the recommender finds. The caller's own values (cron, roots, models, …) are
+    whatever else the recommender finds. The caller's own values (a cron, roots, tags) are
     applied — they are decisions made in code, not proposals.
 
     The workflow is REFERENCED (edited only in the library). The clarified `instruction` is
@@ -54,14 +49,14 @@ def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,  #
     `done_when` — what the person said one finished run delivers — becomes the recipe's
     `## Done when`; `never` — what they said a run must never do — its `## Never` (and
     context for the settings recommended to stop it before the action). A one-line
-    `description` (for the UI) is always written, falling back to the name; `models` maps a
-    role to a catalog model NAME. `tz` is the zone the schedule is in — empty means the
-    server's (`config.default_tz`), the zone the console shows and saves schedules in.
+    `description` (for the UI) is always written, falling back to the name. `tz` is the zone
+    the schedule is in — empty means the server's (`config.default_tz`), the zone the console
+    shows and saves schedules in.
     """
     from .. import library_docs
     from ..config import DEFAULT_RULES
     from ..patterns import apply as pattern_apply
-    from ..patterns import recommend, store
+    from ..patterns import fields, recommend, store
     from . import library
 
     if not is_slug(slug):
@@ -124,10 +119,6 @@ def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,  #
     for stage_name, stage_body in result["stages"].items():
         (routine_dir / "stages" / f"{stage_name}.md").write_text(stage_body.rstrip() + "\n",
                                                                  encoding="utf-8")
-    # extra purpose-specific stage modules from the creation flow also land in stages/
-    for fname, fcontent in (stages or {}).items():
-        safe = fname if fname.endswith(".md") else f"{fname}.md"
-        (routine_dir / "stages" / Path(safe).name).write_text(fcontent, encoding="utf-8")
     # main.md last, over the now-complete stages/ — the stages are the sole source of truth
     (routine_dir / "main.md").write_text(dump_markdown(main_meta, result["main"]),
                                          encoding="utf-8")
@@ -153,18 +144,14 @@ def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,  #
         "name": name,
         "slug": slug,
         "description": (description or "").strip() or name,
-        "enabled": enabled,
+        "enabled": True,
         **({"tags": list(tags)} if tags else {}),
         "schedule": {"cron": cron, "tz": tz, "catchup": "skip"},
         "workflow": {"library_slug": workflow_slug, "library_commit": commit},
-        **({"models": models} if models else {}),
         "permissions": active_perms,
         "rules": active_rules,
         **({"capabilities": own_caps} if own_caps else {}),
-        # unknown keys are dropped, not persisted — a caller typo must not seed junk
-        # config that the strict loader then flags on every read
-        "budgets": {**DEFAULT_BUDGETS,
-                    **{k: v for k, v in (budgets or {}).items() if k in DEFAULT_BUDGETS}},
+        "budgets": dict(DEFAULT_BUDGETS),
         "retention": {"keep_runs": 30},
         # the pattern's values over the defaults — the routine is saved following it
         **({"pattern": pattern} if settings else {}),
@@ -174,30 +161,25 @@ def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,  #
     # API was sent); an unset one leaves the pattern's
     if cron:
         cfg["schedule"] = {"cron": cron, "tz": tz, "catchup": "skip"}
-    if not enabled:
-        cfg["enabled"] = False
-    if models:
-        cfg["models"] = models
-    if budgets:
-        cfg["budgets"] = {**cfg["budgets"], **{k: v for k, v in budgets.items()
-                                                if k in DEFAULT_BUDGETS}}
     if tags:
         cfg["tags"] = list(tags)
     if fs_read_roots:
-        cfg["fs_read_roots"] = [_tilde(p) for p in fs_read_roots]
+        cfg["fs_read_roots"] = [fields.tilde(p) for p in fs_read_roots]
     if fs_write_roots:
-        cfg["fs_write_roots"] = [_tilde(p) for p in fs_write_roots]
+        cfg["fs_write_roots"] = [fields.tilde(p) for p in fs_write_roots]
     atomic_write_yaml(routine_dir / "routine.yaml", cfg)
     # The pattern's own finish line, if it carries one; the finish line the PERSON described
     # is specific to this routine, so it is proposed below rather than written here.
     pattern_apply.write_finish_line(routine_dir, settings, now=now_iso())
-    # tuning.yaml (recipe-classed, improver-editable): the deliberation level — the caller's,
-    # else the pattern's. Always written, so the file exists for later tuning edits.
-    level = deliberation or pattern_apply.deliberation(settings)
+    # tuning.yaml (recipe-classed, improver-editable): the pattern's deliberation level.
+    # Always written, so the file exists for later tuning edits.
+    level = pattern_apply.deliberation(settings)
     write_tuning(routine_dir, {"deliberation": level if level in DELIBERATION_LEVELS
                                else DEFAULT_DELIBERATION})
 
-    init_repo(routine_dir, f"scaffold {slug} from workflow {workflow_slug}")
+    # ONE implementation for every managed repo: the neutral identity, the push hook and the
+    # first commit (F285)
+    libgit.init_repo(routine_dir, first_commit=f"scaffold {slug} from workflow {workflow_slug}")
     # What is specific to THIS routine waits for the person's accept, highlighted on its page.
     from ..engine import finishline
 
@@ -209,17 +191,4 @@ def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,  #
                           context=context,
                           finish_line=finishline.from_words(list(finish_line or [])))
     return routine_dir
-
-
-def _tilde(path: str) -> str:
-    """Collapse $HOME → ~ so an absolute path never embeds the account/home-dir name."""
-    home = str(Path.home())
-    return "~" + path[len(home):] if path.startswith(home) else path
-
-
-def init_repo(repo_dir: Path, message: str) -> None:
-    """Git init a managed repo with the neutral identity + push hook + first commit —
-    ONE implementation for every managed repo (libgit.init_repo, F285).
-    """
-    libgit.init_repo(repo_dir, first_commit=message)
 

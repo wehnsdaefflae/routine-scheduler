@@ -337,19 +337,22 @@ def test_scaffold_creates_valid_routine(tmp_path):
                  workflow_slug="general-task")
 
 
-def test_scaffold_writes_stage_modules(tmp_path):
+def test_scaffold_writes_home_as_tilde_and_a_root_beside_it_verbatim(tmp_path, monkeypatch):
+    """`~` stands for $HOME and nothing else: a root in a sibling directory that merely starts
+    with the same characters (/home/me-data beside /home/me) was written as `~-data`, which
+    names no directory at all."""
+    home = tmp_path / "me"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
     server = ServerConfig()
     server.routines_home = tmp_path / "routines"
     server.routines_home.mkdir()
     server.libraries_home = SEED
-    # the wizard passes extra stage modules; they land in the routine's stages/ (the LLM-decomposed
-    # stages would too, but there's no generator endpoint in this test)
-    d = scaffold(server, slug="split-routine", name="Split",
-                 instruction="# Entry\n\nStages in stages/.", workflow_slug="general-task",
-                 stages={"discover": "# Discover stage\n\nHow to discover.",
-                         "compose.md": "# Compose stage\n\nHow to compose."})
-    assert (d / "stages" / "discover.md").read_text().startswith("# Discover stage")
-    assert (d / "stages" / "compose.md").read_text().startswith("# Compose stage")
+    d = scaffold(server, slug="rooted", name="Rooted", instruction="Read the notes.",
+                 workflow_slug="general-task",
+                 fs_read_roots=[str(tmp_path / "me-data"), str(home / "notes")])
+    raw = yaml.safe_load((d / "routine.yaml").read_text())
+    assert raw["fs_read_roots"] == [str(tmp_path / "me-data"), "~/notes"]
 
 
 def test_dump_markdown_roundtrips_through_engine_parse():
