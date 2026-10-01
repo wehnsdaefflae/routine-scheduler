@@ -31,6 +31,33 @@ def test_memoized_hits_until_any_input_changes(tmp_path):
     assert memo.memoized("k", [f], compute)["n"] == 3
 
 
+def test_a_recompute_is_a_use_and_evicts_nothing_for_itself(tmp_path, monkeypatch):
+    """A dict keeps an existing key's position on assignment, so a key whose sources moved was
+    re-stored IN PLACE — at the eviction end it had reached — and a full cache first evicted a
+    bystander for room the key already held. Two inserts later the value just computed was the
+    one thrown out."""
+    memo.reset()
+    monkeypatch.setattr(memo, "_MAX_ENTRIES", 3)
+    sources = {k: tmp_path / k for k in "abcde"}
+    for p in sources.values():
+        p.write_text("v1", encoding="utf-8")
+    computed: list[str] = []
+
+    def read(key: str) -> str:
+        return memo.memoized(key, [sources[key]], lambda: (computed.append(key), key)[1])
+
+    for key in "abc":
+        read(key)                                      # full: a oldest, then b, then c
+    sources["b"].write_text("v2!", encoding="utf-8")   # b's source moves…
+    read("b")                                          # …so b is recomputed: a USE of b
+    assert set(memo._cache) == set("abc"), "the recompute evicted a bystander"
+    read("d")
+    read("e")                                          # evict the two least recent: a, c
+    computed.clear()
+    read("b")
+    assert computed == [], "the value just recomputed was evicted as if it were the oldest"
+
+
 def test_usage_records_parse_once_and_refresh_on_append(tmp_path):
     memo.reset()
     ctrl = tmp_path / ".control"
