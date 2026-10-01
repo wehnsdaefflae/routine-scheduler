@@ -249,6 +249,32 @@ async def test_abort_active_run(make_routine, tmp_path, monkeypatch):
     assert await runner.abort("abortee") is False
 
 
+async def test_the_engines_stderr_is_kept_as_a_bounded_tail(make_routine, tmp_path,
+                                                            monkeypatch):
+    """The daemon reads an engine's stderr for its LAST lines only (`_notable_stderr`, the
+    synthetic finish's excerpt), and `communicate()` held every byte of it in memory for as
+    long as the run lasted. What reaches the reap is a bounded tail — with the last line in it.
+    """
+    d = make_routine(slug="chatty")
+    cfg, _ = load_routine(d)
+    monkeypatch.setattr(runner_state, "STDERR_TAIL_BYTES", 64 * 1024)
+    _stub_engine(monkeypatch, "head -c 1000000 /dev/zero | tr '\\000' x >&2; "
+                              "echo 'ERROR the last word' >&2")
+    seen: list[bytes] = []
+    real = runner_reap.reap
+
+    def reap(runner, run, cfg, stderr):
+        seen.append(stderr)
+        return real(runner, run, cfg, stderr)
+
+    monkeypatch.setattr(runner_reap, "reap", reap)
+    runner = Runner(_server(tmp_path), EventBus())
+    await runner.fire(cfg)
+    assert await _wait_for(lambda: not runner.active, wait_s=10)
+    assert len(seen[0]) <= 64 * 1024, f"{len(seen[0]):,} bytes of stderr were held"
+    assert seen[0].rstrip().endswith(b"ERROR the last word")
+
+
 def test_recover_orphans(make_routine, tmp_path):
     d = make_routine(slug="orphan")
     run_dir = d / "runs" / "20260701-070000"
