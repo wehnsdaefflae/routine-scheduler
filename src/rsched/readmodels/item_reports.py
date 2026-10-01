@@ -27,10 +27,12 @@ def refs(item_id: str, *parts: str) -> list[str]:
     return sorted(set(REF_RE.findall(" ".join(parts))) - {item_id})
 
 
-def _event(row: dict, key: str) -> dict:
-    """One folded EVENT stamp off a report row, or `{}`. A hand-trimmed ledger can leave a
-    non-dict there, and three call sites reading it inline is three places for that to be a
-    crash instead of an absence.
+def event_stamp(row: dict, key: str) -> dict:
+    """One folded EVENT stamp off a report row (`delivered`, `retracted`, `superseded`), or
+    `{}`. A hand-trimmed ledger can leave a non-dict there, so every site that asks whether a
+    row was folded asks HERE: one reading it inline is a 500 on `/api/items` instead of an
+    absence, and one reading it by truthiness alone disagrees with the rest about which rows
+    are folded.
     """
     value = row.get(key)
     return value if isinstance(value, dict) else {}
@@ -59,7 +61,7 @@ def report_row_item(row: dict, addressed: list[dict], closed_by: dict[str, str],
     """
     item_id = str(row.get("id") or "").strip().upper()
     title, detail = str(row.get("title") or ""), str(row.get("detail") or "")
-    delivered, retracted, superseded = (_event(row, k) for k in
+    delivered, retracted, superseded = (event_stamp(row, k) for k in
                                         ("delivered", "retracted", "superseded"))
     if retracted:
         status = "dropped"
@@ -112,8 +114,8 @@ def resolved_carriers(rows: list[dict], carrier_status: dict[str, str]) -> dict[
     ledger is append-only and neither is reachable by any write here, but a hand-trimmed file
     must not spin.
     """
-    folds = {str(r.get("id") or "").upper(): str((r.get("superseded") or {}).get("by") or "")
-             for r in rows if r.get("superseded")}
+    folds = {str(r.get("id") or "").upper(): str(stamp.get("by") or "")
+             for r in rows if (stamp := event_stamp(r, "superseded"))}
     out: dict[str, str] = dict(carrier_status)
     for start, first in folds.items():
         seen, at = {start}, first

@@ -16,12 +16,13 @@ Four files merge into one shape (docs/items.md is the spec):
   the way `report.json` is for an `F<n>`.
 
 A report holds only its own window, so most items live on solely through the changelog and
-the answered markers — those are `archive_only` and carry no prose of their own. Findings
-have no `status` field on disk yet (the self-audit routine will emit one from the spec on a
-later run); an absent status reads `unknown` and is NEVER recovered from title prose.
+the answered markers — those are `archive_only` and carry no prose of their own. The self-audit
+routine writes a `status` on every finding; one still reading `unknown` was written before it
+did, and an absent status is NEVER recovered from title prose.
 
-Read-model discipline: nothing here writes, and the merge is memoized behind the four
-files' stat fingerprint.
+Read-model discipline: nothing here writes, and the merge is memoized behind the stat
+fingerprint of the four files plus the ⚑ priorities store (`priorities.py`), whose flags float
+an item to the top of the list.
 """
 
 from __future__ import annotations
@@ -33,10 +34,10 @@ from pathlib import Path
 from typing import Any
 
 from ..paths import read_json
-from ..priorities import priorities_path
-from ..reports import REPORTS_FILE, read_reports
+from ..priorities import priorities_path, read_priorities
+from ..reports import read_reports, reports_path
 from . import memo
-from .item_reports import refs, report_row_item, resolved_carriers
+from .item_reports import event_stamp, refs, report_row_item, resolved_carriers
 
 SELF_AUDIT_SLUG = "self-audit"
 
@@ -62,8 +63,7 @@ def source_paths(routine_dir: Path, routines_home: Path) -> list[Path]:
     audit = _audit_dir(routine_dir)
     return [audit / "report.json", audit / "changelog.jsonl",
             audit / "decisions-answered.json",
-            Path(routines_home) / ".control" / REPORTS_FILE,
-            priorities_path(routines_home)]
+            reports_path(routines_home), priorities_path(routines_home)]
 
 
 # ---- source readers ---------------------------------------------------------------------
@@ -204,18 +204,17 @@ def _sort_key(item: dict) -> tuple:
 
 def build(routine_dir: Path, routines_home: Path) -> dict:
     """The merged index: `{"items": [...], "counts": {...}}`, newest origin first."""
-    paths = source_paths(routine_dir, routines_home)
-    key = f"items:{routine_dir}"
-    return memo.memoized(key, paths, lambda: _build(*paths))
+    return memo.memoized(f"items:{routine_dir}", source_paths(routine_dir, routines_home),
+                         lambda: _build(routine_dir, routines_home))
 
 
-def _build(report_path: Path, changelog_path: Path,
-           answered_path: Path, reports_path: Path, priorities_file: Path) -> dict:
-    report = read_json(report_path)
+def _build(routine_dir: Path, routines_home: Path) -> dict:
+    audit = _audit_dir(routine_dir)
+    report = read_json(audit / "report.json")
     report = report if isinstance(report, dict) else {}
-    answered = read_json(answered_path)
+    answered = read_json(audit / "decisions-answered.json")
     answered = answered if isinstance(answered, dict) else {}
-    addressed = _addressed_by_id(read_changelog(changelog_path))
+    addressed = _addressed_by_id(read_changelog(audit / "changelog.jsonl"))
 
     items: dict[str, dict] = {}
     for kind, field in (("finding", "findings"), ("decision", "decisions")):
@@ -226,7 +225,7 @@ def _build(report_path: Path, changelog_path: Path,
             if item_id:
                 items[item_id] = _report_item(kind, entry, report,
                                               addressed.get(item_id, []), answered)
-    rows = read_reports(reports_path)
+    rows = read_reports(reports_path(routines_home))
     # A report CLOSES the rows it disposes of — the reply is the closure record, so the map is
     # built over the whole stream before any item is shaped. A RETRACTED reply settles nothing:
     # the target's question never got its answer delivered.
@@ -253,13 +252,13 @@ def _build(report_path: Path, changelog_path: Path,
     carrier_status: dict[str, str] = {}
     for row in rows:
         item_id = str(row.get("id") or "").strip().upper()
-        if item_id and not row.get("superseded"):
+        if item_id and not event_stamp(row, "superseded"):
             items[item_id] = report_row_item(row, addressed.get(item_id, []), closed_by, {})
             carrier_status[item_id] = items[item_id]["status"]
     resolved = resolved_carriers(rows, carrier_status)
     for row in rows:
         item_id = str(row.get("id") or "").strip().upper()
-        if item_id and row.get("superseded"):
+        if item_id and event_stamp(row, "superseded"):
             items[item_id] = report_row_item(row, addressed.get(item_id, []), closed_by,
                                               resolved)
     for item_id in [*addressed, *answered]:
@@ -267,9 +266,7 @@ def _build(report_path: Path, changelog_path: Path,
         if item_id and item_id not in items and item_id[:1] in TYPE_BY_PREFIX:
             items[item_id] = _archive_item(item_id, addressed.get(item_id, []), answered)
 
-    prior = read_json(priorities_file)
-    flagged = ({str(k).upper() for k, v in prior.items() if isinstance(v, dict)}
-               if isinstance(prior, dict) else set())
+    flagged = set(read_priorities(routines_home))
     for item in items.values():
         if item["id"] in flagged:
             item["priority"] = True

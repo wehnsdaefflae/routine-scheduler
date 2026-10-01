@@ -48,7 +48,7 @@ def _loop(home: Path, slug: str, *, owed: list[str] | None = None):
 def _status(home: Path) -> dict[str, str]:
     audit = home / "self-audit"
     audit.mkdir(parents=True, exist_ok=True)
-    built = items._build(*items.source_paths(audit, home))
+    built = items._build(audit, home)
     return {i["id"]: i["status"] for i in built["items"]}
 
 
@@ -98,7 +98,7 @@ def test_the_fold_is_recorded_on_the_row_and_reaches_the_read_model(home):
     row = {r["id"]: r for r in read_reports(reports_path(home))}["R1"]
     assert row["superseded"]["by"] == "R2"
     assert row["superseded"]["to"] == "global-utils-review"
-    built = {i["id"]: i for i in items._build(*items.source_paths(home / "self-audit", home))["items"]}
+    built = {i["id"]: i for i in items._build(home / "self-audit", home)["items"]}
     assert built["R1"]["superseded"]["by"] == "R2"
     assert built["R2"]["supersedes"] == ["R1"]
     # …and it now reads as OWNED by the carrier's target: a folded row that still said

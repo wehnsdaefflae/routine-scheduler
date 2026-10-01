@@ -97,6 +97,7 @@ arbitrary payload keys). Nothing reads them.
   current rather than historical.
 - **`archive_only`** — true when no source holds the item's own record any more and it
   survives solely through the changelog / answered markers.
+- **`priority`** — present (`true`) only on an item the user flagged ⚑ (see below).
 - Type extras: **`severity`** (findings), **`options[]`** + **`resolution`** (decisions),
   **`to`** + **`delivered{ts,run_id}`** + **`answers`** + **`settles[]`** + **`closes`** +
   **`answered_by`** + **`superseded{ts,by,to}`** + **`supersedes[]`**
@@ -339,6 +340,18 @@ re-formatted from fields, which is why they cannot ride the generic endpoint. Ev
 else — the free note for the next run, and withdrawing ANY queued message — goes through
 the generic per-routine message endpoints (docs/messages.md, D74). Answering a *decision*
 still happens on the Decisions page, through the same inbox.
+
+## The ⚑ priority flag
+
+The user's "work this first" (D75) on any `F`/`D`/`R` item: `POST /api/items/{id}/priority
+{"on": true|false}` writes `<routines>/.control/item-priorities.json` (`rsched/priorities.py`,
+the web layer's store — never `report.json`, which self-audit rewrites whole every run, and
+never the append-only ledger, which records what runs SAID rather than UI state). A flagged
+item carries `priority: true` and sorts above the unflagged maintenance items, each band keeping
+its newest-first order; its OWNING routine's next run reads it in a "PRIORITY items" state-digest
+section (an `R<n>` belongs to its `target`; every `F`/`D`, and an untargeted report, to
+self-audit). The store is the read model's fifth fingerprinted input, so a toggle invalidates the
+memo like any source edit.
 
 ## Report ids
 
