@@ -36,12 +36,26 @@ function seenSet() {
  *  site: the `tag`, which is how the same event raised from three open tabs collapses into
  *  one OS notification, and the click, which focuses this window and navigates. `href` is a
  *  hash route; omitted, the notification is inert on click. Silently does nothing while
- *  notifications are off — the caller states the event, not the policy. */
+ *  notifications are off — the caller states the event, not the policy.
+ *
+ *  Chrome on Android grants the permission but has no page constructor — it throws "Illegal
+ *  constructor" — so there the same notification is raised through the console's service
+ *  worker (registered once Web Push is enabled), whose click handler opens `data.url` (the
+ *  Decisions page when there is none). Without a worker that platform has no way to show one,
+ *  and the event passes silently — it used to throw instead, before `check()` could store the
+ *  decision as seen, so every later snapshot threw again at the same one. */
 export function show(title, body, { tag, href } = {}) {
-  if (!enabled()) return null;
-  const n = new Notification(title, { body, ...(tag ? { tag } : {}) });
-  if (href) n.onclick = () => { window.focus(); location.hash = href; n.close(); };
-  return n;
+  if (!enabled()) return;
+  const options = { body, ...(tag ? { tag } : {}) };
+  try {
+    const n = new Notification(title, options);
+    if (href) n.onclick = () => { window.focus(); location.hash = href; n.close(); };
+  } catch {
+    navigator.serviceWorker?.getRegistration("/")
+      .then((reg) => reg?.showNotification(title,
+        { ...options, ...(href ? { data: { url: `/${href}` } } : {}) }))
+      .catch(() => { /* nothing left to show it with */ });
+  }
 }
 
 function check({ items }) {
