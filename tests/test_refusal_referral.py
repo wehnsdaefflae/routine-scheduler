@@ -119,6 +119,39 @@ def test_classification_unavailable_counts_as_answer():
     assert refusal.is_refusal(_ctx(_Registry(tool2)), "") is False   # empty short-circuits
 
 
+class _GoneRegistry(_Registry):
+    """A role naming a model the catalog no longer resolves: resolution itself raises."""
+
+    def __init__(self, tool_ep=None, unc_ep=None, *, gone: str):
+        super().__init__(tool_ep, unc_ep)
+        self.gone = gone
+
+    def for_model(self, kind, models):
+        if self.gone == "tool_call":
+            raise EndpointError("model 'retired' is not in the catalog")
+        return super().for_model(kind, models)
+
+    def for_uncensored(self, models):
+        if self.gone == "uncensored":
+            raise EndpointError("model 'retired' is not in the catalog")
+        return super().for_uncensored(models)
+
+
+def test_an_unresolvable_classifier_counts_as_an_answer_rather_than_failing_the_run():
+    # resolution sat outside the guard: the EndpointError escaped is_refusal, past the loop's
+    # schema retry, and ended the run as an "Endpoint failure" at its first prose reply
+    assert refusal.is_refusal(_ctx(_GoneRegistry(gone="tool_call")), SOFT_REFUSAL) is False
+
+
+def test_an_unresolvable_harness_is_a_failed_delivery_still_flagged_once():
+    tool = _ScriptedEndpoint([_c(parsed=ISOLATION)])
+    ctx = _ctx(_GoneRegistry(tool, gone="uncensored"))
+    record = refusal.clarify_refusal(ctx, task="t", refusal=REFUSAL, where="loop")
+    assert record["referred"] is False and "not in the catalog" in record["harness_error"]
+    assert ctx.transcript.events == [("refusal", record)]   # the ONE event, whatever happens
+    assert ctx.referrals == 0
+
+
 # --- the clarification pipeline ----------------------------------------------------
 
 def test_clarify_isolates_and_refers_only_the_fragment():
