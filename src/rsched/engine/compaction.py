@@ -18,6 +18,8 @@ import re
 import shutil
 from pathlib import Path
 
+from .actionschema import brief_value
+
 COMPACT_AT_FRACTION = 0.6
 
 # Once the endpoint demonstrably serves cache hits, carrying context is ~10x cheaper than
@@ -66,6 +68,19 @@ def input_cap_tokens(context_tokens: int, max_output_tokens: int, *, cached: boo
 def window_ceiling_tokens(context_tokens: int, max_output_tokens: int) -> int:
     """Available input tokens. Input estimates carry their own conservative packing margin."""
     return max(0, context_tokens - max_output_tokens)
+
+
+def turn_record(turn: int, action: dict) -> dict:
+    """One turn as the digest below remembers it once its messages are elided.
+
+    ONE builder for the two writers of `turn_records` — the live loop, as each action lands,
+    and `history.replay_messages`, as a resume rebuilds them — so a resumed run's digest reads
+    exactly like the live one. The brief's width is the digest's, not `brief_value`'s.
+    """
+    return {"turn": turn, "kind": action.get("kind", "?"),
+            "brief": json.dumps(brief_value(action)[:80], ensure_ascii=False),
+            "say": action.get("say", "")}
+
 
 def maybe_compact(messages: list[dict], turn_records: list[dict], cap_tokens: float
                   ) -> tuple[list[dict], dict | None]:

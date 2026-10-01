@@ -1,12 +1,11 @@
-"""Prompt-size management: deterministic compaction, LLM-driven history archival, and
-transcript replay for resume.
+"""Facts derived from a run's TRANSCRIPT — what a resumed leg, a rewind and a branch rebuild
+from the record rather than from a live loop.
 
-Compaction shrinks only the in-prompt conversation — the transcript on disk keeps
-everything. `maybe_compact` elides the middle to a one-line digest per turn and lands
-instantly; `archive_middle` then reorganizes that same middle into navigable markdown
-files under runs/<ts>/history/ that the model reads back on demand, off the hot path
-(engine/archival.py). The digest is what the run carries meanwhile, and what it keeps if
-the archival degrades — never a summary standing in for the archive.
+`replay_messages` turns the events back into the message list the model read (resume), and
+the rest recover what a fresh RunContext would otherwise forget: the turn boundary a rewind or
+a branch may cut at, children that died with the process, earlier legs' spend and counters,
+the paths a run has seen, and the stage modules it has entered. Shrinking a LIVE message list
+is a different job on different data and lives in `compaction.py` / `window.py` (F393).
 """
 
 from __future__ import annotations
@@ -16,7 +15,7 @@ from pathlib import Path
 
 from ..endpoints.base import fold_usage
 from . import enginenote
-from .actionschema import brief_value
+from .compaction import turn_record
 from .observations import format_observation
 
 
@@ -66,10 +65,7 @@ def replay_messages(events: list[dict]) -> tuple[list[dict], int, list[dict]]:
             turn = ev.get("turn")
             if isinstance(turn, int):
                 last_turn = turn
-                brief = brief_value(p)[:80]
-                records.append({"turn": turn, "kind": p.get("kind", "?"),
-                                "brief": json.dumps(brief, ensure_ascii=False),
-                                "say": p.get("say", "")})
+                records.append(turn_record(turn, p))
         elif kind_ev == "observation":
             if p.get("kind") == "wait":
                 # a child listed in this wait's finished rows was delivered BY it —

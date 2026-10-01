@@ -479,10 +479,10 @@ BRIEF_FIELD = {"util": "name", "write_util": "name", "remove_util": "name", "rea
 def brief_value(action: dict) -> str:
     """The VALUE of the action's most identifying field — no kind, no truncation.
 
-    The three sites that record a turn (`loop._record_turn`, the admin audit line,
-    `history.read_transcript`) store the kind SEPARATELY and want only this value, and each
-    carried its own copy of the same lookup with a different truncation. The widths stay theirs;
-    the derivation is now one function.
+    The sites that record a turn (`compaction.turn_record` — shared by the live loop and the
+    resume replay — and the admin audit line in `loop`) store the kind SEPARATELY and want only
+    this value, and each carried its own copy of the same lookup with a different truncation.
+    The widths stay theirs; the derivation is now one function.
     """
     kind = str(action.get("kind") or "")
     return str(action.get(BRIEF_FIELD.get(kind, ""), "") or "")

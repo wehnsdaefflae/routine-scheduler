@@ -83,7 +83,7 @@ def test_doc_pins_the_canonical_engine_strings(make_routine, tmp_path):
         retry_message(["x"]).splitlines()[-1],
         # loop.py tails + control.py feeds + history.py pointer
         "converge DELIBERATELY",
-        "OBSERVATION (budget spent)",   # the reserved finish turn (loop._reserve_finish)
+        "OBSERVATION (budget spent)",   # the reserved finish turn (loopnudge.reserve_finish)
         "read_file the index and the relevant files before relying on memory",
         "USER MESSAGE (injected mid-run)",
         "CHILD RUN FINISHED",

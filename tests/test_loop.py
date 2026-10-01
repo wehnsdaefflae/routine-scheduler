@@ -1697,6 +1697,22 @@ def test_schema_storm_fails_early_with_a_clear_outcome(make_routine, scripted):
     assert "cannot reliably hold the action schema" in fin["payload"]["summary"]
 
 
+def test_schema_storm_never_preempts_a_finish_that_landed(make_routine, scripted):
+    """The storm exists to stop a run LIMPING on at full-prompt retry prices. A finish ends the
+    run anyway, so failing it buys nothing — and it threw away the one thing that survives a
+    run, its authored summary, for an engine verdict. On the reserved finish turn that is the
+    exact loss the reserve exists to prevent."""
+    seq = []
+    for n in range(3):
+        seq += [f"nope {n}", write_file(f"state/r{n}.txt", content="x", say="recovered")]
+    seq += ["nope 3", finish("partial", "three of four files; resume at state/r3.txt")]
+    _d, _ep, status, _run_dir, events = _run(make_routine, scripted, seq)
+    assert status == "partial"
+    fin = [e for e in events if e["type"] == "finish"][-1]
+    assert fin["payload"]["authored"] is True
+    assert "resume at state/r3.txt" in fin["payload"]["summary"]
+
+
 def test_schema_storm_streak_resets_on_a_clean_turn(make_routine, scripted):
     """The storm streak measures CONSECUTIVE retry-burdened turns: a clean turn resets
     it, so ordinary occasional retries never trip the D87 guard."""

@@ -1,13 +1,14 @@
-"""Run control plane: the abort switch, the pause gate, mid-run model, deliberation and
-rule-binding switches, and the turn-boundary message feeds (injected user messages,
-finished sub-workflow announcements).
+"""Run control plane: the abort switch, the pause gate, and the turn-boundary message feeds
+(injected user messages and slash commands, finished sub-workflow announcements) with the one
+renderer each that a resume's replay shares. The control.json SWITCHES — model, deliberation,
+rule bindings, a live config change — are `switches.py`.
 
 Everything here runs BETWEEN turns and mutates only the loop's message list / context —
-never the model call itself. control.json stays web-owned: the engine only reads it
-(pause, switch_model, set_deliberation, add_rules, drop_rules) and reacts at the
-next turn boundary. The abort flag is the one thing read MID-turn as well: a util, script or
-shell command in flight asks it through `RunContext.aborted` and ends with the run
-(`utils_run.run_jailed`) — the command's own session keeps every abort signal away from it.
+never the model call itself. control.json stays web-owned: the engine only reads it (here, its
+`pause`) and reacts at the next turn boundary. The abort flag is the one thing read MID-turn as
+well: a util, script or shell command in flight asks it through `RunContext.aborted` and ends
+with the run (`utils_run.run_jailed`) — the command's own session keeps every abort signal away
+from it.
 """
 
 from __future__ import annotations
@@ -35,8 +36,9 @@ def request_abort() -> None:
 
 
 class RunAborted(Exception):  # noqa: N818 — control-flow signal (caught to finish as aborted)
-    """Raised at a turn boundary when an abort was requested (signal or control.json);
-    the loop catches it to finish the run as `aborted`.
+    """Raised at a turn boundary when an abort was requested — the process-wide flag
+    `request_abort` raises, or a parent's kill of this child — and caught by the loop to
+    finish the run as `aborted`.
     """
 
 
@@ -190,9 +192,8 @@ def drain_injections(loop) -> None:
     # fresh run and is consumed only by that run's boot — mid-run injection is the live
     # run view's channel, by design. Answers to THIS run's own deferred questions still
     # arrive mid-run (F195, below).
-    resumed = loop.resume and ctx.depth == 0
     pairs = inbox.collect_deferred_answers(ctx.routine.dir, loop.consumed_dir,
-                                           own_run_ts=ctx.run_ts if resumed else None)
+                                           own_run_ts=ctx.run_ts if loop.resume else None)
     if pairs:
         # R118: when the answer is a typed ACCESS-REQUEST decision, the GRANT must
         # arrive with the prose — seed the run overlay and rebuild the live policy
