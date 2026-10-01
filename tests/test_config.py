@@ -225,6 +225,24 @@ def test_routine_structural_problems(tmp_path):
     assert cfg2 is None and len(problems2) == 1
 
 
+def test_a_schedule_without_a_zone_is_in_the_servers_zone(tmp_path, monkeypatch):
+    """The console's schedule editor speaks the SERVER's zone and every friendly save writes it
+    beside the cron, so a routine.yaml that names no zone must mean that zone too — not a fixed
+    one, which fired a hand-written routine at another place's times on any other host."""
+    monkeypatch.setenv("TZ", "America/New_York")
+    cfg, problems = load_routine(_mk_routine(tmp_path, {"description": "x",
+                                                         "schedule": {"cron": "0 7 * * *"}}))
+    assert problems == [] and cfg.tz == "America/New_York"
+
+
+def test_a_host_zone_zoneinfo_cannot_load_defaults_to_utc(tmp_path, monkeypatch):
+    """A default is never a zone the scheduler would choke on: a host whose TZ is not an IANA
+    key falls back to UTC, the same fallback server_tz takes for an undetectable zone."""
+    monkeypatch.setenv("TZ", "Not/A_Zone")
+    cfg, problems = load_routine(_mk_routine(tmp_path, {"description": "x"}))
+    assert problems == [] and cfg.tz == "UTC"
+
+
 def test_routine_empty_description_flagged(tmp_path):
     d = _mk_routine(tmp_path, {"schedule": {"cron": "0 7 * * 1"}})
     cfg, problems = load_routine(d)

@@ -13,6 +13,7 @@ from ..config import (
     DEFAULT_PERMISSIONS,
     DELIBERATION_LEVELS,
     ServerConfig,
+    default_tz,
     write_tuning,
 )
 from ..health_events import log_health_event
@@ -28,7 +29,7 @@ GITIGNORE = "runs/\ninbox/\nquestions/\nmnt/\n.util_outputs/\n"
 # The parameter list IS routine creation's config surface (creation flow + API both fill it);
 # bundling it into an object would only relocate the same list.
 def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,  # noqa: PLR0913
-             workflow_slug: str, cron: str = "", tz: str = "Europe/Berlin",
+             workflow_slug: str, cron: str = "", tz: str = "",
              description: str = "", models: dict[str, str] | None = None,
              budgets: dict | None = None,
              fs_read_roots: list[str] | None = None,
@@ -54,7 +55,8 @@ def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,  #
     `## Done when`; `never` — what they said a run must never do — its `## Never` (and
     context for the settings recommended to stop it before the action). A one-line
     `description` (for the UI) is always written, falling back to the name; `models` maps a
-    role to a catalog model NAME.
+    role to a catalog model NAME. `tz` is the zone the schedule is in — empty means the
+    server's (`config.default_tz`), the zone the console shows and saves schedules in.
     """
     from .. import library_docs
     from ..config import DEFAULT_RULES
@@ -64,6 +66,7 @@ def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,  #
 
     if not is_slug(slug):
         raise ValueError(f"slug {slug!r} is not kebab-case")
+    tz = tz or default_tz()
     routine_dir = server.routines_home / slug
     if routine_dir.exists():
         raise ValueError(f"routine dir {routine_dir} already exists")

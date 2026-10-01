@@ -131,6 +131,23 @@ def _known_tz(v: str) -> str:
     return v
 
 
+def default_tz() -> str:
+    """The zone a schedule is in when none was named: the SERVER's (`schedule.server_tz`).
+
+    It is the zone the console's schedule editor speaks and the one every friendly-schedule
+    save writes beside the cron, so a routine.yaml that names no zone and one saved from the
+    page mean the same clock. A host zone `ZoneInfo` cannot load (a POSIX `TZ` string) reads as
+    UTC — the fallback `server_tz` takes for an undetectable zone — because a default is never
+    validated, and an unknown zone reaching the scheduler unwinds its tick.
+    """
+    from ..schedule import server_tz
+
+    try:
+        return _known_tz(server_tz())
+    except ValueError:
+        return "UTC"
+
+
 def _pop(data: dict, loc: tuple) -> None:
     """Remove the value at a (possibly nested) error location from the raw input."""
     node: object = data

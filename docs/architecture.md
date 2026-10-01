@@ -396,7 +396,8 @@ A routine dir (`~/routines/<slug>`) owns its recipe — a run NEVER follows libr
 (the recipe is materialized in at creation; deliberate, narrow exceptions read the library AS DATA
 mid-run: subtask/spawn materialization, gated in-run workflow generation, `read_rule` reads,
 and the capabilities digest's catalog listing):
-- `routine.yaml` — `description` (one-line UI summary, always present), schedule (cron + tz + catchup),
+- `routine.yaml` — `description` (one-line UI summary, always present), schedule (cron + tz + catchup;
+  a `tz` left out is the server's zone, `config.default_tz` — the zone the console edits in),
   `workflow: {library_slug, library_commit}` (provenance only), `models:` (role → catalog model NAME:
   main / tool_call / uncensored), `connections:` (provider → account label — OAuth
   connection bindings, a resource like models; see OAuth connections above),

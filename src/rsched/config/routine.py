@@ -33,6 +33,7 @@ from .base import (
     _Config,
     _known_tz,
     _validate_lenient,
+    default_tz,
 )
 
 
@@ -91,7 +92,8 @@ class RoutineConfig(_Config):
     run_gate: RunGateConfig = Field(default_factory=RunGateConfig)
     tags: list[str] = Field(default_factory=list)  # freeform, for filtering (e.g. "meta")
     cron: BlankableStr = Field("", validation_alias=AliasPath("schedule", "cron"))
-    tz: str = Field("Europe/Berlin", validation_alias=AliasPath("schedule", "tz"))
+    # No zone named = the server's (default_tz): the zone the console shows and saves in.
+    tz: str = Field(default_factory=default_tz, validation_alias=AliasPath("schedule", "tz"))
     catchup: Literal["skip", "run_once"] = Field(
         "skip", validation_alias=AliasPath("schedule", "catchup"))
     workflow_slug: BlankableStr = Field("", validation_alias=AliasPath("workflow", "library_slug"))
