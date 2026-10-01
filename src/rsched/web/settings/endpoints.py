@@ -16,6 +16,7 @@ from ...config import (
     NATIVE_MM_KINDS,
     EndpointConfig,
     ModelConfig,
+    SchemaMode,
 )
 from ...endpoints import cliproxy_mgmt, limits
 from ...endpoints.base import api_key_source
@@ -196,7 +197,9 @@ class EndpointBody(BaseModel):
     quota_source: Literal["", "cliproxy"] | None = None
     quota_key_var: str | None = None
     quota_auth_index: str | None = None
-    schema_mode: str = "json_schema"
+    # the loader's own vocabulary: as a free string, a mode it cannot load was saved with
+    # `ok: true` and quietly reverted to the default by the next load (R102)
+    schema_mode: SchemaMode = "json_schema"
     context_tokens: int = 25_000     # a DEFAULT catalog models inherit (per-model window wins)
     temperature: float | None = None  # a DEFAULT catalog models inherit
     max_tokens: int | None = None     # a DEFAULT catalog models inherit

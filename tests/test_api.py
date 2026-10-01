@@ -1376,6 +1376,13 @@ def test_settings_endpoints_crud(client):
     assert r.status_code == 400
     r = c.post("/api/settings/endpoints", json={"name": "cc", "kind": "claude-cli"})
     assert r.status_code == 400
+    # a schema_mode the loader cannot load is refused, not saved for the loader to revert
+    # quietly behind an `ok: true` (the endpoint card does not show `problems`; R102)
+    before = (tmp / "config.yaml").read_text()
+    r = c.put("/api/settings/endpoints/vllm", json={
+        "name": "vllm", "kind": "openai", "schema_mode": "strict-please"})
+    assert r.status_code == 422, r.text
+    assert (tmp / "config.yaml").read_text() == before
     assert c.delete("/api/settings/endpoints/vllm").status_code == 200
     assert c.delete("/api/settings/endpoints/vllm").status_code == 404
 
