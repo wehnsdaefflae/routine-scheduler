@@ -39,7 +39,11 @@ def _migrate(tmp_path: Path) -> tuple[subprocess.CompletedProcess, list[str]]:
     bin_dir.mkdir(exist_ok=True)
     log = tmp_path / "docker.log"
     stub = bin_dir / "docker"
-    stub.write_text('#!/bin/sh\nprintf "%s | %s\\n" "$*" "$(grep "^auth-dir" "$STUB_CONFIG")" '
+    # `info` is deploy/docker-host-guard.sh asking which host the daemon is on, not a migration
+    # step: it answers with this host's own name (so the guard lets the script through) and is
+    # NOT logged, because the assertions below are an exact list of the compose calls.
+    stub.write_text('#!/bin/sh\nif [ "$1" = info ]; then hostname; exit 0; fi\n'
+                    'printf "%s | %s\\n" "$*" "$(grep "^auth-dir" "$STUB_CONFIG")" '
                     '>> "$STUB_LOG"\n', encoding="utf-8")
     stub.chmod(0o755)
     data = tmp_path / "data"

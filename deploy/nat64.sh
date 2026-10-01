@@ -23,6 +23,13 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+# The daemon a compose command reaches is whatever the calling shell sees, and nothing here tied
+# that to the checkout these files come from: run on omen-laptop inside the sshfs mount of the
+# server's checkout, `off` rewrote the SERVER's .env and then built the fleet on the LAPTOP,
+# whose empty container list passed the left_out check below. Refuse before `switch` writes .env
+# and before `status` reports a fleet that is not this host's. See deploy/docker-host-guard.sh.
+. "$(dirname "$0")/docker-host-guard.sh"
+
 MARK='# deploy/nat64.sh: NAT64 is on. Every compose command run here reads this file set; deploy/nat64.sh off removes it.'
 NEW=""      # the copy put_env is writing; removed if the script dies before the rename
 trap '[ -z "$NEW" ] || rm -f "$NEW"' EXIT
@@ -54,6 +61,9 @@ default_files() {
 # it; the remaining arguments are what to say once that is known to be safe.
 switch() {
   local before after have chosen left_out
+  # BEFORE put_env: a refusal must leave .env exactly as it was, which is this script's own
+  # promise and the thing the wrong-host run broke (it rewrote the server's .env from a laptop).
+  require_local_docker_host "${ACTION:-on|off}" || exit 4
   before=$(cat .env; printf x); before=${before%x}
   after=$(others; printf x); after=${after%x}
   if [ -n "$1" ]; then after+="$MARK"$'\n'"COMPOSE_FILE=$1"$'\n'; fi
@@ -80,6 +90,9 @@ switch() {
 # is the one the selection gives its service (Compose's own recreate test, the config hash).
 status() {
   local files profiles hashes name svc dns mem hash want verdict
+  # Run from the laptop this listed no containers and reported nothing wrong, which reads as a
+  # healthy fleet. A report about the wrong daemon is worse than no report.
+  require_local_docker_host status || exit 4
   files=$(dotenv COMPOSE_FILE)
   profiles=$(dotenv COMPOSE_PROFILES)
   if [ -n "$files" ]; then
@@ -111,6 +124,7 @@ for var in COMPOSE_FILE COMPOSE_PROFILES; do
 done
 [ -f .env ] || { echo "no .env in $PWD: create it first (deploy/DOCKER.md, step 1)" >&2; exit 2; }
 
+ACTION="${1:-}"      # what the refusal tells him to re-run on the right host
 case "${1:-}" in
   on)  files="$(default_files):compose.nat64.yml"
        switch "$files" "NAT64 on — the fleet will reach IPv4-only hosts through a public gateway" \

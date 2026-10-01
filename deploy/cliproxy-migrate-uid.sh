@@ -44,6 +44,11 @@ if [ "${current}" != "${old_dir}" ] && [ "${current}" != "${new_dir}" ]; then
 fi
 
 cd "${repo}"
+# The daemon a compose command reaches is the calling shell's, not this checkout's host: run from
+# a laptop against a mounted server checkout, the stop/chown below would act on the laptop's
+# containers while the `sed -i` rewrote the SERVER's config.yaml (deploy/docker-host-guard.sh).
+. "$(dirname -- "${BASH_SOURCE[0]}")/docker-host-guard.sh"
+require_local_docker_host || exit 4
 compose=(docker compose)
 echo "stopping cliproxy, so nothing writes as root and nothing reloads mid-move"
 "${compose[@]}" stop cliproxy

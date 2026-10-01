@@ -51,7 +51,7 @@ FLEET = {"rsched": {"service": "rsched", "dns": "[2a00:1098:2b::1]", "mem": 5368
 
 #: `docker`, resolving the compose selection the way Compose does and logging it per command.
 STUB = """#!@PYTHON@
-import hashlib, json, os, sys
+import hashlib, json, os, socket, sys
 from pathlib import Path
 
 import yaml
@@ -61,6 +61,12 @@ fleet = json.loads(os.environ["STUB_FLEET"])
 if args[0] == "inspect":
     c = fleet[args[1]]
     print("|".join([c["service"], c["dns"], str(c["mem"]), c.get("hash", "")]))
+    sys.exit(0)
+if args[0] == "info":
+    # What deploy/docker-host-guard.sh compares against `hostname`: the daemon's own host name.
+    # The stub daemon IS this host's, so the guard lets the script through; STUB_DAEMON lets a
+    # test pose as a daemon somewhere else.
+    print(os.environ.get("STUB_DAEMON") or socket.gethostname())
     sys.exit(0)
 assert args.pop(0) == "compose", sys.argv
 files, profiles = [], []
@@ -111,6 +117,11 @@ def _checkout(tmp_path: Path, *, override: bool = True, profiles: str | None = "
     root = tmp_path / "checkout"
     (root / "deploy").mkdir(parents=True)
     shutil.copy2(DEPLOY / "nat64.sh", root / "deploy" / "nat64.sh")
+    # nat64.sh refuses before it writes `.env` or reports a fleet when the Docker daemon is not
+    # on this host (deploy/docker-host-guard.sh). The guard is part of the script, so a checkout
+    # without it is not one the script can run in; the stub `docker` below answers its
+    # `info --format {{.Name}}` with this host's own name, which is what the guard compares.
+    shutil.copy2(DEPLOY / "docker-host-guard.sh", root / "deploy" / "docker-host-guard.sh")
     for name in ("docker-compose.yml", "compose.nat64.yml"):
         shutil.copy2(REPO / name, root / name)
     if override:
