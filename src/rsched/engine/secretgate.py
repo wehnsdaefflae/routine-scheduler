@@ -16,7 +16,7 @@ from __future__ import annotations
 from .. import utils_lib, utils_run
 from . import requests
 from .actionschema import PSEUDO_UTILS
-from .interact import handle_ask
+from .interact import handle_ask, still_pending
 
 
 def secret_state(ctx, secret: str) -> str:
@@ -171,9 +171,13 @@ def _gate_secrets(loop, *, kind: str, name: str, needed: set, optional: set,
         "request": [f"secret:{s}" for s in undecided],
         "default": f"the {kind} is NOT run and the secrets stay unexposed until allowed"},
         poll_s)
+    if ask.get("dialog"):
+        # an ask-back on the exposure request: the call does not run, the operator's words
+        # reach the run here, and calling it again re-submits — and replaces — the request
+        # (a request's subject is its entity ids, whoever files it)
+        return {"kind": kind, "name": name, "pending_secrets": undecided, **still_pending(ask)}
     if not ask.get("answered"):
-        return {"kind": kind, "name": name, "pending_secrets": undecided,
-                "pending_approval": True, "qid": ask.get("qid"),
+        return {"kind": kind, "name": name, "pending_secrets": undecided, **still_pending(ask),
                 "reason": "the secret-exposure request is still open — do other work and "
                           f"retry the {kind} once it is settled."}
     decision = str(ask.get("decision") or "")

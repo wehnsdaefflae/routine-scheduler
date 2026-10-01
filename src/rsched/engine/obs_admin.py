@@ -1,5 +1,6 @@
 """Observation wording for the kinds that reach OUTSIDE this run — scheduling, creation, reports,
-sub-calls and questions.
+sub-calls and questions — and the ONE wording of an ask-back on any blocking decision
+(`dialog_reply`), which the library, secret-gate and reminder renderers share.
 
 Split out of `observations.py` (F393). Each one either changes instance state or asks something
 of a person, so the wording's job is to be honest about what did NOT happen yet: a draft is not
@@ -31,6 +32,24 @@ def _queued_line(obs: dict, kind: str) -> str:
     """
     return (f"OBSERVATION ({kind} QUEUED as proposal {obs.get('id')} — NOTHING CHANGED): "
             f"{obs.get('proposal') or 'the change you asked for'}. {obs.get('next', '')}").strip()
+
+
+def dialog_reply(obs: dict, what: str, resubmit: str, until: str = "") -> str:
+    """The ONE wording for the console's "ask back" on a blocking decision — the body every
+    kind's observation (and the curated-reminder note) carries after its own head.
+
+    The operator replied WITHOUT deciding: they need some back-and-forth first. Their words are
+    the whole point of the reply, so they come verbatim; then what to do with them — address
+    them, and re-submit the action that asked, which files the decision again and replaces the
+    open record (`interact.handle_ask` supersedes by subject). One pattern for every kind, so a
+    question, an approval and a request cannot drift into dialects of the same promise; a kind
+    supplies only its noun (`what`), how it is re-submitted, and what stays untouched until the
+    operator decides (`until`). `obs` carries `qid` and `user_message` (`interact.still_pending`).
+    """
+    tail = f" {until}" if until else ""
+    return (f"the user replied WITHOUT deciding — a dialog reply, NOT the answer; the {what} "
+            f"stays open ({obs.get('qid')}):\n{obs.get('user_message', '')}\nAddress their "
+            f"message, then {resubmit} — the re-submission replaces the open record.{tail}")
 
 
 def _choice_lists(obs: dict) -> str:
@@ -213,16 +232,21 @@ def format_admin(obs: dict, kind: str) -> str | None:  # noqa: C901, PLR0911, PL
             return (f"OBSERVATION (ask_user): no answer within {obs.get('timeout_min')}m — "
                     f"question stays open as deferred ({obs['qid']}). {tail}; a late answer "
                     "reaches a future run.")
+        if obs.get("dialog") and obs.get("request"):
+            # An ask-back on an ACCESS REQUEST: the same request again re-submits it (the
+            # subject is its entity ids), and its question prose is where the answer goes.
+            ids = ", ".join(obs["request"])
+            return ("OBSERVATION (ask_user — access request): " + dialog_reply(
+                obs, "request", f"ask again with ask_user and the same request ({ids}), its "
+                "question answering them", "Nothing is granted until they decide."))
         if obs.get("dialog"):
             # The console's "ask back": the user replied to a BLOCKING question without
             # deciding it. Their words are the whole point — this used to fall through to the
             # "filed as deferred … Continue." line below, so the model never saw them and
             # carried on as if nobody had answered.
-            return (f"OBSERVATION (ask_user): the user replied WITHOUT deciding — a dialog reply, "
-                    f"NOT the answer; the question stays open ({obs['qid']}):\n"
-                    f"{obs.get('user_message', '')}\nAddress their message, then ask again with "
-                    "ask_user (the original question, or a sharper version) — your re-ask "
-                    "replaces the open record.")
+            return "OBSERVATION (ask_user): " + dialog_reply(
+                obs, "question", "ask again with ask_user (the original question, or a sharper "
+                "version)")
         return (f"OBSERVATION (ask_user): question filed as deferred ({obs['qid']}). The user will "
                 "see it in the UI; the answer, if any, reaches a future run. Continue.")
     return None

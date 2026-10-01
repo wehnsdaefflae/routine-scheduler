@@ -17,7 +17,7 @@ from __future__ import annotations
 from .. import sandbox, utils_header, utils_lib, utils_run
 from ..ids import is_slug
 from ..paths import resolve_rel
-from .interact import handle_ask, is_approval
+from .interact import handle_ask, is_approval, still_pending
 from .observations import truncate
 
 
@@ -152,10 +152,11 @@ def handle_write_util(loop, action: dict, poll_s: float) -> dict:  # noqa: PLR09
             "mode": "blocking", "options": ["approve", "decline",
                 "approve this kind for the rest of this run"],
             "default": "the util is NOT applied until approved"}, poll_s,
-            qtype="util-approval")
+            qtype="util-approval", subject=name)
         if not ask.get("answered"):
-            return {"kind": "write_util", "name": name, "pending_approval": True,
-                    "qid": ask.get("qid")}
+            # pending — and after an ask-back the operator's words reach the run on THIS
+            # observation; the re-submitted write_util answers them and replaces the record
+            return {"kind": "write_util", "name": name, **still_pending(ask)}
         if not is_approval(ask["answer"]):
             # carry the verbatim answer: a decline that hides WHAT was said reads as a
             # contradiction when the user meant to approve in other words (F161)
@@ -257,10 +258,9 @@ def handle_write_rule(loop, action: dict, poll_s: float) -> dict:
                         f"{_impact_note(ctx, 'rule', name, content)}. {excerpt}",
             "mode": "blocking", "options": ["approve", "decline"],
             "default": "the rule is NOT changed until approved"}, poll_s,
-            qtype="rule-approval")
+            qtype="rule-approval", subject=name)
         if not ask.get("answered"):
-            return {"kind": "write_rule", "name": name, "pending_approval": True,
-                    "qid": ask.get("qid")}
+            return {"kind": "write_rule", "name": name, **still_pending(ask)}
         if not is_approval(ask["answer"]):
             return {"kind": "write_rule", "name": name, "declined": True,
                     "answer": str(ask["answer"])[:200]}
@@ -317,10 +317,9 @@ def handle_remove_util(loop, action: dict, poll_s: float) -> dict:
                         f"library (recoverable from git history).",
             "mode": "blocking", "options": ["approve", "decline"],
             "default": "the util is NOT removed until approved"}, poll_s,
-            qtype="util-approval")
+            qtype="util-approval", subject=name)
         if not ask.get("answered"):
-            return {"kind": "remove_util", "name": name, "pending_approval": True,
-                    "qid": ask.get("qid")}
+            return {"kind": "remove_util", "name": name, **still_pending(ask)}
         if not is_approval(ask["answer"]):
             return {"kind": "remove_util", "name": name, "declined": True}
     utils_lib.remove_util_file(home, name)

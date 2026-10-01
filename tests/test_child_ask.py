@@ -33,9 +33,10 @@ def _ctx(routine_dir, *, depth: int) -> RunContext:
 
 def _loop(ctx):
     class _Loop:
-        dialog_qid = None
+        pass
     loop = _Loop()
     loop.ctx = ctx
+    loop.dialog_qids = {}
     return loop
 
 

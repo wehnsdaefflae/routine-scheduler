@@ -13,12 +13,23 @@ and is answered on the web console — the Decisions page, with browser push car
 a phone. On timeout the run CONTINUES on the model's stated `default`; the question stays
 open as deferred so a late answer still reaches the next run. Waiting time is credited
 back to the wall-clock budget.
+
+The console's ASK BACK (an `intermediate` answer) is a reply to ANY blocking decision that
+decides nothing — the operator needs some back-and-forth first. It ends the wait at once and
+comes back as a DIALOG result, which every consumer (the authoring approvals, the curated
+reminder gate, the secret-exposure gate, `ask_user` itself) puts on the observation of the
+action that asked (`still_pending`), worded once (`obs_admin.dialog_reply`): the operator's
+words, and the instruction to answer them and re-submit that action. The record stays open;
+the re-submission SUPERSEDES it, because it is the next decision filed for the same SUBJECT
+(`handle_ask`). Nothing is written, granted or run on the strength of a reply that decided
+nothing.
 """
 
 from __future__ import annotations
 
 import time
 from datetime import datetime, timedelta
+from pathlib import Path
 
 from ..ids import question_id
 from . import availability, config_bridge, inbox, requests, runkind
@@ -61,7 +72,9 @@ def _settles_approval(text: str) -> bool:
 def _held_not_settled(qtype: str, answer: dict) -> bool:
     """D38 across record types: does this reply fail to SETTLE the question? An APPROVAL
     settles only on a clear approve/decline, an access request only on one of the typed
-    decisions; defer markers and dialog replies pass through to their own paths. A held
+    decisions; defer markers and ask-backs pass through to their own paths — an ask-back is
+    never held, whatever the record type, because the operator is asking the run something
+    and is owed the answer now, not after the decision they could not yet make. A held
     reply becomes a delayed user message and the wait continues.
 
     Every approval qtype is listed, not just the first one: the check reads the type, so a
@@ -119,17 +132,80 @@ def _free_qid(ctx) -> str:
     return qid
 
 
-def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question") -> dict:
+def still_pending(ask: dict) -> dict:
+    """The fields an UNSETTLED decision puts on the observation of the action that asked: it is
+    pending under its record — and after an ask-back the operator's words ride along, for the
+    renderer to put in front of the model (`obs_admin.dialog_reply`). ONE shape for every
+    consumer, so no renderer can find the words under one key and miss them under another.
+    """
+    out: dict = {"pending_approval": True, "qid": ask.get("qid")}
+    if ask.get("dialog"):
+        out.update(dialog=True, user_message=str(ask.get("user_message") or ""))
+    return out
+
+
+def _supersede(loop, qdir: Path, key: tuple[str, str]) -> None:
+    """The decision just filed IS the re-submission an ask-back asked for when one left a
+    record open on the same `(type, subject)` — so that record goes, once the new one exists.
+    After the filing, never before: an ask refused before it files anything must not cost the
+    open decision either.
+    """
+    if old := loop.dialog_qids.pop(key, None):
+        inbox.resolve_question(qdir, old)
+
+
+def _await_reply(loop, qdir: Path, qid: str, qtype: str, *, deadline: float,
+                 poll_s: float) -> dict | None:
+    """Wait on a BLOCKING record until a reply ends the wait — None when the deadline passes
+    first. Raises RunAborted the moment the run is stopped.
+
+    D38: an approval is settled ONLY by a clear approve/decline, and an access REQUEST only by
+    one of the typed decisions (the web's buttons). Any other plain reply ("Bin hier", an
+    unrelated instruction) is user INPUT that arrived while the question blocks — it is held
+    as a normal delayed message (drained at the next turn boundary, i.e. after this decision)
+    and the wait goes on; the question stays open. Everything else ends the wait: a settling
+    answer, the Decisions page's defer marker, and an ask-back — the one reply that ends it
+    without settling anything, answered by the caller as a dialog.
+    """
+    ctx = loop.ctx
+    while time.monotonic() < deadline:
+        if loop._aborted():
+            raise RunAborted
+        answer = inbox.take_answer(qdir, qid, loop.consumed_dir)
+        if answer is not None and _held_not_settled(qtype, answer):
+            src = str(answer.get("source", "web"))
+            ctx.transcript.event("answer", {"qid": qid, "text": str(answer["text"]),
+                                            "source": src, "held": True})
+            ctx.user_replies += 1     # held or not, the user spoke (R1310)
+            inbox.file_message(qdir, str(answer["text"]), source=src,
+                               via="web")   # the user's own reply to THIS run — live
+            continue
+        if answer:
+            return answer
+        time.sleep(poll_s)
+    return None
+
+
+def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question",
+               subject: str = "") -> dict:
+    """File one decision record and, for a blocking ask, wait for its answer.
+
+    `subject` is what the decision is ABOUT, beside its type: the util a util-approval would
+    write or remove, the rule a rule-approval would change, the curated reminder a
+    reminder-approval names. An access request's subject is its entity ids, whoever files it —
+    the model's own `request` or the secret gate's — and a plain question has none. The pair
+    keys the one thing an ask leaves behind: a record a DIALOG reply kept open
+    (`loop.dialog_qids`). The next decision filed for the same `(type, subject)` is the
+    re-submission that reply asked for and supersedes it; nothing else can. A single slot was
+    resolved by WHATEVER plain question came next, so an approval the operator had asked back
+    on was deleted by an unrelated ask.
+    """
     ctx = loop.ctx
     # EVERY write of this decision record — the first filing and each re-filing that leaves it
     # open — goes to the ROUTINE's own dir, where a person reads it; a child's `routine.dir` is
     # its runs/<ts>/sub/<n>/ workspace, which no surface scans. One name for that dir keeps the
     # re-files from drifting back to the per-run dir the first filing had to be moved off.
     qdir = ctx.root_routine_dir
-    if qtype == "question" and loop.dialog_qid:
-        # a re-ask after a dialog reply supersedes the still-open previous record
-        inbox.resolve_question(qdir, loop.dialog_qid)
-        loop.dialog_qid = None
     qid = _free_qid(ctx)
     mode = action.get("mode") or "deferred"
     if ctx.depth > 0 or runkind.is_detached_run(ctx):
@@ -156,7 +232,7 @@ def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question") -> di
     # (availability.request_denial), so the ids here are requestable.
     req_ids = availability.request_ids(action)
     if req_ids:
-        qtype = "request"
+        qtype, subject = "request", " ".join(sorted(req_ids))
     question, default = _normalize_plain(qtype, str(action["question"]), default)
     if ctx.depth > 0:
         # The record lands in the ROUTINE's pending dir, where a person reads it — so it has
@@ -181,6 +257,7 @@ def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question") -> di
 
     if mode == "deferred":
         leave_open()
+        _supersede(loop, qdir, (qtype, subject))
         return {"kind": "ask_user", "qid": qid, "mode": mode,
                 **({"request": req_ids} if req_ids else {})}
 
@@ -193,36 +270,15 @@ def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question") -> di
                         mode="blocking", qtype=qtype, default=default, expires=expires,
                         config_patch=cpatch, config_target=ctarget,
                         request=req_ids)
+    _supersede(loop, qdir, (qtype, subject))
     ctx.write_status("waiting_user",
                      question={"qid": qid, "question": question, "options": options,
                                "asked": ctx.run_ts, "expires": expires, **extra,
                                **({"request": req_ids} if req_ids else {})})
-    deadline = time.monotonic() + timeout_min * 60
     started = time.monotonic()
-    answer = None
     try:
-        while time.monotonic() < deadline:
-            if loop._aborted():
-                raise RunAborted
-            answer = inbox.take_answer(qdir, qid, loop.consumed_dir)
-            # D38: an approval is settled ONLY by a clear approve/decline, and an access
-            # REQUEST only by one of the typed decisions (the web's buttons). Any
-            # other reply ("Bin hier", an unrelated instruction) is user INPUT that
-            # arrived while the question blocks — hold it as a normal delayed message
-            # (drained at the next turn boundary, i.e. after this decision) and keep
-            # waiting; the question stays open.
-            if answer is not None and _held_not_settled(qtype, answer):
-                src = str(answer.get("source", "web"))
-                ctx.transcript.event("answer", {"qid": qid, "text": str(answer["text"]),
-                                                "source": src, "held": True})
-                ctx.user_replies += 1     # held or not, the user spoke (R1310)
-                inbox.file_message(qdir, str(answer["text"]), source=src,
-                                   via="web")   # the user's own reply to THIS run — live
-                answer = None
-                continue
-            if answer:
-                break
-            time.sleep(poll_s)
+        answer = _await_reply(loop, qdir, qid, qtype, deadline=started + timeout_min * 60,
+                              poll_s=poll_s)
     except RunAborted:
         # the run dies but the decision survives — as a deferred question for the next run
         leave_open()
@@ -244,18 +300,22 @@ def handle_ask(loop, action: dict, poll_s: float, qtype: str = "question") -> di
                                            if answer.get("decision") else {})})
         ctx.user_replies += 1             # a blocking answer IS the user's next message
         if answer.get("intermediate"):
-            # A dialog reply, not the answer: the user needs some back-and-forth before they
-            # can decide. The decision record STAYS OPEN (deferred — the run is no longer
-            # parked on it): the model's re-ask supersedes it, and a finish without a re-ask
-            # leaves it live for the next run instead of silently dropping it. What the model
-            # is told — their words and what to do with them — is obs_admin's wording.
+            # An ASK-BACK, not the answer — on any record type: the operator needs some
+            # back-and-forth before they can decide. Nothing is settled, so nothing is
+            # written, granted or run. The record STAYS OPEN (deferred — the run is no longer
+            # parked on it): the re-submission supersedes it under its subject, and a finish
+            # without one leaves it live for the next run instead of silently dropping it.
+            # A consumer puts this result on its own kind's observation (`still_pending`); what
+            # the model is told — their words and what to do with them — is obs_admin's
+            # wording.
             leave_open(churn=False)
-            loop.dialog_qid = qid
+            loop.dialog_qids[(qtype, subject)] = qid
             return {"kind": "ask_user", "qid": qid, "mode": mode, "dialog": True,
-                    "user_message": answer["text"]}
+                    "user_message": answer["text"],
+                    **({"request": req_ids} if req_ids else {})}
         inbox.resolve_question(qdir, qid)
         if req_ids:
-            # One of the typed decisions (guaranteed by the settle rule above):
+            # One of the typed decisions (guaranteed by the settle rule, `_await_reply`):
             # seed the run overlay, rebuild the live policy + transport schema, and
             # teach the outcome. Forever-decisions were persisted by the web layer at
             # click time — the engine bridges them into this run and writes no config.

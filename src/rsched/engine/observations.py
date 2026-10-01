@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 
 from . import obs_hold, outputs
+from .obs_admin import dialog_reply
 
 OBS_CAP_CHARS = 8_000
 
@@ -110,6 +111,34 @@ def _run_body(obs: dict) -> str:
     return body
 
 
+def _secret_gate(obs: dict, kind: str) -> str:
+    """D39's secret-exposure gate stopped a util or script call: it was NOT run — say why and
+    what to do next.
+
+    A DECLINE never enumerates the names it refused (R17): the refusal must not read as a
+    consolation listing of exactly what the user just protected — the model gets a count; the
+    transcript dict keeps the names for the user's own surfaces. A PENDING request still names
+    them: it is the run's open ask, not a refusal, and the names are the run's working knowledge
+    (the util's own `secrets:` declarations). An ask-back on that request is worded the one way
+    every blocking decision's is (`obs_admin.dialog_reply`): calling again re-submits it.
+    """
+    if declined := obs.get("declined_secrets"):
+        why = (f"secret exposure declined for {len(declined)} "
+               f"secret{'s' if len(declined) != 1 else ''} it declares")
+    else:
+        why = f"secret exposure pending for {', '.join(obs['pending_secrets'])}"
+    head = f"OBSERVATION ({kind} {obs['name']} NOT run — {why}): "
+    if obs.get("dialog"):
+        return head + dialog_reply(
+            obs, "request", f"call {kind} {obs['name']!r} again, your answer in its `say` (the "
+            "call re-submits the exposure request)",
+            f"The {kind} does not run, and no secret is exposed, until they decide.")
+    text = head + str(obs["reason"])
+    if obs.get("answer"):
+        text += f"\nThe user's verbatim reply: {obs['answer']}"
+    return text
+
+
 # One flat renderer on purpose: observation wording is prompt surface (docs/prompt-anatomy.md)
 # and lives in ONE place per kind — a dispatch table would only scatter the strings.
 def format_observation(obs: dict) -> str:  # noqa: PLR0911
@@ -157,22 +186,7 @@ def format_observation(obs: dict) -> str:  # noqa: PLR0911
                          "out — file a report naming the script this step needs.")
             return miss
         if obs.get("declined_secrets") or obs.get("pending_secrets"):
-            # D39 secret-exposure gate: the util was NOT run — say why and what to do next.
-            # A DECLINE never enumerates the names it refused (R17): the refusal must not
-            # read as a consolation listing of exactly what the user just protected — the
-            # model gets a count; the transcript dict keeps the names for the user's own
-            # surfaces. A PENDING request still names them: it is the run's open ask, not
-            # a refusal, and the names are the run's working knowledge (the util's own
-            # `secrets:` declarations).
-            if declined := obs.get("declined_secrets"):
-                head = (f"secret exposure declined for {len(declined)} "
-                        f"secret{'s' if len(declined) != 1 else ''} it declares")
-            else:
-                head = f"secret exposure pending for {', '.join(obs['pending_secrets'])}"
-            text = f"OBSERVATION ({kind} {obs['name']} NOT run — {head}): {obs['reason']}"
-            if obs.get("answer"):
-                text += f"\nThe user's verbatim reply: {obs['answer']}"
-            return text
+            return _secret_gate(obs, str(kind))
         if err := obs.get("error"):
             # The DECLARATION gates (executor.do_script): the call was refused before
             # anything ran, so there is no exit code to report — the message IS the repair

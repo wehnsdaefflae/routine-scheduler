@@ -81,7 +81,7 @@ def configure(loop, ctx: RunContext, workflow_body: str, instruction: str,
     loop.repeat_hashes = deque(maxlen=REPEAT_FAIL)
     loop.consumed_dir = ctx.root_run_dir / "consumed"
     loop.final_summary = ""
-    loop.dialog_qid = None   # open ask_user record a dialog reply left behind
+    loop.dialog_qids = {}    # records an ask-back left open, by (type, subject) — interact.py
     loop.executed_actions = 0  # actions that produced an observation this run
     loop._schema_storm_streak = 0   # consecutive retry-burdened turns (D87, SCHEMA_STORM_TURNS)
     # This leg's wake, set in boot. The speaker turn is the USER's after the model hands

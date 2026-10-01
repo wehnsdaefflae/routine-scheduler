@@ -107,7 +107,10 @@ form (free text, ask-back, the timeout line), and inline in the chat where it wa
 blocking question with options (approve/decline) or an access request, the chat bubble carries
 the **one-click buttons** right there, so you can approve without scrolling to the panel or
 switching to the Decisions page — all three surfaces settle each other the moment any one of
-them answers.
+them answers. **Ask back** (the full form's reply that decides nothing yet — "why do you need
+it?") works on every one of them, approvals and requests included: the agent sees your words at
+once, answers, and asks again, and its new question replaces the open one. Nothing is approved
+or granted by an ask-back.
 
 A proposed CONFIG change rides a decision the same way (`ask_user` with `config_patch`), and
 **approve & apply** on the Decisions page lands it where the engine resolved it: on this

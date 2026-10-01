@@ -25,7 +25,9 @@ between-turns control plane (abort, pause gate, injection drain, subrun announce
 `engine/switches.py` its `control.json` switches (model, deliberation, rule bindings, a live
 config change), `engine/loopend.py` how a run ENDS (the engine-authored verdicts and the one
 close-out every ending shares — result.md, autocommit, health event, final status), and
-`engine/interact.py` the ASK protocol (`ask_user` and the grant-gated approvals),
+`engine/interact.py` the ASK protocol (`ask_user` and the grant-gated approvals, and the ask-back
+that can answer any of them) with `engine/config_bridge.py` the filing check of the
+`config_patch` an ask may carry,
 `engine/admin_handlers.py` the two handlers that answer about the instance rather than to the
 user (`schedule_run`, `report`) beside their renderer `obs_admin`, and `engine/overflow.py` the
 provider-overflow vocabulary and the two request-fault nets (`_shrink_window_to_provider`,
@@ -609,7 +611,16 @@ and the capabilities digest's catalog listing):
   config), and every decision seeds the run's in-memory overlay (`engine/requests.py`) at
   whichever seam consumes it: the blocking answer, boot (decided between runs), or the live
   turn boundary (a deferred ask answered mid-run — the running run's policy, schema and util
-  sandbox pick the grant up at once). Blocking asks are durable records too, and the console is
+  sandbox pick the grant up at once). The run view's **ask back** is the one reply to a
+  blocking decision that decides nothing — on ANY of them: a plain question, a util, rule or
+  curated-reminder approval, an access request, the secret-exposure request. It ends the wait
+  at once (a plain non-settling reply is held instead, D38) and reaches the run on the
+  observation of the action that asked, in one wording (`obs_admin.dialog_reply`): the
+  operator's words, and the instruction to answer them and re-submit that action. Nothing is
+  written, granted or run on it. The record stays open, and the re-submission SUPERSEDES it as
+  the next decision filed for the same SUBJECT (`interact.handle_ask`; `loop.dialog_qids` keyed
+  `(type, subject)` — the util, the rule, the reminder id, a request's entity ids); no
+  unrelated ask can resolve it. Blocking asks are durable records too, and the console is
   the ONLY surface that carries them: no channel mirrors a decision, and the engine and daemon
   make no implicit outbound send at all (0.230.0 — see docs/notifications.md). Browser push is
   the away-from-console tier, rendering the same open-decisions record. The web layer posts
