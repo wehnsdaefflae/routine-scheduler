@@ -3,8 +3,11 @@
 The operator's ask was specific — "i would prefer they found a way to schedule it so everyone
 gets their turn" — and it rules out the two obvious answers. A mutex REFUSES, so on a daily cron
 two of three routines get "no" every day. An flock blocks in arbitrary order, so a routine that
-submits three jobs starves one that submits one. What these pin is the third thing: an order, a
-position every run can read, and a failure mode that never reads as "free".
+submits three jobs starves one that submits one. The third thing is an ORDER, and it is the
+`remote` util's: it ships its `fair_share_order` to the box by source, and its selftest pins that
+order — the spent-turn regression included — on the very helper the box runs. What these pin
+is the scheduler's half: a position every run can read in the box's own order, and a failure
+mode that never reads as "free".
 """
 
 from __future__ import annotations
@@ -18,61 +21,21 @@ def _t(holder: str, job: str, submitted: str, **extra) -> dict:
     return {"holder": holder, "job": job, "submitted": submitted, **extra}
 
 
-# ---- the order ---------------------------------------------------------------------------------
-
-def test_one_routines_three_jobs_do_not_starve_anothers_one():
-    """THE property. FIFO would run f1 f2 f3 v1 and make voice wait behind three jobs it had
-    nothing to do with; round-robin across HOLDERS puts it second."""
-    order = mq.fair_share_order([
-        _t("funscript", "f1", "1"), _t("funscript", "f2", "2"),
-        _t("funscript", "f3", "3"), _t("voice", "v1", "4")])
-    assert [t["job"] for t in order] == ["f1", "v1", "f2", "f3"]
-
-
-def test_holders_enter_the_rotation_in_arrival_order():
-    """A newcomer does not jump ahead of someone already waiting — it joins the end of the
-    rotation, not the front."""
-    order = mq.fair_share_order([
-        _t("a", "a1", "1"), _t("b", "b1", "2"), _t("c", "c1", "3"), _t("a", "a2", "4")])
-    assert [t["job"] for t in order] == ["a1", "b1", "c1", "a2"]
-
-
-def test_one_holder_is_plain_fifo():
-    order = mq.fair_share_order([_t("a", "a2", "2"), _t("a", "a1", "1"), _t("a", "a3", "3")])
-    assert [t["job"] for t in order] == ["a1", "a2", "a3"]
-
+# ---- the position --------------------------------------------------------------------------------
 
 def test_position_reads_the_order_it_is_given_and_never_re_sorts():
-    """The mirror holds what the BOX returned, already in the box's own order. Re-deriving it
-    here would answer for a round the reader cannot see — see the regression below."""
-    ordered = [_t("f", "f1", "1"), _t("v", "v1", "3"), _t("f", "f2", "2")]
-    assert mq.position_of(ordered, "f1") == 1
-    assert mq.position_of(ordered, "v1") == 2
-    assert mq.position_of(ordered, "f2") == 3
+    """The mirror holds what the BOX returned, already in the box's own order — computed over
+    the whole round, the turns already spent included. Here f1 has run and been retired, so the
+    box puts v1 next even though f2 and f3 were submitted earlier; nothing in these live
+    tickets shows why, so any order derived from them alone would put f2 first."""
+    ordered = [_t("v", "v1", "4"), _t("f", "f2", "2"), _t("f", "f3", "3")]
+    assert mq.position_of(ordered, "v1") == 1
+    assert mq.position_of(ordered, "f2") == 2
+    assert mq.position_of(ordered, "f3") == 3
     assert mq.position_of(ordered, "ghost") is None
 
 
-def test_a_partly_served_round_needs_the_spent_turns_too():
-    """The defect the util's end-to-end harness caught, pinned here because the DEFINITION lives
-    in this module and the box ships this very function.
-
-    Deleting the ticket that just ran also deletes the evidence that its holder used a turn, so
-    ordering the remaining live tickets alone silently collapses to FIFO — f1 f2 f3 v1 instead of
-    f1 v1 f2 f3. Given the whole round (spent + live) it is right again, which is why the box
-    retires a finished ticket into `round/` rather than deleting it.
-    """
-    spent = [_t("f", "f1", "1")]
-    live = [_t("f", "f2", "2"), _t("f", "f3", "3"), _t("v", "v1", "4")]
-
-    # WRONG: the live set alone hands funscript the head again
-    assert next(t["job"] for t in mq.fair_share_order(live)) == "f2"
-    # RIGHT: the whole round remembers f already took a turn
-    whole = [t for t in mq.fair_share_order(spent + live) if t not in spent]
-    assert [t["job"] for t in whole] == ["v1", "f2", "f3"]
-
-
-def test_an_empty_queue_has_no_order_and_no_positions():
-    assert mq.fair_share_order([]) == []
+def test_an_empty_queue_has_no_positions():
     assert mq.position_of([], "x") is None
 
 

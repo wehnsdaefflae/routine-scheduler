@@ -145,8 +145,11 @@ it takes a QUEUE TICKET, and the box runs the jobs one at a time.
 The order is **fair share** — round-robin across ROUTINES by each routine's oldest waiting ticket,
 FIFO within one routine. Three jobs from `funscript-trainer` and one from `voice-model-trainer`
 run `f1, v1, f2, f3`: the routine that asked once does not wait behind the routine that asked
-three times. That ordering is defined in `rsched/machine_queue.fair_share_order` and reproduced
-on the box, so the position a run is told is the order the machine will actually use.
+three times. That ordering is defined ONCE, as the `remote` util's `fair_share_order`, and the
+util ships that very function to the box by source; the box orders over the whole round — the
+turns already spent as well as the ones still waiting — and the scheduler only reads the order
+back, never re-derives it, so the position a run is told is the order the machine will actually
+use.
 
 Three properties are load-bearing:
 
