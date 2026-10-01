@@ -6,7 +6,7 @@ import pytest
 import yaml
 
 from conftest import finish, util, write_file
-from helpers import server_for, set_capabilities
+from helpers import prompt_text, reminder, server_for, set_capabilities
 from rsched import reminder_checks as checks
 from rsched import reminders as store
 from rsched.engine.actions import validate_action
@@ -14,16 +14,8 @@ from rsched.engine.runtime import run_routine
 from rsched.engine.transcript import read_events
 from rsched.grants import capabilities_for, floor_capabilities, read_library_requires
 from rsched.policyload import load_policy
-from rsched.reminders import Reminder
 
 TS = "20260905-090000"
-
-
-def _rem(rid="rem-1", regex="^util:danger", desc="it deletes the target", scope="local",
-         reach="", **stats):
-    return Reminder(id=rid, regex=regex, description=desc, scope=scope,
-                    created_run="r:1", stats={**store.blank_stats(), **stats},
-                    reach=reach or ("universal" if scope == "global" else ""))
 
 
 # --- the store --------------------------------------------------------------------------
@@ -78,7 +70,7 @@ def test_a_lead_that_turns_to_regex_syntax_is_the_authors_to_aim(pattern, render
     as literal text, so `^shell.*rm` — a pattern that fires — was refused as a malformed
     rendering, and the caution it carried was turned away."""
     assert checks.regex_problem(pattern) is None
-    assert _rem(regex=pattern).matches(rendered)
+    assert reminder(regex=pattern).matches(rendered)
 
 
 @pytest.mark.parametrize(("pattern", "fragment"), [
@@ -93,8 +85,8 @@ def test_a_literal_lead_no_rendering_has_is_refused(pattern, fragment):
 
 def test_a_usable_pattern_passes_and_matches_the_canonical_string():
     assert checks.regex_problem("^util:fs-ops mv ") is None
-    assert _rem(regex="^util:fs-ops mv ").matches("util:fs-ops mv a b")
-    assert not _rem(regex="^util:fs-ops mv ").matches("util:fs-ops cp a b")
+    assert reminder(regex="^util:fs-ops mv ").matches("util:fs-ops mv a b")
+    assert not reminder(regex="^util:fs-ops mv ").matches("util:fs-ops cp a b")
 
 
 @pytest.mark.parametrize("rid", ["../../../etc/passwd", "rem-../x", "notrem-1", "",
@@ -116,18 +108,18 @@ def test_a_global_record_with_an_unusable_id_is_skipped(tmp_path):
     lib.mkdir()
     (lib / "evil.json").write_text(
         '{"id": "../../../../x", "regex": "^util:", "description": "d"}', encoding="utf-8")
-    store.write_global(lib, _rem(rid="rem-ok", regex="^util:ok", scope="global"))
+    store.write_global(lib, reminder(rid="rem-ok", regex="^util:ok", scope="global"))
     assert [r.id for r in store.load_global(lib)] == ["rem-ok"]
 
 
 def test_a_pattern_that_stopped_compiling_never_fires_rather_than_raising():
     """The store must not be able to break a run: a hand-edited file with a broken pattern
     is inert, not an exception on every action."""
-    assert _rem(regex="^util:(").matches("util:anything") is False
+    assert reminder(regex="^util:(").matches("util:anything") is False
 
 
 def test_local_round_trip_and_the_global_tally_share_one_file(tmp_path):
-    local = [_rem(rid="rem-a", regex="^util:a"), _rem(rid="rem-b", regex="^util:b", did=2)]
+    local = [reminder(rid="rem-a", regex="^util:a"), reminder(rid="rem-b", regex="^util:b", did=2)]
     store.save_local(tmp_path, local, {"rem-g": {**store.blank_stats(), "fires": 3}})
     back, gstats = store.load_local(tmp_path)
     assert [r.id for r in back] == ["rem-a", "rem-b"]
@@ -156,11 +148,11 @@ def test_a_hand_broken_store_never_stops_a_run_from_starting(tmp_path, doc):
 
 def test_the_union_is_local_over_global_by_regex(tmp_path):
     lib = tmp_path / "library" / "reminders"
-    store.write_global(lib, _rem(rid="rem-g1", regex="^util:a", desc="the library's take",
-                                 scope="global"))
-    store.write_global(lib, _rem(rid="rem-g2", regex="^util:z", desc="only global",
-                                 scope="global"))
-    store.save_local(tmp_path, [_rem(rid="rem-l", regex="^util:a", desc="mine wins")], {})
+    store.write_global(lib, reminder(rid="rem-g1", regex="^util:a", desc="the library's take",
+                                     scope="global"))
+    store.write_global(lib, reminder(rid="rem-g2", regex="^util:z", desc="only global",
+                                     scope="global"))
+    store.save_local(tmp_path, [reminder(rid="rem-l", regex="^util:a", desc="mine wins")], {})
 
     assert store.active(tmp_path, lib, "none") == []
     # the curated set reaches a routine at `local`: the dial governs authoring, not reading
@@ -177,9 +169,9 @@ def test_the_union_is_local_over_global_by_regex(tmp_path):
 
 def test_a_listed_reminder_reaches_only_the_routines_that_list_it(tmp_path):
     lib = tmp_path / "library" / "reminders"
-    store.write_global(lib, _rem(rid="rem-git", regex="^shell: git push", scope="global",
-                                 reach="listed"))
-    store.write_global(lib, _rem(rid="rem-any", regex="^util:x", scope="global"))
+    store.write_global(lib, reminder(rid="rem-git", regex="^shell: git push", scope="global",
+                                     reach="listed"))
+    store.write_global(lib, reminder(rid="rem-any", regex="^util:x", scope="global"))
     assert [r.id for r in store.active(tmp_path, lib, "local")] == ["rem-any"]
     assert [r.id for r in store.active(tmp_path, lib, "local", listed=["rem-git"])] == [
         "rem-any", "rem-git"]
@@ -194,12 +186,12 @@ def test_a_curated_record_that_cannot_say_whom_it_reaches_reaches_nobody(tmp_pat
 
 
 def test_record_bumps_the_tally_for_both_scopes_in_the_local_file(tmp_path):
-    local = _rem(rid="rem-l", regex="^util:a")
+    local = reminder(rid="rem-l", regex="^util:a")
     store.save_local(tmp_path, [local], {})
     # the tally AFTER the increment comes back, so a frozen in-memory copy can be refreshed
     assert store.record(tmp_path, local, "fires")["fires"] == 1
     assert store.record(tmp_path, local, "would_have")["would_have"] == 1
-    store.record(tmp_path, _rem(rid="rem-g", scope="global"), "could_not")
+    store.record(tmp_path, reminder(rid="rem-g", scope="global"), "could_not")
     back, gstats = store.load_local(tmp_path)
     assert back[0].stats["fires"] == 1 and back[0].stats["would_have"] == 1
     assert gstats["rem-g"]["could_not"] == 1
@@ -294,12 +286,6 @@ def _run(make_routine, scripted, replies, *, reminders="local", local=(), **caps
     return d, ep, status, events
 
 
-def _prompt_text(ep) -> str:
-    """Everything the model was shown — the observations live in the message list, not the
-    transcript, so this is where a rendered hold or an engine note is asserted."""
-    return json.dumps(ep.calls[-1]["messages"], ensure_ascii=False)
-
-
 def test_a_matching_action_is_held_before_it_runs_and_re_emitting_it_proceeds(
         make_routine, scripted):
     """The whole point is PRE-execution: the first probe must leave no file behind, and the
@@ -310,7 +296,7 @@ def test_a_matching_action_is_held_before_it_runs_and_re_emitting_it_proceeds(
         [write_file("state/probe.txt", content="one"),
          write_file("state/probe.txt", content="one"),
          finish()],
-        local=[_rem(rid="rem-p", regex=r"^write_file path=state/probe", desc=caution)])
+        local=[reminder(rid="rem-p", regex=r"^write_file path=state/probe", desc=caution)])
 
     holds = [e for e in events if e["type"] == "observation"
              and e["payload"].get("kind") == "reminder_hold"]
@@ -319,7 +305,7 @@ def test_a_matching_action_is_held_before_it_runs_and_re_emitting_it_proceeds(
     assert holds[0]["payload"]["reminders"][0]["id"] == "rem-p"
     assert (d / "state" / "probe.txt").read_text(encoding="utf-8") == "one"   # the SECOND write
     assert status == "ok"
-    shown = _prompt_text(ep)
+    shown = prompt_text(ep)
     assert "ACTION HELD" in shown and caution in shown and "remind_feedback" in shown
     # the fire is counted — it is the denominator the tally is read against
     assert store.load_local(d)[0][0].stats["fires"] == 1
@@ -333,13 +319,13 @@ def test_a_hold_executes_nothing_and_the_feedback_label_lands_on_the_tally(
          {**write_file("state/other.txt", content="x"),
           "remind_feedback": {"id": "rem-d", "label": "would_have"}},
          finish()],
-        local=[_rem(rid="rem-d", regex="^util:danger", desc="it wipes the workdir")])
+        local=[reminder(rid="rem-d", regex="^util:danger", desc="it wipes the workdir")])
 
     kinds = [e["payload"].get("kind") for e in events if e["type"] == "observation"]
     assert kinds == ["reminder_hold", "write_file"]      # the util never reached the executor
     tally = store.load_local(d)[0][0].stats
     assert tally["fires"] == 1 and tally["would_have"] == 1
-    assert "rem-d labelled would_have" in _prompt_text(ep)
+    assert "rem-d labelled would_have" in prompt_text(ep)
     assert status == "ok"
 
 
@@ -350,8 +336,8 @@ def test_an_unlabelled_fire_is_asked_about_once(make_routine, scripted):
         make_routine, scripted,
         [util("danger"), write_file("state/a.txt"), write_file("state/b.txt"),
          write_file("state/c.txt"), finish()],
-        local=[_rem(rid="rem-d", regex="^util:danger", desc="it wipes the workdir")])
-    shown = _prompt_text(ep)
+        local=[reminder(rid="rem-d", regex="^util:danger", desc="it wipes the workdir")])
+    shown = prompt_text(ep)
     assert shown.count("STILL unlabelled") == 1
     assert status == "ok"
 
@@ -372,7 +358,7 @@ def test_an_op_rides_the_action_at_no_turn_cost_and_cannot_hold_that_action(
     saved, _ = store.load_local(d)
     assert len(saved) == 1 and saved[0].regex == r"^write_file path=state/probe"
     assert saved[0].created_run.endswith(TS)
-    assert "[REMINDERS: added rem-" in _prompt_text(ep)
+    assert "[REMINDERS: added rem-" in prompt_text(ep)
     assert status == "ok"
 
 
@@ -384,9 +370,9 @@ def test_revise_and_delete_are_reported_back_to_the_run(make_routine, scripted):
          {**write_file("state/b.txt"), "remind": {"op": "delete", "id": "rem-p"}},
          {**write_file("state/c.txt"), "remind": {"op": "delete", "id": "rem-gone"}},
          finish()],
-        local=[_rem(rid="rem-p", regex="^util:danger", desc="vague")])
+        local=[reminder(rid="rem-p", regex="^util:danger", desc="vague")])
     assert store.load_local(d)[0] == []
-    shown = _prompt_text(ep)
+    shown = prompt_text(ep)
     assert "rem-p revised (local)" in shown and "rem-p deleted (local)" in shown
     assert "no reminder 'rem-gone' is live" in shown
     assert status == "ok"
@@ -404,8 +390,8 @@ def test_a_fire_survives_a_later_definition_write_in_the_same_run(make_routine, 
          {**write_file("state/b.txt"),        # …and so does a DELETE of an unrelated one
           "remind": {"op": "delete", "id": "rem-gone-too"}},
          finish()],
-        local=[_rem(rid="rem-d", regex="^util:danger", desc="it wipes the workdir"),
-               _rem(rid="rem-gone-too", regex="^util:never", desc="deleted below")])
+        local=[reminder(rid="rem-d", regex="^util:danger", desc="it wipes the workdir"),
+               reminder(rid="rem-gone-too", regex="^util:never", desc="deleted below")])
     saved = {r.id: r for r in store.load_local(d)[0]}
     assert saved["rem-d"].stats["fires"] == 1, "the hold's fire was rolled back"
     assert "rem-gone-too" not in saved
@@ -429,7 +415,7 @@ def test_a_hold_does_not_spend_an_allow_once_grant(make_routine, scripted, monke
     monkeypatch.setattr(requests_mod, "consume_once_grants", spy)
     _d, _ep, status, events = _run(
         make_routine, scripted, [util("danger"), util("danger"), finish()],
-        local=[_rem(rid="rem-h", regex="^util:danger", desc="it wipes things")])
+        local=[reminder(rid="rem-h", regex="^util:danger", desc="it wipes things")])
     kinds = [e["payload"].get("kind") for e in events if e["type"] == "observation"]
     assert kinds == ["reminder_hold", "util"]
     assert seen == ["util"], "the once-grant boundary must not see the HELD action"
@@ -446,7 +432,7 @@ def test_the_side_fields_ride_a_finish(make_routine, scripted):
          write_file("state/went-ahead.txt"),
          {**finish(), "remind_feedback": {"id": "rem-f", "label": "didnt"},
           "remind": {"op": "revise", "id": "rem-f", "description": "sharper"}}],
-        local=[_rem(rid="rem-f", regex="^util:danger", desc="vague")])
+        local=[reminder(rid="rem-f", regex="^util:danger", desc="vague")])
     saved = store.load_local(d)[0]
     assert saved[0].description == "sharper"
     assert saved[0].stats == {"fires": 1, "could_not": 0, "would_have": 0, "did": 0,
@@ -460,7 +446,7 @@ def test_a_hold_alone_does_not_ground_a_finish(make_routine, scripted):
     d, _ep, status, events = _run(
         make_routine, scripted,
         [util("danger"), finish(), write_file("state/real.txt"), finish()],
-        local=[_rem(rid="rem-g", regex="^util:danger", desc="it wipes the workdir")])
+        local=[reminder(rid="rem-g", regex="^util:danger", desc="it wipes the workdir")])
     rejected = [e for e in events if e["type"] == "observation"
                 and e["payload"].get("rejected")]
     assert rejected, "finish(ok) after nothing but a hold must be refused"
@@ -481,11 +467,11 @@ def test_a_local_reminder_may_be_promoted_to_the_shared_store(make_routine, scri
          {**write_file("state/b.txt"), "remind": {"op": "delete", "id": "rem-p"}},
          finish()],
         reminders="global", remind_confirm="never",
-        local=[_rem(rid="rem-p", regex="^util:fs-ops mv ", desc="proven locally")])
+        local=[reminder(rid="rem-p", regex="^util:fs-ops mv ", desc="proven locally")])
     written = sorted(server_for(d).reminders_home.glob("*.json"))
     assert len(written) == 1                       # the promotion landed
     assert store.load_local(d)[0] == []            # …and the local copy is gone
-    assert "already live" not in _prompt_text(ep)
+    assert "already live" not in prompt_text(ep)
     assert status == "ok"
 
 
@@ -545,9 +531,9 @@ def test_a_grant_that_lands_mid_run_does_not_truncate_the_store(make_routine, sc
 
     d = make_routine(slug="remr")
     set_capabilities(d, reminders="none")        # the config level: the layer is OFF at boot
-    store.save_local(d, [_rem(rid="rem-old-1", regex="^util:a", desc="from an earlier run",
-                              fires=3, would_have=2),
-                         _rem(rid="rem-old-2", regex="^util:b", desc="also earlier")], {})
+    store.save_local(d, [reminder(rid="rem-old-1", regex="^util:a", desc="from an earlier run",
+                                  fires=3, would_have=2),
+                         reminder(rid="rem-old-2", regex="^util:b", desc="also earlier")], {})
 
     def grant_at_boot(loop, pairs):              # stand in for the Decisions-page answer
         loop.ctx.granted_now = frozenset({"reminders:local"})
@@ -579,7 +565,7 @@ def test_a_deferred_finish_does_not_re_record_its_label(make_routine, scripted):
          {**finish(), "remind_feedback": {"id": "rem-r", "label": "didnt"}},
          write_file("state/went-ahead.txt"),               # now something has really run
          {**finish(), "remind_feedback": {"id": "rem-r", "label": "didnt"}}],
-        local=[_rem(rid="rem-r", regex="^util:danger", desc="it wipes the workdir")])
+        local=[reminder(rid="rem-r", regex="^util:danger", desc="it wipes the workdir")])
     rejected = [e for e in events if e["type"] == "observation"
                 and e["payload"].get("rejected")]
     assert rejected, "the first finish must have been set aside for this to test anything"
@@ -612,14 +598,14 @@ def test_a_routine_at_local_cannot_write_a_curated_reminder_by_its_id(make_routi
     `remind_confirm` said a revision needs none."""
     d = make_routine(slug="remr")
     home = server_for(d).reminders_home
-    store.write_global(home, _rem(rid="rem-cur", regex="^util:danger", desc="curated caution",
-                                  scope="global"))
+    store.write_global(home, reminder(rid="rem-cur", regex="^util:danger", desc="curated caution",
+                                      scope="global"))
     set_capabilities(d, reminders="local", remind_confirm="creations")
     ep = scripted([{**write_file("state/a.txt"), "remind": op}, finish()])
     status, _run_dir = run_routine(d, server_for(d), run_ts=TS)
     rec = json.loads(store.global_path(home, "rem-cur").read_text(encoding="utf-8"))
     assert rec["description"] == "curated caution"            # the library copy is untouched
-    shown = _prompt_text(ep)
+    shown = prompt_text(ep)
     assert "rem-cur is a global reminder, so nothing was" in shown
     assert "reminders:global" in shown                        # …and the way out is named
     assert status == "ok"
@@ -632,9 +618,9 @@ def test_a_curated_add_never_takes_the_id_of_a_reminder_that_does_not_reach_it(
     be that one's, which the write then overwrote: another kind of work's caution, gone."""
     d = make_routine(slug="remr")
     home = server_for(d).reminders_home
-    store.write_global(home, _rem(rid=f"rem-{TS}-1", regex="^util:gpu-submit",
-                                  desc="the shared GPU's caution", scope="global",
-                                  reach="listed"))
+    store.write_global(home, reminder(rid=f"rem-{TS}-1", regex="^util:gpu-submit",
+                                      desc="the shared GPU's caution", scope="global",
+                                      reach="listed"))
     set_capabilities(d, reminders="global", remind_confirm="never")
     scripted([{**write_file("state/a.txt"),
                "remind": {"op": "add", "scope": "global", "regex": "^util:fs-ops mv ",
@@ -698,9 +684,9 @@ def test_a_hold_shows_the_reminder_its_own_record_when_the_pattern_looks_too_bro
          {**write_file("state/other.txt", content="x"),
           "remind_feedback": {"id": "rem-broad", "label": "could_not"}},
          finish()],
-        local=[_rem(rid="rem-broad", regex="^util:danger", desc="it wipes the workdir",
-                    fires=7, could_not=5, would_have=1)])
-    shown = _prompt_text(ep)
+        local=[reminder(rid="rem-broad", regex="^util:danger", desc="it wipes the workdir",
+                        fires=7, could_not=5, would_have=1)])
+    shown = prompt_text(ep)
     assert "THIS REMINDER'S OWN RECORD" in shown
     # the fire this hold just recorded is included — the tally the model reads is current
     assert "8 fires" in shown and "5 `could_not`" in shown
@@ -715,9 +701,9 @@ def test_a_working_reminder_holds_without_the_prune_line(make_routine, scripted)
          {**write_file("state/other.txt", content="x"),
           "remind_feedback": {"id": "rem-good", "label": "would_have"}},
          finish()],
-        local=[_rem(rid="rem-good", regex="^util:danger", desc="it wipes the workdir",
-                    fires=7, would_have=5, could_not=1)])
-    shown = _prompt_text(ep)
+        local=[reminder(rid="rem-good", regex="^util:danger", desc="it wipes the workdir",
+                        fires=7, would_have=5, could_not=1)])
+    shown = prompt_text(ep)
     assert "ACTION HELD" in shown
     assert "THIS REMINDER'S OWN RECORD" not in shown
     assert status == "ok"
@@ -736,10 +722,10 @@ def test_a_label_with_no_hold_behind_it_is_not_recorded(make_routine, scripted):
          {**write_file("state/b.txt"),
           "remind_feedback": {"id": "rem-h", "label": "would_have"}},  # nothing owed any more
          finish()],
-        local=[_rem(rid="rem-h", regex="^util:danger", desc="it wipes the workdir")])
+        local=[reminder(rid="rem-h", regex="^util:danger", desc="it wipes the workdir")])
     tally = store.load_local(d)[0][0].stats
     assert (tally["fires"], tally["would_have"]) == (1, 1)
-    assert "a label answers one hold, once" in _prompt_text(ep)
+    assert "a label answers one hold, once" in prompt_text(ep)
     assert status == "ok"
 
 
@@ -763,7 +749,7 @@ def test_a_listed_reminder_holds_for_a_routine_whose_settings_list_it(make_routi
     raw["shared_reminders"] = ["rem-kind"]
     (d / "routine.yaml").write_text(yaml.safe_dump(raw), encoding="utf-8")
     server = server_for(d)
-    store.write_global(server.reminders_home, _rem(
+    store.write_global(server.reminders_home, reminder(
         rid="rem-kind", regex="^util:danger", desc="a caution for this kind of work",
         scope="global", reach="listed"))
     scripted([util("danger"), write_file("state/x.txt"), finish()])

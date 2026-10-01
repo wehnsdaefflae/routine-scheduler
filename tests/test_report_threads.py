@@ -22,6 +22,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from helpers import bare_routine
 from rsched.engine.actions import validate_action
 from rsched.engine.admin_handlers import handle_report
 from rsched.engine.inbox import drain_messages
@@ -37,15 +38,8 @@ from rsched.reports import (
 )
 
 
-def _routine(home: Path, slug: str) -> Path:
-    d = home / slug
-    d.mkdir(parents=True, exist_ok=True)
-    (d / "routine.yaml").write_text(f"slug: {slug}\n", encoding="utf-8")
-    return d
-
-
 def _loop(home: Path, slug: str, *, owed: list[str] | None = None):
-    _routine(home, slug)
+    bare_routine(home, slug)
     return SimpleNamespace(ctx=SimpleNamespace(
         server=SimpleNamespace(routines_home=home), routine=SimpleNamespace(slug=slug),
         run_id=f"{slug}:20260915-120000", reports_open=list(owed or [])))
@@ -64,7 +58,7 @@ def home(tmp_path):
     h.mkdir(parents=True)
     (h / ".control").mkdir()
     for slug in ("self-audit", "global-utils-review", "freelance-radar"):
-        _routine(h, slug)
+        bare_routine(h, slug)
     return h
 
 

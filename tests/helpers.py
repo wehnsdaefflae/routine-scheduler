@@ -10,15 +10,20 @@ file.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
+import httpx
 import yaml
 
+from rsched import reminders as reminder_store
 from rsched.config import ServerConfig, load_routine
+from rsched.endpoints import cliproxy_mgmt
 from rsched.engine.budgets_config import Budgets
 from rsched.engine.run_context import RunContext
-from rsched.engine.transcript import Transcript
+from rsched.engine.transcript import Transcript, read_events
 from rsched.grantpolicy import GrantPolicy
+from rsched.reminders import Reminder
 
 # ---- servers ----------------------------------------------------------------------------
 
@@ -91,3 +96,108 @@ def set_capabilities(routine_dir: Path, **caps: object) -> None:
     raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     raw["capabilities"] = {**(raw.get("capabilities") or {}), **caps}
     path.write_text(yaml.safe_dump(raw), encoding="utf-8")
+
+
+def prompt_text(ep) -> str:
+    """Everything the model was shown on its last call — the observations live in the message
+    list, not the transcript, so this is where a rendered hold or an engine note is asserted."""
+    return json.dumps(ep.calls[-1]["messages"], ensure_ascii=False)
+
+
+def reminder(rid: str = "rem-1", regex: str = "^util:danger", desc: str = "it deletes the target",
+             scope: str = "local", reach: str = "", **stats: int) -> Reminder:
+    """A consequence reminder as a store holds one. A curated (`global`) one reaches every
+    routine unless `reach` says otherwise; `stats` override its four-way tally."""
+    return Reminder(id=rid, regex=regex, description=desc, scope=scope,
+                    created_run="r:1", stats={**reminder_store.blank_stats(), **stats},
+                    reach=reach or ("universal" if scope == "global" else ""))
+
+
+# ---- on disk ------------------------------------------------------------------------------
+
+
+def routine_yaml(routine_dir: Path) -> dict:
+    """A routine's routine.yaml as it stands on disk."""
+    return yaml.safe_load((routine_dir / "routine.yaml").read_text(encoding="utf-8"))
+
+
+def bare_routine(home: Path, slug: str) -> Path:
+    """A routine dir whose routine.yaml names nothing but its slug."""
+    d = home / slug
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "routine.yaml").write_text(f"slug: {slug}\n", encoding="utf-8")
+    return d
+
+
+def util_src(name: str, *, secrets: str = "(none)", fs: str = "none", calls: str = "(none)",
+             net: str = "none") -> str:
+    """A library util's main.py that is nothing but its header: what it calls, and the
+    secrets, network and filesystem reach it declares."""
+    return (f'"""{name} — t.\n\nusage: gu {name}\ncalls: {calls}\ntags: t\n'
+            f'secrets: {secrets}\nnet: {net}\nfs: {fs}\n"""\n')
+
+
+def write_util(server, name: str, **header: str) -> None:
+    """Put the util `util_src(name, **header)` into the library of `server` (anything with a
+    `libraries_home`)."""
+    d = server.libraries_home / "utils" / name
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "main.py").write_text(util_src(name, **header), encoding="utf-8")
+
+
+def util_library(home: Path, name: str, body: str) -> Path:
+    """A library at `home` holding one util, `name`, whose main.py is `body`; returns `home`."""
+    d = home / "utils" / name
+    d.mkdir(parents=True)
+    (d / "main.py").write_text(body, encoding="utf-8")
+    return home
+
+
+def write_usage_stream(routines_home: Path, records: list[dict]) -> None:
+    """The run-usage stream (`.control/workflow-usage.jsonl`) holding exactly `records`."""
+    control = routines_home / ".control"
+    control.mkdir(parents=True, exist_ok=True)
+    (control / "workflow-usage.jsonl").write_text(
+        "".join(json.dumps(r) + "\n" for r in records), encoding="utf-8")
+
+
+def health_events(routines_home: Path, **match: object) -> list[dict]:
+    """The health stream's rows, oldest first — none while it does not exist yet — keeping
+    those whose fields equal `match` (`event="run_failed"`, `routine="r"`)."""
+    path = routines_home / ".control" / "health-events.jsonl"
+    if not path.exists():
+        return []
+    rows = [json.loads(ln) for ln in path.read_text(encoding="utf-8").splitlines() if ln.strip()]
+    return [row for row in rows if all(row[k] == v for k, v in match.items())]
+
+
+def transcript_events(run_dir: Path) -> list[dict]:
+    """A run's transcript events, read back the way the engine reads them."""
+    return read_events(run_dir / "transcript.jsonl")[0]
+
+
+def write_executable(path: Path, text: str) -> None:
+    """`text` at `path` (parents created), mode 0755 — a stub the code under test runs."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+    path.chmod(0o755)
+
+
+# ---- processes and clients ----------------------------------------------------------------
+
+
+def pid_alive(pid: int) -> bool:
+    """Whether `pid` still runs — a zombie (exited, not yet collected by its init) does not."""
+    try:
+        stat = Path(f"/proc/{pid}/stat").read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return False
+    return not stat.rsplit(") ", 1)[1].startswith("Z")
+
+
+def mock_proxy(monkeypatch, handler) -> None:
+    """Send every request the CLIProxy management client makes to `handler` instead
+    (an httpx MockTransport handler)."""
+    factory = httpx.Client
+    monkeypatch.setattr(cliproxy_mgmt.httpx, "Client", lambda **kw: factory(
+        transport=httpx.MockTransport(handler), **kw))

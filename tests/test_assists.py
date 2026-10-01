@@ -9,7 +9,7 @@ import pytest
 import yaml
 
 from conftest import finish, util, write_file
-from helpers import server_for, set_capabilities
+from helpers import prompt_text, reminder, server_for, set_capabilities
 from rsched import assists as lib
 from rsched.assists import normalize_assists
 from rsched.engine.assist_predicates import PREDICATES
@@ -21,12 +21,6 @@ from rsched.workflows.lint import lint_rule_text
 
 TS = "20260905-190000"
 SEED = Path(__file__).resolve().parents[1] / "library-seed" / "rules"
-
-
-def _rem(rid="rem-1", regex="^util:danger", desc="it deletes the target"):
-    from rsched import reminders as rem_store
-    return Reminder(id=rid, regex=regex, description=desc, scope="local",
-                    created_run="r:1", stats=rem_store.blank_stats())
 
 
 def _assist(**over):
@@ -219,10 +213,6 @@ def _run(make_routine, scripted, replies, *, slug, moment, predicate,
     return d, ep, status, events
 
 
-def _shown(ep) -> str:
-    return json.dumps(ep.calls[-1]["messages"], ensure_ascii=False)
-
-
 def test_an_observation_assist_rides_the_tail_of_the_second_failure(make_routine, scripted):
     """fix-the-cause's moment. Costs no turn: it appends to the observation the run was
     getting anyway — and only on the SECOND failure of the same call, where a run either
@@ -233,7 +223,7 @@ def test_an_observation_assist_rides_the_tail_of_the_second_failure(make_routine
          write_file("state/a.txt"), finish()],
         slug="fix-the-cause", moment="observation", predicate="repeated-failure",
         line="change route after the second failure")
-    shown = _shown(ep)
+    shown = prompt_text(ep)
     assert "[RULE fix-the-cause — the same call has now failed twice this run]" in shown
     assert "change route after the second failure" in shown
     assert "read_rule name=fix-the-cause" in shown           # the rest of the rule stays put
@@ -267,7 +257,7 @@ def test_a_boundary_assist_arrives_as_an_engine_note(make_routine, scripted):
              and e["payload"].get("source") == "engine"]
     assert notes, "the boundary assist never fired"
     assert "[RULE fix-the-cause — the user just said something to this run]" in notes[0]
-    assert "name the intention" in _shown(ep)
+    assert "name the intention" in prompt_text(ep)
     assert len(notes) == 1, "one fire per run, however often the user speaks"
     assert status == "ok"
 
@@ -331,7 +321,7 @@ def test_an_unbound_rule_stops_assisting_the_live_run(make_routine, scripted):
     ep = scripted([fail_then_unbind, util("nonexistent-util"), write_file("state/a.txt"),
                    finish()])
     status, _run_dir = run_routine(d, server, run_ts=TS)
-    shown = _shown(ep)
+    shown = prompt_text(ep)
     assert "UNBOUND the general rule(s) 'fix-the-cause'" in shown
     assert "change route now" not in shown          # the second failure found no assist
     assert status == "ok"
@@ -352,7 +342,7 @@ def test_a_rule_bound_mid_run_brings_its_assists(make_routine, scripted):
     ep = scripted([fail_then_bind, util("nonexistent-util"), write_file("state/a.txt"),
                    finish()])
     status, _run_dir = run_routine(d, server, run_ts=TS)
-    shown = _shown(ep)
+    shown = prompt_text(ep)
     assert "the user bound the general rule 'fix-the-cause'" in shown
     assert "[RULE fix-the-cause — the same call has now failed twice this run]" in shown
     assert status == "ok"
@@ -369,7 +359,7 @@ def test_a_pre_finish_assist_defers_the_finish_exactly_once(make_routine, script
     deferred = [e for e in events if e["type"] == "observation"
                 and e["payload"].get("assist")]
     assert len(deferred) == 1, "the finish should be set aside once, and only once"
-    assert "append one LEDGER entry" in _shown(ep)
+    assert "append one LEDGER entry" in prompt_text(ep)
     assert status == "ok"
 
 
@@ -421,7 +411,7 @@ def test_a_conversation_reply_is_never_held_for_a_ledger_entry(make_routine, scr
     events, _ = read_events(run_dir / "transcript.jsonl")
     assert not [e for e in events if e["type"] == "observation"
                 and e["payload"].get("assist")]
-    assert "[RULE" not in _shown(ep)
+    assert "[RULE" not in prompt_text(ep)
     assert status == "ok"
 
 
@@ -433,7 +423,7 @@ def test_a_routine_that_does_not_hold_the_rule_is_untouched(make_routine, script
     ep = scripted([util("nonexistent-util"), util("nonexistent-util"),
                    write_file("state/a.txt"), finish()])
     status, _run_dir = run_routine(d, server, run_ts=TS)
-    assert "[RULE" not in _shown(ep)
+    assert "[RULE" not in prompt_text(ep)
     assert not lib.state_path(d).exists()
     assert status == "ok"
 
@@ -454,7 +444,7 @@ def test_a_predicate_that_raises_can_never_fail_a_turn(make_routine, scripted, m
         [util("nonexistent-util"), util("nonexistent-util"), write_file("state/a.txt"),
          finish()],
         slug="fix-the-cause", moment="observation", predicate="repeated-failure")
-    assert "[RULE" not in _shown(ep)
+    assert "[RULE" not in prompt_text(ep)
     assert status == "ok"
 
 
@@ -527,7 +517,7 @@ def test_the_validation_seam_marks_the_turn_a_denial_cost(make_routine, scripted
     ep = scripted([{"say": "s", "kind": "shell", "command": "ls"},
                    write_file("state/a.txt"), finish()])
     status, _run_dir = run_routine(d, server, run_ts=TS)
-    assert "file the request now" in _shown(ep)
+    assert "file the request now" in prompt_text(ep)
     assert status == "ok"
 
 
@@ -637,7 +627,7 @@ def test_the_two_sources_do_not_cannibalise_each_others_hold(make_routine, scrip
     (repo / ".git").mkdir(parents=True)
     target = repo / "src.py"
     target.write_text("x", encoding="utf-8")
-    rem_store.save_local(d, [_rem(rid="rem-c", regex=r"^write_file path=", desc="mine first")],
+    rem_store.save_local(d, [reminder(rid="rem-c", regex=r"^write_file path=", desc="mine first")],
                          {})
     scripted([write_file(str(target), content="y"),        # held by the REMINDER (precedence)
                    write_file(str(target), content="y"),   # held by the RULE, not skipped
@@ -676,7 +666,7 @@ def test_a_pre_action_assist_holds_the_write_and_re_emitting_it_proceeds(make_ro
     assert holds[0]["payload"]["assists"] == ["git-checkpoint/m"]
     assert target.read_text(encoding="utf-8") == "changed"   # the SECOND write went through
     assert target.exists()
-    shown = _shown(ep)
+    shown = prompt_text(ep)
     assert "ACTION HELD — it did NOT run." in shown
     assert "commit a checkpoint before the first edit" in shown
     assert "emit the SAME action again" in shown             # the escape is always offered
@@ -727,7 +717,7 @@ def test_the_routines_own_directory_is_never_held_for_a_checkpoint(make_routine,
     events, _ = read_events(run_dir / "transcript.jsonl")
     assert not [e for e in events if e["type"] == "observation"
                 and e["payload"].get("kind") == "assist_hold"]
-    assert "[RULE" not in _shown(ep) and status == "ok"
+    assert "[RULE" not in prompt_text(ep) and status == "ok"
 
 
 def test_a_held_action_grounds_no_finish_whichever_source_held_it(make_routine, scripted):

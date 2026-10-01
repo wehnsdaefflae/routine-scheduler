@@ -42,6 +42,7 @@ import pytest
 import yaml
 from playwright.sync_api import expect
 
+from helpers import write_util
 from rsched import lanes, secrets
 from rsched.config import MachineConfig
 from rsched.oauth import store as oauth_store
@@ -128,15 +129,6 @@ CONTROL_KIND = """(n) => {
   return tag;
 }"""
 OPERABLE = ("button", "input", "select", "textarea", "a")
-
-
-def _util(ui, name: str, *, secrets_hdr: str = "(none)", fs: str = "none") -> None:
-    """A reserved util in the library, declaring what the surface joins on."""
-    d = ui.server_cfg.libraries_home / "utils" / name
-    d.mkdir(parents=True, exist_ok=True)
-    (d / "main.py").write_text(
-        f'"""{name} — t.\n\nusage: gu {name}\ncalls: (none)\ntags: t\n'
-        f'secrets: {secrets_hdr}\nnet: none\nfs: {fs}\n"""\n', encoding="utf-8")
 
 
 def _rule(ui, slug: str, expects: dict) -> None:
@@ -309,29 +301,29 @@ def _seed_switch_on(ui, mp) -> None:
 
 
 def _seed_cover_or_drop(ui, mp) -> None:
-    _util(ui, "poster")
+    write_util(ui.server_cfg, "poster")
     _configure(ui, capabilities={"utils": ["poster"]})
 
 
 def _seed_grant(ui, mp) -> None:
     secrets.set_secret("UI_FIX_TOKEN", "v")
-    _util(ui, "poster", secrets_hdr="UI_FIX_TOKEN")
+    write_util(ui.server_cfg, "poster", secrets="UI_FIX_TOKEN")
     _configure(ui, capabilities={"utils": ["poster"]})
 
 
 def _seed_clear_grant(ui, mp) -> None:
     secrets.set_secret("UI_FIX_TOKEN", "v")
-    _util(ui, "poster", secrets_hdr="UI_FIX_TOKEN")
+    write_util(ui.server_cfg, "poster", secrets="UI_FIX_TOKEN")
     _configure(ui, capabilities={"utils": ["poster"]}, grants={"secret:UI_FIX_TOKEN": False})
 
 
 def _seed_add_secret(ui, mp) -> None:
-    _util(ui, "poster", secrets_hdr="UI_FIX_TOKEN")
+    write_util(ui.server_cfg, "poster", secrets="UI_FIX_TOKEN")
     _configure(ui, capabilities={"utils": ["poster"]})
 
 
 def _seed_add_root(ui, mp) -> None:
-    _util(ui, "store", fs="rw /srv/fix-store")
+    write_util(ui.server_cfg, "store", fs="rw /srv/fix-store")
     _configure(ui, capabilities={"utils": ["store"]})
 
 
@@ -507,7 +499,7 @@ def test_a_capability_this_routine_owns_can_be_switched_off_where_the_row_says(u
     have stripped this capability anyway, so only the request the CLIENT sends can tell the
     control apart from the floor doing its job.
     """
-    _util(ui, "poster")
+    write_util(ui.server_cfg, "poster")
     _configure(ui, capabilities={"utils": ["poster"]})
 
     row = _row(ui_page, ui, "util:poster")
@@ -640,7 +632,7 @@ def test_a_satisfied_row_offers_nothing_to_click(ui, ui_page):
     """
     store = ui.tmp / "ok-store"
     store.mkdir()
-    _util(ui, "okstore", fs=f"rw {store}")
+    write_util(ui.server_cfg, "okstore", fs=f"rw {store}")
     _configure(ui, capabilities={"utils": ["okstore"]}, fs_write_roots=[str(store)])
 
     row = _row(ui_page, ui, f"fs-write:{store}")
@@ -654,7 +646,7 @@ def test_a_fix_that_lives_elsewhere_says_so_and_goes_there(ui, ui_page):
     jump would scroll to nothing, so the row reads as a journey and makes it — landing on the
     section that owns the store rather than at the top of Settings.
     """
-    _util(ui, "poster", secrets_hdr="UI_FIX_TOKEN")
+    write_util(ui.server_cfg, "poster", secrets="UI_FIX_TOKEN")
     _configure(ui, capabilities={"utils": ["poster"]})
 
     row = _row(ui_page, ui, "secret:UI_FIX_TOKEN")
@@ -708,7 +700,7 @@ def test_a_withheld_secret_lands_where_its_control_actually_is(ui, ui_page):
     is not the claim; a link that arrives at the control is.
     """
     secrets.set_secret("UI_FIX_TOKEN", "v")
-    _util(ui, "poster", secrets_hdr="UI_FIX_TOKEN")
+    write_util(ui.server_cfg, "poster", secrets="UI_FIX_TOKEN")
     _configure(ui, capabilities={"utils": ["poster"]},
                grants={"secret:UI_FIX_TOKEN": False})
 

@@ -5,7 +5,9 @@ import frontmatter
 import yaml
 from playwright.sync_api import expect
 
-from .helpers import unfold
+from helpers import write_util
+
+from .helpers import configure, unfold
 
 
 def _effect(home, slug: str) -> dict:
@@ -16,19 +18,12 @@ def _effect(home, slug: str) -> dict:
 
 def _hold_util(ui, slug: str, name: str, *, secrets: str = "(none)", fs: str = "none") -> None:
     """Give the fixture routine a reserved util whose header declares something it lacks."""
-    d = ui.server_cfg.libraries_home / "utils" / name
-    d.mkdir(parents=True, exist_ok=True)
-    (d / "main.py").write_text(
-        f'"""{name} — t.\n\nusage: gu {name}\ncalls: (none)\ntags: t\n'
-        f'secrets: {secrets}\nnet: none\nfs: {fs}\n"""\n', encoding="utf-8")
-    path = ui.routines / slug / "routine.yaml"
-    cfg = yaml.safe_load(path.read_text(encoding="utf-8"))
+    write_util(ui.server_cfg, name, secrets=secrets, fs=fs)
     # Hold NOTHING else: writing an explicit capabilities mapping replaces the model's default
     # (write_util and the doc that covers it), which would orphan the default permission and
     # add rows this test is not about. One util, one gap, one row to assert.
-    cfg["permissions"] = []
-    cfg["capabilities"] = {"actions": [], "utils": [name], "util_tags": []}
-    path.write_text(yaml.safe_dump(cfg), encoding="utf-8")
+    configure(ui, slug, permissions=[],
+              capabilities={"actions": [], "utils": [name], "util_tags": []})
 
 
 def test_a_ready_routine_shows_no_strip(ui_page, ui):

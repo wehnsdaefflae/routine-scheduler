@@ -546,7 +546,8 @@ def git_in(d, *args, date: str = "", check: bool = True):
 def mk_run(routine_dir: Path, ts: str, state: str, *, turn: int = 3, pid: int | None = None,
            usage: dict | None = None, elapsed_s: float | None = None, question=None,
            summary: str | None = None, outcome: str | None = None, model: str | None = None,
-           updated: str | None = None, transcript: list[dict] | None = None) -> Path:
+           started: str | None = None, updated: str | None = None,
+           transcript: list[dict] | None = None) -> Path:
     """One run-dir factory: runs/<ts>/status.json plus optional result.md / transcript
     lines. Callers pass only the fields their assertions need."""
     from rsched.paths import atomic_write_json
@@ -566,6 +567,8 @@ def mk_run(routine_dir: Path, ts: str, state: str, *, turn: int = 3, pid: int | 
         st["outcome"] = outcome
     if model is not None:
         st["model"] = model
+    if started is not None:
+        st["started"] = started
     if updated is not None:
         st["updated"] = updated
     atomic_write_json(run_dir / "status.json", st)
@@ -575,6 +578,17 @@ def mk_run(routine_dir: Path, ts: str, state: str, *, turn: int = 3, pid: int | 
         (run_dir / "transcript.jsonl").write_text(
             "".join(json.dumps(e) + "\n" for e in transcript), encoding="utf-8")
     return run_dir
+
+
+def usage_run(routine_dir: Path, ts: str, state: str, *, tin: int = 0, tout: int = 0,
+              cost: float | None = None, elapsed_s: float = 0, model: str | None = None,
+              cached: int = 0, cache_write: int = 0) -> Path:
+    """mk_run with the token usage a stats reader folds: input and output always, the cost
+    and both cache halves only when given."""
+    usage = {"in": tin, "out": tout, **({"cost": cost} if cost is not None else {}),
+             **({"cached_in": cached} if cached else {}),
+             **({"cache_write": cache_write} if cache_write else {})}
+    return mk_run(routine_dir, ts, state, usage=usage, elapsed_s=elapsed_s, model=model or None)
 
 
 def hammer(work, threads: int = 6) -> list[BaseException]:

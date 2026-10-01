@@ -4,7 +4,7 @@ import json
 
 import yaml
 
-from conftest import mk_run
+from conftest import usage_run
 from helpers import tmp_server
 from rsched.config import EndpointConfig, ModelConfig, ServerConfig
 from rsched.readmodels.stats import aggregate, monthly_spend
@@ -41,14 +41,6 @@ def _mk_routine(home, slug, *, model_name="opus"):
     return d
 
 
-def _mk_run(d, ts, state, *, tin=0, tout=0, cost=None, elapsed_s=0, model=None,
-            cached=0, cache_write=0):
-    usage = {"in": tin, "out": tout, **({"cost": cost} if cost is not None else {}),
-             **({"cached_in": cached} if cached else {}),
-             **({"cache_write": cache_write} if cache_write else {})}
-    return mk_run(d, ts, state, usage=usage, elapsed_s=elapsed_s, model=model or None)
-
-
 def test_aggregate_rolls_up_every_slice(tmp_path):
     home = tmp_path / "routines"
     conv = tmp_path / "conversations"
@@ -57,13 +49,13 @@ def test_aggregate_rolls_up_every_slice(tmp_path):
     c = _mk_routine(conv, "chat1", model_name="opus")
 
     # status.json records the resolved "<endpoint>/<model>"; one bare legacy value stays
-    _mk_run(a, "20260712-070000", "finished", tin=100, tout=40, elapsed_s=60,
-            model="claude/opus")
-    _mk_run(a, "20260713-070000", "failed", tin=50, tout=10, elapsed_s=30, model="opus")
-    _mk_run(b, "20260713-080000", "finished", tin=200, tout=60, cost=0.5, elapsed_s=90,
-            model="openrouter/glm-5.2")
-    _mk_run(c, "20260713-090000", "finished", tin=10, tout=5, elapsed_s=15,
-            model="claude/opus")
+    usage_run(a, "20260712-070000", "finished", tin=100, tout=40, elapsed_s=60,
+              model="claude/opus")
+    usage_run(a, "20260713-070000", "failed", tin=50, tout=10, elapsed_s=30, model="opus")
+    usage_run(b, "20260713-080000", "finished", tin=200, tout=60, cost=0.5, elapsed_s=90,
+              model="openrouter/glm-5.2")
+    usage_run(c, "20260713-090000", "finished", tin=10, tout=5, elapsed_s=15,
+              model="claude/opus")
 
     agg = aggregate(_server(tmp_path))
 
@@ -104,10 +96,10 @@ def test_aggregate_carries_both_halves_of_the_cache_ratio(tmp_path):
     home = tmp_path / "routines"
     good = _mk_routine(home, "good", model_name="opus")
     bad = _mk_routine(home, "bad", model_name="glm")
-    _mk_run(good, "20260712-070000", "finished", tin=100, tout=40,
-            cached=900_000, cache_write=20_000, model="claude/opus")
-    _mk_run(bad, "20260712-080000", "finished", tin=100, tout=40,
-            cached=300_000, cache_write=900_000, model="openrouter/glm-5.2")
+    usage_run(good, "20260712-070000", "finished", tin=100, tout=40,
+              cached=900_000, cache_write=20_000, model="claude/opus")
+    usage_run(bad, "20260712-080000", "finished", tin=100, tout=40,
+              cached=300_000, cache_write=900_000, model="openrouter/glm-5.2")
 
     agg = aggregate(_server(tmp_path))
 
@@ -128,9 +120,9 @@ def test_aggregate_no_models_block_falls_back_to_system_model(tmp_path):
     home = tmp_path / "routines"
     d = _mk_routine(home, "improver", model_name=None)
     # a modern run records the resolved model; a legacy run recorded nothing
-    _mk_run(d, "20260713-070000", "finished", tin=100, tout=20, cost=0.55,
-            model="openrouter/z-ai/glm-5.2")
-    _mk_run(d, "20260712-070000", "finished", tin=10, tout=5)
+    usage_run(d, "20260713-070000", "finished", tin=100, tout=20, cost=0.55,
+              model="openrouter/z-ai/glm-5.2")
+    usage_run(d, "20260712-070000", "finished", tin=10, tout=5)
 
     server = _server(tmp_path)
     server.system_model = "glm52"   # catalog name → openrouter / z-ai/glm-5.2
@@ -150,8 +142,8 @@ def test_aggregate_recorded_model_beats_routine_config(tmp_path):
     switch_model attributes to the model that actually served the run."""
     home = tmp_path / "routines"
     d = _mk_routine(home, "switcher", model_name="opus")
-    _mk_run(d, "20260713-070000", "finished", tin=10, tout=5,
-            model="openrouter/z-ai/glm-5.2")
+    usage_run(d, "20260713-070000", "finished", tin=10, tout=5,
+              model="openrouter/z-ai/glm-5.2")
 
     agg = aggregate(_server(tmp_path))
 
@@ -165,7 +157,7 @@ def test_aggregate_unknown_only_when_unattributable(tmp_path):
     unattributable (legacy) case keeps the "unknown" buckets."""
     home = tmp_path / "routines"
     d = _mk_routine(home, "legacy", model_name=None)
-    _mk_run(d, "20260712-070000", "finished", tin=1, tout=1)
+    usage_run(d, "20260712-070000", "finished", tin=1, tout=1)
 
     agg = aggregate(_server(tmp_path))
 

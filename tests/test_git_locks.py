@@ -8,7 +8,6 @@ answered False exactly as it did for a clean tree. The migration recorded 0 fail
 
 from __future__ import annotations
 
-import json
 import os
 import subprocess
 import time
@@ -18,6 +17,7 @@ from pathlib import Path
 import pytest
 
 from conftest import git_in
+from helpers import health_events
 from rsched import gitlock, libgit, procgroup
 
 
@@ -45,14 +45,6 @@ def _hook(repo: Path, name: str, body: str) -> None:
     hook.chmod(0o755)
 
 
-def _events(routines_home: Path, name: str) -> list[dict]:
-    path = routines_home / ".control" / "health-events.jsonl"
-    if not path.exists():
-        return []
-    return [rec for rec in map(json.loads, path.read_text(encoding="utf-8").splitlines())
-            if rec["event"] == name]
-
-
 def _subject(repo: Path) -> str:
     return git_in(repo, "log", "-1", "--format=%s").stdout.strip()
 
@@ -70,7 +62,7 @@ def test_a_lock_in_the_way_makes_the_commit_say_so(tmp_path):
     assert "younger than 10 min" in result.kept
     assert str(lock) in result.describe()
     assert lock.exists() and _subject(repo) == "first"
-    [event] = _events(home, "commit_failed")
+    [event] = health_events(home, event="commit_failed")
     assert event["routine"] == "sprind" and event["step"] == "add"
     assert event["repo"] == str(repo) and event["lock_age_s"] < 60
 
@@ -85,9 +77,9 @@ def test_a_provably_stale_lock_is_removed_and_the_commit_lands(tmp_path):
     result = libgit.commit(repo, "settings pattern", routines_home=home)
     assert result.status == "committed" and not lock.exists()
     assert _subject(repo) == "settings pattern"
-    [event] = _events(home, "git_lock_cleared")
+    [event] = health_events(home, event="git_lock_cleared")
     assert event["routine"] == "self-audit" and event["lock_age_s"] >= 7000
-    assert _events(home, "commit_failed") == []
+    assert health_events(home, event="commit_failed") == []
 
 
 def test_a_lock_with_content_is_left_for_a_person(tmp_path):

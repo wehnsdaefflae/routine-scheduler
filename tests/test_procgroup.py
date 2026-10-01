@@ -18,6 +18,7 @@ import sys
 import time
 from pathlib import Path
 
+from helpers import pid_alive
 from rsched import libgit, procgroup, utils_run
 
 
@@ -81,15 +82,6 @@ def test_a_leader_that_already_exited_is_reaped_not_waited_for(tmp_path):
     assert proc.returncode == 3
 
 
-def _alive(pid: int) -> bool:
-    """Whether `pid` still runs — a zombie waiting for its init to collect it does not."""
-    try:
-        stat = Path(f"/proc/{pid}/stat").read_text(encoding="utf-8")
-    except FileNotFoundError:
-        return False
-    return not stat.rsplit(") ", 1)[1].startswith("Z")
-
-
 #: A caller of `terminate` that a test can kill inside the grace: it starts a group whose every
 #: member ignores SIGTERM, says when the backstop is armed, and ends the group with a 1 s grace.
 CALLER = """\
@@ -127,13 +119,13 @@ def test_the_group_is_killed_even_when_the_caller_dies_inside_the_grace(tmp_path
         caller.kill()                          # inside the 1 s grace: the caller sends nothing
         caller.wait()
         member = int((tmp_path / "member").read_text(encoding="utf-8"))
-        assert _alive(member)                  # SIGTERM was ignored and the caller is gone
+        assert pid_alive(member)               # SIGTERM was ignored and the caller is gone
         deadline = time.monotonic() + 15
-        while _alive(member):
+        while pid_alive(member):
             assert time.monotonic() < deadline, "nothing SIGKILLed the orphaned group"
             time.sleep(0.05)
     finally:
-        if member and _alive(member):
+        if member and pid_alive(member):
             with contextlib.suppress(ProcessLookupError):
                 os.killpg(os.getpgid(member), signal.SIGKILL)
 

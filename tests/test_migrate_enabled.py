@@ -8,6 +8,7 @@ from types import SimpleNamespace
 
 import yaml
 
+from helpers import routine_yaml
 from rsched import libgit, migrate_enabled
 from rsched.config import load_routine
 
@@ -36,10 +37,6 @@ def _routine(home, slug, **top):
     return d
 
 
-def _raw(d):
-    return yaml.safe_load((d / "routine.yaml").read_text(encoding="utf-8"))
-
-
 def test_every_switch_reads_the_same_before_and_after(tmp_path):
     """`disabled: true` was off whatever `enabled` said; anything else left `enabled` to decide.
     The fold keeps both rules — no routine starts or stops firing because of it."""
@@ -58,7 +55,7 @@ def test_every_switch_reads_the_same_before_and_after(tmp_path):
     record = migrate_enabled.run_migration(server)
 
     for slug, (_top, was) in cases.items():
-        raw = _raw(dirs[slug])
+        raw = routine_yaml(dirs[slug])
         assert "disabled" not in raw["schedule"], slug
         assert raw["enabled"] is was, slug
         cfg, problems = load_routine(dirs[slug])
@@ -91,7 +88,7 @@ def test_all_three_homes_are_folded_and_each_change_is_committed(tmp_path):
 
     assert record["migrated"] == {"routines/r": False, "conversations/c-1": True,
                                   "background/bg-1": False}
-    assert (_raw(conv)["enabled"], _raw(task)["enabled"]) == (True, False)
+    assert (routine_yaml(conv)["enabled"], routine_yaml(task)["enabled"]) == (True, False)
     assert "disabled" in yaml.safe_load(
         (server.routines_home / ".clarify-x" / "routine.yaml").read_text(encoding="utf-8"))[
         "schedule"]
@@ -109,11 +106,11 @@ def test_it_runs_once_and_records_what_it_could_not_read(tmp_path):
 
     record = migrate_enabled.run_migration(server)
 
-    assert _raw(good)["enabled"] is False
+    assert routine_yaml(good)["enabled"] is False
     assert list(record["failed"]) == ["routines/broken"]
     stored = json.loads((server.routines_home / migrate_enabled.RECORD).read_text("utf-8"))
     assert stored["migrated"] == {"routines/good": False}
     # once recorded it never runs again, so a later hand edit is the loader's to report
     late = _routine(server.routines_home, "late", disabled=True)
     assert migrate_enabled.run_migration(server) == {}
-    assert _raw(late)["schedule"]["disabled"] is True
+    assert routine_yaml(late)["schedule"]["disabled"] is True

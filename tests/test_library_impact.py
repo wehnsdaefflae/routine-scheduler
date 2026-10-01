@@ -13,6 +13,7 @@ from types import SimpleNamespace
 import pytest
 import yaml
 
+from helpers import util_src, write_util
 from rsched.library_impact import holders, impact, impact_lines
 
 
@@ -23,17 +24,6 @@ def _server(tmp_path: Path) -> SimpleNamespace:
     routines.mkdir()
     return SimpleNamespace(libraries_home=lib, permissions_home=lib / "permissions",
                            rules_home=lib / "rules", routines_home=routines, machines={})
-
-
-def _util_src(name, *, secrets="(none)", fs="none", calls="(none)") -> str:
-    return (f'"""{name} — t.\n\nusage: gu {name}\ncalls: {calls}\ntags: t\n'
-            f'secrets: {secrets}\nnet: none\nfs: {fs}\n"""\n')
-
-
-def _util(server, name, **kw) -> None:
-    d = server.libraries_home / "utils" / name
-    d.mkdir(parents=True, exist_ok=True)
-    (d / "main.py").write_text(_util_src(name, **kw), encoding="utf-8")
 
 
 def _routine(server, slug, **cfg) -> None:
@@ -57,15 +47,15 @@ def client_lib(api_client, monkeypatch):
                            routines_home=server.routines_home)
     for sub in ("utils", "permissions", "rules"):
         (server.libraries_home / sub).mkdir(parents=True, exist_ok=True)
-    _util(shim, "sig")
+    write_util(shim, "sig")
     _routine(shim, "holder", capabilities={"utils": ["sig"]})
-    return client, _util_src
+    return client, util_src
 
 
 @pytest.mark.usefixtures("empty_store")
 def test_holders_finds_routines_by_kind(tmp_path):
     server = _server(tmp_path)
-    _util(server, "poster")
+    write_util(server, "poster")
     _routine(server, "holder", capabilities={"utils": ["poster"]}, rules=["care"],
              permissions=["messaging"])
     _routine(server, "bystander")
@@ -80,8 +70,8 @@ def test_holders_reaches_through_the_calls_tree(tmp_path):
     """A util's `calls:` line pulls its callees into the same jail and env, so revising a util
     a routine never NAMES can still change what the util it does name requires."""
     server = _server(tmp_path)
-    _util(server, "leaf")
-    _util(server, "top", calls="leaf")
+    write_util(server, "leaf")
+    write_util(server, "top", calls="leaf")
     _routine(server, "holder", capabilities={"utils": ["top"]})
     assert holders(server, "util", "leaf") == ["holder"]
 
@@ -92,14 +82,14 @@ def test_a_new_secret_declaration_names_who_it_breaks(tmp_path, monkeypatch):
     nobody touched stop working at their next run."""
     monkeypatch.setattr("rsched.secrets.load_secrets", lambda: {"NEW_PIN": "x"})
     server = _server(tmp_path)
-    _util(server, "signal")
+    write_util(server, "signal")
     _routine(server, "granted", capabilities={"utils": ["signal"]},
              grants={"secret:NEW_PIN": True})
     _routine(server, "undecided", capabilities={"utils": ["signal"]})
     _routine(server, "declined", capabilities={"utils": ["signal"]},
              grants={"secret:NEW_PIN": False})
 
-    result = impact(server, "util", "signal", _util_src("signal", secrets="NEW_PIN"))
+    result = impact(server, "util", "signal", util_src("signal", secrets="NEW_PIN"))
     assert sorted(result["holders"]) == ["declined", "granted", "undecided"]
     broken = {b["slug"] for b in result["breaks"]}
     assert broken == {"undecided", "declined"}
@@ -111,9 +101,9 @@ def test_a_new_secret_declaration_names_who_it_breaks(tmp_path, monkeypatch):
 @pytest.mark.usefixtures("empty_store")
 def test_a_harmless_revision_breaks_nobody(tmp_path):
     server = _server(tmp_path)
-    _util(server, "poster")
+    write_util(server, "poster")
     _routine(server, "holder", capabilities={"utils": ["poster"]})
-    result = impact(server, "util", "poster", _util_src("poster") + "# a comment\n")
+    result = impact(server, "util", "poster", util_src("poster") + "# a comment\n")
     assert result["breaks"] == [] and result["unaffected"] == ["holder"]
     assert impact_lines(result) == ["binds: holder", "breaks none of them"]
 
@@ -121,11 +111,11 @@ def test_a_harmless_revision_breaks_nobody(tmp_path):
 @pytest.mark.usefixtures("empty_store")
 def test_a_new_private_store_breaks_holders_without_the_root(tmp_path):
     server = _server(tmp_path)
-    _util(server, "sig")
+    write_util(server, "sig")
     _routine(server, "rooted", capabilities={"utils": ["sig"]},
              fs_write_roots=["/srv/store"])
     _routine(server, "rootless", capabilities={"utils": ["sig"]})
-    result = impact(server, "util", "sig", _util_src("sig", fs="rw /srv/store"))
+    result = impact(server, "util", "sig", util_src("sig", fs="rw /srv/store"))
     assert [b["slug"] for b in result["breaks"]] == ["rootless"]
 
 
@@ -147,8 +137,8 @@ def test_a_rule_gaining_an_expectation_is_an_interrupt_not_a_break(tmp_path):
 @pytest.mark.usefixtures("empty_store")
 def test_deletion_is_the_same_question_with_no_content(tmp_path):
     server = _server(tmp_path)
-    _util(server, "leaf", secrets="LEAF_TOKEN")
-    _util(server, "top", calls="leaf")
+    write_util(server, "leaf", secrets="LEAF_TOKEN")
+    write_util(server, "top", calls="leaf")
     _routine(server, "holder", capabilities={"utils": ["top"]})
     # deleting `leaf` removes the secret requirement its caller inherited — strictly fewer
     # unmet rows, so nothing BREAKS even though the library lost a document
@@ -161,12 +151,12 @@ def test_the_digest_changes_with_the_answer(tmp_path):
     """The confirm token: a library that moved between preview and save must re-prompt rather
     than let somebody approve an impact they were never shown."""
     server = _server(tmp_path)
-    _util(server, "sig")
+    write_util(server, "sig")
     _routine(server, "a", capabilities={"utils": ["sig"]})
-    first = impact(server, "util", "sig", _util_src("sig"))
-    assert first["digest"] == impact(server, "util", "sig", _util_src("sig"))["digest"]
+    first = impact(server, "util", "sig", util_src("sig"))
+    assert first["digest"] == impact(server, "util", "sig", util_src("sig"))["digest"]
     _routine(server, "b", capabilities={"utils": ["sig"]})
-    assert impact(server, "util", "sig", _util_src("sig"))["digest"] != first["digest"]
+    assert impact(server, "util", "sig", util_src("sig"))["digest"] != first["digest"]
 
 
 @pytest.mark.usefixtures("empty_store")
@@ -174,10 +164,10 @@ def test_the_digest_names_what_breaks_not_only_whom(tmp_path):
     """The token confirms an impact somebody was SHOWN. The same routine breaking over a
     different secret is a different impact, so a preview of one must not confirm the other."""
     server = _server(tmp_path)
-    _util(server, "sig")
+    write_util(server, "sig")
     _routine(server, "holder", capabilities={"utils": ["sig"]})
-    one = impact(server, "util", "sig", _util_src("sig", secrets="ONE_PIN"))
-    other = impact(server, "util", "sig", _util_src("sig", secrets="OTHER_PIN"))
+    one = impact(server, "util", "sig", util_src("sig", secrets="ONE_PIN"))
+    other = impact(server, "util", "sig", util_src("sig", secrets="OTHER_PIN"))
     assert [b["slug"] for b in one["breaks"]] == [b["slug"] for b in other["breaks"]]
     assert one["digest"] != other["digest"]
 
@@ -187,9 +177,9 @@ def test_the_real_library_is_never_touched(tmp_path):
     """The shadow is symlinks into a temp dir; a preview that mutated the library would be a
     preview nobody could trust."""
     server = _server(tmp_path)
-    _util(server, "sig", secrets="OLD")
+    write_util(server, "sig", secrets="OLD")
     _routine(server, "holder", capabilities={"utils": ["sig"]})
-    impact(server, "util", "sig", _util_src("sig", secrets="NEW"))
+    impact(server, "util", "sig", util_src("sig", secrets="NEW"))
     live = (server.libraries_home / "utils" / "sig" / "main.py").read_text()
     assert "OLD" in live and "NEW" not in live
 
@@ -197,8 +187,8 @@ def test_the_real_library_is_never_touched(tmp_path):
 @pytest.mark.usefixtures("empty_store")
 def test_nothing_held_yields_a_plain_answer(tmp_path):
     server = _server(tmp_path)
-    _util(server, "fresh")
-    assert impact_lines(impact(server, "util", "fresh", _util_src("fresh"))) == [
+    write_util(server, "fresh")
+    assert impact_lines(impact(server, "util", "fresh", util_src("fresh"))) == [
         "binds no routine yet"]
 
 

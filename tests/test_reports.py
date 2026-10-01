@@ -16,6 +16,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from helpers import bare_routine
 from rsched.engine.actions import ALWAYS_KINDS, KIND_EXAMPLES, validate_action
 from rsched.engine.actionschema import KINDS
 from rsched.engine.admin_handlers import handle_report
@@ -34,17 +35,10 @@ from rsched.reports import (
 )
 
 
-def _routine(home: Path, slug: str) -> Path:
-    d = home / slug
-    d.mkdir(parents=True, exist_ok=True)
-    (d / "routine.yaml").write_text(f"slug: {slug}\n", encoding="utf-8")
-    return d
-
-
 def _loop(tmp_path, *, slug="some-routine", run_id="some-routine:20260726-020000"):
     home = tmp_path / "routines"
     home.mkdir(parents=True, exist_ok=True)
-    _routine(home, slug)
+    bare_routine(home, slug)
     ctx = SimpleNamespace(server=SimpleNamespace(routines_home=home),
                           routine=SimpleNamespace(slug=slug), run_id=run_id,
                           reports_open=[])
@@ -104,7 +98,7 @@ def test_report_bypasses_allowlist_and_capability_gate():
 def test_unaddressed_report_lands_in_the_stream_and_delivers_nothing(tmp_path):
     loop, home = _loop(tmp_path, slug="bahnbonus-seat-position",
                        run_id="bahnbonus-seat-position:20260726-134640")
-    other = _routine(home, "self-audit")
+    other = bare_routine(home, "self-audit")
     obs = handle_report(loop, {"title": "write_util selftest fails silently",
                                "detail": "exit 2, no message, under the sandbox"})
     assert obs == {"kind": "report", "title": "write_util selftest fails silently",
@@ -136,7 +130,7 @@ def test_no_id_is_minted_without_the_ledger_lock(tmp_path, monkeypatch):
     import rsched.reports as reports_mod
 
     loop, home = _loop(tmp_path, slug="self-audit")
-    target = _routine(home, "routine-improver")
+    target = bare_routine(home, "routine-improver")
     handle_report(loop, {"title": "before the stall"})
 
     @contextmanager
@@ -159,7 +153,7 @@ def test_an_answer_is_stored_as_the_canonical_id(tmp_path):
     handle_report(loop, {"title": "a question"})
     handle_report(loop, {"title": "the reply", "answers": " r1 "})
     assert _rows(home)[1]["answers"] == "R1"
-    audit = _routine(home, "self-audit")
+    audit = bare_routine(home, "self-audit")
     built = {i["id"]: i for i in items._build(audit, home)["items"]}
     assert built["R1"]["answered_by"] == "R2"
     assert "R1" in built["R2"]["refs"]
@@ -170,7 +164,7 @@ def test_an_answer_is_stored_as_the_canonical_id(tmp_path):
 
 def test_addressed_report_is_delivered_to_the_target_inbox(tmp_path):
     loop, home = _loop(tmp_path, slug="self-audit")
-    _routine(home, "routine-improver")
+    bare_routine(home, "routine-improver")
     obs = handle_report(loop, {"target": "routine-improver",
                                "title": "newsletter-digest stages contradict main.md",
                                "detail": "stages/finalize.md:12 vs main.md:8"})
@@ -189,7 +183,7 @@ def test_an_addressed_report_never_starts_a_run(tmp_path):
     else — no one-shot spool, no state, no status. The target's next scheduled run drains it.
     """
     loop, home = _loop(tmp_path, slug="self-audit")
-    target = _routine(home, "global-utils-review")
+    target = bare_routine(home, "global-utils-review")
     handle_report(loop, {"target": "global-utils-review", "title": "t", "detail": "d"})
 
     written = sorted(p.relative_to(target).as_posix() for p in target.rglob("*") if p.is_file())
@@ -201,7 +195,7 @@ def test_an_addressed_report_never_starts_a_run(tmp_path):
 
 def test_report_refuses_self_target_and_unknown_target(tmp_path):
     loop, home = _loop(tmp_path, slug="self-audit")
-    _routine(home, "config-optimizer")
+    bare_routine(home, "config-optimizer")
     assert handle_report(loop, {"target": "self-audit", "title": "t"})["self_target"] is True
 
     obs = handle_report(loop, {"target": "config-optimiser", "title": "t"})
@@ -217,7 +211,7 @@ def test_report_refuses_self_target_and_unknown_target(tmp_path):
 
 def test_the_targets_drain_stamps_delivery(tmp_path):
     loop, home = _loop(tmp_path, slug="self-audit")
-    target = _routine(home, "routine-improver")
+    target = bare_routine(home, "routine-improver")
     handle_report(loop, {"target": "routine-improver", "title": "t", "detail": "d"})
     assert _rows(home)[0].get("delivered") is None
 
@@ -232,7 +226,7 @@ def test_the_targets_drain_stamps_delivery(tmp_path):
 
 def test_a_plain_user_message_carries_no_report_keys(tmp_path):
     _, home = _loop(tmp_path)
-    target = _routine(home, "routine-improver")
+    target = bare_routine(home, "routine-improver")
     (target / "inbox").mkdir(exist_ok=True)
     (target / "inbox" / "msg-1.json").write_text(json.dumps({"text": "hi"}), encoding="utf-8")
     msgs = drain_messages(target, tmp_path / "consumed")
@@ -251,7 +245,7 @@ def test_retract_report_withdraws_the_pending_delivery(tmp_path):
     never sees it), appends a `retracted` event the fold carries, and the item reads
     `dropped`. The row itself is never rewritten — the ledger stays append-only."""
     loop, home = _loop(tmp_path, slug="self-audit")
-    target = _routine(home, "routine-improver")
+    target = bare_routine(home, "routine-improver")
     handle_report(loop, {"target": "routine-improver", "title": "t", "detail": "d"})
     assert (target / "inbox" / "msg-rep-R1.json").exists()
 
@@ -270,7 +264,7 @@ def test_retract_refusals(tmp_path):
     (stamped or not) all refuse — only a target whose inbox is GONE (it can never consume)
     lets the retraction stand on a missing file."""
     loop, home = _loop(tmp_path, slug="self-audit")
-    target = _routine(home, "routine-improver")
+    target = bare_routine(home, "routine-improver")
     with pytest.raises(LookupError):
         retract_report(home, "R99")
     handle_report(loop, {"title": "unaddressed — triage"})
@@ -298,7 +292,7 @@ def test_a_retracted_answer_settles_nothing(tmp_path):
     """A reply that was retracted before the asker consumed it must not settle its target —
     the answer never arrived, so the exchange is still open."""
     loop, home = _loop(tmp_path, slug="self-audit")
-    target = _routine(home, "routine-improver")
+    target = bare_routine(home, "routine-improver")
     handle_report(loop, {"target": "routine-improver", "title": "fix the pattern"})
     stamp_delivered(home, drain_messages(target, tmp_path / "consumed"),
                     run_id="routine-improver:20260726-010000")
@@ -325,7 +319,7 @@ def _items(home: Path, audit_dir: Path) -> dict:
 def test_items_shows_a_report_and_its_lifecycle(tmp_path):
     loop, home = _loop(tmp_path, slug="self-audit")
     audit = home / "self-audit"
-    target = _routine(home, "routine-improver")
+    target = bare_routine(home, "routine-improver")
     handle_report(loop, {"target": "routine-improver", "title": "fix the pattern",
                          "detail": "see the stage module"})
 
@@ -359,7 +353,7 @@ def test_a_closure_is_born_settled_and_ends_the_exchange(tmp_path):
     has a terminal state instead of every answer needing one more answer."""
     loop, home = _loop(tmp_path, slug="self-audit")
     audit = home / "self-audit"
-    _routine(home, "routine-improver")
+    bare_routine(home, "routine-improver")
     handle_report(loop, {"target": "routine-improver", "title": "fix the pattern"})
 
     back = SimpleNamespace(ctx=SimpleNamespace(
@@ -399,7 +393,7 @@ def test_a_reply_settles_every_row_it_names_not_just_one(tmp_path):
     """
     loop, home = _loop(tmp_path, slug="self-audit")
     audit = home / "self-audit"
-    _routine(home, "routine-improver")
+    bare_routine(home, "routine-improver")
     for n in ("first", "second", "third"):
         handle_report(loop, {"target": "routine-improver", "title": n})
 
@@ -429,7 +423,7 @@ def test_a_report_that_asks_nothing_back_can_be_born_settled(tmp_path):
     """
     loop, home = _loop(tmp_path, slug="self-audit")
     audit = home / "self-audit"
-    _routine(home, "routine-improver")
+    bare_routine(home, "routine-improver")
     handle_report(loop, {"target": "routine-improver", "title": "the original"})
 
     back = SimpleNamespace(ctx=SimpleNamespace(
@@ -452,7 +446,7 @@ def test_a_settling_reply_is_exempt_from_the_open_thread_cap(tmp_path):
     open count exactly as a reply and a fold do, so capping it would punish the fix.
     """
     loop, home = _loop(tmp_path, slug="self-audit")
-    _routine(home, "routine-improver")
+    bare_routine(home, "routine-improver")
     for n in range(OPEN_THREAD_CAP):
         handle_report(loop, {"target": "routine-improver", "title": f"thread {n}"})
     ids = [f"R{n + 1}" for n in range(OPEN_THREAD_CAP)]
@@ -496,7 +490,7 @@ def test_a_targeted_report_always_writes_its_inbox_delivery(tmp_path):
     targeted row with no message). The 2026-08-29 / 2026-09-04 orphans came from an operator batch
     appended straight to the stream, never from this path."""
     loop, home = _loop(tmp_path, slug="self-audit")
-    target = _routine(home, "routine-improver")
+    target = bare_routine(home, "routine-improver")
 
     handle_report(loop, {"target": "routine-improver", "title": "landed", "detail": "d"})
     assert (target / "inbox" / "msg-rep-R1.json").is_file()      # delivered in the same call
@@ -520,7 +514,7 @@ def test_discard_undelivered_report_clears_an_orphan(tmp_path):
     from rsched.reports import discard_undelivered_report
 
     loop, home = _loop(tmp_path, slug="self-audit")
-    _routine(home, "routine-improver")
+    bare_routine(home, "routine-improver")
 
     # an orphan: a targeted row with NO inbox delivery, exactly as an operator batch leaves it
     path = reports_path(home)

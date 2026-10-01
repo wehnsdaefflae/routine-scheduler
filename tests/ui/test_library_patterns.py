@@ -8,22 +8,14 @@ the confirmation says so before anything is removed.
 
 from __future__ import annotations
 
-import yaml
 from playwright.sync_api import expect
 
 from .conftest import until
-from .helpers import stored_config
-
-
-def _follow(ui, slug, pattern) -> None:
-    path = ui.routines / slug / "routine.yaml"
-    cfg = yaml.safe_load(path.read_text(encoding="utf-8"))
-    cfg["pattern"] = pattern
-    path.write_text(yaml.safe_dump(cfg), encoding="utf-8")
+from .helpers import configure, stored_config
 
 
 def test_the_library_lists_every_pattern_readably(ui, ui_page):
-    _follow(ui, "uir", "watcher")
+    configure(ui, pattern="watcher")
     ui_page.goto(f"{ui.url}/#/library")
     section = ui_page.locator("[data-patterns]")
     expect(section).to_be_visible()
@@ -46,7 +38,7 @@ def test_the_library_lists_every_pattern_readably(ui, ui_page):
 
 
 def test_deleting_a_pattern_leaves_its_followers_values_alone(ui, ui_page):
-    _follow(ui, "uir", "watcher")
+    configure(ui, pattern="watcher")
     before = {k: v for k, v in stored_config(ui).items() if k != "pattern"}
     pattern_file = ui.server_cfg.libraries_home / "patterns" / "watcher.yaml"
     assert pattern_file.exists()

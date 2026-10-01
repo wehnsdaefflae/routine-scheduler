@@ -5,21 +5,17 @@ What the server mints is identity — a trigger's id and a webhook's token — s
 the draft has no URL until it is accepted. Its row says so.
 """
 
-import yaml
 from playwright.sync_api import expect
 
 from .conftest import until
-from .helpers import accept, open_section, stored_config, visible_toast
+from .helpers import accept, configure, open_section, stored_config, visible_toast
 
 SEED_TOKEN = "tok-ui-" + "b" * 24
 
 
 def _seed_trigger(ui, slug="uir"):
-    path = ui.routine_dir(slug) / "routine.yaml"
-    raw = yaml.safe_load(path.read_text(encoding="utf-8"))
-    raw["triggers"] = [{"id": "t-uiseed01", "type": "webhook", "token": SEED_TOKEN,
-                        "cooldown_s": 60}]
-    path.write_text(yaml.safe_dump(raw), encoding="utf-8")
+    configure(ui, slug, triggers=[{"id": "t-uiseed01", "type": "webhook", "token": SEED_TOKEN,
+                                   "cooldown_s": 60}])
 
 
 def test_triggers_render_and_a_new_one_is_created_on_accept(ui, ui_page):

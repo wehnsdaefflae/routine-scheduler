@@ -2,16 +2,17 @@
 
 import pytest
 
+from helpers import bare_routine
 from rsched.engine.admin_handlers import handle_report
 from rsched.engine.inbox import drain_messages
 from rsched.reports import stamp_delivered
-from test_reports import _loop, _routine, _rows
+from test_reports import _loop, _rows
 
 
 @pytest.mark.parametrize("disposal", ["answers", "settles"])
 def test_terminal_notice_survives_drain_without_becoming_owed(tmp_path, disposal):
     sender, home = _loop(tmp_path, slug="sender")
-    recipient = _routine(home, "recipient")
+    recipient = bare_routine(home, "recipient")
     handle_report(sender, {"target": "recipient", "title": "ordinary work"})
     ordinary = drain_messages(recipient, tmp_path / "ordinary-consumed")
     assert stamp_delivered(home, ordinary, run_id="recipient:20260921-010000") == ["R1"]

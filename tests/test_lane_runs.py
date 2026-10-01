@@ -14,7 +14,7 @@ from __future__ import annotations
 import yaml
 
 from conftest import FakeRunner, mk_run
-from helpers import tmp_server
+from helpers import health_events, tmp_server
 from rsched import lane_runs, lanes, registry
 
 
@@ -248,14 +248,6 @@ async def test_draining_defers_the_next_fire(tmp_path):
 # -- F316: chain health events -------------------------------------------------------------
 
 
-def _health_events(server):
-    import json
-    p = server.routines_home / ".control" / "health-events.jsonl"
-    if not p.exists():
-        return []
-    return [json.loads(x) for x in p.read_text(encoding="utf-8").splitlines() if x.strip()]
-
-
 async def test_chain_end_emits_a_done_health_event(tmp_path):
     """F316: a chain's end writes lane_chain_done — the periodic heartbeat whose ABSENCE
     is how an audit detects a silently starved lane (the in-flight file is consumed at
@@ -278,7 +270,7 @@ async def test_chain_end_emits_a_done_health_event(tmp_path):
     mk_run(db, "20260717-120000", "finished", outcome="failed")
     runner.active.clear()
     await mgr.tick(catalog)                                     # collects b → chain done
-    evs = [e for e in _health_events(server) if e["event"] == "lane_chain_done"]
+    evs = health_events(server.routines_home, event="lane_chain_done")
     assert len(evs) == 1
     ev = evs[0]
     assert ev["routine"] == lane["id"] and ev["run_id"].startswith("lr-")
@@ -306,7 +298,7 @@ async def test_a_switched_off_member_is_not_counted_not_ok(tmp_path):
     await mgr.tick(catalog)                                     # collects a
     await mgr.tick(catalog)                                     # skips off (cursor past the end)
     await mgr.tick(catalog)                                     # → chain done
-    evs = [e for e in _health_events(server) if e["event"] == "lane_chain_done"]
+    evs = health_events(server.routines_home, event="lane_chain_done")
     assert len(evs) == 1
     assert "Daily: 2 member runs, 0 not-ok," in evs[0]["detail"]
 
@@ -327,7 +319,7 @@ async def test_stop_emits_a_stopped_health_event(tmp_path):
     mk_run(da, "20260717-120000", "finished", outcome="failed")
     runner.active.clear()
     await mgr.tick(catalog)                                     # collects failure → stop
-    evs = _health_events(server)
+    evs = health_events(server.routines_home)
     stopped = [e for e in evs if e["event"] == "lane_chain_stopped"]
     assert len(stopped) == 1 and "1 not-ok (a)" in stopped[0]["detail"]
     assert not [e for e in evs if e["event"] == "lane_chain_done"]
@@ -344,8 +336,7 @@ async def test_skipped_member_emits_a_health_event(tmp_path):
     runner = FakeRunner()
     mgr = LaneRunManager(server, runner)
     await mgr.tick(registry.scan(server))                       # skips ghost
-    evs = [e for e in _health_events(server)
-           if e["event"] == "lane_chain_member_skipped"]
+    evs = health_events(server.routines_home, event="lane_chain_member_skipped")
     assert len(evs) == 1
     assert evs[0]["routine"] == "ghost" and evs[0]["run_id"] == ""
     assert "chain continues" in evs[0]["detail"]

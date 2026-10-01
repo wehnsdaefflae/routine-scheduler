@@ -27,7 +27,7 @@ import pytest
 import yaml
 
 from conftest import finish
-from helpers import server_for
+from helpers import pid_alive, server_for
 from rsched import sandbox, scripts, shellrun, utils_lib, utils_run
 from rsched.config import ServerConfig, load_routine
 from rsched.engine.budgets_config import Budgets
@@ -44,25 +44,9 @@ GROUP = "sleep 60 & echo $! > member.tmp && mv member.tmp member; wait"
 ENDED = re.compile(r"was ended by the run's abort after \d+s \(process group terminated\)")
 
 
-def _until(check, limit: float = 20.0) -> None:
-    deadline = time.monotonic() + limit
-    while not check():
-        assert time.monotonic() < deadline, "the command never got going"
-        time.sleep(0.02)
-
-
-def _alive(pid: int) -> bool:
-    """Whether `pid` still runs — a zombie (exited, not yet collected by its init) does not."""
-    try:
-        stat = Path(f"/proc/{pid}/stat").read_text(encoding="utf-8")
-    except FileNotFoundError:
-        return False
-    return not stat.rsplit(") ", 1)[1].startswith("Z")
-
-
 def _gone(pid: int, limit: float = 10.0) -> bool:
     deadline = time.monotonic() + limit
-    while _alive(pid):
+    while pid_alive(pid):
         if time.monotonic() > deadline:
             return False
         time.sleep(0.05)

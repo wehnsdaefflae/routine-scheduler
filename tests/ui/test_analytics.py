@@ -3,29 +3,18 @@
 execution table — driven end to end, asserting both the DOM and what landed on disk.
 """
 
-import json
-import subprocess
 
 from playwright.sync_api import expect
+
+from conftest import git_in
+from helpers import write_usage_stream
 
 from .helpers import confirm_modal, unfold, visible_toast
 
 
 def _git(d, *args, date="2026-07-01T10:00:00+00:00"):
-    import os
-    subprocess.run(["git", "-C", str(d), "-c", "user.name=t", "-c", "user.email=t@t",
-                    *args], capture_output=True, text=True, check=True,
-                   env={**os.environ, "GIT_COMMITTER_DATE": date, "GIT_AUTHOR_DATE": date})
-    head = subprocess.run(["git", "-C", str(d), "rev-parse", "HEAD"],
-                          capture_output=True, text=True, check=False)
-    return head.stdout.strip()
-
-
-def _stream(ui, records):
-    control = ui.routines / ".control"
-    control.mkdir(parents=True, exist_ok=True)
-    (control / "workflow-usage.jsonl").write_text(
-        "".join(json.dumps(r) + "\n" for r in records), encoding="utf-8")
+    git_in(d, *args, date=date)
+    return git_in(d, "rev-parse", "HEAD", check=False).stdout.strip()
 
 
 def test_recipe_health_untracked_note(ui, ui_page):
@@ -47,7 +36,7 @@ def test_recipe_health_buckets_regression_and_rollback(ui, ui_page):
     _git(d, "add", "-A")
     v2 = _git(d, "commit", "-qm", "recipe: sharpen the scan",
               date="2026-07-10T10:00:00+00:00")
-    _stream(ui, [
+    write_usage_stream(ui.routines, [
         # five clean legacy runs under v1 (date-mapped) …
         *[{"routine": "uir", "run_id": f"uir:2026070{i}-070000", "depth": 0,
            "status": "ok", "turns": 8, "tokens": 4000,
@@ -78,7 +67,7 @@ def test_stats_utils_table(ui, ui_page):
     """The Stats tab answers the per-util questions: executed / ok / syntax errors /
     permission denials, first & last execution — and 'never' for an idle util."""
     ui.seed_run("uir", "20260715-100000", "finished", summary="ok")
-    _stream(ui, [
+    write_usage_stream(ui.routines, [
         {"routine": "uir", "run_id": "uir:20260715-100000", "depth": 0, "status": "ok",
          "turns": 3, "tokens": 900, "ts": "2026-07-15T10:05:00+00:00",
          "utils": {"dir-tree": {"ok": 3, "usage_error": 1, "denied": 2}}},
@@ -107,7 +96,7 @@ def test_stats_compression_table(ui, ui_page):
     compressor time as a kept one and buys nothing. A measurement, not a setting: there is no
     per-routine mode column."""
     ui.seed_run("uir", "20260715-100000", "finished", summary="ok")
-    _stream(ui, [
+    write_usage_stream(ui.routines, [
         {"routine": "uir", "run_id": "uir:20260715-100000", "depth": 0, "status": "ok",
          "turns": 3, "tokens": 900, "ts": "2026-07-15T10:05:00+00:00",
          "compression": {"applied": 1, "fallback": 3, "unchanged": 2, "skipped": 20,

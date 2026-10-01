@@ -10,17 +10,12 @@ import time
 import pytest
 
 from conftest import finish
-from helpers import server_for
+from helpers import server_for, transcript_events
 from rsched import utils_lib, utils_run
 from rsched.engine.runtime import run_routine
-from rsched.engine.transcript import read_events
 from rsched.paths import atomic_write_json, read_json
 
 TS = "20260708-070000"
-
-
-def _events(run_dir):
-    return read_events(run_dir / "transcript.jsonl")[0]
 
 
 def test_open_questions_flags_answered_when_answer_waiting(make_routine):
@@ -61,7 +56,7 @@ def test_blocking_ask_files_a_durable_record_with_default_and_expiry(make_routin
     assert rec["mode"] == "deferred" and rec["type"] == "question"
     assert rec["default"] == "hold the release" and rec["options"] == ["yes", "no"]
     # the run CONTINUED on the stated default
-    events = _events(run_dir)
+    events = transcript_events(run_dir)
     obs = next(e for e in events if e["type"] == "observation" and e["payload"]["kind"] == "ask_user")
     assert obs["payload"]["timed_out"] and obs["payload"]["default"] == "hold the release"
     q = next(e for e in events if e["type"] == "question")
@@ -127,7 +122,7 @@ def test_config_patch_target_that_names_no_routine_is_refused(make_routine, scri
     status, run_dir = run_routine(d, server_for(d), run_ts=TS)
     assert status == "ok"
     assert not list((d / "questions" / "pending").glob("*.json"))
-    obs = next(e for e in _events(run_dir)
+    obs = next(e for e in transcript_events(run_dir)
                if e["type"] == "observation" and e["payload"].get("error"))
     assert "no-such-routine" in obs["payload"]["error"]
 
@@ -156,7 +151,7 @@ def test_blocking_answer_resolves_the_record(make_routine, scripted):
     t.join()
     assert status == "ok"
     assert not list((d / "questions" / "pending").glob("*.json"))   # resolved, not lingering
-    ans = next(e for e in _events(run_dir) if e["type"] == "answer")
+    ans = next(e for e in transcript_events(run_dir) if e["type"] == "answer")
     assert ans["payload"]["text"] == "yes" and ans["payload"]["source"] == "web"
 
 
@@ -171,7 +166,7 @@ def test_util_approval_is_the_same_record_with_its_own_type(make_routine, script
     ])
     status, run_dir = run_routine(d, server_for(d), run_ts=TS)
     assert status == "ok"
-    q = next(e for e in _events(run_dir) if e["type"] == "question")
+    q = next(e for e in transcript_events(run_dir) if e["type"] == "question")
     assert q["payload"]["type"] == "util-approval"
     assert "NOT applied until approved" in q["payload"]["default"]
     rec = read_json(next(iter((d / "questions" / "pending").glob("*.json"))))
@@ -213,7 +208,7 @@ def test_dialog_reply_keeps_the_record_open_and_a_reask_supersedes_it(make_routi
     status, run_dir = run_routine(d, server_for(d), run_ts=TS)
     t.join()
     assert status == "ok"
-    events = _events(run_dir)
+    events = transcript_events(run_dir)
     first_obs = next(e for e in events if e["type"] == "observation"
                      and e["payload"]["kind"] == "ask_user")
     assert first_obs["payload"].get("dialog") is True
@@ -313,7 +308,7 @@ def test_util_secret_gate_files_one_request_covering_the_run(make_routine, scrip
     status, run_dir = run_routine(d, server_for(d), run_ts=TS)
     th.join()
     assert status == "ok"
-    events = _events(run_dir)
+    events = transcript_events(run_dir)
     questions = [e for e in events if e["type"] == "question"]
     assert len(questions) == 1 and questions[0]["payload"]["request"] == ["secret:FOO_KEY"]
     assert next(e for e in events if e["type"] == "answer")["payload"]["decision"] == "allow_now"
@@ -347,7 +342,7 @@ def test_optional_secret_never_asks_and_is_withheld(make_routine, scripted, monk
     ])
     status, run_dir = run_routine(d, server_for(d), run_ts=TS)
     assert status == "ok"
-    events = _events(run_dir)
+    events = transcript_events(run_dir)
     assert not [e for e in events if e["type"] == "question"]      # nobody was asked
     assert seen_withhold == [{"WEB_AUTH_SOURCES"}]                 # env withheld instead
     obs = next(e for e in events if e["type"] == "observation"
@@ -378,7 +373,7 @@ def test_secret_grant_row_covers_runs_without_asking(make_routine, scripted, mon
     scripted([{"say": "call", "kind": "util", "name": "frob", "args": []}, finish()])
     status, run_dir = run_routine(d, server_for(d), run_ts=TS)
     assert status == "ok"
-    assert [e for e in _events(run_dir) if e["type"] == "question"] == []   # never asked
+    assert [e for e in transcript_events(run_dir) if e["type"] == "question"] == []  # never asked
     assert ran == [("frob", [])]                                            # ran unprompted
 
 
@@ -408,7 +403,7 @@ def test_util_secret_gate_recorded_decline_refuses_without_asking(make_routine, 
     ])
     status, run_dir = run_routine(d, server_for(d), run_ts=TS)
     assert status == "ok"
-    events = _events(run_dir)
+    events = transcript_events(run_dir)
     assert not any(e["type"] == "question" for e in events)
     obs = next(e for e in events if e["type"] == "observation"
                and e["payload"]["kind"] == "util")
@@ -442,7 +437,7 @@ def test_a_util_slash_command_passes_the_same_secret_gate(make_routine, scripted
     scripted([finish()])
     status, run_dir = run_routine(d, server_for(d), run_ts=TS)
     assert status == "ok"
-    obs = next(e["payload"] for e in _events(run_dir) if e["type"] == "observation"
+    obs = next(e["payload"] for e in transcript_events(run_dir) if e["type"] == "observation"
                and e["payload"].get("user_command"))
     assert obs["declined_secrets"] == ["FOO_KEY"]
     assert ran == []                                   # the util never executed
@@ -473,7 +468,7 @@ def test_secret_decline_observation_names_no_secrets(make_routine, scripted, mon
     scripted([{"say": "call it", "kind": "util", "name": "frob", "args": []}, finish()])
     status, run_dir = run_routine(d, server_for(d), run_ts=TS)
     assert status == "ok"
-    obs = next(e for e in _events(run_dir) if e["type"] == "observation"
+    obs = next(e for e in transcript_events(run_dir) if e["type"] == "observation"
                and e["payload"]["kind"] == "util")
     assert sorted(obs["payload"]["declined_secrets"]) == ["BAR_KEY", "FOO_KEY"]  # audit keeps them
     assert "FOO_KEY" not in obs["payload"]["reason"]
@@ -518,7 +513,7 @@ def test_secret_decline_after_ask_stays_generic(make_routine, scripted, monkeypa
     status, run_dir = run_routine(d, server_for(d), run_ts=TS)
     th.join()
     assert status == "ok"
-    obs = next(e for e in _events(run_dir) if e["type"] == "observation"
+    obs = next(e for e in transcript_events(run_dir) if e["type"] == "observation"
                and e["payload"]["kind"] == "util")
     assert obs["payload"]["declined_secrets"] == ["FOO_KEY"]   # transcript keeps the audit
     assert "FOO_KEY" not in obs["payload"]["reason"]
@@ -562,7 +557,7 @@ def test_ambiguous_approval_reply_is_held_not_consumed(make_routine, scripted):
     status, run_dir = run_routine(d, server_for(d), run_ts=TS)
     t.join()
     assert status == "ok"
-    events = _events(run_dir)
+    events = transcript_events(run_dir)
     answers = [e["payload"] for e in events if e["type"] == "answer"]
     assert answers[0]["text"] == "Bin hier" and answers[0]["held"] is True
     assert answers[1]["text"] == "no thanks" and "held" not in answers[1]
@@ -593,7 +588,7 @@ def test_deferred_answer_reaches_the_live_run(make_routine, scripted):
     ])
     status, run_dir = run_routine(d, server_for(d), run_ts=TS)
     assert status == "ok"
-    events = _events(run_dir)
+    events = transcript_events(run_dir)
     inj = [e["payload"]["text"] for e in events if e["type"] == "user_injection"]
     assert any("Which color?" in t and "blue" in t for t in inj), inj
     assert not list((d / "questions" / "pending").glob("*.json"))   # record consumed
@@ -673,7 +668,7 @@ def test_a_routine_proposal_naming_a_conversation_field_is_refused_at_filing(
     status, run_dir = run_routine(d, server_for(d), run_ts=TS)
     assert status == "ok"
     assert not list((d / "questions" / "pending").glob("*.json"))
-    obs = next(e for e in _events(run_dir)
+    obs = next(e for e in transcript_events(run_dir)
                if e["type"] == "observation" and e["payload"].get("error"))
     assert "'title'" in obs["payload"]["error"]
     assert "routine config" in obs["payload"]["error"]

@@ -7,6 +7,7 @@ import json
 import httpx
 import pytest
 
+from helpers import mock_proxy
 from rsched.config import EndpointConfig
 from rsched.endpoints import cliproxy_login, cliproxy_mgmt
 from rsched.endpoints.base import EndpointError
@@ -18,12 +19,6 @@ def proxy(monkeypatch):
     monkeypatch.setattr(cliproxy_mgmt, "resolve_api_key", lambda **kw: "management-secret")
     return EndpointConfig(kind="anthropic", base_url="http://proxy:8317/v1",
                           quota_source="cliproxy")
-
-
-def mock_proxy(monkeypatch, handler):
-    factory = httpx.Client
-    monkeypatch.setattr(cliproxy_mgmt.httpx, "Client", lambda **kw: factory(
-        transport=httpx.MockTransport(handler), **kw))
 
 
 # ---- the account list ---------------------------------------------------------------------

@@ -10,17 +10,10 @@ import json
 from types import SimpleNamespace
 
 from conftest import finish, write_file
-from helpers import server_for
+from helpers import health_events, server_for
 from rsched.engine.runtime import run_routine
 
 TS = "20260708-070000"
-
-
-def _health(tmp_path) -> list[dict]:
-    path = tmp_path / "routines" / ".control" / "health-events.jsonl"
-    if not path.exists():
-        return []
-    return [json.loads(ln) for ln in path.read_text(encoding="utf-8").splitlines() if ln.strip()]
 
 
 def test_budget_exhausted_names_the_budget_that_spent_the_run(make_routine, scripted, tmp_path):
@@ -30,7 +23,7 @@ def test_budget_exhausted_names_the_budget_that_spent_the_run(make_routine, scri
     status, run_dir = run_routine(d, server_for(d), run_ts=TS)
 
     assert status == "partial"
-    rows = [e for e in _health(tmp_path) if e["event"] == "budget_exhausted"]
+    rows = health_events(tmp_path / "routines", event="budget_exhausted")
     assert len(rows) == 1
     assert rows[0]["resource"] == "turns" and rows[0]["limit"] == 3
     assert rows[0]["status"] == "partial"
@@ -51,7 +44,7 @@ def test_the_reserved_turn_is_on_the_record_even_when_the_run_finishes_ok(
     status, _run_dir = run_routine(d, server_for(d), run_ts=TS)
 
     assert status == "ok"
-    rows = [e for e in _health(tmp_path) if e["event"] == "budget_exhausted"]
+    rows = health_events(tmp_path / "routines", event="budget_exhausted")
     assert len(rows) == 1 and rows[0]["status"] == "ok" and rows[0]["resource"] == "turns"
 
 

@@ -17,6 +17,8 @@ from pathlib import Path
 import pytest
 import yaml
 
+from helpers import write_executable
+
 REPO = Path(__file__).resolve().parents[1]
 #: The example's placeholders — a value either tier ever carries from these is a known token.
 PLACEHOLDERS = {"change-me", "change-me-too", ""}
@@ -38,12 +40,6 @@ exit 0
 """
 
 
-def _stub(path: Path, text: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(text, encoding="utf-8")
-    path.chmod(0o755)
-
-
 @pytest.fixture
 def host(tmp_path):
     """A HOME with the checkout where the unit expects it (a symlink to this repo), uv where
@@ -52,11 +48,11 @@ def host(tmp_path):
     (home / "git-repos").mkdir(parents=True)
     (home / "git-repos/routine-scheduler").symlink_to(REPO)
     (home / ".local/share/routine-scheduler-libraries").mkdir(parents=True)
-    _stub(home / ".local/bin/uv", UV_STUB)
+    write_executable(home / ".local/bin/uv", UV_STUB)
     bin_dir = tmp_path / "bin"
-    _stub(bin_dir / "systemctl", SYSTEMCTL_STUB)
-    _stub(bin_dir / "loginctl", "#!/bin/sh\nexit 0\n")
-    _stub(bin_dir / "pgrep", "#!/bin/sh\nexit 1\n")
+    write_executable(bin_dir / "systemctl", SYSTEMCTL_STUB)
+    write_executable(bin_dir / "loginctl", "#!/bin/sh\nexit 0\n")
+    write_executable(bin_dir / "pgrep", "#!/bin/sh\nexit 1\n")
     env = {k: v for k, v in os.environ.items() if not k.startswith("RSCHED_")}
     env.update(HOME=str(home), PATH=f"{bin_dir}{os.pathsep}{env['PATH']}",
                RSCHED_TEST_PYTHON=sys.executable)

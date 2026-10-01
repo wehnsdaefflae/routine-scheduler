@@ -3,11 +3,10 @@ stream is the source, records without the tally are OUTSIDE the window (never a 
 children count as themselves.
 """
 
-import json
 
 import yaml
 
-from helpers import stats_server
+from helpers import stats_server, write_usage_stream
 from rsched.readmodels.compression_stats import compression_stats
 
 
@@ -16,11 +15,6 @@ def _routine(server, slug):
     d.mkdir(parents=True, exist_ok=True)
     (d / "routine.yaml").write_text(yaml.safe_dump(
         {"name": slug, "slug": slug, "enabled": True, "description": "t"}), encoding="utf-8")
-
-
-def _stream(server, records):
-    (server.routines_home / ".control" / "workflow-usage.jsonl").write_text(
-        "".join(json.dumps(r) + "\n" for r in records), encoding="utf-8")
 
 
 def _rec(slug, ts, compression, *, depth=0):
@@ -32,7 +26,7 @@ def test_rolls_up_per_routine_and_orders_by_saving(tmp_path):
     server = stats_server(tmp_path)
     _routine(server, "alpha")
     _routine(server, "beta")
-    _stream(server, [
+    write_usage_stream(server.routines_home, [
         _rec("alpha", "2026-09-11T07:00:00+00:00",
              {"applied": 2, "skipped": 40, "fallback": 1, "tokens_saved": 500, "ms": 120.5}),
         # a CHILD counts as itself: the parent folds nothing in
@@ -74,7 +68,7 @@ def test_a_continued_run_is_one_run_with_each_legs_tally_summed(tmp_path):
     second = {**_rec("alpha", "2026-09-11T09:00:00+00:00",
                      {"applied": 1, "tokens_saved": 100, "ms": 100.0}),
               "run_id": first["run_id"]}
-    _stream(server, [first, second])
+    write_usage_stream(server.routines_home, [first, second])
     out = compression_stats(server)
     row = out["rows"][0]
     assert (row["runs"], row["applied"], row["tokens_saved"], row["seconds"]) == (1, 3, 400, 0.2)
@@ -87,7 +81,7 @@ def test_records_without_the_tally_are_outside_the_window(tmp_path):
     """
     server = stats_server(tmp_path)
     _routine(server, "alpha")
-    _stream(server, [
+    write_usage_stream(server.routines_home, [
         {"routine": "alpha", "run_id": "alpha:1", "depth": 0, "status": "ok",
          "turns": 1, "tokens": 10, "ts": "2026-09-01T07:00:00+00:00"},
         _rec("alpha", "2026-09-11T07:00:00+00:00", {"applied": 1, "tokens_saved": 9}),
@@ -101,7 +95,8 @@ def test_records_without_the_tally_are_outside_the_window(tmp_path):
 def test_a_deleted_routine_stays_readable(tmp_path):
     """A slug with no directory any more keeps its row: the history is still true."""
     server = stats_server(tmp_path)
-    _stream(server, [_rec("gone", "2026-09-11T08:00:00+00:00", {"skipped": 3, "ms": 0.0})])
+    write_usage_stream(server.routines_home,
+                       [_rec("gone", "2026-09-11T08:00:00+00:00", {"skipped": 3, "ms": 0.0})])
     rows = {r["routine"]: r for r in compression_stats(server)["rows"]}
     assert rows["gone"]["skipped"] == 3
 
@@ -109,7 +104,7 @@ def test_a_deleted_routine_stays_readable(tmp_path):
 def test_malformed_counts_never_raise(tmp_path):
     server = stats_server(tmp_path)
     _routine(server, "alpha")
-    _stream(server, [
+    write_usage_stream(server.routines_home, [
         _rec("alpha", "2026-09-11T07:00:00+00:00",
              {"applied": "two", "tokens_saved": None, "ms": {"nope": 1}}),
     ])

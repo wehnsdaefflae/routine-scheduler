@@ -8,6 +8,7 @@ two behaviours the old page had earned — Unread by default (2026-08-05) and a 
 
 from __future__ import annotations
 
+from conftest import mk_run
 from helpers import tmp_server
 from rsched.readmodels import summaries
 
@@ -15,17 +16,8 @@ TS = "20260905-090000"
 
 
 def _run(routine_dir, ts, *, summary="", state="finished", outcome="ok"):
-    from rsched.paths import atomic_write_json
-
-    d = routine_dir / "runs" / ts
-    d.mkdir(parents=True, exist_ok=True)
-    atomic_write_json(d / "status.json", {
-        "run_id": f"{routine_dir.name}:{ts}", "state": state, "outcome": outcome,
-        "turn": 3, "usage": {"in": 10, "out": 4}, "started": ts,
-        "updated": "2026-09-05T09:00:00+00:00"})
-    if summary:
-        (d / "result.md").write_text(summary, encoding="utf-8")
-    return d
+    return mk_run(routine_dir, ts, state, outcome=outcome, usage={"in": 10, "out": 4},
+                  started=ts, updated="2026-09-05T09:00:00+00:00", summary=summary)
 
 
 def test_one_row_per_routine_carrying_the_newest_run_with_a_summary(tmp_path, make_routine):

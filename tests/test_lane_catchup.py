@@ -8,22 +8,14 @@ up the most recent due fire once when the watermark is older than it.
 
 from __future__ import annotations
 
-import json
 from datetime import UTC, datetime, timedelta
 
 from conftest import FakeRunner
-from helpers import tmp_server
+from helpers import health_events, tmp_server
 from rsched import firetimes, lane_fires, lane_runs, lanes
 from rsched.daemon import lane_catchup
 from rsched.daemon.events import EventBus
 from rsched.daemon.scheduler import Scheduler
-
-
-def _events(server) -> list[dict]:
-    p = server.routines_home / ".control" / "health-events.jsonl"
-    if not p.exists():
-        return []
-    return [json.loads(x) for x in p.read_text(encoding="utf-8").splitlines() if x.strip()]
 
 
 def test_arm_stamps_the_watermark(tmp_path):
@@ -61,7 +53,7 @@ def test_missed_fire_is_made_up_once(tmp_path):
     rec = lane_runs.read(home, lane["id"])
     assert rec is not None and rec["armed_by"] == "catchup"
     assert lane_runs.read(home, fresh["id"]) is None
-    evs = [e for e in _events(server) if e["event"] == "lane_fire_catchup"]
+    evs = health_events(server.routines_home, event="lane_fire_catchup")
     assert len(evs) == 1 and evs[0]["routine"] == lane["id"] and "Biweekly" in evs[0]["detail"]
     # the arm moved the watermark past the due fire: a second boot makes up nothing more
     assert lane_catchup.boot_catchup(server, now + timedelta(minutes=5)) == []
@@ -105,7 +97,7 @@ def test_skip_policy_paused_and_in_flight_lanes_are_not_made_up(tmp_path):
     assert lane_runs.read(home, skipper["id"]) is None
     assert lane_runs.read(home, paused["id"]) is None
     assert lane_runs.read(home, busy["id"])["armed_by"] == "ui"   # untouched
-    assert not [e for e in _events(server) if e["event"] == "lane_fire_catchup"]
+    assert not health_events(server.routines_home, event="lane_fire_catchup")
 
 
 async def test_scheduler_boot_catchup_arms_missed_lanes(make_routine, tmp_path):
@@ -170,7 +162,7 @@ async def test_a_pause_skipped_lane_fire_is_not_made_up_at_the_next_boot(make_ro
     assert lane_runs.read(home, lane["id"]) is None
     pause.set_paused(server, False)
     assert lane_catchup.boot_catchup(server, datetime.now(UTC)) == []
-    assert not [e for e in _events(server) if e["event"] == "lane_fire_catchup"]
+    assert not health_events(server.routines_home, event="lane_fire_catchup")
 
 
 def test_concurrent_stamps_keep_both_watermarks(tmp_path, monkeypatch):
@@ -291,7 +283,7 @@ def test_resume_makes_up_a_weekly_lane_and_leaves_a_daily_one_alone(tmp_path):
     made = lane_runs.read(home, weekly["id"])
     assert made is not None and made["armed_by"] == "catchup"
     assert lane_runs.read(home, daily["id"]) is None
-    evs = [e for e in _events(server) if e["event"] == "lane_fire_catchup"]
+    evs = health_events(server.routines_home, event="lane_fire_catchup")
     assert len(evs) == 1 and evs[0]["routine"] == weekly["id"]
     assert "Weekly Research" in evs[0]["detail"]
     # the owed record is spent for BOTH — including the one that was declined, or the next
@@ -321,7 +313,7 @@ def test_resume_never_makes_up_a_skip_or_paused_or_in_flight_lane(tmp_path):
     assert lane_runs.read(home, skipper["id"]) is None
     assert lane_runs.read(home, paused["id"]) is None
     assert lane_runs.read(home, busy["id"])["armed_by"] == "ui"    # untouched
-    assert not [e for e in _events(server) if e["event"] == "lane_fire_catchup"]
+    assert not health_events(server.routines_home, event="lane_fire_catchup")
 
 
 def test_a_lane_that_lost_no_fire_is_untouched_by_a_resume(tmp_path):
