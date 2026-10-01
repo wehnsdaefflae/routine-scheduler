@@ -135,7 +135,7 @@ def matches(settings: dict, pattern_settings: dict) -> bool:
     return not overrides(settings, pattern_settings)
 
 
-def snapshot(cfg, *, deliberation: str | None = None) -> dict:
+def snapshot(cfg) -> dict:
     """One routine's settings as a canonical document — what its page shows, what a pattern
     is compared against, and what "Save as new pattern" copies into the library.
     """
@@ -161,7 +161,7 @@ def snapshot(cfg, *, deliberation: str | None = None) -> dict:
         "connections": dict(cfg.connections or {}),
         "machines": list(cfg.machines or []),
         "models": dict(cfg.models or {}),
-        "deliberation": deliberation or cfg.deliberation,
+        "deliberation": cfg.deliberation,
         "tags": list(cfg.tags or []),
         "name": cfg.name,
         "description": cfg.description,
