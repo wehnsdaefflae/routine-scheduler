@@ -19,7 +19,10 @@ export function renderSecrets(view) {
     // for the machines section's key_var) into a single-line input silently strips the
     // newlines before the store ever sees them — the store itself round-trips PEMs fine
     // (operator report 2026-07-23). Masked via text-security; "show" reveals.
-    const valIn = el("textarea", { placeholder: "value", rows: "1",
+    // `data-nopersist` is load-bearing: formpersist.js skips a password INPUT by type, and a
+    // textarea is not one — without the opt-out every keystroke of the value was kept in the
+    // tab's sessionStorage and refilled into the box the save's own re-render mounts.
+    const valIn = el("textarea", { placeholder: "value", rows: "1", "data-nopersist": true,
       style: "flex:1;resize:vertical;-webkit-text-security:disc" });
     const delBtn = (k) => {
       const b = el("button", { class: "btn small danger" }, "delete");
@@ -132,7 +135,8 @@ export function renderSecrets(view) {
     }
     const mKey = el("input", { type: "text", placeholder: "secret (e.g. FTP_SOURCES)", style: "flex:1", list: "secret-names", "data-map-entry": "key" });
     const mName = el("input", { type: "text", placeholder: "entry name (e.g. grantsforbina)", style: "flex:1", "data-map-entry": "name" });
-    const mVal = el("textarea", { placeholder: '{"host": "…", "user": "…", "pass": "…"}', rows: "3", class: "tight", style: "width:100%", "data-map-entry": "value" });
+    // an entry IS credentials (a password in plain JSON), so it is never kept as a draft either
+    const mVal = el("textarea", { placeholder: '{"host": "…", "user": "…", "pass": "…"}', rows: "3", class: "tight", style: "width:100%", "data-map-entry": "value", "data-nopersist": true });
     const mSave = el("button", { class: "btn small primary" }, "add / replace entry");
     mSave.onclick = async () => {
       const key = mKey.value.trim(), name = mName.value.trim();

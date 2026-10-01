@@ -61,9 +61,9 @@ export async function render(view) {
     box.replaceChildren(emptyState("◌", "No browser screen is published",
       "The shared browser runs headless inside the container. To watch it, serve its noVNC "
       + "page (websockify, usually port 6080) somewhere this console can reach, then set "
-      + "that address under Settings → server process → browser screen (noVNC) URL."),
+      + "that address under Settings → Server → browser screen (noVNC) URL."),
       el("div", { class: "row mt" },
-        el("a", { class: "btn small primary", href: "#/settings" }, "open Settings")));
+        el("a", { class: "btn small primary", href: "#/settings?section=server" }, "open Settings")));
     return;
   }
   try { await grantPass(); }

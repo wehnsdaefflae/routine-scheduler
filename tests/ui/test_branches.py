@@ -11,6 +11,8 @@ from playwright.sync_api import expect
 
 from rsched.paths import atomic_write_json
 
+from .conftest import TOKEN
+
 # header + one complete turn + a later turn that must NOT reach the branch
 EVENTS = [
     {"type": "header", "run_id": "X", "routine": "X",
@@ -231,6 +233,35 @@ def test_a_reply_carries_a_rewind_to_here_control_that_posts_the_reply_turn(ui, 
     ui_page.locator(".modal-overlay").get_by_role("button", name="rewind", exact=True).click()
     ui_page.wait_for_timeout(400)   # < the 800ms reload; the POST body is the real contract
     assert posted.get("body") == {"turn": 2}, posted
+
+
+def test_the_reply_corner_controls_show_at_rest_where_nothing_can_hover(ui, ui_page, browser):
+    """F433 put the bubble's ⧉ copy at rest, at half strength, wherever the pointer cannot hover
+    — a phone has no hover, so a hover-revealed control is no control there. ⑂ branch and
+    ⟲ rewind are the same family in the same corner and were left out: on a phone they stayed
+    at opacity 0 and still took a tap, so a touch on a reply's corner could fork the
+    conversation (no confirm) through a control nobody could see."""
+    slug, conv_dir = _start_conversation(ui, ui_page)
+    run_dir = conv_dir / "runs" / "20260827-100000"
+    run_dir.mkdir(parents=True, exist_ok=True)
+    (run_dir / "transcript.jsonl").write_text(
+        "".join(json.dumps(e) + "\n" for e in REPLY_EVENTS), encoding="utf-8")
+    atomic_write_json(run_dir / "status.json", {"state": "finished", "turn": 2})
+
+    phone = browser.new_context(has_touch=True, is_mobile=True, ignore_https_errors=True,
+                                viewport={"width": 390, "height": 844})
+    try:
+        page = phone.new_page()
+        page.add_init_script(f"localStorage.setItem('rsched_token', {TOKEN!r})")
+        page.goto(f"{ui.url}/#/conversations/{slug}")
+        assert page.evaluate("matchMedia('(hover: none)').matches"), "not a no-hover pointer"
+        reply = page.locator(".msg.assistant", has_text="Option B, on the cost curve")
+        expect(reply).to_be_visible()
+        for control in ("copy-msg", "branch-msg", "rewind-msg"):
+            opacity = reply.locator(f".{control}").evaluate("e => getComputedStyle(e).opacity")
+            assert float(opacity) > 0, f".{control} is invisible where nothing can hover"
+    finally:
+        phone.close()
 
 
 def test_agent_reply_can_target_an_earlier_message(ui, ui_page):

@@ -1218,6 +1218,21 @@ def test_settings_grouped_layout(ui, ui_page):
     expect(ui_page.locator("#sec-notifications")).to_be_in_viewport()
 
 
+def test_a_failed_endpoints_read_leaves_the_rest_of_settings_standing(ui, ui_page):
+    """Settings loads its sections in parallel, and settings-common.panelSection paints a failed
+    read INTO its own panel so one broken section cannot take the page down with it. The
+    endpoints section was the one fill not built that way: its rejection reached settings.js's
+    `await Promise.all(fills)`, and the router replaced the whole page — Secrets included, the
+    section an operator repairing a broken endpoint needs — with "view failed to load"."""
+    ui_page.route("**/api/settings/endpoints", lambda route: route.fulfill(
+        status=500, json={"detail": "endpoints unreadable"}))
+    ui_page.goto(f"{ui.url}/#/settings?section=secrets")
+    expect(ui_page.locator("#sec-secrets")).to_be_visible()
+    expect(ui_page.locator("#view")).to_contain_text("endpoints unreadable")
+    expect(ui_page.locator("#view")).not_to_contain_text("view failed to load")
+    expect(ui_page.locator('textarea[placeholder="value"]')).to_be_visible()
+
+
 # ---- 6. Pre-start capabilities & budgets on the composer ----------------------------------
 
 

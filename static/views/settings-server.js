@@ -68,12 +68,16 @@ export function renderServer(view) {
 
     // After a request: poll until the process comes back with a different `started`.
     // Phases: pending (sentinel visible) → draining → down (fetch fails) → back up.
+    // It stops with the page, as the GitHub and OAuth flows' polls do: it is armed on RENDER
+    // whenever a restart is pending, so without the check every visit to Settings during the
+    // quiet-gap wait left one more 2 s /api/status poll running for three minutes.
     async function watch(initialStarted) {
       btn.disabled = true;
       withdraw.hidden = false;
       const t0 = Date.now();
       while (Date.now() - t0 < 180000) {
         await new Promise((r) => setTimeout(r, 2000));
+        if (!srvBox.isConnected) return;
         let st;
         try { st = await api("/api/status"); }
         catch {

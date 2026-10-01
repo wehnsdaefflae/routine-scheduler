@@ -74,6 +74,40 @@ def test_plain_secret_value_keeps_newlines(ui, ui_page):
     assert secrets.load_secrets()["TEST_PEM_KEY"] == "line-one\nline-two"
 
 
+def test_a_secret_value_is_never_kept_as_a_draft(ui, ui_page):
+    """Values are write-only, and the console must not keep a copy of one either.
+
+    formpersist.js stores every text field's draft in sessionStorage and refills a field that
+    mounts empty. Its guard skips password inputs and fields whose key names a token, secret or
+    password — but the value box is a TEXTAREA (F149: a password input strips a PEM's newlines)
+    keyed by its placeholder "value", and the map-entry box is keyed by a placeholder that says
+    "pass". So every keystroke of a secret landed in the tab's storage, and the save's own
+    re-render refilled the fresh, empty box with the value it had just stored — the map entry's
+    in plain text."""
+    ui_page.goto(f"{ui.url}/#/settings?section=secrets")
+    value = ui_page.locator('textarea[placeholder="value"]')
+    value.wait_for()
+    ui_page.get_by_placeholder("KEY (e.g. CLAUDE_CODE_OAUTH_TOKEN)").fill("LEAK_PROBE")
+    value.fill("plain-s3cret")
+    value.locator("xpath=..").get_by_role("button", name="set", exact=True).click()
+    expect(ui_page.locator("body")).to_contain_text("LEAK_PROBE")    # saved, panel re-rendered
+
+    ui_page.locator('[data-add="map-entry"] summary').click()
+    ui_page.locator('[data-map-entry="key"]').fill("FTP_SOURCES")
+    ui_page.locator('[data-map-entry="name"]').fill("acme")
+    ui_page.locator('[data-map-entry="value"]').fill('{"host": "h", "pass": "map-s3cret"}')
+    ui_page.get_by_role("button", name="add / replace entry").click()
+    expect(ui_page.locator('[data-map="FTP_SOURCES"]')).to_contain_text("acme")
+
+    # the boxes the re-render mounted stay empty (input_value, not a retrying expect: the
+    # refill is what is being looked for, so the assertion must not pass before it lands)
+    assert ui_page.locator('textarea[placeholder="value"]').input_value() == ""
+    assert ui_page.locator('[data-map-entry="value"]').input_value() == ""
+    stored = ui_page.evaluate(
+        "() => JSON.stringify([Object.entries(sessionStorage), Object.entries(localStorage)])")
+    assert "s3cret" not in stored, f"a secret value is kept in the tab's storage: {stored}"
+
+
 def test_the_secrets_table_leads_with_what_still_needs_a_value(ui, ui_page):
     """"What still needs a value?" is the only question this table answers, and the server
     hands the rows back alphabetically — so on the fleet eleven unset secrets sat scattered

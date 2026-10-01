@@ -315,7 +315,7 @@ table.list tr.disabled-row td { opacity: 0.55; }
 /* Markdown is what the agent WROTE, so it reads in the prose voice; its code spans,
    fences and tables stay machine. */
 .md { font-family: var(--f-prose); font-size: 14.5px; line-height: 1.62; overflow-wrap: anywhere; }
-.md pre, .md code, .md .mdi code, .md table.list { font-family: var(--f-mono); }
+.md pre, .md code, .md table.list { font-family: var(--f-mono); }
 .md p { margin: 0 0 7px; }
 .md > :last-child { margin-bottom: 0; }
 .md h3, .md h4, .md h5 { margin: 10px 0 5px; font-size: var(--t-m); }
@@ -526,7 +526,10 @@ pre.hl-json .tok-const { color: var(--warn); }
 .conv-hover-tags .tag { font-size: 9.5px; padding: 1px 6px; }
 .dot { width: 7px; height: 7px; border-radius: 50%; flex: none; background: var(--ink-3); }
 .dot.running, .dot.starting, .dot.queued { background: var(--signal); animation: pulse 1.2s infinite; }
-.dot.waiting_user, .dot.paused { background: var(--warn); }
+/* the .chip vocabulary's: waiting on a PERSON is summons, paused is warn — one amber for both
+   was the retired palette's, and made a conversation that needs you read as one that idles */
+.dot.waiting_user { background: var(--summons); }
+.dot.paused { background: var(--warn); }
 .dot.failed { background: var(--err); }
 .dot.finished { background: var(--ok); }
 
@@ -555,39 +558,28 @@ pre.hl-json .tok-const { color: var(--warn); }
 
 .conv-chat { margin-top: 14px; }
 .chat { display: flex; flex-direction: column; gap: 10px; }
-.msg { max-width: 92%; border-radius: 10px; padding: 10px 13px; border: 1px solid var(--rule); position: relative; }
-/* copy-to-clipboard on every chat bubble: the ⧉ twin of the ↩ refer glyph, sitting just
-   left of it (right: 28px keeps it OFF the refer button's hit area — overlapping it
-   intercepted refer clicks). Quiet until the bubble is hovered or the button is
-   keyboard-focused; ✓/✕ feedback swaps the glyph for a moment after a click. */
-.msg .copy-msg {
-  position: absolute; top: 3px; right: 28px; background: none; border: none; cursor: pointer;
-  color: var(--ink-3); font-size: var(--t-s); line-height: 1; padding: 3px 5px;
-  opacity: 0; transition: opacity 0.12s;
-}
-/* mellowed (operator order 2026-08-23): hover reveals it at HALF strength — full contrast
-   only when the pointer is ON the button (or it holds keyboard focus), so it reads as an
-   affordance, not a feature */
-.msg:hover .copy-msg { opacity: .45; }
-.msg .copy-msg:hover, .msg .copy-msg:focus-visible { opacity: .9; color: var(--ink); }
-/* "branch from here" (R1006): the third quiet corner control on a reply bubble, left of copy.
-   Only replies carry it — a reply IS a clean turn boundary, which is what a fork point must be. */
-.msg .branch-msg {
-  position: absolute; top: 3px; right: 52px; background: none; border: none; cursor: pointer;
+.msg { max-width: 92%; border-radius: 10px; padding: 10px 13px; border: 1px solid var(--rule); }
+/* The bubble's quiet CORNER CONTROLS, right to left beside the ↩ refer glyph, 24px apart so
+   none sits on another's hit area (overlapping the refer button intercepted refer clicks):
+     ⧉ copy    every bubble; ✓/✕ swaps the glyph for a moment after a click
+     ⑂ branch  "branch from here" (R1006)
+     ⟲ rewind  "rewind to here" (D69 / F416, operator msg 2026-09-01)
+   Only REPLIES carry the last two: a reply is the clean turn boundary a fork or a cut needs.
+   Mellowed (operator order 2026-08-23): hover reveals them at HALF strength — full contrast only
+   when the pointer is ON one (or it holds keyboard focus), so they read as affordances, not
+   features. One family, so one rule: they were three copies differing by their offset. */
+.msg :is(.copy-msg, .branch-msg, .rewind-msg) {
+  position: absolute; top: 3px; background: none; border: none; cursor: pointer;
   color: var(--ink-3); font-size: 12px; line-height: 1; padding: 3px 5px;
   opacity: 0; transition: opacity 0.12s;
 }
-.msg:hover .branch-msg { opacity: .45; }
-.msg .branch-msg:hover, .msg .branch-msg:focus-visible { opacity: .9; color: var(--ink); }
-/* "rewind to here" (D69 / F416, operator msg 2026-09-01): the fourth quiet corner control, left
-   of ⑂ branch. Only replies carry it — a reply is the clean turn boundary a rewind cuts at. */
-.msg .rewind-msg {
-  position: absolute; top: 3px; right: 76px; background: none; border: none; cursor: pointer;
-  color: var(--ink-3); font-size: 12px; line-height: 1; padding: 3px 5px;
-  opacity: 0; transition: opacity 0.12s;
+.msg .copy-msg { right: 28px; font-size: var(--t-s); }
+.msg .branch-msg { right: 52px; }
+.msg .rewind-msg { right: 76px; }
+.msg:hover :is(.copy-msg, .branch-msg, .rewind-msg) { opacity: .45; }
+.msg :is(.copy-msg, .branch-msg, .rewind-msg):is(:hover, :focus-visible) {
+  opacity: .9; color: var(--ink);
 }
-.msg:hover .rewind-msg { opacity: .45; }
-.msg .rewind-msg:hover, .msg .rewind-msg:focus-visible { opacity: .9; color: var(--ink); }
 /* F385: per-fence copy — the bubble button's quieter sibling, pinned to the block corner */
 .msg-body pre { position: relative; }
 .msg-body pre .copy-fence {
@@ -598,12 +590,14 @@ pre.hl-json .tok-const { color: var(--warn); }
 .msg-body pre:hover .copy-fence { opacity: .45; }
 .msg-body pre .copy-fence:hover,
 .msg-body pre .copy-fence:focus-visible { opacity: .9; color: var(--ink); }
-/* Touch pointers cannot hover, so the copy glyphs could never be revealed on a phone — which is
-   exactly why they read as "missing" there (F433). Where hover is unavailable, show them at
-   rest, at the same half strength a hover gives, so they stay quiet but are tappable; a mouse
-   keeps the hover-only affordance. */
+/* Touch pointers cannot hover, so a hover-revealed control can never be revealed on a phone —
+   which is exactly why the copy glyphs read as "missing" there (F433). Where hover is
+   unavailable they show at rest, at the half strength a hover gives: quiet, but seen before
+   they are tapped. ALL the corner controls: ⑂ and ⟲ were left out of F433, and an opacity-0
+   control still takes a tap — a touch on a reply's corner could fork the conversation through
+   a control nobody could see. A mouse keeps the hover-only affordance. */
 @media (hover: none) {
-  .msg .copy-msg, .msg-body pre .copy-fence { opacity: .45; }
+  .msg :is(.copy-msg, .branch-msg, .rewind-msg), .msg-body pre .copy-fence { opacity: .45; }
 }
 .msg.user { align-self: flex-end; background: var(--plate-3); border-color: var(--rule-2); }
 /* F295: the optimistic echo of a just-sent message — below the streamed history, dashed
@@ -625,7 +619,8 @@ pre.hl-json .tok-const { color: var(--warn); }
   background: var(--plate); border: 1px solid var(--rule-2); border-radius: 6px; padding: 6px 8px;
 }
 .msg.assistant { align-self: flex-start; background: var(--plate); }
-.msg.question-msg { align-self: flex-start; background: var(--warn-dim); border-color: color-mix(in srgb, var(--warn) 38%, transparent); }
+/* the run asking YOU — summons, as the transcript's own question row (.ev.question) is */
+.msg.question-msg { align-self: flex-start; background: var(--summons-dim); border-color: color-mix(in srgb, var(--summons) 38%, transparent); }
 .msg-body { font-size: var(--t-m); line-height: 1.55; overflow-wrap: anywhere; }
 .msg-body p { margin: 0 0 6px; }
 .msg-body p:last-child { margin-bottom: 0; }
@@ -757,10 +752,14 @@ pre.hl-json .tok-const { color: var(--warn); }
 .chip-running { color: var(--signal); border-color: color-mix(in srgb, var(--signal) 38%, transparent); }
 
 /* ---------- state graph (run rail + conversation artifact rail) ---------- */
+/* F296/R341: every rail cap doubles as its section's collapse toggle. Unscoped from
+   .conv-view when the run view started rendering the SAME rail component. */
 .rail-cap {
   font-size: 10px; color: var(--ink-3); letter-spacing: 0.14em; text-transform: uppercase;
-  margin: 10px 0 4px;
+  margin: 10px 0 4px; cursor: pointer; user-select: none;
 }
+.rail-cap::before { content: "▾ "; color: var(--ink-3); }
+.rail-cap.closed::before { content: "▸ "; }
 /* detached background tasks (the `detach` action): a flat list in the conversation rail */
 .bg-tasks { display: flex; flex-direction: column; gap: 4px; font-family: var(--f-display); }
 .bg-task { display: flex; align-items: center; gap: 6px; font-size: 12px; min-width: 0; }
@@ -782,11 +781,6 @@ pre.hl-json .tok-const { color: var(--warn); }
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .browser-shot { width: 100%; border: 1px solid var(--rule-2); border-radius: 6px; cursor: zoom-in; }
-/* F296/R341: every rail cap doubles as its section's collapse toggle. Unscoped from
-   .conv-view when the run view started rendering the SAME rail component. */
-.rail-cap { cursor: pointer; user-select: none; }
-.rail-cap::before { content: "▾ "; color: var(--ink-3); }
-.rail-cap.closed::before { content: "▸ "; }
 .stategraph { display: flex; flex-direction: column; font-family: var(--f-display); }
 .sg-node {
   display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--ink-2);
@@ -1053,9 +1047,9 @@ pre.hl-json .tok-const { color: var(--warn); }
 .cmd-help .cmd-cap { font-size: var(--t-xs); text-transform: uppercase; letter-spacing: 0.1em; color: var(--ink-2); margin: 8px 0 4px; }
 .cmd-help .cmd-row { display: flex; gap: 10px; padding: 2px 0; font-size: 12px; align-items: baseline; }
 .cmd-help code { color: var(--signal); white-space: nowrap; }
-.msg.user.cmd .msg-body { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+.msg.user.cmd .msg-body { font-family: var(--f-mono); font-size: 12px; }
 .ev.cmd-result { border-left: 2px solid var(--rule); padding-left: 10px; margin: 6px 0 10px; }
-.ev.cmd-result pre { margin: 0; white-space: pre-wrap; word-break: break-word; font-size: 12px; max-height: 320px; overflow: auto; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.ev.cmd-result pre { margin: 0; white-space: pre-wrap; word-break: break-word; font-size: 12px; max-height: 320px; overflow: auto; font-family: var(--f-mono); }
 .ev.cmd-result.err pre { color: var(--err); }
 
 /* filesystem-root picker (components/dirpicker.js) + the root list (components/fsroots.js) */
@@ -1079,8 +1073,6 @@ pre.hl-json .tok-const { color: var(--warn); }
 .root-path { font-family: var(--f-mono); font-size: 12px; color: var(--ink); background: var(--deck-2);
   border: 1px solid var(--rule); border-radius: 6px; padding: 3px 9px; overflow: hidden;
   text-overflow: ellipsis; white-space: nowrap; max-width: 560px; }
-
-/* Summary: a read row recedes so unread work stands out */
 
 /* ── routine page: overview hero + collapsible config groups ───────────────────────────
    The hero is an instrument cluster an operator reads before touching any config; the
@@ -1302,7 +1294,10 @@ summary.setup-head::-webkit-details-marker { display: none; }
 /* --- ability cards + catalogue (components/abilities.js) ---------------------------------
    Held abilities are CARDS with their whole requirement stack; everything else is a compact
    catalogue row. An ability that is off has nothing outstanding, so it gets no stack and no
-   status dots — painting its requirements red said the opposite of the truth. */
+   status dots — painting its requirements red said the opposite of the truth.
+   A card's states are the surface's own (readmodels/surface_nodes.py), read in the setup
+   strip's palette: `blocks` is err, `interrupts` — the run will stop and ask a person — is
+   SUMMONS. The strip moved interrupts from amber to coral in 0.365.0; the cards here had not. */
 .ability-panel .lbl { margin: 16px 0 8px; }
 .ability-panel .lbl:first-child { margin-top: 0; }
 .abilities {
@@ -1310,7 +1305,7 @@ summary.setup-head::-webkit-details-marker { display: none; }
   align-items: start;            /* cards size to their content, never to the tallest sibling */
 }
 .ability { border: 1px solid var(--rule-2); border-radius: 3px; background: var(--plate); }
-.ability.interrupts { border-color: color-mix(in srgb, var(--warn) 38%, transparent); }
+.ability.interrupts { border-color: color-mix(in srgb, var(--summons) 38%, transparent); }
 .ability.blocks { border-color: color-mix(in srgb, var(--err) 38%, transparent); }
 .ability.orphan { border-color: color-mix(in srgb, var(--iris) 38%, transparent); grid-column: 1 / -1; }
 .ability-head {
@@ -1319,6 +1314,28 @@ summary.setup-head::-webkit-details-marker { display: none; }
 }
 .ability.orphan .ability-head { cursor: default; }
 .ability-name { font-size: var(--t-m); color: var(--ink); }
+/* The card's VERDICT in its head ("will fail" · "needs a decision" · "ready"; the uncovered
+   card's count). The markup has named it `.pill` from the start and no rule ever defined one,
+   so the one reading a closed card gives sat beside the name as plain body ink — the state in
+   the markup and nowhere on screen. Coloured by the CARD's state class, which speaks the
+   surface's vocabulary; the count on the uncovered card is no state at all. */
+.pill {
+  font-family: var(--f-mono); font-size: var(--t-xs); letter-spacing: 0.06em; padding: 1px 8px;
+  border-radius: 20px; border: 1px solid var(--rule-2); white-space: nowrap;
+  color: var(--ink-2); background: var(--plate-2);
+}
+.pill.ok {
+  color: var(--ok); background: var(--ok-dim);
+  border-color: color-mix(in srgb, var(--ok) 35%, transparent);
+}
+.ability.blocks .pill {
+  color: var(--err); background: var(--err-dim);
+  border-color: color-mix(in srgb, var(--err) 42%, transparent);
+}
+.ability.interrupts .pill {
+  color: var(--summons); background: var(--summons-dim);
+  border-color: color-mix(in srgb, var(--summons) 45%, transparent);
+}
 .ability-stack { list-style: none; margin: 0; padding: 0 0 2px; border-top: 1px solid var(--rule); }
 .ab-row {
   display: grid; grid-template-columns: 9px 76px 1fr; gap: 9px; align-items: start;
@@ -1329,7 +1346,7 @@ summary.setup-head::-webkit-details-marker { display: none; }
   width: 7px; height: 7px; border-radius: 50%; background: var(--ink-3); margin-top: 5px;
 }
 .ab-row.st-ok .dot { background: var(--ok); }
-.ab-row.st-interrupts .dot { background: var(--warn); }
+.ab-row.st-interrupts .dot { background: var(--summons); }
 .ab-row.st-blocks .dot { background: var(--err); }
 .ab-row.st-note .dot { background: var(--iris); }
 .ab-row .kind {
@@ -1428,7 +1445,6 @@ summary.setup-head::-webkit-details-marker { display: none; }
   display: block; margin-top: 8px; padding: 8px 10px; font-size: 12px;
   border: 1px solid var(--rule-2); border-radius: 3px; background: var(--plate-2);
 }
-.rule-erase[hidden] { display: none; }
 
 /* --- effective surface: one heading per provenance group (the doc or util behind the rows) --- */
 .surface-group-head {

@@ -360,9 +360,17 @@ main { max-width: var(--shell-max); width: 100%; margin: 0 auto; padding: var(--
 /* ── global search ──────────────────────────────────────────────────────────────────────── */
 
 .gsearch { position: relative; flex: 0 0 220px; max-width: 40vw; }
+/* The magnifier is a MASK filled with --ink-3, not a background image of the input: an SVG in a
+   data URI cannot read a custom property, so its stroke was the dark theme's --ink-3 written out
+   as a literal, and on the light theme the icon stayed a grey the palette does not have. (A
+   positioned box paints over the in-flow input, so it needs no z-index.) */
+.gsearch::before {
+  content: ""; position: absolute; left: 9px; top: 50%; width: 13px; height: 13px;
+  transform: translateY(-50%); pointer-events: none; background: var(--ink-3);
+  mask: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2'><circle cx='10.5' cy='10.5' r='6'/><line x1='15.2' y1='15.2' x2='21' y2='21'/></svg>") center / contain no-repeat;
+}
 .gsearch .gs-input {
-  width: 100%;
-  background: var(--plate) url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%237a90a8' stroke-width='2.2'><circle cx='10.5' cy='10.5' r='6'/><line x1='15.2' y1='15.2' x2='21' y2='21'/></svg>") no-repeat 9px center / 13px;
+  width: 100%; background: var(--plate);
   color: var(--ink); border: 1px solid var(--rule-2); border-radius: var(--r2);
   /* the right pad is the shortcut's lane (.gs-key below), so a lingering query does not slide
      under it while the box is at rest */
@@ -661,7 +669,7 @@ input[type=time], input[type=datetime-local], select {
    loose select a 1200px bar — three filters read as three unrelated settings stacked down the
    page, and a four-control chart card looked like a form. Inside a labelled field it fills,
    because there it IS the field. */
-select { width: auto; max-width: 100%; min-width: 10ch; }
+select { width: auto; max-width: 100%; min-width: 10ch; cursor: pointer; }
 label.field select, .field > select, .field-row select { width: 100%; }
 textarea:focus, input:focus, select:focus {
   outline: none; border-color: var(--signal);
@@ -669,7 +677,6 @@ textarea:focus, input:focus, select:focus {
 }
 textarea::placeholder, input::placeholder { color: var(--ink-3); }
 textarea.code { font-family: var(--f-mono); font-size: var(--t-s); min-height: 220px; line-height: 1.6; }
-select { cursor: pointer; }
 /* A control that rides inside a line of chrome rather than standing in a form — the model
    picker on a conversation head, a per-reply budget box. It was written as an inline
    `font-size:11.5px` on each one, which silently defeated the ≤860px rule below that exists to
@@ -1030,7 +1037,6 @@ label.field > span, .field > .lbl {
 }
 .bd-toggle:hover { color: var(--ink); }
 .bd-body { display: block; }
-.bd-frame-wrap { position: relative; }
 .browser-dock-frame {
   display: block; width: 100%; aspect-ratio: 16 / 10; border: 0; background: var(--plate-2);
   pointer-events: none;   /* read-only: a glance can never steer a live session */

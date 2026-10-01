@@ -9,6 +9,8 @@ light surface. This surface had no test at all, which is how "light does nothing
 
 from __future__ import annotations
 
+import pytest
+
 
 def _load_with_theme(ui, ui_page, theme: str):
     # the same pre-load seed the token uses (conftest), so the inline <head> script in index.html
@@ -67,4 +69,25 @@ def test_document_declares_dual_scheme_support_to_defeat_force_dark(ui, ui_page)
     content = ui_page.evaluate(
         "() => document.querySelector('meta[name=\"color-scheme\"]')?.content || ''")
     assert "light" in content and "dark" in content, f"color-scheme meta missing/partial: {content!r}"
+
+
+@pytest.mark.parametrize("theme", ["light", "dark"])
+def test_the_search_icon_is_drawn_in_the_themes_own_ink(ui, ui_page, theme):
+    """Every colour is a token defined for both themes — and the search box's magnifier was not.
+    It was a data-URI background, whose SVG cannot read a custom property, so its stroke was the
+    dark theme's --ink-3 written out as a literal: on the light theme the icon stayed a grey the
+    palette does not have, beside a placeholder drawn in the real --ink-3. It is a mask filled
+    with --ink-3 now, so it follows the theme like everything else."""
+    _load_with_theme(ui, ui_page, theme)
+    ui_page.wait_for_selector(".gsearch .gs-input")
+    state = ui_page.evaluate("""() => {
+      const p = document.createElement("span");
+      p.style.color = "var(--ink-3)"; document.body.append(p);
+      const ink3 = getComputedStyle(p).color; p.remove();
+      return { ink3,
+               icon: getComputedStyle(document.querySelector(".gsearch"), "::before").backgroundColor,
+               image: getComputedStyle(document.querySelector(".gsearch .gs-input")).backgroundImage };
+    }""")
+    assert state["icon"] == state["ink3"], f"the search icon is not --ink-3 on {theme}: {state}"
+    assert state["image"] == "none", f"a literal-coloured icon still rides the input: {state}"
 

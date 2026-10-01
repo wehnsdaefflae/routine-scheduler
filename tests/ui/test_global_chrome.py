@@ -1,9 +1,10 @@
 """Global chrome: the components mounted OUTSIDE the routed view, and the one property that
 makes them chrome at all.
 
-The navigation rail (index.html) and the LLM activity dock (components/taskmanager.js) are
-siblings of #view rather than children of it, so they survive navigation. Neither positions
-itself: `position: fixed` comes from base.css and nowhere else. That makes their stylesheet
+The navigation rail (index.html), the LLM activity dock (components/taskmanager.js) and the
+browser preview dock (components/browserdock.js) are siblings of #view rather than children of
+it, so they survive navigation. None positions itself: `position: fixed` comes from base.css and
+nowhere else. That makes their stylesheet
 block the single point of failure, and losing one FAILS SILENTLY — the component still builds,
 still fetches, still updates, and simply lands in the document flow at the foot of every page.
 The 0.277.0 palette migration deleted two such blocks at once; the side TOC was found three
@@ -23,11 +24,14 @@ import pytest
 from playwright.sync_api import expect
 
 # (label, selector, route, a selector proving the route rendered, viewport width)
-# Both are on every page at every width, so both are asserted on the narrowest one the console
-# supports — where the rail is the bottom bar and the dock parks above it.
+# The rail and the LLM dock are on every page at every width, so both are asserted on the
+# narrowest one the console supports — where the rail is the bottom bar and the dock parks above
+# it. The browser dock mounts only once a screen is published, and only where there is a rail to
+# sit beside (base.css hides it below 861px), so it is asserted at a laptop width with one set.
 CHROME = [
     ("llm-dock", "#llm-tasks", "#/routines", "table.list", 390),
     ("nav-rail", ".topbar", "#/routines", "table.list", 390),
+    ("browser-dock", "#browser-dock", "#/routines", "table.list", 1400),
 ]
 
 
@@ -35,6 +39,8 @@ CHROME = [
                          ids=[c[0] for c in CHROME])
 def test_global_chrome_is_positioned_by_the_stylesheet(ui, ui_page, label, selector, route,
                                                        ready, width):
+    if label == "browser-dock":
+        ui.server_cfg.browser_view_url = "http://127.0.0.1:6080/vnc.html"
     ui_page.set_viewport_size({"width": width, "height": 900})
     ui_page.goto(f"{ui.url}/{route}")
     ui_page.wait_for_selector(ready)

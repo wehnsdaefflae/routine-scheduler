@@ -147,6 +147,52 @@ def test_an_ability_that_is_off_is_a_catalogue_row_not_an_alarm(ui_page, ui):
     assert ui_page.locator('.ability[data-ability="shell"]').count() == 0
 
 
+def _fixture_doc(ui, slug: str, **meta) -> None:
+    """A library conduct doc of one SHAPE (what it requires / expects), written for the test."""
+    meta = {"effect": {"with": "w", "without": "wo", "when": "t"}, "tags": ["test"], **meta}
+    (ui.server_cfg.permissions_home / f"{slug}.md").write_text(
+        f"---\n{yaml.safe_dump(meta)}---\n# permission: {slug} — fixture\n\nFixture.\n",
+        encoding="utf-8")
+
+
+def _token_colour(page, token: str) -> str:
+    """What `var(--<token>)` computes to in the page's current theme."""
+    return page.evaluate("""(t) => { const p = document.createElement("span");
+      p.style.color = `var(--${t})`; document.body.append(p);
+      const c = getComputedStyle(p).color; p.remove(); return c; }""", token)
+
+
+def test_a_card_verdict_is_a_badge_in_its_state_colour(ui_page, ui):
+    """The card's verdict is the one thing a reader takes from a closed card, and it rendered as
+    a `.pill` NO stylesheet defined — "will fail" sat in the card head as plain body ink, the
+    state colour in the markup and nowhere on screen (the `.warn-line` lesson again). The colour
+    is the surface's own vocabulary: err where a call will be refused, SUMMONS where the run
+    will stop and ask a person — the setup strip moved interrupts to coral in 0.365.0, and the
+    card's edge and requirement dots still wore amber beside it."""
+    _fixture_doc(ui, "needs-shell", requires={"actions": ["shell"]})   # switched off: fails
+    _fixture_doc(ui, "wants-machine", requires={}, expects={"machine": ["*"]})   # none bound
+    path = ui.routines / "uir" / "routine.yaml"
+    cfg = yaml.safe_load(path.read_text(encoding="utf-8"))
+    cfg["permissions"] = ["needs-shell", "wants-machine"]
+    cfg["capabilities"] = {"actions": [], "utils": [], "util_tags": []}
+    path.write_text(yaml.safe_dump(cfg), encoding="utf-8")
+
+    ui_page.goto(f"{ui.url}/#/routine/uir")
+    _unfold(ui_page)
+    fails = ui_page.locator('.ability[data-ability="needs-shell"] .pill')
+    asks = ui_page.locator('.ability[data-ability="wants-machine"] .pill')
+    expect(fails).to_have_text("will fail")
+    expect(asks).to_have_text("needs a decision")
+    for pill, token in ((fails, "err"), (asks, "summons")):
+        style = pill.evaluate("e => { const c = getComputedStyle(e);"
+                              " return {color: c.color, radius: c.borderRadius, font: c.fontFamily}; }")
+        assert style["color"] == _token_colour(ui_page, token), (token, style)
+        assert style["radius"].startswith("20px"), f"the verdict is not a badge: {style}"
+        assert "mono" in style["font"], f"a verdict is a state word, set mono: {style}"
+    dot = ui_page.locator('.ability[data-ability="wants-machine"] .ab-row.st-interrupts .dot').first
+    assert dot.evaluate("e => getComputedStyle(e).backgroundColor") == _token_colour(ui_page, "summons")
+
+
 def test_a_toggle_states_both_sides_and_when_to_hold_it(ui, ui_page):
     """Operator, 2026-08-30: the descriptions "don't provide actionable information" and "the
     control element is a toggle?! how are you supposed to know what 'on' means?!".

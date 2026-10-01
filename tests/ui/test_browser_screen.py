@@ -39,8 +39,12 @@ def test_the_page_explains_itself_instead_of_showing_an_empty_frame(ui, ui_page)
     view = ui_page.locator("#view")
     expect(view).to_contain_text("No browser screen is published")
     expect(view).to_contain_text("websockify")
-    expect(view.get_by_role("link", name="open Settings")).to_be_visible()
     expect(view.locator("iframe")).to_have_count(0)
+    # it names the field where Settings actually shows it, and the link lands on that section
+    # rather than on the top of a 20 000px page
+    expect(view).to_contain_text("Settings → Server → browser screen (noVNC) URL")
+    view.get_by_role("link", name="open Settings").click()
+    expect(ui_page.locator("#sec-server")).to_be_in_viewport()
 
 
 def test_publishing_a_screen_reveals_the_nav_link_and_the_preview(ui, ui_page):

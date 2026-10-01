@@ -4,7 +4,7 @@
 // { refreshTree } (recipe health's roll-back re-syncs the tree through it).
 
 import { api } from "/static/api.js";
-import { el, queuedToast, toastError } from "/static/util.js";
+import { act, el, toastError } from "/static/util.js";
 import { md } from "/static/md.js";
 import { recipeNav } from "/static/components/recipenav.js";
 import { setQuery } from "/static/router.js";
@@ -23,7 +23,11 @@ export function mountRecipe(navCol, editorCol, slug, initialFile) {
     renderNav();
     let data;
     try { data = await api(`/api/routines/${slug}/file?path=${encodeURIComponent(path)}`); }
-    catch (err) { toastError(err); return; }
+    catch (err) { if (path === currentFile) toastError(err); return; }
+    // The NEWEST pick owns the pane. A read that lands after the reader picked another file
+    // would paint over it — under a tree highlighting the other one, so the save beneath it
+    // wrote the file nobody was looking at.
+    if (path !== currentFile) return;
     editorCol.replaceChildren(fileEditorPane(path, data.content, heading));
     if (!silent) { setQuery({ file: path }); editorCol.scrollIntoView({ behavior: "smooth", block: "nearest" }); }
   }
@@ -49,12 +53,12 @@ export function mountRecipe(navCol, editorCol, slug, initialFile) {
     editBtn.onclick = () => setMode(false);
     prevBtn.onclick = () => setMode(true);
     const saveBtn = el("button", { class: "btn primary" }, "save");
+    // act(): disabled while the PUT is in flight (a double press was two writes), the queued
+    // wording when a run is active, the console's one failure toast otherwise
     saveBtn.onclick = async () => {
-      try {
-        const res = await api(`/api/routines/${slug}/file`,
-          { method: "PUT", body: { path, content: ta.value } });
-        queuedToast(res, `${path} saved`); refreshTree();   // headings may have changed
-      } catch (err) { toastError(err, 5000); }
+      const res = await act(saveBtn, () => api(`/api/routines/${slug}/file`,
+        { method: "PUT", body: { path, content: ta.value } }), `${path} saved`);
+      if (res !== undefined) refreshTree();   // headings may have changed
     };
     if (heading) requestAnimationFrame(() => scrollToHeading(ta, heading));
     return el("div", {},

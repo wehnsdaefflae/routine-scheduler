@@ -2,6 +2,8 @@
 routine page binds a catalog machine, writing routine.yaml `machines:`. No SSH round-trip — the
 scan/test buttons hit the network, which the stub harness does not provide."""
 
+from pathlib import Path
+
 import yaml
 from playwright.sync_api import expect
 
@@ -44,6 +46,7 @@ def test_machines_card_add(ui, ui_page):
     ui_page.get_by_placeholder("ssh user").fill("rsched")
     ui_page.get_by_placeholder("KEY_VAR (Secrets)").fill("GPUBOX_SSH_KEY")
     ui_page.get_by_placeholder("share to mount, e.g. /srv/shared (optional)").fill("/srv/shared")
+    ui_page.locator("[data-mach-exclusive]").check()     # one job at a time: a GPU box
     ui_page.get_by_role("button", name="save machine").click()
     expect(ui_page.locator("#toast:not([hidden])")).to_contain_text("gpu-box saved")
 
@@ -54,6 +57,58 @@ def test_machines_card_add(ui, ui_page):
     assert raw["machines"]["gpu-box"]["host"] == "10.0.0.9"
     assert raw["machines"]["gpu-box"]["key_var"] == "GPUBOX_SSH_KEY"
     assert raw["machines"]["gpu-box"]["share"] == "/srv/shared"
+    assert raw["machines"]["gpu-box"]["exclusive"] is True
+    # a save clears the form for the next box, the exclusive box included
+    expect(ui_page.locator("[data-mach-exclusive]")).not_to_be_checked()
+
+
+def _seed_exclusive_box(ui) -> Path:
+    """An exclusive GPU box in BOTH places the console reads: config.yaml (what a save rewrites)
+    and the live server config (what the GET lists)."""
+    cfg = ui.tmp / "config.yaml"
+    raw = yaml.safe_load(cfg.read_text(encoding="utf-8"))
+    raw["machines"] = {"gpu-box": {"host": "10.0.0.9", "user": "rsched", "exclusive": True}}
+    cfg.write_text(yaml.safe_dump(raw), encoding="utf-8")
+    mac = MachineConfig(host="10.0.0.9", user="rsched", exclusive=True)
+    mac.name = "gpu-box"
+    ui.server_cfg.machines = {"gpu-box": mac}
+    return cfg
+
+
+def test_editing_a_machine_keeps_it_exclusive(ui, ui_page):
+    """`exclusive: true` is what makes a box's `remote submit` take a fair-share queue ticket
+    instead of launching (docs/remote-machines.md). The form neither showed nor sent it, and the
+    PUT replaces the machine's whole spec — so editing an exclusive GPU box, its description
+    say, wrote it back as `exclusive: false`, and the next two jobs shared one card."""
+    cfg = _seed_exclusive_box(ui)
+    ui_page.goto(f"{ui.url}/#/settings?section=machines")
+    row = ui_page.locator('[data-mach="gpu-box"]')
+    expect(row).to_contain_text("exclusive")             # the row says the box queues
+    row.get_by_role("button", name="edit").click()
+    expect(ui_page.locator("[data-mach-exclusive]")).to_be_checked()   # and the edit carries it
+    ui_page.get_by_placeholder("one-line description").fill("RTX 4090")
+    ui_page.get_by_role("button", name="save machine").click()
+    expect(ui_page.locator("#toast:not([hidden])")).to_contain_text("gpu-box saved")
+
+    until(lambda: yaml.safe_load(cfg.read_text(encoding="utf-8"))["machines"]["gpu-box"]
+          .get("description") == "RTX 4090", what="the edited machine")
+    saved = yaml.safe_load(cfg.read_text(encoding="utf-8"))["machines"]["gpu-box"]
+    assert saved.get("exclusive") is True, f"the edit dropped the exclusive queue: {saved}"
+
+
+def test_a_typed_machine_name_reaches_the_server_whole(ui, ui_page):
+    """The save built its URL from the raw name while `test` and `delete` encoded theirs, so a
+    `#` or `?` in a typed name cut the path short: "gpu#box" was saved as a machine called
+    "gpu", and the server's own name check never saw the name the operator typed."""
+    ui_page.goto(f"{ui.url}/#/settings?section=machines")
+    ui_page.locator('[data-add="machine"] summary').click()
+    ui_page.get_by_placeholder("name (gpu-box)").fill("gpu#box")
+    ui_page.get_by_placeholder("host / IP").fill("10.0.0.9")
+    ui_page.get_by_placeholder("ssh user").fill("rsched")
+    ui_page.get_by_role("button", name="save machine").click()
+    expect(ui_page.locator("#toast.err:not([hidden])")).to_contain_text("machine name must be")
+    raw = yaml.safe_load((ui.tmp / "config.yaml").read_text(encoding="utf-8"))
+    assert not raw.get("machines"), f"a truncated name was saved: {raw.get('machines')}"
 
 
 def test_routine_machine_binding(ui, ui_page):

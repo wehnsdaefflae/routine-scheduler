@@ -91,12 +91,12 @@ export async function render(view, slug, query = {}) {
       // Archiving cleans up what it owns and CANNOT touch what the routine published
       // elsewhere — a steward card outlived its routine three times in two weeks because
       // this moment passed in silence (R1658, bina). Say what is still out there and who
-      // can remove it, while the person who just archived it is still looking.
-      for (const item of r.external_residue || []) {
-        toast(`Still on the ${item.surface}: ${item.locator}. `
-              + `Archiving cannot remove it — ask ${item.owner} to retire it.`,
-              12000, { error: true });
-      }
+      // can remove it, while the person who just archived it is still looking. ONE toast:
+      // there is one #toast, and a toast per surface overwrote all but the last.
+      const residue = (r.external_residue || []).map((item) =>
+        `Still on the ${item.surface}: ${item.locator}. `
+        + `Archiving cannot remove it — ask ${item.owner} to retire it.`);
+      if (residue.length) toast(residue.join(" "), 12000, { error: true });
       location.hash = "#/routines";
     } catch (err) { toastError(err); }
   }
@@ -126,7 +126,7 @@ export async function render(view, slug, query = {}) {
   view.append(el("h2", {}, "Runs"));
   const runsBox = el("div", { class: "runs-box" });
   view.append(runsBox);
-  renderRuns(d);
+  runsTable(runsBox, d);
 
   // -- messages (D74): the four folders — inbox (write/edit/withdraw until a run drains
   // it; this is where a "note for the next run" lives), outbox (retractable hand-offs),
@@ -164,7 +164,9 @@ export async function render(view, slug, query = {}) {
     const ev = e.detail || {};
     if (!["run_started", "run_finished"].includes(ev.event)) return;
     if (!String(ev.run_id || "").startsWith(`${slug}:`)) return;
-    cfg.refreshHead();
+    // ONE read of the detail serves both of its readers here — the header chip and next fire,
+    // and once a run has finished, the runs table. It was read twice, a moment apart.
+    const head = cfg.refreshHead();
     messagesPane?.reload();   // a run drains the inbox at boot and files reports as it works
     if (ev.event === "run_finished") {
       cfg.health.reload();
@@ -173,21 +175,23 @@ export async function render(view, slug, query = {}) {
       // on the finish line, which the Goal group reads
       cfg.refreshSurface();
       cfg.onRunFinished();
-      try { renderRuns(await api(`/api/routines/${slug}`)); } catch { /* keep the old table */ }
+      const nd = await head;
+      if (nd) runsTable(runsBox, nd);   // a failed read keeps the old table
     }
   };
   window.addEventListener("rsched-bus", onBus);
   return () => { window.removeEventListener("rsched-bus", onBus); cfg.dispose(); };
+}
 
-  // The Runs table is capped (user order 2026-08-15, F345): with keep_runs at 30+ the full
-  // history made this element the tallest thing on the page, pushing every section below
-  // the fold. The newest rows answer "is it healthy right now"; the full history is one
-  // explicit click away (the expanded state survives the live re-render on run_finished
-  // because it rides on runsBox itself, not on this closure).
-  function renderRuns(d) {
-  const RUNS_PREVIEW = 10;   // inside the function: it hoists, a const out here would not
+// The Runs table is capped (user order 2026-08-15, F345): with keep_runs at 30+ the full
+// history made this element the tallest thing on the page, pushing every section below the
+// fold. The newest rows answer "is it healthy right now"; the full history is one explicit
+// click away (the expanded state survives the live re-render on run_finished because it rides
+// on runsBox itself, not on a closure).
+const RUNS_PREVIEW = 10;
+
+function runsTable(runsBox, d) {
   runsBox.replaceChildren();
-  const view = runsBox;
   const all = d.runs || [];
   const expanded = runsBox.dataset.expanded === "1";
   const shown = expanded ? all : all.slice(0, RUNS_PREVIEW);
@@ -206,18 +210,17 @@ export async function render(view, slug, query = {}) {
     // cell with its asterisks.
     el("td", { class: "muted prose", style: "max-width:420px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" },
       summaryLine(r.summary))));
-  view.append(el("div", { class: "panel", style: "padding:0" },
+  runsBox.append(el("div", { class: "panel", style: "padding:0" },
     el("div", { class: "tablewrap" },
       el("table", { class: "list stack" },
         el("thead", {}, el("tr", {}, ["when", "state", "turns", "duration", "tokens", "summary"].map((h) => el("th", {}, h)))),
         el("tbody", {}, rows.length ? rows
           : el("tr", {}, el("td", { class: "muted", colspan: 6 }, "no runs yet — fire one with ▶ run now")))))));
   if (all.length > RUNS_PREVIEW) {
-    view.append(el("div", { class: "row", style: "justify-content:center;padding:6px 0" },
+    runsBox.append(el("div", { class: "row", style: "justify-content:center;padding:6px 0" },
       el("button", { class: "btn small", onclick: () => {
         runsBox.dataset.expanded = expanded ? "" : "1";
-        renderRuns(d);
+        runsTable(runsBox, d);
       } }, expanded ? "show fewer" : `show all ${all.length} runs`)));
   }
-}
 }

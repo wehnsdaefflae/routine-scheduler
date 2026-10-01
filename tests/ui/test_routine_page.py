@@ -260,6 +260,68 @@ def test_runs_table_caps_at_ten_with_show_all(ui, ui_page):
     assert rows.count() >= 12, "expanding must render the full history"
 
 
+def _recipe_with_a_stage(ui) -> None:
+    stages = ui.routine_dir("uir") / "stages"
+    stages.mkdir()
+    (stages / "gather.md").write_text("# Gather\n\nthe stage body\n", encoding="utf-8")
+
+
+def test_a_slow_recipe_file_never_lands_over_the_one_picked_after_it(ui, ui_page):
+    """The recipe editor fetched a file and THEN painted its pane, with nothing asking whether
+    the reader had picked another meanwhile: pick main.md, then a stage, and a main.md answer
+    arriving last replaced the stage's editor — under a tree still highlighting the stage, with
+    the URL rewritten to main.md. A save from that pane wrote the file nobody was looking at."""
+    _recipe_with_a_stage(ui)
+    held = []
+
+    def hold_main(route):
+        if "path=main.md" in route.request.url:
+            held.append(route)
+        else:
+            route.continue_()
+    ui_page.route("**/api/routines/uir/file?*", hold_main)
+    ui_page.goto(f"{ui.url}#/routine/uir")
+    _unfold(ui_page)
+    nav = ui_page.locator(".recipe-navcol")
+    nav.locator(".rn-file", has_text="main").click()
+    until(lambda: held, what="the held main.md read", page=ui_page)
+    nav.locator(".rn-file", has_text="gather").click()
+    pane = ui_page.locator(".recipe-editorcol .ref-tag")
+    expect(pane).to_have_text("stages/gather.md")
+
+    held[0].continue_()                        # main.md's answer arrives last
+    ui_page.wait_for_timeout(600)
+    assert pane.inner_text() == "stages/gather.md", "a stale read painted over the newer pick"
+    assert "file=stages%2Fgather.md" in ui_page.url, ui_page.url
+    expect(nav.locator(".rn-file.active")).to_contain_text("gather")
+
+
+def test_a_recipe_save_is_one_request_however_often_it_is_pressed(ui, ui_page):
+    """The recipe's save button stayed live while its PUT was in flight, so a double press
+    wrote the file twice. util.act() is the console's one save-button shape: disabled until the
+    request settles, re-enabled in a `finally`."""
+    puts = []
+
+    def hold_put(route):
+        if route.request.method == "PUT":
+            puts.append(route)
+        else:
+            route.continue_()
+    ui_page.route("**/api/routines/uir/file", hold_put)
+    ui_page.goto(f"{ui.url}#/routine/uir")
+    _unfold(ui_page)
+    ui_page.locator(".recipe-navcol .rn-file", has_text="main").click()
+    ui_page.locator(".recipe-editorcol textarea").fill("# Main\n\nrevised\n")
+    save = ui_page.locator(".recipe-editorcol button", has_text="save")
+    save.click()
+    until(lambda: puts, what="the save's PUT", page=ui_page)
+    expect(save).to_be_disabled()              # a second press cannot send a second write
+    puts[0].continue_()
+    expect(_toast(ui_page)).to_contain_text("main.md saved")
+    expect(save).to_be_enabled()
+    assert len(puts) == 1
+
+
 def test_weekly_schedule_day_set_roundtrips(ui, ui_page, make_routine):
     """F347 (user order 2026-08-15, GCal-style repetitions): weekly is a SET of day
     toggles — checking Mon+Wed+Fri saves a day-list cron and reads back as the same
@@ -388,6 +450,24 @@ def test_archiving_a_publisher_names_what_it_leaves_behind(ui, ui_page, make_rou
     # has a way onto that host, so the line names the OPERATOR: a routine slug here reads as
     # "someone else will handle it", and nothing ever does.
     expect(toast).to_contain_text("ask the operator to retire it")
+
+
+def test_archiving_names_every_surface_it_leaves_behind(ui, ui_page):
+    """`external_residue` is a LIST — one row per outside surface the routine published to, and
+    the server's surface table is built to grow. The page toasted each row in turn into the one
+    #toast element, so every row but the last was overwritten before anybody could read it."""
+    residue = [{"surface": "steward hub", "locator": "_store/uir/ on the steward host",
+                "owner": "the operator", "note": ""},
+               {"surface": "status page", "locator": "pages/uir/", "owner": "the operator",
+                "note": ""}]
+    ui_page.route("**/api/routines/uir/archive", lambda route: route.fulfill(
+        json={"ok": True, "external_residue": residue, "lanes_left": []}))
+    ui_page.goto(f"{ui.url}#/routine/uir")
+    ui_page.get_by_role("button", name="archive").click()
+    ui_page.locator(".modal-overlay").get_by_role("button", name="archive", exact=True).click()
+    toast = _toast(ui_page)
+    expect(toast).to_contain_text("status page")
+    expect(toast).to_contain_text("steward hub")
 
 
 def test_a_run_summary_is_rendered_prose_not_raw_markdown(ui, ui_page):
