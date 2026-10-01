@@ -145,6 +145,30 @@ def test_an_answer_too_large_to_read_whole_is_work(tmp_path, routine):
     assert out["decision"] == "run" and "8 MiB" in one(out)["reason"]
 
 
+def test_a_urls_query_never_reaches_the_reason(tmp_path, routine, monkeypatch):
+    """A query string is where many APIs take their key. The check already left it out of a
+    fetch error; its ordinary answers — written to gate.json and a skipped fire's result.md —
+    printed the whole URL."""
+    import io
+    import urllib.request
+
+    class Answer(io.BytesIO):
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+    monkeypatch.setattr(urllib.request, "urlopen", lambda req, timeout: Answer(b"same"))
+    check = [{"kind": "url_changed", "url": "https://api.example/v1/items?api_key=s3cret",
+              "id": "u"}]
+    first = one(kit.evaluate(ctx(tmp_path, check, last_ok=ok_since(1))))
+    again = one(kit.evaluate(ctx(tmp_path, check,
+                                 last_ok=ok_since(1, {"u": first["fingerprint"]}))))
+    assert again["work"] is False and "api.example/v1/items" in again["reason"]
+    assert "s3cret" not in first["reason"] + again["reason"]
+
+
 def test_url_changed_json_path(tmp_path, routine):
     api = tmp_path / "api.json"
     api.write_text(json.dumps({"meta": {"ts": 1}, "items": [1, 2]}))

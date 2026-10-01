@@ -191,11 +191,18 @@ def _senders(check: dict, ctx: dict) -> tuple[list[str], list[str]]:
 # ------------------------------------------------------------------------------ web
 
 
+def _shown(url: str) -> str:
+    """A URL as a reason may print it: without its query, which is where many APIs take a key
+    — and every reason lands in gate.json and a skipped fire's result.md.
+    """
+    return url.split("?", maxsplit=1)[0]
+
+
 def _get(url: str, headers: dict) -> bytes:
     # the address the operator configured; the jail it runs in reaches no local file it names
     req = urllib.request.Request(url, headers={"User-Agent": "rsched-gate/1",  # noqa: S310
                                                **headers})
-    shown = url.split("?", maxsplit=1)[0]
+    shown = _shown(url)
     try:
         with urllib.request.urlopen(req, timeout=NET_TIMEOUT_S) as resp:   # noqa: S310
             body = resp.read(MAX_BODY + 1)
@@ -225,9 +232,10 @@ def url_changed(check: dict, ctx: dict) -> tuple[bool, str, str]:
         before = baseline(ctx, str(check["id"]))
     except UnknownError as exc:
         return True, str(exc), fp
+    shown = _shown(str(check["url"]))
     if fp != before:
-        return True, f"{check['url']} answers differently than at the last ok run", fp
-    return False, f"{check['url']} is unchanged since the last ok run", fp
+        return True, f"{shown} answers differently than at the last ok run", fp
+    return False, f"{shown} is unchanged since the last ok run", fp
 
 
 def _select(body: bytes, select: str) -> object:
