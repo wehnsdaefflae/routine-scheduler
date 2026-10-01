@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 
 import rsched.daemon.llm_tailer as tailer_mod
 from rsched.daemon.llm_tailer import tail_llm_sidecar
@@ -48,6 +49,34 @@ def test_final_drain_catches_records_written_before_cancel(tmp_path, monkeypatch
     assert any(r["id"] == "z" for r in got)
 
 
+def test_a_torn_multibyte_write_does_not_end_the_tail(tmp_path, monkeypatch):
+    """A record read while its write is still landing can stop inside a multi-byte character
+    (the `·` of "Compaction · archival"), and the strict UTF-8 read raises on it. The offset has
+    not moved, so the next poll reads the record whole — the tail must outlive that poll. It
+    used to die there, and its exception then rewrote the run's own outcome (Runner._supervise).
+    """
+    monkeypatch.setattr(tailer_mod, "POLL_S", 0.02)
+    got: list[dict] = []
+    path = tmp_path / "llm-tasks.jsonl"
+    whole = (json.dumps({"id": "a", "phase": "started", "purpose": "Compaction · archival"},
+                        ensure_ascii=False) + "\n").encode()
+    cut = whole.index("·".encode()) + 1                # inside the two-byte middle dot
+    path.write_bytes(whole[:cut])
+
+    async def scenario():
+        task = asyncio.create_task(tail_llm_sidecar(tmp_path, got.append))
+        await asyncio.sleep(0.1)                      # polls that met the torn record
+        assert not task.done()
+        _append_bytes(path, whole[cut:])
+        await asyncio.sleep(0.1)
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+
+    asyncio.run(scenario())
+    assert [r["id"] for r in got] == ["a"]
+
+
 def test_missing_sidecar_never_crashes(tmp_path):
     async def scenario():
         task = asyncio.create_task(tail_llm_sidecar(tmp_path, lambda r: None))
@@ -63,3 +92,8 @@ def _append(path, line):
     """Sync append helper — keeps blocking file IO out of the async test bodies."""
     with path.open("a", encoding="utf-8") as f:
         f.write(line)
+
+
+def _append_bytes(path, data: bytes):
+    with path.open("ab") as f:
+        f.write(data)

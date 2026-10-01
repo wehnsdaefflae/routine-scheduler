@@ -316,6 +316,35 @@ async def test_reap_surfaces_clean_exit_diagnostics(make_routine, tmp_path, monk
     assert surfaced and "util-stats snapshot write failed" in surfaced[0]
 
 
+async def test_a_failing_llm_tailer_never_decides_the_runs_outcome(make_routine, tmp_path,
+                                                                   monkeypatch):
+    """The sidecar tailer is observability. When it died (a torn multi-byte read raised out of
+    its poll), the supervisor re-raised that at the run's end into its LAUNCH handler, which
+    rewrote a run the engine had finished ok as `failed: Run launch failed: …` — over the
+    reply the engine had written to result.md."""
+    import rsched.daemon.runner as runner_mod
+    from rsched.llm_tasks import TaskCenter
+
+    async def dead_tailer(run_dir, on_record):
+        raise UnicodeDecodeError("utf-8", b"\xc2", 0, 1, "unexpected end of data")
+
+    monkeypatch.setattr(runner_mod, "tail_llm_sidecar", dead_tailer)
+    d = make_routine(slug="observed")
+    cfg, _ = load_routine(d)
+    _stub_engine(monkeypatch,
+                 'printf \'{"state": "finished", "outcome": "ok", "pid": 1}\' '
+                 '> runs/{TS}/status.json.tmp && mv runs/{TS}/status.json.tmp '
+                 'runs/{TS}/status.json && echo "the reply" > runs/{TS}/result.md')
+    bus = EventBus()
+    runner = Runner(_server(tmp_path), bus, TaskCenter(bus))
+    run_id = await runner.fire(cfg)
+    assert await _wait_for(lambda: not runner.active)
+    run_dir = d / "runs" / run_id.split(":")[1]
+    st = read_json(run_dir / "status.json")
+    assert (st["state"], st["outcome"]) == ("finished", "ok")
+    assert (run_dir / "result.md").read_text() == "the reply\n"
+
+
 # --- R108 residual (F268): the post-finish inbox sweep ---------------------------------
 
 
