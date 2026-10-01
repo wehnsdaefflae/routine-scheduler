@@ -357,3 +357,68 @@ def test_a_set_env_var_resolves_daemon_side(tmp_path, monkeypatch):
                                    fs_roots=False,
                                    fs_paths=(("rw", "$TEST_SESSION_DIR"),))[2])
     assert str(store) in spec["rw"]
+
+
+def test_a_grant_spelled_through_a_symlink_is_still_a_private_store(tmp_path, monkeypatch):
+    """The private-store subtraction compared spellings while `_admit` and Landlock resolve:
+    a granted root that is a SYMLINK to a store (or a store declared through one) was mounted
+    for every `fs: roots` util. Both sides are resolved now; the declarer still re-admits its
+    own store (R1136)."""
+    _force_abi(monkeypatch, 4)
+    sessions = tmp_path / "signal-sessions"
+    sessions.mkdir()
+    alias = tmp_path / "alias"
+    alias.symlink_to(sessions)
+    lib = _lib_with(tmp_path / "lib", signal=f"roots, rw {sessions}", fetcher="roots")
+    policy = sandbox.SandboxPolicy(mode="permissive", write_roots=(alias,),
+                                   own_dir=tmp_path / "own")
+    other = json.loads(sandbox.wrap(CMD, policy=policy, libraries_home=lib, net=False,
+                                    fs_roots=True, fs_paths=())[2])
+    assert str(alias) not in other["rw"] and str(sessions) not in other["rw"]
+    declarer = json.loads(sandbox.wrap(CMD, policy=policy, libraries_home=lib, net=False,
+                                       fs_roots=True, fs_paths=(("rw", str(sessions)),))[2])
+    assert str(sessions) in declarer["rw"]
+
+
+def test_a_root_turned_into_a_link_to_a_credential_store_is_dropped(tmp_path, monkeypatch,
+                                                                     caplog):
+    """The grant paths refuse a credential store when the root is GRANTED; the jail opens it
+    when a util RUNS. A root replaced in between by a symlink into the store would mount the
+    store (Landlock follows the link), so the jail assembler drops it — for the wholesale
+    mount and for a declared path admitted under it — and says so."""
+    from rsched import entities
+
+    _force_abi(monkeypatch, 4)
+    store = tmp_path / "ssh"
+    store.mkdir()
+    monkeypatch.setattr(entities, "NEVER_GRANTABLE", (str(store),))
+    sandbox._warned.clear()
+    planted = tmp_path / "granted"
+    planted.symlink_to(store)
+    lib = _lib_with(tmp_path / "lib", plain="roots")
+    policy = sandbox.SandboxPolicy(mode="permissive", read_roots=(planted,),
+                                   write_roots=(planted,), own_dir=tmp_path / "own")
+    with caplog.at_level("WARNING", logger="rsched.sandbox"):
+        spec = json.loads(sandbox.wrap(CMD, policy=policy, libraries_home=lib, net=False,
+                                       fs_roots=True,
+                                       fs_paths=(("rw", str(planted / "id_ed25519")),))[2])
+    mounted = spec["rw"] + spec["ro"]
+    assert not any(p.startswith((str(planted), str(store))) for p in mounted)
+    assert "symlink into a credential store" in caplog.text
+
+
+def test_a_root_naming_a_credential_store_openly_stays_mounted(tmp_path, monkeypatch):
+    """The loader REPORTS such a root and keeps it (two live routines audit the server's own
+    config as their job); the jail must not silently vanish it from under them."""
+    from rsched import entities
+
+    _force_abi(monkeypatch, 4)
+    store = tmp_path / "config"
+    store.mkdir()
+    monkeypatch.setattr(entities, "NEVER_GRANTABLE", (str(store),))
+    lib = _lib_with(tmp_path / "lib", plain="roots")
+    policy = sandbox.SandboxPolicy(mode="permissive", read_roots=(store,),
+                                   own_dir=tmp_path / "own")
+    spec = json.loads(sandbox.wrap(CMD, policy=policy, libraries_home=lib, net=False,
+                                   fs_roots=True, fs_paths=())[2])
+    assert str(store) in spec["ro"]

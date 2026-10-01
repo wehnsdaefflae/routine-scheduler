@@ -126,9 +126,24 @@ def never_grantable_fs(path: str | Path) -> bool:
     compared as written AND as resolved, on both sides: a symlink to a store (or a store
     that is itself a symlink) is the store.
     """
+    return any(_touches_store(p) for p in _spellings(path))
+
+
+def _touches_store(p: Path) -> bool:
     guarded = {g for store in NEVER_GRANTABLE for g in _spellings(store)}
-    return any(p == g or p in g.parents or g in p.parents
-               for p in _spellings(path) for g in guarded)
+    return any(p == g or p in g.parents or g in p.parents for g in guarded)
+
+
+def reaches_store_only_through_a_link(path: str | Path) -> bool:
+    """True when the path's WRITTEN form names no credential store but the path the kernel
+    would open does — a symlink aiming a grant at a store.
+
+    The jail assembler's question (`sandbox.wrap`), and deliberately narrower than
+    `never_grantable_fs`: a root that names a store openly is a config the loader REPORTS
+    and keeps (config/routine.py — two live routines audit the server's own config as their
+    job), while one that reaches it only through a link was approved as something else.
+    """
+    return not _touches_store(expand(path)) and never_grantable_fs(path)
 
 
 #: Why a guarded root is refused, in the ONE wording every enforcer uses — the PATCH that

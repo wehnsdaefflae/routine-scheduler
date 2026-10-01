@@ -68,6 +68,10 @@ def test_a_symlink_to_a_credential_store_is_the_store(tmp_path, monkeypatch):
     assert not entities.never_grantable_fs(planted / "fine")
     assert entities.guarded_roots([str(planted / "x"), str(planted / "fine")]) == \
         [str(planted / "x")]
+    # the jail assembler's narrower question: reached ONLY through a link
+    assert entities.reaches_store_only_through_a_link(planted / "x")
+    assert not entities.reaches_store_only_through_a_link(home / ".ssh")     # named openly
+    assert not entities.reaches_store_only_through_a_link(planted / "fine")
 
 
 def test_a_credential_store_that_is_itself_a_symlink_is_guarded_at_its_target(

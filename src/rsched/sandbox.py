@@ -29,11 +29,11 @@ import os
 import shutil
 import sys
 import tempfile
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from functools import lru_cache
 from pathlib import Path
 
-from . import landlock
+from . import entities, landlock
 from .paths import expand, within
 
 log = logging.getLogger("rsched.sandbox")
@@ -196,6 +196,34 @@ def private_store_paths(libraries_home: Path) -> frozenset[Path]:
     return _private_store_paths_cached(str(libraries_home), stamp)
 
 
+def _without_planted_links(policy: SandboxPolicy) -> SandboxPolicy:
+    """The policy with every granted root that reaches a credential store only THROUGH A
+    SYMLINK dropped (`entities.reaches_store_only_through_a_link`).
+
+    The grant paths check a root as it is when it is granted; the jail opens it as it is NOW.
+    A root that was an ordinary directory at approval and is a symlink into `~/.ssh` or the
+    config dir by the time a util runs — planted by any run that can write the root's parent
+    — would hand the store to the jail, because Landlock follows the link when it opens the
+    root. So the check runs again here, at the last moment a path becomes a rule, and the drop
+    is logged. A root that names a store OPENLY is not dropped: the loader reports it and keeps
+    it on purpose (config/routine.py), and vanishing it here would fail the routines that hold
+    one with nothing naming the cause.
+    """
+    def keep(roots: tuple[Path, ...]) -> tuple[Path, ...]:
+        kept = []
+        for root in roots:
+            if entities.reaches_store_only_through_a_link(root):
+                _warn_once(f"guarded:{root}", f"dropped granted root {root} from the util "
+                                              "jail: it is a symlink into a credential store "
+                                              "— the config dir, ~/.credentials or ~/.ssh")
+                continue
+            kept.append(root)
+        return tuple(kept)
+
+    return replace(policy, read_roots=keep(policy.read_roots),
+                   write_roots=keep(policy.write_roots))
+
+
 def _admit(declared: str, granted: tuple[Path, ...]) -> Path | None:
     """A declared private path, resolved and checked against the grants the run holds.
 
@@ -237,6 +265,8 @@ def wrap(cmd: list[str], *, policy: SandboxPolicy, libraries_home: Path,
     `fs_paths` names private stores (a messenger's session directory) that are mounted only
     for the declarer, so granting one no longer hands it to every util in the run.
     """
+    # before anything else touches a root — `_ensure_write_roots` would mkdir inside a store
+    policy = _without_planted_links(policy)
     _ensure_write_roots(policy)   # mode-independent: the grant implies the directory
     if policy.mode == "off":
         return list(cmd)
@@ -267,9 +297,12 @@ def wrap(cmd: list[str], *, policy: SandboxPolicy, libraries_home: Path,
         # exists for: granting a routine its Signal session directory would still hand that
         # credential to every `fs: roots` util in the same run. Claiming a path private is a
         # statement about the PATH, so it binds every util in the library that did not claim it.
-        private = private_store_paths(libraries_home)
-        ro += [str(p) for p in policy.read_roots if p not in private]
-        rw += [str(p) for p in policy.write_roots if p not in private]
+        # Compared RESOLVED on both sides, as `_admit` and Landlock do: a granted root that is
+        # a symlink to a store (or a store declared through one) is the store, and a lexical
+        # compare mounted it for every `roots` util.
+        private = {q.resolve() for q in private_store_paths(libraries_home)}
+        ro += [str(p) for p in policy.read_roots if Path(p).resolve() not in private]
+        rw += [str(p) for p in policy.write_roots if Path(p).resolve() not in private]
     # A util's OWN declared private stores are admitted whether or not it ALSO takes wholesale
     # `roots`. The fs_roots subtraction above strips EVERY private store — this util's own
     # included — out of the wholesale mount, so a util declaring both `roots` AND a private
