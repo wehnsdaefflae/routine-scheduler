@@ -238,3 +238,39 @@ def test_both_riders_report_a_timeout_with_what_was_printed(tmp_path, make_routi
     assert code == 124
     assert "early" in out
     assert f"timed out after {limit}s" in err
+
+
+def test_a_secret_the_command_prints_is_redacted_from_both_streams(tmp_path):
+    """The env injects the credential; the capture must not hand its value back."""
+    token = "sk-test-0123456789abcdef"
+    res = utils_run.run_jailed(["bash", "-c", 'echo "key=$API_KEY"; echo "$API_KEY" >&2'],
+                               env={**PATH_ENV, "API_KEY": token}, cwd=tmp_path, timeout=30,
+                               secrets={"API_KEY": token})
+    assert token not in res.stdout and token not in res.stderr
+    assert res.stdout.strip() == "key=[secret API_KEY redacted]"
+
+
+def test_a_script_hands_its_injected_secrets_to_the_redaction(tmp_path, make_routine):
+    routine = make_routine(slug="redact-script")
+    token = "sk-test-0123456789abcdef"
+    (routine / "scripts").mkdir(exist_ok=True)
+    (routine / "scripts" / "leak.py").write_text(
+        '"""leak — prints its key.\n\nsecrets: API_KEY\n"""\nimport os\n'
+        'print(os.environ["API_KEY"])\n', encoding="utf-8")
+    (routine / ".venv" / "bin").mkdir(parents=True, exist_ok=True)
+    (routine / ".venv" / "bin" / "python").symlink_to(sys.executable)
+    code, out, _err = scripts.run_script(
+        routine, "leak", [], policy=sandbox.SandboxPolicy(mode="off", own_dir=routine),
+        libraries_home=tmp_path / "lib", env_secrets={"API_KEY": token}, timeout=30)
+    assert code == 0
+    assert out.strip() == "[secret API_KEY redacted]"
+
+
+def test_injected_secrets_names_only_what_the_env_carries(monkeypatch):
+    from rsched import secrets as secrets_mod
+
+    monkeypatch.setattr(secrets_mod, "load_secrets",
+                        lambda: {"A": "a-value-1", "B": "b-value-2"})
+    env = {"PATH": "/bin", "A": "a-value-1", "CONN_TOKEN": "conn-value"}
+    assert utils_run.injected_secrets(env, {"CONN_TOKEN": "conn-value"}) == {
+        "A": "a-value-1", "CONN_TOKEN": "conn-value"}

@@ -227,6 +227,19 @@ declaration makes the name required. The same rule applies to a per-routine scri
 `calls:` tree. Blast radius after both layers: a prompt-injected util can leak at most its
 own declared secrets, not the store.
 
+A secret a call was HANDED does not come back through its output either. The capture seam
+every util and script passes (`utils_run.run_jailed` → `captured_output.read_capped`) is
+given the injected name → value pairs (`utils_run.injected_secrets`; a script's are its
+`env_secrets`) and replaces each value of at least `REDACT_MIN_CHARS` (8) by
+`[secret NAME redacted]` in both streams — before the observation, the transcript, the
+`.util_outputs/` spill and full-text search each make their copy. A util that echoes its
+request headers, or a script that dumps its env on a crash, used to write the token verbatim
+into every one of them. The cut of an over-long capture never splits a value, so no prefix
+survives in the preview. It is a backstop for the accidental print, not a boundary: a util
+that transforms the value before printing it (base64, a substring) is not caught, which is
+why declared-only injection above is the layer that limits exposure. `shell` is handed no
+store secret, so it has nothing to redact.
+
 Three NON-secret vars ride along for every util and script: `PATH` (the library root, so
 `gu <sibling>` resolves), `GLOBAL_UTILS_HOME`, and `RSCHED_UTIL_TIMEOUT_S` — the deadline
 this call was given. A util that waits on something slow sets its own timeout inside that

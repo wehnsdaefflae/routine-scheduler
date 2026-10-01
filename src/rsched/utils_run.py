@@ -21,7 +21,7 @@ import shutil
 import subprocess
 import tempfile
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import NamedTuple
@@ -158,6 +158,16 @@ def scoped_env(declared: set[str], extra_secrets: dict[str, str] | None = None,
     return env
 
 
+def injected_secrets(env: Mapping[str, str],
+                     extra_secrets: Mapping[str, str] | None = None) -> dict[str, str]:
+    """The credentials `scoped_env` actually put into `env` — every store or engine-resolved
+    key it carries, name → value. What `run_jailed` redacts from the command's output.
+    """
+    from .secrets import load_secrets
+    keys = set(load_secrets()) | set(extra_secrets or {})
+    return {k: v for k, v in env.items() if k in keys}
+
+
 def _child_env(home: Path, name: str, extra_secrets: dict[str, str] | None = None,
                withhold: set[str] | None = None) -> dict:
     """A util subprocess's environment: `scoped_env` over the util's transitive
@@ -236,7 +246,8 @@ def _seal_broken(routine_dir: Path | None, before: bytes | None, label: str) -> 
 def run_jailed(cmd: list[str], *, env: dict, cwd: Path, timeout: int,
                label: str = "", cap: int = OUTPUT_CAP,
                config_seal: Path | None = None,
-               aborted: Callable[[], bool] | None = None) -> Jailed:
+               aborted: Callable[[], bool] | None = None,
+               secrets: Mapping[str, str] | None = None) -> Jailed:
     """Run one already-jailed command (`sandbox.wrap` composed `cmd`) and bring back at most
     `cap` characters of each stream. The ONE runner behind `util`, `script` and `shell`.
 
@@ -266,6 +277,11 @@ def run_jailed(cmd: list[str], *, env: dict, cwd: Path, timeout: int,
     - WHAT WAS PRINTED BEFORE THE GROUP ENDED is kept: a command that hung after logging why it
       hung would otherwise lose exactly the material that explains the hang. One that catches
       SIGTERM can still print what it has inside the grace.
+
+    `secrets` (name → value, `injected_secrets`) are the credentials `env` hands the command;
+    `read_capped` redacts each value from both streams, so a command that prints one does not
+    carry it into the observation, the transcript and the spill file (`shell` passes none: it
+    is handed no store secret).
 
     `label` names the callable in the timeout, abort and spawn-failure notes ("util 'x'",
     "script 'x'", "the command"). `config_seal` is a routine directory whose `routine.yaml`
@@ -302,8 +318,8 @@ def run_jailed(cmd: list[str], *, env: dict, cwd: Path, timeout: int,
                          f"{name} was ended by the run's abort after {ran}s "
                          f"(process group {ended})")
         notes += [n for n in (_seal_broken(config_seal, before, label),) if n]
-        return Jailed(proc.returncode, read_capped(out_f, cap),
-                      read_capped(err_f, cap, diagnostic="; ".join(notes)),
+        return Jailed(proc.returncode, read_capped(out_f, cap, secrets=secrets),
+                      read_capped(err_f, cap, diagnostic="; ".join(notes), secrets=secrets),
                       stop == "timeout", aborted=stop == "abort")
 
 
@@ -408,7 +424,8 @@ def run_util(home: Path, name: str, args: list[str], *, timeout: int = 300,
     # bounded read; `exit_code` maps a deadline and an abort to their own codes, the same two
     # for all three kinds.
     res = run_jailed(cmd, env=env, cwd=cwd or home, timeout=timeout, label=f"util {name!r}",
-                     config_seal=policy.own_dir, aborted=aborted)
+                     config_seal=policy.own_dir, aborted=aborted,
+                     secrets=injected_secrets(env, extra_secrets))
     return res.exit_code, res.stdout, res.stderr
 
 

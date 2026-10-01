@@ -345,5 +345,5 @@ def run_script(routine_dir: Path, name: str, args: list[str], *,
     # a script that dumps a large file must not be buffered whole in the daemon's memory.
     res = utils_run.run_jailed(cmd, env=env, cwd=routine_dir, timeout=timeout,
                                label=f"script {name!r}", config_seal=routine_dir,
-                               aborted=aborted)
+                               aborted=aborted, secrets=env_secrets)
     return res.exit_code, res.stdout, res.stderr
