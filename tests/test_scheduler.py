@@ -57,9 +57,8 @@ async def test_fire_on_due_tick(make_routine, tmp_path, monkeypatch):
     task = asyncio.create_task(sched.run_forever())
     await asyncio.sleep(0.05)
     sched.next_fires["ticker"] = datetime.now(UTC) - timedelta(seconds=1)
-    await asyncio.sleep(0.1)
+    assert await _wait_for(lambda: ("ticker", "schedule") in fr.fired)
     task.cancel()
-    assert ("ticker", "schedule") in fr.fired
     assert sched.next_fires["ticker"] > datetime.now(UTC)  # advanced past the fire
 
 
@@ -76,10 +75,10 @@ async def test_paused_tick_skips_fires_but_advances(make_routine, tmp_path, monk
     task = asyncio.create_task(sched.run_forever())
     await asyncio.sleep(0.05)
     sched.next_fires["ticker"] = datetime.now(UTC) - timedelta(seconds=1)
-    await asyncio.sleep(0.1)
+    # the table advancing is the proof a due tick ran — only then does "nothing" mean paused
+    assert await _wait_for(lambda: sched.next_fires["ticker"] > datetime.now(UTC))
     task.cancel()
     assert fr.fired == []                                    # paused: nothing fired
-    assert sched.next_fires["ticker"] > datetime.now(UTC)    # yet the table advanced
     assert sched.snapshot()["paused"] is True
     pause.set_paused(server, False)                          # resume: flag clears
     assert sched.snapshot()["paused"] is False
@@ -829,9 +828,8 @@ async def test_the_boot_expires_the_mark_even_with_nothing_to_reap(make_routine,
     assert restart.shutdown_mark_path(server).exists()
     sched = Scheduler(server, FakeRunner(), EventBus())
     task = asyncio.create_task(sched.run_forever())
-    await asyncio.sleep(0.1)
+    assert await _wait_for(lambda: not restart.shutdown_mark_path(server).exists())
     task.cancel()
-    assert not restart.shutdown_mark_path(server).exists()
 
 
 async def test_retention_runs_off_the_event_loop(tmp_path, monkeypatch):

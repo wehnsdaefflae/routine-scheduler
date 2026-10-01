@@ -68,12 +68,10 @@ def test_the_gate_runs_when_its_tool_is_only_beside_the_interpreter(monkeypatch)
     """Measured in the running container: PATH is `/usr/local/bin:…:/bin` and carries none of
     the three tools, because the image sets no PATH and `/opt/rsched-venv/bin` is not on it. Only
     `uv run` prepended it — so every invocation by absolute interpreter, the routine's own
-    worktree gate included, found nothing."""
+    worktree gate included, found nothing. A tool the gate cannot find fails it outright (the
+    test below), so returning at all is the proof that the interpreter's bin was searched."""
     monkeypatch.setenv("PATH", "")
-    try:
-        _gate("ruff", "--version")
-    except pytest.skip.Exception as exc:
-        pytest.fail(f"the gate skipped instead of running: {exc}")
+    _gate("ruff", "--version")
 
 
 def test_a_missing_tool_fails_the_gate_instead_of_skipping(monkeypatch):

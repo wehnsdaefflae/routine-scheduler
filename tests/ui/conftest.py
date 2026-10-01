@@ -47,6 +47,8 @@ HOW_TO_RUN = (f"Run the browser suite inside the engine container, where the com
               f"network exists:\n"
               f"    docker compose exec -u 1000:1000 rsched \\\n"
               f"      env RSCHED_TEST_CDP={SIDECAR_CDP} RSCHED_TEST_BIND={SIDECAR_BIND} \\\n"
+              f"          BROWSER_CDP_TOKEN=\"$(grep -oP '(?<=^BROWSER_CDP_TOKEN=).*' "
+              '~/.config/routine-scheduler/secrets.env)" \\\n'
               f"      uv run pytest -q -m ui\n"
               f"No browser is installed locally: the suite attaches over CDP to the `chrome` "
               f"sidecar and serves its fixture console back at the engine's own address on that "
@@ -123,7 +125,6 @@ def _cdp_headers() -> dict[str, str]:
     suite is one of its callers. Taken from the environment rather than the secrets store:
     a test run is not a routine and has no grant to read from.
     """
-    import os
     token = os.environ.get("BROWSER_CDP_TOKEN", "").strip()
     if not token:
         pytest.fail("BROWSER_CDP_TOKEN is required to reach the browser sidecar — its CDP "
@@ -173,7 +174,11 @@ def _test_bind_host() -> str:
 
 class StubRunner:
     """Records fire/resume calls and answers like an idle daemon — no process is ever
-    spawned. Only the surface the web layer touches is implemented.
+    spawned. Only the part of the web layer's runner surface the browser suite reaches is
+    implemented; a test that drives abort or a resume adds that method here.
+
+    Signatures MIRROR the real Runner's, keyword-only parameters included: a double that
+    accepts a call the real one would refuse lets the console ship that call.
     """
 
     def __init__(self):
@@ -181,13 +186,13 @@ class StubRunner:
         self.active: dict[str, object] = {}
         self.draining = False
 
-    async def fire(self, cfg, reason: str = "", brief: str = "") -> str:
+    async def fire(self, cfg, *, reason: str = "schedule", brief: str = "") -> str:
         self.fired.append((cfg.slug, reason))
         return f"{cfg.slug}:20260715-120000"
 
-    async def resume_terminal(self, cfg, ts: str | None = None, *, reason: str = "") -> str:
-        # Signature mirrors the real Runner.resume_terminal(cfg, ts=None, *, reason=...) — the
-        # run page's converse path passes the run ts positionally (api_run_control.converse).
+    async def resume_terminal(self, cfg, ts: str | None = None, *,
+                              reason: str = "resume") -> str:
+        # the run page's converse path passes the run ts positionally (api_run_control.converse)
         return f"{cfg.slug}:20260715-120001"   # the wake itself is enough - nothing asserts on it
 
     def is_active(self, slug: str) -> bool:
@@ -349,6 +354,12 @@ def ui(tmp_path, monkeypatch, make_routine, library_template, test_tls) -> UiHar
     started_at = time.monotonic()
     deadline = started_at + 15
     while not uv_server.started:
+        # A failed app startup ends uvicorn with sys.exit() inside the thread: silent, and
+        # `started` never flips — so without this a test waited out the whole deadline on each
+        # of the rerun shield's five attempts, ~85 s, before anything said the app was broken.
+        if not thread.is_alive():
+            pytest.fail("uvicorn exited before accepting — its startup error is in the "
+                        "captured log above")
         if time.monotonic() > deadline:
             pytest.fail("uvicorn did not start within 15s")
         time.sleep(0.05)

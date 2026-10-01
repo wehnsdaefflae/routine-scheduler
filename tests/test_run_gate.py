@@ -1,5 +1,8 @@
 """Admission uses real bounded subprocesses, isolated routine homes, and no model boot."""
 import asyncio
+import contextlib
+import os
+import signal
 import sys
 from pathlib import Path
 
@@ -25,7 +28,7 @@ def setup_gate(tmp_path, monkeypatch):
     # of them, a single gate takes ~7s of a healthy box — one second of headroom, which the
     # release gate's fifteen workers spend. `test_declared_optional_and_granted_secrets[False]`
     # failed that way on 2026-09-23 and passed alone, the shape of a flake nobody diagnoses.
-    # The two tests that DO exercise the deadline set their own (1s, 2s), so nothing here
+    # The tests that DO exercise the deadline set their own (1s, 2s), so nothing here
     # weakens them; a genuinely hung gate still trips this.
     cfg = RoutineConfig(slug=root.name, dir=root,
                         run_gate=RunGateConfig(enabled=True, timeout_s=60,
@@ -68,11 +71,19 @@ async def test_skip_never_builds_engine_command(setup_gate, monkeypatch):
     "import time; time.sleep(30)", ""])
 async def test_errors_never_skip_or_boot(setup_gate, monkeypatch, body):
     cfg, _, runner = setup_gate
+    hangs = "sleep" in body
+    if hangs:
+        # The predicate that never answers is the DEADLINE's case. Under the fixture's 60 s
+        # it slept its 30 s out and exited with empty stdout — a 30 s copy of the "" case that
+        # had stopped reaching the deadline it was written for when the fixture's went from 8 s.
+        cfg.run_gate.timeout_s = 2
     script(cfg, body)
     monkeypatch.setattr(runner_state, "engine_cmd", lambda *a, **k: pytest.fail("engine boot"))
     _, run, st = await finish(runner, cfg)
     assert st["state"] == "failed" and st["outcome"] == "failed"
-    assert read_json(run.run_dir / "gate.json")["decision"] == "error"
+    gate = read_json(run.run_dir / "gate.json")
+    assert gate["decision"] == "error"
+    assert ("deadline exceeded" in gate["reason"]) == hangs, gate["reason"]
 
 
 def test_the_console_names_the_script_the_daemon_actually_runs():
@@ -236,17 +247,45 @@ async def test_symlink_escape_fails_closed(setup_gate, tmp_path):
     assert st["state"] == "failed"
 
 
+def _alive_with(token: str) -> list[int]:
+    """Live processes whose argv carries `token`. A zombie's cmdline is empty, so a killed
+    process reads as gone however late its parent or PID 1 reaps it."""
+    found = []
+    for proc in Path("/proc").iterdir():
+        if proc.name.isdigit():
+            with contextlib.suppress(OSError):
+                if token.encode() in (proc / "cmdline").read_bytes():
+                    found.append(int(proc.name))
+    return found
+
+
 async def test_timeout_kills_descendants(setup_gate):
+    """The grandchild is looked for directly, by a token in its argv. A marker it wrote 3 s
+    after it started, read 1.5 s after the run ended, could only catch an escape when the
+    preparation took under half a second — and the wait cost those 1.5 s on every run.
+
+    It holds none of the gate's pipes on purpose: the reap's `proc.wait()` returns only once
+    every pipe has closed, so a grandchild holding one is waited out instead of found alive."""
     cfg, _, runner = setup_gate
     cfg.run_gate.timeout_s = 2
+    token = f"{cfg.dir}/descendant"
     script(cfg, 'import subprocess, sys, time\n'
-        'subprocess.Popen([sys.executable, "-c", '
-        '\'import time; from pathlib import Path; time.sleep(3); Path("escaped").touch()\'])\n'
+        f'subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)", {token!r}],\n'
+        '                 stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,\n'
+        '                 stderr=subprocess.DEVNULL)\n'
         'time.sleep(30)')
     _, _, st = await finish(runner, cfg)
     assert st["state"] == "failed"
-    await asyncio.sleep(1.5)
-    assert not (cfg.dir / "escaped").exists()
+    try:
+        for _ in range(250):                 # the group kill is sent; let the kernel land it
+            if not _alive_with(token):
+                break
+            await asyncio.sleep(.02)
+        assert not _alive_with(token), "a descendant outlived the gate's deadline"
+    finally:
+        for pid in _alive_with(token):
+            with contextlib.suppress(ProcessLookupError):
+                os.kill(pid, signal.SIGKILL)
 
 
 async def test_a_gate_failure_reaches_the_health_stream(setup_gate):

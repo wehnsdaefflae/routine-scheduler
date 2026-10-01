@@ -11,11 +11,15 @@ import pytest
 
 from rsched.config import load_server_config
 from rsched.endpoints import EndpointRegistry
-from rsched.paths import expand
+from rsched.paths import config_file, expand
 from rsched.schema_guard import parse_reply
 
 pytestmark = pytest.mark.skipif(os.environ.get("RSCHED_LIVE_TESTS") != "1",
                                 reason="set RSCHED_LIVE_TESTS=1 for live endpoint smokes")
+
+#: The operator's REAL config — the one file these smokes exist to read. Taken at import,
+#: because every test's `_hermetic_home` points RSCHED_CONFIG into its tmp dir.
+REAL_CONFIG = config_file()
 
 SCHEMA = {"type": "object", "additionalProperties": False, "required": ["answer"],
           "properties": {"answer": {"type": "integer", "description": "the numeric result"}}}
@@ -27,7 +31,7 @@ SCHEMA = {"type": "object", "additionalProperties": False, "required": ["answer"
     ("anthropic", "claude-sonnet-5"),
 ])
 def test_live_schema_completion(endpoint, model):
-    server, _ = load_server_config()
+    server, _ = load_server_config(REAL_CONFIG)
     cfg = server.endpoints.get(endpoint)
     if cfg is None:
         pytest.skip(f"endpoint {endpoint} not configured")
