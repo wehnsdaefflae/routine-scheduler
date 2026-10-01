@@ -10,7 +10,9 @@ why none of them was caught by the js_errors collector or by anyone reading code
   completion, which is the opposite diagnosis;
 - the background archive (0.308.0) carries no before/after chars, because the digest already
   did the shrinking — it reached the branch that prints a span and said "undefined → undefined
-  chars"; abandoned, it said "nothing elided this pass", which is the line for a no-op pass.
+  chars"; abandoned, it said "nothing elided this pass", which is the line for a no-op pass;
+- `stages_skipped` (F521) had no renderer at all and drew nothing (tests/test_static_transcript.py
+  now pins every EVENT_TYPES member to one).
 """
 
 from __future__ import annotations
@@ -52,6 +54,9 @@ EVENTS = [
                  "run_id": "uir:20260905-120000", "disputed": ["g1"]}},
     {"type": "stopping_update",
      "payload": {"goal_reached": True, "run_id": "uir:20260905-120000", "proposal": "p1"}},
+    {"type": "stages_skipped",
+     "payload": {"declared": ["gather", "draft", "send"], "entered": ["draft"],
+                 "skipped": ["gather", "send"], "run_id": "uir:20260905-120000"}},
 ]
 
 
@@ -88,6 +93,9 @@ def test_the_transcript_renders_every_event_shape_in_words(ui, ui_page):
     assert "accounting: d1 met · g1 met · proved g1" in body
     assert "a check of the transcript disagreed on g1" in body
     assert "the finish line is reached" in body
+
+    # a finish that stood with declared stages never entered (F521) — a notice, in words
+    assert "stages skipped: gather, send (entered: draft)" in body
 
     # the background archive, landed and abandoned — neither prints a span it does not have
     assert "background archive landed: 30 messages" in body

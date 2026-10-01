@@ -99,7 +99,7 @@ function details(rec, openDrift = true) {
         o.met_run ? el("div", { class: "faint" }, "proved in ",
           el("a", { href: `#/run/${o.met_run}` }, o.met_run)) : null,
         o.disputed
-          ? el("div", { class: "err-text" },
+          ? el("div", { class: "fl-disputed" },
             `\u26a0 a check of the transcript objected: ${o.disputed}`)
           : null));
     }

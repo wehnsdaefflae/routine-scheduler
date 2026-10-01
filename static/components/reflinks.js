@@ -6,7 +6,13 @@
 // decisions) — on arbitrary text a bare "D1" is a false positive. `R` and not `B` for bug
 // reports: the user's own reviewer-backlog items are written B<n> and would mislink.
 
-const REF_RE = /\b([FDR]\d{1,4})\b/g;
+// Unbounded digits: the R namespace passes R10000, and a capped pattern left every id past it
+// as plain text.
+const REF_RE = /\b([FDR]\d+)\b/g;
+
+// The one address of an item's card — every link to one is built here, so no call site
+// leaves an id unencoded beside an encoded one.
+export const refHref = (id) => `#/messages?focus=${encodeURIComponent(id)}`;
 
 export function linkifyRefs(root) {
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
@@ -26,7 +32,7 @@ export function linkifyRefs(root) {
       frag.append(n.nodeValue.slice(last, m.index));
       const a = document.createElement("a");
       a.className = "ref-link";
-      a.href = `#/messages?focus=${m[1]}`;
+      a.href = refHref(m[1]);
       a.title = `jump to ${m[1]} on the Messages page`;
       a.textContent = m[1];
       frag.append(a);

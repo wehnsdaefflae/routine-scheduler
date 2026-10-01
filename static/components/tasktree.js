@@ -72,11 +72,16 @@ export function createTaskTree(container, { treeUrl, isLive }) {
   // because isLive() reads a state variable frozen at whatever it held when the view was torn
   // down — the run view did exactly that until 0.365.0. Once the box has left the document
   // nothing can render the answer, so nothing asks for it.
+  // `stopped` is what makes stop() final: clearing the timer alone did not hold against a
+  // refresh already in flight — the first one's `.then(poll)` re-armed the poll after a stop()
+  // that landed before it resolved (the run view's "run not found" path does exactly that).
+  let stopped = false;
   function poll() {
     if (timer) clearTimeout(timer);
-    if (!box.isConnected) return;
+    timer = null;
+    if (stopped || !box.isConnected) return;
     if (isLive && isLive()) timer = setTimeout(async () => {
-      if (!box.isConnected) return;
+      if (stopped || !box.isConnected) return;
       await refresh();
       poll();
     }, 3000);
@@ -84,7 +89,7 @@ export function createTaskTree(container, { treeUrl, isLive }) {
 
   refresh().then(poll);
   return {
-    refresh() { refresh(); poll(); },
-    stop() { if (timer) clearTimeout(timer); },
+    refresh() { if (!stopped) { refresh(); poll(); } },
+    stop() { stopped = true; if (timer) clearTimeout(timer); timer = null; },
   };
 }

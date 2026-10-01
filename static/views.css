@@ -254,8 +254,9 @@ table.list tr.disabled-row td { opacity: 0.55; }
   background: color-mix(in srgb, var(--err-dim) 40%, var(--deck));
 }
 /* HELD — the loudest row in the transcript, and the only one that is not history: the action
-   did not run and the run is deciding again. It gets the attention colour, full weight, and the
-   marker that says a decision sits here. */
+   did not run and the run is deciding again. It gets SIGNAL — the machine at work: the RUN
+   decides here, not a person, so it is not SUMMONS — full weight, and the marker that says a
+   decision sits here. */
 .obs-held > summary {
   border-left-color: var(--signal); color: var(--signal); font-weight: 600;
   background: color-mix(in srgb, var(--signal-dim) 75%, var(--deck));
@@ -665,21 +666,27 @@ pre.hl-json .tok-const { color: var(--warn); }
    block in the page flow, where a 168px inner scroller is a touch trap: a drag inside it
    scrolls five rows and stops the page moving at all. */
 @media (max-width: 759px) { .art-list { max-height: none; overflow: visible; } }
-.art-item {
-  display: flex; gap: 7px; align-items: center; text-align: left; width: 100%;
-  padding: 5px 8px; border: 1px solid var(--rule); border-radius: var(--r2);
-  background: var(--plate); color: var(--ink); cursor: pointer; font: inherit;
+/* A row is the bordered box; inside it two SIBLING buttons — open (the row's body) and delete.
+   Nesting the delete inside the open button made it unreachable by keyboard. */
+.art-row {
+  display: flex; align-items: center; border: 1px solid var(--rule); border-radius: var(--r2);
+  background: var(--plate);
 }
-.art-item:hover { border-color: var(--rule-2); }
-.art-item.on { border-color: var(--rule-2); background: var(--plate-2); }
+.art-row:hover { border-color: var(--rule-2); }
+.art-row.on { border-color: var(--rule-2); background: var(--plate-2); }
+.art-item, .art-del {
+  border: 0; background: none; color: var(--ink); cursor: pointer; font: inherit;
+  border-radius: var(--r2); padding: 5px 8px;
+}
+.art-item { display: flex; gap: 7px; align-items: center; text-align: left; flex: 1; min-width: 0; }
 .art-ico { flex: none; }
 .art-item .art-name { flex: 1; min-width: 0; font-size: var(--t-s); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .art-item .art-time { flex: none; white-space: nowrap; }
-/* delete stays quiet until the row is hovered — a destructive control never competes
-   with the open affordance it sits beside */
-.art-item .art-del { flex: none; opacity: 0; transition: opacity 120ms; font-size: 11px; }
-.art-item:hover .art-del, .art-item:focus-within .art-del { opacity: 0.75; }
-.art-item .art-del:hover { opacity: 1; }
+/* delete stays quiet until the row is hovered or focused — a destructive control never
+   competes with the open affordance it sits beside, and a keyboard still finds it */
+.art-del { flex: none; opacity: 0; transition: opacity 120ms; font-size: 11px; }
+.art-row:hover .art-del, .art-row:focus-within .art-del { opacity: 0.75; }
+.art-del:hover, .art-del:focus-visible { opacity: 1; }
 .art-viewer { border: 1px solid var(--rule); border-radius: 9px; background: var(--plate); padding: 10px; }
 /* The name must never dictate layout: nowrap + ellipsis keeps it to one line however long
    it is, and flex-wrap drops the buttons onto their own row in narrow panels (instead of
@@ -1060,6 +1067,7 @@ pre.hl-json .tok-const { color: var(--warn); }
 .dirpicker-list { border: 1px solid var(--rule); border-radius: 8px;
   height: min(46vh, 420px); overflow-y: auto; background: var(--deck-2); }
 .dp-row { display: flex; align-items: center; gap: 8px; padding: 5px 10px; cursor: pointer;
+  width: 100%; text-align: left; background: none; border: 0; font: inherit;
   font-size: 12.5px; color: var(--ink); border-bottom: 1px solid var(--rule); }
 .dp-row:last-child { border-bottom: 0; }
 .dp-row:hover { background: var(--plate-2); }
@@ -1639,6 +1647,7 @@ summary.setup-head::-webkit-details-marker { display: none; }
 .fl-then b { color: var(--ink-2); font-weight: 600; }
 .fl-report { font-size: var(--t-s); color: var(--ink-2); }
 .fl-report .prose { font-size: 13.5px; }
+/* a verifier's objection to a `met` — on the finish-line card and on the pending goal card */
 .fl-disputed { color: var(--warn); cursor: help; }
 .fl-problem { color: var(--err); font-size: var(--t-s); }
 .fl-until { padding-top: var(--s2); border-top: 1px dashed var(--rule-2); display: flex; flex-direction: column; gap: 6px; }

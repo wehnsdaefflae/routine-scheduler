@@ -13,8 +13,8 @@
 
 import { api } from "/static/api.js";
 import { confirmDialog } from "/static/components/dialog.js";
-import { temperatureHint } from "/static/views/settings-common.js";
-import { el, toast, toastError } from "/static/util.js";
+import { savedToast, temperatureHint } from "/static/views/settings-common.js";
+import { act, el, toast } from "/static/util.js";
 
 const EFFORTS = ["", "low", "medium", "high", "xhigh", "max"];   // "" = inherit / provider default
 
@@ -153,20 +153,19 @@ export function modelPanels({ endpoints, models, systemModel, compactionModel, r
   function modelItem(m, endpoints, models) {
     const f = modelFields(m, endpoints, models);
     const saveBtn = el("button", { class: "btn small primary" }, "save changes");
-    saveBtn.onclick = async () => {
+    saveBtn.onclick = () => act(saveBtn, async () => {
       if (!f.modelIn.value.trim()) { toast("enter a model id"); return; }
-      try {
-        await api(`/api/settings/models/${encodeURIComponent(m.name)}`, { method: "PUT",
-          body: modelBody(m.name, f) });
-        toast(`${m.name}: updated`); await reload();
-      } catch (err) { toastError(err, 5000); }
-    };
+      savedToast(await api(`/api/settings/models/${encodeURIComponent(m.name)}`, { method: "PUT",
+        body: modelBody(m.name, f) }), `${m.name}: updated`);
+      await reload();
+    });
     const delBtn = el("button", { class: "btn small danger" }, "delete");
-    delBtn.onclick = async () => {
+    delBtn.onclick = () => act(delBtn, async () => {
       if (!(await confirmDialog(`Delete model "${m.name}"?`, { confirmLabel: "delete" }))) return;
-      try { await api(`/api/settings/models/${encodeURIComponent(m.name)}`, { method: "DELETE" }); await reload(); }
-      catch (err) { toastError(err); }
-    };
+      savedToast(await api(`/api/settings/models/${encodeURIComponent(m.name)}`,
+                           { method: "DELETE" }), `model ${m.name} deleted`);
+      await reload();
+    });
     return el("div", { class: "panel mt", style: "background:var(--deck-2)" },
       el("div", { class: "row spread" },
         el("div", {}, el("strong", {}, m.name), " ",
@@ -195,15 +194,13 @@ export function modelPanels({ endpoints, models, systemModel, compactionModel, r
     const nameIn = el("input", { type: "text", placeholder: "name (e.g. gpt-4o)" });
     const f = modelFields({ context_effective: 0 }, endpoints, models);
     const save = el("button", { class: "btn primary" }, "add model");
-    save.onclick = async () => {
+    save.onclick = () => act(save, async () => {
       if (!nameIn.value.trim()) { toast("name it"); return; }
       if (!f.modelIn.value.trim()) { toast("enter a model id"); return; }
-      try {
-        await api("/api/settings/models", { method: "POST",
-          body: modelBody(nameIn.value.trim(), f) });
-        toast(`model ${nameIn.value.trim()} added`); await reload();
-      } catch (err) { toastError(err); }
-    };
+      savedToast(await api("/api/settings/models", { method: "POST",
+        body: modelBody(nameIn.value.trim(), f) }), `model ${nameIn.value.trim()} added`);
+      await reload();
+    });
     return el("details", { class: "panel mt" },
       el("summary", { style: "cursor:pointer;font-weight:600" }, "+ add model"),
       el("div", { class: "field-row mt" },
@@ -238,12 +235,10 @@ export function modelPanels({ endpoints, models, systemModel, compactionModel, r
     const sel = el("select", {}, models.map((m) => el("option", {}, m.name)));
     if (systemModel) sel.value = systemModel;
     const save = el("button", { class: "btn small primary" }, systemModel ? "update" : "set");
-    save.onclick = async () => {
-      try {
-        await api("/api/settings/system-model", { method: "PUT", body: { name: sel.value } });
-        toast(`system model → ${sel.value}`); await reload();
-      } catch (err) { toastError(err, 5000); }
-    };
+    save.onclick = () => act(save, async () => {
+      await api("/api/settings/system-model", { method: "PUT", body: { name: sel.value } });
+      toast(`system model → ${sel.value}`); await reload();
+    });
     box.append(el("div", { class: "row", style: "margin:5px 0" },
       el("span", { class: "ref-tag", style: "min-width:100px;text-align:center" }, "system"), sel, save));
     return box;
@@ -257,12 +252,10 @@ export function modelPanels({ endpoints, models, systemModel, compactionModel, r
       sel.append(el("option", { value: current }, `${current} (unavailable)`));
     sel.value = current || "";
     const save = el("button", { class: "btn small primary" }, "save compaction model");
-    save.onclick = async () => {
-      try {
-        await api("/api/settings/compaction-model", { method: "PUT", body: { name: sel.value } });
-        toast(`compaction model → ${sel.value || "Automatic"}`); await reload();
-      } catch (err) { toastError(err, 5000); }
-    };
+    save.onclick = () => act(save, async () => {
+      await api("/api/settings/compaction-model", { method: "PUT", body: { name: sel.value } });
+      toast(`compaction model → ${sel.value || "Automatic"}`); await reload();
+    });
     return el("div", { class: "panel mt" },
       el("div", { class: "small", style: "font-weight:600" }, "Context compaction model"),
       el("p", { class: "muted small" },

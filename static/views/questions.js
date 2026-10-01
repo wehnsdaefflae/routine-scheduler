@@ -46,13 +46,9 @@ const qText = (q) => {
   const node = el("div", { class: "q-text" }, qBody(q));
   return q.meta ? linkifyRefs(node) : node;
 };
-const sourceLink = (q) => (q.wizard
-  // a clarify session's surface is its run page (D11); a pre-D13 session has none
-  ? (q.run_id ? el("a", { href: `#/run/${q.run_id}` }, "new-routine setup")
-              : el("span", { class: "muted" }, "new-routine setup"))
-  // each decision links its OWN home: a conversation's page lives under #/conversations,
-  // a detached task's surface is its owning conversation (the task itself has no page)
-  : q.conversation ? el("a", { href: `#/conversations/${q.routine}` }, q.routine)
+// each decision links its OWN home: a conversation's page lives under #/conversations,
+// a detached task's surface is its owning conversation (the task itself has no page)
+const sourceLink = (q) => (q.conversation ? el("a", { href: `#/conversations/${q.routine}` }, q.routine)
   : q.background ? (q.owner
       ? el("a", { href: `#/conversations/${q.owner}`, title: "the conversation that launched this background task" },
           `${q.routine} (background)`)
@@ -238,7 +234,7 @@ export async function render(view, query = {}) {
       say(q.answer, settledNote());
       return el("div", { class: "panel question-item answered" },
         el("div", { class: "q-meta" },
-          q.wizard ? chip("clarify", "meta") : q.meta ? chip("meta", "meta") : null,
+          q.meta ? chip("meta", "meta") : null,
           q.type === "util-approval" ? chip("util approval", "partial") : null,
           q.type === "request" ? chip("access request", "partial") : null,
           chip(`answered${q.answer_source && q.answer_source !== "web" ? ` via ${q.answer_source}` : ""}`
@@ -322,7 +318,7 @@ export async function render(view, query = {}) {
     let wantRun = false;
     let firedRunId = null;
     const canRunNow = !q.meta && q.mode !== "blocking" && !q.conversation && !q.background
-      && !q.wizard && (!q.run_state || TERMINAL.has(q.run_state));
+      && (!q.run_state || TERMINAL.has(q.run_state));
     const runNow = canRunNow ? el("button", { class: "btn small", "data-answer-run-now": "",
       title: "file this answer AND start one run of the routine now (a manual run) — "
         + "otherwise the answer waits for its next scheduled run" }, "answer & run now") : null;
@@ -386,7 +382,7 @@ export async function render(view, query = {}) {
       // the ROUTINES home whoever asked, so a named target is always a routine; without one the
       // proposal is the asker's own and patches the asker's own surface.
       const home = q.config_target ? "routines"
-        : q.conversation ? "conversations" : (q.background || q.wizard) ? "" : "routines";
+        : q.conversation ? "conversations" : q.background ? "" : "routines";
       // what the button patches is named by the surface it posts to, never by who asked: a
       // conversation's proposal for a routine patches a ROUTINE
       const noun = home === "conversations" ? "conversation" : "routine";
@@ -442,7 +438,7 @@ export async function render(view, query = {}) {
     const panel = el("div", { class: `panel question-item${q.mode === "blocking" ? " warn" : ""}` },
       el("div", { class: "q-meta" },
         expiringSoon(q) ? chip("expiring", "failed") : null,
-        q.wizard ? chip("clarify", "meta") : q.meta ? chip("meta", "meta") : null,
+        q.meta ? chip("meta", "meta") : null,
         q.type === "util-approval" ? chip("util approval", "partial") : null,
         q.type === "request" ? chip("access request", "partial") : null,
         chip(q.mode, q.mode),

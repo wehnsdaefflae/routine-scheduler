@@ -2,13 +2,20 @@
 // no HTML pathway, so strings passed to it can never become markup. The ONE sanctioned
 // innerHTML pathway is md.js (simple markdown for model-authored prose), which escapes first.
 
-// localStorage can throw (private mode / embedded contexts) — degrade to in-memory.
-const mem = new Map();
-export const storage = {
-  get(key) { try { return localStorage.getItem(key); } catch { return mem.get(key) ?? null; } },
-  set(key, value) { try { localStorage.setItem(key, value); } catch { mem.set(key, value); } },
-  remove(key) { try { localStorage.removeItem(key); } catch { mem.delete(key); } },
-};
+// Web storage can throw (private mode, blocked site data, embedded contexts) — even READING the
+// `localStorage`/`sessionStorage` global does — so every console read goes through one of these
+// two and degrades to an in-memory map for the life of the page. A bare call is how a browser
+// that blocks site data failed to load the default route.
+function webStorage(area) {
+  const mem = new Map();
+  return {
+    get(key) { try { return window[area].getItem(key); } catch { return mem.get(key) ?? null; } },
+    set(key, value) { try { window[area].setItem(key, value); } catch { mem.set(key, value); } },
+    remove(key) { try { window[area].removeItem(key); } catch { mem.delete(key); } },
+  };
+}
+export const storage = webStorage("localStorage");     // per browser
+export const session = webStorage("sessionStorage");   // per tab, gone when it closes
 
 export function el(tag, attrs = {}, ...children) {
   const node = document.createElement(tag);
@@ -59,13 +66,12 @@ export function toDate(v) {
 
 const p2 = (n) => String(n).padStart(2, "0");
 
+// A run-ts and an ISO string render identically — one name for both.
 export function fmtAbs(v) {
   const d = toDate(v);
   if (!d) return String(v || "");
   return `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())} ${p2(d.getHours())}:${p2(d.getMinutes())}`;
 }
-
-export const fmtTs = fmtAbs;   // run-ts and ISO render identically
 
 export function fmtTime(v) {
   const d = toDate(v);
@@ -105,11 +111,14 @@ export function startTimeTicker() {
   }, 30000);
 }
 
+// Every unit FLOORS: rounding the minor one printed "1m 60s" for 119.6 s and "1h 60m" for
+// 7170 s — a clock never shows a carry it has not made.
 export function fmtDur(secs) {
   if (secs == null || secs < 0 || isNaN(secs)) return "";
-  if (secs < 60) return `${Math.round(secs)}s`;
-  if (secs < 3600) return `${Math.floor(secs / 60)}m ${Math.round(secs % 60)}s`;
-  return `${Math.floor(secs / 3600)}h ${Math.round((secs % 3600) / 60)}m`;
+  const s = Math.floor(secs);
+  if (s < 60) return `${s}s`;
+  if (s < 3600) return `${Math.floor(s / 60)}m ${s % 60}s`;
+  return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`;
 }
 
 // The counts in the console's one compact form (fmtNum — a long run reads "2.30M", where this

@@ -4,8 +4,9 @@
 // everything the setup resolves to.
 //
 // A conduct doc and the capabilities it presumes are ONE decision — ticking a doc switches its
-// requirements on, unticking a capability drops the docs that needed it — so the ability cards
-// edit the two fields together, as one change.
+// requirements on, and a capability a held doc requires has no off switch of its own (only the
+// card of capabilities no held doc requires drops one) — so the ability cards edit the two
+// fields together, as one change.
 
 import { el, skeleton } from "/static/util.js";
 import { settingsSection } from "/static/components/settings-section.js";
@@ -60,11 +61,11 @@ export function abilitiesGroup(ctx) {
       ...settingsSection({ title: "Permissions & capabilities", id: "permissions" },
         ["what this routine is ALLOWED to do — enforced by the engine on every action. One card per ",
          "ability, carrying everything that ability needs: the action kinds and reserved utils it ",
-         "requires, the secrets, roots and bindings it resolves to, plus its POLICY DIAL where it ",
-         "has one — how deep it may read previous runs, who approves a util or rule change, which ",
-         "reminder stores it writes to. Enforcement reads the capabilities, not the conduct doc, so ",
-         "an ability whose requirements are not all switched on fails closed — its card says so, ",
-         "with the dial that fixes it inside that card. Only you can change any of this — a routine ",
+         "requires, the secrets, roots and bindings it resolves to, plus its APPROVAL DIAL where it ",
+         "has one — who approves a util change, who approves a rule change. Enforcement reads the ",
+         "capabilities, not the conduct doc, so an ability whose requirements are not all switched ",
+         "on fails closed — its card says so, with the switch that fixes it inside that card. ",
+         "Only you can change any of this — a routine ",
          "can never grant itself anything. Takes effect at the next run."],
         abilities.node),
       ...settingsSection({ title: "General rules", id: "general-rules" },

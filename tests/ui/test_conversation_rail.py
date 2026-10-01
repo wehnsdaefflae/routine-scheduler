@@ -178,3 +178,24 @@ def test_a_conversation_waiting_on_you_wears_the_summons_colour(ui, ui_page):
             == _computed(ui_page, "background-color", "var(--summons)"))
     assert (bubble.evaluate("e => getComputedStyle(e).backgroundColor")
             == _computed(ui_page, "background-color", "var(--summons-dim)"))
+
+
+def test_the_default_route_loads_where_this_browser_refuses_session_storage(ui, ui_page):
+    """The default route is the new-conversation composer, and it touched `sessionStorage`
+    bare twice — the admin toggle's armed token and the fork's prefill hand-off. In a browser
+    that blocks site data, merely READING the global throws, so the console's landing page
+    failed to load. The toggle now goes through util.js's `session` (degrades to memory) and
+    the prefill is module state; arming admin still works, held for the page's life."""
+    ui_page.add_init_script("""(() => {
+      Object.defineProperty(window, "sessionStorage", {
+        configurable: true,
+        get() { throw new DOMException("refused", "SecurityError"); } });
+    })()""")
+    ui_page.goto(f"{ui.url}/#/")
+    expect(ui_page.locator(".conv-new textarea")).to_be_visible()
+    admin = ui_page.locator(".conv-new button", has_text="admin")
+    admin.click()
+    dialog = ui_page.get_by_role("dialog")
+    dialog.locator("input").fill("adm1n")
+    dialog.get_by_role("button", name="ok").click()
+    expect(admin).to_have_class(re.compile(r"\barmed\b"))

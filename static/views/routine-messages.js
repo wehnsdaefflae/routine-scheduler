@@ -12,6 +12,7 @@ import { clampedBody } from "/static/md.js";
 import { confirmDialog } from "/static/components/dialog.js";
 import { el, tagChip, toast, toastError, when } from "/static/util.js";
 import { forgetField } from "/static/formpersist.js";
+import { refHref } from "/static/components/reflinks.js";
 
 const FOLDERS = [
   ["inbox", "waiting for the next run — drained at boot (or a live run's next turn boundary); write, edit or withdraw freely until then"],
@@ -133,7 +134,7 @@ export function mountMessages(host, slug) {
     };
     const head = () => el("div", { class: "msg-head" },
       el("span", { class: "msg-src" }, fromLabel(m)),
-      m.report ? el("a", { class: "ref-link", href: `#/messages?focus=${m.report}`,
+      m.report ? el("a", { class: "ref-link", href: refHref(m.report),
         title: "the delivered report behind this message" }, m.report) : null,
       m.ts ? when(m.ts) : null,
       el("span", { class: "msg-ops" }, ...[more, edit, drop].filter(Boolean)));
@@ -151,7 +152,7 @@ export function mountMessages(host, slug) {
       const { node: text, toggle: more } = clampedBody(m.text, "msg-text");
       card.append(el("div", { class: "msg-head" },
         el("span", { class: "msg-src" }, fromLabel(m)),
-        m.report ? el("a", { class: "ref-link", href: `#/messages?focus=${m.report}` }, m.report) : null,
+        m.report ? el("a", { class: "ref-link", href: refHref(m.report) }, m.report) : null,
         m.ts ? when(m.ts) : null,
         m.run_ts ? el("a", { href: `#/run/${slug}:${m.run_ts}`,
           title: "the run that consumed it" }, "consumed by run ↗") : null,
@@ -162,7 +163,7 @@ export function mountMessages(host, slug) {
     // outbox + received: an addressed report row (title + detail, ledger-derived)
     const head = el("div", { class: "msg-head" },
       el("span", { class: "msg-src" }, `→ ${m.to || "?"}`),
-      m.report ? el("a", { class: "ref-link", href: `#/messages?focus=${m.report}` }, m.report) : null,
+      m.report ? el("a", { class: "ref-link", href: refHref(m.report) }, m.report) : null,
       m.ts ? when(m.ts) : null);
     if (folder === "outbox") {
       const retract = el("button", { class: "btn small ghost",

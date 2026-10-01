@@ -27,8 +27,8 @@ for (let i = 0; i < 20; i++) {
 """
 
 # The app shell's two periodic backstops, which are nobody's bus handler: the LLM dock mirrors
-# llm_task/llm_process from the EVENT and re-reads /api/llm-tasks every 10 s only to catch
-# events the bus dropped, and the daemon lamp re-reads /api/status every 30 s. Neither is
+# llm_task/llm_process from the EVENT and re-reads /api/llm-tasks every 10 s (in a visible tab)
+# only to catch events the bus dropped, and the daemon lamp re-reads /api/status every 30 s. Neither is
 # triggered by an event, so neither is what this file is about.
 BACKSTOPS = ("/api/llm-tasks", "/api/status")
 
@@ -109,3 +109,28 @@ def test_a_reconnect_does_not_reread_the_heaviest_endpoints(ui, ui_page):
     assert any("/api/routines" in u for u in seen), (
         "the run states still have to catch up — this test must not pass by the dashboard "
         f"ignoring the reconnect entirely (requests seen: {seen})")
+
+
+def test_the_llm_dock_backstop_rests_in_a_hidden_tab(ui, ui_page):
+    """The dock's 10 s /api/llm-tasks reconcile is for a dock somebody can see: a background
+    tab skipped nothing and asked the daemon six times a minute for as long as it stayed open.
+    Hidden, it rests; shown again, it catches up at once rather than at the next tick."""
+    ui_page.add_init_script("""(() => {
+      window.__hidden = false;
+      Object.defineProperty(Document.prototype, "hidden", { get: () => window.__hidden });
+    })()""")
+    ui_page.clock.install()
+    ui_page.goto(ui.url)
+    ui_page.wait_for_selector(".topbar")
+
+    seen: list[str] = []
+    ui_page.on("request", lambda r: seen.append(r.url) if "/api/llm-tasks" in r.url else None)
+    ui_page.evaluate("window.__hidden = true")
+    ui_page.clock.fast_forward(35_000)
+    ui_page.wait_for_timeout(300)
+    assert not seen, f"a hidden tab reconciled the LLM dock: {seen}"
+
+    ui_page.evaluate("""() => { window.__hidden = false;
+                               document.dispatchEvent(new Event("visibilitychange")); }""")
+    ui_page.wait_for_timeout(500)
+    assert len(seen) == 1, f"coming back did not catch up exactly once: {seen}"

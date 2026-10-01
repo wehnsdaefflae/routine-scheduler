@@ -40,6 +40,7 @@ def library_overview(request: Request) -> dict:
     """Everything under the Library tab: workflows, rules, permissions, playbooks, global utils."""
     from .. import playbooks, reminders
     from ..config import DEFAULT_BUDGETS, DEFAULT_DELIBERATION, DEFAULT_PERMISSIONS, DEFAULT_RULES
+    from ..grants import CAPABILITY_ACTIONS
 
     home = _home(request)
     server = request.app.state.server
@@ -60,6 +61,9 @@ def library_overview(request: Request) -> dict:
         # take one out again: the approval gate decides what gets IN, nothing else revokes it.
         "reminders": [{**r, "problems": lint.get(f"reminders/{r['id']}.json", [])}
                       for r in reminders.records(server.reminders_home)],
+        # what a permission doc's `requires: actions:` may name — the Library editor offers
+        # exactly this, so it can never offer a box the PUT below refuses with a 422
+        "capability_actions": list(CAPABILITY_ACTIONS),
         "default_rules": list(DEFAULT_RULES),
         "default_permissions": list(DEFAULT_PERMISSIONS),
         "default_budgets": dict(DEFAULT_BUDGETS),

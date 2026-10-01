@@ -6,7 +6,7 @@
 // they become <mark> nodes via textContent only — no HTML rides the payload.
 
 import { api } from "/static/api.js";
-import { el, fmtTs } from "/static/util.js";
+import { el, fmtAbs } from "/static/util.js";
 
 const MARK_START = "\ue000";
 const MARK_END = "\ue001";
@@ -44,7 +44,7 @@ function markSnippet(snippet) {
 
 function hitMeta(h) {
   const bits = [];
-  if (h.run_ts) bits.push(`run ${fmtTs(h.run_ts)}`);
+  if (h.run_ts) bits.push(`run ${fmtAbs(h.run_ts)}`);
   if (h.sub) bits.push(`sub ${h.sub}`);
   if (h.turn !== null && h.turn !== undefined) bits.push(`turn ${h.turn}`);
   if (h.phase) bits.push(h.phase);

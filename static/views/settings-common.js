@@ -12,9 +12,25 @@
 // private repo before `gh auth login`) instead of failing silently later. The source-repository
 // section is its only consumer: the library repo has no settings surface at all, because the
 // library-sync routine manages that repo exclusively.
+//
+// `savedToast` is how a config-block save (endpoints, models, machines — web/settings/common.py
+// `rewrite_block`) reports. Those answer `{ok, problems}`: the write LANDED, and `problems` is
+// what the loader now says about the whole config — a model naming an endpoint that is gone, a
+// field it dropped. Endpoint and model saves ignored the array and read as plain success; the
+// machine save toasted each problem and then its own success line over them, in the console's
+// one toast slot.
+//
+// Every save button here runs through util.js `act()`: disabled while its request is out, so a
+// double click sends one save, not two (or a 409 from the second).
 
 import { api } from "/static/api.js";
-import { el, skeleton } from "/static/util.js";
+import { el, skeleton, toast } from "/static/util.js";
+
+export function savedToast(res, okMsg) {
+  const problems = res?.problems || [];
+  if (!problems.length) { toast(okMsg); return; }
+  toast(`${okMsg} — but the config now reports: ${problems.join("; ")}`, 8000, { error: true });
+}
 
 export async function panelSection(view, url, skel, render) {
   const box = el("div", { class: "panel" });

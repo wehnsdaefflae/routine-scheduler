@@ -70,11 +70,16 @@ self.addEventListener("pushsubscriptionchange", (event) => {
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
   const url = (event.notification.data && event.notification.data.url) || "/#/questions";
-  event.waitUntil(self.clients.matchAll({ type: "window", includeUncontrolled: true })
-    .then((wins) => {
-      for (const w of wins) {
-        if ("focus" in w) { w.navigate(url); return w.focus(); }
-      }
-      return self.clients.openWindow(url);
-    }));
+  // navigate() is allowed only on a window this worker CONTROLS. The handler used to take any
+  // window (`includeUncontrolled`) — a console tab opened before the worker activated, or
+  // hard-reloaded, is not controlled — and its navigate() rejected unhandled: the click focused
+  // a tab and never reached the decision. So: a controlled window is focused and navigated, and
+  // when there is none (or its navigate fails anyway) a new window opens on the url.
+  event.waitUntil((async () => {
+    for (const w of await self.clients.matchAll({ type: "window" })) {
+      try { await w.focus(); await w.navigate(url); return; }
+      catch { /* the next window, else a new one */ }
+    }
+    await self.clients.openWindow(url);
+  })());
 });

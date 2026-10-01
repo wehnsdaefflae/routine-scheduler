@@ -6,7 +6,7 @@ import { api, sse } from "/static/api.js";
 import { parseHash } from "/static/router.js";
 import { installTracing } from "/static/trace.js";
 import { installFormPersistence } from "/static/formpersist.js";
-import { el, fmtTs, skeleton, startTimeTicker, storage, toast, toastError } from "/static/util.js";
+import { el, fmtAbs, skeleton, startTimeTicker, storage, toast, toastError } from "/static/util.js";
 import { initNotifications } from "/static/notify.js";
 import { loadQuestions, subscribeQuestions } from "/static/questions-store.js";
 import { initTaskManager } from "/static/components/taskmanager.js";
@@ -138,7 +138,7 @@ function crumbsFor(path) {
       const [slug, ts] = (parts[1] || "").split(":");
       return [{ label: "Routines", href: "#/routines" },
         { label: slug || "run", href: slug ? `#/routine/${slug}` : null },
-        { label: ts ? `run ${fmtTs(ts)}` : "run" }];
+        { label: ts ? `run ${fmtAbs(ts)}` : "run" }];
     }
     // A route with no case of its own names ITSELF, capitalised. The old default returned
     // "Conversations", so #/browser — a route added later — announced the wrong page on every

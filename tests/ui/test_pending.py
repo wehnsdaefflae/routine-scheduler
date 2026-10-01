@@ -241,3 +241,17 @@ def test_a_line_the_calendar_reached_is_changed_by_its_date_not_reopened(ui, ui_
     ui_page.wait_for_url(re.compile(r"#/routine/uir\?section=goal$"))
     expect(ui_page.locator("#sec-goal")).to_be_in_viewport()
     expect(ui_page.locator("[data-finish-line]")).to_be_visible()
+
+
+def test_a_disputed_outcome_reads_in_the_warning_colour(ui, ui_page):
+    """A transcript check's standing objection is the most important line on the card — and it
+    wore an `err-text` class no stylesheet defined, so it read as plain body ink. It uses the
+    finish-line card's own `.fl-disputed`."""
+    _queue_goal(ui, outcomes=[{**_PROVED, "disputed": "no receipt in the transcript"}])
+    ui_page.goto(f"{ui.url}/#/questions")
+    note = ui_page.locator('[data-goal-outcome="g1"] .fl-disputed')
+    expect(note).to_contain_text("no receipt in the transcript")
+    probe = ui_page.evaluate("""() => { const p = document.createElement('span');
+      p.style.color = 'var(--warn)'; document.body.append(p);
+      const c = getComputedStyle(p).color; p.remove(); return c; }""")
+    assert note.evaluate("e => getComputedStyle(e).color") == probe

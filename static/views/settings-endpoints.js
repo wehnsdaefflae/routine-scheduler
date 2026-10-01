@@ -9,8 +9,8 @@ import { quotaLine } from "/static/components/quota.js";
 import { confirmDialog } from "/static/components/dialog.js";
 import { proxyAccounts } from "/static/components/proxy-accounts.js";
 import { modelPanels } from "/static/views/settings-models.js";
-import { temperatureHint } from "/static/views/settings-common.js";
-import { el, toast, toastError } from "/static/util.js";
+import { savedToast, temperatureHint } from "/static/views/settings-common.js";
+import { act, el, toast } from "/static/util.js";
 
 // Each kind needs a DIFFERENT credential — spelled out per endpoint so the subscription token
 // and metered API keys don't get confused (they land in different places).
@@ -112,11 +112,12 @@ export async function renderEndpoints(view) {
       testBtn.disabled = false;
     };
     const delBtn = el("button", { class: "btn small danger" }, "delete");
-    delBtn.onclick = async () => {
+    delBtn.onclick = () => act(delBtn, async () => {
       if (!(await confirmDialog(`Delete endpoint "${ep.name}"?`, { confirmLabel: "delete" }))) return;
-      try { await api(`/api/settings/endpoints/${encodeURIComponent(ep.name)}`, { method: "DELETE" }); await load(); }
-      catch (err) { toastError(err); }
-    };
+      savedToast(await api(`/api/settings/endpoints/${encodeURIComponent(ep.name)}`,
+                           { method: "DELETE" }), `endpoint ${ep.name} deleted`);
+      await load();
+    });
 
     // Proxy client keys and provider API keys use the same secret store.
     let keyRow;
@@ -124,15 +125,14 @@ export async function renderEndpoints(view) {
       const keyInput = el("input", { type: "password", style: "flex:1",
         placeholder: ep.has_inline_key ? `${info.keyLabel} set ✓ — paste to replace` : `paste ${info.keyLabel} (or set ${ep.key_var || "its key_var"} in Secrets)` });
       const saveKey = el("button", { class: "btn small primary" }, "save key");
-      saveKey.onclick = async () => {
+      saveKey.onclick = () => act(saveKey, async () => {
         if (!keyInput.value.trim()) { toast("paste a key first"); return; }
-        try {
-          await api(`/api/settings/endpoints/${encodeURIComponent(ep.name)}`, { method: "PUT", body: {
-            name: ep.name, kind: ep.kind, base_url: ep.base_url || "", key_env_file: ep.key_env_file || "",
-            key_var: ep.key_var || "", schema_mode: ep.schema_mode, context_tokens: ep.context_tokens, api_key: keyInput.value.trim() } });
-          toast(`${ep.name}: key saved`); keyInput.value = ""; await load();
-        } catch (err) { toastError(err, 5000); }
-      };
+        savedToast(await api(`/api/settings/endpoints/${encodeURIComponent(ep.name)}`, { method: "PUT", body: {
+          name: ep.name, kind: ep.kind, base_url: ep.base_url || "", key_env_file: ep.key_env_file || "",
+          key_var: ep.key_var || "", schema_mode: ep.schema_mode, context_tokens: ep.context_tokens, api_key: keyInput.value.trim() } }),
+          `${ep.name}: key saved`);
+        keyInput.value = ""; await load();
+      });
       keyRow = el("div", { class: "row mt" }, keyInput, saveKey);
     }
 
@@ -156,7 +156,7 @@ export async function renderEndpoints(view) {
           placeholder: '{"provider": {"ignore": ["…"]}}' },
           ep.extra_body ? JSON.stringify(ep.extra_body, null, 2) : "") : null;
     const saveEdit = el("button", { class: "btn small primary" }, "save changes");
-    saveEdit.onclick = async () => {
+    saveEdit.onclick = () => act(saveEdit, async () => {
       const body = {
         name: ep.name, kind: kindSel.value, base_url: baseIn.value.trim(),
         quota_source: quotaSel.value, quota_key_var: quotaKeyIn.value.trim(),
@@ -170,11 +170,10 @@ export async function renderEndpoints(view) {
         try { body.extra_body = raw ? JSON.parse(raw) : {}; }
         catch { toast("extra_body must be valid JSON", 4000, { error: true }); return; }
       }
-      try {
-        await api(`/api/settings/endpoints/${encodeURIComponent(ep.name)}`, { method: "PUT", body });
-        toast(`${ep.name}: updated`); await load();
-      } catch (err) { toastError(err, 5000); }
-    };
+      savedToast(await api(`/api/settings/endpoints/${encodeURIComponent(ep.name)}`,
+                           { method: "PUT", body }), `${ep.name}: updated`);
+      await load();
+    });
     const editForm = el("details", { class: "mt" },
       el("summary", { style: "cursor:pointer;font-size:12px" }, "edit fields"),
       el("div", { class: "field-row mt" },
@@ -272,16 +271,15 @@ export async function renderEndpoints(view) {
     };
     kindSel.onchange = onKind; onKind();
     const save = el("button", { class: "btn primary" }, "add endpoint");
-    save.onclick = async () => {
+    save.onclick = () => act(save, async () => {
       if (!nameIn.value.trim()) { toast("name it"); return; }
-      try {
-        await api("/api/settings/endpoints", { method: "POST", body: {
-          name: nameIn.value.trim(), kind: kindSel.value, base_url: baseIn.value.trim(),
-          key_var: keyVarIn.value.trim(), schema_mode: schemaSel.value,
-          context_tokens: Number(ctxIn.value) || 25000 } });
-        toast(`endpoint ${nameIn.value.trim()} added — set its ${KIND[kindSel.value]?.keyLabel || "key"} on its card, then add a model`); await load();
-      } catch (err) { toastError(err); }
-    };
+      savedToast(await api("/api/settings/endpoints", { method: "POST", body: {
+        name: nameIn.value.trim(), kind: kindSel.value, base_url: baseIn.value.trim(),
+        key_var: keyVarIn.value.trim(), schema_mode: schemaSel.value,
+        context_tokens: Number(ctxIn.value) || 25000 } }),
+        `endpoint ${nameIn.value.trim()} added — set its ${KIND[kindSel.value]?.keyLabel || "key"} on its card, then add a model`);
+      await load();
+    });
     return el("details", { class: "panel mt" },
       el("summary", { style: "cursor:pointer;font-weight:600" }, "+ add endpoint"),
       el("div", { class: "field-row mt" },

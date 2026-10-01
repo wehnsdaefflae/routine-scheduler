@@ -15,7 +15,7 @@
 // is collapsed.
 
 import { api } from "/static/api.js";
-import { el, fmtTs, storage, svgEl, toDate } from "/static/util.js";
+import { el, fmtAbs, storage, svgEl, toDate } from "/static/util.js";
 import { slugColor } from "/static/components/charts.js";
 import { WORKING } from "/static/states.js";
 
@@ -104,7 +104,7 @@ export function mountRibbon(host) {
 
     for (const f of fireTimes(fires, now, to)) {
       const m = svgEl("rect", { class: "rb-fire", x: x(f.t) - 1.5, y: LANE_Y, width: 3, height: LANE_H });
-      m.append(svgEl("title", {}, `${f.label} · scheduled ${fmtTs(new Date(f.t).toISOString())}`));
+      m.append(svgEl("title", {}, `${f.label} · scheduled ${fmtAbs(new Date(f.t).toISOString())}`));
       svg.append(m);
     }
 
@@ -117,7 +117,7 @@ export function mountRibbon(host) {
       });
       if (s.kind === "ok") rect.setAttribute("fill", slugColor(s.slug));
       const t = svgEl("title", {});
-      t.textContent = `${s.slug} · ${s.run.state} · ${fmtTs(s.run.ts || s.run.started)}`;
+      t.textContent = `${s.slug} · ${s.run.state} · ${fmtAbs(s.run.ts || s.run.started)}`;
       rect.append(t);
       a.append(rect);
       svg.append(a);

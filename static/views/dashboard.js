@@ -137,7 +137,7 @@ export async function render(view) {
   // transcript tailing inline. Collapsed by default and lazily started — a closed section
   // neither fetches nor polls.
   // `isOpen` is what keeps the section lazy after its FIRST open: start() arms the feed once
-  // and it then polls four endpoints every 4 s, so re-collapsing has to stop it again.
+  // and it then polls three endpoints every 4 s, so re-collapsing has to stop it again.
   const feed = activityFeed({ isOpen: () => activityPanel.open });
   const activityPanel = el("details", { class: "panel weekpanel mt activity-panel",
     ...(storage.get(ACTIVITY_KEY) === "open" ? { open: true } : {}) },

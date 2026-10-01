@@ -389,7 +389,10 @@ export async function render(view, sub, query = {}) {
   function requiresPanel(req) {
     const actions = new Set(req.actions || []);
     const utils = new Set(req.utils || []);
-    const GATED = ["write_util", "memory_read", "memory_write"];
+    // The server's own list (grants.CAPABILITY_ACTIONS, sent as /api/library's
+    // capability_actions): a hand-kept list here offered memory_read/memory_write — base kinds
+    // every routine holds — and left out shell, write_rule and the rest the PUT accepts.
+    const GATED = data.capability_actions || [];
     // One labelled checkbox per name, ticking membership in `set` and writing straight back to
     // it — value() below reads the two sets, never the DOM, so the boxes and the saved
     // frontmatter cannot drift apart.
@@ -399,8 +402,6 @@ export async function render(view, sub, query = {}) {
       return el("label", { class: "row", style: "gap:5px" }, cb, name);
     });
     const utilNames = [...new Set([...(data.utils || []).map((u) => u.name), ...utils])].sort();
-    const runsSel = el("select", {}, ...[["", "(none)"], ["last", "last run"], ["all", "all runs"]]
-      .map(([v, label]) => el("option", { value: v, selected: (req.runs || "") === v ? "" : null }, label)));
     const node = el("div", { class: "panel", style: "margin-bottom:10px" },
       el("div", { class: "lbl" }, "requires — the capabilities this doc's instructions presume"),
       el("div", { class: "muted small", style: "margin:4px 0 8px" },
@@ -409,12 +410,12 @@ export async function render(view, sub, query = {}) {
       el("div", { class: "row", style: "gap:16px;flex-wrap:wrap;align-items:flex-start" },
         el("div", {}, el("div", { class: "muted small" }, "gated actions"), ...boxes(GATED, actions)),
         el("div", {}, el("div", { class: "muted small" }, "reserved utils"),
-          el("div", { style: "max-height:130px;overflow:auto" }, ...boxes(utilNames, utils))),
-        el("div", {}, el("div", { class: "muted small" }, "previous runs"), runsSel)));
+          el("div", { style: "max-height:130px;overflow:auto" }, ...boxes(utilNames, utils)))));
+    // Actions and utils only: previous-run depth, the approval dials and the reminder layer are
+    // SETTINGS a routine's owner chooses, which a doc may never require (the PUT refuses them).
     return { node, value: () => ({
       ...(actions.size ? { actions: [...actions] } : {}),
-      ...(utils.size ? { utils: [...utils] } : {}),
-      ...(runsSel.value ? { runs: runsSel.value } : {}) }) };
+      ...(utils.size ? { utils: [...utils] } : {}) }) };
   }
   async function openUtil(name) {
     setOpen(`util/${name}`);

@@ -567,6 +567,11 @@ export function createTranscript(container, opts = {}) {
     // needs to see in place, not an action the model took.
     stopping_update: (ev) => el("div", { class: "ev compaction", "data-accounting-event": "" },
       accountingLine(ev.payload || {})),
+    // A finish that STOOD while declared stages went unentered (engine/finishgate.py, F521) —
+    // a notice, not a refusal: skipping a stage is often right, and the gap is on the record.
+    stages_skipped: (ev) => el("div", { class: "ev compaction", "data-stages-skipped": "" },
+      `— stages skipped: ${(ev.payload?.skipped || []).join(", ")} `
+      + `(entered: ${(ev.payload?.entered || []).join(", ") || "none"}) —`),
     header: (ev) => el("div", { class: "ev system" },
       // every half falls back — the workflow one always did, and the model one printed a
       // literal "undefined:undefined" on any header without an orchestrator block (a

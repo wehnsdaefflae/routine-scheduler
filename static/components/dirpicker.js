@@ -19,10 +19,15 @@ export function pickDirectory({ title = "Select a directory", start = "" } = {})
     const listBox = el("div", { class: "dirpicker-list" });
     const note = el("div", { class: "muted small", style: "min-height:16px" }, "");
 
+    // A folder row is a BUTTON, so Tab reaches it and Enter/Space opens it; a file row is
+    // inert text. They were all divs with click handlers — a mouse-only list inside a dialog
+    // whose whole promise is the keyboard.
     function row(icon, name, onClick) {
-      return el("div", { class: "dp-row" + (onClick ? "" : " file"),
-        ...(onClick ? { onclick: onClick, title: "open" } : {}) },
-        el("span", { class: "dp-ic" }, icon), el("span", { class: "dp-name" }, name));
+      const parts = [el("span", { class: "dp-ic", "aria-hidden": "true" }, icon),
+                     el("span", { class: "dp-name" }, name)];
+      return onClick
+        ? el("button", { type: "button", class: "dp-row", onclick: onClick, title: "open" }, ...parts)
+        : el("div", { class: "dp-row file" }, ...parts);
     }
 
     // Only the NEWEST listing may paint: the opening listing still in flight when the reader

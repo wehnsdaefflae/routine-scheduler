@@ -222,9 +222,10 @@ export function abilitiesPanel(permissions, capabilities, opts = {}) {
     // stack lives inside the card rather than across three other panels
     const bad = rows.some((r2) => r2.state === "blocks") ? "blocks"
       : rows.some((r2) => r2.state === "interrupts") ? "interrupts" : "";
-    const badge = bad === "blocks" ? el("span", { class: "pill err" }, "will fail")
-      : bad === "interrupts" ? el("span", { class: "pill warn" }, "needs a decision")
-      : el("span", { class: "pill ok" }, "ready");
+    // the badge's modifier is the SAME surface word as the card's class (views.css colours the
+    // pill from that class); an err/warn pair here was a second vocabulary nothing read
+    const badge = el("span", { class: `pill ${bad || "ok"}` },
+      bad === "blocks" ? "will fail" : bad === "interrupts" ? "needs a decision" : "ready");
     const doc_ = docExpander("permissions", doc.slug);
     // A HELD doc whose requirements are not all switched on fails closed — and the switch that
     // closes it is here, in the card that names the gap: one press raises the mapping to cover

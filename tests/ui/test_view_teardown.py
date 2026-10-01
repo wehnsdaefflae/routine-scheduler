@@ -278,3 +278,28 @@ def test_a_pending_file_card_refresh_dies_with_its_card(ui, ui_page):
     ui_page.wait_for_timeout(2500)                    # > the 1.5 s coalescing window
     files = [u for u in after if u.endswith("/files")]
     assert not files, f"the files card refetched after it was gone: {files}"
+
+
+def test_a_task_tree_stopped_before_its_first_read_lands_stays_stopped(ui, ui_page):
+    """stop() cleared the timer and nothing else, so a stop() that landed while the FIRST
+    refresh was still in flight was undone by that refresh's `.then(poll)` — the poll re-armed
+    and kept asking every three seconds. The run view's "run not found" path does exactly
+    that, and carried a liveness flag of its own only to paper over it."""
+    held = []
+    ui_page.route("**/api/runs/uir:20260714-070000/tree",
+                  lambda route: route.continue_() if held else held.append(route))
+    ui_page.goto(ui.url)
+    ui_page.wait_for_selector(".topbar")
+    ui_page.evaluate("""() => import('/static/components/tasktree.js').then((m) => {
+        const host = document.createElement('div');
+        document.body.append(host);
+        window.__tree = m.createTaskTree(host, {
+          treeUrl: '/api/runs/uir:20260714-070000/tree', isLive: () => true });
+    })""")
+    until(lambda: held, what="the first tree read to be asked for", page=ui_page)
+    ui_page.evaluate("window.__tree.stop()")
+    after = _watch(ui_page)
+    held[0].continue_()
+    ui_page.wait_for_timeout(QUIET_MS)
+    tree = [u for u in after if u.endswith("/tree")]
+    assert not tree, f"a stopped task tree kept polling: {tree}"

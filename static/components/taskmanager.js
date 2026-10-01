@@ -6,7 +6,7 @@
 // and updating correctly at the foot of the document, which is how it spent 0.277.0-0.291.0.
 // It drives itself off the bus like notify.js —
 // window "rsched-bus" for live llm_task / llm_process events + a periodic GET /api/llm-tasks
-// reconcile (the bus drops events for a slow subscriber). Nothing here initiates LLM work; it
+// reconcile while the tab is visible (the bus drops events for a slow subscriber). Nothing here initiates LLM work; it
 // is a pure mirror of the backend TaskCenter (the single source of truth).
 
 import { api } from "/static/api.js";
@@ -171,5 +171,9 @@ export function initTaskManager() {
   window.addEventListener("rsched-bus", onBus);
   render();
   reconcile();
-  setInterval(reconcile, RECONCILE_MS);
+  // The backstop is for a dock somebody can SEE: a background tab skips it, and coming back
+  // catches up at once instead of showing up to ten seconds of drift (CLAUDE.md: a poller
+  // takes a predicate for whether anybody can see it).
+  setInterval(() => { if (!document.hidden) reconcile(); }, RECONCILE_MS);
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) reconcile(); });
 }
