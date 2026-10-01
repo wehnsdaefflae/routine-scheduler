@@ -378,3 +378,307 @@ the priorities passage in `docs/items.md` say the new rule. Red-first tests with
 report.json: a flagged handed-over `D` appears in `digest_section(…, "scheduler-builder")` and NOT
 in self-audit's; a flagged un-handed `F` appears only in self-audit's; an `addressed` handed-over
 row returns to self-audit.
+
+---
+
+# Handed over from the 0.371.0–0.372.0 review (2026-10-01)
+
+Everything below was PROPOSED by the review of 0.371.0 and the work that built 0.372.0, and not
+built there. The operator's order (2026-10-01): *"the proposed changes all need to go to self audit
+or the feature development routine"*. So each is an entry here — `self-audit` gives it a decision
+row, `scheduler-builder` builds it. Entries headed **Decide:** carry a choice that is the
+operator's: their FIRST increment is to put the options to the operator on the Decisions page
+(`ask_user`, the options and the review's recommendation verbatim) and then build what was chosen —
+that ask is the order, not a reason to wait. Ids in parentheses (E1.6, C1.2, …) are the review's
+own notes, kept so the trail can be followed.
+
+---
+
+## An empty `tools:` list in a workflow allows every action (E1.6)
+
+**Problem.** `engine/loopsetup.py`: `loop.allowed_tools = set(allowed_tools) | {"finish"} if
+allowed_tools else None` — an empty list is falsy, so a workflow declaring `tools: []` (nothing but
+the always-kinds) gets `None`, which means EVERY kind. A restriction fails open.
+
+**Shape.** `is not None`; check that `kindsurface.effective_kinds` and the linter's
+`_tools_problems` read `[]` the same way.
+
+**First increment.** The change, with a red-first test: a workflow with `tools: []` refuses
+`write_file` and allows `finish` and `report`.
+
+---
+
+## The finish's claim guard counts held and refused actions as taken (E4.3)
+
+**Problem.** `finishgate` hands `unbacked_action_claims` `{r["kind"] for r in loop.turn_records}` —
+every action that landed a record, including one a reminder or rule HELD (it did not run,
+`engine/hold.py`) and one the reserved finish turn refused. A summary saying "reported the outage"
+passes on a `report` that was held and never re-emitted. Separately, `loop.assist_undo_points` and
+`loop.reminder_owed` are set by their layers' `configure` but not declared on `EngineLoop`.
+
+**Shape.** "Taken" is what EXECUTED: the predicate `boot` already uses for `executed_actions`
+(not rejected, not `hold.is_hold`). Declare the two attributes.
+
+**First increment.** Confirm `turn_records` holds held and refused actions; red-first test: a run
+whose only `report` was held, finishing `ok` with "reported …" in its summary, is deferred.
+
+---
+
+## A live budget raise withdraws a spent reserved finish turn (E1.4)
+
+**Problem.** The first budget violation grants a reserved finish turn (schema narrowed to
+`finish`). Budgets are LIVE config (`configflow`), adopted at a turn boundary — but a run whose
+operator raises the spent budget still stands in its reserved turn and can only finish.
+
+**Shape.** Adopt a pending live config change BEFORE the budget check at the boundary; when the
+violated resource is back within its limit, clear `_finish_reserved`, restore the full schema, and
+say so in one engine note. A non-finish the reserved turn refused gets its observation.
+
+**First increment.** Red-first ScriptedEndpoint test: budget spent → reserved turn → control.json
+raises `turns` → the next turn may `write_file` and the run continues.
+
+---
+
+## A resumed leg keeps two more counters, and a replayed observation keeps its tails
+
+**Problem.** (a) `loop.failures` (the "failed twice this run" count behind the repair hint) and
+`_schema_off` ("schema off for the rest of the run") reset on every leg, so after a resume a call's
+second failure reads as its first. (b) A replayed observation loses its TAILS — the reminder note,
+rule-assist line, history pointer and once-grant note `EngineLoop._tails` appended after the
+observation was recorded — so a resumed leg's prompt differs from what the model read: the provider
+cache misses from the first such message, and cautions the model was shown are gone.
+
+**Shape.** (a) rebuild both in their layers' `rebuild`, the `engine/guardscope.py` pattern; (b)
+record the rendered tails on the observation event as a payload key and have
+`history.replay_messages` append them.
+
+**First increment.** (b), red-first: an observation that carried a `[REMINDERS: …]` tail replays
+with it.
+
+---
+
+## Model-facing wording that drifted (E3.6, E3.10, E4.5, T2.9, E2.5)
+
+Each changes what the model reads, so `docs/prompt-anatomy.md` and its test move in the same commit.
+
+- The `wait` observation's mode wording and the `CHILD RUN FINISHED (<mode>)` notification say the
+  same thing two ways; `engine/child.py` owns the mode vocabulary — one wording.
+- `docs/prompt-anatomy.md` §5's full verbatim example is stale: regenerate it from a composed prompt.
+- The hold observation's proceed sentence (`obs_hold._PROCEED`) when a reminder AND a rule match
+  the same action.
+- The action schema's `request` description names allow-now where the decisions include
+  allow-once (D76).
+- An `llm` reply over the observation cap loses its middle: spill it like util output
+  (`engine/outputs.py`) and name the path.
+- After a ⚑ refusal flag on a conversation's FIRST reply, the resumed leg is told it was
+  "interrupted… continue from the last observation" over an empty history; a kickoff-style note fits.
+
+**First increment.** The `llm` spill — the only item that loses information.
+
+---
+
+## Abort by run id; the runner's active map keyed per home (T3.2, W1.3, D1.3)
+
+**Problem.** `runner.abort(slug)` aborts whichever run of that routine is live, and `runner.active`
+is keyed by slug across the three homes, so a routine, a conversation and a background task with
+the same slug collide; the web abort names a run id that the runner resolves to a slug.
+
+**Shape.** Key the active map by home and slug (or run id); `abort` takes the run id the web route
+already has.
+
+**First increment.** Red-first test: two homes, one slug, both active — aborting one leaves the
+other running.
+
+---
+
+## Conversation branches: inherited child numbering, and a branch of a branch (E3.7)
+
+(a) A branch copies its parent's transcript, `subrun_start` events included. Verify whether the
+branch's first child reuses a number the inherited transcript already holds (the task tree and the
+hand-back paths key on it); fix it, or delete this half if it does not.
+(b) The ⚑ refusal flag and ⟲ rewind read a reply's opening from the transcript
+(`engine/rewind.reply_opening`); a branch records only its immediate fork point
+(`parent: {slug, turn}`), so in a branch of a branch a reply inherited from before the
+grandparent's fork can be misread. Record the whole lineage in the branch header and read it there.
+
+**First increment.** (b), red-first with a two-level branch.
+
+---
+
+## Every git write goes through libgit (C1.10)
+
+**Problem.** `library_docs`, `utils_lib` and `workflows.library` each wrap `git commit` themselves
+(~20 call sites, e.g. `engine/authoring.py`). CLAUDE.md's rule: a git call goes through
+`libgit.git` / `libgit.commit` — SIGTERM-first, lock-aware, a failure filed.
+
+**First increment.** Replace the wrapper with the most call sites by `libgit.commit(…,
+routines_home=…)`, keeping each message, with its tests.
+
+---
+
+## Files over the size bar (≤ ~350 lines)
+
+`engine/loop.py` (413), `engine/inbox.py` (391), `engine/window.py` (380), `static/util.js` (381).
+Split along responsibilities they already have — inbox's filing vs draining, util.js's formatting
+vs DOM helpers, window's eviction warning, loop's observe/turn-record helpers.
+
+**First increment.** `engine/inbox.py`, the most imported.
+
+---
+
+## Read models: the util-stats snapshot once in the daemon; an incremental search index (R1.3, R1.6)
+
+(a) `engine/runtime.py` writes the util-stats snapshot from EVERY engine at run end; compute it once
+in the daemon, in a thread like the limits refresh, on `run_*` events (debounced).
+(b) The search index is rebuilt whole; index a run's transcript when it finishes and drop what
+retention prunes.
+
+**First increment.** (a).
+
+---
+
+## Console: engine timeouts served not copied; the finish line's "today"; the digest's rule_confirm
+
+(a) `static/components/actiontime.js` copies the engine's action timeouts (and `wait`'s 600): serve
+them in `/api/status`, built from the engine's constants (name the `wait` one), and read them there.
+(b) `finish-line.js` computes "today" on the viewer's clock: `api_finishline.payload` returns the
+scheduler's local day and the client uses it — a date outcome near midnight otherwise reads
+differently from another zone.
+(c) `settings-digest.js` never names `rule_confirm`, so an override on it shows no difference.
+
+**First increment.** (b) — a wrong date is a wrong judgement — with red-first UI tests.
+
+---
+
+## Console: a Content-Security-Policy (S4)
+
+**Problem.** The console sends no CSP. Verified in the review: a blob iframe INHERITS the console's
+policy, so a strict `script-src` would break every HTML artifact's inline scripts (they open
+sandboxed through `components/blobtab.js`); `index.html` has one inline theme script; `el()` sets
+`style=` everywhere.
+
+**Shape.** Now: `Content-Security-Policy: object-src 'none'; frame-ancestors 'self'` — after
+checking that no artifact viewer uses `<embed>`/`<object>` (PDFs). Once artifacts are served from
+their own route: a full policy, the theme script hashed, `style-src 'unsafe-inline'`, `frame-src`
+allowing the browser-view relay.
+
+**First increment.** The narrow header as middleware, with a test.
+
+---
+
+## The refusal shortcut misses curly apostrophes
+
+`engine/refusal.REFUSAL_MARKERS` are typed with a straight apostrophe, and models often write
+`I can’t` (U+2019): the opening-sentence shortcut never matches those and leaves each to the
+classifier call. Normalise apostrophes and quotes in the opening sentence before matching.
+
+**First increment.** The normalisation, red-first with `I’m sorry, but I can’t help with that.`
+
+---
+
+## Pipeline output within the model's cap; schedule_once's dead `expires_at` (C1.1, T3.5)
+
+(a) `workflows/pipeline.py` asks for `MAIN_MAX_TOKENS` / `STAGE_MAX_TOKENS` = 16 000 whatever the
+model; one whose window-derived output cap (`endpoints/limits._output_cap`) is smaller is asked for
+more than it can return. Request the smaller of the two.
+(b) `schedule_once.arm(expires_at=…)` is set only by a test and exposed nowhere: delete the
+parameter and its field (the dead-code rule; exposing it in the console was the alternative the
+review weighed and did not recommend).
+
+**First increment.** (a), red-first with a model whose discovered output cap is 8 192.
+
+---
+
+## Deploy leftovers (SD2.5–6) and a pinned claude CLI
+
+- `deploy/` chrome entrypoint: supervise Xvfb and Chrome with `wait -n`, so one dying ends the
+  container (and `restart:` brings both back) instead of leaving half a sidecar.
+- `deploy/setup-remote-agent-user`: add the `render` group for GPU access.
+- `deploy/install.sh`: set `UV_PROJECT_ENVIRONMENT` explicitly (verify what the host install expects).
+- `deploy/backup.sh`: identify the share with `findmnt -T` beside the device check.
+- `Dockerfile`: pin the `@anthropic-ai/claude-code` version (hadolint DL3016), bumped deliberately
+  like uv — today it is whatever is newest at build time.
+
+**First increment.** The chrome entrypoint's supervision.
+
+---
+
+## CLAUDE.md gaps the review found
+
+- A blob URL carries the console's ORIGIN: a new tab opens only through `components/blobtab.js`
+  (`newTabHref`) — the rule behind 0.371.0's token-theft fix, nowhere in CLAUDE.md.
+- `tests/test_stylesheet_tokens.py` pins the palette tokens — name it beside the design-system
+  paragraph and the global-chrome gotcha.
+- Deploy: `~/.credentials` is optional (bundle and backup tolerate its absence);
+  `tests/test_deploy_state.py` pins compose against `deploy/state-paths.sh`.
+
+**First increment.** All three in one commit.
+
+---
+
+## After 0.372.0 reaches the instance (self-audit housekeeping)
+
+- Tell `doppelcheck-maintainer` and `steward-hub-maintainer` (an addressed `report` each) that
+  their notes about Node are stale — doppelcheck's memory names `/usr/bin/node v20.20.2` and a
+  `/tmp` Node 22 workaround, steward-hub's state `/usr/bin/node`; the image now runs Node 24 LTS at
+  `/usr/local/bin`.
+- Delete `~/routines/.permissions-adopted.json`: its writer (`bootstrap.adopt_permissions`) is gone.
+- Read `.control/migrations/seed-utils.json` and `.control/migrations/enabled.json`: anything they
+  left as it was is named there. (The live library's `git`, `remote`, `pytest-run`,
+  `reminder-census` and `vision` were brought current by hand on 2026-10-01, library commit
+  7d06482, so seed-utils should report them "already current".)
+- Once library-sync has exported after the operator rotated the routine token, confirm the library
+  repo's `config/config.yaml` reads `routine_token: REDACTED`.
+
+**First increment.** The two reports.
+
+---
+
+## Decide: the settings-pattern recommender's fallback (C1.2)
+
+`patterns/recommend.choose` falls back to the alphabetically FIRST pattern when none matches the
+routine's workflow — an arbitrary pick presented as a recommendation. Options: (a) fall back to
+`one-job`, the neutral pattern; (b) recommend no pattern and say none fits; (c) keep.
+**Review's recommendation: (a).**
+
+**First increment.** The decision; then the chosen fallback with a red-first test.
+
+---
+
+## Decide: the reminder layer and run history for NEW conversations
+
+New conversations start at `reminders: none` and `runs: none`, while routines default to `local`
+and `last` (`DEFAULT_CAPABILITIES`, every settings pattern) — and CLAUDE.md's reason for that
+default ("a layer nobody switches on never learns anything") holds for conversations too, though a
+hold costs a turn in a live chat. Options: (a) conversations default like routines; (b) keep both
+off; (c) reminders `local`, runs `none`. **Review's recommendation: (a).**
+
+**First increment.** The decision; then the composer's default with tests.
+
+---
+
+## Decide: does the browser dock give the screen's one seat back?
+
+Once connected (on first open, 0.372.0), the dock keeps the screen's one viewer seat while folded
+and while hidden on `#/browser` — the full-screen page that needs that seat to be interactive.
+Options: (a) release on fold and on `#/browser`, reconnecting on show; (b) release on `#/browser`
+only; (c) keep. **Review's recommendation: (b) at least.** Check first whether `#/browser` is
+refused a seat while the dock holds it — if so that half is a defect, fixed without asking.
+
+**First increment.** That check; then the decision.
+
+---
+
+## Decide: dependencies and the base image's Debian release
+
+- `psutil` — pid liveness with process create-time for the abort fallback (pid reuse).
+  Recommended: yes.
+- `filelock` — replace `paths.file_lock`, which raises on timeout. Recommended: evaluate for a net
+  reduction.
+- `regex` — match-time limits for reminder patterns; declined before. Recommended: no, until a
+  catastrophic pattern is seen.
+- `httpx2` — Starlette's test client deprecation (a `filterwarnings` ignore holds it today).
+  Recommended: when Starlette requires it.
+- Debian trixie for the three images (bookworm is in LTS). Recommended: at the next image refresh.
+
+**First increment.** The decision; each accepted item then builds on its own.
