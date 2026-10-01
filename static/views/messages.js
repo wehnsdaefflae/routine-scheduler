@@ -19,7 +19,7 @@ import { api } from "/static/api.js";
 import { clampedBody, md, summaryLine } from "/static/md.js";
 import { setQuery } from "/static/router.js";
 import { itemCard } from "/static/components/itemcard.js";
-import { focusRef, linkifyRefs } from "/static/components/reflinks.js";
+import { focusRef, linkifyRefs, refHref } from "/static/components/reflinks.js";
 import { chip, el, emptyState, skeleton, tagChip, toast, toastError, when } from "/static/util.js";
 
 const TYPES = [["summary", "summaries"], ["finding", "findings"], ["decision", "decisions"],
@@ -122,7 +122,7 @@ export async function render(view, query = {}) {
       orphanGroup("deferred, then lost — a carrier item closed without delivering these",
         deferrals, (o) => el("div", { class: "card mt" },
           el("div", {}, el("strong", {}, o.source_ids.join(", ")),
-            " was deferred into ", el("a", { href: `#/messages?focus=${o.carrier}` }, o.carrier),
+            " was deferred into ", el("a", { href: refHref(o.carrier) }, o.carrier),
             `, which closed ${o.carrier_status} without naming it.`),
           el("div", { class: "faint small mt" }, o.promise))),
       orphanGroup("addressed, never delivered — the target has no message for these and never will",

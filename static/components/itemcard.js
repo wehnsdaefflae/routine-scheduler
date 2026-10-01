@@ -10,6 +10,7 @@
 
 import { md, mdInline } from "/static/md.js";
 import { chip, el, when } from "/static/util.js";
+import { refHref } from "/static/components/reflinks.js";
 
 const STATUS_TONE = {
   open: "waiting_user", in_progress: "partial", addressed: "ok",
@@ -136,7 +137,7 @@ function refsLine(item) {
   if (!(item.refs || []).length) return null;
   return el("div", { class: "row mt", style: "gap:6px" },
     el("span", { class: "faint small" }, "refers to"),
-    ...item.refs.map((r) => el("a", { class: "ref-link", href: `#/messages?focus=${r}` }, r)));
+    ...item.refs.map((r) => el("a", { class: "ref-link", href: refHref(r) }, r)));
 }
 
 // `queued` is this finding's not-yet-consumed comment (if any): it persists in the box across
