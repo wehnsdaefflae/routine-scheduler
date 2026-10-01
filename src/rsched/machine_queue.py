@@ -94,22 +94,31 @@ def save(routines_home: Path, machine: str, tickets: list[dict], *, error: str =
 
 
 def load(routines_home: Path, machine: str) -> dict:
-    """`{machine, fetched, tickets, error, stale}` — the mirror as a reader sees it."""
+    """`{machine, fetched, tickets, error, stale}` — the mirror as a reader sees it.
+
+    A mirror whose `tickets` is not a list read nothing from the box, so it is STALE, never an
+    empty queue: defaulting it to `[]` told a run the machine was FREE.
+    """
     doc = read_json(mirror_path(routines_home, machine))
     if not isinstance(doc, dict):
         return {"machine": machine, "fetched": "", "tickets": [], "error": "", "stale": True}
-    doc.setdefault("tickets", [])
+    tickets = doc.get("tickets")
+    doc["tickets"] = [t for t in tickets if isinstance(t, dict)] if isinstance(tickets, list) \
+        else []
     doc.setdefault("error", "")
-    doc["stale"] = _stale(str(doc.get("fetched") or ""))
+    doc["stale"] = not isinstance(tickets, list) or _stale(str(doc.get("fetched") or ""))
     return doc
 
 
 def _stale(fetched: str, max_age_s: float = STALE_AFTER_S) -> bool:
+    """No readable, AWARE `fetched` stamp is no evidence of freshness — a naive one (TypeError
+    against an aware now) is as unreadable as a malformed one.
+    """
     if not fetched:
         return True
     try:
         age = (datetime.now(UTC) - datetime.fromisoformat(fetched)).total_seconds()
-    except ValueError:
+    except (TypeError, ValueError):
         return True
     return age > max_age_s
 

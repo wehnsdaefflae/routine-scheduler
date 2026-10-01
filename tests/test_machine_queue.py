@@ -93,6 +93,33 @@ def test_an_unreachable_machine_reads_as_unknown_never_as_free(tmp_path):
     assert "FREE" not in note
 
 
+def test_a_mirror_without_a_readable_queue_is_unknown_never_free(tmp_path):
+    """The mirror is derived state anyone may delete or mangle. A fresh stamp over a missing or
+    non-list `tickets` used to default to an EMPTY queue — "COMPUTE FREE", the one answer this
+    module promises an unreadable box never gets."""
+    import json
+    path = mq.mirror_path(tmp_path, "predator")
+    fresh = datetime.now(UTC).isoformat()
+    for doc in ({"machine": "predator", "fetched": fresh, "error": ""},
+                {"machine": "predator", "fetched": fresh, "error": "", "tickets": {"j": 1}}):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(doc), encoding="utf-8")
+        note = mq.capability_note(tmp_path, "predator", "funscript")
+        assert "COMPUTE QUEUE UNKNOWN" in note and "FREE" not in note
+
+
+def test_a_naive_fetched_stamp_is_stale_not_a_crash(tmp_path):
+    """capability_note runs while a bound routine's prompt is composed; a naive stamp minus an
+    aware now raised TypeError out of it."""
+    import json
+    path = mq.mirror_path(tmp_path, "predator")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"machine": "predator", "fetched": "2026-09-30T10:00:00",
+                                "tickets": [], "error": ""}), encoding="utf-8")
+    assert mq.load(tmp_path, "predator")["stale"] is True
+    assert "COMPUTE QUEUE UNKNOWN" in mq.capability_note(tmp_path, "predator", "funscript")
+
+
 def test_a_stale_mirror_also_reads_as_unknown(tmp_path):
     note = mq.capability_note(tmp_path, "never-seen", "funscript")
     assert "COMPUTE QUEUE UNKNOWN" in note and "FREE" not in note
