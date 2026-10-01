@@ -156,9 +156,11 @@ def normalize_action(obj: dict) -> dict:
     validator sees the model's intent, not the grammar's debris.
     """
     # weak models sometimes wrap the action in a generic tool-call envelope — unwrap it
+    if "kind" not in obj and isinstance(obj.get("action"), dict):   # {"action": {...}}
+        obj = obj["action"]
+    # …and only an object STILL without a kind is a tool-call envelope: reading an unwrapped
+    # action's own `name` as the tool turned `util name=report` into a `report` action
     if "kind" not in obj:
-        if isinstance(obj.get("action"), dict):        # {"action": {...}}
-            obj = obj["action"]
         inner = (obj.get("parameters") or obj.get("arguments")
                  or obj.get("tool_input") or obj.get("input"))
         tool = obj.get("tool_name") or obj.get("tool") or obj.get("name")

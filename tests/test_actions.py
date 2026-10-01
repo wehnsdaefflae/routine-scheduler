@@ -205,6 +205,14 @@ def test_normalize_action_strips_grammar_padding():
     # tool-call envelope unwraps to a flat action
     wrapped = normalize_action({"tool_name": "util", "parameters": {"say": "s", "name": "list"}})
     assert wrapped["kind"] == "util" and wrapped["name"] == "list"
+    # an {"action": …} wrapper around a COMPLETE action is just unwrapped: its own `name` is
+    # not a tool name, so a util called like a kind stays a util call
+    boxed = normalize_action({"action": {"say": "s", "kind": "util", "name": "report",
+                                         "args": ["--week"]}})
+    assert boxed == {"say": "s", "kind": "util", "name": "report", "args": ["--week"]}
+    # …while a wrapper whose inner object has no kind is still read as an envelope
+    assert normalize_action({"action": {"name": "finish", "say": "s", "status": "ok",
+                                        "summary": "x"}})["kind"] == "finish"
 
 
 def test_every_kind_has_a_valid_example():
