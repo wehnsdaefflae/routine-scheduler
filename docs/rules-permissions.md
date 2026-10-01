@@ -347,13 +347,16 @@ features, UI, efficiency — plus a fresh-eyes de-clutter pass on each, itself i
 ### Which rules bind a routine (the SET)
 
 `routine.yaml` `rules:` IS the state; nothing derives a copy of it — the state digest reads
-it at every boot. The **user** binds or unbinds at any time from the routine page's *General rules* panel or the
-conversation header (`POST /routines/{slug}/rules`, `POST /conversations/{slug}/rules` — one
-shared implementation). Nothing is copied anywhere: binding records a slug.
+it at every boot. The **user** binds or unbinds from the conversation header, or through
+`POST /routines/{slug}/rules` / `POST /conversations/{slug}/rules` (one shared implementation,
+`api_routine_edit.apply_rule_edit`). Nothing is copied anywhere: binding records a slug. The
+routine page's *General rules* panel edits the same list as part of that page's ONE accept
+(0.369.0) — which, like every multi-field routine config edit, waits for an active run to end
+(409) and so lands at the next run.
 
-Unlike other routine file edits this is **not** 409-guarded during a run — no run writes
-routine.yaml, so the web layer is the only writer and no race exists. A newly bound rule even
-reaches a run already in flight: the composed prompt is immutable (caching contract), so
+Through the rules endpoint the edit is **not** 409-guarded during a run — no run writes
+routine.yaml, so the web layer is the only writer and no race exists — and a newly bound rule
+even reaches a run already in flight: the composed prompt is immutable (caching contract), so
 `control.json` `add_rules` makes the engine append the prose (read from the library) as an
 engine note at the next turn boundary. Unbinding reaches a live run the same way
 (`drop_rules`): the prose already in its context cannot be unsaid, but its authority can — an

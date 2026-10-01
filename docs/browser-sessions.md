@@ -99,7 +99,11 @@ The **Browser** tab (`#/browser`) is the screen, full height and interactive —
 what signing a session in needs. The right rail carries the same screen as a permanent
 READ-ONLY preview on every page (`components/browserdock.js`, `pointer-events: none`), so an
 unattended run can be watched without steering it; it rests open only at ≥1900px, where the
-reading column leaves a margin, and starts collapsed below that.
+reading column leaves a margin, and starts collapsed below that. It connects to the screen the
+first time it is both open and visible — at load only where it rests open, otherwise on the
+first "show" — because the screen admits one viewer at a time and a folded preview held that
+seat on every page load. Once connected it keeps the seat while folded or hidden on
+`#/browser`; whether to release it then is an open decision (docs/designs.md).
 
 Both load through the console's OWN origin — `/browser-view/…`, relayed by
 `web/api_browser_view.py` to the sidecar's websockify — never from the configured address

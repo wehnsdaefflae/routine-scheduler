@@ -936,9 +936,11 @@ every copy it left (`migrate_seed_utils` carries this release's four util fixes)
   recommender's job (`patterns/recommend.py`, *Recommend for this routine* on the routine page),
   once there is a recipe to judge — and it proposes rather than flips: its answer is a set of
   pending changes, each with its reason, that the user keeps or drops before one accept (D108). The set is changed afterwards ONLY by the user (`rules.py`, `POST /{routines,conversations}/{slug}/rules` — one
-  shared impl): the config list is the state, the tail is DERIVED and rebuilt from it. Deliberately
-  not 409-guarded — no run writes routine.yaml, so the web layer is the sole writer; a newly bound
-  rule even reaches a LIVE run via control.json `add_rules` → `engine/switches.apply_rule_additions` (an
+  shared impl, which the conversation header uses; the routine page's rules panel rides that page's
+  one accept instead, which waits for an active run like every routine config edit): the config
+  list is the state, the tail is DERIVED and rebuilt from it. The rules endpoint is deliberately
+  not 409-guarded — no run writes routine.yaml, so the web layer is the sole writer; through it a
+  newly bound rule even reaches a LIVE run via control.json `add_rules` → `engine/switches.apply_rule_additions` (an
   engine note read from the library, since the prompt is immutable), and an unbind does too, via
   `drop_rules` → `engine/switches.apply_rule_drop` (a note that the rule no longer binds; its
   assists stop with it).
@@ -1058,7 +1060,8 @@ every copy it left (`migrate_seed_utils` carries this release's four util fixes)
   (delete/gzip old run dirs), detached-task delivery (artifacts + `state/background.json` on the
   owner), and the `.control/` spools/ledgers. The **web layer** edits routine config only when no
   run is active (409 otherwise) — deliberate live-edit exceptions: conversation settings and rule
-  bind/unbind (control.json `add_rules` / `drop_rules` tell the live run); web-side routine-dir commits take the
+  bind/unbind through the rules endpoint (control.json `add_rules` / `drop_rules` tell the live
+  run; the conversation header uses it, the routine page's one accept does not); web-side routine-dir commits take the
   engine's per-repo commit lock.
 - The daemon (`scheduler.py` + `runner.py`) fires cron through **`rsched/firetimes.py`** — croniter
   underneath, and the ONE place a fire instant is computed: the fire table, both catch-up paths and

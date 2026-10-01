@@ -8,8 +8,8 @@ owned by its routine — implicitly exposed to its runs, invisible to every othe
 shadowing a central value of the same name for that routine only.
 
 Because ownership IS the grant, there is no `secret:<NAME>` decision here and the exposure
-gate skips these names entirely (engine/interact.py). The declared-only invariant still
-holds: a util receives the var only if its `secrets:` header declares it.
+gate skips these names entirely (`engine/secretgate._own_secrets`). The declared-only invariant
+still holds: a util receives the var only if its `secrets:` header declares it.
 
 Values are write-only, exactly like the central store: this API returns NAMES — and those to
 the operator alone. The routine token rides into every util that declares RSCHED_API_TOKEN, so
