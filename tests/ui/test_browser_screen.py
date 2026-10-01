@@ -189,6 +189,85 @@ def test_the_preview_rests_collapsed_where_it_would_lie_on_the_content(ui, ui_pa
     expect(dock).to_have_class(re.compile(r"\bbd-collapsed\b"))
 
 
+def _screen_dials(page) -> list[str]:
+    """Every socket the page opens to the relayed screen, as it opens — the dock's probe dials
+    it first and only a reachable screen gets a frame, so the probe IS the connection attempt."""
+    sockets: list[str] = []
+    page.on("websocket",
+            lambda ws: sockets.append(ws.url) if "/browser-view/websockify" in ws.url else None)
+    return sockets
+
+
+def test_a_folded_dock_does_not_take_the_screen_until_it_is_opened(ui, ui_page):
+    """The screen admits ONE viewer at a time, and the dock used to dial it at every console
+    load whether or not it was open — so a laptop console nobody had opened the preview on held
+    the seat (operator: "connect only when you first open it"). Below 1900px the dock rests
+    folded: nothing may dial the screen until the first click opens it, and a second open
+    reuses what the first one found instead of dialling again."""
+    ui.server_cfg.browser_view_url = DEAD_SCREEN
+    ui_page.set_viewport_size({"width": 1440, "height": 900})
+    sockets = _screen_dials(ui_page)
+    ui_page.goto(f"{ui.url}/#/routines")
+    dock = ui_page.locator("#browser-dock")
+    expect(dock.get_by_role("button", name="show")).to_be_visible()
+    ui_page.wait_for_timeout(800)            # the old dock dialled within a tick of painting
+    assert sockets == [], f"a folded dock dialled the screen: {sockets}"
+    expect(dock.locator(".bd-note")).to_have_count(0)
+
+    dock.get_by_role("button", name="show").click()
+    expect(dock.locator(".bd-note")).to_contain_text("screen unreachable")
+    assert len(sockets) == 1, sockets
+
+    dock.get_by_role("button", name="hide").click()
+    dock.get_by_role("button", name="show").click()
+    expect(dock.locator(".bd-note")).to_contain_text("screen unreachable")
+    ui_page.wait_for_timeout(400)
+    assert len(sockets) == 1, f"re-opening dialled the screen again: {sockets}"
+
+
+def test_a_dock_resting_open_connects_at_load_and_a_folded_one_waits(ui, ui_page):
+    """Where the dock RESTS open (≥1900px, the remembered choice) it is on screen from the
+    first paint, so it connects at load. Folded there by choice, it waits for the click like a
+    narrow console's."""
+    ui.server_cfg.browser_view_url = DEAD_SCREEN
+    ui_page.set_viewport_size({"width": 1960, "height": 950})
+    sockets = _screen_dials(ui_page)
+    ui_page.goto(f"{ui.url}/#/routines")
+    dock = ui_page.locator("#browser-dock")
+    expect(dock.locator(".bd-note")).to_contain_text("screen unreachable")
+    assert len(sockets) == 1, sockets
+
+    dock.get_by_role("button", name="hide").click()
+    ui_page.reload()
+    expect(dock.get_by_role("button", name="show")).to_be_visible()
+    ui_page.wait_for_timeout(800)
+    assert len(sockets) == 1, f"a dock folded by choice dialled the screen at load: {sockets}"
+    dock.get_by_role("button", name="show").click()
+    expect(dock.locator(".bd-note")).to_contain_text("screen unreachable")
+    assert len(sockets) == 2, sockets
+
+
+def test_the_dock_does_not_dial_the_screen_from_under_the_full_page(ui, ui_page):
+    """#/browser IS the screen, and the dock hides there. Opening the console straight onto it
+    with the dock resting open must not spend the one seat on a preview nobody can see — the
+    full page's own frame is the viewer. Leaving the page shows the dock, which connects then."""
+    ui.server_cfg.browser_view_url = DEAD_SCREEN
+    ui_page.set_viewport_size({"width": 1960, "height": 950})
+    # the full page's frame never dials here: its noVNC document 502s against the dead upstream
+    sockets = _screen_dials(ui_page)
+    ui_page.goto(f"{ui.url}/#/browser")
+    expect(ui_page.locator("iframe.browser-screen")).to_have_count(1)
+    dock = ui_page.locator("#browser-dock")
+    expect(dock.locator(".bd-head")).to_have_count(1)        # mounted, and hidden on this page
+    expect(dock).to_be_hidden()
+    ui_page.wait_for_timeout(800)
+    assert sockets == [], f"the hidden dock dialled the screen: {sockets}"
+
+    ui_page.evaluate("() => { location.hash = '#/routines'; }")
+    expect(dock.locator(".bd-note")).to_contain_text("screen unreachable")
+    assert len(sockets) == 1, sockets
+
+
 def test_an_unreachable_screen_is_a_note_not_a_red_vnc_frame(ui, ui_page):
     """noVNC's document, its assets and its chrome all LOAD when the screen behind the relay is
     down — and the relay ACCEPTS the socket before it dials websockify, so even the handshake
