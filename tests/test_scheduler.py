@@ -813,10 +813,9 @@ def test_a_clean_drain_does_not_leave_its_mark_for_the_next_crash(make_routine, 
 
 
 def test_the_mark_survives_a_reap_pass_that_found_nothing(make_routine, tmp_path):
-    """Expiry belongs to the BOOT, not to a reap pass, and that distinction is load-bearing:
-    the boot reaps routines, then conversations, then background tasks against the one
-    breadcrumb. Consuming it in the first pass would leave a conversation orphaned by the very
-    same restart reading `unknown`."""
+    """Expiry belongs to the BOOT, not to a reap pass, and that distinction is load-bearing: a
+    pass that finds nothing dead must leave the breadcrumb for the pass that does, or a run
+    orphaned by the very same restart reads `unknown`."""
     server = _server(tmp_path)
     d = make_routine(slug="orphan-later")
     run_dir = d / "runs" / "20260701-070000"
@@ -861,6 +860,55 @@ async def test_the_boot_expires_the_mark_even_with_nothing_to_reap(make_routine,
     await asyncio.sleep(0.1)
     task.cancel()
     assert not restart.shutdown_mark_path(server).exists()
+
+
+async def test_a_failing_boot_reap_does_not_stop_the_scheduler(make_routine, tmp_path,
+                                                                monkeypatch):
+    """The boot reap writes a close-out into every orphan, and a full disk at boot — exactly
+    when a crash leaves orphans behind — made that raise out of run_forever before the loop
+    existed: the console kept serving while nothing ever fired again, the failure
+    `_log_loop_failure` exists for, one step earlier in the boot."""
+    make_routine(slug="ticker")
+    monkeypatch.setattr(sched_mod, "TICK_S", 0.02)
+
+    def full_disk(runner, catalog):
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(runner_reap, "recover_orphans", full_disk)
+    server = _server(tmp_path)
+    fr = FakeRunner()
+    sched = Scheduler(server, fr, EventBus())
+    task = asyncio.create_task(sched.run_forever())
+    await asyncio.sleep(0.05)
+    sched.next_fires["ticker"] = datetime.now(UTC) - timedelta(seconds=1)
+    assert await _wait_for(lambda: ("ticker", "schedule") in fr.fired)
+    task.cancel()
+    lines = (server.routines_home / ".control" / "health-events.jsonl").read_text().splitlines()
+    assert any(json.loads(ln)["event"] == "scheduler_tick_error"
+               and "orphan" in json.loads(ln)["detail"] for ln in lines)
+
+
+def test_one_orphan_that_cannot_be_closed_does_not_strand_the_rest(make_routine, tmp_path,
+                                                                   monkeypatch):
+    """Each orphan is closed out on its own: one run dir that refuses the write is logged and
+    left for the next boot, and every other orphan is still closed."""
+    server = _server(tmp_path)
+    for slug in ("a-stuck", "b-other"):
+        run_dir = make_routine(slug=slug) / "runs" / "20260701-070000"
+        run_dir.mkdir(parents=True)
+        atomic_write_json(run_dir / "status.json", {"run_id": f"{slug}:20260701-070000",
+                                                    "state": "running", "pid": 999999})
+    real = runner_reap.close_out
+
+    def refuses_one(runner, run_dir, run_id, message, **kw):
+        if run_id.startswith("a-stuck:"):
+            raise OSError(13, "Permission denied")
+        return real(runner, run_dir, run_id, message, **kw)
+
+    monkeypatch.setattr(runner_reap, "close_out", refuses_one)
+    assert runner_reap.recover_orphans(Runner(server, EventBus()), scan(server)) == 1
+    other = server.routines_home / "b-other" / "runs" / "20260701-070000"
+    assert read_run(other, "b-other").state == "aborted"
 
 
 async def test_retention_runs_off_the_event_loop(tmp_path, monkeypatch):

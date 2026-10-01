@@ -332,8 +332,8 @@ def recover_orphans(runner, catalog: dict[str, registry.RoutineInfo]) -> int:
     #
     # Lazy READING is not lazy EXPIRY, and conflating the two was a defect: a boot that
     # orphaned nothing never consumed the mark, so it sat there for the next crash to inherit.
-    # `Scheduler.run_forever` expires it once, after all three reap passes have had their
-    # chance to read it (restart.clear_shutdown_mark).
+    # `Scheduler.run_forever` expires it once, after its one reap pass over all three homes
+    # has had the chance to read it (restart.clear_shutdown_mark).
     cause: str | None = None
     why = ""
 
@@ -356,9 +356,15 @@ def recover_orphans(runner, catalog: dict[str, registry.RoutineInfo]) -> int:
                 _resolve()
                 # ABORTED, not failed (R1512/R1514): the daemon stopped this run by
                 # restarting, so a `failed` here is a failure the routine never had.
-                close_out(runner, r.dir, r.run_id,
-                          f"orphaned: process gone at daemon boot — {why}",
-                          status="aborted", cause=cause)
+                # Each orphan on its own: one run dir that refuses the write stays open for
+                # the next boot instead of stranding every orphan after it.
+                try:
+                    close_out(runner, r.dir, r.run_id,
+                              f"orphaned: process gone at daemon boot — {why}",
+                              status="aborted", cause=cause)
+                except OSError as exc:
+                    log.warning("orphan %s could not be closed out: %s", r.run_id, exc)
+                    continue
                 fixed += 1
                 log.warning("orphan closed: %s (cause=%s)", r.run_id, cause)
     return fixed
