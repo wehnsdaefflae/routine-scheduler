@@ -3,7 +3,7 @@
 // promise so settings.js can await all sections before the anchor jump.
 
 import { api } from "/static/api.js";
-import { el, toast, toastError, when } from "/static/util.js";
+import { act, el, toast, toastError, when } from "/static/util.js";
 import { panelSection } from "/static/views/settings-common.js";
 
 export function renderServerConfig(view) {
@@ -21,15 +21,13 @@ export function renderServerConfig(view) {
     const vncIn = el("input", { type: "text", value: c.browser_view_url || "",
       placeholder: "http://host:6080/vnc.html", style: "width:100%;max-width:420px" });
     const save = el("button", { class: "btn small primary" }, "save server settings");
-    save.onclick = async () => {
-      try {
-        const r = await api("/api/settings/server", { method: "PUT", body: {
-          sandbox: sandboxSel.value, max_concurrent_runs: Number(concIn.value),
-          registry_rescan_s: Number(rescanIn.value), github_client_id: ghIn.value.trim(),
-          browser_view_url: vncIn.value.trim() } });
-        toast(r.restart_for?.length ? "server settings saved — restart to resize concurrency" : "server settings saved");
-      } catch (err) { toastError(err, 5000); }
-    };
+    save.onclick = () => act(save, async () => {
+      const r = await api("/api/settings/server", { method: "PUT", body: {
+        sandbox: sandboxSel.value, max_concurrent_runs: Number(concIn.value),
+        registry_rescan_s: Number(rescanIn.value), github_client_id: ghIn.value.trim(),
+        browser_view_url: vncIn.value.trim() } });
+      toast(r.restart_for?.length ? "server settings saved — restart to resize concurrency" : "server settings saved");
+    });
     srvCfgBox.replaceChildren(
       el("div", { class: "muted small", style: "margin-bottom:8px" },
         "Runtime knobs in config.yaml. The sandbox mode applies to the next util call and the ",
@@ -133,10 +131,8 @@ export function renderServer(view) {
         watch(s.started);
       } catch (err) { toastError(err, 5000); }
     };
-    withdraw.onclick = async () => {
-      try { await api("/api/settings/restart", { method: "DELETE" }); toast("restart request withdrawn"); }
-      catch (err) { toastError(err); }
-    };
+    withdraw.onclick = () => act(withdraw, () => api("/api/settings/restart", { method: "DELETE" }),
+                                 "restart request withdrawn");
 
     srvBox.append(
       el("div", { class: "row", style: "margin:6px 0" },

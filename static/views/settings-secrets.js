@@ -4,7 +4,7 @@
 
 import { api } from "/static/api.js";
 import { confirmDialog } from "/static/components/dialog.js";
-import { el, toast, toastError } from "/static/util.js";
+import { act, el, toast } from "/static/util.js";
 import { panelSection } from "/static/views/settings-common.js";
 
 export function renderSecrets(view) {
@@ -27,11 +27,11 @@ export function renderSecrets(view) {
       style: "flex:1;resize:vertical;-webkit-text-security:disc" });
     const delBtn = (k) => {
       const b = el("button", { class: "btn small danger" }, "delete");
-      b.onclick = async () => {
+      b.onclick = () => act(b, async () => {
         if (!(await confirmDialog(`Delete secret ${k}?`, { confirmLabel: "delete" }))) return;
-        try { await api(`/api/settings/secrets/${encodeURIComponent(k)}`, { method: "DELETE" }); reload(); }
-        catch (err) { toastError(err); }
-      };
+        await api(`/api/settings/secrets/${encodeURIComponent(k)}`, { method: "DELETE" });
+        reload();
+      });
       return b;
     };
 
@@ -93,14 +93,12 @@ export function renderSecrets(view) {
       secBox.append(el("div", { class: "muted mt small" }, "no secrets set yet"));
 
     const save = el("button", { class: "btn small primary" }, "set");
-    save.onclick = async () => {
+    save.onclick = () => act(save, async () => {
       const key = keyIn.value.trim();
       if (!key || !valIn.value) { toast("enter a KEY and a value"); return; }
-      try {
-        await api("/api/settings/secrets", { method: "PUT", body: { key, value: valIn.value } });
-        toast(`${key} saved`); keyIn.value = ""; valIn.value = ""; reload();
-      } catch (err) { toastError(err, 5000); }
-    };
+      await api("/api/settings/secrets", { method: "PUT", body: { key, value: valIn.value } });
+      toast(`${key} saved`); keyIn.value = ""; valIn.value = ""; reload();
+    });
     // show/hide the value while typing — a JSON map is unreadable when masked
     let valMasked = true;
     const showVal = el("button", { class: "btn small", type: "button" }, "show");
@@ -121,11 +119,11 @@ export function renderSecrets(view) {
       for (const k of mapKeys) {
         const chips = maps[k].map((name) => {
           const x = el("button", { class: "btn small danger", title: `delete ${name}` }, `${name} ✕`);
-          x.onclick = async () => {
+          x.onclick = () => act(x, async () => {
             if (!(await confirmDialog(`Delete entry “${name}” from ${k}?`, { confirmLabel: "delete" }))) return;
-            try { await api(`/api/settings/secrets/${encodeURIComponent(k)}/entry/${encodeURIComponent(name)}`, { method: "DELETE" }); reload(); }
-            catch (err) { toastError(err); }
-          };
+            await api(`/api/settings/secrets/${encodeURIComponent(k)}/entry/${encodeURIComponent(name)}`, { method: "DELETE" });
+            reload();
+          });
           return x;
         });
         secBox.append(el("div", { class: "row", style: "margin:4px 0;flex-wrap:wrap", "data-map": k },
@@ -139,7 +137,7 @@ export function renderSecrets(view) {
     // an entry IS credentials (a password in plain JSON), so it is never kept as a draft either
     const mVal = el("textarea", { placeholder: '{"host": "…", "user": "…", "pass": "…"}', rows: "3", class: "tight", style: "width:100%", "data-map-entry": "value", "data-nopersist": true });
     const mSave = el("button", { class: "btn small primary" }, "add / replace entry");
-    mSave.onclick = async () => {
+    mSave.onclick = () => act(mSave, async () => {
       const key = mKey.value.trim(), name = mName.value.trim();
       if (!key || !name) { toast("enter a secret and an entry name"); return; }
       let value;
@@ -148,11 +146,9 @@ export function renderSecrets(view) {
       if (typeof value !== "object" || value === null || Array.isArray(value)) {
         toast('the entry value must be a JSON object, e.g. {"host": …}', 4000, { error: true }); return;
       }
-      try {
-        await api(`/api/settings/secrets/${encodeURIComponent(key)}/entry`, { method: "PUT", body: { name, value } });
-        toast(`${key} · ${name} saved`); mName.value = ""; mVal.value = ""; reload();
-      } catch (err) { toastError(err, 5000); }
-    };
+      await api(`/api/settings/secrets/${encodeURIComponent(key)}/entry`, { method: "PUT", body: { name, value } });
+      toast(`${key} · ${name} saved`); mName.value = ""; mVal.value = ""; reload();
+    });
     // Behind a "+ add map entry" disclosure, the shape the endpoint and model sections already
     // use for their own add forms. A screen of inputs open at rest is a screen the reader pays
     // for on every visit to Settings, and this form is used once per credential.

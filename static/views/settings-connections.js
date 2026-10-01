@@ -4,7 +4,7 @@
 
 import { api } from "/static/api.js";
 import { confirmDialog } from "/static/components/dialog.js";
-import { el, toast, toastError } from "/static/util.js";
+import { act, el, toast, toastError } from "/static/util.js";
 import { panelSection } from "/static/views/settings-common.js";
 
 export function renderConnections(view) {
@@ -16,11 +16,11 @@ export function renderConnections(view) {
 
     function disconnectBtn(provider, account) {
       const b = el("button", { class: "btn small danger" }, "disconnect");
-      b.onclick = async () => {
+      b.onclick = () => act(b, async () => {
         if (!(await confirmDialog(`Disconnect ${provider}:${account}?`, { confirmLabel: "disconnect" }))) return;
-        try { await api(`/api/settings/oauth/${provider}/${encodeURIComponent(account)}`, { method: "DELETE" }); reload(); }
-        catch (err) { toastError(err); }
-      };
+        await api(`/api/settings/oauth/${provider}/${encodeURIComponent(account)}`, { method: "DELETE" });
+        reload();
+      });
       return b;
     }
 
@@ -53,10 +53,10 @@ export function renderConnections(view) {
     const originGuess = location.origin.startsWith("https://") ? location.origin : "";
     const urlIn = el("input", { type: "text", placeholder: "https://host.ts.net", style: "flex:1", value: d.public_url || originGuess });
     const urlSave = el("button", { class: "btn small" }, "save");
-    urlSave.onclick = async () => {
-      try { await api("/api/settings/oauth/public-url", { method: "PUT", body: { public_url: urlIn.value.trim() } }); toast("public URL saved"); reload(); }
-      catch (err) { toastError(err, 5000); }
-    };
+    urlSave.onclick = () => act(urlSave, async () => {
+      await api("/api/settings/oauth/public-url", { method: "PUT", body: { public_url: urlIn.value.trim() } });
+      toast("public URL saved"); reload();
+    });
     const callbackLine = el("div", { class: "small mt" });
     if (d.public_url) {
       const cb = `${d.public_url.replace(/\/+$/, "")}/oauth/callback`;
@@ -87,7 +87,7 @@ export function renderConnections(view) {
       const acct = el("input", { type: "text", placeholder: "account label", style: "width:150px" });
       const connect = el("button", { class: "btn small primary" }, "connect");
       connect.disabled = !(p.configured && d.public_url_set);
-      connect.onclick = () => startConnect(p.id, acct.value.trim());
+      connect.onclick = () => act(connect, () => startConnect(p.id, acct.value.trim()));
       // Straight link to where you create the OAuth app for this provider (its dev console).
       const consoleLink = p.console_url
         ? el("a", { href: p.console_url, target: "_blank", rel: "noopener", class: "small",

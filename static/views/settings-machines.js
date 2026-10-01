@@ -4,8 +4,8 @@
 
 import { api } from "/static/api.js";
 import { confirmDialog } from "/static/components/dialog.js";
-import { el, toast, toastError } from "/static/util.js";
-import { panelSection } from "/static/views/settings-common.js";
+import { act, el, toast } from "/static/util.js";
+import { panelSection, savedToast } from "/static/views/settings-common.js";
 
 export function renderMachines(view) {
   // -- remote machines (SSH catalog) ----------------------------------------------
@@ -37,11 +37,12 @@ export function renderMachines(view) {
         const editBtn = el("button", { class: "btn small" }, "edit");
         editBtn.onclick = () => fillForm(m);
         const delBtn = el("button", { class: "btn small danger" }, "delete");
-        delBtn.onclick = async () => {
+        delBtn.onclick = () => act(delBtn, async () => {
           if (!(await confirmDialog(`Delete machine ${m.name}?`, { confirmLabel: "delete" }))) return;
-          try { await api(`/api/settings/machines/${encodeURIComponent(m.name)}`, { method: "DELETE" }); reload(); }
-          catch (err) { toastError(err); }
-        };
+          savedToast(await api(`/api/settings/machines/${encodeURIComponent(m.name)}`,
+                               { method: "DELETE" }), `machine ${m.name} deleted`);
+          reload();
+        });
         const flags = [
           m.has_host_key ? null : el("span", { class: "small", style: "color:var(--warn)" }, "no host key"),
           m.has_key ? null : el("span", { class: "small", style: "color:var(--warn)" },
@@ -91,7 +92,7 @@ export function renderMachines(view) {
       machBox.scrollIntoView({ behavior: "smooth", block: "end" });
     }
     const saveBtn = el("button", { class: "btn primary" }, "save machine");
-    saveBtn.onclick = async () => {
+    saveBtn.onclick = () => act(saveBtn, async () => {
       const name = nameIn.value.trim();
       if (!name || !hostIn.value.trim() || !userIn.value.trim()) { toast("name, host and user are required"); return; }
       const body = { name, host: hostIn.value.trim(), user: userIn.value.trim(),
@@ -99,16 +100,13 @@ export function renderMachines(view) {
         host_key: hkIn.value.trim(), share: shareIn.value.trim(), workdir: wdIn.value.trim(),
         description: descIn.value.trim(), exclusive: exclIn.checked,
         tags: tagsIn.value.split(",").map((t) => t.trim()).filter(Boolean) };
-      try {
-        // encoded like the test and delete calls: a raw `#` or `?` cut the path short and saved
-        // the machine under whatever came before it
-        const r = await api(`/api/settings/machines/${encodeURIComponent(name)}`, { method: "PUT", body });
-        (r.problems || []).forEach((p) => toast(p, 5000, { error: true }));
-        toast(`machine ${name} saved`);
-        [nameIn, hostIn, userIn, keyVarIn, wdIn, shareIn, descIn, tagsIn, hkIn].forEach((i) => (i.value = ""));
-        portIn.value = "22"; exclIn.checked = false; reload();
-      } catch (err) { toastError(err, 5000); }
-    };
+      // encoded like the test and delete calls: a raw `#` or `?` cut the path short and saved
+      // the machine under whatever came before it
+      savedToast(await api(`/api/settings/machines/${encodeURIComponent(name)}`, { method: "PUT", body }),
+                 `machine ${name} saved`);
+      [nameIn, hostIn, userIn, keyVarIn, wdIn, shareIn, descIn, tagsIn, hkIn].forEach((i) => (i.value = ""));
+      portIn.value = "22"; exclIn.checked = false; reload();
+    });
     // Behind a "+ add machine" disclosure, the shape the endpoint and model sections already
     // use. Eight inputs, a host-key textarea, two teaching paragraphs and a scan button stood
     // open at rest — a screen of form on every visit to Settings for something done once per
