@@ -85,8 +85,9 @@ Two consequences worth knowing:
   never fire the event. Both paths are upserts keyed on the endpoint, so they are no-ops
   when nothing drifted.
 
-A browser holding the **routine** token renders the whole console — every tab is a read —
-and fails only on the first mutation. That 403 carries `WWW-Authenticate: Bearer
+A browser holding the **routine** token renders most of the console — nearly every tab is a
+read — and fails on the first mutation, or on the first read the tier refuses (the settings
+surface, a routine's secret names, search). That 403 carries `WWW-Authenticate: Bearer
 error="insufficient_scope"`, on which `static/api.js` drops the token and re-opens the
 gate; ordinary 403s (a protected template, the credentials dir, a denied path) omit the
 marker and are left alone.

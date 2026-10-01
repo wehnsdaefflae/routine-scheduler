@@ -1262,12 +1262,16 @@ whose TEXT must change on a live instance is converted by a one-shot migration i
   HTTP flank of "config is the user's" is sealed, mutating routes are primary-only BY
   DEFAULT, and opening one to routines is an explicit allowlist edit with its reason.
   **"Read-only" is not "may read anything"**: `ROUTINE_TOKEN_DENIED_READS`
-  (`/api/fs`, `/api/debug`, `/api/settings`, `/api/search`, matched as SUBTREES) is refused to
-  the routine token with a 403 carrying `WWW-Authenticate: Bearer error="insufficient_scope"`
-  and a detail naming `read_file` as how a run reaches a file it may read. Those four hand a
-  jailed util exactly what its Landlock roots forbid — any directory listing on the host, every
-  secret NAME with the utils declaring it, the daemon's own stacks, and full-text search over
-  every routine's transcripts and notes. Cross-routine FILE reads
+  (`/api/fs`, `/api/debug`, `/api/settings`, `/api/search`, `/api/routines/*/secrets`, matched
+  as SUBTREES segment by segment, `*` standing for any one segment) is refused to the routine
+  token with a 403 carrying `WWW-Authenticate: Bearer error="insufficient_scope"` and a detail
+  naming `read_file` as how a run reaches a file it may read. Those five hand a jailed util
+  exactly what its Landlock roots forbid — any directory listing on the host, every central
+  secret NAME with the utils declaring it, every routine's OWN secret names with the store's
+  host path, the daemon's own stacks, and full-text search over every routine's transcripts and
+  notes. Every tier decision (and the SSE ticket's scope) reads the path the ROUTER dispatches
+  on (`app._route_path`), never `request.url.path`, which Starlette re-parses from the decoded
+  path so that an encoded `?` or `#` in a segment ends it early. Cross-routine FILE reads
   (`/api/routines/{slug}/file`, `/api/runs/{id}/file`) are the same class and deliberately NOT
   denied yet: one routine was granted a sibling's transcripts on purpose, and that grant has to
   be re-expressed as an fs-read root before the door closes.

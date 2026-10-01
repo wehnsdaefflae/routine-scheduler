@@ -1,7 +1,6 @@
 """Web API: auth, routine CRUD + 409 guard, runs/transcripts, questions, settings."""
 
 import json
-from types import SimpleNamespace
 
 import pytest
 import yaml
@@ -75,11 +74,9 @@ def test_routine_token_tier_reads_but_never_mutates_config(tmp_path, make_routin
             assert 'error="insufficient_scope"' in r.headers["www-authenticate"]
         # the allowlist is EMPTY — no routine-tier mutation exists, so a POST never
         # passes the tier gate on any path
-        from types import SimpleNamespace
-        fake = lambda path: SimpleNamespace(method="POST", url=SimpleNamespace(path=path))  # noqa: E731 — two probes, one shape
         assert not ROUTINE_TOKEN_MUTATIONS
-        assert not _routine_token_allowed(fake("/api/llm-tasks"))
-        assert not _routine_token_allowed(fake("/api/anything"))
+        assert not _routine_token_allowed("POST", "/api/llm-tasks")
+        assert not _routine_token_allowed("POST", "/api/anything")
         # a garbage bearer stays 401; the primary passes the sealed routes
         assert c.get("/api/routines",
                      headers={"Authorization": "Bearer nope"}).status_code == 401
@@ -120,10 +117,8 @@ def test_the_routine_token_reads_no_wider_than_the_sandbox(tmp_path, make_routin
         for path in ("/api/routines", "/api/routines/apir", "/api/items", "/api/status"):
             assert c.get(path, headers=rt).status_code == 200, path
         # subtree, never a bare prefix: a sibling route sharing the string is not swallowed
-        assert _routine_token_allowed(
-            SimpleNamespace(method="GET", url=SimpleNamespace(path="/api/fs-something")))
-        assert not _routine_token_allowed(
-            SimpleNamespace(method="GET", url=SimpleNamespace(path="/api/fs/list")))
+        assert _routine_token_allowed("GET", "/api/fs-something")
+        assert not _routine_token_allowed("GET", "/api/fs/list")
 
 
 def test_bootstrap_generates_and_backfills_the_routine_token(tmp_path, monkeypatch):

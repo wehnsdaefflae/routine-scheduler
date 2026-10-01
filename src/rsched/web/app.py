@@ -13,6 +13,7 @@ from pathlib import Path
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from starlette._utils import get_route_path
 
 from ..config import ServerConfig, load_server_config
 from ..daemon.events import EventBus
@@ -102,29 +103,49 @@ ROUTINE_TOKEN_MUTATIONS: tuple[tuple[str, str], ...] = ()
 # found runs reading items, questions, the routine cards, the runs index, status and stats —
 # none of these, and no live util or recipe targets one today.
 #
+# `/api/routines/*/secrets` is the per-routine half of the secret-name read (D103): every
+# routine's OWN secret names, the central names each one shadows, and where the store file
+# lives on the host. A scoped secret is "invisible to every other routine" by design, and was
+# one GET away from every other routine's util. A `*` segment matches any one segment.
+#
 # Cross-routine FILE reads (`/api/routines/{slug}/file`, `/api/runs/{id}/file`) are the same
 # class and are deliberately NOT here yet: at least one routine was granted another's
 # transcripts on purpose, and closing that door needs the grant re-expressed as an fs-read
 # root first, or a run loses a channel with no error it can act on.
 ROUTINE_TOKEN_DENIED_READS: tuple[str, ...] = ("/api/fs", "/api/debug", "/api/settings",
-                                               "/api/search")
+                                               "/api/search", "/api/routines/*/secrets")
 
 
 def _in_subtree(path: str, prefix: str) -> bool:
-    """The path itself or something genuinely under it — never a bare startswith, which
-    would let "/api/foo" swallow "/api/foo-bar" and silently catch (or open) any future
-    sibling route that shares the prefix.
+    """The path itself or something genuinely under it, compared segment by segment — never a
+    bare startswith, which would let "/api/foo" swallow "/api/foo-bar" and silently catch (or
+    open) any future sibling route that shares the prefix. A `*` segment in `prefix` matches
+    any one segment of `path`.
     """
-    return path == prefix or path.startswith(prefix + "/")
+    want, have = prefix.split("/"), path.split("/")
+    return len(have) >= len(want) and all(w in ("*", h) for w, h in zip(want, have,
+                                                                         strict=False))
 
 
-def _routine_token_allowed(request: Request) -> bool:
-    path = request.url.path
+def _routine_token_allowed(method: str, path: str) -> bool:
     if any(_in_subtree(path, prefix) for prefix in ROUTINE_TOKEN_DENIED_READS):
         return False
-    return request.method in ("GET", "HEAD", "OPTIONS") or any(
-        request.method == method and _in_subtree(path, prefix)
-        for method, prefix in ROUTINE_TOKEN_MUTATIONS)
+    return method in ("GET", "HEAD", "OPTIONS") or any(
+        method == allowed and _in_subtree(path, prefix)
+        for allowed, prefix in ROUTINE_TOKEN_MUTATIONS)
+
+
+def _route_path(request: Request) -> str:
+    """The path the ROUTER dispatches this request on — the only string a tier decision may
+    read.
+
+    Not `request.url.path`: that is a URL Starlette RE-PARSES out of the already-decoded path,
+    so an encoded `?` or `#` inside a segment ends the path early. `/api/runs/events%3Fx/file`
+    routes to `/runs/{run_id}/file` while its `url.path` reads `/api/runs/events` — an SSE
+    path, which a URL-carriable ticket then admits. A credential is only as narrow as the
+    path it is checked against, so that path has to be the one that runs.
+    """
+    return get_route_path(request.scope)
 
 
 def require_auth(request: Request) -> None:
@@ -133,6 +154,7 @@ def require_auth(request: Request) -> None:
     if not token:
         return  # auth disabled (empty token in config)
     header = request.headers.get("authorization", "")
+    path = _route_path(request)
     # constant-time, like the webhook token (api_hooks._match_webhook): one credential
     # class, one standard — and the weaker half was guarding the PRIMARY token.
     if secrets.compare_digest(header.encode(), f"Bearer {token}".encode()):
@@ -140,7 +162,7 @@ def require_auth(request: Request) -> None:
     routine_token = server.routine_token
     if routine_token and secrets.compare_digest(header.encode(),
                                                 f"Bearer {routine_token}".encode()):
-        if _routine_token_allowed(request):
+        if _routine_token_allowed(request.method, path):
             return
         # RFC 6750 §3.1: the console tells a TIER refusal apart from an ordinary 403
         # (a protected template, the credentials dir, a denied path) by this header alone
@@ -150,15 +172,16 @@ def require_auth(request: Request) -> None:
             status_code=403,
             detail="the routine API token is read-only and reads no wider than the "
                    "sandbox (R94): config-mutating endpoints, the filesystem picker, the "
-                   "settings surface, cross-routine search and the daemon's stacks take the "
-                   "operator's primary token. A run that needs a config change proposes it "
-                   "via ask_user with config_patch; a file it may read is reached with "
-                   "read_file, and one outside its jail is an fs-read access request.",
+                   "settings surface, a routine's secret names, cross-routine search and the "
+                   "daemon's stacks take the operator's primary token. A run that needs a "
+                   "config change proposes it via ask_user with config_patch; a file it may "
+                   "read is reached with read_file, and one outside its jail is an fs-read "
+                   "access request.",
             headers={"WWW-Authenticate": 'Bearer error="insufficient_scope"'})
     # EventSource cannot send headers, and the bearer token in a query string would leak
     # into access logs — a SHORT-LIVED ticket (POST /api/sse-ticket) rides there instead,
     # valid ONLY for the SSE GET endpoints themselves (never a general API credential).
-    if request.method == "GET" and _is_sse_path(request.url.path):
+    if request.method == "GET" and _is_sse_path(path):
         ticket = request.query_params.get("ticket") or ""
         expiry = request.app.state.sse_tickets.get(ticket)
         if ticket and expiry is not None and expiry >= time.monotonic():
@@ -168,7 +191,7 @@ def require_auth(request: Request) -> None:
     # noVNC then builds its own asset URLs (app/ui.js, app/styles/base.css, the images), so
     # no parameter the embedding page chooses ever reaches those requests. A cookie is the
     # one credential the browser attaches to every sub-resource of the frame by itself.
-    if request.method == "GET" and _is_browser_view_path(request.url.path):
+    if request.method == "GET" and _is_browser_view_path(path):
         from .api_browser_view import SCREEN_COOKIE, pass_is_valid
 
         if pass_is_valid(request.app, request.cookies.get(SCREEN_COOKIE) or ""):
@@ -255,8 +278,13 @@ def create_app(server: ServerConfig | None = None, *, with_scheduler: bool = Tru
         """
         now = time.monotonic()
         tickets = app.state.sse_tickets
-        for stale in [t for t, exp in tickets.items() if exp < now]:
-            del tickets[stale]
+        # A sync route runs on a worker thread, so two mints can purge at once — every
+        # browser tab reconnecting after a restart asks together. Both see the same expired
+        # ticket, and a bare `del` made the slower one a 500; the snapshot keeps the
+        # iteration off a dict another thread is growing.
+        for stale, exp in list(tickets.items()):
+            if exp < now:
+                tickets.pop(stale, None)
         ticket = secrets.token_urlsafe(24)
         tickets[ticket] = now + SSE_TICKET_TTL_S
         return {"ticket": ticket, "ttl": SSE_TICKET_TTL_S}
@@ -305,7 +333,7 @@ def create_app(server: ServerConfig | None = None, *, with_scheduler: bool = Tru
 
     @app.middleware("http")
     async def slow_requests(request, call_next):
-        if _is_sse_path(request.url.path):
+        if _is_sse_path(_route_path(request)):
             return await call_next(request)
         app.state.in_flight += 1
         started = time.monotonic()
