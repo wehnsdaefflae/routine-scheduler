@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from .. import utils_lib, utils_run
 from . import requests
+from .actionschema import PSEUDO_UTILS
 from .interact import handle_ask
 
 
@@ -109,7 +110,7 @@ def gate_util_secrets(loop, action: dict, poll_s: float) -> dict | None:
     ctx = loop.ctx
     name = str(action.get("name") or "")
     home = ctx.server.libraries_home
-    if name in ("list", "show") or not utils_lib.exists(home, name):
+    if name in PSEUDO_UTILS or not utils_lib.exists(home, name):
         return None                     # discovery / missing-util paths expose no secrets
     needs = utils_run.util_needs(home, name)
     needed, optional = needs.secrets, needs.optional

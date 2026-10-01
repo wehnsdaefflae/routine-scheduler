@@ -26,6 +26,12 @@ SUPERSEDES_MAX = 20
 SETTLES_MAX = 20
 
 
+#: The catalog's own verbs, answered by the `util` action itself (executor.do_util: the live
+#: catalog, one util's source, a keyword search) before the library is consulted. So they are
+#: discovery, never an execution to count or gate — and no library util may take one of
+#: these names, because the action would never reach it.
+PSEUDO_UTILS = ("list", "show", "search")
+
 KINDS = ("util", "write_util", "remove_util", "read_file", "view_image", "write_file",
          "delete", "move", "mkdir", "edit_file",
          "memory_read", "memory_write", "read_rule", "write_rule",
@@ -124,7 +130,8 @@ ACTION_SCHEMA: dict = {
                            "memory_read/memory_write: the note's topic (kebab-case) · "
                            "read_rule/write_rule: a general rule in the shared library "
                            '(read_rule "list" = the catalog) · '
-                           "create_routine: the NEW routine's human display name",
+                           "create_routine: the NEW routine's human display name · "
+                           "manage_lane create/update: the lane's display name",
         },
         "args": {
             "type": "array", "items": {"type": "string"},
@@ -371,8 +378,8 @@ ACTION_SCHEMA: dict = {
         "n": {"type": "integer", "minimum": 1, "description": "kill/wait: the sub-workflow number"},
         "all": {"type": "boolean",
                 "description": "wait: wait for ALL running sub-workflows (default: any next) · "
-                               "edit_file/write_util edit mode: replace EVERY occurrence of "
-                               "the anchor (default: the anchor must be unique)"},
+                               "edit_file/write_util/write_rule edit mode: replace EVERY "
+                               "occurrence of the anchor (default: the anchor must be unique)"},
         # ask_user
         "question": {"type": "string",
                      "description": "ask_user: the question, self-contained (simple Markdown "

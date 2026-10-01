@@ -263,8 +263,9 @@ def test_write_util_edit_mode_validation():
     assert any("content" in p for p in validate_action(base))            # neither given
     assert any("not both" in p
                for p in validate_action({**base, "content": "# x", "anchor": "old"}))
-    assert any("replacement" in p
-               for p in validate_action({**base, "anchor": "a", "replacement": 3}))
+    # a non-string replacement never reaches the semantic layer: the schema refuses it first
+    with pytest.raises(SchemaViolation, match="replacement"):
+        _parse_both_layers(json.dumps({**base, "anchor": "a", "replacement": 3}))
 
 
 def test_finish_reply_to_field():

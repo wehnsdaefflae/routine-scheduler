@@ -11,7 +11,7 @@ import subprocess
 from conftest import finish, util, write_file
 from rsched import utils_run
 from rsched.config import ServerConfig, load_routine
-from rsched.engine.actions import util_rejection_outcome
+from rsched.engine.actions import util_rejection_outcome, validate_action
 from rsched.engine.budgets_config import Budgets
 from rsched.engine.executor import dispatch
 from rsched.engine.run_context import RunContext
@@ -76,10 +76,23 @@ def test_rejection_classifier():
     # malformed but permitted → rejected
     assert util_rejection_outcome({"kind": "util", "name": "fetch", "path": "x"},
                                   grants=GrantPolicy()) == ("fetch", "rejected")
-    # not attributable: no name, pseudo-utils, other kinds
+    # not attributable: no name, pseudo-utils (all three catalog verbs), other kinds
     assert util_rejection_outcome({"kind": "util"}) is None
-    assert util_rejection_outcome({"kind": "util", "name": "list"}) is None
+    for verb in ("list", "show", "search"):
+        assert util_rejection_outcome({"kind": "util", "name": verb},
+                                      allowed_kinds={"read_file"}) is None, verb
     assert util_rejection_outcome({"kind": "write_file", "name": "x"}) is None
+
+
+def test_a_util_may_not_take_a_catalog_verbs_name():
+    """`util name=search` is answered by the action itself, so a library util called
+    `search` (or `list`, `show`) could be written and never run."""
+    for verb in ("list", "show", "search"):
+        problems = validate_action({"say": "s", "kind": "write_util", "name": verb,
+                                    "content": "x"})
+        assert any("catalog verbs" in p for p in problems), verb
+    assert validate_action({"say": "s", "kind": "write_util", "name": "web-search",
+                            "content": "x"}) == []
 
 
 def test_a_name_that_cannot_be_a_util_is_not_attributed_to_one():
