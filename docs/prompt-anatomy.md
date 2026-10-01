@@ -784,7 +784,7 @@ Global utils (4, grouped by category; run `util name=list args=["<name>"]` for o
 - discord — two-way phone channel via a Discord bot: send to a channel, read/wait for replies.  [reserved — not granted to this routine]
 
 ### Code & development (1)
-- git-sync — bidirectionally sync a git repo with its remote.
+- git — clone, log, restore, sync and inspect git repositories (verb-dispatched; routines have no shell).
 
 ### Web, browser & scraping (2)
 - page-fetch — render a JS-heavy web page with a real (headless) browser and return its text/HTML.

@@ -43,7 +43,7 @@ KEEP_RUNS = 5
 
 def _ensure_ignored(routine_dir: Path) -> None:
     """Keep the store out of the engine autocommit — `git add -A` would otherwise commit
-    every spilled output into the routine's repo (and `git-sync` push it to a remote),
+    every spilled output into the routine's repo (and `git sync` push it to a remote),
     permanently, including whatever secrets a util printed.
     """
     gi = routine_dir / ".gitignore"

@@ -23,7 +23,7 @@ the Settings page all parse it:
 # ///
 """dir-tree — list a directory tree to a bounded depth.
 
-usage: gu dir-tree ROOT [--depth N] [--max N] [--all] [--json]
+usage: gu dir-tree ROOT [--depth N] [--max N] [--json]
 calls: (none)
 secrets: (none)
 tags: files, listing, meta

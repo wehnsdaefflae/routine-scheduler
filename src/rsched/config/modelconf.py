@@ -126,7 +126,9 @@ class MachineConfig(_Config):
     # <routine>/mnt/<name>/ — so local filesystem utils read/write remote files seamlessly
     # (compute stays on `remote exec`; only the filesystem is shared). Empty = no mount.
     share: BlankableStr = ""
-    workdir: BlankableStr = ""       # default remote working dir for exec/jobs (else the login dir)
+    # The remote dir detached jobs (and their queue tickets) live under, as `.rsched-jobs/`;
+    # empty = the login $HOME. `remote exec` does not use it — its cwd is `--cwd` or the login dir.
+    workdir: BlankableStr = ""
     # ONE JOB AT A TIME. A GPU box is a single resource: two training jobs on one card do not run
     # half as fast, they run out of VRAM. Set this and `remote submit` stops launching immediately
     # — it takes a QUEUE TICKET and the box runs the jobs in fair-share order (round-robin across

@@ -158,7 +158,8 @@ def test_util_miss_names_a_matching_routine_local_script(util_ctx):
     obs = dispatch({"kind": "util", "name": "explode"}, util_ctx)
     assert obs["missing"] is True and obs["script_match"] is True
     text = format_observation(obs)
-    assert "ROUTINE-LOCAL script" in text and "action:script" in text
+    assert "ROUTINE-LOCAL script" in text and "tools: list leaves it out" in text
+    assert "action:script" not in text     # a BASE kind: there is no grant to request
     # a plain miss (no matching script) stays hint-free
     plain = dispatch({"kind": "util", "name": "nope"}, util_ctx)
     assert "script_match" not in plain

@@ -92,8 +92,8 @@ def autocommit(routine_dir: Path, message: str, *, routines_home: Path | None = 
     """Commit the routine's working dir at run end, through the shared `libgit.commit`
     (F285/F318 — this module once re-implemented it verbatim): its
     per-repo lock means a cross-routine writer committing this same dir concurrently
-    — the routine-improver's `git-sync` of a target that is mid-run — takes turns with
-    this autocommit instead of colliding on `index.lock` (the `git-sync` util flocks the
+    — the routine-improver's `git sync` of a target that is mid-run — takes turns with
+    this autocommit instead of colliding on `index.lock` (the `git` util's `sync` flocks the
     same file), its identity flags keep the neutral author even in a routine repo that
     never persisted git config, and a commit that does not land is filed against `run_id`
     in `routines_home`'s health stream.

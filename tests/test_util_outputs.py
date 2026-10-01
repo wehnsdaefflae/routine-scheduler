@@ -68,7 +68,7 @@ def test_pointer_rides_the_observation_that_lost_the_middle(make_routine):
 
 def test_first_spill_gitignores_the_store(make_routine):
     """The run-end autocommit is `git add -A` and util output can carry tokens — the
-    store must never enter the routine's repo (nor ride git-sync to a remote)."""
+    store must never enter the routine's repo (nor ride `git sync` to a remote)."""
     ctx = _ctx(make_routine)
     (ctx.routine.dir / ".gitignore").write_text("runs/\n", encoding="utf-8")
     outputs.spill(ctx, "echoer", BIG, "", out_truncated=True, err_truncated=False)

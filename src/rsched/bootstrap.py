@@ -347,7 +347,7 @@ def sync_seed_utils(libraries_home: Path, *, routines_home: Path) -> int:
         if target.exists():
             continue
         # Never resurrect a util the USER deleted (the library's git history knows) — the
-        # same rule the engine enforces on write_util (interact.recreate_denial). A missing
+        # same rule the engine enforces on write_util (authoring.recreate_denial). A missing
         # seed util with no deletion history is genuinely new and lands normally.
         if utils_lib.was_deleted(libraries_home, d.name):
             continue

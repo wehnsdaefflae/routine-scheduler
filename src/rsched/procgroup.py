@@ -10,7 +10,7 @@ SIGTERM comes first because a process cleans up only in its SIGTERM handler. Git
 `index.lock` there and nowhere else: the SIGKILL `subprocess.run` sends at its timeout left an
 empty lock that failed every later write in two routine repos on 2026-09-30
 (docs/architecture.md, "Git writes"). A util, a script or a `shell` command runs the same git
-under its own deadline — the library's `git-sync`, a routine's script that manages a repo of
+under its own deadline — the library's `git` util, a routine's script that manages a repo of
 its own, self-audit's scripts in the scheduler checkout — and `run_jailed` SIGKILLed it at that
 deadline just as `subprocess.run` did.
 

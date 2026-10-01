@@ -12,7 +12,7 @@ same way until a person looked.
 `libgit` removes a lock only when it is PROVABLY stale, which takes all four of:
 
 - the caller holds the repo's commit lock (`paths.repo_lock_path`), so no cooperative writer —
-  the daemon, an engine run, the web layer, the `git-sync` util — is between its `add` and its
+  the daemon, an engine run, the web layer, the `git` util's `sync` — is between its `add` and its
   `commit`;
 - no git process this process can see works in the repo: none has its working directory, a
   `-C`, a `--git-dir`, a `--work-tree` or a `GIT_DIR` inside it. A git that hides its working

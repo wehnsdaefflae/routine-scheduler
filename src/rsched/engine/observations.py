@@ -147,14 +147,14 @@ def format_observation(obs: dict) -> str:  # noqa: PLR0911
                     "usage), or write it with write_util, then call it.")
             if obs.get("script_match"):
                 # R367: the file exists as a routine-local script — the util action will
-                # never run it; teach the one action that does, and the grant to request
-                # when that kind is absent from this run's schema.
+                # never run it; teach the one action that does. `script` is a BASE kind
+                # (grants.py: no capability, no permission to request), so the one way it is
+                # absent from a schema is the recipe's own `tools:` list leaving it out.
                 miss += (f" NOTE: {obs['name']!r} exists as a ROUTINE-LOCAL script "
                          f"(scripts/) — run it with the script action: "
                          f'{{"kind": "script", "name": "{obs["name"]}"}}. If "script" is '
-                         "not among your action kinds it is gated behind the scripts "
-                         'permission — request it via ask_user with request: '
-                         '"action:script".')
+                         "not among your action kinds, this recipe's tools: list leaves it "
+                         "out — file a report naming the script this step needs.")
             return miss
         if obs.get("declined_secrets") or obs.get("pending_secrets"):
             # D39 secret-exposure gate: the util was NOT run — say why and what to do next.

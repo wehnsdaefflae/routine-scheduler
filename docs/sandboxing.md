@@ -283,7 +283,7 @@ convenience): `write_util` for a slug whose `utils/<name>/main.py` has a **delet
 the library's git history** is rejected inside the schema-retry cycle (never costs a
 turn). The correction routes to a blocking ACCESS REQUEST for the entity
 `recreate:<slug>` (docs/rules-permissions.md); an allow-now decision in the same run
-unblocks the recreate (`interact.recreate_denial`, probe: `utils_lib.was_deleted`) —
+unblocks the recreate (`authoring.recreate_denial`, probe: `utils_lib.was_deleted`) —
 deliberately with no allow-forever, so a fresh deletion always outranks an old grant. Any prior deletion counts — the web UI is the only deliberate
 delete path, so every deletion is user intent. The boot seed-sync obeys the same rule:
 a user-deleted seed util is never resurrected (`bootstrap.sync_seed_utils`).

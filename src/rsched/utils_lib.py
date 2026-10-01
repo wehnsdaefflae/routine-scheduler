@@ -321,7 +321,7 @@ def remove_util_file(home: Path, name: str) -> None:
 
 def was_deleted(home: Path, name: str) -> bool:
     """Was utils/<name>/main.py ever DELETED from the library's git history? The engine's
-    never-recreate rule keys off this (interact.recreate_denial), as does the boot seed-sync.
+    never-recreate rule keys off this (authoring.recreate_denial), as does the boot seed-sync.
     The git question itself is `libgit.path_was_deleted`, shared with the library-doc sync.
     """
     return libgit.path_was_deleted(home, f"utils/{name}/main.py")
