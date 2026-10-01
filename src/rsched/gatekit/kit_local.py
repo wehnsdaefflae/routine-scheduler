@@ -17,6 +17,12 @@ def _folder(ctx: dict, raw: str) -> Path:
 
 
 def files_changed(check: dict, ctx: dict) -> tuple[bool, str, str]:
+    """A file is NEW or CHANGED when its inode changed since the last ok run started: its
+    ctime as well as its mtime, because mv, `rsync -a`, an unpacked archive and every sync
+    client keep the mtime a file had elsewhere — a photo synced in today with last week's
+    mtime is new to this folder all the same. (Anything else that touches an inode, a chmod,
+    only ever adds a run.)
+    """
     pattern = str(check.get("glob") or "*")
     nonempty = bool(check.get("nonempty"))
     cutoff = None if nonempty else since(ctx).timestamp()
@@ -30,7 +36,8 @@ def files_changed(check: dict, ctx: dict) -> tuple[bool, str, str]:
                     continue
                 if nonempty:
                     return True, f"{path.name} is waiting in {root}", ""
-                if cutoff is not None and path.stat().st_mtime > cutoff:
+                st = path.stat()
+                if cutoff is not None and max(st.st_mtime, st.st_ctime) > cutoff:
                     return True, f"{path} changed since the last ok run", ""
         except OSError as exc:
             raise UnknownError(f"could not walk {root}: {exc}") from exc

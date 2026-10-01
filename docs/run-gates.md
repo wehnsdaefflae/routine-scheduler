@@ -30,6 +30,13 @@ answered "no work".
 | `max_quiet` | the last ok run is older than this — a backstop every gate should carry | `days` |
 | `script` | the routine's own predicate `scripts/admit.py` says so | — |
 
+A check's own limits read the same way. `mail` reads the headers of a folder's newest 500
+matching messages, as a mail reader shows them (folded lines unfolded, encoded words decoded),
+over verified TLS; a folder with more, none of whose newest 500 counts, is work. `url_changed`
+compares at most 8 MiB of an answer; a longer one is work. `files_changed` counts a file whose
+inode changed since the last ok run — its mtime OR its ctime, since a file moved or synced in
+keeps the mtime it had elsewhere.
+
 `gatekit.KINDS` is the vocabulary: the console builds each check's form from it and
 `gatekit.validate` checks a `routine.yaml` against it, so a kind cannot be half-added. An
 enabled gate needs at least one check — with nothing to ask, either answer would be a lie.
