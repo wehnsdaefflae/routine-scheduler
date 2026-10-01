@@ -73,6 +73,23 @@ def test_rolls_up_per_routine_and_orders_by_saving(tmp_path):
     assert out["since"] == "2026-09-11T07:00:00+00:00"
 
 
+def test_a_continued_run_is_one_run_with_each_legs_tally_summed(tmp_path):
+    """Each leg of a continued run files its own record carrying its OWN tally. Read per
+    record, one run read as two runs."""
+    server = _server(tmp_path)
+    _routine(server, "alpha")
+    first = _rec("alpha", "2026-09-11T07:00:00+00:00",
+                 {"applied": 2, "tokens_saved": 300, "ms": 100.0})
+    second = {**_rec("alpha", "2026-09-11T09:00:00+00:00",
+                     {"applied": 1, "tokens_saved": 100, "ms": 100.0}),
+              "run_id": first["run_id"]}
+    _stream(server, [first, second])
+    out = compression_stats(server)
+    row = out["rows"][0]
+    assert (row["runs"], row["applied"], row["tokens_saved"], row["seconds"]) == (1, 3, 400, 0.2)
+    assert out["records"] == 1
+
+
 def test_records_without_the_tally_are_outside_the_window(tmp_path):
     """A pre-counter record is not a routine that compressed nothing — it is a run the
     counter never saw. It must not appear as a zero row or move `since`.

@@ -215,6 +215,24 @@ def test_monthly_spend_reads_the_durable_stream(tmp_path):
     assert list(m["by_routine"]) == ["alpha", "chat"]          # latest-month tokens, desc
 
 
+def test_monthly_spend_counts_a_continued_run_once(tmp_path):
+    """Each leg of a continued run appends its own record: its tokens and cost are the leg's
+    own, its `referrals` the run's running total (a resumed leg reseeds it). Per record, one
+    run read as two and its referrals counted the first leg's again."""
+    s = ServerConfig()
+    s.routines_home = tmp_path / "routines"
+    ctrl = s.routines_home / ".control"
+    ctrl.mkdir(parents=True)
+    legs = [{"run_id": "alpha:1", "ts": "2026-07-01T10:00:00+00:00", "routine": "alpha",
+             "depth": 0, "tokens": 100, "cost": 0.25, "referrals": 1},
+            {"run_id": "alpha:1", "ts": "2026-07-01T12:00:00+00:00", "routine": "alpha",
+             "depth": 0, "tokens": 50, "cost": 0.25, "referrals": 3}]
+    (ctrl / "workflow-usage.jsonl").write_text(
+        "".join(json.dumps(leg) + "\n" for leg in legs), encoding="utf-8")
+    assert monthly_spend(s)["by_routine"]["alpha"]["2026-07"] == {
+        "runs": 1, "tokens": 150, "cost": 0.5, "referrals": 3}
+
+
 def test_monthly_spend_without_stream(tmp_path):
     s = ServerConfig()
     s.routines_home = tmp_path / "routines"

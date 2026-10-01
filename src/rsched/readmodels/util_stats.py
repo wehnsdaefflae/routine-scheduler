@@ -101,17 +101,21 @@ def _merge(dst: dict, name: str, counts: dict, first: str = "", last: str = "") 
 
 
 def _stream_utils(server: ServerConfig) -> tuple[dict, set[str], int]:
-    """(per-util aggregate, counted root run ids, counted record count) from the durable
-    stream. A record carrying the `utils` key was counted at the source — its root run
-    id (`slug:ts`) marks the whole run dir (subruns included: their records carry the
+    """(per-util aggregate, counted root run ids, counted run count) from the durable
+    stream. A run whose record carries the `utils` key was counted at the source — its root
+    run id (`slug:ts`) marks the whole run dir (subruns included: their records carry the
     key from the same engine version) as covered for the transcript backfill.
+
+    Read per RUN (`usage_runs`), never per leg: a resumed leg reseeds the run's util counts
+    from the leg before it, so each leg's record carries the run's CUMULATIVE histogram, and
+    summing the legs counted a ten-reply conversation's ten calls as 55.
     """
-    from .usage_stream import usage_records
+    from .usage_stream import usage_runs
 
     agg: dict[str, dict] = {}
     covered: set[str] = set()
     counted = 0
-    for rec in usage_records(server.routines_home):
+    for rec in usage_runs(server.routines_home):
         if "utils" not in rec:
             continue
         covered.add(str(rec.get("run_id") or "").split("#")[0])

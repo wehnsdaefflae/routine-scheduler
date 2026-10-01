@@ -33,6 +33,7 @@ from ..config import ServerConfig
 from ..recipes import recipe_log
 from . import health_stream, library_reads, memo
 from .stamps import instant
+from .usage_stream import fold_legs, usage_runs
 
 # --- regression heuristic constants (each with its reason) ---------------------------
 # Runs compared on each side of the newest recipe change. 5 ≈ one week of a daily
@@ -64,11 +65,11 @@ def _median(vals: list[float]) -> float:
     return float(s[mid]) if len(s) % 2 else (s[mid - 1] + s[mid]) / 2.0
 
 
-def _stream_records(server: ServerConfig, slug: str) -> list[dict]:
-    """This routine's depth-0 usage records, in append (chronological) order."""
-    from .usage_stream import usage_records
-
-    return [rec for rec in usage_records(server.routines_home)
+def _stream_runs(server: ServerConfig, slug: str) -> list[dict]:
+    """This routine's depth-0 RUNS (`usage_runs` — the legs already folded), in chronological
+    order of their first leg.
+    """
+    return [rec for rec in usage_runs(server.routines_home)
             if not rec.get("depth") and rec.get("routine") == slug]
 
 
@@ -96,34 +97,6 @@ def _assign(rec: dict, dated: list[tuple[datetime | None, str]]) -> tuple[str | 
             if when is not None and when <= ts:
                 return commit, True
     return dated[-1][1], True   # predates every known version → the oldest
-
-
-def fold_legs(records: list[dict]) -> list[dict]:
-    """One record per RUN, not per leg — the unit every comparison here assumes it has.
-
-    A run the operator continues, or one that resumes after a restart, appends a FURTHER
-    usage record under the same `run_id`, and the two halves of that record disagree about
-    what they mean: `turns` is CUMULATIVE across the legs while `tokens` and `cost` are
-    per-leg. Measured on this instance 2026-09-23: **50.5% of depth-0 records are extra legs**
-    (2,445 records over 1,211 runs), so a five-record window was often two runs plus their
-    bookkeeping — and one live specimen, a 148-turn leg carrying 2,080 tokens, dragged a
-    median hard enough to flag a routine that had not changed.
-
-    So: keep the LAST leg (the cumulative fields are right there) and SUM the per-leg ones.
-    Order is preserved by first appearance, because every caller slices these by recency.
-    """
-    folded: dict[str, dict] = {}
-    for rec in records:
-        key = str(rec.get("run_id") or id(rec))
-        prev = folded.get(key)
-        if prev is None:
-            folded[key] = dict(rec)
-            continue
-        merged = dict(rec)                      # the newest leg's cumulative view wins
-        for field in ("tokens", "cost"):
-            merged[field] = (prev.get(field) or 0) + (rec.get(field) or 0)
-        folded[key] = merged
-    return list(folded.values())
 
 
 def regression_flag(before: list[dict], after: list[dict], *,
@@ -205,13 +178,13 @@ def routine_health(server: ServerConfig, routine_dir: Path, slug: str) -> dict:
     versions = memo.memoized(f"recipe-log:{routine_dir}",
                              [routine_dir / ".git" / "logs" / "HEAD"],
                              lambda: recipe_log(routine_dir, limit=_LOG_LIMIT))
-    # Fold ONCE, here, because every consumer below counts RUNS: the per-version buckets
+    # RUNS, not legs, because every consumer below counts runs: the per-version buckets
     # (`runs`, the status tallies, both medians), the version-keyed regression, and the
     # time-keyed trend. A continued run appends a further record under the same run_id, so
     # tallying raw legs inflated every bucket's `runs` by the leg ratio — 2.02 legs per run
     # on this instance, measured 2026-09-25 — and a run that finished `partial` and was then
     # continued to `ok` was tallied into BOTH columns of its own bucket.
-    records = fold_legs(_stream_records(server, slug))
+    records = _stream_runs(server, slug)
 
     buckets: dict[str, dict] = {}
     for i, v in enumerate(versions):

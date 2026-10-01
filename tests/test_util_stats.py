@@ -89,6 +89,21 @@ def test_stream_records_aggregate_and_span(tmp_path):
     assert rows["gone-util"]["in_library"] is False and rows["gone-util"]["ok"] == 1
 
 
+def test_a_continued_run_is_counted_once_not_once_per_leg(tmp_path):
+    """A resumed leg reseeds the run's util histogram from the leg before it
+    (`history.prior_counters`), so every leg's usage record carries the run's CUMULATIVE
+    counts. Summed per record, a conversation answering three replies with one call each read
+    as 1 + 2 + 3 = 6 calls."""
+    server = _server(tmp_path)
+    _add_util(server, "fetch")
+    _stream(server, [
+        {"run_id": "chat:1", "ts": f"2026-07-01T0{n}:00:00+00:00",
+         "utils": {"fetch": {"ok": n}}} for n in (1, 2, 3)])
+    out = util_stats(server)
+    fetch = {r["name"]: r for r in out["utils"]}["fetch"]
+    assert fetch["ok"] == 3 and out["stream_records"] == 1
+
+
 def test_backfill_scans_only_uncovered_runs(tmp_path):
     """A run whose stream record carries `utils` was counted at the source — its
     transcript is skipped; a pre-stream run's transcript (gzip included) is scanned."""

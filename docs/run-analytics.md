@@ -6,6 +6,14 @@ version** that produced it, and every util call is counted by **outcome**. Both 
 run-dir retention because they ride the durable workflow-usage stream
 (`~/routines/.control/workflow-usage.jsonl`).
 
+That stream holds one record per LEG, not per run: a continued or resumed run appends another
+record under the same `run_id`. A leg's `tokens`, `cost` and `compression` tally are its own,
+while `turns`, `utils`, `referrals` and `asks_deferred` are the run's running totals (a resumed
+leg's boot reseeds them). Every reader below therefore counts RUNS —
+`readmodels/usage_stream.usage_runs`, the stream folded once per change: the per-leg fields
+summed, the running totals read from the newest leg. Summed leg by leg, a conversation answering
+ten replies with one util call each read as 55 calls.
+
 A third layer measures what a run COSTS rather than what it did: prompt-cache health, the
 one reading that separates carrying context cheaply from paying for it twice. A fourth measures
 what an efficiency mechanism RETURNS — lossless output compression, per routine, on that same

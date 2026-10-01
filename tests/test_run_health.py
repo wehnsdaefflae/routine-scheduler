@@ -288,22 +288,41 @@ def test_a_continued_run_is_one_run_not_three():
     runs) were extra legs, so a five-record window was often two runs plus their legs — and
     folding them dropped the flagged set from 31 routines to 6, all six genuine.
     """
-    from rsched.readmodels.run_health import fold_legs
+    from rsched.readmodels.usage_stream import fold_legs
 
     legs = [
-        {"run_id": "r1", "turns": 100, "tokens": 40_000, "cost": 0.1, "status": "ok"},
-        {"run_id": "r1", "turns": 148, "tokens": 2_080, "cost": 0.0, "status": "ok"},
+        {"run_id": "r1", "turns": 100, "tokens": 40_000, "cost": 0.1, "status": "ok",
+         "utils": {"fetch": {"ok": 1}}, "referrals": 1, "asks_deferred": 1,
+         "compression": {"applied": 2, "ms": 10.0}},
+        {"run_id": "r1", "turns": 148, "tokens": 2_080, "cost": 0.0, "status": "ok",
+         "utils": {"fetch": {"ok": 3}}, "referrals": 2, "asks_deferred": 1,
+         "compression": {"applied": 1, "ms": 5.0}},
         {"run_id": "r2", "turns": 50, "tokens": 9_000, "cost": 0.0, "status": "ok"},
     ]
     folded = fold_legs(legs)
     assert len(folded) == 2
-    # the cumulative field takes the LAST leg's value, the per-leg fields SUM
+    # the cumulative fields take the LAST leg's value, the per-leg fields SUM
     assert folded[0]["turns"] == 148
     assert folded[0]["tokens"] == 42_080
     assert abs(folded[0]["cost"] - 0.1) < 1e-9
-    assert folded[1]["turns"] == 50
+    assert folded[0]["utils"] == {"fetch": {"ok": 3}}
+    assert (folded[0]["referrals"], folded[0]["asks_deferred"]) == (2, 1)
+    assert folded[0]["compression"] == {"applied": 3, "ms": 15.0}
+    assert folded[1]["turns"] == 50 and "compression" not in folded[1]
     # order is by first appearance — every caller slices these by recency
     assert [r["run_id"] for r in folded] == ["r1", "r2"]
+
+
+def test_the_leg_fold_never_raises_on_a_malformed_number():
+    """The fold sits behind one memo every usage reader shares, so a raise there would take the
+    Stats tab, the routine page's health and the cost-trend flag down together."""
+    from rsched.readmodels.usage_stream import fold_legs
+
+    folded = fold_legs([{"run_id": "r1", "tokens": "lots", "cost": None,
+                         "compression": {"applied": "two"}},
+                        {"run_id": "r1", "tokens": 5, "cost": 0.5,
+                         "compression": {"applied": 1}}])
+    assert folded == [{"run_id": "r1", "tokens": 5, "cost": 0.5, "compression": {"applied": 1}}]
 
 
 def test_folding_legs_is_what_stops_a_steady_routine_flagging():
