@@ -177,7 +177,12 @@ def _hermetic_home(tmp_path, monkeypatch):
     hold (a conversation-create test read the live connections.json on every host that had
     one). An environment variable rather than a patch, because it also reaches every
     subprocess a test spawns — a gate's preparation child inherits no monkeypatch. A test
-    that needs its own config dir sets RSCHED_CONFIG after this and wins."""
+    that needs its own config dir sets RSCHED_CONFIG after this and wins.
+
+    The generated-docs tree is the one home that follows neither the config nor the patched
+    `expand` (`docs_build.docs_out_dir` reads `paths.expand` directly), and every app the
+    suite builds mounts it at /docs — so it is redirected the same way, by its own variable,
+    and a test that builds docs sets RSCHED_DOCS_DIR after this and wins."""
     from rsched import paths as _paths
     fake_home = tmp_path / "hermetic-home"
     real = _paths.expand
@@ -191,6 +196,7 @@ def _hermetic_home(tmp_path, monkeypatch):
     monkeypatch.setattr("rsched.config.base.expand", expand)
     monkeypatch.setattr("rsched.config.server.expand", expand)
     monkeypatch.setenv("RSCHED_CONFIG", str(fake_home / ".config/routine-scheduler/config.yaml"))
+    monkeypatch.setenv("RSCHED_DOCS_DIR", str(fake_home / ".cache/routine-scheduler/docs"))
 
 
 @pytest.fixture(autouse=True)
