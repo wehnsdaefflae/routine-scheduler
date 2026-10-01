@@ -946,11 +946,14 @@ def test_answering_files_off_the_event_loop(client, monkeypatch):
     assert probe["r"].status_code == 400 and answered["r"].status_code == 200
 
 
-def test_question_events_are_published_on_the_loop(client, monkeypatch):
+def test_question_events_are_delivered_on_the_loop(client, monkeypatch):
     """The bus is a set of asyncio queues — not thread-safe — and snooze, defer and revise
     are sync routes on worker threads. A put from there wakes no sleeping loop, so open
-    views heard about the change whenever something else next woke it."""
+    views heard about the change whenever something else next woke it. The routes now just
+    publish; `EventBus.publish` marshals the put onto the subscriber's loop."""
     import asyncio
+
+    from rsched.daemon import events
 
     c, tmp = client
     pending = tmp / "routines" / "apir" / "questions" / "pending"
@@ -958,22 +961,34 @@ def test_question_events_are_published_on_the_loop(client, monkeypatch):
                                               "options": [], "asked": "20260707",
                                               "mode": "deferred"})
     where: list[str] = []
+    real_deliver = events._deliver
+
+    def deliver(q, event):
+        if event.get("event") == "question_answered":
+            try:
+                asyncio.get_running_loop()
+                where.append("loop")
+            except RuntimeError:
+                where.append("worker thread")
+        real_deliver(q, event)
+
+    monkeypatch.setattr(events, "_deliver", deliver)
     bus = c.app.state.bus
-    real_publish = bus.publish
 
-    def publish(event):
-        try:
-            asyncio.get_running_loop()
-            where.append("loop")
-        except RuntimeError:
-            where.append("worker thread")
-        real_publish(event)
+    async def subscribe():                     # a stream open on the app's own loop
+        sub = bus.subscribe()
+        sub.__enter__()
+        return sub
 
-    monkeypatch.setattr(bus, "publish", publish)
-    assert c.post("/api/questions/q-e1/snooze", json={"minutes": 5}).status_code == 200
-    assert c.post("/api/questions/q-e1/answer", json={"text": "fine"}).status_code == 200
-    assert c.post("/api/questions/q-e1/revise", json={"text": "finer"}).status_code == 200
-    assert where == ["loop", "loop", "loop"]
+    sub = c.portal.call(subscribe)
+    try:
+        assert c.post("/api/questions/q-e1/snooze", json={"minutes": 5}).status_code == 200
+        assert c.post("/api/questions/q-e1/answer", json={"text": "fine"}).status_code == 200
+        assert c.post("/api/questions/q-e1/revise", json={"text": "finer"}).status_code == 200
+        c.portal.call(asyncio.sleep, 0.05)     # let the marshalled puts run
+    finally:
+        sub.__exit__(None, None, None)
+    assert where and set(where) == {"loop"}           # every subscriber, every route
 
 
 def test_routine_card_spend_line(client):
