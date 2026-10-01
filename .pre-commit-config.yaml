@@ -21,5 +21,6 @@ repos:
         language: system
         pass_filenames: false
         # every file test_policy reads: a commit moving only the Dockerfile's `FROM python:` or
-        # .python-version is exactly the drift its interpreter-pin check exists to stop
-        files: ^(src/rsched/|CHANGELOG\.md$|Dockerfile$|\.python-version$)
+        # .python-version is exactly the drift its interpreter-pin check exists to stop, and a
+        # deploy script can carry a one-shot migration of its own (deploy/backup.sh's)
+        files: ^(src/rsched/|deploy/[^/]+\.sh$|CHANGELOG\.md$|Dockerfile$|\.python-version$)

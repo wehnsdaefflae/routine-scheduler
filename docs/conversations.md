@@ -310,11 +310,12 @@ A conversation is deliberately **unversioned** — deleting it is permanent (the
 If any of the work matters, make sure it landed as an artifact, or as a commit in a project
 directory, before you delete.
 
-A nightly state mirror (`deploy/backup.sh`) does **not** change that, and should not be mistaken
-for an archive. It is a *converging* mirror: a deleted conversation survives in it only until the
-next run, which propagates the deletion. That leaves a recovery window of at most a day — real,
-but not something to rely on. Restoring from it means copying the directory back out of the
-mirror before that run.
+The nightly backup (`deploy/backup.sh`) does **not** change that, and should not be mistaken for
+an archive. It keeps *dated snapshots* — every night of the last two weeks, then one night a week
+for eight weeks beyond — so a deleted conversation can be copied back out of any snapshot taken
+on a night it still existed (`cp -a <root>/snapshots/<date>/conversations/<id> ~/conversations/`),
+for as long as retention keeps such a night. One created and deleted between two nightly runs is
+in none of them. Real, but not something to rely on.
 
 ## See also
 

@@ -90,5 +90,5 @@ Click **finish setup** in the banner (stops the first-launch redirect).
   fine on a trusted host; use disk encryption if you need at-rest protection.
 - **What's git-backed vs. local:** the library repo + the source repo have remotes (GitHub);
   your **routines** (run history, ledgers), conversations, background tasks, config, secrets and
-  linked sessions are local-only — `deploy/backup.sh` mirrors every one of those homes (see
-  [DOCKER.md](DOCKER.md) § Backups).
+  linked sessions are local-only — `deploy/backup.sh` keeps nightly dated snapshots of every one
+  of those homes (see [DOCKER.md](DOCKER.md) § Backups).

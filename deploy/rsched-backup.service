@@ -1,11 +1,13 @@
 [Unit]
-Description=rsched state mirror — incremental backup of every data home
+Description=rsched state snapshot — a dated, hard-linked backup of every data home
 Documentation=file:%h/git-repos/routine-scheduler/deploy/DOCKER.md
 
 [Service]
 Type=oneshot
 
-# The mirror root. Override per host with a drop-in rather than editing this file:
+# The backup root: backup.sh writes snapshots/<YYYY-MM-DD> and the `latest` link under it. The
+# variable keeps its name from the single mirror the root used to hold, so a host's existing
+# drop-in still points where it did. Override per host with a drop-in rather than editing this:
 #   systemctl --user edit rsched-backup.service
 #   [Service]
 #   Environment=RSCHED_MIRROR=/some/other/mount/rsched-backup
@@ -14,9 +16,10 @@ Type=oneshot
 Environment=RSCHED_MIRROR=/mnt/sshd_volume1/rsched-backup
 ExecStart=/bin/bash %h/git-repos/routine-scheduler/deploy/backup.sh ${RSCHED_MIRROR}
 
-# The mirror runs against a network share. If the NAS wedges mid-transfer, rsync blocks in
+# The snapshot is written to a network share. If the NAS wedges mid-transfer, rsync blocks in
 # uninterruptible IO forever and every later firing skips on the lock — so bound the run and
-# let the next night try again cleanly.
+# let the next night try again cleanly. A run cut short keeps no snapshot: its half-built
+# folder never takes a date, and the next run deletes it before it starts.
 TimeoutStartSec=2h
 
 # The daemon is doing real work on this box; a backup never deserves to compete with a run.

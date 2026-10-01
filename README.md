@@ -80,7 +80,7 @@ Stats tab.
 docker compose up -d   # or containerized (deploy/DOCKER.md): engine-only image, everything
                        # mutable bind-mounted — the instance migrates as a tarball
 ./deploy/bundle.sh     # one-shot migration tarball of every data home
-./deploy/backup.sh     # recurring incremental mirror of the same homes (NOT the tarball's job)
+./deploy/backup.sh     # nightly dated snapshots of the same homes (NOT the tarball's job)
 ```
 
 Web UI: `http://127.0.0.1:8321`. A bearer token is generated into

@@ -727,9 +727,14 @@ bind-mounted, so the
 whole system migrates as a tarball of those dirs — EVERY data home must be a bind, or it dies with
 the container layer on recreate. That inventory has ONE copy, `deploy/state-paths.sh`, read by both
 consumers: `bundle.sh` writes the one-shot migration tarball (DOCKER.md's flow ends by
-decommissioning the source, which is why a frozen snapshot is fine there) and `backup.sh` mirrors
-the same homes incrementally with rsync (nightly via the `rsched-backup` user timer, which
-`install.sh` deliberately does NOT install — the mirror root is host-specific). **The tarball is not a backup** — `routines` and
+decommissioning the source, which is why a frozen snapshot is fine there) and `backup.sh` keeps
+DATED SNAPSHOTS of the same homes (nightly via the `rsched-backup` user timer, which `install.sh`
+deliberately does NOT install — the backup root is host-specific): `<root>/snapshots/<YYYY-MM-DD>`,
+rsync `--link-dest` so a file unchanged since the newest earlier snapshot is a hard link into it,
+built under a temporary name that takes the date only once every home copied, and pruned — after
+a successful run only — to the 14 newest plus the newest of each of 8 older ISO weeks. A single
+converging mirror copied a night's damage over the last good copy. Never edit inside a snapshot:
+a linked file is ONE file every snapshot shares. **The tarball is not a backup** — `routines` and
 `conversations` are rewritten by every run, so it is stale within minutes, and a nightly re-tar
 moves gigabytes to capture megabytes. Keep the two lists in the one file: a second copy is how five
 data homes went unbundled for a release. **`docker compose up -d` NEVER reloads code**: the source is
