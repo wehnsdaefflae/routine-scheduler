@@ -42,6 +42,32 @@ services:
     container_name: rsched
     restart: unless-stopped          # self-audit's drain-and-exit restart relaunches here, like Restart=always
     stop_grace_period: 20s           # matches the old systemd TimeoutStopSec (uvicorn bounds its own to 10s)
+    # Does the console ANSWER? A plain GET of the web app manifest, from inside the container.
+    # That route is the app's own (not a static mount) and takes no token BY DESIGN: a browser
+    # fetches a manifest without credentials, so it can never move behind the bearer, and no
+    # credential has to be put in this file or the image to probe it (tests/test_deploy_image.py
+    # serves the path through the real auth rules). Here and not in the Dockerfile because this
+    # file is where the container's supervision lives (restart, init, grace), and because a
+    # retune is then a `docker compose up -d`, not a rebuild.
+    #
+    # start_period covers a whole BOOT: the port opens only after `uv run` has re-synced (a
+    # download, after a dependency change), the one-shot migrations, the seed sync and the
+    # library adoption have run — on a fresh host, after the library repo has been cloned. Misses
+    # inside it are not counted and the first answer ends it, so a normal boot reads healthy at
+    # the first probe (~30 s). After it, three misses in a row read `unhealthy` (~1.5 min).
+    #
+    # A REPORT, not a supervisor: `restart: unless-stopped` acts when the process EXITS, never on
+    # `unhealthy`, so a hung console stays up and says so (deploy/DOCKER.md, "Health").
+    # `--noproxy '*'`: a proxy set up for the containers' egress (the Docker client's `proxies`
+    # setting lands in every container's environment) must never be handed a loopback probe.
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "--show-error", "--noproxy", "*",
+             "--output", "/dev/null", "--max-time", "10",
+             "http://127.0.0.1:8321/manifest.webmanifest"]
+      interval: 30s
+      timeout: 15s                   # above curl's own --max-time, so the log says what curl saw
+      start_period: 5m
+      retries: 3
     ports:
       - "${RSCHED_PORT:-8321}:8321"  # reachable at http://192.168.0.128:8321
     environment:

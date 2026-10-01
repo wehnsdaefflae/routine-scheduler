@@ -14,7 +14,16 @@
 # headless Chrome badly enough to block the application form; under Xvfb the browser genuinely
 # is not headless, it just renders into a framebuffer nobody displays. Do not "simplify" this
 # into a headless flag.
-FROM debian:bookworm-slim
+#
+# The base is pinned by digest, its tag kept for the reader — the engine Dockerfile says why and
+# deploy/DOCKER.md how to bump it. Chrome itself is deliberately NOT pinned: it comes from
+# Google's stable channel at build time, because the sites score the browser's version.
+FROM debian:bookworm-slim@sha256:3783cc01769c7b2b1b83a5c5ad96c815348e28ed7da68e2e3687004faa906251
+
+# bash with pipefail for every RUN (hadolint DL4006). The signing key below arrives through a
+# pipe, and /bin/sh judges a pipeline by its last command alone — a missed download failed this
+# step only because gpg happens to refuse empty input. Now the step answers for curl as well.
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 # chrome              — the browser itself, from Google's own repo (stable channel)
 # xvfb/xauth          — the virtual display it renders into

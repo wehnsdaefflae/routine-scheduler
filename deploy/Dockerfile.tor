@@ -4,7 +4,14 @@
 # is the component that decides whether hidden-service traffic is actually anonymised, so it
 # comes from the same distribution the main image already trusts, and nothing else runs here.
 # Client only — this is never a relay or an exit.
-FROM debian:bookworm-slim
+#
+# The base is pinned by digest, its tag kept for the reader — the engine Dockerfile says why and
+# deploy/DOCKER.md how to bump it.
+FROM debian:bookworm-slim@sha256:3783cc01769c7b2b1b83a5c5ad96c815348e28ed7da68e2e3687004faa906251
+
+# bash with pipefail for every RUN, as in the other two images: nothing here pipes today, and
+# the first step that does is judged by every command in its pipe, not by the last one alone.
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 RUN apt-get update && apt-get install -y --no-install-recommends tor \
     && rm -rf /var/lib/apt/lists/*
