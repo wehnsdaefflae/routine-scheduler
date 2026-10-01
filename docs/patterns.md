@@ -97,7 +97,9 @@ rides as `done_when`, when the routine is done for good as `finish_line`, what a
 do as `never`. The routine is saved with its pattern's values; what is specific to it — the
 setup answers turned into settings (folders, a mailbox watch list for the gate, a cadence), the
 finish line, whatever else the recommender finds — waits as pending changes under "check the
-changes i recommend." (`patterns/recommend.at_creation`).
+changes i recommend." (`patterns/recommend.at_creation`). So does the pattern's own `grants`:
+an ask-first field is never saved without the person's click, because a pattern deciding which
+secrets a routine receives would be a pattern granting them.
 
 **Recommend for this routine** (`POST …/settings/recommend`). The system model picks the pattern
 that fits the routine as it now is — the one built on its workflow when there is exactly one —
@@ -131,5 +133,8 @@ lists every pattern with its followers (`GET /api/patterns`).
 
 `rsched lint` checks every pattern (`workflows/lint.lint_patterns`): a sound document naming
 only rules, permissions and a workflow the library holds — a pattern pointing at a deleted rule
-would hand every follower a binding to nothing. Patterns ride the library repo's sync like
+would hand every follower a binding to nothing. A file in `patterns/` that is no pattern at all
+(it does not parse, is not a mapping, or is not named by a slug) is reported there and passed
+over by every page and flow that lists patterns, so one broken file never takes them down.
+Patterns ride the library repo's sync like
 rules and permissions; the seed sync only adds a pattern a library lacks, never overwrites one.

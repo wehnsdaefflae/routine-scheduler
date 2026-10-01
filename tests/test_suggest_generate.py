@@ -151,6 +151,24 @@ def test_suggest_retries_once_on_a_malformed_reply(server, monkeypatch):
     assert retry_msgs[-2]["role"] == "assistant"      # the bad reply rides the retry context
 
 
+def test_a_natively_parsed_reply_is_held_to_the_schema_too(server, monkeypatch):
+    """A provider's native schema mode (Anthropic tool use) hands back `parsed` without the
+    schema enforced; trusting it unchecked let a suggestion without `confidence` raise out of
+    suggest() — a 500 in the form a person is waiting on — instead of costing one retry."""
+    from rsched.workflows import suggest as sug_mod
+
+    ep = _SysEndpoint([{"suggestions": [{"slug": "general-task"}], "none_fit": False},
+                       {"suggestions": [{"slug": "general-task", "confidence": 0.7,
+                                         "reason": "fits"}], "none_fit": False}])
+    _patch_system_model(monkeypatch, "rsched.workflows.suggest", ep)
+    result = sug_mod.suggest(server, "task")
+    assert [s["slug"] for s in result["suggestions"]] == ["general-task"]
+    assert len(ep.calls) == 2
+    retry = ep.calls[1]["messages"]
+    assert retry[-2]["role"] == "assistant" and retry[-2]["content"]   # never an empty turn
+    assert retry[-1]["content"].startswith("Invalid:")
+
+
 def test_suggest_falls_back_when_replies_stay_malformed(server, monkeypatch):
     from rsched.workflows import suggest as sug_mod
 
@@ -206,3 +224,19 @@ def test_generate_description_empty_task_never_calls_the_model(server, monkeypat
 
     assert sug_mod.generate_description(server, name="Just A Name", instruction="  ") == "Just A Name"
     assert ep.calls == []
+
+
+def test_generate_description_survives_a_routine_yaml_that_is_no_mapping(server, monkeypatch):
+    """The sibling catalog reads every routine.yaml; one that parses to a list made `.get`
+    raise out of a generator whose contract is to never fail the creation flow."""
+    for slug, text in (("listy", "- a\n- b\n"), ("named", "name: Named one\ntags: [x]\n")):
+        (server.routines_home / slug).mkdir()
+        (server.routines_home / slug / "routine.yaml").write_text(text, encoding="utf-8")
+    ep = _SysEndpoint([{"description": "It watches things."}])
+    _patch_system_model(monkeypatch, "rsched.workflows.suggest", ep)
+    from rsched.workflows import suggest as sug_mod
+
+    assert sug_mod.generate_description(server, name="N", instruction="watch") == (
+        "It watches things.")
+    prompt = ep.calls[0]["messages"][0]["content"]
+    assert "- named: Named one [x]" in prompt and "listy" not in prompt

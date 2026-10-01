@@ -69,6 +69,63 @@ def test_an_unsound_pattern_is_refused(tmp_path, doc):
         store.create(tmp_path / "lib", "p", doc)
 
 
+def test_a_pattern_file_that_is_no_pattern_is_named_by_lint_and_breaks_no_listing(tmp_path):
+    """One hand-broken file (a merge conflict, a typo) used to raise out of every listing — each
+    routine's settings page, the Library tab, creation's catalog, `rsched lint` itself — while
+    a file that parsed to a list was silently left out of all of them, lint included."""
+    from rsched.workflows.lint import lint_patterns
+
+    lib = tmp_path / "lib"
+    store.create(lib, "watcher", pattern_doc())
+    (store.home(lib) / "broken.yaml").write_text("title: [unclosed\n", encoding="utf-8")
+    (store.home(lib) / "listy.yaml").write_text("- a\n- b\n", encoding="utf-8")
+    (store.home(lib) / "Bad Name.yaml").write_text("title: t\n", encoding="utf-8")
+    assert [p["slug"] for p in store.list_all(lib)] == ["watcher"]
+    assert store.read(lib, "broken") is None
+    found = lint_patterns(lib, ["ask-policy"], [])
+    assert "invalid YAML" in found["patterns/broken.yaml"][0]
+    assert "a pattern is a mapping" in found["patterns/listy.yaml"][0]
+    assert "kebab-case" in found["patterns/Bad Name.yaml"][0]
+
+
+def test_a_routine_yaml_that_does_not_parse_follows_nothing(tmp_path):
+    home = tmp_path / "routines"
+    for slug, text in (("good", "pattern: watcher\n"), ("bad", "pattern: [watcher\n")):
+        (home / slug).mkdir(parents=True)
+        (home / slug / "routine.yaml").write_text(text, encoding="utf-8")
+    assert store.followers(home, "watcher") == ["good"]
+
+
+def test_creation_proposes_a_patterns_access_decisions_and_writes_none(tmp_path):
+    """`grants` is ask-first: a pattern deciding which secrets a routine receives would be a
+    pattern granting them. So the new routine is saved WITHOUT the pattern's grants, and they
+    wait as a pending change for the person's click."""
+    import shutil
+    from pathlib import Path
+
+    from rsched.config import ServerConfig
+    from rsched.workflows.scaffold import scaffold
+
+    seed = Path(__file__).resolve().parents[1] / "library-seed"
+    server = ServerConfig()
+    server.libraries_home = tmp_path / "library"
+    for kind in ("workflows", "rules", "permissions"):
+        shutil.copytree(seed / kind, server.libraries_home / kind,
+                        ignore=shutil.ignore_patterns("__pycache__"))
+    server.routines_home = tmp_path / "routines"
+    server.routines_home.mkdir()
+    store.create(server.libraries_home, "granting", {
+        **pattern_doc(rules=["ask-policy"], grants={"secret:FOO_KEY": True}),
+        "workflow": "general-task"})
+    d = scaffold(server, slug="newbie", name="Newbie", instruction="Do the thing.",
+                 workflow_slug="general-task", pattern="granting")
+    raw = read_yaml(d / "routine.yaml")
+    assert raw["pattern"] == "granting" and not raw.get("grants")
+    assert raw["rules"] == ["ask-policy"]                    # the rest of the pattern is saved
+    draft = drafts.read(server.routines_home, "newbie")
+    assert draft is not None and draft["changes"]["grants"]["value"] == {"secret:FOO_KEY": True}
+
+
 def test_drafts_prune_what_already_landed(tmp_path):
     home = tmp_path / "routines"
     drafts.write(home, "r", changes={"keep_runs": {"value": 10, "reason": "less history"},
@@ -175,6 +232,16 @@ def test_deleting_a_pattern_releases_its_followers_and_keeps_their_values(client
     assert c.get("/api/patterns").json()["patterns"] == []
 
 
+def test_a_broken_pattern_file_leaves_every_settings_surface_up(client):
+    c, tmp = client
+    store.create(tmp / "library", "watcher", pattern_doc())
+    (store.home(tmp / "library") / "broken.yaml").write_text("summary: [x\n", encoding="utf-8")
+    listed = c.get("/api/patterns")
+    assert listed.status_code == 200
+    assert [p["slug"] for p in listed.json()["patterns"]] == ["watcher"]
+    assert c.get("/api/routines/alpha/settings").status_code == 200
+
+
 def test_the_pattern_list_carries_the_field_vocabulary_the_library_renders(client):
     c, _ = client
     meta = c.get("/api/patterns").json()["meta"]
@@ -266,6 +333,22 @@ def test_a_proposal_the_accept_button_would_refuse_is_not_offered():
     assert valid("machines", ["real-box"], srv)
     assert valid("machines", ["no-such-box"])
     assert not valid("models", {"main": "no-such-model"}, srv)
+
+
+def test_the_recommender_is_told_what_each_gate_parameter_means(tmp_path):
+    """The prompt spells the SCHEDULE's weekday numbering (0 = Sunday), while a gate's
+    `weekdays` check numbers from Monday. Listing the checks' parameter NAMES only left the
+    model one convention to copy: a duty proposed for Monday landed on Tuesday, and the gate
+    answered "no standing duty is due today" on the real day."""
+    from types import SimpleNamespace
+
+    from rsched.patterns.recommend import _prompt
+
+    server = SimpleNamespace(permissions_home=tmp_path / "p", rules_home=tmp_path / "r")
+    text = _prompt(server, "r", {}, None, "a weekly duty", ["run_gate", "schedule"])
+    assert "0 = Monday" in text and "0=Sunday" in text
+    assert "json:<dotted.path>" in text                        # a select's syntax, not its name
+    assert "max_quiet: " in text and "days (int, required)" in text
 
 
 def test_a_refused_connection_names_the_field_and_the_way_out():

@@ -42,6 +42,16 @@ def test_no_main_md_is_not_a_recipe(tmp_path):
     assert recipe_notes(d) == []
 
 
+def test_frontmatter_that_does_not_parse_is_a_note_not_a_crash(tmp_path):
+    """`recipe_notes` never raises — `rsched validate` walks every routine — yet a broken
+    frontmatter block raised out of it and stopped the command at the first such recipe. The
+    file is judged as written and the broken block named, since the engine reads `tools:` and
+    the provenance from it."""
+    d = _recipe(tmp_path, "---\nname: [unclosed\n---\n" + MAIN)
+    (notes,) = recipe_notes(d)
+    assert notes.startswith("main.md: its frontmatter is not valid YAML")
+
+
 def test_route_to_a_module_that_does_not_exist(tmp_path):
     d = _recipe(tmp_path, MAIN + "\n- `wrap` → `stages/wrap-up.md`\n")
     (notes,) = recipe_notes(d)

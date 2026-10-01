@@ -26,6 +26,7 @@ import re
 from pathlib import Path
 
 import frontmatter
+import yaml
 
 from ..grants import GATED_KINDS
 from ..readmodels.statemap import STAGES_DIR
@@ -45,21 +46,29 @@ _SCRIPT_REF = re.compile(r"scripts/([A-Za-z0-9_-]+)\.py")
 _KIND_REF = re.compile(r"`([a-z_]+)`")
 
 
-def recipe_files(routine_dir: Path) -> dict[str, str]:
-    """`{"main.md": body, "stages/<x>.md": body, …}` — the recipe, frontmatter stripped.
+def recipe_files(routine_dir: Path) -> tuple[dict[str, str], list[str]]:
+    """`({"main.md": body, "stages/<x>.md": body, …}, notes)` — the recipe, frontmatter
+    stripped, and a note per file whose frontmatter is not valid YAML (that file is judged as
+    written: the engine reads `tools:` and the provenance from the block, so it is a finding).
 
     Frontmatter is provenance (the pattern a recipe was materialized from) and carries an
     ALPHABETICAL module list, so leaving it in would make every stage look routed-to.
     """
     out: dict[str, str] = {}
+    notes: list[str] = []
     for path in [routine_dir / "main.md", *sorted((routine_dir / STAGES_DIR).glob("*.md"))]:
         try:
             text = path.read_text(encoding="utf-8")
         except OSError:
             continue
         rel = path.name if path.parent == routine_dir else f"{STAGES_DIR}/{path.name}"
-        out[rel] = frontmatter.loads(text).content
-    return out
+        try:
+            out[rel] = frontmatter.loads(text).content
+        except yaml.YAMLError as exc:
+            out[rel] = text
+            notes.append(f"{rel}: its frontmatter is not valid YAML "
+                         f"({getattr(exc, 'problem', None) or exc}) — fix it in place")
+    return out, notes
 
 
 def recipe_notes(routine_dir: Path, capabilities: dict | None = None) -> list[str]:
@@ -70,10 +79,11 @@ def recipe_notes(routine_dir: Path, capabilities: dict | None = None) -> list[st
     answer from the routine dir alone: `rsched validate` walks every routine, and a check
     that needed the library or the network would make the command an outage away from red.
     """
-    files = recipe_files(routine_dir)
+    files, unparsed = recipe_files(routine_dir)
     if "main.md" not in files:
         return []
-    return [*_stage_routing(files),
+    return [*unparsed,
+            *_stage_routing(files),
             *_done_when(files),
             *_missing_scripts(routine_dir, files),
             *_ungranted_kinds(files, capabilities),

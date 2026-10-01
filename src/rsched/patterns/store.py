@@ -28,7 +28,9 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from ..ids import is_slug, now_iso
+import yaml
+
+from ..ids import now_iso
 from ..paths import atomic_write_yaml, read_yaml
 from . import fields
 
@@ -41,9 +43,20 @@ def home(libraries_home: Path) -> Path:
 
 
 def _path(libraries_home: Path, slug: str) -> Path:
-    if not _SLUG_RE.fullmatch(slug or "") or not is_slug(slug):
+    if not _SLUG_RE.fullmatch(slug or ""):
         raise ValueError(f"{slug!r} is not a pattern slug (kebab-case)")
     return home(libraries_home) / f"{slug}.yaml"
+
+
+def _document(path: Path) -> tuple[object, str]:
+    """The file's YAML document, or `(None, why)` when it does not parse — a library file a
+    person can break by hand or a merge can leave conflicted, which is a finding to report
+    and never an exception for every page that lists patterns.
+    """
+    try:
+        return read_yaml(path, {}), ""
+    except (OSError, yaml.YAMLError) as exc:
+        return None, f"invalid YAML: {exc}"
 
 
 def problems(doc: object) -> list[str]:
@@ -69,13 +82,16 @@ def problems(doc: object) -> list[str]:
 
 
 def read(libraries_home: Path, slug: str) -> dict | None:
+    """The pattern `slug`, or None when there is none to use: no such file, or a file that is
+    not a pattern document at all. `unusable` names those, for the library lint.
+    """
     try:
         path = _path(libraries_home, slug)
     except ValueError:
         return None
     if not path.is_file():
         return None
-    doc = read_yaml(path, {})
+    doc, _why = _document(path)
     if not isinstance(doc, dict):
         return None
     settings = {k: fields.canonical(k, v) for k, v in (doc.get("settings") or {}).items()
@@ -88,11 +104,31 @@ def read(libraries_home: Path, slug: str) -> dict | None:
             "problems": problems(doc)}
 
 
-def list_all(libraries_home: Path) -> list[dict]:
+def _files(libraries_home: Path) -> list[Path]:
     d = home(libraries_home)
-    if not d.is_dir():
-        return []
-    return [p for p in (read(libraries_home, f.stem) for f in sorted(d.glob("*.yaml"))) if p]
+    return sorted(d.glob("*.yaml")) if d.is_dir() else []
+
+
+def list_all(libraries_home: Path) -> list[dict]:
+    """Every usable pattern. A file `read` cannot use is left out here and named by
+    `unusable` instead.
+    """
+    return [p for p in (read(libraries_home, f.stem) for f in _files(libraries_home)) if p]
+
+
+def unusable(libraries_home: Path) -> dict[str, str]:
+    """File name → why, for each file in the pattern directory that is not a pattern `read`
+    can use: what `list_all` leaves out, named so `rsched lint` reports it rather than nobody.
+    """
+    out: dict[str, str] = {}
+    for f in _files(libraries_home):
+        if not _SLUG_RE.fullmatch(f.stem):
+            out[f.name] = "the file name is not a pattern slug (kebab-case)"
+            continue
+        doc, why = _document(f)
+        if why or not isinstance(doc, dict):
+            out[f.name] = why or "; ".join(problems(doc))
+    return out
 
 
 def create(libraries_home: Path, slug: str, doc: dict) -> dict:
@@ -131,11 +167,15 @@ def delete(libraries_home: Path, slug: str) -> bool:
 
 def followers(routines_home: Path, slug: str) -> list[str]:
     """Routines whose `routine.yaml` names this pattern — read from the files, because the
-    reference lives there and nowhere else.
+    reference lives there and nowhere else. A file that does not parse names nothing anyone
+    can read (its own loader reports it), so it is passed over rather than failing the list.
     """
     out = []
     for cfg in sorted(Path(routines_home).glob("*/routine.yaml")):
-        raw = read_yaml(cfg, {})
+        try:
+            raw = read_yaml(cfg, {})
+        except (OSError, yaml.YAMLError):
+            continue
         if isinstance(raw, dict) and raw.get("pattern") == slug:
             out.append(cfg.parent.name)
     return out

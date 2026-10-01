@@ -17,6 +17,12 @@ def _folder(ctx: dict, raw: str) -> Path:
 
 
 def files_changed(check: dict, ctx: dict) -> tuple[bool, str, str]:
+    """A file is NEW or CHANGED when its inode changed since the last ok run started: its
+    ctime as well as its mtime, because mv, `rsync -a`, an unpacked archive and every sync
+    client keep the mtime a file had elsewhere — a photo synced in today with last week's
+    mtime is new to this folder all the same. (Anything else that touches an inode, a chmod,
+    only ever adds a run.)
+    """
     pattern = str(check.get("glob") or "*")
     nonempty = bool(check.get("nonempty"))
     cutoff = None if nonempty else since(ctx).timestamp()
@@ -30,7 +36,8 @@ def files_changed(check: dict, ctx: dict) -> tuple[bool, str, str]:
                     continue
                 if nonempty:
                     return True, f"{path.name} is waiting in {root}", ""
-                if cutoff is not None and path.stat().st_mtime > cutoff:
+                st = path.stat()
+                if cutoff is not None and max(st.st_mtime, st.st_ctime) > cutoff:
                     return True, f"{path} changed since the last ok run", ""
         except OSError as exc:
             raise UnknownError(f"could not walk {root}: {exc}") from exc
@@ -209,9 +216,11 @@ def _open_dates(doc: object, check: dict) -> list:
     items = dig(doc, items_path.rstrip("."))
     if not isinstance(items, list):
         raise UnknownError(f"{items_path.rstrip('.') or 'the file'} is not a list")
+    if not all(isinstance(item, dict) for item in items):
+        raise UnknownError(f"{items_path.rstrip('.') or 'the file'} holds items that are not "
+                           f"records, so their {done_key} cannot be read")
     done = {str(v) for v in check.get("done_values") or []}
-    return [item.get(field) for item in items
-            if isinstance(item, dict) and str(item.get(done_key)) not in done]
+    return [item.get(field) for item in items if str(item.get(done_key)) not in done]
 
 
 def weekdays(check: dict, ctx: dict) -> tuple[bool, str, str]:

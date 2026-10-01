@@ -274,6 +274,20 @@ def test_confirm_from_later_leg_materializes(tmp_path):
     assert not (ctx.routine.dir / DRAFT_RELPATH).exists()  # draft consumed
 
 
+def test_a_created_routine_is_scheduled_in_the_servers_zone(tmp_path, monkeypatch):
+    """Creation names no zone, so the routine gets the server's — the zone the console shows
+    and edits its schedule in — never a fixed one."""
+    monkeypatch.setenv("TZ", "America/New_York")
+    server = _server(tmp_path)
+    ctx = _ctx(server, home="conversations_home")
+    create_routine.handle_create_routine(ctx, dict(ACTION))
+    _age_draft(ctx)
+    assert create_routine.handle_create_routine(ctx, dict(ACTION)).get("created")
+    cfg = yaml.safe_load((server.routines_home / ACTION["target"] / "routine.yaml")
+                         .read_text(encoding="utf-8"))
+    assert cfg["schedule"]["tz"] == "America/New_York"
+
+
 def test_changed_fields_redraft_instead_of_confirming(tmp_path):
     """A design change on the confirming call is NOT a confirmation — it replaces the draft
     and restarts the round-trip."""

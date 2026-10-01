@@ -4,6 +4,8 @@ crash or a discarded config."""
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import yaml
 
 from rsched.config import (
@@ -90,6 +92,20 @@ def test_server_bad_keys_degrade_per_key(tmp_path):
     assert server.bind == "10.0.0.1"                # good key survives
     assert set(server.endpoints) == {"good"}        # bad endpoint skipped, good one kept
     assert server.system_model == "m" and server.models["m"].endpoint == "good"
+
+
+def test_server_bounds_hold_for_a_hand_edited_file(tmp_path):
+    """The bounds the settings page enforces hold at load too: `max_concurrent_runs: 0` sized
+    the run semaphore at zero (no run ever started, no problem reported) and a negative value
+    raised out of the daemon's boot; a port outside 1–65535 cannot be bound."""
+    server, problems = _load_server(tmp_path, {
+        "max_concurrent_runs": 0, "registry_rescan_s": -5, "port": 70000,
+        "machines": {"gpu": {"host": "h", "user": "u", "port": 0}}})
+    text = " | ".join(problems)
+    for key in ("max_concurrent_runs", "registry_rescan_s", "port", "machines.gpu.port"):
+        assert key in text, key
+    assert (server.max_concurrent_runs, server.registry_rescan_s, server.port) == (2, 30, 8321)
+    assert server.machines["gpu"].port == 22
 
 
 def test_server_unknown_system_model_and_model_endpoint_flagged(tmp_path):
@@ -223,6 +239,79 @@ def test_routine_structural_problems(tmp_path):
 
     cfg2, problems2 = load_routine(tmp_path)  # no routine.yaml at all
     assert cfg2 is None and len(problems2) == 1
+
+
+def test_a_schedule_without_a_zone_is_in_the_servers_zone(tmp_path, monkeypatch):
+    """The console's schedule editor speaks the SERVER's zone and every friendly save writes it
+    beside the cron, so a routine.yaml that names no zone must mean that zone too — not a fixed
+    one, which fired a hand-written routine at another place's times on any other host."""
+    monkeypatch.setenv("TZ", "America/New_York")
+    cfg, problems = load_routine(_mk_routine(tmp_path, {"description": "x",
+                                                         "schedule": {"cron": "0 7 * * *"}}))
+    assert problems == [] and cfg.tz == "America/New_York"
+
+
+def test_a_host_zone_zoneinfo_cannot_load_defaults_to_utc(tmp_path, monkeypatch):
+    """A default is never a zone the scheduler would choke on: a host whose TZ is not an IANA
+    key falls back to UTC, the same fallback server_tz takes for an undetectable zone."""
+    monkeypatch.setenv("TZ", "Not/A_Zone")
+    cfg, problems = load_routine(_mk_routine(tmp_path, {"description": "x"}))
+    assert problems == [] and cfg.tz == "UTC"
+
+
+def test_retention_keeps_at_least_one_run(tmp_path):
+    """Retention deletes `runs[keep_runs:]` after every run, so a hand-edited `keep_runs: 0`
+    deleted every finished run — the one that just ended included — and a negative value
+    pruned from the wrong end. The routine page refuses both; the loader now does too."""
+    for bad in (0, -3):
+        d = _mk_routine(tmp_path, {"description": "x", "retention": {"keep_runs": bad}},
+                        slug=f"keep{abs(bad)}")
+        cfg, problems = load_routine(d)
+        assert cfg.keep_runs == 30
+        assert any(p.startswith("retention.keep_runs:") for p in problems)
+
+
+def test_a_rejected_gate_reads_like_every_other_problem_line(tmp_path):
+    """`where: what`, one line per problem — not pydantic's multi-line dump with the input's
+    repr and a documentation URL, which is what the routine page and `rsched validate` showed."""
+    d = _mk_routine(tmp_path, {"description": "x", "run_gate": {
+        "enabled": True, "timeout_s": 999, "checks": [{"kind": "nope"}]}})
+    cfg, problems = load_routine(d)
+    assert cfg is None
+    assert "run_gate.timeout_s: Input should be less than or equal to 300" in problems
+    assert any(p.startswith("run_gate.checks[0]: unknown kind 'nope'") for p in problems)
+    assert not any("\n" in p or "errors.pydantic.dev" in p for p in problems)
+
+
+def test_one_bad_list_item_is_dropped_and_the_rest_of_the_routine_stands(tmp_path):
+    """The lenient loader could drop a bad KEY but not a bad list ITEM: the same error came back
+    every round until the whole routine fell back to the defaults — its description and cron
+    gone, and a deliberately locked-down routine handed the default permissions and
+    capabilities — with nothing but the item's own problem line to say so."""
+    d = _mk_routine(tmp_path, {"description": "a careful routine", "permissions": [],
+                               "capabilities": {}, "schedule": {"cron": "0 7 * * *"},
+                               "fs_read_roots": [123, "/srv/ok"]})
+    cfg, problems = load_routine(d)
+    assert any(p.startswith("fs_read_roots.0:") for p in problems)
+    assert cfg.fs_read_roots == [Path("/srv/ok")]
+    assert (cfg.description, cfg.cron, cfg.permissions) == ("a careful routine", "0 7 * * *", [])
+    assert "write_util" not in cfg.capabilities.get("actions", [])
+    assert not any("description is empty" in p for p in problems)
+
+
+def test_a_path_naming_no_account_is_a_problem_line_not_a_crash(tmp_path):
+    """`~bob/x` for an account that does not exist makes pathlib raise RuntimeError, which
+    pydantic does not turn into a validation error — so both loaders, which promise a problem
+    line per bad key, raised instead."""
+    d = _mk_routine(tmp_path, {"description": "x",
+                               "fs_read_roots": ["~nosuchuser-rsched/data", "/srv/ok"]})
+    cfg, problems = load_routine(d)
+    assert any(p.startswith("fs_read_roots.0:") and "nosuchuser-rsched" in p for p in problems)
+    assert cfg.fs_read_roots == [Path("/srv/ok")]
+    server, problems = _load_server(tmp_path, {"routines_home": "~nosuchuser-rsched/r",
+                                               "port": 9000})
+    assert any(p.startswith("routines_home:") for p in problems)
+    assert server.port == 9000 and "nosuchuser" not in str(server.routines_home)
 
 
 def test_routine_empty_description_flagged(tmp_path):

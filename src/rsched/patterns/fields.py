@@ -135,7 +135,7 @@ def matches(settings: dict, pattern_settings: dict) -> bool:
     return not overrides(settings, pattern_settings)
 
 
-def snapshot(cfg, *, deliberation: str | None = None) -> dict:
+def snapshot(cfg) -> dict:
     """One routine's settings as a canonical document — what its page shows, what a pattern
     is compared against, and what "Save as new pattern" copies into the library.
     """
@@ -156,12 +156,12 @@ def snapshot(cfg, *, deliberation: str | None = None) -> dict:
         "finish_line": finishline.load(Path(cfg.dir)),
         "budgets": {**DEFAULT_BUDGETS, **(cfg.budgets or {})},
         "keep_runs": int(cfg.keep_runs),
-        "fs_read_roots": [_tilde(p) for p in cfg.fs_read_roots],
-        "fs_write_roots": [_tilde(p) for p in cfg.fs_write_roots],
+        "fs_read_roots": [tilde(p) for p in cfg.fs_read_roots],
+        "fs_write_roots": [tilde(p) for p in cfg.fs_write_roots],
         "connections": dict(cfg.connections or {}),
         "machines": list(cfg.machines or []),
         "models": dict(cfg.models or {}),
-        "deliberation": deliberation or cfg.deliberation,
+        "deliberation": cfg.deliberation,
         "tags": list(cfg.tags or []),
         "name": cfg.name,
         "description": cfg.description,
@@ -203,7 +203,10 @@ def patch_shape(key: str, value: object, lane_managed: bool) -> tuple[str, objec
     return key, value
 
 
-def _tilde(path: object) -> str:
-    """$HOME → ~, so a pattern saved from one routine never embeds the account's home path."""
+def tilde(path: object) -> str:
+    """$HOME → ~, so a root written into settings — a routine's at creation, a pattern saved
+    from one — never embeds the account's home path. Only $HOME itself or a path under it:
+    a sibling that merely shares its prefix (`/home/me-data` beside `/home/me`) is kept.
+    """
     home, text = str(Path.home()), str(path)
     return "~" + text[len(home):] if text == home or text.startswith(home + "/") else text

@@ -29,10 +29,18 @@ def test_valid_gate_survives_scalar_recovery(make_routine, timeout):
     assert cfg.run_gate.enabled and cfg.run_gate.timeout_s == timeout
 
 
-def test_enabled_gate_rejects_exhausted_recovery(make_routine):
+def test_enabled_gate_rejects_exhausted_recovery(make_routine, monkeypatch):
+    """Should lenient recovery give up on the whole document, an enabled gate refuses the
+    defaults it would fall back to. A malformed list item (`machines: [{}]`) used to be how
+    recovery gave up; the item is dropped now and the rest loads, so the give-up is simulated."""
+    from rsched.config import routine as routine_mod
+
     d = make_routine()
     atomic_write_yaml(d / "routine.yaml", {
         "run_gate": {"enabled": True, "timeout_s": 12, "checks": SCRIPT}, "machines": [{}]})
+    loaded, _ = load_routine(d)
+    assert loaded is not None and loaded.machines == [] and loaded.run_gate.enabled
+    monkeypatch.setattr(routine_mod, "_validate_lenient", lambda *_args: None)
     cfg, problems = load_routine(d)
     assert cfg is None
     assert any("whole-config fallback" in p for p in problems)

@@ -1,6 +1,8 @@
 """The declarative gate checks: each answers "no work" only when it KNOWS there is none."""
 import json
+import os
 import subprocess
+import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -54,18 +56,40 @@ def test_max_quiet_is_a_backstop(tmp_path, routine):
     assert stale["decision"] == "run"
 
 
+def ok_started_now() -> dict:
+    """A last ok run that started on the REAL clock, between files made before and after it —
+    the filesystem stamps a file's inode with that clock, and `files_changed` reads it. The
+    pauses clear the coarse clock the kernel stamps with."""
+    time.sleep(0.05)
+    started = datetime.now(UTC)
+    time.sleep(0.05)
+    return {"run_id": "me:x", "started": started.isoformat(), "fingerprints": {}}
+
+
 def test_files_changed_compares_against_the_last_ok_run(tmp_path, routine):
     watched = tmp_path / "watched"
     watched.mkdir()
-    old = watched / "old.txt"
-    old.write_text("x")
-    past = (NOW - timedelta(hours=5)).timestamp()
-    import os
-    os.utime(old, (past, past))
+    (watched / "old.txt").write_text("x")
+    last_ok = ok_started_now()
     check = [{"kind": "files_changed", "paths": [str(watched)]}]
-    assert kit.evaluate(ctx(tmp_path, check, last_ok=ok_since(2)))["decision"] == "skip"
-    (watched / "new.txt").write_text("y")          # mtime is now — after the last ok run
-    assert kit.evaluate(ctx(tmp_path, check, last_ok=ok_since(2)))["decision"] == "run"
+    assert kit.evaluate(ctx(tmp_path, check, last_ok=last_ok))["decision"] == "skip"
+    (watched / "new.txt").write_text("y")          # written after the last ok run started
+    assert kit.evaluate(ctx(tmp_path, check, last_ok=last_ok))["decision"] == "run"
+
+
+def test_a_file_that_arrives_with_an_old_mtime_is_new(tmp_path, routine):
+    """mv, `rsync -a`, an unpacked archive and every sync client keep a file's own mtime, so a
+    photo taken last week and synced in today predates the last ok run by its mtime alone. Its
+    inode changed when it arrived — that is what makes it new to the folder."""
+    watched = tmp_path / "watched"
+    watched.mkdir()
+    last_ok = ok_started_now()
+    arrived = watched / "photo.jpg"
+    arrived.write_text("x")
+    week_ago = (datetime.now(UTC) - timedelta(days=7)).timestamp()
+    os.utime(arrived, (week_ago, week_ago))
+    check = [{"kind": "files_changed", "paths": [str(watched)]}]
+    assert kit.evaluate(ctx(tmp_path, check, last_ok=last_ok))["decision"] == "run"
 
 
 def test_files_changed_nonempty_mode_ignores_time(tmp_path, routine):
@@ -106,6 +130,43 @@ def test_url_changed_fingerprints_the_answer(tmp_path, routine):
     page.write_text("<rss><item><guid>a</guid></item><item><guid>b</guid></item></rss>")
     changed = kit.evaluate(ctx(tmp_path, check, last_ok=ok_since(1, {"feed": fp})))
     assert changed["decision"] == "run"
+
+
+def test_an_answer_too_large_to_read_whole_is_work(tmp_path, routine):
+    """The check reads at most 8 MiB; a page that changed only past that would fingerprint as
+    "unchanged", so an answer over the limit is work rather than a guess."""
+    page = tmp_path / "big.html"
+    page.write_bytes(b"x" * (8 * 2**20) + b"<p>first</p>")
+    check = [{"kind": "url_changed", "url": page.as_uri(), "id": "big"}]
+    first = one(kit.evaluate(ctx(tmp_path, check, last_ok=ok_since(1))))
+    page.write_bytes(b"x" * (8 * 2**20) + b"<p>second</p>")          # changed past the limit
+    baseline = {"big": first.get("fingerprint") or "none recorded"}
+    out = kit.evaluate(ctx(tmp_path, check, last_ok=ok_since(1, baseline)))
+    assert out["decision"] == "run" and "8 MiB" in one(out)["reason"]
+
+
+def test_a_urls_query_never_reaches_the_reason(tmp_path, routine, monkeypatch):
+    """A query string is where many APIs take their key. The check already left it out of a
+    fetch error; its ordinary answers — written to gate.json and a skipped fire's result.md —
+    printed the whole URL."""
+    import io
+    import urllib.request
+
+    class Answer(io.BytesIO):
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+    monkeypatch.setattr(urllib.request, "urlopen", lambda req, timeout: Answer(b"same"))
+    check = [{"kind": "url_changed", "url": "https://api.example/v1/items?api_key=s3cret",
+              "id": "u"}]
+    first = one(kit.evaluate(ctx(tmp_path, check, last_ok=ok_since(1))))
+    again = one(kit.evaluate(ctx(tmp_path, check,
+                                 last_ok=ok_since(1, {"u": first["fingerprint"]}))))
+    assert again["work"] is False and "api.example/v1/items" in again["reason"]
+    assert "s3cret" not in first["reason"] + again["reason"]
 
 
 def test_url_changed_json_path(tmp_path, routine):
@@ -162,6 +223,84 @@ def test_mail_without_its_secret_is_work(tmp_path, routine, monkeypatch):
               "password_secret": "MAIL_PASS"}]
     out = kit.evaluate(ctx(tmp_path, check, last_ok=ok_since(1)))
     assert out["decision"] == "run" and "MAIL_USER" in one(out)["reason"]
+
+
+def test_the_mailbox_login_goes_over_a_verified_tls_connection(tmp_path, routine, monkeypatch):
+    """imaplib.IMAP4_SSL without a context accepts ANY certificate (its backwards-compatible
+    default), so the password would go to whoever answered on the way to the mail server."""
+    import imaplib
+    import ssl
+
+    seen = {}
+
+    class Refused:
+        def __init__(self, host, port, *, ssl_context=None, timeout=None):
+            seen["tls"] = ssl_context
+            raise OSError("connection refused")
+
+    monkeypatch.setattr(imaplib, "IMAP4_SSL", Refused)
+    monkeypatch.setenv("MAIL_USER", "u")
+    monkeypatch.setenv("MAIL_PASS", "p")
+    check = [{"kind": "mail", "host": "imap.example", "user_secret": "MAIL_USER",
+              "password_secret": "MAIL_PASS"}]
+    assert kit.evaluate(ctx(tmp_path, check, last_ok=ok_since(1)))["decision"] == "run"
+    tls = seen["tls"]
+    assert tls is not None and tls.verify_mode == ssl.CERT_REQUIRED and tls.check_hostname
+
+
+class Inbox:
+    """Just enough IMAP for `_count`: `n` unread messages, only message `watched` (1 = the
+    oldest) from the sender the watch list names."""
+
+    def __init__(self, n: int, watched: int):
+        self.n, self.watched = n, watched
+
+    def select(self, _mailbox, readonly):
+        assert readonly
+        return "OK", [str(self.n).encode()]
+
+    def search(self, _charset, criteria):
+        return "OK", [b" ".join(str(i).encode() for i in range(1, self.n + 1))]
+
+    def fetch(self, numbers, query):
+        out: list = []
+        for num in numbers.split(b","):
+            sender = "Watched <w@x.example>" if int(num) == self.watched else "Bulk <b@y.example>"
+            out += [(num + b" (BODY[HEADER.FIELDS (FROM SUBJECT)] {40}",
+                     f"From: {sender}\r\nSubject: news\r\n\r\n".encode()), b")"]
+        return "OK", out
+
+
+def test_a_mailbox_too_full_to_read_whole_is_work():
+    """Only the newest messages are read. When none of them counts and older ones went unread,
+    the watched mail may be among those — that is not knowing, so it is work."""
+    from rsched.gatekit.kit_net import UnknownError, _count
+
+    watch = {"from_any": ["w@x.example"]}
+    assert _count(Inbox(400, watched=1), "INBOX", watch, None, [], []) == 1
+    assert _count(Inbox(900, watched=900), "INBOX", watch, None, [], []) == 1
+    with pytest.raises(UnknownError, match="newest 500"):
+        _count(Inbox(900, watched=1), "INBOX", watch, None, [], [])
+
+
+def test_a_folded_or_encoded_header_is_matched_as_the_reader_sees_it():
+    """A Subject folded onto a second line, or sent as an RFC 2047 encoded word (how a mail
+    client carries an umlaut), is the same Subject; matching the raw first line skipped both —
+    and an address folded under its display name escaped the sender lists."""
+    import base64
+
+    from rsched.gatekit.kit_net import _matches
+
+    check = {"subject_any": ["ARDS"], "from_any": ["jürgen"]}
+    folded = "From: A <a@x.example>\r\nSubject: Re: the long thread about\r\n the ARDS report\r\n"
+    assert _matches(folded, check, [], [])
+    word = base64.b64encode("Übersicht ARDS".encode()).decode()
+    assert _matches(f"From: B <b@x.example>\r\nSubject: =?utf-8?b?{word}?=\r\n", check, [], [])
+    named = "From: =?utf-8?q?J=C3=BCrgen_M=C3=BCller?= <j@x.example>\r\nSubject: hi\r\n"
+    assert _matches(named, check, [], [])
+    moved = 'From: "A Very Long Display Name Indeed"\r\n <d@fau.de>\r\nSubject: ARDS\r\n'
+    assert _matches(moved, {}, ["d@fau.de"], [])
+    assert not _matches(moved, {"subject_any": ["ARDS"], "from_domains_not": ["fau.de"]}, [], [])
 
 
 def test_one_working_check_is_enough_and_every_check_must_agree_to_skip(tmp_path, routine):
@@ -349,6 +488,24 @@ def test_a_finished_items_date_is_never_due(tmp_path, routine):
     assert kit.evaluate(ctx(tmp_path, check))["decision"] == "run"    # a is overdue again
     bad = [{"kind": "dates", "file": "state/x.json", "key": "due", "done_key": "status"}]
     assert gatekit.validate(bad)
+
+
+def test_a_negative_lead_time_is_refused():
+    """`within_days` counts a date EARLY; a negative one counts it late — a duty due today
+    read as not due for days, the one wrong answer a gate must not give."""
+    bad = [{"kind": "dates", "file": "state/d.json", "key": "due", "within_days": -2}]
+    assert any("within_days" in p for p in gatekit.validate(bad))
+    assert gatekit.validate([{**bad[0], "within_days": 0}]) == []
+
+
+def test_done_items_that_are_not_records_are_work(tmp_path, routine):
+    """With `done_key` each listed item is a record holding its date and its status; a list of
+    bare dates there cannot be read as configured — work, never "no dated duty is due"."""
+    atomic_write_json(routine / "state/d.json", {"items": ["2026-09-01"]})
+    check = [{"kind": "dates", "file": "state/d.json", "key": "items.*.due",
+              "done_key": "status"}]
+    out = kit.evaluate(ctx(tmp_path, check))
+    assert out["decision"] == "run" and "could not check" in one(out)["reason"]
 
 
 def test_a_special_use_folder_is_found_whatever_the_server_calls_it():

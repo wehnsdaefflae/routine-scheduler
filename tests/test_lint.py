@@ -285,6 +285,30 @@ def test_scaffold_stamps_tools_allowlist(tmp_path):
     assert "tools" not in meta2
 
 
+def test_a_literal_python_cannot_hash_is_a_lint_problem_not_a_crash():
+    """literal_eval raises TypeError for an unhashable key (`{["a"]: 1}`), which none of the
+    pattern readers caught — `rsched lint`, the Library listing and generate()'s repair round
+    raised instead of naming the file."""
+    problems = lint_workflow_py('META = {["a"]: 1}\n\ndef main():\n    pass\n',
+                                filename="x.py", rule_slugs=[])
+    assert problems and "META" in problems[0] and "plain literal" in problems[0]
+
+
+def test_a_library_commit_git_cannot_name_in_time_is_unknown(tmp_path, monkeypatch):
+    """head_commit is provenance and best-effort ("" when unknown); a git call that runs out
+    of time raises TimeoutExpired, which escaped it into routine creation and the Library."""
+    import subprocess
+
+    from rsched import libgit
+    from rsched.workflows.library import head_commit
+
+    def hung(*args, **kwargs):
+        raise subprocess.TimeoutExpired(["git"], 30)
+
+    monkeypatch.setattr(libgit, "git", hung)
+    assert head_commit(tmp_path) == ""
+
+
 def test_materialize_unknown_workflow(tmp_path):
     (tmp_path / "workflows").mkdir()
     with pytest.raises(FileNotFoundError):
@@ -337,19 +361,22 @@ def test_scaffold_creates_valid_routine(tmp_path):
                  workflow_slug="general-task")
 
 
-def test_scaffold_writes_stage_modules(tmp_path):
+def test_scaffold_writes_home_as_tilde_and_a_root_beside_it_verbatim(tmp_path, monkeypatch):
+    """`~` stands for $HOME and nothing else: a root in a sibling directory that merely starts
+    with the same characters (/home/me-data beside /home/me) was written as `~-data`, which
+    names no directory at all."""
+    home = tmp_path / "me"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
     server = ServerConfig()
     server.routines_home = tmp_path / "routines"
     server.routines_home.mkdir()
     server.libraries_home = SEED
-    # the wizard passes extra stage modules; they land in the routine's stages/ (the LLM-decomposed
-    # stages would too, but there's no generator endpoint in this test)
-    d = scaffold(server, slug="split-routine", name="Split",
-                 instruction="# Entry\n\nStages in stages/.", workflow_slug="general-task",
-                 stages={"discover": "# Discover stage\n\nHow to discover.",
-                         "compose.md": "# Compose stage\n\nHow to compose."})
-    assert (d / "stages" / "discover.md").read_text().startswith("# Discover stage")
-    assert (d / "stages" / "compose.md").read_text().startswith("# Compose stage")
+    d = scaffold(server, slug="rooted", name="Rooted", instruction="Read the notes.",
+                 workflow_slug="general-task",
+                 fs_read_roots=[str(tmp_path / "me-data"), str(home / "notes")])
+    raw = yaml.safe_load((d / "routine.yaml").read_text())
+    assert raw["fs_read_roots"] == [str(tmp_path / "me-data"), "~/notes"]
 
 
 def test_dump_markdown_roundtrips_through_engine_parse():

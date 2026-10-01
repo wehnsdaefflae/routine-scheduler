@@ -5,8 +5,9 @@ the public surface is unchanged (config/__init__ re-exports everything).
 
 from __future__ import annotations
 
+import copy
 from pathlib import Path
-from typing import Annotated, Literal, get_args
+from typing import Annotated, Any, Literal, get_args
 
 from pydantic import BaseModel, BeforeValidator, ConfigDict, ValidationError
 
@@ -106,15 +107,33 @@ KEY_VAR_DEFAULTS = {"anthropic": "ANTHROPIC_API_KEY", "openai": "OPENAI_API_KEY"
 # answer — a provider's small default can swallow the content entirely. Settings flags
 # models still riding this fallback so the real per-model limit gets configured.
 DEFAULT_MODEL_MAX_TOKENS = 16_384
+# The context window an endpoint lends a catalog model that neither sets one nor has one
+# discovered from its provider (endpoints/limits.py) — the floor of that precedence chain.
+DEFAULT_CONTEXT_TOKENS = 25_000
+
+def _home_path(v: object) -> object:
+    """A path string with `~` and $VARS expanded. `~name` for an account that does not exist
+    makes pathlib raise RuntimeError, which pydantic passes through rather than reporting —
+    so it is turned into the ValueError every other bad value is.
+    """
+    if not isinstance(v, str):
+        return v
+    try:
+        return expand(v)
+    except RuntimeError as exc:
+        raise ValueError(f"cannot expand {v!r} ({exc})") from exc
+
 
 # YAML-friendly coercions: a bare `key:` (null) reads as the empty string; path strings
 # expand `~` and $VARS.
 BlankableStr = Annotated[str, BeforeValidator(lambda v: "" if v is None else v)]
-HomePath = Annotated[Path, BeforeValidator(lambda v: expand(v) if isinstance(v, str) else v)]
+HomePath = Annotated[Path, BeforeValidator(_home_path)]
 
 
 class _Config(BaseModel):
-    model_config = ConfigDict(extra="ignore", populate_by_name=True,
+    # validate_by_name: an aliased field (schedule.cron → `cron`) also loads by its own name —
+    # a model_dump handed to another process (the gate's preparation child) round-trips.
+    model_config = ConfigDict(extra="ignore", validate_by_name=True,
                               coerce_numbers_to_str=True)
 
 
@@ -131,29 +150,75 @@ def _known_tz(v: str) -> str:
     return v
 
 
-def _pop(data: dict, loc: tuple) -> None:
-    """Remove the value at a (possibly nested) error location from the raw input."""
-    node: object = data
-    for key in loc[:-1]:
-        node = node.get(key) if isinstance(node, dict) else None
-    if isinstance(node, dict) and loc:
-        node.pop(loc[-1], None)
+def default_tz() -> str:
+    """The zone a schedule is in when none was named: the SERVER's (`schedule.server_tz`).
+
+    It is the zone the console's schedule editor speaks and the one every friendly-schedule
+    save writes beside the cron, so a routine.yaml that names no zone and one saved from the
+    page mean the same clock. A host zone `ZoneInfo` cannot load (a POSIX `TZ` string) reads as
+    UTC — the fallback `server_tz` takes for an undetectable zone — because a default is never
+    validated, and an unknown zone reaching the scheduler unwinds its tick.
+    """
+    from ..schedule import server_tz
+
+    try:
+        return _known_tz(server_tz())
+    except ValueError:
+        return "UTC"
+
+
+def _drop(data: dict, loc: tuple) -> None:
+    """Remove what an error location names from the raw input: a key from its mapping or an
+    item from its list. Where the location runs on past the raw value (a union member's tag),
+    the value itself goes. Dropping only mapping keys left a bad list ITEM in place, so its
+    error came back every round until the whole config fell back to the defaults.
+    """
+    parent: dict | list | None = None
+    key: Any = None
+    node: Any = data
+    for step in loc:
+        if not isinstance(node, (dict, list)):
+            break
+        try:
+            node, parent, key = node[step], node, step
+        except (KeyError, IndexError, TypeError):   # not there, or a tag past the raw value
+            break
+    if isinstance(parent, dict):
+        parent.pop(key, None)
+    elif isinstance(parent, list):
+        del parent[key]
+
+
+def _problem_lines(exc: ValidationError, prefix: tuple[str, ...] = ()) -> list[str]:
+    """One `<where>: <what>` line per validation error — the shape of every loader problem.
+    A message that already names its own place (the gate kit's `run_gate.checks[0]: …`) is
+    not prefixed with it a second time.
+    """
+    out: list[str] = []
+    for err in exc.errors():
+        where = ".".join(str(p) for p in (*prefix, *err["loc"])) or "(root)"
+        msg = err["msg"].removeprefix("Value error, ")
+        out.append(msg if msg.startswith(where) else f"{where}: {msg}")
+    return out
 
 
 def _validate_lenient(model: type[_Config], data: dict, problems: list[str]):
-    """model_validate that degrades per key: report every invalid key, drop it (or its
-    parent, when a required subfield is missing) and retry so the rest still loads.
+    """model_validate that degrades per key: report every invalid key or list item, drop it
+    (or its parent, when a required subfield is missing) and retry so the rest still loads.
+    Works on its own copy, so a drop never reaches the caller's raw document.
     """
+    data = copy.deepcopy(data)
     for round_no in range(4):
         try:
             return model.model_validate(data)
         except ValidationError as exc:
-            for err in exc.errors():
-                if round_no == 0:  # later rounds only see errors derived from a drop
-                    where = ".".join(str(p) for p in err["loc"]) or "(root)"
-                    problems.append(f"{where}: {err['msg'].removeprefix('Value error, ')}")
+            if round_no == 0:  # later rounds only see errors derived from a drop
+                problems.extend(_problem_lines(exc))
+            # last first: pydantic reports a list's items in order, so dropping from the end
+            # keeps the indexes of the errors still to drop in that list valid
+            for err in reversed(exc.errors()):
                 loc = err["loc"][:-1] if err["type"] == "missing" else err["loc"]
                 if not loc:
                     return None
-                _pop(data, loc)
+                _drop(data, loc)
     return None

@@ -1,6 +1,7 @@
 """Gate checks that ask a server: a mailbox, a web page or API, a Steward hub. Jail side, stdlib
 only. Every one of them reads and never writes: IMAP folders are opened readonly and fetched with
-BODY.PEEK, HTTP is GET, and nothing a run relies on (a read flag, a cursor) is moved.
+BODY.PEEK, HTTP is GET, and nothing a run relies on (a read flag, a cursor) is moved. Both speak
+verified TLS — the mailbox check sends a password.
 """
 
 from __future__ import annotations
@@ -12,14 +13,24 @@ import imaplib
 import json
 import re
 import socket
+import ssl
 import urllib.error
 import urllib.parse
 import urllib.request
+from email import policy
+from email.parser import HeaderParser
 from pathlib import Path
 
 from kit_common import NET_TIMEOUT_S, UnknownError, baseline, dig, digest, secret, since, web_login
 
 _INTERNALDATE = re.compile(rb'INTERNALDATE "([^"]+)"')
+#: The newest messages a folder's headers are read for. Past it, a folder where none of them
+#: counts is one the check could not read whole — work, never "nothing waits".
+FETCH_MAX = 500
+#: The most of an answer `url_changed` compares. A longer one could change where it never looks.
+MAX_BODY = 8 * 1024 * 1024
+#: Headers as a mail reader shows them: folded lines unfolded, RFC 2047 encoded words decoded.
+_HEADERS = HeaderParser(policy=policy.default)
 
 
 # ------------------------------------------------------------------------------ mail
@@ -32,7 +43,11 @@ def mail(check: dict, ctx: dict) -> tuple[bool, str, str]:
     cutoff = since(ctx) if mode == "new" else None
     socket.setdefaulttimeout(NET_TIMEOUT_S)
     try:
+        # An explicit context: without one, IMAP4_SSL accepts ANY certificate (imaplib's
+        # backwards-compatible default) and the login below would hand the password to
+        # whoever answered. A certificate that fails verification is an OSError — work.
         conn = imaplib.IMAP4_SSL(str(check["host"]), int(check.get("port") or 993),
+                                 ssl_context=ssl.create_default_context(),
                                  timeout=NET_TIMEOUT_S)
     except (OSError, imaplib.IMAP4.error) as exc:
         raise UnknownError(f"could not reach {check['host']}: {exc}") from exc
@@ -65,10 +80,10 @@ def _count(conn, folder: str, check: dict, cutoff, senders, domains) -> int:
     typ, data = conn.search(None, criteria)
     if typ != "OK":
         raise UnknownError(f"search in {folder!r} failed")
-    uids = (data[0] or b"").split()
-    if not uids:
+    numbers = (data[0] or b"").split()
+    if not numbers:
         return 0
-    typ, fetched = conn.fetch(b",".join(uids[-500:]),
+    typ, fetched = conn.fetch(b",".join(numbers[-FETCH_MAX:]),
                               "(INTERNALDATE BODY.PEEK[HEADER.FIELDS (FROM SUBJECT)])")
     if typ != "OK":
         raise UnknownError(f"could not read the headers in {folder!r}")
@@ -83,6 +98,9 @@ def _count(conn, folder: str, check: dict, cutoff, senders, domains) -> int:
                 continue
         if _matches(bytes(item[1]).decode("utf-8", "replace"), check, senders, domains):
             n += 1
+    if not n and len(numbers) > FETCH_MAX:
+        raise UnknownError(f"{len(numbers)} messages in {folder!r} and none of the newest "
+                           f"{FETCH_MAX} counts — the older ones were not read")
     return n
 
 
@@ -91,12 +109,16 @@ def _matches(header: str, check: dict, senders: list[str], domains: list[str]) -
     `subject_any` — are a watch list: a message counts when it meets ANY of them (a known
     correspondent OR a subject that names the project), because a reply that happens to come
     from a new address is still work. `from_domains_not` only ever takes messages away.
+
+    Each filter reads a header the way a mail reader shows it — unfolded, encoded words
+    decoded — because a Subject folded onto a second line, an umlaut a client sent as
+    `=?utf-8?b?…?=`, or an address folded under a long display name is the same header to the
+    person who wrote the watch list.
     """
-    low = header.lower()
-    sender = next((ln for ln in low.splitlines() if ln.startswith("from:")), "")
-    subject = next((ln for ln in low.splitlines() if ln.startswith("subject:")), "")
-    addr = email.utils.parseaddr(sender.removeprefix("from:").strip())[1]
-    domain = addr.rpartition("@")[2]
+    parsed = _HEADERS.parsestr(header)
+    sender = str(parsed.get("from") or "").lower()
+    subject = str(parsed.get("subject") or "").lower()
+    domain = email.utils.parseaddr(sender)[1].rpartition("@")[2]
     if any(domain == d or domain.endswith("." + d)
            for d in (str(x).lower() for x in check.get("from_domains_not") or [])):
         return False
@@ -169,15 +191,27 @@ def _senders(check: dict, ctx: dict) -> tuple[list[str], list[str]]:
 # ------------------------------------------------------------------------------ web
 
 
+def _shown(url: str) -> str:
+    """A URL as a reason may print it: without its query, which is where many APIs take a key
+    — and every reason lands in gate.json and a skipped fire's result.md.
+    """
+    return url.split("?", maxsplit=1)[0]
+
+
 def _get(url: str, headers: dict) -> bytes:
     # the address the operator configured; the jail it runs in reaches no local file it names
     req = urllib.request.Request(url, headers={"User-Agent": "rsched-gate/1",  # noqa: S310
                                                **headers})
+    shown = _shown(url)
     try:
         with urllib.request.urlopen(req, timeout=NET_TIMEOUT_S) as resp:   # noqa: S310
-            return resp.read(8 * 1024 * 1024)
+            body = resp.read(MAX_BODY + 1)
     except (urllib.error.URLError, OSError, ValueError) as exc:
-        raise UnknownError(f"could not fetch {url.split('?', maxsplit=1)[0]}: {exc}") from exc
+        raise UnknownError(f"could not fetch {shown}: {exc}") from exc
+    if len(body) > MAX_BODY:
+        raise UnknownError(f"{shown} answered more than {MAX_BODY // 2**20} MiB — a change past "
+                           "that would go unseen")
+    return body
 
 
 def _basic(entry: dict) -> dict:
@@ -198,9 +232,10 @@ def url_changed(check: dict, ctx: dict) -> tuple[bool, str, str]:
         before = baseline(ctx, str(check["id"]))
     except UnknownError as exc:
         return True, str(exc), fp
+    shown = _shown(str(check["url"]))
     if fp != before:
-        return True, f"{check['url']} answers differently than at the last ok run", fp
-    return False, f"{check['url']} is unchanged since the last ok run", fp
+        return True, f"{shown} answers differently than at the last ok run", fp
+    return False, f"{shown} is unchanged since the last ok run", fp
 
 
 def _select(body: bytes, select: str) -> object:

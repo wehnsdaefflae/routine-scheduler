@@ -104,7 +104,7 @@ def valid(key: str, value: object, server: object | None = None) -> bool:
     """Would the page's own accept take this value? Checked with the validators it uses.
 
     The patch model checks a field's SHAPE; three fields are then checked for MEANING by the
-    accept route itself (`web/config_fields.py`, called at `api_routine_patch.py:300-311`), and
+    accept route itself (`web/config_fields.py`, called from `api_routine_patch.apply_updates`), and
     a value that clears the shape and fails the meaning is the worst kind to offer: the accept
     is whole-draft, so one refused field 400s every other change the person kept. That is how
     `connections: {"fau-mail": {"scopes": [...]}}` — a util's name where an OAuth provider
@@ -163,8 +163,14 @@ def _prompt(server, slug: str, saved: dict, pattern: dict | None, context: str,
                       for d in library_docs.list_docs(server.permissions_home))
     rules = "\n".join(f"- {d['slug']}: {d['summary']}"
                       for d in library_docs.list_docs(server.rules_home))
-    kinds = "\n".join(f"- {kind}: {meaning}; params: {', '.join(spec) or 'none'}"
-                      for kind, (meaning, spec) in gatekit.KINDS.items())
+    # Each parameter with its type and meaning, as the console's gate form shows them: a name
+    # alone left the model to guess formats — and the one weekday numbering this prompt spells
+    # is the SCHEDULE's (0 = Sunday), while a `weekdays` check counts from Monday.
+    kinds = "\n".join(
+        f"- {kind}: {meaning}; params: " + ("; ".join(
+            f"{name} ({typ}{', required' if required else ''}): {help_}"
+            for name, (typ, required, help_) in spec.items()) or "none")
+        for kind, (meaning, spec) in gatekit.KINDS.items())
     base = (f"It follows the pattern {pattern['slug']!r} ({pattern['summary']})."
             if pattern else "It follows no pattern yet.")
     return (
@@ -194,8 +200,9 @@ def _prompt(server, slug: str, saved: dict, pattern: dict | None, context: str,
 def at_creation(server, *, slug: str, pattern_slug: str, context: str,
                 finish_line: dict | None) -> list[str]:
     """After a routine is scaffolded on its pattern: write its pending changes — the finish
-    line the person described, plus whatever the recommender finds — under the message the
-    routine page leads with. Returns the fields proposed.
+    line the person described, the pattern's `ask_first` values (which creation never writes),
+    plus whatever the recommender finds — under the message the routine page leads with.
+    Returns the fields proposed.
     """
     from ..config import load_routine
     from . import drafts
@@ -206,6 +213,13 @@ def at_creation(server, *, slug: str, pattern_slug: str, context: str,
     saved = fields.snapshot(cfg)
     pattern = store.read(Path(server.libraries_home), pattern_slug) if pattern_slug else None
     changes = recommend(server, slug=slug, saved=saved, pattern=pattern, context=context)
+    if pattern is not None:
+        reason = f"the value {pattern['title']} carries — it decides access, so it waits for you"
+        changes.update({key: {"value": value, "reason": reason}
+                        for key, value in pattern["settings"].items()
+                        if fields.BY_KEY[key].ask_first and key not in changes
+                        and not fields.equal(key, saved.get(key), value)
+                        and valid(key, value, server)})
     if finish_line and (finish_line.get("outcomes") or finish_line.get("until")) \
             and valid("finish_line", finish_line):
         changes["finish_line"] = {"value": fields.canonical("finish_line", finish_line),
