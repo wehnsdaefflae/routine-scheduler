@@ -859,6 +859,24 @@ def test_replay_reconstitutes_child_announcements():
     assert joined.count("WAITED-RESULT") == 1     # once (in the wait obs), never twice
 
 
+def test_replay_announcement_names_the_hand_back_the_live_one_did():
+    """`subrun_end` carries `collected`; the replayed announcement must render it exactly as
+    the live leg did — a prefix that differs by the paths line is re-written to the provider
+    instead of re-read from cache, and the resumed model loses the paths it was handed."""
+    from rsched.engine.control import child_finished_message
+    from rsched.engine.history import replay_messages
+
+    payload = {"n": 1, "label": "t1", "workflow": "general-task", "mode": "parallel",
+               "status": "ok", "summary": "done", "turns": 3,
+               "collected": ["artifacts/from-sub-1/report.md"]}
+    msgs, _, _ = replay_messages([{"type": "subrun_end", "payload": payload}])
+    live = child_finished_message(mode="parallel", n=1, label="t1", workflow="general-task",
+                                  status="ok", turns=3, summary="done",
+                                  collected=("artifacts/from-sub-1/report.md",))
+    assert [m["content"] for m in msgs] == [live]
+    assert "artifacts/from-sub-1/report.md" in live
+
+
 def test_replay_does_not_duplicate_blocking_answers():
     """The answer text already lives inside the ask_user observation — replaying the
     `answer` event too used to inject it twice."""

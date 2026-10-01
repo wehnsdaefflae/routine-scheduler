@@ -53,7 +53,8 @@ def replay_messages(events: list[dict]) -> tuple[list[dict], int, list[dict]]:
             mode=str(p.get("mode") or "parallel"), n=int(p.get("n") or 0),
             label=str(p.get("label") or ""), workflow=str(p.get("workflow") or ""),
             status=str(p.get("status") or "?"), turns=int(p.get("turns") or 0),
-            summary=str(p.get("summary") or ""))} for p in pending_children.values())
+            summary=str(p.get("summary") or ""),
+            collected=tuple(p.get("collected") or ()))} for p in pending_children.values())
         pending_children.clear()
 
     for ev in events:
