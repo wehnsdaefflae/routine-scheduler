@@ -656,14 +656,14 @@ def test_a_decision_filed_into_a_conversation_is_judged_as_conversation_config(t
     into its ROOT's dir, so a child of a conversation is judged as the conversation."""
     from types import SimpleNamespace
 
-    from rsched.engine.interact import _lands_in_conversation
+    from rsched.engine.runkind import lands_in_conversation
 
     convs, routines = tmp_path / "conversations", tmp_path / "routines"
     (convs / "c1").mkdir(parents=True)
     (routines / "r1").mkdir(parents=True)
     server = SimpleNamespace(conversations_home=convs)
-    assert _lands_in_conversation(SimpleNamespace(root_routine_dir=convs / "c1", server=server))
-    assert not _lands_in_conversation(
+    assert lands_in_conversation(SimpleNamespace(root_routine_dir=convs / "c1", server=server))
+    assert not lands_in_conversation(
         SimpleNamespace(root_routine_dir=routines / "r1", server=server))
 
 

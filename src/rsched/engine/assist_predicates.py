@@ -138,12 +138,12 @@ def _ledger_untouched(s: Situation) -> bool:
     invisible to `turn_records`; reading the actions made 48 of 75 of this assist's
     deferrals false.
     """
-    from .harness import _is_conversation
+    from .runkind import is_conversation
 
     ledger = s.ctx.routine.dir / "LEDGER.md"
     if not ledger.is_file():
         return False        # a routine that keeps no ledger is not being asked to start one
-    if _is_conversation(s.ctx):
+    if is_conversation(s.ctx):
         return False
     try:
         if ledger.stat().st_mtime >= _run_started(s.ctx):

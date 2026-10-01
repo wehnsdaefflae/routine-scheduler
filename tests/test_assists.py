@@ -422,7 +422,7 @@ def test_a_conversation_reply_is_never_held_for_a_ledger_entry(make_routine, scr
     d = make_routine(slug="c-assist")
     server = _server(d)
     server.conversations_home = convs
-    # the run dir must sit directly under conversations_home for _is_conversation to see it
+    # the run dir must sit directly under conversations_home for runkind.is_conversation to see it
     moved = convs / d.name
     d.rename(moved)
     server.routines_home = convs
