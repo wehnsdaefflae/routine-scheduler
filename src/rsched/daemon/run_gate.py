@@ -22,10 +22,10 @@ from ..config import RoutineConfig, ServerConfig
 from ..health_events import log_health_event
 from ..ids import now_iso
 from ..paths import atomic_write, atomic_write_json, read_json
-from .gate_prepare import GateError, child_main, pending_answers, pending_inbox
+from .gate_prepare import GateError
 from .runner_state import ActiveRun
 
-__all__ = ["GateError", "admit", "child_main", "pending_answers", "pending_inbox", "terminal"]
+__all__ = ["GateError", "admit", "terminal"]
 
 OUTPUT_LIMIT = 16384
 

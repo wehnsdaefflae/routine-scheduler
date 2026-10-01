@@ -144,9 +144,9 @@ def clear_shutdown_mark(routines_home: Path) -> None:
     when the daemon finally booted two hours later, ready to mislabel the first crash after it.
 
     A mark describes exactly ONE exit, so the boot that follows that exit is where it stops
-    being true. This runs after the whole boot reap rather than inside it, because the three
-    reap passes (routines, conversations, background tasks) share the one breadcrumb and the
-    first pass must not consume what the third still needs to read.
+    being true. This runs after the boot reap rather than inside it: the reap reads the mark
+    lazily, only when an orphan needs a cause, so a boot that orphaned nothing never reaches it
+    and the expiry has to belong to the boot.
     """
     path = routines_home / ".control" / "shutdown.mark"
     try:

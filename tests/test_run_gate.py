@@ -7,7 +7,7 @@ import pytest
 
 from rsched.config import RoutineConfig, ServerConfig
 from rsched.config.routine import RunGateConfig
-from rsched.daemon import run_gate, runner_state
+from rsched.daemon import gate_prepare, run_gate, runner_state
 from rsched.daemon.events import EventBus
 from rsched.daemon.runner import Runner
 from rsched.paths import read_json
@@ -138,12 +138,12 @@ def test_pending_inbox_counts_messages_only(tmp_path):
     in-flight `.msg-….json.XXXX.tmp` besides."""
     d = tmp_path / "routine"
     (d / "inbox").mkdir(parents=True)
-    assert not run_gate.pending_inbox(d)
+    assert not gate_prepare.pending_inbox(d)
     (d / "inbox" / "answer-q-1.json").write_text("{}")
     (d / "inbox" / ".msg-20260922T101010-ab.json.9f.tmp").write_text("{")
-    assert not run_gate.pending_inbox(d)
+    assert not gate_prepare.pending_inbox(d)
     (d / "inbox" / "msg-rep-R1.json").write_text("{}")
-    assert run_gate.pending_inbox(d)
+    assert gate_prepare.pending_inbox(d)
 
 
 @pytest.mark.parametrize("body", ['"""gate — predicate\ncalls: other\n"""',

@@ -55,8 +55,9 @@ class Runner:
         self.draining = False  # set while quiescing for a self-update restart: no new runs fire
 
     def _under_home(self, cfg: RoutineConfig, home_attr: str) -> bool:
-        """True if the run's dir is a direct child of the named server home. Run kind is
-        discriminated by HOME everywhere (cfg.kind is dropped by pydantic).
+        """True if the run's dir is a direct child of the named server home. The pools are
+        chosen by HOME, not by `cfg.kind`: a detached task's routine.yaml carries no kind at
+        all, and the home is where the run actually lives.
         """
         home = getattr(self.server, home_attr, None)
         try:
