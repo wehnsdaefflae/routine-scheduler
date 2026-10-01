@@ -15,8 +15,13 @@ import re
 from pathlib import Path
 
 import pytest
+import yaml
 
+from rsched import library_docs
+from rsched.daemon.gate_prepare import ADMIT
 from rsched.engine.actionschema import KINDS
+from rsched.engine.capabilities import PERMISSION_NOTE_MAX_CHARS
+from rsched.entities import guarded_roots
 from rsched.utils_header import header_problems
 from rsched.workflows.lint import lint_all
 from rsched.workflows.pyworkflow import parse_py
@@ -26,6 +31,10 @@ LIBRARY_SEED = REPO / "library-seed"
 UTIL_SEEDS = sorted((REPO / "util-seed" / "utils").glob("*/main.py"))
 
 SEED_MD = sorted((REPO / "library-seed").rglob("*.md"))
+PATTERN_SEEDS = sorted((LIBRARY_SEED / "patterns").glob("*.yaml"))
+PERMISSION_SEEDS = sorted((LIBRARY_SEED / "permissions").glob("*.md"))
+#: Every seed document a run or a person reads as instructions.
+SEED_TEXTS = sorted([*SEED_MD, *(LIBRARY_SEED / "workflows").glob("*.py"), *PATTERN_SEEDS])
 
 
 def _ids(paths):
@@ -52,6 +61,23 @@ def test_seed_phase_instructions_use_canonical_shape(md):
             continue
         problems.append(f"{md.relative_to(REPO)}:{i}: phase.json payload {payload!r} "
                         'is not the canonical {"phase": ...} shape')
+    assert not problems, "\n".join(problems)
+
+
+def test_seed_prose_names_the_script_the_run_gate_runs():
+    """The run gate's custom predicate is `scripts/<ADMIT>.py` — named so because routines
+    already ran a `scripts/gate.py` of their own as an IN-RUN check. A recipe told that some
+    other file belongs to the run gate writes the predicate where the gate never looks, and
+    steers its own check away from a name that was always free."""
+    problems = []
+    for doc in SEED_TEXTS:
+        text = " ".join(doc.read_text(encoding="utf-8").split())   # sentences, not lines
+        for sentence in re.split(r"(?<=[.;])\s", text):
+            if "run gate" in sentence:
+                problems += [f"{doc.relative_to(REPO)}: calls scripts/{name}.py the run gate's "
+                             f"(it runs scripts/{ADMIT}.py)"
+                             for name in re.findall(r"scripts/(\w+)\.py", sentence)
+                             if name != ADMIT]
     assert not problems, "\n".join(problems)
 
 
@@ -84,6 +110,26 @@ def test_library_seed_lints_clean():
     assert results, "lint_all found nothing in library-seed — wrong directory layout?"
     dirty = {name: probs for name, probs in results.items() if probs}
     assert not dirty, "\n".join(f"{n}: {p}" for n, p in dirty.items())
+
+
+@pytest.mark.parametrize("pattern", PATTERN_SEEDS, ids=_ids(PATTERN_SEEDS))
+def test_seed_pattern_grants_no_credential_store(pattern):
+    """Creation writes a pattern's roots straight into the new routine.yaml, past the PATCH
+    that refuses a credential store as a folder grant (entities.NEVER_GRANTABLE). A seed
+    carrying one would mount the console token and the central secrets into every run of
+    every routine that follows it."""
+    settings = yaml.safe_load(pattern.read_text(encoding="utf-8"))["settings"]
+    roots = [*(settings.get("fs_read_roots") or []), *(settings.get("fs_write_roots") or [])]
+    assert guarded_roots(roots) == []
+
+
+@pytest.mark.parametrize("perm", PERMISSION_SEEDS, ids=_ids(PERMISSION_SEEDS))
+def test_seed_permission_note_reaches_the_prompt_whole(perm):
+    """A held permission's body is its whole contribution to the prompt, cut on a line
+    boundary past PERMISSION_NOTE_MAX_CHARS. The cap is a backstop for library edits; a SEED
+    doc past it would lose its last lines of conduct in every run that holds it."""
+    body = library_docs.doc_body(perm.read_text(encoding="utf-8")).strip()
+    assert len(body) <= PERMISSION_NOTE_MAX_CHARS
 
 
 # ---- util-seed: docstring headers pass the engine's own write_util gate ------------------

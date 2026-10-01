@@ -29,9 +29,10 @@ run's digest carries.
   and the first thing a hurried run drops.
 - **Write for a reader without your context.** Name the artefact, give the evidence, say what
   done looked like. A note only you could decode records nothing.
-- **Rotate before it outgrows a reader.** Past roughly 400 lines or 40 entries, move the older
-  entries to an archive beside the record in the same run; leave one rollup entry naming what
-  moved and the lessons that must stay. Noticing the overflow and deferring the rotation is how
-  a record becomes unreadable.
+- **Rotate before it outgrows a reader.** Measure it in bytes: entries grow, so a count of lines
+  or entries lets the file swell unseen. When it passes the cap your recipe names — set well
+  above the tail you keep — move the older entries to an archive beside the record in the same
+  run; leave one rollup entry naming what moved and the lessons that must stay. Noticing the
+  overflow and deferring the rotation is how a record becomes unreadable.
 - **Artefacts stay present-tense.** What a thing is belongs in the thing; how it got there
   belongs in the record.

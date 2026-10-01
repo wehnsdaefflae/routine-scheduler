@@ -60,7 +60,6 @@ settings:
     max_wall_clock_min: 60
   keep_runs: 30
   fs_read_roots:
-  - ~/.config/routine-scheduler
   - ~/routines
   fs_write_roots: []
   connections: {}

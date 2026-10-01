@@ -69,7 +69,7 @@ META = {
                    "campaign. Not for one project with a counterparty and a status page "
                    "(steward-a-project), nor for a shared library of rules or utils curated from "
                    "usage (curate-a-library).",
-    "version": 1,
+    "version": 2,
     "tags": ["code", "maintenance", "repository", "tests", "deploy", "campaign"],
     "includes": ["change-scope", "make-failure-visible", "work-order", "verify-independently",
                  "audit-coverage", "git-checkpoint"],
@@ -210,7 +210,7 @@ def bootstrap():
 
     Look each capability up in the CAPABILITIES catalog and write to memory which tool does what
     for each repository. Write GATE as the routine's own script, under a stable name that is not
-    the run gate's scripts/gate.py. Seed FINDINGS with the snapshot and the known-and-accepted
+    the run gate's scripts/admit.py. Seed FINDINGS with the snapshot and the known-and-accepted
     items. Then set the phase to steady and carry on into a real sweep."""
 
 

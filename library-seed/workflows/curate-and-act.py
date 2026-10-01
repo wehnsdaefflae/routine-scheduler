@@ -39,7 +39,7 @@ from routine.params import (
     BOARD,          # dict       — the published board: where it lives, the decisions it collects (pick, cancel, sign-off, reply) and the principal's sign-off rule (an explicit sign-off per item, or a pick not cancelled once its draft is on the board)
     ACT,            # dict       — the outward act on a signed-off item (application, submission, registration), the channel it goes through, the confirmation that proves it went out
     VERIFY_AFTER,   # dict       — per source class, the age after which a record's facts are re-derived from its primary source
-    CHECKS,         # str        — the routine's own deterministic check script (interface checks over the tools it calls and the store's shape), at a path of its own — scripts/gate.py belongs to the run gate
+    CHECKS,         # str        — the routine's own deterministic check script (interface checks over the tools it calls and the store's shape), at a path of its own — scripts/admit.py belongs to the run gate
 )
 
 # The engine actions the orchestrator may take — exactly one per turn, each answered by an
@@ -61,7 +61,7 @@ META = {
                    "and signs off on a board; the routine applies or submits. Every fire is due, "
                    "so no run gate. Not for a watch that only reports (watch-and-report), nor "
                    "for one project with a counterparty (steward-a-project).",
-    "version": 1,
+    "version": 2,
     "tags": ["radar", "corpus", "board", "verification", "applications", "sign-off"],
     "includes": ["audit-coverage", "feedback-loop", "interface-craft", "write-as-the-principal",
                  "correspondence", "verify-independently"],

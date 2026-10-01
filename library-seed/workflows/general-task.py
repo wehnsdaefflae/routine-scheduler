@@ -5,7 +5,7 @@ PATTERN, not a program: the orchestrator never executes it —
 it *acts it out*, one engine action per turn, following the control flow below (its branches,
 loops, and error handling). The dummy imports name the parameters this routine works with; the
 clarifier pins them down for the concrete task, and `decompose` turns this pattern into the
-routine's own markdown state-machine (main.md + steps/).
+routine's own markdown state-machine (main.md + stages/).
 """
 
 # --- Parameter contract -------------------------------------------------------------------------
