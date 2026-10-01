@@ -660,6 +660,36 @@ def test_a_pre_action_assist_holds_the_write_and_re_emitting_it_proceeds(make_ro
     assert status == "ok"
 
 
+def test_a_repo_clean_at_the_runs_first_edit_is_not_held_for_its_second(make_routine,
+                                                                        scripted):
+    """A clean tree is an undo point — and it stays one for the whole run: HEAD restores what
+    the run found. Asking `git status` afresh at every edit read the run's OWN first edit as
+    uncommitted work, so the second edit into a clean repo was held — the false positive the
+    clean-tree check exists to remove, one write later."""
+    import subprocess
+
+    d = make_routine(slug="assistr")
+    server = _server(d)
+    _rule(server, "git-checkpoint", "pre-action", "uncheckpointed-repo-write", "commit first")
+    _hold_rule(d, ["git-checkpoint"])
+    repo = d.parent.parent / "project"
+    repo.mkdir()
+    git = ["git", "-C", str(repo), "-c", "user.email=t@t", "-c", "user.name=t"]
+    subprocess.run([*git, "init", "-q"], check=True)
+    (repo / "README").write_text("r", encoding="utf-8")
+    subprocess.run([*git, "add", "README"], check=True)
+    subprocess.run([*git, "commit", "-qm", "init"], check=True)
+    _write_root(d, repo)
+    scripted([write_file(str(repo / "a.py"), content="a"),
+              write_file(str(repo / "b.py"), content="b"), finish()])
+    status, run_dir = run_routine(d, server, run_ts=TS)
+    events, _ = read_events(run_dir / "transcript.jsonl")
+    kinds = [e["payload"].get("kind") for e in events if e["type"] == "observation"]
+    assert kinds == ["write_file", "write_file"], kinds
+    assert (repo / "b.py").read_text(encoding="utf-8") == "b"
+    assert status == "ok"
+
+
 def test_the_routines_own_directory_is_never_held_for_a_checkpoint(make_routine, scripted):
     """The engine autocommits the routine's own tree at run end, so it always has an undo
     point — holding a write there would be a turn spent on a problem that does not exist."""

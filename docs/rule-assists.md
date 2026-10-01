@@ -213,6 +213,11 @@ makes "no checkpoint yet" true without having to DETECT a checkpoint commit — 
 inside a util or a shell command, where the engine sees a command string and an exit code and
 nothing more. It is overridable like every payload: re-emit the action and it runs.
 
+A tree clean at HEAD is already an undo point, so a write into one is not held — and it stays
+one for the whole run, because HEAD restores what the run found. The predicate remembers each
+repo it found clean (`loop.assist_undo_points`); asking `git status` afresh at every write read
+the run's OWN first edit as uncommitted work, and held its second edit into the same clean repo.
+
 Three predicates read signals the engine already keeps, which is why they are cheap:
 `asks-piling-up` reads `ctx.asks_deferred` (the churn telemetry for a decision thrown over the
 wall), `ledger-untouched` reads the LEDGER FILE — its mtime against the run's start — because an

@@ -49,6 +49,7 @@ def configure(loop) -> None:
     loop.assists_fired = set()
     loop.assist_finish_deferred = False
     loop.assist_user_replies = None     # the user-replies watermark, seeded at the 1st boundary
+    loop.assist_undo_points = set()     # repos found clean this run: HEAD restores them
 
 
 def load(loop) -> list[Assist]:
