@@ -254,8 +254,9 @@ table.list tr.disabled-row td { opacity: 0.55; }
   background: color-mix(in srgb, var(--err-dim) 40%, var(--deck));
 }
 /* HELD — the loudest row in the transcript, and the only one that is not history: the action
-   did not run and the run is deciding again. It gets the attention colour, full weight, and the
-   marker that says a decision sits here. */
+   did not run and the run is deciding again. It gets SIGNAL — the machine at work: the RUN
+   decides here, not a person, so it is not SUMMONS — full weight, and the marker that says a
+   decision sits here. */
 .obs-held > summary {
   border-left-color: var(--signal); color: var(--signal); font-weight: 600;
   background: color-mix(in srgb, var(--signal-dim) 75%, var(--deck));
@@ -1646,6 +1647,7 @@ summary.setup-head::-webkit-details-marker { display: none; }
 .fl-then b { color: var(--ink-2); font-weight: 600; }
 .fl-report { font-size: var(--t-s); color: var(--ink-2); }
 .fl-report .prose { font-size: 13.5px; }
+/* a verifier's objection to a `met` — on the finish-line card and on the pending goal card */
 .fl-disputed { color: var(--warn); cursor: help; }
 .fl-problem { color: var(--err); font-size: var(--t-s); }
 .fl-until { padding-top: var(--s2); border-top: 1px dashed var(--rule-2); display: flex; flex-direction: column; gap: 6px; }

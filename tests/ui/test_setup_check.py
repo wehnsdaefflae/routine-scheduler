@@ -183,6 +183,9 @@ def test_a_card_verdict_is_a_badge_in_its_state_colour(ui_page, ui):
     asks = ui_page.locator('.ability[data-ability="wants-machine"] .pill')
     expect(fails).to_have_text("will fail")
     expect(asks).to_have_text("needs a decision")
+    # the badge speaks the surface's vocabulary, the same word as its card's class
+    assert fails.get_attribute("class") == "pill blocks"
+    assert asks.get_attribute("class") == "pill interrupts"
     for pill, token in ((fails, "err"), (asks, "summons")):
         style = pill.evaluate("e => { const c = getComputedStyle(e);"
                               " return {color: c.color, radius: c.borderRadius, font: c.fontFamily}; }")
