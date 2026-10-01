@@ -60,8 +60,11 @@ sandboxed:
    unencrypted PEM).
 3. **Settings → Machines → add**: name (`gpu-box`), host, user, port, `key_var` = `GPUBOX_SSH_KEY`,
    an optional **`share`** (a remote dir to mount, e.g. `/srv/shared`), an optional workdir, a
-   description (shown to the model), tags. Click **scan host key** to read and pin the server's host
-   key, review it, then save. Click **test** to confirm reachability.
+   description (shown to the model), tags, and **exclusive** for a box that runs one job at a time
+   (see [Exclusive compute](#exclusive-compute-one-job-at-a-time-in-turns)). Click **scan host
+   key** to read and pin the server's host key, review it, then save. Click **test** to confirm
+   reachability. A save replaces the machine's whole entry, which is why **edit** opens the same
+   form prefilled — exclusive included.
 4. **Bind it**: on a routine's page, *Limits & reach* → *more* → *Machines* → check `gpu-box` →
    *accept changes*. The binding is the whole grant: the `remote` util acts on bound machines only.
 
@@ -139,8 +142,9 @@ sits polling for hours. (See [triggers](triggers.md) for the routine's webhook U
 ## Exclusive compute: one job at a time, in turns
 
 A GPU is a single resource. Two training jobs on one card do not run half as fast; they run out
-of VRAM. Set a machine's **`exclusive: true`** and `remote submit` stops launching straight away:
-it takes a QUEUE TICKET, and the box runs the jobs one at a time.
+of VRAM. Set a machine's **`exclusive: true`** (the *exclusive* box on its Settings → Machines
+form) and `remote submit` stops launching straight away: it takes a QUEUE TICKET, and the box runs
+the jobs one at a time.
 
 The order is **fair share** — round-robin across ROUTINES by each routine's oldest waiting ticket,
 FIFO within one routine. Three jobs from `funscript-trainer` and one from `voice-model-trainer`

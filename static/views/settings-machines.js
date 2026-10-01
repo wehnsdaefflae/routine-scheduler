@@ -49,7 +49,8 @@ export function renderMachines(view) {
         return el("tr", { "data-mach": m.name },
           el("td", {}, el("strong", {}, m.name),
             m.description ? el("div", { class: "muted small" }, m.description) : null,
-            m.share ? el("div", { class: "muted small mono" }, `mnt/${m.name}/ ← ${m.share}`) : null),
+            m.share ? el("div", { class: "muted small mono" }, `mnt/${m.name}/ ← ${m.share}`) : null,
+            m.exclusive ? el("div", { class: "muted small" }, "exclusive · submitted jobs queue, one at a time") : null),
           el("td", { class: "muted small mono" }, `${m.user}@${m.host}:${m.port}`),
           el("td", { class: "small" }, flags.length ? flags : el("span", { style: "color:var(--ok)" }, "✓ ready")),
           el("td", {}, el("div", { class: "row" }, testBtn, editBtn, delBtn), testOut));
@@ -64,6 +65,10 @@ export function renderMachines(view) {
     const descIn = inp("one-line description", "280px"), tagsIn = inp("tags, comma-separated", "200px");
     const hkIn = el("textarea", { class: "code", rows: "2", style: "width:100%",
       placeholder: "click “scan host key” below to fill this — or paste ssh-keyscan output" });
+    // `exclusive` is part of the machine's spec like every field above, and the PUT replaces
+    // the whole spec: a form that does not carry it writes `false` over an exclusive box on
+    // every edit, which is how editing a GPU box's description switched its queue off.
+    const exclIn = el("input", { type: "checkbox", "data-mach-exclusive": "" });
     const scanOut = el("span", { class: "small mono" });
     const scanBtn = el("button", { class: "btn small" }, "scan host key");
     scanBtn.onclick = async () => {
@@ -81,6 +86,7 @@ export function renderMachines(view) {
       nameIn.value = m.name; hostIn.value = m.host; userIn.value = m.user; portIn.value = m.port;
       keyVarIn.value = m.key_var || ""; wdIn.value = m.workdir || ""; descIn.value = m.description || "";
       shareIn.value = m.share || ""; tagsIn.value = (m.tags || []).join(", "); hkIn.value = m.host_key || "";
+      exclIn.checked = !!m.exclusive;
       form.open = true;                 // "edit" opens the same form, prefilled
       machBox.scrollIntoView({ behavior: "smooth", block: "end" });
     }
@@ -91,14 +97,16 @@ export function renderMachines(view) {
       const body = { name, host: hostIn.value.trim(), user: userIn.value.trim(),
         port: parseInt(portIn.value, 10) || 22, key_var: keyVarIn.value.trim(),
         host_key: hkIn.value.trim(), share: shareIn.value.trim(), workdir: wdIn.value.trim(),
-        description: descIn.value.trim(),
+        description: descIn.value.trim(), exclusive: exclIn.checked,
         tags: tagsIn.value.split(",").map((t) => t.trim()).filter(Boolean) };
       try {
-        const r = await api(`/api/settings/machines/${name}`, { method: "PUT", body });
+        // encoded like the test and delete calls: a raw `#` or `?` cut the path short and saved
+        // the machine under whatever came before it
+        const r = await api(`/api/settings/machines/${encodeURIComponent(name)}`, { method: "PUT", body });
         (r.problems || []).forEach((p) => toast(p, 5000, { error: true }));
         toast(`machine ${name} saved`);
         [nameIn, hostIn, userIn, keyVarIn, wdIn, shareIn, descIn, tagsIn, hkIn].forEach((i) => (i.value = ""));
-        portIn.value = "22"; reload();
+        portIn.value = "22"; exclIn.checked = false; reload();
       } catch (err) { toastError(err, 5000); }
     };
     // Behind a "+ add machine" disclosure, the shape the endpoint and model sections already
@@ -121,6 +129,9 @@ export function renderMachines(view) {
         el("span", { class: "muted small", style: "align-self:center" },
           "a share mounts at mnt/<name>/ for bound routines")),
       el("div", { class: "row mt" }, descIn),
+      el("label", { class: "row mt", style: "gap:8px" }, exclIn,
+        el("span", { class: "small" }, "exclusive — one job at a time: ", el("code", {}, "remote submit"),
+          " queues a job behind the ones already running instead of launching it (a GPU box)")),
       el("div", { class: "field mt" }, el("span", {}, "host key (pinned server identity)"), hkIn),
       el("div", { class: "row mt" }, scanBtn, scanOut,
         el("span", { class: "muted small", style: "align-self:center" },
