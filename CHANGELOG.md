@@ -15,6 +15,192 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.371.0] — 2026-10-01
+
+### A complete review of the codebase — security holes closed, defects fixed at their cause, one owner per seam
+
+items: operator (2026-10-01), "a complete code review and potential revision … make sure everything works as intended"
+
+**How it was done.** Every file was read against its own intent (docstrings, `docs/`, tests,
+call sites, CHANGELOG history) in twenty file-disjoint slices — engine ×4, top level ×3, daemon,
+web ×2, read models, endpoints, config/gatekit/patterns/workflows, frontend ×4, util seeds,
+library seeds + deploy, test infrastructure — each fixing only what it had verified, each bug fix
+pinned by a regression test seen failing first. What a slice found in another slice's files was
+handed to that slice or to three follow-up passes; where two slices met, the merged behaviour
+was re-derived rather than picked. The fast suite went from 2 839 to 3 244 tests and the browser
+suite from 331 to 431 (21 new files). Every gate (ruff, mypy, vulture, the policy tests) is
+green on every merge.
+
+#### Security
+
+- **A util's `fs:` declaration could escape its grant** through `..` or a symlink: containment
+  was checked lexically while Landlock mounts the resolved inode (`sandbox._admit` now resolves
+  both sides through `paths.within`). Reproduced on the live ABI-7 kernel.
+- **A child run could rewrite its routine's recipe, `.memory/`, finish line and the parent's
+  `control.json`** (whose `config_change` the parent adopts live): the write seals were anchored
+  on the child's workspace. They now cover every routine dir a run can reach, compared resolved.
+- **`delete path: "." recursive: true` removed the whole routine directory**; delete and move
+  followed symlinks. No removal may take a sealed path with it, and both act on a link itself.
+- **`read_rule` joined its name onto the library dir**, so a path read any `.md` file on the host.
+  It takes a slug only.
+- **A symlink into a credential store could be granted as a folder root** (Landlock opens roots
+  following links). Guards compare written and resolved forms; the jail drops a root that reaches
+  a store only through a link planted after approval; one enforcer (`config_fields.validate_roots`)
+  serves routine PATCH, conversation create and conversation PATCH — conversations had no guard.
+- **A one-run create grant let `write_util` revise an existing util** without its approval: the
+  existing-util list was loaded only for half-holders. `deny` asks the live library.
+- **The routine token could read every routine's own secret names** (`/api/routines/*/secrets`)
+  and could pass the tier check with an encoded `%3F`: the tiers judge the path the router
+  dispatches, and the secrets read is denied.
+- **A file the console serves was checked, then opened**: a util racing a symlink could make the
+  console serve its own config.yaml. Containment is proven on the opened descriptor.
+- **A page a run wrote, opened in a new tab, ran as the console** (a blob URL carries the
+  console's origin) and could read the operator token — from the artifact panel, the run files
+  card and transcript attachments. `components/blobtab.js` is the one rule: passive types open as
+  themselves, anything that can carry script inside a sandboxed frame.
+- **A playbook slug of `..` (`%2E%2E`) deleted the whole library repo**, history included — on the
+  web route and in the store. Every playbook function accepts a real slug only.
+- **Published placeholder tokens**: `deploy/install.sh` shipped `routine_token: "change-me-too"`,
+  and a hand-copied example kept `change-me`. Boot replaces a missing or placeholder token (and a
+  routine token equal to the console's); install.sh calls `bootstrap.ensure_config`.
+- **The instance export pushed `routine_token` into the library repo's mirror.** Its redaction
+  now matches every token/secret/password/api_key suffix. **Rotate the routine token** — earlier
+  exports carry it in the library repo's history: delete the `routine_token:` line and restart.
+- **Captured util and script output is redacted** of the secret values the engine injected
+  (8+ characters) before an observation, transcript, spill file or search index sees it; a
+  `/util` slash command now passes the D39 secret-exposure gate a model call passes.
+- **The run gate's mail check sent the IMAP password over unverified TLS**; a url_changed gate
+  printed a URL's query (API keys) into gate.json.
+- **The `git` util** passed a clone URL and a `--since` value where git reads options
+  (`--config=core.sshCommand=…`, `--output=…`); `--` and `--end-of-options` now fence them.
+- **The `instance-auditor` seed pattern granted the console's config dir** to every routine
+  created from it (creation copies roots past the PATCH guard). Removed from the seed. An existing
+  library copy keeps it until edited on the Library tab; existing routines that hold such a root
+  keep it and are reported, never dropped (the recorded owner decision).
+- Smaller: `rsched abort` and the web abort fallback signalled a finished run's recorded pid,
+  which the OS may have reused; a stale pid matching a daemon THREAD made an abort signal the
+  daemon's own process group; a refused converse left admin/recipe unlock markers for a later
+  leg; the screen relay passed still-encoded `..`; a webhook's non-ASCII token was a 500; the
+  browser auth proxy dropped a non-ASCII credential and held a silent caller forever; secret
+  values typed into Settings were kept as session drafts — draft persistence now refuses every
+  credential-shaped field by default; the VAPID private key was world-readable.
+
+#### Fixed — the model
+
+- **Every schema'd call to Fable 5.1, Opus 5.5 and Sonnet 5.5 failed**: they refuse a forced
+  `tool_choice`. The Anthropic adapter degrades each field a 400 names until none is left, and a
+  refused forced choice becomes `auto` held to one call.
+- A create_routine draft told the model to offer `workflow_catalog`'s entries, settings patterns
+  and design checks it never rendered — the model chose from memory. They are in the text now.
+- The claim verifier read only natively parsed replies, so on OpenAI-compatible endpoints every
+  `met` claim went unchecked; a judge answering in text is read.
+- A user's "ask back" reply to a blocking question never reached the model.
+- A discovered output cap of 32 000 on a ≤32k window left the prompt no room; the cap is also
+  bounded by a quarter of the window.
+
+#### Fixed — runs
+
+- A valid `finish` (the reserved turn's included) could be discarded by the schema-storm verdict.
+- A long run's third oversize-prompt recovery ended it, however far apart the recoveries were.
+- The archive the eviction warning promises now happens on the next turn.
+- A resumed leg reported earlier legs' stages as skipped, numbered its children over earlier
+  legs' `sub/1/` (appending to the old transcript, handing back old artifacts), replayed refused
+  actions and deferred finishes so that resume crashed, and dropped the hand-back line from
+  replayed child announcements (rewriting the cached prefix).
+- Transcripts are read as bytes: a gzipped one kept every event (U+2028 split lines), and a reader
+  polling a half-written multi-byte line waits instead of raising.
+- A handler that raises becomes an error observation instead of ending the run; `edit_file` on a
+  binary or non-UTF-8 file, and an unresolvable model role in refusal detection or list_models,
+  no longer end it either.
+- Two siblings could both take the last child slot; `kill_all` waited per child; a finished
+  child's elapsed time kept counting.
+- A finish line date like `2026-02-30` took the whole routine catalog and the scheduler down.
+- A routine at the `local` reminder dial could revise or delete a curated reminder; valid
+  reminder patterns were refused and a dead one accepted; a rule's assists did not arrive or
+  leave with a mid-run bind/unbind; a resumed leg's opening message counted as a correction.
+- A conversation's own one-shot reminder stranded in its inbox (a resumed leg never drained it).
+
+#### Fixed — daemon and scheduling
+
+- A run gate never skipped a routine whose runs keep an accounting (its own finish-line stamp read
+  as a change); a gate script whose descendant held the pipes outlived its deadline (30 s under
+  2 s); four check paths answered "no work" without knowing.
+- A transient 5xx/429 from an OAuth provider flagged the connection for manual re-authorization.
+- A provider or OAuth endpoint that was down held every scheduler tick; refreshes are
+  single-flight off the tick.
+- The boot reap was unguarded (a full disk stopped all firing); one bad routine, lane or one-shot
+  starved the rest of a manager's pass; the llm tailer dying rewrote a finished run as failed.
+- A delivered background task woke its owner once per tick for freight a resume cannot read.
+- Two forks of one conversation at once overwrote each other; a fire in the same second as a run
+  that just ended reused its directory.
+- A fresh container got its seed utils and library only at the second boot.
+- `server_tz` returned unloadable zones into saved schedules; a schedule naming no zone ran on
+  Berlin time on any host — it now runs in the server's zone, the one the console edits in.
+- A malformed friendly schedule or an out-of-range one-shot time was a 500 (or ended a run); a
+  naive lane watermark aborted every lane's catch-up; a report trigger got the webhook's cooldown.
+
+#### Fixed — the console and its API
+
+- The report ledger: a stalled lock could hand two reports one id; a fold that folded nothing
+  bypassed the thread cap; a report holding U+2028 vanished from triage and from `next_id`.
+- A broken routine.yaml wedged every queued web edit; a refused PATCH or settings accept had
+  already written part of its change; concurrent settings saves, audit answers, secret-map edits,
+  read markers and OAuth/device flows lost writes or raised.
+- One malformed list item reset a routine's whole config to defaults — widening its permissions;
+  `keep_runs: 0` deleted every finished run; one broken pattern file took down every settings page.
+- Editing a machine silently ended its GPU queue; a util that failed its selftest stayed live;
+  the Library's reminder "remove" always 404'd.
+- Views acted after they were gone (remounts, URL rewrites, scrolls, polls) and older reads
+  painted over newer ones; a request answering after re-sign-in cleared the new token; dialogs ran
+  the destructive action on Enter over cancel; answers, saves and gate tests were sent twice on a
+  double click; chips and lane rows were mouse-only; the week strip's drag left the next click
+  swallowed and could re-time another lane after a re-sort.
+- Keyboard access for the lane editor, the folder picker's rows and an artifact's delete; the
+  console's modals share one focus-trapping dialog; the chart palette is per-theme tokens that
+  pass contrast on both plates; a Settings save is sent once per press and says when it landed
+  with config problems; the transcript shows a finish that skipped declared stages (every event
+  type is pinned to a renderer); a hidden tab stops reconciling the LLM dock; a notification
+  click reaches the decision when no tab is controlled; the console loads where site data is
+  refused; a new library doc saves on its first try; a cancelled "retire" is quiet.
+- The header badge and web push now count standing proposals; events published from worker
+  threads reach open views at once; a decision's push leaves within ten seconds.
+- Read models: the health window compared local stamps to a UTC cutoff; search answered 500
+  forever once its index was corrupt past the header; a resumed run's util calls were counted
+  once per leg; ids past R9999 dropped out of the reflink graph.
+
+#### Fixed — utils and deploy
+
+- The `git` util SIGKILLed git at its timeout (leaving `index.lock`); its restore restored from
+  the index, reported success when blocked, and could delete `.git/HEAD`.
+- `pytest-run`'s own deadline was longer than the engine's, and its timeout orphaned pytest.
+- `remote --cwd ~/x` failed before the command ran; the reminder census read UTC stamps as local.
+- `backup.sh` ignored the exclude list; bundle and backup refused a host without `~/.credentials`;
+  the Docker entrypoint left several homes root-owned; `cliproxy-init.sh` needed a venv a
+  migrated host does not have.
+
+#### Changed
+
+- Dependencies locked to their current releases (ruff 0.16.9, mypy 2.3.1, fastapi 0.142.2,
+  starlette 1.7.0, uvicorn 0.54.0, websockets 17.1, cryptography 50.0.2, pywebpush 2.5.0, …);
+  ruff 0.16's newly stable rules are green. `pre-commit` (which the docs told everyone to run)
+  and `pytest-timeout` (a 300 s per-test deadline) joined the dev group.
+- One owner per seam where copies had drifted: `paths.append_jsonl`/`read_jsonl` for every
+  append-only stream (one `write(2)` per append); `engine/runkind.py` for "which home is this run
+  in"; `utils_run.write_selftested` for every util author; `inbox.has_pending_messages` for every
+  "is freight waiting" question; `inbox.rewrite_message` for editing a queued message;
+  `config_fields.validate_roots` for every folder grant; `components/blobtab.js` for every new
+  tab; the event bus is thread-safe.
+- `engine/loop.py`'s turn loop reads as its order (complexity 29 → 15; `engine/loopend.py` holds
+  how a run ends); `endpoints/catalogs.py` holds the provider catalog readers.
+- The `docs/designs.md` 2026-09-22 seams entry shipped except the assist outcome label.
+
+#### Removed
+
+- The expired `elapsed_s` fallback migration; the trigger CRUD routes nothing called since
+  0.369.0 (their spool appliers drain old queues until 2026-10-15); dead code no production path
+  reached (`TaskCenter.abandon_task`, `machine_queue.fair_share_order`, budget methods only tests
+  called, the abilities "deactivation cascade", scaffold parameters no caller passed).
+
 ## [0.370.2] — 2026-10-01
 
 ### Fixed — an aborted run's util, script or `shell` command ends with the run instead of outliving it
