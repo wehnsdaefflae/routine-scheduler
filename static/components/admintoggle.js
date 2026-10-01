@@ -14,12 +14,12 @@
 // full toolset, the per-conversation one about the messages that follow.
 
 import { promptDialog } from "/static/components/dialog.js";
-import { el, toast } from "/static/util.js";
+import { el, session, toast } from "/static/util.js";
 
 const ADMIN_KEY = "rsched_admin_token";
 
 export function adminToggle({ title, prompt, onMsg, offMsg }) {
-  let token = sessionStorage.getItem(ADMIN_KEY) || "";
+  let token = session.get(ADMIN_KEY) || "";
   const node = el("button", { class: "btn small ghost", title }, "admin");
   const paint = () => {
     node.classList.toggle("danger", Boolean(token));
@@ -29,12 +29,12 @@ export function adminToggle({ title, prompt, onMsg, offMsg }) {
   };
   node.onclick = async () => {
     if (token) {
-      token = ""; sessionStorage.removeItem(ADMIN_KEY); paint();
+      token = ""; session.remove(ADMIN_KEY); paint();
       toast(offMsg); return;
     }
     const t = await promptDialog(prompt, { placeholder: "paste the admin token" });
     if (!t) return;
-    token = t; sessionStorage.setItem(ADMIN_KEY, t); paint();
+    token = t; session.set(ADMIN_KEY, t); paint();
     toast(onMsg);
   };
   paint();

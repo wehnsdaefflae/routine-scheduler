@@ -1,11 +1,14 @@
 // Form persistence: text typed into the web UI survives a page refresh (and quick tab
 // switches) until it is saved or the tab is closed. sessionStorage-backed, keyed by the
 // view's hash-path + a stable field key — so the same field on the same view restores, but
-// unrelated views never collide. Global and dependency-free: installed once from app.js,
+// unrelated views never collide. Global: installed once from app.js,
 // it uses event delegation to capture edits and a MutationObserver to restore values as
 // views (re)render. It only restores fields that mount EMPTY, so a server-loaded value is
 // never clobbered by stale draft text — the case it heals is "I typed into a blank field
-// and refreshed / navigated away".
+// and refreshed / navigated away". Storage goes through util.js's `session`, which degrades to
+// memory where the browser refuses it (drafts then last as long as the page).
+
+import { session } from "/static/util.js";
 
 const PREFIX = "rsched.formpersist.";
 const SEL = "input, textarea, select";
@@ -67,22 +70,18 @@ function storeKey(node) {
 
 function save(node) {
   if (skip(node)) return;
-  try {
-    const k = storeKey(node);
-    const v = node.value;
-    if (v === "" || v == null) sessionStorage.removeItem(k);
-    else sessionStorage.setItem(k, v);
-  } catch { /* storage full / disabled — persistence is best-effort */ }
+  const k = storeKey(node);
+  const v = node.value;
+  if (v === "" || v == null) session.remove(k);
+  else session.set(k, v);
 }
 
 function restore(node) {
   if (skip(node)) return;
   // Only fill fields that mount empty — never overwrite a value the view loaded itself.
   if (node.value !== "" && node.value != null) return;
-  try {
-    const v = sessionStorage.getItem(storeKey(node));
-    if (v != null && v !== "") node.value = v;
-  } catch { /* ignore */ }
+  const v = session.get(storeKey(node));
+  if (v != null && v !== "") node.value = v;
 }
 
 function restoreTree(root) {
@@ -95,7 +94,7 @@ function restoreTree(root) {
 // successfully SUBMITTED, so a later render or reload never refills text the server
 // already has (submitted content must not come back as a draft).
 export function forgetField(node) {
-  try { sessionStorage.removeItem(storeKey(node)); } catch { /* ignore */ }
+  session.remove(storeKey(node));
 }
 
 export function installFormPersistence() {

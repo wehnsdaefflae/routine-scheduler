@@ -2,13 +2,20 @@
 // no HTML pathway, so strings passed to it can never become markup. The ONE sanctioned
 // innerHTML pathway is md.js (simple markdown for model-authored prose), which escapes first.
 
-// localStorage can throw (private mode / embedded contexts) — degrade to in-memory.
-const mem = new Map();
-export const storage = {
-  get(key) { try { return localStorage.getItem(key); } catch { return mem.get(key) ?? null; } },
-  set(key, value) { try { localStorage.setItem(key, value); } catch { mem.set(key, value); } },
-  remove(key) { try { localStorage.removeItem(key); } catch { mem.delete(key); } },
-};
+// Web storage can throw (private mode, blocked site data, embedded contexts) — even READING the
+// `localStorage`/`sessionStorage` global does — so every console read goes through one of these
+// two and degrades to an in-memory map for the life of the page. A bare call is how a browser
+// that blocks site data failed to load the default route.
+function webStorage(area) {
+  const mem = new Map();
+  return {
+    get(key) { try { return window[area].getItem(key); } catch { return mem.get(key) ?? null; } },
+    set(key, value) { try { window[area].setItem(key, value); } catch { mem.set(key, value); } },
+    remove(key) { try { window[area].removeItem(key); } catch { mem.delete(key); } },
+  };
+}
+export const storage = webStorage("localStorage");     // per browser
+export const session = webStorage("sessionStorage");   // per tab, gone when it closes
 
 export function el(tag, attrs = {}, ...children) {
   const node = document.createElement(tag);

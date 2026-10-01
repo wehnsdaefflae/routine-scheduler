@@ -1,6 +1,6 @@
 // The new-conversation composer (the #/conversations no-slug mount): first message,
 // playbook picker, and the pre-start settings — model, budgets, deliberation, project
-// directory and permissions — split from conversations.js. PREFILL_KEY carries the last
+// directory and permissions — split from conversations.js. prefillComposer() carries the last
 // user text of a forked ([new-topic]) conversation over.
 //
 // D57: the pre-start settings are laid out with the SAME titled-section vocabulary the
@@ -21,15 +21,18 @@ import { forgetField } from "/static/formpersist.js";
 import { navigate } from "/static/router.js";
 import { el, modelOption, skeleton, storage, toast, toastError } from "/static/util.js";
 
-export const PREFILL_KEY = "conv-new-prefill";
+// The fork hand-off is MODULE state, not storage: it crosses one in-page navigation and no
+// reload, and a storage read throws in a browser that blocks site data.
+let prefill = "";
+export function prefillComposer(text) { prefill = text || ""; }
+
 //: whether the composer's pre-start settings block was left open, per browser
 const SETUP_OPEN_KEY = "conv-new-setup-open";
 
 export function mountComposerOnly(main) {
   const text = el("textarea", { rows: 5,
     placeholder: "What should the agent do? The first message becomes the conversation's task…" });
-  const prefill = sessionStorage.getItem(PREFILL_KEY);
-  if (prefill) { text.value = prefill; sessionStorage.removeItem(PREFILL_KEY); }
+  if (prefill) { text.value = prefill; prefill = ""; }
   // Playbook picker (the use-instruction analog): a picked playbook's brief seeds the
   // conversation; the first-message box then just SPECIALIZES it, and may be left empty.
   const pbSel = el("select", { "data-nopersist": "" },

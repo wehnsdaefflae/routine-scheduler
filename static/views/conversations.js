@@ -9,7 +9,7 @@
 
 import { referChip } from "/static/components/referchip.js";
 import { filePicker } from "/static/components/filepicker.js";
-import { mountComposerOnly, PREFILL_KEY } from "/static/views/conversations-new.js";
+import { mountComposerOnly, prefillComposer } from "/static/views/conversations-new.js";
 import { renderHead } from "/static/views/conversations-head.js";
 import { api, apiBlobUrl, apiUpload } from "/static/api.js";
 import { questionPanel } from "/static/components/answerform.js";
@@ -375,7 +375,7 @@ export async function render(view, slug, _query = {}) {
       isLive: () => !TERMINAL.has(curState),
       onArtifact: () => artifacts.refresh(),
       onFork: (_title, lastUserText) => {
-        sessionStorage.setItem(PREFILL_KEY, lastUserText || "");
+        prefillComposer(lastUserText);
         navigate("#/conversations");
       },
       // R1006: fork the conversation AT the reply the user clicked. The header's ⑂ still
