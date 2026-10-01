@@ -374,6 +374,11 @@ def validate_action(obj: dict, allowed_kinds: set[str] | None = None,  # noqa: C
                 problems.append(f"kind={kind} may not touch .memory/ — use memory_read / "
                                 "memory_write (the engine maintains .memory/INDEX.md for you)")
                 break
+    # A rule is read by its catalog SLUG. The name is joined onto the library dir, so a path
+    # here read any .md file on the host past the run's fs jail (memops.do_read_rule).
+    if kind == "read_rule" and (name := str(obj.get("name") or "")) and not is_slug(name):
+        problems.append(f"kind=read_rule: 'name' must be a rule's kebab-case slug as the "
+                        f'catalog lists it, or "list" for the catalog — got {name!r}')
     if kind in ("memory_read", "memory_write"):
         name = str(obj.get("name") or "")
         if name and not is_slug(name):

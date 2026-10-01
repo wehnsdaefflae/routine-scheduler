@@ -11,6 +11,7 @@ never forked into the routine — and is ungated: a routine must be able to read
 
 from __future__ import annotations
 
+from ..ids import is_slug
 from ..paths import atomic_write
 from .observations import truncate
 from .run_context import RunContext
@@ -59,18 +60,21 @@ def do_read_rule(action: dict, ctx: RunContext) -> dict:
 
     name = action["name"]
     home = ctx.server.rules_home
-    catalog = library_docs.list_docs(home)
     # "held" = bound by this routine's own config, so the model can tell a rule it should
     # ALREADY be applying from one it is consulting for the first time.
     held = set(ctx.routine.rules)
     if name == "list":
         return {"kind": "read_rule", "name": "list",
                 "rules": [{"slug": d["slug"], "summary": d["summary"],
-                           "held": d["slug"] in held} for d in catalog]}
-    raw = library_docs.read_doc(home, name)
+                           "held": d["slug"] in held} for d in library_docs.list_docs(home)]}
+    # A rule is addressed by its SLUG, never by a path. `read_doc` joins the name onto the
+    # library dir, so `../../<routine>/.memory/<note>` — or an absolute path, which a join
+    # simply adopts — read any .md file on the host past the run's fs jail, through a kind
+    # every routine holds. validate_action refuses such a name first; this is the backstop.
+    raw = library_docs.read_doc(home, name) if is_slug(name) else None
     if raw is None:
         return {"kind": "read_rule", "name": name, "missing": True,
-                "available": [d["slug"] for d in catalog]}
+                "available": library_docs.slugs(home)}
     body = library_docs.doc_body(raw).strip()
     return {"kind": "read_rule", "name": name, "content": body,
             "lines": len(body.splitlines()), "held": name in held}

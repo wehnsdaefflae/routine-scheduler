@@ -860,7 +860,8 @@ whose TEXT must change on a live instance is converted by a one-shot migration i
   engine note read from the library, since the prompt is immutable), while an unbind lands next run.
   The TEXT is a separate ownership: `read_rule` is UNGATED (a routine must be able to read what
   binds it, and library prose has no side effect; reading one it does not hold applies for that run
-  only), while `write_rule` is gated by the **rule-authoring** permission under its own approval
+  only) and takes a catalog SLUG, never a path — the name is joined onto the library dir, so a
+  path there once read any `.md` on the host past the run's fs jail — while `write_rule` is gated by the **rule-authoring** permission under its own approval
   dial `rule_confirm` — a revision lands on every holder, which is not the decision write_util's
   `confirm` governs. There is deliberately no `remove_rule`: deleting a rule silently un-binds every
   holder with nothing to catch it, so a run reports it and the user deletes it.
