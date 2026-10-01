@@ -12,11 +12,9 @@ derivation, and each answer POST publishes a bus event so open views resync at o
 
 from __future__ import annotations
 
-import asyncio
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-import anyio.from_thread
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
@@ -142,23 +140,14 @@ async def _run_now(request: Request, match: dict, brief: str = "") -> str | None
 
 def _announce_answer(request: Request, qid: str, routine: str) -> None:
     """One bus event per answer: every open view (Decisions page, run views, badges)
-    resyncs its question state immediately instead of waiting for a reload.
-
-    Published ON THE LOOP whichever side calls: the bus is a set of asyncio queues, which
-    are not thread-safe, and every caller here but the async route runs on a worker thread.
-    A put from there wakes no sleeping loop — the open views heard about a snooze, a defer or
-    a revision whenever something else next woke it.
+    resyncs its question state immediately instead of waiting for a reload. Every caller
+    here but the async route runs on a worker thread; `EventBus.publish` marshals onto the
+    loop itself, so the snooze, defer and revision paths wake the open views at once.
     """
     bus = getattr(request.app.state, "bus", None)
     if bus is None:
         return
-    event = {"event": "question_answered", "qid": qid, "routine": routine}
-    try:
-        asyncio.get_running_loop()
-    except RuntimeError:                       # a worker thread: hop onto the loop
-        anyio.from_thread.run_sync(bus.publish, event)
-    else:
-        bus.publish(event)
+    bus.publish({"event": "question_answered", "qid": qid, "routine": routine})
 
 
 def _decide_request(request: Request, match: dict, routine_dir,
