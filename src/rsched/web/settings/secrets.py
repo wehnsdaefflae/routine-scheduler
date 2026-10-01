@@ -99,30 +99,38 @@ def put_secret_entry(_request: Request, key: str, body: SecretEntry) -> dict:
     name = body.name.strip()
     if not name:
         raise HTTPException(400, "an entry name is required")
-    raw = secret_store.load_secrets().get(key, "")
-    data = _parse_map(raw) if raw else {}
-    if data is None:
-        raise HTTPException(400, f"{key} holds a non-JSON-object value — clear it to use entries")
-    data[name] = body.value
+
+    def put(raw: str | None) -> str:
+        data = _parse_map(raw) if raw else {}
+        if data is None:
+            raise HTTPException(
+                400, f"{key} holds a non-JSON-object value — clear it to use entries")
+        data[name] = body.value
+        return json.dumps(data, separators=(",", ":"))
+
     try:
-        secret_store.set_secret(key.strip(), json.dumps(data, separators=(",", ":")))
+        new = secret_store.update_secret(key.strip(), put)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
-    return {"ok": True, "entries": sorted(data)}
+    return {"ok": True, "entries": sorted(_parse_map(new or "") or {})}
 
 
 @router.delete("/settings/secrets/{key}/entry/{name}")
 def delete_secret_entry(_request: Request, key: str, name: str) -> dict:
     """Remove one entry from a JSON-map secret; dropping the last entry deletes the secret."""
-    data = _parse_map(secret_store.load_secrets().get(key, "") or "{}")
-    if not data or name not in data:
-        raise HTTPException(404, f"no entry {name!r} in {key}")
-    del data[name]
-    if data:
-        secret_store.set_secret(key, json.dumps(data, separators=(",", ":")))
-    else:
-        secret_store.delete_secret(key)
-    return {"ok": True, "entries": sorted(data)}
+
+    def drop(raw: str | None) -> str | None:
+        data = _parse_map(raw or "{}")
+        if not data or name not in data:
+            raise HTTPException(404, f"no entry {name!r} in {key}")
+        del data[name]
+        return json.dumps(data, separators=(",", ":")) if data else None
+
+    try:
+        new = secret_store.update_secret(key, drop)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"ok": True, "entries": sorted(_parse_map(new or "") or {})}
 
 
 @router.put("/settings/secrets")

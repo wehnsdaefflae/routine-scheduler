@@ -133,3 +133,16 @@ def test_summaries_are_served_even_without_self_audit(api_client, make_routine):
     got = c.get("/api/items").json()
     assert got["exists"] is False
     assert [i["id"] for i in got["items"]] == ["talker:20260905-080000"]
+
+
+def test_concurrent_mark_read_clicks_all_land(tmp_path):
+    """Each "mark read" is a read-modify-write of one shared marker file on a worker thread;
+    two at once each read the same map, and the second write resurrected the first card."""
+    from conftest import hammer
+
+    home = tmp_path / "routines"
+    for _ in range(10):
+        summaries.read_marker_path(home).unlink(missing_ok=True)
+        assert hammer(lambda tag: summaries.mark_read(
+            home, f"r{tag}:20260905-080000", read=True)) == []
+        assert len(summaries._read_map(home)) == 6

@@ -20,6 +20,11 @@ own `secrets:` header (or a transitive `calls:` sibling's) declares it.
 Scoped values live under the CONFIG dir, never in the routine's own dir: a routine repo is
 `git add -A` autocommitted and auto-pushed, so a secret written there would leave the host.
 
+Every write is a read-modify-write of a whole store file, so each one runs under that file's
+lock (`_update`): the settings handlers run on worker threads, and two concurrent edits — two
+entries saved into one JSON-map secret, a key set while another is deleted — each read the
+same file and the second write silently undid the first.
+
 Format: one `KEY=VALUE` line per secret. A value CONTAINING newlines (an SSH private key —
 the remote-machines `key_var` case) is stored as one line with the value JSON-quoted, so a
 pasted PEM round-trips through the UI instead of silently corrupting into stray
@@ -29,9 +34,14 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Callable
+from pathlib import Path
+from typing import TypeVar
 
 from .ids import is_slug
-from .paths import atomic_write, config_file
+from .paths import atomic_write, config_file, file_lock
+
+T = TypeVar("T")
 
 SECRETS_FILE = "secrets.env"
 SCOPED_DIR = "secrets.d"                             # one <slug>.env per routine (D103)
@@ -110,20 +120,12 @@ def routine_secret_keys(slug: str) -> list[str]:
 
 
 def set_routine_secret(slug: str, key: str, value: str) -> None:
-    if not KEY_RE.match(key):
-        raise ValueError(f"{key!r} is not a valid environment variable name")
-    d = load_routine_secrets(slug)
-    d[key] = value
-    _write(d, scoped_path(slug))
+    _check_key(key)
+    _update(scoped_path(slug), lambda d: d.__setitem__(key, value))
 
 
 def delete_routine_secret(slug: str, key: str) -> bool:
-    d = load_routine_secrets(slug)
-    if key not in d:
-        return False
-    del d[key]
-    _write(d, scoped_path(slug))
-    return True
+    return _update(scoped_path(slug), lambda d: d.pop(key, None) is not None)
 
 
 def drop_routine_secrets(slug: str) -> bool:
@@ -138,20 +140,49 @@ def drop_routine_secrets(slug: str) -> bool:
 
 
 def set_secret(key: str, value: str) -> None:
-    if not KEY_RE.match(key):
-        raise ValueError(f"{key!r} is not a valid environment variable name")
-    d = load_secrets()
-    d[key] = value
-    _write(d, secrets_path())
+    update_secret(key, lambda _old: value)
 
 
 def delete_secret(key: str) -> bool:
-    d = load_secrets()
-    if key not in d:
-        return False
-    del d[key]
-    _write(d, secrets_path())
-    return True
+    return _update(secrets_path(), lambda d: d.pop(key, None) is not None)
+
+
+def update_secret(key: str, edit: Callable[[str | None], str | None]) -> str | None:
+    """Read-modify-write ONE central secret under the store's lock: `edit` gets the current
+    value (None when unset) and returns the new one, or None to delete it; returns what it
+    returned. The JSON-map entry routes (web/settings/secrets.py) edit one entry of a value
+    through this, so two entries saved at once both land. An exception from `edit` leaves the
+    store untouched.
+    """
+    _check_key(key)
+
+    def apply(d: dict[str, str]) -> str | None:
+        new = edit(d.get(key))
+        if new is None:
+            d.pop(key, None)
+        else:
+            d[key] = new
+        return new
+
+    return _update(secrets_path(), apply)
+
+
+def _check_key(key: str) -> None:
+    if not KEY_RE.match(key):
+        raise ValueError(f"{key!r} is not a valid environment variable name")
+
+
+def _update(path: Path, edit: Callable[[dict[str, str]], T]) -> T:  # noqa: UP047 — pdoc can't parse PEP 695 generics
+    """Apply `edit` to one store's {KEY: VALUE} map under that file's lock, writing the file
+    back only when the map changed — the one read-modify-write every setter goes through.
+    """
+    with file_lock(path.with_name(f".{path.name}.lock")):
+        d = _read(path)
+        before = dict(d)
+        result = edit(d)
+        if d != before:
+            _write(d, path)
+        return result
 
 
 def _encode_value(v: str) -> str:
@@ -161,10 +192,8 @@ def _encode_value(v: str) -> str:
     return json.dumps(v) if "\n" in v or "\r" in v else v
 
 
-def _write(d: dict[str, str], path) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    atomic_write(path, "".join(f"{k}={_encode_value(v)}\n" for k, v in d.items()))
-    try:
-        path.chmod(0o600)
-    except OSError:
-        pass
+def _write(d: dict[str, str], path: Path) -> None:
+    # 0600 on the temp file BEFORE the rename: chmod-after-write left the new file
+    # briefly carrying whatever the old one had
+    atomic_write(path, "".join(f"{k}={_encode_value(v)}\n" for k, v in d.items()),
+                 mode=0o600)

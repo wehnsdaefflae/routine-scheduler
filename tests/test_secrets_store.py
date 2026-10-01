@@ -44,3 +44,25 @@ def test_legacy_quoted_single_line_values_still_parse(monkeypatch, tmp_path):
     (tmp_path / "secrets.env").write_text(
         'A="quoted"\nB=\'single\'\n# comment\nC=plain\n', encoding="utf-8")
     assert secrets.load_secrets() == {"A": "quoted", "B": "single", "C": "plain"}
+
+
+def test_concurrent_edits_of_one_store_all_land(monkeypatch, tmp_path):
+    """Every setter is a read-modify-write of the whole file, and the settings handlers run on
+    worker threads: six entries saved into one JSON-map secret at once each read the same map
+    and the last write kept only its own. Under the store's lock every one lands."""
+    import json
+
+    from conftest import hammer
+
+    _patch_store(monkeypatch, tmp_path)
+
+    def add_entry(tag: int) -> None:
+        secrets.update_secret("FTP_SOURCES", lambda raw: json.dumps(
+            {**json.loads(raw or "{}"), f"src{tag}": {"host": f"h{tag}"}}))
+        secrets.set_secret(f"KEY_{tag}", str(tag))
+
+    assert hammer(add_entry) == []
+    store = secrets.load_secrets()
+    assert sorted(json.loads(store["FTP_SOURCES"])) == [f"src{n}" for n in range(6)]
+    assert all(store[f"KEY_{n}"] == str(n) for n in range(6))
+    assert (tmp_path / "secrets.env").stat().st_mode & 0o777 == 0o600
