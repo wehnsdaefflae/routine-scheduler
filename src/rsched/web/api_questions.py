@@ -131,7 +131,7 @@ async def _run_now(request: Request, match: dict, brief: str = "") -> str | None
     answer, and a second run would be refused anyway). One routine is read, never the
     catalog (`registry.info`), because this runs on the loop.
     """
-    if match.get("conversation") or match.get("background") or match.get("wizard"):
+    if match.get("conversation") or match.get("background"):
         return None
     state = request.app.state
     info = registry.info(state.server, state.server.routines_home, str(match["routine"]))
