@@ -285,8 +285,8 @@ turn loop.
 The transports are `httpx` + `tenacity` on purpose. An SDK would replace ~120 lines (`post_json`,
 the status classifier, the Retry-After read, the retry wrapper) and keep every line that actually
 earns its place, because each provider-specific degrade needs the raw status and body: the
-`output_config`/`cache_control` strip for gateways, the forced-`tool_choice` and `temperature`
-drops for the Claude models that refuse them, the `response_format` 400 **and** the generic
+`output_config`/`cache_control` strip for gateways, the `temperature` and effort drops for the
+Claude models that refuse them, the `response_format` 400 **and** the generic
 503 that hides a schema-incapable backend, the 402 "can only afford N" retry, Ollama's native
 `/api/chat`, the four catalog readers, the proxy-management routes. On top of that the Anthropic
 SDK is built on `httpx2` — a second HTTP stack beside the `httpx` the daemon, web layer and utils
@@ -322,11 +322,12 @@ base URL of the server, whatever key you configured it with. This is the guarant
 for a model no provider lists.
 
 **Anthropic API** — `kind: anthropic`, no base_url needed, `sk-ant-…` key. Metered: know
-your budget caps. The action rides one tool the request forces; the newest Claude models
-(Fable 5.1, Opus 5.5, Sonnet 5.5) refuse a forced `tool_choice` with a 400, which the adapter
-absorbs by asking again on `auto` held to one tool call — one extra round trip per call on
-those models, and the same holds through a subscription proxy. A model that refuses several
-fields (that one plus a configured `temperature`) is degraded one 400 at a time.
+your budget caps. The action rides one tool, offered on `tool_choice: auto` held to one call
+and never forced: the newest Claude models (Fable 5.1, Opus 5.5, Sonnet 5.5) refuse a forced
+`tool_choice` with a 400, and absorbing that 400 cost an extra round trip on every call they
+served (the operator chose not to force on this wire, 2026-10-01). A model that answers in
+text instead has its action read from the text. A model that refuses several optional fields
+(a configured `temperature`, the effort knob) is degraded one 400 at a time.
 
 ## Windows and output caps are DISCOVERED — leave them blank
 

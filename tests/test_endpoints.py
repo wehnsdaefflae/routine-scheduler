@@ -455,7 +455,7 @@ def test_ollama_native_malformed_json_on_200_is_retryable(monkeypatch):
 
 # --- anthropic -------------------------------------------------------------------
 
-def test_anthropic_forced_tool_and_parse(monkeypatch, tmp_path):
+def test_anthropic_tool_on_auto_and_parse(monkeypatch, tmp_path):
     keyfile = tmp_path / "anthropic.env"
     keyfile.write_text('ANTHROPIC_API_KEY="sk-test"\n')
     ep = AnthropicEndpoint(EndpointConfig(
@@ -475,7 +475,7 @@ def test_anthropic_forced_tool_and_parse(monkeypatch, tmp_path):
     assert seen["body"]["system"] == [{"type": "text", "text": "be brief",
                                        "cache_control": {"type": "ephemeral"}}]
     assert seen["body"]["tools"][0]["cache_control"] == {"type": "ephemeral"}
-    assert seen["body"]["tool_choice"] == {"type": "tool", "name": "action"}
+    assert seen["body"]["tool_choice"] == _ONE_CALL_AT_MOST       # offered, never forced
     assert all(m["role"] != "system" for m in seen["body"]["messages"])
     last = seen["body"]["messages"][-1]
     assert last["content"][0]["cache_control"] == {"type": "ephemeral"}
@@ -498,6 +498,8 @@ def _anth():
 
 _ANTH_OK = {"content": [{"type": "tool_use", "name": "action", "input": {"say": "s", "kind": "finish"}}],
             "usage": {"input_tokens": 1, "output_tokens": 1}}
+# The tool_choice every schema'd call sends — pinned as the literal wire shape.
+_ONE_CALL_AT_MOST = {"type": "auto", "disable_parallel_tool_use": True}
 
 
 @pytest.mark.parametrize(("status", "attr", "attempts"), [
@@ -576,7 +578,7 @@ def test_anthropic_one_shot_places_no_breakpoints(monkeypatch, tmp_path):
     assert isinstance(seen["body"]["messages"][-1]["content"], str)
     # everything else about the call is unchanged — this is a caching decision, not a
     # different request shape
-    assert seen["body"]["tool_choice"] == {"type": "tool", "name": "action"}
+    assert seen["body"]["tool_choice"] == _ONE_CALL_AT_MOST
 
 
 def test_anthropic_cache_usage_captured(monkeypatch):
@@ -888,74 +890,78 @@ def test_anthropic_temperature_400_degrades_instead_of_failing_the_turn(monkeypa
 
 _FORCED_TOOL_400 = ('{"type":"error","error":{"type":"invalid_request_error","message":'
                     '"tool_choice: type \\"tool\\" and \\"any\\" are not supported for this model."}}')
-_ONE_CALL_AT_MOST = {"type": "auto", "disable_parallel_tool_use": True}
+_UNKNOWN_TOOL_CHOICE_400 = ('{"type":"error","error":{"type":"invalid_request_error",'
+                            '"message":"tool_choice: Extra inputs are not permitted"}}')
 
 
-def _refuses_forced_tool_use(bodies, *, temperature=False, overloaded=None):
-    """A fake Messages API for the newest Claude models: a FORCED tool_choice is a 400, and so
-    (with `temperature=True`) is a sampling parameter; `overloaded` 529s once."""
+def _refuses_forced_tool_use(bodies):
+    """A fake Messages API for the newest Claude models: a FORCED tool_choice is a 400."""
     def fake_post(url, json=None, headers=None, timeout=None):
         bodies.append(json)
-        if temperature and "temperature" in json:
-            return FakeResponse(status_code=400, text=(
-                '{"error":{"message":"temperature: Extra inputs are not permitted"}}'))
         if json.get("tool_choice", {}).get("type") in ("tool", "any"):
             return FakeResponse(status_code=400, text=_FORCED_TOOL_400)
-        if overloaded:
-            overloaded.pop()
-            return FakeResponse(status_code=529, text="overloaded")
         return FakeResponse(payload=_ANTH_OK)
     return fake_post
 
 
-def test_anthropic_forced_tool_choice_400_degrades_to_auto(monkeypatch):
+def test_anthropic_never_forces_the_tool_so_no_call_pays_a_400(monkeypatch):
     """The newest Claude models (Fable 5.1, Opus 5.5, Sonnet 5.5) answer a FORCED tool_choice
-    with a 400 — non-retryable, so every schema'd call on them failed: every turn of every run
-    died at turn 0 or spent a failover on a healthy model. The model that rejects it says so
-    and gets the call again on `auto` with at most ONE tool call (the engine takes one action
-    per turn, and plain `auto` would let a reply carry several, all but one silently lost);
-    the one tool is still offered. A model that ACCEPTS forced tool use keeps it."""
+    with a 400. Degrading on that 400 kept them working, but every schema'd call re-learned it:
+    one wasted round trip on every turn of every run they served. The operator's decision
+    (2026-10-01): never force on this wire. The tool is offered on `auto` with at most ONE
+    call (the engine takes one action per turn; plain `auto` would let a reply carry several,
+    all but one silently lost), so the first request is the one that is answered."""
     bodies: list = []
     monkeypatch.setattr(anth_mod.httpx, "post", _refuses_forced_tool_use(bodies))
     c = _anth().complete(MESSAGES, model="claude-opus-5-5", schema={"type": "object"})
-    assert bodies[0]["tool_choice"] == {"type": "tool", "name": "action"}
-    assert bodies[1]["tool_choice"] == _ONE_CALL_AT_MOST
-    assert bodies[1]["tools"] == bodies[0]["tools"]
-    assert c.parsed == {"say": "s", "kind": "finish"} and len(bodies) == 2
+    assert [b["tool_choice"] for b in bodies] == [_ONE_CALL_AT_MOST]
+    assert bodies[0]["tools"][0]["name"] == "action"
+    assert c.parsed == {"say": "s", "kind": "finish"}
 
 
 def test_anthropic_degrades_every_field_a_model_rejects_one_400_at_a_time(monkeypatch):
-    """A 400 names ONE field, and a model can reject several: a current Claude model refuses
-    both a forced tool_choice and a sampling parameter. One degraded retry absorbed the first
-    and died on the second, so the adapter keeps degrading while the 400 names something it
-    still sends — and a retry after a transient failure resends what is left, rather than
+    """A 400 names ONE field, and a model can reject several. One degraded retry absorbed the
+    first and died on the second, so the adapter keeps degrading while the 400 names something
+    it still sends — and a retry after a transient failure resends what is left, rather than
     re-earning every 400."""
     monkeypatch.setattr("time.sleep", lambda s: None)
     bodies: list = []
-    monkeypatch.setattr(anth_mod.httpx, "post",
-                        _refuses_forced_tool_use(bodies, temperature=True, overloaded=[1]))
+
+    def fake_post(url, json=None, headers=None, timeout=None):
+        bodies.append(json)
+        if "temperature" in json:
+            return FakeResponse(status_code=400, text=(
+                '{"error":{"message":"temperature: Extra inputs are not permitted"}}'))
+        if "output_config" in json:
+            return FakeResponse(status_code=400, text=(
+                '{"error":{"message":"output_config.effort: not supported for this model"}}'))
+        if len(bodies) == 3:
+            return FakeResponse(status_code=529, text="overloaded")
+        return FakeResponse(payload=_ANTH_OK)
+
+    monkeypatch.setattr(anth_mod.httpx, "post", fake_post)
     c = _anth().complete(MESSAGES, model="claude-sonnet-5-5", schema={"type": "object"},
                          temperature=0.2, effort="high")
     assert c.parsed == {"say": "s", "kind": "finish"}
     assert ["temperature" in b for b in bodies] == [True, False, False, False]
-    assert [b["tool_choice"]["type"] for b in bodies] == ["tool", "tool", "auto", "auto"]
-    assert all(b["output_config"] == {"effort": "high"} for b in bodies)  # never named: kept
+    assert ["output_config" in b for b in bodies] == [True, True, False, False]
+    assert all(b["tool_choice"] == _ONE_CALL_AT_MOST for b in bodies)   # never named: kept
     assert len(bodies) == 4               # two 400s, the 529, then the accepted request
 
 
 def test_anthropic_a_400_naming_nothing_sent_is_not_retried(monkeypatch):
-    """The loop ends where the 400 names nothing still in the body. A gateway that refuses
-    even the unforced choice (it does not know the field) loses it entirely; a 400 after that
-    surfaces as-is instead of looping."""
+    """The loop ends where the 400 names nothing still in the body. A gateway that does not
+    know `tool_choice` loses it (the tool is still offered); a 400 after that surfaces as-is
+    instead of looping."""
     bodies = []
 
     def fake_post(url, json=None, headers=None, timeout=None):
         bodies.append(json)
-        return FakeResponse(status_code=400, text=_FORCED_TOOL_400)
+        return FakeResponse(status_code=400, text=_UNKNOWN_TOOL_CHOICE_400)
 
     monkeypatch.setattr(anth_mod.httpx, "post", fake_post)
     with pytest.raises(EndpointError) as exc:
         _anth().complete(MESSAGES, model="m", schema={"type": "object"})
     assert not exc.value.retryable and "tool_choice" in str(exc.value)
-    assert [b.get("tool_choice") for b in bodies] == [
-        {"type": "tool", "name": "action"}, _ONE_CALL_AT_MOST, None]
+    assert [b.get("tool_choice") for b in bodies] == [_ONE_CALL_AT_MOST, None]
+    assert all(b["tools"][0]["name"] == "action" for b in bodies)

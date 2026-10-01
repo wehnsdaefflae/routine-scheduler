@@ -92,8 +92,10 @@ nothing at all: set a Codex model's context window and output limit by hand (the
 Settings card says which models still need it — docs/endpoints.md, "Windows and output
 caps are DISCOVERED"). Existing routine references use catalog names and need no changes.
 
-Codex models also use the `anthropic` kind: the forced-action tool route passed
-our live action schema. The OpenAI strict-schema route rejects optional nested
+Codex models also use the `anthropic` kind: the action-tool route passed our live
+action schema when it was validated, with a FORCED tool choice. Since 0.372.0 the tool is
+offered on `auto` held to one call (docs/endpoints.md) — check a Codex model's first turn
+after upgrading. The OpenAI strict-schema route rejects optional nested
 fields and falls back to unconstrained JSON, so it is not the validated route.
 
 ## Verification and operations

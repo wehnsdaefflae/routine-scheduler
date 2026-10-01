@@ -20,8 +20,12 @@ The contract has three parts, and every mode obeys all three:
 
 1. **Isolation.** A child gets its OWN directory and never writes into its parent's. Concurrent
    siblings therefore cannot race a shared tree, and the engine arbitrates nothing.
-2. **A budget of its own**, sliced from the parent's remainder — a child can never outspend the
-   run that started it.
+2. **A budget of its own**, sliced from the parent's remainder as the child starts — no single
+   child can outspend the run that started it. Parallel siblings are each sliced from the
+   remainder they see and are NOT netted against each other (their usage folds into the
+   parent only as each one exits), so a fan-out can together spend more than the parent had
+   left. That generosity is the operator's choice (2026-10-01); the run-level budget still
+   ends the tree once their usage has folded back.
 3. **A declared HAND-BACK.** A child returns its summary always, and returns FILES by writing
    them into its own `artifacts/` — the same convention the Artifacts panel and detached
    background tasks already use. The engine copies those into the parent's

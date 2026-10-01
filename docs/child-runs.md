@@ -33,8 +33,12 @@ these docs cannot drift apart again.
 
 1. **Isolation.** A child gets its OWN directory and never writes into its parent's, so
    concurrent siblings cannot race a shared tree and the engine arbitrates nothing.
-2. **A budget of its own**, sliced from the parent's remainder — a child can never outspend the
-   run that started it.
+2. **A budget of its own**, sliced from the parent's remainder as the child starts — no single
+   child can outspend the run that started it. Parallel siblings are each sliced from the
+   remainder they see and are NOT netted against each other (a child's usage folds into the
+   parent when it exits), so a fan-out can together spend more than the parent had left — kept
+   that way on purpose (operator, 2026-10-01); the run-level budget still ends the tree once
+   their usage has folded back.
 3. **A declared hand-back.** Summary always; FILES by writing them into its own `artifacts/`
    (below).
 
