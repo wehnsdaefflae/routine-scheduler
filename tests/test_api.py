@@ -1588,6 +1588,32 @@ def test_put_util_rejects_bad_header(client):
     assert not (tmp / "library" / "utils" / "x").exists()
 
 
+def _util_src(name: str, body: str = 'print("ok")') -> str:
+    return (f'"""{name} — a test util.\n\nusage: gu {name}\ntags: test\nnet: none\nfs: none\n'
+            f'"""\n{body}\n')
+
+
+def test_put_util_that_fails_its_selftest_is_rolled_back(client, monkeypatch):
+    """The web editor mirrors write_util, whose selftest gates the LIBRARY: a revision that
+    fails it is reverted and a new util removed, so a broken script is never left live for
+    the routines calling it. Here the 422 said "not committed" while the broken text stayed
+    on disk, and every `gu` caller ran it until someone noticed."""
+    c, tmp = client
+    utils = tmp / "library" / "utils"
+    (utils / "x").mkdir(parents=True)
+    (utils / "x" / "main.py").write_text(_util_src("x"), encoding="utf-8")
+    monkeypatch.setattr("rsched.utils_run.selftest", lambda *_a, **_k: (False, "exit 3"))
+    r = c.put("/api/library/utils/x", json={"content": _util_src("x", "raise SystemExit(3)")})
+    assert r.status_code == 422 and "exit 3" in r.json()["detail"]
+    assert (utils / "x" / "main.py").read_text(encoding="utf-8") == _util_src("x")
+    r = c.put("/api/library/utils/fresh", json={"content": _util_src("fresh")})
+    assert r.status_code == 422
+    assert not (utils / "fresh").exists()
+    # a name outside the slug alphabet is refused as such, not by write_util_file's 500
+    assert c.put("/api/library/utils/Fresh.Util",
+                 json={"content": _util_src("Fresh.Util")}).status_code == 400
+
+
 def test_workflow_delete_and_no_proposals_flow(client):
     """Workflows are edited and DELETED, never accepted: DELETE removes + commits, and the
     retired proposals endpoints are gone."""
