@@ -2053,6 +2053,30 @@ def test_converse_recipe_edit(client, monkeypatch):
     assert msgs == ["tighten the report stage"]
 
 
+def test_a_converse_that_cannot_resume_leaves_no_unlock_behind(client, monkeypatch):
+    """The admin and recipe-edit markers are ONE-SHOT unlocks the next leg of the run dir
+    reads at init, whatever starts it. Written before a resume that was then refused (another
+    run of the routine live), they stayed — and the next leg (a plain converse, the run page's
+    resume) got the full toolset or recipe editing without ever presenting for it."""
+    from types import SimpleNamespace
+
+    from rsched.engine.admin import ADMIN_HEADER, ADMIN_MARKER, ADMIN_TOKEN_ENV
+    from rsched.engine.revise import REVISE_MARKER
+
+    c, tmp = client
+    run_dir = _mk_run(tmp / "routines", "apir", "20260709-130000", "finished")
+    monkeypatch.setenv(ADMIN_TOKEN_ENV, "admin-secret")
+    # another run of the routine is live, so the runner refuses the resume
+    monkeypatch.setitem(c.app.state.runner.active, "apir",
+                        SimpleNamespace(run_id="apir:20260709-140000"))
+    r = c.post("/api/runs/apir:20260709-130000/converse",
+               data={"text": "rewrite the gather stage", "recipe_edit": "1"},
+               headers={ADMIN_HEADER: "admin-secret"})
+    assert r.status_code == 409 and "another run of apir" in r.json()["detail"]
+    assert not (run_dir / ADMIN_MARKER).exists()
+    assert not (run_dir / REVISE_MARKER).exists()
+
+
 def test_audit_decision_answer_survives_inbox_consumption(client):
     """The D2 re-surfacing loop: a mid-run delivery consumes the feedback message
     instantly, and with the report still listing the decision open it re-entered the
