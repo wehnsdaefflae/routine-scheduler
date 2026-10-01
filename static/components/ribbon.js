@@ -11,7 +11,8 @@
 // one control would make the glance heavy and the tool cramped.
 //
 // Cheap by construction: two endpoints the console already polls, one refetch per bus event
-// coalesced into a window, and nothing at all while it is collapsed.
+// coalesced into a window, a resize repainted from what it holds, and nothing at all while it
+// is collapsed.
 
 import { api } from "/static/api.js";
 import { el, fmtTs, storage, svgEl, toDate } from "/static/util.js";
@@ -152,13 +153,18 @@ export function mountRibbon(host) {
   // run events; upcoming FIRES change when someone edits a schedule, which no bus event
   // announces, so the week rides the slow timer and is repainted from cache in between.
   let week = { routines: [], lanes: [] };
+  let runs = null;   // the run list last painted — what a resize repaints
+  let seq = 0;       // stale-response guard: two reads in flight land in the order they were asked
 
   async function refreshRuns() {
     if (collapsed) return;
     last = Date.now();
+    const mine = ++seq;
     try {
-      const runs = await api("/api/runs?limit=200");
-      paint(Array.isArray(runs) ? runs : [], week);
+      const fresh = await api("/api/runs?limit=200");
+      if (mine !== seq) return;
+      runs = Array.isArray(fresh) ? fresh : [];
+      paint(runs, week);
     } catch {
       // The daemon lamp already says the link is down; a broken ribbon says it twice and
       // steals the row. Leave whatever was last painted.
@@ -184,7 +190,10 @@ export function mountRibbon(host) {
   const RUN_EVENTS = new Set(["run_started", "run_state", "run_finished", "reconnect"]);
   const onBus = (ev) => { if (RUN_EVENTS.has(ev.detail?.event)) schedule(); };
   window.addEventListener("rsched-bus", onBus);
-  const onResize = () => schedule();
+  // A resize changes the band's geometry and nothing it shows, so it repaints what is held. It
+  // used to queue a refetch instead — coalesced to 20 s, during which the band stayed drawn for
+  // the old width (its SVG scales without keeping its aspect) — and asked for 200 runs to do it.
+  const onResize = () => { if (!collapsed && runs) paint(runs, week); };
   window.addEventListener("resize", onResize);
   timer = setInterval(refreshWeek, 120_000);
   refreshWeek();
