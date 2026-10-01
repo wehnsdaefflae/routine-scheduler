@@ -47,7 +47,8 @@ OAuth has two halves that live in different places, because a routine run is hea
   beside it (`Scheduler._off_tick`: one pass at a time, so a provider that is down and answers in
   its 20 s timeout never holds a cron fire). It refreshes
   any *expiring*-provider connection within ~5 min of expiry, persists a rotated `refresh_token`, and
-  on a provider rejection flags the connection `needs_reauth`, which badges it in Settings →
+  on a provider REFUSAL (HTTP 400/401/403, RFC 6749 §5.2 — a 5xx, 429 or timeout is retried
+  next tick like a network error) flags the connection `needs_reauth`, which badges it in Settings →
   Connections — the console record IS the notification, and no implicit outbound send exists. A
   no-op for non-expiring providers (Notion), so a Notion-only instance never touches it.
 - **Engine injection** — `executor.do_util` resolves the routine's bound connections to

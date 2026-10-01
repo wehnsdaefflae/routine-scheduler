@@ -83,3 +83,22 @@ def test_rejection_marks_reauth_and_the_record_is_the_notification(monkeypatch):
     _mgr()._refresh_due(time.time())
     conn = store.get_connection("google", "me")
     assert conn is not None and conn.needs_reauth is True
+
+
+@pytest.mark.parametrize("status", [503, 502, 429, 408])
+def test_a_provider_hiccup_is_retried_not_a_refusal(monkeypatch, status):
+    """Only a REFUSAL (RFC 6749 §5.2: 400 invalid_grant/…, 401 invalid_client; some providers
+    say 403) means the grant is dead. Every other non-200 flagged `needs_reauth` too, and a
+    flagged connection is skipped by every later pass and withheld from every run — so one
+    provider outage at refresh time cost a re-authorization by hand."""
+    store.set_connection(Connection(provider="google", account="me", access_token="AT",
+                                    refresh_token="RT", expires_at=time.time() + 60))
+    monkeypatch.setattr(exchange.httpx, "post", lambda *a, **k: _Resp(status, {}))
+    _mgr()._refresh_due(time.time())
+    conn = store.get_connection("google", "me")
+    assert conn is not None and conn.needs_reauth is False
+    monkeypatch.setattr(exchange.httpx, "post",                 # the provider is back
+                        lambda *a, **k: _Resp(200, {"access_token": "NEW", "expires_in": 3600}))
+    _mgr()._refresh_due(time.time())
+    conn = store.get_connection("google", "me")
+    assert conn is not None and conn.access_token == "NEW"
