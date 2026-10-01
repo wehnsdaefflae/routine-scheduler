@@ -63,14 +63,25 @@ COPIED_TREES = ("state", "attachments")
 COPIED_FILES = ("main.md", "instruction.md", "tuning.yaml")
 
 
-def branch_slug(conversations_home: Path, parent_slug: str) -> str:
-    """`<parent>-b<n>`, first free n. The lineage stays readable in the directory name itself,
-    which matters when a branch is later found on disk with no UI in front of it.
+def claim_branch_dir(conversations_home: Path, parent_slug: str) -> tuple[str, Path]:
+    """`<parent>-b<n>` for the first free n, CLAIMED by creating its directory. The lineage
+    stays readable in the directory name itself, which matters when a branch is later found on
+    disk with no UI in front of it.
+
+    The mkdir IS the claim. The fork route runs on the threadpool, so a double-submitted fork
+    is two forks at once; picking a free name first and creating it with exist_ok let both
+    pick the same n, and the one that lost the race wrote over the other's branch.
     """
+    conversations_home.mkdir(parents=True, exist_ok=True)
     n = 1
-    while (conversations_home / f"{parent_slug}-b{n}").exists():
-        n += 1
-    return f"{parent_slug}-b{n}"
+    while True:
+        slug = f"{parent_slug}-b{n}"
+        try:
+            (conversations_home / slug).mkdir()
+        except FileExistsError:
+            n += 1
+            continue
+        return slug, conversations_home / slug
 
 
 def _strip_usage(event: dict) -> dict:
@@ -97,8 +108,7 @@ def fork_conversation(server: ServerConfig, *, parent_dir: Path, parent_slug: st
     if cut is None:
         raise ValueError(f"turn {at_turn} is not in this conversation's transcript")
 
-    slug = branch_slug(server.conversations_home, parent_slug)
-    branch_dir = server.conversations_home / slug
+    slug, branch_dir = claim_branch_dir(server.conversations_home, parent_slug)
     for sub in ("state", "inbox", "attachments", "artifacts"):
         (branch_dir / sub).mkdir(parents=True, exist_ok=True)
     for tree in COPIED_TREES:
