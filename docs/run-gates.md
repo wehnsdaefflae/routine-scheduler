@@ -35,7 +35,9 @@ matching messages, as a mail reader shows them (folded lines unfolded, encoded w
 over verified TLS; a folder with more, none of whose newest 500 counts, is work. `url_changed`
 compares at most 8 MiB of an answer; a longer one is work. `files_changed` counts a file whose
 inode changed since the last ok run — its mtime OR its ctime, since a file moved or synced in
-keeps the mtime it had elsewhere.
+keeps the mtime it had elsewhere. `dates` and `weekdays` read TODAY on the routine's own clock —
+the zone its schedule is in — never the server's, which names a different day for hours around
+midnight whenever the two differ.
 
 `gatekit.KINDS` is the vocabulary: the console builds each check's form from it and
 `gatekit.validate` checks a `routine.yaml` against it, so a kind cannot be half-added. An

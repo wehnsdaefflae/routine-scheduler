@@ -231,6 +231,25 @@ def test_weekdays(tmp_path, routine):
     assert kit.evaluate(ctx(tmp_path, other, last_ok=ok_since(30)))["decision"] == "skip"
 
 
+def test_the_gate_reads_today_on_the_routines_own_clock(tmp_path, monkeypatch):
+    """`weekdays` and `dates` ask what day it is TODAY — the routine's today, the calendar its
+    schedule fires on. The checks were handed the server's local time, so a routine in another
+    zone fired near its own midnight was judged by the server's date and weekday."""
+    from rsched.config import ServerConfig
+    from rsched.config.routine import RoutineConfig
+
+    cfg = RoutineConfig(slug="r", dir=tmp_path / "r", tz="Pacific/Kiritimati",
+                        run_gate={"enabled": True,
+                                  "checks": [{"kind": "weekdays", "days": [0, 1, 2, 3, 4]}]})
+    server = ServerConfig(routines_home=tmp_path, libraries_home=tmp_path / "lib")
+    monkeypatch.setattr(gate_prepare, "baseline_says_run", lambda cfg, run_id: (None, ""))
+    monkeypatch.setattr(gate_prepare, "_wrap", lambda cmd, policy, server, **kw: cmd)
+    cmd, _env, early = gate_prepare.prepare_checks(cfg, server, {}, "r:20260929-090000")
+    assert early == ""
+    now = datetime.fromisoformat(json.loads(cmd[-1])["now"])
+    assert now.utcoffset() == timedelta(hours=14)      # Kiritimati keeps UTC+14 all year
+
+
 def test_mail_without_its_secret_is_work(tmp_path, routine, monkeypatch):
     monkeypatch.delenv("MAIL_USER", raising=False)
     check = [{"kind": "mail", "host": "imap.invalid", "user_secret": "MAIL_USER",
