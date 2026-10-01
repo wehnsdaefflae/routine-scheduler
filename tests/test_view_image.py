@@ -52,7 +52,8 @@ def _ctx(tmp_path, endpoint):
     # executor passes into supports_media (one endpoint serves many models).
     ref = SimpleNamespace(multimodal=endpoint.multimodal, context_tokens=200_000) if endpoint else None
     registry = SimpleNamespace(for_model=lambda k, m: (endpoint, ref)) if endpoint else None
-    return SimpleNamespace(routine=routine, grants=None, root_run_dir=tmp_path / "runs" / "x",
+    return SimpleNamespace(routine=routine, grants=None, depth=0,
+                           root_run_dir=tmp_path / "runs" / "x",
                            read_roots=lambda: list(routine.fs_read_roots),
                            write_roots=lambda: list(routine.fs_write_roots),
                            server=SimpleNamespace(libraries_home=tmp_path / "utils",
@@ -337,7 +338,7 @@ def test_read_file_end_truncates_and_resumes_in_sequence(tmp_path):
     big = tmp_path / "big.txt"
     big.write_text("\n".join(f"line-{i:05d}-{'x' * 24}" for i in range(4000)))
     ctx = SimpleNamespace(routine=SimpleNamespace(dir=tmp_path, fs_read_roots=[]),
-                          grants=None, seen_paths=set(), read_roots=list)
+                          grants=None, depth=0, seen_paths=set(), read_roots=list)
 
     obs = fileops._read_one("big.txt", {"max_lines": 500}, ctx)
     assert obs["truncated"] is True

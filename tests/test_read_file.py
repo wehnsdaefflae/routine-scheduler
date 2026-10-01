@@ -22,7 +22,7 @@ from rsched.engine.obs_files import format_files
 
 def _ctx(tmp_path):
     return SimpleNamespace(routine=SimpleNamespace(dir=tmp_path, fs_read_roots=[]),
-                           grants=None, seen_paths=set(), read_roots=list)
+                           grants=None, depth=0, seen_paths=set(), read_roots=list)
 
 
 def _never_read(*_a):

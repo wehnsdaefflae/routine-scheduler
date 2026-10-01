@@ -13,9 +13,13 @@ import json
 from .. import sandbox, utils_lib, utils_run
 from ..endpoints.base import NATIVE_MEDIA_MAX_BYTES, guess_media_type, read_media_b64
 from ..paths import resolve_rel
-from .fileops import UTIL_DEFAULT_TIMEOUT_S, VIEW_DEFAULT_PROMPT, VISION_UTIL, _runs_read_gate
+from .fileops import UTIL_DEFAULT_TIMEOUT_S, _memory_gate, _runs_read_gate
 from .observations import truncate
 from .run_context import RunContext
+
+VISION_UTIL = "vision"
+VIEW_DEFAULT_PROMPT = ("Describe this file in full detail — transcribe any text verbatim and "
+                       "note structure, data, and notable visual elements.")
 
 
 def vision_describe(ctx: RunContext, abspath: str, prompt: str) -> str:
@@ -51,7 +55,7 @@ def _view_one(rel_path: str, prompt: str, endpoint, ctx: RunContext, multimodal:
     """
     try:
         path = resolve_rel(ctx.routine.dir, rel_path, ctx.read_roots())
-        if err := _runs_read_gate(ctx, path):
+        if err := _memory_gate(ctx, path) or _runs_read_gate(ctx, path):
             return {"path": rel_path, "error": err}
         if not path.is_file():
             return {"path": rel_path,

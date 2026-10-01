@@ -1,7 +1,14 @@
-"""File-shaped effect handlers: read_file / view_image / write_file / edit_file, the
-memory actions, and read_rule — plus the path gates they share (the runs/ read depth,
-the write-grounding rule, the recipe/config seal). Split from executor.py, which keeps
-dispatch, the util runner, and the llm subcall (and routes the file kinds here).
+"""File-shaped effect handlers: read_file / write_file / edit_file and the native filesystem
+actions delete / move / mkdir — plus the path gates every file-shaped action shares (the
+runs/ read depth, the write-grounding rule, the seals on what the engine and the operator
+own). Split from executor.py, which keeps dispatch and the util runner; `view_image` lives in
+mediaops.py and the name-addressed stores (`.memory/`, the rule library) in memops.py.
+
+Every gate compares RESOLVED paths. `resolve_rel` hands back a fully resolved path, so the
+dirs a seal is anchored on are resolved too (`_routine_dirs`) — and they are every routine
+dir the run can REACH, not only its own: a child's own dir is a workspace under
+`runs/<ts>/sub/<n>/`, but its roots extend the parent's tree (F185), so a seal anchored on
+the workspace alone sealed nothing the child could actually write.
 """
 
 from __future__ import annotations
@@ -35,25 +42,59 @@ READ_WINDOW_MAX_LINES = 500          # the schema's `max_lines` maximum, mirrore
 READ_MAX_BYTES = 8 * 1024 * 1024
 BINARY_SNIFF_BYTES = 8 * 1024        # a NUL byte in the first 8 KiB marks a file binary
 UTIL_DEFAULT_TIMEOUT_S = 300
-VISION_UTIL = "vision"
-VIEW_DEFAULT_PROMPT = ("Describe this file in full detail — transcribe any text verbatim and "
-                       "note structure, data, and notable visual elements.")
+
+
+def _is_workspace(d: Path) -> bool:
+    """Is `d` a child run's workspace (`…/sub/<n>`)? The test `RunContext.root_run_dir` walks by."""
+    return d.name.isdigit() and d.parent.name == "sub"
+
+
+def _routine_dirs(ctx: RunContext) -> list[Path]:
+    """Every routine dir this run's file actions can reach, RESOLVED, own dir first: for a
+    top-level run its own dir alone; for a CHILD its workspace, each ancestor child's
+    workspace (the roots chain down to grandchildren, F185), and last the ROUTINE's own dir.
+    Each holds engine- and operator-owned paths a run must leave alone.
+    """
+    own = ctx.routine.dir.resolve()
+    if ctx.depth == 0:
+        return [own]
+    dirs = [own]
+    d = ctx.run_dir.resolve()
+    while _is_workspace(d):
+        d = d.parent.parent                  # the parent's run dir: a workspace, or the root's
+        dirs.append(d if _is_workspace(d) else d.parent.parent)
+    return dirs
+
+
+def _own_dir(ctx: RunContext) -> Path:
+    """The run's own dir, resolved — the one the grounding rules exempt."""
+    return ctx.routine.dir.resolve()
+
+
+def _within(resolved: Path, sealed: Path) -> bool:
+    """Does the resolved action path lie in (or at) `sealed`? `sealed` is resolved as well: an
+    unresolved one — behind a symlinked home, or a relative CLI dir path — matched nothing,
+    which opened the seal instead of closing it.
+    """
+    return resolved.is_relative_to(sealed.resolve())
 
 
 def _runs_read_gate(ctx: RunContext, resolved) -> str | None:
     """Backstop for previous-run access (grants.deny handles the relative-path form inside
     the schema-retry cycle; this catches absolute paths and scopes `runs: last`). The
-    current run's own tree — status, archived history — is always readable.
+    current run's own tree — status, archived history, a child's own workspace — is always
+    readable. Anchored on the ROUTINE's runs/: a child (run history `none`) reaches it
+    through the parent's tree, and a gate on its own workspace's runs/ never saw that.
     """
     g = ctx.grants
     if g is None:
         return None
-    runs_dir = ctx.routine.dir / "runs"
+    runs_dir = (_routine_dirs(ctx)[-1] / "runs").resolve()
     try:
         rel = resolved.relative_to(runs_dir)
     except ValueError:
         return None
-    if resolved.is_relative_to(ctx.root_run_dir):
+    if resolved.is_relative_to(ctx.root_run_dir.resolve()):
         return None
     if g.run_history == "none":
         # after D96 a routine's own policy always carries at least "last" — this branch
@@ -188,7 +229,7 @@ def _read_one(rel_path: str, action: dict, ctx: RunContext) -> dict:
     # here (→ status.json → the SSE state event) with zero recipe cooperation; the
     # stage modules are the state graph's nodes (statemap), so the names always match.
     if (path.suffix == ".md" and path.parent.name == STAGES_DIR
-            and path.parent.parent == ctx.routine.dir):
+            and path.parent.parent == _own_dir(ctx)):
         ctx.phase = path.stem
         # …and the PATH taken, not just the current node (F521/R1681): a run that skipped
         # a declared stage was indistinguishable from one that worked through all of them.
@@ -213,7 +254,7 @@ def _note_recorded_phase(ctx: RunContext, path) -> None:
     evidence, and a write must never fail because of what it happened to contain. Validating
     the name against the declared set is `stage_coverage`'s job, not this seam's.
     """
-    if path.name != "phase.json" or path.parent != ctx.routine.dir / "state":
+    if path.name != "phase.json" or path.parent != _own_dir(ctx) / "state":
         return
     data = read_json(path)
     if not isinstance(data, dict):
@@ -241,10 +282,13 @@ def _memory_gate(ctx: RunContext, resolved) -> str | None:
     `engine/actions.py` also tests it, but LEXICALLY, on the string the model supplied: it is
     the cheap schema-retry correction that costs no turn. It is not a seal:
     `state/../.memory/INDEX.md` and the absolute form both walk straight past it and
-    `resolve_rel` puts them right back inside the own dir. The engine-owned index, the
-    100-line note cap and the `memory` capability gate all went with them.
+    `resolve_rel` puts them right back inside the own dir. The engine-owned index and the
+    100-line note cap went with them — and a child, whose roots reach the routine's tree,
+    walked into the ROUTINE's `.memory/` the same way.
     """
-    return MEMORY_REFUSAL if resolved.is_relative_to(ctx.routine.dir / ".memory") else None
+    if any(_within(resolved, d / ".memory") for d in _routine_dirs(ctx)):
+        return MEMORY_REFUSAL
+    return None
 
 
 def _finish_line_gate(ctx: RunContext, resolved) -> str | None:
@@ -252,16 +296,39 @@ def _finish_line_gate(ctx: RunContext, resolved) -> str | None:
     answers for it through its finish accounting and never edits it (six runs once rewrote the
     document that decided their own end).
     """
-    if resolved != (ctx.routine.dir / FINISH_LINE).resolve():
+    if all(resolved != (d / FINISH_LINE).resolve() for d in _routine_dirs(ctx)):
         return None
     return ("the finish line is the operator's — a run reports against it in its finish "
             "`accounting` (a distance, or met for an outcome the run proves) and never edits "
             "it; if you believe it is wrong, file a report saying why")
 
 
+def _engine_owned(ctx: RunContext, resolved) -> str | None:
+    """`runs/` and `.util_outputs/` of every reachable routine dir: the engine's record of
+    what happened, never rewritten by the run it records. One exemption, and only in the
+    ROUTINE's runs/: a child's own workspace tree (`runs/<ts>/sub/<n>/`, its children's
+    beneath it) is where a child WORKS. Everything else under it — the run's control.json,
+    status.json, transcript, the history of earlier runs — is the engine's and the web's;
+    a child that could write control.json could adopt a `config_change` (grants, budgets)
+    into the very run that spawned it.
+    """
+    dirs = _routine_dirs(ctx)
+    workspace = dirs[-2] if len(dirs) > 1 else None     # the top-most child workspace
+    for d in dirs:
+        if _within(resolved, d / "runs") and not (
+                d == dirs[-1] and workspace is not None and resolved.is_relative_to(workspace)):
+            return "runs/ is engine-owned and read-only for the run"
+        if _within(resolved, d / OUTPUTS_DIR):
+            return (f"{OUTPUTS_DIR}/ is engine-owned and read-only for the run — it is the "
+                    "saved full text of util output too large for its observation (read_file "
+                    "it); a run does not rewrite the record of what a util returned")
+    return None
+
+
 def _write_gate(ctx: RunContext, resolved, *, creates: bool = True) -> str | None:
     """Backstop for engine-owned and permission-gated writes (grants.deny handles the
-    relative-path form; this catches absolute paths into the routine's own dir).
+    relative-path form; this catches absolute paths and traversals into every routine dir
+    the run can reach — `_routine_dirs`).
 
     `creates` is False for a path the action only REMOVES (delete, a move's source): a note
     left in a shared store for a routine that does not share it is refused when it is written;
@@ -279,12 +346,8 @@ def _write_gate(ctx: RunContext, resolved, *, creates: bool = True) -> str | Non
     g = ctx.grants
     if g is None:
         return None
-    if resolved.is_relative_to(ctx.routine.dir / "runs"):
-        return "runs/ is engine-owned and read-only for the run"
-    if resolved.is_relative_to(ctx.routine.dir / OUTPUTS_DIR):
-        return (f"{OUTPUTS_DIR}/ is engine-owned and read-only for the run — it is the saved "
-                "full text of util output too large for its observation (read_file it); a run "
-                "does not rewrite the record of what a util returned")
+    if err := _engine_owned(ctx, resolved):
+        return err
     # routine.yaml is config — never writable by ANY run (even the improver, even when the
     # recipe is unlocked): config is the user's, changed via the UI or a deferred ask_user.
     # Machine-tunable behavior knobs (deliberation) live in tuning.yaml, which is RECIPE.
@@ -295,11 +358,8 @@ def _write_gate(ctx: RunContext, resolved, *, creates: bool = True) -> str | Non
     if not g.recipe_unlocked:
         from ..grantpolicy import is_recipe_path
 
-        try:
-            rel = resolved.relative_to(ctx.routine.dir)
-        except ValueError:
-            return None
-        if is_recipe_path(str(rel)):
+        if any(resolved.is_relative_to(d) and is_recipe_path(str(resolved.relative_to(d)))
+               for d in _routine_dirs(ctx)):
             return ("editing this routine's own recipe (main.md / stages/ / tuning.yaml) "
                     "needs the recipe-authoring permission, which this routine does not "
                     "hold — its instructions are the user's. File a deferred ask_user (or a "
@@ -318,7 +378,7 @@ def do_write_file(action: dict, ctx: RunContext) -> dict:
         # destroys. The own dir is exempt (state/report rewrites are its normal mode);
         # append adds without destroying; creating a new file needs no grounding.
         if (path.is_file() and not action.get("append")
-                and not path.is_relative_to(ctx.routine.dir)
+                and not path.is_relative_to(_own_dir(ctx))
                 and str(path) not in ctx.seen_paths):
             return {"kind": "write_file", "path": action["path"],
                     "error": "this OVERWRITES an existing file this run has never read — "
@@ -454,7 +514,7 @@ def _unseen_destruction(ctx: RunContext, resolved, what: str) -> str | None:
     text names the two forms because a run that reads "read_file it first" about a season
     pack once read_file'd a 1.5 GB .mkv to comply (2026-09-14).
     """
-    if resolved.is_relative_to(ctx.routine.dir) or str(resolved) in ctx.seen_paths:
+    if resolved.is_relative_to(_own_dir(ctx)) or str(resolved) in ctx.seen_paths:
         return None
     return (f"this {what} a path outside the routine's own dir that this run has never "
             "read — read_file it first (a directory reads as its listing, a binary or "
