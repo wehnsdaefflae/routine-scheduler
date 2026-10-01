@@ -372,6 +372,10 @@ def client(tmp_path, make_routine):
     app = create_app(server, with_scheduler=False)
     with TestClient(app) as c:
         c.headers["Authorization"] = f"Bearer {TOKEN}"
+        # A query never queues behind the lifespan maintainer's pass (it answers from the index
+        # as it stands), so these route tests wait for that first pass here — what they pin is
+        # the route over a built index, not which of two threads wins the start.
+        app.state.search.refresh()
         yield c
 
 
