@@ -130,6 +130,9 @@ sits polling for hours. (See [triggers](triggers.md) for the routine's webhook U
   the command itself is gone. The exec read now polls the exit status instead of reading to EOF,
   so a command that leaves the pipes open is reported on stderr rather than hanging the call.
   Detach properly inside the command (`nohup CMD > log 2>&1 < /dev/null &`) or use `submit`.
+  A DIR starting with `~/` is the remote user's home, on `exec` and `submit` alike: it ships as
+  `"$HOME"/…`, because quoting the whole path kept the tilde literal and every such call failed
+  with "No such file or directory" before CMD ran.
 - **`exec --timeout` defaults from the action's own `timeout_s`** (less a margin), so the util
   REPORTS the timeout — `timed_out: true`, exit -1, and the output captured up to that point —
   instead of being killed by the engine with nothing to show. Two equal clocks raced and the
