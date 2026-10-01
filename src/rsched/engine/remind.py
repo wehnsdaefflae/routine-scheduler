@@ -208,10 +208,10 @@ def apply_ops(loop, action: dict, poll_s: float, *, replayable: bool = False) ->
     finish path, where every rung of the finish gate hands the SAME finish back for revision
     and the model re-emits it with its side fields intact. The payload is then applied at most
     once per run, which is the rule this codebase already applies to its own re-emissions
-    (`reminder_held`: re-emitting a held action is the confirmation, not a second hold; the
-    claim verifier's one challenge per claimed line). Without it a finish deferred three times
-    records one hold's label three times, and the tally the whole layer is justified by —
-    `fires` minus the labels — goes negative.
+    (`loop.holds`, engine/hold.py: re-emitting a held action is the confirmation, not a second
+    hold; the claim verifier's one challenge per claimed line). Without it a finish deferred
+    three times records one hold's label three times, and the tally the whole layer is
+    justified by — `fires` minus the labels — goes negative.
     """
     if replayable and (action.get("remind") or action.get("remind_feedback")):
         key = json.dumps([action.get("remind"), action.get("remind_feedback")], sort_keys=True)
@@ -289,6 +289,13 @@ def _apply_op(loop, op: dict, poll_s: float) -> str:
         return (f"{rid} is a {target.scope} reminder and a {verb} cannot move it — to promote a "
                 "proven local reminder, `add` it with scope global (its evidence is per-routine "
                 "and starts fresh there), then delete the local one")
+    # The write gate asked the dial about the scope the op NAMED, and a revise or delete need
+    # not name one (it defaults to local) — while the store it writes is the TARGET's. Without
+    # asking again here, a routine at `local` could rewrite or remove a curated reminder in
+    # the library every routine reads, which is the curator's setting alone.
+    if (grants := loop.ctx.grants) is not None and (
+            denial := grants.reminder_denial(target.scope)):
+        return f"{rid} is a {target.scope} reminder, so nothing was {verb}d — {denial}"
     if target.scope == "global" and (gate := _approve_global(loop, verb, target, op, poll_s)):
         return gate
     if verb == "delete":

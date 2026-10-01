@@ -143,10 +143,11 @@ three modules, one of them negatively — exactly the check a second hold kind w
 
 ## Guards
 
-An assist fires **at most once per run**. That is the rule `reminder_held` (one hold per
-action string) and the claim verifier's `_challenged` set (one challenge per claimed line)
-already apply to their own interventions, and it exists for the same reason: a trigger that
-can fire twice on one situation livelocks a stubborn model into a dead budget.
+An assist fires **at most once per run**. That is the rule the hold ledger `loop.holds` (one
+hold per source and action string) and the claim verifier's `_challenged` set (one challenge
+per claimed line) already apply to their own interventions, and it exists for the same
+reason: a trigger that can fire twice on one situation livelocks a stubborn model into a dead
+budget.
 
 A predicate that raises is **inert, never fatal**. A library document names the check; the
 run's work is not this layer's to lose.

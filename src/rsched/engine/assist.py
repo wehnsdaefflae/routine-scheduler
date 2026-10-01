@@ -17,9 +17,9 @@ The three moments, and why they deliver differently:
   model gets one more turn. It is the only moment here that spends anything.
 
 Two guards, both borrowed rather than invented. An assist fires **at most once per run**
-(`loop.assists_fired`), the rule `loop.reminder_held` and the claim verifier's
-`_challenged` set already apply to their own interventions — a trigger that can fire twice on
-one situation livelocks a stubborn model into a dead budget. And **at most one finish
+(`loop.assists_fired`), the rule the hold ledger (`loop.holds`, engine/hold.py) and the claim
+verifier's `_challenged` set already apply to their own interventions — a trigger that can
+fire twice on one situation livelocks a stubborn model into a dead budget. And **at most one finish
 deferral per run across all assists**, because the finish gate already has five rungs that can
 each defer, and a sixth that can fire repeatedly would turn a run's ending into a negotiation.
 """

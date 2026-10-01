@@ -297,7 +297,11 @@ needs the live store the validator does not have:
 - a duplicate pattern is refused **within the same store** (revise the one that is there). Across
   stores it is allowed, because a local reminder shadowing a global one with the same pattern IS
   the union's precedence — and promotion passes through exactly that overlap;
-- an unknown id, or a `revise` that tries to move a reminder between scopes.
+- an unknown id, or a `revise` that tries to move a reminder between scopes;
+- a `revise` or `delete` of a CURATED reminder by a routine whose dial stops at `local`. The
+  write gate can only ask about the scope an op names, and a revise or delete need not name
+  one — so the dial is asked again about the store the target lives in. Without it a routine
+  that merely reads the curated store could rewrite or remove an entry every routine reads.
 
 Two more hold regardless of when a reminder arrived: a pattern that stops compiling — a hand-edited
 file — never fires rather than raising; an id that is not a plain `rem-…` id is refused

@@ -62,6 +62,34 @@ def test_every_rendered_form_passes(pattern):
     assert checks.regex_problem(pattern) is None
 
 
+@pytest.mark.parametrize(("pattern", "rendered"), [
+    (r"^shell.*rm -rf", "shell: rm -rf build/"),
+    (r"^util\b", "util:fs-ops mv a b"),
+    (r"^util.fs-ops", "util:fs-ops mv a b"),
+    (r"^util[: ]fs-ops", "util:fs-ops mv a b"),
+    (r"^script\S*store", "script:store stage --note x"),
+    (r"^write.*path=state/", "write_file path=state/x.json"),
+    (r"^shell\: rm", "shell: rm -rf build/"),
+    (r"^utils?:fs-ops", "util:fs-ops mv a b"),
+])
+def test_a_lead_that_turns_to_regex_syntax_is_the_authors_to_aim(pattern, rendered):
+    """Only the LITERAL lead is judged. The gate used to read the one character after the kind
+    as literal text, so `^shell.*rm` — a pattern that fires — was refused as a malformed
+    rendering, and the caution it carried was turned away."""
+    assert checks.regex_problem(pattern) is None
+    assert _rem(regex=pattern).matches(rendered)
+
+
+@pytest.mark.parametrize(("pattern", "fragment"), [
+    ("^shell:rm", "renders as 'shell: <command>'"),           # the rendering has the space
+    ("^write_file-x", "renders as 'write_file path=<value>'"),
+    ("^write-x", "no action renders that way"),
+])
+def test_a_literal_lead_no_rendering_has_is_refused(pattern, fragment):
+    problem = checks.regex_problem(pattern)
+    assert problem and fragment in problem
+
+
 def test_a_usable_pattern_passes_and_matches_the_canonical_string():
     assert checks.regex_problem("^util:fs-ops mv ") is None
     assert _rem(regex="^util:fs-ops mv ").matches("util:fs-ops mv a b")
@@ -107,6 +135,22 @@ def test_local_round_trip_and_the_global_tally_share_one_file(tmp_path):
     # a hand-broken file reads as an empty store instead of failing a run at boot
     store.local_path(tmp_path).write_text("{not json", encoding="utf-8")
     assert store.load_local(tmp_path) == ([], {})
+
+
+@pytest.mark.parametrize("doc", [
+    {"reminders": [{"id": "rem-1", "regex": "^util:x", "stats": {"fires": "many"}}]},
+    {"reminders": [{"id": "rem-1", "regex": "^util:x", "stats": {"fires": [3]}}]},
+    {"reminders": 5, "global_stats": {"rem-g": {"fires": 2}}},
+    {"reminders": [], "global_stats": ["rem-g"]},
+])
+def test_a_hand_broken_store_never_stops_a_run_from_starting(tmp_path, doc):
+    """The store is read while the run is being constructed. One unparseable field raised there
+    and the run never started — the store must not be able to break a run."""
+    store.local_path(tmp_path).parent.mkdir(parents=True)
+    store.local_path(tmp_path).write_text(json.dumps(doc), encoding="utf-8")
+    local, gstats = store.load_local(tmp_path)
+    assert all(isinstance(n, int) for r in local for n in r.stats.values())
+    assert all(isinstance(n, int) for s in gstats.values() for n in s.values())
 
 
 def test_the_union_is_local_over_global_by_regex(tmp_path):
@@ -565,6 +609,32 @@ def test_a_feedback_label_is_refused_when_the_layer_is_off(tmp_path):
                                 "remind_feedback": {"id": "rem-1", "label": "would_have"}},
                                grants=off)
     assert problems and "switched OFF" in problems[0]
+
+
+@pytest.mark.parametrize("op", [
+    {"op": "delete", "id": "rem-cur"},
+    {"op": "revise", "id": "rem-cur", "description": "rewritten by a routine at local"},
+])
+def test_a_routine_at_local_cannot_write_a_curated_reminder_by_its_id(make_routine, scripted,
+                                                                      op):
+    """The dial governs AUTHORING: `local` applies the curated reminders that reach it and
+    writes its own; writing the curated store is the curator's (`global`). The write gate
+    asked about the scope the op NAMED, a revise or delete need not name one — so a routine at
+    `local` removed a library reminder every routine reads, with no approval at all when its
+    `remind_confirm` said a revision needs none."""
+    d = make_routine(slug="remr")
+    home = _server(d).reminders_home
+    store.write_global(home, _rem(rid="rem-cur", regex="^util:danger", desc="curated caution",
+                                  scope="global"))
+    _capabilities(d, reminders="local", remind_confirm="creations")
+    ep = scripted([{**write_file("state/a.txt"), "remind": op}, finish()])
+    status, _run_dir = run_routine(d, _server(d), run_ts=TS)
+    rec = json.loads(store.global_path(home, "rem-cur").read_text(encoding="utf-8"))
+    assert rec["description"] == "curated caution"            # the library copy is untouched
+    shown = _prompt_text(ep)
+    assert "rem-cur is a global reminder, so nothing was" in shown
+    assert "reminders:global" in shown                        # …and the way out is named
+    assert status == "ok"
 
 
 def test_a_global_write_lands_in_the_library_when_the_dial_is_autonomous(
