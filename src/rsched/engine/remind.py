@@ -19,6 +19,10 @@ Two rules keep the layer from eating the run:
   a model and a gate that both refuse to yield would otherwise livelock a run into a dead budget.
 - **one hold per action, however many reminders match.** Precedence never multiplies turns.
 
+"Per run" is the GUARD SCOPE (engine/guardscope.py) — every leg of a routine run, the current
+reply of a conversation — and this layer's own ledgers follow the hold ledger across a resume
+(`remind_ledger`): a hold from before a restart is still owed its one label after it.
+
 The turn cost is paid on the INPUT side — selective creation, a precise regex, and the four-way
 tally that shows which reminders earn their turns. There is deliberately no cheaper passive tier.
 """
@@ -49,6 +53,14 @@ def configure(loop) -> None:
     loop.reminder_pending = []       # fires still owed a label — what the nudge names
     loop.reminder_owed = {}          # id → holds this run not yet labelled; one label per hold
     loop.reminder_nudge = 0
+
+
+def replay_key(field: str, payload: object) -> str:
+    """One side field's payload as the replay ledger stores it — what a re-driven finish is
+    deduplicated by, field by field (`apply_ops`, its resume rebuild in `remind_ledger`, and the
+    ask-back's withdrawal in `_approve_global`).
+    """
+    return json.dumps([field, payload], sort_keys=True)
 
 
 def level_of(grants) -> str:
@@ -207,7 +219,8 @@ def apply_ops(loop, action: dict, poll_s: float, *, replayable: bool = False) ->
     `replayable` marks a call site the ENGINE itself can re-drive with the same fields — the
     finish path, where every rung of the finish gate hands the SAME finish back for revision
     and the model re-emits it with its side fields intact. Each field's payload is then applied
-    at most once per run, which is the rule this codebase already applies to its own
+    at most once per run (per guard scope, and across a resume: `remind_ledger`), which is the
+    rule this codebase already applies to its own
     re-emissions (`loop.holds`, engine/hold.py: re-emitting a held action is the confirmation,
     not a second hold; the claim verifier's one challenge per claimed line). Without it a
     finish deferred three times records one hold's label three times, and the tally the whole
@@ -218,10 +231,10 @@ def apply_ops(loop, action: dict, poll_s: float, *, replayable: bool = False) ->
     """
     fields = [f for f in ("remind_feedback", "remind") if action.get(f)]
     if replayable and fields:
-        fields = [f for f in fields if _replay_key(f, action[f]) not in loop.reminder_replayed]
+        fields = [f for f in fields if replay_key(f, action[f]) not in loop.reminder_replayed]
         if not fields:
             return ""
-        loop.reminder_replayed.update(_replay_key(f, action[f]) for f in fields)
+        loop.reminder_replayed.update(replay_key(f, action[f]) for f in fields)
     notes = []
     if "remind_feedback" in fields:
         notes.append(_apply_feedback(loop, action["remind_feedback"]))
@@ -230,11 +243,6 @@ def apply_ops(loop, action: dict, poll_s: float, *, replayable: bool = False) ->
     notes.append(_label_nudge(loop, action))
     lines = [n for n in notes if n]
     return ("\n" + "\n".join(f"[REMINDERS: {n}]" for n in lines)) if lines else ""
-
-
-def _replay_key(field: str, payload: object) -> str:
-    """One side field's payload as the replay ledger stores it (`apply_ops`)."""
-    return json.dumps([field, payload], sort_keys=True)
 
 
 def _label_nudge(loop, action: dict) -> str:
@@ -392,7 +400,7 @@ def _approve_global(loop, verb: str, target: Reminder, op: dict, poll_s: float) 
     if ask.get("dialog"):
         # Nothing was applied, so carrying the same op again is the re-submission the operator
         # is owed — never a replay the finish path may skip (`apply_ops`).
-        loop.reminder_replayed.discard(_replay_key("remind", op))
+        loop.reminder_replayed.discard(replay_key("remind", op))
         return f"{verb} of global reminder {target.id}: " + dialog_reply(
             still_pending(ask), "approval", "carry the same `remind` op again (as it was, or "
             "revised in light of their message), your answer in the `say` of the action it "

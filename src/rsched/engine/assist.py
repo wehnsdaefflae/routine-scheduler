@@ -26,9 +26,18 @@ fire twice on one situation livelocks a stubborn model into a dead budget. And *
 finish deferral per run across all assists**, because the finish gate already has five rungs
 that can each defer, and a sixth that can fire repeatedly would turn a run's ending into a
 negotiation.
+
+"Per run" is the GUARD SCOPE (engine/guardscope.py): every leg of a routine run, the current
+reply of a conversation. A resumed leg rebuilds both guards — and the repos found clean — from
+its transcript, so every event that carries an assist's line NAMES it (`assists`): the held
+action's observation, an observation whose tail carried one, a boundary ENGINE NOTE, a finish
+deferral. The observation-moment assists are asked before their observation is recorded for
+exactly that reason (`EngineLoop._observe`).
 """
 
 from __future__ import annotations
+
+from pathlib import Path
 
 from .. import assists as lib
 from ..assists import Assist
@@ -42,14 +51,38 @@ SOURCE = "rule"
 
 
 def configure(loop) -> None:
-    """This layer's run state. Both guards are per-run: one fire per assist, and at most
-    one finish held by one, ever.
+    """This layer's run state. Both guards are per guard scope (`rebuild` re-seeds them on a
+    resumed leg): one fire per assist, and at most one finish held by one, ever.
     """
     loop.assists = load(loop)
     loop.assists_fired = set()
     loop.assist_finish_deferred = False
     loop.assist_user_replies = None     # the user-replies watermark, seeded at the 1st boundary
     loop.assist_undo_points = set()     # repos found clean this run: HEAD restores them
+    loop.assist_undo_found = None       # …and the one found for the action in flight (`recorded`)
+
+
+def rebuild(loop, events: list[dict]) -> None:
+    """Re-seed both guards and the undo points from the events inside the guard scope
+    (engine/guardscope.py). Every event that carried an assist's line names it (`assists`), a
+    deferral by this layer is the finish observation marked `assist`, and a repo found clean
+    is named on the observation of the write its check let through (`undo_point`).
+
+    The user-replies watermark is NOT carried: it is the leg's arrival edge by design — what
+    the user said before a leg's first boundary is that leg's task (`at_boundary`).
+    """
+    loop.assists_fired = set()
+    loop.assist_finish_deferred = False
+    loop.assist_undo_points = set()
+    for ev in events:
+        if ev.get("type") not in ("observation", "user_injection"):
+            continue
+        payload = ev.get("payload") or {}
+        loop.assists_fired.update(str(k) for k in payload.get("assists") or [])
+        if payload.get("kind") == "finish" and payload.get("assist"):
+            loop.assist_finish_deferred = True
+        if payload.get("undo_point"):
+            loop.assist_undo_points.add(Path(str(payload["undo_point"])))
 
 
 def load(loop) -> list[Assist]:
@@ -90,7 +123,7 @@ def rules_unbound(loop, slugs: list[str]) -> None:
 
 
 def _fire(loop, assist: Assist, situation: Situation) -> bool:
-    """Should this assist fire now? Marks it fired when yes — one per run."""
+    """Should this assist fire now? Marks it fired when yes — one per guard scope."""
     if assist.key in loop.assists_fired:
         return False
     predicate = PREDICATES.get(assist.predicate)
@@ -145,13 +178,35 @@ def hold(loop, action: dict, rendered: str) -> dict | None:
             "assists": [a.key for a in fired]}
 
 
-def at_observation(loop, action: dict, obs: dict) -> str:
-    """The tail appended to an observation — "" when nothing fired. Costs no turn."""
+def at_observation(loop, action: dict, obs: dict) -> list[Assist]:
+    """The observation-moment assists that fire on this result — asked BEFORE the observation
+    is recorded, so the record can name them (`recorded`); their line rides the observation's
+    tail (`tail`). Costs no turn.
+    """
     if not loop.assists:
-        return ""
-    situation = Situation(loop=loop, action=action, obs=obs)
-    fired = _matching(loop, "observation", situation)
+        return []
+    return _matching(loop, "observation", Situation(loop=loop, action=action, obs=obs))
+
+
+def tail(fired: list[Assist]) -> str:
+    """The tail appended to an observation — "" when nothing fired."""
     return ("\n" + "\n".join(_rendered(a) for a in fired)) if fired else ""
+
+
+def recorded(loop, payload: dict, fired: list[Assist]) -> dict:
+    """The observation as the transcript keeps it, with what this layer decided about the
+    action named beside the result — the record a resumed leg rebuilds its guards from
+    (`rebuild`): `assists` gains the observation-moment assists that fired on it (a hold
+    already names its own), and `undo_point` names a repo the pre-action check found clean
+    before letting this very action through. The payload itself when there is nothing to name.
+    """
+    marks: dict = {}
+    if fired:
+        marks["assists"] = [*(payload.get("assists") or []), *(a.key for a in fired)]
+    if loop.assist_undo_found is not None:
+        marks["undo_point"] = str(loop.assist_undo_found)
+        loop.assist_undo_found = None
+    return {**payload, **marks} if marks else payload
 
 
 def at_boundary(loop) -> None:
@@ -169,16 +224,18 @@ def at_boundary(loop) -> None:
         loop.assist_user_replies = replies
     if loop.assists:
         for assist in _matching(loop, "boundary", Situation(loop=loop)):
-            enginenote.append(loop, _rendered(assist))
+            enginenote.append(loop, _rendered(assist), assists=[assist.key])
     loop.assist_user_replies = replies
 
 
-def at_finish(loop, action: dict) -> str | None:
-    """The pre-finish rung: the deferral message, or None to let the finish stand.
+def at_finish(loop, action: dict) -> tuple[str, list[str]] | None:
+    """The pre-finish rung: the deferral message and the keys of the assists behind it, or
+    None to let the finish stand.
 
     The caller (finishgate) owns the deferral SHAPE — this only decides whether one is owed
-    and what it says. Guarded like every other rung plus one of its own: a run may be held at
-    its finish by an assist at most once, ever.
+    and what it says; the keys ride the deferral's record (`rebuild`). Guarded like every
+    other rung plus one of its own: a run may be held at its finish by an assist at most once,
+    ever — once per reply, in a conversation.
     """
     if not loop.assists or loop.assist_finish_deferred:
         return None
@@ -187,6 +244,7 @@ def at_finish(loop, action: dict) -> str | None:
         return None
     loop.assist_finish_deferred = True
     lines = "\n".join(_rendered(a) for a in fired)
-    return ("OBSERVATION (finish deferred): a general rule you practise applies to how this "
-            f"run ends.\n{lines}\nAct on it and finish again — this is asked once per run, "
-            "so the next finish stands either way.")
+    message = ("OBSERVATION (finish deferred): a general rule you practise applies to how this "
+               f"run ends.\n{lines}\nAct on it and finish again — this is asked once per run "
+               "(once per reply, in a conversation), so the next finish stands either way.")
+    return message, [a.key for a in fired]

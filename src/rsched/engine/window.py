@@ -155,7 +155,9 @@ def _warn_before_eviction(loop, size: float, ref) -> bool:
     overflowed the window would cost the run the very turns it was trying to protect. Either
     way `clamp_to_cap` still runs afterwards. Provider tokenization can differ from the estimate.
 
-    Once per run. A second warning would be the layer talking about itself.
+    Once per run — per reply, in a conversation — and across a resume, whose replayed window
+    is evicted again: the note is marked `evict_warning` and `rebuild` reads it back
+    (engine/guardscope.py). A second warning would be the layer talking about itself.
     """
     if loop._evict_warned:
         return False
@@ -171,8 +173,18 @@ def _warn_before_eviction(loop, size: float, ref) -> bool:
         "You have this turn. Anything in the middle worth keeping — a finding, a value you "
         "will need again, a dead end worth not repeating, a decision and why — put it in a "
         "durable store NOW: a `note` (free, rides any action), a memory_write, or a LEDGER "
-        "entry. Then carry on; the archive happens on your next turn either way.")
+        "entry. Then carry on; the archive happens on your next turn either way.",
+        evict_warning=True)
     return True
+
+
+def rebuild(loop, events: list[dict]) -> None:
+    """The guard scope's resume seed (engine/guardscope.py): a warning already given in it
+    stays given.
+    """
+    loop._evict_warned = any(ev.get("type") == "user_injection"
+                             and (ev.get("payload") or {}).get("evict_warning")
+                             for ev in events)
 
 
 def _pick_archival_model(loop, middle: list[dict], endpoint, ref, cinfo: dict):

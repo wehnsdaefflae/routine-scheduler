@@ -22,21 +22,41 @@ than queueing a second hold behind the first.
 Precedence is specific-before-general: a reminder is evidence THIS routine gathered about THIS
 action, a rule is a standing principle that applies to everyone. When both fire, the run hears
 the one it learned itself.
+
+"Already held" means within the GUARD SCOPE — the whole run for a routine, the current reply
+for a conversation (engine/guardscope.py). A resumed leg rebuilds the ledger from the holds
+its transcript recorded, so the confirmation a run gave before a restart still stands after
+it; the hold's observation IS the record, its kind naming the source and `action` the string.
 """
 
 from __future__ import annotations
 
 from .actionschema import canon
 
-#: Every observation kind that means "the action did not run". The literal used to be tested
-#: in three modules, one of them NEGATIVELY (the resume rebuild of `executed_actions`), which
-#: is the kind of check a second hold kind silently walks past.
-HOLD_KINDS = frozenset({"reminder_hold", "assist_hold"})
+#: Every observation kind that means "the action did not run", with the SOURCE whose ledger
+#: entry it records (each layer's own `SOURCE`). The kinds used to be a literal tested in three
+#: modules, one of them NEGATIVELY (the resume rebuild of `executed_actions`), which is the kind
+#: of check a second hold kind silently walks past — so `is_hold` and the ledger's rebuild read
+#: this one table, and a third hold kind is a row here.
+HOLD_SOURCES = {"reminder_hold": "reminder", "assist_hold": "rule"}
+HOLD_KINDS = frozenset(HOLD_SOURCES)
 
 
 def configure(loop) -> None:
     """This seam's run state: which (source, action) pairs have already been held."""
     loop.holds = set()
+
+
+def rebuild(loop, events: list[dict]) -> None:
+    """Re-seed the ledger from the holds recorded inside the guard scope (engine/guardscope.py)
+    — a resumed leg's counterpart of `configure`. A hold needs no extra record: its observation
+    is the hold, its kind names the source and its `action` the canonical string.
+    """
+    loop.holds = set()
+    for ev in events:
+        payload = ev.get("payload") or {}
+        if ev.get("type") == "observation" and is_hold(payload):
+            loop.holds.add((HOLD_SOURCES[payload["kind"]], str(payload.get("action") or "")))
 
 
 def is_hold(obs: dict) -> bool:
@@ -50,7 +70,9 @@ def is_hold(obs: dict) -> bool:
 
 
 def held_before(loop, source: str, rendered: str) -> bool:
-    """Has THIS source already held THIS action string in this run?"""
+    """Has THIS source already held THIS action string in this guard scope — this run, or
+    this reply of a conversation?
+    """
     return (source, rendered) in loop.holds
 
 

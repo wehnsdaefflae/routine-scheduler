@@ -18,7 +18,8 @@ the only one that describes work NOT built.
 The turn loop (`engine/loop.py`) is the heart — `EngineLoop.run` spells the turn order out in
 one place, each step's body a method named for it; `engine/runtime.py` is the entry above it
 (`run_routine`, workflow loading/decomposition), `engine/boot.py` the initial message list
-(kickoff or resume rehydration), `engine/completion.py` the get-one-valid-action side (schema
+(kickoff or resume rehydration — the once-only guards included, in the scope
+`engine/guardscope.py` defines), `engine/completion.py` the get-one-valid-action side (schema
 retries, model failover incl. classifier refusals, refusal clarification, media fallback, the
 compaction gate), `engine/control.py` the
 between-turns control plane (abort, pause gate, injection drain, subrun announcements) and
@@ -150,7 +151,9 @@ the limits (single-writer status.json preserved).
   construction: when the FRACTION binds the gate there is 20-40% of the window before the hard
   ceiling, a whole turn of slack; when the CEILING binds there is none, so the warning is
   skipped and the archive happens now. `clamp_to_cap` runs unconditionally afterwards either
-  way, so a deferred turn cannot 400. Once per run.
+  way, so a deferred turn cannot 400. Once per run — per reply, in a conversation — and a
+  resumed leg, whose replayed window is evicted again, reads the warning back from its
+  `evict_warning` mark rather than giving it twice (`engine/guardscope.py`).
 - **History recall** (`engine/recall.py`): the archive is one more store the relevance-trigger
   layer surfaces from. When what the run just did overlaps an archived topic, the observation
   tail names ONE file and the turn it was archived at — a pointer, never a fetch, and free
@@ -214,8 +217,9 @@ the limits (single-writer status.json preserved).
   (autonomous) and the library's `reminders/` (approval-gated; the union is deduped by regex with
   local winning). Every fire is tallied and labelled four ways (`remind_feedback`:
   could_not / would_have / did / didnt), which is what makes a pattern tunable and the layer
-  measurable. One hold per action string per run, so re-emitting the held action is the
-  confirmation to proceed — the same anti-livelock shape the claim verifier uses. A curated
+  measurable. One hold per action string per run (per reply, in a conversation; kept across a
+  resume — see below), so re-emitting the held action is the confirmation to proceed — the
+  same anti-livelock shape the claim verifier uses. A curated
   reminder declares its reach (`universal`, or `listed` for the routines whose settings list it);
   rules-review curates the store from a census of every routine's own. Full narration in
   [reminders](reminders.md).
@@ -231,13 +235,26 @@ the limits (single-writer status.json preserved).
   the self-authored half of. Compliance-CHECKING most rules is impossible — a compliant and a
   violating run leave byte-identical traces differing only in reasoning — but relevance is a
   property of the situation, which IS in the trace: the rule you cannot check, you can time.
-  One fire per assist per run; a predicate that raises is inert. Full narration in
-  [rule assists](rule-assists.md).
+  One fire per assist per run (per reply, in a conversation); a predicate that raises is inert.
+  Full narration in [rule assists](rule-assists.md).
 - **A run resumes where it left off** (`run_routine(resume_from=…)`, `EngineLoop(resume=True)`): the
   transcript is replayed into the message list (`history.replay_messages`) with a fresh budget window
   (`budget_base_turn`); usage REPORTING stays cumulative across legs (`history.prior_usage` →
   `ctx.usage_base`; budgets ignore it). The **model can be switched mid-run** — a `control.json`
   `switch_model` signal applied at the turn boundary (`for_model` re-resolves every turn).
+- **"Once" survives a resume** (`engine/guardscope.py`). The once-only guards — the hold
+  ledger, each rule assist's single fire and the one assist finish deferral, the repos found
+  clean, the verifier's one challenge per line, a reminder hold's one label and a re-driven
+  finish's one payload, the eviction warning — are in-memory ledgers, and boot REBUILDS each
+  from the transcript events inside its GUARD SCOPE, the way `history.seen_paths` rebuilds the
+  grounding set; each layer reads its own (`rebuild`, the counterpart of `configure`). The
+  scope is one helper (operator decision, 2026-10-01): a routine's whole run, every leg of it;
+  a conversation's current REPLY — the leg after an authored finish opens a new reply and starts
+  them fresh, any other leg continues the reply that began after the last one. Where an event
+  did not record its decision it now does, as a payload extension, never a new event type:
+  `assists` on every event that carried a rule assist's line (the observation-moment assists
+  are asked before their observation is recorded), `undo_point` on the write a clean repo let
+  through, `evict_warning` on the warning's ENGINE NOTE.
 
 ## Endpoints (endpoints/) — transports, not agents
 
@@ -670,7 +687,8 @@ seeds it and the first message specializes it — see Libraries & seeds → Play
 library workflow is materialized in verbatim at creation (no LLM in the path — `conversations.py`;
 title + editable tags arrive off-path via the system model). **Finish-per-reply**: every reply ends in an authored finish whose summary IS the
 chat message; the next user message resumes the SAME run in place (fresh budget window — turns,
-wall clock, tokens and subruns all reset). The per-reply budget is a runaway BACKSTOP, not a pace:
+wall clock, tokens and subruns all reset — and fresh once-only guards, since each reply is a new
+task; a reply interrupted and resumed keeps its own, `engine/guardscope.py`). The per-reply budget is a runaway BACKSTOP, not a pace:
 what ends a reply is the work reaching a handover point (a finished plan step, a verified
 deliverable, a decision for the user, a blocker). A conversation's spine is its own **working plan**
 (`state/plan.md`, written and revised by the run, inlined at the top of every later reply by
@@ -1267,7 +1285,9 @@ whose TEXT must change on a live instance is converted by a one-shot migration i
     and to be generous. `unmet` and distances are never judged; a finish that claims nothing
     met pays no subcall at all.
   - **A livelock** — a stubborn model and a stubborn judge would trade refutations until the
-    budget dies. So a line is challenged AT MOST ONCE per run (`loop._challenged`): the finish is
+    budget dies. So a line is challenged AT MOST ONCE per run (`loop._challenged` — per reply in
+    a conversation, and rebuilt on a resume from the deferrals' `claims_unsupported`, so a
+    restart does not reopen the argument): the finish is
     set aside one turn with the objection and how to overrule it; if the model re-asserts the
     same verdict it STANDS. The disagreement is then recorded — `disputed` on a finish-line
     outcome and in the `stopping_update` event. The engine gets one intervention, the model keeps

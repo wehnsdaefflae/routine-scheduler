@@ -14,7 +14,8 @@ from __future__ import annotations
 from ..reminders import LABEL_HELP, looks_too_broad
 
 _PROCEED = ("To go ahead anyway, emit the SAME action again — it runs this time (one hold per "
-            "action string per run). To avoid the consequence, do something else instead.")
+            "action string per run — per reply, in a conversation). To avoid the consequence, "
+            "do something else instead.")
 
 
 def _caution(r: dict) -> str:

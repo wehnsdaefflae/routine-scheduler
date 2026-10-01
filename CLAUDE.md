@@ -368,7 +368,12 @@ one you are about to touch, not all of them.
   asked in precedence order (reminder before rule: specific before general), the model is
   stopped ONCE per action, and the per-run ledger is keyed `(source, canon)` so the two layers
   cannot spend each other's single allowed hold. `hold.is_hold(obs)` is the predicate the
-  fabrication guard and the allow-once spend both read. `read_rule` is UNGATED (a routine must be able
+  fabrication guard and the allow-once spend both read. EVERY once-only guard (that ledger,
+  an assist's one fire, the one finish deferral, the verifier's one challenge per line, …)
+  counts per GUARD SCOPE — a routine's whole run, a conversation's current REPLY — and a
+  resumed leg REBUILDS it from the transcript (`engine/guardscope.py`); a new one gets a
+  `rebuild` beside its `configure`, and an event that does not record its decision gains a
+  payload key, never a new event type. `read_rule` is UNGATED (a routine must be able
   to read what binds it, and library prose has no side effect); `write_rule` is gated by the
   `rule-authoring` permission and carries its OWN approval dial `rule_confirm` — a rule revision
   lands on every holder at its next run, which is not the decision `confirm` (write_util) governs.
