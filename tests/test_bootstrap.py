@@ -2,6 +2,7 @@
 
 import json
 
+import pytest
 import yaml
 
 from rsched import bootstrap
@@ -114,17 +115,21 @@ def test_sync_seed_utils_installs_missing_never_overwrites(tmp_path, monkeypatch
     assert bootstrap.sync_seed_utils(lib, routines_home=tmp_path) == 0
 
 
-def test_a_fresh_containers_first_boot_seeds_utils_and_docs(tmp_path, monkeypatch):
-    """A container has no install step: its library is an EMPTY bind mount at first boot. The
-    seed util sync only installs into an existing utils/, and the repo used to be created by
-    the web lifespan — after the syncs had run — so a new deploy started with docs but no
-    utils, and first got them at its second boot. The daemon's boot creates the repo first."""
+@pytest.mark.parametrize("bind_mounted", [True, False])
+def test_a_fresh_containers_first_boot_seeds_utils_and_docs(tmp_path, monkeypatch,
+                                                            bind_mounted):
+    """A container has no install step. Its library is an EMPTY bind mount at first boot — or
+    no directory at all (a fresh HOME). The seed syncs only install into a library that
+    exists, and the repo used to be created by the web lifespan AFTER they had run: the first
+    boot started without utils (and, with no directory, without `converse`, rules or
+    patterns) until the next restart. The daemon's boot creates the repo first."""
     from types import SimpleNamespace
 
     from rsched import cli_daemon
 
     lib = tmp_path / "lib"
-    lib.mkdir()                                            # what a fresh bind mount leaves
+    if bind_mounted:
+        lib.mkdir()                                        # what a fresh bind mount leaves
     server = SimpleNamespace(libraries_home=lib, libraries_remote="", bind="127.0.0.1",
                              port=8321, routines_home=tmp_path / "routines",
                              permissions_home=lib / "permissions")
@@ -138,7 +143,8 @@ def test_a_fresh_containers_first_boot_seeds_utils_and_docs(tmp_path, monkeypatc
     assert cli_daemon.cmd_daemon(None) == 0
     assert (lib / ".git").is_dir()
     assert (lib / "utils" / "remote" / "main.py").is_file()       # utils at the FIRST boot
-    assert list((lib / "rules").glob("*.md"))
+    assert (lib / "workflows" / "converse.py").is_file()          # conversations can start
+    assert list((lib / "rules").glob("*.md")) and list((lib / "patterns").glob("*.yaml"))
     from rsched import libgit
     assert libgit.git(lib, "status", "--porcelain").stdout.strip() == ""   # all committed
 
@@ -219,6 +225,31 @@ def test_an_install_sh_config_never_keeps_the_examples_routine_token(tmp_path, m
     assert raw["token"] == "generated-primary"
     assert raw["routine_token"] not in ("change-me-too", "change-me", "generated-primary")
     assert len(raw["routine_token"]) >= 24
+
+
+def test_a_placeholder_or_missing_primary_token_is_replaced(tmp_path, monkeypatch):
+    """A config hand-copied from the example carries `token: "change-me"` — the console's
+    full-authority bearer, published in the repo — and one with no `token:` line loads as an
+    empty token, i.e. auth off. Both get a fresh primary; the routine token is kept."""
+    for text in ('token: "change-me"\nroutine_token: "own-secret"\n',
+                 'bind: 127.0.0.1\nroutine_token: "own-secret"\n'):
+        cfg = _config_at(tmp_path, monkeypatch, text)
+        assert bootstrap.ensure_config() is False
+        raw = yaml.safe_load(cfg.read_text(encoding="utf-8"))
+        assert raw["token"] not in ("change-me", "change-me-too", "", None, "own-secret")
+        assert len(raw["token"]) >= 24 and raw["routine_token"] == "own-secret"
+
+
+def test_both_placeholders_are_replaced_with_two_distinct_secrets(tmp_path, monkeypatch):
+    example = (bootstrap.repo_root() / "config" / "config.example.yaml").read_text(
+        encoding="utf-8")
+    cfg = _config_at(tmp_path, monkeypatch, example)            # copied verbatim, by hand
+    assert bootstrap.ensure_config() is False
+    raw = yaml.safe_load(cfg.read_text(encoding="utf-8"))
+    assert {raw["token"], raw["routine_token"]}.isdisjoint({"change-me", "change-me-too"})
+    assert raw["token"] != raw["routine_token"]
+    assert bootstrap.ensure_config() is False                   # idempotent: now all secrets
+    assert yaml.safe_load(cfg.read_text(encoding="utf-8")) == raw
 
 
 def test_a_routine_token_equal_to_the_primary_is_replaced(tmp_path, monkeypatch):
