@@ -14,6 +14,8 @@ point of the exercise.
 """
 import json
 import os
+import tempfile
+from pathlib import Path
 
 _FIXTURE = """async (actions) => {
   const {createTranscript} = await import('/static/components/transcript.js');
@@ -88,7 +90,8 @@ def test_the_highlighted_fold_is_legible_and_fits_a_phone(ui, ui_page):
     assert fits["docScroll"] <= fits["vw"] + 1, f"the page scrolls sideways on a phone: {fits}"
 
     # and leave the capture behind, so a person can look at what the assertions only describe
-    out = os.environ.get("RSCHED_GATE_ARTIFACTS") or "/tmp"
-    fold.screenshot(path=os.path.join(out, "message-concepts-fold.png"))
-    print("capture:", os.path.join(out, "message-concepts-fold.png"),
+    out = Path(os.environ.get("RSCHED_GATE_ARTIFACTS") or tempfile.gettempdir())
+    capture = out / "message-concepts-fold.png"
+    fold.screenshot(path=capture)
+    print("capture:", capture,  # noqa: T201 — tells a person where to look; pytest -rP shows it
           "| colours:", json.dumps(colours))

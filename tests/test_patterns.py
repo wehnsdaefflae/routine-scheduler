@@ -247,6 +247,8 @@ def test_a_proposal_the_accept_button_would_refuse_is_not_offered():
     provider — must be dropped here rather than offered. One refused field 400s the WHOLE
     accept, so offering it costs the person every other change in the draft.
     """
+    from types import SimpleNamespace
+
     from rsched.patterns.recommend import valid
 
     # connections is the OAuth-provider map: an unknown provider, and a non-string account.
@@ -259,11 +261,7 @@ def test_a_proposal_the_accept_button_would_refuse_is_not_offered():
     # `machines` and `models` are catalog-checked, and the catalog lives on the server: with
     # one, an off-catalog name is refused; without one the semantic half is SKIPPED rather
     # than guessed, because a missing catalog is not evidence the value is wrong.
-    class _Server:
-        machines = {"real-box": {}}
-        models = {"real-model": {}}
-
-    srv = _Server()
+    srv = SimpleNamespace(machines={"real-box": {}}, models={"real-model": {}})
     assert not valid("machines", ["no-such-box"], srv)
     assert valid("machines", ["real-box"], srv)
     assert valid("machines", ["no-such-box"])
