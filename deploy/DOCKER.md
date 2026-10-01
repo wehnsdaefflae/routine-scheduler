@@ -1,6 +1,7 @@
 # Running rsched in Docker + migrating to another host
 
-The container is the **engine environment only** — Python + `uv` + `git` + Node + the `claude` CLI.
+The container is the **engine environment only** — Python + `uv` + `git` + Node 24 LTS + the
+`claude` CLI, every base image pinned by digest ([The image](#the-image)).
 Everything mutable is **bind-mounted**, so the whole system moves as a tarball of those directories
 and the container itself stays disposable. Every data home is a bind for that reason: one that
 isn't dies in the container's writable layer on the next recreate.
@@ -46,6 +47,7 @@ docker compose build                       # ~2–4 min (Node + claude CLI + Pyt
 RSCHED_PORT=8322 docker compose up -d       # test on a spare port, alongside the live systemd daemon
 curl -s -H "Authorization: Bearer $(grep -oP '^token:\s*"?\K[^"]+' ~/.config/routine-scheduler/config.yaml | tr -d '\"')" \
      http://127.0.0.1:8322/api/status
+docker inspect --format '{{.State.Health.Status}}' rsched   # starting, then healthy ~30 s in ("Health")
 docker compose down                         # stop the test container
 ```
 
@@ -215,6 +217,8 @@ systemctl --user disable --now routine-scheduler.service
 - **restart:** `restart: unless-stopped` + `stop_grace_period: 20s` reproduce the old
   `Restart=always` / `TimeoutStopSec=20`. Self-audit's drain-and-exit restart just exits 0 and Docker
   relaunches it — same as before.
+- **health:** compose probes the console every 30 s and reports `healthy` / `unhealthy` — a
+  report, never a restart ([Health](#health)). systemd had no equivalent.
 
 ## Caveats
 
@@ -251,6 +255,133 @@ systemctl --user disable --now routine-scheduler.service
   Compose merges automatically and which is gitignored, so an update never clobbers them. A path
   must ALSO be granted to the routine as an fs-root (the routine's Filesystem roots) before a run
   may read it; a bind mount alone makes it visible to the container, not to the sandboxed run.
+
+## The image
+
+Three images are built here — `Dockerfile` (the engine), `deploy/Dockerfile.chrome` and
+`deploy/Dockerfile.tor` — and one is pulled as is. **Every image any of them reads is pinned by
+digest, its tag kept beside it** (resolved 2026-10-01; the full digests live in the files):
+
+| Pin | What it is | Used for |
+| --- | --- | --- |
+| `python:3.12-slim-bookworm@sha256:392307d2…` | Python 3.12.14 on Debian 12 | the engine's base |
+| `node:24-bookworm-slim@sha256:0e0ff40c…` | Node 24.21.0, npm 11.19.0 | the engine copies `node`, npm, npx, corepack and the headers out of it |
+| `ghcr.io/astral-sh/uv:0.12.13@sha256:b485bd65…` | uv 0.12.13 | the engine copies `uv` and `uvx` out of it |
+| `debian:bookworm-slim@sha256:3783cc01…` | Debian 12 | the `chrome` and `tor` bases |
+| `eceasy/cli-proxy-api:v7.2.156@sha256:7f434559…` | CLIProxyAPI | the `cliproxy` service (in `docker-compose.yml`) |
+
+A tag moves — `python:3.12-slim-bookworm` is re-pushed for every Debian point release and Python
+patch — so a rebuild used to start from whatever had been pushed that day, and two builds of one
+commit could differ with nothing in the repository to say why. A digest makes the base a diff.
+Docker reads only the digest when both are given; the tag records what it was resolved from. Each
+digest is the image INDEX, which covers every platform, so the same line still builds on amd64
+and arm64. The two images the engine only copies from are build stages of their own, so they are
+pinned on FROM lines like the base, and `tests/test_deploy_image.py` holds every FROM, every
+`COPY --from` (a stage name, never an image) and every pulled image to that shape.
+
+Deliberately NOT pinned: the apt packages (installed from the live Debian mirror at build time,
+so they carry that day's security fixes), Google Chrome (the stable channel — the sites the
+browser utils read score its version) and the `claude` CLI (`npm install -g`, newest at build).
+
+The price of a pinned base is that it no longer picks up Debian or Python security rebuilds by
+itself. Bump on a schedule — monthly is plenty — and whenever a CVE in the base matters.
+
+### Node 24 LTS
+
+Copied out of the official `node` image instead of installed from NodeSource's apt repository: the
+binary is the nodejs.org release build, whose GPG-signed checksum that image verified when it was
+built, and the digest pins those bytes — no third-party repository, no `curl | bash` installer. It
+lives at `/usr/local/bin/node` (NodeSource put it at `/usr/bin/node`); nothing in this repository
+or the library calls it by an absolute path, and a routine's own notes that say "`/usr/bin/node` is
+v20" describe the old image. What runs on it:
+
+- **the `claude` CLI's install.** `@anthropic-ai/claude-code` is a native binary now, placed by the
+  package's npm postinstall, and the package declares `engines.node >=22` — the Node 20 this
+  replaced was already below it. The postinstall is allowed by name (npm 11 warns that install
+  scripts are "not yet covered by allowScripts"), and the build runs `claude --version`, so a
+  postinstall that silently left the package's stub in place fails the build instead of the
+  `claude` util's first call.
+- **`node --check`,** the JS syntax gate of library utils: `code-search` (`sym check`, which
+  self-audit runs over the console's ES modules) and `html js-check` (inline scripts).
+- **what runs start themselves:** a routine's own JS test harnesses, and npm builds — a project
+  whose `engines` floor is 22 no longer needs its own Node fetched into `/tmp`.
+
+Not Playwright: its Python wheel carries its own Node driver. Node 24 is maintained until April
+2028; moving to the next LTS is a decision, made in the Dockerfile's tag and `NODE_MAJOR` in
+`tests/test_deploy_image.py` together.
+
+### Bumping a digest
+
+```bash
+docker buildx imagetools inspect node:24-bookworm-slim | sed -n 's/^Digest: *//p'
+```
+
+That prints the INDEX digest — the one to pin. The per-platform digests listed under `Manifests:`
+are not: pinning one of those ties the build to a single architecture. Replace what follows
+`@sha256:` on the FROM line (or the compose `image:` line, for cliproxy), keep the tag, then
+[rebuild and verify](#rebuilding). To see every pin beside what its tag resolves to today:
+
+```bash
+grep -h '^FROM ' Dockerfile deploy/Dockerfile.* | awk '{print $2}' | sort -u | while read -r pin; do
+  printf '%s\n    now %s\n' "$pin" "$(docker buildx imagetools inspect "${pin%@*}" | sed -n 's/^Digest: *//p')"
+done
+```
+
+A MAJOR move changes the tag as well, and each one has a second place that moves with it: Python
+with `.python-version` (`tests/test_policy.py` holds the two together), Node with `NODE_MAJOR`,
+Debian (`bookworm` → `trixie`) in every Dockerfile that names it.
+
+### Rebuilding
+
+```bash
+cd ~/git-repos/routine-scheduler
+docker compose build                        # all three images: rsched, chrome, tor
+docker compose up -d                        # recreates each container whose image changed
+```
+
+For a NEW IMAGE, `up -d` replaces the running `rsched` process — unlike a code change, which it
+never reloads (CLAUDE.md, "Deploy") — and any routine running at that moment goes with it. Check
+`active_runs` on `/api/status` first, or rebuild in a quiet hour. The browser's profile and tor's
+state survive the recreate (a bind mount and a named volume). Then:
+
+```bash
+docker inspect --format '{{.State.Health.Status}}' rsched   # starting, then healthy (below)
+docker compose exec -u mark rsched node --version           # v24.x
+docker compose exec -u mark rsched claude --version         # the CLI answers
+docker compose exec -u mark rsched uv --version             # uv 0.12.13
+docker compose exec -u mark rsched gh --version             # its apt repository was read
+```
+
+`-u mark` is the runtime user: an `exec` as root is how root-owned files landed in mark's caches
+before ([When the console goes slow](#when-the-console-goes-slow)).
+
+## Health
+
+The `rsched` service carries a compose healthcheck: every 30 s, `curl` inside the container asks
+for `http://127.0.0.1:8321/manifest.webmanifest`. That route is the app's own and takes no token
+by design — a browser fetches a manifest without credentials — so no credential is stored in the
+compose file or the image to probe it. It lives in compose, beside the restart policy, so a retune
+is a `docker compose up -d`, not a rebuild. The states:
+
+- **`starting`** — no probe has answered yet. The port opens only at the END of a boot (`uv run`'s
+  re-sync after a dependency change, the one-shot migrations, the seed sync, the library
+  adoption; on a fresh host, the library clone), so misses in the first 5 minutes
+  (`start_period`) do not count. A normal boot reads healthy at the first probe, ~30 s in.
+- **`healthy`** — the console answered its last probe. It says the web app SERVES — not which
+  code is live (`build` on `/api/status` says that) and not that the scheduler is ticking.
+- **`unhealthy`** — three probes in a row failed after the start period, about 1.5 minutes of
+  silence: the process is up and the console does not answer, which is a starved threadpool or a
+  wedged event loop more often than a crash. **Docker does not restart it** — `restart:
+  unless-stopped` acts only when the process EXITS — so read why before you bounce it:
+
+  ```bash
+  docker inspect --format '{{json .State.Health}}' rsched | python3 -m json.tool   # the last 5 probes, in curl's words
+  ```
+
+  then [measure the slowness](#when-the-console-goes-slow) — a restart throws that evidence away.
+- **no health at all, `Exited`** — the container is not running. Docker gives up on a failed
+  START after one try (a vanished bind source is the one that has happened): `docker ps -a`, then
+  check every bind source exists before starting it again.
 
 ## HTTPS via Tailscale (Web Push needs a secure context)
 
