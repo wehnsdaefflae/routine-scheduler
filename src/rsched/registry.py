@@ -147,18 +147,6 @@ def _read_run_fresh(run_dir: Path, slug: str) -> RunInfo:
         info.updated = st.get("updated", "")
         if st.get("elapsed_s") is not None:
             info.elapsed_s = int(st["elapsed_s"])
-        elif st.get("updated") and st.get("started"):
-            # MIGRATION(expires=2026-10-01): runs from before elapsed_s existed —
-            # best-effort from the two stamps; delete once retention has cycled them out
-            try:
-                started = parse_run_ts(str(st["started"]))
-                updated = datetime.fromisoformat(str(st["updated"]))
-                if updated.tzinfo is None:
-                    updated = updated.replace(tzinfo=UTC)
-                if started is not None:
-                    info.elapsed_s = max(0, int((updated - started).total_seconds()))
-            except ValueError:
-                pass
     result = run_dir / "result.md"
     if result.exists():
         try:
