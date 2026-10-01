@@ -144,6 +144,7 @@ class EngineLoop:
     reminder_nudge: Any
     reminder_pending: Any
     reminder_replayed: set[str]
+    reminder_asked_back: bool
     reminders: Any
     reminders_level: Any
     repeat_hashes: deque[str]

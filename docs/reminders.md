@@ -216,7 +216,10 @@ collect. If a finish guard sets the finish aside, the engine note rides the guar
 The model re-emits that finish with its side fields intact, so each field's payload is applied
 at most once per run (`remind.apply_ops`, keyed per FIELD) — except an op whose curated approval
 got an ask-back (below): nothing was applied, so the finish that carries it again re-submits it.
-A finish that STANDS ends the run instead, and that approval stays open as deferred.
+And such a finish never STANDS over the operator's question: a finish that stands carries no
+observation for their words to ride, so the finish gate sets it aside like a user message that
+arrived while finishing (`finishgate.check_finish`, `asked_back`) — except on the spent reserved
+finish turn, which ends the run with the approval left open as deferred.
 
 **Who owns the tally.** `reminders.record` is the only writer of a stat and works off DISK, doing
 its own read-modify-write; the engine's in-memory set owns the DEFINITIONS, because this run's ops

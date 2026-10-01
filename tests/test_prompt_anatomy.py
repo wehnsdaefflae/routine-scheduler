@@ -99,6 +99,9 @@ def test_doc_pins_the_canonical_engine_strings(make_routine, tmp_path):
         # as still queued in the summary
         "OBSERVATION (finish deferred)",
         "it stays queued and opens the next run/reply",
+        # the ask-back rung (finishgate): an approval a finish's `remind` op filed was asked
+        # back on — a finish that stands has no observation for the operator's words to ride
+        "the user replied to the approval this finish asked for WITHOUT deciding",
         # write_util doc-standard rejections carry their own head, never the selftest one
         # (R93, observations.format_observation)
         "docstring HEADER violations",

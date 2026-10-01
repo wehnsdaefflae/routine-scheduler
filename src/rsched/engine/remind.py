@@ -50,6 +50,7 @@ def configure(loop) -> None:
     loop.reminders = load(loop)
     loop.reminders_level = level_of(loop.ctx.grants)   # what `refresh` compares against
     loop.reminder_replayed = set()   # payloads a re-driven finish already applied
+    loop.reminder_asked_back = False  # this turn's op came back as an ask-back (finishgate)
     loop.reminder_pending = []       # fires still owed a label — what the nudge names
     loop.reminder_owed = {}          # id → holds this run not yet labelled; one label per hold
     loop.reminder_nudge = 0
@@ -229,6 +230,7 @@ def apply_ops(loop, action: dict, poll_s: float, *, replayable: bool = False) ->
     finish that carries it again is the re-submission they are owed, and the label beside it
     must still not count twice.
     """
+    loop.reminder_asked_back = False     # set by `_approve_global`, read by the finish gate
     fields = [f for f in ("remind_feedback", "remind") if action.get(f)]
     if replayable and fields:
         fields = [f for f in fields if replay_key(f, action[f]) not in loop.reminder_replayed]
@@ -402,6 +404,9 @@ def _approve_global(loop, verb: str, target: Reminder, op: dict, poll_s: float) 
         # Nothing was applied, so carrying the same op again is the re-submission the operator
         # is owed — never a replay the finish path may skip (`apply_ops`).
         loop.reminder_replayed.discard(replay_key("remind", op))
+        # …and a finish that carried it must not END over the operator's question: the note
+        # rides an observation, and a finish that stands has none (`finishgate.check_finish`)
+        loop.reminder_asked_back = True
         return f"{verb} of global reminder {target.id}: " + dialog_reply(
             still_pending(ask), "approval", "carry the same `remind` op again (as it was, or "
             "revised in light of their message), your answer in the `say` of the action it "

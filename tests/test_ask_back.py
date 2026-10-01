@@ -267,6 +267,31 @@ def test_a_re_submission_on_a_finish_goes_through(make_routine, scripted):
     assert tally["fires"] == 1 and tally["didnt"] == 1             # the label counted once
 
 
+def test_a_finish_whose_approval_is_asked_back_is_set_aside_for_the_answer(make_routine,
+                                                                            scripted):
+    """A `remind` op may ride a finish, and the operator's ask-back on the approval it files
+    rides a note — but a finish that STANDS carries no observation, so the run ended with their
+    question unanswered and the approval open. It is set aside like a user message that
+    arrives while finishing; the finish that carries the op again re-submits the approval."""
+    d = make_routine(slug="finishask")
+    _capabilities(d, reminders="global", remind_confirm="always")
+    _reply(d, 1)                                     # ask back on the first finish's approval
+    _reply(d, 2, "approve", ask_back=False)          # …and approve the re-submission
+    first = {**finish(status="partial", summary="caution proposed"), "remind": REMIND}
+    ep = scripted([first, {**first, "say": "answered them — carrying it again"}])
+    status, run_dir = run_routine(d, _server(d), run_ts=TS)
+    assert status == "partial"
+    shown = _observation(ep, 1)
+    assert "finish deferred" in shown and WORDS in shown, shown
+    deferred = [e["payload"] for e in read_events(run_dir / "transcript.jsonl")[0]
+                if e["type"] == "observation" and e["payload"].get("asked_back")]
+    assert len(deferred) == 1
+    filed = [json.loads(p.read_text(encoding="utf-8"))
+             for p in _server(d).reminders_home.glob("*.json")]
+    assert [r["regex"] for r in filed] == [REMIND["regex"]]
+    assert not _pending(d)              # the asked-back record superseded, the new one settled
+
+
 @pytest.mark.parametrize(("qtype", "answer", "held"), [
     ("util-approval", {"text": "Bin hier"}, True),           # names neither option (D38)
     ("rule-approval", {"text": "hmm, maybe"}, True),

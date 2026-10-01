@@ -67,10 +67,11 @@ def check_finish(loop, action: dict, ctx) -> str | None:
     """May this run END? Returns the run status when the finish stands, None when it is
     set aside for one turn (the R108 deferral shape) and the loop should go round again.
 
-    Split out of `EngineLoop.run` (F393). Six guards, one question: an undrained user
-    message, an incomplete accounting, a rule whose moment is the ending itself
-    (`assist.at_finish`), a fabricated first-action finish, an unbacked action claim, and a
-    `met` claim the run's own transcript does not support. Each costs one turn and says
+    Split out of `EngineLoop.run` (F393). Seven guards, one question: an undrained user
+    message, an ask-back on an approval the finish itself filed, an incomplete accounting, a
+    rule whose moment is the ending itself (`assist.at_finish`), a fabricated first-action
+    finish, an unbacked action claim, and a `met` claim the run's own transcript does not
+    support. Each costs one turn and says
     exactly why — the engine never ends a run the model could have ended itself, so every
     rung hands the turn back rather than force-finishing.
     """
@@ -90,6 +91,20 @@ def check_finish(loop, action: dict, ctx) -> str | None:
                "finishing — it is delivered below instead of being dropped. Address it, then "
                "finish again with an updated summary.", pending_user_input=True)
         drain_injections(loop)
+        return None   # deferred — the loop goes round again
+    # An ASK-BACK on the curated-reminder approval a `remind` op on THIS finish filed
+    # (engine/askback.py): the operator asked the run something and is owed the answer now. On
+    # any other action their words ride its observation; a finish that STANDS has none, so the
+    # run ended with their question unanswered and the approval open. Set aside like the user
+    # message above — the reminder note carrying their words rides this deferral
+    # (`EngineLoop._finish`). Every ask-back is fresh input, so no once-only limit; never the
+    # reserved turn, for the reason every rung here gives.
+    if ctx.depth == 0 and not loop._finish_reserved and loop.reminder_asked_back:
+        _defer(loop, ctx,
+               "OBSERVATION (finish deferred): the user replied to the approval this finish "
+               "asked for WITHOUT deciding — their words are in the reminder note below. "
+               "Answer them, then finish again carrying the same `remind` op (or a revised "
+               "one) — that re-submits the approval.", asked_back=True)
         return None   # deferred — the loop goes round again
     # THE ACCOUNTING: one entry per Done-when line of the recipe and per open outcome of the
     # finish line, as a FIELD — checked for presence and shape only (semantics stay the
