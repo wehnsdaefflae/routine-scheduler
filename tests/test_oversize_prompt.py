@@ -183,6 +183,22 @@ def test_a_second_oversize_error_gets_a_second_shrink(make_routine):
     assert tail.calls == 0
 
 
+def test_the_shrink_allowance_is_per_turn_not_per_run(make_routine):
+    """`_MAX_OVERSIZE_RETRIES` bounds ONE turn's shrink-and-retry loop. The counter lived on
+    the loop and was never re-armed, so a long run that had recovered twice — at turn 50 and
+    at turn 200, each time cleanly — died on its third oversize 400 with "prompt still too long
+    after 2 shrink attempts" before attempting a shrink that would have worked."""
+    head = _FakeEndpoint([EndpointError(ANTHROPIC_400), VALID] * 3)
+    tail = _FakeEndpoint([VALID])
+    loop = _loop(make_routine, _ChainRegistry(head, tail, name="per-turn-probe"))
+    for _turn in range(3):
+        loop.messages.append({"role": "user", "content": "x" * 5_000_000})
+        action, _usage = next_action(loop)
+        assert action["kind"] == "read_file"
+    assert head.calls == 6            # every turn: one rejection, one shrink, one success
+    assert tail.calls == 0
+
+
 def test_an_unshrinkable_prompt_leaves_no_window_override_behind(make_routine):
     """A correction derived from a FAILURE must not outlive it: `_override_window` re-applies
     whatever is stored, so an override written on a raising path would clamp every later turn

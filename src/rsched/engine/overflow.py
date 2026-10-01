@@ -100,13 +100,19 @@ def parse_overflow_limit(text: str) -> int | None:
     """The provider-stated maximum context TOKENS from a context-overflow error message,
     or None when the text is not an overflow error (or states no usable figure).
     """
-    if not _is_overflow_text(text):
-        return None
-    pair = _OVERFLOW_PAIR_RE.search(text)
-    if pair:
-        return int(pair.group(2))
-    m = _OVERFLOW_TOKENS_RE.search(text)
-    return int(m.group(1)) if m else None
+    return parse_overflow_pair(text)[1]
+
+
+def new_turn(loop) -> None:
+    """Re-arm the shrink allowance for the turn about to be asked for.
+
+    `_MAX_OVERSIZE_RETRIES` bounds ONE turn's shrink-and-retry loop — the guard against a
+    prompt that keeps growing between attempts. Kept for the whole run, it also ended any
+    long run on its third oversize 400, however cleanly the first two had been recovered
+    turns apart, before trying a shrink that would have worked.
+    """
+    loop._oversize_attempts = {}
+
 
 def _shrink_window_to_provider(loop, endpoint, ref, exc: EndpointError) -> tuple | None:
     """Net 0 of _recover_transport: a context-overflow failure whose stated maximum is
@@ -120,27 +126,26 @@ def _shrink_window_to_provider(loop, endpoint, ref, exc: EndpointError) -> tuple
     stated = parse_overflow_limit(str(exc))
     if stated is None:
         return None
-    corrected = stated
     key = (ref.endpoint, ref.model)
     overrides = getattr(loop, "_window_overrides", None)
     if overrides is None:
         overrides = loop._window_overrides = {}
-    if overrides.get(key, float("inf")) <= corrected or corrected >= ref.context_tokens:
+    if overrides.get(key, float("inf")) <= stated or stated >= ref.context_tokens:
         return None
-    overrides[key] = corrected
-    new_ref = dataclasses.replace(ref, context_tokens=corrected)
+    overrides[key] = stated
+    new_ref = dataclasses.replace(ref, context_tokens=stated)
     cl = clamp_to_cap(loop.messages, new_ref.context_tokens, _reserved_tokens(loop, new_ref))
     ctx = loop.ctx
     ctx.transcript.event("compaction", {"window_guard": {
         "model": ref.name or ref.model, "configured_tokens": ref.context_tokens,
-        "provider_max_tokens": stated, "corrected_tokens": corrected,
+        "provider_max_tokens": stated, "corrected_tokens": stated,
         **({"clamp": cl} if cl else {})}})
     log_health_event(ctx.server.routines_home, "model_window_corrected",
                      routine=ctx.routine.slug, run_id=ctx.run_id,
                      detail=(f"{ref.name or ref.model}: catalog claims "
                              f"{ref.context_tokens:,} context tokens but the provider "
                              f"enforces {stated:,} tokens — run continues on "
-                             f"{corrected:,} tokens; correct the catalog entry"))
+                             f"{stated:,} tokens; correct the catalog entry"))
     return endpoint, new_ref
 
 def _recover_oversize_prompt(loop, endpoint, ref, exc: EndpointError) -> tuple | None:

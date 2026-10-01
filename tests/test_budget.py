@@ -1,6 +1,6 @@
 """The unified budget primitive (engine/budget.py): Budget + BudgetLedger + allocate.
 
-The RunContext integration (budget_violation/warning/tokens_remaining/child_budgets) is
+The RunContext integration (budget_spent/budget_warning/tokens_remaining/child_budgets) is
 exercised end-to-end in test_loop.py; here we pin the primitive itself and the exact wording
 the loop's BUDGET tail and finish summaries quote."""
 
@@ -11,7 +11,8 @@ def test_budget_limit_semantics():
     b = Budget("turns", limit=10)
     assert not b.unlimited
     assert not b.exceeded(9) and b.exceeded(10) and b.exceeded(11)
-    assert not b.warns(8) and b.warns(9)          # warn at 0.85 * 10 = 8.5
+    assert b.warn_line(8) is None and b.warn_line(9) == 0.85   # warn at 0.85 * 10 = 8.5
+    assert b.warn_line(10) == 0.95                               # …and the final line
     assert b.left(3) == 7 and b.left(20) == 0     # never negative
 
 
@@ -19,7 +20,7 @@ def test_unlimited_never_trips():
     b = Budget("tokens", limit=-1)
     assert b.unlimited
     assert not b.exceeded(10**9)
-    assert not b.warns(10**9)
+    assert b.warn_line(10**9) is None
     assert b.left(10**9) is None
 
 
@@ -33,17 +34,19 @@ def _run_ledger():
     ])
 
 
-def test_violation_is_first_hard_budget_exceeded_in_order():
+def test_spent_is_first_hard_budget_exceeded_in_order():
     led = _run_ledger()
     # turns checked before tokens: a turns overflow wins even though tokens also overflow
-    v = led.violation({"turns": 60, "tokens": 5000, "cost": 0})
-    assert v == "turn budget exhausted (60)"
+    assert led.spent({"turns": 60, "tokens": 5000, "cost": 0}) == {
+        "resource": "turns", "limit": 60, "message": "turn budget exhausted (60)"}
     # only tokens over
-    assert led.violation({"turns": 1, "tokens": 1000, "cost": 0}) == "token budget exhausted (1000)"
+    spent = led.spent({"turns": 1, "tokens": 1000, "cost": 0})
+    assert spent is not None and spent["message"] == "token budget exhausted (1000)"
     # cost wording carries the dollar sign
-    assert led.violation({"turns": 1, "tokens": 1, "cost": 5}) == "cost budget exhausted ($5)"
+    spent = led.spent({"turns": 1, "tokens": 1, "cost": 5})
+    assert spent is not None and spent["message"] == "cost budget exhausted ($5)"
     # nothing over
-    assert led.violation({"turns": 1, "tokens": 1, "cost": 0}) is None
+    assert led.spent({"turns": 1, "tokens": 1, "cost": 0}) is None
 
 
 def test_warning_wording_per_resource():

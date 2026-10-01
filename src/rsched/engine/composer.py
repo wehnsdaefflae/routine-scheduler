@@ -1,7 +1,7 @@
 """System-prompt assembly: harness contract, state digest, kickoff — composed ONCE at
 run start; the messages array then grows turn by turn (prompt-size management lives in
-history.py). The CAPABILITIES section is built in capabilities.py; observation rendering
-in observations.py.
+window.py and compaction.py). The harness contract itself is written in harness.py, the
+CAPABILITIES section in capabilities.py; observation rendering in observations.py.
 """
 
 from __future__ import annotations

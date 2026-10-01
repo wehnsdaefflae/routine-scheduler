@@ -118,15 +118,18 @@ def harness_contract(ctx: RunContext, kinds: list[str] | None = None) -> str:
                      "your task: goal, deliverable, constraints, and what a finished run leaves "
                      "behind (its Done when). It is the single source of truth for what to do. ")
     # Recipe ownership must match what the ENGINE enforces: since 0.261.0 own-recipe writes are
-    # the `write_recipe` CAPABILITY (the recipe-authoring conduct doc), derived in loopsetup —
-    # not, as before, a side effect of a write root covering the routine's own dir.
+    # the `write_recipe` CAPABILITY (the recipe-authoring conduct doc) or a user-requested
+    # revise leg, derived in loopsetup — not, as before, a side effect of a write root covering
+    # the routine's own dir. The sentence names the real grant: it went on citing the write
+    # root after that stopped being the reason, and a wrong reason is a falsehood too.
     # Telling such a run its recipe is "READ-ONLY to you" is a falsehood it will obey —
     # routine-improver:20260723-112446 queued ITSELF (include-toggle on) and then skipped
     # every lens on the self target, citing this very sentence (F165).
     if g is not None and g.recipe_unlocked:
         recipe_line = ("Your own recipe (main.md, stages/, tuning.yaml) IS WRITABLE "
-                       "to you this run — a user-granted write root covers your routine dir; "
-                       "edit it as deliberately as any target's recipe and record why")
+                       "to you this run — the user granted it (the recipe-authoring "
+                       "permission, or a revision requested from the run view); edit it as "
+                       "deliberately as any target's recipe and record why")
     else:
         recipe_line = ("Your own recipe (main.md, stages/) is "
                        "READ-ONLY to you — the routine-improver meta routine refines recipes")

@@ -1702,6 +1702,22 @@ def test_schema_storm_fails_early_with_a_clear_outcome(make_routine, scripted):
     assert "cannot reliably hold the action schema" in fin["payload"]["summary"]
 
 
+def test_schema_storm_never_preempts_a_finish_that_landed(make_routine, scripted):
+    """The storm exists to stop a run LIMPING on at full-prompt retry prices. A finish ends the
+    run anyway, so failing it buys nothing — and it threw away the one thing that survives a
+    run, its authored summary, for an engine verdict. On the reserved finish turn that is the
+    exact loss the reserve exists to prevent."""
+    seq = []
+    for n in range(3):
+        seq += [f"nope {n}", write_file(f"state/r{n}.txt", content="x", say="recovered")]
+    seq += ["nope 3", finish("partial", "three of four files; resume at state/r3.txt")]
+    _d, _ep, status, _run_dir, events = _run(make_routine, scripted, seq)
+    assert status == "partial"
+    fin = [e for e in events if e["type"] == "finish"][-1]
+    assert fin["payload"]["authored"] is True
+    assert "resume at state/r3.txt" in fin["payload"]["summary"]
+
+
 def test_schema_storm_streak_resets_on_a_clean_turn(make_routine, scripted):
     """The storm streak measures CONSECUTIVE retry-burdened turns: a clean turn resets
     it, so ordinary occasional retries never trip the D87 guard."""
@@ -2101,7 +2117,7 @@ def test_unlimited_token_budget_never_trips():
     ctx.budget_base_turn = 0
     ctx._started_mono = __import__("time").monotonic()
     ctx._suspended_s = 0.0
-    assert ctx.budget_violation() is None
+    assert ctx.budget_spent() is None
     assert ctx.budget_warning() is None
     assert ctx.tokens_remaining() is None
     child = ctx.child_budgets()
@@ -2109,7 +2125,7 @@ def test_unlimited_token_budget_never_trips():
     # a finite budget still behaves exactly as before
     ctx.budgets = Budgets(max_turns=100, max_wall_clock_min=100, max_total_tokens=1000,
                           max_subruns=4, max_subrun_depth=2, ask_timeout_min=5)
-    assert "token budget exhausted" in ctx.budget_violation()
+    assert "token budget exhausted" in ctx.budget_spent()["message"]
     assert ctx.tokens_remaining() == 0
 
 
@@ -2132,7 +2148,7 @@ def test_unlimited_time_and_cost_budgets_honor_minus_one():
     ctx._started_mono = _t.monotonic() - 10_000    # ~2.7h elapsed
     ctx._suspended_s = 0.0
     # unlimited time + cost: nothing trips despite huge elapsed and $999 spend
-    assert ctx.budget_violation() is None
+    assert ctx.budget_spent() is None
     assert ctx.budget_warning() is None
     child = ctx.child_budgets()
     assert child.max_wall_clock_min == -1          # unlimited stays unlimited (not 1 min)
@@ -2141,15 +2157,15 @@ def test_unlimited_time_and_cost_budgets_honor_minus_one():
     # a finite wall-clock still trips once exceeded
     ctx.budgets = Budgets(max_turns=100, max_wall_clock_min=60, max_total_tokens=-1,
                           max_subruns=4, max_subrun_depth=2, ask_timeout_min=5, max_cost=-1)
-    assert "wall-clock budget exhausted" in ctx.budget_violation()
+    assert "wall-clock budget exhausted" in ctx.budget_spent()["message"]
 
     # a finite cost cap still trips once real $ spend reaches it
     ctx.budgets = Budgets(max_turns=100, max_wall_clock_min=-1, max_total_tokens=-1,
                           max_subruns=4, max_subrun_depth=2, ask_timeout_min=5, max_cost=5)
     ctx._started_mono = _t.monotonic()             # reset elapsed so only cost can trip
-    assert "cost budget exhausted" in ctx.budget_violation()
+    assert "cost budget exhausted" in ctx.budget_spent()["message"]
     ctx.usage = {"in": 0, "out": 0, "cost": 4.5}   # under the cap but past 85%
-    assert ctx.budget_violation() is None
+    assert ctx.budget_spent() is None
     assert "of budget left" in (ctx.budget_warning() or "")
 
 
@@ -2172,7 +2188,7 @@ def test_conversation_total_turn_budget_caps_the_whole_conversation():
                           max_subruns=4, max_subrun_depth=2, ask_timeout_min=5,
                           max_total_turns=-1)
     ctx.turn, ctx.budget_base_turn = 500, 498
-    assert ctx.budget_violation() is None
+    assert ctx.budget_spent() is None
 
     # finite cap: this reply's window is small (2 turns < max_turns=10) but the conversation
     # has reached its total → the CUMULATIVE cap trips, not the per-reply window one
@@ -2180,8 +2196,9 @@ def test_conversation_total_turn_budget_caps_the_whole_conversation():
                           max_subruns=4, max_subrun_depth=2, ask_timeout_min=5,
                           max_total_turns=40)
     ctx.turn, ctx.budget_base_turn = 40, 38
-    v = ctx.budget_violation()
-    assert v is not None and "conversation turn budget exhausted" in v
+    v = ctx.budget_spent()
+    assert v is not None and "conversation turn budget exhausted" in v["message"]
+    assert v["resource"] == "total_turns" and v["limit"] == 40
 
     # 85% cumulative → a wind-down warning even while the per-reply window is fresh
     ctx.turn, ctx.budget_base_turn = 34, 34
@@ -2210,7 +2227,7 @@ def test_unlimited_turn_budget_honors_minus_one():
     ctx.budget_base_turn = 0
     ctx._started_mono = _t.monotonic()
     ctx._suspended_s = 0.0
-    assert ctx.budget_violation() is None          # unlimited turns never trips
+    assert ctx.budget_spent() is None          # unlimited turns never trips
     assert ctx.budget_warning() is None
     assert ctx.child_budgets().max_turns == -1      # unlimited stays unlimited (not 1)
 
@@ -2218,7 +2235,7 @@ def test_unlimited_turn_budget_honors_minus_one():
     ctx.budgets = Budgets(max_turns=10, max_wall_clock_min=-1, max_total_tokens=-1,
                           max_subruns=4, max_subrun_depth=2, ask_timeout_min=5, max_cost=-1)
     ctx.turn = 10
-    assert "turn budget exhausted" in ctx.budget_violation()
+    assert "turn budget exhausted" in ctx.budget_spent()["message"]
 
 
 def test_usage_accounting_cache_keys_and_resume_base():
@@ -2241,12 +2258,12 @@ def test_usage_accounting_cache_keys_and_resume_base():
     ctx.add_usage({"in": 50, "out": 5, "cached_in": 1000})
     assert ctx.usage == {"in": 150, "out": 15, "cached_in": 10000, "cache_write": 400,
                          "cost": 0.02}
-    assert ctx.budget_violation() is None          # cache traffic never trips the budget
+    assert ctx.budget_spent() is None          # cache traffic never trips the budget
     ctx.usage_base = {"in": 800, "out": 80, "cost": 0.10}
     total = ctx.usage_total()
     assert total["in"] == 950 and total["out"] == 95 and total["cost"] == 0.12
     assert total["cached_in"] == 10000
-    assert ctx.budget_violation() is None          # …and neither does the prior-leg base
+    assert ctx.budget_spent() is None          # …and neither does the prior-leg base
 
 
 def test_budget_warning_appended_near_exhaustion(make_routine, scripted):

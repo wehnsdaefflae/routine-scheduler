@@ -1,13 +1,14 @@
 """Run transcript: append-only JSONL, line-buffered, plus an offset-based reader/tailer.
 
-The event vocabulary is a CONTRACT consumed by the web renderer and the meta routine:
-header, assistant_action, observation, question, answer, user_injection, subrun_start,
-subrun_end, compaction, error, finish. Extend, never repurpose.
+The event vocabulary is a CONTRACT consumed by the web renderer and the meta routine — the
+fourteen types in `EVENT_TYPES` below. An unknown type reads as corruption to both, so the
+tuple and both readers are extended together, never one alone, and no type is repurposed.
 """
 
 from __future__ import annotations
 
 import gzip
+import io
 import json
 import logging
 from collections.abc import Callable
@@ -84,52 +85,49 @@ class Transcript:
             pass
 
 
-def _open_maybe_gz(path: Path):
-    """Returns (fh, is_gz). Falls back to <path>.gz when the plain file is rotated away."""
+def _open_bytes(path: Path) -> io.BufferedIOBase:
+    """The transcript's BYTES — the plain file, or `<path>.gz` once retention has rotated the
+    plain one away. Both hold the same bytes, so a byte offset means the same thing in either.
+    """
     if path.suffix == ".gz":
-        return gzip.open(path, "rt", encoding="utf-8"), True
-    if not path.exists() and path.with_suffix(path.suffix + ".gz").exists():
-        return gzip.open(path.with_suffix(path.suffix + ".gz"), "rt", encoding="utf-8"), True
-    return path.open(encoding="utf-8"), False
+        return gzip.open(path, "rb")
+    rotated = path.with_suffix(path.suffix + ".gz")
+    if not path.exists() and rotated.exists():
+        return gzip.open(rotated, "rb")
+    return path.open("rb")
 
 
 def read_events(path: Path, offset: int = 0) -> tuple[list[dict], int]:
     """Read complete JSONL lines from byte `offset`. Returns (events, new_offset).
     A partial final line (mid-write) is held back — new_offset stops before it, so a
-    concurrent reader never sees broken JSON. Gzipped transcripts only support offset 0.
+    concurrent reader never sees broken JSON. A rotated (.gz) transcript reads the same way:
+    it never grows, so a reader that has reached its end is simply told nothing is new.
+
+    BYTES, split at the newline byte alone, and only a COMPLETE line is decoded (json.loads
+    takes bytes).
+    Reading text got two things wrong. `str.splitlines()` also breaks at U+2028, U+2029 and
+    U+0085, which `json.dumps(ensure_ascii=False)` leaves raw inside a line — so a rotated
+    transcript lost every event that quoted one. And decoding a line the writer had not
+    finished could stop inside a multi-byte character, raising UnicodeDecodeError out of a
+    polling reader instead of holding the line back.
     """
     events: list[dict] = []
     try:
-        fh, is_gz = _open_maybe_gz(path)
+        fh = _open_bytes(path)
     except OSError:
         return [], offset
     with fh:
-        if is_gz:
-            data = fh.read()
-            total = len(data.encode("utf-8"))
-            if offset >= total:
-                return [], offset  # a gz transcript is immutable — nothing new, ever
-            for line in data.splitlines():
-                if line.strip():
-                    try:
-                        events.append(json.loads(line))
-                    except json.JSONDecodeError:
-                        log.warning("transcript %s: skipping malformed line (%d chars)",
-                                    path, len(line))
-            return events, total
-        fh.seek(offset)
+        fh.seek(offset)   # a gz file seeks forward by decompressing: same bytes, same offset
         pos = offset
-        for line in fh:
-            raw = line.encode("utf-8")
-            if not line.endswith("\n"):
+        for raw in fh:
+            if not raw.endswith(b"\n"):
                 break  # partial write in progress — retry from `pos` next poll
             pos += len(raw)
-            line = line.strip()
-            if not line:
+            if not raw.strip():
                 continue
             try:
-                events.append(json.loads(line))
-            except json.JSONDecodeError:
+                events.append(json.loads(raw))
+            except ValueError:   # JSONDecodeError, or a complete line that is not UTF-8
                 # the bytes are counted (the offset moves past it) so it is skipped exactly once
                 log.warning("transcript %s: skipping malformed line ending at byte %d", path, pos)
-        return events, pos
+    return events, pos

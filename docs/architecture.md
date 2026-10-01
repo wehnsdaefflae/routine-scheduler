@@ -15,13 +15,16 @@ the only one that describes work NOT built.
 
 ## How a run works (engine/)
 
-The turn loop (`engine/loop.py`) is the heart; `engine/runtime.py` is the entry above it
+The turn loop (`engine/loop.py`) is the heart — `EngineLoop.run` spells the turn order out in
+one place, each step's body a method named for it; `engine/runtime.py` is the entry above it
 (`run_routine`, workflow loading/decomposition), `engine/boot.py` the initial message list
 (kickoff or resume rehydration), `engine/completion.py` the get-one-valid-action side (schema
 retries, model failover incl. classifier refusals, refusal clarification, media fallback, the
 compaction gate), `engine/control.py` the
-between-turns control plane (abort, pause gate, `control.json` model switch, injection drain,
-subrun announcements), and
+between-turns control plane (abort, pause gate, injection drain, subrun announcements) and
+`engine/switches.py` its `control.json` switches (model, deliberation, rule bindings, a live
+config change), `engine/loopend.py` how a run ENDS (the engine-authored verdicts and the one
+close-out every ending shares — result.md, autocommit, health event, final status), and
 `engine/interact.py` the ASK protocol (`ask_user` and the grant-gated approvals),
 `engine/admin_handlers.py` the two handlers that answer about the instance rather than to the
 user (`schedule_run`, `report`) beside their renderer `obs_admin`, and `engine/overflow.py` the
@@ -136,7 +139,12 @@ the limits (single-writer status.json preserved).
   is POSITIONAL — head 6, tail 24 — so a load-bearing fact in the middle survives only in
   `history/`, reachable if the run remembers to look. `note`, `memory_write` and the LEDGER
   already exist to carry a fact out of the conversation; what was missing was the moment to use
-  them. The archive is deferred by exactly one turn and the run is told why. Safe by
+  them. The archive is deferred by exactly one turn and the run is told why — and the deferred
+  pass is OWED (`loop._evict_owed`): the next turn takes it under the cap that decided it, so
+  "the archive happens on your next turn" holds even when the cap has moved since. It did not
+  before: a stage boundary's anticipatory discount lasts one turn, so re-testing the ordinary
+  gate spent the once-per-run warning on a pass that never came, and the compaction that did
+  come later came unannounced. Safe by
   construction: when the FRACTION binds the gate there is 20-40% of the window before the hard
   ceiling, a whole turn of slack; when the CEILING binds there is none, so the warning is
   skipped and the archive happens now. `clamp_to_cap` runs unconditionally afterwards either

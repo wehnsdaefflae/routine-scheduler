@@ -156,3 +156,31 @@ def test_entering_a_stage_twice_counts_once_and_keeps_flow_order(make_routine, s
     payload = next(e for e in events if e["type"] == "stages_skipped")["payload"]
     assert payload["entered"] == ["alpha", "beta"]     # deduped, in the recipe's own order
     assert payload["skipped"] == ["gamma"]
+
+
+def test_a_resumed_leg_remembers_the_stages_earlier_legs_entered(make_routine, scripted):
+    """Coverage is a fact about the RUN, not the leg. A resumed leg builds a fresh RunContext,
+    and boot reseeded the phase, the grounding set and the counters but not the stages — so a
+    run that worked its first stage, was interrupted and resumed into its second reported the
+    first as SKIPPED, and the finish's claim check would challenge a `met` the run had earned
+    a leg earlier.
+    """
+    import json
+
+    d = make_routine(slug="twolegs")
+    _with_stages(d, "gather", "record")
+    scripted([{"say": "gathering.", "kind": "read_file", "path": "stages/gather.md"},
+              finish(summary="leg one")])
+    run_routine(d, _server(d), run_ts=TS)
+
+    scripted([{"say": "recording.", "kind": "read_file", "path": "stages/record.md"},
+              finish(summary="leg two")])
+    status, run_dir = run_routine(d, _server(d), run_ts=TS, resume_from=TS)
+    assert status == "ok"
+
+    st = json.loads((run_dir / "status.json").read_text(encoding="utf-8"))
+    assert st["stages"]["entered"] == ["gather", "record"]
+    assert st["stages"]["skipped"] == []
+    events, _ = read_events(run_dir / "transcript.jsonl")
+    notices = [e["payload"]["skipped"] for e in events if e["type"] == "stages_skipped"]
+    assert notices == [["record"]], "only leg one, which really had not entered `record`"

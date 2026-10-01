@@ -83,9 +83,6 @@ class Budget:
     def exceeded(self, current: float) -> bool:
         return not self.unlimited and current >= self.limit
 
-    def warns(self, current: float) -> bool:
-        return self.warn_line(current) is not None
-
     def warn_line(self, current: float) -> float | None:
         """The HIGHEST warning line this reading has crossed (`warn_at`, then
         FINAL_WARN_AT), or None below the first. It is the IDENTITY of the warning: a
@@ -117,20 +114,17 @@ class BudgetLedger:
     def spent(self, meter: dict) -> dict | None:
         """The FIRST exceeded budget as `{resource, limit, message}`, or None.
 
-        `violation` says it in words, for the model. This says it in FIELDS, for the health
-        stream and status.json: a fifth of this fleet's runs end against a budget and the
-        cause was recorded nowhere, so reconstructing it afterwards worked for 22 of 90 — the
-        turn and wall-clock caps only, because those are the two status.json carried.
+        `message` says it in words, for the model and the finish summary. The other two say it
+        in FIELDS, for the health stream and status.json: a fifth of this fleet's runs end
+        against a budget and the cause was recorded nowhere, so reconstructing it afterwards
+        worked for 22 of 90 — the turn and wall-clock caps only, because those are the two
+        status.json carried.
         """
         for b in self.budgets:
             if b.exceeded(meter.get(b.resource, 0)):
                 return {"resource": b.resource, "limit": b.limit,
                         "message": _fmt_exhausted(b.resource, b.limit)}
         return None
-
-    def violation(self, meter: dict) -> str | None:
-        s = self.spent(meter)
-        return None if s is None else str(s["message"])
 
     def warnings(self, meter: dict) -> list[tuple[str, str]]:
         """Every budget past a warning line, in check order, as `(line-id, text)` — e.g.

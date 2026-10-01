@@ -31,6 +31,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from .compaction import parse_index
+
 #: Tokens too common in an action string or an index line to carry any signal.
 _STOPWORDS = frozenset({
     "the", "a", "an", "and", "or", "of", "to", "in", "on", "for", "with", "from", "at", "by",
@@ -65,24 +67,16 @@ def index_entries(hist_dir: Path) -> list[tuple[str, str]]:
     """(filename, description) for every line of an engine-written INDEX.md.
 
     Only parses the shape the engine writes — a backticked filename, an em dash, a
-    description — which is why the index had to become engine-owned before recall was
-    worth building: a model-authored index named files that did not exist, so 36% of
-    history reads returned ENOENT and any pointer built on it would have inherited
-    exactly that.
+    description, read by the same `compaction.parse_index` that carries entries forward —
+    which is why the index had to become engine-owned before recall was worth building: a
+    model-authored index named files that did not exist, so 36% of history reads returned
+    ENOENT and any pointer built on it would have inherited exactly that.
     """
-    index = Path(hist_dir) / "INDEX.md"
     try:
-        text = index.read_text(encoding="utf-8")
+        text = (Path(hist_dir) / "INDEX.md").read_text(encoding="utf-8")
     except OSError:
         return []
-    out = []
-    for line in text.splitlines():
-        if not line.startswith("- `"):
-            continue
-        name, _, about = line[3:].partition("` — ")
-        if name.endswith(".md"):
-            out.append((name, about.strip()))
-    return out
+    return list(parse_index(text).items())
 
 
 def _score(entry: tuple[str, str], subject: set[str]) -> float:

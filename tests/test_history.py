@@ -25,6 +25,15 @@ def test_prior_counters_reseeds_histogram_and_integer_counters():
     }
 
 
+def test_prior_counters_reseeds_the_stages_the_run_entered():
+    """Stage coverage belongs to the run, not the leg (F521/R1681): what the prior leg
+    reported entered is where the resumed leg starts."""
+    status = {"stages": {"declared": ["a", "b"], "entered": ["a"], "skipped": ["b"]}}
+    assert prior_counters(status) == {"phases_entered": ["a"]}
+    assert prior_counters({"stages": "nope"}) == {}
+    assert prior_counters({"stages": {"entered": "a"}}) == {}
+
+
 def test_prior_counters_deep_copies_util_cells():
     status = {"utils": {"x": {"ok": 1}}}
     got = prior_counters(status)

@@ -145,7 +145,8 @@ def _warn_before_eviction(loop, size: float, ref) -> bool:
     only in `history/`, reachable if the run remembers to go looking. `note`, `memory_write`
     and the LEDGER already exist to carry a fact out of the conversation; what was missing was
     the moment to use them, which is precisely the one this layer exists to supply. Returns
-    True when the archive should wait a turn.
+    True when the archive should wait a turn — and the caller then records the pass as OWED
+    (`loop._evict_owed`), so the next turn takes it under the cap that decided it.
 
     The decision uses estimated input occupancy, with headroom for the next turn. The gate is
     `min(fraction × window, ceiling)`, and when the FRACTION binds there is 20–40% of the
@@ -257,9 +258,18 @@ def _archive_if_needed(loop, endpoint, ref) -> None:
     # into the next step. The anti-thrash guards below are untouched: this moves WHEN a compaction
     # happens, never whether an extra one does.
     at_boundary = bool(ctx.phase) and ctx.phase != getattr(loop, "_last_seen_phase", None)
+    anticipated = ""
     if at_boundary:
-        loop._last_seen_phase = ctx.phase
+        loop._last_seen_phase = anticipated = ctx.phase
         cap *= ANTICIPATE_AT
+    # A pass the eviction warning DEFERRED is owed now. The run was told "the archive happens
+    # on your next turn either way", so the cap that decided the pass still decides it:
+    # re-testing only today's cap broke that promise whenever the cap had moved — at a stage
+    # boundary every time, because the anticipatory discount applies to the boundary turn
+    # alone — and the once-per-run warning was spent on a pass that never came.
+    if (owed := getattr(loop, "_evict_owed", None)) is not None:
+        loop._evict_owed = None
+        cap, anticipated = min(cap, owed[0]), anticipated or owed[1]
     if (size <= cap or len(loop.messages) <= KEEP_HEAD_MSGS + KEEP_TAIL_MSGS):
         return
     # Anti-thrash: head + tail are an incompressible floor (large observations in the last
@@ -272,7 +282,9 @@ def _archive_if_needed(loop, endpoint, ref) -> None:
     if middle_n < 8 or size < loop._last_compact_after + 5_000:
         return
     if _warn_before_eviction(loop, size, ref):
-        return          # one turn to externalize what matters; the archive happens next turn
+        # one turn to externalize what matters; the archive happens next turn, on THIS cap
+        loop._evict_owed = (cap, anticipated)
+        return
     # The INSTANT tier takes the pass and the run carries straight on; the navigable
     # archive is built off the hot path and announced when it lands (engine/archival.py).
     # The archival call is the slow one — 180-600s of a run's time, spent mid-work — and
@@ -303,9 +315,10 @@ def _archive_if_needed(loop, endpoint, ref) -> None:
         loop._last_compact_after = estimate_input_tokens(loop.messages)
         # `anticipated` says this pass was taken EARLY, at a stage boundary, rather than because
         # the prompt had actually crossed the gate — without it the two are indistinguishable in
-        # the transcript and the feature could not be evaluated after the fact.
+        # the transcript and the feature could not be evaluated after the fact. A boundary pass
+        # the eviction warning deferred by a turn is still that boundary's pass.
         ctx.transcript.event("compaction",
-                             {**cinfo, **({"anticipated": ctx.phase} if at_boundary else {})})
+                             {**cinfo, **({"anticipated": anticipated} if anticipated else {})})
 
 
 def apply_media_fallback(loop, exc: EndpointError) -> bool:

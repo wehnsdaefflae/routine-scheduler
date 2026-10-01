@@ -76,3 +76,61 @@ def test_gzip_read(tmp_path):
     # plain path that only exists gzipped is found too
     events, _ = read_events(tmp_path / "t.jsonl")
     assert len(events) == 2
+
+
+def test_a_rotated_transcript_keeps_events_quoting_unicode_line_separators(tmp_path):
+    """The writer dumps with ensure_ascii=False, which leaves U+2028, U+2029 and U+0085 RAW
+    inside a line — and scraped web text carries them. `str.splitlines()` breaks a line at
+    every one of them, so the gz path cut those events in half and dropped both halves as
+    malformed: a transcript lost them the moment retention gzipped it."""
+    plain = tmp_path / "transcript.jsonl"
+    t = Transcript(plain)
+    for text in ("line separator", "paragraph separator", "next\x85line"):
+        t.event("observation", {"kind": "util", "stdout": text})
+    t.event("finish", {"status": "ok", "summary": "done"})
+    t.close()
+    live, _ = read_events(plain)
+    with plain.open("rb") as src, gzip.open(tmp_path / "transcript.jsonl.gz", "wb") as dst:
+        dst.write(src.read())
+    plain.unlink()                         # what retention does (registry._gzip_in_place)
+
+    rotated, _ = read_events(plain)
+    assert rotated == live
+    assert [e["payload"].get("stdout") for e in rotated[:3]] == [
+        "line separator", "paragraph separator", "next\x85line"]
+
+
+def test_a_line_cut_inside_a_multibyte_character_is_held_back(tmp_path):
+    """A tailer polls while the engine writes. A partial last line is held back by design —
+    but text-mode decoding raised UnicodeDecodeError when the cut fell INSIDE a multi-byte
+    character (an em dash is three bytes, and the engine's own prose is full of them), so the
+    read crashed instead of waiting for the rest of the line."""
+    path = tmp_path / "t.jsonl"
+    full = (json.dumps({"type": "finish", "payload": {}}) + "\n").encode()
+    line = json.dumps({"type": "error", "payload": {"message": "a — b"}},
+                      ensure_ascii=False).encode() + b"\n"
+    cut = line.index("—".encode()) + 1          # one byte into the em dash
+    path.write_bytes(full + line[:cut])
+
+    events, offset = read_events(path)
+    assert [e["type"] for e in events] == ["finish"] and offset == len(full)
+    with path.open("ab") as fh:                      # the writer finishes the line
+        fh.write(line[cut:])
+    events2, offset2 = read_events(path, offset)
+    assert events2[0]["payload"]["message"] == "a — b"
+    assert offset2 == len(full) + len(line)
+
+
+def test_a_rotated_transcript_honours_the_offset(tmp_path):
+    """An offset is a byte position in the transcript, and the gz file holds the SAME bytes —
+    so a tailer that read the plain file up to N and then met the rotated one must get only
+    what follows N, not the whole run again."""
+    first = (json.dumps({"type": "header"}) + "\n").encode()
+    second = (json.dumps({"type": "finish", "payload": {}}) + "\n").encode()
+    with gzip.open(tmp_path / "t.jsonl.gz", "wb") as fh:
+        fh.write(first + second)
+
+    events, offset = read_events(tmp_path / "t.jsonl", len(first))
+    assert [e["type"] for e in events] == ["finish"]
+    assert offset == len(first) + len(second)
+    assert read_events(tmp_path / "t.jsonl", offset) == ([], offset)   # nothing new, ever

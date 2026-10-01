@@ -964,6 +964,34 @@ def test_a_stage_boundary_compacts_a_prompt_only_approaching_the_gate(monkeypatc
     assert loop._last_seen_phase == "draft"     # and the boundary is spent, not re-triggered
 
 
+def test_the_pass_the_eviction_warning_defers_happens_on_the_next_turn(monkeypatch):
+    """The warning tells the run "the archive happens on your next turn either way" — and at a
+    stage boundary it did not. The boundary lowered the cap, the warning deferred that pass,
+    and the next turn — no longer AT the boundary — re-tested the ordinary cap, found the prompt
+    under it and archived nothing. The once-per-run warning was spent on a pass that never came,
+    and the compaction that did come later arrived unannounced.
+    """
+    from types import SimpleNamespace
+
+    from rsched.config import ModelRef
+    from rsched.engine.window import compact_if_needed
+
+    loop, calls = _gate_loop(monkeypatch, usage={"cached_in": 5_000}, phase="draft")
+    events: list[tuple] = []
+    loop.ctx.transcript = SimpleNamespace(event=lambda t, p, **_k: events.append((t, p)))
+    loop._evict_warned = False
+    ref = ModelRef("e", "m", context_tokens=100_000, max_tokens=0)
+    compact_if_needed(loop, endpoint=None, ref=ref)     # boundary: 70k > 0.8 x 0.85 x 100k
+    assert not calls, "the warning defers the pass by exactly one turn"
+    assert "about to be ARCHIVED" in loop.messages[-1]["content"]
+    loop.messages.append({"role": "user", "content": "OBSERVATION (util x, exit 0):\nok"})
+    compact_if_needed(loop, endpoint=None, ref=ref)     # same stage, ordinary 0.8 gate
+    assert calls, "the archive the warning announced must happen on the next turn"
+    # …and it is still the boundary's pass on the record, not a forced mid-step one
+    passes = [p for t, p in events if t == "compaction"]
+    assert passes and passes[-1].get("anticipated") == "draft"
+
+
 def test_mid_step_inside_the_same_stage_does_not_anticipate(monkeypatch):
     """It is the BOUNDARY that lowers the trigger, not the phase. A run already working inside
     `draft` is mid-step, where compacting is the very thing this avoids."""
@@ -1017,19 +1045,25 @@ def test_anticipation_cannot_force_a_pass_the_anti_thrash_guards_refuse(monkeypa
 
 def test_harness_contract_recipe_line_follows_unlock(make_routine, tmp_path):
     """The prompt must tell the TRUTH about recipe ownership: sealed by default, but a run
-    whose grants carry recipe_unlocked (a user fs_write_root covers the routine's own dir —
-    the routine-improver's case) must be told its recipe IS writable. The unconditional
-    "READ-ONLY to you" sentence made the improver skip every lens on its own self-target
-    despite the include-toggle being on (F165, routine-improver:20260723-112446 t11/t13)."""
+    whose grants carry recipe_unlocked (the recipe-authoring permission — the
+    routine-improver's case — or a revise leg) must be told its recipe IS writable. The
+    unconditional "READ-ONLY to you" sentence made the improver skip every lens on its own
+    self-target despite the include-toggle being on (F165, routine-improver:20260723-112446
+    t11/t13).
+
+    And it must give the REAL reason: since 0.261.0 a write root over the routine's own dir
+    unlocks nothing, yet the sentence kept telling the run that one did."""
     from rsched.grantpolicy import GrantPolicy
 
     ctx = _ctx(make_routine, tmp_path, slug="recun")
     ctx.grants = GrantPolicy()                        # sealed — the default for every run
     assert "READ-ONLY to you" in harness_contract(ctx)
-    ctx.grants = GrantPolicy(recipe_unlocked=True)    # user write root covers the own dir
+    ctx.grants = GrantPolicy(recipe_unlocked=True)    # recipe-authoring held (or a revise leg)
     text = harness_contract(ctx)
     assert "IS WRITABLE" in text
     assert "READ-ONLY to you" not in text
+    assert "recipe-authoring permission" in text
+    assert "write root" not in text.split("IS WRITABLE", 1)[1].split(";", 1)[0]
 
 
 def test_a_refused_util_write_names_the_phase_it_failed_in():

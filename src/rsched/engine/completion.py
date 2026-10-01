@@ -15,7 +15,7 @@ from ..endpoints import failover
 from ..endpoints.base import EndpointError, retry_base_delay
 from ..endpoints.base import fold_usage as base_fold
 from ..schema_guard import SchemaViolation, extract_json, retry_message, validate
-from . import refusal
+from . import overflow, refusal
 from .actions import (
     KIND_EXAMPLES,
     field_shift_diagnosis,
@@ -111,6 +111,7 @@ def next_action(loop) -> tuple[dict | None, dict]:
     # Shared across attempts: one refusal-clarification pass per turn (free-text OR
     # classifier-refusal path), and the consecutive-empty streak from the CURRENT model.
     refstate = {"referral_tried": False, "empty": 0}
+    overflow.new_turn(loop)         # the oversize-shrink allowance is per TURN, like these
     base_len = len(loop.messages)   # schema-retry debris beyond this is dropped on success
     attempt = 0
     while attempt < MAX_SCHEMA_ATTEMPTS:

@@ -185,11 +185,12 @@ def configure(loop, ctx: RunContext, workflow_body: str, instruction: str,
     # The RESERVED FINISH turn: a budget violation no longer ends the run behind the
     # model's back. The first violation spends this reserve — one last turn, schema
     # narrowed to finish — so the summary is ALWAYS authored. Only a second violation
-    # (the reserve already spent) force-finishes. See _reserve_finish.
+    # (the reserve already spent) force-finishes. See loopnudge.reserve_finish.
     loop._finish_reserved = False
     loop._budget_spent = None    # which budget spent it: {resource, limit, message}
     loop._last_compact_after = 0   # post-compaction size; gates re-compaction (anti-thrash)
     loop._evict_warned = False   # the one-turn warning before the middle is elided
+    loop._evict_owed = None      # (cap, anticipated phase) of the pass that warning deferred
     loop._last_seen_phase = None   # the anticipatory-compaction edge (window.py)
     # 1.0 until a completion reports what the provider actually counted; every window the
     # compaction gates see is divided by it from then on (window.note_prompt_size).

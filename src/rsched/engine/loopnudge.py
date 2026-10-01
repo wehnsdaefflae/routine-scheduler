@@ -3,9 +3,10 @@
 Split out of `loop.py` (F393): the turn state machine is one job; noticing that a run is drifting
 and saying so is another, and all three of these are prompt surface rather than control flow.
 
-`_build_util_reminder` re-states the util catalog when a run starts inventing tool names.
-`_repeat_streak` counts identical consecutive actions, which is how a loop-in-a-loop shows up.
-`_reserve_finish` is the important one: the FIRST budget violation spends a one-time reserved
+`build_util_reminder` is the ONE-SHOT pointer to the util catalog and the route for a missing
+util, appended to the first user message only (the kickoff, or a resume's engine note).
+`repeat_streak` counts identical consecutive actions, which is how a loop-in-a-loop shows up.
+`reserve_finish` is the important one: the FIRST budget violation spends a one-time reserved
 turn with the schema narrowed to `finish`, so the run authors its own summary. The engine never
 ends a run the model could have ended itself — a run overruns a budget by at most one turn, and
 the summary is always the model's.
