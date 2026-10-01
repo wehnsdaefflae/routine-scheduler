@@ -1,16 +1,18 @@
 // A server-side directory picker modal: browse the DAEMON's filesystem (via /api/fs/list) and
-// pick a real path, instead of typing one blind. Same overlay language as dialog.js. Click a
-// folder to descend, "⤴ .." to go up, or type/paste a path and press Enter to jump; "select
-// this folder" resolves the currently-shown directory. Promise-based:
+// pick a real path, instead of typing one blind. A dialog.js modal (openModal): named by its
+// title, the path field focused on open, focus trapped and given back, Escape or a click on the
+// scrim to cancel. Click a folder to descend, "⤴ .." to go up, or type/paste a path and press
+// Enter to jump; "select this folder" resolves the currently-shown directory. Promise-based:
 //   const dir = await pickDirectory({ title: "read root" }); if (dir == null) return;
 
 import { api } from "/static/api.js";
+import { openModal } from "/static/components/dialog.js";
 import { el } from "/static/util.js";
 
 export function pickDirectory({ title = "Select a directory", start = "" } = {}) {
   return new Promise((resolve) => {
     let cur = start;
-    const done = (v) => { document.removeEventListener("keydown", onKey); overlay.remove(); resolve(v); };
+    const done = (v) => { close(); resolve(v); };
 
     const pathInput = el("input", { type: "text", class: "code", style: "flex:1;min-width:0",
       placeholder: "/path/to/directory", "data-nopersist": true });
@@ -67,16 +69,14 @@ export function pickDirectory({ title = "Select a directory", start = "" } = {})
     const go = el("button", { class: "btn small", onclick: () => load(pathInput.value.trim()) }, "go");
     pathInput.onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); load(pathInput.value.trim()); } };
 
-    const overlay = el("div", { class: "modal-overlay" },
+    const heading = el("div", { class: "dlg-msg", style: "font-weight:600" }, title);
+    const close = openModal(
       el("div", { class: "panel dirpicker" },
-        el("div", { class: "dlg-msg", style: "font-weight:600" }, title),
+        heading,
         el("div", { class: "row", style: "gap:6px" }, pathInput, go),
         listBox, note,
-        el("div", { class: "row", style: "justify-content:flex-end;gap:8px" }, cancel, ok)));
-    const onKey = (e) => { if (e.key === "Escape") { e.preventDefault(); done(null); } };
-    document.addEventListener("keydown", onKey);
-    overlay.onclick = (e) => { if (e.target === overlay) done(null); };
-    document.body.append(overlay);
+        el("div", { class: "row", style: "justify-content:flex-end;gap:8px" }, cancel, ok)),
+      { label: heading, focus: pathInput, onCancel: () => done(null) });
     load(start);
   });
 }
