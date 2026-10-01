@@ -81,7 +81,7 @@ one you are about to touch, not all of them.
   `readmodels/remedies.py` says the same rows in WORDS, `library_impact.py` reads the join
   backwards, `daemon/library_watch.py` catches changes with no writer), the ACCESS-REQUEST
   grant model (entities.py ids; allow/deny × now/forever, plus
-  allow-once for turn-action classes), and each curated rule's provenance
+  allow-once for the once-grantable classes: turn actions, secrets, fs-read and fs-write, D76), and each curated rule's provenance
 - `docs/child-runs.md`, `docs/background-tasks.md`, `docs/triggers.md`, `docs/schedule-once.md`
   — the child-run and firing mechanisms
 - `docs/lanes-tags.md` — how routines relate to each other on THREE axes: a LANE is when
@@ -147,9 +147,12 @@ one you are about to touch, not all of them.
   `chrome` sidecar and serves its fixture console back at the engine container's own address on
   that network, so the two selections that include it run INSIDE the container and must be given
   both addresses — `docker compose exec -u 1000:1000 rsched env
-  RSCHED_TEST_CDP=http://172.30.7.10:9222 RSCHED_TEST_BIND=172.30.7.2 uv run pytest -q -m ui`
-  (both pinned in docker-compose.yml; the conftest refuses with this exact command when either
-  is missing). Whenever browser tests are in the selection, `tests/conftest.py::pytest_configure`
+  RSCHED_TEST_CDP=http://172.30.7.10:9222 RSCHED_TEST_BIND=172.30.7.2 BROWSER_CDP_TOKEN=… uv run
+  pytest -q -m ui` (both addresses pinned in docker-compose.yml; the token is the one the compose
+  `chrome` service's auth proxy checks, from secrets.env; the conftest refuses with this exact
+  command when any is missing). Off that network, a local headless Chromium started with
+  `--remote-debugging-port=9222` serves too: `RSCHED_TEST_CDP=http://127.0.0.1:9222
+  RSCHED_TEST_BIND=127.0.0.1` (any token; CDP itself checks none). Whenever browser tests are in the selection, `tests/conftest.py::pytest_configure`
   switches xdist to `--dist loadgroup`, so that one group runs on ONE worker while the fast suite
   keeps spreading — three workers rendering into one headful Chrome is what the rerun shield had
   been absorbing. Still serialize any browser run under
@@ -204,8 +207,8 @@ one you are about to touch, not all of them.
   the model could have ended itself**: the FIRST budget violation spends a one-time RESERVED FINISH TURN
   (schema narrowed to `finish`, one turn granted, `OBSERVATION (budget spent)` telling it so), and only a
   second violation force-finishes — so a run overruns a budget by at most one turn and the summary is
-  always authored. The engine EXECUTES nothing else on that turn: a non-`finish` (non-`report`)
-  action is refused at the dispatch seam, so the promise the observation makes is kept even on a
+  always authored. The engine EXECUTES nothing else on that turn: anything outside `ALWAYS_KINDS`
+  (`finish`, `report`, `list_models`) is refused at the dispatch seam, so the promise the observation makes is kept even on a
   provider with no constrained decoding. The violation is recorded as a transcript event and as
   `resource`/`limit` fields on the `budget_exhausted` health event and in status.json's
   `budgets.spent`, so which budget ended a run is answerable by a filter rather than by
@@ -236,13 +239,16 @@ one you are about to touch, not all of them.
   overwrite may not stop parsing because of it (`engine/fileformat.check_after`): the write is
   refused and the file untouched, so a degraded model's corrupted `replacement` is caught on the
   turn it is made rather than by the next reader (`.jsonl` is excluded — a partial line is legal
-  there — and repairing an already-broken file is never refused); `write_util` mirrors it — `anchor`/`replacement` instead of `content` patches an
+  there — and repairing an already-broken file is never refused; a binary, over-cap or non-UTF-8 file
+  is refused before any decode rather than ending the run); `write_util` mirrors it — `anchor`/`replacement` instead of `content` patches an
   existing util in place under the same approval + selftest + rollback gate (`util show <name>
   --full` returns the complete source). `write_file` is GROUNDED: overwriting an existing file OUTSIDE the routine's own dir
   is rejected unless this run has seen it (`ctx.seen_paths` — read/viewed/written this run, rebuilt
   from the transcript on resume); the own dir is exempt (state/report rewrites are the normal mode),
   append and new files pass, and `edit_file` needs no gate — its verbatim anchor is self-grounding.
-  `delete` and `move` hold the same gate for a path outside the own dir. **`read_file` never
+  `delete` and `move` hold the same gate for a path outside the own dir, act on a symlink
+  itself rather than what it points to, and may never remove a directory that holds a sealed
+  path (a finish line, a routine.yaml) — `delete .` once took a whole routine with it. **`read_file` never
   materialises a file**: it streams the requested window line by line, a directory path returns its
   LISTING (one entry per line, paged like a file), and a binary file or one over
   `fileops.READ_MAX_BYTES` (8 MiB) is refused from a stat plus an 8 KiB NUL sniff BEFORE any
@@ -257,6 +263,9 @@ one you are about to touch, not all of them.
   concepts and never a fourth action kind; `engine/child.py` owns the mode vocabulary the prompt
   renders and the hand-back path, so the kind copy, the observations and the docs cannot drift
   apart (that drift once had the prompt claim children share the parent's working directory).
+  A child's seals are the ROUTINE's, not its workspace's: the write gates cover every routine dir
+  a run can reach, compared resolved (`fileops._routine_dirs`) — anchored on `ctx.routine.dir`,
+  a child could rewrite the recipe, `.memory/`, the finish line and the parent's control.json.
   Every mode obeys the same contract: isolation, a budget sliced from the parent's remainder, and
   a HAND-BACK — summary always, FILES by the child writing into its own `artifacts/`, which the
   engine copies to the parent's `artifacts/` and NAMES the landed PATHS in the one
@@ -365,6 +374,11 @@ one you are about to touch, not all of them.
   deleting a rule silently un-binds every holder with nothing to catch it, so a run reports it and
   the user deletes it. The `rules-review` meta routine owns the layer: it reads how runs actually
   interpreted each rule and revises the shared text from that evidence.
+  **Captured util and script output is REDACTED of the secret values the engine injected**
+  (8+ characters, `captured_output.read_capped`) before an observation, the transcript, a spill
+  file or the search index sees it; a slash command (`/util …`) goes through the same
+  `dispatch_action` seam as a model action, so the D39 secret gate holds for both, and a handler
+  that raises becomes an error observation instead of ending the run.
   **Util output too large for its observation is SAVED, not lost** — `engine/outputs.py` spills the
   full captured text to `.util_outputs/<run-ts>/t<turn>-<util>.out` and the observation that lost the
   middle carries the path (so the store needs no index). ONLY truncated output is kept: an
@@ -440,13 +454,14 @@ by a test, by the engine, or by a past incident.
   again: sticky + per-run had most of the fleet reading "the job is DONE. Finish NOW" at the top
   of every run.
 - **Global chrome is positioned by `base.css` ALONE, and losing that fails silently.** The
-  components mounted outside `#view` so they survive navigation — the side table-of-contents
-  (`components/toc.js`) and the LLM activity dock (`components/taskmanager.js`) — set no
+  components mounted outside `#view` so they survive navigation — the navigation rail (which now
+  carries the side table-of-contents, `components/toc.js`), the LLM activity dock
+  (`components/taskmanager.js`) and the browser dock (`components/browserdock.js`) — set no
   `position` of their own. Delete their stylesheet block and nothing throws: the component still
   builds, still fetches, still updates, and lands in the document flow at the foot of every page —
   a palette migration once deleted both blocks and only an operator reading a screenshot caught
   it, releases later. `tests/ui/test_global_chrome.py` pins the
-  pair to `position: fixed` — put any new out-of-view chrome in that list the same day.
+  three to `position: fixed` — put any new out-of-view chrome in that list the same day.
   Being fixed is not the same as being WELCOME: the browser dock is an OVERLAY, and the console's
   reading column (`--rail-w` 212 + `--shell-max` 1240 = 1452px) reaches the right edge at every
   width between 861 and 1900px, so an open dock lies on the Routines page's run-now column and on
@@ -487,7 +502,9 @@ by a test, by the engine, or by a past incident.
   `libgit.commit` returns a `Commit` (committed · clean · unversioned · failed) and files a
   failure as `commit_failed`; its `routines_home` is REQUIRED so every call site decides
   where that lands. A lock is removed only when `gitlock` proves it stale — never widen
-  those four conditions to clear a lock faster.
+  those four conditions to clear a lock faster. The library's `git` util cannot import
+  `procgroup`, so it carries the same rule in its own runner: git leads its own group and a
+  timeout ends it SIGTERM-first.
 - **The setup surface answers "what does this routine still need?" — including WHEN it runs.**
   `readmodels/surface.py` JOINS the effective config against the library's `requires:`/`expects:`,
   the util headers, the live stores and the lane store; the ROWS come from `surface_needs`,
@@ -559,6 +576,11 @@ by a test, by the engine, or by a past incident.
   (`engine/inbox.VIAS`) that the single writer `inbox.file_message` validates, seeded from what
   the code actually writes — a branch hand-back filed on the USER channel was read by the parent
   as the operator speaking.
+- **A console view acts only while it is mounted, and only on its newest read.** Work a view
+  schedules past an `await` or a timer (a remount, a URL rewrite, a scroll, a rail refresh, a
+  transcript catch-up) checks the view is still the current one, and of overlapping reads only
+  the one started LAST may paint — a late answer otherwise scrolled, re-filtered or reverted
+  whatever page had replaced it (tests/ui/test_view_teardown.py, tests/ui/test_read_order.py).
 - **A live refresh on a bus event fetches only what that event can change.** The dashboard and
   the activity feed reload on `run_*` events, debounced; `llm_task`/`llm_process` fire several
   times a second during a run and are ignored. ONE reader per endpoint, not one per view:
@@ -616,8 +638,11 @@ by a test, by the engine, or by a past incident.
   documented as a default a model inherits, and putting it there means nothing has to be deleted
   from an unversioned config.yaml. `resolve()` is on the per-turn path and NEVER fetches — a miss
   is the next tier down. The two knobs are OPPOSITE: the input window is adopted verbatim, the
-  output cap is `min(provider max, ENGINE_OUTPUT_CEILING)`, because providers validate
-  `input + requested_output <= window` and a 943k-token output limit would starve the prompt.
+  output cap is `min(provider max, ENGINE_OUTPUT_CEILING, window // 4)` (`limits._output_cap`; a
+  provider that publishes no maximum gets the ceiling), because providers validate
+  `input + requested_output <= window` and a 943k-token output limit — or a flat 32k on a 32k
+  window — would starve the prompt. The per-provider catalog readers live in
+  `endpoints/catalogs.py`; `limits.py` keeps the policy and the cache.
 - **A config field must declare whether it reaches a LIVE run.** `configflow.CLASSIFICATION`
   (F337) maps every `RoutinePatch`/`ConversationPatch` field to LIVE (adopted at a turn boundary
   — budgets, deliberation, grants) or NEXT_RUN, with the reason the operator is shown;
@@ -697,7 +722,7 @@ keeps the modules it imported at boot — a green `compose config` and a `Contai
 both look like success and mean nothing about what is live (probe a changed behaviour through the
 API to know). Shipping code needs the process itself replaced: drop the RESTART SENTINEL
 `~/routines/.control/restart.request` — its EXISTENCE is the whole signal, nothing parses the
-`{"reason": …, "requested": <iso>}` the web writes into it — and the daemon waits for a QUIET
+`{"ts": <iso>, "via": "web-settings"}` the web writes into it — and the daemon waits for a QUIET
 GAP. **It is not a drain, and calling it one misleads:** a pending restart NEVER blocks a start
 (operator, 2026-09-03), so the scheduler keeps firing runs and conversations normally and the
 exit comes only once `runner.active_states()` has been empty for `RESTART_IDLE_S` (10s), at
@@ -721,17 +746,19 @@ sentinel.
 This is the path self-audit uses after a `__version__` bump, and it is the right one for a
 hand-made change too; `docker compose restart rsched` is the blunt equivalent that bounces the
 process immediately and takes any running routine with it. The host's `/etc/localtime` + `/etc/timezone` ride along read-only
-so the container keeps the host's zone; `schedule.server_tz()` honors TZ env / the zoneinfo key /
-`/etc/timezone` / the localtime symlink, in that order). Server config:
+so the container keeps the host's zone; `schedule.server_tz()` takes the first of TZ env /
+`/etc/timezone` / the localtime symlink that names a zone `ZoneInfo` loads, else UTC — and a
+schedule that names no zone runs in that one, `config.default_tz()`). Server config:
 `~/.config/routine-scheduler/config.yaml` (generated with a random token on
 first boot by `bootstrap.ensure_config`, so a fresh deploy is never an open API). Web UI on `:8321`,
 two-tier bearer auth (the operator token, plus a generated `routine_token` — what runs get injected
 as `RSCHED_API_TOKEN` — which is refused on config-mutating routes AND on three read subtrees
-the sandbox forbids, `/api/fs`, `/api/settings`, `/api/debug` plus `/api/search`
-(`web/app.ROUTINE_TOKEN_DENIED_READS`): "read-only" is not "may read anything", since a util
+the sandbox forbids, `/api/fs`, `/api/settings`, `/api/debug`, `/api/search` plus
+`/api/routines/*/secrets` (`web/app.ROUTINE_TOKEN_DENIED_READS`, matched on the path the ROUTER
+dispatches, not the re-parsed URL): "read-only" is not "may read anything", since a util
 subprocess is handed that token inside a Landlock jail and those GETs list any directory on the
-host, name every secret with its declaring utils, dump the daemon's stacks and search every
-routine's transcripts); `RSCHED_BIND` / `RSCHED_PORT`
+host, name every secret with its declaring utils, dump the daemon's stacks, search every
+routine's transcripts and list every routine's own secret names); `RSCHED_BIND` / `RSCHED_PORT`
 override for containers. First launch redirects to
 Settings until setup (secrets, endpoints + system model, GitHub device-flow) is finished; the
 library repo has NO settings surface — the library-sync routine manages it exclusively.
