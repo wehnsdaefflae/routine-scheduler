@@ -583,8 +583,9 @@ Every grantable thing has ONE id in the entity vocabulary (`entities.py`):
 gate files an `ask_user` carrying `request: "<entity-id>"` (the question stays its prose —
 WHY it needs the entity); the Decisions page renders the typed decision buttons — four
 (allow/deny × now/forever) for every class, plus a fifth, **allow once (this action
-only)**, offered for the turn-action classes — and each entity is always in exactly one
-of four states (a once-grant passes through *allowed now* and back out):
+only)**, offered for the once-grantable classes (`entities.ONCE_CLASSES`, below) — and each
+entity is always in exactly one of four states (a once-grant passes through *allowed now*
+and back out):
 
 - **allowed forever** — the entity's NATIVE routine.yaml key: a capability switched on
   through the permission cascade (allow-forever activates a covering conduct doc and
@@ -635,8 +636,9 @@ separate feature; this request grammar does not implement it.
   (`fs-read`/`fs-write` paths expand to one absolute form), so the record, the config
   write and the overlay always name the same root.
 
-- **allowed once** (D65, turn-action classes only: `action:` / `util:` / `runs:`) — an
-  allow-now that the engine REVOKES after exactly one use. The grant
+- **allowed once** (D65 for the turn-action classes `action:` / `util:` / `runs:`; D76
+  widened it to `secret:` / `fs-read:` / `fs-write:`) — an allow-now that the engine
+  REVOKES after exactly one use. The grant
   seeds the same run overlay (so it reaches the same enforcers, and the CAPABILITIES
   line marks it "(one action only)"); the first successfully-DISPATCHED matching action
   spends it — the engine drops it from the overlay and rebuilds the policy at that same
@@ -645,11 +647,16 @@ separate feature; this request grammar does not implement it.
   rejection never consumes (it never becomes a turn), and neither does a user gate
   refusing the call pre-execution (a declined write_util, refused secrets) or a bounced
   handler (unknown target, failed read, missing util) — the grant is spent by USE, not
-  by attempt. Why only these classes: their use IS a turn action `validate_action`
-  observes, so consume-once is exact. `secret:`/`fs-read:`/`fs-write:` are consumed
-  inside a util SUBPROCESS the engine never sees as a turn — "once" for them could only
-  mean "the next util call that touches it", a coarser promise than the button makes —
-  so those classes stay four-state and the button is not offered (the API refuses it).
+  by attempt. For the turn-action classes the spend is exact: their use IS a turn action
+  `validate_action` observes. A secret or an fs root is consumed inside a util SUBPROCESS
+  the engine never sees as a turn, so D76 (operator, 2026-08-06) accepted an explicitly
+  COARSER promise for those: the grant is spent by the next action that RECEIVES it — a
+  secret by the next util call whose declared env (its `calls:` tree included) carries it,
+  an fs root by the next util invocation (every jail mounts the granted roots wholesale) or
+  the next file action under it (`engine/requests._once_match`). `connection:` and
+  `machine:` stay four-state — a binding carries an account or a host no single action
+  uses up — `reminders:` is a dial for the whole run, and `recreate:` is a per-run unlock;
+  the API refuses `allow once` for those four.
 
 Ownership is strict: FOREVER decisions are persisted by the WEB layer at click time —
 the engine never writes routine.yaml, not even to record an approval. Sub-workflows
@@ -685,7 +692,9 @@ The same question applies to the three fs paths that are never grantable at all
 refused at the runtime ask, refused at the config PATCH, and REPORTED by the loader for a
 file that already lists one — that last one deliberately does not drop the root, because a
 routine that has legitimately been reading it would otherwise fail its next run with nothing
-naming the cause.
+naming the cause. All three compare a root as written AND as resolved
+(`entities.never_grantable_fs`): the jail opens a root to build its rule, opening follows
+symlinks, so a link into a store — `/tmp` is writable in every jail — is the store.
 
 ## Working with them
 

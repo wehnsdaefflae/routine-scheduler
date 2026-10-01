@@ -8,17 +8,20 @@ capabilities plus the run's one-time grant overlay, never from a permission doc.
 without its capability therefore fails CLOSED, which is the whole reason the two layers are
 separate.
 
-The four-state grant model (allow/deny x now/forever, plus allow-once for turn-action classes)
-lives here as `entity_state`; the WEB layer writes forever-decisions to routine.yaml at click
-time and the engine only ever bridges now-decisions into the live overlay. No run writes its
-own config, so this object is read-only with respect to what created it.
+The four-state grant model (allow/deny x now/forever, plus allow-once for the once-grantable
+classes, `entities.ONCE_CLASSES`) lives here as `entity_state`; the WEB layer writes
+forever-decisions to routine.yaml at click time and the engine only ever bridges now-decisions
+into the live overlay. No run writes its own config, so this object is read-only with respect
+to what created it.
+
+It also owns the two path questions that are POLICY rather than filesystem (`is_recipe_path`,
+`is_runs_path`): is this the routine's own recipe (a write there needs `write_recipe`), and is
+this under runs/ (engine-owned, read-only to the run).
 """
 
-# path questions that are POLICY, not filesystem: is this the routine's own recipe (a write there
-# unlocks self-editing), and is this under runs/ (engine-owned).
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from . import utilgate
@@ -41,15 +44,15 @@ def _norm_rel(path: str) -> str:
         p = p[2:]
     return p
 
+
 def is_recipe_path(path: str) -> bool:
     p = _norm_rel(path)
     return any(p == pre.rstrip("/") or p.startswith(pre) for pre in RECIPE_PREFIXES)
 
+
 def is_runs_path(path: str) -> bool:
     p = _norm_rel(path)
     return p == "runs" or p.startswith("runs/")
-
-
 
 
 #: The words every denial of an UNDECIDED entity ends with (`GrantPolicy.request_route`).
@@ -57,6 +60,7 @@ def is_runs_path(path: str) -> bool:
 #: `capability-denied` assist predicate, which recognises a refusal the run could still ask
 #: for by exactly this phrase.
 REQUEST_ROUTE_MARK = "request it: ask_user with request:"
+
 
 @dataclass(frozen=True)
 class GrantPolicy:
@@ -94,10 +98,11 @@ class GrantPolicy:
     # in-memory on the RunContext, folded in here so every consumer reads ONE policy.
     granted_now: frozenset = frozenset()
     denied_now: frozenset = frozenset()
-    # own recipe/config writable? True only when a user fs_write_root covers the routine
-    # dir (the routine-improver's case) — computed at policy load, never a capability.
-    # The recipe set includes tuning.yaml (machine-tunable behavior parameters, e.g.
-    # deliberation) — the file boundary IS the permission boundary, no key-level gates.
+    # own RECIPE writable? (routine.yaml never is.) loopsetup derives it once from the
+    # `write_recipe` capability, or a revise leg (engine/revise.py); `with_overlay` raises it
+    # when a one-run grant of `action:write_recipe` lands. The recipe set includes tuning.yaml
+    # (machine-tunable behavior parameters, e.g. deliberation) — the file boundary IS the
+    # permission boundary, no key-level gates.
     recipe_unlocked: bool = False
     # D62 admin conversation: the operator authenticated this leg with RSCHED_ADMIN_TOKEN,
     # so CAPABILITY gating is lifted (gated kinds, reserved utils, previous-run read depth).
@@ -137,8 +142,6 @@ class GrantPolicy:
         `granted_now` for their own consumers (env injection, fs roots, the secrets
         gate). Always applied over the CONFIG-derived base policy, never stacked.
         """
-        from dataclasses import replace
-
         actions, utils = set(self.actions), set(self.utils)
         run_history, reminders = self.run_history, self.reminders
         for eid in granted_now:
@@ -330,8 +333,5 @@ class GrantPolicy:
                             f"(main.md / stages/ / tuning.yaml), which needs the recipe-authoring "
                             f"permission — this routine does not hold it, so its instructions are "
                             f"the user's. Describe the change you need in a deferred ask_user "
-                            f"(or a report), or request it: "
-                            f"{self.request_route('action:write_recipe')}")
+                            f"(or a report). {self.request_route('action:write_recipe')}")
         return None
-
-

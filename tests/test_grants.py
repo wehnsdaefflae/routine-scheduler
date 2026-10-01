@@ -354,6 +354,18 @@ def test_deny_blocks_own_recipe_and_config_writes():
     assert unlocked.deny({"kind": "write_file", "path": "routine.yaml", "content": "x"}) is not None
 
 
+def test_the_recipe_denial_names_the_request_route_once():
+    """The request route is a whole sentence of its own ("If it is essential, request it:
+    ask_user with request: …"). The recipe denial prefixed it with ", or request it: " and the
+    model read "or request it: If it is essential, request it: ask_user …" on every refusal."""
+    from rsched.grantpolicy import REQUEST_ROUTE_MARK
+
+    denial = GrantPolicy().deny({"kind": "edit_file", "path": "stages/collect.md"})
+    assert denial is not None and denial.count("request it:") == 1
+    assert f'{REQUEST_ROUTE_MARK} "action:write_recipe"' in denial
+    assert "(or a report). If it is essential" in denial
+
+
 def test_validate_action_carries_capability_denials():
     """The capability check rides the same retry cycle as the workflow allowlist; finish is
     always permitted and grants=None means unrestricted."""

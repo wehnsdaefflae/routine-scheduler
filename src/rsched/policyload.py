@@ -1,9 +1,9 @@
-"""BUILDING a `GrantPolicy` from config, and the path predicates it asks.
+"""BUILDING a `GrantPolicy` from config.
 
-Split out of `grantpolicy.py` (F393): the policy OBJECT answers questions; this constructs it
-and owns the two path questions that are policy rather than filesystem — is this the routine's
-own recipe (so a write unlocks self-editing), and is this under `runs/` (engine-owned, read-only
-to the run).
+Split out of `grantpolicy.py` (F393): the policy OBJECT answers questions — and keeps the two
+path predicates it asks itself (`is_recipe_path`, `is_runs_path`), since a module that imports
+the policy cannot also be the one the policy imports — while this reads the routine's
+capabilities and the library's `requires:` into one.
 """
 
 from __future__ import annotations
