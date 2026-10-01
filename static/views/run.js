@@ -84,10 +84,9 @@ export async function render(view, runId, query = {}) {
   const durTimer = setInterval(tickDur, 5000);
 
   // Whether there is still anything live to poll for. A run whose detail read 404s never
-  // reports a state, and "no state yet" reads as live — so a missing run would be polled for
-  // as long as its page stood.
-  let missing = false;
-  const runLive = () => !missing && !TERMINAL.has(curState);
+  // reports a state ("no state yet" reads as live); its path below stops the one poller
+  // mounted before the read, and that stop is final even against an in-flight refresh.
+  const runLive = () => !TERMINAL.has(curState);
   // The resume / rewind / converse paths re-attach by remounting this view once the run is live
   // again. Left inside that window, the remount must not fire: remount() re-renders whatever
   // route is CURRENT, which by then is another page.
@@ -470,7 +469,6 @@ export async function render(view, runId, query = {}) {
       `${err.message} — it may have been pruned by retention.`));
     // Nothing further mounts, so what already has stops here — and with it nothing is left
     // for a teardown to do.
-    missing = true;
     taskTree.stop();
     planStrip.destroy();
     clearInterval(durTimer);
