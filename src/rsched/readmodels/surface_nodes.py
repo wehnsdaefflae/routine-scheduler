@@ -39,24 +39,24 @@ def _node(eid: str, state: str, severity: str, why: str, effect: str = "",
     happen, never where a UI puts it: `rsched validate` renders these same nodes on a terminal
     with no sections to scroll to and turns each kind into words through `remedies.py`.
 
-    A kind is REGISTERED in five places, of which two are held by a gate:
+    A kind is emitted once — in the `_node` CALL that names it, in one of the four emitter
+    modules (`surface`, `surface_needs`, `surface_schedule`, `surface_caps`) — and consumed in
+    FOUR registrations (docs/rules-permissions.md, "Adding a `fix` kind"), three of them held to
+    the emission by an equality so the vocabulary cannot grow at one end alone:
 
-    - here, the only one that emits it;
-    - `readmodels/remedies.py` — the `REMEDIES` table, the same kind in words for the two
-      callers with no panel. GATED: `tests/test_surface.py` reads the kinds off this module's
-      source and the table's keys together, so a kind with no words fails there;
-    - `static/components/surface-view.js` — the `FIX` map, one kind to one panel. `section` is
-      the `sec-<id>` anchor every config section heading carries (`components/settings-section.js`
-      builds it); `focus` is a selector for the ONE control inside that panel: the ability
-      card `abilities.js` stamps `data-ability="<slug>"`, or the orphan row it stamps
-      `data-drop="<class>:<name>"`. A kind the map does not name renders no offer at all, which
-      is why the console's vocabulary may not lag behind this one;
-    - `static/components/setupcheck.js` — the strip above the hero, which renders through
-      surface-view's `fixLine` rather than a second map;
-    - `tests/ui/test_surface_fix.py` — the `CASES` table, the only registration that asks
-      whether the panel a kind lands on can PERFORM the act. GATED:
-      `test_no_fix_kind_reaches_the_console_without_a_case_here` holds the console map, the
-      CLI wording and this table to one vocabulary.
+    - its WORDS — `REMEDIES` in `readmodels/remedies.py`, for the two callers with no panel.
+      Bound: `tests/test_surface.py` reads the kinds off every emitter's source (`_EMITTERS`)
+      and asserts they are exactly the table's;
+    - its PANEL — the `FIX` map in `static/components/surface-view.js`, which the setup-check
+      strip imports rather than keeping a second map. Bound:
+      `test_no_fix_kind_reaches_the_console_without_a_case_here` asserts its keys are exactly
+      the `REMEDIES` kinds. A kind the map does not name renders no offer at all;
+    - its ANCHOR — the `sec-<id>` a config section heading carries
+      (`components/settings-section.js`), or the `data-ability` / `data-drop` attribute an
+      ability card stamps on the ONE control. Nothing static can see this one;
+    - its JOURNEY — a `CASES` row in `tests/ui/test_surface_fix.py`, held equal to the console
+      map, which presses the offer in a browser: the only registration that asks whether the
+      panel a kind lands on can PERFORM the act, and so the one that proves the anchor.
 
     UNMET decides who carries one, which is not the same question as severity. Every unmet
     row carries a fix whatever it costs — a cron the file records and the lane overrides is as
