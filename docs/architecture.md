@@ -669,7 +669,9 @@ deliverable, a decision for the user, a blocker). A conversation's spine is its 
   input (`/util …`, `/read_file …`, … — autocomplete + a reference panel fed by
   `GET …/commands`). A command-flagged inbox message EXECUTES at the turn boundary via
   `control.run_user_command` — parse (`engine/commands.py`) → the model action's exact
-  validate_action gates → executor.dispatch — costing NO model turn; the observation lands in the
+  validate_action gates → the model's own routing table (`actionroute.dispatch_action`, so a
+  `/util` passes the D39 secret-exposure gate exactly as the model's call does) — costing NO
+  model turn; the observation lands in the
   transcript (`user_injection {command}` + `observation {user_command}` payload extensions) and in
   the model's context as one USER COMMAND message. **The speaker turn stays with the user**: when
   the model has handed the turn back (an authored finish) and the resuming message ONLY runs

@@ -87,6 +87,10 @@ def _not_executed(obs: dict, kind: str) -> str | None:
         return str(obs["message"])
     if obs.get("rejected") and obs.get("reason") and kind not in _OWN_REFUSALS:
         return f"OBSERVATION ({kind} REJECTED): {obs['reason']}"
+    if obs.get("engine_error"):
+        # A handler that RAISED (actionroute.dispatch_action) — worded here, never by the
+        # kind's own renderer, which reads keys (an exit code, a name) a crash never set.
+        return f"OBSERVATION ({kind} FAILED — engine error): {obs['error']}"
     return None
 
 

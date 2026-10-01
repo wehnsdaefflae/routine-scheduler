@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 from . import (
     admin_handlers,
     authoring,
@@ -12,19 +14,45 @@ from . import (
     manage_lane,
     secretgate,
 )
+from .control import RunAborted
 from .loopconst import POLL_S
 
+log = logging.getLogger("rsched.engine.actionroute")
 
-def dispatch_action(loop, action: dict, ctx) -> dict:  # noqa: PLR0911 — a flat kind->handler table; one branch per action
-                                    # kind is the clearest possible form, and collapsing
-                                    # it would only hide which handler owns which kind.
-    """Route ONE validated action to the handler that owns its kind.
+
+def dispatch_action(loop, action: dict, ctx) -> dict:
+    """Route ONE validated action to the handler that owns its kind, and turn a handler that
+    RAISES into an error observation the run can read and route around.
 
     Split out of `EngineLoop.run` (F393). `run` is the turn state machine — budgets,
     boundaries, retries, the finish gates; this is the routing table it consults, and
     the two change for entirely different reasons. Anything without a named handler
     falls through to `executor.dispatch`, which is where the effect kinds live.
+
+    A bug in one handler used to propagate out of the loop and end the whole run, with the
+    model never told which action broke — the same failure a user's slash command already
+    absorbs (`control.run_user_command`). The traceback goes to the log and the transcript's
+    `error` stream; the model gets the exception's one line. `RunAborted` is control flow,
+    not a failure, and passes through, as does every BaseException (an interpreter exit).
     """
+    try:
+        return _route(loop, action, ctx)
+    except RunAborted:
+        raise
+    except Exception as exc:
+        log.exception("action %s raised in its handler", action.get("kind"))
+        message = f"{type(exc).__name__}: {exc}"
+        ctx.transcript.event("error", {"where": "dispatch", "kind": action.get("kind"),
+                                       "message": message}, turn=ctx.turn)
+        return {"kind": action.get("kind"), "engine_error": True,
+                "error": f"{message} — a defect in the engine, not in your input. Do not "
+                         "repeat the identical action; work around it, and report it if "
+                         "the task depends on it."}
+
+
+def _route(loop, action: dict, ctx) -> dict:  # noqa: PLR0911 — a flat kind->handler table; one branch per action
+                                    # kind is the clearest possible form, and collapsing
+                                    # it would only hide which handler owns which kind.
     if action["kind"] == "ask_user":
         return interact.handle_ask(loop, action, poll_s=POLL_S)
     if action["kind"] == "write_util":

@@ -424,6 +424,37 @@ def test_util_secret_gate_recorded_decline_refuses_without_asking(make_routine, 
     assert ran == []                                   # the util never executed
 
 
+def test_a_util_slash_command_passes_the_same_secret_gate(make_routine, scripted, monkeypatch):
+    """D39 for the user's `/util`: the slash command used to go straight to the executor,
+    which injects every required secret a util declares — a secret the user had DECLINED
+    for this routine reached a util the chat ran. It now rides the model's routing table, so
+    the recorded decline refuses it exactly as it refuses the model's call."""
+    from rsched import secrets as secrets_mod
+
+    ran = []
+    monkeypatch.setattr(utils_run, "run_util",
+                        lambda home, name, args, timeout=0, policy=None, extra_secrets=None,
+                        **_kw: (ran.append(name) or (0, "ran", "")))
+    monkeypatch.setattr(utils_lib, "exists", lambda home, name: True)
+    monkeypatch.setattr(utils_run, "util_needs",
+                        lambda home, name: utils_run.UtilNeeds({"FOO_KEY"}, False, set(), True, ()))
+    monkeypatch.setattr(secrets_mod, "load_secrets", lambda: {"FOO_KEY": "x"})
+    d = make_routine(slug="seccmd")
+    import yaml as _yaml
+    cfg = _yaml.safe_load((d / "routine.yaml").read_text())
+    cfg["grants"] = {"secret:FOO_KEY": False}
+    (d / "routine.yaml").write_text(_yaml.safe_dump(cfg))
+    atomic_write_json(d / "inbox" / "msg-1.json",
+                      {"text": "/util frob", "command": True, "ts": "t1", "via": "web"})
+    scripted([finish()])
+    status, run_dir = run_routine(d, _server(d), run_ts=TS)
+    assert status == "ok"
+    obs = next(e["payload"] for e in _events(run_dir) if e["type"] == "observation"
+               and e["payload"].get("user_command"))
+    assert obs["declined_secrets"] == ["FOO_KEY"]
+    assert ran == []                                   # the util never executed
+
+
 def test_secret_decline_observation_names_no_secrets(make_routine, scripted, monkeypatch):
     """R17: a DENIAL must not enumerate the names it refused — the model-facing reason
     and rendering carry a COUNT only (the transcript dict keeps the names for the user's
