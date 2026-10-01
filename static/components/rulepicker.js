@@ -1,10 +1,11 @@
-// General-rule picker — bind or unbind a routine's/conversation's rules AFTER creation.
+// General-rule picker — bind or unbind a routine's/conversation's rules.
 //
 // routine.yaml's `rules:` list is the state (see rsched/rules.py): bound = this rule binds the
 // routine. Only the SET is per-routine — the prose lives once in the library, so editing it
-// there reaches every holder. A newly bound rule reaches a run already in flight via
-// control.json, so binding takes effect on the current reply; unbinding lands at the next run,
-// because prose already in a live context cannot be unsaid.
+// there reaches every holder. A SAVE reaches a run already in flight in both directions, at
+// its next turn boundary, via control.json (engine/switches.py): a bound rule's prose is
+// appended, an unbound one is declared no longer binding. Its TEXT stays in the context unless
+// the reader also asks to withdraw it, which rewrites the conversation (see `eraseBox`).
 //
 // Shaped like the ability panel beside it, and for the same reason: twenty checkboxes in one
 // undifferentiated list is a wall, and the reader's actual question is "what does this routine
@@ -16,7 +17,7 @@
 // Dumb by design: it paints and reports a diff; the caller owns the POST.
 
 import { effectLine } from "/static/components/effectline.js";
-import { el, toast } from "/static/util.js";
+import { el, toast, toastError } from "/static/util.js";
 import { docExpander } from "/static/components/docexpand.js";
 
 // Rules cluster into a few jobs. A rule whose tags match none of these lands in "other" — the
@@ -37,7 +38,8 @@ function groupFor(rule) {
 }
 
 // available: [{slug, summary, tags}] from GET /api/library · held: [slug]
-// opts: {onSave(payload) -> Promise, live?: boolean}
+// opts: {onSave(payload) -> Promise, live?: boolean} — `live`: a run is in flight that a save
+//       reaches (the conversation header's reply)
 //    or {onChange(selected), saved: [slug]} — a DRAFT picker (the routine page's settings form):
 //       no apply button, every tick reports the full selection, and a row is marked staged
 //       against `saved` (what the routine holds) rather than against `held` (the draft).
@@ -49,11 +51,15 @@ export function rulePicker(available, held, opts = {}) {
   const all = available || [];
   const host = el("div", { class: "rulepicker" });
   const status = el("div", { class: "muted small" });
+  // Only a picker that SAVES reaches a run in flight: its POST signals the run's control.json.
+  // A draft's selection lands with the page's accept, which a live run refuses and which carries
+  // no erase — offering either there was a control that did nothing beside a false sentence.
+  const live = !!(opts.live && opts.onSave);
 
   // Withdrawing the TEXT is a separate, dearer decision from withdrawing the rule's
   // authority: it rewrites the messages carrying it, which costs the provider's prompt cache
-  // from that point on. Offered only while a run is live, because otherwise there is no
-  // context to withdraw anything from.
+  // from that point on. Offered only beside a staged unbind on a live run, because otherwise
+  // there is no context to withdraw anything from.
   const eraseBox = el("input", { type: "checkbox", "data-nopersist": true });
   const eraseLabel = el("label", { class: "rule-erase", hidden: true },
     eraseBox,
@@ -72,13 +78,18 @@ export function rulePicker(available, held, opts = {}) {
       payload.remove.forEach((s) => start.delete(s));
       toast(`rules updated (+${payload.add.length}/−${payload.remove.length})`);
     } catch (e) {
-      toast(String(e?.message || e), 4000, { error: true });
+      toastError(e);
     }
     render();
   } }, "apply");
 
   function paintStatus() {
     const { add, remove } = value();
+    // The erase offer stands beside a staged unbind on a live run and nowhere else. Hidden, it
+    // is unticked too: it used to outlive the unbind it was for — withdrawn, or saved — still
+    // ticked, so the next unbind erased text the reader never chose to withdraw.
+    eraseLabel.hidden = !(live && remove.length);
+    if (eraseLabel.hidden) eraseBox.checked = false;
     if (!add.length && !remove.length) {
       status.textContent = `${now.size} bound`;
       save.disabled = true;
@@ -87,10 +98,9 @@ export function rulePicker(available, held, opts = {}) {
     const bits = [];
     if (add.length) bits.push(`+${add.join(", +")}`);
     if (remove.length) bits.push(`−${remove.join(", −")}`);
-    status.textContent = bits.join("  ") + (opts.live
+    status.textContent = bits.join("  ") + (live
       ? " — reaches the run in flight at its next turn" : "");
     save.disabled = false;
-    eraseLabel.hidden = !(opts.live && remove.length);
   }
 
   // Sections are built from the COMMITTED set; a toggle only stages a change and marks the
@@ -98,11 +108,12 @@ export function rulePicker(available, held, opts = {}) {
   // threw away the one thing this panel is for — showing what you are about to change.
   const marks = [];        // [{slug, node}] — repainted on every toggle, rebuilt on save
 
-  // The two directions are NOT symmetric, and the panel has to say so: binding reaches a run
-  // already in flight (control.json appends the prose at the next turn boundary), unbinding
-  // only lands at the next run, because prose already in a live context cannot be unsaid.
-  const WILL_BIND = "will bind — takes effect on the next turn, this run included";
-  const WILL_DROP = "will unbind — takes effect on the next turn, this run included";
+  // Both directions reach a live run at its next turn boundary (an unbind used to wait for
+  // the next run; engine/switches.apply_rule_drop made it symmetric). Without a live run the
+  // change simply lands with the save, or with the page's accept.
+  const WHEN = live ? " — takes effect on the next turn, this run included" : "";
+  const WILL_BIND = `will bind${WHEN}`;
+  const WILL_DROP = `will unbind${WHEN}`;
 
   function repaint() {
     for (const { slug, node, why } of marks) {
@@ -120,8 +131,7 @@ export function rulePicker(available, held, opts = {}) {
   function boundRow(rule) {
     const doc = docExpander("rules", rule.slug);
     const box = el("input", { type: "checkbox", checked: now.has(rule.slug) ? "" : null,
-                              "data-nopersist": true,
-                              title: "unbind — takes effect at the next run" });
+                              "data-nopersist": true, title: "untick to unbind" });
     const why = el("span", { class: "rule-why small" });
     const node = el("div", { class: "rule-bound", "data-rule": rule.slug },
       el("div", { class: "rule-line" }, box,
