@@ -381,11 +381,12 @@ row returns to self-audit.
 
 ---
 
-# Handed over from the 0.371.0–0.372.0 review (2026-10-01)
+# Handed over from the 0.371.0–0.372.2 review (2026-10-01)
 
-Everything below was PROPOSED by the review of 0.371.0 and the work that built 0.372.0, and not
-built there. The operator's order (2026-10-01): *"the proposed changes all need to go to self audit
-or the feature development routine"*. So each is an entry here — `self-audit` gives it a decision
+Everything below was PROPOSED by the review of 0.371.0 and the work that built 0.372.0–0.372.2,
+and not built there. The operator's orders (2026-10-01): *"the proposed changes all need to go to
+self audit or the feature development routine"*, and *"make sure your proposed changes end up with
+self audit after the next deploy"*. So each is an entry here — `self-audit` gives it a decision
 row, `scheduler-builder` builds it. Entries headed **Decide:** carry a choice that is the
 operator's: their FIRST increment is to put the options to the operator on the Decisions page
 (`ask_user`, the options and the review's recommendation verbatim) and then build what was chosen —
@@ -616,7 +617,10 @@ review weighed and did not recommend).
 
 ---
 
-## After 0.372.0 reaches the instance (self-audit housekeeping)
+## After 0.372.2 reaches the instance (self-audit housekeeping)
+
+Self-audit's own items for the first run after the deploy that brings 0.372.2 — none needs the
+builder.
 
 - Tell `doppelcheck-maintainer` and `steward-hub-maintainer` (an addressed `report` each) that
   their notes about Node are stale — doppelcheck's memory names `/usr/bin/node v20.20.2` and a
@@ -631,8 +635,67 @@ review weighed and did not recommend).
   `reminder-census`, "already current". Anything else there is a real finding.)
 - Once library-sync has exported after the operator rotated the routine token, confirm the library
   repo's `config/config.yaml` reads `routine_token: REDACTED`.
+- Confirm Opus answers through `claude-proxy` again. 0.372.0 stopped forcing the action tool, and
+  from the moment 0.372.1 went live every Opus turn came back `stop_reason: tool_use` with nothing
+  to read and failed its run over to GLM 5.3; 0.372.2 forces it again. Since the deploy there
+  should be no `empty completion` error on a claude-proxy model and no failover away from one for
+  it. Any empty completion now carries `stop_details.unread` — the reply's block types, a tool
+  call's name and its input's type: file that shape as a finding against
+  `endpoints/anthropic_api.py`, because the cause was never confirmed (the deployed proxy config
+  disables the cloak whose tool renaming would explain it).
+- Settle R2111. scheduler-builder reported
+  `tests/test_run_gate_checks.py::test_testing_the_gate_reports_without_running` failing on main at
+  e570769; it passes on 0.372.x in the review's environment. Run it on the instance and close the
+  row either way.
+- Tell `scheduler-builder` (an addressed `report`) what its `audit/D152` campaign will meet when it
+  merges main, unless it already has. The branch was pushed 2026-10-01 14:28 CEST from e570769 and
+  calls its release 0.371.0, but main has since shipped 0.371.0–0.372.2: the release takes the next
+  number above main's newest CHANGELOG header. Every file its commit message names changed on main
+  in between — `engine/loop.py` by ~540 lines, `engine/remind.py`, `reminders.py`,
+  `reminder_checks.py`, `engine/actionschema.py`, `docs/reminders.md`, `docs/prompt-anatomy.md`.
+  And its pushed commit holds only `tests/test_reminder_kinds.py`: the source changes the message
+  describes are not on origin, so they must be committed in its worktree before the merge.
 
-**First increment.** The two reports.
+**First increment.** The three reports.
+
+---
+
+## Shared test builders: the last cross-module imports, and conftest under the size bar
+
+Continues the operator's decision "Test helper consolidation" (2026-10-01): that work moved 109
+duplicated helpers into `tests/helpers.py`, `tests/ui/helpers.py` and `tests/conftest.py` without
+changing a test, and proposed three things it was not scoped to do.
+
+- Helpers still imported from one TEST MODULE into another move into `tests/helpers.py` (or
+  conftest, when they need its fixtures): `test_loop`'s `_server`, `probe`, `TS` and `_run` (nine
+  importers), `test_loop_referral`'s (four), `test_run_gate`'s (three), and the single importers of
+  `test_assists`, `test_requests`, `test_util_outputs`, `test_reports`, `test_deploy_state`,
+  `test_api`, `test_token_calibration`, `test_oversize_prompt` and `tests/ui/test_mobile_nav`. A
+  private helper of one test file should not have a second owner.
+- `tests/conftest.py` is 684 lines (574 before the consolidation). Its plain builders — the ones
+  that need no fixture — move to `tests/helpers.py`, about 70 import lines; fixtures stay.
+- CLAUDE.md's Standards names the two helper modules as the home of shared test builders, with the
+  rules the consolidation kept: a helper with ONE caller stays local, and variants become keyword
+  arguments — never "unified" by picking one.
+
+The gate is the consolidation's: no assertion changes meaning, and both suites collect the same
+node ids before and after.
+
+**First increment.** The CLAUDE.md line, then `test_loop`'s four.
+
+---
+
+## Decide: a CHANGELOG version may never repeat or go backwards
+
+`tests/test_policy.py` checks only that `__version__` equals the newest CHANGELOG header. Several
+writers release into one main now — self-audit, scheduler-builder, operator sessions, review
+sessions — and on 2026-10-01 `audit/D152` called its release 0.371.0 after main had shipped a
+different 0.371.0: a merge that keeps its entry on top passes the policy test, and the console's
+version goes backwards. Options: (a) the policy test also fails when two headers carry the same
+version or a header is not lower than the one above it — all 509 headers pass today; (b) keep, each
+writer renumbering by hand. **Review's recommendation: (a).**
+
+**First increment.** The decision; then the check, red-first against a repeated header.
 
 ---
 
