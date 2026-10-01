@@ -21,18 +21,27 @@ from .run_context import RunContext
 log = logging.getLogger("rsched.engine.exec_env")
 
 
-def _connection_env(ctx: RunContext) -> dict[str, str]:
-    """The routine's EFFECTIVE OAuth connections resolved to {<PROVIDER>_ACCESS_TOKEN: token},
-    passed to run_util as extra_secrets: the config bindings plus this run's one-time
-    connection grants (the decision recorded the account in ctx.grant_args). A util only
-    sees a token it declares AND the run holds; a missing / needs-reauth binding is simply
-    absent (the util then fails for want of a token).
+def _bound_connections(ctx: RunContext) -> dict[str, str]:
+    """The routine's EFFECTIVE OAuth bindings, {provider: account}: the config bindings plus
+    this run's one-time connection grants (the decision recorded the account in
+    ctx.grant_args). The one reading of "does this run hold a connection", so the token a util
+    receives and the request a failed util is routed to cannot disagree about it.
     """
     bound = dict(ctx.routine.connections or {})
     for eid in sorted(ctx.granted_now):
         if eid.startswith("connection:"):
             provider = eid.partition(":")[2]
             bound.setdefault(provider, str(ctx.grant_args.get(eid) or ""))
+    return bound
+
+
+def _connection_env(ctx: RunContext) -> dict[str, str]:
+    """The routine's EFFECTIVE OAuth connections (`_bound_connections`) resolved to
+    {<PROVIDER>_ACCESS_TOKEN: token}, passed to run_util as extra_secrets. A util only sees a
+    token it declares AND the run holds; a missing / needs-reauth binding is simply absent
+    (the util then fails for want of a token).
+    """
+    bound = _bound_connections(ctx)
     if not bound:
         return {}
     env, warnings = oauth_store.tokens_for_routine(bound)
@@ -114,7 +123,9 @@ def _unbound_connection_request(ctx: RunContext, name: str) -> str:
     PROSE in the finish summary, while a missing fs-write root in the same conversation
     correctly produced a typed access request the user could approve inline. The asymmetry
     was the whole complaint: a connection IS a grant entity (`connection:<provider>`,
-    entities.py), so a run should be routed to request it, not to narrate it.
+    entities.py), so a run should be routed to request it, not to narrate it. A connection
+    granted for THIS run counts as bound — it was injected, so the failure lies elsewhere and
+    a request for it would ask the user again for what they just allowed.
 
     Returns the route sentence, or "" when nothing is missing.
     """
@@ -122,7 +133,7 @@ def _unbound_connection_request(ctx: RunContext, name: str) -> str:
 
     declared = utils_run.util_needs(ctx.server.libraries_home, name).secrets
     upper = {d.upper() for d in declared}
-    bound = dict(ctx.routine.connections or {})
+    bound = _bound_connections(ctx)
     missing = [pid for pid in provider_ids()
                if access_token_var(pid) in upper and not bound.get(pid)]
     if not missing:
