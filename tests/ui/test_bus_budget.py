@@ -67,6 +67,26 @@ def test_llm_events_cost_the_daemon_nothing(ui, ui_page, route, ready):
     assert not seen, f"{route} asked the daemon for {seen} on llm_task/llm_process events"
 
 
+def test_a_finished_run_reads_the_routine_detail_once(ui, ui_page):
+    """The routine page answers its own routine's run_finished by re-reading what a run can
+    move, and it read the routine's detail TWICE for it, a moment apart: once for the header
+    chip and the next fire, once more for the runs table. One read serves both."""
+    ui_page.goto(f"{ui.url}/#/routine/uir")
+    ui_page.wait_for_selector(".rgroup-head")
+    ui_page.wait_for_timeout(1500)          # the page's own mount reads are out
+
+    seen: list[str] = []
+    ui_page.on("request", lambda r: seen.append(r.url) if _counts(r.url) else None)
+    ui_page.evaluate("""
+      window.dispatchEvent(new CustomEvent("rsched-bus", { detail: {
+        event: "run_finished", run_id: "uir:20260714-070000", state: "finished" } }));
+    """)
+    ui_page.wait_for_timeout(1500)
+
+    detail = [u for u in seen if u.split("?")[0].endswith("/api/routines/uir")]
+    assert len(detail) == 1, f"one run_finished read the detail {len(detail)} times: {seen}"
+
+
 def test_a_reconnect_does_not_reread_the_heaviest_endpoints(ui, ui_page):
     """A `reconnect` tick means "anything may have moved while the stream was down" — but the
     bus reconnects on capped backoff during a daemon restart, and a FULL dashboard load re-runs
