@@ -46,7 +46,9 @@ DEFAULT_BUDGETS = {
 # opt-in; a settings PATTERN decides what a routine holds (docs/patterns.md). These are
 # only what a routine with no list of its own means. Calling utils, the memory notebook, its
 # own scripts and reading its last run are BASE behaviour — no permission, nothing to switch.
-# Defaults added here AFTER routines exist reach them via bootstrap.ADOPT_PERMISSIONS.
+# A default added here reaches a routine with no list of its own at once (this IS its list);
+# one holding its own list takes it on like any other settings change — proposed as a pending
+# change, kept or dropped by the person (docs/patterns.md), never written at boot.
 DEFAULT_PERMISSIONS = ["util-authoring"]
 # What a routine with no `capabilities:` block of its own MEANS. The settings are named
 # because two of them are not off: `runs: last` is every routine's floor (D96) and the local

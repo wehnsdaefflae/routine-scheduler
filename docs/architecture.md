@@ -927,9 +927,9 @@ whose TEXT must change on a live instance is converted by a one-shot migration i
   SETTINGS, never required by a doc. Permission bodies are SHORT (≤14 lines reach the prompt's CAPABILITIES section
   when held); the Library tab's permission editor has a prefilled, authoritative `requires:` panel.
   Any future permission-ish lever becomes a capability + a `requires:` entry, not a new yaml key.
-  See docs/rules-permissions.md. `DEFAULT_PERMISSIONS`/`DEFAULT_CAPABILITIES` (config) are the
-  source of truth; defaults added after routines exist reach them once via
-  `bootstrap.adopt_permissions` at daemon boot. Historical data migrations are NOT kept:
+  See docs/rules-permissions.md. `DEFAULT_PERMISSIONS`/`DEFAULT_CAPABILITIES` (config) are what a
+  routine with no list or mapping of its own means; one that holds its own takes on a later
+  default as a pending change, never a boot-time write. Historical data migrations are NOT kept:
   each runs once on the production instance and is deleted after convergence — a pre-0.8
   backup converts by booting the matching older tag first. MACHINE-CHECKED: migration code
   must carry a `MIGRATION(expires=YYYY-MM-DD)` marker comment; `tests/test_policy.py` fails

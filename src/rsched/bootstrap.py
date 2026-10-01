@@ -8,7 +8,6 @@ instance.
 """
 from __future__ import annotations
 
-import json
 import logging
 import re
 import secrets
@@ -21,10 +20,7 @@ import yaml
 from . import libgit
 from .paths import (
     atomic_write,
-    atomic_write_yaml,
     config_file,
-    read_json,
-    read_yaml,
     repo_root,
 )
 
@@ -122,99 +118,9 @@ def _tokens_to_replace(text: str) -> list[str]:
     return out
 
 
-# DEFAULT_PERMISSIONS entries introduced AFTER routines already existed never reach them via
-# scaffold. Slugs listed here are added ONCE to every existing routine at daemon boot —
-# tracked in a marker file, so a user who later revokes one is never overridden.
-ADOPT_PERMISSIONS: list[str] = []
-_ADOPTED_MARKER = ".permissions-adopted.json"
-
-
-def _ensure_library_permission(permissions_home: Path, slug: str,
-                               routines_home: Path) -> str | None:
-    """An existing library repo predates a new seed permission (seed_libraries only runs at
-    repo creation): copy the repo seed in — never overwriting — and commit, so the permission
-    exists as the grants authority. Returns the library copy's content, or None.
-    """
-    dst = permissions_home / f"{slug}.md"
-    if dst.exists():
-        return dst.read_text(encoding="utf-8")
-    src = repo_root() / "library-seed" / "permissions" / f"{slug}.md"
-    if not permissions_home.is_dir() or not src.exists():
-        return None
-    shutil.copy(src, dst)
-    libgit.commit(permissions_home.parent, f"seed new default permission: {slug}",
-                  routines_home=routines_home, paths=[f"{permissions_home.name}/{slug}.md"])
-    return dst.read_text(encoding="utf-8")
-
-
-def adopt_permissions(routines_home: Path, permissions_home: Path) -> int:
-    """One-time propagation of new default permissions into EXISTING routines: append the
-    slug to routine.yaml `permissions:`. A slug is marked adopted only once the library copy
-    exists (an unseeded library retries next boot). Returns routine × permission additions.
-    """
-    if not ADOPT_PERMISSIONS or not routines_home.is_dir():
-        return 0   # nothing pending adoption — skip the marker read and routine walk entirely
-    marker = routines_home / _ADOPTED_MARKER
-    raw = read_json(marker, default=[])
-    # The marker is a list of slugs; anything else is not evidence of an adoption.
-    done = set(raw) if isinstance(raw, list) else set()
-    touched, newly_done = 0, set()
-    for slug in ADOPT_PERMISSIONS:
-        if slug in done:
-            continue
-        if _ensure_library_permission(permissions_home, slug, routines_home) is None:
-            continue
-        for rdir in sorted(routines_home.iterdir()):
-            if rdir.name.startswith(".") or not (rdir / "routine.yaml").is_file():
-                continue                            # clarify workspaces and strays stay untouched
-            try:
-                raw = read_yaml(rdir / "routine.yaml", {})
-            except yaml.YAMLError:
-                continue
-            perms = raw.get("permissions")
-            if perms is None or slug in perms:
-                # no explicit list = the routine follows DEFAULT_PERMISSIONS (slug included)
-                continue
-            raw["permissions"] = [*perms, slug]
-            # the activation cascade: switching the doc on switches on what it requires
-            if isinstance(raw.get("capabilities"), dict):
-                from .grants import read_library_requires
-
-                _merge_caps(raw["capabilities"], slug,
-                            read_library_requires(permissions_home))
-            atomic_write_yaml(rdir / "routine.yaml", raw)
-            libgit.commit(rdir, f"adopt default permission: {slug}",
-                          routines_home=routines_home)
-            touched += 1
-        newly_done.add(slug)
-    if newly_done:
-        marker.write_text(json.dumps(sorted(done | newly_done)) + "\n", encoding="utf-8")
-    if touched:
-        log.warning("adopted new default permission(s) into %d routine(s)", touched)
-    return touched
-
-
 # Historical data migrations are deliberately NOT kept in this module: each ran once on the
 # production instance and was deleted after convergence — to convert a pre-0.8 backup, boot it
 # on the matching older tag first.
-
-
-def _merge_caps(caps: dict, slug: str, lib: dict) -> None:
-    """Raise `caps` in place until the newly adopted permission's `requires:` is covered.
-
-    Delegates to `grants.capabilities_for` — THE activation cascade, the one the routine page
-    and the conversation config already run. This used to be a second, private copy of that
-    raise, and the copy knew four keys of nine: `actions`, `utils`, `runs`, `confirm`. Every
-    DIAL outside that set fell through it silently, so adopting a permission whose `requires:`
-    names one wrote the doc into `permissions:` and left the capability at its default — the
-    doc held, the capability off, and the engine (which enforces from capabilities alone)
-    behaving as though the permission had never been adopted at all. `reminders` made it
-    visible by being the first dial adopted this way (0.309.0 shipped "on by default" to zero
-    routines).
-    """
-    from .grants import capabilities_for
-
-    caps.update(capabilities_for([slug], lib, base=caps))
 
 
 #: The flat library doc kinds, with the glob that finds them — what `seed_libraries` lays down

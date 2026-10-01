@@ -539,9 +539,10 @@ routine shares, a reach outside the routine's own world.
 | `messaging-zulip` | `zulip:send` — post to Zulip as the user | opt-in |
 
 `util-authoring` is `config.base.DEFAULT_PERMISSIONS` and `conversations.CONVERSATION_PERMISSIONS`;
-everything else arrives with a settings pattern or a click. `bootstrap.ADOPT_PERMISSIONS` is the
-list a routine that already existed picks up once at boot when a default is added afterwards —
-empty today.
+everything else arrives with a settings pattern or a click. A default added later reaches a
+routine with no `permissions:` list of its own at once (the defaults ARE its list); one that holds
+its own list takes it on like any other change to its settings — as a pending change the person
+keeps or drops (docs/patterns.md). Nothing writes a permission into a routine at boot.
 
 The messenger docs are one per channel rather than one bundle: each names a different reserved
 verb with a different credential; holding one is a decision about a different audience.

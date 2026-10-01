@@ -1,7 +1,7 @@
 """`rsched daemon` — the boot sequence systemd actually runs.
 
 Split out of `cli.py` (F393). This is not one command among many: it is the ordered boot of a
-live instance — config bootstrap, permission adoption, library creation and sync, then the
+live instance — config bootstrap, the one-shot migrations, library creation and sync, then the
 web app and scheduler. The ORDER is load-bearing and commented as such, which is exactly why it does
 not belong inside a dispatcher that otherwise just parses argv.
 """
@@ -27,7 +27,6 @@ def cmd_daemon(_args) -> int:
     logging.basicConfig(level=logging.INFO, format=LOG_FORMAT)
     from .bootstrap import (
         adopt_library_edits,
-        adopt_permissions,
         ensure_config,
         sync_seed_library_docs,
         sync_seed_utils,
@@ -43,8 +42,6 @@ def cmd_daemon(_args) -> int:
     # `enabled` — also before anything loads a routine.yaml, which no longer reads it
     from .migrate_enabled import run_migration as fold_off_switch
     fold_off_switch(server)
-    # new default permissions reach existing routines once, at boot
-    adopt_permissions(server.routines_home, server.permissions_home)
     # The library repo exists BEFORE the syncs fill it. A container has no install step and its
     # library is an empty bind mount at first boot; the util sync installs only into an
     # existing utils/, and the repo used to be created by the web lifespan after these ran — so
