@@ -33,26 +33,33 @@ log = logging.getLogger("rsched.bootstrap")
 
 def ensure_config() -> bool:
     """Create config.yaml with random tokens if it's missing, and give an existing config a
-    `routine_token` of its own when it has none that is a SECRET (R94): none at all, the
-    example's published placeholder, or the primary itself — the primary must never double
-    as the routine tier, or the seal is vacuous. Returns True if it generated the whole
-    config. Without this a fresh deploy has an empty token → auth is disabled → an open API
-    on the LAN.
+    fresh `token` / `routine_token` wherever it holds none that is a SECRET: the key is
+    absent, it carries a placeholder the repo publishes, or the routine token equals the
+    primary (R94: the primary must never double as the routine tier, or the seal is vacuous).
+    Returns True if it generated the whole config. Without this a fresh deploy has an empty
+    token → auth is disabled → an open API on the LAN.
 
-    The placeholder case is a host install's: deploy/install.sh copies the example and
-    generates only the primary, so its routine tier answered to `change-me-too`, a value
-    anyone who read the repo knows. An explicitly EMPTY `routine_token` is left alone — that
-    is the documented way to switch the tier off (config/server.py).
+    The placeholder case is a host install's: the old deploy/install.sh copied the example
+    and generated only the primary, so its routine tier answered to `change-me-too`; a config
+    hand-copied from the example kept `change-me` as the console's own bearer. Both are values
+    anyone who read the repo knows. An explicitly EMPTY value is left alone — for the routine
+    tier that is the documented way to switch it off (config/server.py).
     """
     path = config_file()
     if path.exists():
         text = path.read_text(encoding="utf-8")
-        if not _routine_token_missing_or_known(text):
-            return False
-        fresh = f'routine_token: "{secrets.token_urlsafe(24)}"'
-        text, n = re.subn(r"(?m)^routine_token:.*$", fresh, text, count=1)
-        atomic_write(path, text if n else text.rstrip() + f"\n{fresh}\n")
-        log.warning("boot: gave %s a routine_token of its own (R94 two-tier auth)", path)
+        stale = _tokens_to_replace(text)
+        for key in stale:
+            fresh = f'{key}: "{secrets.token_urlsafe(24)}"'
+            text, n = re.subn(rf"(?m)^{key}:.*$", fresh, text, count=1)
+            if not n:
+                text = text.rstrip() + f"\n{fresh}\n"
+        if stale:
+            atomic_write(path, text)
+            log.warning("boot: gave %s fresh %s — the old value was missing or a published "
+                        "placeholder%s", path, " and ".join(stale),
+                        " (read the new console token from the file)" if "token" in stale
+                        else "")
         return False
     token = secrets.token_urlsafe(24)
     routine_token = secrets.token_urlsafe(24)
@@ -81,29 +88,38 @@ def _example_config() -> Path:
     return repo_root() / "config" / "config.example.yaml"
 
 
-def _routine_token_missing_or_known(text: str) -> bool:
-    """Does this config's routine tier need a token of its own? Absent, a placeholder the
-    shipped example carries, or the same value as the primary. A config that does not parse
-    is `load_server_config`'s to report, never this function's to rewrite.
+#: The two bearer tokens a config carries, primary first.
+TOKEN_KEYS = ("token", "routine_token")
+#: Placeholders the repo has published for them. The example's CURRENT values are read from
+#: the file as well, so a drifted placeholder is caught; these stay because configs written
+#: from older examples still carry them.
+PUBLISHED_PLACEHOLDERS = frozenset({"change-me", "change-me-too"})
+
+
+def _tokens_to_replace(text: str) -> list[str]:
+    """The TOKEN_KEYS this config needs a fresh secret for: absent, a published placeholder,
+    or (the routine token) the same value as the primary. An explicitly empty value is a
+    choice and stays. A config that does not parse is `load_server_config`'s to report, never
+    this function's to rewrite.
     """
     try:
         raw = yaml.safe_load(text)
     except yaml.YAMLError:
-        return False
+        return []
     if not isinstance(raw, dict):
-        return False
-    if "routine_token" not in raw:
-        return True
-    value = str(raw.get("routine_token") or "")
-    if not value:
-        return False                   # explicitly empty: the tier is switched off on purpose
+        return []
     try:
         example = yaml.safe_load(_example_config().read_text(encoding="utf-8"))
     except (OSError, yaml.YAMLError):
         example = {}
-    known = {str(example.get(k)) for k in ("token", "routine_token")
-             if isinstance(example, dict) and example.get(k)}
-    return value in known or value == str(raw.get("token") or "")
+    known = PUBLISHED_PLACEHOLDERS | {str(example.get(k)) for k in TOKEN_KEYS
+                                      if isinstance(example, dict) and example.get(k)}
+    out = [k for k in TOKEN_KEYS
+           if k not in raw or str(raw.get(k) or "") in known - {""}]
+    routine = str(raw.get("routine_token") or "")
+    if "routine_token" not in out and routine and routine == str(raw.get("token") or ""):
+        out.append("routine_token")
+    return out
 
 
 # DEFAULT_PERMISSIONS entries introduced AFTER routines already existed never reach them via
