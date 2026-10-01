@@ -326,39 +326,22 @@ lightweight, same-context unit of work on top of it. Keep both — they answer d
 
 ---
 
-## The seams the 2026-09-22 review named but did not finish (decided 2026-09-22)
+## The outcome label for a rule assist's hold (decided 2026-09-22)
 
-**Decided in the review that shipped 0.365.0; no finding.** That review worked every open item
-and every subsystem in file-disjoint lanes, and a lane that needed a change in another lane's
-file left a precise request rather than reaching across. Most were landed in the same release.
-These are the ones no lane could take, each already specified by the lane that asked for it —
-the full text is in that release's working notes and the summary below is enough to start.
+**Decided in the review that shipped 0.365.0; no finding.** The last of the six seams that
+review named but did not finish; the other five — the `engine/inbox.py` split, the last
+hand-rolled `msg-*` writers and the single-writer scan, the fourth collected-children
+renderer, the two daemon-side inbox predicates, the shared-store notes drain inside the digest
+builder, and the badge and push counting no proposals — have shipped and are narrated in
+docs/messages.md, docs/triggers.md, docs/run-gates.md, docs/lanes-tags.md and
+docs/notifications.md.
 
-**Why one entry and not six.** They share a cause: each is the LAST caller of a seam this
-release unified, and a seam with one straggler is a seam that will grow a second convention.
-Building them together is what makes the unifications true rather than mostly true.
+A pre-action rule assist HOLDS a run and cannot be labelled: the one `hold`-payload assist in
+the library stood at 72 turns across three routines with no way to tell a useful hold from a
+false positive, which is the one number that decides whether a trigger keeps a turn-costing
+rung. The four coupled parts — `remind_feedback` routed by id shape, `state/assists.json`
+growing the reminder's stat fields (with a one-shot migration), the health read model's four
+columns, and the `assist_hold` observation asking for the label — are specified in
+docs/rule-assists.md, "What is still deferred".
 
-- **`engine/inbox.py` is 529 lines against the ~350 standard**, and the split is already named:
-  messages on one side, questions on the other. The release put one writer and one glob behind
-  the `msg-*` shape, which is what makes the seam clean enough to cut.
-- **Two hand-rolled `msg-*` writers remain** (`engine/*` and `daemon/detached_delivery.py`)
-  after the rest moved to the one writer. Until they move, the single-writer scan the finding
-  asks for in `tests/test_policy.py` would arrive red, and a gate that arrives red is deleted
-  rather than obeyed.
-- **A fourth renderer of the collected-children line** lives in `engine/obs_children.py`, beside
-  the three the hand-back unification merged.
-- **Two of the five "is something waiting in the inbox" predicates** are in daemon files the
-  unification lane did not own. One of them is fail-open by contract and one fail-closed, so
-  the shared predicate already carries the flag they need.
-- **The shared-store notes drain is a side effect inside `composer.state_digest`**, whose only
-  production caller is boot. Moving the drain to boot leaves the digest builder pure.
-- **The proposal-and-question merge is half done**: one standing proposal per ask now holds for
-  every kind, but the badge and the browser push still count no proposals, so two records have
-  been invisible on the Decisions page since 2026-09-21.
-- **The assist label increment is priced and deferred**: a pre-action rule assist holds a run and
-  cannot be labelled, measured at 72 unlabelable turns across three routines. The four coupled
-  parts are listed in `docs/rule-assists.md`.
-
-**First increment.** The two remaining `msg-*` writers plus the policy scan, in one change: it is
-the smallest of these, it closes a finding rather than half-closing it, and it is what lets the
-`engine/inbox.py` split land against a settled contract rather than a moving one.
+**First increment.** All four together: until every one lands the label has nowhere to go.
