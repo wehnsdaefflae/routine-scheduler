@@ -101,6 +101,22 @@ def test_pick_never_walks_back_up_a_chain_it_has_left():
     assert failover.pick(chain) is chain[0]
 
 
+def test_the_serving_mark_names_a_member_not_a_provider_model():
+    """One provider model can sit in a chain twice, under two catalog names that differ only
+    in effort. A mark naming the member by (endpoint, model) read back as the FIRST member on
+    that model — the head the run had abandoned — so `pick` restarted the scan there the moment
+    its cooldown lapsed, and the forward-only promise broke on exactly the chains built to
+    step down in effort."""
+    chain = [_ref("opus-high", model="opus"), _ref("sonnet", model="sonnet"),
+             _ref("opus-low", model="opus")]
+    failover.mark_failed("ep", "opus", cooldown_s=0.01)
+    assert failover.next_after(chain, chain[0][1], **ANY_REQUEST) is chain[1]
+    time.sleep(0.03)                                    # opus's cooldown lapses…
+    failover.mark_failed("ep", "sonnet")
+    assert failover.next_after(chain, chain[1][1], **ANY_REQUEST) is chain[2]
+    assert failover.pick(chain) is chain[2]             # …and the run stays on opus-low
+
+
 def test_only_a_deliberate_abandonment_moves_the_serving_mark():
     """`pick` READS the mark and never writes it, and that is the whole safety of the
     scheme: the mark is keyed by chain HEAD and several roles resolve one head (a routine's

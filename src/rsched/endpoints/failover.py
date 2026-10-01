@@ -39,6 +39,13 @@ subprocess is one run tree — a model the run has already abandoned is never pi
 fresh run still probes the head once, which is what makes a recovered provider come back
 without anything to reset.
 
+The mark names that member by its CATALOG name — the identity `resolve_chain` dedups a chain
+by, and the one `next_after` finds the failed member with. The provider model is not an
+identity here: a chain stepping down in effort holds one model twice (`Opus high`, then
+`Opus low`), and a mark on the second read back as the first, so `pick` restarted at the
+member the run had abandoned the moment its cooldown lapsed. The cooldown itself stays per
+provider model, where a failure belongs.
+
 ONLY `next_after` writes the mark, because only the engine's mid-turn failover is a
 DELIBERATE abandonment. `pick` reading it but never writing it is the whole safety of the
 scheme: the mark is keyed by chain HEAD and roles share heads (a routine with
@@ -63,8 +70,9 @@ COOLDOWN_S = 300.0
 
 _lock = threading.Lock()
 _cooling: dict[tuple[str, str], float] = {}   # (endpoint, model id) → monotonic deadline
-#: chain HEAD (endpoint, model id) → the member currently serving that chain. Forward-only.
-_serving: dict[tuple[str, str], tuple[str, str]] = {}
+#: chain HEAD (endpoint, model id) → the catalog NAME of the member currently serving that
+#: chain. Forward-only.
+_serving: dict[tuple[str, str], str] = {}
 
 
 def mark_failed(endpoint: str, model: str, *, cooldown_s: float = COOLDOWN_S) -> None:
@@ -113,14 +121,14 @@ def _id(ref: ModelRef) -> tuple[str, str]:
     return (ref.endpoint, ref.model)
 
 
-def _index_of(chain: list, mark: tuple[str, str] | None) -> int:
-    """Where `mark` sits in this chain — 0 for None, and 0 for a mark this chain does not
-    carry (a chain was re-resolved after a config edit; starting at the head is the safe
-    reading).
+def _index_of(chain: list, mark: str | None) -> int:
+    """Where the member named `mark` sits in this chain — 0 for None, and 0 for a name this
+    chain does not carry (a chain was re-resolved after a config edit; starting at the head is
+    the safe reading).
     """
-    if mark is None:
+    if not mark:
         return 0
-    return next((i for i, (_, ref) in enumerate(chain) if _id(ref) == mark), 0)
+    return next((i for i, (_, ref) in enumerate(chain) if ref.name == mark), 0)
 
 
 def _serving_index(chain: list) -> int:
@@ -137,7 +145,7 @@ def _serve(chain: list, index: int) -> None:
     head = _id(chain[0][1])
     with _lock:
         if index > _index_of(chain, _serving.get(head)):
-            _serving[head] = _id(chain[index][1])
+            _serving[head] = chain[index][1].name
 
 
 def fits(ref: ModelRef, *, has_media: bool, prompt_tokens: int) -> bool:
@@ -195,8 +203,7 @@ def next_after(chain: list, failed: ModelRef, *,
     The returned member becomes the chain's serving mark, so the rest of the run starts
     from it. None = chain exhausted — the caller propagates the failure.
     """
-    idx = next((i for i, (_, ref) in enumerate(chain)
-                if ref.name == failed.name and ref.model == failed.model), None)
+    idx = next((i for i, (_, ref) in enumerate(chain) if ref.name == failed.name), None)
     if idx is None:
         return None
     usable = [i for i in range(idx + 1, len(chain))
