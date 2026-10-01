@@ -14,7 +14,7 @@ from pathlib import Path
 from fastapi import HTTPException, Request
 
 from .. import registry
-from ..grants import EMPTY_CAPABILITIES, GATED_KINDS
+from ..grants import CAPABILITY_ACTIONS, EMPTY_CAPABILITIES
 from ..ids import now_iso, parse_run_id
 from ..paths import atomic_write_json, atomic_write_yaml, read_json
 
@@ -159,7 +159,7 @@ def permission_layers_detail(server, cfg, *,
     reservable = sorted({u for p in all_perms for u in (p["requires"].get("utils") or [])}
                         | set(own_caps.get("utils") or []))
     capabilities = {"active": {**EMPTY_CAPABILITIES, **own_caps},
-                    "vocabulary": {"actions": list(GATED_KINDS), "utils": reservable}}
+                    "vocabulary": {"actions": list(CAPABILITY_ACTIONS), "utils": reservable}}
     return permissions, capabilities
 
 

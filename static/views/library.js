@@ -360,12 +360,17 @@ export async function render(view, sub, query = {}) {
     const isPerm = kind === "permissions";
     const slugIn = el("input", { placeholder: "kebab-case-slug", style: "width:240px" });
     const requires = isPerm ? requiresPanel({}) : null;
+    // `effect:` is required by the library linter (library_docs.EFFECT_FIELDS): what a routine
+    // holding the doc does, what it does without it, and when to hold it — the on/off control
+    // is labelled with it. A template without it was refused on its first save.
+    const effect = "effect:\n  with: <what a routine holding it does>\n"
+      + "  without: <what it does without it>\n  when: <when to hold it>\n";
     const template = isPerm
-      ? "---\ntags: [conduct, capability, draft]\nrequires: {}\n---\n"
+      ? `---\n${effect}tags: [conduct, capability, draft]\nrequires: {}\n---\n`
         + "# permission: <name> — <one-line summary of the conduct>\n\n"
-        + "Short conduct instructions — at most ~14 lines reach the prompt while the doc is held.\n"
-        + "Tick what the instructions presume in the requires panel above.\n"
-      : "---\ntags: [conduct, principle, draft]\n---\n"
+        + "Short conduct instructions — at most 1,000 characters reach the prompt while the doc "
+        + "is held.\nTick what the instructions presume in the requires panel above.\n"
+      : `---\n${effect}tags: [conduct, principle, draft]\n---\n`
         + "# rule: <name> — <one-line summary of the principle>\n\n"
         + "The principle: when it applies, what it looks like in action, what to avoid.\n"
         + "Write the GENERAL form — every routine holding it reads this same text and applies\n"

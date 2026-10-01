@@ -180,15 +180,18 @@ export function pendingBand({ onChanged } = {}) {
       catch (err) { toastError(err, 5000);
         retire.disabled = back.disabled = false; }
     };
-    retire.onclick = () => act(async () => {
+    retire.onclick = async () => {
+      // a cancelled confirm is a choice, not a failure: it must not reach act()'s error toast
       if (!(await confirmDialog(
         `Retire ${rec.routine}? It has already stopped running; this writes enabled: false so it `
         + "stays off even if its finish line is reopened later. Its runs, its finish line and "
         + "its history all stay readable; you can switch it back on any time.",
-        { confirmLabel: "retire it" }))) throw new Error("");
-      await api(`/api/pending-creations/${rec.id}/materialize`, { method: "POST" });
-      toast(`${rec.routine} retired — switched off, nothing deleted`, 5000);
-    });
+        { confirmLabel: "retire it" }))) return;
+      await act(async () => {
+        await api(`/api/pending-creations/${rec.id}/materialize`, { method: "POST" });
+        toast(`${rec.routine} retired — switched off, nothing deleted`, 5000);
+      });
+    };
     if (!byCalendar) {
       back.onclick = () => act(async () => {
         const r = await api(`/api/pending-creations/${rec.id}/discard`,
