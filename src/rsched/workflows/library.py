@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import subprocess
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -64,10 +65,13 @@ def read_workflow(home: Path, slug: str) -> tuple[dict, str]:
 
 
 def head_commit(home: Path) -> str:
+    """The library's short HEAD — provenance, best-effort: "" when git cannot say, whether
+    it fails, is missing, or runs out of time (libgit.git raises TimeoutExpired then).
+    """
     try:
         r = libgit.git(home, "rev-parse", "--short", "HEAD")
         return r.stdout.strip() if r.returncode == 0 else ""
-    except OSError:
+    except (OSError, subprocess.SubprocessError):
         return ""
 
 

@@ -15,7 +15,7 @@ import json
 from ..config import ServerConfig
 from ..endpoints import EndpointRegistry
 from ..paths import read_yaml
-from ..schema_guard import SchemaViolation, parse_reply
+from ..schema_guard import SchemaViolation, parse_reply, validate
 from .library import list_workflows
 
 SUGGEST_SCHEMA = {
@@ -74,15 +74,27 @@ def _ask_json(server: ServerConfig, prompt: str, schema: dict, *,
         except Exception:
             return None, "unavailable"
         try:
-            obj = completion.parsed if completion.parsed is not None else parse_reply(
-                completion.text, schema)
+            obj = _checked(completion, schema)
         except SchemaViolation as exc:
-            messages.append({"role": "assistant", "content": completion.text[:2000]})
+            shown = completion.text or json.dumps(completion.parsed, ensure_ascii=False)
+            messages.append({"role": "assistant", "content": shown[:2000]})
             messages.append({"role": "user", "content":
                              f"Invalid: {exc}. Reply again with ONLY the JSON object."})
         else:
             return obj, ""
     return None, "malformed"
+
+
+def _checked(completion, schema: dict) -> dict:
+    """The reply's object, held to `schema` however it arrived. A provider's native schema
+    mode (Anthropic tool use) hands back `parsed` without enforcing the schema, so it is
+    validated exactly like an object extracted from the text.
+    """
+    if completion.parsed is None:
+        return parse_reply(completion.text, schema)
+    if problems := validate(completion.parsed, schema):
+        raise SchemaViolation(problems)
+    return completion.parsed
 
 
 def suggest(server: ServerConfig, instruction: str) -> dict:

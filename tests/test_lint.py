@@ -294,6 +294,21 @@ def test_a_literal_python_cannot_hash_is_a_lint_problem_not_a_crash():
     assert problems and "META" in problems[0] and "plain literal" in problems[0]
 
 
+def test_a_library_commit_git_cannot_name_in_time_is_unknown(tmp_path, monkeypatch):
+    """head_commit is provenance and best-effort ("" when unknown); a git call that runs out
+    of time raises TimeoutExpired, which escaped it into routine creation and the Library."""
+    import subprocess
+
+    from rsched import libgit
+    from rsched.workflows.library import head_commit
+
+    def hung(*args, **kwargs):
+        raise subprocess.TimeoutExpired(["git"], 30)
+
+    monkeypatch.setattr(libgit, "git", hung)
+    assert head_commit(tmp_path) == ""
+
+
 def test_materialize_unknown_workflow(tmp_path):
     (tmp_path / "workflows").mkdir()
     with pytest.raises(FileNotFoundError):
