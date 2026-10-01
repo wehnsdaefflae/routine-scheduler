@@ -138,6 +138,27 @@ def test_generate_is_the_last_choice_in_every_catalog(tmp_path):
     assert obs["workflow_catalog"][-1]["description"]
 
 
+def test_the_model_reads_the_lists_its_draft_tells_it_to_offer(tmp_path):
+    """`next` says the workflow options ARE workflow_catalog's entries, and settings_patterns and
+    the design checks are what the clarification must cover — so the RENDERED observation, the
+    text the model actually reads, has to carry them. They rode only the observation dict, and
+    the model was told to offer options it could not see."""
+    from rsched.engine.observations import format_observation
+
+    server = _server(tmp_path)
+    ctx = _ctx(server, home="conversations_home")
+    draft = create_routine.handle_create_routine(ctx, dict(ACTION))
+    text = format_observation(draft)
+    assert "workflow_catalog:" in text
+    assert all(f"- {w['slug']}: " in text for w in draft["workflow_catalog"])
+    assert "design_checks:" in text and "- SHAPE" in text
+    if draft["settings_patterns"]:
+        assert "settings_patterns:" in text
+    rejected = create_routine.handle_create_routine(
+        ctx, {**ACTION, "workflow": "no-such-pattern"})
+    assert f"- {create_routine.GENERATE_SLUG}: " in format_observation(rejected)
+
+
 def test_generate_drafts_the_fitted_pattern_then_builds_on_it(tmp_path, monkeypatch):
     """Picking `generate` is the user's own answer to the workflow question, so the confirming
     call drafts the pattern inline and materializes from the slug it wrote."""

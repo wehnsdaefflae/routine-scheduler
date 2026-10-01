@@ -33,6 +33,32 @@ def _queued_line(obs: dict, kind: str) -> str:
             f"{obs.get('proposal') or 'the change you asked for'}. {obs.get('next', '')}").strip()
 
 
+def _choice_lists(obs: dict) -> str:
+    """The lists a create_routine draft (or a refusal naming an unknown workflow) asks the model
+    to put to the user — `workflow_catalog`, `settings_patterns`, `design_checks`. The handler's
+    `next` points at them ("its options are the entries of workflow_catalog"), so they must be IN
+    the text: riding only the observation dict, they never reached the model, which was told to
+    offer options it could not see and answered the workflow question from memory (F383's
+    failure, back through the renderer).
+    """
+    out = []
+    if catalog := obs.get("workflow_catalog"):
+        out.append("workflow_catalog:")
+        out += [f"- {w['slug']}: {w['description']}"
+                + (f" — when: {w['when_to_use']}" if w.get("when_to_use") else "")
+                for w in catalog]
+    if patterns := obs.get("settings_patterns"):
+        out.append("settings_patterns:")
+        for p in patterns:
+            when = f" — when: {p['when']}" if p.get("when") else ""
+            out.append(f"- {p['slug']}: {p['summary']}{when}")
+            out += [f"    asks: {q}" for q in p.get("asks") or []]
+    if checks := obs.get("design_checks"):
+        out.append("design_checks:")
+        out += [f"- {c}" for c in checks]
+    return "\n" + "\n".join(out) if out else ""
+
+
 def format_admin(obs: dict, kind: str) -> str | None:  # noqa: C901, PLR0911, PLR0912 — one flat renderer per module, by design: observation wording is PROMPT SURFACE (docs/prompt-anatomy.md) and every branch is a distinct string for a distinct kind. Collapsing them would scatter a kind's wording, which is exactly what this shape exists to prevent.
     """Wording for this module's kinds; None when `kind` is not one of them."""
     if kind in QUEUEABLE_KINDS and obs.get("queued"):
@@ -57,7 +83,7 @@ def format_admin(obs: dict, kind: str) -> str | None:  # noqa: C901, PLR0911, PL
     if kind == "create_routine":
         slug = obs.get("slug")
         if obs.get("rejected"):
-            return f"OBSERVATION (create_routine REJECTED): {obs['reason']}"
+            return f"OBSERVATION (create_routine REJECTED): {obs['reason']}{_choice_lists(obs)}"
         if obs.get("already_exists"):
             return (f"OBSERVATION (create_routine: a routine {slug!r} already exists — nothing "
                     "created. Pick another slug, or edit the existing routine instead.)")
@@ -74,7 +100,8 @@ def format_admin(obs: dict, kind: str) -> str | None:  # noqa: C901, PLR0911, PL
             return (f"OBSERVATION (create_routine DRAFT {slug!r} — NOTHING CREATED YET; "
                     f"{state}. name {obs.get('name')!r}, workflow {obs.get('workflow')!r}, "
                     f"instruction {obs.get('instruction_chars')} chars, beginning: "
-                    f"{obs.get('instruction_preview', '')[:200]!r}. {obs.get('next')}{held})")
+                    f"{obs.get('instruction_preview', '')[:200]!r}. {obs.get('next')}{held})"
+                    f"{_choice_lists(obs)}")
         return (f"OBSERVATION (create_routine: created routine {slug!r} from workflow "
                 f"{obs.get('workflow')!r}. The daemon's registry rescan (every "
                 f"~{obs.get('rescan_s') or 30}s) picks it up and it appears on the dashboard. "
