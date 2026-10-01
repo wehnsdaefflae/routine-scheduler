@@ -23,6 +23,7 @@ import { apiBlobUrl } from "/static/api.js";
 import { actionTime } from "/static/components/actiontime.js";
 import { md, mdInline } from "/static/md.js";
 import { answerForm } from "/static/components/answerform.js";
+import { newTabHref } from "/static/components/blobtab.js";
 import { highlightJson } from "/static/components/code.js";
 import { ruleLink, utilLink } from "/static/components/conceptlinks.js";
 import { el, fmtTime, fmtTokens, fullOutput, compressionInfo, toast } from "/static/util.js";
@@ -94,21 +95,15 @@ export function referButton(onRefer, label, snippet) {
 // component that mounted the row revokes them in its destroy(), exactly once.
 const ATT_IMG = new Set(["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp"]);
 
-// A blob URL carries THIS console's origin, so a file opened from one as a page of its own runs
-// as the console: an HTML, SVG or XML attachment's script read the operator token out of
-// localStorage the moment it was opened. A type that can run script opens as its source text;
-// an image, a PDF or plain text opens as itself. A thumbnail still SHOWS an SVG — an <img> runs
-// no script.
-const RUNS_SCRIPT = /(?:html|xml)\b/i;
-
-async function openAsPage({ url, type }, blobs) {
-  let href = url;
-  if (RUNS_SCRIPT.test(type || "")) {
-    const bytes = await (await fetch(url)).blob();
-    href = URL.createObjectURL(new Blob([bytes], { type: "text/plain;charset=utf-8" }));
-    blobs?.push(href);
-  }
-  window.open(href, "_blank");
+// A blob URL carries THIS console's origin, so an attachment opened from one as a page of its
+// own would run as the console (an SVG's script read the operator token). New tabs therefore go
+// through components/blobtab.js, the console's ONE rule for it: a passive type opens as itself,
+// anything that can carry script inside a sandboxed frame. A thumbnail still SHOWS an SVG — an
+// <img> runs no script.
+function openInTab({ url, type }, name, blobs) {
+  const tab = newTabHref(url, type, name);
+  if (tab.href !== url) blobs?.push(tab.href);
+  window.open(tab.href, "_blank");
 }
 
 export function attachmentRow(rels, fileUrl, blobs) {
@@ -120,7 +115,7 @@ export function attachmentRow(rels, fileUrl, blobs) {
     if (ATT_IMG.has(ext)) {
       const img = el("img", { class: "att-thumb", alt: name, title: `${name} — click to open` });
       let file = null;   // {url, type} once the thumbnail has loaded
-      img.onclick = () => { if (file) openAsPage(file, blobs); };
+      img.onclick = () => { if (file) openInTab(file, name, blobs); };
       apiBlobUrl(fileUrl(rel)).then((f) => { blobs?.push(f.url); file = f; img.src = f.url; })
         .catch(() => img.replaceWith(
           el("span", { class: "faint small" }, `🖼 ${name} (unavailable)`)));
@@ -128,7 +123,7 @@ export function attachmentRow(rels, fileUrl, blobs) {
     } else {
       const btn = el("button", { class: "btn small att-file", title: rel }, `📎 ${name}`);
       btn.onclick = () => apiBlobUrl(fileUrl(rel))
-        .then((f) => { blobs?.push(f.url); return openAsPage(f, blobs); })
+        .then((f) => { blobs?.push(f.url); openInTab(f, name, blobs); })
         .catch((err) => toast(`could not load ${name}: ${err.message}`, 4000, { error: true }));
       row.append(btn);
     }

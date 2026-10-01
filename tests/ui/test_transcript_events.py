@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 import re
 
+from playwright.sync_api import Error as PlaywrightError
 from playwright.sync_api import expect
 
 EVENTS = [
@@ -110,12 +111,13 @@ ACTIVE_FILES = {
 }
 
 
-def test_an_attachment_that_could_run_script_opens_as_its_source(ui, ui_page):
+def test_an_attachment_that_could_run_script_opens_sandboxed(ui, ui_page):
     """A message attachment opens full-size in a tab of its own. As a blob that tab is the
     console's own origin, and the console has no other wall: an SVG or HTML file a person
     attached — one saved from a web page, say — read the operator token out of localStorage the
-    moment it was opened. Such a file opens as its text; its thumbnail still SHOWS an SVG, since
-    an <img> runs no script."""
+    moment it was opened. Such a file opens through components/blobtab.js, the console's one rule
+    for new tabs, inside a sandboxed frame whose origin is opaque; its thumbnail still SHOWS an
+    SVG, since an <img> runs no script."""
     ts = "20260905-130000"
     run_dir = ui.seed_run("uir", ts, "finished", summary="done")
     for rel, text in ACTIVE_FILES.items():
@@ -135,7 +137,12 @@ def test_an_attachment_that_could_run_script_opens_as_its_source(ui, ui_page):
             opener.click()
         tab = info.value
         tab.wait_for_load_state()
-        assert tab.evaluate("() => window.ran ?? null") is None, "the file ran as the console"
-        assert tab.evaluate("() => document.contentType") == "text/plain"
-        assert "localStorage" in tab.evaluate("() => document.body.textContent")
+        expect(tab.locator('iframe[sandbox="allow-scripts"]')).to_have_count(1)
+        tab.wait_for_timeout(300)                     # the framed file's script has run
+        for frame in tab.frames:
+            try:
+                ran = frame.evaluate("() => window.ran ?? null")
+            except PlaywrightError:                   # a frame mid-navigation says nothing
+                continue
+            assert ran is None, "the file read the operator token"
         tab.close()
