@@ -43,7 +43,9 @@ OAuth has two halves that live in different places, because a routine run is hea
   the **public `GET /oauth/callback`** (mounted without the bearer dependency, like the webhook
   route — the unguessable per-flow `state` is the CSRF guard), which exchanges the code and writes
   the connection. The Settings tab polls the flow until the callback reports `connected`.
-- **`daemon/oauth_refresh.py`** — `OAuthRefreshManager`, ticked from the scheduler loop. It refreshes
+- **`daemon/oauth_refresh.py`** — `OAuthRefreshManager`, started by each scheduler tick but run
+  beside it (`Scheduler._off_tick`: one pass at a time, so a provider that is down and answers in
+  its 20 s timeout never holds a cron fire). It refreshes
   any *expiring*-provider connection within ~5 min of expiry, persists a rotated `refresh_token`, and
   on a provider rejection flags the connection `needs_reauth`, which badges it in Settings →
   Connections — the console record IS the notification, and no implicit outbound send exists. A

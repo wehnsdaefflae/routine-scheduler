@@ -326,9 +326,12 @@ class Scheduler:
                     await self.oneshots.tick(self.catalog)
                     # sequential lane fires: advance each armed chain one member per tick
                     await self.lane_runs.tick(self.catalog)
-                # OAuth token upkeep: refresh expiring connections nearing their deadline
-                await self.oauth.tick()
-                await self.library.tick()
+                # Upkeep runs BESIDE the tick (`_off_tick`), never inside it: OAuth refreshes
+                # expiring connections with a 20 s POST each (and a provider that is down keeps
+                # every connection due), the library watch re-resolves every routine after a
+                # library change — awaited here, either held every fire behind it.
+                self._off_tick("oauth", self.oauth.tick)
+                self._off_tick("library-watch", self.library.tick)
             except _TickSkip:
                 continue  # draining / shutting down: fire nothing this tick
             except Exception as exc:
@@ -336,11 +339,12 @@ class Scheduler:
 
     def _off_tick(self, key: str, work: Callable[[], Coroutine[None, None, None]]) -> None:
         """Start `work` as a task beside the tick unless the previous one for `key` is still
-        running. The refreshes below each end in a thread on the loop's default executor, and a
-        provider or box that answers slowly holds its attempt for a whole connect timeout — so
-        one fresh attempt per 5 s tick stacked threads on the pool every run's llm tailer awaits.
-        The task is KEPT here: the loop holds only a weak reference to a task, so one nobody
-        holds may be collected mid-flight.
+        running. Every pass started here (the two refreshes below, OAuth upkeep, the library
+        watch) ends in a thread on the loop's default executor, and a provider or box that
+        answers slowly holds its attempt for a whole connect timeout — awaited in the tick it
+        held every fire behind it, and started afresh each 5 s tick it stacked threads on the
+        pool every run's llm tailer awaits. The task is KEPT here: the loop holds only a weak
+        reference to a task, so one nobody holds may be collected mid-flight.
         """
         running = self._off_tick_tasks.get(key)
         if running is not None and not running.done():
@@ -359,7 +363,7 @@ class Scheduler:
         (`_off_tick`). An unreachable box holds each attempt for its connect timeout (20-60s),
         so a fresh attempt per tick stacked up to a dozen threads on the loop's default executor
         (8 workers on the 4-core host) — the same pool LibraryWatch, the OAuth refresh and every
-        run's llm tailer await inline in this tick body.
+        run's llm tailer draw from.
         """
         from ..machine_queue import refresh as refresh_queues
 

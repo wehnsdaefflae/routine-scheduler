@@ -6,6 +6,8 @@ import logging
 import signal
 from datetime import UTC, datetime, timedelta
 
+import pytest
+
 import rsched.daemon.scheduler as sched_mod
 from conftest import FakeRunner
 from rsched.config import ServerConfig, load_routine
@@ -937,6 +939,34 @@ async def test_retention_runs_off_the_event_loop(tmp_path, monkeypatch):
     assert seen == {}                                   # the reap returned without waiting
     await asyncio.gather(*runner._supervisors)
     assert seen["thread"] != loop_thread                # …and it ran in a worker thread
+
+
+@pytest.mark.parametrize("manager", ["oauth", "library"])
+async def test_a_hanging_upkeep_pass_does_not_hold_the_next_fire(make_routine, tmp_path,
+                                                                 monkeypatch, manager):
+    """OAuth upkeep POSTs to the provider with a 20 s timeout per due connection, and a provider
+    that is down keeps every connection due; the library watch re-resolves every routine after
+    a library change. Awaited inside the tick, each such pass held every cron fire, lane step
+    and one-shot behind it, tick after tick."""
+    make_routine(slug="ticker")
+    monkeypatch.setattr(sched_mod, "TICK_S", 0.02)
+    fr = FakeRunner()
+    sched = Scheduler(_server(tmp_path), fr, EventBus())
+    release = asyncio.Event()
+    calls: list[int] = []
+
+    async def hanging_pass():
+        calls.append(1)
+        await release.wait()
+
+    monkeypatch.setattr(getattr(sched, manager), "tick", hanging_pass)
+    task = asyncio.create_task(sched.run_forever())
+    assert await _wait_for(lambda: calls)                 # the first pass is in flight…
+    sched.next_fires["ticker"] = datetime.now(UTC) - timedelta(seconds=1)
+    assert await _wait_for(lambda: ("ticker", "schedule") in fr.fired)   # …and ticks go on
+    assert len(calls) == 1                                # one pass at a time, never stacked
+    release.set()
+    task.cancel()
 
 
 async def test_a_slow_limits_refresh_is_never_stacked_by_later_ticks(tmp_path, monkeypatch):

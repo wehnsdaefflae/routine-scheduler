@@ -37,7 +37,10 @@ DEFAULT_TOKEN_LIFETIME_S = 3600.0
 
 
 class OAuthRefreshManager:
-    """Ticked from the scheduler loop like the trigger/detached managers."""
+    """Started by every scheduler tick and run BESIDE it (`Scheduler._off_tick`), one pass at a
+    time: a pass POSTs to each due provider with a 20 s timeout, and a provider that is down
+    keeps every connection due — awaited inside the tick, it held every fire behind it.
+    """
 
     def __init__(self, server: ServerConfig):
         self.server = server

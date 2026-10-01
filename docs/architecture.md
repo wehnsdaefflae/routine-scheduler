@@ -310,8 +310,9 @@ daemon-owned connection store (one `connections.json` beside `config.yaml`, keye
 /oauth/callback` (mounted WITHOUT the bearer dep, like `api_hooks.hooks_router` — the unguessable
 per-flow `state` is the CSRF guard) exchanges the code and writes the connection; the new
 `ServerConfig.public_url` (external https URL, e.g. Tailscale Serve) builds the redirect_uri.
-`daemon/oauth_refresh.py` (`OAuthRefreshManager`, ticked by the scheduler like the trigger/detached
-managers) refreshes EXPIRING tokens near expiry, persists rotation and flags `needs_reauth` on
+`daemon/oauth_refresh.py` (`OAuthRefreshManager`, started by each scheduler tick and run beside it,
+one pass at a time, so a provider that is down never holds a fire) refreshes EXPIRING tokens near
+expiry, persists rotation and flags `needs_reauth` on
 rejection — which badges it in Settings → Connections, the only notification there is (0.230.0
 deleted every implicit outbound send) — a no-op for non-expiring providers (Notion). **Engine injection**:
 `executor.do_util` resolves the routine's bound connections to `{<PROVIDER>_ACCESS_TOKEN: token}`
