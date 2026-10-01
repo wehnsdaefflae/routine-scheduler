@@ -308,20 +308,13 @@ def put_util(request: Request, name: str, body: UtilBody) -> dict:
         raise HTTPException(422, "header problems (not saved): " + "; ".join(problems))
     _require_digest(request, "utils", name, body.content, body.impact_digest)
     utils_lib.ensure_library(server.libraries_home, remote=server.libraries_remote)
-    previous = utils_lib.read_util(server.libraries_home, name)
-    utils_lib.write_util_file(server.libraries_home, name, body.content)
-    ok, output = utils_run.selftest(server.libraries_home, name,
-                                    policy=sandbox.base_policy(server))
+    ok, output = utils_run.write_selftested(
+        server.libraries_home, name, body.content, policy=sandbox.base_policy(server),
+        message=f"revise {name} via web", routines_home=server.routines_home)
     if not ok:
-        if previous is None:
-            utils_lib.remove_util_file(server.libraries_home, name)
-        else:
-            utils_lib.write_util_file(server.libraries_home, name, previous)
         # head+tail, as the engine reports it (R93): a traceback's END is the repair material
         raise HTTPException(422, "selftest failed (rolled back, not committed):\n"
                                  + truncate(output, cap=2000)[0])
-    utils_lib.git_commit(server.libraries_home, f"revise {name} via web",
-                         routines_home=server.routines_home, paths=[f"utils/{name}"])
     return {"ok": True}
 
 

@@ -26,7 +26,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import NamedTuple
 
-from . import procgroup, sandbox
+from . import procgroup, sandbox, utils_lib
 from .captured_output import CapturedOutput, read_capped
 from .ids import is_slug
 from .utils_header import parse_header
@@ -457,3 +457,29 @@ def selftest(home: Path, name: str, *, timeout: int = 120,
     if err.strip():
         parts.append(f"stderr:\n{err.strip()}")
     return False, "\n".join(parts)
+
+
+def write_selftested(home: Path, name: str, content: str, *, policy: sandbox.SandboxPolicy,
+                     message: str, routines_home: Path | None,
+                     aborted: Callable[[], bool] | None = None) -> tuple[bool, str]:
+    """Write a util, selftest it, and COMMIT it — or roll it back: the one transaction every
+    util author goes through (the engine's `write_util`, the web editor's PUT). Returns the
+    selftest's (ok, output).
+
+    The selftest gates the LIBRARY, not just the reply: on failure a new util's dir is
+    removed and a revision is restored to the previous working text, so a broken script is
+    never left live for every routine's `gu` callers. The two authors each carried their own
+    copy of this rollback, and the web copy once reported "not committed" while the broken
+    text stayed on disk.
+    """
+    previous = utils_lib.read_util(home, name)
+    utils_lib.write_util_file(home, name, content)
+    ok, output = selftest(home, name, policy=policy, aborted=aborted)
+    if not ok:
+        if previous is None:
+            utils_lib.remove_util_file(home, name)
+        else:
+            utils_lib.write_util_file(home, name, previous)
+        return False, output
+    utils_lib.git_commit(home, message, routines_home=routines_home, paths=[f"utils/{name}"])
+    return True, output
