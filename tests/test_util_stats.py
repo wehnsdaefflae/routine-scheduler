@@ -219,6 +219,15 @@ def test_empty_world(tmp_path):
     assert out["utils"] == [] and out["backfill_runs"] == 0
 
 
+def test_a_line_that_is_not_an_event_skips_the_line_not_the_transcript(tmp_path):
+    """The scan checked `isinstance(ev, dict)` and then called `ev.get` on the next line anyway,
+    so one line holding a list threw the whole transcript away (the outer guard logged it)."""
+    server = _server(tmp_path)
+    _add_util(server, "fetch")
+    _run_with_transcript(server, "r", "20260601-070000", [_obs("fetch"), [1, 2], _obs("fetch")])
+    assert {r["name"]: r for r in util_stats(server)["utils"]}["fetch"]["ok"] == 2
+
+
 def test_backfill_tolerates_unreadable_transcript(tmp_path, monkeypatch):
     """A single corrupt/unreadable transcript must NOT raise out of util_stats() and zero
     the whole snapshot — the run-finish hook swallows exceptions, so a raise here silently

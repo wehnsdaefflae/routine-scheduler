@@ -15,7 +15,7 @@ index never sees them, so it can never leak them.
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -198,9 +198,13 @@ def _extract_transcript(path: Path) -> list[Doc]:
     and where leaked secrets would live. The prose channels are what "which run mentioned
     X?" means.
     """
-    events, _ = read_events(path)
+    # `read_events` hands back whatever JSON value a line holds, its annotation aside; one that
+    # is not an event object raised here, failing EVERY refresh pass while its run was retained
+    events: Sequence[object] = read_events(path)[0]
     acc = _EventDocs()
     for ev in events:
+        if not isinstance(ev, dict):
+            continue
         payload = ev.get("payload") or {}
         if not isinstance(payload, dict):
             continue

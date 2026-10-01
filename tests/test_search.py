@@ -321,6 +321,18 @@ def test_extract_tolerates_broken_files(tmp_path, server):
     assert extract(SourceFile(bad, "routine", "alpha", kind="decision")) == []
 
 
+def test_a_transcript_line_that_is_not_an_event_object_is_skipped(server, index):
+    """`read_events` returns whatever JSON a line holds. A line holding a list raised inside
+    `extract` — which promises never to raise — and with it EVERY refresh pass, so search
+    answered 500 for as long as that run was retained."""
+    path = server.routines_home / "alpha" / "runs" / "20260701-120000" / "transcript.jsonl"
+    with path.open("a", encoding="utf-8") as fh:
+        fh.write("[1, 2]\n" + json.dumps({"ts": "2026-07-01T12:01:00+00:00", "type": "finish",
+                                          "payload": {"summary": "the quokka report"}}) + "\n")
+    index.refresh()
+    _one(index, "quokka", kind="finish")
+
+
 def test_long_file_chunks_completely(tmp_path, server, index):
     ledger = server.routines_home / "alpha" / "LEDGER.md"
     filler = "\n\n".join(f"### entry {i} — routine housekeeping prose" for i in range(400))

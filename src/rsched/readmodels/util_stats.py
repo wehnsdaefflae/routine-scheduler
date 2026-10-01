@@ -30,6 +30,7 @@ from __future__ import annotations
 import logging
 import os
 import subprocess
+from collections.abc import Sequence
 from pathlib import Path
 
 from .. import libgit
@@ -140,8 +141,12 @@ def _scan_transcript(path: Path) -> dict:
     if hit is not None and hit[0] == fp:
         return hit[1]
     agg: dict[str, dict] = {}
-    for ev in read_events(path)[0]:
-        payload = ev.get("payload") if isinstance(ev, dict) else None
+    # any JSON value a line holds, `read_events`' annotation aside: skip the line, not the file
+    events: Sequence[object] = read_events(path)[0]
+    for ev in events:
+        if not isinstance(ev, dict):
+            continue
+        payload = ev.get("payload")
         if (ev.get("type") != "observation" or not isinstance(payload, dict)
                 or payload.get("kind") != "util"):
             continue
