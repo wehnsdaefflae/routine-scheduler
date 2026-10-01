@@ -5,8 +5,9 @@ the public surface is unchanged (config/__init__ re-exports everything).
 
 from __future__ import annotations
 
+import copy
 from pathlib import Path
-from typing import Annotated, Literal, get_args
+from typing import Annotated, Any, Literal, get_args
 
 from pydantic import BaseModel, BeforeValidator, ConfigDict, ValidationError
 
@@ -110,10 +111,23 @@ DEFAULT_MODEL_MAX_TOKENS = 16_384
 # discovered from its provider (endpoints/limits.py) — the floor of that precedence chain.
 DEFAULT_CONTEXT_TOKENS = 25_000
 
+def _home_path(v: object) -> object:
+    """A path string with `~` and $VARS expanded. `~name` for an account that does not exist
+    makes pathlib raise RuntimeError, which pydantic passes through rather than reporting —
+    so it is turned into the ValueError every other bad value is.
+    """
+    if not isinstance(v, str):
+        return v
+    try:
+        return expand(v)
+    except RuntimeError as exc:
+        raise ValueError(f"cannot expand {v!r} ({exc})") from exc
+
+
 # YAML-friendly coercions: a bare `key:` (null) reads as the empty string; path strings
 # expand `~` and $VARS.
 BlankableStr = Annotated[str, BeforeValidator(lambda v: "" if v is None else v)]
-HomePath = Annotated[Path, BeforeValidator(lambda v: expand(v) if isinstance(v, str) else v)]
+HomePath = Annotated[Path, BeforeValidator(_home_path)]
 
 
 class _Config(BaseModel):
@@ -151,13 +165,26 @@ def default_tz() -> str:
         return "UTC"
 
 
-def _pop(data: dict, loc: tuple) -> None:
-    """Remove the value at a (possibly nested) error location from the raw input."""
-    node: object = data
-    for key in loc[:-1]:
-        node = node.get(key) if isinstance(node, dict) else None
-    if isinstance(node, dict) and loc:
-        node.pop(loc[-1], None)
+def _drop(data: dict, loc: tuple) -> None:
+    """Remove what an error location names from the raw input: a key from its mapping or an
+    item from its list. Where the location runs on past the raw value (a union member's tag),
+    the value itself goes. Dropping only mapping keys left a bad list ITEM in place, so its
+    error came back every round until the whole config fell back to the defaults.
+    """
+    parent: dict | list | None = None
+    key: Any = None
+    node: Any = data
+    for step in loc:
+        if not isinstance(node, (dict, list)):
+            break
+        try:
+            node, parent, key = node[step], node, step
+        except (KeyError, IndexError, TypeError):   # not there, or a tag past the raw value
+            break
+    if isinstance(parent, dict):
+        parent.pop(key, None)
+    elif isinstance(parent, list):
+        del parent[key]
 
 
 def _problem_lines(exc: ValidationError, prefix: tuple[str, ...] = ()) -> list[str]:
@@ -174,18 +201,22 @@ def _problem_lines(exc: ValidationError, prefix: tuple[str, ...] = ()) -> list[s
 
 
 def _validate_lenient(model: type[_Config], data: dict, problems: list[str]):
-    """model_validate that degrades per key: report every invalid key, drop it (or its
-    parent, when a required subfield is missing) and retry so the rest still loads.
+    """model_validate that degrades per key: report every invalid key or list item, drop it
+    (or its parent, when a required subfield is missing) and retry so the rest still loads.
+    Works on its own copy, so a drop never reaches the caller's raw document.
     """
+    data = copy.deepcopy(data)
     for round_no in range(4):
         try:
             return model.model_validate(data)
         except ValidationError as exc:
             if round_no == 0:  # later rounds only see errors derived from a drop
                 problems.extend(_problem_lines(exc))
-            for err in exc.errors():
+            # last first: pydantic reports a list's items in order, so dropping from the end
+            # keeps the indexes of the errors still to drop in that list valid
+            for err in reversed(exc.errors()):
                 loc = err["loc"][:-1] if err["type"] == "missing" else err["loc"]
                 if not loc:
                     return None
-                _pop(data, loc)
+                _drop(data, loc)
     return None

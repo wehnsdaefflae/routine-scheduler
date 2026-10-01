@@ -2,7 +2,8 @@
 
 Both loaders validate through pydantic, leniently: every invalid key is reported into a
 problems list (so callers — registry, `rsched validate` — can show all of them at once)
-and falls back to its default instead of failing the whole load.
+and falls back to its default — an invalid list item is dropped from its list — instead of
+failing the whole load.
 
 A package since the overhaul (base vocabulary / transport catalog / server / routine),
 re-exporting the same public names the old single module carried — `from rsched.config

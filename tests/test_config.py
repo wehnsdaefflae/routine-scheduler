@@ -4,6 +4,8 @@ crash or a discarded config."""
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import yaml
 
 from rsched.config import (
@@ -267,6 +269,37 @@ def test_a_rejected_gate_reads_like_every_other_problem_line(tmp_path):
     assert "run_gate.timeout_s: Input should be less than or equal to 300" in problems
     assert any(p.startswith("run_gate.checks[0]: unknown kind 'nope'") for p in problems)
     assert not any("\n" in p or "errors.pydantic.dev" in p for p in problems)
+
+
+def test_one_bad_list_item_is_dropped_and_the_rest_of_the_routine_stands(tmp_path):
+    """The lenient loader could drop a bad KEY but not a bad list ITEM: the same error came back
+    every round until the whole routine fell back to the defaults — its description and cron
+    gone, and a deliberately locked-down routine handed the default permissions and
+    capabilities — with nothing but the item's own problem line to say so."""
+    d = _mk_routine(tmp_path, {"description": "a careful routine", "permissions": [],
+                               "capabilities": {}, "schedule": {"cron": "0 7 * * *"},
+                               "fs_read_roots": [123, "/srv/ok"]})
+    cfg, problems = load_routine(d)
+    assert any(p.startswith("fs_read_roots.0:") for p in problems)
+    assert cfg.fs_read_roots == [Path("/srv/ok")]
+    assert (cfg.description, cfg.cron, cfg.permissions) == ("a careful routine", "0 7 * * *", [])
+    assert "write_util" not in cfg.capabilities.get("actions", [])
+    assert not any("description is empty" in p for p in problems)
+
+
+def test_a_path_naming_no_account_is_a_problem_line_not_a_crash(tmp_path):
+    """`~bob/x` for an account that does not exist makes pathlib raise RuntimeError, which
+    pydantic does not turn into a validation error — so both loaders, which promise a problem
+    line per bad key, raised instead."""
+    d = _mk_routine(tmp_path, {"description": "x",
+                               "fs_read_roots": ["~nosuchuser-rsched/data", "/srv/ok"]})
+    cfg, problems = load_routine(d)
+    assert any(p.startswith("fs_read_roots.0:") and "nosuchuser-rsched" in p for p in problems)
+    assert cfg.fs_read_roots == [Path("/srv/ok")]
+    server, problems = _load_server(tmp_path, {"routines_home": "~nosuchuser-rsched/r",
+                                               "port": 9000})
+    assert any(p.startswith("routines_home:") for p in problems)
+    assert server.port == 9000 and "nosuchuser" not in str(server.routines_home)
 
 
 def test_routine_empty_description_flagged(tmp_path):
