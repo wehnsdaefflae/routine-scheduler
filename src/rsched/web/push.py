@@ -33,6 +33,12 @@ _VAPID_SUB = "mailto:ops@routine-scheduler.local"
 # human stays worth reading a day later, so ask the service to hold it that long instead.
 _TTL_SECONDS = 24 * 60 * 60
 _lock = threading.Lock()   # subscriptions + notified state are read-modify-write files
+#: The listener's debounce: a burst ends after this much bus silence…
+_QUIET_S = 2.0
+#: …or this long after it began, whichever comes first. Without the cap a busy fleet never
+#: falls silent for two seconds — every LLM call of every live run is a bus event — so a
+#: decision waited for the WHOLE fleet to go quiet before its push left.
+_MAX_COALESCE_S = 10.0
 
 
 def push_dir(server) -> Path:
@@ -176,18 +182,22 @@ def notify_new_decisions(server) -> int:
 async def bus_listener(server, bus) -> None:
     """Daemon-side subscriber: any bus event may mean a new decision exists (a run parked
     on a blocking ask, a finished run that filed deferred ones, a clarify session asking) — debounce
-    briefly, then diff-and-push off the event loop. Runs for the daemon's lifetime.
+    briefly (`_QUIET_S`, never longer than `_MAX_COALESCE_S`), then diff-and-push off the event
+    loop. Runs for the daemon's lifetime.
     """
     import asyncio
 
+    loop = asyncio.get_running_loop()
     with bus.subscribe() as q:
         while True:
             await q.get()
-            try:
-                while True:   # coalesce the burst a finishing run produces
-                    await asyncio.wait_for(q.get(), timeout=2.0)
-            except TimeoutError:
-                pass
+            deadline = loop.time() + _MAX_COALESCE_S
+            # coalesce the burst a finishing run produces — but only so long
+            while (left := deadline - loop.time()) > 0:
+                try:
+                    await asyncio.wait_for(q.get(), timeout=min(_QUIET_S, left))
+                except TimeoutError:
+                    break
             try:
                 await asyncio.to_thread(notify_new_decisions, server)
             except Exception as exc:
