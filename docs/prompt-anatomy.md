@@ -438,8 +438,10 @@ Ownership of prose: your recipe is self-contained — the WORKFLOW below (its ma
 > derives `grantpolicy.recipe_unlocked` from it, plus the `revise` leg). A write root covering the
 > routine's own dir no longer unlocks anything, so the routine-improver holds the doc like any
 > other holder. When it is held, the recipe sentence instead reads "Your own recipe (main.md,
-> stages/, tuning.yaml) IS WRITABLE to you this run…" — the prompt always states what the
-> engine actually enforces.
+> stages/, tuning.yaml) IS WRITABLE to you this run — the user granted it (the
+> recipe-authoring permission, or a revision requested from the run view)…" — the prompt always
+> states what the engine actually enforces, and the real reason for it (it went on naming the
+> retired write-root unlock as the reason long after 0.261.0).
 
 Budgets for this run: 60 turns, 45 minutes, unlimited total tokens, at most 8 child runs (depth ≤ 2). These are a CEILING and a runaway BACKSTOP — never a pace, and never a ration. Two opposite failures live here and you must avoid both: stopping SHORT because turns have been spent, and spreading a job THIN because turns remain. Take the shortest sound route to this run's goal and `finish` the moment its bounds are satisfied — a run done at turn 6 finishes at turn 6, and unspent budget is never a reason to keep looking, to widen the scope, or to polish what already clears the bar. If nothing is actually due this run, establish that, say so plainly, and finish. Do not hand the next run work THIS run could have finished — unless your recipe names the reason that work is serialized (an external gate, one submission, a shared resource), in which case say which. When the budget runs out you get exactly ONE reserved turn and it can only be a finish — so a summary you wrote at a point you chose always beats one written against that wall.
 

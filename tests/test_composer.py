@@ -1017,19 +1017,25 @@ def test_anticipation_cannot_force_a_pass_the_anti_thrash_guards_refuse(monkeypa
 
 def test_harness_contract_recipe_line_follows_unlock(make_routine, tmp_path):
     """The prompt must tell the TRUTH about recipe ownership: sealed by default, but a run
-    whose grants carry recipe_unlocked (a user fs_write_root covers the routine's own dir —
-    the routine-improver's case) must be told its recipe IS writable. The unconditional
-    "READ-ONLY to you" sentence made the improver skip every lens on its own self-target
-    despite the include-toggle being on (F165, routine-improver:20260723-112446 t11/t13)."""
+    whose grants carry recipe_unlocked (the recipe-authoring permission — the
+    routine-improver's case — or a revise leg) must be told its recipe IS writable. The
+    unconditional "READ-ONLY to you" sentence made the improver skip every lens on its own
+    self-target despite the include-toggle being on (F165, routine-improver:20260723-112446
+    t11/t13).
+
+    And it must give the REAL reason: since 0.261.0 a write root over the routine's own dir
+    unlocks nothing, yet the sentence kept telling the run that one did."""
     from rsched.grantpolicy import GrantPolicy
 
     ctx = _ctx(make_routine, tmp_path, slug="recun")
     ctx.grants = GrantPolicy()                        # sealed — the default for every run
     assert "READ-ONLY to you" in harness_contract(ctx)
-    ctx.grants = GrantPolicy(recipe_unlocked=True)    # user write root covers the own dir
+    ctx.grants = GrantPolicy(recipe_unlocked=True)    # recipe-authoring held (or a revise leg)
     text = harness_contract(ctx)
     assert "IS WRITABLE" in text
     assert "READ-ONLY to you" not in text
+    assert "recipe-authoring permission" in text
+    assert "write root" not in text.split("IS WRITABLE", 1)[1].split(";", 1)[0]
 
 
 def test_a_refused_util_write_names_the_phase_it_failed_in():
