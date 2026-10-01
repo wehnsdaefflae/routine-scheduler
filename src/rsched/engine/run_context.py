@@ -27,7 +27,7 @@ if TYPE_CHECKING:
     from ..grantpolicy import GrantPolicy
 
 # Sentinel default for "argument not passed" where None is a meaningful value.
-_UNSET: Any = "\0"
+_UNSET: Any = object()
 
 
 def _never_aborted() -> bool:
@@ -339,17 +339,14 @@ class RunContext:
             "cost": self.usage.get("cost", 0.0),
         }
 
-    def budget_violation(self) -> str | None:
-        return self.budgets.ledger().violation(self.meter())
-
     def budget_spent(self) -> dict | None:
         """The budget that stopped this run: `{resource, limit, message}`, or None."""
         return self.budgets.ledger().spent(self.meter())
 
     def budget_warning(self) -> str | None:
         """The next budget warning this run has not been given yet — its cue to wind down
-        DELIBERATELY (record, then an authored finish) instead of being cut off mid-work by
-        budget_violation. None once every crossed line has been said.
+        DELIBERATELY (record, then an authored finish) instead of meeting the spent budget
+        mid-work. None once every crossed line has been said.
 
         A budget warning is an EVENT, not a state. Repeating it on every turn past the line
         turned the backstop into a countdown — a run read "converge DELIBERATELY now"
@@ -411,7 +408,7 @@ class RunContext:
         """Update status.json (root runs only — subruns report through the parent transcript)."""
         if state is not None:
             self.state = state
-        if question != "\0":
+        if question is not _UNSET:
             self.question = question
         if self.depth > 0:
             return
@@ -460,7 +457,8 @@ class RunContext:
                 "wall_clock_left_s": None if wall_left_min is None else int(wall_left_min * 60),
                 # WHICH budget stopped the run, in fields: turns and wall clock were the
                 # only two reconstructable from this block, so a token or cost cap — the
-                # majority — was unknowable after the fact.
-                "spent": self.budget_spent(),
+                # majority — was unknowable after the fact. The same snapshot as the two
+                # counts above, so the block never disagrees with itself.
+                "spent": ledger.spent(meter),
             },
         })

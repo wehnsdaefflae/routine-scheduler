@@ -3,10 +3,11 @@
 Split out of `history.py` (F393): deriving facts from a finished transcript (which stayed) and
 shrinking a LIVE message list are different jobs on different data.
 
-Two mechanisms, in order of preference: archive the middle to `history/` files the run can read
-back on demand (the model writes the digest, so nothing is silently dropped), and failing that
-clamp oversized message bodies in place. Both rewrite the message list, which is a deliberate
-break in the prompt-caching contract and one of only three places allowed to make it.
+Two mechanisms, in order of preference: elide the middle behind the engine's one-line-per-turn
+digest while a model reorganizes that same middle into `history/` files the run can read back
+on demand (so nothing is silently dropped), and failing that clamp oversized message bodies in
+place. Both rewrite the message list, which is a deliberate break in the prompt-caching
+contract and one of only three places allowed to make it.
 """
 
 from __future__ import annotations
@@ -101,7 +102,8 @@ def clamp_to_cap(messages: list[dict], context_tokens: int, max_output_tokens: i
                  ) -> dict | None:
     """LAST RESORT: bring estimated input below the available token ceiling by truncating
     the largest message bodies in place until the estimate clears the ceiling.
-     Compaction (`maybe_compact`, plus the background `archive_middle`) shrinks the prompt by
+
+    Compaction (`maybe_compact`, plus the background `archive_middle`) shrinks the prompt by
     ELIDING the middle, but the retained head + tail are an incompressible floor — and a short
     conversation (≤ KEEP_HEAD_MSGS + KEEP_TAIL_MSGS messages) has no middle at all. When that
     floor's own observation bodies exceed the window minus the output reservation, EVERY
@@ -210,8 +212,11 @@ def _index_line(name: str, about: str) -> str:
     return f"- `{name}` — {' '.join(str(about).split()) or '(no description)'}"
 
 
-def _parse_index(text: str) -> dict[str, str]:
-    """Filename -> description, from an index this engine wrote."""
+def parse_index(text: str) -> dict[str, str]:
+    """Filename -> description, from an index this engine wrote — `_index_line`'s inverse,
+    and the one reader of that shape: the next pass carries entries forward through it and
+    history recall (`recall.index_entries`) matches against it.
+    """
     out = {}
     for line in text.splitlines():
         if not line.startswith("- `"):
@@ -231,7 +236,7 @@ def _build_index(hist_dir: Path, prior: str, new: dict[str, str]) -> str:
     index through the model each pass cost a 20 KB prompt by the 23rd. Carrying them here is
     deterministic and costs nothing.
     """
-    known = _parse_index(prior)
+    known = parse_index(prior)
     lines = []
     for path in sorted(hist_dir.glob("*.md")):
         if path.name == "INDEX.md":
@@ -336,12 +341,12 @@ def archive_middle(middle: list[dict], endpoint, ref,
     model gives back nothing usable; raises when it gives back non-JSON, so the caller can
     report the reason.
     """
-    convo = "\n\n".join(f"[{m['role']}]\n{m['content']}" for m in middle)
+    messages = archival_messages(middle)
     # Archival time scales with the middle being read: a fixed 180s died on a 1.25M-char
     # middle (F376) while the digest fallback took the pass every time. 180s base + 60s
     # per 200k chars, capped at the endpoint default (600s) so a hung CLI still dies.
-    timeout = min(600, 180 + 60 * (len(convo) // 200_000))
-    comp = endpoint.complete(archival_messages(middle),
+    timeout = min(600, 180 + 60 * (len(messages[0]["content"]) // 200_000))
+    comp = endpoint.complete(messages,
                              model=ref.model, schema=_HISTORY_SCHEMA, effort=ref.effort,
                              temperature=ref.temperature, max_tokens=ref.max_tokens,
                              timeout=timeout,
