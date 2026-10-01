@@ -24,8 +24,10 @@ images of this repository (the engine, `tor`, `chrome`); `cliproxy` is a pinned 
 - **`cliproxy`** (behind the `claude-proxy` profile, which `.env` names on a host that runs it —
   [one compose selection per host](#one-compose-selection-per-host)) — the CLIProxyAPI
   transport a Claude or Codex subscription is billed through. Its
-  state lives in `.config/routine-scheduler/cliproxy/`, inside the inventory below. See
-  [proxy setup](../docs/claude-proxy-cutover.md).
+  state lives in `.config/routine-scheduler/cliproxy/`, inside the inventory below, and holds
+  the subscription logins only a person's OAuth consent re-mints. Being a pulled image it would
+  run as its own root, so compose runs it as the instance's uid (`user:`), which keeps every
+  file it writes readable to the backup. See [proxy setup](../docs/claude-proxy-cutover.md).
 
 Container paths are always `/home/mark/...` (routines and config bake absolute paths, so they must
 not change). Host paths are `${RSCHED_HOME}`-relative (default `/home/mark`).
@@ -72,7 +74,7 @@ migration instead of on the recreate, which is the same loss one host later, so
 | Path (`${RSCHED_HOME}`-relative) | Why it must travel |
 | --- | --- |
 | `git-repos/routine-scheduler` | the source tree self-audit edits and the daemon runs from |
-| `.config/routine-scheduler` | **secrets**: `config.yaml` (tokens, endpoints, homes, `source_repo`), the Secrets store beside it, the cliproxy keys |
+| `.config/routine-scheduler` | **secrets**: `config.yaml` (tokens, endpoints, homes, `source_repo`), the Secrets store beside it, the cliproxy keys and its subscription logins |
 | `routines` | the routine repos, their runs, state and ledgers |
 | `conversations` | interactive sessions — routine-shaped, un-versioned, irreplaceable |
 | `background` | detached background runs a conversation launched, possibly mid-flight |
@@ -156,6 +158,26 @@ and deletes the rest: about ten weeks of history. A failed run deletes nothing, 
 deletes the snapshot it just wrote. rsync's exit 24 — a file that vanished between its listing
 and its copy, routine on a live instance — still completes the snapshot; any other failure
 keeps none.
+
+That includes a file the backup may not read: it runs as the host user, so one file a container
+wrote as root with mode 0600 fails its home and the whole night with it. Every container that
+writes a carried home therefore writes as the instance's uid (`RSCHED_UID`, 1000 by default).
+The engine and `chrome` images drop to `mark` in their entrypoints, and the pulled `cliproxy`
+image gets compose's `user:`. `tests/test_deploy_state.py` fails on a writer that does neither.
+A `docker compose exec -u root` that writes into a home brings the failure back. On a
+`Permission denied` in the backup's journal, list the offenders with
+`find ~/<home> ! -readable`, then find out which writer made them before you chown them.
+Until 0.373.1 the proxy ran as root, and its 0600 files failed `.config/routine-scheduler` from
+2026-09-14 on ([the one-shot move](../docs/claude-proxy-cutover.md#deployment)).
+
+Symlinks are copied as links, but **not their times** (`--omit-link-times`). The default share
+is sshfs, and SFTP sets a path's times by following it on the NAS, so rsync could not time a
+link there: "failed to set times on <link>: No such file or directory", exit 23. `conversations`
+and the LLMSecTest workspace both hold links, so both failed night after night until 0.373.1,
+and with them every snapshot. To read why a night failed, `journalctl --user -u rsched-backup`
+now shows each home's rsync errors under its `FAILED` line. Before 0.373.1 those lines came from
+a pipeline that had exited before journald could file them under the unit, so `-u` hid them and
+only a time-window query (`journalctl --user --since …`) showed them.
 
 It refuses to run unless the destination is on a **different device** than `$HOME`. That check is
 load-bearing rather than defensive: the default target is an autofs/sshfs mount of another

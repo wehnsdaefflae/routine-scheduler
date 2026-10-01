@@ -15,6 +15,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.373.1] — 2026-10-01
+
+### Fixed — every nightly backup failed: a file the subscription proxy wrote as root, and symlinks
+
+items: operator (2026-10-01), found while deploying 0.372.1
+
+- **The `cliproxy` sidecar runs as the instance's uid, not its image's root.** It wrote its
+  logins, OAuth callback files and error logs into `~/.config/routine-scheduler/cliproxy/auth`
+  as root:root. A new login or callback file is 0600, so a callback file from the 2026-09-14
+  sign-in was unreadable to `backup.sh`, which runs as the host user. That failed a REQUIRED
+  home, and with it every night since: the share's last completed backup is 2026-09-11, and
+  since 0.372.0 a failed home keeps no snapshot at all. `bundle.sh` failed on the same file.
+  Compose now gives the service `user: "${RSCHED_UID:-1000}:${RSCHED_GID:-1000}"`, and the
+  terminal login (`docker compose exec`) inherits it. The logins are mounted at
+  `/CLIProxyAPI/auth` (the image keeps `/root` at 0700, closed to that uid), the example
+  config's `auth-dir` names that path, and the bind no longer lets Docker create a missing
+  source root-owned. The backup's all-or-nothing rule and its inventory are unchanged: the
+  logins stay in every snapshot.
+- **`tests/test_deploy_state.py` holds every container that writes a carried home to the
+  instance's uid**: a pulled image through `user:`, an image built here by creating `mark` from
+  `RSCHED_UID`/`RSCHED_GID` and dropping to it in its entrypoint. It also checks that the
+  proxy's `auth-dir` and its bind target agree.
+- **`cliproxy-init.sh` refuses to run as any uid but the proxy's**, so state made under sudo
+  cannot hand the proxy a config it cannot read.
+- **One-shot migration, `deploy/cliproxy-migrate-uid.sh`** (expires 2026-11-15), run by the
+  operator: it stops the proxy, chowns its state to the instance's uid through the pinned image
+  (no sudo), points the live config's `auth-dir` at the new mount, and refuses to report
+  success while any file is unreadable. Then recreate the proxy
+  (docs/claude-proxy-cutover.md, "Deployment"). The stop comes first because the proxy
+  hot-reloads its config and would otherwise follow the new path inside its old container.
+- **`backup.sh` copies symlinks without their times** (`--omit-link-times`). The share is sshfs,
+  and SFTP sets a path's times by following it on the NAS, so rsync failed to time every link it
+  created there ("No such file or directory", exit 23). `conversations` and the LLMSecTest
+  workspace hold links, so both homes failed night after night on their own, whatever the proxy
+  did. The links themselves were always copied, and still are.
+- **`journalctl --user -u rsched-backup` shows why a home failed.** The script printed rsync's
+  error lines from the last process of a pipeline, which had exited before journald could file
+  the line under the unit, so `-u` showed every `FAILED` and never a reason. The current shell
+  prints them now.
+- Docs: docs/claude-proxy-cutover.md, deploy/DOCKER.md ("Backups"), deploy/state-paths.sh,
+  deploy/backup.sh and CLAUDE.md ("Deploy") say who writes a carried home, why symlinks carry no
+  times, and what a `Permission denied` in the backup's journal means.
+
 ## [0.373.0] — 2026-10-01
 
 ### Security — the library export can no longer publish a credential, wherever a routine keeps it

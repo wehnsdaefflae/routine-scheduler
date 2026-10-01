@@ -1,7 +1,9 @@
 # CLIProxyAPI v7.2.156. Real keys live outside the checkout.
 host: ""
 port: 8317
-auth-dir: /root/.cli-proxy-api
+# Where docker-compose.yml mounts cliproxy/auth. The proxy runs as the instance's uid, which
+# cannot reach the image's default under /root.
+auth-dir: /CLIProxyAPI/auth
 api-keys:
   - REPLACE_CLIENT_KEY
 remote-management:

@@ -730,7 +730,11 @@ unlinks the account), the library repo, and any PROJECT WORKSPACE a routine work
 (`~/git-repos/LLMSecTest_agentic` and its read-only grant folder are the first) are all
 bind-mounted, so the
 whole system migrates as a tarball of those dirs — EVERY data home must be a bind, or it dies with
-the container layer on recreate. That inventory has ONE copy, `deploy/state-paths.sh`, read by both
+the container layer on recreate. And every container that WRITES one writes as the instance's uid
+(`RSCHED_UID`): both consumers below read the homes as the host user, and one root-written 0600
+file fails its home, which keeps no snapshot that night — the root-run `cliproxy` sidecar failed
+one every night from 2026-09-14 until 0.373.1 gave it compose's `user:` (`tests/test_deploy_state.py`
+holds the compose file to this). That inventory has ONE copy, `deploy/state-paths.sh`, read by both
 consumers: `bundle.sh` writes the one-shot migration tarball (DOCKER.md's flow ends by
 decommissioning the source, which is why a frozen snapshot is fine there) and `backup.sh` keeps
 DATED SNAPSHOTS of the same homes (nightly via the `rsched-backup` user timer, which `install.sh`

@@ -12,6 +12,15 @@ services:
     image: eceasy/cli-proxy-api:v7.2.156@sha256:7f434559781aa011bbfa1061757fb5fbb4d44190e453f5bb1cb20076d9c6581e
     profiles: ["claude-proxy"]
     restart: unless-stopped
+    # The INSTANCE'S uid, never the image's root. Everything the proxy writes lands in a carried
+    # home — the logins a person's OAuth consent minted, the OAuth callback files, its error
+    # logs — and backup.sh reads those homes as the host user. As root, a new login or callback
+    # file came out root:root 0600, unreadable to the backup; one such file fails its home, and a
+    # failed home keeps no snapshot that night at all (deploy/DOCKER.md, "Backups"). `docker
+    # compose exec` runs as this user too, so the terminal login writes the same way — never
+    # exec it as root.
+    # tests/test_deploy_state.py holds every container that writes a carried home to this.
+    user: "${RSCHED_UID:-1000}:${RSCHED_GID:-1000}"
     # Host access is loopback only; rsched uses http://cliproxy:8317 internally.
     ports:
       - "127.0.0.1:8317:8317"
@@ -22,7 +31,15 @@ services:
         source: ${RSCHED_HOME:-/home/mark}/.config/routine-scheduler/cliproxy/config.yaml
         target: /CLIProxyAPI/config.yaml
         bind: { create_host_path: false }
-      - ${RSCHED_HOME:-/home/mark}/.config/routine-scheduler/cliproxy/auth:/root/.cli-proxy-api
+      # The logins, at the path the proxy's own config names as `auth-dir` — it reads that, not
+      # this file, so the two must agree. Not the image's default under /root: the image keeps
+      # /root at 0700, which a non-root uid cannot cross. `create_host_path: false` because
+      # Docker would create a missing source root-owned, where this uid could store no login;
+      # deploy/cliproxy-init.sh creates it, as the host user.
+      - type: bind
+        source: ${RSCHED_HOME:-/home/mark}/.config/routine-scheduler/cliproxy/auth
+        target: /CLIProxyAPI/auth
+        bind: { create_host_path: false }
     # This entire state directory is already in the required backup inventory.
 
   rsched:

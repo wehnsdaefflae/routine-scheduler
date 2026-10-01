@@ -27,6 +27,32 @@ Keep config.yaml, client.env and auth/ private and back them up together. The co
 initializer refuses to overwrite an existing configuration. The proxy has prompt
 cloaking, extra retries and automatic model substitutions disabled.
 
+**The proxy runs as the instance's uid** (`user: "${RSCHED_UID:-1000}:${RSCHED_GID:-1000}"`),
+not as its image's root. Everything it writes lands in `cliproxy/auth/`, which the nightly
+backup reads as the host user: the logins (a new one is written 0600), the OAuth callback
+files a console sign-in leaves (0600), its error logs. Written as root, one 0600 file from the
+2026-09-14 sign-in was unreadable to the backup, which failed that home and with it every
+nightly backup until 0.373.1. The logins are mounted at `/CLIProxyAPI/auth` and
+`config.yaml` names that path as `auth-dir`. The proxy reads its own config, not Compose, so
+the two must agree; `/root`, the image's default, is closed to a non-root uid. Run
+`cliproxy-init.sh` as that same user: it refuses any other, because the state it creates is
+private to whoever creates it. Compose never creates `auth/` itself, since Docker would make
+it root-owned, and a missing one fails the start instead.
+
+An install made before 0.373.1 has root-owned files and the old `auth-dir`. Move it once,
+while no run is using the proxy:
+
+```bash
+bash deploy/cliproxy-migrate-uid.sh            # stops cliproxy, chowns its state, moves auth-dir
+docker compose up -d --no-deps cliproxy        # naming the service selects it, whatever the profile
+```
+
+The script stops the proxy before it edits `auth-dir`, because a running proxy reloads its config
+and would follow the new path to a directory its old container does not have. It takes root
+from the pinned image (`compose run --user 0:0`), so it needs no sudo, and it hands over every
+file under `auth/`, not only the unreadable ones: a root file the proxy can read but not write
+is a token refresh it cannot save.
+
 Host ports are loopback only: 8317 for the API, 54545 for Claude OAuth and 1455 for
 Codex OAuth. Use the proxy login flow, not a Claude setup-token.
 
@@ -72,6 +98,9 @@ docker compose exec cliproxy /CLIProxyAPI/CLIProxyAPI --claude-login --no-browse
 
 Open the printed URL and finish consent; with the tunnel up the redirect completes by
 itself. Codex has the same two routes (`--codex-login`, or the card) with port 1455.
+`exec` runs as the service's own user, so the new login is written as the instance's uid like
+every other file there. Never add `-u root` (or `-u 0`): a root 0600 login is the file that
+stopped every backup.
 Management requests require the separate management key. Never expose that key to routines.
 
 ## Scheduler configuration

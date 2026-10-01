@@ -171,6 +171,28 @@ def test_a_failed_run_keeps_no_half_snapshot_moves_no_latest_and_prunes_nothing(
     assert _latest(root) == "snapshots/2026-10-01"
 
 
+def test_a_home_holding_symlinks_is_carried_on_a_share_that_cannot_time_them(home, root):
+    """The default share is sshfs, and SFTP sets a path's times by following it on the NAS:
+    rsync's attempt to set a SYMLINK's times failed there with exit 23, so the two homes holding
+    links failed every night and took the snapshot with them. The stub refuses the way the share
+    did; the snapshot must still carry each link, as a link to what it named."""
+    (home / "conversations/c1/_bin").mkdir(parents=True)
+    (home / "conversations/c1/real-tool").write_text("", encoding="utf-8")
+    (home / "conversations/c1/_bin/tool").symlink_to("../real-tool")
+    times_symlinks_like_sshfs = (
+        '#!/bin/sh\nfor a; do src=$dst; dst=$a; done   # the last two: source, destination\n'
+        'case " $* " in *" --omit-link-times "*) ;; *)\n'
+        '  if [ -n "$(find "$src" -type l | head -1)" ]; then\n'
+        '    echo "rsync: [generator] failed to set times on \\"$dst...\\": No such file or '
+        'directory (2)" >&2; exit 23\n'
+        '  fi ;;\nesac\n'
+        f'exec {REAL_RSYNC} "$@"\n')
+
+    _ok(_backup(home, root, "2026-10-01", rsync=times_symlinks_like_sshfs))
+    link = root / "snapshots/2026-10-01/conversations/c1/_bin/tool"
+    assert link.is_symlink() and str(link.readlink()) == "../real-tool"
+
+
 def test_a_run_never_builds_on_what_an_interrupted_one_left(home, root):
     """A run killed mid-copy (the unit's two-hour timeout, a reboot) leaves its half-built folder
     under the temporary name, rsync's own temp files included. The next run deletes it and

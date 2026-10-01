@@ -5,7 +5,8 @@
 so the two cannot drift, and the compose file's binds are what it has to cover. None of it is
 Python, which is why it is tested here: each of these drifted once in a way only a migration, a
 disk failure or a fresh host would have shown — a data home mounted but never carried, a
-backup that ignored the excludes the tarball honoured, an optional credential store required.
+backup that ignored the excludes the tarball honoured, an optional credential store required,
+a sidecar writing a carried home as root where the backup could not read it.
 The backup's own run — and the check that it carries exactly the tarball's files — is in
 tests/test_backup_snapshots.py, which builds its instances with `_home` from here.
 """
@@ -16,7 +17,7 @@ import re
 import shutil
 import subprocess
 import tarfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 import yaml
 
@@ -25,6 +26,8 @@ DEPLOY = REPO / "deploy"
 COMPOSE = REPO / "docker-compose.yml"
 #: How the compose file spells the host's data root; every data bind is relative to it.
 HOME_VAR = "${RSCHED_HOME:-/home/mark}"
+#: …and the uid:gid those homes belong to: the host user backup.sh and bundle.sh run as.
+INSTANCE_UID, INSTANCE_GID = "${RSCHED_UID:-1000}", "${RSCHED_GID:-1000}"
 LISTS = ("STATE_PATHS_REQUIRED", "STATE_PATHS_OPTIONAL", "STATE_PATHS_NOT_CARRIED",
          "STATE_EXCLUDES")
 
@@ -87,6 +90,68 @@ def test_the_entrypoint_hands_every_writable_bind_to_the_runtime_user():
                if b["service"] == "rsched" and b["target"].startswith("/home/mark/")
                and not b["read_only"] and b["creates"] and b["target"] not in owned]
     assert not missing, f"bind targets the entrypoint leaves root-owned when Docker creates them: {missing}"
+
+
+def _drops_to_instance_user(build: dict) -> bool:
+    """An image BUILT here runs as the instance user when it creates `mark` from the instance's
+    uid/gid and its entrypoint ends by dropping root to it."""
+    args = build.get("args", {})
+    if (args.get("UID"), args.get("GID")) != (INSTANCE_UID, INSTANCE_GID):
+        return False
+    context = REPO / build.get("context", ".")
+    dockerfile = (context / build.get("dockerfile", "Dockerfile")).read_text(encoding="utf-8")
+    if not re.search(r'useradd\b.*-u "\$\{UID\}" -g "\$\{GID\}"', dockerfile):
+        return False
+    entry = re.search(r'^ENTRYPOINT \["([^"]+)"', dockerfile, re.MULTILINE)
+    copied = entry and re.search(rf"^COPY (\S+) {re.escape(entry.group(1))}$", dockerfile,
+                                 re.MULTILINE)
+    if not copied:
+        return False
+    script = (context / copied.group(1)).read_text(encoding="utf-8")
+    return re.search(r"^\s*exec gosu mark\b", script, re.MULTILINE) is not None
+
+
+def test_every_container_writing_a_carried_home_writes_as_the_instance_user():
+    """backup.sh and bundle.sh read the carried homes as the HOST user, so a file a container
+    writes there as anyone else may be unreadable to them — and one unreadable file fails its
+    home, after which the night keeps no snapshot at all. The cliproxy sidecar ran as its image's
+    root, and its fresh login of 2026-09-14 came out root:root 0600: every backup from then on
+    failed. A pulled image runs as whatever its own USER says (root, unless told otherwise), so
+    compose names the user; an image built here creates `mark` from the same uid/gid and drops
+    to it in its entrypoint."""
+    lists = _lists()
+    carried = [*lists["STATE_PATHS_REQUIRED"], *lists["STATE_PATHS_OPTIONAL"]]
+    writers = {b["service"] for b in _binds() if b["home_rel"] is not None
+               and not b["read_only"] and _covered(b["home_rel"], carried)}
+    assert "rsched" in writers, "the check no longer sees the engine write its own homes"
+    services = yaml.safe_load(COMPOSE.read_text(encoding="utf-8"))["services"]
+    wrong = []
+    for name in sorted(writers):
+        spec = services[name]
+        if "user" in spec:
+            ok = spec["user"] == f"{INSTANCE_UID}:{INSTANCE_GID}"
+        else:
+            ok = "build" in spec and _drops_to_instance_user(spec["build"])
+        if not ok:
+            wrong.append(name)
+    assert not wrong, (f"these write a carried home as some other user: {wrong} — give a pulled "
+                       f'image `user: "{INSTANCE_UID}:{INSTANCE_GID}"`')
+
+
+def test_the_proxy_finds_its_logins_where_compose_mounts_them():
+    """The proxy reads `auth-dir` from its OWN config, never from compose, so the example
+    cliproxy-init.sh writes and the bind's target must name one path. Not under /root, which the
+    image keeps at 0700 against the non-root uid the proxy runs as; and never a source Docker
+    creates, because it would create it root-owned, where that uid could store no login."""
+    auth = [b for b in _binds() if b["service"] == "cliproxy"
+            and b["home_rel"] == ".config/routine-scheduler/cliproxy/auth"]
+    assert len(auth) == 1, "the proxy's logins are no longer one bind of the cliproxy service"
+    example = yaml.safe_load((DEPLOY / "cliproxy.config.example.yaml").read_text(encoding="utf-8"))
+    assert example["auth-dir"] == auth[0]["target"], (
+        f"the proxy looks for its logins in {example['auth-dir']}, compose mounts them at "
+        f"{auth[0]['target']}")
+    assert not PurePosixPath(auth[0]["target"]).is_relative_to("/root"), auth[0]["target"]
+    assert not auth[0]["creates"], "Docker would create a missing auth dir root-owned"
 
 
 def test_every_data_bind_is_in_the_inventory():

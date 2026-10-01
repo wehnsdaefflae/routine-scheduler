@@ -9,6 +9,15 @@ set -euo pipefail
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 state="${RSCHED_HOME:-/home/mark}/.config/routine-scheduler/cliproxy"
 
+# Everything below is created by whoever runs this, private to them — and the proxy runs as
+# the instance's uid (docker-compose.yml's `user:`), so the two must be one uid: run with sudo,
+# this would hand the proxy a config it cannot read and an auth dir it cannot write.
+if [ "$(id -u)" != "${RSCHED_UID:-1000}" ]; then
+  echo "REFUSING: you are uid $(id -u), the proxy runs as uid ${RSCHED_UID:-1000} (RSCHED_UID)." >&2
+  echo "          Run this as that user, so the state it creates is the proxy's." >&2
+  exit 1
+fi
+
 umask 077                                    # every file and dir below is the owner's alone
 mkdir -p "${state}/auth"
 chmod 700 "${state}" "${state}/auth"

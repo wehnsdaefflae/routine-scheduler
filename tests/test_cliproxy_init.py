@@ -7,6 +7,7 @@ config, against a throwaway data home.
 """
 from __future__ import annotations
 
+import os
 import stat
 import subprocess
 from pathlib import Path
@@ -16,14 +17,16 @@ import yaml
 DEPLOY = Path(__file__).resolve().parents[1] / "deploy"
 
 
-def _init(tmp_path: Path) -> tuple[subprocess.CompletedProcess, Path]:
+def _init(tmp_path: Path, uid: int | None = None) -> tuple[subprocess.CompletedProcess, Path]:
+    """Run as the instance user — this process's uid, unless the test names the proxy another."""
     checkout = tmp_path / "checkout"
     (checkout / "deploy").mkdir(parents=True, exist_ok=True)
     for name in ("cliproxy-init.sh", "cliproxy.config.example.yaml"):
         (checkout / "deploy" / name).write_bytes((DEPLOY / name).read_bytes())
     data = tmp_path / "data"
-    proc = subprocess.run(["bash", str(checkout / "deploy/cliproxy-init.sh")],
-                          env={"PATH": "/usr/bin:/bin", "RSCHED_HOME": str(data)},
+    env = {"PATH": "/usr/bin:/bin", "RSCHED_HOME": str(data),
+           "RSCHED_UID": str(os.getuid() if uid is None else uid)}
+    proc = subprocess.run(["bash", str(checkout / "deploy/cliproxy-init.sh")], env=env,
                           capture_output=True, text=True, timeout=60, check=False)
     return proc, data / ".config/routine-scheduler/cliproxy"
 
@@ -55,3 +58,12 @@ def test_a_second_run_keeps_the_keys_it_made(tmp_path):
     assert second.returncode == 0, second.stderr
     assert "Already configured" in second.stdout
     assert {p.name: p.read_bytes() for p in (state / "config.yaml", state / "client.env")} == before
+
+
+def test_state_for_a_proxy_running_as_another_uid_is_refused(tmp_path):
+    """The proxy runs as the instance's uid (docker-compose.yml's `user:`), and this state is
+    private to whoever creates it: made under sudo, the proxy could not read its own config."""
+    proc, state = _init(tmp_path, uid=os.getuid() + 1)
+    assert proc.returncode == 1
+    assert "REFUSING" in proc.stderr
+    assert not state.exists()

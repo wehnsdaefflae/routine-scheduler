@@ -21,9 +21,14 @@
 # It reads the SAME inventory as bundle.sh (deploy/state-paths.sh), so the two cannot drift.
 #
 # WARNING: the snapshots carry SECRETS — the bearer tokens in config.yaml and the Secrets store
-# beside it in ~/.config/routine-scheduler/, the messenger session stores, plus ~/.credentials
-# when that optional file-based mechanism is used at all. The root is created mode 700, but a
-# network share may not honour that; the script prints the mode it actually got, so read it.
+# beside it in ~/.config/routine-scheduler/, the subscription proxy's OAuth logins under its
+# cliproxy/auth, the messenger session stores, plus ~/.credentials when that optional
+# file-based mechanism is used at all. The root is created mode 700, but a network share may
+# not honour that; the script prints the mode it actually got, so read it.
+#
+# It reads every home as the user it runs as, so a file it may not read fails that home, and
+# then the whole night (below). Every container that writes a home writes as that same uid
+# (deploy/state-paths.sh); a Permission denied here names a file something wrote as another.
 set -euo pipefail
 
 DEFAULT_ROOT=/mnt/sshd_volume1/rsched-backup
@@ -211,9 +216,16 @@ for p in "${STATE_PATHS[@]}"; do
   # filesystem into the snapshot. Every state home is on one device, so -x is otherwise invisible.
   # Never --inplace: an update must write a NEW file, because the old one is shared with every
   # earlier snapshot that linked it, and rewriting it in place would rewrite their past.
+  # --omit-link-times because the default share is sshfs, where a symlink's times cannot be set:
+  # SFTP sets a path's times by following it on the NAS, and rsync failed every such attempt
+  # with "failed to set times on <link>: No such file or directory" — exit 23. The two homes
+  # holding a symlink (conversations, the LLMSecTest workspace) failed that way night after
+  # night, and with them the whole snapshot. The link is copied either way; only its mtime is
+  # not, which nothing reads — and since link times are then not compared either, an unchanged
+  # link is still hard-linked to the night before.
   rc=0
-  out=$(rsync -a -R -x --no-owner --no-group --stats "${LINK_DEST[@]}" "${RSYNC_EXCLUDES[@]}" \
-             "${HOME}/./${p}/" "${WORK}/" 2>&1) || rc=$?
+  out=$(rsync -a -R -x --no-owner --no-group --omit-link-times --stats "${LINK_DEST[@]}" \
+             "${RSYNC_EXCLUDES[@]}" "${HOME}/./${p}/" "${WORK}/" 2>&1) || rc=$?
   # 24 is "some files vanished before they could be transferred": a file deleted between rsync's
   # listing and its copy — an atomic write's tmp, a LevelDB compaction in chrome-profile. It is
   # the one non-zero exit that still leaves a complete copy of everything that existed throughout,
@@ -230,8 +242,14 @@ for p in "${STATE_PATHS[@]}"; do
     echo "FAILED"
     failed+=("${p}")
     # rsync's ERRORS, not its closing stats block — a tail here shows the byte counts and hides
-    # the reason, which is the one thing the operator needs.
-    echo "${out}" | grep -E '^rsync|^IO error|cannot ' | head -8 | sed 's/^/      /' || true
+    # the reason, which is the one thing the operator needs. Printed by THIS shell, never by the
+    # pipeline that finds them: journald files a line under its unit by the writer's cgroup, and
+    # a pipeline's last process has exited before journald looks — so `journalctl -u
+    # rsched-backup` showed every FAILED and not one reason (2026-10-01).
+    reasons=$(echo "${out}" | grep -E '^rsync|^IO error|cannot ' | head -8 || true)
+    while IFS= read -r line; do
+      if [ -n "${line}" ]; then printf '      %s\n' "${line}"; fi
+    done <<<"${reasons}"
   fi
 done
 
