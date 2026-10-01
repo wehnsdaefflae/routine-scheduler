@@ -64,7 +64,7 @@ def test_leaving_a_run_silences_every_run_scoped_request(ui, ui_page):
 
 
 def test_collapsing_the_activity_section_stops_its_poll(ui, ui_page):
-    """The activity feed polls FOUR endpoints every 4 s while a run is active. It is started
+    """The activity feed polls THREE endpoints every 4 s while a run is active. It is started
     lazily when its section opens — and has to stop again when the section closes, or one
     click open and one click closed leaves a request a second running for content nobody can
     see, for the life of the tab."""
