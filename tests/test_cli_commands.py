@@ -167,6 +167,17 @@ def test_scaffold_creates_a_runnable_routine(cli_server, capsys):
     assert not (cli_server.routines_home / "scaffed2").exists()
 
 
+def test_scaffold_refuses_a_zone_no_routine_can_load(cli_server, capsys):
+    """`--tz` was written into routine.yaml unchecked, so a typo made a routine whose own
+    config refused its schedule's zone at every load — and fired on another clock."""
+    rc = cli.cmd_scaffold(_args(slug="scaffed4", name="", workflow="general-task",
+                                instruction_file=None, cron="0 7 * * *", tz="Europe/Berlinn",
+                                description="", tag=None, read_root=None, write_root=None))
+    assert rc == 2
+    assert "Europe/Berlinn" in capsys.readouterr().err
+    assert not (cli_server.routines_home / "scaffed4").exists()
+
+
 def test_scaffold_reports_an_unreadable_instruction_file(cli_server, tmp_path, capsys):
     """A directory (or an unreadable file) given as --instruction-file is a usage error with a
     message, like a missing one — not an IsADirectoryError traceback."""

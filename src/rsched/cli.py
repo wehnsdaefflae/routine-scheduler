@@ -17,7 +17,6 @@ from .cli_daemon import LOG_FORMAT, cmd_daemon
 from .cli_render import _render_event
 from .config import MODEL_KINDS, load_server_config
 from .paths import expand
-from .schedule import server_tz
 
 #: A finished run's status → the process exit code (`run-once` and the daemon's `engine-run`).
 #: A partial run did its job as far as it went — 0; an abort is the shell's SIGINT 130.
@@ -303,7 +302,7 @@ def cmd_scaffold(args) -> int:
             if args.instruction_file
             else f"# Instruction\n\n(fill in) — scaffolded for {args.slug}",
             workflow_slug=args.workflow, cron=args.cron or "",
-            tz=args.tz or server_tz(),
+            tz=args.tz,               # empty: scaffold's default, the server's zone
             description=args.description or "",
             tags=args.tag or None,
             fs_read_roots=args.read_root or None, fs_write_roots=args.write_root or None,
