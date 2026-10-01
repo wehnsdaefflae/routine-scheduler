@@ -476,7 +476,11 @@ When a model refuses, the engine runs the **refusal-clarification process**
    (`stop_reason: "refusal"` / `"content_filter"`, see *Failover & cooldowns* above) is
    authoritative. A free-text decline is judged by an LLM classification subcall on the
    tool_call model (schema'd verdict); the legacy marker list survives only as a zero-cost
-   fast path that can CONFIRM an obvious opener — it never decides "not a refusal".
+   fast path that can CONFIRM an obvious opener — it never decides "not a refusal", and a
+   marker counts only inside the reply's OPENING SENTENCE (operator, 2026-10-01). "Here's
+   the summary; I can't provide the 2025 figures" opens with an answer, so the marker
+   decides nothing there: a free-text reply goes on to the classifier, and an `ok`/`partial`
+   finish — which the fast path judges alone — stands as the reply it is.
 2. **Flag.** A first-class `refusal` transcript event records the seam, the refusing
    model, and the refusal message — the explicit signal the clarification hangs off, and
    what the transcript UI renders.
