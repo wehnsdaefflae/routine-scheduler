@@ -35,6 +35,27 @@ def test_a_finish_line_compares_on_what_a_person_wrote_not_what_a_run_reported()
                                                                 "judge": "you"}]})
 
 
+@pytest.mark.parametrize("caps", [
+    {"actions": [], "utils": []},                          # leaves every setting out
+    {"actions": [], "utils": [], "runs": "none", "confirm": "never"},
+    {"actions": [], "utils": [], "runs": "all", "reminders": "global",
+     "rule_confirm": "creations", "remind_confirm": "never"}])
+def test_the_page_reads_a_setting_the_way_the_run_enforces_it(tmp_path, caps):
+    """A capabilities mapping that leaves a setting out holds what the RUN reads for it — the
+    approval dials at `always`, the reminder layer off, run history at its `last` floor. The
+    page read DEFAULT_CAPABILITIES instead (`confirm: creations`, `reminders: local`), so it
+    showed a routine — and compared it with its pattern — as holding what the engine never
+    gave it."""
+    from rsched.policyload import load_policy
+
+    shown = fields.effective_capabilities(caps)
+    policy = load_policy(tmp_path / "permissions", [], caps)
+    assert (shown["confirm"], shown["rule_confirm"], shown["remind_confirm"],
+            shown["reminders"], shown["runs"]) == (
+        policy.confirm, policy.rule_confirm, policy.remind_confirm, policy.reminders,
+        policy.run_history)
+
+
 def test_snapshot_reads_every_field(make_routine):
     cfg, _ = load_routine(make_routine())
     snap = fields.snapshot(cfg)

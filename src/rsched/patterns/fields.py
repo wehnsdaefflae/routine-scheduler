@@ -173,19 +173,16 @@ def snapshot(cfg) -> dict:
 def effective_capabilities(caps: object) -> dict:
     """A capabilities mapping with every setting present — what the routine's file MEANS.
 
-    A file that leaves a setting out holds its default, so comparing the raw mappings would
-    call two routines with the same effective settings different and mark an override
-    nobody chose.
+    A file that leaves a setting out holds what the run reads for it, so comparing the raw
+    mappings would call two routines with the same effective settings different and mark an
+    override nobody chose. The settings are read through `grants.effective_settings`, the
+    reading the run policy uses — never a second copy of it.
     """
-    from ..config.base import DEFAULT_CAPABILITIES
-    from ..grants import EMPTY_CAPABILITIES
+    from ..grants import effective_settings
 
     raw = dict(caps) if isinstance(caps, dict) else {}
-    out: dict = {"actions": list(raw.get("actions") or []),
-                 "utils": list(raw.get("utils") or [])}
-    for key in ("confirm", "rule_confirm", "remind_confirm", "runs", "reminders"):
-        out[key] = raw.get(key) or DEFAULT_CAPABILITIES.get(key) or EMPTY_CAPABILITIES[key]
-    return out
+    return {"actions": list(raw.get("actions") or []), "utils": list(raw.get("utils") or []),
+            **effective_settings(raw)}
 
 
 def patch_shape(key: str, value: object, lane_managed: bool) -> tuple[str, object]:
