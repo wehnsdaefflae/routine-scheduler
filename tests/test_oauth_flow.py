@@ -9,6 +9,7 @@ from urllib.parse import parse_qs, urlparse
 
 import pytest
 
+from conftest import hammer
 from rsched import secrets
 from rsched.oauth import exchange, store
 from rsched.web.settings import oauth as oauth_mod
@@ -222,33 +223,6 @@ def test_set_public_url_validates(oauth_client):
     assert client.app.state.server.public_url == "https://h.ts.net"
 
 
-def _hammer(work, threads: int = 6) -> list[BaseException]:
-    """Run `work(tag)` on several threads at once, switching between them as often as the
-    interpreter allows, and return whatever any of them raised."""
-    import sys
-    import threading
-
-    errors: list[BaseException] = []
-
-    def run(tag: int) -> None:
-        try:
-            work(tag)
-        except Exception as exc:   # any failure kind is the regression
-            errors.append(exc)
-
-    interval = sys.getswitchinterval()
-    sys.setswitchinterval(1e-6)
-    try:
-        pool = [threading.Thread(target=run, args=(n,)) for n in range(threads)]
-        for t in pool:
-            t.start()
-        for t in pool:
-            t.join()
-    finally:
-        sys.setswitchinterval(interval)
-    return errors
-
-
 def test_concurrent_flow_bookkeeping_never_raises(monkeypatch):
     """The handlers are sync, so FastAPI runs them on worker threads at once: authorize-start,
     the card's poll and the provider's callback all prune the one flow table. Unguarded, a
@@ -265,7 +239,7 @@ def test_concurrent_flow_bookkeeping_never_raises(monkeypatch):
             oauth_mod._flow(fid)
             oauth_mod._claim(state)
 
-    assert _hammer(churn) == []
+    assert hammer(churn) == []
     assert oauth_mod._flows == {} and oauth_mod._state_index == {}
 
 
@@ -284,7 +258,7 @@ def test_concurrent_github_device_flows_never_raise(monkeypatch):
             github._pending(f"{tag}-{i - 1}")
             github._forget(fid)
 
-    assert _hammer(churn) == []
+    assert hammer(churn) == []
     assert github._device_flows == {}
 
 
