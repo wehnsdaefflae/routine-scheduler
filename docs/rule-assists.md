@@ -116,8 +116,9 @@ caching contract.
 can act on, so the finish is set aside and the model gets one more turn — the shape the finish
 gate's five other rungs already use. It carries their two guards (never a child run, never the
 reserved finish turn, which would force-finish the run with an engine string) plus one of its
-own: a run may be held at its finish by an assist **at most once, ever**. A rule may ask for
-an ending to be reconsidered; it may not negotiate over it.
+own: a run may be held at its finish by an assist **at most once, ever** — once per reply, in a
+conversation (see Guards). A rule may ask for an ending to be reconsidered; it may not
+negotiate over it.
 
 ### The shared hold seam
 
@@ -148,6 +149,18 @@ hold per source and action string) and the claim verifier's `_challenged` set (o
 per claimed line) already apply to their own interventions, and it exists for the same
 reason: a trigger that can fire twice on one situation livelocks a stubborn model into a dead
 budget.
+
+"Once" is per GUARD SCOPE, defined once in `engine/guardscope.py` (operator decision,
+2026-10-01): a routine's whole run, every leg of it, and a conversation's current REPLY — each
+reply is a new task, so the leg after an authored finish starts the guards fresh, while a reply
+interrupted and resumed is still that reply. The ledgers live in memory, so a resumed leg
+REBUILDS them from its transcript, the way it rebuilds the files the run has seen. For that,
+every event that carries an assist's line names it — `assists` on the held action's
+observation, on an observation whose tail carried a line (the observation-moment assists are
+asked before their observation is recorded, so the record can say so), on a boundary
+`ENGINE NOTE` and on the pre-finish deferral, which is also marked `assist`. Before this, every
+resumed leg started empty: an assist that had fired could fire again, and an ending a rule had
+already deferred was deferred again.
 
 A predicate that raises is **inert, never fatal**. A library document names the check; the
 run's work is not this layer's to lose.
@@ -217,6 +230,9 @@ A tree clean at HEAD is already an undo point, so a write into one is not held �
 one for the whole run, because HEAD restores what the run found. The predicate remembers each
 repo it found clean (`loop.assist_undo_points`); asking `git status` afresh at every write read
 the run's OWN first edit as uncommitted work, and held its second edit into the same clean repo.
+"The whole run" spans its legs: the finding is named on the observation of the write the check
+let through (`undo_point`), and a resumed leg rebuilds the set from it — the same false hold
+otherwise came back one restart later.
 
 Three predicates read signals the engine already keeps, which is why they are cheap:
 `asks-piling-up` reads `ctx.asks_deferred` (the churn telemetry for a decision thrown over the

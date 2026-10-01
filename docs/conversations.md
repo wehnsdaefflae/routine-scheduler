@@ -84,6 +84,17 @@ phantom "USER MESSAGE (injected mid-run)" carrying a stub, and the notes `boot` 
 every leg (the resume framing, the setup-gap list) are marked not-replayable so they do not
 stack one copy per reply.
 
+**Each reply starts its cautions fresh; a resumed reply keeps its own.** The engine's
+once-only interventions — an action HELD for a caution (emitting it again is the confirmation
+to go ahead), a general rule's reminder, the one time a rule may set a finish aside, the claim
+check's one objection per line, the warning before old context is archived — count once per
+REPLY here, because each reply is a new task: an action you saw held and confirmed in one reply
+can be held again in the next. A reply cut off before the agent could answer — a restart, a
+crash, an abort — and then resumed is still the same reply, and keeps what it already
+confirmed: the engine rebuilds those guards from the transcript (`engine/guardscope.py`)
+instead of starting them over. A scheduled routine keeps them for its whole run, every leg of
+it.
+
 **A reply ends when you have something, not after N steps.** The agent works until it reaches a
 point worth handing you: a finished piece of the job, a verified deliverable, a decision only you
 can make, or a genuine blocker. A single message can run for many turns when the job needs it — it

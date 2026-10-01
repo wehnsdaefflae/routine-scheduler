@@ -20,6 +20,7 @@ import threading
 from collections import deque
 from typing import Any
 
+from ..assists import Assist
 from ..endpoints.base import EndpointError
 from . import (
     actionroute,
@@ -69,9 +70,11 @@ REPEAT_WARN = 3
 #: the model's call and costs it the authored summary; anything else is an action on a turn the
 #: model was told executes nothing.
 RESERVED_TURN_KINDS = frozenset(ALWAYS_KINDS)
-_RESERVED_REFUSAL = ("the reserved finish turn executes nothing but `finish` (or "
-                     + " / ".join(f"`{k}`" for k in ALWAYS_KINDS if k != "finish")
-                     + ") — the budget is spent")
+#: The refusal of anything else there. An action refused with it ran nothing — not even the
+#: side fields every other turn applies — which is how `remind_ledger.rebuild` tells it apart.
+RESERVED_REFUSAL = ("the reserved finish turn executes nothing but `finish` (or "
+                    + " / ".join(f"`{k}`" for k in ALWAYS_KINDS if k != "finish")
+                    + ") — the budget is spent")
 
 
 __all__ = [
@@ -300,7 +303,7 @@ class EngineLoop:
         action.
         """
         self.ctx.transcript.event("observation", {
-            "kind": action["kind"], "rejected": True, "reason": _RESERVED_REFUSAL},
+            "kind": action["kind"], "rejected": True, "reason": RESERVED_REFUSAL},
             turn=self.ctx.turn)
 
     def _observe(self, action: dict, streak: int) -> None:
@@ -310,30 +313,40 @@ class EngineLoop:
         reminder this routine wrote, or a general rule whose moment this action IS, HOLDS the
         action — it does NOT run — and the model decides again with the caution in front of
         it. After execution would be after the consequence.
+
+        The observation-moment rule assists are asked BEFORE the observation is recorded, so
+        the record names what fired (`assist.recorded`): the transcript is what a resumed leg
+        rebuilds the once-only guards from (engine/guardscope.py). Their line still rides the
+        tail, in its place.
         """
         ctx = self.ctx
         obs = (hold.before_dispatch(self, action)
                or actionroute.dispatch_action(self, action, ctx))
-        ctx.transcript.event("observation", mediaops.without_bytes(obs), turn=ctx.turn)
         held = hold.is_hold(obs)
         if not held:
             self.executed_actions += 1   # a HELD action executed nothing
             if is_failure(obs):
                 key = failure_key(action)
                 self.failures[key] = self.failures.get(key, 0) + 1
+        fired = assist.at_observation(self, action, obs)
+        ctx.transcript.event("observation",
+                             assist.recorded(self, mediaops.without_bytes(obs), fired),
+                             turn=ctx.turn)
         if self.admin_leg:
             # D62: the capability bypass is never silent — one audit line per action.
             from .admin import log_admin_action
             log_admin_action(ctx.server.routines_home, run_id=ctx.run_id,
                              kind=action["kind"], brief=brief_value(action)[:200])
-        text = format_observation(obs) + self._tails(action, obs, held=held, streak=streak)
+        text = format_observation(obs) + self._tails(action, obs, fired, held=held,
+                                                     streak=streak)
         msg: dict = {"role": "user", "content": text}
         if obs.get("media"):  # view_image / auto-attach: the model sees it next turn
             msg["media"] = obs["media"]
         self.messages.append(msg)
         ctx.write_status()
 
-    def _tails(self, action: dict, obs: dict, *, held: bool, streak: int) -> str:
+    def _tails(self, action: dict, obs: dict, fired: list[Assist], *, held: bool,
+               streak: int) -> str:
         """Everything that rides an observation, in the order the model reads it
         (docs/prompt-anatomy.md §3b). Each tail is free and appears only when it applies.
         """
@@ -342,8 +355,9 @@ class EngineLoop:
         # never hold the very action it rode on.
         text = remind.apply_ops(self, action, poll_s=POLL_S)
         # …and the observation-moment assists ride the same tail, for the rules whose
-        # moment is "what just came back" rather than "what you are about to do".
-        text += assist.at_observation(self, action, obs)
+        # moment is "what just came back" rather than "what you are about to do" — asked
+        # before the observation was recorded (`_observe`), read here in their place.
+        text += assist.tail(fired)
         # …and the run's OWN archived history is the third store this layer
         # feeds from: when what just happened overlaps an archived topic, the
         # tail names the file rather than leaving the run to remember it.

@@ -178,7 +178,9 @@ def _uncheckpointed_repo_write(s: Situation) -> bool:
     A repo found CLEAN is an undo point for the rest of the run, so it is remembered
     (`loop.assist_undo_points`) and never asked about again: HEAD restores what the run found.
     Asked afresh, the run's own first edit read as uncommitted work and its second edit into
-    the same clean repo was held — and every edit paid a `git status` until one was.
+    the same clean repo was held — and every edit paid a `git status` until one was. "The rest
+    of the run" spans its legs: the finding is named on this write's observation
+    (`assist.recorded`), which a resumed leg rebuilds the set from (engine/guardscope.py).
     """
     action = s.action or {}
     if action.get("kind") not in ("write_file", "edit_file"):
@@ -200,6 +202,7 @@ def _uncheckpointed_repo_write(s: Situation) -> bool:
     if _dirty(repo):
         return True
     s.loop.assist_undo_points.add(repo)
+    s.loop.assist_undo_found = repo
     return False
 
 

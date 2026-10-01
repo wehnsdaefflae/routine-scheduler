@@ -19,6 +19,10 @@ Two rules keep the layer from eating the run:
   a model and a gate that both refuse to yield would otherwise livelock a run into a dead budget.
 - **one hold per action, however many reminders match.** Precedence never multiplies turns.
 
+"Per run" is the GUARD SCOPE (engine/guardscope.py) — every leg of a routine run, the current
+reply of a conversation — and this layer's own ledgers follow the hold ledger across a resume
+(`remind_ledger`): a hold from before a restart is still owed its one label after it.
+
 The turn cost is paid on the INPUT side — selective creation, a precise regex, and the four-way
 tally that shows which reminders earn their turns. There is deliberately no cheaper passive tier.
 """
@@ -49,6 +53,16 @@ def configure(loop) -> None:
     loop.reminder_pending = []       # fires still owed a label — what the nudge names
     loop.reminder_owed = {}          # id → holds this run not yet labelled; one label per hold
     loop.reminder_nudge = 0
+
+
+def replay_key(action: dict) -> str | None:
+    """The identity of a finish's reminder payload — what a re-driven finish is deduplicated
+    by (`apply_ops`, and its resume rebuild in `remind_ledger`). None when the action carries
+    neither side field.
+    """
+    if not (action.get("remind") or action.get("remind_feedback")):
+        return None
+    return json.dumps([action.get("remind"), action.get("remind_feedback")], sort_keys=True)
 
 
 def level_of(grants) -> str:
@@ -207,14 +221,14 @@ def apply_ops(loop, action: dict, poll_s: float, *, replayable: bool = False) ->
     `replayable` marks a call site the ENGINE itself can re-drive with the same fields — the
     finish path, where every rung of the finish gate hands the SAME finish back for revision
     and the model re-emits it with its side fields intact. The payload is then applied at most
-    once per run, which is the rule this codebase already applies to its own re-emissions
-    (`loop.holds`, engine/hold.py: re-emitting a held action is the confirmation, not a second
-    hold; the claim verifier's one challenge per claimed line). Without it a finish deferred
-    three times records one hold's label three times, and the tally the whole layer is
-    justified by — `fires` minus the labels — goes negative.
+    once per run (per guard scope, and across a resume: `remind_ledger`), which is the rule this
+    codebase already applies to its own re-emissions (`loop.holds`, engine/hold.py: re-emitting
+    a held action is the confirmation, not a second hold; the claim verifier's one challenge
+    per claimed line). Without it a finish deferred three times records one hold's label three
+    times, and the tally the whole layer is justified by — `fires` minus the labels — goes
+    negative.
     """
-    if replayable and (action.get("remind") or action.get("remind_feedback")):
-        key = json.dumps([action.get("remind"), action.get("remind_feedback")], sort_keys=True)
+    if replayable and (key := replay_key(action)):
         if key in loop.reminder_replayed:
             return ""
         loop.reminder_replayed.add(key)

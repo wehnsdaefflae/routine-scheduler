@@ -8,6 +8,20 @@ from .control import drain_injections
 from .finish_guard import unbacked_action_claims
 
 
+def rebuild(loop, events: list[dict]) -> None:
+    """Re-seed the claim check's one-objection-per-line ledger (`loop._challenged`) from the
+    challenges recorded inside the guard scope (engine/guardscope.py): each is a deferred
+    finish naming the lines it objected to (`claims_unsupported`). Without it a resumed leg
+    argued a line the run had already been asked about, and a re-asserted verdict never
+    stood.
+    """
+    loop._challenged = set()
+    for ev in events:
+        payload = ev.get("payload") or {}
+        if ev.get("type") == "observation" and payload.get("kind") == "finish":
+            loop._challenged.update(str(i) for i in payload.get("claims_unsupported") or [])
+
+
 def _defer(loop, ctx, message: str, **why) -> None:
     """Set this finish aside for one turn — the shape every rung shares (the R108 deferral).
 
@@ -92,12 +106,14 @@ def check_finish(loop, action: dict, ctx) -> str | None:
     # A general rule the routine PRACTISES whose moment is the ending itself (a ledger
     # entry not written, a review with no denominator). Same deferral shape as the rungs
     # around it, same two guards — never the reserved turn, never a child — plus its own:
-    # `assist.at_finish` allows this at most ONCE per run, so a rule can ask for the ending
-    # to be reconsidered but can never negotiate over it.
+    # `assist.at_finish` allows this at most ONCE per run (per reply, in a conversation), so
+    # a rule can ask for the ending to be reconsidered but can never negotiate over it. The
+    # deferral names the assists behind it: that record is what keeps "once" across a resume.
     if ctx.depth == 0 and not loop._finish_reserved:
         from . import assist
-        if message := assist.at_finish(loop, action):
-            _defer(loop, ctx, message, assist=True)
+        if deferral := assist.at_finish(loop, action):
+            message, keys = deferral
+            _defer(loop, ctx, message, assist=True, assists=keys)
             return None   # deferred — the loop goes round again
     if (action["status"] == "ok" and loop.executed_actions == 0 and ctx.depth == 0
             and not loop._finish_reserved):
@@ -142,8 +158,9 @@ def check_finish(loop, action: dict, ctx) -> str | None:
     # The accounting proves each line was ANSWERED, not that the answer is true. Each `met`
     # claim is checked once: deterministically first (a Done-when line whose producing stage
     # this run never entered), then by a second model against the run's own transcript.
-    # Fail-open at every level and at most ONE objection per line per run: the model keeps
-    # the last word and the disagreement is recorded instead (engine/verifier.py).
+    # Fail-open at every level and at most ONE objection per line per run — per reply, in a
+    # conversation, and kept across a resume (`rebuild`): the model keeps the last word and
+    # the disagreement is recorded instead (engine/verifier.py).
     disputes: dict[str, str] = {}
     if owed is not None and not loop._finish_reserved:
         from . import verifier

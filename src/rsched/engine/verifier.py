@@ -25,6 +25,9 @@ dies. So a line is challenged AT MOST ONCE per run (`loop._challenged`). If the 
 the same verdict after being shown the objection, its verdict STANDS and the disagreement is
 RECORDED — in the `stopping_update` event and on a finish-line outcome as `disputed`. The engine
 gets one intervention, the model keeps the last word, and the operator gets the audit trail.
+"Per run" is the guard scope (engine/guardscope.py) — per reply, in a conversation — and it
+holds across a resume: each challenge is recorded on its deferral (`claims_unsupported`), and a
+resumed leg rebuilds the set from those records (`finishgate.rebuild`).
 
 Cost is naturally scoped: one subcall per finish attempt that claims something met.
 """

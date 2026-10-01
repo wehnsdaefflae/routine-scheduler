@@ -174,7 +174,10 @@ which is why a plurality of `could_not`, not a majority of "unhelpful", is the t
 yet had labelled and records a label only against one of them; a label with no hold behind it is
 refused in the engine note and changes nothing. Before this, labels were accepted for any live
 reminder any number of times: one run labelled a single reminder 75 times, 565 labels sat on 437
-fires, and the inflation fell on `would_have`, the very label promotion reads.
+fires, and the inflation fell on `would_have`, the very label promotion reads. "This run" is the
+hold ledger's own scope (below): a hold from before a restart is still owed its label after it,
+because a resumed leg replays the holds and labels in its transcript, in the order the live
+turns applied them, before it accepts another.
 
 Labelling is **not** enforced. `remind_feedback` rides every kind, so rejecting an action for
 omitting bookkeeping would put the layer in the way of the work — and the schema-storm guard fails
@@ -225,6 +228,15 @@ Two rules keep the layer from eating the run:
   claim VERIFIER already uses (at most one challenge per claimed line per run) and for the same
   reason: a model and a gate that both refuse to yield would livelock a run into a dead budget.
 - **One hold per action**, however many reminders match.
+
+"Per run" is the GUARD SCOPE every once-only guard shares (`engine/guardscope.py`): a routine's
+whole run, every leg of it — and a conversation's current REPLY, because each reply is a new task.
+The ledger lives in memory but is not reset when a run resumes: a resumed leg rebuilds it from the
+holds its transcript recorded (a hold's observation needs no extra field — its kind names the
+source, `action` the string), so a confirmation given before a restart still stands after it.
+Before this, every resumed leg started the ledger empty and held the confirmed action again. In a
+conversation the leg after an authored finish — the reply the user read — opens the next reply,
+and its holds start fresh; a reply interrupted and resumed is still that reply.
 
 The live set is read ONCE, at construction, then kept in step with the run's own ops — the composed
 prompt is append-only under the caching contract, so a store that changes between runs never

@@ -20,15 +20,19 @@ So: one function writes both halves from ONE string, and replay renders it back 
 from __future__ import annotations
 
 
-def append(loop, note: str, *, replay: bool = True) -> None:
+def append(loop, note: str, *, replay: bool = True, **marks) -> None:
     """Append one ENGINE NOTE to the live prompt and record it verbatim in the transcript.
 
     `replay=False` marks a note the resume path RE-AUTHORS for itself — the "this run was
     interrupted and is now resumed" and "the user continued the conversation" notes, which
     `boot` writes afresh on every leg. Replaying them too would stack one copy per leg.
+
+    `marks` ride the RECORD only: payload keys naming the once-only guard a note spent (a rule
+    assist's `assists`, the eviction warning's `evict_warning`), which a resumed leg rebuilds
+    that guard from (engine/guardscope.py). The note's text is the model's, and never parsed.
     """
     loop.ctx.transcript.event("user_injection", {
-        "text": note, "source": "engine", **({} if replay else {"replay": False})})
+        "text": note, "source": "engine", **({} if replay else {"replay": False}), **marks})
     loop.messages.append({"role": "user", "content": message(note)})
 
 

@@ -146,6 +146,7 @@ def configure(loop, ctx: RunContext, workflow_body: str, instruction: str,
     loop._challenged = set()   # F334 v2: conditions the verifier has
     #                                      already objected to — at most once each,
     #                                      or a stubborn pair livelocks the run
+    #                                      (re-seeded on resume: finishgate.rebuild)
     # A signal already applied by an earlier leg must not re-fire on this one —
     # the run's applied ledger (engine-owned) seeds the edge-triggers.
     from .switches import load_applied_baselines
@@ -173,7 +174,8 @@ def configure(loop, ctx: RunContext, workflow_body: str, instruction: str,
     # the reminders this routine learned and the assists its rules declare — and the run's
     # own archived history as a third store to surface from. Each initialises its OWN run
     # state: this function has no business knowing their field names, and the statement
-    # ceiling said so before the fourth one landed.
+    # ceiling said so before the fourth one landed. (A resumed leg's boot then re-seeds the
+    # once-only ledgers among them from the transcript — engine/guardscope.py.)
     from . import archival, assist, hold, recall, remind
     for layer in (hold, remind, assist, recall, archival):
         layer.configure(loop)

@@ -75,7 +75,9 @@ class Assist:
 
     @property
     def key(self) -> str:
-        """The stable identity of one assist — the per-run fire guard and the tally key."""
+        """The stable identity of one assist — the key of its once-per-run fire guard (named in
+        the transcript, so a resumed leg rebuilds the guard) and of its tally.
+        """
         return f"{self.rule}/{self.id}"
 
 

@@ -46,8 +46,10 @@ def reserve_finish(loop, spent: dict) -> None:
     returned an engine-authored `partial` and the model was never told — for a scheduled
     routine that costs the next run its handover; in a CONVERSATION the reply IS the
     product, so the user read "Run stopped by the engine: turn budget exhausted (10)".
-    The reserve is spent at most once per run (the caller force-finishes on a second
-    violation), so it can overrun a budget by exactly one turn.
+    The reserve is spent at most once per BUDGET WINDOW (the caller force-finishes on a second
+    violation), so it can overrun a budget by exactly one turn. Unlike the once-only guards
+    (engine/guardscope.py), a resumed leg does not carry it over: the leg gets a fresh budget
+    window, and with it a fresh reserve.
 
     `spent` (`ctx.budget_spent()`) is KEPT on the loop, because which budget ended the run is
     the fact nothing recorded: the note went into the message list only, and the finish's

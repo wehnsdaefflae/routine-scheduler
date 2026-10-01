@@ -1,14 +1,14 @@
 """Compose the initial message list — a fresh kickoff, or a resume that rehydrates the
-prior transcript (replayed messages, cumulative usage base, orphaned-children notes, the
-ended-run follow-up note). Called once per run by loop.run(); the system prompt itself is
-composed in composer.py.
+prior transcript (replayed messages, cumulative usage base, the once-only guards,
+orphaned-children notes, the ended-run follow-up note). Called once per leg by loop.run();
+the system prompt itself is composed in composer.py.
 """
 
 from __future__ import annotations
 
 from .. import reports, rules, sharedstores
 from ..paths import read_json, resolve_rel
-from . import enginenote, inbox, mediaops
+from . import enginenote, guardscope, inbox, mediaops
 from .composer import build_system_prompt, kickoff_message, state_digest
 from .control import inject_user_message, run_user_command
 from .history import orphaned_children, prior_counters, prior_usage, replay_messages, seen_paths
@@ -108,6 +108,10 @@ def boot(loop) -> None:
             1 for e in events if e.get("type") == "observation"
             and not (payload := e.get("payload") or {}).get("rejected")
             and not is_hold(payload))
+        # …and the once-only guards: a hold the run already confirmed, a rule assist that
+        # already fired, a line the verifier already challenged stay spent for the rest of
+        # the run — of the reply, in a conversation, whose next reply starts them fresh
+        guardscope.rebuild(loop, events)
         # Children that were RUNNING at the interruption are dead (threads don't survive a
         # restart). Mark each aborted in the transcript (so the tree is honest and a re-resume
         # doesn't re-detect it) and tell the model below — otherwise it would `wait` forever
