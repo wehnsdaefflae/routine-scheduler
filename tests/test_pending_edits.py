@@ -6,10 +6,20 @@ from rsched import pending_edits
 
 
 def test_queue_rejects_unknown_kind(tmp_path):
-    """Fail closed: a kind with no applier can never enter the spool."""
-    with pytest.raises(ValueError):
-        pending_edits.queue(tmp_path, "r", "bogus_kind", {})
+    """Fail closed: a kind with no applier can never enter the spool — nor can a trigger edit,
+    whose routes are gone and whose appliers only drain spools written before 0.369.0."""
+    for kind in ("bogus_kind", "trigger_create"):
+        with pytest.raises(ValueError):
+            pending_edits.queue(tmp_path, "r", kind, {})
     assert pending_edits.pending_count(tmp_path, "r") == 0
+
+
+def _spooled_before_0369(home, kind: str, payload: dict) -> None:
+    """A trigger edit as the deleted routes spooled it — the only way one exists now."""
+    from rsched import spool
+
+    spool.write(home, "pending-edits", "r", {"kind": kind, "payload": payload, "ts": "t"},
+                prefix="pe")
 
 
 def test_replay_records_failure_and_drops_file(tmp_path):
@@ -50,8 +60,8 @@ def test_a_routine_yaml_that_does_not_load_fails_one_edit_and_wedges_nothing(tmp
     the reap, with the edit still spooled — so the same edit failed at every later run's end
     and every edit queued behind it, of any kind, never applied."""
     rdir = _routine(tmp_path, broken)
-    pending_edits.queue(tmp_path, "r", "trigger_create",
-                        {"entry": {"id": "t1", "type": "webhook", "token": "x"}})
+    _spooled_before_0369(tmp_path, "trigger_create",
+                         {"entry": {"id": "t1", "type": "webhook", "token": "x"}})
     pending_edits.queue(tmp_path, "r", "file", {"path": "stages/next.md", "content": "next"})
 
     rows = pending_edits.apply_pending(rdir, tmp_path, "r")
@@ -84,12 +94,12 @@ def test_the_trigger_appliers_round_trip(tmp_path):
     """create → retune → delete through the shared read/write pair, and a second report
     trigger slipping in while queued is skipped rather than duplicated."""
     rdir = _routine(tmp_path, "enabled: true\ntriggers:\n- {id: rep1, type: report}\n")
-    pending_edits.queue(tmp_path, "r", "trigger_create", {"entry": {"id": "rep2", "type": "report"}})
-    pending_edits.queue(tmp_path, "r", "trigger_create", {"entry": {"id": "hk", "type": "webhook"}})
-    pending_edits.queue(tmp_path, "r", "trigger_update",
-                        {"trigger_id": "hk", "fields": {"cooldown_s": 60}})
-    pending_edits.queue(tmp_path, "r", "trigger_delete", {"trigger_id": "rep1"})
-    pending_edits.queue(tmp_path, "r", "trigger_delete", {"trigger_id": "gone"})
+    _spooled_before_0369(tmp_path, "trigger_create", {"entry": {"id": "rep2", "type": "report"}})
+    _spooled_before_0369(tmp_path, "trigger_create", {"entry": {"id": "hk", "type": "webhook"}})
+    _spooled_before_0369(tmp_path, "trigger_update",
+                         {"trigger_id": "hk", "fields": {"cooldown_s": 60}})
+    _spooled_before_0369(tmp_path, "trigger_delete", {"trigger_id": "rep1"})
+    _spooled_before_0369(tmp_path, "trigger_delete", {"trigger_id": "gone"})
 
     rows = pending_edits.apply_pending(rdir, tmp_path, "r")
 
