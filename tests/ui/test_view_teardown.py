@@ -212,7 +212,7 @@ def test_a_late_library_delete_does_not_pull_you_back(ui, ui_page):
 
 
 def test_collapsing_the_activity_section_stops_its_poll(ui, ui_page):
-    """The activity feed polls FOUR endpoints every 4 s while a run is active. It is started
+    """The activity feed polls THREE endpoints every 4 s while a run is active. It is started
     lazily when its section opens — and has to stop again when the section closes, or one
     click open and one click closed leaves a request a second running for content nobody can
     see, for the life of the tab."""
@@ -254,3 +254,27 @@ def test_leaving_settings_stops_the_restart_watch(ui, ui_page):
     # one may be the daemon lamp's own 30 s backstop landing inside the window; the watch's
     # 2 s cadence puts three here
     assert len(polls) <= 1, f"the restart watch outlived Settings: {len(polls)} status reads"
+
+
+def test_a_pending_file_card_refresh_dies_with_its_card(ui, ui_page):
+    """The files card coalesces a burst of file observations into one refetch 1.5 s later
+    (components/fileactivity.js poke). Leaving the view inside that window used to send the
+    refetch anyway, for a card nobody can see."""
+    ui.seed_run("uir", "20260714-070000", "running")
+    ui_page.goto(f"{ui.url}/#/help")
+    ui_page.wait_for_selector("#view h1")
+    ui_page.evaluate("""async () => {
+      const { createFileActivity } = await import("/static/components/fileactivity.js");
+      const box = document.createElement("div");
+      document.body.append(box);
+      window.__card = { box, files: createFileActivity(box,
+        { url: "/api/runs/uir:20260714-070000/files" }) };
+    }""")
+    expect(ui_page.locator(".filelist")).to_have_count(1)
+    ui_page.wait_for_timeout(500)                     # its own first read is out and back
+
+    after = _watch(ui_page)
+    ui_page.evaluate("() => { window.__card.files.poke(); window.__card.box.remove(); }")
+    ui_page.wait_for_timeout(2500)                    # > the 1.5 s coalescing window
+    files = [u for u in after if u.endswith("/files")]
+    assert not files, f"the files card refetched after it was gone: {files}"

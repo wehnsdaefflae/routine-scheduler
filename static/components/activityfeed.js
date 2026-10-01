@@ -7,12 +7,19 @@
 // its section is open), so a collapsed section costs nothing — and it stays lazy AFTERWARDS.
 // `isOpen()` is the same predicate shape createTaskTree takes: start() arms the wiring once,
 // and every refresh the bus or the 4 s poll would make is skipped while the section is shut.
-// Without it, one click open and one click closed left four fetches (routines, 300 runs,
-// status, questions) firing every four seconds for content nobody could see, for the life of
-// the tab — the same "refetch nothing renders" class as any leaked poller.
+// Without it, one click open and one click closed left three fetches (routines, 300 runs,
+// status) firing every four seconds for content nobody could see, for the life of the tab — the
+// same "refetch nothing renders" class as any leaked poller.
+//
+// The open-decisions tile is a READER of questions-store.js, never a fetcher of its own: the
+// header badge already keeps that one list fresh on every bus event, so a feed that asked for it
+// with every 4 s refresh doubled the load on one of the two read models that starved the daemon.
+// One load is in flight at a time, and a refresh asked for meanwhile runs once after it — a slow
+// daemon used to collect a new batch of requests every poll, answered in whatever order.
 
 import { api } from "/static/api.js";
 import { summaryLine } from "/static/md.js";
+import { loadQuestions, subscribeQuestions } from "/static/questions-store.js";
 import { liveTail } from "/static/stream.js";
 import { createTranscript } from "/static/components/transcript.js";
 import { chip, el, emptyState, fmtDur, fmtNum, skeleton, storage, toDate, when } from "/static/util.js";
@@ -40,9 +47,12 @@ function runDuration(r) {
 export function activityFeed({ isOpen = () => true } = {}) {
   const filters = { routine: "", status: "", window: storage.get(WINDOW_KEY) || "7d", search: "", live: true };
   const rows = new Map();          // run_id -> row controller (persists across refreshes)
-  let allRuns = [], routineMeta = {}, statusData = { active_runs: {} }, questions = [];
+  let allRuns = [], routineMeta = {}, statusData = { active_runs: {} };
+  let openDecisions = 0;           // from questions-store.js — the badge's own definition of open
   let optionsBuilt = false, loaded = false, started = false;
-  let pending = null, poll = null;
+  let pending = null, poll = null, unsubscribe = null;
+  let inflight = null, again = false;   // one load at a time; `again` = one more after it
+  let disposed = false;                 // the view is gone: a queued reload must not fire
 
   const stats = el("div", { class: "stats" });
   const routineSel = el("select", {}, el("option", { value: "" }, "All routines"));
@@ -77,26 +87,37 @@ export function activityFeed({ isOpen = () => true } = {}) {
   function setStatusFilter(v) { filters.status = v; statusSel.value = v; renderFeed(); }
 
   // ---- data ----------------------------------------------------------------
-  async function load() {
-    try {
-      const [routines, runs, status, qs] = await Promise.all([
-        api("/api/routines"),
-        api("/api/runs?limit=300"),
-        api("/api/status"),
-        api("/api/questions").catch(() => []),
-      ]);
-      routineMeta = Object.fromEntries(routines.map((r) => [r.slug, r]));
-      allRuns = runs;
-      statusData = status || { active_runs: {} };
-      questions = qs || [];
-      loaded = true;
-      if (!optionsBuilt) buildRoutineOptions(routines);
-      renderStats();
-      renderFeed();
-    } catch {
-      if (!loaded) feed.replaceChildren(emptyState("✕", "Couldn't reach the daemon",
-        "The feed retries automatically while this page is open."));
-    }
+  function load() {
+    if (inflight) { again = true; return; }
+    inflight = (async () => {
+      try {
+        const [routines, runs, status] = await Promise.all([
+          api("/api/routines"),
+          api("/api/runs?limit=300"),
+          api("/api/status"),
+        ]);
+        routineMeta = Object.fromEntries(routines.map((r) => [r.slug, r]));
+        allRuns = runs;
+        statusData = status || { active_runs: {} };
+        loaded = true;
+        if (!optionsBuilt) buildRoutineOptions(routines);
+        renderStats();
+        renderFeed();
+      } catch {
+        if (!loaded) feed.replaceChildren(emptyState("✕", "Couldn't reach the daemon",
+          "The feed retries automatically while this page is open."));
+      }
+    })().finally(() => {
+      inflight = null;
+      if (again) { again = false; if (!disposed && isOpen()) load(); }
+    });
+  }
+
+  // "Open" is what the header badge counts — unanswered and not snoozed. The tile counted
+  // snoozed decisions too, so a snooze the badge honoured still read as waiting here.
+  function onQuestions({ items }) {
+    openDecisions = items.filter((q) => !q.answered && !q.snoozed).length;
+    if (loaded) renderStats();
   }
 
   function buildRoutineOptions(routines) {
@@ -123,9 +144,7 @@ export function activityFeed({ isOpen = () => true } = {}) {
       statCard(waiting, "waiting on you", "warn", () => setStatusFilter("waiting_user")),
       statCard(failed, "failed · 24h", "err", () => setStatusFilter("failed")),
       statCard(inWindow, `runs · ${filters.window}`, "amber", () => setStatusFilter("")),
-      // truly open only — answered-and-queued items are settled, not waiting on the user
-      statCard(questions.filter((q) => !q.answered).length, "open decisions", "warn",
-        () => { location.hash = "#/questions"; }));
+      statCard(openDecisions, "open decisions", "warn", () => { location.hash = "#/questions"; }));
   }
 
   // ---- feed ----------------------------------------------------------------
@@ -191,8 +210,9 @@ export function activityFeed({ isOpen = () => true } = {}) {
     }
 
     async function build() {
-      transcript = createTranscript(body, {
+      const mine = createTranscript(body, {
         fileUrl: (rel) => `/api/runs/${r0.run_id}/file?path=${encodeURIComponent(rel)}` });
+      transcript = mine;
       if (isActive(cur.state)) {
         tail = liveTail({
           page: (o) => `/api/runs/${r0.run_id}/transcript?offset=${o}`,
@@ -200,13 +220,18 @@ export function activityFeed({ isOpen = () => true } = {}) {
           onEvent: (ev) => transcript && transcript.add(ev),
         });
       } else {
+        // Collapsed while fetching — or collapsed AND re-opened, which builds a second
+        // transcript: this fetch's events then belong to neither, and adding them to the new
+        // one rendered every event twice.
+        const stale = () => transcript !== mine;
         try {
           const { events } = await api(`/api/runs/${r0.run_id}/transcript`);
-          if (!transcript) return;                           // collapsed while fetching
+          if (stale()) return;
           if (!events.length) body.append(el("div", { class: "empty" },
             el("div", { class: "t" }, "empty transcript")));
-          for (const ev of events) transcript.add(ev);
+          for (const ev of events) mine.add(ev);
         } catch (err) {
+          if (stale()) return;
           body.append(el("div", { class: "ev error" }, `couldn't load transcript: ${err.message}`));
         }
       }
@@ -251,13 +276,19 @@ export function activityFeed({ isOpen = () => true } = {}) {
       if (filters.live && (Object.keys(statusData.active_runs || {}).length || allRuns.some((r) => isActive(r.state))))
         load();
     }, 4000);
+    // the store's own cadence keeps the tile current from here on; this first load joins a
+    // fetch already in flight and reaches the tile through the subscription
+    unsubscribe = subscribeQuestions(onQuestions);
+    loadQuestions().catch(() => { /* the daemon lamp reports the link; the tile stays 0 */ });
     load();
   }
 
   function dispose() {
+    disposed = true;
     window.removeEventListener("rsched-bus", onBus);
     clearInterval(poll);
     clearTimeout(pending);
+    unsubscribe?.();
     for (const ctrl of rows.values()) ctrl.dispose();
     rows.clear();
   }

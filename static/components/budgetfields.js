@@ -1,8 +1,7 @@
-// The budget vocabulary — ONE list feeding every budgets editor (the routine page, the
-// creation flow's setup panel). key → short label → full help line;
-// UNLIMITED_BUDGETS marks
-// the -1-means-unlimited ones (their inputs allow -1). Two drifting copies of this
-// list once disagreed on the labels; keep it here only.
+// The budget vocabulary — ONE list feeding every budgets editor (today the routine page's
+// limits section, views/routine-config-limits.js). key → short label → full help line;
+// UNLIMITED_BUDGETS marks the -1-means-unlimited ones (their inputs allow -1). Two drifting
+// copies of this list once disagreed on the labels; keep it here only.
 export const UNLIMITED_BUDGETS = ["max_total_tokens", "max_wall_clock_min", "max_cost",
                                   "max_total_turns"];
 

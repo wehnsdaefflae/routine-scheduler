@@ -9,10 +9,23 @@ export function filePicker() {
   const chips = el("span", { class: "attach-chips" });
   const btn = el("button", { class: "btn small", onclick: () => input.click() }, "📎 attach");
   let pending = [];
+  // Each chip is a BUTTON to assistive tech and the keyboard (role, tab stop, Enter/Space) —
+  // it was a bare span with a click handler, so a file attached from the keyboard could not be
+  // taken off again. A chip removed by key hands focus to its neighbour, never to the page.
   const renderChips = () => {
-    chips.replaceChildren(...pending.map((f, i) =>
-      el("span", { class: "attach-chip removable", title: "click to remove",
-        onclick: () => { pending.splice(i, 1); renderChips(); } }, f.name, " ×")));
+    chips.replaceChildren(...pending.map((f, i) => {
+      const remove = (byKey) => {
+        pending.splice(i, 1);
+        renderChips();
+        if (byKey) (chips.children[i] || chips.children[i - 1] || btn).focus();
+      };
+      return el("span", { class: "attach-chip removable", role: "button", tabindex: "0",
+        title: "click to remove", "aria-label": `remove ${f.name}`,
+        onclick: () => remove(false),
+        onkeydown: (e) => {
+          if (e.key === "Enter" || e.key === " ") { e.preventDefault(); remove(true); }
+        } }, f.name, " ×");
+    }));
   };
   const addFiles = (list) => {
     for (const f of list) {

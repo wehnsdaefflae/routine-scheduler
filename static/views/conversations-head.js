@@ -150,7 +150,6 @@ export function renderHead(head, detail, stateChip, { slug, isLive, onListChange
       "deliberation — thinking on paper"),
     delib.node));
   capBody.append(abilitiesPanel(detail.permissions, detail.capabilities, {
-    disableRuns: "a conversation is one continuous run — previous-run depth is routine-only",
     onSave: async (payload) => {
       try {
         await api(`/api/conversations/${slug}/permissions`, { method: "PUT", body: payload });

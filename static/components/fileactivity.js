@@ -6,6 +6,7 @@
 // refetch, so the SSE tail can call it per event without hammering the endpoint.
 
 import { api, apiBlobUrl } from "/static/api.js";
+import { newTabHref } from "/static/components/blobtab.js";
 import { el } from "/static/util.js";
 
 function opsLine(f) {
@@ -25,18 +26,21 @@ export function createFileActivity(container, { url }) {
   const fileBase = url.replace(/\/files$/, "/file");
 
   // Fetch one row's file with the auth header and hand it to the browser as a blob —
-  // view in a new tab or download. Rows outside the served scope (fs-root paths) get
-  // told so inline, where the click happened, instead of a dead new tab.
+  // view in a new tab (sandboxed unless the type cannot carry script: blobtab.js) or
+  // download. Rows outside the served scope (fs-root paths) get told so inline, where the
+  // click happened, instead of a dead new tab.
   async function grab(path, ops, download) {
     try {
-      const { url: burl } = await apiBlobUrl(`${fileBase}?path=${encodeURIComponent(path)}`);
-      const a = el("a", download ? { href: burl, download: path.split("/").pop() }
-                                 : { href: burl, target: "_blank" });
+      const { url: burl, type } = await apiBlobUrl(`${fileBase}?path=${encodeURIComponent(path)}`);
+      const name = path.split("/").pop();
+      const tab = download ? null : newTabHref(burl, type, name);
+      const a = el("a", download ? { href: burl, download: name }
+                                 : { href: tab.href, target: "_blank" });
       document.body.append(a); a.click(); a.remove();
-      setTimeout(() => URL.revokeObjectURL(burl), 60_000);
+      setTimeout(() => { URL.revokeObjectURL(burl); tab?.revoke(); }, 60_000);
     } catch (err) {
       const prev = ops.textContent;
-      ops.textContent = /\b400\b/.test(err.message) ? "outside served scope" : "unavailable";
+      ops.textContent = err.status === 400 ? "outside served scope" : "unavailable";
       setTimeout(() => { ops.textContent = prev; }, 4000);
     }
   }
@@ -101,7 +105,9 @@ export function createFileActivity(container, { url }) {
     refresh,
     poke() {  // live tail: many file observations arrive in bursts — one refetch per lull
       if (timer) return;
-      timer = setTimeout(() => { timer = null; refresh(); }, 1500);
+      // …and none once the card is gone: a view left inside the lull is torn down, and its
+      // refetch would be a request for a card nobody can see
+      timer = setTimeout(() => { timer = null; if (box.isConnected) refresh(); }, 1500);
     },
   };
 }

@@ -441,7 +441,11 @@ def ui_page(ui, page):
     """
     page.set_default_timeout(ACTION_TIMEOUT_MS)
     page.set_default_navigation_timeout(ACTION_TIMEOUT_MS)
-    page.add_init_script(f"localStorage.setItem('rsched_token', {TOKEN!r})")
+    # An init script runs in EVERY frame, and the artifact viewer's sandboxed frame has no
+    # storage at all: reading `localStorage` there throws, which the collector below would
+    # report as the page's own error.
+    page.add_init_script(f"try {{ localStorage.setItem('rsched_token', {TOKEN!r}); }} "
+                         "catch { /* a sandboxed frame has no storage */ }")
     page.on("pageerror", lambda exc: ui.js_errors.append(str(exc)))
 
     probe = _Probe(page=page, harness=ui)

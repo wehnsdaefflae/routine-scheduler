@@ -38,9 +38,12 @@ print(json.dumps({"version": 1, "decision": "run" if work else "skip",
                   "reason": "why, in one sentence"}))
 `;
 
+// One read of the vocabulary per tab — but never of a FAILED read: the cache held the rejected
+// promise, so one refused fetch broke every gate editor in the tab until a reload.
 let kindsCache = null;
 async function loadKinds() {
-  kindsCache ??= api("/api/gate/kinds").then((d) => d.kinds);
+  kindsCache ??= api("/api/gate/kinds").then((d) => d.kinds)
+    .catch((err) => { kindsCache = null; throw err; });
   return kindsCache;
 }
 
@@ -184,12 +187,21 @@ export function gateEditor({ slug, value, onChange }) {
     return box;
   }
 
-  async function test() {
+  // A check can be a mailbox login, a page fetch or the routine's own script, so the button
+  // rests while its test is out — a double-click asked them all twice. And only the NEWEST
+  // test may paint: an edit re-renders an enabled button, and a slower test of the gate as it
+  // stood before the edit used to land last and put that gate's verdict under this one.
+  let testing = 0;
+  async function test(e) {
+    const mine = ++testing;
+    const btn = e.currentTarget;
+    btn.disabled = true;
     result.hidden = false;
     result.replaceChildren(el("div", { class: "muted small" }, "asking the checks…"));
     try {
       const r = await api(`/api/routines/${slug}/gate/test`, { method: "POST",
         body: { run_gate: gate } });
+      if (mine !== testing) return;
       const verdict = { run: "a fire now would START a run", skip: "a fire now would be SKIPPED",
         error: "a fire now would FAIL" }[r.decision] || r.decision;
       // el() drops a null child; replaceChildren would print it — so the optional stderr block
@@ -204,8 +216,11 @@ export function gateEditor({ slug, value, onChange }) {
         r.stderr ? el("pre", { class: "small gate-stderr" }, r.stderr) : null,
       ].filter(Boolean));
     } catch (err) {
+      if (mine !== testing) return;
       result.replaceChildren(el("div", { class: "gate-verdict gate-error", "data-gate-verdict": "error" },
         "the test could not run"), el("div", { class: "small" }, String(err.message || err)));
+    } finally {
+      btn.disabled = false;
     }
   }
 

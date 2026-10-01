@@ -722,6 +722,11 @@ deliverable, a decision for the user, a blocker). A conversation's spine is its 
   here and rendered in the chat's side panel (html sandboxed, md/img/pdf/csv/json
   inline); routines get the SAME panel on the run view (`api_routine_files` `/artifacts` + `/artifact`,
   `components/artifacts.js` with `base: "routines"`), with the state-graph card on top.
+  A file fetched for the panel or the files card is a blob URL, and a blob URL carries the
+  console's ORIGIN — so a new tab opens one as itself only when its type cannot carry script
+  (raster image, audio, video, PDF, plain text, an untyped download) and frames everything else
+  in the same `allow-scripts` sandbox (`components/blobtab.js`): a page a routine wrote never
+  runs with the operator token in reach.
   The RAIL those cards sit in is one component too (`components/rail.js`, R341): the run view
   and the conversation view render the same collapsible sections, remembered per browser —
   they were divergent copies, and only the conversation one could collapse (F296/R340).
@@ -905,9 +910,10 @@ whose TEXT must change on a live instance is converted by a one-shot migration i
   `confirm` / `rule_confirm` / `remind_confirm`, and the levels `runs` / `reminders` (the full
   key list with each one's meaning is docs/rules-permissions.md, not restated here) —
   grants.py builds the run policy from it alone, so a doc-without-capability config fails closed;
-  a doc's `requires:` names what its instructions presume and drives the UI cascades (activating a
-  doc switches its requirements on; switching a capability off deactivates the docs requiring it —
-  and the server runs the SAME raise-then-floor on every path that persists a mapping: save AND
+  a doc's `requires:` names what its instructions presume and drives the UI's activation cascade
+  (activating a doc switches its requirements on; on the ability cards a required capability has
+  no switch of its own — the doc is the switch — and the server runs the SAME raise-then-floor on
+  every path that persists a mapping: save AND
   creation (scaffold, conversation create, the composer's ⚙ payload, the /defaults preview), so a
   mapping never expresses a capability its held docs don't require — from birth, not first edit).
   Both layers user-changeable ONLY; routines can't self-grant. The shipped doc set is 17 files

@@ -4,10 +4,12 @@
 // PDF) — listed newest-first and rendered inline by type. Files are fetched WITH the
 // auth header and rendered from blob URLs (iframes/imgs can't carry Authorization); html
 // renders in a sandboxed iframe (scripts yes, same-origin no — an artifact can never read
-// the console's token). Re-writing the same filename updates the artifact in place:
-// refresh() re-lists. `base` picks the API family: "conversations" (default) | "routines".
+// the console's token), and the "open" link hands a new tab the same sandbox (blobtab.js).
+// Re-writing the same filename updates the artifact in place: refresh() re-lists. `base`
+// picks the API family: "conversations" (default) | "routines".
 
 import { api, apiBlobUrl } from "/static/api.js";
+import { newTabHref } from "/static/components/blobtab.js";
 import { confirmDialog } from "/static/components/dialog.js";
 import { md } from "/static/md.js";
 import { el, emptyState, relTime, toast } from "/static/util.js";
@@ -21,16 +23,55 @@ const ICON = (ext) => IMG.has(ext) ? "🖼" : AUDIO.has(ext) ? "🔊" : VIDEO.ha
   : ext === "pdf" ? "📕" : ext === "html" ? "🌐" : ext === "md" ? "📄"
   : ext === "csv" || ext === "tsv" ? "🧮" : ext === "json" ? "{}" : "📎";
 
+// The deliverable dirs (web/artifacts.py ARTIFACT_DIRS): a write that lands in one is a row of
+// this panel, which is how a conversation knows to refresh it while a reply is still working.
+const DELIVERABLE = /(?:^|\/)(?:artifacts|reports|output)\//;
+export const isDeliverable = (path) => DELIVERABLE.test(String(path || ""));
+
+const MAX_ROWS = 200, MAX_COLS = 30;
+
+// Delimited rows the way every csv writer produces them (RFC 4180): a QUOTED field may hold the
+// separator, a doubled quote and a line break. Splitting each line on the separator tore a value
+// like "Smith, John" into two columns and shifted the rest of its row under the wrong headers.
+// Blank lines are skipped; parsing stops once the table has all the rows it will show.
+function delimitedRows(text, sep) {
+  const rows = [];
+  let row = [], field = "", quoted = false;
+  const endRow = () => {
+    row.push(field);
+    if (row.length > 1 || row[0] !== "") rows.push(row);
+    row = [];
+    field = "";
+  };
+  for (let i = 0; i < text.length && rows.length < MAX_ROWS; i++) {
+    const c = text[i];
+    if (quoted) {
+      if (c !== '"') field += c;
+      else if (text[i + 1] === '"') { field += '"'; i++; }
+      else quoted = false;
+    } else if (c === '"' && field === "") quoted = true;
+    else if (c === sep) { row.push(field); field = ""; }
+    else if (c === "\n") endRow();
+    else if (c !== "\r") field += c;
+  }
+  if (rows.length < MAX_ROWS && (field || row.length)) endRow();
+  return rows;
+}
+
 function csvTable(text, sep) {
-  const rows = text.replace(/\r/g, "").split("\n").filter((r) => r.length).slice(0, 200)
-    .map((r) => r.split(sep));
   const table = el("table", { class: "art-table" });
-  rows.forEach((cells, i) => {
+  delimitedRows(text, sep).forEach((cells, i) => {
     const tr = el("tr", {});
-    for (const c of cells.slice(0, 30)) tr.append(el(i === 0 ? "th" : "td", {}, c));
+    for (const c of cells.slice(0, MAX_COLS)) tr.append(el(i === 0 ? "th" : "td", {}, c));
     table.append(tr);
   });
   return el("div", { class: "art-scroll" }, table);
+}
+
+// A .json artifact is shown indented — and as the text it is when it does not parse, because a
+// model-written file one trailing comma off is still worth reading ("could not load" was not).
+function jsonText(text) {
+  try { return JSON.stringify(JSON.parse(text), null, 2); } catch { return text; }
 }
 
 export function createArtifacts(container, { slug, base = "conversations" }) {
@@ -40,31 +81,53 @@ export function createArtifacts(container, { slug, base = "conversations" }) {
   let items = [];
   let openPath = null;
   let blobUrl = null;   // the viewer's current object URL (revoked on replace)
+  let tabLink = null;   // the new-tab href built from it (blobtab.js), revoked with it
+  const release = () => {
+    if (blobUrl) URL.revokeObjectURL(blobUrl);
+    tabLink?.revoke();
+    blobUrl = null;
+    tabLink = null;
+  };
 
   const fileUrl = (p) => (base === "routines"
     ? `/api/routines/${slug}/artifact?path=${encodeURIComponent(p)}`
     : `/api/conversations/${slug}/file?path=${encodeURIComponent(p)}`);
 
+  // Only the NEWEST open may paint the viewer or keep its object URL. Two clicks in quick
+  // succession put two fetches in flight; the earlier one landing last used to repaint the
+  // viewer with the file the reader had already moved off — under the other row's highlight —
+  // and its URL was never revoked. Closing the viewer supersedes a fetch the same way.
+  let opening = 0;
+
+  function close() {
+    opening += 1;
+    release();
+    viewer.hidden = true;
+    viewer.replaceChildren();   // a playing <audio>/<video> stops with its viewer
+    openPath = null;
+  }
+
   async function open(item) {
+    const mine = ++opening;
     openPath = item.path;
     renderList();
     viewer.hidden = false;
     viewer.replaceChildren(el("div", { class: "faint small" }, "loading…"));
     const ext = (item.name.split(".").pop() || "").toLowerCase();
+    release();
     try {
-      if (blobUrl) { URL.revokeObjectURL(blobUrl); blobUrl = null; }
+      const { url, type } = await apiBlobUrl(fileUrl(item.path));
+      if (mine !== opening) { URL.revokeObjectURL(url); return; }
+      blobUrl = url;
+      tabLink = newTabHref(url, type, item.name);
       let body;
       if (ext === "md" || ext === "csv" || ext === "tsv" || ext === "json" || TEXTUAL.has(ext)) {
-        const { url } = await apiBlobUrl(fileUrl(item.path));
-        blobUrl = url;
         const text = await (await fetch(url)).text();
+        if (mine !== opening) return;      // the newer open already released this URL
         body = ext === "md" ? el("div", { class: "prose" }, md(text))
           : ext === "csv" || ext === "tsv" ? csvTable(text, ext === "csv" ? "," : "\t")
-          : el("pre", { class: "art-pre" }, ext === "json"
-              ? JSON.stringify(JSON.parse(text), null, 2) : text);
+          : el("pre", { class: "art-pre" }, ext === "json" ? jsonText(text) : text);
       } else {
-        const { url } = await apiBlobUrl(fileUrl(item.path));
-        blobUrl = url;
         body = ext === "html"
           ? el("iframe", { class: "art-frame", sandbox: "allow-scripts", src: url })
           : IMG.has(ext) ? el("img", { class: "art-img", src: url, alt: item.name })
@@ -74,14 +137,16 @@ export function createArtifacts(container, { slug, base = "conversations" }) {
           : el("div", { class: "faint" }, "no inline view for this type — download below");
       }
       const dl = el("a", { class: "btn small", href: blobUrl, download: item.name }, "⭳ download");
-      const pop = el("a", { class: "btn small", href: blobUrl, target: "_blank",
+      const pop = el("a", { class: "btn small", href: tabLink.href, target: "_blank",
                             title: "open full-size in a new tab" }, "⧉ open");
       viewer.replaceChildren(
         el("div", { class: "art-viewer-head" },
           el("span", { class: "art-name", title: item.path }, item.name), pop, dl,
-          el("button", { class: "btn small", onclick: () => { viewer.hidden = true; openPath = null; renderList(); } }, "×")),
+          el("button", { class: "btn small", title: "close the viewer",
+                         onclick: () => { close(); renderList(); } }, "×")),
         body);
     } catch (err) {
+      if (mine !== opening) return;
       viewer.replaceChildren(el("div", { class: "faint" }, `could not load: ${err.message}`));
     }
   }
@@ -112,7 +177,7 @@ export function createArtifacts(container, { slug, base = "conversations" }) {
           try {
             await api(`/api/${base}/${slug}/artifacts?path=${encodeURIComponent(it.path)}`,
                       { method: "DELETE" });
-            if (openPath === it.path) { viewer.hidden = true; openPath = null; }
+            if (openPath === it.path) close();
             await refresh();
           } catch (err) {
             toast(`could not delete: ${err.message}`, 4000, { error: true });
@@ -151,6 +216,7 @@ export function createArtifacts(container, { slug, base = "conversations" }) {
   return {
     refresh,
     count: () => items.length,
-    destroy() { if (blobUrl) URL.revokeObjectURL(blobUrl); },
+    /** The view's teardown: free the viewer's URLs, and those of an open still in flight. */
+    destroy() { opening += 1; release(); },
   };
 }

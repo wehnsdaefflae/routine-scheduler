@@ -1,4 +1,6 @@
-// Option ladders and explanatory copy for the abilities panel.
+// Option ladders and explanatory copy for the abilities panel. A card carries a dial only for
+// the approval level its doc's gated action rides on: a doc requires actions and utils alone,
+// so the run-history depth and the reminder stores are settings edited elsewhere on the page.
 export const CONFIRM_OPTIONS = [
   ["off", "off — engine rejects write_util"],
   ["always", "on — every create/revise asks you"],
@@ -11,23 +13,6 @@ export const RULE_CONFIRM_OPTIONS = [
   ["creations", "on — new rules ask; revisions are autonomous"],
   ["never", "on — fully autonomous (lint-gated)"],
 ];
-export const RUNS_OPTIONS = [
-  ["none", "off — previous runs unreadable"],
-  ["last", "the last run only"],
-  ["all", "all previous runs"],
-];
-export const RUNS_RANK = { none: 0, last: 1, all: 2 };
-// ONE control for the reminder layer, because the two dials behind it are one decision: which
-// stores the routine reads, and — only once it reaches the shared one — who approves a write
-// there. A `local` routine has nothing to approve: its own store is autonomous by design.
-export const REMINDERS_OPTIONS = [
-  ["off", "off — nothing is stored, nothing is held"],
-  ["local", "its own store — cautions it wrote for itself"],
-  ["global:always", "+ the shared store — every shared change asks you"],
-  ["global:creations", "+ the shared store — new ones ask; edits are autonomous"],
-  ["global:never", "+ the shared store — fully autonomous"],
-];
-export const REM_RANK = { none: 0, local: 1, global: 2 };
 
 // What a gated capability MEANS, with a concrete example — a bare action kind told the reader
 // nothing (F178, user order 2026-07-23). Kept verbatim from the panel this replaces.
