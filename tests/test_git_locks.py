@@ -18,7 +18,7 @@ from pathlib import Path
 import pytest
 
 from conftest import git_in
-from rsched import gitlock, libgit
+from rsched import gitlock, libgit, procgroup
 
 
 def _repo(path: Path) -> Path:
@@ -149,9 +149,11 @@ def test_a_git_that_runs_out_of_time_deletes_its_own_lock(tmp_path):
     assert not (repo / ".git" / "index.lock").exists()
 
 
-def test_what_ignores_the_terminate_is_killed_with_the_group(tmp_path):
-    """A hook that ignores SIGTERM would hold git's output pipes open for its whole sleep;
-    git itself still cleans up; the group's SIGKILL ends the rest."""
+def test_what_ignores_the_terminate_is_killed_with_the_group(tmp_path, monkeypatch):
+    """A hook that ignores SIGTERM would hold git's output pipes open for its whole sleep. It
+    keeps the group occupied for the grace (`procgroup` waits for every member); git itself
+    still cleans up at once; the group's SIGKILL ends the rest."""
+    monkeypatch.setattr(procgroup, "TERM_GRACE_S", 1)
     repo = _repo(tmp_path / "r")
     _hook(repo, "pre-commit", "trap '' TERM\nsleep 60")
     (repo / "a.txt").write_text("2\n", encoding="utf-8")

@@ -15,6 +15,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.370.1] — 2026-10-01
+
+### Fixed — a util, script or `shell` command that times out terminates the git inside it instead of killing it
+
+items: operator (2026-10-01), the runner 0.370.0 left out
+
+**What was left.** 0.370.0 stopped `libgit.git` SIGKILLing git at its timeout, because git
+deletes its `index.lock` only in its SIGTERM handler. The other runner that ends a process group
+at a deadline did not change: `utils_run.run_jailed`, behind every util, script and `shell` call,
+still sent SIGKILL to the group the moment the deadline passed. Git runs inside those — the
+library's `git-sync` util commits routine repos, routines' scripts manage repos of their own,
+self-audit's scripts run git in the scheduler checkout. A timed-out call there left the same
+empty lock; `gitlock` recovers one only in the repos libgit commits to. Docs:
+docs/architecture.md, "Git writes"; docs/sandboxing.md.
+
+- **One way to end a group.** The new `procgroup.terminate` holds what `libgit._terminate` did:
+  SIGTERM to the group, SIGKILL only for what is still running `procgroup.TERM_GRACE_S` (30 s)
+  later, the leader reaped either way. `libgit.git` and `run_jailed` both call it; neither
+  signals a group itself any more.
+- **The wait covers the whole group, not its leader.** `libgit._terminate` waited for git, the
+  leader of its group. In a util git is a grandchild (`uv run` → python → git) and the leader
+  exits within milliseconds of SIGTERM: measured on the host, a leader-only wait ended after
+  0.01 s and SIGKILLed a grandchild mid-cleanup, leaving its lock. The wait now ends when no
+  member is left, so a call whose members exit on SIGTERM spends none of the grace; a member
+  that ignores SIGTERM costs the call 30 s before SIGKILL ends it. The grace stays sized to the
+  disk: a process blocked in a stalled `/home` I/O runs its handler only when the I/O returns.
+  Under libgit the same wait lets a hook's own git (the post-commit push) finish its cleanup.
+- **The timeout note says how the group ended**: `… timed out after Ns (process group
+  terminated)`, or `(process group killed 30s after SIGTERM)` when something outlived the grace
+  and its cleanup did not run. The exit stays 124. What the command printed before the group
+  ended is still kept; one that catches SIGTERM can print what it has inside the grace.
+
 ## [0.370.0] — 2026-09-30
 
 ### Fixed — a git call that runs out of time no longer leaves a stale index lock; a commit that does not land says so

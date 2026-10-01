@@ -144,11 +144,11 @@ def test_a_signalled_child_reaches_the_health_stream(shell_ctx, tmp_path):
     assert events[0]["routine"] == "sheller"
 
 
-def test_timeout_kills_the_process_group_and_reports_124(shell_ctx):
+def test_timeout_ends_the_process_group_and_reports_124(shell_ctx):
     obs = dispatch({"kind": "shell", "command": "sleep 30", "timeout_s": 1}, shell_ctx)
     assert obs["exit"] == shellrun.TIMEOUT_EXIT == 124
     assert obs["timed_out"] is True
-    assert "timed out after 1s" in obs["stderr"]
+    assert "timed out after 1s (process group terminated)" in obs["stderr"]
 
 
 def test_cwd_defaults_to_the_routine_dir_and_path_moves_it(shell_ctx):

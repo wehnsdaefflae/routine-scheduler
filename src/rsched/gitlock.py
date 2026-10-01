@@ -24,7 +24,7 @@ same way until a person looked.
 
 The age is the margin for the holder the process scan cannot see: git run on the host outside
 the container, or over the sshfs mount from another machine. Each git call of an rsched commit
-ends within its timeout plus its termination grace (`libgit`), a minute; ten cover a person's
+ends within its timeout plus its termination grace (`procgroup`), a minute; ten cover a person's
 git on a disk that stalls single commands for thirty seconds.
 
 Everything here is lexical about OTHER processes' paths — nothing is resolved through the

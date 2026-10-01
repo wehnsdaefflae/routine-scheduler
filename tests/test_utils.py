@@ -663,9 +663,10 @@ def test_dispatcher_list_skips_non_util_entries(tmp_path):
 
 
 def test_run_util_timeout_kills_grandchildren(tmp_path):
-    """The timeout must kill the whole process GROUP: `uv run` re-execs the script as a
+    """The timeout must end the whole process GROUP: `uv run` re-execs the script as a
     grandchild that a plain kill leaves alive — holding the pipes open and blocking the
-    engine turn forever. With killpg the call returns promptly and the tree is dead."""
+    engine turn forever. Terminated with its group (`procgroup`), the call returns promptly
+    and the tree is dead: nothing in it ignores SIGTERM, so none of the grace is spent."""
     import os as _os
     import time as _time
 
@@ -711,7 +712,7 @@ time.sleep(120)
             return True   # /proc entry vanished between the two checks
     if pidfile.exists():
         pid = int(pidfile.read_text())
-        for _ in range(50):   # killpg is async — give the kernel a moment
+        for _ in range(50):   # a SIGKILL after the grace is async — give the kernel a moment
             if _dead(pid):
                 break
             _time.sleep(0.1)

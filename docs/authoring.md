@@ -69,8 +69,8 @@ root (so `gu <sibling>` resolves), `GLOBAL_UTILS_HOME` names that library, and
 `RSCHED_UTIL_TIMEOUT_S` is the deadline THIS call has. Read that last one when the util
 waits on something slow (an SSH read, a long HTTP poll) and set your own internal timeout
 inside it: a util that owns its clock reports what it captured, while one that outlives the
-deadline is killed with its process group and reports nothing at all. Per-routine scripts
-get the same three.
+deadline is terminated with its process group (SIGTERM, then SIGKILL 30 s later for whatever
+ignores it) and keeps only what it had printed. Per-routine scripts get the same three.
 
 Two gates run before a util reaches the library:
 

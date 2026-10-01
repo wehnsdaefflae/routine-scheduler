@@ -18,14 +18,13 @@ from __future__ import annotations
 import logging
 import os
 import shutil
-import signal
 import subprocess
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import NamedTuple
 
-from . import sandbox
+from . import procgroup, sandbox
 from .captured_output import CapturedOutput, read_capped
 from .ids import is_slug
 from .utils_header import parse_header
@@ -220,16 +219,20 @@ def run_jailed(cmd: list[str], *, env: dict, cwd: Path, timeout: int,
 
     Its three protections are why it is one function and not three copies:
 
-    - OWN PROCESS GROUP (`start_new_session` + `killpg`): `uv run` re-execs the script as a
-      GRANDCHILD, and a shell command can background one — neither is killed by a plain
-      `subprocess.run` timeout, so the child outlives the deadline holding the pipes open and
-      blocks the engine turn forever.
+    - OWN PROCESS GROUP (`start_new_session`), ended through `procgroup.terminate`: `uv run`
+      re-execs the script as a GRANDCHILD and a shell command can background one — neither is
+      killed by a plain `subprocess.run` timeout, so the child outlives the deadline holding the
+      pipes open and blocks the engine turn forever. The group gets SIGTERM and up to
+      `procgroup.TERM_GRACE_S` to empty before SIGKILL: a git the command runs deletes its
+      `index.lock` only in its SIGTERM handler. The SIGKILL this runner used to send first left
+      the lock behind in that repo.
     - TEMPFILE CAPTURE read through `read_capped`, which takes `cap + 1` characters and never
       the file: `fh.read()` on a spool file puts the whole capture back in the daemon's memory,
       the 2026-09-14 incident (a 1.5 GB read, five hours of swap-thrash) in a seam `shell`
       reaches with one `find /`.
-    - WHAT WAS PRINTED BEFORE THE KILL is kept: a command that hung after logging why it hung
-      would otherwise lose exactly the material that explains the hang.
+    - WHAT WAS PRINTED BEFORE THE GROUP ENDED is kept: a command that hung after logging why it
+      hung would otherwise lose exactly the material that explains the hang. One that catches
+      SIGTERM can still print what it has inside the grace.
 
     `label` names the callable in the timeout and spawn-failure notes ("util 'x'",
     "script 'x'", "the command"). `config_seal` is a routine directory whose `routine.yaml`
@@ -246,18 +249,15 @@ def run_jailed(cmd: list[str], *, env: dict, cwd: Path, timeout: int,
             return Jailed(2, CapturedOutput(""),
                           CapturedOutput(f"could not run {label or 'the command'}: {exc}"),
                           False)
-        timed_out = False
+        timed_out, ended = False, ""
         try:
             proc.wait(timeout=timeout)
         except subprocess.TimeoutExpired:
             timed_out = True
-            try:
-                os.killpg(proc.pid, signal.SIGKILL)
-            except (ProcessLookupError, PermissionError):
-                proc.kill()
-            proc.wait()
+            ended = ("terminated" if procgroup.terminate(proc)
+                     else f"killed {procgroup.TERM_GRACE_S}s after SIGTERM")
         notes = [f"{label or 'the command'} timed out after {timeout}s "
-                 f"(process group killed)"] if timed_out else []
+                 f"(process group {ended})"] if timed_out else []
         notes += [n for n in (_seal_broken(config_seal, before, label),) if n]
         return Jailed(proc.returncode, read_capped(out_f, cap),
                       read_capped(err_f, cap, diagnostic="; ".join(notes)), timed_out)
@@ -307,7 +307,7 @@ def run_util(home: Path, name: str, args: list[str], *, timeout: int = 300,
     # THE DEADLINE, so a util that waits on something slow can own its own clock instead of
     # racing this one. Both runners export it (scripts.run_script too) — a util that sets its
     # internal timeout from it reports what it captured; without it, two equal clocks expired
-    # together, the killpg below won, and a remote exec that had already printed its job's PID
+    # together, the runner's kill won, and a remote exec that had already printed its job's PID
     # returned nothing at all (R1813, funscript-trainer 2026-09-21).
     env["RSCHED_UTIL_TIMEOUT_S"] = str(timeout)
     needs = util_needs(home, name)

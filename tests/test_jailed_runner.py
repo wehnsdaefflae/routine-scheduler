@@ -21,11 +21,13 @@ from __future__ import annotations
 import ast
 import re
 import sys
+import time
 from pathlib import Path
 
 import pytest
 
-from rsched import sandbox, scripts, shellrun, utils_run
+from conftest import git_in
+from rsched import procgroup, sandbox, scripts, shellrun, utils_run
 from rsched.utils_lib import OUTPUT_CAP
 
 SRC = Path(__file__).resolve().parents[1] / "src" / "rsched"
@@ -90,12 +92,52 @@ def test_the_three_callable_kinds_share_the_runner():
 PATH_ENV = {"PATH": "/usr/bin:/bin"}
 
 
-def test_a_grandchild_that_outlives_the_deadline_is_killed_with_its_group(tmp_path):
+def test_a_grandchild_that_outlives_the_deadline_is_ended_with_its_group(tmp_path):
     res = utils_run.run_jailed(["bash", "-c", "echo started; sleep 30 & wait"],
                                env=PATH_ENV, cwd=tmp_path, timeout=1, label="the command")
     assert res.timed_out is True
-    assert "started" in res.stdout                  # what was printed BEFORE the kill survives
-    assert "timed out after 1s" in res.stderr
+    assert "started" in res.stdout                  # what was printed BEFORE the end survives
+    assert "timed out after 1s (process group terminated)" in res.stderr
+
+
+def test_a_git_inside_the_command_deletes_its_own_lock_at_the_deadline(tmp_path):
+    """Why the deadline TERMINATES the group (`procgroup`): git deletes `index.lock` only in
+    its SIGTERM handler, which this runner's SIGKILL never let run — the 2026-09-30 lock, one
+    seam over from libgit. A hanging hook keeps git inside the lock (its marker proves git was
+    there when time ran out); git is a CHILD of the leader here, as it is under `uv run`.
+    """
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    git_in(repo, "init", "-q", "-b", "main")
+    (repo / "a.txt").write_text("1\n", encoding="utf-8")
+    git_in(repo, "add", "-A")
+    git_in(repo, "commit", "-qm", "first")
+    hook = repo / ".git" / "hooks" / "pre-commit"
+    hook.write_text(f"#!/bin/sh\ntouch {tmp_path / 'hook-ran'}\nsleep 60\n", encoding="utf-8")
+    hook.chmod(0o755)
+    (repo / "a.txt").write_text("2\n", encoding="utf-8")
+    res = utils_run.run_jailed(
+        ["bash", "-c", "git -c user.name=t -c user.email=t@t commit -a -qm x; echo after"],
+        env={**PATH_ENV, "HOME": str(tmp_path)}, cwd=repo, timeout=3, label="the command")
+    assert res.timed_out is True
+    assert (tmp_path / "hook-ran").exists()
+    assert not (repo / ".git" / "index.lock").exists()
+    assert "(process group terminated)" in res.stderr
+
+
+def test_a_command_that_ignores_sigterm_is_killed_when_the_grace_runs_out(tmp_path,
+                                                                         monkeypatch):
+    """The grace bounds the turn: SIGKILL still ends what will not go. The note says the group
+    had to be killed, so its cleanup did not run.
+    """
+    monkeypatch.setattr(procgroup, "TERM_GRACE_S", 1)
+    started = time.monotonic()
+    res = utils_run.run_jailed(["bash", "-c", "trap '' TERM; echo started; sleep 30"],
+                               env=PATH_ENV, cwd=tmp_path, timeout=1, label="the command")
+    assert time.monotonic() - started < 15
+    assert res.timed_out is True
+    assert "started" in res.stdout
+    assert "timed out after 1s (process group killed 1s after SIGTERM)" in res.stderr
 
 
 def test_a_runaway_printer_is_bounded_and_says_so(tmp_path):

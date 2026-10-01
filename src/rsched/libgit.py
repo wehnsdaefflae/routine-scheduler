@@ -22,9 +22,11 @@ Two causes of that lock are closed here and a third source is recovered from
 (docs/architecture.md, "Git writes"):
 
 - A git call that runs out of time is TERMINATED, never killed outright: SIGTERM to its process
-  group first (git answers it by deleting the lockfiles it holds) and SIGKILL only `_TERM_GRACE`
-  later. `subprocess.run` sent SIGKILL at the timeout, which git cannot clean up after — and the
-  disk under `/home` stalls single I/O commands for up to thirty seconds.
+  group first (git answers it by deleting the lockfiles it holds) and SIGKILL only for what is
+  left `procgroup.TERM_GRACE_S` later. `subprocess.run` sent SIGKILL at the timeout, which git
+  cannot clean up after — and the disk under `/home` stalls single I/O commands for up to thirty
+  seconds. `procgroup.terminate` is the one way to do it: `utils_run.run_jailed` ends a
+  timed-out util, script or `shell` command through it too, since git runs inside those.
 - Every call runs with `GIT_OPTIONAL_LOCKS=0`, so a READ (`status`) never takes the index lock
   to write a refreshed index back: a reader can neither leave one behind nor make a concurrent
   writer fail on a live one.
@@ -37,25 +39,19 @@ from __future__ import annotations
 import contextlib
 import logging
 import os
-import signal
 import subprocess
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Literal
 
-from . import gitlock
+from . import gitlock, procgroup
 from .health_events import log_health_event
 from .paths import file_lock, repo_lock_path, repo_root
 
 log = logging.getLogger("rsched.libgit")
 
 _TIMEOUT = 30
-#: How long a git that ran out of time gets between SIGTERM and SIGKILL. Git deletes its lockfiles
-#: in its SIGTERM handler, but a git blocked in disk I/O runs the handler only once the I/O
-#: returns — and on the production host a stalled command on the `/home` disk returns when its
-#: 30 s SCSI timeout resets it.
-_TERM_GRACE = 30
 #: Added to every call's environment: reads never take the index lock (module docstring).
 _ENV = {"GIT_OPTIONAL_LOCKS": "0"}
 
@@ -80,8 +76,9 @@ def git(home: Path, *args: str, check: bool = False,
     passes its own `timeout`.
 
     Git runs in its own process group with no stdin and `GIT_OPTIONAL_LOCKS=0`; a call that
-    outlives `timeout` (default `_TIMEOUT`) is ended the way git can clean up after
-    (`_terminate`) and raises `subprocess.TimeoutExpired`, exactly as `subprocess.run` did.
+    outlives `timeout` (default `_TIMEOUT`) is ended the way git can clean up after — its group,
+    a hook and the hook's children included, through `procgroup.terminate` — and raises
+    `subprocess.TimeoutExpired`, exactly as `subprocess.run` did.
     """
     cmd = ["git", "-C", str(home), *args]
     limit = _TIMEOUT if timeout is None else timeout
@@ -91,34 +88,16 @@ def git(home: Path, *args: str, check: bool = False,
         try:
             out, err = proc.communicate(timeout=limit)
         except subprocess.TimeoutExpired:
-            _terminate(proc)
+            procgroup.terminate(proc)
             out, err = proc.communicate()
             raise subprocess.TimeoutExpired(cmd, limit, output=out, stderr=err) from None
         except BaseException:
-            _terminate(proc)
+            procgroup.terminate(proc)
             raise
     done = subprocess.CompletedProcess(cmd, proc.returncode, out, err)
     if check:
         done.check_returncode()
     return done
-
-
-def _terminate(proc: subprocess.Popen[str]) -> None:
-    """End git the way it can clean up after: SIGTERM to its whole process group (a hook and
-    its children included), up to `_TERM_GRACE` for git to delete its lockfiles and exit, then
-    SIGKILL for whatever is left. Signalling the group after git is reaped is safe: the kernel
-    keeps a group's id reserved while any member lives and answers ESRCH once none does.
-    """
-    try:
-        os.killpg(proc.pid, signal.SIGTERM)
-    except ProcessLookupError:
-        return
-    try:
-        proc.wait(timeout=_TERM_GRACE)
-    except subprocess.TimeoutExpired:
-        pass
-    with contextlib.suppress(ProcessLookupError):
-        os.killpg(proc.pid, signal.SIGKILL)
 
 
 @dataclass(frozen=True)

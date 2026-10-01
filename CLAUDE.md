@@ -14,8 +14,9 @@ subprocess runs inside a Landlock sandbox scoped to
 the run's permissions INTERSECTED with the util's own `fs:` declaration, and a `shell` command
 runs in the same jail on the widest of those terms — the run's granted roots, no store secret
 (docs/sandboxing.md). All three callable kinds run through ONE process seam
-(`utils_run.run_jailed`): its own process group, tempfile capture read through a capped reader,
-and what was printed before a kill is kept. The jail cannot carve `routine.yaml` out of the
+(`utils_run.run_jailed`): its own process group ended SIGTERM-first (`procgroup.terminate`),
+tempfile capture read through a capped reader, and what was printed before the group ended is
+kept. The jail cannot carve `routine.yaml` out of the
 routine's own directory — Landlock unmasks access UP the path — so the "a run never writes
 routine.yaml" seal is ACTION-LAYER only and the runner REPORTS a change it sees rather than
 preventing it. The instruction contains only the task; cross-cutting conduct is
@@ -471,9 +472,13 @@ by a test, by the engine, or by a past incident.
   "Git writes"). Git deletes its `index.lock` in its SIGTERM handler only, so `libgit.git`
   runs it in its own process group and ends a timed-out call with SIGTERM first — the
   `subprocess.run` timeout's SIGKILL is what left empty locks in two routine repos on
-  2026-09-30, after which every write there failed while reads worked. A new git call goes
-  through `libgit.git` (with `timeout=` when it needs another), never a `subprocess.run` of
-  its own — the two that cannot are named in its docstring.
+  2026-09-30, after which every write there failed while reads worked. `utils_run.run_jailed`
+  ends a timed-out util, script or `shell` command through the same `procgroup.terminate`,
+  because git runs inside those too. It waits for EVERY member of the group, never its leader
+  alone: in a util git is a grandchild (`uv run` → python → git) and the leader exits within
+  milliseconds of SIGTERM. A new git call goes through `libgit.git` (with `timeout=` when it
+  needs another), never a `subprocess.run` of its own — the two that cannot are named in its
+  docstring.
   `libgit.commit` returns a `Commit` (committed · clean · unversioned · failed) and files a
   failure as `commit_failed`; its `routines_home` is REQUIRED so every call site decides
   where that lands. A lock is removed only when `gitlock` proves it stale — never widen

@@ -1313,10 +1313,16 @@ silent way. Three rules close that, each where it happened:
 
 - **A timeout TERMINATES git and never kills it outright.** Git deletes its lockfiles in its own
   SIGTERM handler and cannot after SIGKILL, which is what `subprocess.run` sends at its timeout.
-  `libgit.git` runs git in its own process group; a call that outlives its timeout (30 s)
-  gets SIGTERM to the group and SIGKILL only after `_TERM_GRACE` (30 s). The grace is sized to
-  the disk: `/home` is a USB-attached SSD whose bridge aborts a stalled command at the 30 s SCSI
-  timeout. A git blocked in that I/O runs its handler only once the I/O returns.
+  `libgit.git` runs git in its own process group; a call that outlives its timeout (30 s) is
+  ended by `procgroup.terminate`: SIGTERM to the group, then SIGKILL only for what is still
+  running `procgroup.TERM_GRACE_S` (30 s) later. The grace is sized to the disk: `/home` is a
+  USB-attached SSD whose bridge aborts a stalled command at the 30 s SCSI timeout. A git blocked
+  in that I/O runs its handler only once the I/O returns. The wait ends as soon as the group is
+  empty, so it costs nothing unless a member outlives SIGTERM. It covers EVERY member of the
+  group, not its leader alone, because `utils_run.run_jailed` ends a timed-out util, script or
+  `shell` command through the same helper. There git is rarely the leader: under `uv run` →
+  python → git the leader exits within milliseconds of SIGTERM, so a wait for it alone SIGKILLed
+  git mid-cleanup (measured on the host: leader gone in 0.01 s, the grandchild's lock left).
 - **A read never takes the index lock.** Every call runs with `GIT_OPTIONAL_LOCKS=0`, so a
   `git status` stops writing a refreshed index back: a reader can neither leave a lock behind
   nor make a concurrent writer fail on its live one. The hold check's `status` in the operator's
@@ -1355,8 +1361,10 @@ was kept; the next commit after the lock turns ten minutes old removes it. The r
 re-checks the file's inode, mtime and size, so a lock replaced after its inspection is never the
 one deleted. A removal is filed as `git_lock_cleared` — a run of those is something killing git
 mid-write (a stalling disk, the OOM killer, a container stopped mid-commit). A repo no rsched
-commit writes — the scheduler's own checkout, a worktree a session made — is outside this path:
-its stale lock is found by whoever next writes there, as before.
+commit writes — the scheduler's own checkout, a worktree a session made, a repo a routine's
+script manages — is outside this path. A util, a script or a `shell` command that runs git there
+is still terminated at its deadline rather than killed (`run_jailed`), but a lock that a kill
+from elsewhere leaves is found by whoever next writes there, as before.
 
 ## Observing the daemon
 

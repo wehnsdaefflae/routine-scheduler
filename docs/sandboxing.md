@@ -41,12 +41,14 @@ jailed) plus **scoped secrets injection**. Three cooperating layers:
   list that gated 6 of 114 utils.
 
   The three kinds compose three different jails and run ONE process: `utils_run.run_jailed`
-  — own process group (so a `uv run` grandchild dies with its deadline instead of holding
-  the engine turn open forever), tempfile capture read through `captured_output.read_capped`
-  at a single 1 MB envelope, and whatever was printed before a kill is kept. Hand-copying
-  it cost both of the other two a protection: the script kind ran a plain `subprocess.run`
-  with no process group, and the shell kind read its whole capture tempfile back into the
-  daemon's memory — the failure its own comment said the spool file prevented.
+  — own process group, ended SIGTERM-first at the deadline (`procgroup.terminate`: every
+  member gets up to 30 s to exit before SIGKILL, so a `uv run` grandchild dies with its
+  deadline instead of holding the engine turn open forever and a git inside a util still
+  deletes its `index.lock`), tempfile capture read through `captured_output.read_capped`
+  at a single 1 MB envelope, and whatever was printed before the group ended is kept.
+  Hand-copying it cost both of the other two a protection: the script kind ran a plain
+  `subprocess.run` with no process group; the shell kind read its whole capture tempfile back
+  into the daemon's memory — the failure its own comment said the spool file prevented.
 
 ## What a util can see
 
@@ -215,8 +217,9 @@ own declared secrets, not the store.
 Three NON-secret vars ride along for every util and script: `PATH` (the library root, so
 `gu <sibling>` resolves), `GLOBAL_UTILS_HOME`, and `RSCHED_UTIL_TIMEOUT_S` — the deadline
 this call was given. A util that waits on something slow sets its own timeout inside that
-budget and reports what it captured; one that lets the budget expire is killed with its
-process group and reports nothing (docs/authoring.md § the util env).
+budget and reports what it captured; one that lets the budget expire is terminated with its
+process group — SIGTERM, then SIGKILL 30 s later for whatever ignores it — and keeps only what
+it had printed (docs/authoring.md § the util env).
 
 **Never run `uv` in the container as root.** `docker exec` defaults to root, and uv creates a
 per-script environment under `~/.cache/uv` at every util call — so one root-run `uv` leaves
