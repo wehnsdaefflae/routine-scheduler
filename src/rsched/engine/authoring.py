@@ -4,8 +4,9 @@ Split out of `interact.py` (F393). What these share is not "they ask the user" �
 can do that — it is that they WRITE THE SHARED LIBRARY, so each is a ladder of refusals with
 its own approval dial (`confirm` for utils, `rule_confirm` for rules, because a rule revision
 lands on every holder at its next run and that is a different decision from creating a util).
-The `# noqa: PLR0911` on the two big handlers is the point of the shape: every rung of the
-ladder is its own teaching exit, and collapsing them would make the refusals interchangeable.
+Every rung of a handler's ladder is its own teaching exit — collapsing them would make the
+refusals interchangeable — and the one rung both share, EDIT MODE's anchor patch, is one
+helper (`_anchor_edit`), so a guard taught to one kind cannot be missing from the other.
 
 There is deliberately no `remove_rule`: deleting a rule silently un-binds every holder with
 nothing to catch it, so a run reports it and the user deletes it.
@@ -55,6 +56,30 @@ def recreate_denial(loop, action: dict) -> list[str]:
              f"summary.")]
 
 
+def _anchor_edit(text: str, action: dict, *, current: str, verbatim_from: str,
+                 whole: str) -> tuple[str, str]:
+    """EDIT MODE's one rule for both library kinds: replace the action's verbatim `anchor` in
+    `text` — every occurrence with `all: true`. Returns `(patched, "")`, or `("", reason)`,
+    the teaching exit naming where to copy the anchor from.
+
+    An EMPTY anchor is refused before it is counted. "" occurs between every two characters,
+    so write_util answered it "anchor occurs 5001× … or set all: true", and with `all: true`
+    `str.replace` then wove the replacement between every character of the script.
+    """
+    anchor = str(action.get("anchor") or "")
+    if not anchor:
+        return "", (f"pass either {whole} or a non-empty 'anchor' + 'replacement' (an "
+                    "in-place revision)")
+    count = text.count(anchor)
+    if count == 0:
+        return "", (f"anchor not found in {current} — copy it VERBATIM (whitespace included) "
+                    f"from {verbatim_from}")
+    if count > 1 and not action.get("all"):
+        return "", (f"anchor occurs {count}× in {current} — extend it until unique, or set "
+                    "all: true to replace every occurrence")
+    return text.replace(anchor, str(action.get("replacement") or "")), ""
+
+
 def handle_write_util(loop, action: dict, poll_s: float) -> dict:  # noqa: PLR0911 — gate ladder: every refusal is its own teaching exit
     ctx = loop.ctx
     name, raw_content = action["name"], action.get("content")
@@ -71,25 +96,18 @@ def handle_write_util(loop, action: dict, poll_s: float) -> dict:  # noqa: PLR09
         # one reply (the re-emit exceeded the output cap and made big utils unfixable
         # for shell-less routines, observed 2026-07-24). The synthesized result rides
         # the exact same approval + selftest + rollback gate as a full rewrite.
-        anchor = str(action.get("anchor") or "")
         source = utils_lib.read_util(home, name)
         if source is None:
             return {"kind": "write_util", "name": name, "edit_failed": True,
                     "reason": f"no util {name!r} exists to edit — edit mode patches an "
                               "existing script; pass 'content' (the complete script) to "
                               "create a new one"}
-        count = source.count(anchor)
-        if count == 0:
-            return {"kind": "write_util", "name": name, "edit_failed": True,
-                    "reason": "anchor not found in the util's current source — copy it "
-                              "VERBATIM (whitespace included) from "
-                              f'{{"kind": "util", "name": "show", "args": ["{name}", '
-                              '"--full"]}'}
-        if count > 1 and not action.get("all"):
-            return {"kind": "write_util", "name": name, "edit_failed": True,
-                    "reason": f"anchor occurs {count}× in the source — extend it until "
-                              "unique, or set all: true to replace every occurrence"}
-        content = source.replace(anchor, str(action.get("replacement") or ""))
+        content, problem = _anchor_edit(
+            source, action, current="the util's current source",
+            verbatim_from=f'{{"kind": "util", "name": "show", "args": ["{name}", "--full"]}}',
+            whole="'content' (the complete script), 'path' (a file holding it)")
+        if problem:
+            return {"kind": "write_util", "name": name, "edit_failed": True, "reason": problem}
     elif src_path:
         # Content-from-file (F280): install the script from a file's EXACT bytes — a
         # large pre-built util (a subtask's tested draft, a consolidation) must not be
@@ -168,7 +186,6 @@ def handle_write_util(loop, action: dict, poll_s: float) -> dict:  # noqa: PLR09
     return {"kind": "write_util", "name": name, "created": creating, "selftest_ok": True}
 
 
-
 def _impact_note(ctx, kind: str, name: str, content: str | None) -> str:
     """The blast radius, for the approval question. Advisory and best-effort: an impact that
     could REFUSE a write would make a diagnostic the reason authoring fails, and the write gate
@@ -182,7 +199,7 @@ def _impact_note(ctx, kind: str, name: str, content: str | None) -> str:
         return ""
 
 
-def handle_write_rule(loop, action: dict, poll_s: float) -> dict:  # noqa: PLR0911 — gate ladder: every refusal is its own teaching exit
+def handle_write_rule(loop, action: dict, poll_s: float) -> dict:
     """Author or revise a GENERAL RULE in the shared library — the write_util shape, applied
     to prose instead of code, gated by the rule-authoring permission.
 
@@ -219,25 +236,16 @@ def handle_write_rule(loop, action: dict, poll_s: float) -> dict:  # noqa: PLR09
         # Edit mode, the normal shape for a revision: anchor-patch the current prose so a
         # one-clause fix costs one clause, and so the change is legible as a diff to the
         # user approving it.
-        anchor = str(action.get("anchor") or "")
         if existing is None:
             return {"kind": "write_rule", "name": name, "edit_failed": True,
                     "reason": f"no rule {name!r} exists to revise — pass 'content' (the "
                               "complete rule markdown) to author a new one"}
-        if not anchor:
-            return {"kind": "write_rule", "name": name, "edit_failed": True,
-                    "reason": "pass either 'content' (the whole rule) or 'anchor' + "
-                              "'replacement' (an in-place revision)"}
-        count = existing.count(anchor)
-        if count == 0:
-            return {"kind": "write_rule", "name": name, "edit_failed": True,
-                    "reason": "anchor not found in the rule's current text — copy it VERBATIM "
-                              f'from {{"kind": "read_rule", "name": "{name}"}}'}
-        if count > 1 and not action.get("all"):
-            return {"kind": "write_rule", "name": name, "edit_failed": True,
-                    "reason": f"anchor occurs {count}× in the rule — extend it until unique, "
-                              "or set all: true to replace every occurrence"}
-        content = existing.replace(anchor, str(action.get("replacement") or ""))
+        content, problem = _anchor_edit(
+            existing, action, current="the rule's current text",
+            verbatim_from=f'{{"kind": "read_rule", "name": "{name}"}}',
+            whole="'content' (the whole rule)")
+        if problem:
+            return {"kind": "write_rule", "name": name, "edit_failed": True, "reason": problem}
     else:
         content = str(raw_content)
     if problems := lint_rule_text(content, filename=f"{name}.md"):

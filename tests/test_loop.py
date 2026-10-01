@@ -3104,6 +3104,27 @@ def test_write_util_edit_mode_teaches_on_bad_anchor(make_routine, scripted, monk
     assert obs[1]["edit_failed"] and "2×" in obs[1]["reason"] and "all" in obs[1]["reason"]
 
 
+def test_edit_mode_is_one_rule_for_both_library_kinds():
+    """write_util and write_rule patch through ONE anchor rule (`authoring._anchor_edit`), so a
+    guard taught to one kind cannot be missing from the other — the rule kind's refusal of an
+    empty anchor is the case in point: "" occurs between every two characters, and counted it
+    reads as "occurs N× … set all: true", after which `all: true` would weave the replacement
+    between every character."""
+    from rsched.engine.authoring import _anchor_edit
+
+    kw = {"current": "the util's current source", "verbatim_from": "<show>",
+          "whole": "'content'"}
+    text = "x = 1\ny = 2\nx = 1\n"
+    assert _anchor_edit(text, {"anchor": "", "all": True, "replacement": "z"}, **kw)[0] == ""
+    assert "non-empty 'anchor'" in _anchor_edit(text, {}, **kw)[1]
+    assert "copy it VERBATIM" in _anchor_edit(text, {"anchor": "q = 9"}, **kw)[1]
+    assert "occurs 2×" in _anchor_edit(text, {"anchor": "x = 1"}, **kw)[1]
+    assert _anchor_edit(text, {"anchor": "y = 2", "replacement": "y = 3"}, **kw) == (
+        "x = 1\ny = 3\nx = 1\n", "")
+    assert _anchor_edit(text, {"anchor": "x = 1", "replacement": "x = 0", "all": True},
+                        **kw)[0] == "x = 0\ny = 2\nx = 0\n"
+
+
 def test_write_util_edit_mode_needs_an_existing_util(make_routine, scripted, monkeypatch):
     """Edit mode cannot create — a missing util yields a teaching edit_failed, and the
     ambiguous-anchor escape hatch all: true replaces every occurrence when set."""
