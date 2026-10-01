@@ -152,23 +152,15 @@ def phase_stats(run_dir: Path) -> list[dict]:
 
 
 def _phase_stats(run_dir: Path) -> list[dict]:
-    from datetime import datetime
-
     from ..engine.transcript import read_events
+    from .stamps import instant
 
     events, _ = read_events(run_dir / "transcript.jsonl")
-
-    def ts_of(ev) -> datetime | None:
-        try:
-            return datetime.fromisoformat(str(ev.get("ts") or ""))
-        except ValueError:
-            return None
-
     stats: dict[str, dict] = {}
     prev_ts = None
     last_cell = None
     for ev in events:
-        t = ts_of(ev)
+        t = instant(ev.get("ts"))
         if ev.get("type") == "assistant_action":
             name = str(ev.get("phase") or "")
             cell = stats.setdefault(name, {"phase": name, "turns": 0, "tokens": 0,

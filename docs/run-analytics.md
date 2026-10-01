@@ -6,9 +6,17 @@ version** that produced it, and every util call is counted by **outcome**. Both 
 run-dir retention because they ride the durable workflow-usage stream
 (`~/routines/.control/workflow-usage.jsonl`).
 
+That stream holds one record per LEG, not per run: a continued or resumed run appends another
+record under the same `run_id`. A leg's `tokens`, `cost` and `compression` tally are its own,
+while `turns`, `utils`, `referrals` and `asks_deferred` are the run's running totals (a resumed
+leg's boot reseeds them). Every reader below therefore counts RUNS —
+`readmodels/usage_stream.usage_runs`, the stream folded once per change: the per-leg fields
+summed, the running totals read from the newest leg. Summed leg by leg, a conversation answering
+ten replies with one util call each read as 55 calls.
+
 A third layer measures what a run COSTS rather than what it did: prompt-cache health, the
 one reading that separates carrying context cheaply from paying for it twice. A fourth measures
-what an optional efficiency feature RETURNS — output compression, per routine, on that same
+what an efficiency mechanism RETURNS — lossless output compression, per routine, on that same
 durable stream.
 
 A fifth measures the runs that never happened. Work the fleet owed and did not do leaves no
@@ -132,22 +140,26 @@ own counts; parents never fold them in (the read-model sums records at every dep
 
 `rsched/readmodels/util_stats.py` joins three sources into the Stats tab table:
 
-1. **Library git history** (one `git log` walk, memoized on HEAD): created = oldest
-   commit touching `utils/<name>/`, last revised = newest.
+1. **Library git history** (one `git log` walk, memoized on the library repo's reflog, which
+   every commit and pull appends to): created = oldest commit touching `utils/<name>/`,
+   last revised = newest.
 2. **The stream**: per-run outcome breakdowns, first/last execution timestamps.
 3. **Transcript backfill** for pre-stream history: runs whose records lack the `utils`
-   key are scanned for util observations (root + sub transcripts, gzip included),
-   memoized per file behind a stat fingerprint. Backfill sees executions only —
+   key are scanned for util observations (every level of the run tree — a child's own
+   children nest under its `sub/` — gzip included), memoized per file behind a stat
+   fingerprint and pruned to the runs still uncounted. Backfill sees executions only —
    rejected/denied calls never became observations back then, so those counts honestly
    start at the stream's adoption.
 
 ## Output compression (Stats tab → Output compression by routine)
 
-An optional feature that spends run time to save tokens has to be able to show which of the two
-it is actually doing, per routine — otherwise it is enabled by default on a guess. Each run tallies
-its own compression outcomes (`RunContext.compression_stats`) into its workflow-usage record;
-`rsched/readmodels/compression_stats.py` rolls the records up per routine, joining each routine's
-CURRENT mode so an empty row reads as "switched off" rather than "nothing qualified".
+A mechanism that spends run time to save tokens has to be able to show which of the two it is
+actually doing, per routine. Compression is engine behaviour rather than a setting, so a routine
+with no row is one with no counted run since the tally began, and a row with no applications is
+one whose outputs never qualified. Each run tallies its own compression outcomes
+(`RunContext.compression_stats`) into its workflow-usage record;
+`rsched/readmodels/compression_stats.py` rolls the records up per routine, and `since` names the
+oldest counted record so the table never implies a longer history than it has.
 
 The reading is three columns wide: `applied ÷ attempts` is the hit rate, `~tokens saved` is the
 recorded estimate (preview characters ÷ 4 — never a billing figure), and `rejected` is the half
@@ -239,9 +251,14 @@ store, never by reading a prefix), the repo's directory name for a commit that d
 (a routine's slug, or the library's own directory), empty for a scheduler tick. `total: 0`
 is the healthy reading.
 
-Both folds are memoized on the stream's stat fingerprint with single-flight misses: this
-rides a bus-event refresh path, and an un-memoized parse per request is what starved the
-daemon behind `/api/items` and `/api/questions`.
+What both folds read — the parsed stream, each event's stamp already read as an instant — is
+memoized on the stream's stat fingerprint with single-flight misses: this rides a bus-event
+refresh path, and an un-memoized parse per request is what starved the daemon behind
+`/api/items` and `/api/questions`. The WINDOW is cut at every request over that shared list,
+because it moves with the clock while the file stands still: a fold memoized on the file alone
+answered for the moment it was first computed until the next append. Stamps are compared as
+instants, never as text — `now_iso` writes the host's local time with its offset, so a string
+compare against a UTC cutoff moved the window's edge by that offset.
 
 ## Who reads the flags
 

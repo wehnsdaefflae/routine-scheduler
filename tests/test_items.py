@@ -104,9 +104,9 @@ def test_read_changelog_missing_file_is_empty(tmp_path):
 
 
 def test_absent_status_reads_unknown_and_is_never_parsed_from_prose(audit_home):
-    """Findings carry no `status` on disk yet — the self-audit routine will emit one later.
-    Until then the read model says `unknown`; it must NOT recover open-vs-fixed from the
-    title (that is exactly the tolerant dual-convention code the house rules ban)."""
+    """A finding written before the self-audit routine emitted `status` carries none. The read
+    model says `unknown`; it must NOT recover open-vs-fixed from the title (that is exactly
+    the tolerant dual-convention code the house rules ban)."""
     items = _by_id(items_model.build(audit_home / "self-audit", audit_home))
     assert items["F1"]["status"] == "unknown"
     assert items["F2"]["status"] == "open"          # the report's own field wins when present
@@ -229,6 +229,45 @@ def test_a_folded_row_is_counted_and_listed_apart_from_the_worklist(audit_home):
     # …reachable when asked for by name, or by the chip
     assert [i["id"] for i in items_model.filter_items(rows, folded=True)] == ["R1", "R2"]
     assert [i["id"] for i in items_model.filter_items(rows, search="folded in")] == ["R2"]
+
+
+def test_a_hand_trimmed_fold_stamp_reads_as_no_fold_rather_than_a_500(audit_home):
+    """A report row can carry a `superseded` that is not the `{ts, by, to}` the ledger fold
+    writes (a hand-trimmed or hand-batched ledger). Three sites already read the stamp through
+    `event_stamp`; the carrier walk read it inline, so ONE such row made `/api/items` raise.
+    Every site now agrees: it is not a fold, the row is its own thread, and a row folded into
+    it reads its status."""
+    with (audit_home / ".control" / "reports.jsonl").open("a", encoding="utf-8") as fh:
+        for row in ({"id": "R3", "ts": "2026-07-26T00:00:00+00:00", "routine": "x",
+                     "run_id": "x:1", "title": "trimmed", "target": "owner", "superseded": "R1"},
+                    {"id": "R4", "ts": "2026-07-26T01:00:00+00:00", "routine": "x",
+                     "run_id": "x:2", "title": "settles R3", "settles": ["R3"]},
+                    {"id": "R5", "ts": "2026-07-26T02:00:00+00:00", "routine": "x",
+                     "run_id": "x:3", "title": "folded into R3"},
+                    {"event": "superseded", "id": "R5", "by": "R3", "to": "owner",
+                     "ts": "2026-07-26T03:00:00+00:00"}):
+            fh.write(json.dumps(row) + "\n")
+    items = _by_id(items_model.build(audit_home / "self-audit", audit_home))
+    assert items["R3"]["superseded"] == {} and items["R3"]["status"] == "settled"
+    assert items["R5"]["status"] == "settled"           # its carrier's, as for any fold
+
+
+def test_an_id_past_four_digits_is_still_an_id(audit_home):
+    """`reports.next_id` mints `R<highest+1>` with no ceiling and the ledger is past R2000. The
+    id patterns capped the number at four digits, and `\\b` cannot close before a fifth, so from
+    R10000 on an id in prose matched NOTHING: no reflink, no changelog link."""
+    with (audit_home / ".control" / "reports.jsonl").open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps({"id": "R12345", "ts": "2026-07-26T00:00:00+00:00",
+                             "routine": "x", "run_id": "x:1", "title": "five digits",
+                             "detail": "follows up R10001 and F12345"}) + "\n")
+    with (audit_home / "self-audit" / "audit" / "changelog.jsonl").open(
+            "a", encoding="utf-8") as fh:
+        fh.write(json.dumps({"ts": "2026-07-27T10:00:00+00:00", "commit": "eeee5555",
+                             "summary": "1.0.0 — D10000 settled"}) + "\n")
+    items = _by_id(items_model.build(audit_home / "self-audit", audit_home))
+    assert items["R12345"]["refs"] == ["F12345", "R10001"]
+    assert items["D10000"]["archive_only"] and items["D10000"]["addressed"][0]["link"] == \
+        "best-effort"
 
 
 def test_items_are_ordered_newest_origin_first(audit_home):

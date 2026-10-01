@@ -6,6 +6,7 @@ from a real library git history.
 
 import gzip
 import json
+import shutil
 import subprocess
 
 from rsched.config import ServerConfig
@@ -88,6 +89,21 @@ def test_stream_records_aggregate_and_span(tmp_path):
     assert rows["gone-util"]["in_library"] is False and rows["gone-util"]["ok"] == 1
 
 
+def test_a_continued_run_is_counted_once_not_once_per_leg(tmp_path):
+    """A resumed leg reseeds the run's util histogram from the leg before it
+    (`history.prior_counters`), so every leg's usage record carries the run's CUMULATIVE
+    counts. Summed per record, a conversation answering three replies with one call each read
+    as 1 + 2 + 3 = 6 calls."""
+    server = _server(tmp_path)
+    _add_util(server, "fetch")
+    _stream(server, [
+        {"run_id": "chat:1", "ts": f"2026-07-01T0{n}:00:00+00:00",
+         "utils": {"fetch": {"ok": n}}} for n in (1, 2, 3)])
+    out = util_stats(server)
+    fetch = {r["name"]: r for r in out["utils"]}["fetch"]
+    assert fetch["ok"] == 3 and out["stream_records"] == 1
+
+
 def test_backfill_scans_only_uncovered_runs(tmp_path):
     """A run whose stream record carries `utils` was counted at the source — its
     transcript is skipped; a pre-stream run's transcript (gzip included) is scanned."""
@@ -127,6 +143,48 @@ def test_backfill_scans_only_uncovered_runs(tmp_path):
     assert util_stats(server) == out
 
 
+def test_backfill_reads_every_level_of_the_run_tree(tmp_path):
+    """A child's own children nest under ITS `sub/` (`runs/<ts>/sub/1/sub/2/`, the layout
+    retention's rglob gzips). The backfill globbed one level down, so a grandchild's calls —
+    plain or gzipped — were never counted."""
+    server = _server(tmp_path)
+    _add_util(server, "fetch")
+    _run_with_transcript(server, "r", "20260601-070000", [_obs("fetch")])
+    run = server.routines_home / "r" / "runs" / "20260601-070000"
+    for level, gz in ((run / "sub" / "1", False), (run / "sub" / "1" / "sub" / "2", False),
+                      (run / "sub" / "1" / "sub" / "3", True)):
+        level.mkdir(parents=True)
+        data = json.dumps(_obs("fetch", exit_code=1)) + "\n"
+        if gz:
+            with gzip.open(level / "transcript.jsonl.gz", "wt", encoding="utf-8") as fh:
+                fh.write(data)
+        else:
+            (level / "transcript.jsonl").write_text(data, encoding="utf-8")
+    fetch = {r["name"]: r for r in util_stats(server)["utils"]}["fetch"]
+    assert (fetch["ok"], fetch["error"]) == (1, 3)
+
+
+def test_the_transcript_memo_holds_only_what_the_stream_has_not_counted(tmp_path):
+    """Entries are kept per transcript path, and every run the stream later counts (or
+    retention deletes) used to stay in the dict for the life of the process."""
+    import rsched.readmodels.util_stats as us
+
+    server = _server(tmp_path)
+    _add_util(server, "fetch")
+    _run_with_transcript(server, "r", "20260601-070000", [_obs("fetch")])
+    _run_with_transcript(server, "r", "20260602-070000", [_obs("fetch")])
+    def held() -> set[str]:
+        return {k for k in us._transcript_memo if k.startswith(str(server.routines_home))}
+
+    util_stats(server)
+    assert len(held()) == 2
+    _stream(server, [{"run_id": "r:20260601-070000", "ts": "2026-06-01T07:10:00+00:00",
+                      "utils": {"fetch": {"ok": 1}}}])
+    shutil.rmtree(server.routines_home / "r" / "runs" / "20260602-070000")
+    util_stats(server)
+    assert held() == set()
+
+
 def test_git_dates_created_and_revised(tmp_path):
     import os
 
@@ -159,6 +217,15 @@ def test_git_dates_created_and_revised(tmp_path):
 def test_empty_world(tmp_path):
     out = util_stats(_server(tmp_path))
     assert out["utils"] == [] and out["backfill_runs"] == 0
+
+
+def test_a_line_that_is_not_an_event_skips_the_line_not_the_transcript(tmp_path):
+    """The scan checked `isinstance(ev, dict)` and then called `ev.get` on the next line anyway,
+    so one line holding a list threw the whole transcript away (the outer guard logged it)."""
+    server = _server(tmp_path)
+    _add_util(server, "fetch")
+    _run_with_transcript(server, "r", "20260601-070000", [_obs("fetch"), [1, 2], _obs("fetch")])
+    assert {r["name"]: r for r in util_stats(server)["utils"]}["fetch"]["ok"] == 2
 
 
 def test_backfill_tolerates_unreadable_transcript(tmp_path, monkeypatch):

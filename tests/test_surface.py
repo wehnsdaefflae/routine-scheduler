@@ -82,6 +82,25 @@ def empty_store(monkeypatch):
     monkeypatch.setattr("rsched.secrets.load_secrets", dict)
 
 
+def test_the_soft_edge_is_parsed_once_per_library_change(tmp_path, monkeypatch):
+    """Every surface read joins `expects:`, and an authoring approval's blast radius reads
+    every holder's surface twice. `requires:` beside it came off the read-model memo; the soft
+    edge re-parsed every permission and rule doc's frontmatter on each read."""
+    import rsched.grants as grants_mod
+
+    server = _server(tmp_path)
+    _doc(server, "rules", "hub",
+         "---\ntags: [a, b, c]\nexpects:\n  fs-write: ['*']\n---\n# rule: hub — x\nbody\n")
+    parses: list[Path] = []
+    real = grants_mod.read_library_expects
+    monkeypatch.setattr(grants_mod, "read_library_expects",
+                        lambda home: (parses.append(home), real(home))[1])
+    cfg = _cfg(tmp_path, rules=["hub"])
+    for _ in range(3):
+        assert _by_id(routine_surface(server, cfg), "fs-write:*")["state"] == "missing"
+    assert sorted(parses) == sorted([server.permissions_home, server.rules_home])
+
+
 def test_a_ready_routine_reports_nothing(tmp_path):
     server = _server(tmp_path)
     surface = routine_surface(server, _cfg(tmp_path))

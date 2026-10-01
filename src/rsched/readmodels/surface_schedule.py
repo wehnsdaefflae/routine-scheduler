@@ -96,10 +96,10 @@ def _phase_nodes(server: Any, cfg: RoutineConfig) -> list[dict]:
     never counted.
 
     Only said for a routine whose recipe actually TRACKS a phase — detected by the recipe
-    naming `state/phase.json`, not by a `## Phases` heading: the routines that get this wrong
-    are exactly the ones that describe their phase in prose (self-audit walks a state machine
-    through it, routine-improver a step cursor) and have no such heading. A routine that never
-    mentions the file is not missing anything.
+    naming `phase.json` (a `## Phases` heading counts as well, but alone it would miss the
+    routines that get this wrong: they describe their phase in prose — self-audit walks a
+    state machine through it, routine-improver a step cursor — and have no such heading). A
+    routine that never mentions the file is not missing anything.
 
     ABSENCE is only a gap once a run has COMPLETED without recording one —
     the composer reads a missing file as "likely the first run"; the run in flight right

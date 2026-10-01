@@ -319,7 +319,7 @@ def test_a_retracted_answer_settles_nothing(tmp_path):
 
 
 def _items(home: Path, audit_dir: Path) -> dict:
-    return {i["id"]: i for i in items._build(*items.source_paths(audit_dir, home))["items"]}
+    return {i["id"]: i for i in items._build(audit_dir, home)["items"]}
 
 
 def test_items_shows_a_report_and_its_lifecycle(tmp_path):

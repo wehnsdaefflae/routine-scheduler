@@ -14,9 +14,19 @@ detail, so "what is the fleet not doing" is answered by a fetch instead of by ss
 `budget_endings` is the per-routine one — which of a routine's partial finishes a BUDGET
 forced, the distinction the usage stream cannot carry because both land there as `partial`.
 
-Both are memoized on the stream's stat fingerprint with single-flight misses: this rides a
-bus-event path (the dashboard refetches on `run_*`), and an un-memoized 280 KB parse per
-request is what starved the daemon behind `/api/items` and `/api/questions`.
+A fold answers for a WINDOW, and a window is a question about the clock as much as about the
+file. So the half that depends on the file alone — the parse, and each folded event's stamp
+read as an instant — is memoized on the stream's stat fingerprint with single-flight misses:
+this rides a bus-event path (the dashboard refetches on `run_*`), and an un-memoized 280 KB
+parse per request is what starved the daemon behind `/api/items` and `/api/questions`. The
+window itself is cut at every call, over that shared list. A fold memoized on the file alone
+kept answering for the moment it was first computed until the next append, so on a quiet
+instance a week-old refused fire still read as this week's.
+
+Stamps are compared as INSTANTS (`stamps.instant`), never as strings: `ids.now_iso` writes the
+host's local time with its offset, so a string compare against a UTC cutoff moved the window's
+edge by the host's offset, and two stamps either side of a DST change compared in the wrong
+order.
 """
 
 from __future__ import annotations
@@ -28,6 +38,7 @@ from pathlib import Path
 from ..config import ServerConfig
 from ..health_events import HEALTH_EVENTS_FILE
 from . import memo
+from .stamps import instant
 
 #: The events that mean WORK THAT WAS DUE DID NOT HAPPEN, each with the one line the console
 #: labels the row with. The vocabulary is `health_events.py`'s header enum — a name added
@@ -92,14 +103,38 @@ def health_records(routines_home: Path) -> list[dict]:
     return memo.memoized_shared(f"health-stream:{path}", [path], parse)
 
 
-def _since(days: int) -> str:
-    return (datetime.now(UTC) - timedelta(days=days)).isoformat()
+def _stamped(routines_home: Path) -> list[tuple[datetime, dict]]:
+    """Every event either fold reads, paired with its stamp as an instant, oldest first — the
+    half of a fold that depends on the file alone, so the half memoized on its fingerprint.
+    An event whose stamp names no instant cannot sit inside any window and is left out here.
+
+    SHARED like `health_records`: treat the list and its records as immutable.
+    """
+    path = stream_path(routines_home)
+
+    def pair() -> list[tuple[datetime, dict]]:
+        out: list[tuple[datetime, dict]] = []
+        for rec in health_records(routines_home):
+            event = rec.get("event")
+            if event in BLOCKED_EVENTS or event in ENDING_EVENTS:
+                when = instant(rec.get("ts"))
+                if when is not None:
+                    out.append((when, rec))
+        return out
+
+    return memo.memoized_shared(f"health-stamped:{path}", [path], pair)
 
 
-def _window(records: list[dict], events, days: int) -> list[dict]:
-    since = _since(days)
-    return [r for r in records
-            if r.get("event") in events and str(r.get("ts") or "") >= since]
+def _since(days: int) -> datetime:
+    return datetime.now(UTC) - timedelta(days=days)
+
+
+def _window(routines_home: Path, events, since: datetime) -> list[tuple[datetime, dict]]:
+    """The stamped events named in `events` at or after `since` — cut at every call, because
+    the window moves while the file stands still.
+    """
+    return [(when, rec) for when, rec in _stamped(routines_home)
+            if rec.get("event") in events and when >= since]
 
 
 def blocked_fleet(server: ServerConfig, *, days: int = DEFAULT_WINDOW_DAYS) -> dict:
@@ -111,28 +146,29 @@ def blocked_fleet(server: ServerConfig, *, days: int = DEFAULT_WINDOW_DAYS) -> d
     against the lane store, never by reading a prefix), and empty for a scheduler tick.
     """
     days = max(1, min(int(days), MAX_WINDOW_DAYS))
-
-    def fold() -> dict:
-        rows: dict[tuple[str, str], dict] = {}
-        for rec in _window(health_records(server.routines_home), BLOCKED_EVENTS, days):
-            event, subject = str(rec.get("event")), str(rec.get("routine") or "")
-            ts = str(rec.get("ts") or "")
-            row = rows.get((event, subject))
-            if row is None:
-                row = rows[(event, subject)] = {
-                    "event": event, "means": BLOCKED_EVENTS[event], "subject": subject,
-                    "count": 0, "first_ts": ts, "last_ts": ts, "detail": ""}
-            row["count"] += 1
-            row["first_ts"] = min(row["first_ts"], ts) if row["first_ts"] else ts
-            if ts >= row["last_ts"]:
-                row["last_ts"], row["detail"] = ts, str(rec.get("detail") or "")
-        ordered = sorted(rows.values(), key=lambda r: (r["last_ts"], r["event"]), reverse=True)
-        return {"window_days": days, "since": _since(days),
-                "total": sum(r["count"] for r in ordered), "rows": ordered,
-                "vocabulary": dict(BLOCKED_EVENTS)}
-
-    path = stream_path(server.routines_home)
-    return memo.memoized(f"health-blocked:{path}:{days}", [path], fold)
+    since = _since(days)
+    rows: dict[tuple[str, str], dict] = {}
+    span: dict[tuple[str, str], tuple[datetime, datetime]] = {}   # (first, last) instants
+    for when, rec in _window(server.routines_home, BLOCKED_EVENTS, since):
+        key = (str(rec.get("event")), str(rec.get("routine") or ""))
+        ts, detail = str(rec.get("ts") or ""), str(rec.get("detail") or "")
+        row = rows.get(key)
+        if row is None:
+            rows[key] = {"event": key[0], "means": BLOCKED_EVENTS[key[0]], "subject": key[1],
+                         "count": 1, "first_ts": ts, "last_ts": ts, "detail": detail}
+            span[key] = (when, when)
+            continue
+        row["count"] += 1
+        first, last = span[key]
+        if when < first:
+            first, row["first_ts"] = when, ts
+        if when >= last:
+            last, row["last_ts"], row["detail"] = when, ts, detail
+        span[key] = (first, last)
+    ordered = [rows[k] for k in sorted(rows, key=lambda k: (span[k][1], k[0]), reverse=True)]
+    return {"window_days": days, "since": since.isoformat(),
+            "total": sum(r["count"] for r in ordered), "rows": ordered,
+            "vocabulary": dict(BLOCKED_EVENTS)}
 
 
 def budget_endings(server: ServerConfig, slug: str, *,
@@ -145,19 +181,13 @@ def budget_endings(server: ServerConfig, slug: str, *,
     (the event carries `resource`/`limit`), which is the sentence a reader needs.
     """
     days = max(1, min(int(days), MAX_WINDOW_DAYS))
-
-    def fold() -> dict:
-        counts = dict.fromkeys(ENDING_EVENTS, 0)
-        last_detail, last_ts = "", ""
-        for rec in _window(health_records(server.routines_home), ENDING_EVENTS, days):
-            if str(rec.get("routine") or "") != slug:
-                continue
-            counts[str(rec["event"])] += 1
-            ts = str(rec.get("ts") or "")
-            if ts >= last_ts:
-                last_ts, last_detail = ts, str(rec.get("detail") or "")
-        return {"window_days": days, **counts,
-                "last_ts": last_ts, "last_detail": last_detail}
-
-    path = stream_path(server.routines_home)
-    return memo.memoized(f"health-endings:{path}:{slug}:{days}", [path], fold)
+    counts = dict.fromkeys(ENDING_EVENTS, 0)
+    last_detail, last_ts, newest = "", "", None
+    for when, rec in _window(server.routines_home, ENDING_EVENTS, _since(days)):
+        if str(rec.get("routine") or "") != slug:
+            continue
+        counts[str(rec["event"])] += 1
+        if newest is None or when >= newest:
+            newest, last_ts = when, str(rec.get("ts") or "")
+            last_detail = str(rec.get("detail") or "")
+    return {"window_days": days, **counts, "last_ts": last_ts, "last_detail": last_detail}

@@ -29,11 +29,13 @@ page's Unread-by-default behaviour with no new machinery.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from pathlib import Path
 
 from .. import registry
 from ..config import ServerConfig
 from ..paths import atomic_write_json, read_json
+from .stamps import instant
 
 #: The watermark store — kept at its old path, shape and meaning. Renaming it would have bought a
 #: one-shot migration for no benefit; nothing else reads or writes it.
@@ -63,15 +65,25 @@ def latest_with_summary(info: registry.RoutineInfo) -> registry.RunInfo | None:
     return runs[0]
 
 
+def _recency(run: registry.RunInfo) -> datetime:
+    """When the run last moved, as an instant: status.json's `updated` (the host's local time
+    with its offset), else its start — the run-ts, UTC by contract. As TEXT the two forms do
+    not even interleave: a compact run-ts sorts above every ISO stamp, so a routine whose newest
+    run never wrote a status floated to the top of the page however old that run was.
+    """
+    return (instant(run.updated) or registry.parse_run_ts(run.ts)
+            or datetime.min.replace(tzinfo=UTC))
+
+
 def build(server: ServerConfig) -> list[dict]:
     """One item-shaped row per routine that has ever run, newest first."""
     read_map = _read_map(server.routines_home)
-    rows: list[dict] = []
+    rows: list[tuple[datetime, dict]] = []
     for slug, info in registry.scan(server).items():
         last = latest_with_summary(info)
         if last is None:
             continue
-        rows.append({
+        rows.append((_recency(last), {
             "id": last.run_id,
             "type": "summary",
             # `open` = unread, `settled` = dismissed. A summary is never in_progress, addressed
@@ -86,9 +98,9 @@ def build(server: ServerConfig) -> list[dict]:
             "outcome": last.outcome or "",
             "run_state": last.state,
             "updated": last.updated or last.ts,
-        })
-    rows.sort(key=lambda r: r["updated"], reverse=True)
-    return rows
+        }))
+    rows.sort(key=lambda pair: pair[0], reverse=True)
+    return [row for _, row in rows]
 
 
 def mark_read(routines_home: Path, run_id: str, *, read: bool) -> str:

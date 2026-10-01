@@ -7,7 +7,7 @@ the route, plus the per-routine budget/partial split the usage stream cannot mak
 """
 
 import json
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, timedelta, timezone
 
 from rsched.config import ServerConfig
 from rsched.health_events import log_health_event
@@ -101,6 +101,72 @@ def test_window_excludes_older_events(tmp_path):
     ])
     assert blocked_fleet(server, days=7)["total"] == 1
     assert blocked_fleet(server, days=MAX_WINDOW_DAYS)["total"] == 2
+
+
+def _at(delta, offset_hours):
+    """A stamp `delta` from now, written the way `ids.now_iso` writes it on a host whose zone
+    is `offset_hours` from UTC — the suite runs in UTC, the instance in Europe/Berlin."""
+    zone = timezone(timedelta(hours=offset_hours))
+    return (datetime.now(UTC) + delta).astimezone(zone).isoformat(timespec="seconds")
+
+
+def test_the_window_edge_is_an_instant_whatever_offset_wrote_the_stamp(tmp_path):
+    """`now_iso` writes LOCAL time with its offset, and the cutoff was a UTC string: compared as
+    text, the window's edge moved by the host's offset. An event an hour too old, written on a
+    UTC+2 host, read as inside the week; one an hour inside it, written at UTC-5, as outside."""
+    server = _server(tmp_path)
+    _write(server, [
+        {"event": "fire_refused", "routine": "too-old", "run_id": "",
+         "ts": _at(-timedelta(days=7, hours=1), 2)},
+        {"event": "fire_refused", "routine": "inside", "run_id": "",
+         "ts": _at(-timedelta(days=6, hours=23), -5)},
+    ])
+    out = blocked_fleet(server, days=7)
+    assert [r["subject"] for r in out["rows"]] == ["inside"]
+
+
+def test_the_newest_detail_is_the_newest_instant_not_the_largest_string(tmp_path):
+    """Stamps written under different offsets (a DST change, a host moved between zones) order
+    by the instant they name. As text, the older one — written at the larger offset, so an
+    hour LATER on the wall clock — won."""
+    server = _server(tmp_path)
+    older, newer = _at(-timedelta(hours=3), 3), _at(-timedelta(hours=1), 0)
+    _write(server, [
+        {"event": "budget_exhausted", "routine": "alpha", "run_id": "a1", "ts": older,
+         "detail": "turns 100/100"},
+        {"event": "budget_exhausted", "routine": "alpha", "run_id": "a2", "ts": newer,
+         "detail": "tokens 1/1"},
+        {"event": "fire_refused", "routine": "alpha", "run_id": "", "ts": older,
+         "detail": "overrun"},
+        {"event": "fire_refused", "routine": "alpha", "run_id": "", "ts": newer,
+         "detail": "draining"},
+    ])
+    assert budget_endings(server, "alpha")["last_detail"] == "tokens 1/1"
+    row = blocked_fleet(server)["rows"][0]
+    assert (row["detail"], row["first_ts"], row["last_ts"]) == ("draining", older, newer)
+
+
+def test_the_window_moves_with_the_clock_while_the_file_stands_still(tmp_path, monkeypatch):
+    """A fold memoized on the file's fingerprint alone answered for the moment it was first
+    computed until the next append — on a quiet instance, for days."""
+    from rsched.readmodels import health_stream
+
+    server = _server(tmp_path)
+    _write(server, [{"event": "trigger_capped", "routine": "beta", "run_id": "",
+                     "ts": _at(-timedelta(days=6), 2)},
+                    {"event": "budget_exhausted", "routine": "beta", "run_id": "b1",
+                     "ts": _at(-timedelta(days=6), 2)}])
+    assert blocked_fleet(server)["total"] == 1
+    assert budget_endings(server, "beta")["budget_exhausted"] == 1
+
+    class TwoDaysLater(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime.now(tz) + timedelta(days=2)
+
+    monkeypatch.setattr(health_stream, "datetime", TwoDaysLater)
+    assert blocked_fleet(server)["total"] == 0
+    assert budget_endings(server, "beta")["budget_exhausted"] == 0
 
 
 def test_budget_endings_split_per_routine(tmp_path):

@@ -86,5 +86,16 @@ def test_file_activity_includes_children(tmp_path):
     ]
 
 
+def test_children_are_read_in_the_order_they_were_created(tmp_path):
+    """`n` in `sub/<n>/` is the tree-wide counter. Sorted as TEXT, child 10 was read before
+    child 2, so its files were listed first in a list that promises first-touched order."""
+    _write_transcript(tmp_path, [])
+    for n in (2, 10):
+        _write_transcript(tmp_path / "sub" / str(n), [
+            {"type": "observation", "turn": 1,
+             "payload": {"kind": "write_file", "path": f"out/child-{n}.md", "bytes": 1}}])
+    assert [r["path"] for r in file_activity(tmp_path)] == ["out/child-2.md", "out/child-10.md"]
+
+
 def test_file_activity_empty_without_transcript(tmp_path):
     assert file_activity(tmp_path) == []

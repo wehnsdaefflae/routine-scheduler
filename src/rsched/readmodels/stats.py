@@ -9,9 +9,9 @@ The filesystem (each run's status.json) is the source of truth: no database, and
 roll-up itself is recomputed on every call — a routine dropped in appears on the next one,
 one deleted disappears. What IS cached is each input, behind a stat fingerprint of the file
 it comes from: the registry's per-run memo means 800 status files cost two stats each
-rather than a parse each (`registry.read_run`), and the two subprocess-backed slices beside
-this one cache their own halves (`recipe_size._baseline_chars` on the routine repo's
-reflog, `compression_stats._modes`). Nothing here is cached longer than its source is
+rather than a parse each (`registry.read_run`), and the two git-backed slices beside this
+one cache their own halves on a reflog (`recipe_size._baseline_chars` per routine repo,
+`util_stats._git_dates` for the library). Nothing here is cached longer than its source is
 unchanged.
 
 Powers the Stats tab (/api/stats). Kept a pure function of a ServerConfig so it is fully
@@ -90,15 +90,17 @@ def monthly_spend(server: ServerConfig) -> dict:
     """Per-routine tokens/cost per calendar month — the answer to "what does this routine
     cost me and is it growing". Source: the durable workflow-usage stream (run dirs fall to
     retention; the stream survives), top-level entries only (depth 0 — a parent's usage
-    already folds its children in). Detached background tasks are attributed to their owner
+    already folds its children in), one per RUN (`usage_runs`: a continued run's legs are
+    one run with their spend summed and its cumulative `referrals` read once, filed under
+    the month its newest leg ended). Detached background tasks are attributed to their owner
     conversation. Shape: {"months": [...asc], "by_routine": {slug: {month: {runs, tokens,
     cost}}}} — routines sorted by latest-month tokens, descending.
     """
-    from .usage_stream import usage_records
+    from .usage_stream import usage_runs
 
     months: set[str] = set()
     by_routine: dict[str, dict[str, dict]] = defaultdict(dict)
-    for rec in usage_records(server.routines_home):
+    for rec in usage_runs(server.routines_home):
         if rec.get("depth"):
             continue
         month = str(rec.get("ts") or "")[:7]

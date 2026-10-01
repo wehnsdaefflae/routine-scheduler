@@ -51,6 +51,18 @@ def test_one_row_per_routine_carrying_the_newest_run_with_a_summary(tmp_path, ma
     assert row["origin"]["routine"] == "talker"
 
 
+def test_the_list_is_newest_first_by_instant_whatever_form_the_stamp_takes(tmp_path,
+                                                                           make_routine):
+    """A run that never wrote `updated` (no status.json — a boot that died) is dated by its
+    run-ts. Sorted as text, a compact run-ts lands above every ISO stamp, so that routine sat at
+    the top of the page however old its run was."""
+    server = _server(tmp_path)
+    stale = make_routine(slug="stale")
+    (stale / "runs" / "20260101-000000").mkdir(parents=True)    # no status.json, no `updated`
+    _run(make_routine(slug="fresh"), "20260905-080000", summary="said this week")
+    assert [r["origin"]["routine"] for r in summaries.build(server)] == ["fresh", "stale"]
+
+
 def test_a_routine_that_never_ran_has_nothing_to_say(tmp_path, make_routine):
     server = _server(tmp_path)
     make_routine(slug="quiet")

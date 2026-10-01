@@ -15,13 +15,14 @@ the counter existed carry no key and are simply not in the window — `since` na
 first record that is, so the table never implies a longer history than it has.
 
 Records at every depth are summed: a child run's compression is its own (the parent folds
-nothing in), the same contract per-util counts follow.
+nothing in), the same contract per-util counts follow. They are read per RUN (`usage_runs`):
+a continued run's legs are one run, each leg's own tally summed into it.
 """
 
 from __future__ import annotations
 
 from ..config import ServerConfig
-from .usage_stream import usage_records
+from .usage_stream import usage_runs
 
 # the outcome vocabulary of engine.output_compression (metrics["status"])
 STATUSES = ("applied", "unchanged", "fallback", "skipped")
@@ -61,7 +62,7 @@ def compression_stats(server: ServerConfig) -> dict:
     rows: dict[str, dict] = {}
     since = ""
     records = 0
-    for rec in usage_records(server.routines_home):
+    for rec in usage_runs(server.routines_home):
         tally = rec.get("compression")
         if not isinstance(tally, dict):
             continue    # written before the counter existed: outside the window, not a zero

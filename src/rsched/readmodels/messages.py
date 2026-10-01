@@ -24,12 +24,15 @@ writable per folder is docs/messages.md.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from pathlib import Path
 
 from ..paths import read_json
 from ..reports import read_reports, reports_path
+from .stamps import instant
 
 READ_CAP = 50            # the read folder is history — cap it, newest first
+_UNDATED = datetime.min.replace(tzinfo=UTC)
 
 
 def _msg_row(path: Path, *, folder: str, editable: bool, run_ts: str = "") -> dict:
@@ -41,6 +44,14 @@ def _msg_row(path: Path, *, folder: str, editable: bool, run_ts: str = "") -> di
             **({"report": rec.get("report")} if rec.get("report") else {}),
             **({"run_ts": run_ts} if run_ts else {}),
             "editable": editable}
+
+
+def _newest_first(rows: list[dict]) -> list[dict]:
+    """Newest first by the moment each message names. A filename is no clock: the KEYED ones
+    (`msg-rep-<id>`, `msg-bg-<task>`) sort after every timestamped `msg-<ts>-…` as text, so a
+    report delivery or a background result sat at the top of the folder however old it was.
+    """
+    return sorted(rows, key=lambda r: instant(r["ts"]) or _UNDATED, reverse=True)
 
 
 def _report_row(row: dict, *, folder: str) -> dict:
@@ -57,13 +68,13 @@ def _report_row(row: dict, *, folder: str) -> dict:
 def build(routine_dir: Path, routines_home: Path) -> dict:
     """The four folders for one routine, each newest-first."""
     slug = routine_dir.name
-    inbox = [_msg_row(p, folder="inbox", editable=True)
-             for p in sorted((routine_dir / "inbox").glob("msg-*.json"))]
+    inbox = _newest_first([_msg_row(p, folder="inbox", editable=True)
+                           for p in sorted((routine_dir / "inbox").glob("msg-*.json"))])
     read: list[dict] = []
     runs_dir = routine_dir / "runs"
     for run in sorted(runs_dir.iterdir(), reverse=True) if runs_dir.is_dir() else []:
-        read.extend(_msg_row(p, folder="read", editable=False, run_ts=run.name)
-                    for p in sorted((run / "consumed").glob("msg-*.json"), reverse=True))
+        read.extend(_newest_first([_msg_row(p, folder="read", editable=False, run_ts=run.name)
+                                   for p in sorted((run / "consumed").glob("msg-*.json"))]))
         if len(read) >= READ_CAP:
             break
     read = read[:READ_CAP]
@@ -76,7 +87,6 @@ def build(routine_dir: Path, routines_home: Path) -> dict:
             received.append(_report_row(row, folder="received"))
         elif not row.get("retracted"):
             outbox.append(_report_row(row, folder="outbox"))
-    inbox.reverse()
-    outbox.reverse()
+    outbox.reverse()        # the ledger is append-only, so filing order IS time order
     received.reverse()
     return {"inbox": inbox, "outbox": outbox, "read": read, "received": received}

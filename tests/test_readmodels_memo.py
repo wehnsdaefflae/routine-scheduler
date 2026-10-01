@@ -31,6 +31,52 @@ def test_memoized_hits_until_any_input_changes(tmp_path):
     assert memo.memoized("k", [f], compute)["n"] == 3
 
 
+def test_a_recompute_is_a_use_and_evicts_nothing_for_itself(tmp_path, monkeypatch):
+    """A dict keeps an existing key's position on assignment, so a key whose sources moved was
+    re-stored IN PLACE — at the eviction end it had reached — and a full cache first evicted a
+    bystander for room the key already held. Two inserts later the value just computed was the
+    one thrown out."""
+    memo.reset()
+    monkeypatch.setattr(memo, "_MAX_ENTRIES", 3)
+    sources = {k: tmp_path / k for k in "abcde"}
+    for p in sources.values():
+        p.write_text("v1", encoding="utf-8")
+    computed: list[str] = []
+
+    def read(key: str) -> str:
+        return memo.memoized(key, [sources[key]], lambda: (computed.append(key), key)[1])
+
+    for key in "abc":
+        read(key)                                      # full: a oldest, then b, then c
+    sources["b"].write_text("v2!", encoding="utf-8")   # b's source moves…
+    read("b")                                          # …so b is recomputed: a USE of b
+    assert set(memo._cache) == set("abc"), "the recompute evicted a bystander"
+    read("d")
+    read("e")                                          # evict the two least recent: a, c
+    computed.clear()
+    read("b")
+    assert computed == [], "the value just recomputed was evicted as if it were the oldest"
+
+
+def test_a_run_trees_transcripts_are_its_numbered_levels_and_nothing_else(tmp_path):
+    """The fingerprint behind the rail's polled read models. A `sub/**` glob walked every
+    directory under `sub/` on each poll — a child's artifacts and clones included — and took
+    any file there named transcript.jsonl as one of the run's. The tree is the numbered child
+    dirs, at any depth, in creation order."""
+    run = tmp_path / "run"
+    for level in ("sub/2", "sub/2/sub/3", "sub/10"):
+        (run / level).mkdir(parents=True)
+    stray = run / "sub" / "2" / "artifacts" / "copied-run"
+    stray.mkdir(parents=True)
+    (stray / "transcript.jsonl").write_text("{}\n", encoding="utf-8")
+
+    assert memo.run_tree(run) == [run, run / "sub/2", run / "sub/2/sub/3", run / "sub/10"]
+    paths = memo.transcript_paths(run)
+    assert stray / "transcript.jsonl" not in paths
+    assert paths[:2] == [run / "transcript.jsonl", run / "transcript.jsonl.gz"]
+    assert run / "sub/2/sub/3/transcript.jsonl.gz" in paths
+
+
 def test_usage_records_parse_once_and_refresh_on_append(tmp_path):
     memo.reset()
     ctrl = tmp_path / ".control"

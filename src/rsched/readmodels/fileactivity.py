@@ -22,6 +22,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from ..engine.transcript import read_events
+from . import memo
 
 _READ_KINDS = frozenset({"read_file", "view_image"})
 _WRITE_OPS = {"write_file": "writes", "edit_file": "edits"}
@@ -50,17 +51,16 @@ def file_activity(run_dir: Path) -> list[dict]:
     order — what a relative path resolves against.
     Memoized on the run's transcript fingerprints (rail-polled endpoint).
     """
-    from . import memo
-
     return memo.memoized(f"files:{run_dir}", memo.transcript_paths(run_dir),
                          lambda: _file_activity(run_dir))
 
 
 def _file_activity(run_dir: Path) -> list[dict]:
     rows: dict[str, dict] = {}
-
-    def walk(d: Path, *, sub: bool) -> None:
-        base = d.relative_to(run_dir).as_posix() if d != run_dir else ""
+    # the parent first, then each child in the order it was created (`sub/10` after `sub/2`)
+    for d in memo.run_tree(run_dir):
+        sub = d != run_dir
+        base = d.relative_to(run_dir).as_posix() if sub else ""
         events, _ = read_events(d / "transcript.jsonl")
         for ev in events:
             if ev.get("type") != "observation":
@@ -81,10 +81,4 @@ def _file_activity(run_dir: Path) -> list[dict]:
                 row["sub"] = row["sub"] or sub
                 if base not in row["bases"]:
                     row["bases"].append(base)
-        subdir = d / "sub"
-        if subdir.is_dir():
-            for child in sorted(p for p in subdir.iterdir() if p.name.isdigit()):
-                walk(child, sub=True)
-
-    walk(run_dir, sub=False)
     return list(rows.values())

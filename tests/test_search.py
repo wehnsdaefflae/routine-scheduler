@@ -72,6 +72,10 @@ def _build_tree(tmp_path, make_routine):
         {"ts": "2026-07-01T12:00:10+00:00", "type": "assistant_action", "turn": 1,
          "payload": {"say": "narwhal analysis in the child task", "kind": "util", "name": "x"}},
     ])
+    _write_events(run / "sub" / "1" / "sub" / "2" / "transcript.jsonl", [
+        {"ts": "2026-07-01T12:00:11+00:00", "type": "assistant_action", "turn": 1,
+         "payload": {"say": "aardvark census by the grandchild", "kind": "util", "name": "x"}},
+    ])
     old = d / "runs" / "20260601-110000"
     old.mkdir(parents=True)
     with gzip.open(old / "transcript.jsonl.gz", "wt", encoding="utf-8") as fh:
@@ -131,6 +135,7 @@ def test_kinds_and_metadata(index):
     _one(index, "proceed", kind="question")
     _one(index, "unicorn", kind="history")
     _one(index, "narwhal", kind="say", sub="1")
+    _one(index, "aardvark", kind="say", sub="1/2")   # a child's child: its own sub/ nests
     _one(index, "okapi", run_ts="20260601-110000")   # the gzipped transcript
     _one(index, "vaporwave", home="conversation", slug="c-plan", kind="instruction")
     _one(index, "seventeen", home="conversation", kind="finish")
@@ -201,6 +206,43 @@ def test_a_locked_index_is_never_discarded(server, index, monkeypatch):
     monkeypatch.setattr(index, "_match", boom)
     assert index.search("zeppelin") == []           # answers empty, like an unbuilt schema
     assert index.path.exists()                      # but the cache is NOT thrown away
+
+
+def test_corruption_the_writer_meets_heals_like_corruption_a_reader_meets(server, index):
+    """F356 healed corruption at the QUERY seam only, and `/api/search` refreshes BEFORE it
+    queries. `_db()` proves the header readable at open; damage past it surfaced in `refresh()`
+    as "database disk image is malformed" — a 500 on every search and a maintainer warning a
+    minute, with the query seam's heal never reached. The writer heals the same way."""
+    index.close()
+    image = bytearray(index.path.read_bytes())
+    assert len(image) > 4096                        # more than the header page to damage
+    image[4096:] = b"\xa5" * (len(image) - 4096)    # every page but the first
+    index.path.write_bytes(bytes(image))
+
+    stats = index.refresh()                         # rebuilds instead of raising
+    assert stats["pending"] == 0 and stats["indexed"] == stats["files"]
+    assert index.search("zeppelin")
+
+
+def test_a_discard_leaves_no_writer_on_the_unlinked_file(server, index, monkeypatch):
+    """Discarding closed the writer and unlinked the files under TWO acquisitions of the lock.
+    The maintainer, waiting on it, could take the gap: its refresh reopened the writer on the
+    old file, the unlink then removed that file from under it, and every later pass indexed
+    into an inode nothing could read — search answered empty until a restart. Simulated
+    deterministically: the waiting refresh runs exactly in that gap."""
+    real_close = index.close
+
+    def close_then_the_maintainer_refreshes():
+        real_close()
+        index.refresh()
+
+    monkeypatch.setattr(index, "close", close_then_the_maintainer_refreshes)
+    index._discard_cache()
+    monkeypatch.undo()
+
+    assert not index.path.exists()                  # the cache really was thrown away…
+    index.refresh()
+    assert index.search("zeppelin")                 # …and the rebuild is the one search reads
 
 
 def test_budget_bounds_work(server):
@@ -277,6 +319,18 @@ def test_extract_tolerates_broken_files(tmp_path, server):
     bad = tmp_path / "bad.json"
     bad.write_text("{not json", encoding="utf-8")
     assert extract(SourceFile(bad, "routine", "alpha", kind="decision")) == []
+
+
+def test_a_transcript_line_that_is_not_an_event_object_is_skipped(server, index):
+    """`read_events` returns whatever JSON a line holds. A line holding a list raised inside
+    `extract` — which promises never to raise — and with it EVERY refresh pass, so search
+    answered 500 for as long as that run was retained."""
+    path = server.routines_home / "alpha" / "runs" / "20260701-120000" / "transcript.jsonl"
+    with path.open("a", encoding="utf-8") as fh:
+        fh.write("[1, 2]\n" + json.dumps({"ts": "2026-07-01T12:01:00+00:00", "type": "finish",
+                                          "payload": {"summary": "the quokka report"}}) + "\n")
+    index.refresh()
+    _one(index, "quokka", kind="finish")
 
 
 def test_long_file_chunks_completely(tmp_path, server, index):
