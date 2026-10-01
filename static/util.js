@@ -200,10 +200,11 @@ export function chip(text, cls = "") {
 }
 
 // The capabilities a permission doc's instructions presume (its `requires:`) as one human
-// line, e.g. "needs write_util · util discord". Empty when the doc requires nothing.
+// line, e.g. "needs write_util · util discord". Empty when the doc requires nothing. Actions and
+// utils are all a doc may require: previous-run depth is a setting the routine's owner chooses
+// (grants.normalize_capabilities refuses it in a `requires:`), so it is never named here.
 export function requiresSummary(r) {
   const caps = [...(r?.actions || []), ...(r?.utils || []).map((u) => `util ${u}`)];
-  if (r?.runs) caps.push(r.runs === "last" ? "previous runs (last)" : "previous runs (all)");
   return caps.length ? `needs ${caps.join(" · ")}` : "";
 }
 
