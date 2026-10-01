@@ -11,8 +11,15 @@ On the scheduler Docker host, from the source checkout:
 
 ```bash
 bash deploy/cliproxy-init.sh
-docker compose --profile claude-proxy up -d --no-deps cliproxy
+grep -qx 'COMPOSE_PROFILES=claude-proxy' .env || echo 'COMPOSE_PROFILES=claude-proxy' >> .env
+docker compose up -d --no-deps cliproxy
 ```
+
+The second line puts the proxy into this host's compose selection. Compose reads
+`COMPOSE_PROFILES` from `.env` on every command run in the checkout's root, so `build`, `up -d`
+and `exec` include `cliproxy` without a flag ([deploy/DOCKER.md](../deploy/DOCKER.md#one-compose-selection-per-host)).
+That matters beyond convenience: an `up` that leaves `cliproxy` out cannot settle the project's
+networks — it stops the other services and strands the model transport on the old network.
 
 The image is pinned by version and digest in Compose. State lives in
 `~/.config/routine-scheduler/cliproxy/`, included in the existing backup inventory.
@@ -60,7 +67,7 @@ ssh -N -L 54545:127.0.0.1:54545 mark@192.168.0.128
 On the server:
 
 ```bash
-docker compose --profile claude-proxy exec cliproxy /CLIProxyAPI/CLIProxyAPI --claude-login --no-browser
+docker compose exec cliproxy /CLIProxyAPI/CLIProxyAPI --claude-login --no-browser
 ```
 
 Open the printed URL and finish consent; with the tunnel up the redirect completes by

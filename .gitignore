@@ -28,3 +28,6 @@ docker-compose.override.yml
 # The compose environment. It carries BROWSER_CDP_TOKEN — the bearer in front of the
 # browser sidecar's CDP and noVNC ports — so it is a credential file, never tracked.
 .env
+# …and the replacement deploy/nat64.sh writes beside it before renaming it over `.env`: killed in
+# between, the script leaves that copy behind, token included.
+/.env.*

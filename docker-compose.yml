@@ -284,11 +284,13 @@ networks:
   # container addressing scheme that changes when the prefix does is one that breaks on a lease
   # renewal. The IPv4 subnets are pinned to what they already were, so no address moves.
   #
-  # CHANGING ANYTHING HERE NEEDS `--profile claude-proxy`. A network can only be recreated once
-  # every container is off it, and `cliproxy` sits behind that profile, so a plain
-  # `docker compose up -d` stops the other three, fails to drop the network cliproxy still holds,
-  # and leaves the fleet down with the model transport still on the old network:
-  #   docker compose --profile claude-proxy up -d --force-recreate
+  # CHANGING ANYTHING HERE NEEDS `cliproxy` IN THE SELECTION. A network can only be recreated
+  # once every container is off it, and `cliproxy` sits behind the `claude-proxy` profile, so an
+  # `up` that leaves the profile out stops the other three, fails to drop the network cliproxy
+  # still holds, and leaves the fleet down with the model transport still on the old network. A
+  # host that runs the proxy keeps COMPOSE_PROFILES=claude-proxy in `.env`, which every command
+  # from the checkout's root reads (deploy/DOCKER.md, "One compose selection per host"):
+  #   docker compose up -d --force-recreate
   # `--force-recreate` matters for cliproxy specifically — compose will otherwise try to START
   # the existing container, which still references the deleted network by id and cannot boot.
   default:

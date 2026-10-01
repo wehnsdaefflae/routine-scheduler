@@ -21,8 +21,9 @@ images of this repository (the engine, `tor`, `chrome`); `cliproxy` is a pinned 
   `${RSCHED_HOME}/chrome-profile` is a **bind mount and part of the tarball** — lose it and every
   site is signed out. A person signs in over noVNC, published on the host's loopback only. See
   `docs/browser-sessions.md`.
-- **`cliproxy`** (behind the `claude-proxy` profile, so a plain `docker compose up -d` leaves it
-  alone) — the CLIProxyAPI transport a Claude or Codex subscription is billed through. Its
+- **`cliproxy`** (behind the `claude-proxy` profile, which `.env` names on a host that runs it —
+  [one compose selection per host](#one-compose-selection-per-host)) — the CLIProxyAPI
+  transport a Claude or Codex subscription is billed through. Its
   state lives in `.config/routine-scheduler/cliproxy/`, inside the inventory below. See
   [proxy setup](../docs/claude-proxy-cutover.md).
 
@@ -38,7 +39,8 @@ credential in front of the browser's CDP and noVNC ports, which authenticate not
 own. Keep it in `.env` beside `docker-compose.yml` (gitignored, and carried by the migration
 bundle with the checkout), and put the SAME value in **Settings → Secrets** under the same name
 once the console is up — the console's browser relay and every util that declares it read it
-from there.
+from there. The same file holds the host's compose selection, the files and profiles every
+compose command uses ([one compose selection per host](#one-compose-selection-per-host)).
 
 ```bash
 cd ~/git-repos/routine-scheduler
@@ -233,7 +235,10 @@ cd /home/mark/git-repos/routine-scheduler
 docker compose up -d --build                                   # builds the image, starts on :8321
 ```
 
-Then browse to **http://192.168.0.128:8321** (token is in the migrated `config.yaml`).
+Then browse to **http://192.168.0.128:8321** (token is in the migrated `config.yaml`). The
+bundle carries `.env`, so this host starts on the source host's compose selection:
+`deploy/nat64.sh status` shows it. Where the line has IPv4 of its own, `deploy/nat64.sh off`
+drops NAT64.
 
 Transferring the image instead of building on the server (offline server):
 ```bash
@@ -264,6 +269,34 @@ systemctl --user disable --now routine-scheduler.service
 - **health:** compose probes the console every 30 s and reports `healthy` / `unhealthy` — a
   report, never a restart ([Health](#health)). systemd had no equivalent.
 
+## One compose selection per host
+
+Which files make up the project and which profiles are on belong to the HOST, so they live in the
+one place Compose reads on every command run from the checkout's root — `.env` — and never in a
+command's flags:
+
+| Line in `.env` | Written by | Present while |
+| --- | --- | --- |
+| `COMPOSE_PROFILES=claude-proxy` | you, once, when the subscription proxy is set up ([proxy setup](../docs/claude-proxy-cutover.md#deployment)) | the host runs `cliproxy` |
+| `COMPOSE_FILE=docker-compose.yml:docker-compose.override.yml:compose.nat64.yml` | `deploy/nat64.sh on`, naming the override only when it exists; `off` deletes the line | NAT64 is on ([Caveats](#caveats)) |
+
+So `build`, `up -d`, `exec`, `logs`, `stop` and `start` take no file flag and no profile flag —
+and must not be given one: either REPLACES what `.env` names instead of adding to it. A file
+list — on the command line or in `COMPOSE_FILE` — also switches off Compose's auto-loading of
+`docker-compose.override.yml`, which is why the list nat64.sh writes names the override itself.
+A list typed by hand drops this host's memory ceilings without a word. With no `COMPOSE_FILE`
+line Compose uses its own default: `docker-compose.yml`, plus the override when it exists.
+
+Two more things undo the selection silently. A `COMPOSE_FILE` or `COMPOSE_PROFILES` exported in
+the shell beats `.env`. A command run from a subdirectory finds the project by searching upward
+and never reads `COMPOSE_FILE` at all.
+
+`deploy/nat64.sh status` prints the selection and, for each container, its resolvers, its memory
+ceiling and whether its config is the one the selection gives it — `config differs` means the
+next `docker compose up -d` recreates it. `tests/test_deploy_selection.py` drives nat64.sh
+through a stand-in `docker` that resolves the selection the way Compose does. It also fails on
+any tracked file that gives a compose command a selection of its own.
+
 ## Caveats
 
 - **Credentials are set in the UI**, not on the host — see [SETUP.md](SETUP.md). All keys, tokens,
@@ -281,12 +314,17 @@ systemctl --user disable --now routine-scheduler.service
   portable off a desktop machine: signing in is a one-time human step per host.
 - **Dependency changes** committed by self-audit or scheduler-builder are picked up on the next restart (`uv run`
   re-syncs from the mounted `pyproject.toml`), exactly like the systemd unit.
-- **A line without IPv4 needs the NAT64 override.** `deploy/nat64.sh on` restarts `rsched` and
-  `chrome` with the public DNS64 resolvers in `compose.nat64.yml`, so IPv4-only hosts (GitHub)
-  are reached through a translating gateway while dual-stack hosts still go direct; the Claude
-  proxy is deliberately left out. `deploy/nat64.sh status` shows which resolvers each container
-  uses. Turn it `off` the day IPv4 returns: a third party's gateway then sees the destination of
-  every IPv4-only call for no benefit.
+- **A line without IPv4 needs the NAT64 override.** `deploy/nat64.sh on` writes the
+  `COMPOSE_FILE` line into `.env` with `compose.nat64.yml` last
+  ([one compose selection per host](#one-compose-selection-per-host)) and runs
+  `docker compose up -d`, which recreates `rsched` and `chrome` with its public DNS64 resolvers:
+  IPv4-only hosts (GitHub) are reached through a translating gateway while dual-stack hosts still
+  go direct. The Claude proxy is deliberately left out. Every later compose command reads the
+  same line, so a rebuild keeps the resolvers. The script refuses, changing nothing, while a
+  service that has a container here is outside the selection — on this host, while `.env` lacks
+  `COMPOSE_PROFILES=claude-proxy`. `deploy/nat64.sh status` shows the selection and each
+  container's resolvers. Turn it `off` the day IPv4 returns: a third party's gateway then sees
+  the destination of every IPv4-only call for no benefit.
 - **Host mounts (`/mnt`, `/srv`, `/tmp`) are bind-mounted with `rslave` propagation** so the
   fs-roots picker can offer USB disks / NAS mounts, including ones mounted on the host AFTER the
   container started (F190: without the bind, the daemon's mount namespace has no `/mnt` at all
@@ -295,8 +333,12 @@ systemctl --user disable --now routine-scheduler.service
 - **The committed `docker-compose.yml` is this instance's**, host mounts and project workspaces
   included (`git-repos/LLMSecTest_agentic` and its grant folder). Another host's extra paths —
   a project share, a document vault (cf. R35, where a clarify run could not read
-  `/mnt/sshd_volume1/...`) — and its resource ceilings go in a `docker-compose.override.yml`, which
-  Compose merges automatically and which is gitignored, so an update never clobbers them. A path
+  `/mnt/sshd_volume1/...`) — and its resource ceilings go in a `docker-compose.override.yml`,
+  which is gitignored, so an update never clobbers them. Compose merges it by itself only while
+  nothing names the file list. nat64.sh's list names it; a list typed by hand does not. Neither
+  did the first version of nat64.sh: every container ran without a memory limit from 2026-09-27
+  until the 0.372.1 deploy. Create or delete the override while NAT64 is on, then run
+  `deploy/nat64.sh on` again, so the list follows. A path
   must ALSO be granted to the routine as an fs-root (the routine's Filesystem roots) before a run
   may read it; a bind mount alone makes it visible to the container, not to the sandboxed run.
 
@@ -379,9 +421,15 @@ Debian (`bookworm` → `trixie`) in every Dockerfile that names it.
 
 ```bash
 cd ~/git-repos/routine-scheduler
+deploy/nat64.sh status                      # the selection both commands read; what runs now
 docker compose build                        # all three images: rsched, chrome, tor
-docker compose up -d                        # recreates each container whose image changed
+docker compose up -d                        # recreates each container whose image or config changed
 ```
+
+Both run bare, from the checkout's root: they read this host's files and profiles from `.env`
+([one compose selection per host](#one-compose-selection-per-host)), so the rebuilt fleet keeps
+the override's memory ceilings, the NAT64 resolvers while they are on, and `cliproxy`. A file
+flag or a profile flag here would replace that selection for the one command.
 
 For a NEW IMAGE, `up -d` replaces the running `rsched` process — unlike a code change, which it
 never reloads (CLAUDE.md, "Deploy") — and any routine running at that moment goes with it. Check
