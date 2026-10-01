@@ -61,6 +61,9 @@ def test_an_unset_url_has_no_upstream_at_all():
     "/absolute",                 # escape to the upstream root
     "a/../../b",                 # climb after a legitimate segment
     "..%2f..%2fetc",             # pre-decoded traversal
+    "%2e%2e/%2e%2e/etc",         # the DOTS still encoded: a dot to the server that decodes
+    "%252e%252e/etc",            # encoded twice: the router's pass leaves one to go
+    ".%2E/etc",                  # half encoded, upper-case hex
 ])
 def test_a_path_that_escapes_the_upstream_is_refused(path):
     """The proxy forwards a path the BROWSER chose, so traversal is refused here rather

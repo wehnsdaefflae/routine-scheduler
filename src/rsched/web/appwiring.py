@@ -42,6 +42,20 @@ def _observe(task: asyncio.Task, name: str) -> None:
     task.add_done_callback(_done)
 
 
+async def _stop(task: asyncio.Task | None) -> None:
+    """Cancel one lifespan task and wait for it to end.
+
+    A task that had already DIED re-raises its exception at the await — `_observe` logged it
+    the moment it happened — and must not cut the shutdown short: raised from here, it left
+    every task after it running into a closed loop and failed the whole lifespan shutdown.
+    """
+    if task is None:
+        return
+    task.cancel()
+    with contextlib.suppress(asyncio.CancelledError, Exception):
+        await task
+
+
 def _make_lifespan(server: ServerConfig, bus: EventBus, task_center: TaskCenter,
                    *, with_scheduler: bool):
     """The app's startup/shutdown seam, built before the FastAPI instance exists (it only
@@ -85,20 +99,10 @@ def _make_lifespan(server: ServerConfig, bus: EventBus, task_center: TaskCenter,
         _observe(search_task, "search maintainer")
         yield
         set_sink(None)
-        search_task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await search_task
+        await _stop(search_task)
         app.state.search.shutdown()
-        docs_task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await docs_task
-        push_task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await push_task
-        if task:
-            task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await task
+        for running in (docs_task, push_task, task):
+            await _stop(running)
 
     return lifespan
 

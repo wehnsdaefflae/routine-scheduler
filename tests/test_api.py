@@ -174,6 +174,23 @@ def test_engine_injects_the_routine_token_for_the_reserved_name(monkeypatch):
     assert env["RSCHED_API_TOKEN"] == ""
 
 
+def test_a_dead_lifespan_task_does_not_fail_the_shutdown(tmp_path, monkeypatch):
+    """`_observe` logs a lifespan task the moment it dies. The shutdown then awaited it again,
+    and the exception that re-raised failed the whole lifespan shutdown — every task after it
+    (the push listener, the scheduler) left running into a closing loop."""
+    from rsched.web import api_search
+
+    async def crashes(_index):
+        raise RuntimeError("the search maintainer died")
+
+    monkeypatch.setattr(api_search, "maintain", crashes)
+    app = create_app(make_test_server(tmp_path), with_scheduler=False)
+    with TestClient(app) as c:
+        assert c.get("/api/status", headers={"Authorization": f"Bearer {TOKEN}"}
+                     ).status_code == 200
+    # leaving the block ran the shutdown: reaching this line is the assertion
+
+
 def test_sse_ticket_flow(client):
     """EventSource auth: a short-lived ticket minted over the authed channel authenticates
     the SSE endpoints ONLY — a URL-carriable credential must never be a full-API bearer
