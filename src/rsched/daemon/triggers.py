@@ -35,6 +35,7 @@ from ..health_events import log_health_event
 from ..ids import now_iso
 from ..paths import read_json
 from .runner import Runner
+from .tickguard import ItemGuard
 
 log = logging.getLogger("rsched.triggers")
 
@@ -48,18 +49,21 @@ class TriggerManager:
         self.server = server
         self.runner = runner
         self.home = server.routines_home
+        self.guard = ItemGuard(self.home, "trigger manager")
 
     async def tick(self, catalog: dict[str, registry.RoutineInfo]) -> None:
         """One pass over the spool + the report-trigger inbox watch. Never raises into
-        the scheduler loop.
+        the scheduler loop, and one routine that raises never starves the rest (tickguard).
         """
         try:
             for slug in triggers.slugs_with_events(self.home):
-                await self._service(slug, catalog.get(slug))
+                with self.guard.item(slug):
+                    await self._service(slug, catalog.get(slug))
             # report triggers have no spool — the durable inbox file IS the event, so
             # the watch is a cheap glob on exactly the routines that DECLARE one
             for slug, info in catalog.items():
-                await self._service_report(slug, info)
+                with self.guard.item(f"{slug} (report trigger)"):
+                    await self._service_report(slug, info)
         except Exception:
             log.exception("trigger tick failed")
 

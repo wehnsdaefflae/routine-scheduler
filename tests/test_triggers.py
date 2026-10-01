@@ -430,6 +430,35 @@ async def test_an_in_flight_temp_file_never_buys_a_run(tmp_path):
     assert runner.fired == []
 
 
+async def test_one_routine_that_raises_never_starves_the_rest_of_the_pass(tmp_path,
+                                                                        monkeypatch):
+    """The whole pass sat in one try/except, so a routine whose servicing raised on every tick
+    silenced every routine after it. It is contained per item, and filed in the health stream
+    once — not once per five-second tick — until it next succeeds."""
+    from rsched.health_events import HEALTH_EVENTS_FILE
+
+    server = _server(tmp_path)
+    _routine(server, slug="aaa-broken", trig=[dict(REPORT_TRIG)])
+    d = _routine(server, slug="zzz-fine", trig=[dict(REPORT_TRIG)])
+    (d / "inbox" / "msg-x.json").write_text('{"text": "work", "via": "report"}', "utf-8")
+    runner = FakeRunner()
+    mgr = TriggerManager(server, runner)
+    real = mgr._service_report
+
+    async def service(slug, info):
+        if slug == "aaa-broken":
+            raise OSError("an unreadable trigger state file")
+        await real(slug, info)
+
+    monkeypatch.setattr(mgr, "_service_report", service)
+    catalog = registry.scan(server)
+    await mgr.tick(catalog)
+    await mgr.tick(catalog)
+    assert runner.fired == [("zzz-fine", "trigger")]
+    stream = (server.routines_home / ".control" / HEALTH_EVENTS_FILE).read_text("utf-8")
+    assert stream.count('"scheduler_tick_error"') == 1 and "aaa-broken" in stream
+
+
 async def test_the_page_counts_exactly_what_the_report_trigger_fires_on(tmp_path):
     """The routine page's pending number and the daemon's watch read the ONE inbox predicate
     with the same flags. They used to differ on an unparseable file: the watch is fail-OPEN
