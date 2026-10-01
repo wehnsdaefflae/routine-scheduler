@@ -48,7 +48,7 @@ that temp file on a fresh boot, could not parse it, logged "not a message file" 
 it into `consumed/`, so the writer's `replace()` raised and the message was lost. The report
 trigger's watch (`daemon/triggers`) is documented FAIL-OPEN — anything unreadable WAKES —
 so a race with any inbox write bought a whole run of the recipe. And the run gate
-(`daemon/run_gate.pending_inbox`) counted ANY file, so a queued question ANSWER — the one
+(then a hand-rolled check of its own) counted ANY file, so a queued question ANSWER — the one
 thing that must never start a run — read as freight the gate had to admit a run for.
 
 ## What a live leg is TOLD versus HANDED

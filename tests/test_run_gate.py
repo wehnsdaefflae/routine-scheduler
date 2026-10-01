@@ -142,19 +142,37 @@ async def test_existing_inbox_bypasses_missing_script(setup_gate, monkeypatch):
     assert marker.exists()
 
 
-def test_pending_inbox_counts_messages_only(tmp_path):
-    """`msg-*.json` — the stem the ONE writer produces — and nothing else. Counting ANY
+def test_the_gates_inbox_check_counts_messages_only(tmp_path):
+    """The gate asks the ONE inbox predicate, fail-open: `msg-*.json` — the stem the ONE
+    writer produces — and nothing else, an unparseable one counting as work. Counting ANY
     file made a queued question ANSWER read as freight the gate must admit a run for (an
     answer is exactly what does NOT start a run), and matched `paths.atomic_write`'s
     in-flight `.msg-….json.XXXX.tmp` besides."""
     d = tmp_path / "routine"
     (d / "inbox").mkdir(parents=True)
-    assert not gate_prepare.pending_inbox(d)
+    assert not _gate_sees_freight(d)
     (d / "inbox" / "answer-q-1.json").write_text("{}")
     (d / "inbox" / ".msg-20260922T101010-ab.json.9f.tmp").write_text("{")
-    assert not gate_prepare.pending_inbox(d)
+    assert not _gate_sees_freight(d)
     (d / "inbox" / "msg-rep-R1.json").write_text("{}")
-    assert gate_prepare.pending_inbox(d)
+    assert _gate_sees_freight(d)
+
+
+def _gate_sees_freight(d: Path) -> bool:
+    """What `gate_prepare.child_main` decides for an inbox-mode gate on this directory."""
+    import io
+    import json
+
+    cfg = RoutineConfig(slug="routine", dir=d)
+    server = ServerConfig(routines_home=d.parent)
+    out = io.StringIO()
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr("sys.stdin", io.StringIO(json.dumps({
+            "routine": cfg.model_dump(mode="json"), "server": server.model_dump(mode="json"),
+            "mode": "inbox"})))
+        mp.setattr("sys.stdout", out)
+        gate_prepare.child_main()
+    return json.loads(out.getvalue())["decision"] == "run"
 
 
 @pytest.mark.parametrize("body", ['"""gate — predicate\ncalls: other\n"""',

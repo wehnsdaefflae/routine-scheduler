@@ -24,6 +24,7 @@ from pathlib import Path
 
 from .. import gatekit, sandbox, scripts, secrets, utils_header, utils_run
 from ..config import RoutineConfig, ServerConfig
+from ..engine import inbox as inbox_mod
 from ..ids import now_iso
 from ..paths import read_json
 from ..registry import TERMINAL_STATES
@@ -36,15 +37,6 @@ ADMIT = "admit"
 
 class GateError(Exception):
     """Admission failed: never interpret an error as permission to skip or run."""
-
-
-def pending_inbox(directory: Path) -> bool:
-    """Does freight wait for this routine? `msg-*.json` only — the stem the ONE writer
-    produces (engine/inbox.file_message); `paths.atomic_write`'s in-flight
-    `.msg-….json.XXXX.tmp` is not freight.
-    """
-    inbox = directory / "inbox"
-    return inbox.is_dir() and any(inbox.glob("msg-*.json"))
 
 
 def pending_answers(directory: Path) -> bool:
@@ -315,7 +307,10 @@ def child_main() -> None:
         cfg = RoutineConfig.model_validate(payload["routine"])
         server = ServerConfig.model_validate(payload["server"])
         mode = payload.get("mode") or "script"
-        pending = pending_inbox(cfg.dir)
+        # inbox freight: the ONE predicate, fail-open like every gate read (a file it cannot
+        # parse is WORK) and counting closures — once a fire is due, any message is the run's
+        # to read. `msg-*.json` only, so `atomic_write`'s in-flight temp is not freight.
+        pending = inbox_mod.has_pending_messages(cfg.dir, on_unparseable=True)
         if pending or mode == "inbox":
             sys.stdout.write(json.dumps({
                 "version": 1, "decision": "run" if pending else "skip",

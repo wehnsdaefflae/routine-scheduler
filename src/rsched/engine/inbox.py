@@ -198,6 +198,10 @@ def _waiting(routine_dir: Path, *, vias: tuple[str, ...] | None,
       freight the drain will never consume makes a wait-yield or a finish-deferral spin
       forever on it.
 
+    Every one of them now asks here — the engine's wait/finish/loop-end checks, the reap, the
+    detached delivery, the run gate (fail-open, closures counted) and the report trigger with
+    the Triggers card's count (fail-open, closures not counted).
+
     `answer-*` files are never counted here by anyone. They have their own matching pass
     (`collect_deferred_answers`), and an answer is the one thing that must not buy a run.
     """

@@ -121,7 +121,9 @@ copies could not simply be merged. The scan selects `msg-*.json`, the stem the O
 produces (`engine/inbox.file_message`), and not "any file that is not `answer-*`":
 `paths.atomic_write` creates its temp file IN the target directory, so the broader filter also
 matched an in-flight `.msg-….json.XXXX.tmp` — unreadable, and unreadable wakes, so a race with
-any inbox write bought a whole run of the recipe.
+any inbox write bought a whole run of the recipe. The Triggers card's `pending` number counts
+with the watch's own flags (`triggers.describe_triggers`), so the page never shows "0" over
+a fire.
 
 ## An answer waits for the next run — or for your click
 
