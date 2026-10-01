@@ -24,8 +24,9 @@ burst of identical requests computes once — plus `run_tree`, the one walk of a
 nested child dirs that every run-scoped model and the search index read), `stamps` (the
 one way two moments are compared — never as text), `library_reads` (the ONE memoized
 reader of the library's parsed docs, util headers and whole-library lint), `usage_stream`
-(the ONE parser of workflow-usage.jsonl) and `health_stream` (the ONE parser of
-health-events.jsonl, plus the blocked-fleet fold behind `/api/health/blocked`).
+(the ONE parser of workflow-usage.jsonl, and its one fold from legs to runs) and
+`health_stream` (the ONE parser of health-events.jsonl, plus the blocked-fleet fold behind
+`/api/health/blocked`).
 `web/decisions_read` (the open-decisions list behind `/api/questions`) follows the same
 discipline from the web package.
 """
