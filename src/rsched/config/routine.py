@@ -166,7 +166,8 @@ class RoutineConfig(_Config):
     # TriggerManager (docs/triggers.md). User config like everything in this file:
     # created/deleted on the routine page, never by a run.
     triggers: list[dict] = Field(default_factory=list)
-    keep_runs: int = Field(30, validation_alias=AliasPath("retention", "keep_runs"))
+    # Retention deletes every run past this many after each run: 0 would delete them all.
+    keep_runs: int = Field(30, ge=1, validation_alias=AliasPath("retention", "keep_runs"))
     # Whether the routine-improver meta routine visits this routine (default: yes; the
     # toggle on the routine page opts out with `improve: false`).
     improve: bool = True

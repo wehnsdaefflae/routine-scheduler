@@ -259,6 +259,18 @@ def test_a_host_zone_zoneinfo_cannot_load_defaults_to_utc(tmp_path, monkeypatch)
     assert problems == [] and cfg.tz == "UTC"
 
 
+def test_retention_keeps_at_least_one_run(tmp_path):
+    """Retention deletes `runs[keep_runs:]` after every run, so a hand-edited `keep_runs: 0`
+    deleted every finished run — the one that just ended included — and a negative value
+    pruned from the wrong end. The routine page refuses both; the loader now does too."""
+    for bad in (0, -3):
+        d = _mk_routine(tmp_path, {"description": "x", "retention": {"keep_runs": bad}},
+                        slug=f"keep{abs(bad)}")
+        cfg, problems = load_routine(d)
+        assert cfg.keep_runs == 30
+        assert any(p.startswith("retention.keep_runs:") for p in problems)
+
+
 def test_a_rejected_gate_reads_like_every_other_problem_line(tmp_path):
     """`where: what`, one line per problem — not pydantic's multi-line dump with the input's
     repr and a documentation URL, which is what the routine page and `rsched validate` showed."""
