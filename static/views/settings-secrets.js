@@ -19,9 +19,10 @@ export function renderSecrets(view) {
     // for the machines section's key_var) into a single-line input silently strips the
     // newlines before the store ever sees them — the store itself round-trips PEMs fine
     // (operator report 2026-07-23). Masked via text-security; "show" reveals.
-    // `data-nopersist` is load-bearing: formpersist.js skips a password INPUT by type, and a
-    // textarea is not one — without the opt-out every keystroke of the value was kept in the
-    // tab's sessionStorage and refilled into the box the save's own re-render mounts.
+    // Never a draft: before formpersist.js refused credential-shaped fields by default (a
+    // masked textarea is one), every keystroke of the value was kept in the tab's
+    // sessionStorage and refilled into the box the save's own re-render mounts. The explicit
+    // `data-nopersist` stays as the field's own statement of that.
     const valIn = el("textarea", { placeholder: "value", rows: "1", "data-nopersist": true,
       style: "flex:1;resize:vertical;-webkit-text-security:disc" });
     const delBtn = (k) => {

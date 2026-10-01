@@ -60,7 +60,9 @@ export function proxyAccounts(ep, onSignedIn) {
     try { s = await api(`${base}/proxy-login`, { method: "POST", body: { provider } }); }
     catch (err) { loginBox.replaceChildren(el("div", { class: "warn-line" }, `✗ ${err.message}`)); return; }
     if (!s.ok) { loginBox.replaceChildren(el("div", { class: "warn-line" }, `✗ ${s.error}`)); return; }
+    // an OAuth code + state: never a draft (formpersist would also refuse it by its words)
     const paste = el("textarea", { rows: "2", style: "width:100%", "aria-label": `${label} sign-in response`,
+      "data-nopersist": true,
       placeholder: `http://localhost:${s.callback_port}/callback?code=…&state=…   (or the code the page shows)` });
     const finish = el("button", { class: "btn small primary" }, "finish sign-in");
     const cancel = el("button", { class: "btn small" }, "cancel");

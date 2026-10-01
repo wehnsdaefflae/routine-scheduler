@@ -10,16 +10,35 @@
 const PREFIX = "rsched.formpersist.";
 const SEL = "input, textarea, select";
 
-// Fields we must never remember: passwords/tokens, file pickers, buttons, and anything
-// explicitly opted out with data-nopersist.
+// Fields we must never remember: non-text controls, anything explicitly opted out with
+// data-nopersist, and — DENY-BY-DEFAULT — anything credential-shaped. An opt-out per field is
+// a guard the next form forgets: the Secrets value box (a masked TEXTAREA, so a type check
+// never saw it) and the proxy sign-in paste box (an OAuth code + state) both kept every
+// keystroke in the tab's storage until each was opted out by hand.
 function skip(node) {
   if (!node.matches || !node.matches(SEL)) return true;
-  if (node.type === "password" || node.type === "file" || node.type === "hidden"
-      || node.type === "checkbox" || node.type === "radio" || node.type === "submit"
-      || node.type === "button") return true;
-  if (node.hasAttribute("data-nopersist")) return true;
-  const key = fieldKey(node);
-  return !key || /token|secret|password/i.test(key);
+  if (node.type === "file" || node.type === "hidden" || node.type === "checkbox"
+      || node.type === "radio" || node.type === "submit" || node.type === "button") return true;
+  if (node.hasAttribute("data-nopersist") || credentialShaped(node)) return true;
+  return !fieldKey(node);
+}
+
+// Words that make a field read as a credential. Matched against what DESCRIBES the field
+// (name, id, placeholder, aria-label) — never against an explicit `data-persist` key, which is
+// the author's own statement that the field holds a draft worth keeping.
+const CREDENTIAL_WORDS = /token|secret|password|key|pass|code/i;
+const CREDENTIAL_AUTOCOMPLETE = new Set(["off", "new-password", "current-password",
+                                         "one-time-code"]);
+
+function credentialShaped(node) {
+  if (node.type === "password" || node.hasAttribute("data-secret")) return true;
+  if (CREDENTIAL_AUTOCOMPLETE.has((node.getAttribute("autocomplete") || "").toLowerCase()))
+    return true;
+  const masked = node.style && node.style.webkitTextSecurity;      // a masked textarea
+  if (masked && masked !== "none") return true;
+  if (node.hasAttribute("data-persist")) return false;
+  return [node.id, node.getAttribute("name"), node.getAttribute("placeholder"),
+          node.getAttribute("aria-label")].some((s) => s && CREDENTIAL_WORDS.test(s));
 }
 
 // A stable identifier for a field within its view: explicit id/name/data-persist win;
