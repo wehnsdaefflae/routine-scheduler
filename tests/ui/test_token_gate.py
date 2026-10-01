@@ -1,8 +1,10 @@
-"""The token gate's TIER path. A browser holding the routine bearer renders the whole
-console — every tab is a read — and only the first mutation fails. Before R94's marker
-header that 403 became an unactionable toast with no way back to the token field: on a
-phone there is no devtools to clear localStorage by hand, so the browser stayed stranded
-until the operator cleared site data. The gate must re-open instead.
+"""The token gate's TIER path. A browser holding the routine bearer renders the console's
+pages — they are reads, bar the few subtrees that token is refused even to read (settings,
+the folder picker, debug, search, a routine's secret names —
+`web/app.ROUTINE_TOKEN_DENIED_READS`) — and the first mutation fails. Before R94's marker
+header that 403 became an unactionable toast with no way back to the token field: on a phone
+there is no devtools to clear localStorage by hand, so the browser stayed stranded until the
+operator cleared site data. The gate must re-open instead.
 """
 
 from .conftest import ROUTINE_TOKEN, TOKEN, until

@@ -45,6 +45,27 @@ def _stranded_user_messages(routine_dir: Path) -> bool:
     from ..engine import inbox
     return inbox.has_pending_messages(routine_dir, vias=inbox.USER_MESSAGE_VIAS)
 
+#: How much of an engine's stderr the daemon keeps: the TAIL, because the tail is all anything
+#: reads (`_notable_stderr`, the synthetic finish's excerpt). `communicate()` held every byte a
+#: run wrote, in the daemon, for as long as the run lasted.
+STDERR_TAIL_BYTES = 256 * 1024
+
+
+async def wait_keeping_stderr_tail(proc: asyncio.subprocess.Process) -> bytes:
+    """`communicate()` for an engine whose stdout is DEVNULL — read stderr to EOF, then reap
+    the process — keeping only the last STDERR_TAIL_BYTES. Cancelled, it stops reading exactly
+    as `communicate()` would, so the caller's kill-and-reap drains what is left.
+    """
+    tail = bytearray()
+    if proc.stderr is not None:
+        while chunk := await proc.stderr.read(64 * 1024):
+            tail += chunk
+            if len(tail) > STDERR_TAIL_BYTES:
+                del tail[:len(tail) - STDERR_TAIL_BYTES]
+    await proc.wait()
+    return bytes(tail)
+
+
 def _notable_stderr(stderr: bytes, *, max_lines: int = 12, max_chars: int = 800) -> str:
     """A compact tail of the WARNING/ERROR/CRITICAL/traceback lines in captured stderr, or
     "" when the subprocess logged nothing notable. Keeps only the tail so a chatty run can

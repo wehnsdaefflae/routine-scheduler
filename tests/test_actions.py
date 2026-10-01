@@ -311,6 +311,11 @@ def test_canon_renders_each_form_the_spec_defines():
     # read_file carries a LIST, not the singular field its BRIEF_FIELD entry names
     assert canon({"kind": "read_file", "paths": ["a.md", "b.md"]}) == "read_file paths=a.md,b.md"
     assert canon({"kind": "read_file", "path": "one.md"}) == "read_file path=one.md"
+    # …and so does view_image, which renders a bare `view_image` without it — a reminder about
+    # looking at a file could not see which files a multi-image call looked at
+    assert canon({"kind": "view_image", "paths": ["a.png", "b.pdf"]}) == \
+        "view_image paths=a.png,b.pdf"
+    assert canon({"kind": "view_image", "path": "a.png"}) == "view_image path=a.png"
     # every other kind names its field, so the string says what it is
     assert canon({"kind": "write_file", "path": "state/x.json"}) == "write_file path=state/x.json"
     assert canon({"kind": "edit_file", "path": "src/auth.py"}) == "edit_file path=src/auth.py"

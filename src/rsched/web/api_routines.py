@@ -279,8 +279,8 @@ class RevertBody(BaseModel):
 def revert_recipe(request: Request, slug: str, body: RevertBody) -> dict:
     """One-click rollback of a recipe change: restore main.md / stages/ / tuning.yaml
     to their state just before `commit` and commit only those paths —
-    routine.yaml (the user's config) and state files are never touched. Guarded like
-    every web-side routine edit: 409 while a run is active.
+    routine.yaml (the user's config) and state files are never touched. Queued while a run
+    is active and applied when it ends (D78-A), by the same `recipes.revert_recipe`.
     """
     from ..recipes import RecipeError
     from ..recipes import revert_recipe as do_revert

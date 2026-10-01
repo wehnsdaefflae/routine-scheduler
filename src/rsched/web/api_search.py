@@ -35,18 +35,25 @@ MAINTAIN_BUDGET_S = 15.0
 def search(request: Request, q: str = "", limit: int = 50) -> dict:
     """Ranked full-text hits. `index.pending` > 0 in the response means the index is
     still catching up (cold boot, deep backlog) — results are valid but may be
-    incomplete; the client surfaces that.
+    incomplete; the client surfaces that. `index.refreshing` means the maintainer was
+    mid-pass, so this query skipped its own top-up rather than wait the pass out.
+
+    Query syntax never reaches this handler as an error — `SearchIndex.search` retries it
+    escaped, and what remains unsearchable is a ValueError (400). An sqlite OperationalError
+    that does arrive is a lock or busy timeout: the index is busy, which is a 503 to retry,
+    never "unsupported query syntax".
     """
     index: SearchIndex = request.app.state.search
     if not q.strip():
         raise HTTPException(400, "empty query — pass ?q=<terms>")
-    stats = index.refresh(budget_s=QUERY_REFRESH_BUDGET_S)
     try:
+        stats = index.refresh(budget_s=QUERY_REFRESH_BUDGET_S, wait=False)
         hits = index.search(q, limit=limit)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     except sqlite3.OperationalError as exc:
-        raise HTTPException(400, f"unsupported query syntax: {exc}") from exc
+        raise HTTPException(503, f"the search index is busy ({exc}) — try again in a "
+                                 "moment") from exc
     return {"hits": hits, "index": stats}
 
 

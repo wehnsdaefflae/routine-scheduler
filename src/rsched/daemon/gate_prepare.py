@@ -21,11 +21,11 @@ import re
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from .. import gatekit, sandbox, scripts, secrets, utils_header, utils_run
 from ..config import RoutineConfig, ServerConfig
 from ..engine import inbox as inbox_mod
-from ..ids import now_iso
 from ..paths import read_json
 from ..registry import TERMINAL_STATES
 
@@ -290,9 +290,13 @@ def prepare_checks(cfg: RoutineConfig, server: ServerConfig, context: dict,
     injected = _injectable(cfg, declared, set())
     policy = sandbox.SandboxPolicy(mode="strict", own_dir=root,
                                    read_roots=(kit, *reads), write_roots=())
+    # `now` on the ROUTINE's clock — the zone its schedule fires in (validated at load) — so
+    # a check asking what day it is today (`weekdays`, `dates`) reads the routine's calendar,
+    # not the server's: the two disagree for hours around midnight whenever the zones differ.
     ctx = {**context, "version": 2, "routine_dir": str(root),
            "routines_home": str(server.routines_home),
-           "libraries_home": str(server.libraries_home), "now": now_iso(),
+           "libraries_home": str(server.libraries_home),
+           "now": datetime.now(ZoneInfo(cfg.tz)).isoformat(),
            "last_ok": base, "checks": [{**c, "id": str(c.get("id") or f"c{i + 1}")}
                                        for i, c in enumerate(checks)]}
     cmd = _wrap([sys.executable, "-I", str(gatekit.ENTRY), json.dumps(ctx)], policy, server,

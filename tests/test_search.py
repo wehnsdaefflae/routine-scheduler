@@ -245,6 +245,26 @@ def test_a_discard_leaves_no_writer_on_the_unlinked_file(server, index, monkeypa
     assert index.search("zeppelin")                 # …and the rebuild is the one search reads
 
 
+def test_a_query_never_queues_behind_the_maintainers_pass(server, index):
+    """The maintainer holds the writer for up to its 15 s budget a pass, and the query-time
+    top-up took the same lock — so a search typed during a pass waited it out before it even
+    looked. The query reads the index as it stands instead (WAL readers never wait on the
+    writer) and says a refresh is running."""
+    import time
+
+    with index._lock:                                  # the maintainer, mid-pass
+        t0 = time.monotonic()
+        stats = index.refresh(budget_s=2.0, wait=False)
+        assert time.monotonic() - t0 < 1.0
+        assert stats["refreshing"] is True and stats["indexed"] == 0
+        assert stats["files"] > 0                      # the last finished pass's counts
+        assert index.search("zeppelin")
+    cold = SearchIndex(server)                         # no pass has finished in this process
+    with cold._lock:
+        assert cold.refresh(budget_s=2.0, wait=False)["pending"] >= 1   # "may be incomplete"
+    cold.close()
+
+
 def test_budget_bounds_work(server):
     idx = SearchIndex(server)
     stats = idx.refresh(budget_s=0)
@@ -352,6 +372,10 @@ def client(tmp_path, make_routine):
     app = create_app(server, with_scheduler=False)
     with TestClient(app) as c:
         c.headers["Authorization"] = f"Bearer {TOKEN}"
+        # A query never queues behind the lifespan maintainer's pass (it answers from the index
+        # as it stands), so these route tests wait for that first pass here — what they pin is
+        # the route over a built index, not which of two threads wins the start.
+        app.state.search.refresh()
         yield c
 
 
@@ -373,6 +397,22 @@ def test_api_empty_and_unsearchable_are_400(client):
     assert client.get("/api/search").status_code == 400
     assert client.get("/api/search?q=%20").status_code == 400
     assert client.get("/api/search?q=(((").status_code == 400   # clean 4xx, never a 500
+
+
+def test_a_busy_index_is_a_503_never_a_syntax_error(client, monkeypatch):
+    """Query syntax never escapes `SearchIndex.search` — it is retried escaped, and what is
+    still unsearchable is a ValueError (the 400 above). What does escape is a lock or busy
+    timeout, which the route reported as "unsupported query syntax": a 400 telling the user
+    their words were wrong when the index was merely busy."""
+    import sqlite3
+
+    def busy(q, limit=50):
+        raise sqlite3.OperationalError("database is locked")
+
+    monkeypatch.setattr(client.app.state.search, "search", busy)
+    resp = client.get("/api/search?q=zeppelin")
+    assert resp.status_code == 503, resp.text
+    assert "busy" in resp.json()["detail"] and "syntax" not in resp.json()["detail"]
 
 
 def test_api_limit(client):

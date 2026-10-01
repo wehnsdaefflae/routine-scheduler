@@ -173,30 +173,33 @@ def snapshot(cfg) -> dict:
 def effective_capabilities(caps: object) -> dict:
     """A capabilities mapping with every setting present — what the routine's file MEANS.
 
-    A file that leaves a setting out holds its default, so comparing the raw mappings would
-    call two routines with the same effective settings different and mark an override
-    nobody chose.
+    A file that leaves a setting out holds what the run reads for it, so comparing the raw
+    mappings would call two routines with the same effective settings different and mark an
+    override nobody chose. The settings are read through `grants.effective_settings`, the
+    reading the run policy uses — never a second copy of it.
     """
-    from ..config.base import DEFAULT_CAPABILITIES
-    from ..grants import EMPTY_CAPABILITIES
+    from ..grants import effective_settings
 
     raw = dict(caps) if isinstance(caps, dict) else {}
-    out: dict = {"actions": list(raw.get("actions") or []),
-                 "utils": list(raw.get("utils") or [])}
-    for key in ("confirm", "rule_confirm", "remind_confirm", "runs", "reminders"):
-        out[key] = raw.get(key) or DEFAULT_CAPABILITIES.get(key) or EMPTY_CAPABILITIES[key]
-    return out
+    return {"actions": list(raw.get("actions") or []), "utils": list(raw.get("utils") or []),
+            **effective_settings(raw)}
 
 
 def patch_shape(key: str, value: object, lane_managed: bool) -> tuple[str, object]:
-    """One settings value in the shape the validated routine PATCH takes."""
+    """One settings value in the shape the validated routine PATCH takes.
+
+    The schedule's "disabled" cadence is the routine's off switch, so it lands on `enabled`
+    — keeping the cron it had, ready for the day it is switched back on. A lane-managed
+    routine's own cadence decides nothing (the lane fires it), so all its schedule value can
+    still say is that it is on.
+    """
     if key == "schedule":
         spec = dict(value) if isinstance(value, dict) else {}
         friendly = spec.get("friendly") or {"frequency": "manual"}
         if friendly.get("frequency") == "disabled":
-            return "schedule", {"disabled": True}
+            return "enabled", False
         if lane_managed:
-            return "schedule", {"disabled": False}
+            return "enabled", True
         return "schedule", {"friendly": friendly, "catchup": spec.get("catchup") or "skip"}
     if key == "reminders":
         return "shared_reminders", value

@@ -55,8 +55,9 @@ def secrets_path():
 def scoped_path(slug: str):
     """`secrets.d/<slug>.env` — one routine's own store, beside the central one. Derived
     from `secrets_path()` rather than `config_file()` so the two scopes can never drift
-    apart (and so one patch point relocates BOTH — the hermetic test fixture's). The slug is
-    validated, so a caller can never walk out of the directory with a crafted name.
+    apart (and so relocating `secrets_path` alone moves BOTH, which is how the store tests
+    point them at a tmp dir). The slug is validated, so a caller can never walk out of the
+    directory with a crafted name.
     """
     if not is_slug(slug):
         raise ValueError(f"{slug!r} is not a valid routine slug")

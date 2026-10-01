@@ -6,13 +6,13 @@ effect:
 tags: [steward, web, publishing, reporting]
 requires: {}
 expects:
-  fs-read: ["/home/mark/.local/share/routine-scheduler-libraries/web/steward"]
+  fs-read: ["~/.local/share/routine-scheduler-libraries/web/steward"]
 ---
 # permission: steward-publishing — publish this routine's page on the Steward hub
 
 How the hub works — keys, endpoints, credentials, the publish sequence — is
 `web/steward/CONTRACT.md` in the library, read through the kit root this permission expects
-(`/home/mark/.local/share/routine-scheduler-libraries/web/steward/CONTRACT.md`). Read the section
+(`~/.local/share/routine-scheduler-libraries/web/steward/CONTRACT.md`). Read the section
 you need when you publish; never copy it into memory.
 A publish is finished only when three proofs pass in this run:
 1. every stored copy the page renders from, read back through the API, matches what you built;

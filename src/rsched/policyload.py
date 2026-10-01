@@ -13,6 +13,7 @@ from pathlib import Path
 from .grantpolicy import GrantPolicy
 from .grants import (
     GATED_KINDS,
+    effective_settings,
     normalize_capabilities,
     read_library_requires,
     split_util_verb,
@@ -48,6 +49,7 @@ def load_policy(permissions_home: Path, active: list[str] | None,
             else:
                 gated_utils.setdefault(name, []).append(slug)
     caps, _ = normalize_capabilities(capabilities)
+    settings = effective_settings(caps)    # the reading the settings page shows, too
     return GrantPolicy(active=tuple(active or []),
                        # `<libraries_home>/permissions` by construction (ServerConfig), so the
                        # util catalog sits beside it — the reserved-util gate resolves a call's
@@ -62,19 +64,17 @@ def load_policy(permissions_home: Path, active: list[str] | None,
                                     for k, verbs in gated_verbs.items()
                                     if k not in gated_utils},
                        kind_sources={k: tuple(v) for k, v in kind_sources.items()},
-                       confirm=caps.get("confirm") or "always",
-                       rule_confirm=caps.get("rule_confirm") or "always",
-                       remind_confirm=caps.get("remind_confirm") or "always",
-                       # No baseline: unlike run history (D96's always-on 'last'), a reminder
-                       # HOLDS a turn, so the layer stays off until the user switches it on.
-                       reminders=caps.get("reminders") or "none",
+                       confirm=settings["confirm"],
+                       rule_confirm=settings["rule_confirm"],
+                       remind_confirm=settings["remind_confirm"],
+                       reminders=settings["reminders"],
                        # D96 (user decision 2026-08-20): own-runs read at 'last' depth is
                        # ALWAYS ON for a routine — baseline observability, like the state
                        # digest carrying the last result. The `runs: all` SETTING opens the
                        # whole archive (longitudinal work). Sub-workflow children DO load
                        # through here (empty caps), so the loop's depth>0 seam drops them
                        # back to "none" — a child's brief, not the archive, is its context.
-                       run_history="all" if caps.get("runs") == "all" else "last",
+                       run_history=settings["runs"],
                        denied=frozenset(k for k, v in (grants_map or {}).items()
                                         if v is False),
                        recipe_unlocked=recipe_unlocked,

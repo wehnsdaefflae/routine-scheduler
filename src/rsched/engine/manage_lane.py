@@ -243,7 +243,7 @@ def handle_manage_lane(ctx: RunContext, action: dict) -> dict:  # noqa: PLR0911 
         members, err = _members_or_error(ctx, action)
         if err:
             return err
-        on_failure = _normalize_on_failure(action) if "on_failure" in action else lanes._UNSET
+        on_failure = _normalize_on_failure(action) if "on_failure" in action else lanes.UNSET
         name = action.get("name")
         # key-presence semantics like members/on_failure: absent = unchanged, "" = clear
         new_cron = str(action.get("cron") or "").strip() if "cron" in action else None

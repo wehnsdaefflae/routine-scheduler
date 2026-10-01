@@ -82,9 +82,11 @@ from .schedule import server_tz, zone_key
 ON_FAILURE = ("stop", "continue")
 DEFAULT_ON_FAILURE = "stop"
 
-# Sentinel for update(): distinguishes "field not passed" (leave unchanged) from an explicit
-# None (inherit the instance default) — a tri-state a plain None default cannot express.
-_UNSET = object()
+#: The `on_failure` argument of update() when the caller is not changing it — distinct from an
+#: explicit None (inherit the instance default), a tri-state a plain None default cannot
+#: express. Public because both lane writers outside this module pass it (the lane PATCH and
+#: a conversation's manage_lane).
+UNSET = object()
 
 
 def new_id() -> str:
@@ -328,7 +330,7 @@ def create(routines_home: Path, *, name: str, members: list[dict] | None = None,
 # The patchable lane surface IS this parameter list; an options object would only relocate it
 # (the same reason scaffold() takes its fields flat).
 def update(routines_home: Path, lane_id: str, *, name: str | None = None,
-           members: list[dict] | None = None, on_failure: object = _UNSET,
+           members: list[dict] | None = None, on_failure: object = UNSET,
            cron: str | None = None, tz: str | None = None,
            paused: bool | None = None, catchup: str | None = None) -> dict | None:
     """Patch a lane in place (only the fields passed are touched). `members` replaces the
@@ -366,7 +368,7 @@ def _update_locked(routines_home: Path, lane_id: str, *, name: str | None,
                 raise ValueError("a routine belongs to at most one lane; already claimed: "
                                  + ", ".join(taken))
             lane["members"] = _clean_members(members)
-        if on_failure is not _UNSET:
+        if on_failure is not UNSET:
             if on_failure is not None and on_failure not in ON_FAILURE:
                 raise ValueError(
                     f"on_failure must be one of {ON_FAILURE} or null, got {on_failure!r}")

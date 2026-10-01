@@ -259,27 +259,6 @@ def child_finished_message(*, mode: str, n: int, label: str, workflow: str, stat
                    if mode == child.SEQUENTIAL else ""))
 
 
-def collect_child_artifacts(sub) -> tuple:
-    """This mode's call into the shared hand-back (`child.collect_handback`): a finished
-    child's deliverables copied into the PARENT's artifacts/, namespaced by the child's number.
-
-    The convention is the one the rest of the system already uses: a child writes what it is
-    handing back into its own `artifacts/`, exactly as a detached background task does
-    (daemon/detached_delivery.copy_artifacts) and exactly what the Artifacts panel lists.
-    Nothing new to declare, no action-schema change — a child that writes nothing hands back
-    only its summary, as before.
-
-    Isolation is preserved on purpose: children keep their own dirs (childrun.py), so
-    concurrent siblings never race a shared tree; this is the hand-back that isolation was
-    missing.
-    """
-    parent_dir = sub.parent_dir
-    if parent_dir is None:
-        return ()          # a child built outside the normal path collects nothing
-    return child.collect_handback(sub.ctx.routine.dir / "artifacts", parent_dir,
-                                  child.SUB, sub.n)
-
-
 def announce_finished_subruns(loop) -> None:
     """Turn-boundary notification: children that exited since the last boundary — the
     "child finished" hook. One `CHILD RUN FINISHED` headline for every mode; a SEQUENTIAL

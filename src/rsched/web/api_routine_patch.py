@@ -14,7 +14,7 @@ from typing import Literal
 
 from croniter import croniter
 from fastapi import APIRouter, HTTPException, Request
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_validator
 
 from .. import rules as rules_mod
 from .. import schedule
@@ -52,7 +52,9 @@ class SchedulePatch(BaseModel):
     `updated: ["schedule"]`, and the next load DROPPED it with a problem (`_validate_lenient`):
     a scheduled routine silently became a manual one. A misspelled key landed beside the real
     ones, read by nothing; a non-mapping `friendly` was a 500. All of those are 422s here —
-    strict, like `RunGatePatch`, so `"disabled": "yes"` is refused rather than read as true.
+    strict, like `RunGatePatch`, so `"catchup": 1` is refused rather than coerced. Switching a
+    routine off is not a schedule key: it is the top-level `enabled`, which the friendly
+    "disabled" cadence writes.
     """
 
     model_config = ConfigDict(extra="forbid", strict=True)
@@ -61,7 +63,6 @@ class SchedulePatch(BaseModel):
     catchup: Literal["skip", "run_once"] | None = None
     cron: str | None = None
     tz: str | None = None
-    disabled: bool | None = None
 
     # an explicit null reaches an after-validator too; it means "not sent" (exclude_none)
     @field_validator("tz")
@@ -84,7 +85,10 @@ class RoutinePatch(BaseModel):
     # the stray instead.
     model_config = ConfigDict(extra="forbid")
 
-    enabled: bool | None = None
+    # the off switch (RoutineConfig.enabled) — strict, so `"no"` is a 422 rather than read as
+    # true: the dashboard's pause and goal retirement send it, and the friendly "disabled"
+    # cadence writes the same key
+    enabled: StrictBool | None = None
     run_gate: RunGatePatch | None = None    # partial — validated MERGED, see _apply_run_gate
     schedule: SchedulePatch | None = None   # {"friendly":…, "catchup":…} (cron built server-side)
     budgets: BudgetsPatch | None = None     # the runaway backstops, by name — a misspelled
@@ -239,6 +243,11 @@ def _apply_resource_fields(raw: dict, updates: dict) -> None:
     schedule (a friendly spec → cron + the server's tz, plus the catchup policy). Pops what
     it consumes. A write root covering the routine's own dir unlocks recipe self-editing
     (grants.py) — the user's deliberate choice here, the same lever the routine-improver holds.
+
+    `enabled` needs nothing here: the generic merge writes it where every reader looks. The
+    friendly cadence is the other door to the same key — its "disabled" choice switches the
+    routine off and any real cadence switches it back on — unless the patch names `enabled`
+    itself, which the merge then writes over it.
     """
     if "keep_runs" in updates:
         n = updates.pop("keep_runs")
@@ -250,35 +259,20 @@ def _apply_resource_fields(raw: dict, updates: dict) -> None:
             # absolute, deduplicated, and never a credential store (SEC-1) — the one
             # enforcer every grant edge calls (config_fields.validate_roots)
             updates[roots_key] = validate_roots(roots_key, updates[roots_key])
-    # F448: `enabled` is the OLD spelling of "does this routine fire", kept because the
-    # dashboard's D72 start/pause toggle PATCHes it. The firing gate reads `schedule.disabled`
-    # alone, so without this the key fell through the generic merge below and wrote a bare
-    # `enabled:` nothing reads — while `updated` still reported it applied (R102: a key an
-    # endpoint silently ignores must never read as success). Translate it at the edge; the
-    # rest of the codebase knows only `schedule.disabled`.
-    if "enabled" in updates:
-        on = updates.pop("enabled")
-        if not isinstance(on, bool):
-            raise HTTPException(400, "enabled must be a boolean")
-        raw.setdefault("schedule", {})["disabled"] = not on
-        raw.pop("enabled", None)
     if "schedule" in updates:
-        # typed by SchedulePatch: catchup, disabled, a raw cron and its tz arrive valid
+        # typed by SchedulePatch: catchup, a raw cron and its tz arrive valid
         sched_patch = updates.pop("schedule") or {}
         raw.setdefault("schedule", {})
-        if "disabled" in sched_patch:
-            raw.pop("enabled", None)
         if "friendly" in sched_patch:
             friendly = sched_patch.pop("friendly")
             try:
                 cron = schedule.friendly_to_cron(friendly)
             except (ValueError, TypeError) as exc:     # a field of the wrong type is a 400 too
                 raise HTTPException(400, f"invalid schedule: {exc}") from exc
-            raw["schedule"].update(cron=cron, tz=schedule.server_tz(),
-                                   disabled=friendly.get("frequency") == "disabled")
-            raw.pop("enabled", None)
-        # merge the remaining RAW keys (cron / tz / catchup / disabled) — a friendly spec was
-        # already translated and popped above; tz is preserved when only cron is sent.
+            raw["schedule"].update(cron=cron, tz=schedule.server_tz())
+            raw["enabled"] = friendly.get("frequency") != "disabled"
+        # merge the remaining RAW keys (cron / tz / catchup) — a friendly spec was already
+        # translated and popped above; tz is preserved when only cron is sent.
         raw["schedule"].update(sched_patch)
 
 @router.patch("/routines/{slug}")

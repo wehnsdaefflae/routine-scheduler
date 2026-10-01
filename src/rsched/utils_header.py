@@ -25,6 +25,9 @@ import re
 from .ids import is_slug
 
 _SUMMARY_RE = re.compile(r'"""(.+?)"""', re.DOTALL)
+#: `["gu", "<sibling>"]` exec sites in util or script code — the one home for this pattern:
+#: header_problems flags an undeclared call with it, and the script runner and the util gate
+#: (`scripts`, `utilgate`) read a call tree through the same regex, so they can never drift.
 GU_CALL_RE = re.compile(r"""\[\s*["']gu["']\s*,\s*["']([a-z0-9][a-z0-9-]*)["']""")
 
 # `fs:` entry grammar — the seventh header line, read by sandbox.wrap the way `net:` is.
@@ -205,7 +208,7 @@ def _secrets_read(content: str) -> set[str]:
 
 def undeclared_secrets(content: str) -> list[str]:
     """Credential-looking env vars the code reads but the docstring `secrets:` line does
-    not declare — the gap header_problems rejects (and the header migration repairs).
+    not declare — the gap header_problems rejects.
     """
     declared = {s.upper() for s in parse_header(content)["secrets"]}
     return sorted(_secrets_read(content) - declared)

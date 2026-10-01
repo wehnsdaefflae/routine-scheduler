@@ -75,11 +75,21 @@ def turn_record(turn: int, action: dict) -> dict:
 
     ONE builder for the two writers of `turn_records` — the live loop, as each action lands,
     and `history.replay_messages`, as a resume rebuilds them — so a resumed run's digest reads
-    exactly like the live one. The brief's width is the digest's, not `brief_value`'s.
+    exactly like the live one. The brief is stored WHOLE: the assist predicates read a written
+    path off it (`assist_predicates._file_writes` — its extension, whether it is under
+    state/), and a brief cut to the digest's width lost the extension of every long path. The
+    digest cuts its own copy when it renders one (`_digest_line`).
     """
-    return {"turn": turn, "kind": action.get("kind", "?"),
-            "brief": json.dumps(brief_value(action)[:80], ensure_ascii=False),
+    return {"turn": turn, "kind": action.get("kind", "?"), "brief": brief_value(action),
             "say": action.get("say", "")}
+
+
+def _digest_line(record: dict) -> str:
+    """One elided turn as the compaction digest shows it: the brief cut to 80 characters and
+    quoted, the `say` to 120.
+    """
+    brief = json.dumps(str(record["brief"])[:80], ensure_ascii=False)
+    return f'turn {record["turn"]}: {record["kind"]} {brief} — say: "{record["say"][:120]}"'
 
 
 def maybe_compact(messages: list[dict], turn_records: list[dict], cap_tokens: float
@@ -103,8 +113,7 @@ def maybe_compact(messages: list[dict], turn_records: list[dict], cap_tokens: fl
     # Digest from turn records whose messages fell in the middle: turns 3 .. N-12.
     first_kept_tail_turn = (max((r["turn"] for r in turn_records), default=0)
                             - KEEP_TAIL_MSGS // 2 + 1)
-    lines = [f'turn {r['turn']}: {r['kind']} {r['brief']} — say: "{r['say'][:120]}"'
-             for r in turn_records if 2 < r["turn"] < first_kept_tail_turn]
+    lines = [_digest_line(r) for r in turn_records if 2 < r["turn"] < first_kept_tail_turn]
     digest = ("CONTEXT COMPACTED — this replaces the elided middle of the conversation "
               f"({elided} messages). One line per elided turn:\n" + "\n".join(lines))
     new_messages = [*head, {"role": "user", "content": digest}, *tail]

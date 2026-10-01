@@ -116,7 +116,8 @@ pattern (committed to the library repo) and the routine follows it. Refused, nam
 pattern, when one already carries exactly these values.
 
 **Deleting a pattern** (`DELETE /api/patterns/{slug}`). Its followers keep every value they
-hold — those were always their own — and stop naming it, in the same operation. The Library tab
+hold — those were always their own — and stop naming it, in the same operation. A pattern file
+that no longer parses (which `rsched lint` names, below) is deleted the same way. The Library tab
 lists every pattern with its followers (`GET /api/patterns`).
 
 ## What a pattern carries that is easy to miss
@@ -133,7 +134,10 @@ lists every pattern with its followers (`GET /api/patterns`).
 
 `rsched lint` checks every pattern (`workflows/lint.lint_patterns`): a sound document naming
 only rules, permissions and a workflow the library holds — a pattern pointing at a deleted rule
-would hand every follower a binding to nothing. A file in `patterns/` that is no pattern at all
+would hand every follower a binding to nothing — and no instance credential store among its
+folder grants. Creation copies a pattern's roots into the new routine past the guard the routine
+page applies, so such a root is never written there either, and "Save as new pattern" refuses a
+routine's values that hold one. A file in `patterns/` that is no pattern at all
 (it does not parse, is not a mapping, or is not named by a slug) is reported there and passed
 over by every page and flow that lists patterns, so one broken file never takes them down.
 Patterns ride the library repo's sync like

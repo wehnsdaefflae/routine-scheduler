@@ -981,10 +981,10 @@ def _submit_queued(m: dict, keys: dict, jobid: str, script_b64: str, webhook: st
     if code != 0:
         raise RemoteError(f"submit failed (exit {code}): {err.strip() or out.strip()}")
     try:
-        tickets = [t for t in json.loads(out or "[]") if isinstance(t, dict)]
+        # the box's own `list`, already in fair-share order — see cmd_queue on why it is kept
+        order = [t for t in json.loads(out or "[]") if isinstance(t, dict)]
     except ValueError:
-        tickets = []
-    order = fair_share_order(tickets)
+        order = []
     position = next((i for i, t in enumerate(order, 1) if str(t.get("job")) == jobid), None)
     return {"command": "submit", "machine": m["name"], "job": jobid,
             "job_dir": f"{root}/{JOBS_DIR}/{jobid}", "notify_webhook": webhook or None,
@@ -999,6 +999,11 @@ def cmd_queue(m: dict, keys: dict, cancel_job: str) -> dict:
     (rsched/machine_queue.refresh) and what an operator reads to see whose turn it is. Reading
     also PRUNES on the box, so a dead holder's ticket clears even when nobody is waiting behind
     it. `--cancel` drops one ticket, terminating its job if it had already started.
+
+    The order is the BOX's, reported as it came. The on-box helper derives it over the whole
+    round — the turns already spent and the ones still waiting — and only the box knows the
+    spent ones. Re-sorting its answer here, over the waiting tickets alone, put a routine whose
+    turn had just run back at the front, which is the starvation the round exists to prevent.
     """
     if cancel_job and not _JOBID_RE.fullmatch(cancel_job):
         raise RemoteError(f"invalid job id {cancel_job!r} (expected [A-Za-z0-9_.-])")
@@ -1029,7 +1034,7 @@ def cmd_queue(m: dict, keys: dict, cancel_job: str) -> dict:
         raise RemoteError(f"{m['name']} did not return a readable job queue: "
                           f"{out[:200]!r}") from exc
     payload = {"command": "queue", "machine": m["name"], "exclusive": True,
-               "tickets": [_ticket_view(t) for t in fair_share_order(tickets)]}
+               "tickets": [_ticket_view(t) for t in tickets]}
     if cancel_job:
         payload["cancelled"], payload["result"] = cancel_job, result
     return payload
@@ -1193,30 +1198,49 @@ def cmd_pull(m: dict, keys: dict, src: str, dest: str) -> dict:
 def cmd_scan_host(host: str, port: int) -> dict:
     """Read a host's public host key(s) — for PINNING in the Settings card (this is the one
     command that does NOT verify a pinned key, since pinning is exactly what it bootstraps).
+
+    Each key type is asked over a connection of its own (a negotiation that fails ends the
+    session), but a host that cannot be DIALED is unreachable for every type alike: that fails
+    at once, naming why, instead of waiting out the 15 s connect three times over and then
+    guessing "(unreachable?)".
     """
     import socket
 
-    import paramiko
-
     lines = []
     for keytype in ("ssh-ed25519", "ecdsa-sha2-nistp256", "ssh-rsa"):
-        transport = None
         try:
             sock = socket.create_connection((host, int(port)), timeout=15)
-            transport = paramiko.Transport(sock)
-            transport.get_security_options().key_types = (keytype,)
-            transport.start_client(timeout=15)
-            key = transport.get_remote_server_key()
-            lines.append(f"{key.get_name()} {key.get_base64()}")
+        except OSError as exc:
+            raise RemoteError(f"could not reach {host}:{port}: {exc}") from exc
+        if line := _offered_key(sock, keytype):
+            lines.append(line)
             break                                  # first algo the server offers is enough
-        except (OSError, EOFError, paramiko.SSHException):
-            continue
-        finally:
-            if transport is not None:
-                transport.close()
     if not lines:
-        raise RemoteError(f"could not read a host key from {host}:{port} (unreachable?)")
+        raise RemoteError(f"{host}:{port} answered, but offered no host key this util can pin "
+                          "(ed25519, ecdsa-nistp256, rsa)")
     return {"command": "scan-host", "host": host, "port": int(port), "host_key": "\n".join(lines)}
+
+
+def _offered_key(sock, keytype: str) -> str:
+    """The server's host key of ONE type, as "type base64", over an open socket — "" when the
+    negotiation for that type fails. The socket is closed either way.
+    """
+    import paramiko
+
+    transport = None
+    try:
+        transport = paramiko.Transport(sock)
+        transport.get_security_options().key_types = (keytype,)
+        transport.start_client(timeout=15)
+        key = transport.get_remote_server_key()
+        return f"{key.get_name()} {key.get_base64()}"
+    except (OSError, EOFError, paramiko.SSHException):
+        return ""
+    finally:
+        if transport is not None:
+            transport.close()
+        else:
+            sock.close()
 
 
 def cmd_test(m: dict, keys: dict) -> dict:

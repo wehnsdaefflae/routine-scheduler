@@ -6,6 +6,7 @@ when git's index lock is in the way is tests/test_git_locks.py.
 from __future__ import annotations
 
 import subprocess
+from pathlib import Path
 
 from conftest import git_in
 from rsched import libgit, utils_lib
@@ -78,6 +79,22 @@ def test_commit_says_clean_and_unversioned_apart_from_failed(tmp_path):
     assert libgit.commit(tmp_path / "lib", "again", routines_home=None).status == "clean"
     (tmp_path / "loose").mkdir()
     assert libgit.commit(tmp_path / "loose", "x", routines_home=None).status == "unversioned"
+
+
+def test_a_worktrees_lock_lives_in_its_git_dir_not_in_its_tree(tmp_path):
+    """A linked worktree (or a submodule) has a `.git` FILE naming its git dir elsewhere. The
+    lock beside that file was a file IN the work tree, so every commit's `add -A` staged it."""
+    main = tmp_path / "main"
+    utils_lib.ensure_library(main)
+    wt = tmp_path / "wt"
+    assert libgit.git(main, "worktree", "add", "--detach", "-q", str(wt)).returncode == 0
+    lock = repo_lock_path(wt / "sub")
+    gitdir = Path(libgit.git(wt, "rev-parse", "--absolute-git-dir").stdout.strip())
+    assert lock == gitdir.resolve() / "rsched-commit.lock"
+    (wt / "note.txt").write_text("n\n", encoding="utf-8")
+    assert libgit.commit(wt, "in the worktree", routines_home=None).status == "committed"
+    assert _head_files(wt) == ["note.txt"]                       # the lock was not swept in
+    assert _git(wt, "status", "--porcelain") == ""
 
 
 def test_repo_lock_path_targets_the_git_dir(tmp_path):
@@ -171,6 +188,26 @@ def test_ensure_library_refuses_to_reinit_a_repo_that_lost_its_git(tmp_path):
     assert not (lib / ".git").exists()                                  # no re-init
     assert (lib / "utils" / "keeper" / "main.py").exists()              # nothing swept
     assert ".active/" in (lib / ".gitignore").read_text(encoding="utf-8")   # not overwritten
+
+
+def test_ensure_library_clones_its_remote_into_an_empty_bind_mount(tmp_path):
+    """A container's library is an EMPTY directory at first boot — the bind mount exists before
+    anything is in it. The clone was attempted only when the path did not exist at all, so a
+    configured remote was never cloned there: a fresh repo was initialised beside it instead,
+    with no history in common with the remote it then pushes to."""
+    remote = tmp_path / "remote.git"
+    seed = tmp_path / "seed"
+    utils_lib.ensure_library(seed)
+    (seed / "kept.md").write_text("from the remote\n", encoding="utf-8")
+    libgit.commit(seed, "a library with history", routines_home=None)
+    subprocess.run(["git", "clone", "-q", "--bare", str(seed), str(remote)], check=True)
+    lib = tmp_path / "mounted"
+    lib.mkdir()                                            # what a fresh bind mount leaves
+
+    utils_lib.ensure_library(lib, remote=str(remote))
+
+    assert (lib / "kept.md").read_text(encoding="utf-8") == "from the remote\n"
+    assert _git(lib, "log", "-1", "--format=%s").strip() == "a library with history"
 
 
 def test_ensure_library_still_creates_one_over_a_populated_but_never_used_dir(tmp_path):

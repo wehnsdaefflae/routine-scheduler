@@ -32,8 +32,8 @@ defined**: `grants.read_library_requires` takes the union of every permission do
 enforcement mechanism; there is no list in the source to extend, and no code was added to gate
 this. A routine that does not hold the permission gets the standard reserved-util refusal.
 
-The util is **not** a default permission and is deliberately absent from `ADOPT_PERMISSIONS`: it
-reaches every routine only if the user grants it, one routine at a time.
+The util is **not** a default permission: it reaches a routine only if the user grants it, one
+routine at a time.
 
 ## What the util guarantees, and what it cannot
 

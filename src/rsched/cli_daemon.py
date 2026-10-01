@@ -1,7 +1,7 @@
 """`rsched daemon` — the boot sequence systemd actually runs.
 
 Split out of `cli.py` (F393). This is not one command among many: it is the ordered boot of a
-live instance — config bootstrap, permission adoption, library creation and sync, then the
+live instance — config bootstrap, the one-shot migrations, library creation and sync, then the
 web app and scheduler. The ORDER is load-bearing and commented as such, which is exactly why it does
 not belong inside a dispatcher that otherwise just parses argv.
 """
@@ -27,7 +27,6 @@ def cmd_daemon(_args) -> int:
     logging.basicConfig(level=logging.INFO, format=LOG_FORMAT)
     from .bootstrap import (
         adopt_library_edits,
-        adopt_permissions,
         ensure_config,
         sync_seed_library_docs,
         sync_seed_utils,
@@ -39,8 +38,10 @@ def cmd_daemon(_args) -> int:
     # before anything loads a routine.yaml that still names a domain
     from .migrate_settings_patterns import run_migration
     run_migration(server)
-    # new default permissions reach existing routines once, at boot
-    adopt_permissions(server.routines_home, server.permissions_home)
+    # MIGRATION(expires=2026-11-15): `schedule.disabled` folded into the one off switch,
+    # `enabled` — also before anything loads a routine.yaml, which no longer reads it
+    from .migrate_enabled import run_migration as fold_off_switch
+    fold_off_switch(server)
     # The library repo exists BEFORE the syncs fill it. A container has no install step and its
     # library is an empty bind mount at first boot; the util sync installs only into an
     # existing utils/, and the repo used to be created by the web lifespan after these ran — so
@@ -54,6 +55,10 @@ def cmd_daemon(_args) -> int:
     # utils added to util-seed since bootstrap, then workflows/rules/permissions added since too,
     # then out-of-band writes (user/conversation) get history
     sync_seed_utils(server.libraries_home, routines_home=server.routines_home)
+    # MIGRATION(expires=2026-11-15): this release's fixes to four utils the live library
+    # already has — the sync above only adds missing ones
+    from .migrate_seed_utils import run_migration as carry_seed_util_fixes
+    carry_seed_util_fixes(server)
     sync_seed_library_docs(server.libraries_home, routines_home=server.routines_home)
     adopt_library_edits(server.libraries_home, routines_home=server.routines_home)
     for pr in problems:

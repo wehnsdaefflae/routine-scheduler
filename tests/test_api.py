@@ -267,10 +267,9 @@ def test_patch_routine_and_409_guard(client):
     r = c.patch("/api/routines/apir", json={"enabled": False, "schedule": {"cron": "0 9 * * 2"}})
     assert r.status_code == 200
     raw = yaml.safe_load((tmp / "routines" / "apir" / "routine.yaml").read_text())
-    # F448: `enabled` is translated to its inverse at the edge — the firing gate reads
-    # `schedule.disabled` alone, so the old bare `enabled:` key is no longer written.
-    assert raw["schedule"]["disabled"] is True and raw["schedule"]["cron"] == "0 9 * * 2"
-    assert "enabled" not in raw
+    # the off switch has one spelling — the top-level `enabled` every reader reads
+    assert raw["enabled"] is False and raw["schedule"]["cron"] == "0 9 * * 2"
+    assert "disabled" not in raw["schedule"]
     assert raw["schedule"]["tz"] == "Europe/Berlin"  # merged, not replaced
     _mk_run(tmp / "routines", "apir", "20260708-090000", "running")
     # config saves are allowed DURING a run (D35): the engine reads routine.yaml at run
@@ -278,7 +277,7 @@ def test_patch_routine_and_409_guard(client):
     # their 409 — stages/ ARE read mid-run.
     assert c.patch("/api/routines/apir", json={"enabled": True}).status_code == 200
     assert yaml.safe_load(
-        (tmp / "routines" / "apir" / "routine.yaml").read_text())["schedule"]["disabled"] is False
+        (tmp / "routines" / "apir" / "routine.yaml").read_text())["enabled"] is True
     # D40 pin (2026-07-24): connection bindings and grant-decision rows are exactly the
     # saves a user makes WHILE a bootstrap run waits on them — they must never 409.
     assert c.patch("/api/routines/apir",
@@ -1623,9 +1622,11 @@ def test_settings_server_config(client):
     assert raw["sandbox"] == "strict" and raw["max_concurrent_runs"] == 4
     assert raw["registry_rescan_s"] == 15 and raw["github_client_id"] == "abc123"
     assert c.get("/api/settings/server").json()["sandbox"] == "strict"   # live object mirrors it
-    assert c.put("/api/settings/server", json={"sandbox": "bogus"}).status_code == 400
-    assert c.put("/api/settings/server", json={"max_concurrent_runs": 0}).status_code == 400
-    assert c.put("/api/settings/server", json={"registry_rescan_s": 0}).status_code == 400
+    # judged by ServerConfig's own fields, and the refusal names the field it is about
+    for bad in ({"sandbox": "bogus"}, {"max_concurrent_runs": 0}, {"registry_rescan_s": 0}):
+        refused = c.put("/api/settings/server", json=bad)
+        assert refused.status_code == 400 and next(iter(bad)) in refused.json()["detail"]
+    assert yaml.safe_load((tmp / "config.yaml").read_text())["sandbox"] == "strict"
 
 
 def test_endpoints_prefer_inline_key(monkeypatch):

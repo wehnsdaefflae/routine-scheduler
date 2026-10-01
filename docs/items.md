@@ -349,8 +349,9 @@ The user's "work this first" (D75) on any `F`/`D`/`R` item: `POST /api/items/{id
 {"on": true|false}` writes `<routines>/.control/item-priorities.json` (`rsched/priorities.py`,
 the web layer's store — never `report.json`, which self-audit rewrites whole every run, and
 never the append-only ledger, which records what runs SAID rather than UI state). A flagged
-item carries `priority: true` and sorts above the unflagged maintenance items, each band keeping
-its newest-first order; its OWNING routine's next run reads it in a "PRIORITY items" state-digest
+item carries `priority: true` and sorts above everything else on the page — the unflagged
+maintenance items and the run summaries alike — each band keeping its own order; its OWNING
+routine's next run reads it in a "PRIORITY items" state-digest
 section (an `R<n>` belongs to its `target`; every `F`/`D`, and an untargeted report, to
 self-audit). The store is the read model's fifth fingerprinted input, so a toggle invalidates the
 memo like any source edit.

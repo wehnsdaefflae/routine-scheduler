@@ -90,18 +90,21 @@ the limits (single-writer status.json preserved).
 - **The message list is a prompt-caching contract**: composed once, appended-to only, never mutated —
   so providers serve each turn's prefix from cache (~0.1x). Per-turn boilerplate is banned: the util
   reminder is ONE-SHOT on the kickoff/resume note, the history pointer re-appears only every 10th turn,
-  and schema-retry debris is dropped from the live prompt once a retry succeeds (the transcript keeps
-  the error events). Cache traffic reports as usage `cached_in`/`cache_write` (kept OUT of `in`, so
+  and a turn's retry debris — schema-retry pairs, a refused finish and its re-drive note, a failover
+  notice — is dropped from the live prompt once the turn's action is accepted (the transcript keeps
+  the error events). The debris is remembered by identity, not as the tail past a length
+  (`engine/turndebris.py`): a model switch mid-turn re-fits the prompt to the new window, and a
+  compaction there moves it. Cache traffic reports as usage `cached_in`/`cache_write` (kept OUT of `in`, so
   token budgets keep their meaning). A provider's cache is earned by a BYTE-STABLE prefix and by
   nothing else — there is no per-run key an adapter is handed. THREE sanctioned exceptions
   rewrite the list in place:
   compaction (below), schema-retry debris cleanup, and the media fallback (a failed image turn's
   tail message is rewritten text-only) — each invalidates the provider cache once, by design.
-- **Compaction archives context to a navigable on-disk history** (`history.archive_middle`): when
+- **Compaction archives context to a navigable on-disk history** (`compaction.archive_middle`): when
   the prompt exceeds ~60% of the resolved model's `context_tokens` — ~80% once cache hits are observed
   (compaction rewrites the prefix and invalidates the cache, so carried context is cheaper than
   re-archiving) — the middle turns are elided by the deterministic one-line digest
-  (`history.maybe_compact`) and that same middle is reorganized into markdown files (~≤100 lines
+  (`compaction.maybe_compact`) and that same middle is reorganized into markdown files (~≤100 lines
   each) under `runs/<ts>/history/` + `INDEX.md`. ONE fit test (`compaction.archival_fits`, which reserves the
   archival prompt, the history schema and the model's own output) decides every candidate in
   order — the configured compaction model, then the routine's `tool_call` model (machine work
@@ -361,7 +364,7 @@ to collide or to be spelled by convention. A scoped secret is owned by its routi
 implicitly exposed to its runs, invisible to every other routine, and SHADOWING a central
 value of the same name (it rides `exec_env._extra_secrets`, which wins the `_child_env`
 merge). The exposure gate therefore subtracts a routine's own names before deciding anything
-(`interact._own_secrets`), and CAPABILITIES lists the two sets apart so a run never spends a
+(`secretgate._own_secrets`), and CAPABILITIES lists the two sets apart so a run never spends a
 turn requesting what it already holds. Both scopes stay under the declared-only rule. Write
 surface: Settings → Secrets for the central store, the routine page's *Own secrets* section
 (`web/api_routine_secrets.py`) for the scoped one — values write-only in both, names only on
@@ -390,7 +393,7 @@ connect (paramiko `RejectPolicy` — no TOFU in a headless run). Pieces:
   for long GPU work — a setsid process group, killable; `--notify-webhook <the routine's own
   trigger URL>` lets the job ping the routine on completion instead of polling) / `push`·`pull`
   (SFTP) / `scan-host` · `test`. Host keys pinned; a mismatch refuses.
-- **Engine injection** mirrors OAuth: `executor._machine_env(ctx)` (merged with `_connection_env`
+- **Engine injection** mirrors OAuth: `exec_env._machine_env(ctx)` (merged with `_connection_env`
   in `_extra_secrets`) passes the two vars to `run_util` as `extra_secrets`, under the SAME
   declared-var gate — a key reaches a util iff the routine binds the machine AND the util declares
   the var. Bound machines are NAMED in the prompt's CAPABILITIES section (`capabilities_digest`),
@@ -434,9 +437,10 @@ and the capabilities digest's catalog listing):
   `workflow: {library_slug, library_commit}` (provenance only), `models:` (role → catalog model NAME:
   main / tool_call / uncensored), `connections:` (provider → account label — OAuth
   connection bindings, a resource like models; see OAuth connections above),
-  `permissions:` (held CONDUCT docs) + `capabilities:` (the engine-enforced surface: {actions, utils,
-  confirm, runs, workflows} — both user-changeable only, side by side on the routine page with cascades between
-  them; `workflows: catalog|generate` gates in-run pattern drafting for subtasks),
+  `permissions:` (held CONDUCT docs) + `capabilities:` (the engine-enforced surface: `actions`,
+  `utils`, the approval dials `confirm` / `rule_confirm` / `remind_confirm` and the levels `runs` /
+  `reminders` — both user-changeable only, side by side on the routine page with cascades between
+  them; a child run picks its pattern from the catalog and never drafts one),
   `budgets:` (max_turns / max_total_turns (cumulative across resume windows) / wall_clock_min /
   total_tokens / max_cost (whole-$ ceiling) — the last four honor -1 = unlimited — / subruns /
   subrun_depth / ask_timeout_min — all editable in the UI, creation flow + routine page), `fs_read_roots` / `fs_write_roots`, retention —
@@ -543,7 +547,8 @@ and the capabilities digest's catalog listing):
   both land there as `partial`. Deterministic thresholds, each constant justified in the module —
   see docs/run-analytics.md;
   `POST /routines/{slug}/recipe/revert` is the one-click rollback (recipe files only — never
-  routine.yaml or state; 409 while a run is active). Flag-first: the improver never auto-reverts.
+  routine.yaml or state; queued while a run is active and applied when it ends, D78-A).
+  Flag-first: the improver never auto-reverts.
 
 ## Child runs (spawn + subtask), questions, injection
 
@@ -571,9 +576,9 @@ and the capabilities digest's catalog listing):
   FILES by writing them into its OWN `artifacts/` — the convention the Artifacts panel and
   detached tasks already use, so no action-schema field was added and a non-child run pays
   nothing. The engine copies those into the parent's `artifacts/from-sub-<n>/`
-  (`control.collect_child_artifacts`) and NAMES the landed paths in the notification, so a parent
-  never greps the runs tree for a child's output. Collection happens in `subruns._collect`, the
-  child's single finalization point — two paths report an exit (`wait`, which consumes finished
+  (`child.collect_handback`, the one copy every hand-back shares) and NAMES the landed paths in the
+  notification, so a parent never greps the runs tree for a child's output. Collection happens in
+  `subruns._collect`, the child's single finalization point — two paths report an exit (`wait`, which consumes finished
   children directly, and the turn-boundary announcement), so collecting in either reporter was a
   race. Isolation is kept on purpose: a shared writable dir between concurrent children is a race
   the engine would have to arbitrate, and an isolated dir plus a declared hand-back gives the same
@@ -622,8 +627,10 @@ and the capabilities digest's catalog listing):
   (filed to `questions/pending/`, surfaced in a later run's state digest). An ask may carry
   `request: "<entity-id>"` — a typed ACCESS REQUEST (entities.py; docs/rules-permissions.md's
   grant model): the record then settles ONLY on one of the typed allow/deny × now/forever
-  decisions (plus *allow once* for turn-action classes, spent by the next dispatched matching
-  action and then revoked — D65; the Decisions page's buttons; free text is held, D38),
+  decisions (plus *allow once* for the once-grantable classes, `entities.ONCE_CLASSES`: a
+  turn-action class is spent by the next dispatched matching action (D65), a secret or an fs
+  root by the next action that RECEIVES it (D76), then revoked; the Decisions page's buttons;
+  free text is held, D38),
   forever-decisions are applied
   to routine.yaml by the WEB at click time (`web/grants_apply.py` — the engine never writes
   config), and every decision seeds the run's in-memory overlay (`engine/requests.py`) at
@@ -711,7 +718,7 @@ deliverable, a decision for the user, a blocker). A conversation's spine is its 
   the model has handed the turn back (an authored finish) and the resuming message ONLY runs
   commands (`loop.leg_commands` and not `leg_prose`, boot sets `leg_after_authored`), the loop's
   command-only gate ends the leg after boot with NO model turn and NO reply
-  (`loop._exit_commands_only` — no finish event, result.md untouched, status→finished); the next
+  (`loopend.exit_commands_only` — no finish event, result.md untouched, status→finished); the next
   PROSE message hands the turn over and the model replies, seeing the command results replayed. A
   run with its OWN work (a scheduled routine fire, crash recovery mid-workflow) has no authored
   hand-back, so it always proceeds and a command there is injected context. Loop-control kinds are
@@ -844,7 +851,9 @@ back at the next restart and pushed. (It used to be: only utils had that guard, 
 workflow or rule returned at every boot.) The sync covers the flat kinds — workflows, rules,
 permissions, settings PATTERNS and the reminder store's README — plus whole playbook folders. It is ADD-ONLY and stays that way: these
 files are user-editable, so overwriting one would discard an operator's edit silently. A seed doc
-whose TEXT must change on a live instance is converted by a one-shot migration instead.
+or util whose TEXT must change on a live instance is carried by a one-shot migration instead,
+which replaces the live copy only while it is byte-identical to the seed it supersedes and names
+every copy it left (`migrate_seed_utils` carries this release's four util fixes).
 - **Workflows** are self-contained **Python pattern files** (`.py`) that DEPICT a routine's control flow —
   never executed, parsed statically with `ast` (`workflows/pyworkflow.py`). Each has a `META = {...}` dict
   (`slug / name / description / when_to_use / version / tags / includes`, optional `tools:`
@@ -974,9 +983,9 @@ whose TEXT must change on a live instance is converted by a one-shot migration i
   SETTINGS, never required by a doc. Permission bodies are SHORT (≤14 lines reach the prompt's CAPABILITIES section
   when held); the Library tab's permission editor has a prefilled, authoritative `requires:` panel.
   Any future permission-ish lever becomes a capability + a `requires:` entry, not a new yaml key.
-  See docs/rules-permissions.md. `DEFAULT_PERMISSIONS`/`DEFAULT_CAPABILITIES` (config) are the
-  source of truth; defaults added after routines exist reach them once via
-  `bootstrap.adopt_permissions` at daemon boot. Historical data migrations are NOT kept:
+  See docs/rules-permissions.md. `DEFAULT_PERMISSIONS`/`DEFAULT_CAPABILITIES` (config) are what a
+  routine with no list or mapping of its own means; one that holds its own takes on a later
+  default as a pending change, never a boot-time write. Historical data migrations are NOT kept:
   each runs once on the production instance and is deleted after convergence — a pre-0.8
   backup converts by booting the matching older tag first. MACHINE-CHECKED: migration code
   must carry a `MIGRATION(expires=YYYY-MM-DD)` marker comment; `tests/test_policy.py` fails
@@ -1001,7 +1010,7 @@ whose TEXT must change on a live instance is converted by a one-shot migration i
   `calls:` (sibling utils exec'd via `gu` — drives transitive secret/net resolution), `tags:`,
   `secrets: NAME,…`, `net: outbound|none`, `fs: roots|none|rw <path>|ro <path>` — the docstring is the ONLY machine-read surface;
   comment-form declarations above it are invisible), and a `--selftest` the engine runs before
-  saving. `write_util` is gated twice: `utils_lib.header_problems` rejects a missing `tags:`/`net:`
+  saving. `write_util` is gated twice: `utils_header.header_problems` rejects a missing `tags:`/`net:`
   line or a credential env var the code reads but `secrets:` doesn't declare (the Settings page can
   only prompt for declared secrets), then the selftest; approval rides the routine's write_util
   `confirm:` capability level. A header rejection is reported AS one — its own observation head

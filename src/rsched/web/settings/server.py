@@ -8,19 +8,13 @@ does not edit them.
 
 from __future__ import annotations
 
-from typing import get_args
-
 from fastapi import APIRouter, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from ...config import ServerConfig
 from .common import reload_into, server_of, update_config
 
 router = APIRouter()
-
-# Derived from the pydantic field, never restated: that Literal is the one authority on the
-# vocabulary, and a hand-copied tuple here is exactly how two sources of truth start drifting.
-SANDBOX_MODES = get_args(ServerConfig.model_fields["sandbox"].annotation)
 
 
 class ServerBody(BaseModel):
@@ -49,12 +43,14 @@ def set_server(request: Request, body: ServerBody) -> dict:
     max_concurrent_runs sizes the run semaphore at daemon startup, so it needs a restart.
     """
     updates = body.model_dump(exclude_none=True)
-    if "sandbox" in updates and updates["sandbox"] not in SANDBOX_MODES:
-        raise HTTPException(400, f"sandbox must be one of {SANDBOX_MODES}")
-    if "max_concurrent_runs" in updates and updates["max_concurrent_runs"] < 1:
-        raise HTTPException(400, "max_concurrent_runs must be at least 1")
-    if "registry_rescan_s" in updates and updates["registry_rescan_s"] < 1:
-        raise HTTPException(400, "registry_rescan_s must be at least 1 second")
+    # ServerConfig's own fields judge each value — the sandbox vocabulary and every bound —
+    # so the config a restart loads can never refuse what this route saved, and no bound
+    # is restated here to drift from the one the loader enforces.
+    try:
+        ServerConfig.model_validate(updates)
+    except ValidationError as exc:
+        raise HTTPException(400, "; ".join(
+            f"{'.'.join(map(str, err['loc']))}: {err['msg']}" for err in exc.errors())) from exc
     if updates.get("browser_view_url"):
         url = str(updates["browser_view_url"]).strip().rstrip("/")
         if not url.startswith(("http://", "https://")):

@@ -146,6 +146,16 @@ def test_the_config_directory_is_hermetic_in_process_and_in_a_child(tmp_path):
     assert tmp_path in Path(child.stdout.strip()).parents
 
 
+def test_the_generated_docs_tree_is_hermetic_too(tmp_path):
+    """Every app the suite builds mounts the generated docs at /docs, and that tree follows
+    neither the config file nor the patched `expand`: without its own variable a /docs read
+    served the host's ~/.cache build, so a Help assertion depended on the machine.
+    """
+    from rsched.docs_build import docs_out_dir
+
+    assert tmp_path in docs_out_dir().parents, docs_out_dir()
+
+
 @pytest.mark.parametrize("argv", [
     ["rsched", "engine-run", "x"],
     ["/opt/venv/bin/rsched", "daemon"],

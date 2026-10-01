@@ -41,11 +41,11 @@ def _check_budgets(value: dict[str, int]) -> dict[str, int]:
 
 #: The budgets a PATCH may set, in the ONE spelling both the routine and the conversation
 #: patch models use. Typed rather than a free mapping because the loader DROPS an unknown
-#: budget key and `_validate_lenient` pops the whole mapping back to the defaults on a
-#: non-integer value — so an untyped `budgets` let the endpoint answer `updated:
-#: ["budgets"]` for a change the next scan reverted, which is exactly the silent ignore R102
-#: forbids. (The conversation patch had the mirror defect: a bare `int(v)` raising an
-#: uncaught ValueError, i.e. a 500 with no detail where every sibling route 422s.)
+#: budget key and `_validate_lenient` drops a non-integer value, which then reverts to its
+#: default — so an untyped `budgets` let the endpoint answer `updated: ["budgets"]` for a
+#: change the next scan reverted, which is exactly the silent ignore R102 forbids. (The
+#: conversation patch had the mirror defect: a bare `int(v)` raising an uncaught
+#: ValueError, i.e. a 500 with no detail where every sibling route 422s.)
 BudgetsPatch = Annotated[dict[str, int], AfterValidator(_check_budgets)]
 
 

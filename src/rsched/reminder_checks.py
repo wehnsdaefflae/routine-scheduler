@@ -94,9 +94,9 @@ def _field_form(kind: str, rest: str) -> str | None:
     """After `<kind>`, the literal text must be on its way to ` <field>=`; a kind with no
     identifying field renders as its bare name, so nothing may follow it.
     """
-    from .engine.actionschema import BRIEF_FIELD
+    from .engine.actionschema import BRIEF_FIELD, LIST_KINDS
 
-    fields = ("path", "paths") if kind == "read_file" else (BRIEF_FIELD.get(kind, ""),)
+    fields = ("path", "paths") if kind in LIST_KINDS else (BRIEF_FIELD.get(kind, ""),)
     if not fields[0]:
         return (None if not rest else
                 f"a {kind} action renders as just '{kind}' — nothing follows it to match")

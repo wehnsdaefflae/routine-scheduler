@@ -49,10 +49,14 @@ prunes rows for files gone from disk — run retention and routine deletion clea
 index automatically. Two triggers keep it warm:
 
 - a **maintainer task** in the daemon runs a bounded refresh pass in a worker thread
-  (back-to-back while a backlog remains, then once a minute), and
+  (back-to-back while a backlog remains, then once a minute; a long pass commits every 50
+  files, so readers see its progress as it goes), and
 - every **query** tops up freshness with a ~2s budget first, so results never show a
-  deleted run and always include the latest finished one.
+  deleted run and always include the latest finished one — unless the maintainer is
+  mid-pass, in which case the query does not queue behind it (a pass may hold the writer for
+  15 s): it reads the index as it stands and answers `index.refreshing: true`.
 
 `GET /api/search?q=…&limit=…` (bearer-authed like every route) returns ranked hits
 with snippets and enough metadata (home, slug, run ts, subrun path, event kind, turn,
-phase) to group and deep-link. Malformed queries come back as a 400, never a 500.
+phase) to group and deep-link. Malformed queries come back as a 400, never a 500; an index
+that is busy (a lock or busy timeout) is a 503 to retry, never a complaint about the query.

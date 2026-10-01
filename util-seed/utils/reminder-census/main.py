@@ -69,8 +69,9 @@ def canon(action: dict) -> str:
         return f"{kind}:{action.get('name') or '?'}{f' {tail}' if tail else ''}"
     if kind == "shell":
         return f"shell: {action.get('command') or ''}".rstrip()
-    if kind == "read_file" and isinstance(action.get("paths"), list) and action["paths"]:
-        return f"read_file paths={','.join(str(x) for x in action['paths'])}"
+    if kind in ("read_file", "view_image") and isinstance(action.get("paths"), list) \
+            and action["paths"]:
+        return f"{kind} paths={','.join(str(x) for x in action['paths'])}"
     field = BRIEF_FIELD.get(kind, "")
     value = str(action.get(field, "") or "") if field else ""
     return f"{kind} {field}={value}" if value else kind
@@ -283,6 +284,7 @@ def selftest() -> None:
         assert result["clusters"] and result["clusters"][0]["anchor"] == "util:fs-ops"
         assert canon({"kind": "script", "name": "store", "args": ["stage"]}) == "script:store stage"
         assert canon({"kind": "read_file", "paths": ["a", "b"]}) == "read_file paths=a,b"
+        assert canon({"kind": "view_image", "paths": ["a", "b"]}) == "view_image paths=a,b"
         # a run stamp is UTC: a util last touched 30 min BEFORE the reminder was written is not
         # "revised after" it on a host east of UTC (POSIX `Etc/GMT-2` is UTC+2) — read as local
         # time, the stamp moved two hours back and the census said exactly that

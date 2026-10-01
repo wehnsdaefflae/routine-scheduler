@@ -11,6 +11,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from ...config import (
+    DEFAULT_CONTEXT_TOKENS,
     DEFAULT_MODEL_MAX_TOKENS,
     ENDPOINT_KINDS,
     NATIVE_MM_KINDS,
@@ -200,7 +201,7 @@ class EndpointBody(BaseModel):
     # the loader's own vocabulary: as a free string, a mode it cannot load was saved with
     # `ok: true` and quietly reverted to the default by the next load (R102)
     schema_mode: SchemaMode = "json_schema"
-    context_tokens: int = 25_000     # a DEFAULT catalog models inherit (per-model window wins)
+    context_tokens: int = DEFAULT_CONTEXT_TOKENS  # a DEFAULT models inherit (per-model wins)
     temperature: float | None = None  # a DEFAULT catalog models inherit
     max_tokens: int | None = None     # a DEFAULT catalog models inherit
     # openai only: merged verbatim into every request body (aggregator/provider routing, e.g.

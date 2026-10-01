@@ -25,8 +25,8 @@ entire enforcement mechanism; there is no list in the source to extend, and no c
 to gate this. A routine that does not hold the permission gets the standard reserved-util
 refusal.
 
-The permission is **not** a default and is deliberately absent from `ADOPT_PERMISSIONS`: it
-reaches a routine only if the user grants it, one routine at a time.
+The permission is **not** a default: it reaches a routine only if the user grants it, one
+routine at a time.
 
 ## Configuring a provider
 

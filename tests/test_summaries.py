@@ -125,6 +125,32 @@ def test_a_maintenance_item_cannot_be_marked_read(api_client, make_routine):
     assert c.post("/api/items/F123/read", json={"read": True}).status_code == 400
 
 
+def test_a_flagged_item_leads_the_page_ahead_of_every_summary(api_client, make_routine):
+    """⚑ is the user's "work this first" and outranks recency (readmodels/items). The page
+    prepended every run summary to the maintenance index, so the flagged item sat below one
+    summary per routine — the float undone by the merge."""
+    import json
+
+    from rsched import priorities
+
+    c, tmp = api_client
+    make_routine(slug="self-audit")
+    _run(make_routine(slug="talker"), "20260905-080000", summary="the report is published")
+    home = tmp / "routines"
+    (home / ".control").mkdir(exist_ok=True)
+    rows = [{"id": "R1", "ts": "2026-07-19T21:20:06+02:00", "routine": "talker",
+             "run_id": "talker:20260719-190013", "title": "a flagged bug", "detail": ""},
+            {"id": "R2", "ts": "2026-07-20T08:00:00+02:00", "routine": "talker",
+             "run_id": "talker:20260720-080000", "title": "an ordinary bug", "detail": ""}]
+    (home / ".control" / "reports.jsonl").write_text(
+        "".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8")
+    priorities.set_priority(home, "R1", True)
+
+    ids = [i["id"] for i in c.get("/api/items").json()["items"]]
+    assert ids[0] == "R1", ids
+    assert ids.index("talker:20260905-080000") < ids.index("R2"), "the rest keep their order"
+
+
 def test_summaries_are_served_even_without_self_audit(api_client, make_routine):
     """An instance with no maintenance record still has routines that tell it things — the
     `exists: False` branch used to return an empty page."""

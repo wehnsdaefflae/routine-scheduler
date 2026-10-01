@@ -16,6 +16,7 @@ from ..config import (
     default_tz,
     write_tuning,
 )
+from ..config.base import _known_tz
 from ..health_events import log_health_event
 from ..ids import is_slug, now_iso
 from ..paths import atomic_write_yaml
@@ -61,7 +62,9 @@ def scaffold(server: ServerConfig, *, slug: str, name: str, instruction: str,  #
 
     if not is_slug(slug):
         raise ValueError(f"slug {slug!r} is not kebab-case")
-    tz = tz or default_tz()
+    # a caller's zone is checked like a saved one: written unchecked, a typo made a routine
+    # whose own config refused its schedule's zone at every load
+    tz = _known_tz(tz) if tz else default_tz()
     routine_dir = server.routines_home / slug
     if routine_dir.exists():
         raise ValueError(f"routine dir {routine_dir} already exists")

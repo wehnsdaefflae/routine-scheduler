@@ -113,7 +113,11 @@ def items(request: Request,
                 "queued": [], "answered_decisions": []}
 
     merged = items_model.build(routine_dir, server.routines_home)
-    all_items = summary_rows + merged["items"]
+    # ⚑ outranks recency (items_model floats the flagged band to the top of its index) — and
+    # it has to outrank the summaries too, or one per routine sits above the flagged item
+    flagged = [i for i in merged["items"] if i.get("priority")]
+    rest = [i for i in merged["items"] if not i.get("priority")]
+    all_items = flagged + summary_rows + rest
     shown = items_model.filter_items(all_items, type_=type_, status=status,
                                      routine=routine, target=target, search=search,
                                      folded=folded)

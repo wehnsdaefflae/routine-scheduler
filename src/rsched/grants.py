@@ -114,6 +114,22 @@ RUN_HISTORY_LEVELS = ("none", "last", "all")
 # vocabulary, read by the validator, the cascade and the floor alike.
 SETTING_DEFAULTS = {**dict.fromkeys(APPROVAL_DIALS, "always"), "runs": "none",
                     "reminders": "none"}
+
+
+def effective_settings(caps: dict) -> dict:
+    """What a capabilities mapping MEANS for each SETTING — the one reading the run policy
+    (`policyload`) and the settings page (`patterns/fields.effective_capabilities`) share, so a
+    page cannot show a routine holding one value while the engine enforces another (it did:
+    the page read an omitted `confirm` as DEFAULT_CAPABILITIES' `creations`, the run as
+    `always`). A setting the mapping leaves out is its all-off value; run history is the one
+    with a floor — `last` for every routine (D96), so anything but `all` reads as `last`. No
+    floor for reminders: a reminder HOLDS a turn, so the layer stays off until switched on.
+    """
+    out = {key: caps.get(key) or off for key, off in SETTING_DEFAULTS.items()}
+    out["runs"] = "all" if caps.get("runs") == "all" else "last"
+    return out
+
+
 # The routine's own recipe files — writable by the owning run only under the `write_recipe`
 # capability or in a revise leg (see the module docstring). stages/ + main.md are the
 # materialized workflow. The general RULES are not here at all: they live in the library, one
@@ -177,10 +193,16 @@ def normalize_expects(raw: object, *, label: str = "expects") -> tuple[dict, lis
                 problems.append(f"{label}.{cls}: entries must be non-empty strings")
                 continue
             name = item.strip()
-            if name != "*" and parse_entity(f"{cls}:{name}") is None:
-                problems.append(f"{label}.{cls}: {name!r} is not a valid {cls} entity name "
-                                f"(or use '*' for 'at least one')")
-                continue
+            if name != "*":
+                parsed = parse_entity(f"{cls}:{name}")
+                if parsed is None:
+                    problems.append(f"{label}.{cls}: {name!r} is not a valid {cls} entity "
+                                    "name (or use '*' for 'at least one')")
+                    continue
+                # the canonical spelling — an fs root `~`-expanded — because it is compared
+                # with a routine's own roots, which are stored expanded; a library doc shipped
+                # to every instance can only name a home as `~`
+                name = parsed[1]
             if name not in keep:
                 keep.append(name)
         if keep:

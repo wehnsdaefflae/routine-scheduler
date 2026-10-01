@@ -35,6 +35,27 @@ def test_a_finish_line_compares_on_what_a_person_wrote_not_what_a_run_reported()
                                                                 "judge": "you"}]})
 
 
+@pytest.mark.parametrize("caps", [
+    {"actions": [], "utils": []},                          # leaves every setting out
+    {"actions": [], "utils": [], "runs": "none", "confirm": "never"},
+    {"actions": [], "utils": [], "runs": "all", "reminders": "global",
+     "rule_confirm": "creations", "remind_confirm": "never"}])
+def test_the_page_reads_a_setting_the_way_the_run_enforces_it(tmp_path, caps):
+    """A capabilities mapping that leaves a setting out holds what the RUN reads for it — the
+    approval dials at `always`, the reminder layer off, run history at its `last` floor. The
+    page read DEFAULT_CAPABILITIES instead (`confirm: creations`, `reminders: local`), so it
+    showed a routine — and compared it with its pattern — as holding what the engine never
+    gave it."""
+    from rsched.policyload import load_policy
+
+    shown = fields.effective_capabilities(caps)
+    policy = load_policy(tmp_path / "permissions", [], caps)
+    assert (shown["confirm"], shown["rule_confirm"], shown["remind_confirm"],
+            shown["reminders"], shown["runs"]) == (
+        policy.confirm, policy.rule_confirm, policy.remind_confirm, policy.reminders,
+        policy.run_history)
+
+
 def test_snapshot_reads_every_field(make_routine):
     cfg, _ = load_routine(make_routine())
     snap = fields.snapshot(cfg)
@@ -86,6 +107,33 @@ def test_a_pattern_file_that_is_no_pattern_is_named_by_lint_and_breaks_no_listin
     assert "invalid YAML" in found["patterns/broken.yaml"][0]
     assert "a pattern is a mapping" in found["patterns/listy.yaml"][0]
     assert "kebab-case" in found["patterns/Bad Name.yaml"][0]
+
+
+def test_a_pattern_never_grants_a_credential_store(tmp_path):
+    """Creation copies a pattern's folder grants into the new routine past the PATCH guard that
+    refuses one by hand — the seed instance-auditor pattern once handed the console's config dir
+    to every routine made from it. A pattern naming a store is a problem the lint reports, a
+    "Save as new pattern" refuses, and creation writes without that root."""
+    from rsched.patterns import apply
+    from rsched.workflows.lint import lint_patterns
+
+    lib = tmp_path / "lib"
+    risky = {"fs_read_roots": ["~/.ssh", "~/notes"], "fs_write_roots": ["~/.credentials/x"],
+             "keep_runs": 20}
+    with pytest.raises(ValueError, match="credential store"):
+        store.create(lib, "auditor", pattern_doc(**risky))
+    store.home(lib).mkdir(parents=True)        # a library copy that predates the check
+    (store.home(lib) / "auditor.yaml").write_text(
+        "title: Auditor\nsummary: s\nworkflow: w\nsettings:\n  fs_read_roots: [~/.ssh, ~/notes]\n"
+        "  fs_write_roots: [~/.credentials/x]\n", encoding="utf-8")
+    found = lint_patterns(lib, [], [])["patterns/auditor.yaml"]
+    assert [f for f in found if "credential store" in f] == [
+        ("patterns/auditor.yaml: settings.fs_read_roots: ~/.ssh is a credential store — a "
+         "pattern never grants one"),
+        ("patterns/auditor.yaml: settings.fs_write_roots: ~/.credentials/x is a credential "
+         "store — a pattern never grants one")]
+    out = apply.routine_yaml(store.read(lib, "auditor")["settings"], tz="UTC")
+    assert out["fs_read_roots"] == ["~/notes"] and out["fs_write_roots"] == []
 
 
 def test_a_routine_yaml_that_does_not_parse_follows_nothing(tmp_path):
@@ -259,6 +307,20 @@ def test_a_broken_pattern_file_leaves_every_settings_surface_up(client):
     assert listed.status_code == 200
     assert [p["slug"] for p in listed.json()["patterns"]] == ["watcher"]
     assert c.get("/api/routines/alpha/settings").status_code == 200
+
+
+def test_a_pattern_file_that_no_longer_parses_can_still_be_deleted(client):
+    """`rsched lint` names a broken pattern file and every listing passes it over — and the
+    one way to remove it answered "no settings pattern" (404), because it asked the READER,
+    which cannot use the file, whether the file exists."""
+    c, tmp = client
+    broken = store.home(tmp / "library") / "broken.yaml"
+    broken.parent.mkdir(parents=True, exist_ok=True)
+    broken.write_text("summary: [x\n", encoding="utf-8")
+    r = c.delete("/api/patterns/broken")
+    assert r.status_code == 200, r.text
+    assert r.json()["released"] == [] and not broken.exists()
+    assert c.delete("/api/patterns/broken").status_code == 404     # gone is still gone
 
 
 def test_the_pattern_list_carries_the_field_vocabulary_the_library_renders(client):

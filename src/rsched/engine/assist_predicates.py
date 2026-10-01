@@ -110,9 +110,9 @@ def _file_writes(s: Situation) -> list[str]:
 
     `turn_records` is the run history that SURVIVES compaction — the message list does not,
     so a predicate that greps scrollback silently stops working on exactly the long runs that
-    need it most. A `brief` is the action's identifying field, JSON-quoted.
+    need it most. A `brief` is the action's identifying field, whole (`compaction.turn_record`).
     """
-    return [str(r.get("brief") or "").strip('"')
+    return [str(r.get("brief") or "")
             for r in getattr(s.loop, "turn_records", []) or []
             if r.get("kind") in ("write_file", "edit_file")]
 
@@ -278,8 +278,7 @@ def _rendered_output_unseen(s: Situation) -> bool:
     """
     records = getattr(s.loop, "turn_records", []) or []
     looked = any(r.get("kind") == "view_image"
-                 or (r.get("kind") == "util"
-                     and str(r.get("brief") or "").strip('"') in _LOOK_UTILS)
+                 or (r.get("kind") == "util" and str(r.get("brief") or "") in _LOOK_UTILS)
                  for r in records)
     if looked:
         return False

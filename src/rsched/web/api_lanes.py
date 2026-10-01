@@ -188,7 +188,7 @@ def update_lane(request: Request, lane_id: str, body: LanePatch) -> dict:
     members = (_validate_members(request, body.members,
                                  already=lanes.member_slugs(current or {}))
                if body.members is not None else None)
-    on_failure = body.on_failure if body.set_on_failure else lanes._UNSET
+    on_failure = body.on_failure if body.set_on_failure else lanes.UNSET
     sched = _schedule_to_cron(body.schedule)
     try:
         rec = lanes.update(_routines_home(request), lane_id, name=body.name,

@@ -291,8 +291,7 @@ class Runner:
                     tail_llm_sidecar(run.run_dir, self._llm_recorder(run)))
                     if self.center is not None else None)
                 try:
-                    _, err = await proc.communicate()
-                    stderr = err or b""
+                    stderr = await runner_state.wait_keeping_stderr_tail(proc)
                 finally:
                     waiter.cancel()
                     if tailer is not None:
