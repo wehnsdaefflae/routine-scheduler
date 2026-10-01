@@ -228,6 +228,18 @@ def _job_root(m: dict) -> str:
     return wd if wd else "$HOME"
 
 
+def remote_dir(path: str) -> str:
+    """`path` as ONE word for the remote shell, with a leading `~` still meaning the remote
+    user's home. `shlex.quote` alone kept the tilde literal — `cd '~/data'` looks for a
+    directory named `~` — so every `--cwd ~/…` failed with "No such file or directory" before
+    the command ran. Pure."""
+    if path == "~":
+        return '"$HOME"'
+    if path.startswith("~/"):
+        return '"$HOME"/' + shlex.quote(path[2:])
+    return shlex.quote(path)
+
+
 def build_job_script(command: str, jobid: str, cwd: str, webhook: str) -> str:
     """The detached job body, run inside the job dir (setsid cd's there first). Redirections are
     opened in the job dir; an optional --cwd changes only the command's dir. base64-transported,
@@ -236,7 +248,7 @@ def build_job_script(command: str, jobid: str, cwd: str, webhook: str) -> str:
     # A SUBSHELL, not a { } group: a user command ending in `exit N` must terminate only the
     # job body, so `code=$?` and the exit-file write below still run (a group's exit would kill
     # job.sh outright, losing the exit code). Redirections are opened in the job dir.
-    inner = f"cd {shlex.quote(cwd)} || exit 1\n{command}\n" if cwd else f"{command}\n"
+    inner = f"cd {remote_dir(cwd)} || exit 1\n{command}\n" if cwd else f"{command}\n"
     # Same PATH line as `exec` (R1730): a job.sh runs under the same profile-less shell.
     lines = [PATH_PREFIX.strip(), "(", inner, ") > stdout 2> stderr < /dev/null",
              "code=$?", "echo $code > exit"]
@@ -737,7 +749,7 @@ def _run(client, command: str, timeout: int, cwd: str = "") -> tuple[int, str, s
       with a note naming the holder so the caller can fix its launch form.
     """
     if cwd:
-        command = f"cd {shlex.quote(cwd)} || exit 1; {command}"
+        command = f"cd {remote_dir(cwd)} || exit 1; {command}"
     _stdin, stdout, _stderr = client.exec_command(PATH_PREFIX + command, timeout=timeout)
     chan = stdout.channel
     out, err = bytearray(), bytearray()
@@ -1232,6 +1244,20 @@ def selftest() -> int:
     assert "cd /data" in build_job_script("run", "j", "/data", ""), "cwd cd'd"
     assert "cd '/a b'" in build_job_script("run", "j", "/a b", ""), "cwd is shell-quoted"
     assert "curl" in build_job_script("run", "j", "", "https://x/hook"), "webhook → curl"
+    # --cwd ~/…: the tilde is the REMOTE home. Quoting it whole shipped `cd '~/data'`, which
+    # names a directory called `~` — so prove the shipped words in a real shell
+    import subprocess
+    import tempfile
+    assert 'cd "$HOME"/data || exit 1' in build_job_script("run", "j", "~/data", ""), "~ in a job"
+    fake_home = tempfile.mkdtemp()
+    os.makedirs(os.path.join(fake_home, "my data"))
+    for cwd, want in (("~/my data", os.path.join(fake_home, "my data")), ("~", fake_home),
+                      (os.path.join(fake_home, "my data"), os.path.join(fake_home, "my data"))):
+        shipped = subprocess.run(["sh", "-c", f"cd {remote_dir(cwd)} || exit 1; pwd -P"],
+                                 env={"HOME": fake_home, "PATH": os.environ.get("PATH", "")},
+                                 capture_output=True, text=True)
+        assert shipped.returncode == 0, (cwd, shipped.stderr)
+        assert shipped.stdout.strip() == os.path.realpath(want), (cwd, shipped.stdout)
     # launcher: detached setsid, job dir under the given root, prints the id
     lz = build_launcher("$HOME", "abcd", "QUk=")
     assert "setsid" in lz and ".rsched-jobs/abcd" in lz and "echo abcd" in lz, lz
@@ -1245,7 +1271,6 @@ def selftest() -> int:
     out, trunc = _capped("x" * (CAP + 50))
     assert trunc and len(out) < CAP + 60, "over-cap output is elided"
     # pull dest resolution creates the local parent dir (R1140/R1176: no bare FileNotFoundError)
-    import tempfile
     td = tempfile.mkdtemp()
     nested = os.path.join(td, "a", "b", "out.bin")
     assert _resolve_pull_dest("/remote/x.bin", nested) == nested
@@ -1346,6 +1371,7 @@ def selftest() -> int:
     code, out, err = _run(client, "nohup ./train.sh &", 30, cwd="~/video2funscript")
     assert client.sent.startswith(PATH_PREFIX), client.sent
     assert "|| exit 1;" in client.sent and "&&" not in client.sent, client.sent
+    assert 'cd "$HOME"/video2funscript ||' in client.sent, ("~ is the remote home", client.sent)
     assert code == 0 and out == "PID=4072019\n", (code, out)
     assert "left a process holding" in err and "nohup" in err, err   # names the trap, no hang
     assert chan.closed, "the channel must be released"
@@ -1379,7 +1405,7 @@ def selftest() -> int:
                 return 0, out, ""
             return _fake
 
-        _mach = {"name": "box", "root": "/srv/x"}
+        _mach = {"name": "box", "workdir": "/srv/x"}
         for _out, _ok in (("cancelled", True),
                           ("cancelled (SIGKILL)", True),
                           ("not running", True),
@@ -1393,6 +1419,7 @@ def selftest() -> int:
         _snip = _seen["cmd"]
         assert "kill -TERM" in _snip and "kill -KILL" in _snip, "must escalate TERM → KILL"
         assert _snip.count("kill -0") >= 2, "must RE-CHECK the group, not trust the signal"
+        assert _snip.startswith('JOBDIR="/srv/x/.rsched-jobs/j1";'), "jobs live under workdir"
 
         # --- R1496: --tail is BYTES; --tail-lines must really switch to lines ---
         globals()["_run"] = _mk("===STDOUT===\nx\n===STDERR===\ny")
@@ -1433,7 +1460,7 @@ def selftest() -> int:
     _saved_connect2 = connect
     try:
         _d = _tf.mkdtemp()
-        _mach2 = {"name": "box", "root": "/srv/x"}
+        _mach2 = {"name": "box"}
 
         globals()["connect"] = lambda *a, **k: _Client(_SFTP(_st.S_IFDIR | 0o755))
         _p = os.path.join(_d, "out.bin")

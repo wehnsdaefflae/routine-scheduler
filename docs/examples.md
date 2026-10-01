@@ -162,7 +162,7 @@ grant-funded open-source project: deliverables register, worklog, public repo hy
 3. Guard pass over `DELIVERABLES.md`: anything due ≤ 14 days gets priority regardless of
    the backlog.
 4. **One thing**: implements the next backlog item — edits code (fs write root), runs the
-   suite via `shell`/`pytest-run`, iterates to green, commits via `git-sync`. If ahead of
+   suite via `shell`/`pytest-run`, iterates to green, commits via `git sync`. If ahead of
    schedule: a quality increment instead (a flaky test, a type-hole, a doc gap).
 5. Mondays: the fresh-eyes audit — reads the public README/docs as a stranger, fixes
    "functional but bad" findings in the same run.

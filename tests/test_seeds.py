@@ -8,10 +8,13 @@ rename.
 Covered: library-seed/ (workflows parse via pyworkflow and lint clean; rules/permissions/
 playbooks lint clean; permission `requires:` normalize; `state/phase.json` instructions in the
 canonical {"phase": ...} shape; action-kind references), and util-seed/ (docstring headers pass
-the engine's own write_util gate).
+the engine's own write_util gate, and every util's own offline `--selftest` passes).
 """
 
+import os
 import re
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -93,3 +96,19 @@ def test_library_seed_lints_clean():
 def test_util_seed_headers_pass_engine_gate(util):
     problems = header_problems(util.read_text(encoding="utf-8"))
     assert problems == [], f"{util.name}: {problems}"
+
+
+# The selftests ARE the seed utils' regression tests — `write_util` runs them before a util
+# lands — yet a seed util ships to every instance without ever passing through that gate, so
+# nothing ran them: git's hook-refusal fixture sat uncalled while it was the only proof of a
+# fix. Run here without uv: a selftest is offline by contract, and this interpreter carries
+# every import one reaches — pyyaml is a package dependency, and the network clients (paramiko,
+# httpx, ddgs) are imported only in the code that talks to the network. In its own process, so
+# a selftest's env and signal changes stay there.
+@pytest.mark.parametrize("util", UTIL_SEEDS, ids=_ids(UTIL_SEEDS))
+def test_util_seed_selftest_passes(util, tmp_path):
+    if util.parent.name == "instance-export" and os.geteuid() == 0:
+        pytest.skip("its selftest proves a chmod-000 directory is reported; root reads it anyway")
+    done = subprocess.run([sys.executable, str(util), "--selftest"], cwd=tmp_path,
+                          capture_output=True, text=True, timeout=300, check=False)
+    assert done.returncode == 0, f"{util.parent.name}:\n{done.stdout}\n{done.stderr}"

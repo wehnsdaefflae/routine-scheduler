@@ -1377,7 +1377,7 @@ see either — and waiting costs a failed commit per run in that repo until some
 proof is four conditions, all required, checked while `writing()` holds the repo's commit lock:
 
 1. the commit lock is held, so no cooperative writer (daemon, engine run, web layer, the
-   `git-sync` util) is between its `add` and its `commit`;
+   library `git` util's `sync`) is between its `add` and its `commit`;
 2. no git process visible here works in the repo — none has its working directory, a `-C`, a
    `--git-dir`, a `--work-tree` or a `GIT_DIR` inside it — and a git whose working directory
    cannot be read (another uid's) counts as one that does;
@@ -1397,8 +1397,12 @@ commit writes — the scheduler's own checkout, a worktree a session made, a rep
 script manages — is outside this path. A util, a script or a `shell` command that runs git there
 is still terminated at its deadline, or when its run is aborted, rather than killed
 (`run_jailed`) — and its SIGKILL still comes if the engine dies inside the grace (the backstop
-`procgroup.terminate` arms). A lock that a kill from elsewhere leaves is found by whoever next
-writes there, as before.
+`procgroup.terminate` arms). The library's `git` util holds itself to the same rule INSIDE that
+deadline: each git call it makes leads a process group of its own and, past the call's own
+timeout, is ended the `procgroup.terminate` way — SIGTERM to git, its hook and the hook's
+children, SIGKILL 30 s later — while a SIGTERM the util itself receives is passed on to that
+group. Its `subprocess.run` timeouts had SIGKILLed git, a lock-holding `commit -a` included. A
+lock that a kill from elsewhere leaves is found by whoever next writes there, as before.
 
 ## Observing the daemon
 

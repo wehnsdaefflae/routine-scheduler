@@ -1,3 +1,7 @@
+# /// script
+# requires-python = ">=3.11"
+# dependencies = ["pyyaml"]
+# ///
 """instance-export — mirror this instance's routines + sanitized config into the library repo tree.
 
 usage: gu instance-export DEST [--routines-home PATH] [--config PATH] [--json]
@@ -9,12 +13,13 @@ fs: roots
 
 Everything the instance acquires syncs to ONE repo — this util stages the instance-owned part
 into that repo's working tree (DEST, normally ~/.local/share/routine-scheduler-libraries, which
-already holds workflows/, traits/, permissions/, playbooks/, utils/): (a) every routine under
+already holds workflows/, rules/, permissions/, playbooks/, utils/): (a) every routine under
 --routines-home (default ~/routines) into DEST/routines/<slug>/, minus transient run state (runs/,
-.git/, inbox/, questions/, status.json — routine.yaml, main.md, stages/, traits/, state/,
+.git/, inbox/, questions/, status.json — routine.yaml, main.md, stages/, scripts/, state/,
 LEDGER.md all stay); (b) the server config (default ~/.config/routine-scheduler/config.yaml)
-into DEST/config/config.yaml with every `token` and `api_key` value replaced by REDACTED —
-parsed as YAML, never regexed. Idempotent and rsync-like: files gone from the source are deleted
+into DEST/config/config.yaml with every credential value replaced by REDACTED — any key that
+is or ends in `token`, `api_key`, `secret` or `password` (so `routine_token` too), parsed as
+YAML, never regexed. Idempotent and rsync-like: files gone from the source are deleted
 from DEST. An unreadable file or directory (permission-denied mounts etc.) is SKIPPED and
 recorded in `errors` rather than aborting the whole export. Two guards keep the mirror
 pushable and private: a routine that is a git repo is enumerated through ITS OWN git view
@@ -23,7 +28,7 @@ keeps out of its repo — a .secrets/ folder, mnt/, .venv — never reaches the 
 and any file at or over MAX_FILE_BYTES (10 MiB) is never copied and is pruned from DEST if a
 previous run copied it, listed in `oversize` (GitHub refuses a 100 MB blob outright and a
 223 MB state inventory once blocked every push for days; the routine's own repo is the
-place for such a file, not the off-box mirror). Run it right before git-sync on DEST.
+place for such a file, not the off-box mirror). Run it right before `git sync` on DEST.
 --selftest builds a fake instance in a temp dir (including a permission-denied subdirectory,
 a git-ignored secret and an oversize file) and asserts exclusions, redaction, deletion of
 vanished files, and that a permission error is recorded without crashing — fully offline."""
@@ -31,6 +36,7 @@ vanished files, and that a permission error is recorded without crashing — ful
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -41,7 +47,11 @@ import yaml
 
 EXCLUDE = {"runs", ".git", "inbox", "questions", "status.json",
            ".venv", ".util_outputs", "mnt"}   # transient run state / generated caches / external mount points
-REDACT_KEYS = {"token", "api_key"}
+#: A config key whose value is a credential: `token`, `routine_token` (R94's second bearer tier,
+#: which bootstrap writes into every config.yaml), an endpoint's `api_key` — and by the same
+#: rule any `*_token`, `*_secret` or `*_password` a later config grows. A SUFFIX rule on purpose:
+#: the exact-name set {token, api_key} let `routine_token` through into a mirror that is pushed.
+SECRET_KEY_RE = re.compile(r"(?:^|_)(?:token|api_key|secret|password)$")
 MAX_FILE_BYTES = 10 * 1024 * 1024   # a mirror carries files people read; nothing they read is 10 MiB
 
 
@@ -151,12 +161,14 @@ def export_routines(routines_home: Path, dest_routines: Path) -> dict:
 
 
 def redact(obj):
-    """Recursively blank secret values: any `token`/`api_key` mapping entry with a non-empty
-    value becomes REDACTED (empty stays empty — it honestly says 'nothing was set')."""
+    """Recursively blank secret values: any mapping entry whose key SECRET_KEY_RE names a
+    credential and whose value is non-empty becomes REDACTED (empty stays empty — it honestly
+    says 'nothing was set')."""
     hits = 0
     if isinstance(obj, dict):
         for key, val in obj.items():
-            if key in REDACT_KEYS and isinstance(val, (str, int, float)) and str(val).strip():
+            if (isinstance(key, str) and SECRET_KEY_RE.search(key)
+                    and isinstance(val, (str, int, float)) and str(val).strip()):
                 obj[key] = "REDACTED"
                 hits += 1
             else:
@@ -193,7 +205,7 @@ def selftest() -> int:
     with tempfile.TemporaryDirectory() as tmp:
         home = Path(tmp) / "routines"
         keep = ["routine.yaml", "main.md", "LEDGER.md",
-                "stages/one.md", "traits/t.md", "state/phase.json"]
+                "stages/one.md", "scripts/helper.py", "state/phase.json"]
         drop = ["status.json", "runs/2026-01-01T00-00-00/transcript.jsonl",
                 "inbox/msg.json", "questions/pending/q.json", ".git/HEAD"]
         for rel in keep + drop:
@@ -224,8 +236,11 @@ def selftest() -> int:
         try:
             cfg = Path(tmp) / "config.yaml"
             cfg.write_text("bind: 127.0.0.1\ntoken: \"super-secret\"\n"
+                           "routine_token: \"rt-live-456\"\n"
                            "endpoints:\n  or:\n    kind: openai\n    api_key: sk-live-123\n"
-                           "  local:\n    kind: openai\n    api_key: \"\"\n")
+                           "    key_var: OPENROUTER_API_KEY\n"
+                           "  local:\n    kind: openai\n    api_key: \"\"\n"
+                           "models:\n  big:\n    context_tokens: 200000\n")
             dest = Path(tmp) / "library"
             dest.mkdir()
             result = run(str(dest), str(home), str(cfg))
@@ -247,9 +262,14 @@ def selftest() -> int:
             (repo / "state" / "stale-big.jsonl").write_bytes(b"y" * (MAX_FILE_BYTES + 1))
             out_cfg = yaml.safe_load((dest / "config" / "config.yaml").read_text())
             assert out_cfg["token"] == "REDACTED"
+            # the second bearer tier is a credential too — and it is in EVERY config.yaml
+            assert out_cfg["routine_token"] == "REDACTED", "routine_token reached the mirror"
             assert out_cfg["endpoints"]["or"]["api_key"] == "REDACTED"
             assert out_cfg["endpoints"]["local"]["api_key"] == ""         # empty stays empty
-            assert out_cfg["bind"] == "127.0.0.1" and result["config"]["redacted_values"] == 2
+            # a NAME of a secret and a token COUNT are not secrets
+            assert out_cfg["endpoints"]["or"]["key_var"] == "OPENROUTER_API_KEY"
+            assert out_cfg["models"]["big"]["context_tokens"] == 200000
+            assert out_cfg["bind"] == "127.0.0.1" and result["config"]["redacted_values"] == 3
             # idempotence + rsync-like pruning: delete at the source → gone from the mirror
             (home / "demo" / "stages" / "one.md").unlink()
             second = run(str(dest), str(home), str(cfg))
