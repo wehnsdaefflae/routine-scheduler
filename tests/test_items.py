@@ -252,6 +252,24 @@ def test_a_hand_trimmed_fold_stamp_reads_as_no_fold_rather_than_a_500(audit_home
     assert items["R5"]["status"] == "settled"           # its carrier's, as for any fold
 
 
+def test_an_id_past_four_digits_is_still_an_id(audit_home):
+    """`reports.next_id` mints `R<highest+1>` with no ceiling and the ledger is past R2000. The
+    id patterns capped the number at four digits, and `\\b` cannot close before a fifth, so from
+    R10000 on an id in prose matched NOTHING: no reflink, no changelog link."""
+    with (audit_home / ".control" / "reports.jsonl").open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps({"id": "R12345", "ts": "2026-07-26T00:00:00+00:00",
+                             "routine": "x", "run_id": "x:1", "title": "five digits",
+                             "detail": "follows up R10001 and F12345"}) + "\n")
+    with (audit_home / "self-audit" / "audit" / "changelog.jsonl").open(
+            "a", encoding="utf-8") as fh:
+        fh.write(json.dumps({"ts": "2026-07-27T10:00:00+00:00", "commit": "eeee5555",
+                             "summary": "1.0.0 — D10000 settled"}) + "\n")
+    items = _by_id(items_model.build(audit_home / "self-audit", audit_home))
+    assert items["R12345"]["refs"] == ["F12345", "R10001"]
+    assert items["D10000"]["archive_only"] and items["D10000"]["addressed"][0]["link"] == \
+        "best-effort"
+
+
 def test_items_are_ordered_newest_origin_first(audit_home):
     result = items_model.build(audit_home / "self-audit", audit_home)
     stamps = [i["origin"]["ts"] for i in result["items"]]

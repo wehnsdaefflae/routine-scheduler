@@ -47,8 +47,9 @@ STATUSES = ("open", "in_progress", "addressed", "settled", "dropped", "unknown")
 
 TYPE_BY_PREFIX = {"F": "finding", "D": "decision", "R": "report"}
 
-#: Item ids in HISTORICAL prose — findings and decisions only (see `_row_ids`).
-ID_RE = re.compile(r"\b([FD]\d{1,4})\b")
+#: Item ids in HISTORICAL prose — findings and decisions only (see `_row_ids`), with no digit
+#: ceiling for the same reason as `item_reports.REF_RE`.
+ID_RE = re.compile(r"\b([FD]\d+)\b")
 
 
 def _audit_dir(routine_dir: Path) -> Path:

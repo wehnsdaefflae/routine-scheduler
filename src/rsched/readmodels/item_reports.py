@@ -19,7 +19,9 @@ import re
 #: Item ids in CURRENT prose — report ids included. Unlike the changelog's historical scan
 #: (`items._row_ids`) this one matches `R<n>`: current prose can legitimately name a report,
 #: where an `R` in an archived changelog row predates the namespace and is a false positive.
-REF_RE = re.compile(r"\b([FDR]\d{1,4})\b")
+#: No digit ceiling: `reports.next_id` mints `R<highest+1>` without one, and a capped `\d{1,4}`
+#: matches nothing at all from R10000 on (the closing `\b` cannot sit before a fifth digit).
+REF_RE = re.compile(r"\b([FDR]\d+)\b")
 
 
 def refs(item_id: str, *parts: str) -> list[str]:
