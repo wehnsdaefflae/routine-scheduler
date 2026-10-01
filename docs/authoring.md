@@ -108,11 +108,11 @@ from routine.params import (
 META = {
     "name": "General task",
     "slug": "general-task",
-    "description": "Orient, work everything that is due in verified steps, record, commit.",
+    "description": "The sane default — orient, do the work in verified steps, record, commit.",
     "when_to_use": "Most recurring instructions with no more specific pattern…",
-    "version": 9,
+    "version": 15,   # bumped whenever the instructions change; a routine records the one it was built from
     "tags": ["general", "research", "tool-use"],
-    "includes": ["ask-policy", "decision-record"],  # general rules this pattern presumes
+    "includes": ["ask-policy", "web-research", "decision-record"],  # general rules it presumes
     "tools": None,   # or a list restricting action kinds ("finish" is always allowed)
 }
 
@@ -199,14 +199,25 @@ A rule (`rules/<slug>.md` in the library) is principle prose — *how* to work, 
 task to do:
 
 ```markdown
+---
+effect:
+  with: appends what it changed, chose and rejected where the next run reads it first
+  without: leaves only artefacts; the next run re-buys old lessons
+  when: a routine that works one problem across runs
+tags: [self-management, record-keeping, review]
+---
 # rule: decision-record — keep the reasoning the artefacts cannot carry
 
 Read the record before you explore. Append one entry per run: what changed, why, and the
 candidates you rejected with the reason…
 ```
 
-The heading form `# rule: <slug> — <summary>` is lint-enforced, three tags are the minimum,
-and rules carry **no** `requires:` (they grant nothing).
+The linter enforces the shape: the `effect:` block (`with` / `without` / `when` — what holding
+the rule changes, which is what the routine page labels its control with, and the `when` line the
+state digest shows beside the held slug), three tags at the minimum, the heading form
+`# rule: <slug> — <summary>`, and **no** `requires:` (a rule grants nothing). A rule may declare
+`expects:` (an entity its prose presumes) and `assists:` (its operative line, surfaced at the
+moment it applies — [rule assists](rule-assists.md)).
 
 A rule is GENERAL by construction and has exactly ONE copy. Routines hold slugs
 (`routine.yaml` `rules:`), read the prose on demand with `read_rule`, and apply it to their
@@ -230,18 +241,25 @@ model; the enforced half is the routine's `capabilities:` mapping. The frontmatt
 
 ```markdown
 ---
+effect:
+  with: posts to Discord through the bot — by default to your agent channel
+  without: reads the channel wherever the bot secret is granted, but never posts
+  when: it has something you want pushed to your phone
 tags: [communication, messaging, outbound]
 requires:
-  utils: [discord]
+  utils: [discord:send]     # a whole util, or ONE verb of it
 ---
-# permission: discord messaging — reach a person on Discord
+# permission: messaging-discord — post to Discord through the bot
 
-Keep channel messages short; the durable record is always the Decisions page…
+The default channel is the operator's agent channel: a post there is a notice, never a
+decision surface — a decision goes through `ask_user`…
 ```
 
-Bodies are **short** (≤14 lines reach the prompt when held). `requires:` may name
-`actions`, `utils`, `runs`, `workflows` — never `confirm` (approval levels are user
-policy, not a doc's demand).
+The body is the doc's whole contribution to a holder's prompt, cut on a line boundary past
+1,000 characters (`engine/capabilities.PERMISSION_NOTE_MAX_CHARS`), so write the conduct first
+and keep it short. `effect:` is required as on a rule. `requires:` may name only `actions` and
+`utils` — never a setting (`confirm`, `runs`, `reminders`: those are the user's choice per
+routine, not a doc's demand).
 
 ## Playbooks — reusable conversation briefs
 

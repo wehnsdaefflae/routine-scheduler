@@ -1,8 +1,9 @@
 # First-run setup
 
 routine-scheduler ships **no secrets and no repo URLs** — you provision everything from the web UI
-on first launch. After `docker compose up -d` (see [DOCKER.md](DOCKER.md) for the container details),
-the app **redirects you to Settings** and shows a setup banner until you're done.
+on first launch. After `docker compose up -d` (see [DOCKER.md](DOCKER.md) for the container details,
+including the browser token the compose file needs in `.env` first), the app **redirects you to
+Settings** and shows a setup banner until you're done.
 
 The image already contains everything setup needs: `git`, the **GitHub CLI (`gh`)**, Node + the
 **`claude` CLI**, and `uv`. Nothing of the maintainer's is baked in.
@@ -26,6 +27,7 @@ at run time**. Values are **write-only** — the UI lists key names, never the v
 | `OPENROUTER_KEY` | `sk-or-v1-…` |
 | `ANTHROPIC_KEY` | `sk-ant-…` |
 | `CLIPROXY_API_KEY` | *(proxy client key — see §3)* |
+| `BROWSER_CDP_TOKEN` | *(the same value as in `.env` — the signed-in browser's door)* |
 | `DISCORD_BOT_TOKEN` | *(for the `discord` util)* |
 
 **"Needed by installed utils"** — this section lists exactly which env vars your utils declare they
@@ -39,9 +41,11 @@ the engine surfaces it. This is also required of every `write_util`-generated ut
 Add an `openai` or `anthropic` endpoint. Each OpenAI/Anthropic endpoint
 reads its key from **Secrets** via its `key_var` (e.g. `openrouter` → `OPENROUTER_KEY`) — so just set
 that key in §2 and the endpoint works. (You can also paste a per-endpoint inline key if you prefer.)
-Then set the **system model** — the one fallback the new-routine wizard and workflow generation
-use. Each routine you create afterwards picks its own three models (main / subroutine / tool-call)
-on its page or in the creation wizard.
+Then add the models you use to the **model catalog** on the same page — each a name over an
+endpoint and a model id — and pick the **system model**: the one fallback for the scheduler's own
+helper calls (the new-routine clarify flow, workflow generation) and for any role a routine leaves
+unset. Each routine picks its own models from the catalog (main and tool-call, plus an optional
+uncensored one) on its page.
 
 ### Using your Claude subscription
 
@@ -59,19 +63,18 @@ To clone/pull/push your (private) library + source repos, click **Connect GitHub
 
 No container terminal, no PAT to mint. Skip only if all your repos are public and you never push.
 
-## 5. Set up your library  (Settings → Library repository)
+## 5. The library and the source repository
 
-Workflows, rules, permissions, playbooks, and utils live together in ONE git repo on your account
-(subdirs `workflows/`, `rules/`, `permissions/`, `playbooks/`, `utils/`). On a fresh deploy its row
-offers two buttons (do §4 first — both need GitHub):
+Workflows, rules, permissions, settings patterns, playbooks and utils live together in ONE git
+repo (`~/.local/share/routine-scheduler-libraries`: `workflows/`, `rules/`, `permissions/`,
+`patterns/`, `reminders/`, `playbooks/`, `utils/`). It has **no settings surface**: the daemon
+creates it — cloned from `libraries_remote` in `config.yaml` when that names a repo of yours,
+otherwise empty — and its boot-time sync adds the built-in defaults the library lacks, never
+overwriting an edit; the **library-sync** routine keeps it in step with its remote from then on.
 
-- **Clone existing** — enter `owner/name` of a repo you already have → its content is pulled in.
-- **Create + seed** — enter a new name → a **private** repo is created on your account, seeded with
-  the built-in defaults, and pushed. Future generated workflows and library edits auto-sync there.
-
-Once the library has content its row switches to a **remote** field with a **Test** button
-(`git ls-remote` → **✓ reachable** / **✗ authentication required** / **✗ not found**). The
-**Source repository** (self-audit's push target) works the same way.
+**Settings → Source** is the scheduler's own repository, where self-audit commits and pushes:
+set the remote to your fork, and **Test** it (`git ls-remote` → **✓ reachable** /
+**✗ authentication required** / **✗ not found** — do §4 first for a private repo).
 
 ## 6. Finish
 
@@ -85,5 +88,7 @@ Click **finish setup** in the banner (stops the first-launch redirect).
   trusted network (or front it with a reverse proxy + TLS).
 - **Secrets are plaintext on disk** (in the config dir, `0600`), like most self-hosted `.env` setups —
   fine on a trusted host; use disk encryption if you need at-rest protection.
-- **What's git-backed vs. local:** the library repo + the source repo have remotes (GitHub); your
-  **routines** (run history, ledgers) are local-only — back them up by copying `~/routines`.
+- **What's git-backed vs. local:** the library repo + the source repo have remotes (GitHub);
+  your **routines** (run history, ledgers), conversations, background tasks, config, secrets and
+  linked sessions are local-only — `deploy/backup.sh` mirrors every one of those homes (see
+  [DOCKER.md](DOCKER.md) § Backups).

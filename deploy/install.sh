@@ -1,21 +1,35 @@
 #!/usr/bin/env bash
-# Idempotent install: venv, config+token, dirs, library seed, systemd user service with
+# Idempotent install: venv, config + tokens, dirs, library seed, systemd user service with
 # linger. Safe to re-run after every git pull.
 set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CONFIG_DIR="${HOME}/.config/routine-scheduler"
-CONFIG="${CONFIG_DIR}/config.yaml"
 ROUTINES="${HOME}/routines"
 CONVERSATIONS="${HOME}/conversations"
 BACKGROUND="${HOME}/background"
 LIBRARIES="${HOME}/.local/share/routine-scheduler-libraries"
 UNIT_DIR="${HOME}/.config/systemd/user"
+# The two paths the unit runs the daemon from (`%h/…` in deploy/routine-scheduler.service). The
+# backup inventory carries the checkout at the first one too. Anywhere else, this script used to
+# finish "done" and enable a service that could not start, so it refuses up front instead.
+CHECKOUT="${HOME}/git-repos/routine-scheduler"
+UV="${HOME}/.local/bin/uv"
 
 echo "== rsched install (${REPO})"
 
-command -v uv >/dev/null || { echo "uv is required (https://docs.astral.sh/uv/)"; exit 1; }
-(cd "${REPO}" && uv sync --quiet)
+if [ ! "${REPO}" -ef "${CHECKOUT}" ]; then
+  echo "This checkout must live at ${CHECKOUT}: the systemd unit, the compose file and the" >&2
+  echo "backup inventory all run it from there. Clone or move it there and re-run." >&2
+  exit 1
+fi
+if [ ! -x "${UV}" ]; then
+  echo "uv is required at ${UV}, where the systemd unit runs it — the standalone installer" >&2
+  echo "puts it there (https://docs.astral.sh/uv/); for a uv installed elsewhere:" >&2
+  echo "  ln -s \"\$(command -v uv)\" ${UV}" >&2
+  exit 1
+fi
+(cd "${REPO}" && "${UV}" sync --quiet)
 echo "venv synced"
 
 # The three data homes (server config: routines_home / conversations_home / background_home).
@@ -24,13 +38,12 @@ echo "venv synced"
 # deploy/bundle.sh requires them, so a fresh install is complete rather than half-migratable.
 mkdir -p "${ROUTINES}" "${CONVERSATIONS}" "${BACKGROUND}" "${CONFIG_DIR}"
 
-if [ ! -f "${CONFIG}" ]; then
-  TOKEN="$(python3 -c "import secrets; print(secrets.token_urlsafe(24))")"
-  sed "s/token: \"change-me\".*/token: \"${TOKEN}\"/" "${REPO}/config/config.example.yaml" > "${CONFIG}"
-  echo "config written: ${CONFIG} (token generated)"
-else
-  echo "config exists: ${CONFIG}"
-fi
+# The config — written by bootstrap.ensure_config, the ONE implementation the daemon also runs at
+# first boot, which gives BOTH bearer tiers a random token. The shell copy that lived here
+# replaced the example's `token:` line only, so every host install shipped the example's
+# placeholder `routine_token` — a credential anyone could read in this repository.
+(cd "${REPO}" && "${UV}" run python -c \
+  'from rsched.bootstrap import ensure_config; from rsched.paths import config_file; print("config written (fresh tokens):" if ensure_config() else "config exists:", config_file())')
 
 # The library — ONE git repo holding workflows/, rules/, permissions/, patterns/, reminders/,
 # playbooks/ and utils/. Seeded by bootstrap.seed_libraries, which git-inits it and installs the
@@ -41,7 +54,7 @@ fi
 # from the library's doc kinds; a host install then starts with kinds missing that only the
 # add-only boot sync ever fills in.
 if [ ! -d "${LIBRARIES}" ]; then
-  (cd "${REPO}" && uv run python -c \
+  (cd "${REPO}" && "${UV}" run python -c \
     'import sys; from pathlib import Path; from rsched.bootstrap import seed_libraries; seed_libraries(Path(sys.argv[1]))' \
     "${LIBRARIES}")
   echo "library seeded: ${LIBRARIES}"
@@ -64,8 +77,14 @@ if systemctl is-active --quiet ollama 2>/dev/null || pgrep -x ollama >/dev/null 
   echo "      'sudo systemctl edit ollama' → [Service] Environment=OLLAMA_CONTEXT_LENGTH=16384)"
 fi
 
-PORT="$(grep -oP '^port: \K[0-9]+' "${CONFIG}" || echo 8321)"
-TOKEN="$(grep -oP '^token: "\K[^"]+' "${CONFIG}")"
+# Port and token through the config LOADER, never a grep: the file is YAML, and the first save
+# on the Settings page rewrites it with the token unquoted — which the quoted-token grep this
+# replaced did not match, failing every re-run of this script at its last line.
+read -r PORT TOKEN < <(cd "${REPO}" && "${UV}" run python -c \
+  'from rsched.config import load_server_config; cfg, _ = load_server_config(); print(cfg.port, cfg.token)')
 echo
 echo "== done. Web UI: http://127.0.0.1:${PORT}  ·  token: ${TOKEN}"
-systemctl --user --no-pager status routine-scheduler.service | head -5
+# Informational only — `enable --now` above already failed the script if the start failed — so
+# the unit's own lines without the journal tail, and never through a pipe that pipefail could
+# turn into a failed install after "done" was printed.
+systemctl --user --no-pager --lines=0 status routine-scheduler.service || true

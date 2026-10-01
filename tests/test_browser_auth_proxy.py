@@ -86,6 +86,34 @@ def test_an_unauthenticated_connection_is_refused_with_401_naming_the_way_in():
     assert b"secrets:" in got
 
 
+def test_a_non_ascii_credential_is_refused_with_401_not_dropped():
+    """`hmac.compare_digest` RAISES on a str holding a non-ASCII character, so a bearer value
+    with one byte above 0x7f escaped the handler as a traceback and the caller got a dropped
+    connection instead of the refusal that names the way in."""
+    head = b"GET /json/version HTTP/1.1\r\nAuthorization: Bearer s\xe9krit\r\n\r\n"
+    assert proxy._authorized(head, "sekrit") is False
+    got = _serve_once({"target": ("127.0.0.1", 1), "token": "sekrit", "label": "cdp"}, head)
+    assert got.startswith(b"HTTP/1.1 401 Unauthorized")
+
+
+def test_a_caller_that_never_sends_a_head_is_let_go(monkeypatch):
+    """Nothing is decided before the head arrives, so a caller that connects and never speaks
+    held its socket and its task for as long as it liked — one per connection, unauthenticated."""
+    monkeypatch.setattr(proxy, "HEAD_TIMEOUT_S", 0.2)
+
+    async def main() -> bytes:
+        server = await asyncio.start_server(
+            lambda r, w: proxy._handle(r, w, ("127.0.0.1", 1), "sekrit", "cdp"), "127.0.0.1", 0)
+        port = server.sockets[0].getsockname()[1]
+        async with server:
+            reader, writer = await asyncio.open_connection("127.0.0.1", port)
+            try:
+                return await asyncio.wait_for(reader.read(), timeout=5)   # EOF: it let go
+            finally:
+                writer.close()
+    assert asyncio.run(main()) == b""
+
+
 def test_an_unconfigured_proxy_refuses_every_connection_with_503():
     got = _serve_once({"target": ("127.0.0.1", 1), "token": "", "label": "cdp"},
                       _head("Authorization: Bearer anything"))

@@ -16,8 +16,10 @@ repos:
         pass_filenames: false
         files: ^(src/|pyproject\.toml)
       - id: policy
-        name: policy — version bump has CHANGELOG entry, no expired migrations
+        name: policy — version bump has CHANGELOG entry, no expired migrations, host Python is the image's
         entry: uv run pytest tests/test_policy.py -q
         language: system
         pass_filenames: false
-        files: ^(src/rsched/|CHANGELOG\.md)
+        # every file test_policy reads: a commit moving only the Dockerfile's `FROM python:` or
+        # .python-version is exactly the drift its interpreter-pin check exists to stop
+        files: ^(src/rsched/|CHANGELOG\.md$|Dockerfile$|\.python-version$)

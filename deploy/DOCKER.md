@@ -5,19 +5,25 @@ Everything mutable is **bind-mounted**, so the whole system moves as a tarball o
 and the container itself stays disposable. Every data home is a bind for that reason: one that
 isn't dies in the container's writable layer on the next recreate.
 
-Compose defines two **sidecar services**, for the same reason each time: the engine image stays
-engine-only and the daemon supervises no second process. `docker compose build` builds all three
-images.
+Compose defines three **sidecar services**, for the same reason each time: the engine image stays
+engine-only and the daemon supervises no second process. `docker compose build` builds the three
+images of this repository (the engine, `tor`, `chrome`); `cliproxy` is a pinned upstream image.
 
 - **`tor`** (`deploy/Dockerfile.tor`) — the SOCKS proxy the `darknet` util egresses through,
   reachable only from the compose network. Its state is the one named volume (`tor-data`,
   regenerable guard state, so it is deliberately not part of the tarball). See `docs/darknet.md`.
 - **`chrome`** (`deploy/Dockerfile.chrome`) — a headful Chrome on a virtual display holding
-  LOGGED-IN site sessions, which every `--cdp` util drives. It shares the engine's network
-  namespace, so CDP lands on the engine's own loopback at `127.0.0.1:9222`. Unlike tor it
-  carries real state: `${RSCHED_HOME}/chrome-profile` is a **bind mount and part of the
-  tarball** — lose it and every site is signed out. A person signs in over noVNC, published on
-  the host's loopback only. See `docs/browser-sessions.md`.
+  LOGGED-IN site sessions, which every `--cdp` util drives. It sits on its OWN network at a
+  fixed address — CDP is `http://172.30.7.10:9222` — rather than in the engine's namespace,
+  which the engine's drain-and-exit restarts would strand. Both its ports are behind a
+  bearer-token proxy (`BROWSER_CDP_TOKEN`, step 1). Unlike tor it carries real state:
+  `${RSCHED_HOME}/chrome-profile` is a **bind mount and part of the tarball** — lose it and every
+  site is signed out. A person signs in over noVNC, published on the host's loopback only. See
+  `docs/browser-sessions.md`.
+- **`cliproxy`** (behind the `claude-proxy` profile, so a plain `docker compose up -d` leaves it
+  alone) — the CLIProxyAPI transport a Claude or Codex subscription is billed through. Its
+  state lives in `.config/routine-scheduler/cliproxy/`, inside the inventory below. See
+  [proxy setup](../docs/claude-proxy-cutover.md).
 
 Container paths are always `/home/mark/...` (routines and config bake absolute paths, so they must
 not change). Host paths are `${RSCHED_HOME}`-relative (default `/home/mark`).
@@ -26,8 +32,16 @@ not change). Host paths are `${RSCHED_HOME}`-relative (default `/home/mark`).
 
 ## 1. On this machine — build + verify
 
+The compose file refuses every command until `BROWSER_CDP_TOKEN` is set: it is the one
+credential in front of the browser's CDP and noVNC ports, which authenticate nothing of their
+own. Keep it in `.env` beside `docker-compose.yml` (gitignored, and carried by the migration
+bundle with the checkout), and put the SAME value in **Settings → Secrets** under the same name
+once the console is up — the console's browser relay and every util that declares it read it
+from there.
+
 ```bash
 cd ~/git-repos/routine-scheduler
+[ -f .env ] || { printf 'BROWSER_CDP_TOKEN=%s\n' "$(openssl rand -hex 32)" > .env; chmod 600 .env; }
 docker compose build                       # ~2–4 min (Node + claude CLI + Python deps)
 RSCHED_PORT=8322 docker compose up -d       # test on a spare port, alongside the live systemd daemon
 curl -s -H "Authorization: Bearer $(grep -oP '^token:\s*"?\K[^"]+' ~/.config/routine-scheduler/config.yaml | tr -d '\"')" \
@@ -45,23 +59,25 @@ docker compose down                         # stop the test container
 deploy/bundle.sh                            # → ~/rsched-migration-<ts>.tgz  (contains secrets!)
 ```
 
-`deploy/state-paths.sh` is the authority on what a migration carries, and its two lists mirror
-the bind mounts in `docker-compose.yml` — a data home that is mounted but unlisted would die on
-the migration instead of on the recreate, which is the same loss one host later. Both
+`deploy/state-paths.sh` is the authority on what a migration carries, and its lists mirror the
+bind mounts in `docker-compose.yml` — a data home that is mounted but unlisted would die on the
+migration instead of on the recreate, which is the same loss one host later, so
+`tests/test_deploy_state.py` fails on a bind the lists neither carry nor declare left out. Both
 `bundle.sh` and `backup.sh` source that one file, so they cannot drift apart. What it takes:
 
 | Path (`${RSCHED_HOME}`-relative) | Why it must travel |
 | --- | --- |
 | `git-repos/routine-scheduler` | the source tree self-audit edits and the daemon runs from |
-| `.config/routine-scheduler` | `config.yaml` — token, endpoints, homes, `source_repo` |
-| `.credentials` | **secrets**: endpoint keys + the claude-code OAuth token |
+| `.config/routine-scheduler` | **secrets**: `config.yaml` (tokens, endpoints, homes, `source_repo`), the Secrets store beside it, the cliproxy keys |
 | `routines` | the routine repos, their runs, state and ledgers |
 | `conversations` | interactive sessions — routine-shaped, un-versioned, irreplaceable |
 | `background` | detached background runs a conversation launched, possibly mid-flight |
-| `.local/share/routine-scheduler-libraries` | the library repo: `workflows/`, `rules/`, `utils/` |
+| `.local/share/routine-scheduler-libraries` | the library repo: `workflows/`, `rules/`, `permissions/`, `patterns/`, `utils/`, … |
 
 Plus the homes that exist only once a feature has been used, taken when present and reported as
-skipped when not (`STATE_PATHS_OPTIONAL`): `chrome-profile` (the logged-in browser —
+skipped when not (`STATE_PATHS_OPTIONAL`): `.credentials` (the key files an endpoint's
+`key_env_file` names — the credential ladder's last rung, below the Secrets store, so an install
+that never used one has none), `chrome-profile` (the logged-in browser —
 [docs/browser-sessions.md](../docs/browser-sessions.md)), `telegram-sessions`, `signal-sessions`
 and `whatsapp-sessions` (a **linked session on disk IS the credential** — there is no API key to
 re-enter, so losing one unlinks the account and someone has to re-pair by phone), `.config/gh`
@@ -126,13 +142,16 @@ mirror would land on the very disk it is meant to survive, and report success. I
 sshfs-mounted at `<routine>/mnt/<name>` while it runs, and a backup firing at that moment would
 otherwise copy another host's filesystem into the mirror.
 
-Deletion is `--delete-excluded` rather than plain `--delete`: rsync **protects** excluded files on
-the receiving side, so anything the exclude list gains later would sit in the mirror forever —
-which is how a stale Chrome `SingletonLock` survived being excluded on the first live run. A
-`flock` keeps two scheduled runs from racing, and the mirror root is created mode 700 because it
-carries the bearer tokens and Secrets store from `config.yaml` — check the mode the script
-reports, since a network share may not honour it. `chrome-profile` carries the same torn-copy
-caveat as the tarball, and the script says so on every run.
+Each home is mirrored with `--relative`, so rsync matches the exclude list against the same
+HOME-relative names tar does: an exclude anchored to a workspace (`git-repos/LLMSecTest_agentic/apps`)
+cuts the same files from both, which `tests/test_deploy_state.py` checks by running the two
+side by side. Deletion is `--delete-excluded` rather than plain `--delete`: rsync **protects**
+excluded files on the receiving side, so anything the exclude list gains later would sit in the
+mirror forever — which is how a stale Chrome `SingletonLock` survived being excluded on the first
+live run. A `flock` keeps two scheduled runs from racing, and the mirror root is created mode 700
+because it carries `config.yaml`'s bearer tokens and the Secrets store beside it — check the mode
+the script reports, since a network share may not honour it. `chrome-profile` carries the same
+torn-copy caveat as the tarball, and the script says so on every run.
 
 ### Running it nightly
 
@@ -214,20 +233,18 @@ systemctl --user disable --now routine-scheduler.service
   portable off a desktop machine: signing in is a one-time human step per host.
 - **Dependency changes** committed by self-audit are picked up on the next restart (`uv run`
   re-syncs from the mounted `pyproject.toml`), exactly like the systemd unit.
-- **Host mounts (`/mnt`) are bind-mounted with `rslave` propagation** so the fs-roots picker
-  can offer USB disks / NAS mounts, including ones mounted on the host AFTER the container
-  started (F190: without the bind, the daemon's mount namespace has no `/mnt` at all and the
-  picker shows an explained empty state). Takes effect on the next `docker compose up -d`;
-  drop the volume line if the host has no `/mnt`.
-- **Extra host directories are opt-in, not shipped defaults.** The committed `docker-compose.yml`
-  bind-mounts only what every deployment needs (the state dirs above + `/mnt`). If a specific task
-  needs another host path visible in the container (e.g. `/tmp`, a project share, a document
-  vault — cf. R35, where a clarify run could not read `/tmp` or `/mnt/sshd_volume1/...`), add that
-  bind mount **in your local compose** (a `docker-compose.override.yml`, which Compose merges
-  automatically and which is gitignored) rather than editing the tracked `docker-compose.yml` —
-  so an update never clobbers it and the shipped file stays minimal. The path must ALSO be granted
-  to the routine as an fs-root (Settings → the routine's Filesystem roots) before a run may read it;
-  a bind mount alone makes it visible to the container, not to the sandboxed run.
+- **Host mounts (`/mnt`, `/srv`, `/tmp`) are bind-mounted with `rslave` propagation** so the
+  fs-roots picker can offer USB disks / NAS mounts, including ones mounted on the host AFTER the
+  container started (F190: without the bind, the daemon's mount namespace has no `/mnt` at all
+  and the picker shows an explained empty state). Takes effect on the next `docker compose up -d`;
+  drop a volume line if the host has no such directory.
+- **The committed `docker-compose.yml` is this instance's**, host mounts and project workspaces
+  included (`git-repos/LLMSecTest_agentic` and its grant folder). Another host's extra paths —
+  a project share, a document vault (cf. R35, where a clarify run could not read
+  `/mnt/sshd_volume1/...`) — and its resource ceilings go in a `docker-compose.override.yml`, which
+  Compose merges automatically and which is gitignored, so an update never clobbers them. A path
+  must ALSO be granted to the routine as an fs-root (the routine's Filesystem roots) before a run
+  may read it; a bind mount alone makes it visible to the container, not to the sandboxed run.
 
 ## HTTPS via Tailscale (Web Push needs a secure context)
 
@@ -257,16 +274,19 @@ isolation, so a request over two seconds is queueing or contention, and the daem
 both halves of that:
 
 ```bash
-TOKEN=$(python3 -c 'import yaml;print(yaml.safe_load(open("/home/mark/.config/routine-scheduler/config.yaml"))["token"])')
+TOKEN=$(grep -oP '^token:\s*"?\K[^"]+' ~/.config/routine-scheduler/config.yaml)   # quoted or not
 curl -s -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8321/api/debug/slow      # the last 50 slow requests
 curl -s -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8321/api/debug/threads   # every thread's stack, in-flight count, threadpool tokens
 docker logs rsched --since 1h 2>&1 | grep "slow request"
 ```
 
 Both debug routes take the operator's primary token only. For a native sample of the whole
-process (C frames included), the container carries `SYS_PTRACE` for exactly this:
+process (C frames included), the container carries `SYS_PTRACE` for exactly this. It runs as
+root, which ptrace needs — so with root's OWN uv cache: a root `uvx` in `mark`'s cache leaves
+root-owned entries that fail every util call in the instance until the entrypoint repairs them
+at the next start (2026-08-26):
 
 ```bash
-docker exec rsched sh -c 'uvx py-spy dump --pid $(pgrep -f "rsched daemon" | tail -1)'
+docker exec -e HOME=/root rsched sh -c 'uvx py-spy dump --pid $(pgrep -f "rsched daemon" | tail -1)'
 ```
 

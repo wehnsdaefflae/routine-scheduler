@@ -9,8 +9,10 @@
 # decommissioning the source host, which is the only reason staleness does not matter there.
 # For recurring protection use deploy/backup.sh, which mirrors the same inventory incrementally.
 #
-# WARNING: the archive includes ~/.credentials (API keys + the Claude OAuth token). Move it over
-# scp/ssh only; never commit it or put it anywhere world-readable.
+# WARNING: the archive carries SECRETS — config.yaml's bearer tokens and the Secrets store in
+# ~/.config/routine-scheduler/, the linked messenger sessions, the `claude /login` token, and
+# ~/.credentials where it is used. Move it over scp/ssh only; never commit it or put it
+# anywhere world-readable.
 set -euo pipefail
 
 OUT="${1:-${HOME}/rsched-migration-$(date +%Y%m%d-%H%M%S).tgz}"
@@ -57,6 +59,6 @@ if [ -s "${WARNFILE}" ]; then
 fi
 
 echo
-echo "⚠  contains ~/.credentials — transfer over scp only, do NOT commit."
+echo "⚠  contains secrets (tokens, the Secrets store, linked sessions) — transfer over scp only, do NOT commit."
 echo "   next:  scp \"${OUT}\" <user>@192.168.0.128:~/"
 echo "          then follow deploy/DOCKER.md on the server."

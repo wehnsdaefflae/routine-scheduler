@@ -1,22 +1,24 @@
-# routine-scheduler server config — copy to ~/.config/routine-scheduler/config.yaml
-# (deploy/install.sh writes one with a generated token if none exists)
+# routine-scheduler server config (~/.config/routine-scheduler/config.yaml). Written from
+# config/config.example.yaml by the daemon's first boot — or by deploy/install.sh, which runs the
+# same bootstrap.ensure_config — with BOTH tokens replaced by random ones. Never copy the example
+# by hand: a copy keeps its placeholder tokens, which anyone can read in the repository.
 
 bind: 127.0.0.1        # 0.0.0.0 to expose on the LAN
 port: 8321
-token: "change-me"     # bearer token for the web UI / API (install.sh generates one)
+token: "change-me"     # bearer token for the web UI / API — generated on first boot
 routine_token: "change-me-too"  # second tier: injected into runs as RSCHED_API_TOKEN; refused on
-                                # config-mutating routes (generated on first boot when absent)
+                                # config-mutating routes — generated on first boot
 
 routines_home: ~/routines
 
-# The library — ONE git repo holding workflows/ (control-flow patterns), fragments/ (reusable
-# routine standards), and utils/ (global utils, the ONLY way routines run code — there is no
-# shell). Set libraries_remote to clone-from / sync-to a repo.
+# The library — ONE git repo holding workflows/ (control-flow patterns), rules/, permissions/,
+# patterns/ (settings patterns), reminders/, playbooks/ and utils/ (the global utils routines run
+# code through). Set libraries_remote to clone it from — and push it to — a repo of yours.
 libraries_home: ~/.local/share/routine-scheduler-libraries
 libraries_remote: ""   # e.g. https://github.com/<you>/routine-scheduler-libraries.git
 # Whether a routine may create/revise utils — and whether that asks for approval — is NOT a
-# server switch: it comes from the routine's active fragments (util-authoring / -autonomous;
-# see docs/fragments.md).
+# server switch: it is the routine's own write_util / revise_util capability and its `confirm`
+# dial (docs/rules-permissions.md).
 
 max_concurrent_runs: 2
 registry_rescan_s: 30
@@ -37,9 +39,12 @@ sandbox: permissive
 #                Needs an API key (Ollama: none).
 #   anthropic  — Messages API: direct API key or subscription proxy client key.
 #                For CLIProxyAPI setup, see docs/claude-proxy-cutover.md.
-# Each ROUTINE picks its own three models (main / subroutine / tool_call) in the UI or its
-# routine.yaml. The only server-level model is the system_model below: the ONE fallback used for
-# machine work that isn't a routine yet — the new-routine clarify wizard and workflow generation.
+# Models are a CATALOG over those endpoints, each entry named once and picked by that name. Each
+# ROUTINE picks its own (main / tool_call, plus an optional uncensored one) in the UI or its
+# routine.yaml. The only server-level model is system_model below: the ONE fallback for machine
+# work that isn't a routine yet — the new-routine clarify flow and workflow generation — and for
+# any role a routine leaves unset.
 #
-# endpoints: {}          # populated from the UI
-# system_model: {}       # {endpoint: <name>, model: <id>} — set from the UI once endpoints exist
+# endpoints: {}          # transports — populated from the UI
+# models: {}             # the catalog: name → {endpoint, model, …} — populated from the UI
+# system_model: ""       # a catalog model NAME — set from the UI once the catalog has one
