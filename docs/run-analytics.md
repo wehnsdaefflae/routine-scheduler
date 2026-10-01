@@ -239,9 +239,14 @@ store, never by reading a prefix), the repo's directory name for a commit that d
 (a routine's slug, or the library's own directory), empty for a scheduler tick. `total: 0`
 is the healthy reading.
 
-Both folds are memoized on the stream's stat fingerprint with single-flight misses: this
-rides a bus-event refresh path, and an un-memoized parse per request is what starved the
-daemon behind `/api/items` and `/api/questions`.
+What both folds read — the parsed stream, each event's stamp already read as an instant — is
+memoized on the stream's stat fingerprint with single-flight misses: this rides a bus-event
+refresh path, and an un-memoized parse per request is what starved the daemon behind
+`/api/items` and `/api/questions`. The WINDOW is cut at every request over that shared list,
+because it moves with the clock while the file stands still: a fold memoized on the file alone
+answered for the moment it was first computed until the next append. Stamps are compared as
+instants, never as text — `now_iso` writes the host's local time with its offset, so a string
+compare against a UTC cutoff moved the window's edge by that offset.
 
 ## Who reads the flags
 
