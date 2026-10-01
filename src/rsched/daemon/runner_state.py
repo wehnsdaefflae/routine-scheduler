@@ -54,6 +54,12 @@ def _notable_stderr(stderr: bytes, *, max_lines: int = 12, max_chars: int = 800)
             if _NOTABLE_RE.search(ln)]
     return " | ".join(hits[-max_lines:])[-max_chars:] if hits else ""
 
+#: How long an aborted engine gets between the daemon's SIGTERM and SIGKILL: enough for the
+#: close-out it writes itself — deliberately less than `procgroup.TERM_GRACE_S` (30 s), the
+#: grace a util, script or shell command the run was running gets when the abort ends it
+#: (`utils_run.run_jailed`). An engine killed inside that grace leaves the group's SIGKILL to the
+#: backstop `procgroup.terminate` armed, so the two need no order — and an abort that lands during
+#: a model call, which no signal interrupts, stays a ten-second wait (procgroup's docstring).
 KILL_GRACE_S = 10
 
 STATUS_POLL_S = 2.0
@@ -155,6 +161,12 @@ async def abort_process(pid: int | None) -> bool:
     """SIGTERM the engine's process group; SIGKILL stragglers after the grace period.
     (F283: the run-dir/run-id params every caller dutifully passed were never used —
     close-out attribution is the CALLER's job, via _close_out/_reap.)
+
+    That group is the engine alone. Every util, script, shell command and git it starts leads
+    a group of its own, which neither signal reaches. The abort flag the SIGTERM raises is what
+    ends a util, script or shell command, through the engine's own `utils_run.run_jailed`; a git
+    is left to finish (`libgit.git`). An engine SIGKILLed while one of those groups is still
+    ending leaves the group's SIGKILL to `procgroup.terminate`'s backstop (`KILL_GRACE_S`).
     """
     if not pid or not _pid_alive(pid):
         return False

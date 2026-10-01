@@ -25,7 +25,7 @@ def test_approval_scope_and_fresh_run(tmp_path, monkeypatch, answer, expected):
     tests = []
     ctx = SimpleNamespace(depth=0, server=SimpleNamespace(
         libraries_home=tmp_path, libraries_remote="", sandbox="off", routines_home=None),
-        grants=GrantPolicy(confirm="always"), granted_now=set())
+        grants=GrantPolicy(confirm="always"), granted_now=set(), aborted=lambda: False)
     loop = SimpleNamespace(ctx=ctx)
     monkeypatch.setattr(authoring.utils_lib, "ensure_library", lambda *a, **k: None)
     monkeypatch.setattr(authoring.utils_lib, "exists", lambda *a: False)

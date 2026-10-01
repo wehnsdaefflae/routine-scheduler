@@ -162,6 +162,11 @@ def test_doc_pins_the_canonical_engine_strings(make_routine, tmp_path):
         # WAIT is as load-bearing as naming the ones that land
         "IN EFFECT NOW, from this turn on",
         "Saved, but it takes effect at your NEXT RUN",
+        # A util, script or shell call the run's abort ended (utils_run.run_jailed): a resumed
+        # run replays this observation — the only place it learns the call has no result
+        # because the run stopped, not because the command failed
+        "was ended by the run's abort after",
+        "was not started: the run was aborted",
         # F335: the light channel between routines sharing a store — the digest block the
         # notes arrive in and the write-gate refusal of a note nobody would ever read
         "NOTES FROM ROUTINES YOU SHARE A STORE WITH",

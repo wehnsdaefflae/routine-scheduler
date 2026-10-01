@@ -70,7 +70,9 @@ root (so `gu <sibling>` resolves), `GLOBAL_UTILS_HOME` names that library, and
 waits on something slow (an SSH read, a long HTTP poll) and set your own internal timeout
 inside it: a util that owns its clock reports what it captured, while one that outlives the
 deadline is terminated with its process group (SIGTERM, then SIGKILL 30 s later for whatever
-ignores it) and keeps only what it had printed. Per-routine scripts get the same three.
+ignores it) and keeps only what it had printed. An abort of the run ends a util the same way at
+once (exit 130), so state worth saving is saved in a SIGTERM handler, which gets that grace.
+Per-routine scripts get the same three.
 
 Two gates run before a util reaches the library:
 

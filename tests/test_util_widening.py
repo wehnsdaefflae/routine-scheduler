@@ -29,7 +29,7 @@ def _loop(home, confirm):
                           depth=0, routine=SimpleNamespace(dir=home, slug="r"),
                           grants=GrantPolicy(actions=frozenset({"write_util", "revise_util"}),
                                              confirm=confirm),
-                          granted_now={"approval:write_util"})
+                          granted_now={"approval:write_util"}, aborted=lambda: False)
     return SimpleNamespace(ctx=ctx)
 
 

@@ -15,6 +15,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.370.2] — 2026-10-01
+
+### Fixed — an aborted run's util, script or `shell` command ends with the run instead of outliving it
+
+items: operator (2026-10-01), found while 0.370.1 moved `run_jailed`'s timeouts to `procgroup.terminate`
+
+**What happened.** The daemon aborts a run by SIGTERMing the engine's process group and
+SIGKILLing it 10 s later. The engine's SIGTERM handler only raises an abort flag, read at turn
+boundaries. A util, script or `shell` command runs in a session of its own, so neither signal
+reaches it. `run_jailed` waited on it without looking at the flag. The engine was SIGKILLed
+while it waited; the command ran on with no deadline at all, since that wait had been its only
+clock. Reproduced on the production host against a real engine run with a scripted model:
+`abort_process` waited out its 10 s, the engine died with rc -9, the run's `shell` `sleep` was
+left running with PPID 1 and status.json still said `running`. Docs: docs/architecture.md,
+"Aborting a run"; docs/sandboxing.md.
+
+- **The wait asks the run.** `run_jailed` takes the run's abort check (`RunContext.aborted`,
+  installed by the loop: the abort flag, or a child run's own kill event) and looks every
+  0.25 s. Once it says yes, the group is ended through `procgroup.terminate`, SIGTERM first as
+  at a deadline. The executor passes the check for util, script and `shell` calls, for
+  write_util's selftest and for the vision fallback; the dependency prewarm and a script's venv
+  build end the same way. A run that is already stopping starts nothing. The same
+  reproduction after the change: the sleep ended within a poll, the engine closed the run out
+  itself as `aborted` 0.6 s after SIGTERM, and `abort_process` returned after 1.0 s.
+- **What the run records.** The call exits 130, the code `rsched run-once` and `engine-run` exit
+  with for an aborted run. It is positive so that `_note_if_killed` does not file the SIGTERM as
+  a kernel kill. The observation carries `aborted: true` and its stderr says
+  `… was ended by the run's abort after Ns (process group terminated)`, or
+  `… was not started: the run was aborted` when nothing ran. A util call ended that way carries
+  no `[usage]`, no repair `[hint]` and no reliability tick: a resumed run replays the
+  observation, while stopping a run says nothing about the util. The Stats backfill skips it
+  too.
+  `Jailed.exit_code` maps a deadline (124) and an abort (130) once for all three kinds.
+- **The SIGKILL no longer depends on the caller living through the grace.** The daemon SIGKILLs
+  an aborted engine 10 s after SIGTERM; `procgroup.TERM_GRACE_S` is 30 s. An engine killed while
+  a SIGTERM-ignoring group was still inside its grace left that group with no SIGKILL ever
+  coming. `procgroup.terminate` now arms a backstop — an isolated interpreter in a session of its
+  own that SIGKILLs the group one second after the caller would have — and stops it once the
+  group is gone. Reproduced with a group that ignores SIGTERM: the engine died at 10 s; the
+  backstop killed the group 31.7 s after its SIGTERM. The daemon's grace stays 10 s on purpose.
+  The health stream holds 23 aborts that reached its SIGKILL and 11 the engine closed itself;
+  the six of those 23 whose transcripts show where they landed were all in a model call, which
+  no signal interrupts. A 40 s grace would have made those stops wait four times as long. A
+  parent's exit, which abandons a child's thread after 12 s, is covered by the same backstop.
+- **An exception out of the wait ends the group too.** A KeyboardInterrupt where no handler maps
+  SIGINT to the abort now ends the group before it propagates, as `libgit.git` already did.
+  `rsched run-once` maps Ctrl-C to the abort, so Ctrl-C now ends a command in flight at once and
+  the run closes out `aborted`.
+
 ## [0.370.1] — 2026-10-01
 
 ### Fixed — a util, script or `shell` command that times out terminates the git inside it instead of killing it

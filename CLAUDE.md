@@ -14,9 +14,10 @@ subprocess runs inside a Landlock sandbox scoped to
 the run's permissions INTERSECTED with the util's own `fs:` declaration, and a `shell` command
 runs in the same jail on the widest of those terms — the run's granted roots, no store secret
 (docs/sandboxing.md). All three callable kinds run through ONE process seam
-(`utils_run.run_jailed`): its own process group ended SIGTERM-first (`procgroup.terminate`),
-tempfile capture read through a capped reader, and what was printed before the group ended is
-kept. The jail cannot carve `routine.yaml` out of the
+(`utils_run.run_jailed`): its own process group ended SIGTERM-first (`procgroup.terminate`) at
+the deadline or the moment its run is aborted (`RunContext.aborted`, polled — no abort signal
+reaches the group's own session), tempfile capture read through a capped reader, and what was
+printed before the group ended is kept. The jail cannot carve `routine.yaml` out of the
 routine's own directory — Landlock unmasks access UP the path — so the "a run never writes
 routine.yaml" seal is ACTION-LAYER only and the runner REPORTS a change it sees rather than
 preventing it. The instruction contains only the task; cross-cutting conduct is
@@ -473,10 +474,14 @@ by a test, by the engine, or by a past incident.
   runs it in its own process group and ends a timed-out call with SIGTERM first — the
   `subprocess.run` timeout's SIGKILL is what left empty locks in two routine repos on
   2026-09-30, after which every write there failed while reads worked. `utils_run.run_jailed`
-  ends a timed-out util, script or `shell` command through the same `procgroup.terminate`,
-  because git runs inside those too. It waits for EVERY member of the group, never its leader
-  alone: in a util git is a grandchild (`uv run` → python → git) and the leader exits within
-  milliseconds of SIGTERM. A new git call goes through `libgit.git` (with `timeout=` when it
+  ends a timed-out util, script or `shell` command — or one whose run is aborted — through the
+  same `procgroup.terminate`, because git runs inside those too. It waits for EVERY member of
+  the group, never its leader alone: in a util git is a grandchild (`uv run` → python → git) and
+  the leader exits within milliseconds of SIGTERM. Its SIGKILL never depends on the caller
+  living through the 30 s grace — `terminate` arms a backstop in a session of its own — which is
+  why the daemon's 10 s abort grace (`runner_state.KILL_GRACE_S`) is shorter ON PURPOSE: never
+  lengthen it to "order" the two, it would make a stop during a model call wait out the disk's
+  grace. A new git call goes through `libgit.git` (with `timeout=` when it
   needs another), never a `subprocess.run` of its own — the two that cannot are named in its
   docstring.
   `libgit.commit` returns a `Commit` (committed · clean · unversioned · failed) and files a

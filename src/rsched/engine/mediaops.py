@@ -29,7 +29,7 @@ def vision_describe(ctx: RunContext, abspath: str, prompt: str) -> str:
     args = [abspath, "--prompt", prompt or VIEW_DEFAULT_PROMPT, "--json"]
     code, out, err = utils_run.run_util(home, VISION_UTIL, args, timeout=UTIL_DEFAULT_TIMEOUT_S,
                                         policy=sandbox.policy_for_ctx(ctx),
-                                        cwd=ctx.routine.dir)
+                                        cwd=ctx.routine.dir, aborted=ctx.aborted)
     if code != 0:
         return f"error: vision util failed (exit {code}): {(err or out or '').strip()[:800]}"
     try:

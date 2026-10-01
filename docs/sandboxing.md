@@ -44,8 +44,16 @@ jailed) plus **scoped secrets injection**. Three cooperating layers:
   — own process group, ended SIGTERM-first at the deadline (`procgroup.terminate`: every
   member gets up to 30 s to exit before SIGKILL, so a `uv run` grandchild dies with its
   deadline instead of holding the engine turn open forever and a git inside a util still
-  deletes its `index.lock`), tempfile capture read through `captured_output.read_capped`
-  at a single 1 MB envelope, and whatever was printed before the group ended is kept.
+  deletes its `index.lock`) and ended the same way the moment its run is aborted,
+  tempfile capture read through `captured_output.read_capped` at a single 1 MB envelope,
+  and whatever was printed before the group ended is kept. The abort needs the runner's
+  help because the group's own session keeps both of the daemon's abort signals away from
+  the command: the wait asks the run's abort check (`RunContext.aborted` — the flag the
+  engine's SIGTERM handler raises, or a child run's kill) every quarter second. Before it
+  did, the daemon SIGKILLed the engine while it waited; the command ran on with no deadline
+  at all, since its deadline had been that wait. The SIGKILL that follows the grace
+  does not depend on the engine living through it either: `procgroup.terminate` arms a
+  backstop in a session of its own that delivers it if the engine is killed first.
   Hand-copying it cost both of the other two a protection: the script kind ran a plain
   `subprocess.run` with no process group; the shell kind read its whole capture tempfile back
   into the daemon's memory — the failure its own comment said the spool file prevented.
@@ -219,7 +227,8 @@ Three NON-secret vars ride along for every util and script: `PATH` (the library 
 this call was given. A util that waits on something slow sets its own timeout inside that
 budget and reports what it captured; one that lets the budget expire is terminated with its
 process group — SIGTERM, then SIGKILL 30 s later for whatever ignores it — and keeps only what
-it had printed (docs/authoring.md § the util env).
+it had printed, exit 124. A call whose run is aborted is ended the same way at once and exits
+130, with the note saying so (docs/authoring.md § the util env).
 
 **Never run `uv` in the container as root.** `docker exec` defaults to root, and uv creates a
 per-script environment under `~/.cache/uv` at every util call — so one root-run `uv` leaves

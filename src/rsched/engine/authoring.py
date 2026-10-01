@@ -150,7 +150,8 @@ def handle_write_util(loop, action: dict, poll_s: float) -> dict:  # noqa: PLR09
     # so a broken script is never left live for concurrent `gu` callers.
     previous = None if creating else utils_lib.read_util(home, name)
     utils_lib.write_util_file(home, name, content)
-    ok, output = utils_run.selftest(home, name, policy=sandbox.base_policy(ctx.server))
+    ok, output = utils_run.selftest(home, name, policy=sandbox.base_policy(ctx.server),
+                                    aborted=ctx.aborted)
     if not ok:
         if previous is None:
             utils_lib.remove_util_file(home, name)

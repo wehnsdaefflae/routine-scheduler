@@ -136,7 +136,7 @@ def test_selftest_prewarms_deps_for_net_outbound(tmp_path, monkeypatch):
     utils_lib.write_util_file(home, "adder", outbound)
     prewarmed: list[str] = []
     monkeypatch.setattr(utils_run, "prewarm_script_deps",
-                        lambda script, policy, _home: prewarmed.append(script))
+                        lambda script, policy, _home, **_kw: prewarmed.append(script))
     monkeypatch.setattr(utils_run, "run_util", lambda *a, **k: (0, "", "selftest: ok"))
     ok, _out = utils_run.selftest(home, "adder", policy=OFF)
     assert ok
@@ -153,7 +153,7 @@ def test_selftest_leaves_prewarm_to_run_util_for_net_none(tmp_path, monkeypatch)
     utils_lib.write_util_file(home, "adder", none_net)
     prewarmed: list[str] = []
     monkeypatch.setattr(utils_run, "prewarm_script_deps",
-                        lambda script, policy, _home: prewarmed.append(script))
+                        lambda script, policy, _home, **_kw: prewarmed.append(script))
     monkeypatch.setattr(utils_run, "run_util", lambda *a, **k: (0, "", "selftest: ok"))
     ok, _out = utils_run.selftest(home, "adder", policy=OFF)
     assert ok
@@ -283,7 +283,7 @@ def _ctx(home, grants=None):
                            read_roots=list, write_roots=list,
                            granted_now=frozenset(), grant_args={},
                            count_util=lambda *a, **k: None,
-                           note_compression=lambda metrics: None)
+                           note_compression=lambda metrics: None, aborted=lambda: False)
 
 
 def test_util_show_returns_source(tmp_path):

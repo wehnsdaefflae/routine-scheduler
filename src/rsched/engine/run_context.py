@@ -9,6 +9,7 @@ from __future__ import annotations
 import os
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -27,6 +28,13 @@ if TYPE_CHECKING:
 
 # Sentinel default for "argument not passed" where None is a meaningful value.
 _UNSET: Any = "\0"
+
+
+def _never_aborted() -> bool:
+    """`RunContext.aborted` until a loop installs its own: a context no loop drives (a test,
+    a direct dispatch) is never stopping.
+    """
+    return False
 
 
 @dataclass
@@ -58,6 +66,11 @@ class RunContext:
     # (+ the library's requires: index for denial wording).
     # None (direct construction) = unrestricted.
     grants: GrantPolicy | None = None
+    # Whether this run is being stopped — its loop's own check, installed by
+    # loopsetup.configure: the flag the daemon's abort SIGTERM raises, or the event a parent's
+    # kill sets. The jailed runner asks it while a util, script or shell command runs, so the
+    # command ends with the run instead of outliving it (utils_run.run_jailed).
+    aborted: Callable[[], bool] = _never_aborted
 
     turn: int = 0
     phase: str = ""

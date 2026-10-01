@@ -20,6 +20,10 @@ from .childrun import Subrun, build_child
 from .observations import truncate
 
 MAX_PARALLEL = 4
+#: How long `kill` and the parent's exit wait for a child to stop. A child whose abort is ending
+#: a util or script group (`utils_run.run_jailed`) may take up to `procgroup.TERM_GRACE_S` (30 s)
+#: — longer, on purpose: after a `kill` it finishes in its own thread; after the parent's exit
+#: the backstop `procgroup.terminate` armed delivers the group's SIGKILL.
 KILL_JOIN_S = 12.0
 # Below this many tokens left, skip in-run workflow generation (≈2 full-context system-model
 # calls) and fall back to the default pattern — generation must not tip a run over its budget.

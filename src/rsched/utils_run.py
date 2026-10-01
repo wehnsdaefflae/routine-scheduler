@@ -20,6 +20,8 @@ import os
 import shutil
 import subprocess
 import tempfile
+import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import NamedTuple
@@ -38,8 +40,15 @@ log = logging.getLogger("rsched.utils_run")
 #: whose whole job is catching the cgroup OOM killer. This kind spelled it -1 until 0.366.2, so
 #: every util that ran out of clock was filed as "killed by signal 1", a SIGHUP nothing in this
 #: system sends: routine-improver's three timeouts on 2026-09-23 read as three kernel kills.
-#: One deadline, one code — `shellrun` and `scripts` import this rather than restating it.
+#: One deadline, one code — `Jailed.exit_code` maps it for all three kinds.
 TIMEOUT_EXIT = 124
+#: What a call its RUN'S ABORT ended exits with, for all three callable kinds: the code `rsched
+#: run-once` and `engine-run` exit with for an aborted run (cli.py). POSITIVE for TIMEOUT_EXIT's
+#: reason: the group ends on the abort's SIGTERM, whose -15 would otherwise reach
+#: `_note_if_killed` as a kernel kill.
+ABORT_EXIT = 130
+#: How often a jailed call's wait asks whether its run was aborted (`run_jailed`'s `aborted`).
+ABORT_POLL_S = 0.25
 
 # Vars scrubbed from every jailed subprocess UNCONDITIONALLY (declared or not). LLM-auth: a
 # util that needs an LLM (e.g. a `gu claude` equivalent) resolves its own credentials; it must
@@ -177,6 +186,19 @@ class Jailed:
     stdout: CapturedOutput
     stderr: CapturedOutput
     timed_out: bool
+    aborted: bool = False
+
+    @property
+    def exit_code(self) -> int:
+        """What the callable reports: `TIMEOUT_EXIT` for a deadline, `ABORT_EXIT` for its run's
+        abort, the command's own code otherwise — one mapping, so the three kinds cannot report
+        an ended call three ways.
+        """
+        if self.timed_out:
+            return TIMEOUT_EXIT
+        if self.aborted:
+            return ABORT_EXIT
+        return self.returncode
 
 
 def _config_bytes(routine_dir: Path | None) -> bytes | None:
@@ -213,11 +235,12 @@ def _seal_broken(routine_dir: Path | None, before: bytes | None, label: str) -> 
 
 def run_jailed(cmd: list[str], *, env: dict, cwd: Path, timeout: int,
                label: str = "", cap: int = OUTPUT_CAP,
-               config_seal: Path | None = None) -> Jailed:
+               config_seal: Path | None = None,
+               aborted: Callable[[], bool] | None = None) -> Jailed:
     """Run one already-jailed command (`sandbox.wrap` composed `cmd`) and bring back at most
     `cap` characters of each stream. The ONE runner behind `util`, `script` and `shell`.
 
-    Its three protections are why it is one function and not three copies:
+    Its four protections are why it is one function and not three copies:
 
     - OWN PROCESS GROUP (`start_new_session`), ended through `procgroup.terminate`: `uv run`
       re-execs the script as a GRANDCHILD and a shell command can background one — neither is
@@ -226,6 +249,16 @@ def run_jailed(cmd: list[str], *, env: dict, cwd: Path, timeout: int,
       `procgroup.TERM_GRACE_S` to empty before SIGKILL: a git the command runs deletes its
       `index.lock` only in its SIGTERM handler. The SIGKILL this runner used to send first left
       the lock behind in that repo.
+    - ENDED WITH ITS RUN: `aborted` is the run's own "am I being stopped?" (`RunContext.aborted`
+      — the flag the daemon's abort SIGTERM raises, or a parent run's kill), asked every
+      `ABORT_POLL_S` while the command runs; once it says yes the group is ended the same way.
+      The group's own session keeps both the abort's SIGTERM and the daemon's SIGKILL that
+      follows it away from the command, whose only clock was this wait: an aborted engine,
+      killed while it waited here, left the command running with no deadline at all — a
+      `shell` `sleep infinity` lived until the container restarted. A run that is
+      already stopping starts nothing. An exception out of the wait (a KeyboardInterrupt where
+      no handler maps SIGINT to the abort) ends the group before it propagates, as `libgit.git`
+      does.
     - TEMPFILE CAPTURE read through `read_capped`, which takes `cap + 1` characters and never
       the file: `fh.read()` on a spool file puts the whole capture back in the daemon's memory,
       the 2026-09-14 incident (a 1.5 GB read, five hours of swap-thrash) in a seam `shell`
@@ -234,10 +267,15 @@ def run_jailed(cmd: list[str], *, env: dict, cwd: Path, timeout: int,
       hung would otherwise lose exactly the material that explains the hang. One that catches
       SIGTERM can still print what it has inside the grace.
 
-    `label` names the callable in the timeout and spawn-failure notes ("util 'x'",
+    `label` names the callable in the timeout, abort and spawn-failure notes ("util 'x'",
     "script 'x'", "the command"). `config_seal` is a routine directory whose `routine.yaml`
     must not move across the call (`_seal_broken`).
     """
+    name = label or "the command"
+    if aborted is not None and aborted():
+        return Jailed(ABORT_EXIT, CapturedOutput(""),
+                      CapturedOutput(f"{name} was not started: the run was aborted"), False,
+                      aborted=True)
     before = _config_bytes(config_seal)
     with tempfile.TemporaryFile("w+", encoding="utf-8", errors="replace") as out_f, \
             tempfile.TemporaryFile("w+", encoding="utf-8", errors="replace") as err_f:
@@ -247,28 +285,56 @@ def run_jailed(cmd: list[str], *, env: dict, cwd: Path, timeout: int,
                                     cwd=str(cwd), start_new_session=True)
         except OSError as exc:
             return Jailed(2, CapturedOutput(""),
-                          CapturedOutput(f"could not run {label or 'the command'}: {exc}"),
-                          False)
-        timed_out, ended = False, ""
+                          CapturedOutput(f"could not run {name}: {exc}"), False)
+        started = time.monotonic()
         try:
-            proc.wait(timeout=timeout)
-        except subprocess.TimeoutExpired:
-            timed_out = True
+            stop = _wait(proc, timeout, aborted)
+        except BaseException:
+            procgroup.terminate(proc)
+            raise
+        notes = []
+        if stop:
+            ran = int(time.monotonic() - started)
             ended = ("terminated" if procgroup.terminate(proc)
                      else f"killed {procgroup.TERM_GRACE_S}s after SIGTERM")
-        notes = [f"{label or 'the command'} timed out after {timeout}s "
-                 f"(process group {ended})"] if timed_out else []
+            notes.append(f"{name} timed out after {timeout}s (process group {ended})"
+                         if stop == "timeout" else
+                         f"{name} was ended by the run's abort after {ran}s "
+                         f"(process group {ended})")
         notes += [n for n in (_seal_broken(config_seal, before, label),) if n]
         return Jailed(proc.returncode, read_capped(out_f, cap),
-                      read_capped(err_f, cap, diagnostic="; ".join(notes)), timed_out)
+                      read_capped(err_f, cap, diagnostic="; ".join(notes)),
+                      stop == "timeout", aborted=stop == "abort")
 
 
-def prewarm_script_deps(script: str, policy: sandbox.SandboxPolicy, home: Path) -> None:
+def _wait(proc: subprocess.Popen[str], timeout: int,
+          aborted: Callable[[], bool] | None) -> str:
+    """Wait for `proc` and say why the wait ended: "" when the command exited, "timeout" when
+    its deadline passed, "abort" when its run was aborted — which outranks a deadline reached
+    at the same look, since the run is stopping either way.
+    """
+    deadline = time.monotonic() + timeout
+    while True:
+        left = max(0.0, deadline - time.monotonic())
+        try:
+            proc.wait(timeout=left if aborted is None else min(left, ABORT_POLL_S))
+        except subprocess.TimeoutExpired:
+            if aborted is not None and aborted():
+                return "abort"
+            if time.monotonic() >= deadline:
+                return "timeout"
+        else:
+            return ""
+
+
+def prewarm_script_deps(script: str, policy: sandbox.SandboxPolicy, home: Path, *,
+                        aborted: Callable[[], bool] | None = None) -> None:
     """Resolve + install a PEP 723 script's dependencies with the network OPEN, so a util
     whose runtime net policy is `none`/undeclared can still fetch its build-time deps (R40).
     Filesystem stays jailed (same policy); only this install phase gets TCP. Best-effort:
     the outcome is discarded — the caller's real run reports the genuine error. No-op under
-    sandbox mode 'off' would still be a harmless local `uv sync`.
+    sandbox mode 'off' would still be a harmless local `uv sync`. `aborted` ends it with its
+    run, as it does the util it prepares (`run_jailed`).
     """
     try:
         cmd = sandbox.wrap(["uv", "sync", "--script", script],
@@ -276,14 +342,16 @@ def prewarm_script_deps(script: str, policy: sandbox.SandboxPolicy, home: Path) 
                            fs_roots=False, fs_paths=())
     except sandbox.SandboxRefusal:
         return
-    run_jailed(cmd, env={**os.environ}, cwd=home, timeout=180, label="the dependency prewarm")
+    run_jailed(cmd, env={**os.environ}, cwd=home, timeout=180, label="the dependency prewarm",
+               aborted=aborted)
 
 
 def run_util(home: Path, name: str, args: list[str], *, timeout: int = 300,
              policy: sandbox.SandboxPolicy,
              extra_secrets: dict[str, str] | None = None,
              withhold_secrets: set[str] | None = None,
-             cwd: Path | None = None) -> tuple[int, str, str]:
+             cwd: Path | None = None,
+             aborted: Callable[[], bool] | None = None) -> tuple[int, str, str]:
     """Controlled runner: only a named util from THIS library, uv-run, scoped env (declared
     secrets only, plus any `extra_secrets` the engine resolved for this run — same declared-only
     rule), library root on PATH (so the util can call siblings via `gu`), inside the Landlock jail
@@ -291,7 +359,8 @@ def run_util(home: Path, name: str, args: list[str], *, timeout: int = 300,
     decides strict/permissive/off). Runs with working directory `cwd` — a routine's own dir for
     run-scoped calls, so relative paths a routine passes to a util resolve against ITS dir like
     read_file/write_file do — or the library `home` when unset (CLI, selftest, notify, settings).
-    Returns (exit, out, err).
+    A call made inside a run passes the run's `aborted` check, so the util ends with its run
+    (`run_jailed`); a caller outside any run passes none. Returns (exit, out, err).
     """
     if not is_slug(name):
         return 2, "", f"invalid util name {name!r}"
@@ -326,7 +395,7 @@ def run_util(home: Path, name: str, args: list[str], *, timeout: int = 300,
     # an outbound util installs inside its own net-open `uv run`, so it skips the pass here
     # and the selftest runner owns its warm-up instead (R20).
     if not net:
-        prewarm_script_deps(script, policy, home)
+        prewarm_script_deps(script, policy, home, aborted=aborted)
     try:
         cmd = sandbox.wrap(["uv", "run", "--script", script, *args],
                            policy=policy, libraries_home=home, net=net,
@@ -336,25 +405,29 @@ def run_util(home: Path, name: str, args: list[str], *, timeout: int = 300,
     # F226: the timed-out leg still returns what was captured BEFORE the kill — a util that
     # hung AFTER printing diagnostics (the common case) would otherwise lose exactly the
     # material that explains why it hung. `run_jailed` owns that, the process group and the
-    # bounded read; TIMEOUT_EXIT is the deadline's code, the same one for all three kinds.
+    # bounded read; `exit_code` maps a deadline and an abort to their own codes, the same two
+    # for all three kinds.
     res = run_jailed(cmd, env=env, cwd=cwd or home, timeout=timeout, label=f"util {name!r}",
-                     config_seal=policy.own_dir)
-    return (TIMEOUT_EXIT if res.timed_out else res.returncode), res.stdout, res.stderr
+                     config_seal=policy.own_dir, aborted=aborted)
+    return res.exit_code, res.stdout, res.stderr
 
 
 def selftest(home: Path, name: str, *, timeout: int = 120,
-             policy: sandbox.SandboxPolicy) -> tuple[bool, str]:
+             policy: sandbox.SandboxPolicy,
+             aborted: Callable[[], bool] | None = None) -> tuple[bool, str]:
     # Build phase vs test phase (R20): run_util prewarms PEP 723 deps itself for
     # net:none/undeclared utils, but a net:outbound one (util_needs' bool: True) resolves
     # + installs its deps INSIDE `uv run` — so a first selftest of a heavy-dep script (a
     # cold pandas/scipy tree is a ~60 MB fetch plus a bytecode compile) would spend this
     # timeout on the toolchain and fail a correct util. Prewarm here (same best-effort
     # jail as the run path) so the timed window below covers the selftest, never the
-    # install.
+    # install. A selftest run inside a run (write_util) ends with it, like any util call.
     net = util_needs(home, name).net
     if net:
-        prewarm_script_deps(str(util_dir(home, name) / "main.py"), policy, home)
-    code, out, err = run_util(home, name, ["--selftest"], timeout=timeout, policy=policy)
+        prewarm_script_deps(str(util_dir(home, name) / "main.py"), policy, home,
+                            aborted=aborted)
+    code, out, err = run_util(home, name, ["--selftest"], timeout=timeout, policy=policy,
+                              aborted=aborted)
     if code == 0:
         return True, (err or out).strip()
     # F226: a FAILED selftest must surface ALL the diagnostics — the exit code plus BOTH

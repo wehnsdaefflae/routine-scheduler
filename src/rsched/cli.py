@@ -62,6 +62,10 @@ def cmd_run_once(args) -> int:
         print(f"no routine at {routine_dir} (missing routine.yaml)", file=sys.stderr)
         return 2
 
+    # Ctrl-C is the abort, never a KeyboardInterrupt: the flag ends a util, script or shell
+    # command in flight through `procgroup.terminate` (utils_run.run_jailed) — the terminal's
+    # SIGINT itself never reaches one, since it runs in a session of its own — and the run then
+    # writes its own `aborted` close-out.
     signal.signal(signal.SIGTERM, lambda *_: request_abort())
     signal.signal(signal.SIGINT, lambda *_: request_abort())
 
@@ -112,6 +116,9 @@ def cmd_engine_run(args) -> int:
     # complete() appends a lifecycle record to a sidecar the daemon tails and republishes.
     if args.run_ts:
         set_sink(FileSink(routine_dir / "runs" / args.run_ts / "llm-tasks.jsonl"))
+    # The daemon's abort (runner_state.abort_process): the flag ends the run at its next turn
+    # boundary and a util, script or shell command in flight at once (utils_run.run_jailed).
+    # Neither of the daemon's signals reaches that command — it leads a group of its own.
     signal.signal(signal.SIGTERM, lambda *_: request_abort())
     try:
         status, _ = run_routine(routine_dir, server, run_ts=args.run_ts,

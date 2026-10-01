@@ -71,6 +71,9 @@ def configure(loop, ctx: RunContext, workflow_body: str, instruction: str,
     # validate_action, so the model is corrected within the schema-retry cycle.
     loop.allowed_tools = set(allowed_tools) | {"finish"} if allowed_tools else None
     loop.abort_event = abort_event or threading.Event()
+    # The same check, where the jailed runner can ask it: a util, script or shell command in
+    # flight ends with this run (RunContext.aborted, utils_run.run_jailed).
+    ctx.aborted = loop._aborted
     loop.subruns = SubrunManager(loop)
     loop.messages = []
     loop.turn_records = []

@@ -187,13 +187,16 @@ on completion). See [background-tasks.md](background-tasks.md).
 A parent controls its running children with two actions and one invariant:
 
 - **Abort** — `kill n=N` terminates child run *N* immediately (its partial state is marked in
-  the transcript). This is how a parent stops a child run it no longer needs; there is
-  nothing else to add for "abort".
+  the transcript). A util or script call the child has in flight ends with it: the jailed
+  runner asks the child's abort check — its own kill event as well as the run-wide abort flag —
+  while the command runs (`utils_run.run_jailed`). This is how a parent stops a child run it no
+  longer needs; there is nothing else to add for "abort".
 - **Gather** — `wait n=N` / `wait all=true` blocks until a child (or all) finishes; a finished
   child is also announced at the next turn boundary whether or not you are waiting.
 - **Reap on finish** — a parent's `finish` kills every child still running. Children never outlive
   the parent (the in-process-thread invariant above), so a parent can always stop the whole subtree
-  by finishing.
+  by finishing — and neither does a command a child started: a child whose thread is abandoned
+  while it is still ending one leaves the group's SIGKILL to `procgroup.terminate`'s backstop.
 
 There is **no pause/resume** of a running child, by design: a subtask is usually a handful of turns,
 so the coordination cost of holding one mid-flight and resuming it later exceeds just letting it run

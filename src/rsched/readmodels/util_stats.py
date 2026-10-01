@@ -20,7 +20,9 @@ Three sources, no database (stat-fingerprint memos in the registry.py idiom):
 
 Outcome vocabulary (RunContext.count_util): ok / error (non-zero exit) / usage_error
 (exit 2 — argparse's bad-arguments convention, the "called with wrong syntax" signal) /
-missing (no such util) / denied (permission refusal) / rejected (malformed action).
+missing (no such util) / denied (permission refusal) / rejected (malformed action). A call its
+run's abort ended (`aborted` on the observation) is not counted — live or backfilled — since it
+says nothing about the util.
 """
 
 from __future__ import annotations
@@ -138,6 +140,8 @@ def _scan_transcript(path: Path) -> dict:
             continue
         name = str(payload.get("name") or "")
         if not name or name in _PSEUDO:
+            continue
+        if payload.get("aborted"):
             continue
         if payload.get("missing"):
             outcome = "missing"

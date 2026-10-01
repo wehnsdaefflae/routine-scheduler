@@ -3,13 +3,18 @@
 The 2026-09-30 incident in miniature: git deletes its `index.lock` only in its SIGTERM handler,
 so a deadline that SIGKILLs it leaves the lock behind. What the helper owes both of its callers
 (`libgit.git`, `utils_run.run_jailed`): SIGTERM first, a wait that covers the whole GROUP rather
-than its leader, and SIGKILL only for what outlives the grace.
+than its leader, and SIGKILL only for what outlives the grace — delivered even when the caller
+does not live through the grace itself.
 """
 
 from __future__ import annotations
 
 import ast
+import contextlib
+import os
+import signal
 import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -74,6 +79,83 @@ def test_a_leader_that_already_exited_is_reaped_not_waited_for(tmp_path):
     assert procgroup.terminate(proc) is True
     assert time.monotonic() - started < 5
     assert proc.returncode == 3
+
+
+def _alive(pid: int) -> bool:
+    """Whether `pid` still runs — a zombie waiting for its init to collect it does not."""
+    try:
+        stat = Path(f"/proc/{pid}/stat").read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return False
+    return not stat.rsplit(") ", 1)[1].startswith("Z")
+
+
+#: A caller of `terminate` that a test can kill inside the grace: it starts a group whose every
+#: member ignores SIGTERM, says when the backstop is armed, and ends the group with a 1 s grace.
+CALLER = """\
+import subprocess, sys, time
+from pathlib import Path
+from rsched import procgroup
+here = Path(sys.argv[1])
+procgroup.TERM_GRACE_S = 1
+real_arm = procgroup._arm
+def arm(pgid):
+    backstop = real_arm(pgid)
+    (here / "armed").touch()
+    return backstop
+procgroup._arm = arm
+group = subprocess.Popen(
+    ["bash", "-c", "trap '' TERM; sleep 60 & echo $! > m.tmp && mv m.tmp member; wait"],
+    cwd=here, text=True, start_new_session=True)
+while not (here / "member").exists():
+    time.sleep(0.02)
+procgroup.terminate(group)
+"""
+
+
+def test_the_group_is_killed_even_when_the_caller_dies_inside_the_grace(tmp_path):
+    """The engine is that caller: the daemon SIGKILLs an aborted engine 10 s after its
+    SIGTERM while the grace is 30 s. Every member sits in a session of its own, so the
+    engine's death reaches none of them: a member that ignores SIGTERM ran on with no deadline
+    at all. The backstop `terminate` arms delivers the SIGKILL the dead caller never sent.
+    """
+    caller = subprocess.Popen([sys.executable, "-c", CALLER, str(tmp_path)],
+                              start_new_session=True)
+    member = 0
+    try:
+        _until((tmp_path / "armed").exists)
+        caller.kill()                          # inside the 1 s grace: the caller sends nothing
+        caller.wait()
+        member = int((tmp_path / "member").read_text(encoding="utf-8"))
+        assert _alive(member)                  # SIGTERM was ignored and the caller is gone
+        deadline = time.monotonic() + 15
+        while _alive(member):
+            assert time.monotonic() < deadline, "nothing SIGKILLed the orphaned group"
+            time.sleep(0.05)
+    finally:
+        if member and _alive(member):
+            with contextlib.suppress(ProcessLookupError):
+                os.killpg(os.getpgid(member), signal.SIGKILL)
+
+
+def test_a_caller_that_sees_the_group_end_stops_its_backstop(tmp_path, monkeypatch):
+    """A backstop left running would SIGKILL a group id the kernel may by then have handed out
+    again; the caller that watched its group end stops it first.
+    """
+    armed: list = []
+    real_arm = procgroup._arm
+
+    def arm(pgid):
+        armed.append(real_arm(pgid))
+        return armed[-1]
+
+    monkeypatch.setattr(procgroup, "_arm", arm)
+    proc = _group("trap 'sleep 0.3; exit 0' TERM; touch ready; sleep 30 & wait", tmp_path)
+    _until((tmp_path / "ready").exists)
+    assert procgroup.terminate(proc) is True
+    assert len(armed) == 1
+    assert armed[0] is not None
+    assert armed[0].returncode == -signal.SIGKILL       # stopped and reaped, never left to fire
 
 
 def test_both_runners_end_a_group_through_the_one_helper():

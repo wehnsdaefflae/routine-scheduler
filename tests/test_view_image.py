@@ -190,7 +190,8 @@ def test_vision_describe_parses_and_errors(tmp_path, monkeypatch):
     from rsched import utils_lib
     routine = SimpleNamespace(dir=tmp_path, fs_read_roots=[], fs_write_roots=[])
     ctx = SimpleNamespace(server=SimpleNamespace(libraries_home=tmp_path, sandbox="off"),
-                          routine=routine, read_roots=list, write_roots=list)
+                          routine=routine, read_roots=list, write_roots=list,
+                          aborted=lambda: False)
     monkeypatch.setattr(utils_lib, "exists", lambda home, n: True)
     monkeypatch.setattr(utils_run, "run_util",
                         lambda home, n, args, timeout=300, policy=None, **_kw:

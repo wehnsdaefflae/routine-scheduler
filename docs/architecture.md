@@ -622,7 +622,8 @@ and the capabilities digest's catalog listing):
   (health-by-recipe-version outlives retention), `utils` (per-util outcome counts — ok / error /
   usage_error (exit 2 = bad args) / missing / denied / rejected, counted in `RunContext.count_util`
   at the executor + validation seams; a denied call never becomes a turn, so it is counted where
-  it is raised; subrun records carry their OWN counts, never folded into the parent), and
+  it is raised; a call the run's abort ended is not counted at all; subrun records carry their
+  OWN counts, never folded into the parent), and
   `asks_deferred` (deferred-question churn). `util_stats.py` joins the stream with the library's
   git history (created/revised per util) and a stat-memoized transcript backfill for pre-stream
   runs — the Stats tab's "Global utils" table. The referral AUDIT (`ctx.referrals`: turns + llm
@@ -1298,6 +1299,25 @@ whose TEXT must change on a live instance is converted by a one-shot migration i
   committed code (`uv run` re-syncs deps); under Docker `restart: unless-stopped` does, and its
   restart manager gives up after ONE failed start — so verify every bind source exists before
   dropping the sentinel. Orphaned runs claiming to be alive are closed out at boot.
+- **Aborting a run** (`runner.abort` → `runner_state.abort_process`, behind the run page's abort,
+  a conversation's stop, a background task's cancel and `rsched abort`): SIGTERM to the engine's
+  process group, SIGKILL `KILL_GRACE_S` (10 s) later if it is still there. The engine's handler
+  only raises the abort flag (`engine/control.request_abort`), which the loop reads at every turn
+  boundary and right after a model call — no signal interrupts a model call, so a stop that lands
+  in one waits for the call or for the SIGKILL. A util, script or `shell` command in flight is
+  the one thing the flag must reach mid-turn: it leads a process group in a session of its own,
+  which neither of the daemon's signals touches — the engine's wait on it was its only clock.
+  `utils_run.run_jailed` therefore asks the run's abort check (`RunContext.aborted` — the flag,
+  or a child run's own kill event) every quarter second and ends the group through
+  `procgroup.terminate` the moment it says yes. The observation carries `aborted`, exit 130 and
+  the note `… was ended by the run's abort after Ns`; the run writes its own `aborted`
+  close-out. Until 0.370.2 the wait did not look: the engine was SIGKILLed while it waited, and
+  the command ran on with no deadline (a `shell` `sleep` reparented to PID 1, its status.json
+  left `running`). `KILL_GRACE_S` stays shorter than `procgroup.TERM_GRACE_S` (30 s) on purpose:
+  an engine killed while a SIGTERM-ignoring group is still inside its grace leaves that group's
+  SIGKILL to the backstop `terminate` armed, so a stop during a model call is never made to wait
+  out a grace sized to the disk. Lengthening the daemon's grace to "fix" the order would cost
+  exactly that.
 
 ## Git writes (libgit.py, gitlock.py)
 
@@ -1320,9 +1340,10 @@ silent way. Three rules close that, each where it happened:
   in that I/O runs its handler only once the I/O returns. The wait ends as soon as the group is
   empty, so it costs nothing unless a member outlives SIGTERM. It covers EVERY member of the
   group, not its leader alone, because `utils_run.run_jailed` ends a timed-out util, script or
-  `shell` command through the same helper. There git is rarely the leader: under `uv run` →
-  python → git the leader exits within milliseconds of SIGTERM, so a wait for it alone SIGKILLed
-  git mid-cleanup (measured on the host: leader gone in 0.01 s, the grandchild's lock left).
+  `shell` command — and one whose run is aborted — through the same helper. There git is rarely
+  the leader: under `uv run` → python → git the leader exits within milliseconds of SIGTERM, so
+  a wait for it alone SIGKILLed git mid-cleanup (measured on the host: leader gone in 0.01 s, the
+  grandchild's lock left).
 - **A read never takes the index lock.** Every call runs with `GIT_OPTIONAL_LOCKS=0`, so a
   `git status` stops writing a refreshed index back: a reader can neither leave a lock behind
   nor make a concurrent writer fail on its live one. The hold check's `status` in the operator's
@@ -1363,8 +1384,10 @@ one deleted. A removal is filed as `git_lock_cleared` — a run of those is some
 mid-write (a stalling disk, the OOM killer, a container stopped mid-commit). A repo no rsched
 commit writes — the scheduler's own checkout, a worktree a session made, a repo a routine's
 script manages — is outside this path. A util, a script or a `shell` command that runs git there
-is still terminated at its deadline rather than killed (`run_jailed`), but a lock that a kill
-from elsewhere leaves is found by whoever next writes there, as before.
+is still terminated at its deadline, or when its run is aborted, rather than killed
+(`run_jailed`) — and its SIGKILL still comes if the engine dies inside the grace (the backstop
+`procgroup.terminate` arms). A lock that a kill from elsewhere leaves is found by whoever next
+writes there, as before.
 
 ## Observing the daemon
 

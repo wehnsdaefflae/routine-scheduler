@@ -5,7 +5,9 @@ finished sub-workflow announcements).
 Everything here runs BETWEEN turns and mutates only the loop's message list / context —
 never the model call itself. control.json stays web-owned: the engine only reads it
 (pause, switch_model, set_deliberation, add_rules, drop_rules) and reacts at the
-next turn boundary.
+next turn boundary. The abort flag is the one thing read MID-turn as well: a util, script or
+shell command in flight asks it through `RunContext.aborted` and ends with the run
+(`utils_run.run_jailed`) — the command's own session keeps every abort signal away from it.
 """
 
 from __future__ import annotations
@@ -25,6 +27,10 @@ _ABORT = {"flag": False}
 
 
 def request_abort() -> None:
+    """The process-wide abort: what `rsched engine-run`'s SIGTERM handler (the daemon's abort)
+    and `run-once`'s SIGINT/SIGTERM handlers call. Read at turn boundaries by every loop in the
+    process and, while a jailed command runs, by `utils_run.run_jailed`.
+    """
     _ABORT["flag"] = True
 
 

@@ -125,7 +125,9 @@ into the run's usage record:
 - **rejected** — a malformed call (schema/field problems).
 
 User slash commands run the same gates and count the same way. The catalog pseudo-utils
-(`list`, `show`) are discovery, not execution — never counted. Subrun records carry their
+(`list`, `show`) are discovery, not execution — never counted. Nor is a call its run's abort
+ended (`aborted` on the observation, exit 130): stopping the run says nothing about the util,
+so neither the engine nor the transcript backfill counts it. Subrun records carry their
 own counts; parents never fold them in (the read-model sums records at every depth).
 
 `rsched/readmodels/util_stats.py` joins three sources into the Stats tab table:

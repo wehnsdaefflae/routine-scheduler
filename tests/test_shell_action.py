@@ -18,7 +18,7 @@ from pathlib import Path
 import jsonschema
 import pytest
 
-from rsched import shellrun
+from rsched import utils_run
 from rsched.config import ServerConfig, load_routine
 from rsched.engine.actions import validate_action
 from rsched.engine.actionschema import ACTION_SCHEMA
@@ -146,7 +146,7 @@ def test_a_signalled_child_reaches_the_health_stream(shell_ctx, tmp_path):
 
 def test_timeout_ends_the_process_group_and_reports_124(shell_ctx):
     obs = dispatch({"kind": "shell", "command": "sleep 30", "timeout_s": 1}, shell_ctx)
-    assert obs["exit"] == shellrun.TIMEOUT_EXIT == 124
+    assert obs["exit"] == utils_run.TIMEOUT_EXIT == 124
     assert obs["timed_out"] is True
     assert "timed out after 1s (process group terminated)" in obs["stderr"]
 
@@ -242,21 +242,38 @@ def test_the_deadline_is_not_a_signal_and_raises_no_kernel_kill_event(shell_ctx,
     """
     shell_ctx.server.routines_home = tmp_path / "rhome"
     obs = dispatch({"kind": "shell", "command": "sleep 30", "timeout_s": 1}, shell_ctx)
-    assert obs["exit"] == shellrun.TIMEOUT_EXIT  # positive, so it is not read as a signal
+    assert obs["exit"] == utils_run.TIMEOUT_EXIT  # positive, so it is not read as a signal
     assert not (tmp_path / "rhome" / ".control" / "health-events.jsonl").exists()
 
 
-def test_one_deadline_is_defined_in_exactly_one_place():
+def test_the_runs_abort_is_not_a_signal_either(shell_ctx, tmp_path):
+    """The abort ends the group on SIGTERM, so the command's own status is -15 — which
+    `_note_if_killed` would file as a kernel kill. It exits `ABORT_EXIT` instead and says why.
+    """
+    shell_ctx.server.routines_home = tmp_path / "rhome"
+    shell_ctx.aborted = (shell_ctx.routine.dir / "started").exists
+    obs = dispatch({"kind": "shell", "command": "touch started; sleep 30", "timeout_s": 60},
+                   shell_ctx)
+    assert obs["exit"] == utils_run.ABORT_EXIT == 130
+    assert obs["aborted"] is True
+    assert "timed_out" not in obs
+    assert "the command was ended by the run's abort after" in obs["stderr"]
+    assert not (tmp_path / "rhome" / ".control" / "health-events.jsonl").exists()
+
+
+@pytest.mark.parametrize("name", ["TIMEOUT_EXIT", "ABORT_EXIT"])
+def test_each_ending_has_its_code_defined_in_exactly_one_place(name):
     """Three callable kinds share one runner and one clock; they had three spellings of what
     it exits with — 124 in `shellrun`, 124 restated in `scripts`, and -1 in `utils_run` under
     a comment in `shellrun` claiming the value was "kept from the util". A constant copied is
-    a constant that drifts, and this one drifted into a fabricated signal number.
+    a constant that drifts; this one drifted into a fabricated signal number. The abort's code
+    is the second ending the runner reports and gets the same single definition.
     """
     import ast
 
     src = Path(__file__).resolve().parents[1] / "src/rsched"
     definers = [p.relative_to(src).as_posix() for p in sorted(src.rglob("*.py"))
-                if any(isinstance(n, ast.Name) and n.id == "TIMEOUT_EXIT"
+                if any(isinstance(n, ast.Name) and n.id == name
                        and isinstance(n.ctx, ast.Store)
                        for n in ast.walk(ast.parse(p.read_text(encoding="utf-8"))))]
     assert definers == ["utils_run.py"], definers

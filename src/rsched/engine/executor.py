@@ -74,6 +74,16 @@ def _note_if_killed(ctx: RunContext, kind: str, name: str, code: int) -> None:
         children_vm_hwm_kb=resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss or None)
 
 
+def _ended_by_abort(ctx: RunContext, code: int) -> bool:
+    """Whether the run's abort ended this util or script call (`utils_run.run_jailed`). The
+    runner's own note on stderr says so in words; the observation also says it in a field
+    (`aborted`), as `shell`'s does, for the transcript's readers. A command that exited
+    `ABORT_EXIT` by itself just as its run was aborted reads as ended by the abort — it would
+    have been, a quarter-second later.
+    """
+    return code == utils_run.ABORT_EXIT and ctx.aborted()
+
+
 def do_util(action: dict, ctx: RunContext) -> dict:  # noqa: PLR0911 — list/show dispatch, many small exits
     name = action["name"]
     args = [str(a) for a in (action.get("args") or [])]
@@ -166,11 +176,14 @@ def do_util(action: dict, ctx: RunContext) -> dict:  # noqa: PLR0911 — list/sh
         home, name, args, timeout=int(action.get("timeout_s") or UTIL_DEFAULT_TIMEOUT_S),
         policy=sandbox.policy_for_ctx(ctx),
         extra_secrets=_extra_secrets(ctx), withhold_secrets=set(withheld),
-        cwd=ctx.routine.dir)
+        cwd=ctx.routine.dir, aborted=ctx.aborted)
     _note_if_killed(ctx, "util", name, code)
-    # Per-util reliability telemetry (util_stats → the Stats tab).
-    ctx.count_util(name, "ok" if code == 0
-                   else ("usage_error" if code == USAGE_ERROR_EXIT else "error"))
+    stopped = _ended_by_abort(ctx, code)
+    # Per-util reliability telemetry (util_stats → the Stats tab). A call the run's abort ended
+    # says nothing about the util, so it is not counted at all.
+    if not stopped:
+        ctx.count_util(name, "ok" if code == 0
+                       else ("usage_error" if code == USAGE_ERROR_EXIT else "error"))
     obs = {"kind": "util", "name": name, "args": args, "exit": code,
            **command_output(ctx, name, out, err, code)}
     if withheld:
@@ -179,7 +192,11 @@ def do_util(action: dict, ctx: RunContext) -> dict:  # noqa: PLR0911 — list/sh
         undecided = [s for s in withheld if secret_state(ctx, s) == "undecided"]
         n_denied = len(withheld) - len(undecided)
         obs["withheld_optional"] = {"undecided": undecided, "denied": n_denied}
-    if code != 0:
+    if stopped:
+        # Not a failure, so no repair route: a resumed run replays this observation, and
+        # "the util itself may be broken — fix it" would send it after a util that is fine.
+        obs["aborted"] = True
+    elif code != 0:
         # A failed call teaches the correct one — and the repair path. Without this nudge
         # the model's rational move is a silent workaround, and the next routine hits the
         # same wall (seen live: page-fetch broken, run fell back to websearch, nobody told).
@@ -252,10 +269,13 @@ def do_script(action: dict, ctx: RunContext) -> dict:
         ctx.routine.dir, name, args,
         timeout=int(action.get("timeout_s") or scripts.SCRIPT_TIMEOUT_S),
         policy=sandbox.policy_for_ctx(ctx), libraries_home=ctx.server.libraries_home,
-        env_secrets=env_secrets)
+        env_secrets=env_secrets, aborted=ctx.aborted)
     _note_if_killed(ctx, "script", name, code)
-    return {"kind": "script", "name": name, "args": args, "exit": code,
-            **command_output(ctx, f"script-{name}", out, err, code)}
+    obs = {"kind": "script", "name": name, "args": args, "exit": code,
+           **command_output(ctx, f"script-{name}", out, err, code)}
+    if _ended_by_abort(ctx, code):
+        obs["aborted"] = True
+    return obs
 
 
 #: Command shapes that may WRITE. Conservative by design (D158): a hit means "this command may
@@ -288,10 +308,11 @@ def do_shell(action: dict, ctx: RunContext) -> dict:
     """Run ONE ad-hoc command through `bash -c` inside the run's Landlock jail — the escape
     hatch, gated by the `shell` capability so a routine without it cannot even generate the
     call. No call-time secret gate: the command is handed NO store secret at all, so there is
-    nothing to ask exposure for. The jail, the empty secret env and the 64 KB per-stream cap are
-    `shellrun`'s; the observation truncation and the `.util_outputs/` spill are the same ones a
-    util call gets, so a command that prints more than the observation carries is saved rather
-    than lost.
+    nothing to ask exposure for. The jail and the empty secret env are `shellrun`'s; the 1 MB
+    per-stream capture, the timeout and the end of a command whose run is aborted are the shared
+    runner's (`utils_run.run_jailed`); the observation truncation and the `.util_outputs/` spill
+    are the same ones a util call gets, so a command that prints more than the observation
+    carries is saved rather than lost.
 
     The observation carries no advisory tail, unlike `util`'s. A non-zero exit here is usually
     the ANSWER (`grep -q`, `test -f`, a failing suite the run is iterating on), not a mistake to
@@ -320,7 +341,8 @@ def do_shell(action: dict, ctx: RunContext) -> dict:
     result = shellrun.run_shell(
         command, policy=sandbox.policy_for_ctx(ctx),
         libraries_home=ctx.server.libraries_home, cwd=cwd,
-        timeout=int(action.get("timeout_s") or shellrun.SHELL_DEFAULT_TIMEOUT_S))
+        timeout=int(action.get("timeout_s") or shellrun.SHELL_DEFAULT_TIMEOUT_S),
+        aborted=ctx.aborted)
     _note_if_killed(ctx, "shell", command[:60], int(result["exit"]))
     obs = {"kind": "shell", "command": command, "exit": result["exit"],
            **command_output(ctx, "shell", result["stdout"], result["stderr"], result["exit"])}
@@ -332,6 +354,8 @@ def do_shell(action: dict, ctx: RunContext) -> dict:
         obs["cwd"] = str(cwd)
     if result["timed_out"]:
         obs["timed_out"] = True
+    if result["aborted"]:
+        obs["aborted"] = True
     return obs
 
 

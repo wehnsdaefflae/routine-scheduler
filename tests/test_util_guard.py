@@ -175,7 +175,8 @@ def _path_loop(d, server):
 
     cfg, _ = load_routine(d)
     ctx = SimpleNamespace(server=server, depth=0, routine=cfg, read_roots=list,
-                          grants=SimpleNamespace(needs_confirm=lambda creating: False))
+                          grants=SimpleNamespace(needs_confirm=lambda creating: False),
+                          aborted=lambda: False)
     return SimpleNamespace(ctx=ctx)
 
 

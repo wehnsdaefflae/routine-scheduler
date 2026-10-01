@@ -40,11 +40,11 @@ from __future__ import annotations
 import os
 import re
 import tomllib
+from collections.abc import Callable
 from pathlib import Path
 
 from . import sandbox, utils_header, utils_lib, utils_run
 from .paths import atomic_write
-from .utils_run import TIMEOUT_EXIT
 
 SCRIPT_TIMEOUT_S = 300
 VENV_DIR = ".venv"
@@ -248,12 +248,15 @@ def _ensure_venv_ignored(routine_dir: Path) -> None:
 
 
 def ensure_env(routine_dir: Path, name: str, *,
-               policy: sandbox.SandboxPolicy, libraries_home: Path) -> str | None:
+               policy: sandbox.SandboxPolicy, libraries_home: Path,
+               aborted: Callable[[], bool] | None = None) -> str | None:
     """Create `<routine>/.venv` if missing and install the script's PEP 723 dependencies
     into it (a fast no-op when already satisfied). Returns an error line, or None. The
     install is a BUILD step: it runs net-open inside the routine jail (the util prewarm's
     R40 rationale — a `net: none` script must still be able to fetch its deps), and a
-    failure surfaces instead of letting the exec die on an import it cannot explain.
+    failure surfaces instead of letting the exec die on an import it cannot explain. A build
+    step ends with its run like the script it builds for (`aborted`, `utils_run.run_jailed`),
+    and the line it returns is then the runner's own note.
     """
     _ensure_venv_ignored(routine_dir)
     py = venv_python(routine_dir)
@@ -271,7 +274,10 @@ def ensure_env(routine_dir: Path, name: str, *,
         except sandbox.SandboxRefusal as exc:
             return str(exc)
         r = utils_run.run_jailed(cmd, env=dict(os.environ), cwd=routine_dir,
-                                 timeout=_INSTALL_TIMEOUT_S, label=f"venv setup ({step[1]})")
+                                 timeout=_INSTALL_TIMEOUT_S, label=f"venv setup ({step[1]})",
+                                 aborted=aborted)
+        if r.aborted:
+            return r.stderr.strip()
         if r.timed_out:
             # The install cap is fixed and SEPARATE from the action's timeout_s, which bounds the
             # script's runtime, not this build step — so no recipe can raise it (R1296). A dep too
@@ -291,21 +297,25 @@ def ensure_env(routine_dir: Path, name: str, *,
 def run_script(routine_dir: Path, name: str, args: list[str], *,
                policy: sandbox.SandboxPolicy, libraries_home: Path,
                env_secrets: dict[str, str] | None = None,
-               timeout: int = SCRIPT_TIMEOUT_S) -> tuple[int, str, str]:
+               timeout: int = SCRIPT_TIMEOUT_S,
+               aborted: Callable[[], bool] | None = None) -> tuple[int, str, str]:
     """Controlled runner: the routine's own venv python on the script, ONLY the caller's
     `env_secrets` injected (the caller filters to declared+granted names; every other
     store key is scrubbed — `utils_run.scoped_env`), the shared jail (`sandbox.wrap` —
     run fs roots), working directory = the routine dir so relative paths resolve like
     read_file/write_file. `gu` is on PATH only for a script that DECLARES the utils it
-    calls. Returns (exit, out, err).
+    calls. `aborted` is the run's abort check: the script and the venv build before it end
+    with the run (`utils_run.run_jailed`). Returns (exit, out, err).
     """
     if not exists(routine_dir, name):
         have = ", ".join(p["name"] for p in list_scripts(routine_dir)) or "(none yet)"
         return 2, "", f"no script {name!r} (available: {have})"
     _declared, net, _opt = needs(routine_dir, name, libraries_home)
     if problem := ensure_env(routine_dir, name, policy=policy,
-                             libraries_home=libraries_home):
-        return 2, "", problem
+                             libraries_home=libraries_home, aborted=aborted):
+        # A build the run's abort ended reports the abort's code, as the script itself would.
+        stopped = aborted is not None and aborted()
+        return (utils_run.ABORT_EXIT if stopped else 2), "", problem
     env_secrets = dict(env_secrets or {})
     env = utils_run.scoped_env(set(env_secrets), env_secrets)
     # The `calls:` line is what folded the named utils' secrets and net into the env and
@@ -334,5 +344,6 @@ def run_script(routine_dir: Path, name: str, args: list[str], *,
     # — it would hold the pipes open past the deadline and block the engine turn forever — and
     # a script that dumps a large file must not be buffered whole in the daemon's memory.
     res = utils_run.run_jailed(cmd, env=env, cwd=routine_dir, timeout=timeout,
-                               label=f"script {name!r}", config_seal=routine_dir)
-    return (TIMEOUT_EXIT if res.timed_out else res.returncode), res.stdout, res.stderr
+                               label=f"script {name!r}", config_seal=routine_dir,
+                               aborted=aborted)
+    return res.exit_code, res.stdout, res.stderr
