@@ -4,8 +4,9 @@ The daemon/web process is the single writer of the connection store; this manage
 EXPIRING-provider connection's access token valid (refreshing ~5 min before expiry) and persists
 any ROTATED refresh_token, so a run always reads a live token from disk. Non-expiring providers
 (Notion — long-lived bearer, no refresh_token) are skipped, so an instance that only uses those
-never does any work here. A refresh that the provider rejects flags the connection `needs_reauth`,
-which badges it in Settings → Connections — the console record IS the notification.
+never does any work here. A refresh that the provider REFUSES (`REFUSED`) flags the connection
+`needs_reauth`, which badges it in Settings → Connections — the console record IS the
+notification; a provider that is down or rate-limiting is retried next tick instead.
 
 The token POST is `oauth/exchange.post_token` — the same blocking httpx call the connect flow
 makes, so a provider's client-auth style and body encoding are honoured identically here and
@@ -34,10 +35,19 @@ REFRESH_MARGIN_S = 300   # refresh once a token is within 5 minutes of expiry
 # expires_at=0 instead made "unknown" look permanently due and hammered the provider
 # every 5-second tick.
 DEFAULT_TOKEN_LIFETIME_S = 3600.0
+# The statuses that mean the provider REFUSED the grant (RFC 6749 §5.2: 400 for invalid_grant
+# and the other error codes, 401 for invalid_client; some providers answer 403). Only these
+# flag `needs_reauth`: a flagged connection is skipped by every later pass and withheld from
+# every run, so a 5xx/429/408 flagged with them cost a re-authorization by hand for a provider
+# outage. Every other non-200 is transient, like a network error.
+REFUSED = frozenset({400, 401, 403})
 
 
 class OAuthRefreshManager:
-    """Ticked from the scheduler loop like the trigger/detached managers."""
+    """Started by every scheduler tick and run BESIDE it (`Scheduler._off_tick`), one pass at a
+    time: a pass POSTs to each due provider with a 20 s timeout, and a provider that is down
+    keeps every connection due — awaited inside the tick, it held every fire behind it.
+    """
 
     def __init__(self, server: ServerConfig):
         self.server = server
@@ -73,8 +83,12 @@ class OAuthRefreshManager:
         except httpx.HTTPError as exc:
             log.warning("oauth refresh: network error for %s: %s", conn.key(), exc)
             return   # transient — try again next tick, don't flag needs_reauth
-        if resp.status_code != 200:
+        if resp.status_code in REFUSED:
             self._mark_reauth(conn, f"refresh HTTP {resp.status_code}")
+            return
+        if resp.status_code != 200:
+            log.warning("oauth refresh: %s answered HTTP %s — retrying next tick",
+                        conn.key(), resp.status_code)
             return
         try:
             payload = resp.json()

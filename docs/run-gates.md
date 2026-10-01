@@ -57,7 +57,11 @@ Built in, never configured, because each one is work by construction:
 - the last admitted run did not finish ok — it may have left work behind;
 - its configuration or recipe changed since the last ok run (`routine.yaml`, `tuning.yaml`,
   `main.md`, `stages/`, `state/finish-line.json`): a granted permission can unblock parked
-  work, a revised recipe can add some.
+  work, a revised recipe can add some. A run reads its configuration and recipe at boot, so
+  those count from when the last ok run STARTED; it reads the finish line again at its finish
+  and stamps it there (a distance per open outcome), so the finish line counts from when that
+  run ENDED — measured from the start, the run's own stamp read as a change and no routine
+  whose runs keep an accounting could ever be skipped.
 
 ## Which fires are gated
 
@@ -117,7 +121,9 @@ fail closed; no one-run grants are inherited.
 The timeout (an integer 1–300 s) covers interpreter startup, filesystem, secret and sandbox
 preparation and the checks themselves. Preparation runs in a dedicated same-source interpreter
 with private stdin configuration and a tracked process group, never in an uncancellable
-event-loop thread; timeout and abort kill that group. Diagnostic stderr is kept in
+event-loop thread; timeout and abort kill that group, and the gate ends when its process does —
+a descendant that left the group (`setsid`) holding the inherited stdout/stderr no longer keeps
+the gate and its slot past the deadline: its pipes are closed on it. Diagnostic stderr is kept in
 `gate-stderr.txt`, bounded to 16 KiB, apart from protocol stdout.
 
 Engine launch retains its process handle through cancellation. An abort during the launch

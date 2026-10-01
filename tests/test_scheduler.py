@@ -6,6 +6,8 @@ import logging
 import signal
 from datetime import UTC, datetime, timedelta
 
+import pytest
+
 import rsched.daemon.scheduler as sched_mod
 from conftest import FakeRunner
 from rsched.config import ServerConfig, load_routine
@@ -282,6 +284,42 @@ def test_a_crashed_engine_is_still_closed_out_as_failed(make_routine, tmp_path):
     assert info.state == "failed" and "rc=-9" in info.summary
 
 
+def test_a_thread_id_is_not_a_live_run_process():
+    """kill(pid, 0) answers for a THREAD id too, so a stale status.json pid the kernel had since
+    handed to one of the daemon's own threads read as a live engine: its orphan was never
+    reaped, a lane chain or a detached delivery waited on it forever."""
+    import os
+    import threading
+
+    tid: list[int] = []
+    hold = threading.Event()
+    worker = threading.Thread(target=lambda: (tid.append(threading.get_native_id()),
+                                              hold.wait()))
+    worker.start()
+    try:
+        while not tid:
+            pass
+        assert runner_state._pid_alive(os.getpid())          # a process: alive
+        assert not runner_state._pid_alive(tid[0])           # a thread of one: not a run
+    finally:
+        hold.set()
+        worker.join()
+
+
+async def test_an_abort_never_signals_the_daemons_own_process_group(monkeypatch):
+    """The abort fallback signals whatever process group a recorded pid leads. An engine leads a
+    session of its own, so a pid inside the CALLER's group is never a run's — it is the daemon,
+    or a thread of it, that a stale status.json happens to name — and signalling it SIGTERMed and
+    then SIGKILLed the daemon itself."""
+    import os
+
+    sent: list[tuple[int, int]] = []
+    monkeypatch.setattr(runner_state.os, "killpg", lambda pgid, sig: sent.append((pgid, sig)))
+    monkeypatch.setattr(runner_state, "KILL_GRACE_S", 0.5)
+    assert await runner_state.abort_process(os.getpid()) is False
+    assert sent == []
+
+
 def test_notable_stderr_extracts_only_warnings_and_errors():
     # Info/debug chatter is dropped; WARNING/ERROR/CRITICAL/traceback lines are kept, tail-first.
     assert _notable_stderr(b"") == ""
@@ -313,6 +351,35 @@ async def test_reap_surfaces_clean_exit_diagnostics(make_routine, tmp_path, monk
         assert await _wait_for(lambda: not runner.is_active("warner"))
     surfaced = [r.getMessage() for r in caplog.records if "finished but logged" in r.getMessage()]
     assert surfaced and "util-stats snapshot write failed" in surfaced[0]
+
+
+async def test_a_failing_llm_tailer_never_decides_the_runs_outcome(make_routine, tmp_path,
+                                                                   monkeypatch):
+    """The sidecar tailer is observability. When it died (a torn multi-byte read raised out of
+    its poll), the supervisor re-raised that at the run's end into its LAUNCH handler, which
+    rewrote a run the engine had finished ok as `failed: Run launch failed: …` — over the
+    reply the engine had written to result.md."""
+    import rsched.daemon.runner as runner_mod
+    from rsched.llm_tasks import TaskCenter
+
+    async def dead_tailer(run_dir, on_record):
+        raise UnicodeDecodeError("utf-8", b"\xc2", 0, 1, "unexpected end of data")
+
+    monkeypatch.setattr(runner_mod, "tail_llm_sidecar", dead_tailer)
+    d = make_routine(slug="observed")
+    cfg, _ = load_routine(d)
+    _stub_engine(monkeypatch,
+                 'printf \'{"state": "finished", "outcome": "ok", "pid": 1}\' '
+                 '> runs/{TS}/status.json.tmp && mv runs/{TS}/status.json.tmp '
+                 'runs/{TS}/status.json && echo "the reply" > runs/{TS}/result.md')
+    bus = EventBus()
+    runner = Runner(_server(tmp_path), bus, TaskCenter(bus))
+    run_id = await runner.fire(cfg)
+    assert await _wait_for(lambda: not runner.active)
+    run_dir = d / "runs" / run_id.split(":")[1]
+    st = read_json(run_dir / "status.json")
+    assert (st["state"], st["outcome"]) == ("finished", "ok")
+    assert (run_dir / "result.md").read_text() == "the reply\n"
 
 
 # --- R108 residual (F268): the post-finish inbox sweep ---------------------------------
@@ -783,10 +850,9 @@ def test_a_clean_drain_does_not_leave_its_mark_for_the_next_crash(make_routine, 
 
 
 def test_the_mark_survives_a_reap_pass_that_found_nothing(make_routine, tmp_path):
-    """Expiry belongs to the BOOT, not to a reap pass, and that distinction is load-bearing:
-    the boot reaps routines, then conversations, then background tasks against the one
-    breadcrumb. Consuming it in the first pass would leave a conversation orphaned by the very
-    same restart reading `unknown`."""
+    """Expiry belongs to the BOOT, not to a reap pass, and that distinction is load-bearing: a
+    pass that finds nothing dead must leave the breadcrumb for the pass that does, or a run
+    orphaned by the very same restart reads `unknown`."""
     server = _server(tmp_path)
     d = make_routine(slug="orphan-later")
     run_dir = d / "runs" / "20260701-070000"
@@ -832,6 +898,55 @@ async def test_the_boot_expires_the_mark_even_with_nothing_to_reap(make_routine,
     task.cancel()
 
 
+async def test_a_failing_boot_reap_does_not_stop_the_scheduler(make_routine, tmp_path,
+                                                                monkeypatch):
+    """The boot reap writes a close-out into every orphan, and a full disk at boot — exactly
+    when a crash leaves orphans behind — made that raise out of run_forever before the loop
+    existed: the console kept serving while nothing ever fired again, the failure
+    `_log_loop_failure` exists for, one step earlier in the boot."""
+    make_routine(slug="ticker")
+    monkeypatch.setattr(sched_mod, "TICK_S", 0.02)
+
+    def full_disk(runner, catalog):
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(runner_reap, "recover_orphans", full_disk)
+    server = _server(tmp_path)
+    fr = FakeRunner()
+    sched = Scheduler(server, fr, EventBus())
+    task = asyncio.create_task(sched.run_forever())
+    await asyncio.sleep(0.05)
+    sched.next_fires["ticker"] = datetime.now(UTC) - timedelta(seconds=1)
+    assert await _wait_for(lambda: ("ticker", "schedule") in fr.fired)
+    task.cancel()
+    lines = (server.routines_home / ".control" / "health-events.jsonl").read_text().splitlines()
+    assert any(json.loads(ln)["event"] == "scheduler_tick_error"
+               and "orphan" in json.loads(ln)["detail"] for ln in lines)
+
+
+def test_one_orphan_that_cannot_be_closed_does_not_strand_the_rest(make_routine, tmp_path,
+                                                                   monkeypatch):
+    """Each orphan is closed out on its own: one run dir that refuses the write is logged and
+    left for the next boot, and every other orphan is still closed."""
+    server = _server(tmp_path)
+    for slug in ("a-stuck", "b-other"):
+        run_dir = make_routine(slug=slug) / "runs" / "20260701-070000"
+        run_dir.mkdir(parents=True)
+        atomic_write_json(run_dir / "status.json", {"run_id": f"{slug}:20260701-070000",
+                                                    "state": "running", "pid": 999999})
+    real = runner_reap.close_out
+
+    def refuses_one(runner, run_dir, run_id, message, **kw):
+        if run_id.startswith("a-stuck:"):
+            raise OSError(13, "Permission denied")
+        return real(runner, run_dir, run_id, message, **kw)
+
+    monkeypatch.setattr(runner_reap, "close_out", refuses_one)
+    assert runner_reap.recover_orphans(Runner(server, EventBus()), scan(server)) == 1
+    other = server.routines_home / "b-other" / "runs" / "20260701-070000"
+    assert read_run(other, "b-other").state == "aborted"
+
+
 async def test_retention_runs_off_the_event_loop(tmp_path, monkeypatch):
     """Retention re-indexes every run dir, `rmtree`s the oldest and gzips transcripts that
     reach 9 MB. Called straight from the reap it did all that on the loop thread, so every SSE
@@ -858,6 +973,34 @@ async def test_retention_runs_off_the_event_loop(tmp_path, monkeypatch):
     assert seen == {}                                   # the reap returned without waiting
     await asyncio.gather(*runner._supervisors)
     assert seen["thread"] != loop_thread                # …and it ran in a worker thread
+
+
+@pytest.mark.parametrize("manager", ["oauth", "library"])
+async def test_a_hanging_upkeep_pass_does_not_hold_the_next_fire(make_routine, tmp_path,
+                                                                 monkeypatch, manager):
+    """OAuth upkeep POSTs to the provider with a 20 s timeout per due connection, and a provider
+    that is down keeps every connection due; the library watch re-resolves every routine after
+    a library change. Awaited inside the tick, each such pass held every cron fire, lane step
+    and one-shot behind it, tick after tick."""
+    make_routine(slug="ticker")
+    monkeypatch.setattr(sched_mod, "TICK_S", 0.02)
+    fr = FakeRunner()
+    sched = Scheduler(_server(tmp_path), fr, EventBus())
+    release = asyncio.Event()
+    calls: list[int] = []
+
+    async def hanging_pass():
+        calls.append(1)
+        await release.wait()
+
+    monkeypatch.setattr(getattr(sched, manager), "tick", hanging_pass)
+    task = asyncio.create_task(sched.run_forever())
+    assert await _wait_for(lambda: calls)                 # the first pass is in flight…
+    sched.next_fires["ticker"] = datetime.now(UTC) - timedelta(seconds=1)
+    assert await _wait_for(lambda: ("ticker", "schedule") in fr.fired)   # …and ticks go on
+    assert len(calls) == 1                                # one pass at a time, never stacked
+    release.set()
+    task.cancel()
 
 
 async def test_a_slow_limits_refresh_is_never_stacked_by_later_ticks(tmp_path, monkeypatch):

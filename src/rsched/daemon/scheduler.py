@@ -57,7 +57,8 @@ class Scheduler:
         self.bus = bus
         # Detached background tasks (the `detach` action): daemon-managed processes that outlive
         # a conversation reply and report back on completion. The manager is the single writer of
-        # background_home; it is ticked after the cron-fire loop (paused during a restart drain).
+        # background_home; it is ticked after the cron-fire loop, like every manager below, and
+        # no longer once a restart has begun shutting the process down.
         self.detached = DetachedManager(server, runner)
         # Event triggers (webhooks today): the web layer only spools events durably; this
         # manager turns them into coalesced fires at the tick (see daemon/triggers.py).
@@ -178,20 +179,35 @@ class Scheduler:
         except Exception:   # the guard itself must never take the loop down
             pass
 
-    async def run_forever(self) -> None:
-        try:
-            self.rescan()
-        except Exception as exc:
-            self._log_loop_failure("boot rescan", exc)
-        # One pass retains shutdown evidence; home-qualified keys preserve colliding slugs.
-        recovery_catalog = {
+    def _recover_orphans(self) -> int:
+        """Close out every run the previous process left claiming to be alive. Routines,
+        conversations and background tasks go through ONE reap pass so all three read the same
+        shutdown evidence (restart.read_shutdown_mark); home-qualified keys keep a slug that
+        exists in two homes apart.
+        """
+        catalog = {
             **{f"routines:{slug}": info for slug, info in self.catalog.items()},
             **{f"conversations:{slug}": info for slug, info in
                registry.scan(self.server, self.server.conversations_home).items()},
             **{f"background:{slug}": info for slug, info in
                registry.scan(self.server, self.server.background_home).items()},
         }
-        fixed = runner_reap.recover_orphans(self.runner, recovery_catalog)
+        return runner_reap.recover_orphans(self.runner, catalog)
+
+    async def _boot(self) -> None:
+        """Everything that happens once, before the first tick: the catalog, the orphans the
+        previous process left, the detached tasks it was delivering, then catch-up. Every step
+        that can raise is guarded (`_log_loop_failure`) — the loop must start regardless.
+        """
+        try:
+            self.rescan()
+        except Exception as exc:
+            self._log_loop_failure("boot rescan", exc)
+        fixed = 0
+        try:
+            fixed = self._recover_orphans()
+        except Exception as exc:     # a full disk at boot is exactly when orphans exist
+            self._log_loop_failure("boot orphan recovery", exc)
         # Expire unused evidence too: a mark describes exactly one exit.
         restart.clear_shutdown_mark(self.server.routines_home)
         await self.detached.reconcile()
@@ -209,6 +225,9 @@ class Scheduler:
             await self.boot_catchup()
         except Exception as exc:
             self._log_loop_failure("boot catch-up", exc)
+
+    async def run_forever(self) -> None:
+        await self._boot()
         loop = asyncio.get_running_loop()
         self._last_scan = loop.time()
         log.info("scheduler up: %d routines, next fires: %s", len(self.catalog),
@@ -307,9 +326,12 @@ class Scheduler:
                     await self.oneshots.tick(self.catalog)
                     # sequential lane fires: advance each armed chain one member per tick
                     await self.lane_runs.tick(self.catalog)
-                # OAuth token upkeep: refresh expiring connections nearing their deadline
-                await self.oauth.tick()
-                await self.library.tick()
+                # Upkeep runs BESIDE the tick (`_off_tick`), never inside it: OAuth refreshes
+                # expiring connections with a 20 s POST each (and a provider that is down keeps
+                # every connection due), the library watch re-resolves every routine after a
+                # library change — awaited here, either held every fire behind it.
+                self._off_tick("oauth", self.oauth.tick)
+                self._off_tick("library-watch", self.library.tick)
             except _TickSkip:
                 continue  # draining / shutting down: fire nothing this tick
             except Exception as exc:
@@ -317,11 +339,12 @@ class Scheduler:
 
     def _off_tick(self, key: str, work: Callable[[], Coroutine[None, None, None]]) -> None:
         """Start `work` as a task beside the tick unless the previous one for `key` is still
-        running. The refreshes below each end in a thread on the loop's default executor, and a
-        provider or box that answers slowly holds its attempt for a whole connect timeout — so
-        one fresh attempt per 5 s tick stacked threads on the pool every run's llm tailer awaits.
-        The task is KEPT here: the loop holds only a weak reference to a task, so one nobody
-        holds may be collected mid-flight.
+        running. Every pass started here (the two refreshes below, OAuth upkeep, the library
+        watch) ends in a thread on the loop's default executor, and a provider or box that
+        answers slowly holds its attempt for a whole connect timeout — awaited in the tick it
+        held every fire behind it, and started afresh each 5 s tick it stacked threads on the
+        pool every run's llm tailer awaits. The task is KEPT here: the loop holds only a weak
+        reference to a task, so one nobody holds may be collected mid-flight.
         """
         running = self._off_tick_tasks.get(key)
         if running is not None and not running.done():
@@ -340,7 +363,7 @@ class Scheduler:
         (`_off_tick`). An unreachable box holds each attempt for its connect timeout (20-60s),
         so a fresh attempt per tick stacked up to a dozen threads on the loop's default executor
         (8 workers on the 4-core host) — the same pool LibraryWatch, the OAuth refresh and every
-        run's llm tailer await inline in this tick body.
+        run's llm tailer draw from.
         """
         from ..machine_queue import refresh as refresh_queues
 

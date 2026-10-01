@@ -55,8 +55,9 @@ class Runner:
         self.draining = False  # set while quiescing for a self-update restart: no new runs fire
 
     def _under_home(self, cfg: RoutineConfig, home_attr: str) -> bool:
-        """True if the run's dir is a direct child of the named server home. Run kind is
-        discriminated by HOME everywhere (cfg.kind is dropped by pydantic).
+        """True if the run's dir is a direct child of the named server home. The pools are
+        chosen by HOME, not by `cfg.kind`: a detached task's routine.yaml carries no kind at
+        all, and the home is where the run actually lives.
         """
         home = getattr(self.server, home_attr, None)
         try:
@@ -273,9 +274,7 @@ class Runner:
                 finally:
                     waiter.cancel()
                     if tailer is not None:
-                        tailer.cancel()   # its finally drains last-moment records before reap
-                        with contextlib.suppress(asyncio.CancelledError):
-                            await tailer
+                        await self._stop_tailer(tailer, run)
         except asyncio.CancelledError:
             run.user_cancel = True
             # Keep ownership even if cancellation arrives again while acquiring/reaping.
@@ -298,6 +297,24 @@ class Runner:
                 sem.release()
                 run.holds_slot = False
             runner_reap.reap(self, run, cfg, stderr)
+
+    @staticmethod
+    async def _stop_tailer(tailer: asyncio.Task, run: ActiveRun) -> None:
+        """Stop the run's sidecar tailer once its process is gone; its `finally` drains the
+        records the engine wrote last, before the reap closes the process out.
+
+        The tailer is observability, so a failure it died of is logged and never re-raised.
+        Re-raised here it reached `_supervise`'s LAUNCH handler, which rewrote a run the engine
+        had finished ok as `failed: Run launch failed: …` over its authored result.md.
+        """
+        tailer.cancel()
+        try:
+            await tailer
+        except asyncio.CancelledError:
+            pass
+        except Exception:
+            log.exception("llm sidecar tailer of %s failed — its LLM calls stopped reaching "
+                          "the task center; the run's own outcome stands", run.run_id)
 
     @staticmethod
     def _launch_cancelled(run: ActiveRun) -> bool:

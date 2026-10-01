@@ -180,6 +180,41 @@ def test_a_changed_recipe_since_the_last_ok_run_is_work(tmp_path):
     past = time.time() - 3600
     os.utime(tmp_path / "main.md", (past, past))
     since = __import__("datetime").datetime.fromtimestamp(past + 60).astimezone().isoformat()
-    assert gate_prepare.changed_since(tmp_path, since) == ""
+    base = {"started": since, "ended": since}
+    assert gate_prepare.changed_since(tmp_path, base) == ""
     (tmp_path / "main.md").write_text("recipe, revised")
-    assert gate_prepare.changed_since(tmp_path, since) == "main.md"
+    assert gate_prepare.changed_since(tmp_path, base) == "main.md"
+
+
+def test_the_last_ok_runs_own_finish_line_stamp_is_not_a_change(tmp_path):
+    """A finish STAMPS the finish line (`finishline.record`: a distance per open outcome, and
+    the file itself for a routine whose recipe has only a Done-when list), so that write is
+    always newer than the run's start. Read against the start, every gated routine whose runs
+    keep an accounting looked reconfigured at every fire — the gate could never skip one. The
+    finish line counts from the last ok run's END; the operator editing it after that is still
+    a change."""
+    import os
+    from datetime import UTC, datetime
+
+    from rsched.config import RoutineConfig
+    from rsched.daemon import gate_prepare
+
+    cfg = RoutineConfig(slug="me", dir=tmp_path)
+    started = datetime(2026, 9, 28, 8, 0, tzinfo=UTC).timestamp()
+    run_dir = tmp_path / "runs" / "20260928-080000"
+    run_dir.mkdir(parents=True)
+    (tmp_path / "main.md").write_text("recipe")
+    os.utime(tmp_path / "main.md", (started - 60, started - 60))
+    stamp = tmp_path / "state" / "finish-line.json"           # the finish stamps the line…
+    stamp.parent.mkdir()
+    atomic_write_json(stamp, {"outcomes": [], "until": ""})
+    os.utime(stamp, (started + 300, started + 300))
+    atomic_write_json(run_dir / "status.json",                # …then writes its final status
+                      {"run_id": "me:20260928-080000", "state": "finished", "outcome": "ok"})
+    os.utime(run_dir / "status.json", (started + 301, started + 301))
+
+    base, why = gate_prepare.baseline_says_run(cfg, "me:20260929-080000")
+    assert base is not None and why == ""
+    os.utime(stamp, (started + 900, started + 900))           # the operator edits it later
+    _, why = gate_prepare.baseline_says_run(cfg, "me:20260929-080000")
+    assert why == "state/finish-line.json changed since the last ok run"

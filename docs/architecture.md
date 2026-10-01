@@ -321,8 +321,9 @@ daemon-owned connection store (one `connections.json` beside `config.yaml`, keye
 /oauth/callback` (mounted WITHOUT the bearer dep, like `api_hooks.hooks_router` — the unguessable
 per-flow `state` is the CSRF guard) exchanges the code and writes the connection; the new
 `ServerConfig.public_url` (external https URL, e.g. Tailscale Serve) builds the redirect_uri.
-`daemon/oauth_refresh.py` (`OAuthRefreshManager`, ticked by the scheduler like the trigger/detached
-managers) refreshes EXPIRING tokens near expiry, persists rotation and flags `needs_reauth` on
+`daemon/oauth_refresh.py` (`OAuthRefreshManager`, started by each scheduler tick and run beside it,
+one pass at a time, so a provider that is down never holds a fire) refreshes EXPIRING tokens near
+expiry, persists rotation and flags `needs_reauth` on
 rejection — which badges it in Settings → Connections, the only notification there is (0.230.0
 deleted every implicit outbound send) — a no-op for non-expiring providers (Notion). **Engine injection**:
 `executor.do_util` resolves the routine's bound connections to `{<PROVIDER>_ACCESS_TOKEN: token}`
@@ -1313,7 +1314,11 @@ whose TEXT must change on a live instance is converted by a one-shot migration i
   dropping the sentinel. Orphaned runs claiming to be alive are closed out at boot.
 - **Aborting a run** (`runner.abort` → `runner_state.abort_process`, behind the run page's abort,
   a conversation's stop, a background task's cancel and `rsched abort`): SIGTERM to the engine's
-  process group, SIGKILL `KILL_GRACE_S` (10 s) later if it is still there. The engine's handler
+  process group, SIGKILL `KILL_GRACE_S` (10 s) later if it is still there. A pid read from a
+  status.json can outlive its process, so it is signalled only while it still names a process
+  (not a thread the kernel gave that id since) outside the caller's own process group — an
+  engine leads a session of its own, and a stale pid once aimed both signals at the daemon. The
+  engine's handler
   only raises the abort flag (`engine/control.request_abort`), which the loop reads at every turn
   boundary and right after a model call — no signal interrupts a model call, so a stop that lands
   in one waits for the call or for the SIGKILL. A util, script or `shell` command in flight is

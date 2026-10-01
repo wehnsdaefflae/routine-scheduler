@@ -4,7 +4,7 @@ Engine subprocesses can't reach the in-process bus, so each appends per-call lif
 to `runs/<ts>/llm-tasks.jsonl` (via endpoints.instrument.FileSink). This coroutine tails that
 file with the transcript's partial-line-safe reader and hands each new record to a callback
 (which stamps run/process attribution and forwards it to the TaskCenter). The Runner runs one
-per active run; a clarify session runs one for its subprocess.
+per active run.
 
 Cancel the task to stop it — a final drain in the `finally` catches records the engine wrote
 just before exiting, so the last calls land before the run's process is closed.
@@ -26,7 +26,13 @@ async def tail_llm_sidecar(run_dir: Path, on_record: Callable[[dict], None]) -> 
     offset = 0
     try:
         while True:
-            events, offset = await asyncio.to_thread(read_events, path, offset)
+            try:
+                events, offset = await asyncio.to_thread(read_events, path, offset)
+            except UnicodeDecodeError:
+                # A record read while its write is still landing can stop inside a multi-byte
+                # character, and the strict decode raises. The offset has not moved, so the
+                # next poll reads the record whole; ending the tail here lost every later call.
+                events = []
             for rec in events:
                 on_record(rec)
             await asyncio.sleep(POLL_S)

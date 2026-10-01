@@ -88,10 +88,14 @@ def last_ok(routine_dir: Path, current_run_id: str) -> tuple[dict | None, str]:
     """The baseline every "since the last run" check compares against.
 
     Returns `(last_ok, why_not)`: the newest ADMITTED run (a fire the gate skipped processed
-    nothing and is passed over) as `{run_id, started, fingerprints}` when it finished ok, or
-    `(None, reason)` when it did not — a failed, partial or aborted run may have left work
+    nothing and is passed over) as `{run_id, started, ended, fingerprints}` when it finished ok,
+    or `(None, reason)` when it did not — a failed, partial or aborted run may have left work
     behind, so the gate must run. `(None, "")` means there is no earlier admitted run at all,
     which the checks that need a baseline already read as work.
+
+    `ended` is when that run's status was last written — its finish, the moment it last read
+    the finish line (`changed_since`). A status that cannot be stat'ed ends at its start, the
+    reading that can only admit more.
     """
     runs = routine_dir / "runs"
     if not runs.is_dir():
@@ -114,8 +118,12 @@ def last_ok(routine_dir: Path, current_run_id: str) -> tuple[dict | None, str]:
         gate = read_json(run_dir / "gate.json", {})
         prints = gate.get("fingerprints") if isinstance(gate, dict) else None
         started = datetime.strptime(run_dir.name, "%Y%m%d-%H%M%S").replace(tzinfo=UTC)
+        try:
+            ended = datetime.fromtimestamp((run_dir / "status.json").stat().st_mtime, UTC)
+        except OSError:
+            ended = started
         return {"run_id": status.get("run_id") or run_dir.name,
-                "started": started.isoformat(),
+                "started": started.isoformat(), "ended": ended.isoformat(),
                 "fingerprints": prints if isinstance(prints, dict) else {}}, ""
     return None, ""
 
@@ -123,20 +131,34 @@ def last_ok(routine_dir: Path, current_run_id: str) -> tuple[dict | None, str]:
 #: The files whose change means the person (or an improver) changed what this routine is or
 #: does — any of them newer than the last ok run makes the next fire a run, whatever the
 #: checks say: a granted permission can unblock parked work, a revised recipe can add some.
-CHANGE_SURFACE = ("routine.yaml", "tuning.yaml", "main.md", "state/finish-line.json")
+#: A run reads these at its BOOT, so a change counts from the moment the last ok run STARTED.
+CHANGE_SURFACE = ("routine.yaml", "tuning.yaml", "main.md")
+
+#: The finish line counts from the moment the last ok run ENDED. Its finish reads the line
+#: again — the accounting answers for every open outcome — and then STAMPS it
+#: (`finishline.record`: a distance per open outcome, and the file itself for a routine whose
+#: recipe has only a Done-when list). Read against the start, that stamp looked like the
+#: operator changing the goal, and no gated routine whose runs keep an accounting could ever
+#: be skipped.
+FINISH_LINE = "state/finish-line.json"
 
 
-def changed_since(routine_dir: Path, started_iso: str) -> str:
-    """The first configuration or recipe file modified after `started_iso`, or ""."""
+def changed_since(routine_dir: Path, base: dict) -> str:
+    """The first configuration or recipe file modified since the last ok run (`base`, from
+    `last_ok`) read it, or "": the boot-read surface against its start, the finish line
+    against its end.
+    """
     try:
-        started = datetime.fromisoformat(started_iso).timestamp()
+        started = datetime.fromisoformat(base["started"]).timestamp()
+        ended = datetime.fromisoformat(base["ended"]).timestamp()
     except ValueError:
         return ""
-    paths = [routine_dir / rel for rel in CHANGE_SURFACE]
-    paths += sorted((routine_dir / "stages").glob("*.md"))
-    for path in paths:
+    paths = [(routine_dir / rel, started) for rel in CHANGE_SURFACE]
+    paths += [(path, started) for path in sorted((routine_dir / "stages").glob("*.md"))]
+    paths.append((routine_dir / FINISH_LINE, ended))
+    for path, since in paths:
         try:
-            if path.stat().st_mtime > started:
+            if path.stat().st_mtime > since:
                 return str(path.relative_to(routine_dir))
         except OSError:
             continue
@@ -151,7 +173,7 @@ def baseline_says_run(cfg: RoutineConfig, current_run_id: str) -> tuple[dict | N
     base, why_not = last_ok(cfg.dir, current_run_id)
     if why_not:
         return None, why_not
-    if base and (what := changed_since(cfg.dir, base["started"])):
+    if base and (what := changed_since(cfg.dir, base)):
         return base, f"{what} changed since the last ok run"
     return base, ""
 

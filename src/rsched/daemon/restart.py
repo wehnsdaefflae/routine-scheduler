@@ -144,9 +144,9 @@ def clear_shutdown_mark(routines_home: Path) -> None:
     when the daemon finally booted two hours later, ready to mislabel the first crash after it.
 
     A mark describes exactly ONE exit, so the boot that follows that exit is where it stops
-    being true. This runs after the whole boot reap rather than inside it, because the three
-    reap passes (routines, conversations, background tasks) share the one breadcrumb and the
-    first pass must not consume what the third still needs to read.
+    being true. This runs after the boot reap rather than inside it: the reap reads the mark
+    lazily, only when an orphan needs a cause, so a boot that orphaned nothing never reaches it
+    and the expiry has to belong to the boot.
     """
     path = routines_home / ".control" / "shutdown.mark"
     try:
@@ -157,17 +157,14 @@ def clear_shutdown_mark(routines_home: Path) -> None:
         log.warning("shutdown mark %s could not be expired: %s", path, exc)
 
 
-def trigger_shutdown(server: ServerConfig | None = None,
-                     reason: str = "self-update restart") -> None:
+def trigger_shutdown(server: ServerConfig, reason: str = "self-update restart") -> None:
     """Signal uvicorn to shut down gracefully (it handles SIGTERM); the process then exits and
     the supervisor relaunches with the new code. Isolated so tests patch it rather than
     signalling the test runner.
 
-    `server` is what lets the exit leave its breadcrumb (F480). It is optional only because
-    the signal must be raised even when no server config is at hand; an unmarked exit is
-    reaped as `unknown`, never as a restart.
+    The exit leaves its breadcrumb first (F480): after SIGTERM there is no later moment in
+    which to write it, and an unmarked exit is reaped as `unknown`, never as a restart.
     """
-    if server is not None:
-        mark_deliberate_shutdown(server, reason)
+    mark_deliberate_shutdown(server, reason)
     log.warning("self-update: drained — signalling graceful shutdown to restart on new code")
     signal.raise_signal(signal.SIGTERM)
