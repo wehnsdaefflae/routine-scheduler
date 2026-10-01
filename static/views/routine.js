@@ -91,12 +91,12 @@ export async function render(view, slug, query = {}) {
       // Archiving cleans up what it owns and CANNOT touch what the routine published
       // elsewhere — a steward card outlived its routine three times in two weeks because
       // this moment passed in silence (R1658, bina). Say what is still out there and who
-      // can remove it, while the person who just archived it is still looking.
-      for (const item of r.external_residue || []) {
-        toast(`Still on the ${item.surface}: ${item.locator}. `
-              + `Archiving cannot remove it — ask ${item.owner} to retire it.`,
-              12000, { error: true });
-      }
+      // can remove it, while the person who just archived it is still looking. ONE toast:
+      // there is one #toast, and a toast per surface overwrote all but the last.
+      const residue = (r.external_residue || []).map((item) =>
+        `Still on the ${item.surface}: ${item.locator}. `
+        + `Archiving cannot remove it — ask ${item.owner} to retire it.`);
+      if (residue.length) toast(residue.join(" "), 12000, { error: true });
       location.hash = "#/routines";
     } catch (err) { toastError(err); }
   }

@@ -452,6 +452,24 @@ def test_archiving_a_publisher_names_what_it_leaves_behind(ui, ui_page, make_rou
     expect(toast).to_contain_text("ask the operator to retire it")
 
 
+def test_archiving_names_every_surface_it_leaves_behind(ui, ui_page):
+    """`external_residue` is a LIST — one row per outside surface the routine published to, and
+    the server's surface table is built to grow. The page toasted each row in turn into the one
+    #toast element, so every row but the last was overwritten before anybody could read it."""
+    residue = [{"surface": "steward hub", "locator": "_store/uir/ on the steward host",
+                "owner": "the operator", "note": ""},
+               {"surface": "status page", "locator": "pages/uir/", "owner": "the operator",
+                "note": ""}]
+    ui_page.route("**/api/routines/uir/archive", lambda route: route.fulfill(
+        json={"ok": True, "external_residue": residue, "lanes_left": []}))
+    ui_page.goto(f"{ui.url}#/routine/uir")
+    ui_page.get_by_role("button", name="archive").click()
+    ui_page.locator(".modal-overlay").get_by_role("button", name="archive", exact=True).click()
+    toast = _toast(ui_page)
+    expect(toast).to_contain_text("status page")
+    expect(toast).to_contain_text("steward hub")
+
+
 def test_a_run_summary_is_rendered_prose_not_raw_markdown(ui, ui_page):
     """The summary column is the one thing a reader scans to decide which run to open, and it
     is MODEL PROSE. Rendered raw it was prefixed with punctuation noise on most rows, and a
