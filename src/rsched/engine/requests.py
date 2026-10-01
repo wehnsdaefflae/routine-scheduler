@@ -4,11 +4,11 @@ An `ask_user` carrying `request: "<class>:<name>"` asks the user for an entity g
 the Decisions page answers it with one of four decisions (allow/deny × now/forever) —
 five for once-grantable classes (entities.ONCE_CLASSES), which also offer `allow once`
 (D65; D76 extends it to secret:/fs-*: with the coarser util-invocation-level spend).
-This module owns the run-side mechanics:
+The request is validated BEFORE it becomes a turn — `availability.request_denial`, inside
+the schema-retry cycle beside `authoring.recreate_denial` (`completion.action_candidate`), so
+a malformed, redundant or already-declined request is corrected and never costs one. What
+happens once the user has DECIDED is this module's — the run-side mechanics:
 
-- `request_denial` validates the request INSIDE the schema-retry cycle (a malformed,
-  redundant or already-declined request is corrected and never costs a turn) — the
-  sibling of `interact.recreate_denial` in `completion.action_candidate`.
 - `apply_decision` seeds the run's one-time overlay (RunContext.granted_now/denied_now —
   in-memory on purpose: a resumed leg starts empty and re-asks) and rebuilds the live
   policy + transport schema, so an allow-now takes effect on the very next turn.

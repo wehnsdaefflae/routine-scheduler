@@ -19,8 +19,9 @@ one of them a character-for-character copy of the line below. A channel that nee
 DETERMINISTIC filename (so it can read its own pending delivery back, or replace it instead
 of queuing a second) passes `name=`; extra keys ride in `extra=`.
 
-A fresh run's boot drains every message; live turn boundaries deliver only the
-LIVE_MESSAGE_VIAS set (the live run view + background results — user order 2026-08-20).
+A fresh run's boot drains every message; live turn boundaries and a resumed leg's boot deliver
+only the LIVE_MESSAGE_VIAS set (the user talking to this run, plus the results of work this run
+started — a background task's, a branch's — user order 2026-08-20).
 Every scanner selects `msg-*.json` — the stem the one writer produces — never "any file that
 is not answer-*", which also matched `atomic_write`'s in-flight `.msg-….json.XXXX.tmp`: on a
 fresh boot that temp file reached the unparseable branch below, was logged "not a message
@@ -42,22 +43,21 @@ log = logging.getLogger("rsched.inbox")
 
 #: The injection channels that mean "the user is talking to THIS run": the conversation
 #: composer and the run page. The daemon's post-finish sweep re-opens a finished run only
-#: for these (R108/F268), and a RESUMED leg's boot drains ONLY these (F359, user order
-#: 2026-08-17): everything else waiting in an inbox — audit feedback, report deliveries,
-#: routine-page queued messages, trigger/background/one-shot texts, answers to other runs'
-#: questions — is addressed to the routine's NEXT fresh run, and a follow-up leg draining
-#: it wholesale silently ate decision answers meant for that night's run (D92/D93).
+#: for these (R108/F268) — a machine delivery waits for the run's next leg instead of
+#: buying one.
 USER_MESSAGE_VIAS = ("conversation", "web", "web-converse")
 
 #: What a LIVE run may consume at a mid-run turn boundary, and what a RESUMED leg's boot
-#: drains (user order 2026-08-20, generalizing F359): the user talking to THIS run
-#: (USER_MESSAGE_VIAS) plus a detached background task's result delivery — the task was
-#: started by this very conversation, so its result IS this conversation's freight, and the
-#: daemon's delivery contract counts on the live owner draining it at the next boundary
-#: (daemon/detached_delivery.wake). Everything else — reports, audit feedback, routine-page queued
-#: messages, trigger/one-shot texts — is addressed to the routine's NEXT FRESH run and is
-#: consumed only by that run's boot, never mid-flight. Mid-run injection into a running run
-#: is the live run view's channel, by design.
+#: drains (F359, generalized by the user order of 2026-08-20): the user talking to THIS run
+#: (USER_MESSAGE_VIAS) plus the results of work this run itself started — a detached
+#: background task's delivery (the daemon's delivery contract counts on the live owner
+#: draining it at the next boundary, daemon/detached_delivery.wake) and a branch's hand-back
+#: (branches.hand_back: the parent's next reply reads it). Everything else — reports, audit
+#: feedback, routine-page queued messages, trigger/one-shot texts, answers to other runs'
+#: questions — is addressed to the routine's NEXT FRESH run and is consumed only by that
+#: run's boot, never mid-flight: a follow-up leg draining it wholesale silently ate decision
+#: answers meant for that night's run (D92/D93). Mid-run injection into a running run is the
+#: live run view's channel, by design.
 LIVE_MESSAGE_VIAS = (*USER_MESSAGE_VIAS, "background", "branch")
 
 #: The CLOSED set of delivery channels. `via` is not a label: it is the switch that decides
@@ -77,7 +77,8 @@ VIAS = frozenset({
     "web-converse",   # web/api_run_control — the run view's converse box
     "web-audit",      # web/api_audit — self-audit feedback and decisions
     "report",         # reports.file_report — a sibling routine's addressed report
-    "background",     # daemon/detached_delivery — a detached task's result
+    "background",     # daemon/detached_delivery — a detached task's result; also
+                      # daemon/runner_reap's D99 recovery note, which a resumed leg must drain
     "branch",         # branches.hand_back — a forked conversation's result
     "trigger",        # daemon/triggers — a configured event's text
     "schedule_once",  # daemon/schedule_once — a one-shot fire's provenance
@@ -255,8 +256,11 @@ def queued_freight(routine_dir: Path, *, exclude_vias: tuple[str, ...]) -> list[
         via = str(obj.get("via") or "")
         if via in exclude_vias:
             continue
+        # `next(…, "")`, not `[0]`: a whitespace-only text has no first line, and every other
+        # scanner here reads such a file as a message — an IndexError would take down the
+        # boot of the very leg this digest is composed for
         out.append({"file": path.name, "via": via, "ts": str(obj.get("ts") or ""),
-                    "text": str(obj["text"]).strip().splitlines()[0],
+                    "text": next(iter(str(obj["text"]).strip().splitlines()), ""),
                     **({"report": str(obj["report"]), "from": str(obj.get("from") or "")}
                        if obj.get("report") else {})})
     return out
