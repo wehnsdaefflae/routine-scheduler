@@ -114,7 +114,9 @@ fail closed; no one-run grants are inherited.
 The timeout (an integer 1–300 s) covers interpreter startup, filesystem, secret and sandbox
 preparation and the checks themselves. Preparation runs in a dedicated same-source interpreter
 with private stdin configuration and a tracked process group, never in an uncancellable
-event-loop thread; timeout and abort kill that group. Diagnostic stderr is kept in
+event-loop thread; timeout and abort kill that group, and the gate ends when its process does —
+a descendant that left the group (`setsid`) holding the inherited stdout/stderr no longer keeps
+the gate and its slot past the deadline: its pipes are closed on it. Diagnostic stderr is kept in
 `gate-stderr.txt`, bounded to 16 KiB, apart from protocol stdout.
 
 Engine launch retains its process handle through cancellation. An abort during the launch

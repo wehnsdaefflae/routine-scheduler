@@ -41,6 +41,27 @@ def _bootstrap_cmd() -> list[str]:
     return [sys.executable, "-I", "-c", code]
 
 
+class _GateProtocol(asyncio.subprocess.SubprocessStreamProtocol):
+    """The stream protocol `create_subprocess_exec` uses, plus the one moment it hides: the
+    gate PROCESS exiting.
+
+    `Process.wait()` resolves only once every pipe has closed as well, and a descendant that
+    left the gate's group (`setsid`) still holds the stdout/stderr it inherited after the group
+    is killed: the gate, and the concurrency slot it holds, outlived its deadline for as long
+    as that descendant lived (30 s measured under a 2 s deadline). `exited` is the process
+    alone; closing the transport then lets go of whatever such a descendant still holds.
+    """
+
+    def __init__(self, loop: asyncio.AbstractEventLoop) -> None:
+        super().__init__(limit=2 ** 16, loop=loop)   # asyncio's own default stream limit
+        self.exited: asyncio.Future[None] = loop.create_future()
+
+    def process_exited(self) -> None:
+        super().process_exited()
+        if not self.exited.done():
+            self.exited.set_result(None)
+
+
 async def _read(stream: asyncio.StreamReader | None, data: bytearray) -> None:
     if stream is None:
         raise GateError("gate output pipe unavailable")
@@ -68,18 +89,20 @@ async def _execute(
         "context": {"version": 1, "routine": cfg.slug, "run_id": run.run_id, "reason": reason},
     }).encode()
     tasks: list[asyncio.Task] = []
-    proc = None
     stdout, stderr = bytearray(), bytearray()
-    spawn = None
+    loop = asyncio.get_running_loop()
+    spawn: asyncio.Task[tuple[asyncio.SubprocessTransport, _GateProtocol]] | None = None
+    child: tuple[asyncio.SubprocessTransport, _GateProtocol] | None = None
     try:
         async with asyncio.timeout(cfg.run_gate.timeout_s):
-            spawn = asyncio.create_task(asyncio.create_subprocess_exec(
-                *_bootstrap_cmd(), stdin=asyncio.subprocess.PIPE,
-                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
-                start_new_session=True,
+            spawn = asyncio.create_task(loop.subprocess_exec(
+                lambda: _GateProtocol(loop), *_bootstrap_cmd(),
+                stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE, start_new_session=True,
             ))
             # Shield the spawn handshake so cancellation cannot lose a live child's PID.
-            proc = await asyncio.shield(spawn)
+            child = await asyncio.shield(spawn)
+            proc = asyncio.subprocess.Process(*child, loop)
             run.proc = proc
             if run.user_cancel or run.cancelled:
                 raise GateError("gate aborted")
@@ -115,12 +138,14 @@ async def _execute(
         raise GateError(
             f"gate deadline exceeded ({cfg.run_gate.timeout_s}s, including preparation)") from None
     finally:
-        if proc is None and spawn is not None:
-            proc = await spawn
-        if proc is not None:
+        if child is None and spawn is not None:
+            child = await spawn
+        if child is not None:
+            transport, protocol = child
             with contextlib.suppress(ProcessLookupError):
-                os.killpg(proc.pid, signal.SIGKILL)
-            await proc.wait()
+                os.killpg(transport.get_pid(), signal.SIGKILL)
+            await protocol.exited     # the process — not its pipes (_GateProtocol)
+            transport.close()
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)

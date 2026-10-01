@@ -42,6 +42,35 @@ async def test_blocked_preparation_deadline_keeps_loop_live(setup_gate, monkeypa
     assert "deadline exceeded (1s, including preparation)" in st["summary"]
 
 
+async def test_a_descendant_holding_the_pipes_does_not_outlive_the_deadline(
+        setup_gate, monkeypatch, tmp_path):
+    """`Process.wait()` resolves only once every pipe has closed, and a descendant that left
+    the gate's group (`setsid`) still holds the stdout/stderr it inherited after the group is
+    killed — so the gate, and the concurrency slot it holds, outlived its deadline for as long
+    as that descendant lived (30 s measured under a 2 s deadline)."""
+    import contextlib
+    import signal
+
+    cfg, _, runner = setup_gate
+    cfg.run_gate.timeout_s = 1
+    pidfile = tmp_path / "holder.pid"
+    bootstrap_patch(
+        monkeypatch,
+        "import pathlib, subprocess, sys, time; "
+        "h = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)'], "
+        "start_new_session=True); "
+        f"pathlib.Path({str(pidfile)!r}).write_text(str(h.pid)); time.sleep(30)")
+    started = time.monotonic()
+    try:
+        _, _, st = await finish(runner, cfg)
+        assert time.monotonic() - started < 6
+        assert "deadline exceeded" in st["summary"]
+    finally:
+        if pidfile.exists():
+            with contextlib.suppress(ProcessLookupError):
+                os.kill(int(pidfile.read_text()), signal.SIGKILL)
+
+
 async def test_abort_during_preparation_leaves_no_child(setup_gate, monkeypatch):
     cfg, _, runner = setup_gate
     bootstrap_patch(monkeypatch, "import time; time.sleep(30)")
