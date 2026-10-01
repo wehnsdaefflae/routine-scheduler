@@ -15,13 +15,10 @@ import shutil
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Protocol
-from zoneinfo import ZoneInfo
-
-from croniter import croniter
 
 from .config import RoutineConfig, ServerConfig, load_routine
 from .engine.inbox import open_questions
+from .firetimes import last_due_fire
 from .ids import is_slug
 from .paths import read_json
 from .readmodels.memo import fingerprint
@@ -302,35 +299,6 @@ def homes_fingerprint(server: ServerConfig) -> str:
     """
     return " ".join(f"{kind}={path}"
                     for kind, path in zip(HOME_KINDS, all_homes(server), strict=True))
-
-
-class Schedulable(Protocol):
-    """What next_fire needs. RoutineConfig satisfies it directly; a LANE's cron/tz is adapted
-    to this shape, so both ride the same cron math without duck-typed type:ignores.
-    """
-
-    cron: str
-    tz: str
-    enabled: bool
-
-
-def next_fire(cfg: Schedulable, after: datetime) -> datetime | None:
-    if not cfg.cron or not cfg.enabled:
-        return None
-    tz = ZoneInfo(cfg.tz)
-    return croniter(cfg.cron, after.astimezone(tz)).get_next(datetime)
-
-
-def last_due_fire(cfg: Schedulable, before: datetime) -> datetime | None:
-    """The most recent instant `cfg`'s cron came due at or before `before`.
-
-    Reads `enabled` like `next_fire` does: a schedule that is switched off — or a lane that is
-    PAUSED, which `lanes.schedulable` presents the same way — has no due fire to have missed.
-    """
-    if not cfg.cron or not cfg.enabled:
-        return None
-    tz = ZoneInfo(cfg.tz)
-    return croniter(cfg.cron, before.astimezone(tz)).get_prev(datetime)
 
 
 def parse_run_ts(ts: str) -> datetime | None:

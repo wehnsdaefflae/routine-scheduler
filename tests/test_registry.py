@@ -4,7 +4,7 @@ from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from conftest import mk_run
-from rsched import registry
+from rsched import firetimes, registry
 from rsched.config import ServerConfig, load_routine
 from rsched.engine.transcript import read_events
 from rsched.paths import atomic_write_json
@@ -93,10 +93,10 @@ def test_next_and_missed_fire(make_routine):
     d = make_routine(slug="cronny")
     cfg, _ = load_routine(d)  # cron "0 7 * * 1" Europe/Berlin
     tue = datetime(2026, 7, 7, 12, 0, tzinfo=BERLIN)  # Tuesday
-    nf = registry.next_fire(cfg, tue)
+    nf = firetimes.next_fire(cfg, tue)
     assert nf == datetime(2026, 7, 13, 7, 0, tzinfo=BERLIN)  # next Monday 07:00
     cfg.enabled = False
-    assert registry.next_fire(cfg, tue) is None
+    assert firetimes.next_fire(cfg, tue) is None
     cfg.enabled = True
 
     # catch-up: policy skip → never; run_once → due fire when no run covered it

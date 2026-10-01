@@ -12,7 +12,7 @@ import json
 from datetime import UTC, datetime, timedelta
 
 from conftest import FakeRunner
-from rsched import lane_fires, lane_runs, lanes, registry
+from rsched import firetimes, lane_fires, lane_runs, lanes
 from rsched.config import ServerConfig
 from rsched.daemon import lane_catchup
 from rsched.daemon.events import EventBus
@@ -284,7 +284,7 @@ def test_resume_makes_up_a_weekly_lane_and_leaves_a_daily_one_alone(tmp_path):
     weekly = lanes.create(home, name="Weekly Research", cron="0 5 * * 6", tz="UTC")
     daily = lanes.create(home, name="Nightly", cron="0 5 * * *", tz="UTC")
     anchor = datetime(2026, 9, 26, 12, 0, tzinfo=UTC)
-    due = {rec["id"]: registry.last_due_fire(lanes.schedulable(rec), anchor)
+    due = {rec["id"]: firetimes.last_due_fire(lanes.schedulable(rec), anchor)
            for rec in (weekly, daily)}
     for rec in (weekly, daily):
         stamp = due[rec["id"]].isoformat()

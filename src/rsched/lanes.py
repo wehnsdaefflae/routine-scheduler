@@ -147,7 +147,7 @@ def _normalize(rec: dict) -> dict:
 
 
 def schedulable(lane: dict) -> SimpleNamespace:
-    """A lane as the `Schedulable` shape `registry.next_fire` / `registry.last_due_fire` read.
+    """A lane as the `Schedulable` shape `firetimes.next_fire` / `firetimes.last_due_fire` read.
 
     ONE adapter, so the lane and routine cron rules cannot drift: the scheduler's fire table
     and boot catch-up both go through it. A PAUSED lane reads as a disabled schedulable —

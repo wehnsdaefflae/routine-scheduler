@@ -15,6 +15,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dates are UTC. The project has a fast, single-author cadence (many commits per day), so
   entries group related work rather than list every commit.
 
+## [0.371.1] — 2026-10-01
+
+### Fixed — a fixed time the clock repeats when daylight saving ends fires once
+
+items: operator (2026-10-01), "fire once, first time" — a decision from the 0.371.0 review
+
+**What happened.** croniter yields BOTH occurrences of a wall-clock time the clock passes twice.
+On 2026-10-25 Europe/Berlin goes back from 03:00 CEST to 02:00 CET, so a routine set to run
+daily at 02:30 would have fired at 00:30 UTC and again at 01:30 UTC; a lane at that time would
+have armed its chain again. A boot inside the repeated hour did the same through catch-up: the
+last due fire read as the second 02:30, so the run the first one started looked an hour too old
+and was made up. The week strip drew both. Every schedule saved through the console is in the
+server's zone, so on a Berlin host every routine or lane set between 02:00 and 02:59 was due
+to fire twice that night.
+
+- **`rsched/firetimes.py` is the one place a fire instant is computed** — the fire table, both
+  catch-up paths (`registry.missed_fire`, a lane's watermark check and its resume make-up) and
+  the week view read it; the cron math left `registry.py` (394 → 362 lines).
+- **The rule is Vixie cron's.** A cron whose minute AND hour fields are fixed (`30 2 * * *`,
+  `0 9,17 * * 1-5`, `@daily`) names WALL-CLOCK TIMES and fires at the first occurrence only. A
+  wildcard minute or hour (`0 * * * *`, `*/20 2 * * *`, `@hourly`) is an INTERVAL and keeps
+  firing through the repeated hour, once per real hour. Spring forward is unchanged: a fixed
+  time inside the skipped hour fires at the jump, so a daily routine loses no day.
+- `tests/test_firetimes.py` pins both directions, the catch-up path for routines and lanes, and
+  the week view; the five tests that pin the repeat fail with the rule switched off.
+
+### Changed
+
+- The library seed's `general-task` pattern is the live library's version 19: it keeps the
+  live edits (indexing a routine's own tooling, the record step's turn reserve) and speaks the
+  finish line and `## Done when` — the live copy still named the retired `state/stopping.json`,
+  had no `DONE_WHEN` and failed the library lint. The live library got the same merge, plus the
+  0.371.0 seed changes and the export's `routine_token` redaction, by hand (the seed sync is
+  add-only).
+
 ## [0.371.0] — 2026-10-01
 
 ### A complete review of the codebase — security holes closed, defects fixed at their cause, one owner per seam

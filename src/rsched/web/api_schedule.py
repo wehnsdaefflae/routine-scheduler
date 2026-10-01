@@ -1,5 +1,5 @@
 """The dashboard week strip: every scheduled routine's fire times enumerated over the
-coming days (croniter, each routine's own tz). A day of back-fill lets the client render
+coming days (`firetimes`, each routine's own tz). A day of back-fill lets the client render
 "earlier today" in its own timezone; a per-routine cap bounds every-minute crons.
 
 Scheduled LANES (D71) fire here too: a member of a lane WITH a cron never fires on its
@@ -14,13 +14,11 @@ on a clock; tags fire nothing at all (docs/lanes-tags.md).
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from zoneinfo import ZoneInfo
 
-from croniter import croniter
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
-from .. import lanes, registry, schedule_once
+from .. import firetimes, lanes, registry, schedule_once
 from ..schedule import server_tz
 from .routines_common import _info
 
@@ -68,21 +66,21 @@ def schedule_week(request: Request, days: int = 7) -> dict:
 
 
 def _cron_fires(cron: str, tz: str, start: datetime, end: datetime) -> list[str]:
-    """Enumerate `cron` in `tz` over [start, end): ISO strings, capped at MAX_FIRES.
-    A broken cron/tz yields [] — it already surfaces as a routine/lane problem.
+    """Enumerate `cron` in `tz` over [start, end): ISO strings, capped at MAX_FIRES — read
+    through `firetimes`, the scheduler's own fire math, so the strip draws what fires (a fixed
+    time the clock repeats when daylight saving ends is drawn once). A broken cron/tz yields
+    [] — it already surfaces as a routine/lane problem.
     """
     if not cron:
         return []
-    try:
-        it = croniter(cron, start.astimezone(ZoneInfo(tz)))
-    except (ValueError, KeyError):
-        return []
     fires: list[str] = []
-    while len(fires) < MAX_FIRES:
-        t = it.get_next(datetime)
-        if t >= end:
-            break
-        fires.append(t.isoformat())
+    try:
+        for t in firetimes.iter_fires(cron, tz, start):
+            if t >= end or len(fires) >= MAX_FIRES:
+                break
+            fires.append(t.isoformat())
+    except (ValueError, KeyError):   # a bad cron (CroniterError) or zone (ZoneInfoNotFoundError)
+        return []
     return fires
 
 

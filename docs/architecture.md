@@ -409,7 +409,8 @@ A routine dir (`~/routines/<slug>`) owns its recipe — a run NEVER follows libr
 mid-run: subtask/spawn materialization, gated in-run workflow generation, `read_rule` reads,
 and the capabilities digest's catalog listing):
 - `routine.yaml` — `description` (one-line UI summary, always present), schedule (cron + tz + catchup;
-  a `tz` left out is the server's zone, `config.default_tz` — the zone the console edits in),
+  a `tz` left out is the server's zone, `config.default_tz` — the zone the console edits in; a
+  fixed time the clock repeats when daylight saving ends fires once, `rsched/firetimes.py`),
   `workflow: {library_slug, library_commit}` (provenance only), `models:` (role → catalog model NAME:
   main / tool_call / uncensored), `connections:` (provider → account label — OAuth
   connection bindings, a resource like models; see OAuth connections above),
@@ -1001,7 +1002,12 @@ whose TEXT must change on a live instance is converted by a one-shot migration i
   run is active (409 otherwise) — deliberate live-edit exceptions: conversation settings and rule
   bind/unbind (control.json `add_rules` / `drop_rules` tell the live run); web-side routine-dir commits take the
   engine's per-repo commit lock.
-- The daemon (`scheduler.py` + `runner.py`) fires cron via croniter and spawns one `engine-run` subprocess
+- The daemon (`scheduler.py` + `runner.py`) fires cron through **`rsched/firetimes.py`** — croniter
+  underneath, and the ONE place a fire instant is computed: the fire table, both catch-up paths and
+  the week view read it, so the strip draws what fires. It adds the rule croniter lacks (Vixie
+  cron's): a cron whose minute and hour fields are both fixed names WALL-CLOCK times and fires
+  once when daylight saving ends repeats the hour; a wildcard minute or hour is an INTERVAL and
+  fires through both passes. The daemon spawns one `engine-run` subprocess
   per routine (never two of the same at once) under `max_concurrent_runs`; a run that blocks on a user
   question **releases its slot** (a PAUSED run too). **The spawn is an explicit contract, not an
   inheritance** (F394): the child is a fresh interpreter that gets none of the parent's

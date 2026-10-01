@@ -31,7 +31,7 @@ META = {
                    "/ maintain something on a schedule, tend a long-running goal, run a periodic "
                    "check. Use it when the instruction says WHAT to deliver and the HOW is "
                    "ordinary tool work.",
-    "version": 15,
+    "version": 19,
     "tags": ["general", "research", "tool-use"],
     "includes": ["ask-policy", "web-research", "decision-record"],
     "tools": None,          # None = every action kind is allowed
@@ -100,6 +100,55 @@ def orient():
     """Consume the state digest (phase, last result, LEDGER tail, user messages/answers) before
     exploring anything new — so you never re-try a known dead end. The digest already carries the
     LEDGER tail and says when there is more; read the file only if it says so."""
+
+
+def own_tooling():
+    """A routine that has written helper scripts for itself INDEXES them in its own recipe.
+
+    A routine accumulates its own programs over months, and the recipe that commissioned them
+    routinely never names a single one. The next run then has a bare directory listing and a
+    guess, and the guess it makes is to call the script the way it calls everything else — as a
+    shared capability, by the filename it can see. That resolves to nothing: a routine's own
+    helper is reached through a different door than the shared library's, and the two doors do
+    not fall back to one another. The run loses the turn, and because the name was RIGHT and only
+    the door was wrong, the error reads as a missing tool rather than as a recipe that never
+    said.
+
+    Measured 2026-09-23 across one instance: three routines with 4, 10 and 33 helper scripts
+    each, none of them named anywhere in their recipes, each with a run that reached for one as a
+    shared capability and got nothing back. One of those was a first run, so the recipe was as
+    new as the scripts.
+
+    So the recipe carries a short index: for each helper, how it is CALLED and one line on what
+    it does — and, where the helpers form a sequence, the order they belong in, because that
+    ordering is usually hard-won knowledge that exists nowhere else. Past a handful, index the
+    directory rather than each file and let each helper's own docstring carry its arguments; a
+    copied argument list rots while the code moves. The index is not documentation for a reader.
+    It is the difference between a capability this routine already paid to build and one every
+    run rediscovers.
+
+    A call that comes back "missing" is a defect in this index, not something to retry. Fix the
+    reference in the same run that hit it.
+
+    THE SAME APPLIES TO A SHARED CAPABILITY WHOSE CALL SHAPE A RUN KEEPS GETTING WRONG — and the
+    place the shape has to live is the STEP THAT MAKES THE CALL, not a note the routine wrote to
+    itself. A recipe step that says WHAT to fetch and never HOW to ask for it leaves every run to
+    improvise the same arguments and be refused the same way, before any work happens. That cost
+    is small per run and permanent: on a fifteen-turn routine one rejected call is seven per cent
+    of the run, every run, forever.
+
+    Memory is not the fix, and this is the measurement that settles it. Of two routines found
+    losing their first turn to the same refused call every run, one had the correct arguments
+    written down in its own private notes the whole time and lost the turn anyway, while the
+    other's recipe named no call at all. A note is read when a run thinks to look; a step is read
+    because the run is in that step. So when a run establishes the working form of a call, it
+    writes that form into the step, beside the instruction that needs it.
+
+    Two limits keep this honest. Name the CAPABILITY and the shape of the request, never a
+    tool's whole flag list — a copied list rots while the tool moves, which is the same reason
+    the script index above points at docstrings. And treat a usage rejection as evidence the
+    recipe is stale rather than as friction to absorb: confirm the current form from the tool
+    itself, fix the step, and let the next run inherit a call that works."""
 
 
 def bootstrap():
@@ -171,7 +220,23 @@ def collect_children():
 
 
 def record():
-    """Update state/phase.json and any state files; append exactly one LEDGER entry for the run
+    """RESERVE THE TURNS THIS STEP NEEDS BEFORE YOU SPEND THEM, because a budget wall always
+    arrives at whichever step is last, and that is this one. Measured 2026-09-23 across one
+    instance: four routines finished `ok` having skipped their own record step, one of them at
+    exactly zero turns remaining after a full day of real work. Every one of those runs did the
+    job and then left no durable account of it — the finish summary survives, the ledger entry
+    that the NEXT run reads does not, and the findings the run raised about itself were never
+    acted on because the step that acts on them is the step the wall ate.
+
+    So from the midpoint of the run onward, before beginning any further piece of work, compare
+    the turns left against what recording costs. If recording no longer fits, stop the work in
+    hand and record instead, naming what was unfinished. An unfinished piece of work that is
+    recorded is a queue the next run picks up; an unfinished piece of work that is unrecorded
+    happened to nobody. A run that ends without its ledger entry is `partial`, whatever else it
+    delivered — and if that verdict ever feels unfair, the remedy is the reserve, not a kinder
+    verdict.
+
+    Update state/phase.json and any state files; append exactly one LEDGER entry for the run
     (what changed, why, decisions, and candidates rejected + why). Advance phase.json to
     'wrap-up' once the routine's FINISH LINE is reached — the operator's own terms for when this
     ROUTINE is finished, shown in the digest — so the next fire closes the job out instead of

@@ -20,7 +20,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime
 
-from .. import lane_fires, lane_runs, lanes, registry
+from .. import firetimes, lane_fires, lane_runs, lanes
 from ..config import ServerConfig
 from ..health_events import log_health_event
 
@@ -34,7 +34,7 @@ def missed_lanes(server: ServerConfig, now: datetime) -> list[dict]:
     home = server.routines_home
     out: list[dict] = []
     for lane in lanes.list_lanes(home):
-        due = registry.last_due_fire(lanes.schedulable(lane), now)
+        due = firetimes.last_due_fire(lanes.schedulable(lane), now)
         if due is None:
             continue
         armed = lane_fires.last_armed(home, lane["id"])
@@ -89,7 +89,7 @@ def resume_catchup(server: ServerConfig, now: datetime) -> list[str]:
         # distance-to-next test makes up a daily lane the pause barely inconvenienced. Against
         # the 24-hour INTERVAL the same hour is a twelfth, and the lane is correctly left alone
         # while a weekly lane's hour out of 168 is made up.
-        nxt = registry.next_fire(sched, skipped)
+        nxt = firetimes.next_fire(sched, skipped)
         if nxt is None:
             continue
         interval = (nxt - skipped).total_seconds()

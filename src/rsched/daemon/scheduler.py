@@ -17,7 +17,7 @@ import time
 from collections.abc import Callable, Coroutine
 from datetime import UTC, datetime
 
-from .. import lane_fires, lanes, registry
+from .. import firetimes, lane_fires, lanes, registry
 from .. import lane_runs as lane_runs_store
 from ..config import ServerConfig
 from ..health_events import log_health_event
@@ -46,7 +46,7 @@ def _now() -> datetime:
 
 
 class Scheduler:
-    """The cron heart: rescans the catalog, computes next fires (croniter, per-routine
+    """The cron heart: rescans the catalog, computes next fires (`firetimes`, per-routine
     tz + catchup policy), hands due routines to the Runner, and snapshots its state for
     the UI.
     """
@@ -126,7 +126,7 @@ class Scheduler:
                     from ..engine.goalreached import propose_if_due
                     propose_if_due(self.server.routines_home, slug, info.cfg.name)
                 continue
-            nf = registry.next_fire(info.cfg, now)
+            nf = firetimes.next_fire(info.cfg, now)
             if nf is None:
                 continue
             prev = self.next_fires.get(slug)
@@ -135,7 +135,7 @@ class Scheduler:
         self.next_fires = fires
         by_lane: dict[str, datetime] = {}
         for lane in self.scheduled_lanes:
-            nf = registry.next_fire(lanes.schedulable(lane), now)
+            nf = firetimes.next_fire(lanes.schedulable(lane), now)
             if nf is None:
                 continue
             prev = self.lane_next_fires.get(lane["id"])
@@ -249,7 +249,7 @@ class Scheduler:
                     if info is None:
                         self.next_fires.pop(slug, None)
                         continue
-                    self.next_fires[slug] = registry.next_fire(info.cfg, now) or due
+                    self.next_fires[slug] = firetimes.next_fire(info.cfg, now) or due
                     if is_paused:
                         log.info("scheduling paused — skipped due fire of %r", slug)
                         continue
@@ -264,7 +264,7 @@ class Scheduler:
                         self.lane_next_fires.pop(lane_id, None)
                         continue
                     self.lane_next_fires[lane_id] = (
-                        registry.next_fire(lanes.schedulable(lane), now) or due)
+                        firetimes.next_fire(lanes.schedulable(lane), now) or due)
                     if is_paused:
                         log.info("scheduling paused — skipped due lane fire of %r", lane_id)
                         # A deliberate skip is a HANDLED fire, so it moves the watermark. Only

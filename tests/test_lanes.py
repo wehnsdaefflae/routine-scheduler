@@ -430,16 +430,16 @@ def test_paused_lane_leaves_the_daemon_fire_table():
     reads as enabled again and yields the next future fire."""
     from datetime import UTC, datetime
 
-    from rsched import registry
+    from rsched import firetimes
     lane = {"cron": "0 7 * * *", "tz": "UTC", "paused": True}
     now = datetime(2026, 8, 10, 6, 0, tzinfo=UTC)
-    assert registry.next_fire(lanes.schedulable(lane), now) is None
+    assert firetimes.next_fire(lanes.schedulable(lane), now) is None
     # …and the catch-up reads the same adapter, so a paused lane has no missed fire either
-    assert registry.last_due_fire(lanes.schedulable(lane), now) is None
+    assert firetimes.last_due_fire(lanes.schedulable(lane), now) is None
     lane["paused"] = False
-    nf = registry.next_fire(lanes.schedulable(lane), now)
+    nf = firetimes.next_fire(lanes.schedulable(lane), now)
     assert nf is not None and nf.hour == 7
-    assert registry.last_due_fire(lanes.schedulable(lane), now).hour == 7
+    assert firetimes.last_due_fire(lanes.schedulable(lane), now).hour == 7
 
 
 def test_api_lane_pause_toggle(api_client):
