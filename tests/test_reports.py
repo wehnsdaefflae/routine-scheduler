@@ -160,7 +160,7 @@ def test_an_answer_is_stored_as_the_canonical_id(tmp_path):
     handle_report(loop, {"title": "the reply", "answers": " r1 "})
     assert _rows(home)[1]["answers"] == "R1"
     audit = _routine(home, "self-audit")
-    built = {i["id"]: i for i in items._build(*items.source_paths(audit, home))["items"]}
+    built = {i["id"]: i for i in items._build(audit, home)["items"]}
     assert built["R1"]["answered_by"] == "R2"
     assert "R1" in built["R2"]["refs"]
 
