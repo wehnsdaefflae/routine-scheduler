@@ -90,9 +90,8 @@ def model_window_problem(server, name: str) -> str | None:
     context, max_out = effective_window(server, name)
     if window_ceiling_tokens(context, max_out) > 0:
         return None
-    window_tokens = context
     return (f"model {name!r} cannot run a single turn: its context window "
-            f"({window_tokens:,} tokens) minus its max output tokens ({max_out:,}) "
+            f"({context:,} tokens) minus its max output tokens ({max_out:,}) "
             "leaves no room for input — every completion would overflow the window. "
             "Pick a larger-window model, or lower this model's max_tokens under "
             "Settings → Models.")

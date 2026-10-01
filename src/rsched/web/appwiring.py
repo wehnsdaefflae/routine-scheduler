@@ -24,6 +24,8 @@ from ..daemon.events import EventBus
 from ..endpoints.instrument import set_sink
 from ..llm_tasks import DaemonSink, TaskCenter
 
+log = logging.getLogger("rsched.web.appwiring")
+
 
 def _observe(task: asyncio.Task, name: str) -> None:
     """A lifespan background task must never die silently: without this, an exception in
@@ -40,7 +42,18 @@ def _observe(task: asyncio.Task, name: str) -> None:
     task.add_done_callback(_done)
 
 
-log = logging.getLogger("rsched.web.appwiring")
+async def _stop(task: asyncio.Task | None) -> None:
+    """Cancel one lifespan task and wait for it to end.
+
+    A task that had already DIED re-raises its exception at the await — `_observe` logged it
+    the moment it happened — and must not cut the shutdown short: raised from here, it left
+    every task after it running into a closed loop and failed the whole lifespan shutdown.
+    """
+    if task is None:
+        return
+    task.cancel()
+    with contextlib.suppress(asyncio.CancelledError, Exception):
+        await task
 
 
 def _make_lifespan(server: ServerConfig, bus: EventBus, task_center: TaskCenter,
@@ -86,20 +99,10 @@ def _make_lifespan(server: ServerConfig, bus: EventBus, task_center: TaskCenter,
         _observe(search_task, "search maintainer")
         yield
         set_sink(None)
-        search_task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await search_task
+        await _stop(search_task)
         app.state.search.shutdown()
-        docs_task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await docs_task
-        push_task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await push_task
-        if task:
-            task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await task
+        for running in (docs_task, push_task, task):
+            await _stop(running)
 
     return lifespan
 
@@ -171,19 +174,19 @@ def _include_api_routers(app: FastAPI, deps: list) -> None:
     # under /api, because the browser loads it as a document + assets rather than as an API:
     # noVNC builds its own relative asset paths, and any prefix it does not know about would
     # send them somewhere else. The GET half keeps the console's bearer dependency; the
-    # websocket half cannot (the WebSocket API sends no headers) and authenticates with the
-    # same short-lived ticket the SSE streams use.
+    # websocket half cannot (the WebSocket API sends no headers) and checks the screen's PASS
+    # cookie itself (F530) — the cookie the frame's handshake carries.
     from . import api_browser_view
 
     # The asset half keeps the console's bearer dependency — a relayed noVNC asset is exactly
     # as protected as any other route (noVNC's own fetches from inside the frame carry no
-    # header, so require_auth's `_is_browser_view_path` ticket branch is what admits them).
+    # header, so require_auth's `_is_browser_view_path` pass-cookie branch is what admits them).
     app.include_router(api_browser_view.router, dependencies=deps)
     # The websocket half must NOT carry it: a FastAPI HTTP dependency applied to a websocket
     # route fails at connect time with "require_auth() missing 1 required positional argument:
-    # 'request'" (a websocket scope has no Request). It validates the same short-lived ticket
-    # itself. The two are separate routers precisely so this exemption cannot spread to the
-    # GETs and quietly unauthenticate a signed-in browser session.
+    # 'request'" (a websocket scope has no Request). It validates the same pass cookie itself.
+    # The two are separate routers precisely so this exemption cannot spread to the GETs and
+    # quietly unauthenticate a signed-in browser session.
     app.include_router(api_browser_view.ws_router)
     # Minting the screen's pass is an OPERATOR act, so that one route sits on the /api
     # surface with the console's bearer dependency — unlike the two above, which are reached

@@ -24,7 +24,7 @@ the console already enforces.
 from __future__ import annotations
 
 import logging
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import unquote, urlsplit, urlunsplit
 
 log = logging.getLogger("rsched.web.browser_proxy")
 
@@ -62,16 +62,20 @@ def _safe_suffix(path: str) -> str:
     """The relative path, refused if it could escape the upstream's mount.
 
     The browser chooses this path, so traversal is rejected HERE rather than trusted to the
-    upstream's hygiene — websockify is a development server and not a hardened one.
+    upstream's hygiene — websockify is a development server and not a hardened one. It is
+    judged fully DECODED: the router decoded it once, and the relay forwards what is left as
+    it stands, so a dot still encoded here (`%2e%2e`, or `%252e%252e` before the router's
+    pass) is a dot to the server that decodes the rest. Any `..` at all is refused — no asset
+    noVNC serves has one in its name — which makes the separator spelling (a slash, a
+    backslash, their encodings) irrelevant.
     """
     p = (path or "").strip()
     if p.startswith("/"):
         raise ValueError(f"absolute path is not relayable: {path!r}")
-    # catch a traversal that arrived still-encoded as well as a decoded one
-    lowered = p.lower().replace("%2f", "/").replace("%5c", "\\")
-    if ".." in lowered.split("/") or ".." in lowered.replace("\\", "/").split("/"):
-        raise ValueError(f"path escapes the upstream: {path!r}")
-    if ".." in lowered:
+    decoded = p
+    while (step := unquote(decoded)) != decoded:     # each pass shortens it: terminates
+        decoded = step
+    if ".." in decoded:
         raise ValueError(f"path escapes the upstream: {path!r}")
     return p
 

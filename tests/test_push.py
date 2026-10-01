@@ -3,11 +3,14 @@ diff-and-dedupe behavior. Actual webpush sends are mocked — no network."""
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 from pathlib import Path
 
 import pytest
 
 from rsched.config import ServerConfig
+from rsched.daemon.events import EventBus
 from rsched.engine import inbox
 from rsched.web import push
 
@@ -181,3 +184,29 @@ def test_worker_auth_cache_literals_stay_paired():
     for literal in ('"rsched-auth"', '"/__auth_token"'):
         assert literal in api_js, literal
         assert literal in sw_js, literal
+
+
+def test_a_busy_bus_cannot_hold_a_push_back(monkeypatch):
+    """Every LLM call of every live run is a bus event, so a busy fleet never falls silent
+    for the debounce window — and the listener waited for that silence before every diff, so
+    a decision's push waited for the whole fleet to go quiet. The burst is capped now: the
+    diff runs while the chatter goes on."""
+    monkeypatch.setattr(push, "_QUIET_S", 0.2, raising=False)
+    monkeypatch.setattr(push, "_MAX_COALESCE_S", 0.5, raising=False)
+    diffs: list[int] = []
+    monkeypatch.setattr(push, "notify_new_decisions", lambda _server: diffs.append(1) or 0)
+
+    async def chatter() -> int:
+        bus = EventBus()
+        listener = asyncio.create_task(push.bus_listener(object(), bus))
+        await asyncio.sleep(0)                    # let it subscribe
+        for _ in range(25):                       # 2.5 s, one event every 0.1 s
+            bus.publish({"event": "llm_task"})
+            await asyncio.sleep(0.1)
+        during = len(diffs)
+        listener.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await listener
+        return during
+
+    assert asyncio.run(chatter()) >= 2

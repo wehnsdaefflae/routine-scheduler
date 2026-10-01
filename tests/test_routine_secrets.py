@@ -164,6 +164,25 @@ def test_api_reports_which_central_names_are_shadowed(client):
     assert body["shadowing"] == ["SFTP_USER"]     # OWN_ONLY collides with nothing
 
 
+def test_api_names_no_secret_to_the_routine_token(tmp_path, make_routine):
+    """Invisible to every other routine — and that has to hold for the API as well as for
+    the env. The routine token rides into every util that declares RSCHED_API_TOKEN, so the
+    names list (with the central names it shadows and the store's host path) was one GET away
+    from every other routine's util; it is the per-routine half of the `/api/settings`
+    secret-name read the tier already refuses."""
+    make_routine(slug="apir")
+    server = make_test_server(tmp_path, routine_token="routine-tok")
+    secrets.set_routine_secret("apir", "SFTP_PASS", "hunter2")
+    with TestClient(create_app(server, with_scheduler=False)) as c:
+        r = c.get("/api/routines/apir/secrets", headers={"Authorization": "Bearer routine-tok"})
+        assert r.status_code == 403 and "SFTP_PASS" not in r.text
+        assert 'error="insufficient_scope"' in r.headers["www-authenticate"]
+        assert c.get("/api/routines/apir", headers={"Authorization": "Bearer routine-tok"}
+                     ).status_code == 200                     # the card stays readable
+        ok = c.get("/api/routines/apir/secrets", headers={"Authorization": f"Bearer {TEST_TOKEN}"})
+        assert ok.status_code == 200 and ok.json()["keys"] == ["SFTP_PASS"]
+
+
 def test_api_rejects_an_invalid_env_var_name(client):
     c, _tmp = client
     r = c.put("/api/routines/apir/secrets", json={"key": "not a var", "value": "v"})

@@ -23,6 +23,7 @@ from .routines_common import (
     _catalog,
     _info,
     _state,
+    guard_not_active,
     permission_layers_detail,
     queue_or_apply,
 )
@@ -86,11 +87,12 @@ def _schedule_fields(info: registry.RoutineInfo, lane: dict | None, *,
             "next_fire": nxt.isoformat() if nxt else None}
 
 
-def _card(request: Request, info: registry.RoutineInfo, *, monthly: dict | None = None,
-          lane_of: dict[str, dict] | None = None) -> dict:
+def _card(request: Request, info: registry.RoutineInfo, *, monthly: dict,
+          lane_of: dict[str, dict]) -> dict:
+    """One routine's dashboard card. `monthly` (the spend series) and `lane_of`
+    (`lanes.scheduled_lane_by_member`) are read ONCE by the caller for every card it builds.
+    """
     sched = _state(request).scheduler
-    if lane_of is None:
-        lane_of = lanes.scheduled_lane_by_member(_state(request).server.routines_home)
     last = info.last_run
     return {
         "slug": info.slug,
@@ -129,7 +131,7 @@ def _card(request: Request, info: registry.RoutineInfo, *, monthly: dict | None 
                             > DEFERRED_BACKLOG_N,
         "problems": info.problems,
         "improve": info.cfg.improve,
-        **({"spend": _spend_line(monthly, info.slug)} if monthly is not None else {}),
+        "spend": _spend_line(monthly, info.slug),
     }
 
 
@@ -178,12 +180,14 @@ def routine_detail(request: Request, slug: str) -> dict:
     in_library = bool(info.cfg.workflow_slug) and \
         (server.libraries_home / "workflows" / f"{info.cfg.workflow_slug}.py").exists()
     monthly = monthly_spend(server)
+    lane_of = lanes.scheduled_lane_by_member(server.routines_home)
+    lane = lane_of.get(info.slug)
     # uncensored-referral audit: how often a turn/llm call was answered by the uncensored
     # model (durable stream; the current month rides spend.current.referrals)
     referrals_total = sum(int(c.get("referrals") or 0)
                           for c in (monthly["by_routine"].get(slug) or {}).values())
     return {
-        **_card(request, info, monthly=monthly),
+        **_card(request, info, monthly=monthly, lane_of=lane_of),
         "referrals_total": referrals_total,
         # the heading this routine's card sits under on the Steward hub — identity, edited in
         # the page's identity section and named to the run in its harness contract
@@ -199,10 +203,9 @@ def routine_detail(request: Request, slug: str) -> dict:
         "run_gate": info.cfg.run_gate.model_dump(),
         # D71: set when a SCHEDULED lane contains this routine — its own cron is
         # suppressed and the Schedule dropdown renders the "lane managed" state, linking to
-        # the lane. At most one lane can match: membership is exclusive (rsched.lanes).
-        "lane_managed": next(({"id": ln["id"], "name": ln["name"]}
-                              for ln in lanes.list_lanes(server.routines_home)
-                              if ln["cron"] and slug in lanes.member_slugs(ln)), None),
+        # the lane. At most one lane can match: membership is exclusive (rsched.lanes). The
+        # same lookup the card's schedule fields read, so the two can never disagree.
+        "lane_managed": {"id": lane["id"], "name": lane["name"]} if lane else None,
         # Provenance is a CLAIM ("generated from") — in_library says whether the referenced
         # pattern actually exists in the current library, so the UI never implies a findable
         # workflow that isn't there (hand-authored recipes carry an empty slug).
@@ -332,12 +335,18 @@ def delete_local_reminder(request: Request, slug: str, rid: str) -> dict:
     Local only: a curated reminder is the library's copy, removed on the Library tab, and its
     tally here is this routine's evidence about it rather than the reminder itself. Deleting a
     local one takes its tally with it, because the tally is about a definition that is going.
+
+    Refused (409) while a run is active. A live run holds its reminders in memory and keeps
+    holding actions on them, and its next `remind` rewrites the file with the definitions it
+    holds (`engine/remind._save_local`) — so a delete landing mid-run reached nothing and was
+    then silently undone, under a 200.
     """
     from .. import reminders
 
     info = _info(request, slug)
     if not reminders.is_reminder_id(rid):
         raise HTTPException(400, f"not a reminder id: {rid!r}")
+    guard_not_active(request, info)
     local, gstats = reminders.load_local(info.cfg.dir)
     kept = [r for r in local if r.id != rid]
     if len(kept) == len(local):

@@ -101,26 +101,40 @@ async def converse(request: Request, run_id: str, text: Annotated[str, Form()],
     await _file_inbox_message(run_dir, text, files, via="web-converse")
     if state not in TERMINAL_STATES:
         return {"ok": True, "delivery": "mid-run"}
-    from ..config import load_routine
     cfg, _ = load_routine(routine_dir)
     if cfg is None:
         raise HTTPException(404, f"routine {slug!r} not found")
+    from ..engine.admin import (
+        ADMIN_HEADER,
+        admin_token_valid,
+        clear_admin_marker,
+        write_admin_marker,
+    )
+    from ..engine.revise import clear_revise_marker, write_revise_marker
+
     if recipe_edit:
         # The "editable recipe" checkbox: the SAME conversation continues, with the sole
         # difference that this leg may edit the routine's own recipe files (one-shot
         # marker, engine/revise.py — cleared when the loop reads it at init).
-        from ..engine.revise import write_revise_marker
         write_revise_marker(run_dir, text.strip())
     # D62: an ADMIN resume — the operator drives this conversation leg with the full toolset.
     # The admin token is compared HERE (constant-time, fail-closed) and NEVER reaches the
     # engine; on a match a one-shot marker unlocks capability gating for the resumed leg only.
-    from ..engine.admin import ADMIN_HEADER, admin_token_valid, write_admin_marker
-    if admin_token_valid(request.headers.get(ADMIN_HEADER)):
+    admin = admin_token_valid(request.headers.get(ADMIN_HEADER))
+    if admin:
         write_admin_marker(run_dir)
-    rid = await request.app.state.runner.resume_terminal(cfg, run_dir.name, reason="converse")
+    runner = request.app.state.runner
+    rid = await runner.resume_terminal(cfg, run_dir.name, reason="converse")
     if not rid:
-        raise HTTPException(409, "could not resume — another run of this routine is active, "
-                                 "or the daemon is draining")
+        # Both markers unlock the NEXT leg of this run dir, whatever starts it. Left behind
+        # by a resume that did not happen, they handed a later leg — a plain converse, the
+        # run page's resume — the full toolset or recipe editing it never presented for.
+        if admin:
+            clear_admin_marker(run_dir)
+        if recipe_edit:
+            clear_revise_marker(run_dir)
+        why = runner.resume_blocker(cfg, run_dir.name) or "the run is no longer finished"
+        raise HTTPException(409, f"could not resume: {why}")
     return {"ok": True, "delivery": "resumed", "run_id": rid}
 
 @router.post("/runs/{run_id}/pause")
@@ -191,8 +205,6 @@ async def resume_run(request: Request, run_id: str) -> dict:
     """
     slug, run_dir = _run_dir(request, run_id)
     require_terminal(run_dir, "resumes")
-    from ..config import load_routine
-
     cfg, _ = load_routine(run_dir.parent.parent)
     if cfg is None:
         raise HTTPException(404, f"routine {slug!r} not found")
@@ -236,7 +248,17 @@ async def abort_with_fallback(runner, slug: str, run_dir: Path) -> bool:
     """Abort via the runner (daemon-owned runs) with a recorded-pid fallback for runs the
     daemon doesn't track (a CLI run, a pre-restart orphan) — the ONE abort sequence the
     run, conversation, and background endpoints all share.
+
+    Only a run its own status still calls ACTIVE is aborted, by either path. A finished run's
+    status.json keeps the last pid it had, and the kernel is free to hand that number to any
+    later process: the fallback SIGTERMed whatever process GROUP held it now — another run's
+    engine, or one the daemon leads — which is what deleting a conversation with an old
+    finished background task, or an abort fired at a finished run, used to do. And the
+    runner aborts by SLUG, so the same abort used to stop whichever OTHER run of that routine
+    was live at the time.
     """
+    if run_state(run_dir) in TERMINAL_STATES:
+        return False
     if await runner.abort(slug):
         return True
     st = read_json(run_dir / "status.json")

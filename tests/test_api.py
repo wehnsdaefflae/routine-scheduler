@@ -1,7 +1,6 @@
 """Web API: auth, routine CRUD + 409 guard, runs/transcripts, questions, settings."""
 
 import json
-from types import SimpleNamespace
 
 import pytest
 import yaml
@@ -75,11 +74,9 @@ def test_routine_token_tier_reads_but_never_mutates_config(tmp_path, make_routin
             assert 'error="insufficient_scope"' in r.headers["www-authenticate"]
         # the allowlist is EMPTY — no routine-tier mutation exists, so a POST never
         # passes the tier gate on any path
-        from types import SimpleNamespace
-        fake = lambda path: SimpleNamespace(method="POST", url=SimpleNamespace(path=path))  # noqa: E731 — two probes, one shape
         assert not ROUTINE_TOKEN_MUTATIONS
-        assert not _routine_token_allowed(fake("/api/llm-tasks"))
-        assert not _routine_token_allowed(fake("/api/anything"))
+        assert not _routine_token_allowed("POST", "/api/llm-tasks")
+        assert not _routine_token_allowed("POST", "/api/anything")
         # a garbage bearer stays 401; the primary passes the sealed routes
         assert c.get("/api/routines",
                      headers={"Authorization": "Bearer nope"}).status_code == 401
@@ -120,10 +117,8 @@ def test_the_routine_token_reads_no_wider_than_the_sandbox(tmp_path, make_routin
         for path in ("/api/routines", "/api/routines/apir", "/api/items", "/api/status"):
             assert c.get(path, headers=rt).status_code == 200, path
         # subtree, never a bare prefix: a sibling route sharing the string is not swallowed
-        assert _routine_token_allowed(
-            SimpleNamespace(method="GET", url=SimpleNamespace(path="/api/fs-something")))
-        assert not _routine_token_allowed(
-            SimpleNamespace(method="GET", url=SimpleNamespace(path="/api/fs/list")))
+        assert _routine_token_allowed("GET", "/api/fs-something")
+        assert not _routine_token_allowed("GET", "/api/fs/list")
 
 
 def test_bootstrap_generates_and_backfills_the_routine_token(tmp_path, monkeypatch):
@@ -177,6 +172,23 @@ def test_engine_injects_the_routine_token_for_the_reserved_name(monkeypatch):
                         lambda: {"RSCHED_API_TOKEN": "the-primary-console-token"})
     env = scoped_env({"RSCHED_API_TOKEN"}, _extra_secrets(ctx))
     assert env["RSCHED_API_TOKEN"] == ""
+
+
+def test_a_dead_lifespan_task_does_not_fail_the_shutdown(tmp_path, monkeypatch):
+    """`_observe` logs a lifespan task the moment it dies. The shutdown then awaited it again,
+    and the exception that re-raised failed the whole lifespan shutdown — every task after it
+    (the push listener, the scheduler) left running into a closing loop."""
+    from rsched.web import api_search
+
+    async def crashes(_index):
+        raise RuntimeError("the search maintainer died")
+
+    monkeypatch.setattr(api_search, "maintain", crashes)
+    app = create_app(make_test_server(tmp_path), with_scheduler=False)
+    with TestClient(app) as c:
+        assert c.get("/api/status", headers={"Authorization": f"Bearer {TOKEN}"}
+                     ).status_code == 200
+    # leaving the block ran the shutdown: reaching this line is the assertion
 
 
 def test_sse_ticket_flow(client):
@@ -297,9 +309,10 @@ def test_patch_routine_resource_fields(client):
     detail = c.get("/api/routines/apir").json()
     assert detail["keep_runs"] == 5 and detail["catchup"] == "run_once"
     assert detail["fs_read_roots"] and detail["fs_write_roots"]   # resolved to absolute server paths
-    # validation: positive keep_runs, a known catchup policy, no empty root strings
+    # validation: positive keep_runs, a known catchup policy (typed: SchedulePatch's 422, like
+    # every schema refusal at this edge), no empty root strings
     assert c.patch("/api/routines/apir", json={"keep_runs": 0}).status_code == 400
-    assert c.patch("/api/routines/apir", json={"schedule": {"catchup": "bogus"}}).status_code == 400
+    assert c.patch("/api/routines/apir", json={"schedule": {"catchup": "bogus"}}).status_code == 422
     assert c.patch("/api/routines/apir", json={"fs_read_roots": ["ok", ""]}).status_code == 400
 
 
@@ -633,6 +646,57 @@ def test_intervention_endpoints(client):
     assert c.post(f"/api/runs/{rid}/pause").status_code == 409
 
 
+def test_abort_never_signals_a_finished_runs_pid(client):
+    """A finished run's status.json keeps the last pid it had, and the kernel reuses pids:
+    the recorded-pid fallback SIGTERMed whatever process GROUP held that number now. The
+    stand-in is a live process of our own, leading its own session like an engine does,
+    wearing a finished run's pid."""
+    import subprocess
+
+    c, tmp = client
+    proc = subprocess.Popen(["sleep", "60"], start_new_session=True)
+    try:
+        mk_run(tmp / "routines" / "apir", "20260708-110000", "finished", pid=proc.pid)
+        r = c.post("/api/runs/apir:20260708-110000/abort")
+        assert r.status_code == 409
+        assert proc.poll() is None                      # the bystander is still running
+    finally:
+        proc.kill()
+        proc.wait()
+
+
+def test_abort_of_a_finished_run_leaves_the_routines_live_run_alone(client, monkeypatch):
+    """The runner aborts by SLUG, so an abort naming an old, finished run stopped whichever
+    other run of the routine happened to be live."""
+    c, tmp = client
+    _mk_run(tmp / "routines", "apir", "20260708-120000", "finished")
+    aborted: list[str] = []
+
+    async def abort_live(slug):
+        aborted.append(slug)
+        return True
+
+    monkeypatch.setattr(c.app.state.runner, "abort", abort_live)
+    assert c.post("/api/runs/apir:20260708-120000/abort").status_code == 409
+    assert aborted == []
+    _mk_run(tmp / "routines", "apir", "20260708-130000", "running")
+    assert c.post("/api/runs/apir:20260708-130000/abort").status_code == 200
+    assert aborted == ["apir"]
+
+
+def test_run_reads_validate_their_query(client):
+    """A negative transcript offset reached a text-mode seek (a 500 on both the page and the
+    stream); a non-slug `routine` was joined onto every home, `../` and all."""
+    c, tmp = client
+    _mk_run(tmp / "routines", "apir", "20260708-140000", "finished")
+    rid = "apir:20260708-140000"
+    assert c.get(f"/api/runs/{rid}/transcript", params={"offset": -1}).status_code == 422
+    assert c.get(f"/api/runs/{rid}/events", params={"offset": -1}).status_code == 422
+    assert c.get("/api/runs", params={"limit": 0}).status_code == 422
+    assert c.get("/api/runs", params={"routine": "../routines/apir"}).status_code == 400
+    assert [r["run_id"] for r in c.get("/api/runs", params={"routine": "apir"}).json()] == [rid]
+
+
 def test_inject_carries_attachments(client):
     """A run-page message can carry file attachments (F202): uploads land under the
     routine dir's attachments/ (the run's working dir, so the recorded rels resolve for
@@ -857,6 +921,79 @@ def test_question_defer_to_next_run(client):
                                               "options": [], "asked": "20260707",
                                               "mode": "deferred"})
     assert c.post("/api/questions/q-d2/defer").status_code == 400
+
+
+def test_answering_files_off_the_event_loop(client, monkeypatch):
+    """The answer route is async — it awaits the runner — and it used to FILE on the loop
+    too: finding the record walks every home's decision catalog, and a forever-decision
+    commits under the repo lock, waiting up to 30 s for an engine holding it. Every stream,
+    every async route and the scheduler tick waited with it. Here the record lookup is held
+    open, and an async route must still answer meanwhile."""
+    import threading
+
+    from rsched.web import api_questions
+
+    c, tmp = client
+    atomic_write_json(tmp / "routines" / "apir" / "questions" / "pending" / "q-slow.json",
+                      {"qid": "q-slow", "question": "Ok?", "options": [],
+                       "asked": "20260707", "mode": "deferred"})
+    entered, release = threading.Event(), threading.Event()
+    real_find = api_questions.find_question
+
+    def held_find(server, qid):
+        entered.set()
+        release.wait(10)
+        return real_find(server, qid)
+
+    monkeypatch.setattr(api_questions, "find_question", held_find)
+    answered: dict = {}
+    probe: dict = {}
+    filing = threading.Thread(target=lambda: answered.update(
+        r=c.post("/api/questions/q-slow/answer", json={"text": "yes"})))
+    filing.start()
+    try:
+        assert entered.wait(5)
+        prober = threading.Thread(target=lambda: probe.update(
+            r=c.get("/api/runs/not-a-run-id/events")))     # an ASYNC route: runs on the loop
+        prober.start()
+        prober.join(3)
+        loop_was_free = not prober.is_alive()
+    finally:
+        release.set()
+        filing.join(10)
+    prober.join(10)
+    assert loop_was_free, "the answer route held the event loop while filing"
+    assert probe["r"].status_code == 400 and answered["r"].status_code == 200
+
+
+def test_question_events_are_published_on_the_loop(client, monkeypatch):
+    """The bus is a set of asyncio queues — not thread-safe — and snooze, defer and revise
+    are sync routes on worker threads. A put from there wakes no sleeping loop, so open
+    views heard about the change whenever something else next woke it."""
+    import asyncio
+
+    c, tmp = client
+    pending = tmp / "routines" / "apir" / "questions" / "pending"
+    atomic_write_json(pending / "q-e1.json", {"qid": "q-e1", "question": "Later?",
+                                              "options": [], "asked": "20260707",
+                                              "mode": "deferred"})
+    where: list[str] = []
+    bus = c.app.state.bus
+    real_publish = bus.publish
+
+    def publish(event):
+        try:
+            asyncio.get_running_loop()
+            where.append("loop")
+        except RuntimeError:
+            where.append("worker thread")
+        real_publish(event)
+
+    monkeypatch.setattr(bus, "publish", publish)
+    assert c.post("/api/questions/q-e1/snooze", json={"minutes": 5}).status_code == 200
+    assert c.post("/api/questions/q-e1/answer", json={"text": "fine"}).status_code == 200
+    assert c.post("/api/questions/q-e1/revise", json={"text": "finer"}).status_code == 200
+    assert where == ["loop", "loop", "loop"]
 
 
 def test_routine_card_spend_line(client):
@@ -1916,6 +2053,30 @@ def test_converse_recipe_edit(client, monkeypatch):
     assert msgs == ["tighten the report stage"]
 
 
+def test_a_converse_that_cannot_resume_leaves_no_unlock_behind(client, monkeypatch):
+    """The admin and recipe-edit markers are ONE-SHOT unlocks the next leg of the run dir
+    reads at init, whatever starts it. Written before a resume that was then refused (another
+    run of the routine live), they stayed — and the next leg (a plain converse, the run page's
+    resume) got the full toolset or recipe editing without ever presenting for it."""
+    from types import SimpleNamespace
+
+    from rsched.engine.admin import ADMIN_HEADER, ADMIN_MARKER, ADMIN_TOKEN_ENV
+    from rsched.engine.revise import REVISE_MARKER
+
+    c, tmp = client
+    run_dir = _mk_run(tmp / "routines", "apir", "20260709-130000", "finished")
+    monkeypatch.setenv(ADMIN_TOKEN_ENV, "admin-secret")
+    # another run of the routine is live, so the runner refuses the resume
+    monkeypatch.setitem(c.app.state.runner.active, "apir",
+                        SimpleNamespace(run_id="apir:20260709-140000"))
+    r = c.post("/api/runs/apir:20260709-130000/converse",
+               data={"text": "rewrite the gather stage", "recipe_edit": "1"},
+               headers={ADMIN_HEADER: "admin-secret"})
+    assert r.status_code == 409 and "another run of apir" in r.json()["detail"]
+    assert not (run_dir / ADMIN_MARKER).exists()
+    assert not (run_dir / REVISE_MARKER).exists()
+
+
 def test_audit_decision_answer_survives_inbox_consumption(client):
     """The D2 re-surfacing loop: a mid-run delivery consumes the feedback message
     instantly, and with the report still listing the decision open it re-entered the
@@ -2058,6 +2219,55 @@ def test_patch_binds_rules_via_config_patch(client):
     # an unknown slug is a legible 400, never the opaque extra=forbid 422
     bad = c.patch("/api/routines/apir", json={"rules": ["ghost"]})
     assert bad.status_code == 400 and "ghost" in bad.text
+
+
+def test_a_refused_patch_lands_nothing(client):
+    """The rule binder and the tuning file write outside the one final save, and both used to
+    write FIRST: a patch refused over a later field had already rebound the routine's rules or
+    re-levelled its deliberation — uncommitted, unscanned, under a 4xx saying nothing landed."""
+    from rsched.config import DELIBERATION_LEVELS, load_routine
+
+    c, tmp = client
+    rules_home = tmp / "library" / "rules"
+    rules_home.mkdir(parents=True, exist_ok=True)
+    (rules_home / "alpha.md").write_text(
+        "---\ntags: [a, b, c]\n---\n# rule: alpha — the first principle\nbody\n",
+        encoding="utf-8")
+    rdir = tmp / "routines" / "apir"
+    before = (rdir / "routine.yaml").read_text(encoding="utf-8")
+    deliberation = load_routine(rdir)[0].deliberation
+    level = next(lv for lv in DELIBERATION_LEVELS if lv != deliberation)
+    for later in ({"pattern": "no-such-pattern"}, {"schedule": {"cron": "not a cron"}},
+                  {"keep_runs": 0}):
+        r = c.patch("/api/routines/apir",
+                    json={"rules": ["alpha"], "deliberation": level, **later})
+        assert r.status_code in (400, 422), (later, r.status_code)
+        assert (rdir / "routine.yaml").read_text(encoding="utf-8") == before, later
+        assert load_routine(rdir)[0].deliberation == deliberation, later
+
+
+def test_a_raw_schedule_is_judged_before_it_is_written(client):
+    """`schedule` was a free mapping merged verbatim: a cron croniter rejects (or a zone it
+    does not know) answered `updated: ["schedule"]`, and the next load DROPPED it — a
+    scheduled routine silently turned manual (R102). A misspelled key landed beside the real
+    ones; a `friendly` that was not a mapping, or carried a wrong-typed field, was a 500."""
+    from rsched.config import load_routine
+
+    c, tmp = client
+    rdir = tmp / "routines" / "apir"
+    for body in ({"cron": "not a cron"}, {"tz": "Mars/Olympus"}, {"crn": "0 9 * * 1"},
+                 {"friendly": "daily"}, {"catchup": "always"}, {"disabled": "yes"}):
+        r = c.patch("/api/routines/apir", json={"schedule": body})
+        assert r.status_code == 422, (body, r.status_code, r.text)
+    r = c.patch("/api/routines/apir",
+                json={"schedule": {"friendly": {"frequency": "hourly", "minute": None}}})
+    assert r.status_code == 400 and "invalid schedule" in r.json()["detail"]
+    assert load_routine(rdir)[0].cron == "0 7 * * 1"               # untouched throughout
+    ok = c.patch("/api/routines/apir",
+                 json={"schedule": {"cron": "0 9 * * 2", "tz": "UTC", "catchup": "run_once"}})
+    assert ok.status_code == 200 and ok.json()["updated"] == ["schedule"]
+    cfg = load_routine(rdir)[0]
+    assert (cfg.cron, cfg.tz, cfg.catchup) == ("0 9 * * 2", "UTC", "run_once")
 
 
 def test_put_permissions_cascades_capabilities(client):

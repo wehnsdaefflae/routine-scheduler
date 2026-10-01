@@ -11,7 +11,10 @@ Because ownership IS the grant, there is no `secret:<NAME>` decision here and th
 gate skips these names entirely (engine/interact.py). The declared-only invariant still
 holds: a util receives the var only if its `secrets:` header declares it.
 
-Values are write-only, exactly like the central store: this API returns NAMES.
+Values are write-only, exactly like the central store: this API returns NAMES — and those to
+the operator alone. The routine token rides into every util that declares RSCHED_API_TOKEN, so
+the names read is refused to it like the central one (`app.ROUTINE_TOKEN_DENIED_READS`);
+otherwise every routine's secret names would be one GET away from every other routine.
 """
 
 from __future__ import annotations

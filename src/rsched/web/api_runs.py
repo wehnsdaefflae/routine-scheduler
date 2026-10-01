@@ -6,25 +6,30 @@ api_run_control uses).
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Annotated
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 from sse_starlette import EventSourceResponse
 
 from .. import registry
 from ..config import load_routine
 from ..engine.transcript import read_events
-from ..ids import parse_run_id
+from ..ids import is_slug, parse_run_id
 from ..paths import read_json
 from ..registry import TERMINAL_STATES
 from .sse import traced_run_stream
 
 router = APIRouter(tags=["runs"])
 
+#: A transcript byte offset. Only ever one the server handed out, so never negative — a
+#: negative one reached a text-mode seek and came back a 500.
+Offset = Annotated[int, Query(ge=0)]
+
 
 def _run_dir(request: Request, run_id: str) -> tuple[str, Path]:
-    """Resolve a run id in routines_home OR conversations_home — a conversation's run is a
-    run like any other (transcript, SSE, inject, converse, abort all apply). The owning
-    routine/conversation dir is always run_dir.parent.parent.
+    """Resolve a run id in any of the three run homes — a conversation's or a detached task's
+    run is a run like any other (transcript, SSE, inject, converse, abort all apply). The
+    owning routine/conversation dir is always run_dir.parent.parent.
     """
     try:
         slug, ts = parse_run_id(run_id)
@@ -39,12 +44,16 @@ def _run_dir(request: Request, run_id: str) -> tuple[str, Path]:
 
 
 @router.get("/runs")
-def run_index(request: Request, routine: str | None = None, limit: int = 30) -> list[dict]:
+def run_index(request: Request, routine: str | None = None,
+              limit: Annotated[int, Query(ge=1)] = 30) -> list[dict]:
     """Recent runs, newest first. `routine` filters to ONE slug, resolved across all three
     homes like _run_dir — a conversation's or a detached task's runs list here too;
-    without it, the index covers routines_home (the dashboard's world).
+    without it, the index covers routines_home (the dashboard's world). The slug is checked
+    like a run id's own: it is joined onto each home, and `../` would walk out of them.
     """
     server = request.app.state.server
+    if routine and not is_slug(routine):
+        raise HTTPException(400, f"not a routine slug: {routine!r}")
     if routine:
         runs = next((registry.run_index(home / routine, routine)
                      for home in registry.all_homes(server)
@@ -113,7 +122,8 @@ def run_detail(request: Request, run_id: str) -> dict:
 
 
 @router.get("/runs/{run_id}/transcript")
-def run_transcript(request: Request, run_id: str, offset: int = 0, sub: str | None = None) -> dict:
+def run_transcript(request: Request, run_id: str, offset: Offset = 0,
+                   sub: str | None = None) -> dict:
     """Paged transcript events. `sub` selects a subrun's transcript; a nested child is a
     slash path of subrun numbers ("2/1" = child 1 of child 2), matching sub/<n>/sub/<m>/
     on disk — the UI unfolds subrun conversations recursively with this.
@@ -130,7 +140,7 @@ def run_transcript(request: Request, run_id: str, offset: int = 0, sub: str | No
 
 
 @router.get("/runs/{run_id}/events")
-async def run_events(request: Request, run_id: str, offset: int = 0):
+async def run_events(request: Request, run_id: str, offset: Offset = 0):
     _, run_dir = _run_dir(request, run_id)
     return EventSourceResponse(traced_run_stream(run_dir, offset, request.app.state.server))
 
@@ -174,14 +184,14 @@ def run_file(request: Request, run_id: str, path: str):
     file-activity read model records per row (`bases`): a child's working-dir file lives under
     `sub/<n>/`, and resolving it against the parent alone made it a dead row that 404'd while
     a sibling in the same directory opened (R1193). The recorded bases are tried first, the
-    two tree roots after, and every candidate still has to land inside one of them.
+    two tree roots after, and every candidate still has to land inside one of them — proven
+    on the file as OPENED (`artifacts.open_within`), since a run's util can rearrange these
+    directories while the console looks. Served never cached, like every artifact (R1682):
+    the rows are the same deliverables, rewritten in place under the same names.
     """
-    import mimetypes
-
-    from fastapi.responses import FileResponse
-
     from ..paths import within
     from ..readmodels.fileactivity import file_activity
+    from .artifacts import file_response, open_within
 
     _, run_dir = _run_dir(request, run_id)
     routine_dir = run_dir.parent.parent
@@ -200,9 +210,11 @@ def run_file(request: Request, run_id: str, path: str):
             continue
         if not (within(run_dir, resolved) or within(routine_dir, resolved)):
             continue
-        if resolved.is_file():
-            media = mimetypes.guess_type(resolved.name)[0] or "text/plain"
-            return FileResponse(resolved, media_type=media, filename=resolved.name)
+        try:
+            fd = open_within(resolved, [routine_dir])
+        except OSError:                # gone, not a regular file, or moved out from under us
+            continue
+        return file_response(fd, resolved.name, default_media="text/plain")
     if rel.is_absolute():
         raise HTTPException(400, "only files under the run and its routine directory "
                                  f"are served — {path!r} is outside both")

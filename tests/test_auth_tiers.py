@@ -8,10 +8,11 @@ GETs hand it precisely what the jail forbids.
 
 Each denied prefix is denied for a stated reason, and the table below is the reason:
 `/api/fs` browses the daemon's whole filesystem (names only, but names are the map),
-`/api/settings` enumerates every central secret with the utils that declare it, `/api/debug`
-samples the daemon's own stacks, and `/api/search` is full-text over EVERY routine's
-transcripts, notes and ledgers — observations are never redacted, so a util that printed a
-token once is queryable by every other routine forever.
+`/api/settings` enumerates every central secret with the utils that declare it,
+`/api/routines/*/secrets` every routine's OWN secret names and the store's host path,
+`/api/debug` samples the daemon's own stacks, and `/api/search` is full-text over EVERY
+routine's transcripts, notes and ledgers — observations are never redacted, so a util that
+printed a token once is queryable by every other routine forever.
 """
 
 from __future__ import annotations
@@ -92,3 +93,52 @@ def test_the_deny_list_matches_subtrees_not_prefixes():
     assert "/api/fs" in ROUTINE_TOKEN_DENIED_READS
     assert _in_subtree("/api/fs", "/api/fs") and _in_subtree("/api/fs/list", "/api/fs")
     assert not _in_subtree("/api/fsomething", "/api/fs")
+
+
+def test_a_star_segment_stands_for_exactly_one_segment():
+    """`/api/routines/*/secrets` reaches every routine's own secret store and nothing beside
+    it: the routine card and its sibling routes stay readable."""
+    pattern = "/api/routines/*/secrets"
+    assert pattern in ROUTINE_TOKEN_DENIED_READS
+    assert _in_subtree("/api/routines/alpha/secrets", pattern)
+    assert _in_subtree("/api/routines/alpha/secrets/SFTP_USER", pattern)
+    assert not _in_subtree("/api/routines/alpha", pattern)
+    assert not _in_subtree("/api/routines/alpha/secretsx", pattern)
+    assert not _in_subtree("/api/routines/secrets", pattern)
+
+
+def test_the_tier_judges_the_path_the_router_dispatches(client):
+    """An encoded `?` (or `#`) inside a segment used to end the path the tier judged:
+    `request.url.path` is RE-PARSED from the decoded path, so `/api/runs/events%3Fx/transcript`
+    routed to the transcript route while auth read `/api/runs/events` — an SSE path, which a
+    URL-carriable ticket admits. Auth passed (the handler's own 400 proved it); a ticket is now
+    judged against the route it would actually reach."""
+    ticket = client.post("/api/sse-ticket",
+                         headers={"Authorization": f"Bearer {TEST_TOKEN}"}).json()["ticket"]
+    for encoded in ("%3F", "%23"):
+        r = client.get(f"/api/runs/events{encoded}x/transcript?ticket={ticket}")
+        assert r.status_code == 401, (encoded, r.status_code, r.text)
+    # the stream the ticket exists for still opens on it (404: authenticated, no such run)
+    assert client.get(f"/api/runs/ghost:00000000-000000/events?ticket={ticket}"
+                      ).status_code == 404
+
+
+def test_two_mints_purging_one_expired_ticket_do_not_collide(client):
+    """A mint runs on a worker thread, and every tab reconnecting after a restart mints at
+    once: two purges saw the same expired ticket and the slower `del` raised a 500. The
+    dict below loses its expired entries the moment it is listed — the other mint winning
+    the purge between this one's listing and its delete."""
+    import time
+
+    class RacingStore(dict):
+        def items(self):
+            listed = list(super().items())
+            for key, expiry in listed:
+                if expiry < time.monotonic():
+                    super().pop(key, None)
+            return listed
+
+    client.app.state.sse_tickets = RacingStore({"expired": 0.0})
+    r = client.post("/api/sse-ticket", headers={"Authorization": f"Bearer {TEST_TOKEN}"})
+    assert r.status_code == 200
+    assert "expired" not in client.app.state.sse_tickets
