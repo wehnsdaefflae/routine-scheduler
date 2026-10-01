@@ -243,6 +243,14 @@ def routine_health(server: ServerConfig, routine_dir: Path, slug: str) -> dict:
             "tracked": bool(versions)}
 
 
+def _fires(n: object) -> int:
+    """An assist's tally as the engine writes it — or 0 for whatever a hand edit left there."""
+    try:
+        return int(n or 0)  # type: ignore[call-overload]
+    except (TypeError, ValueError):
+        return 0
+
+
 def cautions(server: ServerConfig, routine_dir: Path) -> dict:
     """What the between-turn feed has actually been doing here: every reminder in force with
     this routine's own tally, and every rule assist that has fired, with its count.
@@ -266,12 +274,12 @@ def cautions(server: ServerConfig, routine_dir: Path) -> dict:
     except OSError:
         local, shared = [], []
     fired = read_json(assists_mod.state_path(routine_dir), {})
-    counts = fired if isinstance(fired, dict) else {}
+    counts = {key: _fires(n) for key, n in fired.items()} if isinstance(fired, dict) else {}
     known = {a.key: a for a in library_reads.assists(server.rules_home)}
     rows = []
-    for key, n in sorted(counts.items(), key=lambda kv: (-int(kv[1] or 0), kv[0])):
+    for key, n in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0])):
         a = known.get(key)
-        rows.append({"key": key, "fires": int(n or 0),
+        rows.append({"key": key, "fires": n,
                      "rule": a.rule if a else key.split(":")[0],
                      "moment": a.moment if a else "",
                      "payload": a.payload if a else "",

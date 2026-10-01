@@ -280,6 +280,25 @@ def test_payload_carries_the_time_trend_and_the_budget_endings(tmp_path):
     assert h["endings"]["budget_exhausted"] == 1 and h["endings"]["run_partial"] == 0
 
 
+def test_a_hand_broken_assist_tally_reads_as_nothing_instead_of_breaking_the_page(tmp_path):
+    """`cautions` rides the routine page's health payload and promises that a hand-broken store
+    shows nothing rather than a broken page; a tally that is not a number raised in `int()`
+    and took the whole payload down with it."""
+    import json
+
+    from rsched.readmodels.run_health import cautions
+
+    server = ServerConfig()
+    server.routines_home = tmp_path / "routines"
+    server.libraries_home = tmp_path / "library"
+    d = server.routines_home / "r"
+    (d / "state").mkdir(parents=True)
+    (d / "state" / "assists.json").write_text(
+        json.dumps({"x:pre-action": "lots", "y:observation": 2}), encoding="utf-8")
+    rows = [(r["key"], r["fires"]) for r in cautions(server, d)["assists"]]
+    assert rows == [("y:observation", 2), ("x:pre-action", 0)]
+
+
 def test_a_continued_run_is_one_run_not_three():
     """Legs of one run are bookkeeping, not cost, and the two halves of a usage record
     disagree about which: `turns` is cumulative across legs while `tokens` is per leg.
