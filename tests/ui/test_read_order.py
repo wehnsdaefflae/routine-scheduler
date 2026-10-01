@@ -111,3 +111,32 @@ def test_a_bus_event_during_an_older_question_read_gets_a_fresh_one(ui, ui_page)
     held[0][0].continue_()
     ui_page.wait_for_timeout(3800)                       # past the store's 3 s window
     assert len(sent) == 2, f"the event was folded into a read that predates it: {sent}"
+
+
+def test_a_slow_sidebar_read_does_not_bring_back_an_old_title(ui, ui_page):
+    """The conversation list reloads on a 20 s timer, on run events and after a rename. A read
+    begun before the rename could land after the one that showed it, and the sidebar went back
+    to the old title until the next refresh."""
+    ui_page.goto(f"{ui.url}/#/conversations")
+    ui_page.locator(".conv-new textarea").fill("Plan the trip.")
+    ui_page.get_by_role("button", name="start conversation").click()
+    ui_page.wait_for_url("**/conversations/**")
+    row = ui_page.locator(".conv-item.on .conv-title")
+    expect(row).not_to_have_text("")
+    old = row.inner_text()
+
+    held = _hold_first(ui_page, lambda url: url.endswith("/api/conversations"))
+    ui_page.evaluate("() => window.dispatchEvent(new CustomEvent('rsched-bus', "
+                     "{ detail: { event: 'run_started', run_id: 'x' } }))")
+    until(lambda: held, what="the run event's list read", page=ui_page)
+
+    title = ui_page.locator(".conv-h1")
+    title.fill("Trip, renamed")
+    title.evaluate("el => el.blur()")
+    expect(row).to_have_text("Trip, renamed")
+
+    route, stale = held[0]
+    route.fulfill(response=stale)                        # the list from before the rename
+    ui_page.wait_for_timeout(800)
+    expect(row).to_have_text("Trip, renamed")
+    assert old != "Trip, renamed"

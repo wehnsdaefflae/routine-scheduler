@@ -107,14 +107,23 @@ export async function render(view, slug, _query = {}) {
   }
 
   // ---- sidebar --------------------------------------------------------------------------------
+  // The list reloads on a 20 s timer, on run events and after a rename or a tag edit — reads
+  // that overlap and answer out of order. Only the newest one paints: a read begun before a
+  // rename used to land after it and put the old title back.
+  let listSeq = 0;
   async function loadList() {
-    try { items = await api("/api/conversations"); }
+    const seq = ++listSeq;
+    let next;
+    try { next = await api("/api/conversations"); }
     catch (err) {
+      if (seq !== listSeq) return;
       const retry = el("button", { class: "btn small", onclick: loadList }, "retry");
       sideList.replaceChildren(el("div", { class: "empty" },
         el("div", {}, `couldn't load conversations: ${err.message}`), retry));
       return;
     }
+    if (seq !== listSeq) return;
+    items = next;
     renderList();
   }
 
