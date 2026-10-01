@@ -118,3 +118,40 @@ def test_proxy_reauth_from_each_endpoints_own_card(ui, ui_page, monkeypatch):
     expect(claude).to_contain_text("✓ Claude me@example.org: ok")
     expect(claude).to_contain_text("5h 90% left")          # the quota row reloaded too
     assert completed == [("anthropic", "st-1", "http://localhost:54545/callback?code=abc&state=st-1")]
+
+
+def test_a_double_pressed_reauth_starts_one_sign_in(ui, ui_page, monkeypatch):
+    """Two presses asked the proxy for two sign-ins, and the card showed whichever link answered
+    last while the other state waited for a code that would never come. The button rests while
+    the proxy mints the link (util.js act)."""
+    from rsched.config import ModelConfig
+    from rsched.endpoints import cliproxy_login
+
+    ui.server_cfg.endpoints["claude-proxy"] = EndpointConfig(
+        kind="anthropic", base_url="http://127.0.0.1:1", quota_source="cliproxy")
+    ui.server_cfg.models["Opus"] = ModelConfig(name="Opus", endpoint="claude-proxy",
+                                                model="claude-opus-5")
+    monkeypatch.setattr(cliproxy_quota, "read_quota",
+                        lambda cfg: {"supported": True, "ok": False, "error": "token expired"})
+    monkeypatch.setattr(cliproxy_login, "accounts", lambda cfg, providers: {
+        "supported": True, "ok": True, "accounts": [],
+        "providers": [{"id": "anthropic", "label": "Claude"}]})
+    started: list = []
+
+    def start(cfg, provider):
+        started.append(provider)
+        return {"ok": True, "provider": provider, "url": "https://consent.invalid/authorize",
+                "state": f"st-{len(started)}", "callback_port": 54545}
+    monkeypatch.setattr(cliproxy_login, "start", start)
+
+    def slow(route):                      # hold the POST so the second press lands while it is out
+        ui_page.wait_for_timeout(400)
+        route.continue_()
+
+    ui_page.route("**/api/settings/endpoints/claude-proxy/proxy-login", slow)
+    ui_page.goto(f"{ui.url}/#/settings?section=endpoints")
+    card = ui_page.locator(".panel", has=ui_page.get_by_text("claude-proxy", exact=True)).first
+    card.get_by_role("button", name="re-authenticate Claude", exact=True).dblclick()
+    expect(card.get_by_role("link", name="1. open the sign-in page ↗")).to_be_visible()
+    ui_page.wait_for_timeout(500)
+    assert started == ["anthropic"], f"one press, {len(started)} sign-ins"

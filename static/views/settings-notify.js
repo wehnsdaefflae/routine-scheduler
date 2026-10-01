@@ -4,7 +4,7 @@
 
 import { api } from "/static/api.js";
 import * as notify from "/static/notify.js";
-import { el, toast, toastError } from "/static/util.js";
+import { act, el, toast } from "/static/util.js";
 
 // ---- notifications: tier 1 (tab open) + tier 2 (Web Push, tab closed) -------------------------
 export function renderNotifications() {
@@ -65,21 +65,16 @@ export function renderNotifications() {
     const sub = el("button", { class: "btn small primary", hidden: st.subscribed || null }, "enable on this browser");
     const unsub = el("button", { class: "btn small danger", hidden: st.subscribed ? null : "" }, "disable on this browser");
     const test = el("button", { class: "btn small", hidden: st.subscribed ? null : "" }, "send test");
-    sub.onclick = async () => {
-      sub.disabled = true;
-      try { await notify.pushSubscribe(); toast("subscribed — decisions push to this browser now"); renderPush(); }
-      catch (err) { toastError(err, 5000); sub.disabled = false; }
-    };
-    unsub.onclick = async () => {
-      unsub.disabled = true;
-      try { await notify.pushUnsubscribe(); toast("push disabled on this browser"); renderPush(); }
-      catch (err) { toastError(err, 5000); unsub.disabled = false; }
-    };
-    test.onclick = async () => {
-      try { const r = await api("/api/push/test", { method: "POST" });
-        toast(`test sent to ${r.sent} browser(s)`); }
-      catch (err) { toastError(err, 5000); }
-    };
+    // util.js act(), like every other Settings button: disabled while its request is out — a
+    // double press on "send test" pushed two notifications to every subscribed browser.
+    sub.onclick = () => act(sub, async () => { await notify.pushSubscribe(); renderPush(); },
+      "subscribed — decisions push to this browser now");
+    unsub.onclick = () => act(unsub, async () => { await notify.pushUnsubscribe(); renderPush(); },
+      "push disabled on this browser");
+    test.onclick = () => act(test, async () => {
+      const r = await api("/api/push/test", { method: "POST" });
+      toast(`test sent to ${r.sent} browser(s)`);
+    });
     pushRow.append(head,
       el("div", { class: "muted small" },
         "one notification per new decision, sent by the server — subscribe each browser/device you want reached"),

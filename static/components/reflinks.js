@@ -6,6 +6,8 @@
 // decisions) — on arbitrary text a bare "D1" is a false positive. `R` and not `B` for bug
 // reports: the user's own reviewer-backlog items are written B<n> and would mislink.
 
+import { flash } from "/static/landing.js";
+
 // Unbounded digits: the R namespace passes R10000, and a capped pattern left every id past it
 // as plain text.
 const REF_RE = /\b([FDR]\d+)\b/g;
@@ -50,7 +52,6 @@ export function focusRef(id) {
   const target = document.getElementById(`ref-${id}`);
   if (!target) return false;
   target.scrollIntoView({ block: "center" });
-  target.classList.add("ref-flash");
-  setTimeout(() => target.classList.remove("ref-flash"), 2500);
+  flash(target);
   return true;
 }

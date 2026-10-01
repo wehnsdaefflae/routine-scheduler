@@ -13,6 +13,7 @@
 // that carry their own page-level rail.
 
 import { el } from "/static/util.js";
+import { openFolds } from "/static/landing.js";
 
 export function mountToc(box) {
   // Views with their own page-level rail don't get a second one. The routine page's
@@ -33,7 +34,7 @@ export function mountToc(box) {
         e.preventDefault();
         // a section folded inside a closed group (or its "more" menu) has no box to scroll to:
         // open every fold on the way, as a fix link does
-        for (let d = h.closest("details"); d; d = d.parentElement?.closest("details")) d.open = true;
+        openFolds(h);
         h.scrollIntoView({ behavior: "smooth", block: "start" });
       } },
       h.textContent.trim());

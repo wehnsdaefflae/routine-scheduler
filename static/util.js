@@ -1,6 +1,7 @@
 // Small DOM + formatting helpers (no framework, no build). el() is textContent-only — it has
-// no HTML pathway, so strings passed to it can never become markup. The ONE sanctioned
-// innerHTML pathway is md.js (simple markdown for model-authored prose), which escapes first.
+// no HTML pathway, so strings passed to it can never become markup, nor script: an `on*`
+// attribute takes a FUNCTION and nothing else. The ONE sanctioned innerHTML pathway is md.js
+// (simple markdown for model-authored prose), which escapes first.
 
 // Web storage can throw (private mode, blocked site data, embedded contexts) — even READING the
 // `localStorage`/`sessionStorage` global does — so every console read goes through one of these
@@ -17,12 +18,26 @@ function webStorage(area) {
 export const storage = webStorage("localStorage");     // per browser
 export const session = webStorage("sessionStorage");   // per tab, gone when it closes
 
+// An event handler is a function, wired with addEventListener. Anything else under an `on*`
+// name used to fall through to setAttribute, where a string IS an inline handler — the browser
+// compiles it as script, and since HTML lowercases attribute names, `onClick`/`ONCLICK` compile
+// too. That is the one way an el() string could run, so the name is refused rather than set;
+// null/undefined/false still mean "no handler", like every other attribute. The event type is
+// lowercased for the same reason the attribute is: `onClick: fn` listened for a "Click" event,
+// which nothing ever fires.
+const HANDLER_RE = /^on/i;
+
 export function el(tag, attrs = {}, ...children) {
   const node = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs)) {
+    if (v === null || v === undefined || v === false) continue;
     if (k === "class") node.className = v;
-    else if (k.startsWith("on") && typeof v === "function") node.addEventListener(k.slice(2), v);
-    else if (v !== null && v !== undefined && v !== false) node.setAttribute(k, v === true ? "" : v);
+    else if (HANDLER_RE.test(k)) {
+      if (typeof v !== "function") {
+        throw new TypeError(`el(${tag}): ${k} must be a function, not ${typeof v}`);
+      }
+      node.addEventListener(k.slice(2).toLowerCase(), v);
+    } else node.setAttribute(k, v === true ? "" : v);
   }
   for (const c of children.flat()) {
     if (c === null || c === undefined) continue;
@@ -185,10 +200,11 @@ export function chip(text, cls = "") {
 }
 
 // The capabilities a permission doc's instructions presume (its `requires:`) as one human
-// line, e.g. "needs write_util · util discord". Empty when the doc requires nothing.
+// line, e.g. "needs write_util · util discord". Empty when the doc requires nothing. Actions and
+// utils are all a doc may require: previous-run depth is a setting the routine's owner chooses
+// (grants.normalize_capabilities refuses it in a `requires:`), so it is never named here.
 export function requiresSummary(r) {
   const caps = [...(r?.actions || []), ...(r?.utils || []).map((u) => `util ${u}`)];
-  if (r?.runs) caps.push(r.runs === "last" ? "previous runs (last)" : "previous runs (all)");
   return caps.length ? `needs ${caps.join(" · ")}` : "";
 }
 
@@ -329,9 +345,15 @@ export function queuedToast(res, savedMsg) {
  *  `okMsg` is the success line; when the endpoint answers `{queued:true}` (D78-A, an edit
  *  made while a run is active) the queued wording wins, because every save that can be
  *  queued must say so. Returns the handler's value, or undefined when it threw — a caller
- *  that must know the difference should await `api()` itself. */
+ *  that must know the difference should await `api()` itself.
+ *
+ *  A disabled button cannot hold focus, and a confirm `fn` opens hands focus back to its opener
+ *  on close — this button, still disabled then, so it took none and a keyboard reader who
+ *  cancelled was left on <body>. The button that had focus takes it back on its re-enable,
+ *  unless the reader has moved on to something else meanwhile. */
 export async function act(btn, fn, okMsg) {
   const buttons = Array.isArray(btn) ? btn : [btn];
+  const focused = buttons.find((b) => b === document.activeElement);
   for (const b of buttons) b.disabled = true;
   try {
     const res = await fn();
@@ -342,6 +364,8 @@ export async function act(btn, fn, okMsg) {
     return undefined;
   } finally {
     for (const b of buttons) b.disabled = false;
+    const nowhere = !document.activeElement || document.activeElement === document.body;
+    if (focused?.isConnected && nowhere) focused.focus();
   }
 }
 

@@ -10,7 +10,7 @@
 // connections and machines have theirs: one panel, one responsibility, one place to fix.
 
 import { api } from "/static/api.js";
-import { el, skeleton, toast, toastError } from "/static/util.js";
+import { act, el, skeleton, toast } from "/static/util.js";
 
 export function routineSecretsCard(slug) {
   const box = el("div", {}, skeleton(["50%"]));
@@ -25,19 +25,21 @@ export function routineSecretsCard(slug) {
       "on its ", el("code", {}, "secrets:"), " header. A name set here overrides the central ",
       "store's value for this routine's runs."));
 
+    // Both buttons run through act(), as Settings → Secrets does: disabled while the request is
+    // out, so a double press is one write — not a second DELETE answering 404.
     for (const name of own.keys || []) {
+      const remove = el("button", { class: "btn small" }, "remove");
+      remove.onclick = () => act(remove, async () => {
+        await api(`/api/routines/${slug}/secrets/${encodeURIComponent(name)}`,
+                  { method: "DELETE" });
+        load();
+      }, `${name} removed`);
       box.append(el("div", { class: "row", style: "margin:5px 0", "data-own-secret": name },
         el("code", { class: "small", style: "min-width:240px" }, name),
         (own.shadowing || []).includes(name)
           ? el("span", { class: "muted small" }, "overrides the central store's value")
           : null,
-        el("button", { class: "btn small", onclick: async () => {
-          try {
-            await api(`/api/routines/${slug}/secrets/${encodeURIComponent(name)}`,
-                      { method: "DELETE" });
-            toast(`${name} removed`); load();
-          } catch (err) { toastError(err); }
-        } }, "remove")));
+        remove));
     }
     if (!(own.keys || []).length)
       box.append(el("div", { class: "muted small" }, "none yet"));
@@ -46,16 +48,16 @@ export function routineSecretsCard(slug) {
                                 "data-own-secret-key": "", style: "min-width:240px" });
     const valIn = el("input", { type: "password", placeholder: "value",
                                 "data-own-secret-value": "", style: "min-width:240px" });
-    box.append(el("div", { class: "row", style: "margin-top:10px" }, keyIn, valIn,
-      el("button", { class: "btn small", "data-own-secret-set": "", onclick: async () => {
-        if (!keyIn.value.trim()) { toast("a name is required", 3000, { error: true }); return; }
-        try {
-          await api(`/api/routines/${slug}/secrets`,
-                    { method: "PUT", body: { key: keyIn.value.trim(), value: valIn.value } });
-          toast(`${keyIn.value.trim()} saved`); keyIn.value = ""; valIn.value = "";
-          load();
-        } catch (err) { toastError(err); }
-      } }, "set")));
+    const setBtn = el("button", { class: "btn small", "data-own-secret-set": "" }, "set");
+    setBtn.onclick = () => act(setBtn, async () => {
+      const key = keyIn.value.trim();
+      if (!key) { toast("a name is required", 3000, { error: true }); return; }
+      await api(`/api/routines/${slug}/secrets`,
+                { method: "PUT", body: { key, value: valIn.value } });
+      toast(`${key} saved`); keyIn.value = ""; valIn.value = "";
+      load();
+    });
+    box.append(el("div", { class: "row", style: "margin-top:10px" }, keyIn, valIn, setBtn));
   };
 
   load();

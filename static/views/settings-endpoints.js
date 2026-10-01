@@ -23,6 +23,13 @@ const KIND = {
 const KINDS = ["openai", "anthropic"];
 const SCHEMA_MODES = ["json_schema", "json_object", "ollama_native", "none"];
 
+// The endpoint's fallback context window, or nothing: a blank field is LEFT OUT of the save and
+// the server fills in its own default. Both forms used to send `|| 25000` — a second copy of the
+// server's DEFAULT_CONTEXT_TOKENS that would go on saving the old number after the default moved.
+const contextField = (input) =>
+  (Number(input.value) > 0 ? { context_tokens: Number(input.value) } : {});
+const CONTEXT_BLANK = "blank: the server's default";
+
 export async function renderEndpoints(view) {
   view.append(el("div", { class: "set-desc muted small" },
     "Model transports only — the scheduler is the only harness. None are configured by default; ",
@@ -148,7 +155,8 @@ export async function renderEndpoints(view) {
     const quotaKeyIn = el("input", { type: "text", value: ep.quota_key_var || "CLIPROXY_MANAGEMENT_KEY" });
     const quotaAccountIn = el("input", { type: "text", value: ep.quota_auth_index || "",
       placeholder: "Automatic for one Claude account" });
-    const ctxIn = el("input", { type: "number", value: ep.context_tokens });
+    const ctxIn = el("input", { type: "number", min: "1", value: ep.context_tokens,
+      placeholder: CONTEXT_BLANK });
     const tempIn = el("input", { type: "number", step: "0.1", value: ep.temperature ?? "", placeholder: "provider default" });
     const mtIn = el("input", { type: "number", value: ep.max_tokens ?? "", placeholder: "inherit (16,384)" });
     const extraBodyIn = ep.kind === "openai"
@@ -162,7 +170,7 @@ export async function renderEndpoints(view) {
         quota_source: quotaSel.value, quota_key_var: quotaKeyIn.value.trim(),
         quota_auth_index: quotaAccountIn.value.trim(),
         key_env_file: keyEnvIn.value.trim(), key_var: keyVarIn.value.trim(),
-        schema_mode: schemaSel.value, context_tokens: Number(ctxIn.value) || 25000,
+        schema_mode: schemaSel.value, ...contextField(ctxIn),
         temperature: tempIn.value.trim() ? Number(tempIn.value) : null,
         max_tokens: mtIn.value.trim() ? Number(mtIn.value) : null };
       if (extraBodyIn) {
@@ -264,7 +272,7 @@ export async function renderEndpoints(view) {
     const baseIn = el("input", { type: "text", placeholder: "https://host/v1" });
     const keyVarIn = el("input", { type: "text", placeholder: "KEY_VAR in Secrets (optional)" });
     const schemaSel = el("select", {}, SCHEMA_MODES.map((m) => el("option", {}, m)));
-    const ctxIn = el("input", { type: "number", value: "25000" });
+    const ctxIn = el("input", { type: "number", min: "1", placeholder: CONTEXT_BLANK });
     const hint = el("div", { class: "muted small" });
     const onKind = () => {
       const k = KIND[kindSel.value]; hint.textContent = k ? `${k.title} — ${k.hint}` : "";
@@ -276,7 +284,7 @@ export async function renderEndpoints(view) {
       savedToast(await api("/api/settings/endpoints", { method: "POST", body: {
         name: nameIn.value.trim(), kind: kindSel.value, base_url: baseIn.value.trim(),
         key_var: keyVarIn.value.trim(), schema_mode: schemaSel.value,
-        context_tokens: Number(ctxIn.value) || 25000 } }),
+        ...contextField(ctxIn) } }),
         `endpoint ${nameIn.value.trim()} added — set its ${KIND[kindSel.value]?.keyLabel || "key"} on its card, then add a model`);
       await load();
     });

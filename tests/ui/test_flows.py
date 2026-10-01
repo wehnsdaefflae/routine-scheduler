@@ -1214,6 +1214,36 @@ def test_settings_endpoints_crud(ui, ui_page):
     assert "llama" not in (cfg.get("models") or {})   # deleting the last model may null the key
 
 
+def test_an_endpoint_saved_with_no_context_window_takes_the_servers_default(ui, ui_page):
+    """The add form came prefilled with 25000, and both endpoint forms sent `|| 25000` for a
+    blank field — a copy of the server's DEFAULT_CONTEXT_TOKENS that would go on saving the old
+    number after the default moved. A blank field is left out; the server fills in its own."""
+    from rsched.config import DEFAULT_CONTEXT_TOKENS
+
+    ui_page.goto(f"{ui.url}/#/settings?section=endpoints")
+    add = ui_page.locator("details.panel", has_text="+ add endpoint")
+    add.locator("summary").click()
+    expect(add.get_by_label("Context window (tokens, fallback)")).to_have_value("")
+    add.locator('input[placeholder="name (e.g. openrouter)"]').fill("blankctx")
+    with ui_page.expect_request(lambda r: r.method == "POST"
+                                and r.url.endswith("/api/settings/endpoints")) as sent:
+        add.get_by_role("button", name="add endpoint", exact=True).click()
+    assert "context_tokens" not in sent.value.post_data_json
+    card = ui_page.locator(".panel", has=ui_page.locator("strong", has_text="blankctx")).first
+    expect(card).to_be_visible()
+    assert _server_yaml(ui)["endpoints"]["blankctx"]["context_tokens"] == DEFAULT_CONTEXT_TOKENS
+
+    # the edit form shows the stored number; cleared, the save leaves it to the server again
+    card.locator("summary", has_text="edit fields").click()
+    ctx = card.get_by_label("Context window (tokens, fallback)")
+    expect(ctx).to_have_value(str(DEFAULT_CONTEXT_TOKENS))
+    ctx.fill("")
+    with ui_page.expect_request(lambda r: r.method == "PUT"
+                                and r.url.endswith("/api/settings/endpoints/blankctx")) as put:
+        card.get_by_role("button", name="save changes").click()
+    assert "context_tokens" not in put.value.post_data_json
+
+
 def test_settings_grouped_layout(ui, ui_page):
     """The Settings page groups its sections into four labelled categories with a per-group
     blurb and a per-section description (F248 cognitive-model overhaul), while keeping every

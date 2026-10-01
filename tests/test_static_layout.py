@@ -23,6 +23,18 @@ STATIC = Path(__file__).resolve().parents[1] / "static"
 MID_QUERY_RE = re.compile(r"@media \(min-width: \d+px\)")
 
 
+def _rules(css: str) -> str:
+    """The stylesheet without its comments. views.css NAMES selectors in its prose
+    ("(.run-rail = the right column, .run-rail.left = the conversation index …)"), so a
+    check that read the raw text passed on a comment alone."""
+    return re.sub(r"/\*.*?\*/", "", css, flags=re.DOTALL)
+
+
+def _selects(rules: str, selector: str) -> bool:
+    """`selector` as a whole token: `.pane-rail` is not present because `.pane-railing` is."""
+    return re.search(re.escape(selector) + r"(?![\w-])", rules) is not None
+
+
 def test_conversations_mounts_run_rails():
     src = (STATIC / "views" / "conversations.js").read_text(encoding="utf-8")
     assert 'class: "run-rail left"' in src, "conversation list must ride a left run-rail"
@@ -41,11 +53,12 @@ def test_dom_order_list_chat_artifacts():
 
 
 def test_css_styles_both_rail_positions():
-    css = (STATIC / "views.css").read_text(encoding="utf-8")
-    assert ".run-rail {" in css
-    assert ".run-rail.left" in css, "the left rail variant must be styled (fixed left margin)"
+    rules = _rules((STATIC / "views.css").read_text(encoding="utf-8"))
+    assert ".run-rail {" in rules
+    assert _selects(rules, ".run-rail.left"), \
+        "the left rail variant must be styled (fixed left margin)"
     for gone in (".conv-layout", ".pane-handle", ".pane-fold", ".pane-rail"):
-        assert gone not in css, f"stale CSS for the removed grid: {gone}"
+        assert not _selects(rules, gone), f"stale CSS for the removed grid: {gone}"
 
 
 def test_rails_persist_at_mid_widths():
@@ -63,17 +76,16 @@ def test_rails_persist_at_mid_widths():
     assert "main:has(.conv-view), main:has(.run-view) { max-width: none; }" in block, \
         "both views must escape the reading column through selectors that can match"
     # the comment above the rule NAMES the dead selector to explain it; strip comments first
-    rules = re.sub(r"/\*.*?\*/", "", css, flags=re.DOTALL)
-    assert "main.conv-view" not in rules, "the dead element selector must not come back"
+    assert "main.conv-view" not in _rules(css), "the dead element selector must not come back"
     assert "display: grid" in block, "mid widths must lay the rails out as grid columns"
     assert "position: sticky" in block, "grid rails must stick (remain on scroll)"
 
 
 def test_no_view_references_undefined_conv_classes():
-    """Every conv-*/pane-* class literal the conversations view mounts is styled."""
-    import re
+    """Every conv-*/pane-* class literal the conversations view mounts is styled — by a RULE:
+    a class a comment merely mentions is not styled."""
     src = (STATIC / "views" / "conversations.js").read_text(encoding="utf-8")
-    css = (STATIC / "views.css").read_text(encoding="utf-8")
+    css = _rules((STATIC / "views.css").read_text(encoding="utf-8"))
     used = set()
     for m in re.finditer(r'class: [`"]([^`"]+)[`"]', src):
         for token in re.split(r"[\s$]", m.group(1)):

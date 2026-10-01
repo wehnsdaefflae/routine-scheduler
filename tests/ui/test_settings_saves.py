@@ -55,6 +55,22 @@ def test_a_double_clicked_delete_asks_once(ui, ui_page):
     expect(ui_page.locator("tr", has_text="DOUBLE_PROBE")).to_have_count(0)
 
 
+def test_finish_setup_is_sent_once(ui, ui_page):
+    """The first-run banner's one button had the hand-written shape too: a double press
+    completed setup twice and toasted twice."""
+    (ui.tmp / ".setup-complete").unlink()
+    ui_page.goto(f"{ui.url}/#/settings")
+    done = ui_page.get_by_role("button", name="finish setup")
+    expect(done).to_be_visible()
+    seen = _held(ui_page, "**/api/setup/complete", "POST")
+    done.dblclick()
+    expect(ui_page.locator("#toast")).to_contain_text("setup complete")
+    expect(done).to_have_count(0)
+    ui_page.wait_for_timeout(500)
+    assert len(seen) == 1, f"one press, {len(seen)} completions: {seen}"
+    assert (ui.tmp / ".setup-complete").exists()
+
+
 def test_a_model_save_that_lands_with_problems_says_so(ui, ui_page):
     ui_page.goto(f"{ui.url}/#/settings?section=endpoints")
     card = ui_page.locator(".panel", has_text="dummy / m").last

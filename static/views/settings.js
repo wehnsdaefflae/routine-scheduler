@@ -8,7 +8,7 @@
 import { api } from "/static/api.js";
 import { setQuery } from "/static/router.js";
 import { settingsSection } from "/static/components/settings-section.js";
-import { el, toast, toastError } from "/static/util.js";
+import { act, el } from "/static/util.js";
 import { renderConnections } from "/static/views/settings-connections.js";
 import { renderEndpoints } from "/static/views/settings-endpoints.js";
 import { renderGithub } from "/static/views/settings-github.js";
@@ -108,10 +108,10 @@ export async function render(view, query = {}) {
   if (st.needs_setup) {
     const banner = el("div", { class: "panel warn", style: "margin-bottom:14px" });
     const done = el("button", { class: "btn small primary" }, "finish setup");
-    done.onclick = async () => {
-      try { await api("/api/setup/complete", { method: "POST" }); toast("setup complete - no more first-run redirect"); banner.remove(); }
-      catch (err) { toastError(err, 5000); }
-    };
+    done.onclick = () => act(done, async () => {
+      await api("/api/setup/complete", { method: "POST" });
+      banner.remove();
+    }, "setup complete - no more first-run redirect");
     banner.append(
       el("strong", {}, "First-run setup"),
       el("div", { class: "muted mt small" },

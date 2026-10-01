@@ -178,3 +178,31 @@ def test_only_the_newest_gate_test_paints_its_verdict(ui, ui_page):
     ui_page.wait_for_timeout(500)
     expect(verdict).to_have_attribute("data-gate-verdict", "skip")
     expect(panel.locator(".gate-result")).to_contain_text("the newer gate")
+
+
+def test_the_predicate_is_saved_once_and_a_queued_write_is_named(ui, ui_page):
+    """A double press wrote scripts/admit.py twice. And while a run is active the PUT is QUEUED
+    to the run's end (D78-A) — the note still said "saved", so a gate test the reader then ran
+    asked the script as it was before the edit."""
+    ui_page.goto(f"{ui.url}/#/routine/uir")
+    panel = _gate(ui_page)
+    panel.locator("[data-gate-add]").select_option("script")
+    row = panel.locator('[data-gate-check="script"]')
+    row.get_by_role("button", name="edit scripts/admit.py").click()
+    expect(row.locator("textarea.code")).to_be_visible()
+    puts = []
+
+    def queued(route):                   # what the server answers while a run is active
+        if route.request.method != "PUT":
+            route.continue_()
+            return
+        puts.append(route.request.post_data_json["path"])
+        ui_page.wait_for_timeout(400)
+        route.fulfill(json={"ok": True, "queued": True, "pending": 1})
+
+    ui_page.route(re.compile(r"/api/routines/uir/file$"), queued)
+    row.get_by_role("button", name="save scripts/admit.py").dblclick()
+    expect(row).to_contain_text("scripts/admit.py is written when the active run ends")
+    expect(row).not_to_contain_text("saved scripts/admit.py")
+    ui_page.wait_for_timeout(400)
+    assert puts == ["scripts/admit.py"], f"one press, {len(puts)} writes"
