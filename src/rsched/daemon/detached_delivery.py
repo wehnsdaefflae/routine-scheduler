@@ -107,11 +107,12 @@ def delivery_text(info: registry.RoutineInfo, state: str, taskid: str,
 
 
 async def wake(mgr, catalog: dict[str, registry.RoutineInfo]) -> None:
-    """Resume any owner that is idle (terminal last run) with a pending inbox message and is
-    not active/draining — state-driven, so it also catches the race where the owner finished
-    a reply just after we wrote the message. A live owner is skipped: its running reply drains
-    the message at the next turn boundary. Idempotent vs the message endpoint's own resume
-    (both go through runner.resume, which refuses a second concurrent resume).
+    """Resume any owner that is idle (terminal last run), not active/draining, and holding a
+    message its resumed leg will drain — state-driven, so it also catches the race where the
+    owner finished a reply just after we wrote the message. A live owner is skipped: its
+    running reply drains the message at the next turn boundary. Idempotent vs the message
+    endpoint's own resume (both go through runner.resume, which refuses a second concurrent
+    resume).
     """
     seen: set[str] = set()
     for info in catalog.values():
@@ -131,10 +132,14 @@ async def wake(mgr, catalog: dict[str, registry.RoutineInfo]) -> None:
 async def wake_owner(mgr, owner_dir: Path, slug: str) -> None:
     if mgr.runner.is_active(slug) or mgr.runner.draining:
         return
-    # the ONE inbox predicate (engine/inbox): every channel counts here — a wake exists to let
-    # an idle owner drain whatever is waiting — but an unparseable file does not, because the
-    # drain it would wake for is fail-closed on the same file.
-    if not inbox.has_pending_messages(owner_dir):
+    # the ONE inbox predicate (engine/inbox), asked about exactly what the wake's RESUMED leg
+    # drains: LIVE_MESSAGE_VIAS — the user's own messages, a background result, a branch
+    # hand-back. Anything else waiting (a report, audit feedback, the conversation's own
+    # one-shot reminder) is a fresh run's freight (F359), so a wake for it consumed nothing and
+    # the next tick woke the owner again: one full reply per tick for as long as the delivered
+    # task stood, the F367 loop on another channel. An unparseable file does not count either,
+    # because the drain it would wake for is fail-closed on the same file.
+    if not inbox.has_pending_messages(owner_dir, vias=inbox.LIVE_MESSAGE_VIAS):
         return
     owner_cfg, _ = load_routine(owner_dir)
     if owner_cfg is None:
