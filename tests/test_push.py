@@ -41,6 +41,19 @@ def test_vapid_key_generated_once_and_stable(tmp_path):
     assert (tmp_path / "vapid-private.pem").exists()
 
 
+def test_concurrent_first_use_yields_one_key(tmp_path):
+    """Two first requests at once each generated a pair and the later save replaced the
+    earlier, so one browser held a public key whose private half was gone. Every caller now
+    gets the same key, and the private key is not world-readable."""
+    from conftest import hammer
+
+    server = _server(tmp_path)
+    keys: list[str] = []
+    assert hammer(lambda _tag: keys.append(push.vapid_public_key(server))) == []
+    assert len(set(keys)) == 1 and keys[0] == push.vapid_public_key(server)
+    assert (tmp_path / "vapid-private.pem").stat().st_mode & 0o777 == 0o600
+
+
 def test_subscription_store_upserts_by_endpoint(tmp_path):
     server = _server(tmp_path)
     assert push.subscriptions(server) == []
@@ -99,6 +112,30 @@ def test_answered_decision_is_withdrawn(make_routine, tmp_path, monkeypatch):
     before = len(sent)
     assert push.notify_new_decisions(server) == 0
     assert len(sent) == before
+
+
+def test_a_standing_proposal_is_pushed_and_withdrawn_once_decided(tmp_path, monkeypatch):
+    """A queued proposal (a creation, a met goal, library drift) waits on a person exactly as
+    a question does. The sender counted none of them, so a scheduled run's proposal reached
+    nobody away from the console; it is pushed once, keyed by its `pc-` id, and retracted
+    when the operator decides it (the record leaves the queue)."""
+    from rsched import pending
+
+    server = _server(tmp_path)
+    rec = pending.queue(server.routines_home, kind="create_routine", routine="scout",
+                        run_id="scout:20260712-070000", fields={"slug": "new-one"},
+                        summary="create routine new-one")
+    push.add_subscription(server, SUB_A)
+    sent: list[dict] = []
+    monkeypatch.setattr(push, "_send_one", lambda _srv, sub, payload: sent.append(payload) or True)
+
+    assert push.notify_new_decisions(server) == 1
+    assert sent[-1]["tag"] == f"rsched-{rec['id']}" and "scout" in sent[-1]["title"]
+    assert "create routine new-one" in sent[-1]["body"]
+    assert push.notify_new_decisions(server) == 0          # never twice
+    assert pending.drop(server.routines_home, rec["id"])
+    assert push.notify_new_decisions(server) == 1
+    assert sent[-1] == {"tag": f"rsched-{rec['id']}", "close": True}
 
 
 def test_notify_is_a_noop_without_subscribers(make_routine, tmp_path, monkeypatch):

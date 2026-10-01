@@ -363,7 +363,7 @@ def test_shared_store_notes_reach_the_prompt_and_drain_once(make_routine, tmp_pa
     from rsched.engine.composer import state_digest
     from rsched.engine.harness import harness_contract
     from rsched.paths import atomic_write_yaml, read_yaml
-    from rsched.sharedstores import stores_home
+    from rsched.sharedstores import drain, stores_home
 
     ctx = _ctx(make_routine, tmp_path, slug="steward")
     ctx.server.routines_home = tmp_path / "routines"
@@ -388,13 +388,16 @@ def test_shared_store_notes_reach_the_prompt_and_drain_once(make_routine, tmp_pa
     (inbox / "note-20260902-120000-aaaaaa.json").write_text(
         json.dumps({"from": "ingest", "ts": "2026-09-02T12:00:00+02:00",
                     "text": "staged the batch for you"}), encoding="utf-8")
-    kw = {"routines_home": ctx.server.routines_home, "slug": "steward",
-          "write_roots": [store]}
-    digest = state_digest(ctx.routine.dir, [], [], **kw)
+    kw = {"routines_home": ctx.server.routines_home, "slug": "steward"}
+    # the digest builder is PURE: composing it leaves the note where it is
+    assert "NOTES FROM ROUTINES" not in state_digest(ctx.routine.dir, [], [], **kw)
+    assert list(inbox.glob("note-*.json"))
+    # boot drains (`sharedstores.drain`) and hands the digest what it read — exactly once
+    notes = drain(ctx.server.routines_home, "steward", [store])
+    digest = state_digest(ctx.routine.dir, [], [], store_notes=notes, **kw)
     assert "NOTES FROM ROUTINES YOU SHARE A STORE WITH" in digest
     assert "staged the batch for you" in digest
-    # the digest is built once per run and the note is delivered exactly once
-    assert "NOTES FROM ROUTINES" not in state_digest(ctx.routine.dir, [], [], **kw)
+    assert drain(ctx.server.routines_home, "steward", [store]) == []
 
 
 def test_harness_contract_names_the_hub_tab_only_when_set(make_routine, tmp_path):

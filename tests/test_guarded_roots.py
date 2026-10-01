@@ -58,6 +58,24 @@ def test_the_patch_edge_refuses_a_guarded_root_and_says_which(tmp_path, make_rou
         assert saved["fs_read_roots"] == ["~/routines"]
 
 
+def test_every_grant_edge_holds_the_same_checks(tmp_path, make_routine):
+    """ONE enforcer (`config_fields.validate_roots`) for the routine PATCH, the conversation
+    PATCH and the conversation create form. The routine PATCH used to save a RELATIVE root —
+    resolved later against the daemon's working directory — because the absolute-path check
+    lived in the create form alone."""
+    make_routine(slug="auditor")
+    server = make_test_server(tmp_path)
+    with TestClient(create_app(server, with_scheduler=False)) as c:
+        c.headers["Authorization"] = f"Bearer {TEST_TOKEN}"
+        r = c.patch("/api/routines/auditor", json={"fs_write_roots": ["data/out"]})
+        assert r.status_code == 400 and "not an absolute path" in r.json()["detail"], r.text
+        ok = c.patch("/api/routines/auditor",
+                     json={"fs_read_roots": ["~/routines/", " ~/routines", "/srv/x"]})
+        assert ok.status_code == 200, ok.text
+        saved = yaml.safe_load((tmp_path / "routines" / "auditor" / "routine.yaml").read_text())
+        assert saved["fs_read_roots"] == ["~/routines", "/srv/x"]
+
+
 def test_a_guarded_root_already_in_a_file_is_reported_and_kept(make_routine):
     """The store is named ABSOLUTELY here because conftest's `_hermetic_home` redirects `~`
     for the config package only — a routine.yaml may carry either spelling, and the guard

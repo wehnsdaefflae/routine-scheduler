@@ -140,6 +140,29 @@ async def test_bus_stream_delivers_published_events():
     assert not bus._subscribers                 # closing the stream unsubscribes
 
 
+async def test_a_publish_from_a_worker_thread_wakes_the_subscriber_at_once():
+    """Sync routes and the LLM task center publish from worker threads. An asyncio.Queue
+    put from there neither locks against the loop nor wakes it, so a waiting stream heard
+    about the event only when something else next woke the loop — here, the 3 s timeout.
+    `publish` marshals onto the subscriber's loop and the wake is immediate."""
+    import threading
+    import time
+
+    bus = EventBus()
+    with bus.subscribe() as q:
+        waiter = asyncio.ensure_future(q.get())
+        await asyncio.sleep(0)                  # the getter is parked on the queue
+        t0 = time.monotonic()
+        def later() -> None:                    # once the loop is asleep in its selector
+            time.sleep(0.2)
+            bus.publish({"event": "question_answered"})
+
+        threading.Thread(target=later).start()
+        got = await asyncio.wait_for(waiter, 3)
+        assert got == {"event": "question_answered"}
+        assert time.monotonic() - t0 < 1.0
+
+
 # ---------------------------------------------------------------- endpoints
 
 

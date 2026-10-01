@@ -23,7 +23,7 @@ from ..engine import inbox
 from ..ids import now_iso
 from ..paths import atomic_write_json, file_lock, read_json
 from ..readmodels.items import SELF_AUDIT_SLUG
-from .routines_common import queued_message
+from .routines_common import rewrite_queued_message
 
 router = APIRouter(tags=["audit"])
 
@@ -173,10 +173,10 @@ def audit_feedback_edit(request: Request, msg_id: str, body: Feedback) -> dict:
     # via="web-audit" is what confines this editor to its OWN tagged messages: the shared
     # resolver defaults to no filter, and without it a feedback PUT would rewrite any queued
     # inbox file — a question answer, a routine-page injection, a report delivery.
-    path, prev = queued_message(_routine_dir(request) / "inbox", msg_id,
-                                via="web-audit", noun="feedback")
-    atomic_write_json(path, _message_payload(body, str(prev.get("ts") or now_iso()),
-                                             edited=now_iso()))
+    rewrite_queued_message(_routine_dir(request) / "inbox", msg_id,
+                           lambda prev: _message_payload(body, str(prev.get("ts") or now_iso()),
+                                                         edited=now_iso()),
+                           via="web-audit", noun="feedback")
     active = request.app.state.runner.is_active(SELF_AUDIT_SLUG)
     return {"ok": True, "id": msg_id, "delivery": "mid-run" if active else "next-run"}
 

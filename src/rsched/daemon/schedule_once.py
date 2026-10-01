@@ -31,6 +31,7 @@ from ..config import ServerConfig
 from ..engine import inbox as inbox_mod
 from ..ids import now_iso
 from .runner import Runner
+from .tickguard import ItemGuard
 
 log = logging.getLogger("rsched.schedule_once")
 
@@ -52,6 +53,7 @@ class OneShotManager:
         self.server = server
         self.runner = runner
         self.home = server.routines_home
+        self.guard = ItemGuard(self.home, "one-shot manager")
 
     async def tick(self, catalog: dict[str, registry.RoutineInfo]) -> None:
         """One pass over the spool. Never raises into the scheduler loop. `conv--<slug>`
@@ -61,10 +63,11 @@ class OneShotManager:
         """
         try:
             for slug in schedule_once.slugs_with_requests(self.home):
-                if slug.startswith("conv--"):
-                    await self._service_conversation(slug)
-                else:
-                    await self._service(slug, catalog.get(slug))
+                with self.guard.item(slug):     # one bad request never starves the rest
+                    if slug.startswith("conv--"):
+                        await self._service_conversation(slug)
+                    else:
+                        await self._service(slug, catalog.get(slug))
         except Exception:
             log.exception("schedule-once tick failed")
 

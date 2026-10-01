@@ -54,6 +54,25 @@ def skip_body():
     return 'print(\'{"version":1,"decision":"skip","reason":"no new work"}\')'
 
 
+async def test_a_fire_in_the_same_second_as_a_skip_gets_its_own_run_dir(setup_gate,
+                                                                         monkeypatch):
+    """A gate skip ends in milliseconds; the next fire landing in the same second used the
+    same `runs/<ts>` (made with exist_ok=True) and overwrote the skip's records — two run ids,
+    one directory. The second fire now claims the next free second."""
+    from rsched.daemon import runner as runner_mod
+
+    cfg, _, runner = setup_gate
+    script(cfg, skip_body())
+    # both fires read the clock inside one second; the claim's retry reads the next one
+    stamps = iter(["20260101-000000", "20260101-000000", "20260101-000001"])
+    monkeypatch.setattr(runner_mod, "make_run_ts", lambda now=None: next(stamps))
+    rid1, run1, _ = await finish(runner, cfg)
+    rid2, run2, _ = await finish(runner, cfg)
+    assert rid1 != rid2 and run1.run_dir != run2.run_dir
+    assert run2.run_dir.name == "20260101-000001"
+    assert read_json(run1.run_dir / "status.json")["run_id"] == rid1   # not overwritten
+
+
 async def test_skip_never_builds_engine_command(setup_gate, monkeypatch):
     cfg, _, runner = setup_gate
     script(cfg, skip_body())
@@ -142,19 +161,37 @@ async def test_existing_inbox_bypasses_missing_script(setup_gate, monkeypatch):
     assert marker.exists()
 
 
-def test_pending_inbox_counts_messages_only(tmp_path):
-    """`msg-*.json` — the stem the ONE writer produces — and nothing else. Counting ANY
+def test_the_gates_inbox_check_counts_messages_only(tmp_path):
+    """The gate asks the ONE inbox predicate, fail-open: `msg-*.json` — the stem the ONE
+    writer produces — and nothing else, an unparseable one counting as work. Counting ANY
     file made a queued question ANSWER read as freight the gate must admit a run for (an
     answer is exactly what does NOT start a run), and matched `paths.atomic_write`'s
     in-flight `.msg-….json.XXXX.tmp` besides."""
     d = tmp_path / "routine"
     (d / "inbox").mkdir(parents=True)
-    assert not gate_prepare.pending_inbox(d)
+    assert not _gate_sees_freight(d)
     (d / "inbox" / "answer-q-1.json").write_text("{}")
     (d / "inbox" / ".msg-20260922T101010-ab.json.9f.tmp").write_text("{")
-    assert not gate_prepare.pending_inbox(d)
+    assert not _gate_sees_freight(d)
     (d / "inbox" / "msg-rep-R1.json").write_text("{}")
-    assert gate_prepare.pending_inbox(d)
+    assert _gate_sees_freight(d)
+
+
+def _gate_sees_freight(d: Path) -> bool:
+    """What `gate_prepare.child_main` decides for an inbox-mode gate on this directory."""
+    import io
+    import json
+
+    cfg = RoutineConfig(slug="routine", dir=d)
+    server = ServerConfig(routines_home=d.parent)
+    out = io.StringIO()
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr("sys.stdin", io.StringIO(json.dumps({
+            "routine": cfg.model_dump(mode="json"), "server": server.model_dump(mode="json"),
+            "mode": "inbox"})))
+        mp.setattr("sys.stdout", out)
+        gate_prepare.child_main()
+    return json.loads(out.getvalue())["decision"] == "run"
 
 
 @pytest.mark.parametrize("body", ['"""gate — predicate\ncalls: other\n"""',

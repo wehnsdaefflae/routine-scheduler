@@ -10,6 +10,12 @@
 //
 // So: one bus listener, one cadence, one in-flight fetch, many subscribers.
 //
+// The snapshot also carries the standing PROPOSALS (/api/pending-creations — a queued
+// creation, a met goal, library drift): they wait on a person exactly as a question does,
+// and the badge and the tab notifier counted none of them until 2026-10. They are a separate
+// list because the Decisions page renders them in their own band; the one read fetches both,
+// and a failed proposals read keeps the last list rather than blanking the count.
+//
 // What the listener skips is llm_task / llm_process and NOTHING else. Those fire several
 // times a second while a run works and cannot touch a decision. `run_state` can: a run that
 // asks a blocking question goes `waiting_user`, and that event is the only announcement the
@@ -32,9 +38,12 @@ const subscribers = new Set();
 function fetchNow() {
   if (inflight) return inflight;
   const at = Date.now();
-  inflight = api("/api/questions")
-    .then((items) => {
-      snapshot = { items, at };
+  inflight = Promise.all([
+    api("/api/questions"),
+    api("/api/pending-creations").catch(() => snapshot?.proposals ?? []),
+  ])
+    .then(([items, proposals]) => {
+      snapshot = { items, proposals, at };
       for (const fn of [...subscribers]) {
         try { fn(snapshot); } catch { /* one bad reader must not starve the others */ }
       }

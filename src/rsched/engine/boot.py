@@ -6,7 +6,7 @@ composed in composer.py.
 
 from __future__ import annotations
 
-from .. import reports, rules
+from .. import reports, rules, sharedstores
 from ..paths import read_json, resolve_rel
 from . import enginenote, inbox, mediaops
 from .composer import build_system_prompt, kickoff_message, state_digest
@@ -51,12 +51,16 @@ def boot(loop) -> None:
             vias=inbox.LIVE_MESSAGE_VIAS if resuming else None)
         ctx.reports_open += reports.stamp_delivered(
             ctx.server.routines_home, msgs, run_id=ctx.run_id)
+        # F335: the notes sharers of a store left for this routine — read and DELETED here,
+        # once per leg, beside the inbox drain above: a note is delivered exactly once
+        store_notes = sharedstores.drain(ctx.server.routines_home, ctx.routine.slug,
+                                         list(ctx.routine.fs_write_roots))
         digest = state_digest(ctx.routine.dir, deferred_qa, open_qs,
                               routines_home=ctx.server.routines_home,
                               slug=ctx.routine.slug,
                               held_rules=rules.when_lines(ctx.server.rules_home,
                                                           list(ctx.routine.rules)),
-                              write_roots=list(ctx.routine.fs_write_roots),
+                              store_notes=store_notes,
                               brief=ctx.brief)
     else:
         msgs = []

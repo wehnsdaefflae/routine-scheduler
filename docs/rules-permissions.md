@@ -666,7 +666,10 @@ separate feature; this request grammar does not implement it.
   the API refuses `allow once` for those four.
 
 Ownership is strict: FOREVER decisions are persisted by the WEB layer at click time —
-the engine never writes routine.yaml, not even to record an approval. Sub-workflows
+the engine never writes routine.yaml, not even to record an approval. Like every web edit of
+that file it then tells a LIVE run what changed (F337: a `config_change` signal naming each
+changed key — a `grants:` row adopted live, a capability or root named as next-run) beside
+the decision the answer bridges into the run's overlay. Sub-workflows
 cannot request; they inherit the parent's RESOURCE grants (fs/secret/connection/machine)
 and none of its capability grants. `recreate:<slug>` deliberately has no allow-forever: a
 fresh user deletion must
@@ -696,7 +699,9 @@ docs (they ride the cascade; they grant nothing).
 
 The same question applies to the three fs paths that are never grantable at all
 (`entities.NEVER_GRANTABLE`: the instance config dir, `~/.credentials`, `~/.ssh`). They are
-refused at the runtime ask, refused at the config PATCH, and REPORTED by the loader for a
+refused at the runtime ask, refused at every edge where an operator MAKES a grant (the routine
+PATCH, the conversation PATCH and create form — one enforcer, `config_fields.validate_roots`,
+which also refuses a non-absolute root), and REPORTED by the loader for a
 file that already lists one — that last one deliberately does not drop the root, because a
 routine that has legitimately been reading it would otherwise fail its next run with nothing
 naming the cause. All three compare a root as written AND as resolved

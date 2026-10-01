@@ -62,6 +62,7 @@ from ..paths import read_json
 from . import restart
 from .runner import Runner
 from .runner_state import _pid_alive
+from .tickguard import ItemGuard
 
 log = logging.getLogger("rsched.lane_runs")
 
@@ -75,12 +76,16 @@ class LaneRunManager:
         self.server = server
         self.runner = runner
         self.home = server.routines_home
+        self.guard = ItemGuard(self.home, "lane-run manager")
 
     async def tick(self, catalog: dict[str, registry.RoutineInfo]) -> None:
-        """One advance pass over every in-flight chain. Never raises into the scheduler loop."""
+        """One advance pass over every in-flight chain. Never raises into the scheduler loop,
+        and one chain that raises never stalls the others (tickguard).
+        """
         try:
             for rec in lane_runs.in_flight(self.home):
-                await self._advance(rec, catalog)
+                with self.guard.item(str(rec.get("lane_id") or rec.get("id") or "?")):
+                    await self._advance(rec, catalog)
         except Exception:
             log.exception("lane-run tick failed")
 

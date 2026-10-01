@@ -167,17 +167,17 @@ def test_leaving_a_store_cuts_the_channel_both_ways(server, team):
 # ---- what the run reads ---------------------------------------------------------------------
 
 
-def test_digest_section_renders_the_notes_and_drains_them(server, team):
+def test_digest_section_renders_the_drained_notes(server, team):
     roots = _roots(server, "steward")
-    assert sharedstores.digest_section(server.routines_home, "steward", roots) == ""
+    assert sharedstores.digest_section([]) == ""
     note(team.fau, sender="ingest", to="steward", text="alpha")
     note(team.fau, sender="sender", to="steward", text="beta")
-    text = sharedstores.digest_section(server.routines_home, "steward", roots)
+    text = sharedstores.digest_section(sharedstores.drain(server.routines_home, "steward", roots))
     assert "NOTES FROM ROUTINES YOU SHARE A STORE WITH" in text
     assert "from ingest" in text and "alpha" in text
     assert "from sender" in text and "beta" in text
     assert "nobody is waiting on a reply" in text
-    assert sharedstores.digest_section(server.routines_home, "steward", roots) == ""
+    assert sharedstores.drain(server.routines_home, "steward", roots) == []
 
 
 def test_digest_caps_a_backlog_and_says_it_dropped_the_oldest(server, team):
@@ -186,11 +186,11 @@ def test_digest_caps_a_backlog_and_says_it_dropped_the_oldest(server, team):
     for i in range(sharedstores.MAX_NOTES_SHOWN + 3):
         note(team.fau, sender="ingest", to="steward", text=f"note {i:02d}")
     roots = _roots(server, "steward")
-    text = sharedstores.digest_section(server.routines_home, "steward", roots)
+    text = sharedstores.digest_section(sharedstores.drain(server.routines_home, "steward", roots))
     assert text.count("- from ingest") == sharedstores.MAX_NOTES_SHOWN
     assert "3 older note(s) were dropped unread" in text
     assert "note 22" in text and "note 00" not in text
-    assert sharedstores.digest_section(server.routines_home, "steward", roots) == ""
+    assert sharedstores.drain(server.routines_home, "steward", roots) == []
 
 
 def test_contract_names_each_store_and_the_other_routines_sharing_it(server, team):
@@ -281,3 +281,19 @@ def test_the_write_gate_judges_the_destination_never_the_removal(server, team):
         {"kind": "edit_file", "path": str(target), "anchor": "old", "replacement": "new"},
         ctx).get("error", "")
     assert do_delete({"kind": "delete", "path": str(target)}, ctx).get("removed") is True
+
+
+def test_a_run_is_handed_its_notes_once_at_boot(server, team, scripted):
+    """Boot drains the notes beside the inbox and hands them to the (pure) digest builder:
+    the first run's system prompt carries the note, the file is gone, the next run sees none."""
+    from conftest import finish
+    from rsched.engine.runtime import run_routine
+
+    note(team.fau, sender="ingest", to="steward", text="staged the batch for you")
+    look = {"say": "Reading the recipe.", "kind": "read_file", "path": "main.md"}
+    ep = scripted([look, finish(summary="read it"), look, finish(summary="nothing new")])
+    run_routine(server.routines_home / "steward", server, run_ts="20260902-120000")
+    assert "staged the batch for you" in ep.calls[0]["messages"][0]["content"]
+    assert list(sharedstores.notes_dir(team.fau, "steward").glob("note-*.json")) == []
+    run_routine(server.routines_home / "steward", server, run_ts="20260902-130000")
+    assert "staged the batch for you" not in ep.calls[2]["messages"][0]["content"]

@@ -29,12 +29,13 @@ page's Unread-by-default behaviour with no new machinery.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 
 from .. import registry
 from ..config import ServerConfig
-from ..paths import atomic_write_json, read_json
+from ..paths import atomic_write_json, file_lock, read_json
 from .stamps import instant
 
 #: The watermark store — kept at its old path, shape and meaning. Renaming it would have bought a
@@ -49,6 +50,21 @@ def read_marker_path(routines_home: Path) -> Path:
 def _read_map(routines_home: Path) -> dict:
     data = read_json(read_marker_path(routines_home))
     return data if isinstance(data, dict) else {}
+
+
+def _update_map(routines_home: Path, edit: Callable[[dict], int]) -> int:
+    """Apply `edit` to the read-marker map under the file's lock and write it back when `edit`
+    reports a change (a count). The two writers below are read-modify-writes of one shared
+    file on worker threads: two "mark read" clicks at once each read the same map, and the
+    second write resurrected the first card as unread.
+    """
+    path = read_marker_path(routines_home)
+    with file_lock(path.with_name(f".{path.name}.lock")):
+        read_map = _read_map(routines_home)
+        changed = edit(read_map)
+        if changed:
+            atomic_write_json(path, read_map)
+    return changed
 
 
 def latest_with_summary(info: registry.RoutineInfo) -> registry.RunInfo | None:
@@ -111,14 +127,15 @@ def mark_read(routines_home: Path, run_id: str, *, read: bool) -> str:
     old marker.
     """
     slug = run_id.split(":", 1)[0]
-    read_map = _read_map(routines_home)
-    if read:
-        read_map[slug] = run_id
-    else:
-        read_map.pop(slug, None)
-    path = read_marker_path(routines_home)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    atomic_write_json(path, read_map)
+
+    def mark(read_map: dict) -> int:
+        if read:
+            read_map[slug] = run_id
+        else:
+            read_map.pop(slug, None)
+        return 1
+
+    _update_map(routines_home, mark)
     return slug
 
 
@@ -128,15 +145,11 @@ def mark_all_read(routines_home: Path, server: ServerConfig) -> int:
     Carried across from the old page, where it exists because of a shipped finding (F303): with
     one row per routine and no bulk action, clearing a backlog was 31 clicks.
     """
-    read_map = _read_map(routines_home)
-    changed = 0
-    for row in build(server):
-        slug = row["origin"]["routine"]
-        if read_map.get(slug) != row["id"]:
-            read_map[slug] = row["id"]
-            changed += 1
-    if changed:
-        path = read_marker_path(routines_home)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        atomic_write_json(path, read_map)
-    return changed
+    shown = {row["origin"]["routine"]: row["id"] for row in build(server)}
+
+    def mark_all(read_map: dict) -> int:
+        stale = {slug: rid for slug, rid in shown.items() if read_map.get(slug) != rid}
+        read_map.update(stale)
+        return len(stale)
+
+    return _update_map(routines_home, mark_all)

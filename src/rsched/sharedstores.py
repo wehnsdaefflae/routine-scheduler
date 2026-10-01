@@ -158,13 +158,14 @@ def drain(routines_home: Path, slug: str, fs_write_roots: Iterable[object]) -> l
     return [rec for _, _, rec in sorted(found, key=lambda row: (row[0], row[1]))]
 
 
-def digest_section(routines_home: Path, slug: str, fs_write_roots: Iterable[object]) -> str:
-    """The state-digest block for this run's waiting notes — "" when there are none.
+def digest_section(notes: list[dict]) -> str:
+    """The state-digest block for the notes boot drained (`drain`) — "" when there are none.
 
-    Called ONCE per run, at boot, because it DRAINS. Past the cap the NEWEST notes are shown and
-    the run is told how many older ones were dropped, so the drop never reads as "that was all".
+    Pure: it renders what it is handed. The drain is boot's own step, so the digest builder
+    has no side effect and the once-per-run delivery is visible where it happens. Past the
+    cap the NEWEST notes are shown and the run is told how many older ones were dropped, so
+    the drop never reads as "that was all".
     """
-    notes = drain(routines_home, slug, fs_write_roots)
     if not notes:
         return ""
     dropped = max(0, len(notes) - MAX_NOTES_SHOWN)

@@ -239,14 +239,15 @@ async function refreshStatus() {
 
 // The header badge is one READER of the shared questions store (questions-store.js), which
 // owns the bus listener, the cadence and the single in-flight fetch for every surface that
-// reads /api/questions.
-function paintBadge({ items }) {
+// reads /api/questions. It counts everything waiting on a person: the open questions and
+// the standing proposals the Decisions page shows in its own band.
+function paintBadge({ items, proposals = [] }) {
   // answered-but-unconsumed items are settled; snoozed ones wait silently by design
-  const open = items.filter((q) => !q.answered && !q.snoozed);
+  const open = items.filter((q) => !q.answered && !q.snoozed).length + proposals.length;
   const badge = document.getElementById("q-badge");
   if (!badge) return;
-  badge.textContent = open.length;
-  badge.hidden = open.length === 0;
+  badge.textContent = open;
+  badge.hidden = open === 0;
 }
 
 function globalStream() {

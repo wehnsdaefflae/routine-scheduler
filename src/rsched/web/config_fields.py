@@ -19,7 +19,9 @@ from typing import Annotated
 from fastapi import HTTPException
 from pydantic import AfterValidator
 
+from .. import entities
 from ..config import DEFAULT_BUDGETS, MODEL_KINDS
+from ..paths import expand
 from .model_fit import model_window_problem
 
 
@@ -101,13 +103,42 @@ def validate_machines(server, names: list | None) -> list[str]:
 
 
 def validate_roots(key: str, values: list | None) -> list[str]:
-    """One folder-grant list (`fs_read_roots` / `fs_write_roots`), REPLACED wholesale and
-    stripped — the raw `~`-carrying strings the file holds, never expanded here.
+    """One folder-grant list (`fs_read_roots` / `fs_write_roots`, or a conversation's
+    `workdir` — write root #1), REPLACED wholesale — the ONE enforcer every edge where a grant
+    is MADE calls: the routine PATCH, the conversation PATCH and the conversation create form.
+
+    Each entry is stripped of whitespace and a trailing `/`, deduplicated, and returned as the
+    raw string the file holds (`~` kept, never expanded here). Refused with a 400 naming it:
+
+    - a path that is not ABSOLUTE once `~`/`$VARS` expand — a relative root would resolve
+      against the daemon's working directory, which no operator means;
+    - a credential store (SEC-1, `entities.guarded_roots`): the config dir, `~/.credentials`
+      and `~/.ssh` are never grantable, and the never-grantable promise lived only on the
+      runtime ask path until a typed root mounted the instance's credential dir on a routine.
+      A store ALREADY in a file is the loader's to report, never dropped (config/routine.py).
+
+    The three edges used to hold three subsets of this (the routine PATCH no absolute check,
+    the conversation create form its own), and a check that exists on one edge is a check a
+    grant can route around.
     """
     vals = values or []
     if not isinstance(vals, list) or any(not isinstance(p, str) or not p.strip() for p in vals):
         raise HTTPException(400, f"{key}: must be a list of non-empty path strings")
-    return [p.strip() for p in vals]
+    roots: list[str] = []
+    for raw in vals:
+        root = raw.strip().rstrip("/") or "/"
+        try:
+            absolute = expand(root).is_absolute()
+        except RuntimeError:          # `~name` for an account that does not exist
+            absolute = False
+        if not absolute:
+            raise HTTPException(
+                400, f"{key}: {raw!r} is not an absolute path (use /abs/path or ~/path)")
+        if root not in roots:
+            roots.append(root)
+    if guarded := entities.guarded_roots(roots):
+        raise HTTPException(400, f"{key}: {', '.join(guarded)} {entities.GUARDED_ROOT_REASON}")
+    return roots
 
 
 def clean_tags(values: list | None) -> list[str]:

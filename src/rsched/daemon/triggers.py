@@ -35,36 +35,9 @@ from ..health_events import log_health_event
 from ..ids import now_iso
 from ..paths import read_json
 from .runner import Runner
+from .tickguard import ItemGuard
 
 log = logging.getLogger("rsched.triggers")
-
-
-def _inbox_wants_a_run(inbox: Path) -> bool:
-    """True if the inbox holds a message worth WAKING for — for a routine that DECLARES a
-    report trigger.
-
-    Answers (`answer-*`) never count: a deferred question is one the run did not need
-    answered to finish, so its answer waits for the routine's next scheduled run — or for
-    the operator's own "answer & run now" on the Decisions page, which is a manual fire, not
-    a trigger. (0.330.0 fired a run on every answer; three routines started in one second
-    when the operator cleared his inbox, and the schedule stopped being the schedule.) A
-    CLOSURE (`closes` — the terminal acknowledgment of an exchange this routine started) is
-    exempt too: it asks nothing, and buying a full run of a recipe to read "no reply needed"
-    is exactly the amplification the cooldown cannot see. Anything unreadable or unrecognised
-    WAKES (fail open — a message the daemon cannot classify must never be silently swallowed).
-
-    The scan selects `msg-*.json`, the stem the ONE writer produces, and not "any file that
-    is not `answer-*`": `paths.atomic_write` puts its temp file IN the target directory, so
-    the old filter also matched an in-flight `.msg-….json.XXXX.tmp` — unreadable, and
-    unreadable WAKES here, which bought a whole run off a race with a write.
-    """
-    if not inbox.is_dir():
-        return False
-    for path in sorted(inbox.glob("msg-*.json")):
-        msg = read_json(path)
-        if not isinstance(msg, dict) or not msg.get("closes"):
-            return True
-    return False
 
 
 class TriggerManager:
@@ -76,18 +49,21 @@ class TriggerManager:
         self.server = server
         self.runner = runner
         self.home = server.routines_home
+        self.guard = ItemGuard(self.home, "trigger manager")
 
     async def tick(self, catalog: dict[str, registry.RoutineInfo]) -> None:
         """One pass over the spool + the report-trigger inbox watch. Never raises into
-        the scheduler loop.
+        the scheduler loop, and one routine that raises never starves the rest (tickguard).
         """
         try:
             for slug in triggers.slugs_with_events(self.home):
-                await self._service(slug, catalog.get(slug))
+                with self.guard.item(slug):
+                    await self._service(slug, catalog.get(slug))
             # report triggers have no spool — the durable inbox file IS the event, so
             # the watch is a cheap glob on exactly the routines that DECLARE one
             for slug, info in catalog.items():
-                await self._service_report(slug, info)
+                with self.guard.item(f"{slug} (report trigger)"):
+                    await self._service_report(slug, info)
         except Exception:
             log.exception("trigger tick failed")
 
@@ -103,7 +79,15 @@ class TriggerManager:
         trig = next((t for t in info.cfg.triggers if t.get("type") == "report"), None)
         if trig is None or not info.fireable:
             return
-        if not _inbox_wants_a_run(info.cfg.dir / "inbox"):
+        # The ONE inbox predicate, FAIL-OPEN (anything unreadable or unrecognised wakes — a
+        # message the daemon cannot classify must never be silently swallowed) and without
+        # CLOSURES (`closes` asks nothing; buying a run to read "no reply needed" is the
+        # amplification the cooldown cannot see). Answers never count: one waits for the
+        # next scheduled run or the operator's "answer & run now" (0.330.0 fired a run per
+        # answer and three routines started in one second). `triggers.describe_triggers`
+        # counts with the same flags, so the page shows exactly what this fires on.
+        if not inbox_mod.has_pending_messages(info.cfg.dir, include_closures=False,
+                                              on_unparseable=True):
             return
         if self.runner.draining or self.runner.is_active(slug):
             return

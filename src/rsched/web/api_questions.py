@@ -12,18 +12,16 @@ derivation, and each answer POST publishes a bus event so open views resync at o
 
 from __future__ import annotations
 
-import asyncio
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-import anyio.from_thread
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
 
 from .. import registry
 from ..ids import now_iso
-from ..paths import atomic_write_json, read_json
+from ..paths import atomic_write_json, read_json, read_yaml
 from .decisions_read import (
     _audit_decisions,
     _record_dir,
@@ -142,23 +140,34 @@ async def _run_now(request: Request, match: dict, brief: str = "") -> str | None
 
 def _announce_answer(request: Request, qid: str, routine: str) -> None:
     """One bus event per answer: every open view (Decisions page, run views, badges)
-    resyncs its question state immediately instead of waiting for a reload.
-
-    Published ON THE LOOP whichever side calls: the bus is a set of asyncio queues, which
-    are not thread-safe, and every caller here but the async route runs on a worker thread.
-    A put from there wakes no sleeping loop — the open views heard about a snooze, a defer or
-    a revision whenever something else next woke it.
+    resyncs its question state immediately instead of waiting for a reload. Every caller
+    here but the async route runs on a worker thread; `EventBus.publish` marshals onto the
+    loop itself, so the snooze, defer and revision paths wake the open views at once.
     """
     bus = getattr(request.app.state, "bus", None)
     if bus is None:
         return
-    event = {"event": "question_answered", "qid": qid, "routine": routine}
-    try:
-        asyncio.get_running_loop()
-    except RuntimeError:                       # a worker thread: hop onto the loop
-        anyio.from_thread.run_sync(bus.publish, event)
-    else:
-        bus.publish(event)
+    bus.publish({"event": "question_answered", "qid": qid, "routine": routine})
+
+
+def _tell_live_run(request: Request, routine_dir: Path, before: object) -> None:
+    """A forever-decision edits routine.yaml, and every web edit of that file tells a LIVE run
+    what changed and which half reaches it (F337, `routines_common.signal_config_change`) —
+    the PATCH routes did, this one did not. The decided entity itself already reaches the run
+    through the answer (the overlay bridge); what the note adds is the rest of the edit — a
+    `grants:` row adopted live, a capability cascade or a new root named as next-run — so the
+    run is never left reasoning from a config it no longer has.
+    """
+    from ..configflow import ADOPTABLE
+    from .routines_common import signal_config_change
+
+    prev = before if isinstance(before, dict) else {}
+    after = read_yaml(routine_dir / "routine.yaml", {})
+    after = after if isinstance(after, dict) else {}
+    fields = sorted(k for k in {*prev, *after} if prev.get(k) != after.get(k))
+    info = registry.info(request.app.state.server, routine_dir.parent, routine_dir.name)
+    if info is not None and fields:
+        signal_config_change(info, fields, {k: after.get(k) for k in fields if k in ADOPTABLE})
 
 
 def _decide_request(request: Request, match: dict, routine_dir,
@@ -184,11 +193,13 @@ def _decide_request(request: Request, match: dict, routine_dir,
     out: dict = {"decision": decision, "text": DECISION_PHRASES[decision],
                  "intermediate": False}
     if decision.endswith("_forever"):
+        before = read_yaml(routine_dir / "routine.yaml", {})
         out.update(grants_apply.apply_forever(request.app.state.server, routine_dir,
                                               req_ids, decision))
         _git_commit(request, routine_dir, f"grant decision via web ({decision}: "
                                  f"{', '.join(req_ids)})")
         request.app.state.scheduler.rescan()
+        _tell_live_run(request, routine_dir, before)
     elif decision == "allow_now":
         # a one-run connection grant still needs its account resolved at decision time
         for eid in req_ids:

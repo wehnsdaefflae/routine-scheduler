@@ -218,7 +218,8 @@ def describe_triggers(routines_home: Path, slug: str, entries: list[dict]) -> li
     # a report trigger's "pending" is the routine's unconsumed inbox messages — its events
     # live there, not in the spool. The ONE inbox predicate answers it (engine/inbox), so the
     # number on the page cannot disagree with what the daemon will actually fire on.
-    inbox_pending = inbox.count_pending(routines_home / slug, include_closures=False)
+    inbox_pending = inbox.count_pending(routines_home / slug, include_closures=False,
+                                        on_unparseable=True)
     rows = []
     for t in entries:
         tid = str(t.get("id"))

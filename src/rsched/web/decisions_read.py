@@ -266,14 +266,12 @@ def open_decisions(server) -> list[dict]:
     on the user surfaces only). The four parts are memoized (module docstring); the snooze
     mark is the one clock-dependent step, so it is applied to the copies on every call.
 
-    It is NOT yet everything a person has to decide. Queued PROPOSALS — a routine a scheduled
+    It is not everything a person has to decide. Queued PROPOSALS — a routine a scheduled
     run designed, a lane change, a met goal, a library commit that broke a routine — are a
-    second record shape in `.control/pending-creations/` (`rsched/pending.py`) with its own
-    route and its own band on the page, and they are absent here: the badge and the push
-    sender therefore count none of them. Both stores answer "what needs a person", so the end
-    state is ONE — a proposal filed as a `type: "proposal"` question the existing approve path
-    settles — and until the page stops rendering its own band, adding them here would show the
-    operator every proposal twice.
+    second record shape (`open_proposals`) with its own route and its own band on the page,
+    so they stay out of THIS list (the page would render each twice); the surfaces that COUNT
+    what waits on a person — the header badge, the tab notifier and the Web Push sender — read
+    both lists.
     """
     items = file_backed_questions(server) + _audit_decisions(server)
     now = datetime.now(UTC)
@@ -281,6 +279,22 @@ def open_decisions(server) -> list[dict]:
         if _snooze_active(item.get("snoozed_until"), now):
             item["snoozed"] = True
     return items
+
+def open_proposals(server) -> list[dict]:
+    """Every standing PROPOSAL (`rsched/pending.py`), oldest first — the Decisions page's
+    band, the header badge, the tab notifier and the Web Push sender all read this.
+
+    MEMOIZED on the queue directory like the rest of this module: the badge's store fetches
+    it on every bus event, and every write to the queue (`atomic_write` renames, `drop`
+    unlinks) moves the directory's mtime. Until 2026-10 neither the badge nor the push counted
+    proposals at all, so a met goal or a queued creation waited on the page unannounced.
+    """
+    from .. import pending
+
+    queue = pending.pending_dir(server.routines_home)
+    return memo.memoized(f"decisions:proposals:{queue}", [queue],
+                         partial(pending.load_all, server.routines_home))
+
 
 def _snooze_active(snoozed_until: object, now: datetime) -> bool:
     if not snoozed_until:

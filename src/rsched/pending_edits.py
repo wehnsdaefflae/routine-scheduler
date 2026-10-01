@@ -38,10 +38,9 @@ from . import libgit, recipes, spool
 from .ids import now_iso
 from .paths import atomic_write, atomic_write_yaml, read_json, read_yaml, resolve_rel
 
-# Edit kinds that may be queued. Keep in sync with APPLIERS below and the web endpoints
-# that queue them; a kind with no applier is rejected at queue time (fail closed).
-QUEUEABLE_KINDS = ("file", "recipe_revert", "trigger_create", "trigger_update",
-                   "trigger_delete")
+# Edit kinds that may be queued — each one an endpoint that calls queue_or_apply. Every kind
+# here has an applier below; a kind without one is rejected at queue time (fail closed).
+QUEUEABLE_KINDS = ("file", "recipe_revert")
 MAX_PENDING_EDITS = 64   # spool cap per routine — past it the web rejects with 429
 
 
@@ -135,6 +134,12 @@ def apply_trigger_delete(routine_dir: Path, payload: dict, routines_home: Path) 
 APPLIERS: dict[str, Callable[[Path, dict, Path], dict]] = {
     "file": apply_file,
     "recipe_revert": apply_recipe_revert,
+    # MIGRATION(expires=2026-10-15): the trigger CRUD routes that queued these lost their last
+    # caller in 0.369.0 (2026-09-30, the Triggers card moved onto the settings accept) and were
+    # deleted after it, so nothing queues a trigger edit any more (they are not QUEUEABLE). A
+    # run parked on a person since before then can still hold one in its spool, replayed at
+    # that run's reap — these three appliers drain it. Delete them, `_read_triggers` and
+    # `_write_triggers` once the date passes.
     "trigger_create": apply_trigger_create,
     "trigger_update": apply_trigger_update,
     "trigger_delete": apply_trigger_delete,

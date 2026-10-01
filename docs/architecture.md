@@ -1262,7 +1262,8 @@ whose TEXT must change on a live instance is converted by a one-shot migration i
   (`daemon/triggers.py`) turns them into fires — the trigger analog of overrun is QUEUE, not skip:
   N events while a run is active/queued/cooling coalesce into ONE fire, each event still landing as
   its own inbox message for that fire (deterministic filenames → exactly-once across crashes).
-  `cooldown_s` per trigger (default 60) bounds trigger-fire frequency, so a leaked URL can't burn
+  `cooldown_s` per trigger (default 60; 900 for a report trigger, `triggers.default_cooldown`)
+  bounds trigger-fire frequency, so a leaked URL can't burn
   budget; `state.json` in the spool is the daemon-written fire ledger the Triggers card renders.
 - **API auth is two-tier (R94; operator decision 2026-08-05: ENFORCE — superseding D68's
   earlier "leave as-is")**: the PRIMARY bearer (`config.yaml token:`) is the human/web

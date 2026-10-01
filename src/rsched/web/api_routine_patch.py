@@ -16,8 +16,8 @@ from croniter import croniter
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from .. import entities, schedule
 from .. import rules as rules_mod
+from .. import schedule
 from ..config import DELIBERATION_LEVELS, write_tuning
 from ..config.base import _known_tz
 from ..config.routine import RunGateConfig, RunGatePatch
@@ -247,16 +247,9 @@ def _apply_resource_fields(raw: dict, updates: dict) -> None:
         raw.setdefault("retention", {})["keep_runs"] = n
     for roots_key in ("fs_read_roots", "fs_write_roots"):
         if roots_key in updates:
+            # absolute, deduplicated, and never a credential store (SEC-1) — the one
+            # enforcer every grant edge calls (config_fields.validate_roots)
             updates[roots_key] = validate_roots(roots_key, updates[roots_key])
-            # The never-grantable guard, at the edge where the grant is MADE. It existed only
-            # on the runtime ask path (engine/availability.py), so "never grantable, to any
-            # routine, by design" was true of what a run asked for and false of what an
-            # operator typed into the Filesystem-roots panel — which is how the instance's
-            # credential dir became a live read+write root on a routine (SEC-1). A refusal
-            # here, naming the path, is the difference between a promise and a seal.
-            if guarded := entities.guarded_roots(updates[roots_key]):
-                raise HTTPException(
-                    400, f"{roots_key}: {', '.join(guarded)} {entities.GUARDED_ROOT_REASON}")
     # F448: `enabled` is the OLD spelling of "does this routine fire", kept because the
     # dashboard's D72 start/pause toggle PATCHes it. The firing gate reads `schedule.disabled`
     # alone, so without this the key fell through the generic merge below and wrote a bare

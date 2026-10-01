@@ -80,6 +80,11 @@ of invention F480 removed from the boot reap. Every path that HANDLES a due fire
 the watermark — an arm, and the operator's global pause skipping one deliberately — so
 what remains is a fire the daemon was not there for.
 
+scheduler_tick_error: a scheduling pass raised, so whatever it owed is late. routine =
+`(daemon)` when a whole pass or the boot rescan raised (daemon/scheduler.py); otherwise the
+ITEM one manager's pass could not service — a routine, a lane, a one-shot spool — filed once
+until it next succeeds, while the rest of that pass carries on (daemon/tickguard.py).
+
 cache_read_degraded: a finished run's prompt-cache READ SHARE fell below half — it
 re-wrote its prefix every turn (1.25x) instead of re-reading it (0.1x), a 12.5x
 multiplier on the same work. Carries `cache_read_share`, `cache_read_tokens` and

@@ -50,7 +50,9 @@ FINGERPRINT per check in that run's `gate.json`. No such run is itself work.
 
 Built in, never configured, because each one is work by construction:
 
-- freight waits in the inbox (a message, a report addressed to the routine);
+- freight waits in the inbox (a message, a report addressed to the routine) — the ONE inbox
+  predicate (`engine/inbox.has_pending_messages`), fail-open like every gate read: a `msg-*`
+  file it cannot parse counts as work;
 - an answer to one of its questions waits to be read (an answer never STARTS a run, but a fired
   one must not be skipped past it);
 - a note from a routine sharing one of its stores waits (`rsched/sharedstores.py`);

@@ -1,8 +1,8 @@
 // Browser notifications for pending decisions — both tiers, opt-in (Settings → Notifications).
 // Tier 1 (tab open): the Notification API driven by the shared questions store
 //   (questions-store.js, which owns the one bus listener and the one fetch for every reader
-//   of /api/questions); unseen open decisions notify once (qid-keyed, remembered in
-//   localStorage, OS-deduped via the notification tag).
+//   of /api/questions); unseen open decisions and standing proposals notify once (keyed by
+//   qid / proposal id, remembered in localStorage, OS-deduped via the notification tag).
 // Tier 2 (tab closed): Web Push through the service worker at /sw.js — this module only
 //   manages the per-browser subscription; the daemon sends the pushes (web/push.py).
 
@@ -58,19 +58,25 @@ export function show(title, body, { tag, href } = {}) {
   }
 }
 
-function check({ items }) {
+function check({ items, proposals = [] }) {
   // Checked here, not only in show(): while notifications are off nothing may be marked
   // seen, or switching them on would silently skip the backlog that is already waiting.
   if (!enabled()) return;
   const seen = seenSet();
   let dirty = false;
-  for (const q of items) {
-    if (q.answered || !q.qid || seen.has(q.qid)) continue;
-    seen.add(q.qid);
+  // Questions and standing proposals both wait on a person; a proposal is keyed by its
+  // `pc-` id, which never collides with a qid — the same keys the Web Push sender uses.
+  const asks = [
+    ...items.filter((q) => !q.answered && q.qid)
+      .map((q) => [q.qid, `decision needed · ${q.routine}`, q.question]),
+    ...proposals.map((p) => [p.id, `proposal · ${p.routine}`, p.summary]),
+  ];
+  for (const [key, title, text] of asks) {
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
     dirty = true;
-    show(`decision needed · ${q.routine}`,
-         (q.question || "").replace(/\s+/g, " ").slice(0, 160),
-         { tag: `rsched-${q.qid}`, href: "#/questions" });
+    show(title, (text || "").replace(/\s+/g, " ").slice(0, 160),
+         { tag: `rsched-${key}`, href: "#/questions" });
   }
   if (dirty) storage.set(SEEN_KEY, JSON.stringify([...seen].slice(-200)));
 }

@@ -163,26 +163,19 @@ def handle_write_util(loop, action: dict, poll_s: float) -> dict:  # noqa: PLR09
                     "answer": str(ask["answer"])[:200]}
         if str(ask["answer"]).strip().lower() == "approve this kind for the rest of this run":
             ctx.granted_now.add("approval:write_util")
-    # Selftest gates the LIBRARY, not just the observation: on failure the write is rolled
-    # back — a new util's dir removed, a revision restored to the previous working text —
-    # so a broken script is never left live for concurrent `gu` callers.
-    previous = None if creating else utils_lib.read_util(home, name)
-    utils_lib.write_util_file(home, name, content)
-    ok, output = utils_run.selftest(home, name, policy=sandbox.base_policy(ctx.server),
-                                    aborted=ctx.aborted)
+    # Selftest gates the LIBRARY, not just the observation: a failing text is rolled back
+    # (utils_run.write_selftested), so a broken script is never left live for `gu` callers.
+    ok, output = utils_run.write_selftested(
+        home, name, content, policy=sandbox.base_policy(ctx.server),
+        message=f"{'create' if creating else 'revise'} {name}",
+        routines_home=ctx.server.routines_home, aborted=ctx.aborted)
     if not ok:
-        if previous is None:
-            utils_lib.remove_util_file(home, name)
-        else:
-            utils_lib.write_util_file(home, name, previous)
         # Head+tail, never a head slice: a traceback's END is the repair material, and a
         # long selftest log sliced at its head hid exactly the AssertionError that
         # explained the failure (R93).
         output, _ = truncate(output, cap=2000)
         return {"kind": "write_util", "name": name, "created": creating,
                 "selftest_ok": False, "reverted": True, "output": output}
-    utils_lib.git_commit(home, f"{'create' if creating else 'revise'} {name}",
-                         routines_home=ctx.server.routines_home, paths=[f"utils/{name}"])
     return {"kind": "write_util", "name": name, "created": creating, "selftest_ok": True}
 
 
