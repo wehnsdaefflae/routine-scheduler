@@ -15,7 +15,7 @@ while an endpoint is unreachable or half-configured.
 
 from __future__ import annotations
 
-from ..config.base import DEFAULT_MODEL_MAX_TOKENS
+from ..config.base import DEFAULT_CONTEXT_TOKENS, DEFAULT_MODEL_MAX_TOKENS
 from ..endpoints import limits
 from ..engine.compaction import window_ceiling_tokens
 
@@ -37,7 +37,7 @@ def effective_window_pair(mc, ep, found: dict | None = None) -> tuple[int, int]:
     """
     found = found or {}
     context = (mc.context_tokens or limits.window_tokens(found)
-               or (ep.context_tokens if ep else 0) or 25_000)
+               or (ep.context_tokens if ep else 0) or DEFAULT_CONTEXT_TOKENS)
     max_out = (mc.max_tokens or found.get("max_output_tokens")
                or (ep.max_tokens if ep else None) or DEFAULT_MODEL_MAX_TOKENS)
     return context, max_out
