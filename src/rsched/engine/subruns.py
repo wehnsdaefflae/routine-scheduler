@@ -215,10 +215,13 @@ class SubrunManager:
             # there are two paths that can REPORT an exit — `wait` (which consumes finished
             # children directly) and the turn-boundary announcement — and a child that
             # finished during a wait must hand its files back exactly like one that finished
-            # between turns. Collecting in either reporter made it a race (F338).
-            from .control import collect_child_artifacts
-
-            sub.collected_paths = collect_child_artifacts(sub)
+            # between turns. Collecting in either reporter made it a race (F338). The child
+            # wrote what it hands back into its OWN artifacts/ (children keep their own dirs,
+            # so siblings never race a shared tree); a child built without a parent_dir
+            # hands back only its summary.
+            if sub.parent_dir is not None:
+                sub.collected_paths = child.collect_handback(
+                    sub.ctx.routine.dir / "artifacts", sub.parent_dir, child.SUB, sub.n)
             # kill_all can collect a child that REFUSED to stop (still running in its
             # thread, still mutating its usage dict) — snapshot defensively so the fold
             # and the event agree, and a concurrent key insert can't blow the copy.

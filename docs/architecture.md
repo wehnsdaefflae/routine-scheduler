@@ -554,9 +554,9 @@ and the capabilities digest's catalog listing):
   FILES by writing them into its OWN `artifacts/` — the convention the Artifacts panel and
   detached tasks already use, so no action-schema field was added and a non-child run pays
   nothing. The engine copies those into the parent's `artifacts/from-sub-<n>/`
-  (`control.collect_child_artifacts`) and NAMES the landed paths in the notification, so a parent
-  never greps the runs tree for a child's output. Collection happens in `subruns._collect`, the
-  child's single finalization point — two paths report an exit (`wait`, which consumes finished
+  (`child.collect_handback`, the one copy every hand-back shares) and NAMES the landed paths in the
+  notification, so a parent never greps the runs tree for a child's output. Collection happens in
+  `subruns._collect`, the child's single finalization point — two paths report an exit (`wait`, which consumes finished
   children directly, and the turn-boundary announcement), so collecting in either reporter was a
   race. Isolation is kept on purpose: a shared writable dir between concurrent children is a race
   the engine would have to arbitrate, and an isolated dir plus a declared hand-back gives the same
