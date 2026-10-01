@@ -15,40 +15,70 @@ load, never surfaced to the user.
 from __future__ import annotations
 
 import os
-from datetime import UTC, datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
 
+#: Where a host — or a container, through its read-only bind mounts — names its zone.
+ETC_TIMEZONE = Path("/etc/timezone")
+ETC_LOCALTIME = Path("/etc/localtime")
+
 
 def server_tz() -> str:
-    """The server's local IANA timezone name (e.g. 'Europe/Berlin'), best-effort. Inside
-    a container the host's zone arrives as a TZ env var or a bind-mounted /etc/timezone
-    (a plain file naming the zone). /etc/timezone is consulted BEFORE the /etc/localtime
-    symlink: Docker mounts through the image's symlink, leaving a stale symlink NAME over
-    correct zone DATA — the symlink is only trustworthy where /etc/timezone is absent.
+    """The server's local IANA timezone name (e.g. 'Europe/Berlin'), best-effort, from the
+    first of these that names a zone `ZoneInfo` loads: the TZ env var, /etc/timezone, the
+    /etc/localtime symlink — else 'UTC'. Inside a container the host's zone arrives as a TZ
+    env var or a bind-mounted /etc/timezone (a plain file naming the zone). /etc/timezone is
+    consulted BEFORE the /etc/localtime symlink: Docker mounts through the image's symlink,
+    leaving a stale symlink NAME over correct zone DATA — the symlink is only trustworthy
+    where /etc/timezone is absent.
+
+    A source that names no loadable zone FALLS THROUGH rather than winning: the answer is
+    written beside every cron the console saves (routine.yaml, lanes.json), so the systemd
+    idiom `TZ=:/etc/localtime`, a POSIX rule string or a typo must never become a zone no
+    routine can load. A path is read for the key under its `zoneinfo/`, following a symlink
+    the way the last source does.
     """
-    env = os.environ.get("TZ", "").strip().lstrip(":")
-    if env:
-        return env
-    try:
-        tz = datetime.now(UTC).astimezone().tzinfo
-        key = getattr(tz, "key", None)
-        if key:
-            return str(key)
-        tzfile = Path("/etc/timezone")
-        if tzfile.is_file():
-            name = tzfile.read_text(encoding="utf-8").strip()
-            if name:
-                return name
-        link = Path("/etc/localtime")
-        if link.is_symlink():
-            p = str(link.resolve())
-            if "zoneinfo/" in p:
-                return p.split("zoneinfo/", 1)[1]
-    except Exception:
-        pass
+    for read in (_tz_env, _etc_timezone, _localtime_link):
+        try:
+            zone = zone_key(read())
+        except (OSError, RuntimeError, ValueError):
+            continue        # an unreadable source names nothing (RuntimeError: a symlink loop)
+        if zone:
+            return zone
     return "UTC"
+
+
+def _tz_env() -> str:
+    return os.environ.get("TZ", "")
+
+
+def _etc_timezone() -> str:
+    return ETC_TIMEZONE.read_text(encoding="utf-8")
+
+
+def _localtime_link() -> str:
+    return str(ETC_LOCALTIME) if ETC_LOCALTIME.is_symlink() else ""
+
+
+def zone_key(name: str) -> str:
+    """`name` as a key `ZoneInfo` loads, or "" when it names none — the ONE zone check every
+    stored tz goes through (`lanes` degrades a hand-edited zone with it). The POSIX leading
+    colon is dropped; a path becomes the key under its `zoneinfo/` (resolved first, so a
+    symlink names its target's zone and a plain file names none).
+    """
+    name = name.strip().lstrip(":")
+    if name.startswith("/"):
+        resolved = str(Path(name).resolve())
+        name = resolved.split("zoneinfo/", 1)[1] if "zoneinfo/" in resolved else ""
+    if not name:
+        return ""
+    try:
+        ZoneInfo(name)
+    except (ZoneInfoNotFoundError, ValueError):
+        return ""
+    return name
 
 
 def friendly_to_cron(spec: dict) -> str:

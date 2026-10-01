@@ -1,7 +1,5 @@
 """Friendly schedule ↔ cron round-trip and descriptions."""
 
-from pathlib import Path
-
 import pytest
 
 from rsched.schedule import cron_to_friendly, describe, friendly_to_cron, server_tz
@@ -62,72 +60,60 @@ def test_invalid_friendly():
         friendly_to_cron({"frequency": "weekly", "time": "08:00", "weekday": 1})
 
 
-def test_server_tz_reports_the_local_zoneinfo_key(monkeypatch):
-    """When the local zone resolves to a named IANA zone, server_tz reports that key."""
-    from types import SimpleNamespace
-    from zoneinfo import ZoneInfo
-
-    class _Stamp:
-        @staticmethod
-        def astimezone():
-            return SimpleNamespace(tzinfo=ZoneInfo("Europe/Berlin"))
-
-    class _DT:
-        @staticmethod
-        def now(_tz=None):
-            return _Stamp()
-
+@pytest.fixture
+def etc(monkeypatch, tmp_path):
+    """The two /etc files server_tz reads, pointed at tmp — absent until a test writes them."""
     monkeypatch.delenv("TZ", raising=False)
-    monkeypatch.setattr("rsched.schedule.datetime", _DT)
-    assert server_tz() == "Europe/Berlin"
+    monkeypatch.setattr("rsched.schedule.ETC_TIMEZONE", tmp_path / "timezone")
+    monkeypatch.setattr("rsched.schedule.ETC_LOCALTIME", tmp_path / "localtime")
+    return tmp_path
 
 
-def test_server_tz_honors_tz_env(monkeypatch):
+def test_server_tz_honors_tz_env(monkeypatch, etc):
     """A TZ env var (how a container is told its zone) wins outright — no filesystem
     probing needed."""
+    (etc / "timezone").write_text("Europe/Berlin\n", encoding="utf-8")
     monkeypatch.setenv("TZ", ":Europe/Vienna")   # the leading colon form is valid
     assert server_tz() == "Europe/Vienna"
 
 
-def test_server_tz_reads_etc_timezone_when_localtime_is_not_a_symlink(monkeypatch, tmp_path):
+def test_server_tz_reads_etc_timezone_when_localtime_is_not_a_symlink(etc):
     """In a container, /etc/localtime is a bind-mounted FILE (the symlink trick dies) and
     /etc/timezone names the zone — server_tz falls through to it."""
-    from types import SimpleNamespace
-
-    class _Stamp:
-        @staticmethod
-        def astimezone():
-            return SimpleNamespace(tzinfo=SimpleNamespace())   # no .key — a fixed offset
-
-    class _DT:
-        @staticmethod
-        def now(_tz=None):
-            return _Stamp()
-
-    (tmp_path / "localtime").write_bytes(b"TZif2-binary-blob")     # a file, not a symlink
-    (tmp_path / "timezone").write_text("Europe/Vienna\n", encoding="utf-8")
-
-    real_path = Path
-
-    def _fake_path(p):
-        mapped = {"/etc/localtime": tmp_path / "localtime", "/etc/timezone": tmp_path / "timezone"}
-        return mapped.get(str(p), real_path(p))
-
-    monkeypatch.delenv("TZ", raising=False)
-    monkeypatch.setattr("rsched.schedule.datetime", _DT)
-    monkeypatch.setattr("rsched.schedule.Path", _fake_path)
+    (etc / "localtime").write_bytes(b"TZif2-binary-blob")          # a file, not a symlink
+    (etc / "timezone").write_text("Europe/Vienna\n", encoding="utf-8")
     assert server_tz() == "Europe/Vienna"
 
 
-def test_server_tz_degrades_to_utc_when_zone_is_undetectable(monkeypatch):
-    """server_tz never raises: an unresolvable local zone falls back to 'UTC' (the
+def test_server_tz_reads_the_localtime_symlinks_target(etc):
+    """With no /etc/timezone, the symlink's TARGET names the zone (it need not exist here:
+    the key is read off the path under `zoneinfo/`)."""
+    (etc / "localtime").symlink_to(etc / "usr" / "share" / "zoneinfo" / "Europe" / "Vienna")
+    assert server_tz() == "Europe/Vienna"
+
+
+@pytest.mark.parametrize("tz", [":{localtime}", "CET-1CEST,M3.5.0,M10.5.0/3",
+                                "Not/AZone", "Europe/"])
+def test_a_tz_no_zoneinfo_loads_falls_through_to_the_next_source(monkeypatch, etc, tz):
+    """The answer is WRITTEN beside every cron the console saves, so a TZ value ZoneInfo cannot
+    load — the systemd idiom `:/etc/localtime` where that is a bind-mounted plain FILE (a
+    container's), a POSIX rule, a typo — must not win. It used to be returned verbatim,
+    poisoning every routine.yaml saved after it."""
+    (etc / "localtime").write_bytes(b"TZif2-binary-blob")
+    (etc / "timezone").write_text("Europe/Vienna\n", encoding="utf-8")
+    monkeypatch.setenv("TZ", tz.format(localtime=etc / "localtime"))
+    assert server_tz() == "Europe/Vienna"
+
+
+def test_a_tz_naming_a_zoneinfo_path_reads_as_its_key(monkeypatch, etc):
+    monkeypatch.setenv("TZ", ":/usr/share/zoneinfo/America/New_York")
+    assert server_tz() == "America/New_York"
+
+
+def test_server_tz_degrades_to_utc_when_zone_is_undetectable(etc):
+    """server_tz never raises: no source naming a loadable zone falls back to 'UTC' (the
     scheduler still needs SOME zone to compute fires)."""
-
-    class _Broken:
-        @staticmethod
-        def now(_tz=None):
-            raise OSError("no clock")
-
-    monkeypatch.delenv("TZ", raising=False)
-    monkeypatch.setattr("rsched.schedule.datetime", _Broken)
+    assert server_tz() == "UTC"
+    (etc / "timezone").write_text("Mars/Olympus_Mons\n", encoding="utf-8")
+    (etc / "localtime").symlink_to(etc / "localtime")                # a symlink loop
     assert server_tz() == "UTC"

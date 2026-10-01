@@ -68,13 +68,12 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from croniter import croniter
 
 from .ids import now_iso
 from .paths import atomic_write_json, file_lock, read_json
-from .schedule import server_tz
+from .schedule import server_tz, zone_key
 
 # What to do when a member run fails partway through a sequential lane fire (Phase B reads
 # this; Phase A only stores it). "stop" = abort the rest of the chain; "continue" = fire the
@@ -172,14 +171,7 @@ def _known_zone(tz: object) -> str:
     answered /api/status and never fired another run. (A routine's own tz is validated by
     pydantic at load; the lane store has no such gate, so it is checked here on the way out.)
     """
-    name = str(tz or "").strip()
-    if not name:
-        return ""
-    try:
-        ZoneInfo(name)
-    except (ZoneInfoNotFoundError, ValueError):
-        return ""
-    return name
+    return zone_key(str(tz or ""))
 
 
 def _check_cron(cron: str) -> str:
