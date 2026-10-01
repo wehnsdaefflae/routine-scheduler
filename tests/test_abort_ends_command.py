@@ -27,6 +27,7 @@ import pytest
 import yaml
 
 from conftest import finish
+from helpers import server_for
 from rsched import sandbox, scripts, shellrun, utils_lib, utils_run
 from rsched.config import ServerConfig, load_routine
 from rsched.engine.budgets_config import Budgets
@@ -170,11 +171,8 @@ def test_a_venv_build_the_abort_ended_reports_the_abort(tmp_path, make_routine):
 # -- the engine ---------------------------------------------------------------------------
 
 def _server(routine_dir: Path) -> ServerConfig:
-    s = ServerConfig()
-    s.routines_home = routine_dir.parent
-    s.libraries_home = routine_dir.parent.parent / "test-library"
-    s.sandbox = "off"        # the jail's inputs are pinned elsewhere; this exercises the process
-    return s
+    # the jail's inputs are pinned elsewhere; this exercises the process
+    return server_for(routine_dir, sandbox="off")
 
 
 def test_an_abort_ends_the_shell_command_in_flight(make_routine, scripted):

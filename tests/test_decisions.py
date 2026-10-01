@@ -10,20 +10,13 @@ import time
 import pytest
 
 from conftest import finish
+from helpers import server_for
 from rsched import utils_lib, utils_run
-from rsched.config import ServerConfig
 from rsched.engine.runtime import run_routine
 from rsched.engine.transcript import read_events
 from rsched.paths import atomic_write_json, read_json
 
 TS = "20260708-070000"
-
-
-def _server(routine_dir) -> ServerConfig:
-    s = ServerConfig()
-    s.routines_home = routine_dir.parent          # hermetic: .control logs land in tmp
-    s.libraries_home = routine_dir.parent.parent / "test-library"
-    return s
 
 
 def _events(run_dir):
@@ -59,7 +52,7 @@ def test_blocking_ask_files_a_durable_record_with_default_and_expiry(make_routin
          "options": ["yes", "no"], "default": "hold the release"},
         finish(),
     ])
-    status, run_dir = run_routine(d, _server(d), run_ts=TS)
+    status, run_dir = run_routine(d, server_for(d), run_ts=TS)
     assert status == "ok"
     # timed out → the record survives as an open DEFERRED decision, default intact
     recs = [read_json(p) for p in (d / "questions" / "pending").glob("*.json")]
@@ -86,7 +79,7 @@ def test_deferred_ask_carries_config_patch_for_the_bridge(make_routine, scripted
          "question": "Raise the turn budget to 120?", "config_patch": patch},
         finish(),
     ])
-    status, _ = run_routine(d, _server(d), run_ts=TS)
+    status, _ = run_routine(d, server_for(d), run_ts=TS)
     assert status == "ok"
     recs = [read_json(p) for p in (d / "questions" / "pending").glob("*.json")]
     assert len(recs) == 1 and recs[0]["config_patch"] == patch
@@ -110,7 +103,7 @@ def test_config_patch_names_another_routine_as_its_target(make_routine, scripted
          "config_patch": {"routine": "suedlink-wlf", "budgets": {"max_turns": 120}}},
         finish(),
     ])
-    status, _ = run_routine(d, _server(d), run_ts=TS)
+    status, _ = run_routine(d, server_for(d), run_ts=TS)
     assert status == "ok"
     recs = [read_json(p) for p in (d / "questions" / "pending").glob("*.json")]
     assert len(recs) == 1
@@ -131,7 +124,7 @@ def test_config_patch_target_that_names_no_routine_is_refused(make_routine, scri
          "config_patch": {"routine": "no-such-routine", "budgets": {"max_turns": 120}}},
         finish(),
     ])
-    status, run_dir = run_routine(d, _server(d), run_ts=TS)
+    status, run_dir = run_routine(d, server_for(d), run_ts=TS)
     assert status == "ok"
     assert not list((d / "questions" / "pending").glob("*.json"))
     obs = next(e for e in _events(run_dir)
@@ -159,7 +152,7 @@ def test_blocking_answer_resolves_the_record(make_routine, scripted):
         {"say": "q", "kind": "ask_user", "question": "Go?", "mode": "blocking"},
         finish(),
     ])
-    status, run_dir = run_routine(d, _server(d), run_ts=TS)
+    status, run_dir = run_routine(d, server_for(d), run_ts=TS)
     t.join()
     assert status == "ok"
     assert not list((d / "questions" / "pending").glob("*.json"))   # resolved, not lingering
@@ -176,7 +169,7 @@ def test_util_approval_is_the_same_record_with_its_own_type(make_routine, script
          "content": '"""frob — test util.\n\nusage: gu frob\ntags: test, demo\nnet: none\nfs: roots\n"""\n'},
         finish(),
     ])
-    status, run_dir = run_routine(d, _server(d), run_ts=TS)
+    status, run_dir = run_routine(d, server_for(d), run_ts=TS)
     assert status == "ok"
     q = next(e for e in _events(run_dir) if e["type"] == "question")
     assert q["payload"]["type"] == "util-approval"
@@ -217,7 +210,7 @@ def test_dialog_reply_keeps_the_record_open_and_a_reask_supersedes_it(make_routi
          "question": "Go? Options: yes (ship now) / no (hold)."},
         finish(),
     ])
-    status, run_dir = run_routine(d, _server(d), run_ts=TS)
+    status, run_dir = run_routine(d, server_for(d), run_ts=TS)
     t.join()
     assert status == "ok"
     events = _events(run_dir)
@@ -271,7 +264,7 @@ def test_dialog_reply_survives_a_finish_without_reask(make_routine, scripted):
         {"say": "q", "kind": "ask_user", "question": "Proceed?", "mode": "blocking"},
         finish(status="partial", summary="ended mid-dialog"),
     ])
-    status, _run_dir = run_routine(d, _server(d), run_ts=TS)
+    status, _run_dir = run_routine(d, server_for(d), run_ts=TS)
     t.join()
     assert status == "partial"
     recs = [read_json(p) for p in (d / "questions" / "pending").glob("*.json")]
@@ -317,7 +310,7 @@ def test_util_secret_gate_files_one_request_covering_the_run(make_routine, scrip
         {"say": "call it again", "kind": "util", "name": "frob", "args": []},
         finish(),
     ])
-    status, run_dir = run_routine(d, _server(d), run_ts=TS)
+    status, run_dir = run_routine(d, server_for(d), run_ts=TS)
     th.join()
     assert status == "ok"
     events = _events(run_dir)
@@ -352,7 +345,7 @@ def test_optional_secret_never_asks_and_is_withheld(make_routine, scripted, monk
         {"say": "public fetch", "kind": "util", "name": "page-fetch", "args": ["https://x"]},
         finish(),
     ])
-    status, run_dir = run_routine(d, _server(d), run_ts=TS)
+    status, run_dir = run_routine(d, server_for(d), run_ts=TS)
     assert status == "ok"
     events = _events(run_dir)
     assert not [e for e in events if e["type"] == "question"]      # nobody was asked
@@ -383,7 +376,7 @@ def test_secret_grant_row_covers_runs_without_asking(make_routine, scripted, mon
     (d / "routine.yaml").write_text(_yaml.safe_dump(cfg))
 
     scripted([{"say": "call", "kind": "util", "name": "frob", "args": []}, finish()])
-    status, run_dir = run_routine(d, _server(d), run_ts=TS)
+    status, run_dir = run_routine(d, server_for(d), run_ts=TS)
     assert status == "ok"
     assert [e for e in _events(run_dir) if e["type"] == "question"] == []   # never asked
     assert ran == [("frob", [])]                                            # ran unprompted
@@ -413,7 +406,7 @@ def test_util_secret_gate_recorded_decline_refuses_without_asking(make_routine, 
         {"say": "call it", "kind": "util", "name": "frob", "args": []},
         finish(),
     ])
-    status, run_dir = run_routine(d, _server(d), run_ts=TS)
+    status, run_dir = run_routine(d, server_for(d), run_ts=TS)
     assert status == "ok"
     events = _events(run_dir)
     assert not any(e["type"] == "question" for e in events)
@@ -447,7 +440,7 @@ def test_a_util_slash_command_passes_the_same_secret_gate(make_routine, scripted
     atomic_write_json(d / "inbox" / "msg-1.json",
                       {"text": "/util frob", "command": True, "ts": "t1", "via": "web"})
     scripted([finish()])
-    status, run_dir = run_routine(d, _server(d), run_ts=TS)
+    status, run_dir = run_routine(d, server_for(d), run_ts=TS)
     assert status == "ok"
     obs = next(e["payload"] for e in _events(run_dir) if e["type"] == "observation"
                and e["payload"].get("user_command"))
@@ -478,7 +471,7 @@ def test_secret_decline_observation_names_no_secrets(make_routine, scripted, mon
     cfg["grants"] = {"secret:FOO_KEY": False, "secret:BAR_KEY": False}
     (d / "routine.yaml").write_text(_yaml.safe_dump(cfg))
     scripted([{"say": "call it", "kind": "util", "name": "frob", "args": []}, finish()])
-    status, run_dir = run_routine(d, _server(d), run_ts=TS)
+    status, run_dir = run_routine(d, server_for(d), run_ts=TS)
     assert status == "ok"
     obs = next(e for e in _events(run_dir) if e["type"] == "observation"
                and e["payload"]["kind"] == "util")
@@ -522,7 +515,7 @@ def test_secret_decline_after_ask_stays_generic(make_routine, scripted, monkeypa
     th = threading.Thread(target=decline_soon)
     th.start()
     scripted([{"say": "call it", "kind": "util", "name": "frob", "args": []}, finish()])
-    status, run_dir = run_routine(d, _server(d), run_ts=TS)
+    status, run_dir = run_routine(d, server_for(d), run_ts=TS)
     th.join()
     assert status == "ok"
     obs = next(e for e in _events(run_dir) if e["type"] == "observation"
@@ -566,7 +559,7 @@ def test_ambiguous_approval_reply_is_held_not_consumed(make_routine, scripted):
          "content": '"""frob — test util.\n\nusage: gu frob\ntags: test, demo\nnet: none\nfs: roots\n"""\n'},
         finish(),
     ])
-    status, run_dir = run_routine(d, _server(d), run_ts=TS)
+    status, run_dir = run_routine(d, server_for(d), run_ts=TS)
     t.join()
     assert status == "ok"
     events = _events(run_dir)
@@ -598,7 +591,7 @@ def test_deferred_answer_reaches_the_live_run(make_routine, scripted):
         {"say": "next turn", "kind": "read_file", "path": "main.md"},
         finish(),
     ])
-    status, run_dir = run_routine(d, _server(d), run_ts=TS)
+    status, run_dir = run_routine(d, server_for(d), run_ts=TS)
     assert status == "ok"
     events = _events(run_dir)
     inj = [e["payload"]["text"] for e in events if e["type"] == "user_injection"]
@@ -677,7 +670,7 @@ def test_a_routine_proposal_naming_a_conversation_field_is_refused_at_filing(
          "question": "Rename?", "config_patch": {"title": "Nicer name"}},
         finish(),
     ])
-    status, run_dir = run_routine(d, _server(d), run_ts=TS)
+    status, run_dir = run_routine(d, server_for(d), run_ts=TS)
     assert status == "ok"
     assert not list((d / "questions" / "pending").glob("*.json"))
     obs = next(e for e in _events(run_dir)

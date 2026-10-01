@@ -76,12 +76,6 @@ def _by_id(surface, eid):
     return next((n for n in surface["nodes"] if n["id"] == eid), None)
 
 
-@pytest.fixture
-def empty_store(monkeypatch):
-    """No secrets in the store unless a test says otherwise — the surface reads the live one."""
-    monkeypatch.setattr("rsched.secrets.load_secrets", dict)
-
-
 def test_the_soft_edge_is_parsed_once_per_library_change(tmp_path, monkeypatch):
     """Every surface read joins `expects:`, and an authoring approval's blast radius reads
     every holder's surface twice. `requires:` beside it came off the read-model memo; the soft

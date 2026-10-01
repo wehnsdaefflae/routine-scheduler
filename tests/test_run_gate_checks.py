@@ -5,9 +5,6 @@ from rsched.config.routine import RunGateConfig
 from rsched.daemon import runner_state
 from rsched.paths import atomic_write_json, read_json
 from test_run_gate import fake_engine, finish, script, skip_body
-from test_run_gate import setup_gate as gate_fixture
-
-setup_gate = gate_fixture
 
 
 def use(cfg, *checks, timeout=60):

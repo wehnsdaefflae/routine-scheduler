@@ -8,17 +8,10 @@ two behaviours the old page had earned — Unread by default (2026-08-05) and a 
 
 from __future__ import annotations
 
-from rsched.config import ServerConfig
+from helpers import tmp_server
 from rsched.readmodels import summaries
 
 TS = "20260905-090000"
-
-
-def _server(tmp_path) -> ServerConfig:
-    s = ServerConfig()
-    s.routines_home = tmp_path / "routines"
-    s.routines_home.mkdir(parents=True, exist_ok=True)
-    return s
 
 
 def _run(routine_dir, ts, *, summary="", state="finished", outcome="ok"):
@@ -36,7 +29,7 @@ def _run(routine_dir, ts, *, summary="", state="finished", outcome="ok"):
 
 
 def test_one_row_per_routine_carrying_the_newest_run_with_a_summary(tmp_path, make_routine):
-    server = _server(tmp_path)
+    server = tmp_server(tmp_path)
     d = make_routine(slug="talker")
     _run(d, "20260905-070000", summary="the older one")
     _run(d, "20260905-080000", summary="what it last told you")
@@ -56,7 +49,7 @@ def test_the_list_is_newest_first_by_instant_whatever_form_the_stamp_takes(tmp_p
     """A run that never wrote `updated` (no status.json — a boot that died) is dated by its
     run-ts. Sorted as text, a compact run-ts lands above every ISO stamp, so that routine sat at
     the top of the page however old its run was."""
-    server = _server(tmp_path)
+    server = tmp_server(tmp_path)
     stale = make_routine(slug="stale")
     (stale / "runs" / "20260101-000000").mkdir(parents=True)    # no status.json, no `updated`
     _run(make_routine(slug="fresh"), "20260905-080000", summary="said this week")
@@ -64,7 +57,7 @@ def test_the_list_is_newest_first_by_instant_whatever_form_the_stamp_takes(tmp_p
 
 
 def test_a_routine_that_never_ran_has_nothing_to_say(tmp_path, make_routine):
-    server = _server(tmp_path)
+    server = tmp_server(tmp_path)
     make_routine(slug="quiet")
     assert summaries.build(server) == []
 
@@ -72,7 +65,7 @@ def test_a_routine_that_never_ran_has_nothing_to_say(tmp_path, make_routine):
 def test_marking_read_is_a_watermark_a_newer_run_clears(tmp_path, make_routine):
     """The store is `{slug: newest run seen}`, so a newer run resurfaces on its own — nothing
     has to go back and clear the old marker."""
-    server = _server(tmp_path)
+    server = tmp_server(tmp_path)
     d = make_routine(slug="talker")
     _run(d, "20260905-080000", summary="first")
 
@@ -89,7 +82,7 @@ def test_marking_read_is_a_watermark_a_newer_run_clears(tmp_path, make_routine):
 
 def test_the_bulk_sweep_marks_every_shown_row(tmp_path, make_routine):
     """F303: with one row per routine and no bulk action, clearing a backlog was one click each."""
-    server = _server(tmp_path)
+    server = tmp_server(tmp_path)
     for slug in ("a", "b", "c"):
         _run(make_routine(slug=slug), "20260905-080000", summary=f"{slug} says hi")
     assert summaries.mark_all_read(server.routines_home, server) == 3

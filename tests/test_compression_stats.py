@@ -7,17 +7,8 @@ import json
 
 import yaml
 
-from rsched.config import ServerConfig
+from helpers import stats_server
 from rsched.readmodels.compression_stats import compression_stats
-
-
-def _server(tmp_path) -> ServerConfig:
-    s = ServerConfig()
-    s.routines_home = tmp_path / "routines"
-    s.conversations_home = tmp_path / "conversations"
-    s.libraries_home = tmp_path / "library"
-    (s.routines_home / ".control").mkdir(parents=True, exist_ok=True)
-    return s
 
 
 def _routine(server, slug):
@@ -38,7 +29,7 @@ def _rec(slug, ts, compression, *, depth=0):
 
 
 def test_rolls_up_per_routine_and_orders_by_saving(tmp_path):
-    server = _server(tmp_path)
+    server = stats_server(tmp_path)
     _routine(server, "alpha")
     _routine(server, "beta")
     _stream(server, [
@@ -76,7 +67,7 @@ def test_rolls_up_per_routine_and_orders_by_saving(tmp_path):
 def test_a_continued_run_is_one_run_with_each_legs_tally_summed(tmp_path):
     """Each leg of a continued run files its own record carrying its OWN tally. Read per
     record, one run read as two runs."""
-    server = _server(tmp_path)
+    server = stats_server(tmp_path)
     _routine(server, "alpha")
     first = _rec("alpha", "2026-09-11T07:00:00+00:00",
                  {"applied": 2, "tokens_saved": 300, "ms": 100.0})
@@ -94,7 +85,7 @@ def test_records_without_the_tally_are_outside_the_window(tmp_path):
     """A pre-counter record is not a routine that compressed nothing — it is a run the
     counter never saw. It must not appear as a zero row or move `since`.
     """
-    server = _server(tmp_path)
+    server = stats_server(tmp_path)
     _routine(server, "alpha")
     _stream(server, [
         {"routine": "alpha", "run_id": "alpha:1", "depth": 0, "status": "ok",
@@ -109,14 +100,14 @@ def test_records_without_the_tally_are_outside_the_window(tmp_path):
 
 def test_a_deleted_routine_stays_readable(tmp_path):
     """A slug with no directory any more keeps its row: the history is still true."""
-    server = _server(tmp_path)
+    server = stats_server(tmp_path)
     _stream(server, [_rec("gone", "2026-09-11T08:00:00+00:00", {"skipped": 3, "ms": 0.0})])
     rows = {r["routine"]: r for r in compression_stats(server)["rows"]}
     assert rows["gone"]["skipped"] == 3
 
 
 def test_malformed_counts_never_raise(tmp_path):
-    server = _server(tmp_path)
+    server = stats_server(tmp_path)
     _routine(server, "alpha")
     _stream(server, [
         _rec("alpha", "2026-09-11T07:00:00+00:00",
@@ -129,6 +120,6 @@ def test_malformed_counts_never_raise(tmp_path):
 
 
 def test_empty_instance_reports_an_empty_window(tmp_path):
-    out = compression_stats(_server(tmp_path))
+    out = compression_stats(stats_server(tmp_path))
     assert out == {"rows": [], "totals": out["totals"], "since": None, "records": 0}
     assert out["totals"]["tokens_saved"] == 0

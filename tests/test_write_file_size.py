@@ -6,32 +6,13 @@ had clobbered a file's existing content.
 
 from __future__ import annotations
 
-from rsched.config import ServerConfig, load_routine
-from rsched.engine.budgets_config import Budgets
+from helpers import action_ctx
 from rsched.engine.fileops import do_write_file
 from rsched.engine.observations import format_observation
-from rsched.engine.run_context import RunContext
-from rsched.engine.transcript import Transcript
-from rsched.grantpolicy import GrantPolicy
-
-
-def _ctx(make_routine, tmp_path) -> RunContext:
-    d = make_routine()
-    cfg, _problems = load_routine(d)
-    assert cfg is not None
-    run_dir = d / "runs" / "20260716-070000"
-    run_dir.mkdir(parents=True)
-    server = ServerConfig()
-    server.libraries_home = tmp_path / "libraries"
-    ctx = RunContext(routine=cfg, server=server, registry=None, run_ts="20260716-070000",
-                     run_dir=run_dir, transcript=Transcript(run_dir / "transcript.jsonl"),
-                     budgets=Budgets.from_config(cfg.budgets))
-    ctx.grants = GrantPolicy()
-    return ctx
 
 
 def test_write_file_append_reports_grown_total_size(make_routine, tmp_path):
-    ctx = _ctx(make_routine, tmp_path)
+    ctx = action_ctx(make_routine(), tmp_path)
     target = ctx.routine.dir / "state" / "note.md"
     first = do_write_file({"path": str(target), "content": "header\n"}, ctx)
     assert first["size"] == first["bytes"] == len(b"header\n")
@@ -45,7 +26,7 @@ def test_write_file_append_reports_grown_total_size(make_routine, tmp_path):
 
 
 def test_write_file_overwrite_size_equals_payload(make_routine, tmp_path):
-    ctx = _ctx(make_routine, tmp_path)
+    ctx = action_ctx(make_routine(), tmp_path)
     target = ctx.routine.dir / "state" / "note.md"
     do_write_file({"path": str(target), "content": "aaaaaa\n"}, ctx)
     over = do_write_file({"path": str(target), "content": "bb\n"}, ctx)
@@ -58,7 +39,7 @@ def test_append_outside_own_dir_preserves_existing_content(make_routine, tmp_pat
     fs_write_root — the reported case was a conversation LEDGER) passes the grounding
     gate UNREAD (append adds without destroying) and keeps every original byte; the
     observation proves it (size == prior + bytes, never == bytes)."""
-    ctx = _ctx(make_routine, tmp_path)
+    ctx = action_ctx(make_routine(), tmp_path)
     ext = tmp_path / "conversations" / "c-20260719-162554"
     ext.mkdir(parents=True)
     ctx.routine.fs_write_roots = [tmp_path / "conversations"]
@@ -82,7 +63,7 @@ def test_structured_append_is_one_compact_jsonl_line(make_routine, tmp_path):
     every reader then counted it as 13 malformed rows. Overwrite keeps the readable form."""
     import json
 
-    ctx = _ctx(make_routine, tmp_path)
+    ctx = action_ctx(make_routine(), tmp_path)
     row = {"ts": "2026-09-12T00:00:00+00:00", "items": ["F1", "D2"], "summary": "one"}
     do_write_file({"kind": "write_file", "path": "audit/changelog.jsonl", "content": row,
                    "append": True}, ctx)

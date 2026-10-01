@@ -9,32 +9,8 @@ from pathlib import Path
 import pytest
 
 from rsched.config import RoutineConfig, ServerConfig
-from rsched.config.routine import RunGateConfig
 from rsched.daemon import gate_prepare, run_gate, runner_state
-from rsched.daemon.events import EventBus
-from rsched.daemon.runner import Runner
 from rsched.paths import read_json
-
-
-@pytest.fixture
-def setup_gate(tmp_path, monkeypatch):
-    root = tmp_path / "routines" / "gate-test"
-    (root / "scripts").mkdir(parents=True)
-    server = ServerConfig(routines_home=root.parent, libraries_home=tmp_path / "lib",
-                          conversations_home=tmp_path / "conversations",
-                          background_home=tmp_path / "background", sandbox="strict")
-    # 60s, not 8: this is the deadline for tests that are not ABOUT the deadline, and a gate
-    # child is a fresh interpreter importing rsched. Measured under six concurrent runs of one
-    # of them, a single gate takes ~7s of a healthy box — one second of headroom, which the
-    # release gate's fifteen workers spend. `test_declared_optional_and_granted_secrets[False]`
-    # failed that way on 2026-09-23 and passed alone, the shape of a flake nobody diagnoses.
-    # The tests that DO exercise the deadline set their own (1s, 2s), so nothing here
-    # weakens them; a genuinely hung gate still trips this.
-    cfg = RoutineConfig(slug=root.name, dir=root,
-                        run_gate=RunGateConfig(enabled=True, timeout_s=60,
-                                               checks=[{"kind": "script"}]))
-    monkeypatch.setenv("RSCHED_CONFIG", str(tmp_path / "config.yaml"))
-    return cfg, server, Runner(server, EventBus())
 
 
 def script(cfg, body):

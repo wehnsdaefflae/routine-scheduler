@@ -10,6 +10,7 @@ import pytest
 
 import rsched.daemon.scheduler as sched_mod
 from conftest import FakeRunner
+from helpers import tmp_server
 from rsched.config import ServerConfig, load_routine
 from rsched.daemon import restart, runner_reap, runner_state
 from rsched.daemon.events import EventBus
@@ -22,10 +23,7 @@ from rsched.registry import read_run, scan
 
 
 def _server(tmp_path, max_concurrent=2) -> ServerConfig:
-    s = ServerConfig()
-    s.routines_home = tmp_path / "routines"
-    s.max_concurrent_runs = max_concurrent
-    return s
+    return tmp_server(tmp_path, create=False, max_concurrent_runs=max_concurrent)
 
 
 def test_rescan_keeps_owed_fires(make_routine, tmp_path):

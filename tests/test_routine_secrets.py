@@ -13,7 +13,7 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
-from conftest import TEST_TOKEN, make_test_server
+from conftest import TEST_TOKEN, authed_client, make_test_server
 from rsched import secrets
 from rsched.web.app import create_app
 
@@ -136,10 +136,7 @@ def test_the_exposure_gate_skips_a_name_the_routine_owns(make_routine):
 @pytest.fixture
 def client(tmp_path, make_routine):
     make_routine(slug="apir")
-    server = make_test_server(tmp_path)
-    app = create_app(server, with_scheduler=False)
-    with TestClient(app) as c:
-        c.headers["Authorization"] = f"Bearer {TEST_TOKEN}"
+    with authed_client(make_test_server(tmp_path)) as c:
         yield c, tmp_path
 
 

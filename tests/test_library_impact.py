@@ -45,11 +45,6 @@ def _routine(server, slug, **cfg) -> None:
 
 
 @pytest.fixture
-def empty_store(monkeypatch):
-    monkeypatch.setattr("rsched.secrets.load_secrets", dict)
-
-
-@pytest.fixture
 def client_lib(api_client, monkeypatch):
     """The hermetic app over a one-util library with one holding routine, plus the source
     builder — so the web writer is exercised through the real routes, not a stand-in."""

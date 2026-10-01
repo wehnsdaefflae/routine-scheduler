@@ -9,7 +9,7 @@ the route, plus the per-routine budget/partial split the usage stream cannot mak
 import json
 from datetime import UTC, datetime, timedelta, timezone
 
-from rsched.config import ServerConfig
+from helpers import tmp_server
 from rsched.health_events import log_health_event
 from rsched.readmodels import memo
 from rsched.readmodels.health_stream import (
@@ -23,12 +23,6 @@ from rsched.readmodels.health_stream import (
 
 def _ago(hours):
     return (datetime.now(UTC) - timedelta(hours=hours)).isoformat()
-
-
-def _server(tmp_path):
-    server = ServerConfig()
-    server.routines_home = tmp_path / "routines"
-    return server
 
 
 def _write(server, rows):
@@ -52,7 +46,7 @@ def test_every_blocked_event_is_in_the_writers_vocabulary():
 
 
 def test_missing_stream_is_empty_not_an_error(tmp_path):
-    server = _server(tmp_path)
+    server = tmp_server(tmp_path, create=False)
     assert health_records(server.routines_home) == []
     out = blocked_fleet(server)
     assert out["total"] == 0 and out["rows"] == []
@@ -60,7 +54,7 @@ def test_missing_stream_is_empty_not_an_error(tmp_path):
 
 
 def test_unparseable_lines_are_skipped(tmp_path):
-    server = _server(tmp_path)
+    server = tmp_server(tmp_path, create=False)
     control = server.routines_home / ".control"
     control.mkdir(parents=True)
     good = json.dumps({"event": "fire_refused", "routine": "a", "ts": _ago(1)})
@@ -71,7 +65,7 @@ def test_unparseable_lines_are_skipped(tmp_path):
 
 
 def test_rows_group_by_event_and_subject_newest_first(tmp_path):
-    server = _server(tmp_path)
+    server = tmp_server(tmp_path, create=False)
     _write(server, [
         {"event": "fire_refused", "routine": "alpha", "run_id": "", "ts": _ago(30),
          "detail": "overrun"},
@@ -93,7 +87,7 @@ def test_rows_group_by_event_and_subject_newest_first(tmp_path):
 
 
 def test_window_excludes_older_events(tmp_path):
-    server = _server(tmp_path)
+    server = tmp_server(tmp_path, create=False)
     _write(server, [
         {"event": "lane_chain_stopped", "routine": "grp-1", "run_id": "lr-1",
          "ts": _ago(24 * 30), "detail": "old"},
@@ -114,7 +108,7 @@ def test_the_window_edge_is_an_instant_whatever_offset_wrote_the_stamp(tmp_path)
     """`now_iso` writes LOCAL time with its offset, and the cutoff was a UTC string: compared as
     text, the window's edge moved by the host's offset. An event an hour too old, written on a
     UTC+2 host, read as inside the week; one an hour inside it, written at UTC-5, as outside."""
-    server = _server(tmp_path)
+    server = tmp_server(tmp_path, create=False)
     _write(server, [
         {"event": "fire_refused", "routine": "too-old", "run_id": "",
          "ts": _at(-timedelta(days=7, hours=1), 2)},
@@ -129,7 +123,7 @@ def test_the_newest_detail_is_the_newest_instant_not_the_largest_string(tmp_path
     """Stamps written under different offsets (a DST change, a host moved between zones) order
     by the instant they name. As text, the older one — written at the larger offset, so an
     hour LATER on the wall clock — won."""
-    server = _server(tmp_path)
+    server = tmp_server(tmp_path, create=False)
     older, newer = _at(-timedelta(hours=3), 3), _at(-timedelta(hours=1), 0)
     _write(server, [
         {"event": "budget_exhausted", "routine": "alpha", "run_id": "a1", "ts": older,
@@ -151,7 +145,7 @@ def test_the_window_moves_with_the_clock_while_the_file_stands_still(tmp_path, m
     computed until the next append — on a quiet instance, for days."""
     from rsched.readmodels import health_stream
 
-    server = _server(tmp_path)
+    server = tmp_server(tmp_path, create=False)
     _write(server, [{"event": "trigger_capped", "routine": "beta", "run_id": "",
                      "ts": _at(-timedelta(days=6), 2)},
                     {"event": "budget_exhausted", "routine": "beta", "run_id": "b1",
@@ -172,7 +166,7 @@ def test_the_window_moves_with_the_clock_while_the_file_stands_still(tmp_path, m
 def test_budget_endings_split_per_routine(tmp_path):
     """Both land in the usage stream as `partial`; only the health stream says which budget
     forced one."""
-    server = _server(tmp_path)
+    server = tmp_server(tmp_path, create=False)
     _write(server, [
         {"event": "budget_exhausted", "routine": "alpha", "run_id": "a1", "ts": _ago(4),
          "detail": "turns 100/100"},
@@ -190,7 +184,7 @@ def test_budget_endings_split_per_routine(tmp_path):
 def test_fold_reflects_a_new_append(tmp_path):
     """The memo keys on the file's stat fingerprint, so an appended event shows up without
     a process restart — this rides a bus-event refresh path."""
-    server = _server(tmp_path)
+    server = tmp_server(tmp_path, create=False)
     _write(server, [])
     assert blocked_fleet(server)["total"] == 0
     log_health_event(server.routines_home, "scheduler_tick_error", routine="", run_id="",

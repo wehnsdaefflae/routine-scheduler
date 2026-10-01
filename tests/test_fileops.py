@@ -15,31 +15,18 @@ the memory permission could read and rewrite its own `.memory/` through a file a
 
 from __future__ import annotations
 
-from rsched.config import ServerConfig, load_routine
-from rsched.engine.budgets_config import Budgets
+from helpers import action_ctx
 from rsched.engine.fileops import do_edit_file, do_read_file, do_write_file
 from rsched.engine.fsops import do_delete, do_mkdir, do_move
 from rsched.engine.run_context import RunContext
-from rsched.engine.transcript import Transcript
-from rsched.grantpolicy import GrantPolicy
 
 
 def _ctx(make_routine, tmp_path) -> RunContext:
     d = make_routine()
-    cfg, _problems = load_routine(d)
-    assert cfg is not None
-    run_dir = d / "runs" / "20260922-070000"
-    run_dir.mkdir(parents=True)
     (d / ".memory").mkdir()
     (d / ".memory" / "INDEX.md").write_text("# INDEX\n- topic — engine-written\n",
                                             encoding="utf-8")
-    server = ServerConfig()
-    server.libraries_home = tmp_path / "libraries"
-    ctx = RunContext(routine=cfg, server=server, registry=None, run_ts="20260922-070000",
-                     run_dir=run_dir, transcript=Transcript(run_dir / "transcript.jsonl"),
-                     budgets=Budgets.from_config(cfg.budgets))
-    ctx.grants = GrantPolicy()
-    return ctx
+    return action_ctx(d, tmp_path, ts="20260922-070000")
 
 
 TRAVERSAL = "state/../.memory/INDEX.md"

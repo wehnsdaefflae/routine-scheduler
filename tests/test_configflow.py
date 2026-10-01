@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import pytest
 
+from helpers import run_context, server_config
 from rsched import configflow
 from rsched.web.api_conversation_config import ConversationPatch
 from rsched.web.api_routine_patch import RoutinePatch
@@ -82,21 +83,9 @@ def test_adoptable_is_exactly_the_live_half():
 # ---- the engine half: what a live run actually does with the signal --------------------------
 
 def _loop(make_routine, tmp_path):
-    from rsched.config import ServerConfig, load_routine
-    from rsched.engine.budgets_config import Budgets
-    from rsched.engine.run_context import RunContext
-    from rsched.engine.transcript import Transcript
-
-    d = make_routine(slug="cfgr")
-    cfg, _ = load_routine(d)
-    run_dir = d / "runs" / "20260827-070000"
-    run_dir.mkdir(parents=True)
-    server = ServerConfig()
-    server.libraries_home = tmp_path / "libraries"
-    ctx = RunContext(routine=cfg, server=server, registry=None, run_ts="20260827-070000",
-                     run_dir=run_dir, transcript=Transcript(run_dir / "transcript.jsonl"),
-                     budgets=Budgets.from_config(cfg.budgets))
-    ctx.deliberation = "standard"
+    ctx = run_context(make_routine(slug="cfgr"), "20260827-070000",
+                      server=server_config(libraries_home=tmp_path / "libraries"),
+                      deliberation="standard")
 
     class _Loop:
         def __init__(self):
@@ -104,7 +93,7 @@ def _loop(make_routine, tmp_path):
             self.messages: list[dict] = []
             self._last_config_ts = ""
 
-    return _Loop(), run_dir
+    return _Loop(), ctx.run_dir
 
 
 def _signal(run_dir, fields, values, ts="2026-08-27T07:05:00+02:00"):

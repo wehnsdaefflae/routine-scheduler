@@ -11,8 +11,9 @@ from types import SimpleNamespace
 import pytest
 
 from conftest import finish, write_file
+from helpers import server_for
 from rsched import machine_mounts, machines, secrets, utils_run
-from rsched.config import MachineConfig, RoutineConfig, ServerConfig, load_server_config
+from rsched.config import MachineConfig, RoutineConfig, load_server_config
 from rsched.engine import runtime
 from rsched.engine.exec_env import _extra_secrets, _machine_env
 from rsched.engine.runtime import run_routine
@@ -337,13 +338,6 @@ def test_remove_lookalike_never_deletes_data(tmp_path):
 SENTINEL_SHARE = SimpleNamespace(name="gpu")
 
 
-def _server_for(d):
-    server = ServerConfig()
-    server.routines_home = d.parent
-    server.libraries_home = d.parent.parent / "lib"
-    return server
-
-
 def test_run_routine_mounts_then_unmounts(make_routine, scripted, monkeypatch):
     calls: list = []
     monkeypatch.setattr(machine_mounts, "mount_routine_shares",
@@ -353,7 +347,8 @@ def test_run_routine_mounts_then_unmounts(make_routine, scripted, monkeypatch):
                         lambda mounted: calls.append(("unmount", mounted)))
     d = make_routine(slug="mountr")
     scripted([write_file("state/out.txt", content="x"), finish(summary="done")])
-    status, _ = run_routine(d, _server_for(d), run_ts="20260708-070000")
+    status, _ = run_routine(d, server_for(d, libraries_home=d.parent.parent / "lib"),
+                            run_ts="20260708-070000")
     assert status == "ok"
     assert calls[0] == "mount" and calls[-1] == ("unmount", [SENTINEL_SHARE])
 
@@ -375,7 +370,8 @@ def test_run_routine_unmounts_even_when_loop_raises(make_routine, scripted, monk
     d = make_routine(slug="boomr")
     scripted([])
     with pytest.raises(RuntimeError, match="boom"):
-        run_routine(d, _server_for(d), run_ts="20260708-070000")
+        run_routine(d, server_for(d, libraries_home=d.parent.parent / "lib"),
+                    run_ts="20260708-070000")
     assert unmounted == [[SENTINEL_SHARE]]    # the finally ran despite the crash
 
 

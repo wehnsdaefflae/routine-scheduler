@@ -9,19 +9,14 @@ import time
 import pytest
 from fastapi.testclient import TestClient
 
-from conftest import make_test_server
+from conftest import authed_client, make_test_server
 from rsched.web.app import create_app
-
-TOKEN = "test-token"
 
 
 @pytest.fixture
 def client(tmp_path, make_routine):
     make_routine(slug="dbg")
-    server = make_test_server(tmp_path)
-    app = create_app(server, with_scheduler=False)
-    with TestClient(app) as c:
-        c.headers["Authorization"] = f"Bearer {TOKEN}"
+    with authed_client(make_test_server(tmp_path)) as c:
         yield c
 
 

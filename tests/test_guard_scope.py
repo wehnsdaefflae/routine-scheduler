@@ -21,6 +21,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from conftest import finish, util, write_file
+from helpers import server_for, set_capabilities
 from rsched import assists as lib
 from rsched import reminders as rem_store
 from rsched.endpoints.base import EndpointError
@@ -28,7 +29,7 @@ from rsched.engine import finishline, guardscope
 from rsched.engine.runtime import run_routine
 from rsched.engine.transcript import read_events
 from rsched.reminders import Reminder
-from test_assists import TS, _age_ledger, _capabilities, _hold_rule, _rule, _server, _write_root
+from test_assists import TS, _age_ledger, _hold_rule, _rule, _write_root
 
 
 def _down() -> EndpointError:
@@ -45,7 +46,7 @@ def _observed(run_dir) -> list[str]:
 
 
 def _reminder(d, regex: str) -> None:
-    _capabilities(d, reminders="local")
+    set_capabilities(d, reminders="local")
     rem_store.save_local(d, [Reminder(id="rem-1", regex=regex, description="it clobbers x",
                                       scope="local", created_run="r:1",
                                       stats=rem_store.blank_stats())], {})
@@ -58,7 +59,7 @@ def test_a_hold_confirmed_before_a_resume_is_not_held_again(make_routine, script
     The label the hold asked for still lands on the far side: the hold is the run's, so the
     label it is owed is the run's too."""
     d = make_routine(slug="scope")
-    server = _server(d)
+    server = server_for(d)
     _reminder(d, r"^write_file path=state/x\.txt")
     scripted([write_file("state/x.txt"), _down()])
     assert run_routine(d, server, run_ts=TS)[0] == "failed"
@@ -77,7 +78,7 @@ def test_an_observation_assist_does_not_fire_again_after_a_resume(make_routine, 
     """The second failure of the same call fired fix-the-cause's line; the leg died; the
     resumed leg fails the same way twice more — the line was said, once, for this run."""
     d = make_routine(slug="scope")
-    server = _server(d)
+    server = server_for(d)
     _rule(server, "fix-the-cause", "observation", "repeated-failure", "change route now")
     _hold_rule(d, ["fix-the-cause"])
     scripted([util("nonexistent-util"), util("nonexistent-util"), _down()])
@@ -98,7 +99,7 @@ def test_a_boundary_assist_does_not_fire_again_after_a_resume(make_routine, scri
     from rsched.engine.inbox import file_message
 
     d = make_routine(slug="scope")
-    server = _server(d)
+    server = server_for(d)
     _rule(server, "fix-the-cause", "boundary", "user-corrected", "name the intention")
     _hold_rule(d, ["fix-the-cause"])
 
@@ -123,7 +124,7 @@ def test_the_assist_finish_deferral_does_not_recur_after_a_resume(make_routine, 
     """A run is held at its finish by an assist at most once — a restart between the deferral
     and the next finish does not buy the rule a second negotiation."""
     d = make_routine(slug="scope")
-    server = _server(d)
+    server = server_for(d)
     _rule(server, "decision-record", "pre-finish", "ledger-untouched", "append one entry")
     _hold_rule(d, ["decision-record"])
     _age_ledger(d)
@@ -146,7 +147,7 @@ def test_the_verifier_does_not_challenge_a_line_twice_across_a_resume(make_routi
     from rsched.engine import verifier
 
     d = make_routine(slug="scope")
-    server = _server(d)
+    server = server_for(d)
     finishline.save(d, {"outcomes": [{"text": "the PDF is verified", "judge": "run"}]},
                     now="t")
     monkeypatch.setattr(verifier, "refuted", lambda loop, claims, summary: [
@@ -171,7 +172,7 @@ def test_a_repo_found_clean_stays_an_undo_point_across_a_resume(make_routine, sc
     run's own first edit read as uncommitted work and its next edit into the same clean repo
     was held: the false positive the clean-tree check exists to remove, one leg later."""
     d = make_routine(slug="scope")
-    server = _server(d)
+    server = server_for(d)
     _rule(server, "git-checkpoint", "pre-action", "uncheckpointed-repo-write", "commit first")
     _hold_rule(d, ["git-checkpoint"])
     repo = tmp_path / "project"
@@ -208,7 +209,7 @@ def test_a_new_reply_starts_fresh_while_a_resumed_reply_keeps_its_guards(make_ro
     made = make_routine(slug="c-scope")
     d = convs / made.name
     made.rename(d)
-    server = _server(d)
+    server = server_for(d)
     server.conversations_home = convs
     server.routines_home = convs
     _reminder(d, r"^write_file path=state/x\.txt")

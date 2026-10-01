@@ -5,33 +5,10 @@ hermetic: load_server_config is monkeypatched to tmp homes, LLM boundaries are c
 
 from types import SimpleNamespace
 
-import pytest
 import yaml
 
 from rsched import cli
-from rsched.config import load_server_config
 from rsched.paths import atomic_write_json
-
-REPO_SEED = cli.Path(__file__).resolve().parents[1] / "library-seed"
-
-
-@pytest.fixture
-def cli_server(tmp_path, monkeypatch):
-    """Tmp homes wired into every cmd_* via the module's load_server_config seam."""
-    import shutil
-
-    lib = tmp_path / "library"
-    for kind in ("workflows", "rules", "permissions"):
-        shutil.copytree(REPO_SEED / kind, lib / kind)
-    cfg_path = tmp_path / "config.yaml"
-    cfg_path.write_text(yaml.safe_dump({
-        "token": "t", "routines_home": str(tmp_path / "routines"),
-        "libraries_home": str(lib)}), encoding="utf-8")
-    server, problems = load_server_config(cfg_path)
-    assert not problems
-    (tmp_path / "routines").mkdir(exist_ok=True)
-    monkeypatch.setattr(cli, "load_server_config", lambda: (server, []))
-    return server
 
 
 def _args(**kw):

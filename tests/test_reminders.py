@@ -6,9 +6,9 @@ import pytest
 import yaml
 
 from conftest import finish, util, write_file
+from helpers import server_for, set_capabilities
 from rsched import reminder_checks as checks
 from rsched import reminders as store
-from rsched.config import ServerConfig
 from rsched.engine.actions import validate_action
 from rsched.engine.runtime import run_routine
 from rsched.engine.transcript import read_events
@@ -282,27 +282,14 @@ def test_malformed_ops_are_corrected_inside_the_schema_retry_cycle(tmp_path):
 
 # --- the pre-execution hold, end to end ---------------------------------------------------
 
-def _server(routine_dir) -> ServerConfig:
-    s = ServerConfig()
-    s.routines_home = routine_dir.parent
-    s.libraries_home = routine_dir.parent.parent / "test-library"
-    return s
-
-
-def _capabilities(routine_dir, **updates):
-    path = routine_dir / "routine.yaml"
-    raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    raw["capabilities"] = {**(raw.get("capabilities") or {}), **updates}
-    path.write_text(yaml.safe_dump(raw), encoding="utf-8")
-
 
 def _run(make_routine, scripted, replies, *, reminders="local", local=(), **caps):
     d = make_routine(slug="remr")
-    _capabilities(d, reminders=reminders, **caps)
+    set_capabilities(d, reminders=reminders, **caps)
     if local:
         store.save_local(d, list(local), {})
     ep = scripted(replies)
-    status, run_dir = run_routine(d, _server(d), run_ts=TS)
+    status, run_dir = run_routine(d, server_for(d), run_ts=TS)
     events, _ = read_events(run_dir / "transcript.jsonl")
     return d, ep, status, events
 
@@ -495,7 +482,7 @@ def test_a_local_reminder_may_be_promoted_to_the_shared_store(make_routine, scri
          finish()],
         reminders="global", remind_confirm="never",
         local=[_rem(rid="rem-p", regex="^util:fs-ops mv ", desc="proven locally")])
-    written = sorted(_server(d).reminders_home.glob("*.json"))
+    written = sorted(server_for(d).reminders_home.glob("*.json"))
     assert len(written) == 1                       # the promotion landed
     assert store.load_local(d)[0] == []            # …and the local copy is gone
     assert "already live" not in _prompt_text(ep)
@@ -557,7 +544,7 @@ def test_a_grant_that_lands_mid_run_does_not_truncate_the_store(make_routine, sc
     from rsched.engine import requests as requests_mod
 
     d = make_routine(slug="remr")
-    _capabilities(d, reminders="none")           # the config level: the layer is OFF at boot
+    set_capabilities(d, reminders="none")        # the config level: the layer is OFF at boot
     store.save_local(d, [_rem(rid="rem-old-1", regex="^util:a", desc="from an earlier run",
                               fires=3, would_have=2),
                          _rem(rid="rem-old-2", regex="^util:b", desc="also earlier")], {})
@@ -572,7 +559,7 @@ def test_a_grant_that_lands_mid_run_does_not_truncate_the_store(make_routine, sc
     ep = scripted([{**write_file("state/a.txt"),
                     "remind": {"op": "add", "regex": "^util:c", "description": "brand new"}},
                    finish()])
-    status, _run_dir = run_routine(d, _server(d), run_ts=TS)
+    status, _run_dir = run_routine(d, server_for(d), run_ts=TS)
     kept = {r.id: r for r in store.load_local(d)[0]}
     assert set(kept) >= {"rem-old-1", "rem-old-2"}, "the earlier run's reminders were dropped"
     assert kept["rem-old-1"].stats["fires"] == 3 and kept["rem-old-1"].stats["would_have"] == 2
@@ -624,12 +611,12 @@ def test_a_routine_at_local_cannot_write_a_curated_reminder_by_its_id(make_routi
     `local` removed a library reminder every routine reads, with no approval at all when its
     `remind_confirm` said a revision needs none."""
     d = make_routine(slug="remr")
-    home = _server(d).reminders_home
+    home = server_for(d).reminders_home
     store.write_global(home, _rem(rid="rem-cur", regex="^util:danger", desc="curated caution",
                                   scope="global"))
-    _capabilities(d, reminders="local", remind_confirm="creations")
+    set_capabilities(d, reminders="local", remind_confirm="creations")
     ep = scripted([{**write_file("state/a.txt"), "remind": op}, finish()])
-    status, _run_dir = run_routine(d, _server(d), run_ts=TS)
+    status, _run_dir = run_routine(d, server_for(d), run_ts=TS)
     rec = json.loads(store.global_path(home, "rem-cur").read_text(encoding="utf-8"))
     assert rec["description"] == "curated caution"            # the library copy is untouched
     shown = _prompt_text(ep)
@@ -644,16 +631,16 @@ def test_a_curated_add_never_takes_the_id_of_a_reminder_that_does_not_reach_it(
     it does not list is still in the store — and an id picked against the live set alone could
     be that one's, which the write then overwrote: another kind of work's caution, gone."""
     d = make_routine(slug="remr")
-    home = _server(d).reminders_home
+    home = server_for(d).reminders_home
     store.write_global(home, _rem(rid=f"rem-{TS}-1", regex="^util:gpu-submit",
                                   desc="the shared GPU's caution", scope="global",
                                   reach="listed"))
-    _capabilities(d, reminders="global", remind_confirm="never")
+    set_capabilities(d, reminders="global", remind_confirm="never")
     scripted([{**write_file("state/a.txt"),
                "remind": {"op": "add", "scope": "global", "regex": "^util:fs-ops mv ",
                           "reach": "universal", "description": "mv overwrites silently"}},
               finish()])
-    status, _run_dir = run_routine(d, _server(d), run_ts=TS)
+    status, _run_dir = run_routine(d, server_for(d), run_ts=TS)
     kept = json.loads(store.global_path(home, f"rem-{TS}-1").read_text(encoding="utf-8"))
     assert kept["regex"] == "^util:gpu-submit"                 # untouched
     assert {r["regex"] for r in store.records(home)} == {"^util:gpu-submit",
@@ -671,7 +658,7 @@ def test_a_global_write_lands_in_the_library_when_the_dial_is_autonomous(
                      "description": "mv over an existing destination overwrites it silently"}},
          finish()],
         reminders="global", remind_confirm="never")
-    home = _server(d).reminders_home
+    home = server_for(d).reminders_home
     written = sorted(home.glob("*.json"))
     assert len(written) == 1
     rec = json.loads(written[0].read_text(encoding="utf-8"))
@@ -771,11 +758,11 @@ def test_a_global_add_says_whom_it_reaches(tmp_path):
 
 def test_a_listed_reminder_holds_for_a_routine_whose_settings_list_it(make_routine, scripted):
     d = make_routine(slug="lister")
-    _capabilities(d, reminders="local")
+    set_capabilities(d, reminders="local")
     raw = yaml.safe_load((d / "routine.yaml").read_text(encoding="utf-8"))
     raw["shared_reminders"] = ["rem-kind"]
     (d / "routine.yaml").write_text(yaml.safe_dump(raw), encoding="utf-8")
-    server = _server(d)
+    server = server_for(d)
     store.write_global(server.reminders_home, _rem(
         rid="rem-kind", regex="^util:danger", desc="a caution for this kind of work",
         scope="global", reach="listed"))

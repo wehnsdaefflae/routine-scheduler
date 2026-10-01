@@ -9,9 +9,9 @@ import pytest
 import yaml
 
 from conftest import finish, util, write_file
+from helpers import server_for, set_capabilities
 from rsched import assists as lib
 from rsched.assists import normalize_assists
-from rsched.config import ServerConfig
 from rsched.engine.assist_predicates import PREDICATES
 from rsched.engine.observations import is_failure
 from rsched.engine.runtime import run_routine
@@ -27,13 +27,6 @@ def _rem(rid="rem-1", regex="^util:danger", desc="it deletes the target"):
     from rsched import reminders as rem_store
     return Reminder(id=rid, regex=regex, description=desc, scope="local",
                     created_run="r:1", stats=rem_store.blank_stats())
-
-
-def _capabilities(routine_dir, **updates):
-    path = routine_dir / "routine.yaml"
-    raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    raw["capabilities"] = {**(raw.get("capabilities") or {}), **updates}
-    path.write_text(yaml.safe_dump(raw), encoding="utf-8")
 
 
 def _assist(**over):
@@ -173,12 +166,6 @@ def test_is_failure_does_not_cry_wolf(obs):
 
 # --- the three moments, end to end ---------------------------------------------------------
 
-def _server(routine_dir) -> ServerConfig:
-    s = ServerConfig()
-    s.routines_home = routine_dir.parent
-    s.libraries_home = routine_dir.parent.parent / "test-library"
-    return s
-
 
 def _rule(server, slug: str, moment: str, predicate: str, line: str) -> None:
     """A library rule declaring one assist. The payload follows the MOMENT, because the two
@@ -222,7 +209,7 @@ def _age_ledger(routine_dir) -> None:
 def _run(make_routine, scripted, replies, *, slug, moment, predicate,
          line="the operative line"):
     d = make_routine(slug="assistr")
-    server = _server(d)
+    server = server_for(d)
     _rule(server, slug, moment, predicate, line)
     _hold_rule(d, [slug])
     _age_ledger(d)
@@ -264,7 +251,7 @@ def test_a_boundary_assist_arrives_as_an_engine_note(make_routine, scripted):
     from rsched.engine.inbox import file_message
 
     d = make_routine(slug="assistr")
-    server = _server(d)
+    server = server_for(d)
     _rule(server, "fix-the-cause", "boundary", "user-corrected", "name the intention")
     _hold_rule(d, ["fix-the-cause"])
 
@@ -295,7 +282,7 @@ def test_the_message_that_opens_a_resumed_leg_is_its_task_not_a_correction(
     from rsched.paths import atomic_write_json
 
     d = make_routine(slug="assistr")
-    server = _server(d)
+    server = server_for(d)
     _rule(server, "fix-the-cause", "boundary", "user-corrected", "name the intention")
     _hold_rule(d, ["fix-the-cause"])
     scripted([write_file("state/a.txt"), finish(summary="first reply")])
@@ -333,7 +320,7 @@ def test_an_unbound_rule_stops_assisting_the_live_run(make_routine, scripted):
     them" — so the rule's assists must stop too, or it goes on holding actions and deferring
     the finish of a run it no longer binds."""
     d = make_routine(slug="assistr")
-    server = _server(d)
+    server = server_for(d)
     _rule(server, "fix-the-cause", "observation", "repeated-failure", "change route now")
     _hold_rule(d, ["fix-the-cause"])
 
@@ -354,7 +341,7 @@ def test_a_rule_bound_mid_run_brings_its_assists(make_routine, scripted):
     """Binding is the same act in the other direction: the rule's prose reaches the live run as
     a note, and the rule's assists — part of the rule — reach it with the prose."""
     d = make_routine(slug="assistr")
-    server = _server(d)
+    server = server_for(d)
     _rule(server, "fix-the-cause", "observation", "repeated-failure", "change route now")
     _hold_rule(d, [])
 
@@ -420,7 +407,7 @@ def test_a_conversation_reply_is_never_held_for_a_ledger_entry(make_routine, scr
     convs = tmp_path / "conversations"
     convs.mkdir(parents=True, exist_ok=True)
     d = make_routine(slug="c-assist")
-    server = _server(d)
+    server = server_for(d)
     server.conversations_home = convs
     # the run dir must sit directly under conversations_home for runkind.is_conversation to see it
     moved = convs / d.name
@@ -440,7 +427,7 @@ def test_a_conversation_reply_is_never_held_for_a_ledger_entry(make_routine, scr
 
 def test_a_routine_that_does_not_hold_the_rule_is_untouched(make_routine, scripted):
     d = make_routine(slug="assistr")
-    server = _server(d)
+    server = server_for(d)
     _rule(server, "fix-the-cause", "observation", "repeated-failure", "a line")
     _hold_rule(d, [])                       # the rule exists in the library, unheld here
     ep = scripted([util("nonexistent-util"), util("nonexistent-util"),
@@ -484,7 +471,7 @@ def test_a_ledger_appended_outside_the_actions_still_counts(make_routine, script
     file's own mtime is not. Reading the actions made 48 of 75 of this assist's deferrals
     false."""
     d = make_routine(slug="assistr")
-    server = _server(d)
+    server = server_for(d)
     _rule(server, "decision-record", "pre-finish", "ledger-untouched", "append one entry")
     _hold_rule(d, ["decision-record"])
     ledger = d / "LEDGER.md"
@@ -530,7 +517,7 @@ def test_a_denied_call_the_run_routed_around_is_named(make_routine, scripted):
 
 def test_the_validation_seam_marks_the_turn_a_denial_cost(make_routine, scripted):
     d = make_routine(slug="assistr")
-    server = _server(d)
+    server = server_for(d)
     perms = server.libraries_home / "permissions"
     perms.mkdir(parents=True, exist_ok=True)
     (perms / "shell.md").write_text("---\ntags: [a, b, c]\nrequires:\n  actions: [shell]\n"
@@ -642,10 +629,10 @@ def test_the_two_sources_do_not_cannibalise_each_others_hold(make_routine, scrip
     from rsched import reminders as rem_store
 
     d = make_routine(slug="assistr")
-    server = _server(d)
+    server = server_for(d)
     _rule(server, "git-checkpoint", "pre-action", "uncheckpointed-repo-write", "commit first")
     _hold_rule(d, ["git-checkpoint"])
-    _capabilities(d, reminders="local")
+    set_capabilities(d, reminders="local")
     repo = d.parent.parent / "project"
     (repo / ".git").mkdir(parents=True)
     target = repo / "src.py"
@@ -668,7 +655,7 @@ def test_a_pre_action_assist_holds_the_write_and_re_emitting_it_proceeds(make_ro
     """git-checkpoint's moment: the engine versions its OWN directory, not a project repo the
     routine was granted a write root into."""
     d = make_routine(slug="assistr")
-    server = _server(d)
+    server = server_for(d)
     _rule(server, "git-checkpoint", "pre-action", "uncheckpointed-repo-write",
           "commit a checkpoint before the first edit")
     _hold_rule(d, ["git-checkpoint"])
@@ -705,7 +692,7 @@ def test_a_repo_clean_at_the_runs_first_edit_is_not_held_for_its_second(make_rou
     import subprocess
 
     d = make_routine(slug="assistr")
-    server = _server(d)
+    server = server_for(d)
     _rule(server, "git-checkpoint", "pre-action", "uncheckpointed-repo-write", "commit first")
     _hold_rule(d, ["git-checkpoint"])
     repo = d.parent.parent / "project"
@@ -730,7 +717,7 @@ def test_the_routines_own_directory_is_never_held_for_a_checkpoint(make_routine,
     """The engine autocommits the routine's own tree at run end, so it always has an undo
     point — holding a write there would be a turn spent on a problem that does not exist."""
     d = make_routine(slug="assistr")
-    server = _server(d)
+    server = server_for(d)
     _rule(server, "git-checkpoint", "pre-action", "uncheckpointed-repo-write", "commit first")
     _hold_rule(d, ["git-checkpoint"])
     (d / ".git").mkdir(exist_ok=True)          # the routine dir IS a git repo — still exempt
@@ -746,7 +733,7 @@ def test_the_routines_own_directory_is_never_held_for_a_checkpoint(make_routine,
 def test_a_held_action_grounds_no_finish_whichever_source_held_it(make_routine, scripted):
     """The fabrication guard reads one counter, and both hold kinds must be absent from it."""
     d = make_routine(slug="assistr")
-    server = _server(d)
+    server = server_for(d)
     _rule(server, "git-checkpoint", "pre-action", "uncheckpointed-repo-write", "commit first")
     _hold_rule(d, ["git-checkpoint"])
     repo = d.parent.parent / "project"

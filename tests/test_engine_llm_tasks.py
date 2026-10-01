@@ -13,12 +13,7 @@ from rsched.endpoints.instrument import FileSink, set_sink
 from rsched.engine.runtime import run_routine
 from test_loop import TS, _run, _server, probe
 
-
-@pytest.fixture(autouse=True)
-def _reset_sink():
-    set_sink(None)
-    yield
-    set_sink(None)
+pytestmark = pytest.mark.usefixtures("reset_llm_sink")
 
 
 class CapSink:

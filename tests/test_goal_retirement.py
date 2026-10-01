@@ -17,6 +17,7 @@ from __future__ import annotations
 import yaml
 
 from conftest import FakeRunner, finish
+from helpers import tmp_server
 from rsched import pending, registry
 from rsched.config import ServerConfig
 from rsched.daemon.events import EventBus
@@ -24,13 +25,6 @@ from rsched.daemon.scheduler import Scheduler
 from rsched.engine import finishline
 
 NOW = "2026-09-05T09:00:00+02:00"
-
-
-def _server(tmp_path) -> ServerConfig:
-    s = ServerConfig()
-    s.routines_home = tmp_path / "routines"
-    s.routines_home.mkdir(parents=True, exist_ok=True)
-    return s
 
 
 def _goal_met(routine_dir, text="the application is submitted"):
@@ -43,7 +37,7 @@ def _goal_met(routine_dir, text="the application is submitted"):
 
 def test_a_routine_whose_finish_line_is_reached_gets_no_fire_table_entry(make_routine, tmp_path):
     d = make_routine(slug="finisher")
-    sched = Scheduler(_server(tmp_path), FakeRunner(), EventBus())
+    sched = Scheduler(tmp_server(tmp_path), FakeRunner(), EventBus())
     sched.rescan()
     assert "finisher" in sched.next_fires            # ordinary routine, ordinary cron
 
@@ -58,7 +52,7 @@ def test_a_routine_whose_finish_line_is_reached_gets_no_fire_table_entry(make_ro
 def test_reopening_the_finish_line_puts_the_routine_straight_back(make_routine, tmp_path):
     d = make_routine(slug="reopened")
     _goal_met(d)
-    sched = Scheduler(_server(tmp_path), FakeRunner(), EventBus())
+    sched = Scheduler(tmp_server(tmp_path), FakeRunner(), EventBus())
     sched.rescan()
     assert "reopened" not in sched.next_fires
 
@@ -75,7 +69,7 @@ def test_a_done_when_line_never_retires_anything(make_routine, tmp_path):
     run = d / "runs" / "2026-09-04T09-00-00"
     run.mkdir(parents=True)
     (run / "status.json").write_text('{"accounting": ["d1 met: landed"]}', encoding="utf-8")
-    sched = Scheduler(_server(tmp_path), FakeRunner(), EventBus())
+    sched = Scheduler(tmp_server(tmp_path), FakeRunner(), EventBus())
     sched.rescan()
     assert "perrun" in sched.next_fires
 
@@ -86,7 +80,7 @@ async def test_boot_catchup_does_not_make_up_runs_for_a_finished_routine(make_ro
     (d / "routine.yaml").write_text(text)
     _goal_met(d)
     fr = FakeRunner()
-    sched = Scheduler(_server(tmp_path), fr, EventBus())
+    sched = Scheduler(tmp_server(tmp_path), fr, EventBus())
     sched.rescan()
     await sched.boot_catchup()
     assert fr.fired == []
@@ -98,7 +92,7 @@ def test_the_registry_reports_retired_separately_from_disabled(make_routine, tmp
     (off / "routine.yaml").write_text(
         (off / "routine.yaml").read_text().replace("enabled: true", "enabled: false"))
     _goal_met(done)
-    catalog = registry.scan(_server(tmp_path))
+    catalog = registry.scan(tmp_server(tmp_path))
     assert catalog["done"].retired is True and catalog["done"].cfg.enabled is True
     assert catalog["off"].retired is False and catalog["off"].cfg.enabled is False
 
@@ -110,7 +104,7 @@ def test_a_passed_until_date_retires_the_routine_and_the_tick_queues_the_card(ma
     d = make_routine(slug="deadline")
     finishline.save(d, {"outcomes": [{"text": "submitted", "judge": "run"}],
                         "until": "2026-01-31"}, now=NOW)
-    server = _server(tmp_path)
+    server = tmp_server(tmp_path)
     sched = Scheduler(server, FakeRunner(), EventBus())
     sched.rescan()
     assert "deadline" not in sched.next_fires
@@ -125,7 +119,7 @@ def test_a_date_outcome_whose_day_has_come_is_reached(make_routine, tmp_path):
     d = make_routine(slug="closes")
     finishline.save(d, {"outcomes": [{"text": "the call closes", "judge": "date",
                                       "date": "2026-02-01"}]}, now=NOW)
-    assert registry.scan(_server(tmp_path))["closes"].retired is True
+    assert registry.scan(tmp_server(tmp_path))["closes"].retired is True
 
 
 def test_a_date_that_names_no_day_cannot_take_the_catalog_down(make_routine, tmp_path):
@@ -138,14 +132,14 @@ def test_a_date_that_names_no_day_cannot_take_the_catalog_down(make_routine, tmp
     finishline.path(d).write_text(
         '{"outcomes": [{"id": "g1", "text": "closes", "judge": "date", "date": "2026-02-30"}],'
         ' "until": "2026-02-31"}', encoding="utf-8")
-    catalog = registry.scan(_server(tmp_path))
+    catalog = registry.scan(tmp_server(tmp_path))
     assert catalog["baddate"].retired is False and catalog["healthy"].retired is False
 
 
 def test_a_future_until_leaves_the_routine_running(make_routine, tmp_path):
     d = make_routine(slug="later")
     finishline.save(d, {"outcomes": [], "until": "2999-01-01"}, now=NOW)
-    sched = Scheduler(_server(tmp_path), FakeRunner(), EventBus())
+    sched = Scheduler(tmp_server(tmp_path), FakeRunner(), EventBus())
     sched.rescan()
     assert "later" in sched.next_fires
 
@@ -159,7 +153,7 @@ async def test_a_retired_lane_member_is_skipped_without_counting_as_a_failure(tm
     from rsched import lane_runs, lanes
     from rsched.daemon.lane_runs import LaneRunManager
 
-    server = _server(tmp_path)
+    server = tmp_server(tmp_path)
     for slug in ("first", "second"):
         d = server.routines_home / slug
         (d / "inbox").mkdir(parents=True, exist_ok=True)
@@ -240,7 +234,7 @@ def test_only_one_proposal_however_many_runs_follow(make_routine, tmp_path):
     from rsched.engine import goalreached
 
     d = make_routine(slug="once")
-    server = _server(tmp_path)
+    server = tmp_server(tmp_path)
     _goal_met(d)
     ctx = SimpleNamespace(depth=0, server=server, routine=SimpleNamespace(
         dir=d, slug="once", name="Once"), run_id="once:1",

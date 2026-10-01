@@ -9,6 +9,7 @@ import json
 import subprocess
 
 from conftest import finish, util, write_file
+from helpers import run_context, server_config
 from rsched import utils_run
 from rsched.config import ServerConfig, load_routine
 from rsched.engine.actions import util_rejection_outcome, validate_action
@@ -24,16 +25,9 @@ TS = "20260716-210000"
 
 
 def _ctx(make_routine, tmp_path, slug="counter") -> RunContext:
-    d = make_routine(slug=slug)
-    cfg, _ = load_routine(d)
-    run_dir = d / "runs" / TS
-    run_dir.mkdir(parents=True)
-    server = ServerConfig()
-    server.routines_home = tmp_path / "routines"
-    server.libraries_home = tmp_path / "empty-library"
-    return RunContext(routine=cfg, server=server, registry=None, run_ts=TS,
-                      run_dir=run_dir, transcript=Transcript(run_dir / "transcript.jsonl"),
-                      budgets=Budgets.from_config(cfg.budgets))
+    return run_context(make_routine(slug=slug), TS,
+                       server=server_config(routines_home=tmp_path / "routines",
+                                            libraries_home=tmp_path / "empty-library"))
 
 
 # ---- executor seam ---------------------------------------------------------------------

@@ -6,40 +6,29 @@ from __future__ import annotations
 
 import asyncio
 import json
-import shutil
 from pathlib import Path
 
 import pytest
 import yaml
-from fastapi.testclient import TestClient
 
-from conftest import make_test_server
+from conftest import authed_client, seeded_server
 from rsched import conversations as conv_mod
 from rsched.config import load_routine
 from rsched.paths import atomic_write_json
-from rsched.web.app import create_app
 
 REPO = Path(__file__).resolve().parents[1]
 SEED = REPO / "library-seed"
-TOKEN = "test-token"
 
 
 @pytest.fixture
 def server(tmp_path):
     """A ServerConfig with tmp homes and the REAL library-seed copied in (no git)."""
-    lib = tmp_path / "library"
-    shutil.copytree(SEED / "workflows", lib / "workflows")
-    shutil.copytree(SEED / "rules", lib / "rules")
-    shutil.copytree(SEED / "permissions", lib / "permissions")
-    return make_test_server(tmp_path, conversations_home=str(tmp_path / "conversations"),
-                            libraries_home=str(lib))
+    return seeded_server(tmp_path)
 
 
 @pytest.fixture
 def client(server):
-    app = create_app(server, with_scheduler=False)
-    with TestClient(app) as c:
-        c.headers["Authorization"] = f"Bearer {TOKEN}"
+    with authed_client(server) as c:
         # the API must never spawn real engine subprocesses in tests
         fired: list[tuple[str, str]] = []
 

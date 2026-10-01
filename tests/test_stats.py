@@ -5,24 +5,25 @@ import json
 import yaml
 
 from conftest import mk_run
+from helpers import tmp_server
 from rsched.config import EndpointConfig, ModelConfig, ServerConfig
 from rsched.readmodels.stats import aggregate, monthly_spend
 
 
 def _server(tmp_path) -> ServerConfig:
-    s = ServerConfig()
-    s.routines_home = tmp_path / "routines"
-    s.conversations_home = tmp_path / "conversations"
     # endpoints + a catalog the routines' model NAMES resolve against (stats resolves a
     # routine's main model to attribute legacy runs whose status.json lacks the model)
-    s.endpoints = {"claude": EndpointConfig(name="claude", kind="anthropic"),
-                   "openrouter": EndpointConfig(name="openrouter", kind="openai", base_url="http://x")}
-    s.models = {
-        "opus": ModelConfig(name="opus", endpoint="claude", model="opus"),
-        "glm": ModelConfig(name="glm", endpoint="openrouter", model="glm-5.2"),
-        "glm52": ModelConfig(name="glm52", endpoint="openrouter", model="z-ai/glm-5.2"),
-    }
-    return s
+    return tmp_server(tmp_path, create=False, conversations_home=tmp_path / "conversations",
+                      endpoints={"claude": EndpointConfig(name="claude", kind="anthropic"),
+                                 "openrouter": EndpointConfig(name="openrouter", kind="openai",
+                                                              base_url="http://x")},
+                      models={
+                          "opus": ModelConfig(name="opus", endpoint="claude", model="opus"),
+                          "glm": ModelConfig(name="glm", endpoint="openrouter",
+                                             model="glm-5.2"),
+                          "glm52": ModelConfig(name="glm52", endpoint="openrouter",
+                                               model="z-ai/glm-5.2"),
+                      })
 
 
 def _mk_routine(home, slug, *, model_name="opus"):

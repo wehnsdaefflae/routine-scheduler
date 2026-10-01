@@ -21,8 +21,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from rsched.config import ServerConfig, load_routine
-from rsched.engine.budgets_config import Budgets
+from helpers import run_context, server_config
 from rsched.engine.childrun import _sub_routine
 from rsched.engine.fileops import do_read_file, do_write_file
 from rsched.engine.fsops import do_delete, do_move
@@ -52,17 +51,10 @@ def _routine(make_routine):
 
 
 def _top(d, tmp_path) -> RunContext:
-    cfg, _ = load_routine(d)
-    assert cfg is not None
-    server = ServerConfig()
-    server.libraries_home = tmp_path / "libraries"
-    server.routines_home = d.parent
-    run_dir = d / "runs" / TS
-    ctx = RunContext(routine=cfg, server=server, registry=None, run_ts=TS, run_dir=run_dir,
-                     transcript=Transcript(run_dir / "transcript.jsonl"),
-                     budgets=Budgets.from_config(cfg.budgets))
-    ctx.grants = GrantPolicy(run_history="last")
-    return ctx
+    # the run dir is already there: `_routine` lays it out with its transcript
+    return run_context(d, TS, server=server_config(libraries_home=tmp_path / "libraries",
+                                                   routines_home=d.parent),
+                       grants=GrantPolicy(run_history="last"))
 
 
 def _child(parent: RunContext, n: int = 1) -> RunContext:

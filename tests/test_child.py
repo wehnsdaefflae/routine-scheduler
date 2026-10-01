@@ -11,25 +11,15 @@ import threading
 import time
 from types import SimpleNamespace
 
-from rsched.config import ServerConfig, load_routine
+from helpers import run_context
 from rsched.engine import child, control, subruns
-from rsched.engine.budgets_config import Budgets
 from rsched.engine.observations import format_observation
 from rsched.engine.run_context import RunContext
-from rsched.engine.transcript import Transcript
 
 
 def _ctx(make_routine, slug: str) -> RunContext:
     """A real root RunContext over a scaffolded routine — the tree's lock, counter and dirs."""
-    d = make_routine(slug)
-    cfg, _problems = load_routine(d)
-    assert cfg is not None
-    run_dir = d / "runs" / "20260708-070000"
-    run_dir.mkdir(parents=True)
-    return RunContext(routine=cfg, server=ServerConfig(), registry=None,
-                      run_ts="20260708-070000", run_dir=run_dir,
-                      transcript=Transcript(run_dir / "transcript.jsonl"),
-                      budgets=Budgets.from_config(cfg.budgets))
+    return run_context(make_routine(slug), "20260708-070000")
 
 
 def test_modes_are_the_vocabulary():

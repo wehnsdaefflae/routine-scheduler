@@ -1,24 +1,13 @@
 """memory_read / memory_write handlers: engine-owned .memory/ notes + INDEX.md upkeep."""
 
-from rsched.config import ServerConfig, load_routine
+from helpers import run_context, server_config
 from rsched.engine import executor
-from rsched.engine.budgets_config import Budgets
 from rsched.engine.observations import format_observation
-from rsched.engine.run_context import RunContext
-from rsched.engine.transcript import Transcript
 
 
 def _ctx(make_routine, tmp_path):
-    d = make_routine(slug="memr")
-    cfg, _problems = load_routine(d)
-    assert cfg is not None
-    run_dir = d / "runs" / "20260712-070000"
-    run_dir.mkdir(parents=True)
-    server = ServerConfig()
-    server.libraries_home = tmp_path / "libraries"
-    return RunContext(routine=cfg, server=server, registry=None, run_ts="20260712-070000",
-                      run_dir=run_dir, transcript=Transcript(run_dir / "transcript.jsonl"),
-                      budgets=Budgets.from_config(cfg.budgets))
+    return run_context(make_routine(slug="memr"), "20260712-070000",
+                       server=server_config(libraries_home=tmp_path / "libraries"))
 
 
 def _write(ctx, name, content, about):

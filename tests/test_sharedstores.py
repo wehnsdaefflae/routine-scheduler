@@ -20,13 +20,12 @@ import pytest
 import yaml
 
 from conftest import make_test_server
+from helpers import run_context
 from rsched import sharedstores
 from rsched.config import load_routine
-from rsched.engine.budgets_config import Budgets
 from rsched.engine.fileops import do_edit_file, do_write_file
 from rsched.engine.fsops import do_delete, do_mkdir, do_move
 from rsched.engine.run_context import RunContext
-from rsched.engine.transcript import Transcript
 from rsched.grantpolicy import GrantPolicy
 
 
@@ -226,15 +225,8 @@ def test_note_refusal_judges_only_note_paths(server, team):
 
 
 def _ctx(server, slug: str) -> RunContext:
-    cfg, _ = load_routine(server.routines_home / slug)
-    assert cfg is not None
-    run_dir = server.routines_home / slug / "runs" / "20260929-070000"
-    run_dir.mkdir(parents=True)
-    ctx = RunContext(routine=cfg, server=server, registry=None, run_ts="20260929-070000",
-                     run_dir=run_dir, transcript=Transcript(run_dir / "transcript.jsonl"),
-                     budgets=Budgets.from_config(cfg.budgets))
-    ctx.grants = GrantPolicy()
-    return ctx
+    return run_context(server.routines_home / slug, "20260929-070000", server=server,
+                       grants=GrantPolicy())
 
 
 def test_the_write_gate_refuses_a_note_nobody_would_read(server, team):

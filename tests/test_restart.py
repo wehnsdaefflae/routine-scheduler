@@ -7,18 +7,13 @@ isolation from signals.
 import asyncio
 import json
 
-from rsched.config import RoutineConfig, ServerConfig
+from helpers import server_config
+from rsched.config import RoutineConfig
 from rsched.daemon import restart
 from rsched.daemon.events import EventBus
 from rsched.daemon.runner import Runner
 from rsched.daemon.runner_state import ActiveRun
 from rsched.daemon.scheduler import Scheduler
-
-
-def _server(tmp_path) -> ServerConfig:
-    s = ServerConfig()
-    s.routines_home = tmp_path
-    return s
 
 
 def test_restart_action_state_machine():
@@ -38,7 +33,7 @@ def test_restart_action_state_machine():
 
 
 def test_sentinel_helpers(tmp_path):
-    server = _server(tmp_path)
+    server = server_config(routines_home=tmp_path)
     assert restart.restart_requested(server) is False
     restart.clear_request(server)                            # idempotent when absent
     p = restart.sentinel_path(server)
@@ -51,7 +46,7 @@ def test_sentinel_helpers(tmp_path):
 
 
 def test_runner_active_states_reads_status(tmp_path):
-    server = _server(tmp_path)
+    server = server_config(routines_home=tmp_path)
     runner = Runner(server, EventBus())
     rd = tmp_path / "r" / "runs" / "ts"
     rd.mkdir(parents=True)
@@ -61,7 +56,7 @@ def test_runner_active_states_reads_status(tmp_path):
 
 
 def test_fire_refused_while_draining(tmp_path):
-    server = _server(tmp_path)
+    server = server_config(routines_home=tmp_path)
     runner = Runner(server, EventBus())
     runner.draining = True
     d = tmp_path / "x"
@@ -74,7 +69,7 @@ def test_fire_refused_while_draining(tmp_path):
 def test_scheduler_keeps_scheduling_then_restarts_when_idle(tmp_path, monkeypatch):
     """A pending restart never blocks a start (operator, 2026-09-03): with a run active the
     scheduler keeps firing, and it restarts only once the system is idle."""
-    server = _server(tmp_path)
+    server = server_config(routines_home=tmp_path)
     runner = Runner(server, EventBus())
     sched = Scheduler(server, runner, EventBus())
     triggered = []
@@ -106,7 +101,7 @@ def test_scheduler_keeps_scheduling_then_restarts_when_idle(tmp_path, monkeypatc
 
 def test_scheduler_waits_out_the_idle_window_before_restarting(tmp_path, monkeypatch):
     """Nothing active but the idle window has not elapsed yet → keep scheduling, do not restart."""
-    server = _server(tmp_path)
+    server = server_config(routines_home=tmp_path)
     runner = Runner(server, EventBus())
     sched = Scheduler(server, runner, EventBus())
     monkeypatch.setattr(restart, "trigger_shutdown",
@@ -122,7 +117,7 @@ def test_scheduler_waits_out_the_idle_window_before_restarting(tmp_path, monkeyp
 
 
 def test_scheduler_defers_restart_while_parked(tmp_path, monkeypatch):
-    server = _server(tmp_path)
+    server = server_config(routines_home=tmp_path)
     runner = Runner(server, EventBus())
     sched = Scheduler(server, runner, EventBus())
     monkeypatch.setattr(restart, "trigger_shutdown",
@@ -147,7 +142,7 @@ def test_a_background_task_holds_the_drain_like_any_other_run(tmp_path):
     exactly when only a background task was running — the task died at rc=-9 and its owner was
     told "[background task was cancelled]" with a `daemon_restart` cause.
     """
-    server = _server(tmp_path)
+    server = server_config(routines_home=tmp_path)
     runner = Runner(server, EventBus())
     rd = tmp_path / "scrape" / "runs" / "ts"
     rd.mkdir(parents=True)

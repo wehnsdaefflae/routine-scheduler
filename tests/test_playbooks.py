@@ -5,38 +5,28 @@ playbook (+ revise) via the system model, boot-time seed sync, and the library +
 from __future__ import annotations
 
 import json
-import shutil
 from pathlib import Path
 
 import pytest
 import yaml
-from fastapi.testclient import TestClient
 
-from conftest import make_test_server
+from conftest import authed_client, seeded_server
 from rsched import playbooks
 from rsched.endpoints import EndpointRegistry as _RealRegistry  # captured before any monkeypatch
-from rsched.web.app import create_app
 
 REPO = Path(__file__).resolve().parents[1]
 SEED = REPO / "library-seed"
-TOKEN = "test-token"
 
 
 @pytest.fixture
 def server(tmp_path):
     """A ServerConfig with tmp homes and the REAL library-seed copied in (playbooks included)."""
-    lib = tmp_path / "library"
-    for kind in ("workflows", "rules", "permissions", "playbooks"):
-        shutil.copytree(SEED / kind, lib / kind)
-    return make_test_server(tmp_path, conversations_home=str(tmp_path / "conversations"),
-                            libraries_home=str(lib))
+    return seeded_server(tmp_path, kinds=("workflows", "rules", "permissions", "playbooks"))
 
 
 @pytest.fixture
 def client(server):
-    app = create_app(server, with_scheduler=False)
-    with TestClient(app) as c:
-        c.headers["Authorization"] = f"Bearer {TOKEN}"
+    with authed_client(server) as c:
 
         async def fake_fire(cfg, *, reason="x"):
             ts = "20260714-120000"

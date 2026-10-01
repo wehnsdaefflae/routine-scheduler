@@ -24,12 +24,11 @@ from __future__ import annotations
 import json
 
 import pytest
-import yaml
 
 from conftest import WORKFLOW_MD, finish, util, write_file
+from helpers import server_for, set_capabilities
 from rsched import reminders as store
 from rsched import utils_lib, utils_run
-from rsched.config import ServerConfig
 from rsched.engine.interact import _held_not_settled
 from rsched.engine.runtime import run_routine
 from rsched.engine.transcript import read_events
@@ -64,34 +63,20 @@ CASES = {
 }
 
 
-def _server(d) -> ServerConfig:
-    s = ServerConfig()
-    s.routines_home = d.parent                  # hermetic: .control logs land in tmp
-    s.libraries_home = d.parent.parent / "test-library"
-    return s
-
-
-def _capabilities(d, **caps) -> None:
-    path = d / "routine.yaml"
-    raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    raw["capabilities"] = {**(raw.get("capabilities") or {}), **caps}
-    path.write_text(yaml.safe_dump(raw), encoding="utf-8")
-
-
 def _arm(case: str, d, monkeypatch) -> tuple[dict, list]:
     """Set routine `d` up so `case`'s action files a BLOCKING decision. Returns the action and
     the list a util call is recorded in (the secret gate's util must never run on an ask-back).
     """
     ran: list[str] = []
     if case == "util-approval":
-        _capabilities(d, actions=["write_util"], confirm="always")
+        set_capabilities(d, actions=["write_util"], confirm="always")
         return {"say": "a new util", "kind": "write_util", "name": "frob", "content": UTIL}, ran
     if case == "rule-approval":
-        _capabilities(d, actions=["write_rule"], rule_confirm="always")
+        set_capabilities(d, actions=["write_rule"], rule_confirm="always")
         return ({"say": "a new rule", "kind": "write_rule", "name": "show-your-work",
                  "content": RULE}, ran)
     if case == "reminder-approval":
-        _capabilities(d, reminders="global", remind_confirm="always")
+        set_capabilities(d, reminders="global", remind_confirm="always")
         return {**write_file("state/a.txt"), "remind": REMIND}, ran
     if case == "access-request":
         return ({"say": "the shared store would carry this", "kind": "ask_user",
@@ -137,7 +122,7 @@ def test_an_ask_back_reaches_the_run_as_the_observation_of_the_action_that_asked
     action, ran = _arm(case, d, monkeypatch)
     _reply(d, 1)
     ep = scripted([action, finish(status="partial", summary="answered; the decision is open")])
-    status, run_dir = run_routine(d, _server(d), run_ts=TS)
+    status, run_dir = run_routine(d, server_for(d), run_ts=TS)
     assert status == "partial"
 
     shown = _observation(ep, 1)
@@ -150,7 +135,7 @@ def test_an_ask_back_reaches_the_run_as_the_observation_of_the_action_that_asked
     # the decision stays open — deferred now, the run is no longer parked on it
     rec = _pending(d)[f"q-{TS}-1"]
     assert rec["type"] == qtype and rec["mode"] == "deferred"
-    server = _server(d)
+    server = server_for(d)
     assert not (server.rules_home / "show-your-work.md").exists()
     assert not list(server.reminders_home.glob("*.json"))
     assert ran == []
@@ -173,7 +158,7 @@ def test_the_re_submission_supersedes_the_open_record(case, make_routine, script
     _reply(d, 2, "and what does it cost?")
     scripted([action, {**action, "say": "answered them — re-submitting"},
               finish(status="partial", summary="still open")])
-    status, _run_dir = run_routine(d, _server(d), run_ts=TS)
+    status, _run_dir = run_routine(d, server_for(d), run_ts=TS)
     assert status == "partial"
     pending = _pending(d)
     assert list(pending) == [f"q-{TS}-2"], "the superseded record is still open"
@@ -191,12 +176,12 @@ def test_a_re_submission_after_a_resume_supersedes_the_record_asked_back_on_befo
     action, _ran = _arm(case, d, monkeypatch)
     _reply(d, 1)
     scripted([action, finish(status="partial", summary="asked back; the decision is open")])
-    status, _run_dir = run_routine(d, _server(d), run_ts=TS)
+    status, _run_dir = run_routine(d, server_for(d), run_ts=TS)
     assert status == "partial" and list(_pending(d)) == [f"q-{TS}-1"]
     _reply(d, 3, "and what does it cost?")      # the resumed leg's re-submission is turn 3
     scripted([{**action, "say": "answered them — re-submitting"},
               finish(status="partial", summary="still open")])
-    status, _run_dir = run_routine(d, _server(d), run_ts=TS, resume_from=TS)
+    status, _run_dir = run_routine(d, server_for(d), run_ts=TS, resume_from=TS)
     assert status == "partial"
     assert list(_pending(d)) == [f"q-{TS}-3"], "the record asked back on before the resume"
 
@@ -213,7 +198,7 @@ def test_an_unrelated_ask_leaves_the_open_record_alone(case, make_routine, scrip
               {"say": "something else entirely", "kind": "ask_user", "mode": "deferred",
                "question": "Which venue do you prefer?"},
               finish(status="partial", summary="two decisions open")])
-    status, _run_dir = run_routine(d, _server(d), run_ts=TS)
+    status, _run_dir = run_routine(d, server_for(d), run_ts=TS)
     assert status == "partial"
     pending = _pending(d)
     assert set(pending) == {f"q-{TS}-1", f"q-{TS}-2"}
@@ -230,7 +215,7 @@ def test_a_request_for_other_entities_is_not_a_re_submission(make_routine, scrip
               {"say": "and the run history", "kind": "ask_user", "mode": "deferred",
                "question": "May I read every earlier run?", "request": "runs:all"},
               finish(status="partial", summary="two requests open")])
-    status, _run_dir = run_routine(d, _server(d), run_ts=TS)
+    status, _run_dir = run_routine(d, server_for(d), run_ts=TS)
     assert status == "partial"
     assert {q: r["request"] for q, r in _pending(d).items()} == {
         f"q-{TS}-1": ["reminders:global"], f"q-{TS}-2": ["runs:all"]}
@@ -245,7 +230,7 @@ def test_a_re_submission_on_a_finish_goes_through(make_routine, scripted):
     """
     recipe = WORKFLOW_MD + "\n## Done when\n\n- d1 — the curated caution is filed\n"
     d = make_routine(slug="finishop", workflow_md=recipe)
-    _capabilities(d, reminders="global", remind_confirm="always")
+    set_capabilities(d, reminders="global", remind_confirm="always")
     store.save_local(d, [Reminder(id="rem-d", regex="^util:danger", scope="local",
                                   description="it wipes the workdir", created_run="r:1",
                                   stats=store.blank_stats())], {})
@@ -256,11 +241,11 @@ def test_a_re_submission_on_a_finish_goes_through(make_routine, scripted):
     ep = scripted([util("danger"),                   # HELD — the fire the label answers
                    first,       # no accounting yet — the gate sets it aside, the note rides along
                    {**first, "accounting": ["d1 unmet: the operator approves the caution"]}])
-    status, _run_dir = run_routine(d, _server(d), run_ts=TS)
+    status, _run_dir = run_routine(d, server_for(d), run_ts=TS)
     assert status == "partial"
     assert WORDS in _observation(ep, 2)
     filed = [json.loads(p.read_text(encoding="utf-8"))
-             for p in _server(d).reminders_home.glob("*.json")]
+             for p in server_for(d).reminders_home.glob("*.json")]
     assert [r["regex"] for r in filed] == [REMIND["regex"]]       # the re-submission landed
     assert not _pending(d)              # the asked-back record superseded, the new one settled
     tally = store.load_local(d)[0][0].stats
@@ -274,12 +259,12 @@ def test_a_finish_whose_approval_is_asked_back_is_set_aside_for_the_answer(make_
     question unanswered and the approval open. It is set aside like a user message that
     arrives while finishing; the finish that carries the op again re-submits the approval."""
     d = make_routine(slug="finishask")
-    _capabilities(d, reminders="global", remind_confirm="always")
+    set_capabilities(d, reminders="global", remind_confirm="always")
     _reply(d, 1)                                     # ask back on the first finish's approval
     _reply(d, 2, "approve", ask_back=False)          # …and approve the re-submission
     first = {**finish(status="partial", summary="caution proposed"), "remind": REMIND}
     ep = scripted([first, {**first, "say": "answered them — carrying it again"}])
-    status, run_dir = run_routine(d, _server(d), run_ts=TS)
+    status, run_dir = run_routine(d, server_for(d), run_ts=TS)
     assert status == "partial"
     shown = _observation(ep, 1)
     assert "finish deferred" in shown and WORDS in shown, shown
@@ -287,7 +272,7 @@ def test_a_finish_whose_approval_is_asked_back_is_set_aside_for_the_answer(make_
                 if e["type"] == "observation" and e["payload"].get("asked_back")]
     assert len(deferred) == 1
     filed = [json.loads(p.read_text(encoding="utf-8"))
-             for p in _server(d).reminders_home.glob("*.json")]
+             for p in server_for(d).reminders_home.glob("*.json")]
     assert [r["regex"] for r in filed] == [REMIND["regex"]]
     assert not _pending(d)              # the asked-back record superseded, the new one settled
 
