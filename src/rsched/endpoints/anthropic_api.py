@@ -4,13 +4,14 @@ Schema enforcement via tool use: one tool named "action" whose input_schema is t
 schema, with tool_choice forcing it. Without a schema it is a plain messages call.
 
 Every optional field a model may refuse — the forced `tool_choice`, `output_config` (effort),
-`temperature`, the `cache_control` markers — rides the body, and a 400 that NAMES one drops it
-for a degraded retry (`_degrade`). This adapter's KIND is a WIRE, not a provider: a
-subscription proxy speaks it while serving `gpt-*` ids, Haiku 4.5 still honours temperature,
-and only the newest Claude models (Fable 5.1, Opus 5.5, Sonnet 5.5) refuse forced tool use —
-on those the tool is still offered, on the API default `auto`, and the engine reads an action
-from a text reply when the model writes one instead. So no field is sent blindly or dropped
-blindly: the model that rejects one says so, and pays a round trip per refused field.
+`temperature`, the `cache_control` markers — rides the body, and a 400 that NAMES one degrades
+it for a retry (`_degrade`). This adapter's KIND is a WIRE, not a provider: a subscription
+proxy speaks it while serving `gpt-*` ids, Haiku 4.5 still honours temperature, and only the
+newest Claude models (Fable 5.1, Opus 5.5, Sonnet 5.5) refuse forced tool use — on those the
+tool is still offered, on `auto` with at most one call (the engine takes ONE action per turn),
+and the engine reads an action from a text reply when the model writes one instead. So no
+field is sent blindly or dropped blindly: the model that rejects one says so, and pays a round
+trip per refused field.
 
 Prompt caching is on for CONVERSATIONS: cache_control breakpoints on the tools block and
 the system prompt (static per run) plus a moving breakpoint on the last message — each turn
@@ -52,14 +53,18 @@ API_VERSION = "2023-06-01"
 
 #: Optional top-level fields and the words in a 400's body that name each. Current Claude
 #: models REMOVED the sampling parameters and the newest refuse a forced tool_choice; the 400
-#: is non-retryable, so without the drop one filled Settings box — or the adapter's own forced
-#: tool — failed a model over on every turn of every run, while the same wire still serves
-#: models that accept the field. `cache_control` is not here: it is nested, see `_degrade`.
+#: is non-retryable, so without the degrade one filled Settings box — or the adapter's own
+#: forced tool — failed a model over on every turn of every run, while the same wire still
+#: serves models that accept the field. `cache_control` (nested) and `tool_choice` (replaced
+#: before it is dropped) are handled in `_degrade` itself.
 _DROPPABLE = (
     ("output_config", ("effort", "output_config")),
     ("temperature", ("temperature",)),
-    ("tool_choice", ("tool_choice",)),
 )
+
+#: What a refused forced tool_choice becomes: the API default, held to ONE call — `auto` alone
+#: would let a reply carry several, and `_parse` keeps a single action.
+_ONE_CALL_AT_MOST = {"type": "auto", "disable_parallel_tool_use": True}
 
 
 def _usage(raw: dict) -> dict:
@@ -175,14 +180,21 @@ def _strip_cache_control(body: dict) -> dict:
 
 
 def _degrade(body: dict, error: str) -> dict | None:
-    """`body` without every optional field this 400 names, or None when it names none that is
-    still being sent — then the 400 stands. Each call removes at least one field, so a caller
-    looping on it ends after at most four degraded requests.
+    """`body` with every optional field this 400 names degraded, or None when it names none
+    that is still being sent — then the 400 stands. A forced tool_choice is first unforced
+    (`_ONE_CALL_AT_MOST`) and dropped only if that is refused too; every other field is
+    dropped. Each call changes at least one field and none comes back, so a caller looping on
+    it ends after at most five degraded requests.
     """
     low = error.lower()
     out = {key: value for key, value in body.items()
            if not any(key == field and any(h in low for h in hints)
                       for field, hints in _DROPPABLE)}
+    if "tool_choice" in low and "tool_choice" in out:
+        if out["tool_choice"] == _ONE_CALL_AT_MOST:   # a gateway that does not know the field
+            del out["tool_choice"]
+        else:
+            out["tool_choice"] = _ONE_CALL_AT_MOST
     if "cache_control" in low:   # a proxy/old gateway that rejects caching
         out = _strip_cache_control(out)
     return out if out != body else None

@@ -324,9 +324,9 @@ for a model no provider lists.
 **Anthropic API** — `kind: anthropic`, no base_url needed, `sk-ant-…` key. Metered: know
 your budget caps. The action rides one tool the request forces; the newest Claude models
 (Fable 5.1, Opus 5.5, Sonnet 5.5) refuse a forced `tool_choice` with a 400, which the adapter
-absorbs by asking again on the API default `auto` — one extra round trip per call on those
-models, and the same holds through a subscription proxy. A model that refuses several fields
-(that one plus a configured `temperature`) is degraded one 400 at a time.
+absorbs by asking again on `auto` held to one tool call — one extra round trip per call on
+those models, and the same holds through a subscription proxy. A model that refuses several
+fields (that one plus a configured `temperature`) is degraded one 400 at a time.
 
 ## Windows and output caps are DISCOVERED — leave them blank
 
