@@ -81,6 +81,26 @@ def test_request_denial_redirects_already_available_entities(tmp_path):
     assert request_denial(lp, _ask("runs:all")) == []
 
 
+def test_holding_one_half_of_util_authoring_leaves_the_other_requestable(tmp_path):
+    """Creating a util needs `write_util`, revising one `revise_util`; the creation denial
+    routes to `action:write_util`. The availability check asked `allows_kind`, which is true
+    when EITHER half is held — so a routine holding only `revise_util` was told the very
+    request its denial named was "already enabled": a dead end."""
+    lp = _loop(tmp_path, grants=GrantPolicy(actions=frozenset({"revise_util"})))
+    assert request_denial(lp, _ask("action:write_util")) == []
+    assert "already enabled" in request_denial(lp, _ask("action:revise_util"))[0]
+
+
+def test_a_structural_kind_is_never_put_to_the_user(tmp_path):
+    """`detach` is gated but structural: a root conversation holds it from setup and its
+    handler refuses it anywhere else. A grant decision for it would cost the user a click for
+    a capability no grant can make usable — and the teaching copy must not list it either."""
+    problems = request_denial(_loop(tmp_path), _ask("action:detach"))
+    assert problems and "exists only in a root conversation" in problems[0]
+    taught = request_denial(_loop(tmp_path), _ask("action:create_routine"))[0]
+    assert "write_util" in taught and "detach" not in taught
+
+
 def test_request_denial_names_unreserved_and_missing_utils(tmp_path):
     from rsched import utils_lib
 

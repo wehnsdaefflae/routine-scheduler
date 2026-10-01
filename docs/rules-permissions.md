@@ -15,7 +15,8 @@ ownership:
 - **Capabilities** — the atomic, engine-enforced surface: gated action kinds
   (`grants.GATED_KINDS` — `write_util`, `revise_util`, `remove_util`, `write_rule`,
   `write_recipe`, `schedule_run`, `shell`, plus `detach`, which is structural: a root
-  conversation gets it at setup and no config names it; `revise_util` and `write_recipe` are
+  conversation gets it at setup and no config names it, so a request for it is refused before
+  it reaches the Decisions page; `revise_util` and `write_recipe` are
   capability TOKENS rather than emittable kinds), reserved utils or single VERBS of them (every
   entry a permission doc's `requires.utils:` names — `signal:send`, `gmail:send`,
   `fau-mail:send`, `usenet:post`, `ntfy`, `browser-session`, `darknet`), and the settings: the

@@ -13,6 +13,11 @@ from __future__ import annotations
 
 from .. import entities, utils_lib
 
+#: Gated, and yet no grant can switch it on: `detach` is STRUCTURAL — a root conversation holds
+#: it from setup and its handler refuses it anywhere else, so an `action:detach` decision would
+#: cost the user a click on the Decisions page for a capability that can never be used.
+_STRUCTURAL_KINDS = frozenset({"detach"})
+
 
 def request_ids(action: dict) -> list[str]:
     """The request field as a list of ids. The MODEL always sends one id (the schema
@@ -56,10 +61,11 @@ def request_denial(loop, action: dict) -> list[str]:
                 from ..grants import GATED_KINDS
                 from .actionschema import KINDS
                 if aname in KINDS and aname not in GATED_KINDS:
+                    requestable = [k for k in GATED_KINDS if k not in _STRUCTURAL_KINDS]
                     problems.append(
                         f"request: the {aname!r} action kind exists but is not grantable "
                         f"per-routine — the requestable action kinds are "
-                        f'{", ".join(GATED_KINDS)}. {aname!r} is wired to the run kind '
+                        f'{", ".join(requestable)}. {aname!r} is wired to the run kind '
                         "(e.g. conversation-only), so no grant can switch it on here — "
                         "raise the need in a report or a plain ask_user instead")
                     continue
@@ -92,9 +98,15 @@ def _availability(loop, cls: str, name: str, eid: str) -> list[str]:  # noqa: C9
     g = loop.grants
     cfg = ctx.routine
     if cls == "action":
-        if g is None or g.allows_kind(name):
+        # Asked of the capability TOKEN, not of the kind: `allows_kind("write_util")` is true
+        # when either half of util authoring is held, so a routine holding only `revise_util`
+        # was told `action:write_util` is "already enabled" — by the request its own creation
+        # denial had just routed it to. A dead end it could only burn retries against.
+        if g is None or g.admin or name in g.actions:
             return [(f"{eid} is already enabled for this routine — use the {name} action "
                      "directly")]
+        if name in _STRUCTURAL_KINDS:
+            return [str(g.deny({"kind": name}))]
         return []
     if cls == "util":
         from ..grants import split_util_verb
@@ -168,16 +180,18 @@ def _availability(loop, cls: str, name: str, eid: str) -> list[str]:  # noqa: C9
                      f"{'read' if cls == 'fs-read' else 'write'} roots — use it directly")]
         return []
     if cls == "runs":
+        from ..grants import RUN_HISTORY_LEVELS
+
         current = g.run_history if g is not None else "none"
-        order = ("none", "last", "all")
-        if order.index(current) >= order.index(name):
+        if RUN_HISTORY_LEVELS.index(current) >= RUN_HISTORY_LEVELS.index(name):
             return [(f"previous-run access at depth {current!r} already covers "
                      f"{eid} — read runs/ directly")]
         return []
     if cls == "reminders":
+        from ..grants import REMINDER_LEVELS
+
         current = g.reminders if g is not None else "none"
-        order = ("none", "local", "global")
-        if order.index(current) >= order.index(name):
+        if REMINDER_LEVELS.index(current) >= REMINDER_LEVELS.index(name):
             return [(f"the reminder layer is already at {current!r}, which covers {eid} — "
                      "use the `remind` field directly")]
         return []
