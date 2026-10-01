@@ -32,14 +32,20 @@ def config_path(request: Request) -> Path:
 def update_config(request: Request, mutate) -> Path:
     """Read-modify-write config.yaml; returns the path so callers can reload derived state.
     The daemon-side ServerConfig is live-reloaded by callers; engine subprocesses read it fresh.
+
+    Under the file's lock: every settings handler is sync, so FastAPI runs two saves on two
+    worker threads at once, and each read the file, changed its own key and wrote its copy
+    back — the later write silently undid the earlier save (an endpoint saved beside a model
+    edit, two tabs). Every runtime writer of config.yaml comes through here.
     """
-    from ...paths import atomic_write_yaml, read_yaml
+    from ...paths import atomic_write_yaml, file_lock, read_yaml
 
     path = config_path(request)
-    raw = read_yaml(path, {})
-    mutate(raw)
-    # atomic: engine subprocesses load config fresh mid-run — a torn read is a broken run
-    atomic_write_yaml(path, raw)
+    with file_lock(path.with_suffix(".lock")):
+        raw = read_yaml(path, {})
+        mutate(raw)
+        # atomic: engine subprocesses load config fresh mid-run — a torn read is a broken run
+        atomic_write_yaml(path, raw)
     return path
 
 
