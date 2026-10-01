@@ -126,6 +126,29 @@ def test_read_detail_rejects_traversal(server):
     assert playbooks.read_detail(home, "d", "../../routine.yaml") is None
 
 
+def test_a_slug_that_is_not_one_never_leaves_the_playbooks_dir(server):
+    """`<playbooks>/..` is the library ROOT, so a delete of slug `..` was an rmtree of the whole
+    library repo, history included. Every store function answers only for a real slug."""
+    home = server.libraries_home
+    (home / "MAIN.md").write_text("---\nslug: root\n---\n\nnot a playbook\n", encoding="utf-8")
+    for bad in ("..", ".", "../rules", "a/../.."):
+        assert playbooks.delete_playbook(home, bad) is False
+        assert playbooks.read_playbook(home, bad) is None
+        assert playbooks.read_detail(home, bad, "MAIN.md") is None
+        with pytest.raises(ValueError):
+            playbooks.write_playbook(home, bad, main="---\nslug: x\n---\n\nx\n")
+    assert (home / "rules").is_dir() and (home / "playbooks").is_dir()
+    assert (home / "MAIN.md").read_text(encoding="utf-8").endswith("not a playbook\n")
+
+
+def test_the_delete_route_refuses_a_dot_dot_slug(client):
+    """`%2E%2E` reaches the route as `..` — the raw segment, decoded."""
+    c, server = client
+    r = c.delete("/api/playbooks/%2E%2E")
+    assert r.status_code == 404
+    assert (server.libraries_home / "rules").is_dir()
+
+
 # ---- lint + the seed playbook -------------------------------------------------------------------
 
 def test_seed_playbook_lints_clean():

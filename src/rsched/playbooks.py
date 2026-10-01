@@ -21,6 +21,7 @@ from pathlib import Path
 
 import yaml
 
+from .ids import is_slug
 from .paths import atomic_write
 
 MAIN = "MAIN.md"
@@ -32,6 +33,17 @@ FRONT_KEYS = ("slug", "title", "when", "tags", "axis", "updated")
 def playbooks_dir(home: Path) -> Path:
     """The playbooks/ subdir of the library repo root."""
     return home / "playbooks"
+
+
+def _playbook_dir(home: Path, slug: str) -> Path | None:
+    """`<library>/playbooks/<slug>`, or None when `slug` is not a slug.
+
+    The ONE gate between a caller's slug and the filesystem. The web routes pass the URL
+    segment straight through, and `%2E%2E` arrives as `..` — `playbooks/..` is the library
+    ROOT, so a delete of it was an rmtree of the whole library repo, history included. Every
+    playbook slug is minted by `ids.slugify`, so the slug alphabet refuses nothing real.
+    """
+    return playbooks_dir(home) / slug if is_slug(slug) else None
 
 
 def _parse(text: str) -> tuple[dict, str]:
@@ -54,7 +66,8 @@ def list_playbooks(home: Path) -> list[dict]:
     if not d.is_dir():
         return []
     out = []
-    for sub in sorted(p for p in d.iterdir() if p.is_dir()):
+    # a folder whose name is no slug is nothing the store can open, so the catalog omits it
+    for sub in sorted(p for p in d.iterdir() if p.is_dir() and is_slug(p.name)):
         main = sub / MAIN
         if not main.is_file():
             continue
@@ -80,12 +93,11 @@ def read_playbook(home: Path, slug: str) -> dict | None:
     """{slug, content (full MAIN.md), body (MAIN.md minus front matter), meta, details:{name:body}}
     or None when the playbook does not exist.
     """
-    main = playbooks_dir(home) / slug / MAIN
-    if not main.is_file():
+    sub = _playbook_dir(home, slug)
+    if sub is None or not (sub / MAIN).is_file():
         return None
-    text = main.read_text(encoding="utf-8")
+    text = (sub / MAIN).read_text(encoding="utf-8")
     meta, body = _parse(text)
-    sub = playbooks_dir(home) / slug
     details = {p.name: p.read_text(encoding="utf-8")
                for p in sorted(sub.glob("*.md")) if p.name != MAIN}
     return {"slug": slug, "content": text, "body": body.strip(), "meta": meta, "details": details}
@@ -93,9 +105,10 @@ def read_playbook(home: Path, slug: str) -> dict | None:
 
 def read_detail(home: Path, slug: str, name: str) -> str | None:
     """One detail file's text (bare filename only — no path traversal)."""
-    if "/" in name or ".." in name:
+    sub = _playbook_dir(home, slug)
+    if sub is None or "/" in name or ".." in name:
         return None
-    p = playbooks_dir(home) / slug / name
+    p = sub / name
     return p.read_text(encoding="utf-8") if p.is_file() and p.suffix == ".md" else None
 
 
@@ -114,8 +127,11 @@ def write_playbook(home: Path, slug: str, *,
     """Write `<slug>/MAIN.md` (full text, front matter included), creating the subfolder. When
     `details` is a dict, it is reconciled — files not in it are removed (so a revision drops stale
     ones); when `details` is None the existing detail files are left untouched (a MAIN-only edit).
+    Raises ValueError for a `slug` that is not one.
     """
-    sub = playbooks_dir(home) / slug
+    sub = _playbook_dir(home, slug)
+    if sub is None:
+        raise ValueError(f"not a playbook slug: {slug!r}")
     sub.mkdir(parents=True, exist_ok=True)
     atomic_write(sub / MAIN, main.rstrip() + "\n")
     if details is None:
@@ -131,8 +147,8 @@ def write_playbook(home: Path, slug: str, *,
 
 
 def delete_playbook(home: Path, slug: str) -> bool:
-    sub = playbooks_dir(home) / slug
-    if not sub.is_dir():
+    sub = _playbook_dir(home, slug)
+    if sub is None or not sub.is_dir():
         return False
     shutil.rmtree(sub)
     return True
