@@ -71,7 +71,7 @@ def _shadow_library(real: Path, kind: str, name: str, content: str | None):
 
 def _server_at(server: Any, libraries_home: Path) -> Any:
     """The same server, reading a different library. A shallow stand-in rather than a mutated
-    copy: ServerConfig is a validated model and the surface only ever reads four attributes.
+    copy: ServerConfig is a validated model and the surface only ever reads these five.
     """
     from types import SimpleNamespace
 
@@ -144,9 +144,10 @@ def impact(server: Any, kind: str, name: str, content: str | None) -> dict:
     `content=None` means DELETION. Returns `{holders, breaks, unaffected, digest}`; `breaks`
     names each routine that gains a blocking or interrupting row, with the rows it gains.
 
-    `digest` fingerprints the answer. The web save carries it back and the write is refused if
-    it no longer matches — so a library that moved between preview and save re-prompts instead
-    of letting somebody approve an impact they were never shown.
+    `digest` fingerprints the answer — who holds the document and what each broken holder gains,
+    not only which holders break. The web save carries it back and the write is refused if it
+    no longer matches — so a library that moved between preview and save re-prompts instead of
+    letting somebody approve an impact they were never shown.
     """
     from .config import load_routine
     from .readmodels.surface import routine_surface
@@ -175,7 +176,7 @@ def impact(server: Any, kind: str, name: str, content: str | None) -> dict:
                     breaks.append({"slug": slug, "gains": gained})
                 else:
                     unaffected.append(slug)
-    payload = f"{kind}:{name}:{sorted(who)}:{[b['slug'] for b in breaks]}"
+    payload = f"{kind}:{name}:{sorted(who)}:{[(b['slug'], b['gains']) for b in breaks]}"
     return {"holders": who, "breaks": breaks, "unaffected": unaffected,
             "digest": hashlib.sha256(payload.encode()).hexdigest()[:16]}
 

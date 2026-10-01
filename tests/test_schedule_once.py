@@ -69,6 +69,24 @@ def test_parse_fire_at_rejects_past_bad_and_far():
             schedule_once.parse_fire_at(bad, now)
 
 
+@pytest.mark.parametrize("spec", ["+99999999999d", "+999999999d",
+                                  "0001-01-01T00:00:00+01:00", "9999-12-31T23:59:59-05:00"])
+def test_parse_fire_at_an_out_of_range_spec_is_a_value_error(spec):
+    """Both callers surface ValueError (the web route as a 422, the engine as a `bad_fire_at`
+    observation). An offset or instant past what a datetime can hold raised OverflowError
+    instead, which neither catches — a typo'd `+99999999999d` ended the whole run."""
+    with pytest.raises(ValueError, match="out of range"):
+        schedule_once.parse_fire_at(spec, datetime(2026, 1, 1, tzinfo=UTC))
+
+
+def test_handle_schedule_run_reports_an_out_of_range_fire_at(tmp_path):
+    server = _server(tmp_path)
+    _routine(server, "tgt")
+    obs = handle_schedule_run(_loop(server), {"target": "tgt", "fire_at": "+99999999999d"})
+    assert "out of range" in obs["bad_fire_at"]
+    assert schedule_once.pending_requests(server.routines_home, "tgt") == []
+
+
 # -- the request spool ------------------------------------------------------------------
 
 

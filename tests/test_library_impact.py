@@ -175,6 +175,19 @@ def test_the_digest_changes_with_the_answer(tmp_path):
 
 
 @pytest.mark.usefixtures("empty_store")
+def test_the_digest_names_what_breaks_not_only_whom(tmp_path):
+    """The token confirms an impact somebody was SHOWN. The same routine breaking over a
+    different secret is a different impact, so a preview of one must not confirm the other."""
+    server = _server(tmp_path)
+    _util(server, "sig")
+    _routine(server, "holder", capabilities={"utils": ["sig"]})
+    one = impact(server, "util", "sig", _util_src("sig", secrets="ONE_PIN"))
+    other = impact(server, "util", "sig", _util_src("sig", secrets="OTHER_PIN"))
+    assert [b["slug"] for b in one["breaks"]] == [b["slug"] for b in other["breaks"]]
+    assert one["digest"] != other["digest"]
+
+
+@pytest.mark.usefixtures("empty_store")
 def test_the_real_library_is_never_touched(tmp_path):
     """The shadow is symlinks into a temp dir; a preview that mutated the library would be a
     preview nobody could trust."""
