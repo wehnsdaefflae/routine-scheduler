@@ -17,6 +17,7 @@ from __future__ import annotations
 from playwright.sync_api import expect
 
 QUIET_MS = 4500      # > the tree poll (3 s) and the activity feed's (4 s)
+STATUS_QUIET_MS = 6500   # three of the restart watch's 2 s polls, against at most one lamp read
 
 
 def _watch(page):
@@ -83,3 +84,26 @@ def test_collapsing_the_activity_section_stops_its_poll(ui, ui_page):
     # the 300-run window, which nothing else on the page requests
     feed = [u for u in after if "limit=300" in u]
     assert not feed, f"the activity feed kept polling while collapsed: {feed}"
+
+
+def test_leaving_settings_stops_the_restart_watch(ui, ui_page):
+    """Settings → Server watches a requested restart by asking /api/status every 2 s, for up to
+    three minutes — and it is armed on RENDER whenever a restart is already pending. Unlike the
+    GitHub and OAuth flows on the same page it never asked whether its panel was still on
+    screen, so leaving Settings left that poll running for the full three minutes, and every
+    visit while the restart waited for its quiet gap started one more."""
+    def pending(route):
+        response = route.fetch()
+        route.fulfill(response=response, json={**response.json(), "restart_requested": True})
+    ui_page.route("**/api/status", pending)
+
+    ui_page.goto(f"{ui.url}/#/settings?section=server")
+    expect(ui_page.locator("#view")).to_contain_text("restart is already requested")
+    _leave(ui_page)
+
+    after = _watch(ui_page)
+    ui_page.wait_for_timeout(STATUS_QUIET_MS)
+    polls = [u for u in after if u.endswith("/api/status")]
+    # one may be the daemon lamp's own 30 s backstop landing inside the window; the watch's
+    # 2 s cadence puts three here
+    assert len(polls) <= 1, f"the restart watch outlived Settings: {len(polls)} status reads"
